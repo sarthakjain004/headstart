@@ -277,8 +277,7 @@ not being stressed.
 `scrape` owns 27.8–30.1 min of a 56–59 min wall in every run; `join` 11.6–12.8; `merge` 7.8–11.8;
 `embed` 3.6–6.7. Queueing and setup is **0.3 min** — infrastructure is not the problem.
 
-The pipeline measures its own concurrency headroom every run and says the same thing every time.
-Over all 75 shard-runs:
+The pipeline measures its own concurrency headroom every run. Over all 75 shard-runs:
 
 | Surface | n | throughput median | latency median | verdicts |
 |---|---|---|---|---|
@@ -286,11 +285,41 @@ Over all 75 shard-runs:
 | workday details | 75 | 1.24× | 1.80× | 52× widen, 12× narrow, 11× mixed |
 | eightfold details | 73 | 1.22× | 1.70× | 42× widen, **27× narrowing is free**, 4× mixed |
 
-**Workday's listing-page concurrency buys 2.18× throughput for 2.1× width at no latency cost, on 74
-of 75 shard-runs across five runs.** That is near-linear scaling and it is free. Widening it is the
-clearest unclaimed win in the pipeline, and Workday is 37% of all scrape volume (523k of 1.41M
-lines). Eightfold's detail concurrency is the mirror image — over-wide on a third of shards, where
-narrowing costs nothing and returns capacity.
+> **CORRECTION — this section originally over-read its own evidence.** It concluded that Workday's
+> listing concurrency should be **widened**, on the strength of "2.1× the width bought 2.18× the
+> throughput at 1.00× the latency" across 74 of 75 shard-runs. That is a real measurement, but not
+> of what the conclusion needed.
+>
+> `fanout_stats` records against **the width in force**, and a shard runs at exactly two: 12 when
+> `spare_egress.stream_width` clamps a walled group, and the resolved ceiling of 25 otherwise. So
+> "2.1× the width" is **25 ÷ 12** — the finding is that *the walled clamp of 12 is too narrow*, and
+> 25 is already what an unwalled Workday group runs at. It says nothing about whether 50 beats 25,
+> which is what "widen it" would mean.
+>
+> The repo has one experiment on this
+> (`experiment/workday-rotation-severed-pages/artifacts/2026-09-06_width-25-vs-12-via-fanout-stats.txt`)
+> and it compares the same two points. Nothing has measured above 25.
+>
+> There is a second, worse problem: width 12 is what a group gets **after the origin walled it**
+> and width 25 is what a healthy group gets, so the comparison is a walled fan-out against an
+> unwalled one, not one fan-out at two widths. "25 outperforms 12" may be no more than "unwalled
+> outperforms walled".
+>
+> **Measured directly, 25 → 50 buys nothing**: 60 listing pages took 5 s at both widths,
+> interleaved twice, 0 missing and 0 retries; the detail surface likewise, 11 s at both.
+> `_PAGE_STREAMS` stays at 25 and the item is withdrawn —
+> [`docs/workday/2026-09-07_page-streams-25-vs-50.md`](../workday/2026-09-07_page-streams-25-vs-50.md).
+> What the evidence does still question is `_WALLED_STREAM_WIDTH = 12`, which `stream_width`'s own
+> docstring flags as untuned — but that is a politeness decision before a throughput one, since it
+> governs how hard to push a host that has just said no.
+
+**The eightfold row is unusable for the same reason**, and its ranked item 7 is withdrawn with
+item 3. "27 of 73 say narrowing is free" is the same walled-vs-unwalled comparison read the other
+way round: a fan-out clamped to 12 *because the origin walled it* is slower per stream than a
+healthy one at 25, and reading that as "eightfold is over-wide at 25" inverts cause and effect.
+Eightfold remains by far the most expensive ATS per Board — **40.4 s median** against workday's 9.2
+and successfactors' 11.1 — so there is probably something real here; the width is simply not shown
+to be it.
 
 Eightfold is also the most expensive ATS per board by a wide margin: **40.4 s median** against
 workday 9.2 s and successfactors 11.1 s.
@@ -371,11 +400,11 @@ visible in the Actions UI instead of buried.
 |---|---|---|---|
 | 1 | ~~Diagnose the SuccessFactors zero-yield class, then fix~~ **FIXED, verification pending** — one denylisted User-Agent literal, not an egress wall ([writeup](../successfactors/2026-09-07_user-agent-denylist.md)). All evidence is laptop-vantage; the in-Actions probe cannot run until the fix merges | §1 | up to 56,120 postings/run **unblocked** — reaching the index also needs the listing to work in CI and the tech gate to keep them (~13.2%, so on the order of 7,400 tech jobs) |
 | 2 | Make the ADR-0064 gate read measured `jobs`, not a carried score | §2 | Would have caught this in one run; ~127 board-min/run and the critical path |
-| 3 | Widen `workday` listing-page concurrency | §4 — 74/75 shard-runs, 2.18× for free | Directly cuts the largest stage's Σ work |
+| 3 | ~~Widen `workday` listing-page concurrency~~ **WITHDRAWN — measured, no gain.** The cited statistic compares 12 vs 25 (and a walled population against an unwalled one), not 25 vs 50. Probed directly: identical wall at both widths on both surfaces ([writeup](../workday/2026-09-07_page-streams-25-vs-50.md)) | §4 | **zero** — widening would add third-party load for no benefit |
 | 4 | Per-host circuit breaker on repeated timeouts | §3a | ~1,600 board-s saved in one outage; bounds any future one |
 | 5 | Let a durable `CertificateVerifyError` count as a gone-strike | §3b | Stops 4 boards retrying forever; surfaces real lost coverage |
 | 6 | Demote spare-egress rotation lines to info | §6 | Makes 400 real warnings visible instead of 23,700 |
-| 7 | Narrow `eightfold` detail concurrency | §4 — 27/73 say narrowing is free | Returns capacity on the most expensive ATS per board |
+| 7 | ~~Narrow `eightfold` detail concurrency~~ **WITHDRAWN — same confound as item 3.** "27/73 say narrowing is free" compares walled groups at 12 against unwalled ones at 25, so it may only say "a walled eightfold fan-out is slower", which is trivially true. Needs a controlled probe at eightfold's real ceiling before any change | §4 | unknown until measured |
 | 8 | Paginate past the zoho 750 / freshteam 1000 ceilings, or `mark_truncated` | §3d | 8 boards permanently and silently short |
 
 Items 1 and 2 are the same incident seen from two sides: one is why the pipeline is losing 56,000
