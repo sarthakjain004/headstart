@@ -521,3 +521,20 @@ def test_saved_jobs_stamped_in_the_same_second_keep_a_stable_order(monkeypatch):
 
     # Same timestamp throughout, so the id breaks every tie: newest-first degrades to id-desc.
     assert got == sorted(ids, reverse=True)
+
+
+def test_absent_is_separated_from_an_unreachable_hub():
+    """`Store.get` answers None three ways; only the log tells them apart.
+
+    `LocalEntryNotFoundError` subclasses `EntryNotFoundError` while meaning the opposite —
+    not "no such file" but "could not reach the Hub to ask" — so an `isinstance` against
+    the parent alone files every outage as a routine absent record. `subscription_for`
+    reads that as "no record yet" and mints a replacement, restarting the person's
+    Watermark and rotating the unsubscribe token in mail already delivered. Pinned because
+    the failure is silent and the inheritance is the reverse of what it reads like."""
+    hub_errors = pytest.importorskip("huggingface_hub.errors")
+    from headstart.alerts.store import _is_absent
+
+    assert _is_absent(hub_errors.EntryNotFoundError("no such file")) is True
+    assert _is_absent(hub_errors.LocalEntryNotFoundError("hub unreachable")) is False
+    assert _is_absent(ValueError("corrupt json")) is False

@@ -177,12 +177,24 @@ class EmbeddingStore:
         ids: list[str] = []
         good: list[str] = []
         with self._meta_path.open(encoding="utf-8") as f:
-            for line in f:
+            for lineno, line in enumerate(f, start=1):
                 line = line.rstrip("\n")
                 try:
                     record = json.loads(line)
                 except json.JSONDecodeError:
-                    break  # a half-written final line from a crash — stop; treat the rest as gone
+                    # Stopping here is right for the case this was written for — a half-written
+                    # *final* line from a crash. It is wrong, and silently destructive, for
+                    # corruption anywhere else: everything after this point is rewritten out of
+                    # meta.jsonl and truncated off embeddings.f32 below, so those Jobs read as
+                    # un-embedded forever and re-embed on every run. Loud, and with the count,
+                    # because the file itself cannot tell the two cases apart afterwards.
+                    dropped = 1 + sum(1 for _ in f)
+                    _log.error(
+                        f"{self._meta_path}: unparseable metadata at line {lineno} — dropping "
+                        f"{dropped} record(s) from there to end of file, and truncating "
+                        f"{self._vec_path.name} to match"
+                    )
+                    break
                 ids.append(record["id"])
                 good.append(line)
         # Rewrite metadata with only fully-parsed lines, then size the vector file to match.
@@ -325,7 +337,8 @@ def _encode_groups(
                     bad = [m["id"] for m in batch_metas]
                     _log.warning(
                         f"batch FAILED ({type(exc).__name__}: {exc}) — skipped "
-                        f"{len(bad)} (e.g. {bad[:2]}); retry with --resume"
+                        f"{len(bad)} (e.g. {bad[:2]}); retry with --resume",
+                        exc_info=True,
                     )
                 else:
                     store.add(vectors, batch_metas)
@@ -402,7 +415,6 @@ def _run_assignment(
 
 def main() -> None:
     log.setup()
-    observability.context("embed")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--source",
@@ -431,6 +443,14 @@ def main() -> None:
         help="store output dir (default: data/embeddings/jobs; an embed shard writes its own fragment)",
     )
     args = ap.parse_args()
+    # After parsing, not before it: the shard number lives in the assignment's filename, and it
+    # is the only key that tells fifteen concurrent embedders apart in a merged log.
+    observability.context(
+        "embed_run",
+        shard=Path(args.assignment).stem.rsplit("-", 1)[-1]
+        if args.assignment
+        else None,
+    )
 
     model, device, dim, budget = _load_model()
     outdir = Path(args.outdir)

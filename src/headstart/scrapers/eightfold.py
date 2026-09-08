@@ -94,6 +94,11 @@ class EightfoldScraper(BaseScraper):
     #: (ADR-0063). Both therefore escalate to the spare egress rather than to a fourth attempt.
     egress_fallback_on = frozenset({403, 405})
 
+    #: Why this Board fell back from the PCSX API to the per-job sitemap walk, written by
+    #: whichever branch actually gave up. A class-level default only so the attribute exists
+    #: before the first assignment; every path that reaches the fallback line has replaced it.
+    _fallback_reason = "the PCSX API did not answer"
+
     def url(self) -> str:
         return f"https://{self.slug}/careers/sitemap.xml"
 
@@ -140,26 +145,35 @@ class EightfoldScraper(BaseScraper):
         # API is replica-unstable and re-swept; the sitemap is batch-generated and stable but
         # can be a stale or wrong-tenant index), so reading a Board's numbers without knowing
         # which one produced them has repeatedly meant re-probing the host by hand to find out.
+        #
+        # The reason is the *branch actually taken*, not the step that returned None. Both
+        # helpers below have three exits each — a transport failure, a non-200, and a body that
+        # arrived and did not carry what was wanted — and collapsing them onto "no group id on
+        # the careers page" / "the PCSX API did not answer" sends an operator hunting a page
+        # rewrite for what was a connection error.
         _log.info(
-            f"{self.board_key()}: falling back to the sitemap — "
-            + (
-                "the PCSX API did not answer"
-                if group_id
-                else "no group id on the careers page"
-            )
+            f"{self.board_key()}: falling back to the sitemap — {self._fallback_reason}"
         )
         return self._sitemap_records()
 
     def _group_id(self) -> str | None:
-        """The board's ``_EF_GROUP_ID`` (the API ``domain`` param), read from its careers page."""
+        """The board's ``_EF_GROUP_ID`` (the API ``domain`` param), read from its careers page.
+
+        Sets :attr:`_fallback_reason` on the way out, so a None says which of its three exits
+        produced it."""
         try:
             r = self._get(f"https://{self.slug}/careers", accept="text/html")
-        except http.RequestsError:
+        except http.RequestsError as exc:
+            self._fallback_reason = f"the careers page failed ({type(exc).__name__})"
             return None
         if r.status_code != 200:
+            self._fallback_reason = f"the careers page returned {r.status_code}"
             return None
         m = _EF_GROUP_ID.search(r.text)
-        return m.group(1) if m else None
+        if not m:
+            self._fallback_reason = "no group id on the careers page"
+            return None
+        return m.group(1)
 
     # --- primary: PCSX JSON API ---------------------------------------------------------------
 
@@ -194,10 +208,12 @@ class EightfoldScraper(BaseScraper):
         # every remaining Board onto the far more expensive per-job sitemap path.
         first = self._get(self._search_url(group_id, 0), marks_wall=False)
         if first.status_code != 200:
+            self._fallback_reason = f"the PCSX API returned {first.status_code}"
             return None
         try:
             data = first.json().get("data") or {}
         except ValueError:
+            self._fallback_reason = "the PCSX API answered 200 with an unparseable body"
             return None
         total = int(data.get("count") or 0)
         seen: dict[str, dict[str, Any]] = {}
@@ -334,21 +350,46 @@ class EightfoldScraper(BaseScraper):
         return records
 
     def _description(self, group_id: str, position_id: str) -> str | None:
-        r = self._get(self._details_url(group_id, position_id))
-        return _description_of(r) if r.status_code == 200 else None
+        try:
+            r = self._get(self._details_url(group_id, position_id))
+        except http.RequestsError as exc:
+            self.note_detail_loss(type(exc).__name__)
+            return None
+        return self._read_description(r)
 
     async def _description_async(
         self, session: Any, group_id: str, position_id: str
     ) -> str | None:
-        r = await http.fetch_async(
-            session,
-            "GET",
-            self._details_url(group_id, position_id),
-            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-            timeout=30,
-            **self._egress(),
-        )
-        return _description_of(r) if r.status_code == 200 else None
+        try:
+            r = await http.fetch_async(
+                session,
+                "GET",
+                self._details_url(group_id, position_id),
+                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+                timeout=30,
+                **self._egress(),
+            )
+        except http.RequestsError as exc:
+            self.note_detail_loss(type(exc).__name__)
+            return None
+        return self._read_description(r)
+
+    def _read_description(self, response: Any) -> str | None:
+        """One ``position_details`` response's text, with a ``None`` labelled by what lost it.
+
+        This ATS's edge answers a spent per-origin budget with 403/405 (ADR-0063) and its API
+        can answer 200 with a body that will not parse; both arrive here as ``None``, and the
+        bare gap count reads them as the same fact. ``""`` is not a loss — see
+        :func:`_description_of` on why an empty description means only that the request
+        completed.
+        """
+        if response.status_code != 200:
+            self.note_detail_loss(f"HTTP {response.status_code}")
+            return None
+        text = _description_of(response)
+        if text is None:
+            self.note_detail_loss("unparseable body on a 200")
+        return text
 
     # --- fallback: sitemap -> per-job JSON-LD -------------------------------------------------
 
@@ -411,19 +452,42 @@ class EightfoldScraper(BaseScraper):
         return _dedupe(found)
 
     def _jsonld(self, job_url: str) -> dict[str, Any] | None:
-        r = self._get(job_url, accept="text/html")
-        return _jobposting(r.text) if r.status_code == 200 else None
+        try:
+            r = self._get(job_url, accept="text/html")
+        except http.RequestsError as exc:
+            self.note_detail_loss(type(exc).__name__)
+            return None
+        return self._read_jsonld(r)
 
     async def _jsonld_async(self, session: Any, job_url: str) -> dict[str, Any] | None:
-        r = await http.fetch_async(
-            session,
-            "GET",
-            job_url,
-            headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
-            timeout=30,
-            **self._egress(),
-        )
-        return _jobposting(r.text) if r.status_code == 200 else None
+        try:
+            r = await http.fetch_async(
+                session,
+                "GET",
+                job_url,
+                headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
+                timeout=30,
+                **self._egress(),
+            )
+        except http.RequestsError as exc:
+            self.note_detail_loss(type(exc).__name__)
+            return None
+        return self._read_jsonld(r)
+
+    def _read_jsonld(self, response: Any) -> dict[str, Any] | None:
+        """One job page's JobPosting fields, with a ``None`` labelled by what lost it.
+
+        It matters most on this surface: the page *is* the Job here, so every loss is also a
+        truncation, and this fallback is taken exactly when the API is refusing us — the run
+        where "was it refused or was it unreadable?" is the whole question.
+        """
+        if response.status_code != 200:
+            self.note_detail_loss(f"HTTP {response.status_code}")
+            return None
+        fields = _jobposting(response.text)
+        if fields is None:
+            self.note_detail_loss("no JobPosting JSON-LD on a 200")
+        return fields
 
     # --- shared parse -------------------------------------------------------------------------
 

@@ -4,7 +4,11 @@ Four seams, each closing a gap that made a real run undiagnosable:
 
 **Run context.** GitHub prefixes every raw log line with an ISO timestamp, so the missing
 correlation is not the date — it is *which* run, attempt and shard a log belongs to once it
-is off the Actions page. :func:`context` prints that once per stage.
+is off the Actions page. :func:`context` prints that once per stage — every ``python -m
+headstart.ingest.*`` entry point, and on the two fan-out stages after argument parsing, so the
+line can carry the shard that separates fifteen concurrent producers. The curated-feed entry
+(``python -m headstart``) deliberately does not call it: it is not a pipeline stage, and the feed
+path may not import from ``ingest`` (CLAUDE.md's repo conventions).
 
 **Step summary.** ``$GITHUB_STEP_SUMMARY`` was unused, so answering "what did this run
 actually do?" meant opening ~20 job logs across five stages. :func:`summary` appends
@@ -41,6 +45,14 @@ _SHARD_REPORT = "_shard_report.json"
 
 def context(stage: str, **extra: Any) -> None:
     """One line naming the run this log belongs to. Silent off CI, where it is noise.
+
+    ``stage`` is **the calling module's own name** — ``scrape_run``, never ``scrape``;
+    ``scrape_join``, never ``join``. The workflow's job names are the tempting alternative and
+    they name a different thing: ``join`` is one Actions job running seven of these modules, so a
+    log grepped by job answers "which runner" and a log grepped by stage answers "which code",
+    and a vocabulary mixing the two answers neither. Where one module is several passes behind
+    one entry point the pass rides as an ``extra`` instead of in ``stage`` — ``index``'s
+    ``step=``, ``update_ledgers``' ``ledger=``. ``tests/test_log_contract.py`` enforces the rule.
 
     No bracketed prefix of its own: ADR-0039 fixes one line format whose only tag is the
     module's name, which the formatter already supplies. ``stage`` rides as a field.
@@ -95,11 +107,21 @@ def read_shards(fragments: Path) -> list[dict]:
     A missing or corrupt report is skipped with a warning rather than raising: the join's job
     is to union job data, and it must not die because a shard's telemetry did."""
     out: list[dict] = []
+    unreadable: list[str] = []
     for path in sorted(fragments.glob(f"*/{_SHARD_REPORT}")):
         try:
             out.append(json.loads(path.read_text(encoding="utf-8")))
         except (OSError, json.JSONDecodeError) as exc:
-            _log.warning(f"unreadable shard report {path}: {exc}")
+            unreadable.append(f"{path.parent.name} ({type(exc).__name__})")
+    if unreadable:
+        # One warning for the set, not one per shard. A fan-out has ~15 shards and a WARNING
+        # is an annotation under Actions, capped at 10 per step — so the per-shard form could
+        # spend the join's whole budget reporting that telemetry was missing, and bury the
+        # join's own errors doing it. The names still ride, via the helper below.
+        _log.warning(
+            f"{len(unreadable)} shard report(s) unreadable, so their telemetry is missing "
+            f"from this run's totals: {named_sample(unreadable)}"
+        )
     return out
 
 

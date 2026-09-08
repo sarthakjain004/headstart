@@ -31,7 +31,7 @@ from pathlib import Path
 from headstart import log
 from headstart.board_priority import load_scores
 from headstart.corpus import board_of, iter_jobs
-from headstart.ingest import PENDING_UPGRADES_PATH, REPO_ROOT
+from headstart.ingest import PENDING_UPGRADES_PATH, REPO_ROOT, observability
 from headstart.ingest.binpack import (
     lpt_pack,
     shard_count,
@@ -128,6 +128,7 @@ def _write_plan(
 
 def main() -> int:
     log.setup()
+    observability.context("embed_plan")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--source",

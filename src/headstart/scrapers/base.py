@@ -8,6 +8,7 @@ import os
 import time
 import urllib.parse
 from abc import ABC, abstractmethod
+from collections import Counter
 from collections.abc import Awaitable, Callable, Container, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
@@ -48,6 +49,34 @@ _R = TypeVar("_R")
 # the common server MAX_CONCURRENT_STREAMS. Override per-call, via HEADSTART_H2_STREAMS, or
 # run_scrapers --streams N. Read at call time (below) so a CLI flag can set the env before the scrape.
 _DEFAULT_H2_STREAMS = 100
+
+
+def _loss_breakdown(losses: Counter[str], missing: int) -> str:
+    """`` (HTTP 403 x2114, no JSON-LD on a 200 x13)`` for a labelled detail pass, else ``""``.
+
+    Only the four largest are named — as workday's own loss report does, because what the line
+    is for is the *shape* of the failure — and whatever reached no label is counted into
+    ``unlabelled`` rather than dropped, so a partial tally cannot read as a full account of
+    ``missing``. A scraper that never calls :meth:`BaseScraper.note_detail_loss` gets nothing
+    appended, which is why every unmigrated scraper's line is byte-identical to before.
+
+    The tail names how much the four leave out, not merely *that* they leave something out: a
+    bare ``…`` says a fifth cause exists and nothing about its size, so a long tail that
+    outweighs everything shown reads as a footnote. With the residual stated, the four shown
+    plus the tail always sum to ``missing``.
+    """
+    if not losses:
+        return ""
+    tally = Counter(losses)
+    unlabelled = missing - sum(tally.values())
+    if unlabelled > 0:
+        tally["unlabelled"] = unlabelled
+    shown = tally.most_common(4)
+    why = ", ".join(f"{cause} x{n}" for cause, n in shown)
+    if len(tally) > len(shown):
+        rest = sum(tally.values()) - sum(n for _, n in shown)
+        why += f", …{len(tally) - len(shown)} more cause(s) x{rest}"
+    return f" ({why})"
 
 
 class BaseScraper(ABC):
@@ -130,6 +159,15 @@ class BaseScraper(ABC):
         # partial Jobs are real and worth keeping — so the truncation travels beside them:
         # `scrape_all` reads this after a successful fetch and reports the Board as unfinished.
         self.truncated: str | None = None
+        # This Board's own logger, tagged with the ATS rather than with `base`, so a merged CI
+        # log still says which scraper spoke (ADR-0039's whole reason for the tag). Built once
+        # here rather than per call — `report_detail_gaps` used to re-derive it on every line,
+        # an idiom nothing else in the repo uses.
+        self._log = log.get(f"headstart.scrapers.{self.ats}")
+        # What this Board's detail fetches came back empty *for*, tallied by cause. Filled by
+        # `note_detail_loss`, named by `report_detail_gaps`; empty for the scrapers that have
+        # not opted in, whose line then reads exactly as it always did.
+        self.detail_losses: Counter[str] = Counter()
 
     def mark_truncated(self, why: str) -> None:
         """Record ``why`` this Board's list came back short, keeping the *first* reason.
@@ -141,6 +179,46 @@ class BaseScraper(ABC):
         """
         if self.truncated is None:
             self.truncated = why
+
+    def note_unreadable_board(self, expected: str, got: str) -> None:
+        """Say, before returning nothing, that this Board could not be *read* — which is not
+        the same fact as this Board having nothing open, though downstream they are identical.
+
+        A scraper that answers ``[]`` for a listing surface it never managed to parse lands the
+        Board in ``boards_ok``, clears its ADR-0058 gone-streak, and leaves every row it already
+        has indexed unconfirmed — evicted on the next run under ADR-0083's grace period. The
+        company's postings leave search and nothing in the run says why. Five such exits existed
+        across four scrapers and none of them was readable from a log.
+
+        ``expected``/``got`` are the discriminator the code actually branched on (the shape asked
+        for, and the shape that came back), because "no jobs" alone cannot be acted on. This does
+        not mark the Board truncated: whether an unread Board is a *departed* one is per-ATS and
+        measured per-ATS, so the scraper that knows makes that call beside this line.
+
+        INFO, not WARNING, and named ``note_`` rather than ``warn_`` to say so. An unreadable
+        Board is routine at this scale, not exceptional — the committed liveness ledgers carry
+        423 live freshteam rows and 95 live keka rows at ``jobs=0`` — and under Actions a
+        WARNING is an annotation against a hard quota (10 per step, 50 per run), so a line that
+        can fire once per Board spends the run's whole budget on the routine case and displaces
+        the aborts the quota exists for (ADR-0039's 2026-09-08 amendment).
+        """
+        self._log.info(
+            f"{self.board_key()}: read no jobs — expected {expected}, got {got}"
+        )
+
+    def note_detail_loss(self, cause: str) -> None:
+        """Record what one empty detail result was lost *to*, for :meth:`report_detail_gaps`.
+
+        A bare count cannot separate a Board being refused from a Board whose pages arrived
+        unreadable — the distinction that hid a User-Agent denylist for five consecutive runs
+        while the only line on the subject read ``2127/2127 detail fields missing`` (see
+        :data:`USER_AGENT`). Labels are deliberately coarse — a status, or an exception class —
+        because what a gap needs is its *shape*, not one distinct string per request.
+
+        Call it only where the same path returns ``None``, so the tally can never exceed the
+        count it explains. Workday keeps a richer tally of its own and does not use this.
+        """
+        self.detail_losses[cause] += 1
 
     def needs_detail(self, native_id: str) -> bool:
         """Whether this Job still needs its per-job detail fetch (ADR-0048).
@@ -481,11 +559,16 @@ class BaseScraper(ABC):
         A scraper that needs more than a count may **replace** this line rather than add to it —
         workday reports its own gaps classified by cause (ADR-0088) and so does not call this at
         all. Adding a second line beside this one instead is the thing to avoid: the two carry
-        the same numbers, so anything grepping them double-counts the Board."""
+        the same numbers, so anything grepping them double-counts the Board.
+
+        Where the scraper labelled its losses through :meth:`note_detail_loss`, the causes are
+        appended to this same line rather than to a second one, for that reason. The leading
+        ``N/M {what} missing`` is unchanged either way — several docs and probes quote it."""
         missing = sum(1 for r in results if r is None)
         if missing:
-            log.get(f"headstart.scrapers.{self.ats}").info(
+            self._log.info(
                 f"{self.board_key()}: {missing}/{len(results)} {what} missing"
+                + _loss_breakdown(self.detail_losses, missing)
             )
         return missing
 

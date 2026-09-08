@@ -101,10 +101,26 @@ class KekaScraper(BaseScraper):
     def fetch_raw(self) -> Any:
         # step 1: portal info. A soft-error HTML page (200) means no public board.
         info = self._get()
-        if any(marker in info for marker in _DEAD_MARKERS):
+        marker = next((m for m in _DEAD_MARKERS if m in info), None)
+        if marker:
+            # Not marked truncated: this module's own measurement (module docstring) is that the
+            # marker *means* no public board, and truncating would hold a departed tenant's rows
+            # in the index indefinitely. It is still worth a line — the two markers differ, and
+            # "Forbidden Access" on a Board that was serving jobs yesterday is a portal someone
+            # switched off, not a tenant that left.
+            self.note_unreadable_board("the portal-info JSON", f"a {marker!r} page")
             return []
         tenant = self._tenant_uuid(info)
         if not tenant:
+            # The portal answered and did *not* say it was dead, so the Board is alive and its
+            # postings are simply unreachable without the uuid — a short list, not an empty one
+            # (ADR-0053), or `sync` reads every one of them as a delisting.
+            self.note_unreadable_board(
+                "an org uuid in careerportalinfo or the careers page", "neither"
+            )
+            self.mark_truncated(
+                "no org uuid on the portal — the jobs array was never requested"
+            )
             return []
         self._tenant = tenant
         # step 2: the active-jobs array

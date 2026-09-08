@@ -40,6 +40,15 @@ class _Formatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         tag = record.name.rsplit(".", 1)[-1]
         message = record.getMessage()
+        if record.exc_info:
+            # Rendered here because this formatter never calls ``super().format()``:
+            # until it did, ``exc_info=True`` at a call site cost the traceback it
+            # asked for and said nothing about the loss, so a parse bug in any of the
+            # 25 scrapers named neither file nor line. Cached on the record the way
+            # ``logging.Formatter`` does, so a second handler re-uses the render.
+            if not record.exc_text:
+                record.exc_text = self.formatException(record.exc_info)
+            message = f"{message}\n{record.exc_text}"
         if record.levelno >= logging.WARNING:
             if os.environ.get("GITHUB_ACTIONS"):
                 kind = "error" if record.levelno >= logging.ERROR else "warning"
