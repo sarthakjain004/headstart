@@ -5,10 +5,17 @@ that exists, that we could scrape, and that discovery never sees, with nothing i
 so.
 
 1. Does re-fetching CDX pages already marked *done* recover boards? (Yes — measured.)
-2. Is `wayback_feeder.ATS_HOSTS` missing hosts entirely? (Yes — two real gaps, one large.)
+2. Is `wayback_feeder.ATS_HOSTS` missing hosts entirely? (Yes — **four** real gaps.)
 
-Group B of the audit (icims, zoho, oracle, successfactors, keka, freshteam, trakstar, darwinbox,
-ripplehire, eightfold) was still running when this was written; §7 is the placeholder.
+All 20 ATSes audited. The four missing hosts, ranked by measured yield: Trakstar's
+`recruiterbox.com` (§7.1, twice the archive of the host we sweep), Workday's `myworkdaysite.com`
+(§3, 31+ unknown Boards, needs a new extractor style), Oracle's pod-less `fa.oraclecloud.com`
+(§7.2, one live 7,323-job board both miners are blind to), and Greenhouse's ANZ region (§4). Two
+further slug shapes are reachable but unreadable by `extract` (§5), and one question is left open
+by CDX throttling (§7.5).
+
+Ten ATSes are verified complete, and one plausible-looking gap — the `cc_miner` API hosts — is
+**refuted by measurement** (§6) so it is not re-opened.
 
 ## 1. The resume markers were hiding boards
 
@@ -162,8 +169,129 @@ Ruled out by CT records, DNS and live probes rather than assumption:
 - **zoho** — 8 TLDs, established earlier: 19 further candidates probed, only `zohorecruit.ae`
   exists and it archives just `insights.zohorecruit.ae`, marketing rather than a board namespace.
 
-*Group B's remaining ATSes (icims, oracle, successfactors, keka, freshteam, trakstar, darwinbox,
-ripplehire, eightfold) were still under audit; this section is incomplete.*
+- **darwinbox** — `.in` + `.com` matches the scraper's own `_TLDS = ("in", "com")`
+  (`darwinbox.py:49`). `.sa`, `.ae`, `.my`, `.co.id`, `.com.sa` NXDOMAIN; `darwinbox.id` resolves
+  but is a parked Hostinger page.
+- **freshteam** — `freshteam.com` only, matching `freshteam.py:96`. `myfreshteam.com`,
+  `freshteam.in/.eu/.io` all NXDOMAIN.
+- **ripplehire** — `ripplehire.com` only, matching `ripplehire.py:67`. `.in/.co/.io` NXDOMAIN.
+- **icims** — no regional or legacy host confirmed: `icims.eu` and `icims.net` 301 to
+  `www.icims.com`, `icims.co.uk` shares the `icims.eu` wildcard IP with no board. Agrees with the
+  481,000-URL census in `docs/icims/2026-09-08_url-formats-and-the-build-decision.md:44-52`, which
+  finds `{tenant}.icims.com` is the only board suffix. **One candidate unresolved** — see §7.5.
+
+
+## 7.1 Trakstar is missing the larger half of its own archive
+
+**The highest-yield finding in the audit.** `ATS_HOSTS` carries only `hire.trakstar.com`
+(`wayback_feeder.py:334`). Trakstar Hire *is* Recruiterbox, renamed — and the legacy per-tenant
+namespace is still live, still resolving, and still archived.
+
+- Trakstar's own support article states the hosted careers site is `[company].recruiterbox.com`
+  and that "you can't change the `.recruiterbox.com` part".
+- Live today: `1lattice.recruiterbox.com` 301s to `1lattice.hire.trakstar.com`; likewise
+  `1stopasia`, `recruiterbox`. A 1:1 label mapping, which is exactly the slug `trakstar.py:126`
+  wants.
+- **Archive size: `recruiterbox.com` holds 40 CDX pages against `hire.trakstar.com`'s 20.** The
+  legacy domain is the *bigger* half of Trakstar's archive and nothing sweeps it.
+- Two alphabetical slices gave 10 distinct tenant labels, of which **6 are in neither the liveness
+  ledger nor the candidate pool** — and all 6 answer 200 live on `hire.trakstar.com`
+  (`1000megabytes`, `100marks` 1 opening, `10strings` 2 openings, `1boc`, `macaulaygidado`,
+  `macfoodservices`).
+
+The first independent signal was in our own code: `trakstar.py:104` still carries
+`_FEED_NS = {"job": "https://recruiterbox.com/rss/job/"}`. The scraper remembers the rename; the
+host table does not.
+
+**One caveat the fix must handle.** `dedupe_key` (`wayback_feeder.py:484-495`) keys non-`path`
+styles on the **URL**, so `https://acme.recruiterbox.com` will not collapse against
+`https://acme.hire.trakstar.com`. Zoho's TLDs are regional *pods* and must not collapse; this pair
+is an **alias** and must. So adding the host naively double-counts every tenant in
+`data/wayback-ats/trakstar.csv`. Either dedupe alias hosts on the label, or sweep it ad-hoc
+(`--domain recruiterbox.com --style sub`) and merge on the label. The liveness prober is unaffected
+— `check_liveness.py:1525` builds from the tenant label and ignores the url column.
+
+## 7.2 Oracle has a seventeenth shape with no pod at all
+
+All 16 entries added earlier carry a pod segment (`fa.{pod}.oraclecloud.com`). There is a
+**pod-less vanity tier** that matches none of them:
+
+`data/validate/liveness/oracle.csv:1090` — `jpmc.fa.oraclecloud.com`, **live, 7,323 jobs**. It is
+not a duplicate of a known pod: it CNAMEs to `eino.fa.ocs.oraclecloud.com`, which has zero ledger
+rows. The scraper's own endpoint returns a well-formed `recruitingCEJobRequisitions` envelope for
+it, and `extract(…, "fa.oraclecloud.com", "host")` yields the right slug unchanged.
+
+The namespace is genuinely tiny — crt.sh for `%.fa.oraclecloud.com` returns 19 names, essentially
+`jpmc` plus its dev/test siblings and two Oracle-internal `faaasvanitypod` hosts — but its one
+production member is a 7,323-job board. `*.fa.oraclecloud.com` publishes no wildcard, so DNS
+enumeration works here as it does for Eightfold.
+
+**`cc_miner` misses it too**, and this is the one place the two miners fail together:
+`cc_miner.py:255-260`'s regex `([a-z0-9-]+\.fa\.[a-z0-9-]+\.oraclecloud\.com)` *requires* a pod
+segment. So neither discovery path can see this tier.
+
+Worth stating plainly for the future: cc_miner mines Oracle from the apex with a full-host regex
+and is therefore **pod-agnostic — it finds pod N+1 for free**. The feeder enumerates, so **every
+new Oracle pod is a permanent silent miss until a human adds it**. That is an argument for giving
+`extract` an oracle-shaped style rather than growing the list.
+
+And the `fa.` prefix is *not* an assumption: Oracle documents the career site as
+`{instance}.fa.{pod}.oraclecloud.com/hcmUI/…`. Oracle's actual vanity-URL feature is not an
+`oraclecloud.com` host at all — it is a customer subdomain behind a customer-run reverse proxy, so
+those boards are off the vendor namespace entirely, unenumerable by any domain sweep.
+
+## 7.3 Keka has a second domain, but it buys nothing today
+
+`kekahire.com` is real: `*.kekahire.com` has a valid cert, tenants get provisioned pod records
+(`10decoders` → `cin01.career.kekahire.com`, not the wildcard), and
+`https://10decoders.kekahire.com/careers` 302s to `10decoders.keka.com`. `extract` handles it as
+`sub` unchanged. But it is only 3 CDX pages against `keka.com`'s 23, and of 18 tenant labels
+sampled, **16 are already known and the 2 new ones are dead** (`adwitiya` → 403,
+`alokin` → TenantNotFound). Add it if the table is being touched anyway; it does not justify its
+own change. Same alias/`dedupe_key` caveat as Trakstar.
+
+## 7.4 SuccessFactors and Eightfold: the table is right, the tail is structural
+
+Neither has a missing host. Both have a customer-vanity tail no host sweep can reach, now measured:
+
+| provider | on swept hosts | on customer vanity domains |
+|---|---|---|
+| successfactors | 113 Boards / 13,133 jobs | **2,091 Boards / 250,895 jobs across 2,044 apexes** |
+| eightfold | 97 Boards / 75,099 jobs | 5 Boards / 10,252 jobs (12.0%) |
+
+**95% of live SuccessFactors jobs sit on customer domains with no shared namespace.** The prefix
+distribution of those live hosts — `careers.` 969, `jobs.` 658, `career.` 51, `karriere.` 37,
+`www.` 34, `empleos.` 28 — is exactly what `sf_derive_hosts.py:37-45` already exploits, so the tail
+belongs to `mine_successfactors.py` / `sf_derive_hosts.py` / `sf_cname_probe.py`, not to
+`ATS_HOSTS`. (`jobs2web.eu` NXDOMAIN; `hr.cloud.sap` as a table host is unusable anyway — the dot
+guard makes `extract` return `None`.)
+
+Eightfold's tail is just five customer apexes — micron, nvidia, qualcomm, hsbc, vodafone — which
+confirms the comment at `wayback_feeder.py:238-239`. The right instrument already exists and is not
+a host sweep: `eightfold_portal_sweep.py` enumerates customers via `app.eightfold.ai`'s `?domain=`
+param across the regional portals, and `eightfold.ai` publishes no wildcard DNS, so a resolving
+label *is* a provisioned Board.
+
+## 7.5 One question the throttling left open
+
+**`jibeapply.com`** — iCIMS acquired Jibe in 2019, owns the domain, and hosts recruitment-marketing
+career sites on it. The apex 301s to `www.icims.com`; crt.sh returns 93 names, all infrastructure
+behind a `*.jibeapply.com` wildcard, so CT cannot reveal customer hosts;
+`careers.icims.com.jibeapply.com` resolves and answers 400 to a bare request. `extract` would
+handle it as `host`. **The CDX probe 429'd on four attempts** and the question is unresolved — it
+needs one probe once the endpoint is free. Proviso: `icims.py` is sitemap-only, so a Jibe career
+host may not be scrapable even if it archives.
+
+## 7.6 Miner asymmetries worth knowing
+
+The feeder and `cc_miner` are each ahead of the other in places, so neither is a superset:
+
+- `cc_miner` has **no `successfactors` or `freshteam` entry at all** — those live only in the feeder.
+- `cc_miner` mines only 4 Zoho TLDs (com/eu/in/ca) against the feeder's 8; the 4 it omits
+  (`.com.au`, `.sa`, `.jp`, `.com.cn`) hold **120 live Boards**.
+- `mine_zoho.py:39-49` mines 10 domains, two of which (`zohorecruit.uk`, `zohorecruit.sg`) have zero
+  ledger rows and nothing archived — harmless, but neither the feeder nor reality supports them.
+- Only cc_miner is pod-agnostic on Oracle (§7.2).
 
 ## 8. `ATS_HOSTS`'s own docstring is wrong
 
@@ -176,15 +304,20 @@ the hosts the scrapers fetch from.
 
 ## 9. Ranked actions
 
-1. **Add a `myworkdaysite` style and host** (§3) — a floor of 31 unknown Boards, 12 sampled live
+0. **Add `recruiterbox.com` to trakstar** (§7.1) — the legacy domain is *twice* the archive of
+   the one we sweep, and 6 of 10 sampled tenants were unknown and live. Needs the alias-dedupe
+   decision, not just a table line.
+1. **Add `fa.oraclecloud.com`** (§7.2) — one line, `extract` handles it, and it recovers a live
+   7,323-job board that both miners are currently blind to.
+2. **Add a `myworkdaysite` style and host** (§3) — a floor of 31 unknown Boards, 12 sampled live
    with 2,389 jobs, and 23 CDX pages left entirely unswept. Needs a new extractor; no scraper
    change.
-2. **Add the two Greenhouse ANZ hosts** (§4) — two lines, `extract()` already handles them.
-3. **Teach `extract()` Teamtailor's `utm_content` slug** (§5) — 53 known tenants, 51 live, that
+3. **Add the two Greenhouse ANZ hosts** (§4) — two lines, `extract()` already handles them.
+4. **Teach `extract()` Teamtailor's `utm_content` slug** (§5) — 53 known tenants, 51 live, that
    the harvest has never seen.
-4. **Clear resume markers before every periodic sweep** (§1), or give `wayback_pages.py` a
+5. **Clear resume markers before every periodic sweep** (§1), or give `wayback_pages.py` a
    `--refresh` flag so this is not a manual step that gets forgotten.
-5. **Reword the `ATS_HOSTS` docstring** (§8) and drop `cc_miner`'s NXDOMAIN target (§6).
+6. **Reword the `ATS_HOSTS` docstring** (§8), add cc_miner's 4 missing Zoho TLDs (§7.6), and drop `cc_miner`'s NXDOMAIN target (§6).
 
 ## 10. A measurement caveat that shaped this audit
 
