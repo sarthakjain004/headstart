@@ -45,7 +45,7 @@ from headstart.corpus import board_of
 from headstart.ingest.observability import named_sample
 from headstart.scrapers.registry import get_scraper
 
-_log = log.get(__name__)
+_log = log.get(__name__, __spec__)
 
 
 @dataclass(frozen=True, slots=True)

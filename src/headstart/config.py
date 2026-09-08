@@ -327,6 +327,20 @@ def load_active_companies(
     return _drop_parked(_dedupe_boards(companies))
 
 
+#: Boards already reported by :func:`board_identity`, so one malformed slug says so once.
+#:
+#: Module-level, and never cleared: a pipeline stage is one process, and the point is that every
+#: caller shares one record. `board_identity` is reached from ~15 sites (`scrape_plan` x8,
+#: `board_priority` x7, plus `_drop_parked` and `_dedupe_boards` here), each walking the whole
+#: company list, so one bad slug restated itself ~15x per run — and a scraper whose `board_key()`
+#: starts raising would emit `N_Boards x 15` lines for one bug.
+#:
+#: Measured 2026-09-08: `load_active_companies('data/validate/liveness', min_jobs=0)` yields
+#: 91,325 Scrapable Boards and reaches this path zero times, so the blast radius today is nil.
+#: Latent, not live — but unbounded by construction, which is what the bound is for.
+_IDENTITY_REPORTED: set[str] = set()
+
+
 def board_identity(company: CompanyRef) -> str:
     """The Board's canonical key: ``board_key`` where the scraper can build one, the plain
     ``ats:slug`` where a malformed slug defeats it — never dropping the Board either way."""
@@ -339,11 +353,18 @@ def board_identity(company: CompanyRef) -> str:
         # for this Board — `_dedupe_boards` collapses on it and `index prune` builds its keep-set
         # from it — so a Board quietly landing here can be scraped under one name and pruned
         # under another. Worth a line even though nothing is dropped.
-        _log.warning(
-            f"{company.ats}:{company.slug}: board_key() failed "
-            f"({type(exc).__name__}: {exc}) — falling back to the plain ats:slug"
-        )
-        return f"{company.ats}:{company.slug}"
+        #
+        # INFO, not WARNING: this fires once per Board, and under Actions WARNING is an
+        # annotation against a run-level quota (ADR-0039's 2026-09-08 amendment). `index_plan`'s
+        # keep-set guard already warns, once, about the same population.
+        key = f"{company.ats}:{company.slug}"
+        if key not in _IDENTITY_REPORTED:
+            _IDENTITY_REPORTED.add(key)
+            _log.info(
+                f"{key}: board_key() failed "
+                f"({type(exc).__name__}: {exc}) — falling back to the plain ats:slug"
+            )
+        return key
 
 
 def _drop_parked(companies: list[CompanyRef]) -> list[CompanyRef]:

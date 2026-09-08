@@ -186,7 +186,7 @@ _DETAIL_STREAMS = 25
 _PAGE_STREAMS = _DETAIL_STREAMS
 # How much of one query's pages may come back short before `_paginate` fails the crawl instead of
 # reporting it truncated (ADR-0076). A judgement call, not a measurement — nothing records
-# per-page failure rates, so there is no distribution to cut at yet; the warning `_paginate` logs
+# per-page failure rates, so there is no distribution to cut at yet; the line `_paginate` logs
 # either way carries the numbers to re-measure this with. Half is where the two ends land on the
 # side they belong: one page of five lost to a 429 still ships the other four, while a query that
 # loses most of its pages has kept too little to read as those postings — and marking *that*
@@ -237,7 +237,7 @@ _JSON_LD = re.compile(
 # is a stale session cookie the cookie reset recovers in-pass (ADR-0103), not an origin refusing
 # the Board wholesale, so it is not what this breaker is for. On the threaded fan_out fallback the streak increments
 # race (same caveat as the loss classes) — the trip point is approximate there and the break-off
-# warning can double-fire; both are exact on the async path. Tripping stops new details from
+# line can double-fire; both are exact on the async path. Tripping stops new details from
 # STARTING — items already in flight complete, retry ladders included.
 _DETAIL_BREAK_STREAK = 30
 _BROKEN_OFF = "skipped after the 5xx break-off"
@@ -465,7 +465,7 @@ class WorkdayScraper(BaseScraper):
         # page raises on a 404 (`_post(raise_gone=True)`), so a genuinely gone Board still
         # becomes a Board error rather than an empty one — what this line adds is the reason,
         # which the resulting error cannot carry.
-        _log.warning(
+        _log.info(
             f"{self.board_key()}: no Workday data centre served the probe "
             f"({hinted} and every entry in INSTANCES) — crawling {hinted} anyway"
         )
@@ -805,7 +805,7 @@ class WorkdayScraper(BaseScraper):
                     and not self._detail_pass_broken
                 ):
                     self._detail_pass_broken = True
-                    _log.warning(
+                    _log.info(
                         f"{self.board_key()}: breaking off the detail pass after "
                         f"{self._settled_5xx_streak} consecutive details lost to settled 5xx "
                         "— the origin is refusing this Board's details this run; the rest "
@@ -1021,7 +1021,7 @@ class WorkdayScraper(BaseScraper):
         """Page through offsets [20, total), fanned out over at most ``_PAGE_STREAMS`` concurrent
         streams (mirrors :meth:`fan_out_async`'s bounded-semaphore/shared-session shape, as its
         own small gather rather than a call to it — see :meth:`_paginate_async`). A page that
-        404s or spends its retry ladder mid-crawl is skipped, and one warning reports how many
+        404s or spends its retry ladder mid-crawl is skipped, and one line reports how many
         went missing — the tripwire for a truncated list — unless more than
         ``_MAX_LOST_PAGE_SHARE`` of the query's pages went that way, which is a failed crawl
         rather than a truncated one and raises (ADR-0076).
@@ -1061,7 +1061,7 @@ class WorkdayScraper(BaseScraper):
             f" ({why})" if why else ""
         )
         if missing / page_count > _MAX_LOST_PAGE_SHARE:
-            _log.warning(
+            _log.info(
                 f"{self.board_key()}: {shortfall} — too little of {total} listed read to keep"
             )
             # Re-raise what the origin actually said rather than a fresh exception of our own:
@@ -1071,7 +1071,7 @@ class WorkdayScraper(BaseScraper):
             raise error or RuntimeError(
                 f"{shortfall} — too little of {total} listed postings was read"
             )
-        _log.warning(
+        _log.info(
             f"{self.board_key()}: {shortfall} — Board unauthoritative this run "
             f"({total} listed)"
         )

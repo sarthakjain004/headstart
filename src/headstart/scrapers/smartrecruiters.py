@@ -187,8 +187,7 @@ class SmartRecruitersScraper(BaseScraper):
     def _detail_url(self, posting_id: str) -> str:
         return f"https://api.smartrecruiters.com/v1/companies/{self.slug}/postings/{posting_id}"
 
-    @staticmethod
-    def _extract_detail(response: Any) -> dict[str, Any] | None:
+    def _extract_detail(self, response: Any) -> dict[str, Any] | None:
         """The posting-detail fields ``parse()`` needs (None on non-200): the jobAd sections
         concatenated into raw HTML, and the native ``compensation`` block (min/max/currency/
         period — populated on 10.48% of postings, unread until this pass; see the module-level
@@ -198,8 +197,14 @@ class SmartRecruitersScraper(BaseScraper):
         qualifications and additionalInformation carry the requirements (years of
         experience etc.); companyDescription is deliberately skipped — it's the same
         boilerplate on every posting and would dilute the embedding.
+
+        An instance method, not a static one, so the ``None`` can say what lost it: a bare count
+        of ``None``s reads a refused Board and an empty one identically, which is how a
+        User-Agent denylist stayed invisible across 102 Boards for five runs
+        (:data:`~headstart.scrapers.base.USER_AGENT`).
         """
         if response.status_code != 200:
+            self.note_detail_loss(f"HTTP {response.status_code}")
             return None
         payload = response.json()
         sections = (payload.get("jobAd") or {}).get("sections") or {}
@@ -215,6 +220,7 @@ class SmartRecruitersScraper(BaseScraper):
     def _job_detail(self, posting_id: str | None) -> dict[str, Any] | None:
         """GET one posting's detail fields (None on failure). Sync path."""
         if not posting_id:
+            self.note_detail_loss("no posting id")
             return None
         try:
             response = http.fetch(
@@ -223,7 +229,8 @@ class SmartRecruitersScraper(BaseScraper):
                 timeout=30,
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
             )
-        except http.RequestsError:
+        except http.RequestsError as exc:
+            self.note_detail_loss(type(exc).__name__)
             return None  # a missing detail must not drop the job
         return self._extract_detail(response)
 
@@ -232,6 +239,7 @@ class SmartRecruitersScraper(BaseScraper):
     ) -> dict[str, Any] | None:
         """Same as :meth:`_job_detail` but over the shared multiplexed ``AsyncSession``."""
         if not posting_id:
+            self.note_detail_loss("no posting id")
             return None
         try:
             response = await http.fetch_async(
@@ -241,7 +249,8 @@ class SmartRecruitersScraper(BaseScraper):
                 timeout=30,
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
             )
-        except http.RequestsError:
+        except http.RequestsError as exc:
+            self.note_detail_loss(type(exc).__name__)
             return None
         return self._extract_detail(response)
 

@@ -15,6 +15,7 @@ went unnoticed. The measurements behind every assertion are in
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 
 from headstart.models import html_to_text
@@ -347,11 +348,15 @@ def test_a_detail_gap_does_not_mark_the_board_truncated(monkeypatch):
 
 def test_an_unknown_id_returns_none_rather_than_raising():
     """An id the tenant does not have answers 200 with `items: []`, not 404 — a real outcome to
-    fold into the detail-gap count, not an error."""
-    assert OracleScraper._first_item(json.dumps({"items": []})) is None
-    assert OracleScraper._first_item(json.dumps({"items": [{"Id": "7"}]})) == {
-        "Id": "7"
-    }
+    fold into the detail-gap count, not an error.
+
+    And the empty answer is labelled, not merely counted: a Board whose ids have all gone stale
+    and a Board the pod is refusing produce the same number of gaps."""
+    scraper = OracleScraper("fa-abcd.fa.us2.oraclecloud.com")
+    assert scraper._first_item(json.dumps({"items": []})) is None
+    assert scraper.detail_losses == Counter({"no items on a 200": 1})
+    assert scraper._first_item(json.dumps({"items": [{"Id": "7"}]})) == {"Id": "7"}
+    assert scraper.detail_losses == Counter({"no items on a 200": 1})
 
 
 def test_a_slug_that_still_carries_a_site_suffix_is_not_split_apart():

@@ -108,12 +108,12 @@ class FreshteamScraper(BaseScraper):
         try:
             data = json.loads(self._get())
         except json.JSONDecodeError:
-            self.warn_unreadable_board(
+            self.note_unreadable_board(
                 "the widget's jobs.json", "HTML (the soft 404 page)"
             )
             return {}
         if not isinstance(data, dict):
-            self.warn_unreadable_board(
+            self.note_unreadable_board(
                 "the widget's jobs.json object", f"a bare {type(data).__name__}"
             )
             return {}
@@ -127,7 +127,7 @@ class FreshteamScraper(BaseScraper):
         if len(listed) >= _WIDGET_CAP:
             # Same shape as zoho's and trakstar's ceilings: documented, silent until now. No
             # pagination parameter exists, so the excess is simply unreachable this run.
-            _log.warning(
+            _log.info(
                 f"{self.board_key()}: {len(listed)} jobs, at or over the {_WIDGET_CAP}-job "
                 "widget cap — the rest is unread, not absent"
             )

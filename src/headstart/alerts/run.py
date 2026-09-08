@@ -28,6 +28,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 
 from headstart import log
+from headstart.ingest import observability
 
 from . import digest, space_query, transports
 from .shortlist import CAP, shortlist
@@ -115,7 +116,10 @@ def send_one(
 
 
 def subscription_for(
-    invite: Invite, store: Store, accounts_with_sets: frozenset[str]
+    invite: Invite,
+    store: Store,
+    accounts_with_sets: frozenset[str],
+    email_not_enabled: list[str] | None = None,
 ) -> Subscription | None:
     """The Subscription this Invite should send against, created on first sight.
 
@@ -142,10 +146,20 @@ def subscription_for(
             # Not "no query set yet" — they have a Query, and we are declining to act on it.
             # Say which, because ADR-0069's whole argument is that this class of desync costs
             # so much precisely because it is invisible.
-            _log.warning(
+            #
+            # INFO, not WARNING, because this fires once per Account: under Actions a WARNING is
+            # an annotation and GitHub keeps 10 per step and 50 per job (ADR-0039), so a
+            # per-Account level would let a routine desync spend the budget the run's real
+            # failures need. `main` raises it to one WARNING naming the count and a sample —
+            # which is also the only view that shows the desync is systemic rather than one
+            # person's, and it collects them here rather than re-deriving the condition because
+            # this is the one place that knows why the record was declined.
+            _log.info(
                 f"{account}: has Saved sets, email not enabled from the Matches tab"
                 " - skipped"
             )
+            if email_not_enabled is not None:
+                email_not_enabled.append(account)
         # ADR-0069: once an Account keeps Saved sets, the Space's sets endpoints own the
         # Subscription's content — they are the only writer that keeps the projection in step
         # (ADR-0043), which is why `/subscribe` already 409s in this configuration. Re-projecting
@@ -231,6 +245,7 @@ def main() -> int:
     _log.info(f"{len(invites)} invited, {len(chats)} via telegram")
 
     sent = failed = skipped = 0
+    email_not_enabled: list[str] = []
     for item in (*invites, *chats):
         # An Invite still has to be resolved to a Subscription, and may create one; a
         # record the bot made is already the thing to deliver. Resolution reads and may
@@ -239,7 +254,11 @@ def main() -> int:
         from_allowlist = isinstance(item, Invite)
         sub_id = subscription_id(item.email) if from_allowlist else item.id
         try:
-            sub = subscription_for(item, store, with_sets) if from_allowlist else item
+            sub = (
+                subscription_for(item, store, with_sets, email_not_enabled)
+                if from_allowlist
+                else item
+            )
             if sub is None or not sub.query:
                 _log.info(f"{sub_id}: no query set yet - skipped")
                 skipped += 1
@@ -265,6 +284,16 @@ def main() -> int:
             f"{' - digest sent' if count else ''}"
         )
 
+    if email_not_enabled:
+        # One WARNING for the whole set, after the per-Account INFO lines above — the annotation
+        # budget buys exactly one line here, so it names the count and a sample rather than
+        # repeating itself per Account. Worth a warning at all because every Account in it asked
+        # for alerts and is silently getting none (ADR-0069).
+        _log.warning(
+            f"{len(email_not_enabled)} allowlisted Account(s) keep Saved sets but have "
+            "enabled email on none of them from the Matches tab, so this run delivered "
+            "nothing to them: " + observability.named_sample(sorted(email_not_enabled))
+        )
     _log.info(f"done: {sent} digest(s) sent, {skipped} skipped, {failed} failed")
     return 1 if failed else 0
 

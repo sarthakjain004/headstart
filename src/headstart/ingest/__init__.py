@@ -31,7 +31,11 @@ Each is run as ``python -m headstart.ingest.<module>``. They live here rather th
 makes them unit-testable without ``importlib`` path-loading, and keeps the run's fourteen entry
 points from being scattered across five ``scripts/`` subdirs mixed in with R&D scripts.
 
-Alongside them, the helper modules with no consumer outside this package::
+Alongside them, the pipeline's own helper modules. One of them is now read from outside the
+package: ``alerts/run.py`` imports ``observability.named_sample`` for its post-loop summary line.
+That is allowed — the rule CLAUDE.md fixes is narrower than "nothing imports ``ingest``", and it
+still holds: the **curated feed** (``python -m headstart`` -> ``harvest``) may never reach in
+here, and ``alerts`` is not the feed::
 
     binpack        LPT packing + shard sizing, shared by both planners
     board_failures The consecutive-gone quarantine ledger (ADR-0058), written in the join

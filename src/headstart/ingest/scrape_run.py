@@ -318,7 +318,7 @@ def main() -> int:
     # After parsing, not before it: the shard is the only key that tells fifteen concurrent
     # producers apart once their logs are merged, and it is only knowable from the assignment.
     shard = _shard_id(args.assignment)
-    observability.context("scrape", shard=shard)
+    observability.context("scrape_run", shard=shard)
 
     have_details: set[str] | None = None
     if (

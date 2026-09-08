@@ -139,7 +139,15 @@ class RippleHireScraper(BaseScraper):
             )
         else:
             details = self.fan_out(need, lambda j: self._job_detail(token, j["jobSeq"]))
-        descriptions = [(d or {}).get("jobDesc") or None for d in details]
+        descriptions: list[str | None] = []
+        for d in details:
+            text = (d or {}).get("jobDesc") or None
+            if text is None and d is not None:
+                # The record arrived and carried no text. Counted as a gap either way, but it
+                # is not the same fact as a fetch that never landed, and the bare count reads
+                # the two identically (:meth:`~BaseScraper.note_detail_loss`).
+                self.note_detail_loss("no jobDesc on the record")
+            descriptions.append(text)
         self.report_detail_gaps(descriptions, "descriptions")
         for j, d, desc in zip(need, details, descriptions):
             j["jobDesc"] = desc
@@ -169,9 +177,10 @@ class RippleHireScraper(BaseScraper):
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 timeout=30,
             ).json()
-        except (http.RequestsError, json.JSONDecodeError):
+        except (http.RequestsError, json.JSONDecodeError) as exc:
+            self.note_detail_loss(type(exc).__name__)
             return None  # a missing detail record must not drop the job
-        return data.get("jobVO") or None
+        return self._job_vo(data)
 
     async def _job_detail_async(
         self, session: Any, token: str, job_seq: Any
@@ -186,9 +195,18 @@ class RippleHireScraper(BaseScraper):
                 timeout=30,
             )
             data = response.json()
-        except (http.RequestsError, json.JSONDecodeError):
+        except (http.RequestsError, json.JSONDecodeError) as exc:
+            self.note_detail_loss(type(exc).__name__)
             return None  # a missing detail record must not drop the job
-        return data.get("jobVO") or None
+        return self._job_vo(data)
+
+    def _job_vo(self, data: dict) -> dict | None:
+        """The ``jobVO`` record, or a ``None`` that says the response carried none — which is
+        a 200 this parser did not recognise, not a request that failed."""
+        vo = data.get("jobVO") or None
+        if vo is None:
+            self.note_detail_loss("no jobVO on a 200")
+        return vo
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
