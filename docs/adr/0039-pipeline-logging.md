@@ -88,3 +88,59 @@ decision against ADR-0014, not taken here.
 - Scripts under `scripts/` that import the scrapers get WARNING+ on stderr for free via
   logging's last-resort handler; they can opt into the full format with one `log.setup()`.
 - New prints in pipeline code are a defect: log through `headstart.log` instead.
+
+## Amendment (2026-09-08): three of the claims above were not true of the code, and WARNING is a quota
+
+**Status:** accepted. Corrects the "Decision" and "Consequences" sections above — the decision
+itself stands unchanged; what follows is what the code did *not* do, and one constraint the
+original write-up did not know about.
+
+An audit of the whole logging seam against this ADR found the code and the ADR had drifted apart
+in three places. Each is fixed in the same change as this amendment; the ADR is corrected rather
+than rewritten, because what it *claimed* on 2026-08-10 is part of the record.
+
+- **"`setup()` — called once at each CLI entry (every `python -m` stage plus `python -m
+  headstart`)" was false.** `alerts/run.py` and `alerts/bot.py` are both `python -m` entry points
+  and neither called it, so the alerts workflows ran with no `headstart` handler at all: their
+  output reached stderr only through logging's last-resort handler, unformatted and untagged, and
+  `bot.py` was still on bare `print`. All 17 entry points now call it, and the claim is true as
+  written for the first time.
+- **"the tag is the module name's last segment … without per-module invented tags" was false at
+  the one entry point most likely to be read.** `headstart/__main__.py` passed a literal
+  `log.get("headstart.feed")` to emit `[feed]` — the exact per-module invented tag this ADR set
+  out to abolish, complete with a comment justifying it. It now passes `(__name__, __spec__)` like
+  every other CLI module and logs under `[__main__]`. Nothing consumed `[feed]`.
+- **"`docs/AI_Integration/embedding-throughput.md`'s rate recipe updated in this change" was
+  false.** The recipe's `grep` patterns still used the dead `[embed]` tag, and all of them
+  targeted the *mono* code path (`to embed:`, `done: embedded`) while the pipeline has always run
+  the sharded one (`--assignment`, hence `assignment:` and `done: shard embedded`). Every recipe
+  in that section returned nothing. They now match the sharded path, and the doc says why.
+
+**WARNING is an annotation channel with a hard cap, not just a level — treat it as a budget.**
+Under Actions this ADR renders WARNING/ERROR as `::warning::`/`::error::` workflow annotations,
+and GitHub keeps **10 per step, 50 per job and 50 per run**; everything past that is dropped from
+the run page silently. Nothing above said so, and the consequence was real: `index sync` logged
+one WARNING *per excluded Board* (`_log_reasons`) and one *per Board* holding out-of-scope rows,
+and a run excluding several hundred Boards spent the merge job's whole annotation budget on
+routine exclusions — displacing `state_fetch`'s abort, the torn-store checks and every other
+genuine error. That is the exact inversion of what annotations were put here for. Those lines are
+now INFO with a single capped WARNING naming the set, and `scrape_run`'s per-shard egress and
+fan-out-width lines moved to INFO for the same reason. **The level policy above therefore gains a
+rule: a line that can fire once per Board, per shard or per item is never WARNING, however much
+someone wants it on the summary page — the step summary is the uncapped surface for that.**
+
+**One defect this ADR's own design invited.** `_Formatter.format` built its line from
+`record.getMessage()` and returned it directly, never calling `super().format()` — so
+`exc_info=True` at a call site was accepted and then **discarded**, everywhere in the repo, with
+no sign that anything had been lost. A parse bug in any of the 25 scrapers named neither file nor
+line. The formatter now renders and appends the traceback (caching it on the record the way
+`logging.Formatter` does), and `tests/test_log.py` pins it. The general lesson is worth keeping:
+a formatter that bypasses `logging.Formatter` silently opts out of every feature it does not
+re-implement, so overriding `format` wholesale needs a test per feature the call sites use.
+
+**Consumers of these lines are now under test.** `tests/test_log_contract.py` pins each log line
+`scripts/runlog/` parses against its emitter — calling the emitter where CI can import it, and
+otherwise checking the pattern's literals against the emitter's source with `ast`. Two analyser
+regexes had already died silently against reworded emitters before it existed. Any new
+`scripts/runlog/` pattern must join that table or be exempted with a reason, so "anything grepping
+CI logs must use the module-name tags" is now enforced rather than asserted.

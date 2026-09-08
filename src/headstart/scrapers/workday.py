@@ -460,6 +460,15 @@ class WorkdayScraper(BaseScraper):
             if instance != hinted and serves(instance):
                 self._instance = instance
                 return
+        # Every data centre refused the probe, so the crawl below runs against the URL's own
+        # instance knowing none of them answered. It is not marked truncated here: the first
+        # page raises on a 404 (`_post(raise_gone=True)`), so a genuinely gone Board still
+        # becomes a Board error rather than an empty one — what this line adds is the reason,
+        # which the resulting error cannot carry.
+        _log.warning(
+            f"{self.board_key()}: no Workday data centre served the probe "
+            f"({hinted} and every entry in INSTANCES) — crawling {hinted} anyway"
+        )
 
     def _post(
         self,

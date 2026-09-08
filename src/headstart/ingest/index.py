@@ -123,9 +123,6 @@ _ADD_CHUNK = 2048  # rows per add batch — bounds peak memory and streams progr
 _TOP_UNCONFIRMED_BOARDS = (
     10  # Boards named per run; enough to show concentration, not enough to bury the log
 )
-_TOP_OUT_OF_SCOPE_BOARDS = (
-    10  # Boards named when reporting what scope exclusion withholds
-)
 # a healthy ledger holds tens of thousands of Scrapable Boards; refuse to prune below this
 _MIN_KEEP_BOARDS = 1000
 # When *we* first indexed the Job, as an ISO-8601 UTC string — not `posted_at`, which is the
@@ -275,15 +272,19 @@ def _log_reasons(label: str, reasons: dict[str, str]) -> None:
     Reasons are flattened and clipped because they carry arbitrary scraper text — a newline would
     break the one-Board-per-line contract the grep depends on.
 
-    Logged at **warning**, matching the header these lines explain: at info they would vanish
-    from a warning-filtered log and leave exactly the bare count that made 19 runs' worth of
-    exclusions undiagnosable in the first place.
+    Logged at **info**, and the caller carries the one warning that names the set. These lines
+    were warnings, which under Actions is not a level but a *quota*: every WARNING renders as a
+    workflow annotation and GitHub keeps only 10 per step, 50 per job. A run excluding several
+    hundred Boards therefore spent the whole merge job's budget on routine exclusions and
+    displaced `state_fetch`'s abort, the torn-store checks and every other genuine error —
+    the exact inversion of what ADR-0039 put annotations there for. Info is uncapped, still
+    greps out of the raw log, and loses nothing but the summary-page slot the caller now holds.
     """
     for board, reason in reasons.items():
         why = " ".join(str(reason).split()) or "no reason recorded"
         if len(why) > _REASON_CHARS:
             why = why[:_REASON_CHARS] + "…"
-        _log.warning(f"{label}: {board} — {why}")
+        _log.info(f"{label}: {board} — {why}")
 
 
 def _take_upgrades(table: Any, path: Path) -> dict[str, str | None]:
@@ -458,10 +459,15 @@ def sync(args: argparse.Namespace) -> int:
     excluded = {b for b in boards if b.lower() in unauthoritative}
     if excluded:
         boards -= excluded
+        # One warning for the whole set, naming a sample of it, then every Board and its reason
+        # at info just below. Under Actions a WARNING is an annotation, and GitHub keeps 10 per
+        # step and 50 per job — so the per-Board warnings this replaces could spend the merge
+        # job's entire budget on routine exclusions and hide the errors it was meant to surface.
         _log.warning(
             f"scrape outcome: {len(excluded)} Board(s) returned a list that is not authoritative "
             "(truncated, or the scrape raised) and are excluded from the eviction scope — their "
-            "missing rows are unscraped, not closed"
+            "missing rows are unscraped, not closed: "
+            + observability.named_sample(sorted(excluded))
         )
         _log_reasons(
             "scope-excluded Board",
@@ -517,14 +523,23 @@ def sync(args: argparse.Namespace) -> int:
             board = resolve_board(job_id, live)
             if board in excluded:
                 out_of_scope[board] += 1
+        ranked = out_of_scope.most_common()
+        # Same shape as the exclusion warning above, for the same reason: one annotation naming
+        # the worst offenders, then the full per-Board breakdown at info. GitHub keeps 10
+        # annotations per step and 50 per job, and this loop and `_log_reasons` are both
+        # unbounded in the number of Boards — either alone could exhaust the job's budget.
+        # The sample is omitted rather than left empty when every excluded Board happens to hold
+        # no eviction candidate — a real outcome, and "worst: " with nothing after it reads as
+        # a truncated line.
+        worst = observability.named_sample([f"{b} ({n})" for b, n in ranked])
         _log.warning(
             f"scope exclusion keeps {sum(out_of_scope.values())} eviction-candidate row(s) out of "
             f"scope across {len(excluded)} Board(s) — ADR-0053 has no drain, so a "
             "Board short on every run never re-enters scope; watch this number across runs, not "
-            "within one"
+            "within one" + (f"; worst: {worst}" if worst else "")
         )
-        for board, count in out_of_scope.most_common(_TOP_OUT_OF_SCOPE_BOARDS):
-            _log.warning(
+        for board, count in ranked:
+            _log.info(
                 f"  {count} eviction-candidate row(s) kept out of scope on {board}"
             )
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import urllib.error
 import urllib.request
 from collections.abc import Callable
 from typing import Any
@@ -29,6 +30,24 @@ FILENAME = "new-jobs.xlsx"
 
 class TelegramError(Exception):
     """Telegram refused or could not be reached; the Watermark must not advance."""
+
+
+def _reason(exc: Exception) -> str:
+    """Why this call failed, in a form that names a cause — and never the URL.
+
+    `HTTPError.__str__` is only "HTTP Error 429: Too Many Requests"; the `description` and
+    the `retry_after` that say what to do about it are in the *body*, which is a file-like
+    object read once and then gone with the exception. The URL is deliberately left out even
+    though `HTTPError.filename` offers it: this API puts the bot token in the path, so a URL
+    in a log is a leaked credential.
+    """
+    if isinstance(exc, urllib.error.HTTPError):
+        try:
+            body = exc.read().decode("utf-8", "replace").strip()[:200]
+        except Exception:  # noqa: BLE001 — the status is still worth reporting without it
+            body = ""
+        return f"HTTP {exc.code}" + (f": {body}" if body else "")
+    return f"{type(exc).__name__}: {exc}"
 
 
 def _post(url: str, body: bytes, headers: dict[str, str]) -> dict[str, Any]:
@@ -92,7 +111,7 @@ def send(
                 f"{API}/bot{token}/{method}", body, {"Content-Type": content_type}
             )
         except Exception as exc:  # refusal and unreachable are one outcome
-            raise TelegramError(f"{method}: {type(exc).__name__}: {exc}") from exc
+            raise TelegramError(f"{method}: {_reason(exc)}") from exc
         # Telegram answers HTTP 200 with `"ok": false` for application-level refusals — a
         # blocked bot, an unknown chat id — so a status code alone reads those as sent.
         if not (isinstance(reply, dict) and reply.get("ok")):

@@ -26,7 +26,11 @@ import urllib.request
 from collections.abc import Callable
 from typing import Any
 
+from headstart import log
+
 from .store import Subscription
+
+_log = log.get(__name__)
 
 K = 100  # the Space's page cap (JobSearch.max_k)
 _TIMEOUT = 120  # a cold Space reloads the index and the encoder before it answers
@@ -97,10 +101,13 @@ def newly_seen(
         except Exception as exc:  # anything but _PERMANENT_HTTP retries
             if wait is None or _is_permanent_failure(exc):
                 raise SearchUnavailable(f"{type(exc).__name__}: {exc}") from exc
-            print(
-                f"[alerts] search attempt {attempt} failed ({type(exc).__name__}); "
-                f"retrying in {wait}s",
-                flush=True,
+            # The status code is what says whether waiting can help — a 503 from HF's edge
+            # while the Space wakes reads nothing like a 500 from the app itself, and the
+            # exception type alone renders both as `HTTPError`.
+            status = f" {exc.code}" if isinstance(exc, urllib.error.HTTPError) else ""
+            _log.warning(
+                f"search attempt {attempt} failed ({type(exc).__name__}{status}); "
+                f"retrying in {wait}s"
             )
             sleep(wait)
             continue

@@ -29,7 +29,12 @@ import json
 from pathlib import Path
 
 from headstart import log
-from headstart.ingest import PENDING_UPGRADES_PATH, REPO_ROOT, read_id_list
+from headstart.ingest import (
+    PENDING_UPGRADES_PATH,
+    REPO_ROOT,
+    observability,
+    read_id_list,
+)
 from headstart.search import DOC_PREFIX, MODEL
 
 _log = log.get(__name__, __spec__)
@@ -60,16 +65,26 @@ def _fragment_dirs(root: Path) -> list[Path]:
 
 
 def _good_meta_lines(meta_path: Path) -> list[str]:
-    """Meta lines up to the first unparseable one — a shard killed mid-batch leaves a partial tail."""
+    """Meta lines up to the first unparseable one — a shard killed mid-batch leaves a partial tail.
+
+    Says how much it dropped, because every caller acts on the answer without re-checking it: the
+    merge trims the fragment's vectors to match, and :func:`_reconcile_store` rewrites the store.
+    A shortfall that goes unsaid is a Job silently absent from the served index for a run.
+    """
     good: list[str] = []
     with meta_path.open(encoding="utf-8") as fh:
-        for line in fh:
+        for lineno, line in enumerate(fh, start=1):
             s = line.rstrip("\n")
             if not s:
                 continue
             try:
                 json.loads(s)
             except json.JSONDecodeError:
+                dropped = 1 + sum(1 for rest in fh if rest.strip())
+                _log.warning(
+                    f"{meta_path}: unparseable metadata at line {lineno} — dropping {dropped} "
+                    "record(s) from there to end of file"
+                )
                 break
             good.append(s)
     return good
@@ -90,6 +105,13 @@ def _reconcile_store(meta_path: Path, vec_path: Path, dim: int | None) -> int:
         want = n * dim * _FLOAT_BYTES
         size = vec_path.stat().st_size
         if size > want:
+            # Named, not just done: meta is the authority, so these rows have no metadata and are
+            # correctly discarded — but a store arriving here torn is itself the anomaly, and a
+            # silent repair leaves nothing to correlate against the shard that produced it.
+            _log.warning(
+                f"prior store: {(size - want) // (dim * _FLOAT_BYTES)} vector row(s) past the "
+                f"last metadata line — truncating {vec_path.name} back to {n} rows"
+            )
             with vec_path.open("r+b") as vf:
                 vf.truncate(want)  # drop the extra in-flight vector row(s)
         elif size < want:
@@ -163,6 +185,7 @@ def evict_ids(meta_path: Path, vec_path: Path, dim: int, ids: set[str]) -> int:
 
 def main() -> int:
     log.setup()
+    observability.context("embed_merge")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--store",

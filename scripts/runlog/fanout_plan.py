@@ -31,7 +31,10 @@ the 9 min even share", the actual run confirming a straggler is not a new findin
    the probe).
 4. **Predicted spread and the makespan floor** — `predicted spread: min A / mean B / max C min (Rx
    mean); single-board floor F min`, then, only when it applies, `one board costs F min, above the
-   E min even share — the makespan floor is this board, not the packing`. This is the planner
+   E min even share — the makespan floor is this board, not the packing`. None of these exist on a
+   **cold start**: with no measured seconds the plan packs in unitless cost units, says
+   `N boards across M shards (cold-start cost units)` in place of the makespan tail, and skips the
+   spread and floor lines entirely. That is reported as a cold start, not as silence. This is the planner
    naming its own expected straggler in the SAME units `fanout_timing.py`'s floor_table reports
    after the fact — compare them: a plan-predicted floor that didn't show up as the actual floor
    means something changed between plan and run (a Board that failed fast, an egress problem that
@@ -74,9 +77,16 @@ COST_COVERAGE = re.compile(
     r"\[scrape_plan\] cost: measured seconds for (\d+)/(\d+) boards \((\d+) in ledger\)"
 )
 COST_COLDSTART = re.compile(r"\[scrape_plan\] cost: no measurements yet")
+# Two forms, like `fanout_timing.PLAN_SHARD`. With a measured cost ledger the line carries the
+# makespan tail; on a cold start `scrape_plan` appends `(cold-start cost units)` instead and states
+# no makespan at all, deliberately — a heuristic divided by a fan-out speedup is not a minute. The
+# makespan-only pattern therefore matched nothing on exactly the runs whose plan is least
+# trustworthy, and printed no `predicted:` line rather than saying so. Groups 3-4 are None on a
+# cold start; `scrape_plan_report` says which form it read.
 MAKESPAN = re.compile(
-    r"\[scrape_plan\] (\d+) boards across (\d+) shards; predicted makespan ~([\d.]+) min "
-    r"\(total work Σ ([\d.]+) min\)"
+    r"\[scrape_plan\] (\d+) boards across (\d+) shards"
+    r"(?:; predicted makespan ~([\d.]+) min \(total work Σ ([\d.]+) min\)"
+    r"| \(cold-start cost units\))"
 )
 SPREAD = re.compile(
     r"predicted spread: min ([\d.]+) / mean ([\d.]+) / max ([\d.]+) min "
@@ -168,11 +178,22 @@ def scrape_plan_report(run: Run) -> None:
     sp = SPREAD.search(text)
     if m:
         n, shards, makespan, total_work = m.groups()
-        print(
-            f"  predicted: {n} boards / {shards} shards, makespan ~{float(makespan):.1f} min "
-            f"(Σ work {float(total_work):.1f} min)",
-            flush=True,
-        )
+        if makespan:
+            print(
+                f"  predicted: {n} boards / {shards} shards, makespan ~{float(makespan):.1f} min "
+                f"(Σ work {float(total_work):.1f} min)",
+                flush=True,
+            )
+        else:
+            # Say it, rather than print nothing. A cold-start plan is packed on the ADR-0026
+            # heuristic in unitless cost units, so there IS no makespan to report and the
+            # spread/floor lines below are absent too — which reads as a broken tool unless the
+            # reason is stated.
+            print(
+                f"  predicted: {n} boards / {shards} shards — COLD START, packed in cost units; "
+                "no makespan, spread or floor figures this run (ADR-0026 heuristic)",
+                flush=True,
+            )
     if sp:
         mn, mean, mx, ratio, floor = (float(x) for x in sp.groups())
         print(

@@ -4,7 +4,11 @@ Four seams, each closing a gap that made a real run undiagnosable:
 
 **Run context.** GitHub prefixes every raw log line with an ISO timestamp, so the missing
 correlation is not the date — it is *which* run, attempt and shard a log belongs to once it
-is off the Actions page. :func:`context` prints that once per stage.
+is off the Actions page. :func:`context` prints that once per stage — every ``python -m
+headstart.ingest.*`` entry point, and on the two fan-out stages after argument parsing, so the
+line can carry the shard that separates fifteen concurrent producers. The curated-feed entry
+(``python -m headstart``) deliberately does not call it: it is not a pipeline stage, and the feed
+path may not import from ``ingest`` (CLAUDE.md's repo conventions).
 
 **Step summary.** ``$GITHUB_STEP_SUMMARY`` was unused, so answering "what did this run
 actually do?" meant opening ~20 job logs across five stages. :func:`summary` appends
