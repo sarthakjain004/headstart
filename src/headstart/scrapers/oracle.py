@@ -50,18 +50,26 @@ from headstart.scrapers.base import BaseScraper
 _PAGE_SIZE = 200
 #: Our ceiling. Reaching it means the board did not end, we stopped reading it.
 _MAX_PAGES = 100
+#: The offset the API refuses to read past: it serves `offset + limit <= 10000` and answers
+#: anything beyond with zero rows *and* a `TotalJobsCount` of 0, the envelope going blank rather
+#: than erroring. Measured exactly on `ejwl.fa.us2` — offset 9999 limit 1 returns a row, limit 2
+#: returns none; offset 9900 limit 100 returns 100, limit 101 returns none — and confirmed on
+#: `eluq.fa.us2`. A Board above it cannot be read whole by offset paging at all.
+_OFFSET_CEILING = 10_000
+
 #: Rows a completed walk may fall short of `TotalJobsCount`, **per page fetched**, before it is
-#: called truncated. Per-page rather than a flat figure because the shortfall scales with the
-#: walk: measured on 55 multi-page Boards, 9 landed under their total and the three worst were
-#: short by 7 over 15 pages, 5 over 20 and 4 over 8 — ratios of 0.5, 0.25 and 0.47 rows per page.
-#: A flat slack of 2 was the first attempt and a review found it wrong in exactly the place that
-#: matters: it fits small Boards and falsely truncates large ones, every run, permanently, into
-#: ADR-0053's exclusion scope — which has no drain, so the accretion is invisible.
+#: called truncated. Per-page rather than flat because the shortfall scales with the walk, and a
+#: flat figure (the first attempt) fits small Boards while falsely truncating large ones every
+#: run into ADR-0053's exclusion scope, which has no drain.
 #:
-#: 1 row per page is double the worst ratio observed, and still separates a real loss by more
-#: than an order of magnitude: `egud` reads 10,000 of 11,056 (20.7 rows/page), `ejwl` 9,926 of
-#: 13,430 (~70) and `etud` 89 of 114 (25) — all still reported, as they must be.
-_SLACK_PER_PAGE = 1
+#: **Two** because the worst *benign* ratio measured is **1.0**, not the 0.5 an earlier and
+#: smaller sample suggested: over 245 multi-page Boards, `elfw.fa.us2` (728 of 733 over 5 pages)
+#: and `fa-eomf` (232 of 235 over 3) sit exactly on one row per page, and `egjl.fa.us6` (492 of
+#: 497 over 4) exceeds it at 1.25 while being demonstrably benign — a boundary-shifted re-walk at
+#: limit=100 finds no id the ordinary walk missed. One per page therefore had zero headroom and
+#: still truncated `egjl` falsely; two gives a real margin and still reports every measured loss
+#: by a wide mark (`etud` 89 of 114 in one page, `egud` 10,000 of 11,056, `ejwl` 9,926 of 13,429).
+_SLACK_PER_PAGE = 2
 #: Concurrent detail fetches. Measured clean at 32 across five regional pods (us2, ocs, em3, em2,
 #: us6) — 454 calls, 46-65 req/s, zero non-200s, and no rate limit found anywhere in 6,351
 #: requests. Half that here because `harvest` scrapes Boards concurrently *and* each Board fans
@@ -187,14 +195,23 @@ class OracleScraper(BaseScraper):
                 "requisitions — the rest unread"
             )
         # Counts the fetches made, so it includes the final empty one — the allowance is
-        # therefore data-pages + 1, a row more generous than the 0.5 rows/page the sample
-        # measured. Deliberate: the margin sits on the safe side of a false truncation, and a
-        # real loss clears it by more than an order of magnitude either way.
+        # data-pages + 1 rows. Deliberate: the margin sits on the safe side of a false truncation.
         pages = self._offset // _PAGE_SIZE
-        if total and len(reqs) < total - pages * _SLACK_PER_PAGE:
-            self.mark_truncated(
-                f"read {len(reqs)} of {total} requisitions — the rest is unread, not absent"
-            )
+        if total and len(reqs) < total:
+            # The ceiling is reported whatever the slack says. Without this clause the slack can
+            # *mask* it: a Board stating 10,001-10,102 reads exactly 10,000, and 51 pages of
+            # allowance swallow the gap — a silent short list, which is the one thing ADR-0053
+            # exists to prevent. The slack exists for a counter that over-counts by a row or two,
+            # not for a Board the API will not serve.
+            if self._offset >= _OFFSET_CEILING:
+                self.mark_truncated(
+                    f"read {len(reqs)} of {total} requisitions — the API serves no offset past "
+                    f"{_OFFSET_CEILING:,}, so the rest is unreachable, not absent"
+                )
+            elif len(reqs) < total - pages * _SLACK_PER_PAGE:
+                self.mark_truncated(
+                    f"read {len(reqs)} of {total} requisitions — the rest is unread, not absent"
+                )
         return reqs
 
     def fetch_raw(self) -> Any:

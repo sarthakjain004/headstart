@@ -251,12 +251,19 @@ class _FakeListing:
         self.lies_has_more = lies_has_more
         self.offsets = []
         self.short_at = set()
+        # Whether to model the API's 10,000-row offset ceiling. On by default because that is
+        # what Oracle does; switched off only to exercise `_MAX_PAGES`, which the ceiling
+        # otherwise reaches first and so hides.
+        self.ceiling = True
         self.scraper = None
 
     def __call__(self, url=None):
         offset = int((url or self.scraper.url()).split("offset=")[1])
         self.offsets.append(offset)
-        page = self.ids[offset : offset + self.page_size]
+        if self.ceiling and offset + self.page_size > 10_000:
+            page = []  # the API's own offset ceiling: a blank envelope, not an error
+        else:
+            page = self.ids[offset : offset + self.page_size]
         if (
             offset in self.short_at
         ):  # serve this page one row light, as Oracle really does
@@ -343,25 +350,42 @@ def test_the_slack_scales_with_the_number_of_pages_walked(monkeypatch):
     grows with the walk (7 rows over 15 pages, 5 over 20, 4 over 8), so a flat figure fits
     small Boards and falsely truncates large ones on every run. Both halves are pinned here —
     a gap equal to the page count is tolerated, one row more is not."""
-    # 3 pages walked (200 + 97 + the empty one), so a 3-row gap sits exactly on the allowance.
-    fake = _FakeListing(total_ids=297, page_size=200, reported_total=300)
+    # 3 pages walked (200 + 94 + the empty one), so a 6-row gap sits exactly on the allowance.
+    fake = _FakeListing(total_ids=294, page_size=200, reported_total=300)
     scraper = _paged(monkeypatch, fake)
     scraper.fetch_raw()
     assert scraper.truncated is None
 
     # Same walk, one row further under: now it is reported.
-    fake = _FakeListing(total_ids=296, page_size=200, reported_total=300)
+    fake = _FakeListing(total_ids=293, page_size=200, reported_total=300)
     scraper = _paged(monkeypatch, fake)
     scraper.fetch_raw()
-    assert scraper.truncated and "296 of 300" in scraper.truncated
+    assert scraper.truncated and "293 of 300" in scraper.truncated
 
     # And the scaling itself, which the two cases above cannot see: a *shorter* walk earns a
-    # *smaller* allowance, so the same 3-row gap over 2 pages IS reported. Without this, a flat
-    # slack of 3 would satisfy both halves above and the per-page property would be untested.
-    fake = _FakeListing(total_ids=197, page_size=200, reported_total=200)
+    # *smaller* allowance, so the same 6-row gap over 2 pages IS reported. Without this, a flat
+    # slack of 6 would satisfy both halves above and the per-page property would be untested.
+    fake = _FakeListing(total_ids=194, page_size=200, reported_total=200)
     scraper = _paged(monkeypatch, fake)
     scraper.fetch_raw()
-    assert scraper.truncated and "197 of 200" in scraper.truncated
+    assert scraper.truncated and "194 of 200" in scraper.truncated
+
+
+def test_the_offset_ceiling_is_reported_even_when_the_slack_would_swallow_it(
+    monkeypatch,
+):
+    """The slack must not mask the API's own ceiling.
+
+    Oracle serves no offset past 10,000. A Board stating 10,001-10,102 therefore reads exactly
+    10,000 — and 51 pages of allowance would swallow that gap, serving a knowingly short list as
+    if it were whole. That is the single thing ADR-0053 exists to prevent, so the ceiling is
+    reported whatever the slack says.
+    """
+    fake = _FakeListing(total_ids=10_050, page_size=200, reported_total=10_050)
+    scraper = _paged(monkeypatch, fake)
+    raw = scraper.fetch_raw()
+    assert len(raw["requisitionList"]) == 10_000  # the ceiling, not the Board's end
+    assert scraper.truncated and "no offset past 10,000" in scraper.truncated
 
 
 def test_a_materially_short_walk_is_still_called_truncated(monkeypatch):
@@ -394,7 +418,11 @@ def test_a_board_short_of_its_own_total_is_marked_truncated(monkeypatch):
 
 
 def test_hitting_the_page_cap_marks_truncated(monkeypatch):
+    """A backstop that no real Board reaches: the API's offset ceiling stops a walk at 50 pages,
+    half of `_MAX_PAGES`. Kept because the ceiling is measured on three Boards, not guaranteed
+    across every tenant, and an unbounded pagination loop is not something to leave to that."""
     fake = _FakeListing(total_ids=10**6, page_size=200)
+    fake.ceiling = False
     scraper = _paged(monkeypatch, fake)
     scraper.fetch_raw()
     assert scraper.truncated

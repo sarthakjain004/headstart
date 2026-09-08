@@ -117,28 +117,41 @@ alarming and the more representative of where the rows are. Either way the direc
 same and the fix is the same.
 
 **The end is an empty page — with one exception that matters.** The API refuses to read past
-row 10,000: on `ejwl.fa.us2` (13,430 postings) `offset=9800` returns a full 200 while
-`offset=9900` returns zero rows *and* a `TotalJobsCount` of 0, the envelope going blank rather
-than erroring. So a Board above ~10,000 postings ends its walk at that ceiling, not at its true
+row 10,000 — precisely, it serves `offset + limit <= 10000`: on `ejwl.fa.us2` offset 9999 with
+`limit=1` returns a row and `limit=2` returns none, offset 9900 with `limit=100` returns 100 and
+`limit=101` returns none. Past it the response carries zero rows *and* a `TotalJobsCount` of 0,
+the envelope going blank rather than erroring. Confirmed on `eluq.fa.us2` (12,205) too. So a Board above ~10,000 postings ends its walk at that ceiling, not at its true
 end, and the shortfall check is what reports it. **That ceiling binds long before
 `_MAX_PAGES = 100`** (20,000 rows), which is why no real Board reaches the page cap — the
 earlier draft of §5 had this backwards.
 
-**The total is slightly inflated, and by an amount that grows with the walk.** Across 55
-multi-page Boards, 46 landed exactly on `TotalJobsCount`, no Board ever repeated an id, and the
-9 that fell short were short by 1 to 7 rows — the three worst being 7 over 15 pages, 5 over 20
-and 4 over 8, i.e. **0.25 to 0.5 rows per page**. Whether the counter over-counts or a row
-exists that offset paging cannot reach, the measurement cannot say, and it does not decide
-anything: on `ebxr.fa.us2`, `offset=199` returns 200 rows containing **no id** the ordinary
-page-size walk already had, so the row is unreachable either way.
+**The total is slightly inflated, and by an amount that grows with the walk.** Measured over
+**245 multi-page Boards**, 209 (85.3%) landed exactly on `TotalJobsCount`, no Board ever
+repeated an id, and the rest fell short by an amount that tracks the walk's length rather than
+the Board's size. Whether the counter over-counts or a row exists that offset paging cannot
+reach, the measurement cannot say, and it does not decide anything: on `ebxr.fa.us2`,
+`offset=199` returns 200 rows containing **no id** the ordinary page-size walk already had, so
+the row is unreachable either way.
 
 Hence `_SLACK_PER_PAGE`, and hence per-page rather than flat. A flat slack of 2 was the first
 attempt and a review measured it wrong in the place that matters: it fits small Boards and
 **falsely truncates large ones** — `fa-ermg` (1,280 of 1,284) and `hcml` (3,605 of 3,610) every
-run, permanently, into ADR-0053's exclusion scope, which has no drain. One row per page is
-double the worst ratio observed and still separates a real loss by more than an order of
-magnitude: `egud` reads 10,000 of 11,056 (20.7 rows/page), `ejwl` 9,926 of 13,430 (~70) and
-`etud` 89 of 114 (25) are all still reported.
+run, permanently, into ADR-0053's exclusion scope, which has no drain.
+
+**The value is 2 per page, not 1.** An earlier 55-Board sample put the worst benign ratio at 0.5
+and one per page looked like double the margin. The 245-Board sample says otherwise: `elfw`
+(728 of 733 over 5 pages) and `fa-eomf` (232 of 235 over 3) sit **exactly** on one row per page,
+and `egjl` (492 of 497 over 4) exceeds it at 1.25 while being demonstrably benign — a
+boundary-shifted re-walk at `limit=100` finds no id the ordinary walk missed. One per page
+therefore had zero headroom and still truncated `egjl` falsely. Two keeps every measured loss
+reported by a wide mark: `etud` 89 of 114 in a single page, `egud` 10,000 of 11,056, `ejwl`
+9,926 of 13,429.
+
+**The ceiling is reported whatever the slack says**, and that is a separate clause rather than a
+bigger number on purpose. A Board stating 10,001-10,102 reads exactly 10,000, and 51 pages of
+allowance would swallow the gap — a knowingly short list served as whole, which is the one thing
+ADR-0053 exists to prevent. The slack is for a counter that over-counts by a row or two, not for
+a Board the API will not serve.
 
 **How many Boards actually paginate** — read against the committed ledger, not the sweep, for the
 reason §8 gives: **262 of 991** hiring Boards exceed one 200-row page. The largest real employer
