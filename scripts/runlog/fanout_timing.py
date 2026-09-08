@@ -44,7 +44,7 @@ import re
 import statistics
 from typing import NamedTuple
 
-from run_logs import DONE, Run, common_args, runs_from
+from run_logs import DONE, Run, common_args, runs_from, skip_if_stood_down
 
 SLOW_BOARD = re.compile(r"slow board ([a-z]+):(\S+?): (\d+) jobs in (\d+)s")
 PLAN_SHARD = re.compile(r"\[scrape_plan\] shard (\d+): (\d+) boards \(~([\d.]+) min\)")
@@ -180,6 +180,8 @@ def main() -> None:
     args = common_args(__doc__.split("\n")[0]).parse_args()
     runs = runs_from(args)
     for run in runs:
+        if skip_if_stood_down(run):
+            continue
         print(
             f"\n===== run {run.id} head={run.head} ({len(run.jobs)} jobs) =====",
             flush=True,

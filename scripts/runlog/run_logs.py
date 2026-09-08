@@ -55,6 +55,10 @@ REPO = "sarthakjain004/headstart"
 # anything, or you measure the script text instead of the run.
 ECHO = "\x1b[36;1m"
 
+# `pipeline.yml`'s compaction gate. Its wording is the only thing distinguishing "this run chose
+# to do nothing" from "this run's stages logged nothing", and the two must never read alike.
+STAND_DOWN = "standing this run down"
+
 # Cached logs are R&D captures, so they live where CLAUDE.md puts those and where the repo's
 # other gh-log analyser (`scripts/eval/flap_audit.py`) already puts its own.
 ROOT = Path(__file__).resolve().parents[2]
@@ -122,7 +126,16 @@ class Run:
         meta = json.loads(gh(f"repos/{repo}/actions/runs/{run_id}"))
         self.head = meta["head_sha"][:7]
         self.created = meta["created_at"]
-        self.jobs = [j for j in self._jobs() if j["started_at"] and j["completed_at"]]
+        # A SKIPPED job has `started_at`/`completed_at` like any other but no log endpoint —
+        # `gh api .../logs` 404s and :func:`gh` exits the process. `pipeline.yml`'s compaction
+        # gate stands a whole run down by skipping every job after `scrape-plan`, so every
+        # analyser in this package died mid-report on one. A skipped job carries no log by
+        # definition, so it is not a job these tools can read.
+        self.jobs = [
+            j
+            for j in self._jobs()
+            if j["started_at"] and j["completed_at"] and j["conclusion"] != "skipped"
+        ]
 
     def _jobs(self) -> list[dict]:
         out: list[dict] = []
@@ -191,6 +204,18 @@ class Run:
                 job = futures[fut]
                 yield self.shard_of(job["name"]), job, fut.result()
 
+    def stood_down(self) -> bool:
+        """True when `pipeline.yml`'s gate stood this run down before any stage ran.
+
+        Worth a check before reporting anything: such a run's `scrape-plan` job succeeded and has
+        a log, but `scrape_plan` itself never executed, so every pattern in this package finds
+        nothing. Reporting that as a measurement — `fanout_plan` printed "value gate: no boards
+        skipped this run" for a run that gated no boards at all — is exactly the
+        artefact-as-finding error :func:`warn_if_unparsed` exists to prevent.
+        """
+        jobs = self.stage_jobs("scrape-plan")
+        return bool(jobs) and STAND_DOWN in self.log(jobs[0])
+
     def stages(self) -> list[str]:
         seen: list[str] = []
         for j in sorted(self.jobs, key=lambda j: ts(j["started_at"])):
@@ -198,6 +223,31 @@ class Run:
             if s not in seen:
                 seen.append(s)
         return seen
+
+
+def skip_if_stood_down(run: Run) -> bool:
+    """Announce a stood-down run and return True so callers can skip it.
+
+    Every analyser needs this in the same shape, and getting it wrong is not a crash but a lie:
+    the stages did not run, so a report of zeros describes the tool, not the pipeline.
+
+    Called per analyser rather than filtered inside :func:`runs_from`, which would cost no call
+    sites at all: four of them branch on ``len(runs) > 1`` to decide whether to print a comparison
+    section, so silently shortening the list would change what they report on rather than only
+    what they skip.
+    """
+    if not run.stood_down():
+        return False
+    print(
+        f"\n===== run {run.id} head={run.head} — STOOD DOWN, nothing to measure =====",
+        flush=True,
+    )
+    print(
+        "  pipeline.yml's compaction gate stood this run down before any stage ran; every job "
+        "after scrape-plan was skipped. This is a deliberate no-op run, NOT an empty result.",
+        flush=True,
+    )
+    return True
 
 
 def warn_if_unparsed(text: str, marker: str, parsed: object, what: str) -> bool:
