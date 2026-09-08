@@ -6,7 +6,7 @@ name, the way `test_datadome_transcript.py` does for `scripts/scrape`.
 These check the rules that decide what counts as a Company's slug. Each one exists because the
 harvest got it wrong at some point: the slug's case, the datacenter in a Workday host, dots and
 underscores in a path slug, files served from a board root, Greenhouse's widget route, and the
-two ATSes whose slug is the whole host rather than the label.
+four ATSes whose slug is the whole host rather than the label.
 """
 
 import csv

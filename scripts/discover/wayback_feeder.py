@@ -620,6 +620,11 @@ def prune_encoded_slashes(ats: str, out: Path) -> int:
     nothing). Stripping every `2f` unconditionally would delete that live board, so the stripped
     form must be corroborated before a row is dropped.
 
+    Runs on every `slug_sink` exit and rewrites the whole file, not just this run's rows — so a
+    `--domain` sweep of one host still prunes the rest. That is deliberate: corroboration grows as
+    the corpus does, so an artifact left behind by an earlier partial sweep is cleaned up by the
+    next one that happens to find its real host.
+
     Measured 2026-09-08 over all harvests: 142 rows carry the prefix and 125 (88%) decode to a
     host already in the same file or the ledger. The other 17 stay — an artifact whose real host
     this sweep has not reached yet is indistinguishable from a genuine `2f…` company, and a
