@@ -601,3 +601,69 @@ def test_greenhouse_anz_region_is_swept():
     hosts = dict(wf.ATS_HOSTS["greenhouse"])
     assert hosts["job-boards.anz.greenhouse.io"] == "path"
     assert hosts["boards.anz.greenhouse.io"] == "path"
+
+
+def test_the_backlink_shape_is_canonicalised_too():
+    """The `utm_content` branch returns early, so it can miss the alias rewrite.
+
+    It did: `www.recruiterbox.com/?utm_content=acme.recruiterbox.com` emitted the alias spelling
+    while `acme.recruiterbox.com` emitted the canonical one — one board, two dedupe keys, which
+    is precisely the double-count `_CANONICAL_HOST` exists to stop. The shape-based invariant
+    test never probed this path, so it passed throughout.
+    """
+    direct = wf.extract("https://acme.recruiterbox.com/", "recruiterbox.com", "sub")
+    backlink = wf.extract(
+        "https://www.recruiterbox.com/?utm_content=acme.recruiterbox.com",
+        "recruiterbox.com",
+        "sub",
+    )
+    assert direct == backlink == ("acme", "https://acme.hire.trakstar.com")
+    assert wf.dedupe_key(*direct, "sub") == wf.dedupe_key(*backlink, "sub")
+
+
+def test_repeated_utm_content_names_nobody():
+    """`parse_qs` returns every value; taking the first silently picked an attacker's."""
+    assert (
+        wf.extract(
+            "https://www.teamtailor.com/?utm_content=evil.teamtailor.com"
+            "&utm_content=acme.teamtailor.com",
+            "teamtailor.com",
+            "sub",
+        )
+        is None
+    )
+    # repeated but agreeing is not ambiguous, so it still reads
+    assert wf.extract(
+        "https://www.teamtailor.com/?utm_content=acme.teamtailor.com"
+        "&utm_content=acme.teamtailor.com",
+        "teamtailor.com",
+        "sub",
+    ) == ("acme", "https://acme.teamtailor.com")
+
+
+def test_workdaysite_reads_the_cxs_route_like_the_other_domain_does():
+    """`_workday_site` has a `/wday/cxs/` handler "to recover boards archived only in API form".
+
+    Requiring `recruiting` as the first segment made that handler unreachable on myworkdaysite,
+    so the same board was recoverable from one of Workday's two domains and not the other.
+    """
+    assert wf.extract(
+        "https://wd5.myworkdaysite.com/wday/cxs/uw/UWHires/jobs",
+        "myworkdaysite.com",
+        "workdaysite",
+    ) == ("uw/UWHires", "https://uw.wd5.myworkdayjobs.com/UWHires")
+    # everything else under /wday/ is machinery, exactly as for the other domain
+    assert (
+        wf.extract(
+            "https://wd5.myworkdaysite.com/wday/videoLabels",
+            "myworkdaysite.com",
+            "workdaysite",
+        )
+        is None
+    )
+
+
+def test_keka_alias_domain_is_deliberately_not_swept():
+    """Measured yield was zero, so it stays out — rule 2, not an oversight."""
+    assert "kekahire.com" not in dict(wf.ATS_HOSTS["keka"])
+    assert "kekahire.com" not in wf._CANONICAL_HOST

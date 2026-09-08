@@ -13,8 +13,10 @@ found zero boards behind any of them that the board hosts did not already have.
 
 An ATS is rarely one host, and sweeping only the obvious one loses boards silently: Zoho spreads
 8,197 known slugs over 8 TLDs, of which `zohorecruit.com` holds 6,101 — and, found by the
-2026-09-08 audit, Trakstar's pre-rename `recruiterbox.com` holds *twice* the archive of the
-`hire.trakstar.com` this table used to list alone. The liveness ledger cannot be used to check
+2026-09-08 audit, Trakstar's pre-rename `recruiterbox.com` is swept by nothing at all. (Its 40
+CDX pages against `hire.trakstar.com`'s 20 counts *captures*, and is confounded — that host was
+also the company's own marketing site. The sound evidence is the sample: 10 tenants read off it,
+6 in no ledger, all 6 live.) The liveness ledger cannot be used to check
 this table: it was populated by this feeder, so it only ever contains hosts already swept. See
 `docs/discovery/2026-09-08_wayback-host-coverage-audit.md`.
 
@@ -56,9 +58,6 @@ _CANONICAL_HOST = {
     # and recruiterbox itself. The scraper never learned the new name either — `trakstar.py:104`
     # still carries `_FEED_NS = {"job": "https://recruiterbox.com/rss/job/"}`.
     "recruiterbox.com": "hire.trakstar.com",
-    # `{slug}.kekahire.com/careers` 302s to `{slug}.keka.com/careers`, also 1:1. Tenants get a
-    # provisioned pod record (`10decoders` -> `cin01.career.kekahire.com`), not the wildcard.
-    "kekahire.com": "keka.com",
 }
 # `en`, `en-US`, `pt-BR` — a Workday board archived under a locale prefix.
 _LOCALE = re.compile(r"[a-z]{2}(-[A-Za-z]{2})?")
@@ -290,9 +289,11 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     # costs one `probe_icims.py` request and lands as a dead ledger row, so the error is bounded
     # and self-correcting rather than silent.
     "icims": _with_style("host", "icims.com"),
-    "keka": _with_style(
-        "sub", "keka.com", "kekahire.com"
-    ),  # alias, see _CANONICAL_HOST
+    # `kekahire.com` is a real alias domain, deliberately NOT swept: the ledger holds 1,820 Keka
+    # rows and zero on it, and an 18-tenant sample found 16 already known and the other 2 dead.
+    # Adding it because the alias machinery made it cheap is the speculative generality rule 2
+    # forbids.
+    "keka": _with_style("sub", "keka.com"),
     "lever": _with_style(
         "path", "jobs.lever.co", "jobs.eu.lever.co"
     ),  # EU: 154 rows, 92 live
@@ -491,6 +492,22 @@ def extract(url: str, host: str, style: Style) -> tuple[str, str] | None:
         if not _WD_INSTANCE.fullmatch(instance):
             return None  # impl-/perf-/wcpdev- are non-production tenants
         segments = [seg for seg in path.split("/") if seg]
+        if segments and segments[0].lower() == "wday":
+            # `/wday/cxs/{company}/{site}/jobs`. `_workday_site` already reads this shape for the
+            # other domain, and omitting it here made a board recoverable from one of Workday's
+            # two domains but not the other. Thinly archived (CXS is a POST); the asymmetry was
+            # unintended rather than a decision.
+            site = _workday_site(path)
+            if len(segments) < 4 or not site or not valid(segments[2]):
+                return None
+            return (
+                f"{segments[2]}/{site}",
+                f"https://{segments[2]}.{instance}.myworkdayjobs.com/{site}",
+            )
+        # This locale strip is NOT the one inside `_workday_site`, though it looks like it: that
+        # one skips a locale sitting among the *site* segments, and this one has to remove a
+        # leading `/en-US/` before `recruiting` can be recognised at all. Deleting it as a
+        # duplicate made `/en-US/recruiting/gflenv/Careers` unreadable, which a test caught.
         if segments and _LOCALE.fullmatch(segments[0]) and len(segments) > 1:
             segments = segments[1:]
         if len(segments) < 3 or segments[0].lower() != "recruiting":
@@ -513,15 +530,29 @@ def extract(url: str, host: str, style: Style) -> tuple[str, str] | None:
         # The slug is in the query, like Greenhouse's `embed?for=` above, and `www` is INFRA so
         # the row was dropped. Measured: 183 ledger rows carry this shape (174 live) and 53 of
         # those tenants — 51 live — appear in no Teamtailor harvest. Guarded on `utm_content`
-        # naming a host under this same ATS, so it cannot fire on another vendor's backlink.
-        content = urllib.parse.parse_qs(query).get("utm_content", [""])[0].lower()
-        content = content.split("/")[0].split(":")[0]
+        # naming a host under this same ATS, so another vendor's backlink cannot inject a slug.
+        # It does NOT tell a tenant from the vendor's own subdomains — `partners.teamtailor.com`
+        # reads as a Company — but `INFRA`/`valid()` catch the common ones and the rest cost one
+        # liveness probe each and settle as dead rows: the same bounded, self-correcting error
+        # the iCIMS entry already accepts.
+        values = {
+            v.lower().split("/")[0].split(":")[0]
+            for v in urllib.parse.parse_qs(query).get("utm_content", [])
+        }
+        if len(values) != 1:
+            return (
+                None  # absent, or repeated and disagreeing — names nobody in particular
+            )
+        content = values.pop()
         if not content.endswith("." + host):
             return None
         label = content[: -len("." + host)]
         if "." in label or not valid(label):
             return None
-        return label, f"https://{content}"
+        # Through `_CANONICAL_HOST` like every other `sub` row. Returning `content` verbatim
+        # emitted the alias spelling and gave one board two dedupe keys — the exact double-count
+        # this map exists to prevent.
+        return label, f"https://{label}.{_CANONICAL_HOST.get(host, host)}"
     if "." in label or not valid(label):
         return None  # a deeper subdomain, or furniture — not a slug
     # `host` ATSes are keyed by the whole board host, because that is what their scraper is
