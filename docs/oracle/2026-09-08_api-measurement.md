@@ -102,6 +102,20 @@ and 0 missing**, with and without `sortBy`.
 pagination terminator. `TotalJobsCount` is the honest signal, and the current loop is right to
 use it.
 
+**A short page is not the end of the board** (found 2026-09-08 from the first production run,
+after this document's first draft). Oracle serves under-full pages mid-walk: `ebxr.fa.us2`
+answers offset 0 with **199** rows against a stated total of 420 — reproducibly, 3 of 3 attempts
+— then offset 200 with a full 200 and offset 400 with the remaining 20. A loop that stops on a
+short page reads 199 of 420. Measured over 40 multi-page boards, **12% hit one early and 3,421
+of 28,715 postings (12%) were lost**. The run log showed it plainly: `read 199 of 420`,
+`read 599 of 2184`, `read 5963 of 13424`.
+
+The end is an **empty** page. Walking 50 boards to one, the distinct ids equalled
+`TotalJobsCount` on **92%**, no board ever repeated an id across pages, and the 4 that fell
+short were short by **1 or 2 rows** (max 1.69%). So the total is a sound early stop but is
+slightly inflated, which is why `_TOTAL_SLACK` exists: marking those 8% truncated every run
+would park them in ADR-0053's exclusion scope, and that has no drain.
+
 **How many Boards actually paginate** — read against the committed ledger, not the sweep, for the
 reason §8 gives: **262 of 991** hiring Boards exceed one 200-row page. The largest real employer
 Board is Marriott at **13,379** postings (67 pages), comfortably inside `_MAX_PAGES = 100`. Only

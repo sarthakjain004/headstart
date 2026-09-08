@@ -50,6 +50,13 @@ from headstart.scrapers.base import BaseScraper
 _PAGE_SIZE = 200
 #: Our ceiling. Reaching it means the board did not end, we stopped reading it.
 _MAX_PAGES = 100
+#: How far under `TotalJobsCount` a completed walk may land without being called truncated.
+#: The counter is slightly inflated: walking 50 boards to an empty page, 46 matched it exactly
+#: and the other 4 fell short by **1 or 2 rows** (max 1.69% of the board). Without this slack
+#: those boards would be marked truncated on every run and so leave the eviction scope
+#: permanently — ADR-0053's exclusion has no drain, so a recurring false positive there accretes
+#: dead rows invisibly. Deliberately tiny: a real mid-crawl loss is hundreds of rows, not two.
+_TOTAL_SLACK = 2
 #: Concurrent detail fetches. Measured clean at 32 across five regional pods (us2, ocs, em3, em2,
 #: us6) — 454 calls, 46-65 req/s, zero non-200s, and no rate limit found anywhere in 6,351
 #: requests. Half that here because `harvest` scrapes Boards concurrently *and* each Board fans
@@ -129,12 +136,19 @@ class OracleScraper(BaseScraper):
         )
 
     def _listing(self) -> list[dict]:
-        """Page through the requisition list until `TotalJobsCount` is satisfied.
+        """Page through the requisition list until the board runs out.
 
-        `TotalJobsCount` is the terminator because **`hasMore` lies**: it came back ``false`` on a
-        248-posting board whose first page held 200. Offset paging itself is sound — page 0 and
-        page 200 of that board had zero overlap and zero missing, with and without an explicit
-        `sortBy` — so the only thing needed is an honest stop condition.
+        **A short page is not the end of the board.** This is the correction that matters here:
+        Oracle serves under-full pages mid-walk — `ebxr.fa.us2` answers offset 0 with 199 rows
+        against a stated total of 420, reproducibly (3 of 3 attempts), then offset 200 with a
+        full 200 and offset 400 with the remaining 20. Treating the 199 as the end read 199 of
+        420. Measured over 40 multi-page boards, **12% hit a short page early and 3,421 of
+        28,715 postings (12%) were lost** to it. The end is an **empty** page.
+
+        `TotalJobsCount` stops the walk early when it is satisfied, and it is trustworthy for
+        that: walking 50 boards to an empty page, the distinct ids equalled it on 92% and no
+        board ever repeated an id across pages. `hasMore` remains useless — it came back
+        ``false`` on a 248-posting board whose first page held 200.
         """
         reqs: list[dict] = []
         total = 0
@@ -148,17 +162,17 @@ class OracleScraper(BaseScraper):
             total = first.get("TotalJobsCount") or total
             reqs.extend(batch)
             self._offset += _PAGE_SIZE
-            # `total and ...` is load-bearing: without it a missing TotalJobsCount makes
-            # `len(reqs) >= 0` true and stops after one page — a silent truncation wearing the
-            # natural-end branch's clothes. Absent a total, the short page is the only honest end.
-            if len(batch) < _PAGE_SIZE or (total and len(reqs) >= total):
+            # An empty page is the definitive end; a short one only means this page was short.
+            # `total and ...` is load-bearing on the second clause: without it a missing
+            # TotalJobsCount makes `len(reqs) >= 0` true and stops after one page.
+            if not batch or (total and len(reqs) >= total):
                 break
         else:
             self.mark_truncated(
                 f"hit the {_MAX_PAGES}-page cap at {len(reqs)} of {total or 'unknown'} "
                 "requisitions — the rest unread"
             )
-        if total and len(reqs) < total:
+        if total and len(reqs) < total - _TOTAL_SLACK:
             self.mark_truncated(
                 f"read {len(reqs)} of {total} requisitions — the rest is unread, not absent"
             )

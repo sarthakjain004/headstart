@@ -6704,15 +6704,20 @@ def test_oracle_pages_past_the_first_200(monkeypatch):
     assert len({j.id for j in jobs}) == 299
 
 
-def test_oracle_stops_on_a_short_page_when_no_total_is_given(monkeypatch):
-    """A missing TotalJobsCount must fall back to the short-page end, never to `>= 0`.
+def test_oracle_walks_to_an_empty_page_when_no_total_is_given(monkeypatch):
+    """A missing TotalJobsCount must not fall back to `>= 0`, and must not stop on a short page.
 
-    Guards the exact shape a review found latent elsewhere: `len(reqs) >= total` with `total`
-    defaulting to 0 is always true, which stops after one page while looking like a natural end.
+    Renamed and re-pinned 2026-09-08. The original guarded half of this: `len(reqs) >= total`
+    with `total` defaulting to 0 is always true, so the walk stopped after one page while
+    looking like a natural end. That guard still holds. But it also asserted the *short page*
+    ended the walk, and the first production run proved that wrong — Oracle serves under-full
+    pages mid-board (199 of a 420-posting board, reproducibly), and 12% of multi-page boards
+    lost rows to it. Only an empty page ends a walk now.
     """
     pages = [
         json.dumps({"items": [{"requisitionList": _oracle_reqs(0, 200)}]}),
         json.dumps({"items": [{"requisitionList": _oracle_reqs(200, 5)}]}),
+        json.dumps({"items": [{"requisitionList": []}]}),
     ]
     seen: list[int] = []
     s = get_scraper("oracle", "acme.fa.ocs.oraclecloud.com", "Acme")
@@ -6724,7 +6729,7 @@ def test_oracle_stops_on_a_short_page_when_no_total_is_given(monkeypatch):
     monkeypatch.setattr(type(s), "_get", _get)
     jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
 
-    assert seen == [0, 200]  # it did NOT stop after page 1
+    assert seen == [0, 200, 400]  # the short page did NOT end it; the empty one did
     assert len(jobs) == 205
 
 

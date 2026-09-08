@@ -250,12 +250,17 @@ class _FakeListing:
         self.reported_total = total_ids if reported_total is None else reported_total
         self.lies_has_more = lies_has_more
         self.offsets = []
+        self.short_at = set()
         self.scraper = None
 
     def __call__(self, url=None):
         offset = int((url or self.scraper.url()).split("offset=")[1])
         self.offsets.append(offset)
         page = self.ids[offset : offset + self.page_size]
+        if (
+            offset in self.short_at
+        ):  # serve this page one row light, as Oracle really does
+            page = page[:-1]
         return json.dumps(
             {
                 "items": [
@@ -301,14 +306,51 @@ def test_has_more_false_does_not_stop_a_board_that_is_not_done(monkeypatch):
     assert len(raw["requisitionList"]) == 248
 
 
-def test_a_missing_total_stops_at_the_first_short_page(monkeypatch):
+def test_a_short_page_does_not_end_the_walk(monkeypatch):
+    """The bug this class of terminator had. Oracle serves under-full pages mid-walk —
+    `ebxr.fa.us2` answers offset 0 with 199 rows against a total of 420, reproducibly — and
+    treating that as the end read 199 of 420. Measured across 40 multi-page boards, 12% hit one
+    and 3,421 of 28,715 postings were lost."""
+    fake = _FakeListing(total_ids=420, page_size=200)
+    fake.short_at = {0}  # page 0 comes back with 199
+    scraper = _paged(monkeypatch, fake)
+    raw = scraper.fetch_raw()
+    # 199 + 200 + 20 = 419, one short of the stated total, which is inside the slack.
+    assert len(raw["requisitionList"]) == 419
+    # Four fetches, not three: landing under the total costs one extra request to see the empty
+    # page that proves the board is exhausted. That is the price of the fix, and it is only paid
+    # by the boards whose count does not land exactly on the total (8% of 50 measured).
+    assert fake.offsets == [0, 200, 400, 600]
+    assert scraper.truncated is None
+
+
+def test_a_walk_ending_just_under_the_total_is_not_called_truncated(monkeypatch):
+    """The API's counter is slightly inflated: of 50 boards walked to an empty page, 46 matched
+    it exactly and 4 fell short by 1-2 rows. Marking those truncated every run would park them
+    in ADR-0053's exclusion scope, which has no drain."""
+    fake = _FakeListing(total_ids=298, page_size=200, reported_total=300)
+    scraper = _paged(monkeypatch, fake)
+    scraper.fetch_raw()
+    assert scraper.truncated is None
+
+
+def test_a_materially_short_walk_is_still_called_truncated(monkeypatch):
+    """The slack is 2 rows, not a licence to lose hundreds."""
+    fake = _FakeListing(total_ids=150, page_size=200, reported_total=900)
+    scraper = _paged(monkeypatch, fake)
+    scraper.fetch_raw()
+    assert scraper.truncated and "150 of 900" in scraper.truncated
+
+
+def test_an_empty_page_ends_the_walk_when_no_total_is_stated(monkeypatch):
     """The `total and ...` guard: without it `len(reqs) >= 0` is true and the walk stops after
     one page — a silent truncation wearing the natural-end branch's clothes."""
     fake = _FakeListing(total_ids=250, page_size=200, reported_total=0)
     scraper = _paged(monkeypatch, fake)
     raw = scraper.fetch_raw()
     assert len(raw["requisitionList"]) == 250
-    assert fake.offsets == [0, 200]
+    # With no total to satisfy, only an empty page can end the walk.
+    assert fake.offsets == [0, 200, 400]
 
 
 def test_a_board_short_of_its_own_total_is_marked_truncated(monkeypatch):
