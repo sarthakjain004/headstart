@@ -6704,30 +6704,6 @@ def test_oracle_pages_past_the_first_200(monkeypatch):
     assert len({j.id for j in jobs}) == 299
 
 
-def test_oracle_stops_on_a_short_page_when_no_total_is_given(monkeypatch):
-    """A missing TotalJobsCount must fall back to the short-page end, never to `>= 0`.
-
-    Guards the exact shape a review found latent elsewhere: `len(reqs) >= total` with `total`
-    defaulting to 0 is always true, which stops after one page while looking like a natural end.
-    """
-    pages = [
-        json.dumps({"items": [{"requisitionList": _oracle_reqs(0, 200)}]}),
-        json.dumps({"items": [{"requisitionList": _oracle_reqs(200, 5)}]}),
-    ]
-    seen: list[int] = []
-    s = get_scraper("oracle", "acme.fa.ocs.oraclecloud.com", "Acme")
-
-    def _get(self, url=None):
-        seen.append(self._offset)
-        return pages[len(seen) - 1]
-
-    monkeypatch.setattr(type(s), "_get", _get)
-    jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
-
-    assert seen == [0, 200]  # it did NOT stop after page 1
-    assert len(jobs) == 205
-
-
 def test_zwayam_parse():
     raw = _load("zwayam_tavant.json")
     jobs = get_scraper("zwayam", "careers.tavant.com", "Tavant").parse(raw, SCRAPED_AT)
