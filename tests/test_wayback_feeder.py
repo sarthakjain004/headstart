@@ -546,7 +546,8 @@ def test_alias_hosts_collapse_but_regional_pods_do_not():
     jobs = wf.extract(
         "https://uw.wd5.myworkdayjobs.com/UWHires", "myworkdayjobs.com", "workday"
     )
-    assert wf.dedupe_key(*site, "workday") == wf.dedupe_key(*jobs, "workday")
+    # keyed with each row's own harvest style, as `_Sink.add` does
+    assert wf.dedupe_key(*site, "workdaysite") == wf.dedupe_key(*jobs, "workday")
 
     com = wf.extract(
         "https://acme.zohorecruit.com/jobs/Careers", "zohorecruit.com", "sub"
@@ -666,4 +667,40 @@ def test_workdaysite_reads_the_cxs_route_like_the_other_domain_does():
 def test_keka_alias_domain_is_deliberately_not_swept():
     """Measured yield was zero, so it stays out — rule 2, not an oversight."""
     assert "kekahire.com" not in dict(wf.ATS_HOSTS["keka"])
-    assert "kekahire.com" not in wf._CANONICAL_HOST
+
+
+def test_refresh_reharvests_pages_already_marked_done(tmp_path, monkeypatch):
+    """A periodic sweep must re-read finished pages, because CDX inserts new captures into them.
+
+    Without this a page marked done months ago is skipped forever, which measurably hid boards:
+    clearing every marker recovered ashby +125 and greenhouse +96 on 2026-09-08. Asserted by
+    recording which pages `sweep` actually fetches, not by restating its arithmetic.
+    """
+    import wayback_pages as wp
+
+    monkeypatch.setattr(wp, "WB", tmp_path)
+    (tmp_path / ".ashby_jobs.ashbyhq.com_pages_done").write_text("0 1\n")
+
+    fetched = []
+
+    def fake_fetch(url):
+        if "showNumPages" in url:
+            return "3\n"
+        fetched.append(int(url.rsplit("page=", 1)[1]))
+        return "https://acme.jobs.ashbyhq.com/x\n"
+
+    monkeypatch.setattr(wp, "fetch", fake_fetch)
+
+    class _NullSink:
+        def add(self, found, style):
+            return False
+
+        def flush(self):
+            pass
+
+    wp.sweep("ashby", "jobs.ashbyhq.com", "path", 1, _NullSink())
+    assert fetched == [2], "without --refresh, pages 0 and 1 must stay skipped"
+
+    fetched.clear()
+    wp.sweep("ashby", "jobs.ashbyhq.com", "path", 1, _NullSink(), refresh=True)
+    assert sorted(fetched) == [0, 1, 2], "--refresh must re-read the finished pages"

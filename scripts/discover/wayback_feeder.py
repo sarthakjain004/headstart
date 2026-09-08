@@ -44,6 +44,9 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 WB = ROOT / "data" / "wayback-ats"
 socket.setdefaulttimeout(120)
 
+# `workday` and `workdaysite` are Workday's two career-site domains and differ in where the
+# tenant sits: `workday` reads it from the HOST (`acme.wd1.myworkdayjobs.com`), `workdaysite`
+# from the PATH (`wd1.myworkdaysite.com/recruiting/acme/Site`). Both emit the same identity.
 Style = Literal["sub", "host", "path", "workday", "workdaysite"]
 
 # An ATS that serves the same board from two hostnames. The value is the spelling the scraper
@@ -291,8 +294,8 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     "icims": _with_style("host", "icims.com"),
     # `kekahire.com` is a real alias domain, deliberately NOT swept: the ledger holds 1,820 Keka
     # rows and zero on it, and an 18-tenant sample found 16 already known and the other 2 dead.
-    # Adding it because the alias machinery made it cheap is the speculative generality rule 2
-    # forbids.
+    # It was added once because the alias machinery made it a one-word change; that is not a
+    # reason, and the measurement is the reason it is out.
     "keka": _with_style("sub", "keka.com"),
     "lever": _with_style(
         "path", "jobs.lever.co", "jobs.eu.lever.co"
@@ -388,8 +391,9 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
 #   sensehq — has a scraper (`registry.SCRAPERS`) and an enumerable `{slug}.sensehq.com`, but no
 #             liveness ledger, so there is nothing to check a sweep against yet. Add it here once
 #             `data/validate/liveness/sensehq.csv` exists.
-#   oracle, phenom, pyjamahr, zwayam — no enumerable host namespace (per-tenant pods, UUIDs, or
-#             boards that live on customer domains).
+#   phenom, pyjamahr, zwayam — no enumerable host namespace (per-tenant pods, UUIDs, or boards
+#             that live on customer domains). Oracle was listed here until its pods turned out to
+#             be enumerable after all; it now has 17 entries above.
 #   greythr, qandle, beehive, taleo, HirePro, iSmartRecruit, Recruit CRM, Ceipal — verified dead
 #             ends (CLAUDE.md's ATS-expansion TODO); the retired PowerShell feeder still swept
 #             qandle and beehive.
@@ -498,7 +502,9 @@ def extract(url: str, host: str, style: Style) -> tuple[str, str] | None:
             # two domains but not the other. Thinly archived (CXS is a POST); the asymmetry was
             # unintended rather than a decision.
             site = _workday_site(path)
-            if len(segments) < 4 or not site or not valid(segments[2]):
+            # `_workday_site` returns None for anything that is not the full
+            # `/wday/cxs/{company}/{site}/jobs`, so a length check here would never decide.
+            if not site or not valid(segments[2]):
                 return None
             return (
                 f"{segments[2]}/{site}",
@@ -529,12 +535,17 @@ def extract(url: str, host: str, style: Style) -> tuple[str, str] | None:
         # `https://www.teamtailor.com/?utm_campaign=poweredby&utm_content={slug}.teamtailor.com`.
         # The slug is in the query, like Greenhouse's `embed?for=` above, and `www` is INFRA so
         # the row was dropped. Measured: 183 ledger rows carry this shape (174 live) and 53 of
-        # those tenants — 51 live — appear in no Teamtailor harvest. Guarded on `utm_content`
+        # those tenants — 51 live — appear in no Teamtailor harvest. Written for Teamtailor but,
+        # like the Greenhouse rule above, applied to every `sub` ATS rather than threading the
+        # ATS in here; the `endswith` guard keeps each one to its own namespace. Guarded on `utm_content`
         # naming a host under this same ATS, so another vendor's backlink cannot inject a slug.
         # It does NOT tell a tenant from the vendor's own subdomains — `partners.teamtailor.com`
         # reads as a Company — but `INFRA`/`valid()` catch the common ones and the rest cost one
         # liveness probe each and settle as dead rows: the same bounded, self-correcting error
         # the iCIMS entry already accepts.
+        # The trailing `split`s are defensive and unmeasured: `utm_content` is a bare host in
+        # every sample seen, but a value carrying a path or port would otherwise fail the
+        # `endswith` guard and lose a real slug, which is the costlier way to be wrong.
         values = {
             v.lower().split("/")[0].split(":")[0]
             for v in urllib.parse.parse_qs(query).get("utm_content", [])
@@ -546,13 +557,11 @@ def extract(url: str, host: str, style: Style) -> tuple[str, str] | None:
         content = values.pop()
         if not content.endswith("." + host):
             return None
+        # Fall through rather than return: the tail below already validates the label and
+        # applies `_CANONICAL_HOST`. Returning here duplicated both, and skipping the rewrite
+        # gave one board two dedupe keys — the exact double-count that map exists to prevent.
         label = content[: -len("." + host)]
-        if "." in label or not valid(label):
-            return None
-        # Through `_CANONICAL_HOST` like every other `sub` row. Returning `content` verbatim
-        # emitted the alias spelling and gave one board two dedupe keys — the exact double-count
-        # this map exists to prevent.
-        return label, f"https://{label}.{_CANONICAL_HOST.get(host, host)}"
+        seen_host = f"{label}.{host}"
     if "." in label or not valid(label):
         return None  # a deeper subdomain, or furniture — not a slug
     # `host` ATSes are keyed by the whole board host, because that is what their scraper is
