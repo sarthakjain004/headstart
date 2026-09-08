@@ -46,7 +46,7 @@ from __future__ import annotations
 import re
 from typing import NamedTuple
 
-from run_logs import Run, common_args, runs_from
+from run_logs import Run, common_args, runs_from, skip_if_stood_down
 
 RETRIES = re.compile(r"\[scrape_run\] retries: ([^(]+)\(total (\d+)\)")
 # `http._retry_reason` emits these five for the statuses anyone currently retries, with `network`
@@ -199,6 +199,8 @@ def report(run: Run) -> None:
 def main() -> None:
     args = common_args(__doc__.split("\n")[0]).parse_args()
     for run in runs_from(args):
+        if skip_if_stood_down(run):
+            continue
         print(f"\n===== run {run.id} head={run.head} — retries =====", flush=True)
         report(run)
 

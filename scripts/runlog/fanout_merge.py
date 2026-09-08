@@ -52,7 +52,9 @@ from __future__ import annotations
 import re
 from collections import Counter
 
-from run_logs import Run, common_args, runs_from
+from run_logs import Run, common_args, runs_from, skip_if_stood_down
+
+from headstart.scrapers.registry import SCRAPERS
 
 # --- embed_merge ---------------------------------------------------------------------------
 MERGE_PRIOR = re.compile(
@@ -135,38 +137,27 @@ PRUNE_DONE = re.compile(
     r"\[index\] done: pruned (\d+) rows; table '\S+' now holds (\d+)"
 )
 
-# A closed set (headstart.scrapers.registry.SCRAPERS keys, 2026-08-23 — update if a new ATS
-# ships). `_log_ids` joins ids with plain spaces and some Workday ids ARE a raw location string
+# The provider names, read from the registry rather than hand-copied. `_log_ids` joins ids with
+# plain spaces and some Workday ids ARE a raw location string
 # ("workday:gianteagle/GEExternalcareers:0018 - Shaler - Supermarket") or a full address with
-# embedded spaces/commas — `str.split()` on the batch line shreds a single id into several
-# fake ones. Splitting instead on a lookahead for a known ATS-prefix boundary recovers the real
-# ids, verified against two real batch lines from run 32621581881: a `[1-16 of 16]` add batch
-# splits correctly into 16 (a blind `.split()` gives 46), and a `[1-50 of 50]` evict batch splits
+# embedded spaces/commas — `str.split()` on the batch line shreds a single id into several fake
+# ones. Splitting instead on a lookahead for a known ATS-prefix boundary recovers the real ids,
+# verified against two real batch lines from run 32621581881: a `[1-16 of 16]` add batch splits
+# correctly into 16 (a blind `.split()` gives 46), and a `[1-50 of 50]` evict batch splits
 # correctly into 50 (a blind `.split()` gives 143).
-_ATS = (
-    "ashby",
-    "darwinbox",
-    "eightfold",
-    "freshteam",
-    "greenhouse",
-    "join",
-    "keka",
-    "lever",
-    "oracle",
-    "personio",
-    "recruitee",
-    "ripplehire",
-    "rippling",
-    "sensehq",
-    "smartrecruiters",
-    "successfactors",
-    "teamtailor",
-    "trakstar",
-    "workable",
-    "workday",
-    "zoho",
-)
-_ID_BOUNDARY = re.compile(r"(?=\b(?:" + "|".join(_ATS) + r"):)")
+#
+# It is derived, not frozen, because the frozen copy went stale the moment icims/zwayam/jazzhr/
+# jobvite shipped and NOTHING SAID SO: a name absent from the set yields no boundary, the batch's
+# parse count then disagrees with its own `[start-end]` header, and `_id_churn_by_ats` dropped the
+# whole batch. Measured over the five runs of 2026-09-08, that silently discarded 312-658 add ids
+# per run — 48% of the control run's — and hid the entire iCIMS ramp-in (1,503 adds) from every
+# reader of the churn table.
+_ATS = tuple(sorted(SCRAPERS))
+# Anchored to whitespace (or the line start), not a bare `\b`. A board slug may repeat its own
+# ATS name: `rippling:rippling:78904b0c-...` is a real id in run 34197315179, and a `\b` lookahead
+# split its inner `rippling:` into two fake ids, breaking that batch's count the same way a
+# missing name does.
+_ID_BOUNDARY = re.compile(r"(?:(?<=\s)|(?<=\A))(?=(?:" + "|".join(_ATS) + r"):)")
 
 # --- role_trends -----------------------------------------------------------------------------
 TRENDS_ASSIGNING = re.compile(
@@ -292,21 +283,28 @@ def update_meta_report(text: str) -> None:
         print(f"  watermark -> v{w.group(1)}", flush=True)
 
 
-def _id_churn_by_ats(text: str) -> dict[str, Counter]:
+def _id_churn_by_ats(text: str) -> tuple[dict[str, Counter], Counter]:
     """Bucket `[index] add`/`evict` id batches by ATS only — never by full board. `ats:tenant:id`
     is ambiguous past the first `:` (a Workday id can itself contain both), and this is exactly
-    the key-splitting mistake that mis-attributed prune's own duplicate rows before (CLAUDE.md)."""
+    the key-splitting mistake that mis-attributed prune's own duplicate rows before (CLAUDE.md).
+
+    Returns the per-ATS counts and, beside them, the ids dropped because a batch's parse disagreed
+    with its own `[start-end]` header — the caller reports those, so this stays a pure parser."""
     out: dict[str, Counter] = {"add": Counter(), "evict": Counter()}
+    dropped: Counter = Counter()
     for label, start, end, ids in ID_BATCH.findall(text):
         expected = int(end) - int(start) + 1
         parts = [p.strip() for p in _ID_BOUNDARY.split(ids) if p.strip()]
         if len(parts) != expected:
-            # The boundary regex missed or over-split this line — trust the line's own [start-end]
-            # count over a wrong per-ATS breakdown; skip rather than silently misattribute.
+            # The boundary regex missed or over-split this line. Trusting the line's own
+            # [start-end] count over a wrong per-ATS breakdown is right; doing it silently was
+            # not. A skip here is invisible in the output, so a stale `_ATS` discarded 48% of a
+            # run's add ids while the table below still looked plausible. Say so, once per run.
+            dropped[label] += expected
             continue
         for jid in parts:
             out[label][jid.split(":", 1)[0]] += 1
-    return out
+    return out, dropped
 
 
 def index_sync_report(text: str) -> None:
@@ -368,7 +366,15 @@ def index_sync_report(text: str) -> None:
     if sd:
         print(f"  done: table now holds {sd.group(1)} rows", flush=True)
 
-    churn = _id_churn_by_ats(text)
+    churn, dropped = _id_churn_by_ats(text)
+    for label, n in sorted(dropped.items()):
+        print(
+            f"  !! churn by ATS: {n} {label} id(s) NOT counted — their batch's parse disagreed "
+            f"with its own [start-end] header. Any per-ATS {label} figure here is an "
+            "UNDERCOUNT, not a total, and where every batch dropped there is no table at all. "
+            "An ATS missing from the registry-derived boundary is the usual cause.",
+            flush=True,
+        )
     if churn["add"] or churn["evict"]:
         print("  churn by ATS (from the add/evict id batches):", flush=True)
         ats_all = sorted(set(churn["add"]) | set(churn["evict"]))
@@ -498,6 +504,8 @@ def main() -> None:
     args = common_args(__doc__.split("\n")[0]).parse_args()
     runs = runs_from(args)
     for run in runs:
+        if skip_if_stood_down(run):
+            continue
         print(f"\n===== run {run.id} head={run.head} — merge =====", flush=True)
         report(run)
     if len(runs) > 1:

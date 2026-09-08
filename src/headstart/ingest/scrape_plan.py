@@ -489,12 +489,21 @@ def main() -> int:
             f"max {widest:.1f} min ({widest / even if even else 0:.2f}x mean); "
             f"single-board floor {floor:.1f} min"
         )
-        if floor > even:
+        # `even` above is SERIAL pack minutes; `floor` is WALL clock — `predict_minutes` takes
+        # it as a shard's makespan floor unchanged. Comparing them raw asked "23 > 171" and could
+        # never be true, so this warning stayed silent through all five runs of 2026-09-08, every
+        # one of which had `predicted makespan == single-board floor` to the decimal. Dividing by
+        # the same measured speedup the makespan uses puts both sides in wall minutes: 24.0 vs a
+        # 13.1 min even share on run 34203005531, i.e. a floor 1.8x an even share, reported.
+        # Through `predict_minutes` with no floor of its own, so this share and the
+        # makespan it is compared against can never divide by different numbers.
+        even_wall = shard_speedup.predict_minutes(even, 0.0, speedup.ratio)
+        if floor > even_wall:
             # The packing cannot go below its slowest single item, so when one board outweighs
             # an even share the shard count is no longer the lever — that board is. Saying so
             # here stops the next person tuning the packer at a problem it cannot reach.
             _log.warning(
-                f"one board costs {floor:.1f} min, above the {even:.1f} min even share — "
+                f"one board costs {floor:.1f} min, above the {even_wall:.1f} min even share — "
                 "the makespan floor is this board, not the packing"
             )
         if makespan > _BUDGET_MIN:

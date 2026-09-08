@@ -32,7 +32,7 @@ import re
 import statistics
 from typing import NamedTuple
 
-from run_logs import Run, common_args, runs_from
+from run_logs import Run, common_args, runs_from, skip_if_stood_down
 
 LOADING = re.compile(r"\[embed_run\] loading (\S+) on (\S+) \.\.\.")
 ASSIGNMENT = re.compile(r"\[embed_run\] assignment: (\d+) docs from \S+ \| (.+)")
@@ -182,6 +182,8 @@ def report(run: Run) -> None:
 def main() -> None:
     args = common_args(__doc__.split("\n")[0]).parse_args()
     for run in runs_from(args):
+        if skip_if_stood_down(run):
+            continue
         print(f"\n===== run {run.id} head={run.head} — embed =====", flush=True)
         report(run)
 

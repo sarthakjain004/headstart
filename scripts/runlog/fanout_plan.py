@@ -55,7 +55,7 @@ from __future__ import annotations
 
 import re
 
-from run_logs import Run, common_args, runs_from
+from run_logs import Run, common_args, runs_from, skip_if_stood_down
 
 QUARANTINE_SKIP = re.compile(
     r"\[scrape_plan\] quarantine: skipped (\d+) of (\d+) confirmed-gone board\(s\)"
@@ -251,6 +251,8 @@ def embed_plan_report(run: Run) -> None:
 def main() -> None:
     args = common_args(__doc__.split("\n")[0]).parse_args()
     for run in runs_from(args):
+        if skip_if_stood_down(run):
+            continue
         print(f"\n===== run {run.id} head={run.head} — plan =====", flush=True)
         scrape_plan_report(run)
         embed_plan_report(run)

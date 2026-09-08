@@ -61,7 +61,7 @@ import re
 from collections import Counter, defaultdict
 
 from fanout_merge import SCOPE_EXCLUDED, SCOPE_ROW_BOARD, SCOPE_ROWS
-from run_logs import common_args, runs_from
+from run_logs import common_args, runs_from, skip_if_stood_down
 
 # The `index sync` stage lives in the `merge` job's log.
 STAGE = "merge"
@@ -108,6 +108,8 @@ def main() -> None:
     spelling: dict[str, str] = {}
 
     for run in runs:
+        if skip_if_stood_down(run):
+            continue
         text = ""
         for _shard, _job, log in run.stage(STAGE):
             text += log

@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import re
 
-from run_logs import Run, common_args, runs_from, warn_if_unparsed
+from run_logs import Run, common_args, runs_from, skip_if_stood_down, warn_if_unparsed
 
 PRIORITY_HEADER = re.compile(
     r"\[update_ledgers\] priority: (\d+) boards in snapshot \| (\d+) ledger rows "
@@ -128,6 +128,8 @@ def main() -> None:
     args = common_args(__doc__.split("\n")[0]).parse_args()
     runs = runs_from(args)
     for run in runs:
+        if skip_if_stood_down(run):
+            continue
         print(f"\n===== run {run.id} head={run.head} — ledgers =====", flush=True)
         report(run)
     if len(runs) > 1:
