@@ -417,7 +417,7 @@ def test_prune_encoded_drops_corroborated_artifacts_and_keeps_real_slugs(
         encoding="utf-8",
     )
     monkeypatch.setattr(wf, "ROOT", tmp_path)  # no liveness ledger under tmp_path
-    assert wf.prune_encoded("icims", out) == 2
+    assert wf.prune_encoded_slashes("icims", out) == 2
 
     kept = {r["tenant"] for r in csv.DictReader(out.open(encoding="utf-8"))}
     assert "careers-aei.icims.com" in kept  # the real board, untouched
@@ -443,4 +443,27 @@ def test_prune_encoded_consults_the_liveness_ledger(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     monkeypatch.setattr(wf, "ROOT", tmp_path)
-    assert wf.prune_encoded("icims", out) == 1
+    assert wf.prune_encoded_slashes("icims", out) == 1
+
+
+def test_prune_does_not_truncate_a_dotted_path_slug(tmp_path, monkeypatch):
+    """A `path` slug may legally contain dots, so its leading token is the whole slug.
+
+    Ashby and Lever let a Company use its domain as its slug (`adept.ai`). Splitting that at the
+    first dot would put the stub `adept` into the corroboration set, and a real Company whose slug
+    merely starts with `2f` could then be matched against a stub that is not a board at all.
+    """
+    out = tmp_path / "ashby.csv"
+    out.write_text(
+        "ats,tenant,url\n"
+        "ashby,adept.ai,https://jobs.ashbyhq.com/adept.ai\n"
+        "ashby,2fadept.ai,https://jobs.ashbyhq.com/2fadept.ai\n"
+        "ashby,2fadept,https://jobs.ashbyhq.com/2fadept\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(wf, "ROOT", tmp_path)
+    # `2fadept.ai` is corroborated by `adept.ai` and goes; `2fadept` is not, because the corpus
+    # holds no board called `adept` — only `adept.ai`, which a truncating label would have faked.
+    assert wf.prune_encoded_slashes("ashby", out) == 1
+    kept = {r["tenant"] for r in csv.DictReader(out.open(encoding="utf-8"))}
+    assert kept == {"adept.ai", "2fadept"}

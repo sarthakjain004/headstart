@@ -18,6 +18,7 @@ CONTEXT.md retires the term but parks the code/data rename as a separate change.
 import argparse
 import csv
 import errno
+import os
 import re
 import socket
 import ssl
@@ -598,12 +599,19 @@ def _style_of(url: str, hosts: tuple[tuple[str, Style], ...]) -> Style:
 _ENCODED_SLASH = re.compile(r"^(252f|2f)(?=.)")
 
 
-def _head(tenant: str) -> str:
-    """The token a mangled prefix would be glued to: the first label, past any Workday site."""
-    return tenant.split("/")[0].split(".")[0].lower()
+def _leading_label(tenant: str, style: Style) -> str:
+    """The token a mangled prefix would be glued to, in this style's own identity.
+
+    Style-aware because a `path` slug may legally contain dots — Ashby and Lever let a Company use
+    its domain (`adept.ai`), 1,528 such slugs on Ashby alone — so splitting one at the first dot
+    would put a stub into the corroboration set and could strip a real Company down to a label
+    `valid()` would never have admitted. Only a hostname's leading label ends at a dot.
+    """
+    head = tenant.split("/")[0]  # workday keys as `{company}/{site}`
+    return (head if style == "path" else head.split(".")[0]).lower()
 
 
-def prune_encoded(ats: str, out: Path) -> int:
+def prune_encoded_slashes(ats: str, out: Path) -> int:
     """Drop rows whose slug is `%2F` + a host we independently know, and say how many.
 
     Runs after the harvest, not inside :func:`extract`, because the test is *relational*: it needs
@@ -619,27 +627,41 @@ def prune_encoded(ats: str, out: Path) -> int:
     """
     if not out.exists():
         return 0
+    hosts = ATS_HOSTS.get(ats, ())
+
+    def label(tenant: str, url: str) -> str:
+        return _leading_label(tenant, _style_of(url, hosts))
+
     with out.open(encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh))
-    known = {_head(r["tenant"]) for r in rows}
+    known = {label(r["tenant"], r["url"]) for r in rows}
     ledger = ROOT / "data" / "validate" / "liveness" / f"{ats}.csv"
     if ledger.exists():
         with ledger.open(encoding="utf-8") as fh:
-            known |= {_head(r["tenant"]) for r in csv.DictReader(fh) if r.get("tenant")}
+            known |= {
+                label(r["tenant"], r["url"])
+                for r in csv.DictReader(fh)
+                if r.get("tenant") and r.get("url")
+            }
 
-    def mangled(tenant: str) -> bool:
-        head = _head(tenant)
+    def mangled(row: dict) -> bool:
+        head = label(row["tenant"], row["url"])
         m = _ENCODED_SLASH.match(head)
         return bool(m) and head[m.end() :] in known
 
-    keep = [r for r in rows if not mangled(r["tenant"])]
+    keep = [r for r in rows if not mangled(r)]
     dropped = len(rows) - len(keep)
     if dropped:
-        with out.open("w", newline="", encoding="utf-8") as fh:
+        # Written aside and renamed, never truncated in place: `slug_sink` promises a harvest is
+        # never lost to a stall, and a crash midway through rewriting 20k rows would break exactly
+        # that. `os.replace` is atomic on the same filesystem.
+        tmp = out.with_suffix(".csv.tmp")
+        with tmp.open("w", newline="", encoding="utf-8") as fh:
             w = csv.writer(fh)
             w.writerow(["ats", "tenant", "url"])
             for r in keep:
                 w.writerow([r["ats"], r["tenant"], r["url"]])
+        os.replace(tmp, out)
     return dropped
 
 
@@ -667,14 +689,17 @@ def slug_sink(ats: str):
     with out.open("a", newline="", encoding="utf-8") as f:
         sink = _Sink(ats, seen, csv.writer(f), f)
         yield sink
-    dropped = prune_encoded(ats, out)
+    dropped = prune_encoded_slashes(ats, out)
     if dropped:
         print(
             f"pruned {dropped} row(s) whose slug was %2F glued onto a host already known",
             flush=True,
         )
+        # Counted off the file, not `len(seen) - dropped`: `seen` holds dedupe_keys, and for a
+        # `path` ATS one key can stand for two rows, so subtracting rows from keys under-reports.
+        seen = {r["tenant"] for r in csv.DictReader(out.open(encoding="utf-8"))}
     print(
-        f"DONE: {len(seen) - dropped} unique {ats} slugs in data/wayback-ats/{ats}.csv",
+        f"DONE: {len(seen)} unique {ats} slugs in data/wayback-ats/{ats}.csv",
         flush=True,
     )
 
