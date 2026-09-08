@@ -9,7 +9,7 @@ Each Oracle tenant sits on its own pod host, so the ``slug`` is that host
 requisitions under ``items[0].requisitionList``, and the pagination params live *inside* the
 ``finder`` string rather than as separate query params.
 
-Three measured facts shape everything below. All are from a 2026-09-08 sweep of the 670 pool
+Four measured facts shape everything below. All are from a 2026-09-08 sweep of the 670 pool
 hosts — 15,189 listing requisitions, 1,030 detail payloads, 6,351 rate-limit requests — written up
 in ``docs/oracle/2026-09-08_api-measurement.md``.
 
@@ -50,6 +50,26 @@ from headstart.scrapers.base import BaseScraper
 _PAGE_SIZE = 200
 #: Our ceiling. Reaching it means the board did not end, we stopped reading it.
 _MAX_PAGES = 100
+#: The offset the API refuses to read past: it serves `offset + limit <= 10000` and answers
+#: anything beyond with zero rows *and* a `TotalJobsCount` of 0, the envelope going blank rather
+#: than erroring. Measured exactly on `ejwl.fa.us2` — offset 9999 limit 1 returns a row, limit 2
+#: returns none; offset 9900 limit 100 returns 100, limit 101 returns none — and confirmed on
+#: `eluq.fa.us2`. A Board above it cannot be read whole by offset paging at all.
+_OFFSET_CEILING = 10_000
+
+#: Rows a completed walk may fall short of `TotalJobsCount`, **per page fetched**, before it is
+#: called truncated. Per-page rather than flat because the shortfall scales with the walk, and a
+#: flat figure (the first attempt) fits small Boards while falsely truncating large ones every
+#: run into ADR-0053's exclusion scope, which has no drain.
+#:
+#: **Two** because the worst *benign* ratio measured is **1.0**, not the 0.5 an earlier and
+#: smaller sample suggested: over 245 multi-page Boards, `elfw.fa.us2` (728 of 733 over 5 pages)
+#: and `fa-eomf` (232 of 235 over 3) sit exactly on one row per page, and `egjl.fa.us6` (492 of
+#: 497 over 4) exceeds it at 1.25 while being demonstrably benign — a boundary-shifted re-walk at
+#: limit=100 finds no id the ordinary walk missed. One per page therefore had zero headroom and
+#: still truncated `egjl` falsely; two gives a real margin and still reports every measured loss
+#: by a wide mark (`etud` 89 of 114 in one page, `egud` 10,000 of 11,056, `ejwl` 9,926 of 13,429).
+_SLACK_PER_PAGE = 2
 #: Concurrent detail fetches. Measured clean at 32 across five regional pods (us2, ocs, em3, em2,
 #: us6) — 454 calls, 46-65 req/s, zero non-200s, and no rate limit found anywhere in 6,351
 #: requests. Half that here because `harvest` scrapes Boards concurrently *and* each Board fans
@@ -129,12 +149,28 @@ class OracleScraper(BaseScraper):
         )
 
     def _listing(self) -> list[dict]:
-        """Page through the requisition list until `TotalJobsCount` is satisfied.
+        """Page through the requisition list until the board runs out.
 
-        `TotalJobsCount` is the terminator because **`hasMore` lies**: it came back ``false`` on a
-        248-posting board whose first page held 200. Offset paging itself is sound — page 0 and
-        page 200 of that board had zero overlap and zero missing, with and without an explicit
-        `sortBy` — so the only thing needed is an honest stop condition.
+        **A short page is not the end of the Board.** This is the correction that matters here:
+        Oracle serves under-full pages mid-walk — `ebxr.fa.us2` answers offset 0 with 199 rows
+        against a stated total of 420, reproducibly (3 of 3 attempts), then offset 200 with a
+        full 200 and offset 400 with the remaining 20. Treating the 199 as the end read 199 of
+        420. Two samples measured the cost: 5 of 40 multi-page Boards (12.5%) losing 3,421 of
+        28,715 postings (11.9%), and an independent 60-Board sample finding 12 (20%) losing
+        18,974 of 63,397 (29.9%). The loss concentrates in large Boards, so the second is the
+        more representative; both say the same thing about the fix. The end is an **empty** page.
+
+        **An empty page is not always the end of the Board, though.** The API refuses to read
+        past row 10,000: on `ejwl.fa.us2` (13,430 postings) `offset=9800` returns a full 200
+        while `offset=9900` returns zero rows *and* a `TotalJobsCount` of 0 — the envelope goes
+        blank rather than erroring. So a Board over ~10,000 postings ends its walk at the
+        ceiling, not at its true end, and the shortfall check below is what reports it. That
+        ceiling binds long before `_MAX_PAGES`, which is why no real Board reaches the page cap.
+
+        `TotalJobsCount` stops the walk early when it is satisfied, and it is trustworthy for
+        that: across 55 multi-page Boards no Board repeated an id, and 46 of 55 landed exactly on
+        their total. `hasMore` remains useless — it came back ``false`` on a 248-posting Board
+        whose first page held 200.
         """
         reqs: list[dict] = []
         total = 0
@@ -148,20 +184,34 @@ class OracleScraper(BaseScraper):
             total = first.get("TotalJobsCount") or total
             reqs.extend(batch)
             self._offset += _PAGE_SIZE
-            # `total and ...` is load-bearing: without it a missing TotalJobsCount makes
-            # `len(reqs) >= 0` true and stops after one page — a silent truncation wearing the
-            # natural-end branch's clothes. Absent a total, the short page is the only honest end.
-            if len(batch) < _PAGE_SIZE or (total and len(reqs) >= total):
+            # An empty page is the definitive end; a short one only means this page was short.
+            # `total and ...` is load-bearing on the second clause: without it a missing
+            # TotalJobsCount makes `len(reqs) >= 0` true and stops after one page.
+            if not batch or (total and len(reqs) >= total):
                 break
         else:
             self.mark_truncated(
                 f"hit the {_MAX_PAGES}-page cap at {len(reqs)} of {total or 'unknown'} "
                 "requisitions — the rest unread"
             )
+        # Counts the fetches made, so it includes the final empty one — the allowance is
+        # data-pages + 1 rows. Deliberate: the margin sits on the safe side of a false truncation.
+        pages = self._offset // _PAGE_SIZE
         if total and len(reqs) < total:
-            self.mark_truncated(
-                f"read {len(reqs)} of {total} requisitions — the rest is unread, not absent"
-            )
+            # The ceiling is reported whatever the slack says. Without this clause the slack can
+            # *mask* it: a Board stating 10,001-10,102 reads exactly 10,000, and 51 pages of
+            # allowance swallow the gap — a silent short list, which is the one thing ADR-0053
+            # exists to prevent. The slack exists for a counter that over-counts by a row or two,
+            # not for a Board the API will not serve.
+            if self._offset >= _OFFSET_CEILING:
+                self.mark_truncated(
+                    f"read {len(reqs)} of {total} requisitions — the API serves no offset past "
+                    f"{_OFFSET_CEILING:,}, so the rest is unreachable, not absent"
+                )
+            elif len(reqs) < total - pages * _SLACK_PER_PAGE:
+                self.mark_truncated(
+                    f"read {len(reqs)} of {total} requisitions — the rest is unread, not absent"
+                )
         return reqs
 
     def fetch_raw(self) -> Any:
