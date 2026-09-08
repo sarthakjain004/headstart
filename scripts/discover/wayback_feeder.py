@@ -265,6 +265,41 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     "lever": _with_style(
         "path", "jobs.lever.co", "jobs.eu.lever.co"
     ),  # EU: 154 rows, 92 live
+    # `host` style: `oracle.py` builds `https://{slug}/hcmRestApi/...`, so the slug IS the whole
+    # board host (`airborneo-iacatj.fa.ocs.oraclecloud.com`), as for iCIMS and Eightfold.
+    #
+    # Every pod is listed separately, and the apex is NOT usable: with host `oraclecloud.com`,
+    # `extract` sees the label `airborneo-iacatj.fa.ocs`, whose dots trip the `"." in label` guard
+    # and it returns None. Measured both ways 2026-09-08 — the apex harvests exactly nothing, so a
+    # one-line `("oraclecloud.com", "host")` would look right and silently find zero boards.
+    #
+    # 15 pods come from `data/validate/liveness/oracle.csv` (ocs 552 rows, us2 211, em2 106, us6
+    # 85, em3 54, ap1 39, ca2 11, us8 10, em8 10, us1 7, ap2 7, ca3 6, em5 4, la1 2, em4 2). The
+    # ledger alone would be circular — it only knows pods already discovered — so a CDX existence
+    # probe swept the rest of the grid (us3-us12, em1/em6/em7/em9-em11, ap3/ap5-ap7, ca1/ca4,
+    # la2/la3, uk1-uk3, me1/me2, in1, jp1, au1, sa1/sa2, ocs1-ocs3). It found **ap4**, which the
+    # ledger has zero rows for and which archives 5 real tenant boards (ccjs, eftw, efyq, egda,
+    # hdip) — so it is included. Everything else in that grid is empty; `em1` archives only the
+    # bare pod host with no tenant under it, so it is deliberately left out.
+    "oracle": _with_style(
+        "host",
+        "fa.ocs.oraclecloud.com",
+        "fa.us2.oraclecloud.com",
+        "fa.em2.oraclecloud.com",
+        "fa.us6.oraclecloud.com",
+        "fa.em3.oraclecloud.com",
+        "fa.ap1.oraclecloud.com",
+        "fa.ca2.oraclecloud.com",
+        "fa.us8.oraclecloud.com",
+        "fa.em8.oraclecloud.com",
+        "fa.us1.oraclecloud.com",
+        "fa.ap2.oraclecloud.com",
+        "fa.ca3.oraclecloud.com",
+        "fa.em5.oraclecloud.com",
+        "fa.la1.oraclecloud.com",
+        "fa.em4.oraclecloud.com",
+        "fa.ap4.oraclecloud.com",
+    ),
     "personio": _with_style("sub", "jobs.personio.com", "jobs.personio.de"),
     "recruitee": _with_style("sub", "recruitee.com"),
     "ripplehire": _with_style("sub", "ripplehire.com"),
@@ -556,6 +591,58 @@ def _style_of(url: str, hosts: tuple[tuple[str, Style], ...]) -> Style:
     return "path" if "/" in url.split("://")[-1] else "sub"
 
 
+# `%2F` — the encoding of `/` — glued onto the front of a real hostname. A redirect-wrapped
+# link (`...?url=https%3A%2F%2Fcareers-aei.icims.com`) archived and canonicalised loses its `%`,
+# so CDX serves `http://2fcareers-aei.icims.com/` and `extract` sees a well-formed host with a
+# dotless label that no rule rejects. The board is then stored twice: once real, once mangled.
+_ENCODED_SLASH = re.compile(r"^(252f|2f)(?=.)")
+
+
+def _head(tenant: str) -> str:
+    """The token a mangled prefix would be glued to: the first label, past any Workday site."""
+    return tenant.split("/")[0].split(".")[0].lower()
+
+
+def prune_encoded(ats: str, out: Path) -> int:
+    """Drop rows whose slug is `%2F` + a host we independently know, and say how many.
+
+    Runs after the harvest, not inside :func:`extract`, because the test is *relational*: it needs
+    the rest of the corpus. `extract` sees one URL and cannot tell `2fcareers-aei` (mangled, since
+    `careers-aei` exists) from `2flystudiosde` (real — "2Fly Studios", and `lystudiosde` is
+    nothing). Stripping every `2f` unconditionally would delete that live board, so the stripped
+    form must be corroborated before a row is dropped.
+
+    Measured 2026-09-08 over all harvests: 142 rows carry the prefix and 125 (88%) decode to a
+    host already in the same file or the ledger. The other 17 stay — an artifact whose real host
+    this sweep has not reached yet is indistinguishable from a genuine `2f…` company, and a
+    later sweep that finds the real host will prune it then.
+    """
+    if not out.exists():
+        return 0
+    with out.open(encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    known = {_head(r["tenant"]) for r in rows}
+    ledger = ROOT / "data" / "validate" / "liveness" / f"{ats}.csv"
+    if ledger.exists():
+        with ledger.open(encoding="utf-8") as fh:
+            known |= {_head(r["tenant"]) for r in csv.DictReader(fh) if r.get("tenant")}
+
+    def mangled(tenant: str) -> bool:
+        head = _head(tenant)
+        m = _ENCODED_SLASH.match(head)
+        return bool(m) and head[m.end() :] in known
+
+    keep = [r for r in rows if not mangled(r["tenant"])]
+    dropped = len(rows) - len(keep)
+    if dropped:
+        with out.open("w", newline="", encoding="utf-8") as fh:
+            w = csv.writer(fh)
+            w.writerow(["ats", "tenant", "url"])
+            for r in keep:
+                w.writerow([r["ats"], r["tenant"], r["url"]])
+    return dropped
+
+
 @contextmanager
 def slug_sink(ats: str):
     """Open `data/wayback-ats/{ats}.csv` for appending and yield the sink that writes to it.
@@ -580,8 +667,14 @@ def slug_sink(ats: str):
     with out.open("a", newline="", encoding="utf-8") as f:
         sink = _Sink(ats, seen, csv.writer(f), f)
         yield sink
+    dropped = prune_encoded(ats, out)
+    if dropped:
+        print(
+            f"pruned {dropped} row(s) whose slug was %2F glued onto a host already known",
+            flush=True,
+        )
     print(
-        f"DONE: {len(seen)} unique {ats} slugs in data/wayback-ats/{ats}.csv",
+        f"DONE: {len(seen) - dropped} unique {ats} slugs in data/wayback-ats/{ats}.csv",
         flush=True,
     )
 
