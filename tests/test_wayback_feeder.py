@@ -9,6 +9,7 @@ underscores in a path slug, files served from a board root, Greenhouse's widget 
 two ATSes whose slug is the whole host rather than the label.
 """
 
+import csv
 import sys
 from pathlib import Path
 
@@ -394,3 +395,52 @@ def test_a_multi_host_ats_is_told_rather_than_guessed_for(
 
     assert (tmp_path / ".zoho_resume").exists()  # untouched
     assert "names no host" in capsys.readouterr().out
+
+
+def test_prune_encoded_drops_corroborated_artifacts_and_keeps_real_slugs(
+    tmp_path, monkeypatch
+):
+    """`%2F` glued onto a known host is dropped; a real `2f…` company is not.
+
+    Both halves matter. `2fcareers-aei` is mangling because `careers-aei` is right there beside
+    it; `2flystudiosde` is the live board "2Fly Studios" and stripping its prefix leaves
+    `lystudiosde`, which is nobody — so an unconditional strip would delete a real Company.
+    """
+    out = tmp_path / "icims.csv"
+    out.write_text(
+        "ats,tenant,url\n"
+        "icims,careers-aei.icims.com,https://careers-aei.icims.com\n"
+        "icims,2fcareers-aei.icims.com,https://2fcareers-aei.icims.com\n"
+        "icims,252fcareers-aei.icims.com,https://252fcareers-aei.icims.com\n"
+        "icims,2flystudiosde.icims.com,https://2flystudiosde.icims.com\n"
+        "icims,2funseen-elsewhere.icims.com,https://2funseen-elsewhere.icims.com\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(wf, "ROOT", tmp_path)  # no liveness ledger under tmp_path
+    assert wf.prune_encoded("icims", out) == 2
+
+    kept = {r["tenant"] for r in csv.DictReader(out.open(encoding="utf-8"))}
+    assert "careers-aei.icims.com" in kept  # the real board, untouched
+    assert "2fcareers-aei.icims.com" not in kept  # corroborated artifact
+    assert "252fcareers-aei.icims.com" not in kept  # double-encoded, same rule
+    # Neither stripped form is a host we know, so both survive rather than risk a real Company.
+    assert "2flystudiosde.icims.com" in kept
+    assert "2funseen-elsewhere.icims.com" in kept
+
+
+def test_prune_encoded_consults_the_liveness_ledger(tmp_path, monkeypatch):
+    """Corroboration comes from the ledger too, not just the file being pruned."""
+    (tmp_path / "data" / "validate" / "liveness").mkdir(parents=True)
+    (tmp_path / "data" / "validate" / "liveness" / "icims.csv").write_text(
+        "ats,tenant,url,status,jobs,checked_at\n"
+        "icims,careers-onlyinledger.icims.com,https://x,live,4,2026-09-08\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "icims.csv"
+    out.write_text(
+        "ats,tenant,url\n"
+        "icims,2fcareers-onlyinledger.icims.com,https://2fcareers-onlyinledger.icims.com\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(wf, "ROOT", tmp_path)
+    assert wf.prune_encoded("icims", out) == 1
