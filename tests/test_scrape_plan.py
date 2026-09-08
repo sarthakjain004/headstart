@@ -8,7 +8,10 @@ monkeypatched active-list so the test doesn't couple to the liveness-ledger CSV 
 from __future__ import annotations
 
 import json
+import re
 import sys
+
+import pytest
 
 import headstart.ingest.scrape_plan as ps
 from headstart.config import CompanyRef, board_identity
@@ -281,3 +284,87 @@ def test_a_workday_board_is_costed_under_the_same_key_two_pods_share():
         name="A",
     )
     assert board_identity(wd3) == board_identity(wd103) == "workday:accenture/careers"
+
+
+def test_floor_warning_compares_wall_clock_not_serial_minutes(
+    tmp_path, monkeypatch, caplog
+):
+    """One board above an even WALL share must be reported as the makespan floor.
+
+    The guard used to compare ``floor`` (wall minutes — what ``predict_minutes`` treats as a
+    shard's makespan floor) against ``even`` (SERIAL pack minutes, ~``speedup`` times larger), so
+    it asked "23 > 171" and never fired. It stayed silent through all five runs of 2026-09-08 even
+    though every one had ``predicted makespan == single-board floor`` to the decimal.
+
+    The board costs are chosen so the OLD comparison stays silent (floor < serial even share) while
+    the new one fires (floor > that share divided by the measured speedup) — asserted below, so
+    reverting the fix fails this test rather than merely changing a number in it.
+    """
+    boards = [CompanyRef("lever", "giant", "Giant")] + [
+        CompanyRef("lever", f"small{i}", f"Small{i}") for i in range(9)
+    ]
+    monkeypatch.setattr(
+        ps, "load_active_companies", lambda ledger, min_jobs=0: list(boards)
+    )
+    # 700 s stays under the ADR-0064 value gate's 15 min bar, so the giant survives into the slice.
+    cost = tmp_path / "cost.csv"
+    cost.write_text(
+        "board,seconds,jobs,updated_at\n"
+        f"{board_identity(boards[0])},700.0,900,2026-09-08\n"
+        + "".join(f"{board_identity(b)},200.0,50,2026-09-08\n" for b in boards[1:])
+    )
+    speedup = tmp_path / "speedup.csv"
+    speedup.write_text("speedup,shards,updated_at\n13.08,15,2026-09-08\n")
+
+    out = tmp_path / "assignments"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "scrape_plan",
+            "--priority",
+            str(tmp_path / "none.csv"),
+            "--cost",
+            str(cost),
+            "--speedup-ledger",
+            str(speedup),
+            "--out-dir",
+            str(out),
+            "--max-boards",
+            "0",
+            "--max-shards",
+            "3",
+            "--target-boards",
+            "4",
+        ],
+    )
+    with caplog.at_level("INFO"):
+        assert ps.main() == 0
+
+    spread = next(
+        r.message for r in caplog.records if r.message.startswith("predicted spread:")
+    )
+    even_serial = float(re.search(r"mean ([\d.]+)", spread).group(1))
+    floor = float(re.search(r"single-board floor ([\d.]+)", spread).group(1))
+    # The premise that makes this a regression test rather than a restatement of the new code.
+    assert floor < even_serial, (
+        "the fixture must be one the OLD `floor > even` comparison stayed silent on, "
+        f"got floor={floor} even_serial={even_serial}"
+    )
+
+    warnings = [
+        r.message
+        for r in caplog.records
+        if "the makespan floor is this board" in r.message
+    ]
+    assert warnings, (
+        f"floor {floor} min exceeds the {even_serial / 13.08:.2f} min even WALL share and must "
+        f"be reported; warnings: {[r.message for r in caplog.records if r.levelname == 'WARNING']}"
+    )
+    reported_share = float(
+        re.search(r"above the ([\d.]+) min even share", warnings[0]).group(1)
+    )
+    assert reported_share == pytest.approx(even_serial / 13.08, abs=0.05), (
+        f"the warning must quote the WALL even share, not the serial {even_serial} min one; "
+        f"got {reported_share}"
+    )

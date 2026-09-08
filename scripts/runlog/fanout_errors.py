@@ -58,7 +58,15 @@ from __future__ import annotations
 
 import re
 
-from run_logs import DONE, Run, common_args, runs_from, unstamp
+from run_logs import (
+    DONE,
+    Run,
+    common_args,
+    runs_from,
+    skip_if_stood_down,
+    unstamp,
+    warn_if_unparsed,
+)
 
 ERR_DIGEST = re.compile(r"\d+ board errors: (.+)")
 # `scrape_join`'s run-level digest, read from the JOIN job — not the same line as ERR_DIGEST
@@ -74,8 +82,14 @@ QUARANTINE = re.compile(
 )
 # The authoritative totals. The per-board `quarantined` lines above are capped at 20 by the
 # emitter, so this line is the only honest source for "how many".
+# Tracks `update_ledgers._failures`' emitter. It used to read `N board(s) reported gone`; the
+# emitter now says `N of M board error(s) read as gone`, and because the miss was a plain
+# `search() -> None` behind an `if totals:`, the whole line vanished from this tool's output with
+# no error at all — on runs whose log carried it verbatim. `warn_if_unparsed` below is the guard
+# that makes the next such drift loud; `fanout_corpus` and `fanout_ledgers` already use it.
 FAILURES = re.compile(
-    r"\[update_ledgers\] failures: (\d+) board\(s\) reported gone \(404/410\) across (\d+) shard\(s\)"
+    r"\[update_ledgers\] failures: (\d+) of (\d+) board error\(s\) read as gone \(404/410\)"
+    r" across (\d+) shard\(s\)"
     r" \| (\d+) ledger rows \((\d+) cleared by a successful scrape\) \| (\d+) at/over (\d+) strikes"
 )
 FAILED = re.compile(r"\[scrape_run\] (\S+?) failed after (\d+)s: (\w+)")
@@ -157,13 +171,17 @@ def quarantines(run: Run) -> None:
             flush=True,
         )
     if totals:
-        gone, shards, ledger, cleared, quarantined, at = totals.groups()
+        gone, examined, shards, ledger, cleared, quarantined, at = totals.groups()
         print(
-            f"\n  failures: {gone} board(s) reported gone across {shards} shard(s) | "
-            f"{ledger} ledger rows ({cleared} cleared) | "
+            f"\n  failures: {gone} of {examined} board error(s) read as gone across {shards} "
+            f"shard(s) | {ledger} ledger rows ({cleared} cleared) | "
             f"**{quarantined}** at/over {at} strikes — a STANDING TOTAL over the whole ledger, "
             f"not this run's inflow",
             flush=True,
+        )
+    else:
+        warn_if_unparsed(
+            text, "[update_ledgers] failures:", totals, "update_ledgers failures totals"
         )
     sample = QUARANTINE.findall(text)
     if not sample:
@@ -204,6 +222,8 @@ def run_level_errors(run: Run) -> None:
 def main() -> None:
     args = common_args(__doc__.split("\n")[0]).parse_args()
     for run in runs_from(args):
+        if skip_if_stood_down(run):
+            continue
         print(f"\n===== run {run.id} head={run.head} — errors =====", flush=True)
         scrape_errors(run)
         run_level_errors(run)
