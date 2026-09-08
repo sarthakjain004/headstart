@@ -144,8 +144,8 @@ magnitude: `egud` reads 10,000 of 11,056 (20.7 rows/page), `ejwl` 9,926 of 13,43
 reason §8 gives: **262 of 991** hiring Boards exceed one 200-row page. The largest real employer
 Board is Marriott at **13,430** postings — but it cannot be read whole: the 10,000-row offset
 ceiling stops its walk at 9,926, which the shortfall check reports. `_MAX_PAGES = 100` is
-therefore never the binding limit on a real Board; if it does, `mark_truncated` says so rather than serving a
-short list silently. (The exploratory sweep's own figures — 199 of 1,331 over one page, largest
+therefore never the binding limit on a real Board — the offset ceiling is. Whichever stops the
+walk, `mark_truncated` says so rather than serving a short list silently. (The exploratory sweep's own figures — 199 of 1,331 over one page, largest
 4,947 — count *sites*, and are not the ones to size a page cap against.)
 
 ## 6. No rate limit found, and concurrency above ~32 is counter-productive

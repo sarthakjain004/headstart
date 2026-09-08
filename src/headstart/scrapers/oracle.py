@@ -9,7 +9,7 @@ Each Oracle tenant sits on its own pod host, so the ``slug`` is that host
 requisitions under ``items[0].requisitionList``, and the pagination params live *inside* the
 ``finder`` string rather than as separate query params.
 
-Three measured facts shape everything below. All are from a 2026-09-08 sweep of the 670 pool
+Four measured facts shape everything below. All are from a 2026-09-08 sweep of the 670 pool
 hosts — 15,189 listing requisitions, 1,030 detail payloads, 6,351 rate-limit requests — written up
 in ``docs/oracle/2026-09-08_api-measurement.md``.
 
@@ -143,12 +143,14 @@ class OracleScraper(BaseScraper):
     def _listing(self) -> list[dict]:
         """Page through the requisition list until the board runs out.
 
-        **A short page is not the end of the board.** This is the correction that matters here:
+        **A short page is not the end of the Board.** This is the correction that matters here:
         Oracle serves under-full pages mid-walk — `ebxr.fa.us2` answers offset 0 with 199 rows
         against a stated total of 420, reproducibly (3 of 3 attempts), then offset 200 with a
         full 200 and offset 400 with the remaining 20. Treating the 199 as the end read 199 of
-        420. Measured over 40 multi-page boards, **12% hit a short page early and 3,421 of
-        28,715 postings (12%) were lost** to it. The end is an **empty** page.
+        420. Two samples measured the cost: 5 of 40 multi-page Boards (12.5%) losing 3,421 of
+        28,715 postings (11.9%), and an independent 60-Board sample finding 12 (20%) losing
+        18,974 of 63,397 (29.9%). The loss concentrates in large Boards, so the second is the
+        more representative; both say the same thing about the fix. The end is an **empty** page.
 
         **An empty page is not always the end of the Board, though.** The API refuses to read
         past row 10,000: on `ejwl.fa.us2` (13,430 postings) `offset=9800` returns a full 200
@@ -184,6 +186,10 @@ class OracleScraper(BaseScraper):
                 f"hit the {_MAX_PAGES}-page cap at {len(reqs)} of {total or 'unknown'} "
                 "requisitions — the rest unread"
             )
+        # Counts the fetches made, so it includes the final empty one — the allowance is
+        # therefore data-pages + 1, a row more generous than the 0.5 rows/page the sample
+        # measured. Deliberate: the margin sits on the safe side of a false truncation, and a
+        # real loss clears it by more than an order of magnitude either way.
         pages = self._offset // _PAGE_SIZE
         if total and len(reqs) < total - pages * _SLACK_PER_PAGE:
             self.mark_truncated(
