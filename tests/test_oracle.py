@@ -318,8 +318,9 @@ def test_a_short_page_does_not_end_the_walk(monkeypatch):
     # 199 + 200 + 20 = 419, one short of the stated total, which is inside the slack.
     assert len(raw["requisitionList"]) == 419
     # Four fetches, not three: landing under the total costs one extra request to see the empty
-    # page that proves the board is exhausted. That is the price of the fix, and it is only paid
-    # by the boards whose count does not land exactly on the total (8% of 50 measured).
+    # page that proves the Board is exhausted. That is the price of the fix, paid by the Boards
+    # whose count does not land exactly on the total (8% of 50 measured) and by any Board
+    # stating no total at all — a class measured at **0 of 120** live Boards, so theoretical.
     assert fake.offsets == [0, 200, 400, 600]
     assert scraper.truncated is None
 
@@ -334,8 +335,19 @@ def test_a_walk_ending_just_under_the_total_is_not_called_truncated(monkeypatch)
     assert scraper.truncated is None
 
 
+def test_a_walk_three_rows_under_the_total_is_called_truncated(monkeypatch):
+    """The first row outside the slack, which is where the constant actually decides. Two short
+    is quiet (the test above), three short is not — without this, `_TOTAL_SLACK` could be
+    widened silently and only the 750-short case would still object."""
+    fake = _FakeListing(total_ids=297, page_size=200, reported_total=300)
+    scraper = _paged(monkeypatch, fake)
+    scraper.fetch_raw()
+    assert scraper.truncated and "297 of 300" in scraper.truncated
+
+
 def test_a_materially_short_walk_is_still_called_truncated(monkeypatch):
-    """The slack is 2 rows, not a licence to lose hundreds."""
+    """The slack is 2 rows, not a licence to lose hundreds. Real case: `etud.fa.us8` states 114
+    and serves 89, and that 25-row gap must still be reported."""
     fake = _FakeListing(total_ids=150, page_size=200, reported_total=900)
     scraper = _paged(monkeypatch, fake)
     scraper.fetch_raw()

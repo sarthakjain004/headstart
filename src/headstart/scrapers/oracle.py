@@ -51,11 +51,15 @@ _PAGE_SIZE = 200
 #: Our ceiling. Reaching it means the board did not end, we stopped reading it.
 _MAX_PAGES = 100
 #: How far under `TotalJobsCount` a completed walk may land without being called truncated.
-#: The counter is slightly inflated: walking 50 boards to an empty page, 46 matched it exactly
-#: and the other 4 fell short by **1 or 2 rows** (max 1.69% of the board). Without this slack
-#: those boards would be marked truncated on every run and so leave the eviction scope
-#: permanently — ADR-0053's exclusion has no drain, so a recurring false positive there accretes
-#: dead rows invisibly. Deliberately tiny: a real mid-crawl loss is hundreds of rows, not two.
+#: Walking 50 Boards to an empty page, 46 matched the total exactly and the other 4 fell short by
+#: **1 or 2 rows** (max 1.69% of the Board). Whether the counter over-counts or a row exists that
+#: offset paging cannot reach, the measurement cannot say — and it does not matter here, because
+#: the row is unreachable either way: on `ebxr.fa.us2`, offset 199 returns 200 rows containing
+#: **no id** the ordinary page-size walk missed, so its 420th posting is not fetchable at any
+#: offset. Without this slack those Boards would be marked truncated on every run and so leave
+#: the eviction scope permanently — ADR-0053's exclusion has no drain, so a recurring false
+#: positive there accretes dead rows invisibly. Deliberately tiny, and it does discriminate:
+#: `etud.fa.us8` states 114 and serves 89, and that 25-row gap is still reported.
 _TOTAL_SLACK = 2
 #: Concurrent detail fetches. Measured clean at 32 across five regional pods (us2, ocs, em3, em2,
 #: us6) — 454 calls, 46-65 req/s, zero non-200s, and no rate limit found anywhere in 6,351

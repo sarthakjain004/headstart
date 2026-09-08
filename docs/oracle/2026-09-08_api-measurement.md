@@ -106,15 +106,22 @@ use it.
 after this document's first draft). Oracle serves under-full pages mid-walk: `ebxr.fa.us2`
 answers offset 0 with **199** rows against a stated total of 420 — reproducibly, 3 of 3 attempts
 — then offset 200 with a full 200 and offset 400 with the remaining 20. A loop that stops on a
-short page reads 199 of 420. Measured over 40 multi-page boards, **12% hit one early and 3,421
-of 28,715 postings (12%) were lost**. The run log showed it plainly: `read 199 of 420`,
+short page reads 199 of 420. Measured over 40 multi-page Boards, **5 of 40 (12.5%) hit one
+early**, costing **3,421 of 28,715 postings (11.9%)** — two nearby figures measuring different
+things, not one figure written twice. The run log showed it plainly: `read 199 of 420`,
 `read 599 of 2184`, `read 5963 of 13424`.
 
-The end is an **empty** page. Walking 50 boards to one, the distinct ids equalled
-`TotalJobsCount` on **92%**, no board ever repeated an id across pages, and the 4 that fell
-short were short by **1 or 2 rows** (max 1.69%). So the total is a sound early stop but is
-slightly inflated, which is why `_TOTAL_SLACK` exists: marking those 8% truncated every run
-would park them in ADR-0053's exclusion scope, and that has no drain.
+The end is an **empty** page. Walking 50 Boards to one, the distinct ids equalled
+`TotalJobsCount` on **92%**, no Board ever repeated an id across pages, and the 4 that fell
+short were short by **1 or 2 rows** (max 1.69%).
+
+Whether the counter over-counts or a row exists that offset paging cannot reach, this
+measurement cannot say — and it does not decide anything, because the row is unreachable either
+way: on `ebxr.fa.us2`, `offset=199` returns 200 rows containing **no id** the ordinary
+page-size walk already had. So the total is a sound early stop, and `_TOTAL_SLACK` exists so
+those 8% are not marked truncated every run and parked in ADR-0053's exclusion scope, which has
+no drain. It still discriminates: `etud.fa.us8` states 114 and serves 89, and that 25-row gap
+is reported.
 
 **How many Boards actually paginate** — read against the committed ledger, not the sweep, for the
 reason §8 gives: **262 of 991** hiring Boards exceed one 200-row page. The largest real employer
