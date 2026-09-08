@@ -24,7 +24,7 @@ from typing import Any
 
 from headstart import log
 
-from .store import read_bytes, write_bytes
+from .store import _is_absent, read_bytes, write_bytes
 
 _log = log.get(__name__)
 
@@ -106,15 +106,29 @@ def load(repo: str, token: str) -> Registry:
         return Registry.from_dict(json.loads(read_bytes(repo, PATH, token)))
     except ImportError:
         raise
-    except Exception as exc:  # noqa: BLE001 — absent on first run is the normal case
+    except Exception as exc:  # noqa: BLE001 — every read failure answers "starting empty"
         # Absent, corrupt and Hub-unreachable all land here and all answer "starting empty",
         # which `bot.main` then *saves* over the stored record — so a read blip is written
         # down as a bot with no master and nobody pending. The exception type is the only
-        # thing that separates the first-run case from the two that destroy state.
-        _log.error(
-            f"registry unreadable ({type(exc).__name__}: {exc}) - starting empty",
-            exc_info=True,
-        )
+        # thing that separates the first-run case from the two that destroy state, and
+        # `store._is_absent` is the only test that draws that line correctly:
+        # `LocalEntryNotFoundError` subclasses `EntryNotFoundError` while meaning the
+        # opposite — not "no such file" but "could not reach the Hub" — so an `isinstance`
+        # against the parent alone files every outage as a routine first run.
+        if _is_absent(exc):
+            _log.info("no registry yet - first run")
+        else:
+            # Loud, and naming the consequence rather than the symptom: this run continues
+            # with an empty Registry and `bot.main` saves it, so a transient read failure
+            # *erases* the master and everyone pending. The next `/start` then claims the
+            # master seat, and `/allow`, `/deny` and `/revoke` come with it. The bot polls
+            # every 15 minutes, so this is one bad read away at all times.
+            _log.error(
+                f"registry unreadable ({type(exc).__name__}: {exc}) - starting empty, "
+                "which will be SAVED OVER the stored record: the master and every pending "
+                "request are lost and the next /start claims the master seat",
+                exc_info=True,
+            )
         return Registry()
 
 

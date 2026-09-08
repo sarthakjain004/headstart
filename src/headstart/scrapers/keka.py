@@ -108,14 +108,14 @@ class KekaScraper(BaseScraper):
             # in the index indefinitely. It is still worth a line — the two markers differ, and
             # "Forbidden Access" on a Board that was serving jobs yesterday is a portal someone
             # switched off, not a tenant that left.
-            self.warn_unreadable_board("the portal-info JSON", f"a {marker!r} page")
+            self.note_unreadable_board("the portal-info JSON", f"a {marker!r} page")
             return []
         tenant = self._tenant_uuid(info)
         if not tenant:
             # The portal answered and did *not* say it was dead, so the Board is alive and its
             # postings are simply unreachable without the uuid — a short list, not an empty one
             # (ADR-0053), or `sync` reads every one of them as a delisting.
-            self.warn_unreadable_board(
+            self.note_unreadable_board(
                 "an org uuid in careerportalinfo or the careers page", "neither"
             )
             self.mark_truncated(

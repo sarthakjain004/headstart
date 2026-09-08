@@ -878,7 +878,6 @@ def backfill_from_store(args: argparse.Namespace) -> int:
 
 def main() -> int:
     log.setup()
-    observability.context("index")
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -974,6 +973,10 @@ def main() -> int:
     p_backfill.set_defaults(fn=backfill_from_store)
 
     args = ap.parse_args()
+    # After parsing, not before it: one entry point runs four different passes, and `stage=index`
+    # alone cannot say which of them a log belongs to — `sync` and `prune` even run back to back
+    # in the same `merge` job. Same reason `update_ledgers` rides its ledger name.
+    observability.context("index", step=args.step)
     return args.fn(args)
 
 

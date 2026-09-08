@@ -110,23 +110,30 @@ class JoinScraper(BaseScraper):
     def _detail_url(self, jid: str) -> str:
         return f"https://join.com/api/public/jobs/{jid}?locale=en"
 
-    @staticmethod
-    def _extract_description(response: Any) -> str | None:
-        """Description, or intro/tasks/requirements joined, from a detail response (None on non-200)."""
+    def _extract_description(self, response: Any) -> str | None:
+        """Description, or intro/tasks/requirements joined, from a detail response (None on
+        non-200), with every ``None`` labelled by what lost it — an instance method for that
+        reason (:meth:`~BaseScraper.note_detail_loss`): a refused Board and a Board whose
+        postings simply carry no body count the same in a bare gap total."""
         if response.status_code != 200:
+            self.note_detail_loss(f"HTTP {response.status_code}")
             return None
         d = response.json()
-        return (
+        text = (
             d.get("description")
             or "\n\n".join(
                 s for s in (d.get("intro"), d.get("tasks"), d.get("requirements")) if s
             )
             or None
         )
+        if text is None:
+            self.note_detail_loss("no description on a 200")
+        return text
 
     def _job_description(self, jid) -> str | None:
         """GET one posting's detail and return its description body (None on failure). Sync path."""
         if not jid:
+            self.note_detail_loss("no job id")
             return None
         try:
             resp = http.fetch(
@@ -135,13 +142,15 @@ class JoinScraper(BaseScraper):
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 timeout=30,
             )
-        except http.RequestsError:
+        except http.RequestsError as exc:
+            self.note_detail_loss(type(exc).__name__)
             return None
         return self._extract_description(resp)
 
     async def _job_description_async(self, session: Any, jid) -> str | None:
         """Same as :meth:`_job_description` but over the shared multiplexed ``AsyncSession``."""
         if not jid:
+            self.note_detail_loss("no job id")
             return None
         try:
             resp = await http.fetch_async(
@@ -151,7 +160,8 @@ class JoinScraper(BaseScraper):
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 timeout=30,
             )
-        except http.RequestsError:
+        except http.RequestsError as exc:
+            self.note_detail_loss(type(exc).__name__)
             return None
         return self._extract_description(resp)
 

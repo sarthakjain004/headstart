@@ -42,6 +42,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from headstart import http
 from headstart.models import Job, host_of, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
@@ -247,23 +248,38 @@ class OracleScraper(BaseScraper):
             f'recruitingCEJobRequisitionDetails?onlyData=true&expand=all&finder=ById;Id="{job_id}"'
         )
 
-    @staticmethod
-    def _first_item(body: str) -> dict | None:
+    def _first_item(self, body: str) -> dict | None:
         """The one requisition in a detail response, or None if it carried none.
 
         An unknown id is **not** a 404 — it answers 200 with ``items: []`` — so an empty list is a
-        real outcome to fold into the detail-gap count, not an error to raise on.
+        real outcome to fold into the detail-gap count, not an error to raise on. It is labelled
+        rather than merely counted, because a Board whose ids have all gone stale and a Board the
+        pod is refusing produce the same number of gaps and call for opposite responses
+        (:meth:`~BaseScraper.note_detail_loss`).
         """
         items = json.loads(body).get("items") or []
-        return items[0] if items else None
+        if not items:
+            self.note_detail_loss("no items on a 200")
+            return None
+        return items[0]
 
     def _detail(self, job_id: str) -> dict | None:
-        return self._first_item(self._get(self._detail_url(job_id)))
+        try:
+            body = self._get(self._detail_url(job_id))
+        except http.RequestsError as exc:
+            # `fan_out` turns the raise into this same None; caught here so the cause travels
+            # with the count rather than only the count.
+            self.note_detail_loss(type(exc).__name__)
+            return None
+        return self._first_item(body)
 
     async def _detail_async(self, session: Any, job_id: str) -> dict | None:
-        return self._first_item(
-            await self._get_async(session, self._detail_url(job_id))
-        )
+        try:
+            body = await self._get_async(session, self._detail_url(job_id))
+        except http.RequestsError as exc:
+            self.note_detail_loss(type(exc).__name__)
+            return None
+        return self._first_item(body)
 
     def job_url(self, job_id: str) -> str:
         """The careers-UI page for one posting.

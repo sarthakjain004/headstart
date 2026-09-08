@@ -46,6 +46,14 @@ _SHARD_REPORT = "_shard_report.json"
 def context(stage: str, **extra: Any) -> None:
     """One line naming the run this log belongs to. Silent off CI, where it is noise.
 
+    ``stage`` is **the calling module's own name** — ``scrape_run``, never ``scrape``;
+    ``scrape_join``, never ``join``. The workflow's job names are the tempting alternative and
+    they name a different thing: ``join`` is one Actions job running seven of these modules, so a
+    log grepped by job answers "which runner" and a log grepped by stage answers "which code",
+    and a vocabulary mixing the two answers neither. Where one module is several passes behind
+    one entry point the pass rides as an ``extra`` instead of in ``stage`` — ``index``'s
+    ``step=``, ``update_ledgers``' ``ledger=``. ``tests/test_log_contract.py`` enforces the rule.
+
     No bracketed prefix of its own: ADR-0039 fixes one line format whose only tag is the
     module's name, which the formatter already supplies. ``stage`` rides as a field.
     """

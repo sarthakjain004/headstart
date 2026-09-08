@@ -59,6 +59,11 @@ def _loss_breakdown(losses: Counter[str], missing: int) -> str:
     ``unlabelled`` rather than dropped, so a partial tally cannot read as a full account of
     ``missing``. A scraper that never calls :meth:`BaseScraper.note_detail_loss` gets nothing
     appended, which is why every unmigrated scraper's line is byte-identical to before.
+
+    The tail names how much the four leave out, not merely *that* they leave something out: a
+    bare ``…`` says a fifth cause exists and nothing about its size, so a long tail that
+    outweighs everything shown reads as a footnote. With the residual stated, the four shown
+    plus the tail always sum to ``missing``.
     """
     if not losses:
         return ""
@@ -69,7 +74,8 @@ def _loss_breakdown(losses: Counter[str], missing: int) -> str:
     shown = tally.most_common(4)
     why = ", ".join(f"{cause} x{n}" for cause, n in shown)
     if len(tally) > len(shown):
-        why += ", …"
+        rest = sum(tally.values()) - sum(n for _, n in shown)
+        why += f", …{len(tally) - len(shown)} more cause(s) x{rest}"
     return f" ({why})"
 
 
@@ -174,7 +180,7 @@ class BaseScraper(ABC):
         if self.truncated is None:
             self.truncated = why
 
-    def warn_unreadable_board(self, expected: str, got: str) -> None:
+    def note_unreadable_board(self, expected: str, got: str) -> None:
         """Say, before returning nothing, that this Board could not be *read* — which is not
         the same fact as this Board having nothing open, though downstream they are identical.
 
@@ -188,8 +194,15 @@ class BaseScraper(ABC):
         for, and the shape that came back), because "no jobs" alone cannot be acted on. This does
         not mark the Board truncated: whether an unread Board is a *departed* one is per-ATS and
         measured per-ATS, so the scraper that knows makes that call beside this line.
+
+        INFO, not WARNING, and named ``note_`` rather than ``warn_`` to say so. An unreadable
+        Board is routine at this scale, not exceptional — the committed liveness ledgers carry
+        423 live freshteam rows and 95 live keka rows at ``jobs=0`` — and under Actions a
+        WARNING is an annotation against a hard quota (10 per step, 50 per run), so a line that
+        can fire once per Board spends the run's whole budget on the routine case and displaces
+        the aborts the quota exists for (ADR-0039's 2026-09-08 amendment).
         """
-        self._log.warning(
+        self._log.info(
             f"{self.board_key()}: read no jobs — expected {expected}, got {got}"
         )
 

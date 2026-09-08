@@ -355,7 +355,7 @@ class PersonioScraper(BaseScraper):
                 # The bare feed's positions are already in hand and every description it did
                 # carry is still correct. Losing them to a flake on a secondary request would
                 # trade a partial gap for a total one.
-                _log.warning(f"{self.slug}: ?language={lang} failed ({exc})")
+                _log.info(f"{self.slug}: ?language={lang} failed ({exc})")
                 continue
             for pos in alt.findall("position"):
                 jid = _text(pos, "id")

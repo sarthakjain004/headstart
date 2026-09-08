@@ -41,9 +41,32 @@ and the message body as it really appears. Four checks run over it:
 sentence-transformers) cannot be imported here at all, and several other lines sit inside a
 `main()` that wants a real ledger on disk. Those entries are source-verified: check 2 pins their
 wording, check 1 pins the shape the pattern reads out of it. Entries carrying `emit=` add check 3
-on top. Source-verification is the weaker kind — it cannot notice that a *value* changed shape
-(a count gaining thousands separators, say) — so prefer `emit=` whenever an emitter becomes
-cheaply callable, and treat a growing source-verified set as debt.
+on top, so prefer `emit=` whenever an emitter becomes cheaply callable, and treat a growing
+source-verified set as debt.
+
+**Where the line between them actually falls is *values*.** Check 2 reads format strings, so `{n}`
+becoming `{n:,}` leaves every literal around the placeholder untouched and sails through. Check 3
+reads the rendered line, so it can catch that — but only when the fixture's own number renders
+differently, and `{12:,}` is still `12`. Measured, not assumed: rewriting `scrape_run`'s job count
+as `{progress.jobs:,}` left this file green while `run_logs.DONE` provably no longer matched the
+line, because the fixture's shard had scraped 12 jobs. Every `emit=` fixture's counts are
+four-figure for that reason. Three kinds of number stay below the line and a `:,` on one of them
+would still pass: a per-run shard count (15 at most), `QUARANTINE_AT` (a five-strike streak), and
+anything rendered through a float format — a minute figure, a percentage, an actual/predicted
+ratio. Raising those would make the fixture lie about the pipeline rather than about the format
+string, which is a worse trade than the gap.
+
+**Neither check reads `body` against what the emitter produced**, either: check 1 matches the
+pattern against `body` and check 3 matches it against the real records, but nothing asserts the
+two are the same string. `body` is documentation, and it is only as honest as the person who last
+edited the fixture beside it.
+
+**One thing this file pins is not in the table at all**: the `stage= run= attempt=` line every
+ingest entry point opens with (`observability.context`). No analyser parses it — a human greps it
+— so it has no CONTRACT row and no regex to drift against. What it can lose instead is its
+*vocabulary*, and it had: ten call sites saying the module's name, three borrowing
+`pipeline.yml`'s job name, and one hyphenated and alone in that. The last two tests in this file
+hold every call site to one rule, and catch an entry point that ships without the line at all.
 
 ## Adding a line
 
@@ -143,6 +166,10 @@ def _scrape_shard(
 ) -> None:
     """Run one scrape shard's whole end-of-run report — six patterns read this one call.
 
+    Every count here is deliberately four-figure. Check 3 only sees a value's *rendering*, so a
+    fixture in single digits cannot notice one gaining thousands separators: `{12:,}` is still
+    `12`, and this shard used to scrape 12 jobs from 2 boards.
+
     `retry_stats` is stubbed rather than driven through `http.fetch`: the retries line is formatted
     by `_report` itself, which is the part under contract, and reaching it for real would need a
     rate-limiting origin.
@@ -152,17 +179,34 @@ def _scrape_shard(
     monkeypatch.setattr(
         scrape_run.http,
         "retry_stats",
-        lambda: Counter({"429-ratelimit": 7, "5xx": 2}),
+        lambda: Counter({"429-ratelimit": 1207, "5xx": 2393}),
     )
-    progress = scrape_run._Progress(4)
+    progress = scrape_run._Progress(2400)
     if boards:
-        # 130s clears `_SLOW_BOARD_S` (120), which is what emits the `slow board` line.
-        progress.on_board("workday:acme/External", 12, None, 130.0)
-        progress.on_board("lever:beta", 0, "HTTPError: HTTP Error 404: Not Found", 3.0)
+        # 2393s clears `_SLOW_BOARD_S` (120), which is what emits the `slow board` line.
+        progress.on_board("workday:acme/External", 1204, None, 2393.0)
+        progress.on_board(
+            "lever:beta", 0, "HTTPError: HTTP Error 404: Not Found", 1207.0
+        )
+        # The other 2,300 Boards, poked into the counters instead of driven through `on_board`.
+        # `_report` reads only these aggregates, the two lines `on_board` writes for itself are
+        # already pinned by the two real calls above, and 2,300 more records in `caplog` would
+        # bury the assertion message under the shard's whole log on every failure in this file.
+        # A four-figure error count is not contrived: it is one ATS walling this project's
+        # egress, and it is the only way `(N board errors)` clears 999 as well.
+        progress.seconds.extend([1.0] * 1200 + [2.0] * 1100)
+        progress.jobs += 1200 * 3
+        progress.boards_ok.extend(f"greenhouse:ok-{n}" for n in range(1200))
+        progress.errors.update(
+            {
+                f"workable:walled-{n}": "HTTPError: HTTP Error 429: Too Many Requests"
+                for n in range(1100)
+            }
+        )
     scrape_run._report(
         progress,
         tmp_path,
-        elapsed=903.0,
+        elapsed=3603.0,
         predicted=predicted,
         serial=136.3 if predicted else None,
         killed=killed,
@@ -187,17 +231,26 @@ def _shard_no_boards(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _shard_report(**over: object) -> dict:
-    """One shard's telemetry as `observability.write_shard` records it."""
+    """One shard's telemetry as `observability.write_shard` records it.
+
+    Four figures of Boards attempted and errors raised, for the reason `_scrape_shard` gives: the
+    run-level digest built from this counts both, and neither count can be checked for thousands
+    separators from a fixture that stays under 999.
+    """
     return {
         "shard": 0,
         "seconds": 903,
-        "done": 1200,
+        "done": 18422,
         "undone": 3,
         "killed_by_budget": True,
         "deferred": ["workday:dollartree/dollartreeus"],
         "errors": {
             "lever:beta": "HTTPError: HTTP Error 404: Not Found",
             "greenhouse:gamma": "ReadTimeout: timed out",
+            **{
+                f"lever:bulk-{n}": "HTTPError: HTTP Error 404: Not Found"
+                for n in range(1202)
+            },
         },
         "retries": {"429-ratelimit": 7},
         "board_seconds": {"p50": 1.2, "max": 2393.0},
@@ -224,25 +277,37 @@ def _join_fanout_nothing_attempted(
 
 
 def _ledger_failures(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`update_ledgers failures` over one shard: one gone board, one that did not read as gone.
+    """`update_ledgers failures` over one shard: boards read as gone, and boards that were not.
 
-    The ledger is seeded one strike short of `QUARANTINE_AT` so this run's 404 quarantines it and
-    the capped per-Board sample line is emitted too.
+    Every board here is seeded one strike short of `QUARANTINE_AT` so this run's 404 quarantines
+    it and the capped per-Board sample line is emitted too; `lever:beta` is named rather than
+    numbered because that line samples `sorted(quarantined)[:20]` and `beta` sorts ahead of the
+    bulk. The `ashby:alive-*` rows exist only to be cleared, which is the one count on the
+    `failures:` line no other input reaches.
+
+    The bulk is four-figure for the reason `_scrape_shard` gives, and at a realistic magnitude:
+    the real ledger carries a row per Board that has ever 404'd across ~20k Scrapable Boards.
     """
     import argparse
 
     from headstart.ingest import board_failures, update_ledgers
 
+    gone = "HTTPError: HTTP Error 404: Not Found"
     fragments = tmp_path / "fragments"
     (fragments / "shard-0").mkdir(parents=True)
     (fragments / "shard-0" / "_shard_report.json").write_text(
         json.dumps(
             {
                 "errors": {
-                    "lever:beta": "HTTPError: HTTP Error 404: Not Found",
+                    "lever:beta": gone,
                     "greenhouse:gamma": "ReadTimeout: timed out",
+                    **{f"lever:gone-{n}": gone for n in range(1203)},
+                    **{
+                        f"greenhouse:slow-{n}": "ReadTimeout: timed out"
+                        for n in range(1010)
+                    },
                 },
-                "boards_ok": [],
+                "boards_ok": [f"ashby:alive-{n}" for n in range(1150)],
             }
         ),
         encoding="utf-8",
@@ -250,14 +315,17 @@ def _ledger_failures(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     jobs = tmp_path / "jobs"
     jobs.mkdir()
     ledger = tmp_path / "board_failures.csv"
+    row = functools.partial(
+        board_failures.Failure,
+        strikes=board_failures.QUARANTINE_AT - 1,
+        last_seen_gone="2026-09-01T00:00:00+00:00",
+    )
     board_failures.save(
         ledger,
         {
-            "lever:beta": board_failures.Failure(
-                strikes=board_failures.QUARANTINE_AT - 1,
-                last_reason="HTTPError: HTTP Error 404: Not Found",
-                last_seen_gone="2026-09-01T00:00:00+00:00",
-            )
+            "lever:beta": row(last_reason=gone),
+            **{f"lever:gone-{n}": row(last_reason=gone) for n in range(1203)},
+            **{f"ashby:alive-{n}": row(last_reason=gone) for n in range(1150)},
         },
     )
     update_ledgers.failures(
@@ -290,9 +358,9 @@ CONTRACT: tuple[Line, ...] = (
         consumer="run_logs.DONE",
         emitter=_SCRAPE_RUN,
         body=(
-            "done: 12 jobs from 2 boards in 903s (1 board errors) | board seconds "
-            "{'p50': 130.0, 'p90': 130.0, 'p99': 130.0, 'max': 130.0} | predicted 20.3 min, "
-            "actual/predicted 0.74x"
+            "done: 4804 jobs from 2302 boards in 3603s (1101 board errors) | board seconds "
+            "{'p50': 1.0, 'p90': 2.0, 'p99': 2.0, 'max': 2393.0} | predicted 20.3 min, "
+            "actual/predicted 2.96x"
         ),
         why="the full shape: percentiles present and the planner's predicted/actual tail present",
         emit=_shard_full,
@@ -301,8 +369,8 @@ CONTRACT: tuple[Line, ...] = (
         consumer="run_logs.DONE",
         emitter=_SCRAPE_RUN,
         body=(
-            "done: 12 jobs from 2 boards in 903s (1 board errors) | board seconds "
-            "{'p50': 130.0, 'p90': 130.0, 'p99': 130.0, 'max': 130.0}"
+            "done: 4804 jobs from 2302 boards in 3603s (1101 board errors) | board seconds "
+            "{'p50': 1.0, 'p90': 2.0, 'p99': 2.0, 'max': 2393.0}"
         ),
         why="no plan estimate: the `| predicted ... actual/predicted ...x` tail is omitted",
         emit=_shard_unpredicted,
@@ -310,7 +378,7 @@ CONTRACT: tuple[Line, ...] = (
     Line(
         consumer="run_logs.DONE",
         emitter=_SCRAPE_RUN,
-        body="done: 0 jobs from 0 boards in 903s (0 board errors) | board seconds {}",
+        body="done: 0 jobs from 0 boards in 3603s (0 board errors) | board seconds {}",
         why=(
             "zero boards finished: `percentiles([])` is `{}`, so the dict group must be `[^}]*`. "
             "With `+` the shard vanishes from every table AND from the run totals"
@@ -320,14 +388,14 @@ CONTRACT: tuple[Line, ...] = (
     Line(
         consumer="fanout_timing.SLOW_BOARD",
         emitter=_SCRAPE_RUN,
-        body="slow board workday:acme/External: 12 jobs in 130s",
+        body="slow board workday:acme/External: 1204 jobs in 2393s",
         why="the floor-ratio input; INFO by design (ADR-0039) so it never spends an annotation",
         emit=_shard_full,
     ),
     Line(
         consumer="fanout_errors.FAILED",
         emitter=_SCRAPE_RUN,
-        body="lever:beta failed after 3s: HTTPError: HTTP Error 404: Not Found",
+        body="lever:beta failed after 1207s: HTTPError: HTTP Error 404: Not Found",
         why="the per-board live failure line, logged as it happens rather than at the end",
         emit=_shard_full,
     ),
@@ -335,8 +403,8 @@ CONTRACT: tuple[Line, ...] = (
         consumer="fanout_errors.KILLED",
         emitter=_SCRAPE_RUN,
         body=(
-            "time budget reached after 15.1 min — banking a partial fragment; 2/4 boards done, "
-            "2 deferred to the next run"
+            "time budget reached after 60.0 min — banking a partial fragment; 2302/2400 boards "
+            "done, 98 deferred to the next run"
         ),
         why="the budget kill that banks a partial fragment",
         emit=_shard_full,
@@ -351,14 +419,14 @@ CONTRACT: tuple[Line, ...] = (
     Line(
         consumer="fanout_errors.ERR_DIGEST",
         emitter=_SCRAPE_RUN,
-        body="1 board errors: 1 HTTPError (lever 1)",
+        body="1101 board errors: 1101 HTTPError (workable 1100, lever 1)",
         why="the per-shard digest, distinct from the join's run-level one below",
         emit=_shard_full,
     ),
     Line(
         consumer="fanout_retries.RETRIES",
         emitter=_SCRAPE_RUN,
-        body="retries: 429-ratelimit 7, 5xx 2 (total 9)",
+        body="retries: 429-ratelimit 1207, 5xx 2393 (total 3600)",
         why="`([^(]+)` stops at the `(total N)` tail, so the class list must not contain a paren",
         emit=_shard_full,
     ),
@@ -366,14 +434,20 @@ CONTRACT: tuple[Line, ...] = (
     Line(
         consumer="fanout_errors.JOIN_ERR_DIGEST",
         emitter=_SCRAPE_JOIN,
-        body="2 board errors across 1 shards (0.2% of 1200 attempted): 1 HTTPError (lever 1); 1 ReadTimeout (greenhouse 1)",
+        body=(
+            "1204 board errors across 1 shards (6.5% of 18422 attempted): "
+            "1203 HTTPError (lever 1203); 1 ReadTimeout (greenhouse 1)"
+        ),
         why="the run-level digest WITH its rate clause — a count alone cannot say if a run is bad",
         emit=_join_fanout,
     ),
     Line(
         consumer="fanout_errors.JOIN_ERR_DIGEST",
         emitter=_SCRAPE_JOIN,
-        body="2 board errors across 1 shards: 1 HTTPError (lever 1); 1 ReadTimeout (greenhouse 1)",
+        body=(
+            "1204 board errors across 1 shards: 1203 HTTPError (lever 1203); "
+            "1 ReadTimeout (greenhouse 1)"
+        ),
         why=(
             "no Board was finished, so `attempted` is 0 and the rate clause is omitted. A pattern "
             "requiring it drops the line instead of erroring"
@@ -385,8 +459,8 @@ CONTRACT: tuple[Line, ...] = (
         consumer="fanout_errors.FAILURES",
         emitter=_LEDGERS,
         body=(
-            "failures: 1 of 2 board error(s) read as gone (404/410) across 1 shard(s) | "
-            "1 ledger rows (0 cleared by a successful scrape) | 1 at/over 5 strikes -> "
+            "failures: 1204 of 2215 board error(s) read as gone (404/410) across 1 shard(s) | "
+            "1204 ledger rows (1150 cleared by a successful scrape) | 1204 at/over 5 strikes -> "
             "board_failures.csv"
         ),
         why=(
@@ -398,7 +472,7 @@ CONTRACT: tuple[Line, ...] = (
     Line(
         consumer="fanout_errors.UNMATCHED",
         emitter=_LEDGERS,
-        body="  1 error(s) did not read as gone; top classes: greenhouse ReadTimeout x1",
+        body="  1011 error(s) did not read as gone; top classes: greenhouse ReadTimeout x1011",
         why="the gone-matcher's blind spot; a 404-ish class here run after run is the signal",
         emit=_ledger_failures,
     ),
@@ -1380,4 +1454,82 @@ def test_every_runlog_pattern_is_accounted_for() -> None:
     )
     assert all(reason.strip() for reason in EXEMPT.values()), (
         "every EXEMPT pattern needs a reason — an unexplained exemption is how a dead regex hides"
+    )
+
+
+# --------------------------------------------------------------------------------------------
+# The correlation vocabulary — not a `scripts/runlog/` pattern, but the same failure mode.
+# --------------------------------------------------------------------------------------------
+
+_INGEST = _ROOT / "src" / "headstart" / "ingest"
+
+
+def _ingest_modules() -> dict[str, ast.Module]:
+    """Every module under `src/headstart/ingest/`, parsed — read, never imported.
+
+    Same reason as `_emitter_strings`: `index`, `role_trends` and `embed_run` need
+    lancedb/numpy/torch, which CI does not install, and a check that skips in CI is not a check.
+    """
+    return {
+        path.stem: ast.parse(path.read_text(encoding="utf-8"), str(path))
+        for path in sorted(_INGEST.glob("*.py"))
+    }
+
+
+def _context_stages() -> dict[str, str]:
+    """The literal each module passes as `observability.context`'s `stage`, by module name."""
+    found: dict[str, str] = {}
+    for module, tree in _ingest_modules().items():
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "context"
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+            ):
+                found[module] = node.args[0].value
+    return found
+
+
+_STAGES = sorted(_context_stages().items())
+
+
+@pytest.mark.parametrize(("module", "stage"), _STAGES, ids=[m for m, _ in _STAGES])
+def test_the_stage_field_is_the_module_name(module: str, stage: str) -> None:
+    """`stage=` is the emitting module's own name, so that grepping it asks one question.
+
+    These values had drifted into three vocabularies at once: `scrape-plan` hyphenated and alone
+    in that, `scrape`/`join`/`embed` borrowed from `pipeline.yml`'s job names, and the other ten
+    the module name verbatim. A job is not a stage — `join` is one runner executing seven of
+    these modules — so a grep across the mix answered neither "which runner" nor "which code".
+    """
+    assert stage == module, (
+        f"{module}.py logs `stage={stage}`, but the rule is the module's own name, "
+        f"`stage={module}` — `observability.context`'s docstring says why. A module running "
+        "several passes puts the pass in an extra field (`step=`, `ledger=`), not in `stage`."
+    )
+
+
+def test_every_ingest_entry_point_opens_with_a_context_line() -> None:
+    """Without it a stage's log says nothing about which run, attempt or shard produced it.
+
+    GitHub stamps every raw line with a timestamp and nothing else, and thirty shards write into
+    one run. `context` is the only line that closes that, so every module runnable as `python -m
+    headstart.ingest.<module>` — which is every module here with a `main()` — has to call it.
+    This is also what stops the parametrized rule above going vacuously green if the walk above
+    ever stops finding call sites.
+    """
+    entry_points = {
+        module
+        for module, tree in _ingest_modules().items()
+        if any(
+            isinstance(node, ast.FunctionDef) and node.name == "main"
+            for node in tree.body
+        )
+    }
+    missing = sorted(entry_points - set(_context_stages()))
+    assert not missing, (
+        "these `python -m headstart.ingest.*` entry points never call `observability.context`, "
+        f"so nothing in their logs says which run, attempt or shard wrote them: {missing}"
     )

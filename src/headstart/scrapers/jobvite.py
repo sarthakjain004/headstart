@@ -306,7 +306,7 @@ class JobviteScraper(BaseScraper):
         self.mark_truncated(
             f"stopped at the {_MAX_PAGES}-page cap with a next link still offered"
         )
-        _log.warning(
+        _log.info(
             f"{self.board_key()}: hit the {_MAX_PAGES}-page walk cap after {len(ids)} postings "
             f"(the board's own counter stated {stated})"
         )
@@ -363,9 +363,10 @@ class JobviteScraper(BaseScraper):
                 timeout=30,
                 **self._egress(),
             )
-        except http.RequestsError:
+        except http.RequestsError as exc:
+            self.note_detail_loss(type(exc).__name__)
             return None
-        return self._posting_of(response.text) if response.status_code == 200 else None
+        return self._read_posting(response)
 
     async def _posting_async(self, session: Any, job_id: str) -> dict | None:
         """Same as :meth:`_fetch_posting` over the shared multiplexed ``AsyncSession``."""
@@ -378,9 +379,25 @@ class JobviteScraper(BaseScraper):
                 timeout=30,
                 **self._egress(),
             )
-        except http.RequestsError:
+        except http.RequestsError as exc:
+            self.note_detail_loss(type(exc).__name__)
             return None
-        return self._posting_of(response.text) if response.status_code == 200 else None
+        return self._read_posting(response)
+
+    def _read_posting(self, response: Any) -> dict | None:
+        """One detail page's posting, with a ``None`` labelled by what lost it.
+
+        Load-bearing here — the listing carries no title, so a lost page is a dropped Job and a
+        marked truncation — which makes "refused" versus "arrived and did not parse" the
+        difference between waiting out an origin and fixing a parser.
+        """
+        if response.status_code != 200:
+            self.note_detail_loss(f"HTTP {response.status_code}")
+            return None
+        posting = self._posting_of(response.text)
+        if posting is None:
+            self.note_detail_loss("no posting on a 200")
+        return posting
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         postings = raw.get("postings") or {}
