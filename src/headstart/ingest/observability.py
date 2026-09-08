@@ -107,11 +107,21 @@ def read_shards(fragments: Path) -> list[dict]:
     A missing or corrupt report is skipped with a warning rather than raising: the join's job
     is to union job data, and it must not die because a shard's telemetry did."""
     out: list[dict] = []
+    unreadable: list[str] = []
     for path in sorted(fragments.glob(f"*/{_SHARD_REPORT}")):
         try:
             out.append(json.loads(path.read_text(encoding="utf-8")))
         except (OSError, json.JSONDecodeError) as exc:
-            _log.warning(f"unreadable shard report {path}: {exc}")
+            unreadable.append(f"{path.parent.name} ({type(exc).__name__})")
+    if unreadable:
+        # One warning for the set, not one per shard. A fan-out has ~15 shards and a WARNING
+        # is an annotation under Actions, capped at 10 per step — so the per-shard form could
+        # spend the join's whole budget reporting that telemetry was missing, and bury the
+        # join's own errors doing it. The names still ride, via the helper below.
+        _log.warning(
+            f"{len(unreadable)} shard report(s) unreadable, so their telemetry is missing "
+            f"from this run's totals: {named_sample(unreadable)}"
+        )
     return out
 
 

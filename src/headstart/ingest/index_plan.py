@@ -311,8 +311,12 @@ def live_keep_set(ledger_dir: str | Path) -> set[str]:
             # step's whole GitHub budget (10 per step, 50 per job) restating one bug. The first
             # stack says what broke; the summary below says how far it reached.
             keyless.append(f"{company.ats}:{company.slug}")
-            log_first = _log.warning if len(keyless) == 1 else _log.info
-            log_first(f"keep-set: no board_key for {keyless[-1]}", exc_info=True)
+            first = len(keyless) == 1
+            emit = _log.warning if first else _log.info
+            # The traceback is bound to the same first occurrence as the level. Leaving
+            # `exc_info` unconditional would bound the annotations and not the stacks, which
+            # is the same flood one indirection later — a stack per Board rather than a line.
+            emit(f"keep-set: no board_key for {keyless[-1]}", exc_info=first)
             continue
     if len(keyless) > 1:
         # "Scrapable Board", the term `index prune`'s own keep-set line uses and the one

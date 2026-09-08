@@ -679,3 +679,34 @@ def test_grace_period_buckets_are_disjoint_for_a_scope_excluded_board():
     assert reappeared + still_waiting <= len(was_unconfirmed), (
         "buckets must not overlap"
     )
+
+
+def test_only_the_first_keyless_board_carries_a_stack(monkeypatch, caplog):
+    """The traceback is bound to the same first occurrence as the level.
+
+    Bounding the level alone leaves the stacks unbounded, which is the same flood one
+    indirection later: a scraper whose `board_key` starts raising fails on every row it
+    owns, and `exc_info=True` would then print a full traceback per Board. Harmless while
+    the formatter silently dropped `exc_info`; a real flood once it renders them."""
+    import logging
+
+    from headstart import config
+    from headstart.ingest import index_plan
+
+    def explode(*_args, **_kwargs):
+        raise ValueError("no key")
+
+    monkeypatch.setattr(index_plan, "get_scraper", explode)
+    companies = [config.CompanyRef(ats="keka", slug=f"acme{n}") for n in range(4)]
+    monkeypatch.setattr(index_plan, "load_active_companies", lambda *a, **k: companies)
+
+    with caplog.at_level(logging.INFO, logger="headstart.ingest.index_plan"):
+        index_plan.live_keep_set("data/validate/liveness")
+
+    keyless = [r for r in caplog.records if "no board_key for" in r.getMessage()]
+    assert len(keyless) == 4, "every failing Board should still be named"
+    assert sum(bool(r.exc_info) for r in keyless) == 1, (
+        "exactly one stack, not one per Board"
+    )
+    assert keyless[0].levelno == logging.WARNING
+    assert all(r.levelno == logging.INFO for r in keyless[1:])
