@@ -22,7 +22,11 @@ import json
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from headstart import log
+
 from .store import read_bytes, write_bytes
+
+_log = log.get(__name__)
 
 PATH = "telegram/registry.json"
 
@@ -103,8 +107,13 @@ def load(repo: str, token: str) -> Registry:
     except ImportError:
         raise
     except Exception as exc:  # noqa: BLE001 — absent on first run is the normal case
-        print(
-            f"[bot] no registry yet ({type(exc).__name__}) - starting empty", flush=True
+        # Absent, corrupt and Hub-unreachable all land here and all answer "starting empty",
+        # which `bot.main` then *saves* over the stored record — so a read blip is written
+        # down as a bot with no master and nobody pending. The exception type is the only
+        # thing that separates the first-run case from the two that destroy state.
+        _log.error(
+            f"registry unreadable ({type(exc).__name__}: {exc}) - starting empty",
+            exc_info=True,
         )
         return Registry()
 

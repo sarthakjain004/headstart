@@ -97,12 +97,27 @@ class FreshteamScraper(BaseScraper):
 
     def fetch_raw(self) -> Any:
         """The widget payload, or ``{}`` for a dead tenant. An unknown slug returns an HTML 404
-        at HTTP 200, so a JSON decode failure (or a non-object body) means no public board."""
+        at HTTP 200, so a JSON decode failure (or a non-object body) means no public board.
+
+        Both exits are logged rather than silent: ``{}`` parses to zero jobs, which downstream is
+        the same fact as a Board with nothing open, and the difference is the whole reason the
+        module docstring's "treats as an empty board" was worth writing down. Neither marks the
+        Board truncated — the measured meaning of a non-JSON body here is a dead tenant, and
+        truncating would hold its rows in the index for as long as the slug stays in the ledger.
+        """
         try:
             data = json.loads(self._get())
         except json.JSONDecodeError:
+            self.warn_unreadable_board(
+                "the widget's jobs.json", "HTML (the soft 404 page)"
+            )
             return {}
-        return data if isinstance(data, dict) else {}
+        if not isinstance(data, dict):
+            self.warn_unreadable_board(
+                "the widget's jobs.json object", f"a bare {type(data).__name__}"
+            )
+            return {}
+        return data
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         branch_loc = {b["id"]: _branch_location(b) for b in raw.get("branches") or []}

@@ -12,9 +12,12 @@ approvals (ADR-0038) — and each Subscription is delivered by exactly one Trans
 single Watermark stays meaningful.
 
 One Subscription's failure never stops the rest, and a Subscription that fails is left with
-its Watermark untouched, so the next run retries exactly the window it missed. Progress
-prints per Subscription and flushes, per the repo's streaming-output rule — a run that
-printed only at the end would hide which record was mid-flight when it died.
+its Watermark untouched, so the next run retries exactly the window it missed. Progress is
+logged around each delivery, per the repo's streaming-output rule: one line *before* the
+send names the Subscription, its Transport and how much it is about to carry, and one line
+after names the Watermark it advanced to. A run that logged only after the send would name
+the previous Subscription when it died mid-flight, and would leave "why did this person get
+a duplicate" unanswerable.
 """
 
 from __future__ import annotations
@@ -24,9 +27,13 @@ import sys
 from collections.abc import Mapping
 from dataclasses import replace
 
+from headstart import log
+
 from . import digest, space_query, transports
 from .shortlist import CAP, shortlist
 from .store import Invite, Store, Subscription, now_iso, subscription_id
+
+_log = log.get(__name__, __spec__)
 
 _REQUIRED = ("SUBSCRIBERS_REPO", "SUBSCRIBERS_TOKEN")
 
@@ -82,6 +89,15 @@ def send_one(
     if not picked:
         return 0
 
+    # Said before the send, not after: this is the slow call — a cold Space, then Resend or
+    # Telegram — so it is the one a killed run is most likely to be inside, and only a line
+    # already written names the record that was mid-flight. Both counts are here because the
+    # Digest states `len(ranked)` in its subject while the run's tally counts `len(picked)`,
+    # and a log carrying one of them cannot be reconciled with the other.
+    _log.info(
+        f"{sub.id}: sending {len(picked)} of {len(ranked)} match(es) "
+        f"({len(rows)} row(s) from the Space) by {transport.name}"
+    )
     transport.send(
         sub,
         picked,
@@ -92,7 +108,9 @@ def send_one(
     # Only now: the send is the thing that must not be lost.
     sub.watermark = cutoff
     store.put(sub)
-    print(f"[alerts] {sub.id}: delivered by {transport.name}", flush=True)
+    # The new Watermark is the whole answer to "why did they get a duplicate / miss a
+    # window" — it is what the next run searches from, and nothing else records it.
+    _log.info(f"{sub.id}: delivered by {transport.name}, watermark -> {cutoff}")
     return len(picked)
 
 
@@ -124,10 +142,9 @@ def subscription_for(
             # Not "no query set yet" — they have a Query, and we are declining to act on it.
             # Say which, because ADR-0069's whole argument is that this class of desync costs
             # so much precisely because it is invisible.
-            print(
-                f"[alerts] {account}: has Saved sets, email not enabled from the Matches tab"
-                " - skipped",
-                flush=True,
+            _log.warning(
+                f"{account}: has Saved sets, email not enabled from the Matches tab"
+                " - skipped"
             )
         # ADR-0069: once an Account keeps Saved sets, the Space's sets endpoints own the
         # Subscription's content — they are the only writer that keeps the projection in step
@@ -195,12 +212,10 @@ def telegram_subscriptions(store: Store) -> list[Subscription]:
 
 
 def main() -> int:
+    log.setup()
     missing = [name for name in _REQUIRED if not os.environ.get(name)]
     if missing:
-        print(
-            f"alerts not configured (missing {', '.join(missing)}) - skipping",
-            flush=True,
-        )
+        _log.info(f"alerts not configured (missing {', '.join(missing)}) - skipping")
         return 0
 
     space = os.environ.get("SPACE_URL", "https://imposeidon-headstart-search.hf.space")
@@ -213,7 +228,7 @@ def main() -> int:
     chats = telegram_subscriptions(store)
     # One listing for the whole run — see Store.accounts_with_sets (ADR-0069).
     with_sets = store.accounts_with_sets()
-    print(f"[alerts] {len(invites)} invited, {len(chats)} via telegram", flush=True)
+    _log.info(f"{len(invites)} invited, {len(chats)} via telegram")
 
     sent = failed = skipped = 0
     for item in (*invites, *chats):
@@ -226,7 +241,7 @@ def main() -> int:
         try:
             sub = subscription_for(item, store, with_sets) if from_allowlist else item
             if sub is None or not sub.query:
-                print(f"[alerts] {sub_id}: no query set yet - skipped", flush=True)
+                _log.info(f"{sub_id}: no query set yet - skipped")
                 skipped += 1
                 continue
             count = send_one(sub, store, space, config)
@@ -234,24 +249,23 @@ def main() -> int:
             # Not a failure: this is the dark-until-configured state the feature is built
             # around, so it must not turn the run red — it would be red on every run of a
             # repo deliberately using only one channel.
-            print(f"[alerts] {sub_id}: {exc} - skipped", flush=True)
+            _log.info(f"{sub_id}: {exc} - skipped")
             skipped += 1
             continue
         except Exception as exc:  # noqa: BLE001 — one bad Subscription must not stop the rest
             failed += 1
-            print(f"[alerts] {sub_id}: FAILED {type(exc).__name__}: {exc}", flush=True)
+            # With the traceback: this is the arm nothing anticipated, so the exception's
+            # own message is rarely enough to say which of `subscription_for`, the search,
+            # the render or the send it came out of.
+            _log.error(f"{sub_id}: FAILED {type(exc).__name__}: {exc}", exc_info=True)
             continue
         sent += bool(count)
-        print(
-            f"[alerts] {sub_id}: {count or 'no'} new match(es)"
-            f"{' - digest sent' if count else ''}",
-            flush=True,
+        _log.info(
+            f"{sub_id}: {count or 'no'} new match(es)"
+            f"{' - digest sent' if count else ''}"
         )
 
-    print(
-        f"[alerts] done: {sent} digest(s) sent, {skipped} skipped, {failed} failed",
-        flush=True,
-    )
+    _log.info(f"done: {sent} digest(s) sent, {skipped} skipped, {failed} failed")
     return 1 if failed else 0
 
 

@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from headstart import log
+from headstart import http, log
 from headstart.board_cost import SHARD_HEADER, shard_row
 from headstart.config import CompanyRef, board_identity
 from headstart.models import Job
@@ -270,6 +270,16 @@ def scrape_all(
                 jobs = future.result()
             except Exception as exc:  # noqa: BLE001 - isolate per-company failures
                 errors[key] = f"{type(exc).__name__}: {exc}"
+                if not isinstance(exc, http.RequestsError):
+                    # A transport failure is the expected shape here, and `scrape_run` already
+                    # groups those by class. Anything else came out of this repo's own parse
+                    # code, and `KeyError: 'title'` — which is what one of those looks like in
+                    # the digest — names neither the scraper nor the line it happened on. The
+                    # traceback rides only on that branch, so the 150-250 routine Board errors
+                    # a run collects stay one line each.
+                    _log.warning(
+                        f"{key}: unexpected {type(exc).__name__}", exc_info=True
+                    )
             else:
                 fresh = [j for j in jobs if j.id not in seen_ids]
                 seen_ids.update(j.id for j in fresh)

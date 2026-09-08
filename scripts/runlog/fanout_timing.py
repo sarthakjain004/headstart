@@ -25,6 +25,9 @@ estimate, which is the serial figure divided by the learned fan-out speedup (ADR
 a shard's real wall against the `scrape_plan` number makes a healthy cost model look 3-10x wrong:
 the measured median `actual/predicted` is 0.91, not 0.2. Only the `scrape_run` ratio is
 like-for-like, so it is the one reported here; the plan figure is shown separately and labelled.
+On a **cold start** the plan has no measured seconds at all and logs `(cost ~N)` instead of
+`(~N min)` — unitless pack weights. Both forms are read, and the plan section says which one it
+got, because reporting cost units as minutes is a worse answer than reporting none.
 
 Per-item rates (s/board) move with the input mix, so they compare runs only when the mix is
 identical and it rarely is. The predicted/actual ratio is the fixed rule the mix cancels against.
@@ -47,7 +50,15 @@ from typing import NamedTuple
 from run_logs import DONE, Run, common_args, runs_from, skip_if_stood_down
 
 SLOW_BOARD = re.compile(r"slow board ([a-z]+):(\S+?): (\d+) jobs in (\d+)s")
-PLAN_SHARD = re.compile(r"\[scrape_plan\] shard (\d+): (\d+) boards \(~([\d.]+) min\)")
+# Two forms, and the pattern must read both. `scrape_plan` writes minutes only when the cost
+# ledger has measured seconds for this run's Boards; on a cold start it packs in unitless cost
+# units and writes `(cost ~N)` instead, deliberately, because dividing a heuristic by a fan-out
+# speedup would be a fake minute. A minutes-only pattern silently reports nothing on exactly the
+# runs where the plan is least trustworthy — so match both and let `plan_note` say which it read.
+# Group 3 is minutes (measured), group 4 is cost units (cold start); exactly one is ever set.
+PLAN_SHARD = re.compile(
+    r"\[scrape_plan\] shard (\d+): (\d+) boards \((?:~([\d.]+) min|cost ~(\d+))\)"
+)
 
 
 class Shard(NamedTuple):
@@ -159,12 +170,25 @@ def plan_note(run: Run) -> None:
     jobs = run.stage_jobs("scrape-plan")
     if not jobs:
         return
-    pred = [float(m[2]) for m in PLAN_SHARD.findall(run.log(jobs[0]))]
-    if not pred:
+    rows = PLAN_SHARD.findall(run.log(jobs[0]))
+    if not rows:
         return
+    # Never average the two forms together: cold-start cost units are not minutes, and a run that
+    # mixed them would print a number in no unit at all. A single plan run is wholly one or the
+    # other (`measured` decides once), so the presence of any minutes figure settles it.
+    measured = [float(m[2]) for m in rows if m[2]]
+    if measured:
+        pred, unit, label = measured, "m", "serial board-seconds, NOT a wall estimate"
+    else:
+        pred = [float(m[3]) for m in rows]
+        unit = " cost units"
+        label = (
+            "COLD START — unitless cost units, not minutes (ADR-0026 heuristic; "
+            "the cost ledger had no measured seconds for this slice)"
+        )
     print(
-        f"\n-- scrape_plan (serial board-seconds, NOT a wall estimate) --\n"
-        f"  {statistics.mean(pred):.1f}m/shard, spread {max(pred) - min(pred):.1f}m "
+        f"\n-- scrape_plan ({label}) --\n"
+        f"  {statistics.mean(pred):.1f}{unit}/shard, spread {max(pred) - min(pred):.1f}{unit} "
         f"over {len(pred)} shards",
         flush=True,
     )
