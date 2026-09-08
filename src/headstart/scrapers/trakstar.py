@@ -157,7 +157,7 @@ class TrakstarScraper(BaseScraper):
                     f"{len(codes)} cards rendered, capped, and the RSS feed fallback is "
                     "unreachable"
                 )
-            _log.warning(
+            _log.info(
                 f"{self.board_key()}: {len(codes)} cards, capped, and the RSS feed is "
                 "unreachable — keeping the capped HTML list"
             )
@@ -201,18 +201,26 @@ class TrakstarScraper(BaseScraper):
     def _detail_url(self, code: str) -> str:
         return f"https://{self.slug}.hire.trakstar.com/jobs/{code}/"
 
-    @staticmethod
-    def _extract_posting(response: Any) -> dict | None:
+    def _extract_posting(self, response: Any) -> dict | None:
         """Pull the JobPosting JSON-LD block from a detail page (None on non-200), falling
         back to the rendered description container when a tenant's template never emits
-        JSON-LD at all (#179)."""
+        JSON-LD at all (#179).
+
+        These pages sit behind DataDome, so "the wall answered" and "the page arrived and
+        neither reader recognised it" are the two live explanations for a gap and the count
+        alone reads them alike — hence the label on each exit
+        (:meth:`~BaseScraper.note_detail_loss`)."""
         if response.status_code != 200:
+            self.note_detail_loss(f"HTTP {response.status_code}")
             return None
         posting = _jsonld_posting(response.text)
         if posting is not None:
             return posting
         description = _html_description(response.text)
-        return {"description": description} if description is not None else None
+        if description is None:
+            self.note_detail_loss("no JSON-LD and no description on a 200")
+            return None
+        return {"description": description}
 
     def _job_posting(self, code: str) -> dict | None:
         """GET one job page and return its JSON-LD JobPosting (None on failure). Sync path."""
@@ -223,7 +231,8 @@ class TrakstarScraper(BaseScraper):
                 timeout=30,
                 headers={"User-Agent": USER_AGENT},
             )
-        except http.RequestsError:
+        except http.RequestsError as exc:
+            self.note_detail_loss(type(exc).__name__)
             return None  # a missing posting must not drop the job
         return self._extract_posting(response)
 
@@ -237,7 +246,8 @@ class TrakstarScraper(BaseScraper):
                 timeout=30,
                 headers={"User-Agent": USER_AGENT},
             )
-        except http.RequestsError:
+        except http.RequestsError as exc:
+            self.note_detail_loss(type(exc).__name__)
             return None
         return self._extract_posting(response)
 

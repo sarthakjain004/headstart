@@ -91,3 +91,47 @@ def test_setup_is_idempotent_and_reads_level(monkeypatch):
         assert logger.level == logging.INFO  # unknown value falls back to the default
     finally:
         logger.handlers, logger.level = saved_handlers, saved_level
+
+
+def _exc_info():
+    try:
+        raise ValueError("the boom")
+    except ValueError:
+        import sys
+
+        return sys.exc_info()
+
+
+def test_exc_info_renders_the_traceback(monkeypatch):
+    """``exc_info=True`` must actually cost a traceback — it silently did not.
+
+    The formatter builds its line from ``record.getMessage()`` and never calls
+    ``super().format()``, so every ``exc_info=True`` call site was a no-op: a scraper
+    parse bug named neither file nor line. Locked here because the loss was invisible
+    at the call site — the log read correctly, it was just useless."""
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    record = _record(level=logging.ERROR, msg="scrape failed")
+    record.exc_info = _exc_info()
+    line = log._Formatter().format(record)
+    assert "[scrape_run] ERROR: scrape failed" in line
+    assert "Traceback (most recent call last):" in line
+    assert "ValueError: the boom" in line
+
+
+def test_traceback_stays_inside_one_actions_annotation(monkeypatch):
+    """A raw newline truncates a workflow command, so the traceback needs the same
+    ``%0A`` escaping the message already gets — one annotation carrying the whole stack,
+    not an annotation cut off at the word ``Traceback``."""
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    record = _record(level=logging.ERROR, msg="scrape failed")
+    record.exc_info = _exc_info()
+    line = log._Formatter().format(record)
+    assert line.startswith("::error::[scrape_run] scrape failed%0A")
+    assert "%0AValueError: the boom" in line
+    assert "\n" not in line
+
+
+def test_a_record_without_exc_info_is_unchanged(monkeypatch):
+    """The traceback branch must not perturb the ~200 call sites that pass no exception."""
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    assert log._Formatter().format(_record()).endswith(" [scrape_run] hello")

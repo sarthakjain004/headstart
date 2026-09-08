@@ -324,20 +324,42 @@ class SuccessFactorsScraper(BaseScraper):
         ]
 
     def _job_fields(self, url: str) -> dict[str, Any] | None:
-        response = http.fetch(
-            "GET", url, headers={"User-Agent": USER_AGENT}, timeout=30
-        )
-        if response.status_code != 200:
+        try:
+            response = http.fetch(
+                "GET", url, headers={"User-Agent": USER_AGENT}, timeout=30
+            )
+        except http.RequestsError as exc:
+            self.note_detail_loss(type(exc).__name__)
             return None
-        return _titled_fields(response.text, url)
+        return self._fields_of(response, url)
 
     async def _job_fields_async(self, session: Any, url: str) -> dict[str, Any] | None:
-        response = await http.fetch_async(
-            session, "GET", url, headers={"User-Agent": USER_AGENT}, timeout=30
-        )
-        if response.status_code != 200:
+        try:
+            response = await http.fetch_async(
+                session, "GET", url, headers={"User-Agent": USER_AGENT}, timeout=30
+            )
+        except http.RequestsError as exc:
+            self.note_detail_loss(type(exc).__name__)
             return None
-        return _titled_fields(response.text, url)
+        return self._fields_of(response, url)
+
+    def _fields_of(self, response: Any, url: str) -> dict[str, Any] | None:
+        """One job page's fields, with a ``None`` labelled by what lost it.
+
+        This is the pass the User-Agent denylist landed on: 102 Boards, five consecutive runs,
+        56,120 postings listed and none ingested, and the only line on the subject read
+        ``2127/2127 detail fields missing`` — because a 403 and a 200 that parsed to no title
+        both arrive here as ``None`` (:data:`~headstart.scrapers.base.USER_AGENT`). The label is
+        what separates "the origin refused us" from "the parser did not recognise the page", and
+        those two call for opposite responses.
+        """
+        if response.status_code != 200:
+            self.note_detail_loss(f"HTTP {response.status_code}")
+            return None
+        fields = _titled_fields(response.text, url)
+        if fields is None:
+            self.note_detail_loss("200 without a parseable title")
+        return fields
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []

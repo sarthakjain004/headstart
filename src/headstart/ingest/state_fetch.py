@@ -51,7 +51,7 @@ from pathlib import Path
 from typing import Any
 
 from headstart import log
-from headstart.ingest import REPO_ROOT, state_witness
+from headstart.ingest import REPO_ROOT, observability, state_witness
 
 _log = log.get(__name__, __spec__)
 
@@ -516,6 +516,7 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
 
 def main() -> int:
     log.setup()
+    observability.context("state_fetch")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "patterns", nargs="+", help="allow_patterns to fetch (repo-relative globs)"

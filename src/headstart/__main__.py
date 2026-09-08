@@ -10,9 +10,7 @@ from headstart.config import load_active_companies, load_companies
 from headstart.harvest import build_feed, scrape_all, write_feed
 from headstart.tech_filter import filter_jobs
 
-# Explicit name: run as `python -m headstart` this module is "headstart.__main__", and
-# [__main__] says nothing — [feed] is what this entry builds.
-_log = log.get("headstart.feed")
+_log = log.get(__name__, __spec__)
 
 _ROOT = Path(__file__).resolve().parents[2]
 _CONFIG = _ROOT / "config" / "companies.toml"

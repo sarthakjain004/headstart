@@ -34,6 +34,55 @@ def test_report_detail_gaps_silent_when_complete(caplog):
     assert caplog.records == []
 
 
+def test_note_detail_loss_appends_causes_without_changing_the_leading_count(caplog):
+    """The labelled causes ride on the SAME line, after a byte-identical `N/M {what} missing`.
+
+    Several docs, probes and one ADR quote that prefix verbatim, and a scraper that has not
+    opted into `note_detail_loss` must still emit exactly the line it always did — which is why
+    the causes are appended rather than the line reworded."""
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.stub")
+    scraper = _StubScraper("acme")
+    scraper.note_detail_loss("HTTP 403")
+    scraper.note_detail_loss("HTTP 403")
+    scraper.note_detail_loss("no JSON-LD on a 200")
+    scraper.report_detail_gaps([None, None, None], what="detail fields")
+    message = caplog.records[0].getMessage()
+    assert message == (
+        "stub:acme: 3/3 detail fields missing (HTTP 403 x2, no JSON-LD on a 200 x1)"
+    )
+
+
+def test_a_long_tail_of_causes_states_its_residual(caplog):
+    """Only the four largest causes are named, and the tail says how much they leave out.
+
+    A bare "…" said a fifth cause existed and nothing about its size, so a long tail that
+    outweighed everything shown read as a footnote. With the residual stated, the four shown
+    plus the tail always sum to the missing count — 10+9+8+7+11 == 45 here."""
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.stub")
+    scraper = _StubScraper("acme")
+    for cause, n in (("a", 10), ("b", 9), ("c", 8), ("d", 7), ("e", 6), ("f", 5)):
+        for _ in range(n):
+            scraper.note_detail_loss(cause)
+    scraper.report_detail_gaps([None] * 45, what="details")
+    assert (
+        "45/45 details missing (a x10, b x9, c x8, d x7, …2 more cause(s) x11)"
+        in caplog.records[0].getMessage()
+    )
+
+
+def test_an_unlabelled_remainder_is_counted_rather_than_dropped(caplog):
+    """A partial tally must not read as a full account of the gap: whatever reached no label is
+    named `unlabelled`, so the parenthetical always totals `missing`."""
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.stub")
+    scraper = _StubScraper("acme")
+    scraper.note_detail_loss("HTTP 500")
+    scraper.report_detail_gaps([None] * 4, what="details")
+    assert (
+        "4/4 details missing (unlabelled x3, HTTP 500 x1)"
+        in caplog.records[0].getMessage()
+    )
+
+
 def test_fan_out_isolates_failures_and_preserves_input_order():
     def fn(x):
         if x == 2:

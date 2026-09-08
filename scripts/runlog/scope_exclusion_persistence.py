@@ -39,8 +39,12 @@ conflated):
 - `scope-excluded Board: {board} — {why}` — **this** file's subject. ADR-0053, per-Board, emitted
   once per excluded Board with its `truncated`/error reason. The complete list, not a top-N.
 - `{n} eviction-candidate row(s) kept out of scope on {board}` — the row cost of the same
-  exclusion, but **only the top 10 Boards** (`index._TOP_OUT_OF_SCOPE_BOARDS`), so a Board can be
-  excluded with no row line. Absent from runs built before PR #280 (`960d991`, 2026-08-24).
+  exclusion, one line per excluded Board and **no longer capped**: `index sync` used to print only
+  the ten worst (`_TOP_OUT_OF_SCOPE_BOARDS`), which is why a Board could be excluded with no row
+  line at all. That cap and its constant are gone — the lines are INFO, and only WARNING spends
+  GitHub's annotation quota — so on a current run every excluded Board carries its row count. A
+  `·` in the trail below therefore means an *older* run, not a Board outside a top-N. Absent
+  entirely from runs built before PR #280 (`960d991`, 2026-08-24).
 - `Unconfirmed` (ADR-0083) is the *other* withholding mechanism (a third, ADR-0046's collapse
   guard, existed until ADR-0101 removed it and still appears in runs before 2026-09-01). Neither
   is parsed here on purpose; inferring which one fired from an outcome is the exact error
@@ -179,7 +183,8 @@ def main() -> None:
     window = len(usable)
     print(
         f"\n{'runs':>5}  {'max rows':>8}  Board / row count per run\n"
-        "         · = excluded, but outside the top-10 that get a row line\n"
+        "         · = excluded, but this run logged no row count for it — a run from before\n"
+        "             the per-Board row line was uncapped, or from before PR #280 added it\n"
         "         - = NOT excluded this run — either it drained, or the Board was not in this\n"
         "             run's slice; the merge log carries no scraped-Board list to tell them\n"
         "             apart, so a gap is not evidence of a drain (see the module docstring)",

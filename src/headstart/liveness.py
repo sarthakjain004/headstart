@@ -24,6 +24,10 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+from headstart import log
+
+_log = log.get(__name__)
+
 LIVE, DEAD, UNKNOWN = "live", "dead", "unknown"
 FIELDS = ("ats", "tenant", "url", "status", "jobs", "checked_at")
 
@@ -63,13 +67,23 @@ def path_for(root: str | Path, ats: str) -> Path:
 
 
 def load(path: str | Path) -> dict[str, Verdict]:
-    """``tenant -> Verdict`` for one ATS's ledger ( ``{}`` if the file is absent)."""
+    """``tenant -> Verdict`` for one ATS's ledger ( ``{}`` if the file is absent).
+
+    Rows repeating a tenant collapse last-wins, and the count of collapses is logged rather than
+    left implicit. A raw line count of one of these files overstates its Boards by however many
+    duplicates it holds, and CLAUDE.md documents three separate mechanisms that put them there —
+    a prober-side casing change that left the old row behind being the one that mattered most,
+    because the two rows disagreed on *verdict* and the stale one kept winning. None of that is
+    visible from either end of this function unless the collapse says how much it ate.
+    """
     path = Path(path)
     out: dict[str, Verdict] = {}
     if not path.exists():
         return out
+    rows = 0
     with path.open(encoding="utf-8") as f:
         for r in csv.DictReader(f):
+            rows += 1
             jobs = (r.get("jobs") or "").strip()
             out[r["tenant"]] = Verdict(
                 ats=r["ats"],
@@ -79,6 +93,11 @@ def load(path: str | Path) -> dict[str, Verdict]:
                 jobs=int(jobs) if jobs else None,
                 checked_at=r.get("checked_at", ""),
             )
+    if rows > len(out):
+        _log.info(
+            f"{path.name}: {rows - len(out)} duplicate tenant row(s) collapsed "
+            f"last-wins — {rows} rows, {len(out)} tenants"
+        )
     return out
 
 

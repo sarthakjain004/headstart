@@ -100,7 +100,7 @@ def write_unauthoritative_boards(reports: list[dict], path: Path) -> dict[str, s
 
 def main() -> int:
     log.setup()
-    observability.context("join")
+    observability.context("scrape_join")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--shards",

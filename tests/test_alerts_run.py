@@ -1,6 +1,8 @@
 """The run's ordering guarantee: the Watermark advances only after a Digest is accepted,
 and one Subscription's failure never stops the rest (ADR-0035)."""
 
+import logging
+
 import pytest
 
 from headstart.alerts import digest, mail, run, space_query, transports
@@ -107,11 +109,12 @@ def test_no_matches_sends_nothing_and_does_not_advance(monkeypatch):
     assert store.saved == []
 
 
-def test_main_skips_cleanly_when_unconfigured(monkeypatch, capsys):
+def test_main_skips_cleanly_when_unconfigured(monkeypatch, caplog):
     for name in run._REQUIRED:
         monkeypatch.delenv(name, raising=False)
+    caplog.set_level(logging.INFO, logger="headstart.alerts.run")
     assert run.main() == 0
-    assert "not configured" in capsys.readouterr().out
+    assert any("not configured" in r.getMessage() for r in caplog.records)
 
 
 class _InviteStore:

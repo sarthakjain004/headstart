@@ -10,6 +10,7 @@ standard test env.
 
 from __future__ import annotations
 
+import logging
 import types
 
 import pytest
@@ -329,6 +330,23 @@ _ROW = {
 def _searcher():
     table = _Table([dict(_ROW)])
     return JobSearch(_Model(), table), table
+
+
+def test_an_unknown_filter_value_is_warned_about_once_per_request(caplog):
+    # The regression this pins is amplification, not wording: `facets.counts` recompiles one
+    # request's kwargs once per facet option, so warning at the drop site in `build_filter`
+    # turned a single `?ats=bogus&etype=bogus` into 58 WARNING records on the deployed Space —
+    # user-controlled, unauthenticated log volume from any crawler holding a stale link. The
+    # parse happens once; the compile happens ~30 times, and only the parse may speak.
+    searcher, _ = _searcher()
+    with caplog.at_level(logging.WARNING, logger="headstart.search"):
+        caplog.clear()  # the constructor's own dark-column line is not what is counted here
+        kwargs = searcher.filter_kwargs({"ats": "bogus", "etype": "bogus"})
+        for _ in range(30):
+            build_filter(**kwargs)
+    assert len(caplog.records) == 2
+    assert kwargs["ats"] == "bogus"  # still dropped by the compiler, unchanged
+    assert build_filter(**kwargs) is None
 
 
 def test_startup_scan_learns_atses_and_first_seen():

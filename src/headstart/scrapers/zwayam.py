@@ -509,21 +509,26 @@ class ZwayamScraper(BaseScraper):
         """One Job's full posting text — the detail JSON's ``longDescription``, stripped.
 
         A JSON POST, unlike the multipart search; ``fan_out`` turns any raising call into
-        ``None``, which :meth:`report_detail_gaps` then counts.
+        ``None``, which :meth:`report_detail_gaps` then counts — caught here first so the count
+        also says what it was lost to (:meth:`~BaseScraper.note_detail_loss`).
         """
-        response = http.fetch(
-            "POST",
-            _DETAIL_API,
-            json={"jobUrl": job_url, "companyId": company_id},
-            headers={
-                "User-Agent": USER_AGENT,
-                "Accept": "application/json, text/plain, */*",
-                "Content-Type": "application/json",
-            },
-            timeout=30,
-            **self._egress(),
-        )
-        response.raise_for_status()
+        try:
+            response = http.fetch(
+                "POST",
+                _DETAIL_API,
+                json={"jobUrl": job_url, "companyId": company_id},
+                headers={
+                    "User-Agent": USER_AGENT,
+                    "Accept": "application/json, text/plain, */*",
+                    "Content-Type": "application/json",
+                },
+                timeout=30,
+                **self._egress(),
+            )
+            response.raise_for_status()
+        except http.RequestsError as exc:
+            self.note_detail_loss(type(exc).__name__)
+            return None
         detail = response.json() or {}
         # `""`, never None, when the endpoint answers with no body: `fan_out` turns a *raising*
         # call into None, and `fetch_raw` needs the two apart — one is transient and must be
@@ -572,7 +577,7 @@ class ZwayamScraper(BaseScraper):
             # fired — this is the shortfall that reaches `harvest` when it did not.
             self.mark_truncated(f"read {len(rows)} of {total} postings")
         if self.truncated:
-            _log.warning(f"{self.board_key()}: {self.truncated}")
+            _log.info(f"{self.board_key()}: {self.truncated}")
         # Detail pass for every row the ADR-0050 store does not already hold text for: the
         # listing's own fields can be silently truncated (module docstring), so the detail is
         # the only text trusted as complete. Steady state, `needs_detail` prunes this to the
@@ -628,9 +633,7 @@ class ZwayamScraper(BaseScraper):
                 # Unobserved: 0 of 16,427 rows across 19 Boards. The alternative — falling back
                 # to the Board root — would emit a link that no per-Job URL shape can match, so
                 # the row is dropped and logged instead of shipping an unverifiable link.
-                _log.warning(
-                    f"{self.board_key()}: job {native_id} has no jobUrl, skipped"
-                )
+                _log.info(f"{self.board_key()}: job {native_id} has no jobUrl, skipped")
                 continue
             jobs.append(
                 Job(

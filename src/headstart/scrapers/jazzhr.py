@@ -84,9 +84,11 @@ import json
 import re
 from typing import Any
 
-from headstart import http
+from headstart import http, log
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
+
+_log = log.get(__name__)
 
 #: Detail-pass width. Every tenant is a subdomain of one Cloudflare-fronted origin, so this is a
 #: bound on that origin rather than on a per-tenant host. 8 is the base default and is well inside
@@ -283,6 +285,20 @@ class JazzHRScraper(BaseScraper):
         # invisible on ~60% of its jobs).
         listing = self._listing()
         keys = [key for key, *_ in _rows(listing)]
+        # `_rows` skips any `row_job_` <tr> whose posting link it cannot read, and the skip is
+        # the one thing on this page that can go wrong without anything failing: the shell is
+        # present, `_listing` is satisfied, and a Board whose markup moved parses to zero keys —
+        # which reads downstream as a live Board with nothing open, and costs it every indexed
+        # row two runs later (ADR-0083). Counted against the shell's own rows because that is the
+        # only total this listing states. Not marked truncated: this module's 1,000-tenant sweep
+        # never saw a link-less row, so how many are benign is unmeasured, and a truncation guard
+        # built on a guess is the one this repo has learned not to ship.
+        unread = len(_ROW.findall(listing)) - len(keys)
+        if unread > 0:
+            _log.info(
+                f"{self.board_key()}: {unread} of {unread + len(keys)} listing row(s) carried "
+                "no posting link — those postings are listed but unread"
+            )
         details: dict[str, str] = {}
         if keys:
             # Multiplexed by default (ADR-0016); HEADSTART_ASYNC_FANOUT=0 falls back to threads.
@@ -297,11 +313,27 @@ class JazzHRScraper(BaseScraper):
             details = {key: page for key, page in zip(keys, fetched) if page}
         return {"listing": listing, "details": details}
 
-    def _detail_page(self, key: str) -> str:
-        return self._get(self._detail_url(key))
+    def _detail_page(self, key: str) -> str | None:
+        """One posting's detail page, or a ``None`` that says what lost it.
 
-    async def _detail_page_async(self, session: Any, key: str) -> str:
-        return await self._get_async(session, self._detail_url(key))
+        ``fan_out`` would turn the raise into the same ``None`` on its own; catching it here is
+        what lets the cause reach the Board's gap line instead of only its count — a 403 across
+        every page and a parser that stopped recognising them are one number otherwise
+        (:meth:`~BaseScraper.note_detail_loss`).
+        """
+        try:
+            return self._get(self._detail_url(key))
+        except http.RequestsError as exc:
+            self.note_detail_loss(type(exc).__name__)
+            return None
+
+    async def _detail_page_async(self, session: Any, key: str) -> str | None:
+        """Same as :meth:`_detail_page` over the shared multiplexed ``AsyncSession``."""
+        try:
+            return await self._get_async(session, self._detail_url(key))
+        except http.RequestsError as exc:
+            self.note_detail_loss(type(exc).__name__)
+            return None
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         # raw is fetch_raw's {listing, details}; a bare string means no detail pass ran

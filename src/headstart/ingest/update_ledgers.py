@@ -401,6 +401,9 @@ def main() -> int:
     p_gap.set_defaults(fn=gap)
 
     args = ap.parse_args()
+    # After parsing, so the line carries which ledger this is: all four subcommands run in the
+    # same job, under the same module tag, and are otherwise indistinguishable in a merged log.
+    observability.context("update_ledgers", ledger=args.ledger_name)
     return args.fn(args)
 
 

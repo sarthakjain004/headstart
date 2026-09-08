@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from headstart import log
+from headstart import http, log
 from headstart.board_cost import SHARD_HEADER, shard_row
 from headstart.config import CompanyRef, board_identity
 from headstart.models import Job
@@ -253,6 +253,9 @@ def scrape_all(
 
     seen_ids: set[str] = set()
     errors: dict[str, str] = {}
+    # How many Boards have failed on something other than a transport error. Only the first one
+    # carries a traceback and an annotation (see the branch below); the rest are counted here.
+    unexpected = 0
     total, done = len(companies), 0
     start = time.monotonic()
     executor = ThreadPoolExecutor(max_workers=workers)
@@ -270,6 +273,29 @@ def scrape_all(
                 jobs = future.result()
             except Exception as exc:  # noqa: BLE001 - isolate per-company failures
                 errors[key] = f"{type(exc).__name__}: {exc}"
+                if not isinstance(exc, http.RequestsError):
+                    # A transport failure is the expected shape here, and `scrape_run` already
+                    # groups those by class. Anything else came out of this repo's own parse
+                    # code, and `KeyError: 'title'` — which is what one of those looks like in
+                    # the digest — names neither the scraper nor the line it happened on. The
+                    # traceback rides only on that branch, so the 150-250 routine Board errors
+                    # a run collects stay one line each.
+                    #
+                    # And only the FIRST one carries it. A parse break is systemic, not
+                    # per-Board: `KeyError: 'title'` raises on every Board of that ATS, so an
+                    # unconditional `exc_info=True` prints one full stack per Board — up to
+                    # ~1,300 on a shard, all of them the same stack — and one annotation per
+                    # Board with it, which is the run-level quota ADR-0039's amendment forbids
+                    # spending this way. The first stack says what broke; `errors` (written
+                    # above, for every failure) says how far it reached, and `scrape_run`'s
+                    # end-of-run digest groups it. Same shape as `index_plan`'s keep-set guard.
+                    unexpected += 1
+                    if unexpected == 1:
+                        _log.warning(
+                            f"{key}: unexpected {type(exc).__name__}", exc_info=True
+                        )
+                    else:
+                        _log.info(f"{key}: unexpected {type(exc).__name__}")
             else:
                 fresh = [j for j in jobs if j.id not in seen_ids]
                 seen_ids.update(j.id for j in fresh)

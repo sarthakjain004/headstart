@@ -76,17 +76,20 @@ def test_greenhouse_reports_an_envelope_that_contradicts_itself(
     """
     s = get_scraper("greenhouse", "acme", "Acme")
     monkeypatch.setattr(type(s), "_get", lambda self: json.dumps(envelope))
-    caplog.set_level(logging.WARNING, logger="headstart.scrapers.greenhouse")
+    # INFO, not WARNING: this can fire once per Board and WARNING is a run-level annotation
+    # quota under Actions (ADR-0039's 2026-09-08 amendment, pinned by
+    # tests/test_scraper_log_levels.py).
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.greenhouse")
 
     raw = s.fetch_raw()
 
     assert raw == envelope, "the envelope must pass through untouched"
-    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert bool(warnings) is should_warn
+    reported = [r for r in caplog.records if r.levelno == logging.INFO]
+    assert bool(reported) is should_warn
     if should_warn:
         assert (
-            "meta.total=5" in warnings[0].message
-            and "greenhouse:acme" in warnings[0].message
+            "meta.total=5" in reported[0].message
+            and "greenhouse:acme" in reported[0].message
         )
     assert s.truncated is None, (
         "observation only — wiring this to mark_truncated is the unverified guard §4.1 declines "
@@ -927,7 +930,7 @@ def test_smartrecruiters_extract_detail_reads_description_and_compensation_from_
                 },
             }
 
-    detail = SmartRecruitersScraper._extract_detail(_Resp())
+    detail = SmartRecruitersScraper("acme")._extract_detail(_Resp())
     assert detail == {
         "description": "<p>Build things</p>",
         "compensation": {
@@ -949,7 +952,7 @@ def test_smartrecruiters_extract_detail_missing_compensation_is_none():
         def json():
             return {"jobAd": {"sections": {"jobDescription": {"text": "<p>Role</p>"}}}}
 
-    detail = SmartRecruitersScraper._extract_detail(_Resp())
+    detail = SmartRecruitersScraper("acme")._extract_detail(_Resp())
     assert detail["compensation"] is None
 
 
@@ -2214,9 +2217,11 @@ def test_workday_leaves_instance_when_none_serves(monkeypatch):
     assert ".wd3." in s.url()
 
 
-def test_workday_paginate_warns_once_on_missing_pages(monkeypatch, caplog):
+def test_workday_paginate_logs_once_on_missing_pages(monkeypatch, caplog):
     # a mid-crawl 404 (None from _post_async) skips that page but keeps the rest, and one
-    # WARNING reports the gap — the tripwire for a partial board
+    # INFO line reports the gap — the tripwire for a partial board. INFO rather than WARNING
+    # because it fires once per Board and WARNING is a run-level annotation quota under
+    # Actions (ADR-0039's 2026-09-08 amendment; tests/test_scraper_log_levels.py pins it)
     from headstart.scrapers.workday import WorkdayScraper
 
     s = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
@@ -2232,18 +2237,18 @@ def test_workday_paginate_warns_once_on_missing_pages(monkeypatch, caplog):
 
     monkeypatch.setattr(s, "_post_async", fake_post_async)
     absorbed = []
-    caplog.set_level(logging.WARNING, logger="headstart.scrapers.workday")
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.workday")
     s._paginate({}, 100, absorbed.extend)
     # the surviving pages are all absorbed — fanned out concurrently now, so not guaranteed to
     # land in offset order (the postings they build are deduplicated/looked up by id, never by
     # position, so this doesn't need to assert order to prove the pagination is correct)
     assert sorted(p["bulletFields"][0] for p in absorbed) == ["R20", "R60", "R80"]
-    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert len(warnings) == 1
-    assert warnings[0].name == "headstart.scrapers.workday"
+    reported = [r for r in caplog.records if r.levelno == logging.INFO]
+    assert len(reported) == 1
+    assert reported[0].name == "headstart.scrapers.workday"
     # 1 of 5, not 1 of 4: the first page `_exhaust` already holds counts too
-    assert "1 of 5 page(s) failed" in warnings[0].getMessage()
-    assert "workday:acme/ext" in warnings[0].getMessage()  # the board key
+    assert "1 of 5 page(s) failed" in reported[0].getMessage()
+    assert "workday:acme/ext" in reported[0].getMessage()  # the board key
     assert s.truncated is not None  # and it travels with the Jobs (ADR-0053)
 
 
@@ -2343,13 +2348,13 @@ def test_workday_paginate_absorbs_a_retry_exhausted_page_mid_crawl(monkeypatch, 
 
     monkeypatch.setattr(s, "_post_async", fake_post_async)
     absorbed = []
-    caplog.set_level(logging.WARNING, logger="headstart.scrapers.workday")
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.workday")
     s._paginate({}, 100, absorbed.extend)
 
     assert sorted(p["bulletFields"][0] for p in absorbed) == ["R20", "R60", "R80"]
-    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert len(warnings) == 1
-    assert "1 of 5 page(s) failed" in warnings[0].getMessage()
+    reported = [r for r in caplog.records if r.levelno == logging.INFO]
+    assert len(reported) == 1
+    assert "1 of 5 page(s) failed" in reported[0].getMessage()
     # and the gap travels with the Jobs, or `index sync` reads it as delistings (ADR-0053)
     assert s.truncated is not None
 
@@ -2502,7 +2507,7 @@ def test_trakstar_extract_posting_prefers_jsonld_when_present():
     </script></head><body>
     <div class="jobdesciption"><p>Ignored -- JSON-LD wins when both are present.</p></div>
     </body></html>"""
-    posting = TrakstarScraper._extract_posting(_TrakstarDetailResp(text=page))
+    posting = TrakstarScraper("acme")._extract_posting(_TrakstarDetailResp(text=page))
     assert posting["datePosted"] == "2026-03-01"
     assert posting["description"] == "&lt;p&gt;Build the platform.&lt;/p&gt;"
 
@@ -2526,7 +2531,7 @@ def test_trakstar_extract_posting_falls_back_to_html_when_jsonld_absent():
         </div>
     <section class="bottomspace-double">apply here</section>
     </body></html>"""
-    posting = TrakstarScraper._extract_posting(_TrakstarDetailResp(text=page))
+    posting = TrakstarScraper("acme")._extract_posting(_TrakstarDetailResp(text=page))
     assert posting is not None
     assert "datePosted" not in posting  # not present anywhere on these pages
     text = html_to_text(posting["description"])
@@ -2542,7 +2547,9 @@ def test_trakstar_extract_posting_none_when_neither_jsonld_nor_html_present():
     from headstart.scrapers.trakstar import TrakstarScraper
 
     page = "<html><body><p>No JSON-LD and no .jobdesciption div here.</p></body></html>"
-    assert TrakstarScraper._extract_posting(_TrakstarDetailResp(text=page)) is None
+    assert (
+        TrakstarScraper("acme")._extract_posting(_TrakstarDetailResp(text=page)) is None
+    )
 
 
 _TRAKSTAR_FEED = """<?xml version="1.0" encoding="utf-8"?>
@@ -5267,7 +5274,10 @@ def test_zoho_detail_description_appends_salary_and_currency(record, expected):
     from headstart.scrapers.zoho import ZohoScraper, _description_text
 
     page = f"var jobs = JSON.parse('[{record}]')"
-    assert _description_text(ZohoScraper._detail_record_of(page) or {}) == expected
+    assert (
+        _description_text(ZohoScraper("jobs.acme.com")._detail_record_of(page) or {})
+        == expected
+    )
 
 
 def _zoho_listing(records):
@@ -7449,7 +7459,9 @@ def test_workday_detail_pass_breaks_off_after_consecutive_settled_5xx(
     )
     s = _breaker_scraper()
     classes: Counter = Counter()
-    caplog.set_level(logging.WARNING, logger="headstart.scrapers.workday")
+    # INFO: the break-off fires once per Board, and WARNING is a run-level annotation quota
+    # under Actions (ADR-0039's 2026-09-08 amendment; tests/test_scraper_log_levels.py pins it).
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.workday")
     for i in range(_DETAIL_BREAK_STREAK + 10):
         assert s._job_detail(f"/job/x/J_{i}", classes) is None
     assert len(calls) == _DETAIL_BREAK_STREAK, "fetching must stop at the streak"

@@ -24,8 +24,12 @@ import os
 import sys
 from typing import Any
 
+from headstart import log
+
 from .registry import Pending, Registry
 from .store import Store, Subscription, chat_subscription_id, now_iso
+
+_log = log.get(__name__, __spec__)
 
 HELP = (
     "HeadStart job alerts.\n\n"
@@ -209,12 +213,11 @@ def _set_query(
 
 
 def main() -> int:
+    log.setup()
     required = ("TELEGRAM_BOT_TOKEN", "SUBSCRIBERS_REPO", "SUBSCRIBERS_TOKEN")
     missing = [name for name in required if not os.environ.get(name)]
     if missing:
-        print(
-            f"bot not configured (missing {', '.join(missing)}) - skipping", flush=True
-        )
+        _log.info(f"bot not configured (missing {', '.join(missing)}) - skipping")
         return 0
 
     from . import registry as registry_store
@@ -236,7 +239,9 @@ def main() -> int:
         try:
             replies.extend(handle(update, registry, store))
         except Exception as exc:  # noqa: BLE001 — one bad update must not stall the queue
-            print(f"[bot] update {update.get('update_id')} failed: {exc}", flush=True)
+            # With the traceback: the offset has already advanced, so this update is gone
+            # and cannot be replayed to find out where in `handle` it broke.
+            _log.error(f"update {update.get('update_id')} failed: {exc}", exc_info=True)
 
     # `alerts.telegram.send` rather than the polling client's `send_message`, which swallows
     # failures. A swallowed failure here is not cosmetic: the update that put somebody in
@@ -245,22 +250,27 @@ def main() -> int:
     # `/pending` is the recovery.
     failed = 0
     for chat_id, text in replies:
+        # The hashed id, never the chat id itself. This repo is public and this runs every
+        # fifteen minutes, so a raw id in the log is a stable handle on a real person — the
+        # master included — published to anyone who opens the run. It is the same hash the
+        # Subscription store keys on, so two lines about one person still correlate, and the
+        # id is still recoverable from the store by whoever is entitled to it.
+        recipient = chat_subscription_id(chat_id)
         try:
             # Plain text: these replies are prose, and `/q <…>` would be read as markup.
             sender.send(bot_token, chat_id, [text], parse_mode=None)
         except sender.TelegramError as exc:
             failed += 1
-            print(f"[bot] reply to {chat_id} FAILED: {exc}", flush=True)
+            _log.error(f"reply to {recipient} FAILED: {exc}")
             continue
-        print(f"[bot] replied to {chat_id}", flush=True)
+        _log.info(f"replied to {recipient}")
 
     # Saved after sending: a crash before this replays the update, and every write `handle`
     # makes is idempotent, so a replay costs a duplicate message rather than a lost one.
     registry_store.save(repo, token, registry)
-    print(
-        f"[bot] {len(updates)} update(s), {len(replies) - failed} repl(ies), "
-        f"{failed} failed, {len(registry.pending)} waiting",
-        flush=True,
+    _log.info(
+        f"{len(updates)} update(s), {len(replies) - failed} repl(ies), "
+        f"{failed} failed, {len(registry.pending)} waiting"
     )
     return 1 if failed else 0
 

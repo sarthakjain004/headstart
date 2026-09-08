@@ -23,17 +23,17 @@ flapping out and back in every run. That mechanism (ADR-0053's `unauthoritative`
 ADR-0046's collapse guard were two DIFFERENT protections — conflating them is the same mistake
 CLAUDE.md's "duplicate boards" section warns about for the liveness ledger) is fully logged:
 `scrape outcome: N Board(s) ... not authoritative ... excluded from the eviction scope` names each
-excluded Board and why; `collapse guard: withheld W evictions across B Boards` was the *other*
-guard, for a Board that scraped short without going unauthoritative, until ADR-0101 removed it —
-still parsed because runs before 2026-09-01 carry the line, and absent from newer ones because
-nothing withholds that way any more, never because a run was clean. This file parses both, plus
+excluded Board and why. (ADR-0046's `collapse guard: withheld W evictions across B Boards` was the
+*other* guard, for a Board that scraped short without going unauthoritative; ADR-0101 removed the
+mechanism on 2026-09-01 and this file no longer parses the line, so a run from before then reports
+no collapse guard rather than a wrong one.) Also parsed here:
 `plan: add A (L new + R re-embedded), evict E -> net D rows` (the one line that says whether the
-served index actually grew), and buckets the `add`/`evict` id batches by ATS (not by full board —
+served index actually grew), and the `add`/`evict` id batches bucketed by ATS (not by full board —
 `ats:tenant:id` is ambiguous past the first `:`, per CLAUDE.md, and splitting further is how a past
 prune bug misattributed Workday ids) so oscillation shows up without hand-counting again.
 
-**`index prune`** — `keep-set: N live Boards`, then `evict off-Board`/`evict duplicate` each with
-their own per-ATS ranked breakdown (the emitter's own top-5, not this file's).
+**`index prune`** — `keep-set: N Scrapable Boards`, then `evict off-Board`/`evict duplicate` each
+with their own per-ATS ranked breakdown (the emitter's own top-5, not this file's).
 
 **`role_trends`** — family assignment counts, the non-tech% (the ADR-0017 tech filter's measured
 creep into the served table), and family-transition counts (the signal that told #57's "software-
@@ -97,13 +97,11 @@ SCOPE_OUTCOME = re.compile(
     r"scrape outcome: (\d+) Board\(s\) returned a list that is not authoritative"
 )
 SCOPE_EXCLUDED = re.compile(r"scope-excluded Board: (\S+) — (.+)")
-COLLAPSE_GUARD = re.compile(
-    r"collapse guard: withheld (\d+) evictions across (\d+) Boards"
-)
-WITHHELD_BOARD = re.compile(r"withheld (\d+) evictions on (\S+)")
-# ADR-0083's per-Job grace period — distinct from the two above (ADR-0053 scope exclusion is
-# per-Board; ADR-0046's collapse guard was a per-Board cap, removed by ADR-0101). Since that
-# removal it is the only mechanism that withholds an eviction on a Board still in scope.
+# ADR-0083's per-Job grace period — distinct from the ADR-0053 scope exclusion above, which is
+# per-Board. (ADR-0046's collapse guard was a third, per-Board cap; ADR-0101 deleted it, and the
+# two patterns that read its lines went with it — parsing a mechanism that no longer exists reads
+# as a live protection.) Since that removal this is the only mechanism that withholds an eviction
+# on a Board still in scope.
 GRACE = re.compile(
     r"grace period: (\d+) id\(s\) unconfirmed.*?of the (\d+) carried in, (\d+) reappeared "
     r"in this scrape and (\d+) are unconfirmed again"
@@ -125,7 +123,11 @@ SYNC_DONE = re.compile(r"\[index\] done: table '\S+' now holds (\d+) rows")
 ID_BATCH = re.compile(r"\[index\] (add|evict) \[(\d+)-(\d+) of \d+\]: (.+)")
 
 # --- index prune -----------------------------------------------------------------------------
-KEEP_SET = re.compile(r"\[index\] keep-set: (\d+) live Boards")
+# "Scrapable Boards", not "live Boards". The emitter was corrected to CONTEXT.md's counting
+# vocabulary and this pattern was not, so `index prune` reported no keep-set at all — a
+# `search() -> None` behind an `if`, which prints nothing rather than failing. "live Boards" names
+# no single number and CLAUDE.md forbids writing it; keep this spelling paired with the emitter's.
+KEEP_SET = re.compile(r"\[index\] keep-set: (\d+) Scrapable Boards")
 PRUNE_SUMMARY = re.compile(
     r"\[index\] index: (\d+) rows \| evict (\d+) \((\d+) off-Board \+ (\d+) duplicate\) "
     r"-> (\d+) remain"
@@ -163,8 +165,12 @@ _ID_BOUNDARY = re.compile(r"(?:(?<=\s)|(?<=\A))(?=(?:" + "|".join(_ATS) + r"):)"
 TRENDS_ASSIGNING = re.compile(
     r"\[role_trends\] assigning (\d+) served rows to (\d+) families via (\d+) clusters"
 )
+# `(.*)`, not `(.+)`: `stock_top` is a slice of a filtered comprehension, so a run where no
+# served row lands in a stock family renders `| top:  |` and a one-or-more group drops the whole
+# line — reporting no trends tick rather than an empty one. Same shape as the omitted-when-zero
+# clause that has already produced wrong numbers here; the contract test pins both forms.
 TRENDS_APPENDED = re.compile(
-    r"\[role_trends\] appended (\d+) rows @ \S+ -> \S+ \| top: (.+) \| new in (\d+)d: (\d+)"
+    r"\[role_trends\] appended (\d+) rows @ \S+ -> \S+ \| top: (.*) \| new in (\d+)d: (\d+)"
 )
 TRENDS_NONTECH = re.compile(
     r"\[role_trends\] non-tech: (\d+) of (\d+) served rows \(([\d.]+)%"
@@ -343,17 +349,6 @@ def index_sync_report(text: str) -> None:
             flush=True,
         )
 
-    cg = COLLAPSE_GUARD.search(text)
-    if cg:
-        withheld, n_boards = cg.groups()
-        print(
-            f"  ADR-0046 collapse guard: withheld {withheld} evictions across {n_boards} "
-            "Board(s) that lost too much in one run (truncated scrape, not a delisting)",
-            flush=True,
-        )
-        for count, board in WITHHELD_BOARD.findall(text)[:5]:
-            print(f"    withheld {count} on {board}", flush=True)
-
     sp = SYNC_PLAN.search(text)
     if sp:
         add, listings, reembedded, evict, net = sp.groups()
@@ -396,7 +391,7 @@ def index_prune_report(text: str) -> None:
     print("-- index prune --", flush=True)
     ks = KEEP_SET.search(text)
     if ks:
-        print(f"  keep-set: {ks.group(1)} live Boards", flush=True)
+        print(f"  keep-set: {ks.group(1)} Scrapable Boards", flush=True)
     ps = PRUNE_SUMMARY.search(text)
     if ps:
         rows, evict, off_board, dup, remain = ps.groups()

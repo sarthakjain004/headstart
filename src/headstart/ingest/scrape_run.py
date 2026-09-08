@@ -222,16 +222,17 @@ def _report(
     # (ADR-0063). Reported for the same reason the retry classes are: without it a shard that
     # routed everything successfully and one whose proxy carried nothing log identically, and
     # "did the fallback work?" is the only question this feature has.
-    for line in spare_egress.report():
-        _log.warning(line)
+    egress = spare_egress.report()
     # What each fan-out width actually bought. The ADR-0078 clamp already runs some Boards at the
     # ceiling and some at 12, so this is the only place the two are comparable — and
     # `stream_width`'s own docstring says 12 has never been re-measured.
-    # WARNING, like `spare_egress.report()` beside it and unlike `retries:`: only WARNING+ becomes
-    # a GitHub annotation, and this is the one line here whose whole purpose is to be read by a
-    # person deciding a number. An INFO line means digging through fifteen raw shard logs for it.
-    for line in fanout_stats.report():
-        _log.warning(line)
+    widths = fanout_stats.report()
+    # Both are routine per-run measurement, so both are info. They were warnings only to force a
+    # GitHub annotation, which is a quota and not a level: 10 per step, 50 per job, and fifteen
+    # shards each claiming several of them starve the errors the annotations exist for. The step
+    # summary below is the surface that was actually wanted — uncapped and on the run page.
+    for line in egress + widths:
+        _log.info(line)
     ratio = (
         f" | predicted {predicted:.1f} min, actual/predicted {actual_min / predicted:.2f}x"
         if predicted
@@ -240,6 +241,26 @@ def _report(
     _log.info(
         f"done: {progress.jobs} jobs from {progress.done} boards in {elapsed:0.0f}s "
         f"({len(progress.errors)} board errors) | board seconds {spread}{ratio}"
+    )
+    observability.summary(
+        f"Scrape shard {shard}" if shard else "Scrape",
+        [
+            (
+                f"- **{progress.jobs:,}** jobs from {progress.done}/{progress.assigned} "
+                f"boards in {actual_min:.1f} min{ratio}"
+            ),
+            f"- {len(progress.errors)} board errors"
+            + (
+                f": {observability.error_summary(progress.errors)}"
+                if progress.errors
+                else ""
+            ),
+            f"- **{len(deferred)} deferred** (time budget reached)"
+            if killed
+            else "- finished within the time budget",
+            f"- board seconds {spread}",
+        ]
+        + [f"- {line}" for line in egress + widths],
     )
     observability.write_shard(
         outdir,
@@ -276,7 +297,6 @@ def _report(
 
 def main() -> int:
     log.setup()
-    observability.context("scrape")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--max-boards",
@@ -295,6 +315,10 @@ def main() -> int:
         help="output dir (default: data/jobs; a scrape shard writes its own fragment)",
     )
     args = ap.parse_args()
+    # After parsing, not before it: the shard is the only key that tells fifteen concurrent
+    # producers apart once their logs are merged, and it is only knowable from the assignment.
+    shard = _shard_id(args.assignment)
+    observability.context("scrape_run", shard=shard)
 
     have_details: set[str] | None = None
     if (
@@ -321,7 +345,6 @@ def main() -> int:
         )
 
     outdir = Path(args.outdir)
-    shard = _shard_id(args.assignment)
     predicted = _plan_minutes(args.assignment, "per_shard_minutes")
     serial = _plan_minutes(args.assignment, "per_shard_serial_minutes")
     _log.info(f"shard mix: {_ats_mix(companies)}")

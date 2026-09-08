@@ -1,6 +1,7 @@
 """The bot's durable state: master, pending requests, polling offset (ADR-0038)."""
 
 import json
+import logging
 
 import pytest
 
@@ -83,6 +84,47 @@ def test_a_denial_is_remembered_so_the_gate_cannot_be_reopened():
     parsed = reg.Registry.from_dict({"master": "1", "denied": ["2000", 3000]})
     assert parsed.denied == ["2000", "3000"]
     assert reg.Registry.from_dict({"master": "1"}).denied == []
+
+
+def test_an_unreachable_hub_is_loud_where_a_first_run_is_not(monkeypatch, caplog):
+    """Both start empty; only the level and the message separate them.
+
+    `bot.main` *saves* whatever `load` returned, so a read blip that reads as "first run"
+    erases the master and everyone pending — and the next `/start` claims the master seat,
+    with `/allow`, `/deny` and `/revoke` behind it, every 15 minutes. `LocalEntryNotFound
+    Error` subclasses `EntryNotFoundError` while meaning the opposite, so the split is drawn
+    by `store._is_absent` rather than by an `isinstance` on the parent.
+    """
+    hub_errors = pytest.importorskip("huggingface_hub.errors")
+
+    def raising(exc):
+        def read(repo, path, token):
+            raise exc
+
+        return read
+
+    monkeypatch.setattr(
+        reg, "read_bytes", raising(hub_errors.EntryNotFoundError("gone"))
+    )
+    with caplog.at_level(logging.DEBUG, logger="headstart.alerts.registry"):
+        assert reg.load(REPO, TOKEN) == reg.Registry()
+    absent = caplog.records[-1]
+    assert absent.levelno == logging.INFO
+    assert "first run" in absent.getMessage()
+
+    caplog.clear()
+    monkeypatch.setattr(
+        reg, "read_bytes", raising(hub_errors.LocalEntryNotFoundError("unreachable"))
+    )
+    with caplog.at_level(logging.DEBUG, logger="headstart.alerts.registry"):
+        assert reg.load(REPO, TOKEN) == reg.Registry()
+    unreachable = caplog.records[-1]
+    assert unreachable.levelno == logging.ERROR
+    assert (
+        unreachable.exc_info is not None
+    )  # the traceback is the only clue to which read
+    # The consequence, not just the symptom — this empty Registry is about to be persisted.
+    assert "SAVED OVER" in unreachable.getMessage()
 
 
 def test_a_broken_install_is_not_reported_as_an_absent_registry(monkeypatch):

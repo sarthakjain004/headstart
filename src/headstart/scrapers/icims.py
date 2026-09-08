@@ -167,24 +167,45 @@ class ICIMSScraper(BaseScraper):
         ]
 
     def _job_fields(self, url: str) -> dict[str, Any] | None:
-        response = http.fetch(
-            "GET", _detail_url(url), headers={"User-Agent": USER_AGENT}, timeout=30
-        )
-        if response.status_code != 200:
+        try:
+            response = http.fetch(
+                "GET", _detail_url(url), headers={"User-Agent": USER_AGENT}, timeout=30
+            )
+        except http.RequestsError as exc:
+            self.note_detail_loss(type(exc).__name__)
             return None
-        return _ld_fields(response.text)
+        return self._fields_of(response)
 
     async def _job_fields_async(self, session: Any, url: str) -> dict[str, Any] | None:
-        response = await http.fetch_async(
-            session,
-            "GET",
-            _detail_url(url),
-            headers={"User-Agent": USER_AGENT},
-            timeout=30,
-        )
-        if response.status_code != 200:
+        try:
+            response = await http.fetch_async(
+                session,
+                "GET",
+                _detail_url(url),
+                headers={"User-Agent": USER_AGENT},
+                timeout=30,
+            )
+        except http.RequestsError as exc:
+            self.note_detail_loss(type(exc).__name__)
             return None
-        return _ld_fields(response.text)
+        return self._fields_of(response)
+
+    def _fields_of(self, response: Any) -> dict[str, Any] | None:
+        """One job page's JSON-LD fields, with a ``None`` labelled by what lost it (ADR-0088's
+        discipline, on the pass that needed it: a refusal and a body that arrived unreadable both
+        return ``None`` here, and a bare count of ``None``s cannot tell them apart — which is how
+        a User-Agent denylist stayed invisible for five runs across 102 Boards). The transport
+        failures are labelled by the two callers above, which are the only ones that see them.
+        """
+        if response.status_code != 200:
+            self.note_detail_loss(f"HTTP {response.status_code}")
+            return None
+        fields = _ld_fields(response.text)
+        if fields is None:
+            # The `in_iframe=1` trap as well as a genuine JSON-LD outage — the branded wrapper
+            # is a well-formed 200 carrying no JobPosting at all.
+            self.note_detail_loss("no JSON-LD on a 200")
+        return fields
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []

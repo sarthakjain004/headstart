@@ -19,7 +19,7 @@ import argparse
 from pathlib import Path
 
 from headstart import log
-from headstart.ingest import REPO_ROOT
+from headstart.ingest import REPO_ROOT, observability
 from headstart.tech_filter import filter_jobs
 
 _log = log.get(__name__, __spec__)
@@ -27,6 +27,7 @@ _log = log.get(__name__, __spec__)
 
 def main() -> int:
     log.setup()
+    observability.context("filter_tech")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--src", type=Path, default=REPO_ROOT / "data" / "jobs")
     ap.add_argument("--dst", type=Path, default=REPO_ROOT / "data" / "jobs" / "tech")

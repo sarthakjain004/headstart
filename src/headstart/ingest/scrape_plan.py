@@ -220,7 +220,7 @@ def _write_plan(
 
 def main() -> int:
     log.setup()
-    observability.context("scrape-plan")
+    observability.context("scrape_plan")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--ledger",

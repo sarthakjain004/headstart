@@ -40,13 +40,15 @@ class GreenhouseScraper(BaseScraper):
         ``total`` stays authoritative *during* a short response is exactly the unknown, and
         marking a Board unauthoritative on a signal that might fire always (or never) is the
         failure ADR-0053's guards exist to avoid. So this logs and does nothing else; §4.1 records
-        how to read a warning (and, harder, a silence) into a decision on shipping the guard.
+        how to read this line (and, harder, a silence) into a decision on shipping the guard.
+        It logs at INFO: it can fire once per Board, and ADR-0039's annotation budget is a
+        run-level quota, so an observation-only tripwire is exactly what must not spend it.
         """
         raw = super().fetch_raw()
         total = (raw.get("meta") or {}).get("total")
         listed = len(raw.get("jobs") or [])
         if isinstance(total, int) and total != listed:
-            _log.warning(
+            _log.info(
                 f"{self.board_key()}: envelope disagrees — {listed} jobs listed but "
                 f"meta.total={total} (delta {total - listed}); the response is short and "
                 "says so, so a mark_truncated guard on this signal would fire here"

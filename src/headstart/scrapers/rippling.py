@@ -149,13 +149,18 @@ class RipplingScraper(BaseScraper):
     def _detail_url(self, uuid: str) -> str:
         return f"{_API}/{self.slug}/jobs/{uuid}"
 
-    @staticmethod
-    def _extract_detail(response: Any) -> dict:
-        return response.json() if response.status_code == 200 else {}
+    def _extract_detail(self, response: Any) -> dict:
+        """This posting's record, or the ``{}`` failure sentinel labelled by what lost it —
+        an instance method for that reason alone (see :meth:`~BaseScraper.note_detail_loss`)."""
+        if response.status_code != 200:
+            self.note_detail_loss(f"HTTP {response.status_code}")
+            return {}
+        return response.json()
 
     def _detail(self, uuid: str | None) -> dict:
         """GET one posting's full record (``{}`` on failure). Sync path."""
         if not uuid:
+            self.note_detail_loss("no job uuid")
             return {}
         try:
             resp = http.fetch(
@@ -164,13 +169,15 @@ class RipplingScraper(BaseScraper):
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 timeout=30,
             )
-        except http.RequestsError:
+        except http.RequestsError as exc:
+            self.note_detail_loss(type(exc).__name__)
             return {}
         return self._extract_detail(resp)
 
     async def _detail_async(self, session: Any, uuid: str | None) -> dict:
         """Same as :meth:`_detail` but over the shared multiplexed ``AsyncSession``."""
         if not uuid:
+            self.note_detail_loss("no job uuid")
             return {}
         try:
             resp = await http.fetch_async(
@@ -180,7 +187,8 @@ class RipplingScraper(BaseScraper):
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 timeout=30,
             )
-        except http.RequestsError:
+        except http.RequestsError as exc:
+            self.note_detail_loss(type(exc).__name__)
             return {}
         return self._extract_detail(resp)
 

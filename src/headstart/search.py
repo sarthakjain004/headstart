@@ -25,6 +25,7 @@ constants and both filter builders stay importable (and unit-testable) without t
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Collection, Mapping
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, NamedTuple
@@ -35,6 +36,15 @@ try:  # in the repo, a package member; in the Space image, a flat sibling module
 except ImportError:  # pragma: no cover - exercised only in the deployed Space
     import fx  # type: ignore[no-redef]
     import geo  # type: ignore[no-redef]
+
+# `logging.getLogger` rather than `headstart.log.get`, which is the same call: `log.py` is not
+# among the modules `deploy-space.yml` copies into the Space image, and there is no `headstart`
+# package there to import the seam from (the same constraint the fx/geo import above documents).
+# In the repo the name resolves under the `headstart` root, so a stage's `log.setup()` reaches
+# it; in the Space nothing calls `setup`, which is why the one boot line below is a WARNING —
+# `logging.lastResort` carries WARNING and above to stderr with no handler configured, and a
+# served table quietly ignoring whole filters is an anomaly by ADR-0039's own definition.
+_log = logging.getLogger(__name__)
 
 MODEL = "nomic-ai/nomic-embed-text-v1.5"
 DOC_PREFIX = "search_document: "  # index time (ADR-0005)
@@ -673,6 +683,11 @@ def build_filter(
         filters.append("remote = true")
     if max_years is not None:
         filters.append(f"(min_years <= {int(max_years)} OR min_years IS NULL)")
+    # A value that misses either whitelist drops the filter silently *here* and is reported
+    # once, by `JobSearch.filter_kwargs`, before this compiler is ever entered. It cannot be
+    # reported here: `facets.counts` recompiles the same kwargs once per facet option, so a
+    # warning on this line is emitted ~29 times for one bad query-string parameter — see
+    # `_warn_unknown_filters`.
     if ats in atses:  # whitelist — never interpolated from free text
         filters.append(f"ats = '{ats}'")
     if etype in ETYPE_CLAUSES:
@@ -712,6 +727,34 @@ def build_filter(
         has_first_seen=has_first_seen,
     )
     return " AND ".join(filters) if filters else None
+
+
+def _warn_unknown_filters(
+    ats: str | None, etype: str | None, atses: Collection[str]
+) -> None:
+    """Say, once per request, that a query-string value missed its whitelist.
+
+    A value that misses drops its filter entirely and the search runs unfiltered — the widest
+    possible answer to a request that asked to be narrowed — so it is worth a line.
+    :func:`eval_filter` raises on its own unknown value; this one cannot, because the whitelist
+    is whatever the served table happens to hold and a stale bookmark must not 500.
+
+    It lives here rather than beside the drop in :func:`build_filter` because that compiler is
+    re-entered once per facet option: :func:`headstart.facets.counts` recompiles one request's
+    kwargs 32 times, so a line on the drop itself came out **58 times** for a single
+    ``?ats=bogus&etype=bogus`` — unauthenticated, user-controlled amplification, ~29 lines per
+    bad parameter from any crawler with a stale link. :meth:`JobSearch.filter_kwargs` parses a
+    request exactly once, so this is said exactly once.
+
+    Rendered through ``%r`` and clipped: the value comes from the query string, so it is never
+    the format string itself and cannot open a second line in the log.
+    """
+    if ats and ats not in atses:
+        _log.warning("filter dropped: ats %.40r is not in this table", ats)
+    if etype and etype not in ETYPE_CLAUSES:
+        _log.warning(
+            "filter dropped: employment_type %.40r is not a known value", etype
+        )
 
 
 class JobSearch:
@@ -782,6 +825,28 @@ class JobSearch:
         # boot is the one moment a cold Space has a visitor waiting on it, and nobody has
         # asked for the tab yet.
         self._coverage: dict[str, Any] | None = None
+        # The three flags above are each a whole feature silently switched off: an un-migrated
+        # table ignores every `seen_within`/`first_seen_after` bound, the salary bracket and
+        # `has_salary`, the Keyword filter's description scope, and the `seen`/`salary` sorts
+        # (`run` below quietly drops those too) — and answers each request as though no such
+        # filter had been asked for. That is the shape of the incident where the derived salary
+        # columns were never read by the serving path and nothing said so, so it is said here,
+        # once, naming the columns rather than the features. A fully migrated table logs nothing.
+        dark = [
+            column
+            for column, live in (
+                ("first_seen", self.has_first_seen),
+                ("min_salary_annual", self.has_min_salary_annual),
+                ("description", self.has_description),
+            )
+            if not live
+        ]
+        if dark:
+            _log.warning(
+                "served table is missing %s — every filter and sort keyed on those columns "
+                "is disabled for this table, not failing",
+                ", ".join(dark),
+            )
 
     def filter_kwargs(self, args: Mapping[str, str]) -> dict[str, Any]:
         """The :func:`build_filter` keywords one request asks for, parsed exactly once.
@@ -796,11 +861,16 @@ class JobSearch:
         _int = _int_arg(args)
         kw = (args.get("kw") or "").strip() or None
         kw_in = (args.get("kw_in") or "").strip().lower()
+        ats = (args.get("ats") or "").strip() or None
+        etype = (args.get("etype") or "").strip() or None
+        # The one place a request is parsed, and so the one place a dropped filter can be
+        # reported without `facets.counts` repeating it once per option — see the helper.
+        _warn_unknown_filters(ats, etype, self.atses)
         return {
             "remote": args.get("remote") == "true",
             "max_years": _int("max_years"),
-            "ats": (args.get("ats") or "").strip() or None,
-            "etype": (args.get("etype") or "").strip() or None,
+            "ats": ats,
+            "etype": etype,
             "india": (args.get("india") or "").strip().lower() or None,
             "location": (args.get("location") or "").strip() or None,
             "company": (args.get("company") or "").strip() or None,

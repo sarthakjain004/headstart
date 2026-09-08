@@ -42,6 +42,7 @@ from typing import Any
 from headstart import log
 from headstart.config import load_active_companies
 from headstart.corpus import board_of
+from headstart.ingest.observability import named_sample
 from headstart.scrapers.registry import get_scraper
 
 _log = log.get(__name__, __spec__)
@@ -294,11 +295,37 @@ def live_keep_set(ledger_dir: str | Path) -> set[str]:
     Kept in the ledger's **own casing**, not lowercased: :func:`plan_prune` matches Boards
     case-insensitively but needs the exact live casing to pick which duplicate row to keep."""
     keep: set[str] = set()
+    keyless: list[str] = []
     for company in load_active_companies(ledger_dir, min_jobs=0):
         try:
             keep.add(get_scraper(company.ats, company.slug, company.name).board_key())
-        except Exception:  # noqa: BLE001, S112 - a malformed ledger row shouldn't sink the whole set
+        except Exception:  # noqa: BLE001 - a malformed ledger row shouldn't sink the whole set
+            # Not sinking the set is right; doing it silently is not. The Board drops out of the
+            # keep-set, so `plan_prune` reads its rows as off-Board and `prune --apply` deletes
+            # them under that name — a live Board's postings evicted, and reported as a cause
+            # that never happened. Only the exception distinguishes the two, so it is recorded.
+            #
+            # The first one carries its traceback at warning; the rest are info. A Board failing
+            # here is usually one malformed row, but a scraper whose `board_key` starts raising
+            # fails on every row it owns — and one annotation per Board would then spend the
+            # step's whole GitHub budget (10 per step, 50 per job) restating one bug. The first
+            # stack says what broke; the summary below says how far it reached.
+            keyless.append(f"{company.ats}:{company.slug}")
+            first = len(keyless) == 1
+            emit = _log.warning if first else _log.info
+            # The traceback is bound to the same first occurrence as the level. Leaving
+            # `exc_info` unconditional would bound the annotations and not the stacks, which
+            # is the same flood one indirection later — a stack per Board rather than a line.
+            emit(f"keep-set: no board_key for {keyless[-1]}", exc_info=first)
             continue
+    if len(keyless) > 1:
+        # "Scrapable Board", the term `index prune`'s own keep-set line uses and the one
+        # `load_active_companies(min_jobs=0)` actually yields — CONTEXT.md §Counting Boards
+        # binds each name to exactly one figure, and "live Boards" names none of them.
+        _log.warning(
+            f"keep-set: {len(keyless)} Scrapable Board(s) built no board_key and will prune as "
+            "off-Board: " + named_sample(keyless)
+        )
     return keep
 
 

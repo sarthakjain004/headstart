@@ -276,13 +276,25 @@ predicted duration.
 # recent runs of the nightly pipeline
 gh run list --workflow pipeline.yml --limit 5 --json databaseId,createdAt,conclusion
 
-# bucket boundaries + the final summary line
-gh run view <run-id> --log | grep -E "\[embed\] bucket|to embed:|done: embedded"
+# bucket boundaries, the shard's assignment, and the final summary line
+gh run view <run-id> --log | grep -E "\[embed_run\] (bucket ≤|assignment:|done: )"
 
 # full per-batch throughput stream (compute real rates from the timestamps, not the
 # rounded jobs/s the script prints)
-gh run view <run-id> --log | grep -E "\[embed\]"
+gh run view <run-id> --log | grep -F "[embed_run]"
 ```
+
+Two things these greps get right that an earlier version of them did not, both worth keeping:
+
+- **The tag is `[embed_run]`, not `[embed]`.** `log._Formatter` stamps the module's own name
+  (`headstart.ingest.embed_run` -> `embed_run`), so `\[embed\]` matches nothing at all — and a
+  grep that matches nothing exits 1 silently rather than saying the pattern is stale.
+- **The pipeline runs the *sharded* path, so the lines are the sharded ones.** `pipeline.yml`
+  passes `--assignment`, which logs `assignment: N docs from <path> | <bucket>:<n>, ...` and
+  `done: shard embedded N (F failed) -> <path> (V vectors)`. The mono path's `to embed: ...` and
+  `done: embedded N this run ...` are what a local whole-corpus run prints; grepping for those
+  against a pipeline run returns nothing. `scripts/runlog/fanout_embed.py` reads the sharded
+  spellings for the same reason, and `tests/test_log_contract.py` pins both.
 
 ## Files
 

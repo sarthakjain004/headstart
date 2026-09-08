@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import secrets
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -36,6 +37,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 from .access import normalize
+
+# `logging.getLogger` rather than `headstart.log.get`, which is the same call: this module is
+# copied into the Space image, where every module is laid down flat and there is no
+# `headstart` package to import the seam from (the constraint `search.py` documents). In the
+# pipeline the name still resolves under the `headstart` root, so `log.setup()` reaches it.
+_log = logging.getLogger(__name__)
 
 PREFIX = "subscriptions/"
 _ID = re.compile(r"[0-9a-f]{16}")  # exactly what subscription_id and saved_job_id mint
@@ -484,6 +491,22 @@ def _list_files(repo: str, token: str) -> list[str]:
     return _hf(token).list_repo_files(repo, repo_type="dataset")
 
 
+def _is_absent(exc: BaseException) -> bool:
+    """True only for "the Hub has no such file" — never for "the Hub did not answer".
+
+    `LocalEntryNotFoundError` *subclasses* `EntryNotFoundError` while meaning the opposite,
+    so an `isinstance` against the parent alone reads every outage as an absent record. It
+    is checked first here for that reason. Absent `huggingface_hub` answers False, which
+    keeps an import failure loud rather than filing it as a routine miss."""
+    try:
+        from huggingface_hub.errors import EntryNotFoundError, LocalEntryNotFoundError
+    except Exception:  # noqa: BLE001 — no Hub library means no absent-file verdict to give
+        return False
+    return isinstance(exc, EntryNotFoundError) and not isinstance(
+        exc, LocalEntryNotFoundError
+    )
+
+
 def _read(repo: str, path: str, token: str) -> bytes:
     from huggingface_hub import hf_hub_download
 
@@ -539,7 +562,7 @@ class Store:
                     )
                 )
             except Exception as exc:  # noqa: BLE001 — a malformed record is data, not a crash
-                print(f"[alerts] skipping unreadable {path}: {exc}", flush=True)
+                _log.info(f"skipping unreadable {path}: {exc}")
         return out
 
     def get(self, sub_id: str) -> Subscription | None:
@@ -554,7 +577,27 @@ class Store:
         try:
             data = json.loads(_read(self._repo, f"{PREFIX}{sub_id}.json", self._token))
             return Subscription.from_dict(data)
-        except Exception:  # noqa: BLE001 — absent, unreadable and not-a-Subscription are one answer
+        except Exception as exc:  # noqa: BLE001 — absent, unreadable and not-a-Subscription are one answer
+            # None is three different facts — no record yet, a corrupt one, the Hub
+            # unreachable — and the caller cannot tell them apart. `subscription_for` reads
+            # the third as the first and mints a replacement, which restarts that person's
+            # Watermark and rotates the unsubscribe token in mail already delivered. The
+            # return value stays None for all three; only the log separates them.
+            #
+            # The two Hub cases must be split in *this* order: `LocalEntryNotFoundError`
+            # subclasses `EntryNotFoundError` but means the opposite thing — not "no such
+            # file" but "could not reach the Hub to ask". Catching the parent first would
+            # file every outage under "no record yet", which is precisely the misreading
+            # that costs someone their Watermark.
+            if _is_absent(exc):
+                # The overwhelmingly common path: a signed-in Account with no record yet.
+                # `/sets` reaches here on most page loads, so anything louder than DEBUG
+                # would bury the two real failures below in routine traffic.
+                _log.debug(f"{sub_id}: no record yet")
+            else:
+                _log.error(
+                    f"{sub_id} unreadable: {type(exc).__name__}: {exc}", exc_info=True
+                )
             return None
 
     def put(self, sub: Subscription) -> None:
@@ -583,7 +626,7 @@ class Store:
                     SavedSet.from_dict(json.loads(_read(self._repo, path, self._token)))
                 )
             except Exception as exc:  # noqa: BLE001 — a malformed record is data, not a crash
-                print(f"[alerts] skipping unreadable {path}: {exc}", flush=True)
+                _log.info(f"skipping unreadable {path}: {exc}")
         out.sort(key=lambda s: s.created_at)
         return out
 
@@ -662,7 +705,7 @@ class Store:
         try:
             return SavedJob.from_dict(json.loads(_read(self._repo, path, self._token)))
         except Exception as exc:  # noqa: BLE001 — a malformed record is data, not a crash
-            print(f"[alerts] skipping unreadable {path}: {exc}", flush=True)
+            _log.info(f"skipping unreadable {path}: {exc}")
             return None
 
     def saved_ids(self, account: str) -> set[str]:
@@ -766,7 +809,11 @@ class Store:
         try:
             data = json.loads(_read(self._repo, ALLOWLIST_PATH, self._token))
         except Exception as exc:  # noqa: BLE001 — absent list must deny, not raise
-            print(f"[alerts] allowlist unreadable ({exc}) — denying all", flush=True)
+            _log.error(
+                f"the allowlist at {ALLOWLIST_PATH} could not be read "
+                f"({type(exc).__name__}: {exc}) — nobody is invited, so every email "
+                "Subscription is skipped this run"
+            )
             return []
         return parse_allowlist(data)
 

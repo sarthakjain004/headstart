@@ -6,6 +6,10 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from headstart import log
+
+_log = log.get(__name__)
+
 
 @dataclass(frozen=True, slots=True)
 class CompanyRef:
@@ -294,8 +298,18 @@ def load_active_companies(
     companies: list[CompanyRef] = []
     for csv_path in sorted(ledger_dir.glob("*.csv")):
         scraper = SCRAPERS.get(csv_path.stem)
-        if scraper is None or scraper.ats in DISABLED_ATS:
+        if scraper is None:
+            # A whole ledger file dropped, silently, because its stem is not a registered ATS.
+            # That is how a scraper renamed without its ledger, or a ledger landed under a
+            # misspelt name, takes every one of its Boards out of the run while the run reports
+            # nothing unusual — the ATS simply stops appearing in the totals.
+            _log.warning(
+                f"{csv_path.name}: no scraper registered for '{csv_path.stem}' — "
+                "every Board in this ledger is skipped"
+            )
             continue
+        if scraper.ats in DISABLED_ATS:
+            continue  # deliberate (registry.DISABLED_ATS), so not worth a line
         # Boards this ATS publishes twice, buried in favour of their canonical (ADR-0111). Dropped
         # here beside EXCLUDED_BOARDS because both are keyed on the slug; the *syntactic* dedupe
         # below cannot do it, since two different hostnames share no `board_key` to collapse on.
@@ -313,6 +327,20 @@ def load_active_companies(
     return _drop_parked(_dedupe_boards(companies))
 
 
+#: Boards already reported by :func:`board_identity`, so one malformed slug says so once.
+#:
+#: Module-level, and never cleared: a pipeline stage is one process, and the point is that every
+#: caller shares one record. `board_identity` is reached from ~15 sites (`scrape_plan` x8,
+#: `board_priority` x7, plus `_drop_parked` and `_dedupe_boards` here), each walking the whole
+#: company list, so one bad slug restated itself ~15x per run — and a scraper whose `board_key()`
+#: starts raising would emit `N_Boards x 15` lines for one bug.
+#:
+#: Measured 2026-09-08: `load_active_companies('data/validate/liveness', min_jobs=0)` yields
+#: 91,325 Scrapable Boards and reaches this path zero times, so the blast radius today is nil.
+#: Latent, not live — but unbounded by construction, which is what the bound is for.
+_IDENTITY_REPORTED: set[str] = set()
+
+
 def board_identity(company: CompanyRef) -> str:
     """The Board's canonical key: ``board_key`` where the scraper can build one, the plain
     ``ats:slug`` where a malformed slug defeats it — never dropping the Board either way."""
@@ -320,8 +348,23 @@ def board_identity(company: CompanyRef) -> str:
 
     try:
         return SCRAPERS[company.ats](company.slug).board_key()
-    except Exception:  # noqa: BLE001 - a malformed slug falls back to the plain key
-        return f"{company.ats}:{company.slug}"
+    except Exception as exc:  # noqa: BLE001 - a malformed slug falls back to the plain key
+        # The fallback key is a *different* identity from the one the rest of the pipeline uses
+        # for this Board — `_dedupe_boards` collapses on it and `index prune` builds its keep-set
+        # from it — so a Board quietly landing here can be scraped under one name and pruned
+        # under another. Worth a line even though nothing is dropped.
+        #
+        # INFO, not WARNING: this fires once per Board, and under Actions WARNING is an
+        # annotation against a run-level quota (ADR-0039's 2026-09-08 amendment). `index_plan`'s
+        # keep-set guard already warns, once, about the same population.
+        key = f"{company.ats}:{company.slug}"
+        if key not in _IDENTITY_REPORTED:
+            _IDENTITY_REPORTED.add(key)
+            _log.info(
+                f"{key}: board_key() failed "
+                f"({type(exc).__name__}: {exc}) — falling back to the plain ats:slug"
+            )
+        return key
 
 
 def _drop_parked(companies: list[CompanyRef]) -> list[CompanyRef]:

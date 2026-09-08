@@ -208,11 +208,24 @@ def _note_retry(
     why: str,
     retry_after: float | None,
     status: int | None,
+    board: str | None = None,
 ) -> float:
     """Count one retry, log it at DEBUG, and return the backoff delay for the caller to sleep.
 
     A rate-limited host that says how long to wait is believed over the local backoff curve — it
     knows its own window, and guessing shorter just burns another attempt against the wall.
+
+    ``board`` is the ``ats:slug`` the request belongs to, where the caller knows it. Without it
+    the line names only a URL, and asking "which Boards is this ATS spending its retries on?"
+    means reverse-engineering hostnames — while the answer was already in scope at the call site
+    (``egress_board``), simply never passed.
+
+    The line below is assembled with ``%``-style arguments rather than an f-string. This runs
+    once per retry across every request in the run — tens of thousands of times per shard — and
+    the default level is INFO, at which ``logging`` drops the record without ever formatting it;
+    an f-string is built before the call and so pays in full for a line nobody sees. (``why``
+    still arrives pre-formatted from the caller: it is one small string, and threading the
+    exception and status down here to defer it would cost more than it saves.)
     """
     with _retries_lock:
         _retries[_retry_reason(status)] += 1
@@ -222,8 +235,14 @@ def _note_retry(
         else _BACKOFF_STEP * (attempt + 1) * random.uniform(*_BACKOFF_JITTER)
     )
     _log.debug(
-        f"{method} {url} attempt {attempt + 1}/{attempts} {why}; "
-        f"retrying in {delay:.1f}s"
+        "%s%s %s attempt %d/%d %s; retrying in %.1fs",
+        f"{board}: " if board else "",
+        method,
+        url,
+        attempt + 1,
+        attempts,
+        why,
+        delay,
     )
     return delay
 
@@ -319,7 +338,16 @@ def fetch(
                     spare_egress.note_settled(egress_group, None, egress_on)
                 raise
             time.sleep(
-                _note_retry(method, url, attempt, budget, f"failed ({exc})", None, None)
+                _note_retry(
+                    method,
+                    url,
+                    attempt,
+                    budget,
+                    f"failed ({exc})",
+                    None,
+                    None,
+                    egress_board,
+                )
             )
             attempt += 1
             continue
@@ -341,6 +369,7 @@ def fetch(
                     f"-> {response.status_code}",
                     _retry_after(response),
                     response.status_code,
+                    egress_board,
                 )
             )
             attempt += 1
@@ -418,7 +447,16 @@ async def fetch_async(
                     spare_egress.note_settled(egress_group, None, egress_on)
                 raise
             await asyncio.sleep(
-                _note_retry(method, url, attempt, budget, f"failed ({exc})", None, None)
+                _note_retry(
+                    method,
+                    url,
+                    attempt,
+                    budget,
+                    f"failed ({exc})",
+                    None,
+                    None,
+                    egress_board,
+                )
             )
             attempt += 1
             continue
@@ -447,6 +485,7 @@ async def fetch_async(
                     f"-> {response.status_code}",
                     _retry_after(response),
                     response.status_code,
+                    egress_board,
                 )
             )
             attempt += 1

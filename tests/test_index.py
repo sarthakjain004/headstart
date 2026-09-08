@@ -303,6 +303,11 @@ def test_log_reasons_pairs_each_board_with_why_on_its_own_line(caplog):
         "scope-excluded Board: eightfold:caci.eightfold.ai — truncated: 500 of 1200",
         "scope-excluded Board: workday:x/Careers — HTTPError: HTTP Error 429:",
     ]
+    # Info, not warning. Under Actions a WARNING is a workflow annotation, and GitHub keeps only
+    # 10 per step / 50 per job — one per Board spent the merge job's whole budget on routine
+    # exclusions (469 in one snapshot) and displaced the errors annotations exist for. The
+    # caller emits the single warning that names the set.
+    assert {r.levelname for r in caplog.records} == {"INFO"}
 
 
 def test_log_reasons_flattens_and_clips_so_one_board_stays_one_line(caplog):
