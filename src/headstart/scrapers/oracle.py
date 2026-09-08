@@ -50,17 +50,18 @@ from headstart.scrapers.base import BaseScraper
 _PAGE_SIZE = 200
 #: Our ceiling. Reaching it means the board did not end, we stopped reading it.
 _MAX_PAGES = 100
-#: How far under `TotalJobsCount` a completed walk may land without being called truncated.
-#: Walking 50 Boards to an empty page, 46 matched the total exactly and the other 4 fell short by
-#: **1 or 2 rows** (max 1.69% of the Board). Whether the counter over-counts or a row exists that
-#: offset paging cannot reach, the measurement cannot say — and it does not matter here, because
-#: the row is unreachable either way: on `ebxr.fa.us2`, offset 199 returns 200 rows containing
-#: **no id** the ordinary page-size walk missed, so its 420th posting is not fetchable at any
-#: offset. Without this slack those Boards would be marked truncated on every run and so leave
-#: the eviction scope permanently — ADR-0053's exclusion has no drain, so a recurring false
-#: positive there accretes dead rows invisibly. Deliberately tiny, and it does discriminate:
-#: `etud.fa.us8` states 114 and serves 89, and that 25-row gap is still reported.
-_TOTAL_SLACK = 2
+#: Rows a completed walk may fall short of `TotalJobsCount`, **per page fetched**, before it is
+#: called truncated. Per-page rather than a flat figure because the shortfall scales with the
+#: walk: measured on 55 multi-page Boards, 9 landed under their total and the three worst were
+#: short by 7 over 15 pages, 5 over 20 and 4 over 8 — ratios of 0.5, 0.25 and 0.47 rows per page.
+#: A flat slack of 2 was the first attempt and a review found it wrong in exactly the place that
+#: matters: it fits small Boards and falsely truncates large ones, every run, permanently, into
+#: ADR-0053's exclusion scope — which has no drain, so the accretion is invisible.
+#:
+#: 1 row per page is double the worst ratio observed, and still separates a real loss by more
+#: than an order of magnitude: `egud` reads 10,000 of 11,056 (20.7 rows/page), `ejwl` 9,926 of
+#: 13,430 (~70) and `etud` 89 of 114 (25) — all still reported, as they must be.
+_SLACK_PER_PAGE = 1
 #: Concurrent detail fetches. Measured clean at 32 across five regional pods (us2, ocs, em3, em2,
 #: us6) — 454 calls, 46-65 req/s, zero non-200s, and no rate limit found anywhere in 6,351
 #: requests. Half that here because `harvest` scrapes Boards concurrently *and* each Board fans
@@ -149,10 +150,17 @@ class OracleScraper(BaseScraper):
         420. Measured over 40 multi-page boards, **12% hit a short page early and 3,421 of
         28,715 postings (12%) were lost** to it. The end is an **empty** page.
 
+        **An empty page is not always the end of the Board, though.** The API refuses to read
+        past row 10,000: on `ejwl.fa.us2` (13,430 postings) `offset=9800` returns a full 200
+        while `offset=9900` returns zero rows *and* a `TotalJobsCount` of 0 — the envelope goes
+        blank rather than erroring. So a Board over ~10,000 postings ends its walk at the
+        ceiling, not at its true end, and the shortfall check below is what reports it. That
+        ceiling binds long before `_MAX_PAGES`, which is why no real Board reaches the page cap.
+
         `TotalJobsCount` stops the walk early when it is satisfied, and it is trustworthy for
-        that: walking 50 boards to an empty page, the distinct ids equalled it on 92% and no
-        board ever repeated an id across pages. `hasMore` remains useless — it came back
-        ``false`` on a 248-posting board whose first page held 200.
+        that: across 55 multi-page Boards no Board repeated an id, and 46 of 55 landed exactly on
+        their total. `hasMore` remains useless — it came back ``false`` on a 248-posting Board
+        whose first page held 200.
         """
         reqs: list[dict] = []
         total = 0
@@ -176,7 +184,8 @@ class OracleScraper(BaseScraper):
                 f"hit the {_MAX_PAGES}-page cap at {len(reqs)} of {total or 'unknown'} "
                 "requisitions — the rest unread"
             )
-        if total and len(reqs) < total - _TOTAL_SLACK:
+        pages = self._offset // _PAGE_SIZE
+        if total and len(reqs) < total - pages * _SLACK_PER_PAGE:
             self.mark_truncated(
                 f"read {len(reqs)} of {total} requisitions — the rest is unread, not absent"
             )

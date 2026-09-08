@@ -326,23 +326,33 @@ def test_a_short_page_does_not_end_the_walk(monkeypatch):
 
 
 def test_a_walk_ending_just_under_the_total_is_not_called_truncated(monkeypatch):
-    """The API's counter is slightly inflated: of 50 boards walked to an empty page, 46 matched
-    it exactly and 4 fell short by 1-2 rows. Marking those truncated every run would park them
-    in ADR-0053's exclusion scope, which has no drain."""
+    """The API's counter is slightly inflated: of 55 multi-page Boards walked to an empty page,
+    46 matched it exactly and 9 fell short. Marking those truncated every run would park them in
+    ADR-0053's exclusion scope, which has no drain."""
     fake = _FakeListing(total_ids=298, page_size=200, reported_total=300)
     scraper = _paged(monkeypatch, fake)
     scraper.fetch_raw()
     assert scraper.truncated is None
 
 
-def test_a_walk_three_rows_under_the_total_is_called_truncated(monkeypatch):
-    """The first row outside the slack, which is where the constant actually decides. Two short
-    is quiet (the test above), three short is not — without this, `_TOTAL_SLACK` could be
-    widened silently and only the 750-short case would still object."""
+def test_the_slack_scales_with_the_number_of_pages_walked(monkeypatch):
+    """Where the constant actually decides, and why it is per-page rather than flat.
+
+    A flat slack of 2 was the first attempt, and a review measured it wrong: the shortfall
+    grows with the walk (7 rows over 15 pages, 5 over 20, 4 over 8), so a flat figure fits
+    small Boards and falsely truncates large ones on every run. Both halves are pinned here —
+    a gap equal to the page count is tolerated, one row more is not."""
+    # 3 pages walked (200 + 97 + the empty one), so a 3-row gap sits exactly on the allowance.
     fake = _FakeListing(total_ids=297, page_size=200, reported_total=300)
     scraper = _paged(monkeypatch, fake)
     scraper.fetch_raw()
-    assert scraper.truncated and "297 of 300" in scraper.truncated
+    assert scraper.truncated is None
+
+    # Same walk, one row further under: now it is reported.
+    fake = _FakeListing(total_ids=296, page_size=200, reported_total=300)
+    scraper = _paged(monkeypatch, fake)
+    scraper.fetch_raw()
+    assert scraper.truncated and "296 of 300" in scraper.truncated
 
 
 def test_a_materially_short_walk_is_still_called_truncated(monkeypatch):

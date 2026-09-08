@@ -102,33 +102,49 @@ and 0 missing**, with and without `sortBy`.
 pagination terminator. `TotalJobsCount` is the honest signal, and the current loop is right to
 use it.
 
-**A short page is not the end of the board** (found 2026-09-08 from the first production run,
+**A short page is not the end of the Board** (found 2026-09-08 from the first production run,
 after this document's first draft). Oracle serves under-full pages mid-walk: `ebxr.fa.us2`
 answers offset 0 with **199** rows against a stated total of 420 — reproducibly, 3 of 3 attempts
 — then offset 200 with a full 200 and offset 400 with the remaining 20. A loop that stops on a
-short page reads 199 of 420. Measured over 40 multi-page Boards, **5 of 40 (12.5%) hit one
-early**, costing **3,421 of 28,715 postings (11.9%)** — two nearby figures measuring different
-things, not one figure written twice. The run log showed it plainly: `read 199 of 420`,
+short page reads 199 of 420. The run log showed it plainly: `read 199 of 420`,
 `read 599 of 2184`, `read 5963 of 13424`.
 
-The end is an **empty** page. Walking 50 Boards to one, the distinct ids equalled
-`TotalJobsCount` on **92%**, no Board ever repeated an id across pages, and the 4 that fell
-short were short by **1 or 2 rows** (max 1.69%).
+**How much this costs depends heavily on which Boards you sample, so both measurements are
+here.** A 40-Board sample found 5 (12.5%) hitting an early short page and 3,421 of 28,715
+postings lost (11.9%); an independent 60-Board review sample found 12 (20%) and 18,974 of
+63,397 (29.9%). The loss concentrates in large Boards, so the second sample is the more
+alarming and the more representative of where the rows are. Either way the direction is the
+same and the fix is the same.
 
-Whether the counter over-counts or a row exists that offset paging cannot reach, this
-measurement cannot say — and it does not decide anything, because the row is unreachable either
-way: on `ebxr.fa.us2`, `offset=199` returns 200 rows containing **no id** the ordinary
-page-size walk already had. So the total is a sound early stop, and `_TOTAL_SLACK` exists so
-those 8% are not marked truncated every run and parked in ADR-0053's exclusion scope, which has
-no drain. It still discriminates: `etud.fa.us8` states 114 and serves 89, and that 25-row gap
-is reported.
+**The end is an empty page — with one exception that matters.** The API refuses to read past
+row 10,000: on `ejwl.fa.us2` (13,430 postings) `offset=9800` returns a full 200 while
+`offset=9900` returns zero rows *and* a `TotalJobsCount` of 0, the envelope going blank rather
+than erroring. So a Board above ~10,000 postings ends its walk at that ceiling, not at its true
+end, and the shortfall check is what reports it. **That ceiling binds long before
+`_MAX_PAGES = 100`** (20,000 rows), which is why no real Board reaches the page cap — the
+earlier draft of §5 had this backwards.
+
+**The total is slightly inflated, and by an amount that grows with the walk.** Across 55
+multi-page Boards, 46 landed exactly on `TotalJobsCount`, no Board ever repeated an id, and the
+9 that fell short were short by 1 to 7 rows — the three worst being 7 over 15 pages, 5 over 20
+and 4 over 8, i.e. **0.25 to 0.5 rows per page**. Whether the counter over-counts or a row
+exists that offset paging cannot reach, the measurement cannot say, and it does not decide
+anything: on `ebxr.fa.us2`, `offset=199` returns 200 rows containing **no id** the ordinary
+page-size walk already had, so the row is unreachable either way.
+
+Hence `_SLACK_PER_PAGE`, and hence per-page rather than flat. A flat slack of 2 was the first
+attempt and a review measured it wrong in the place that matters: it fits small Boards and
+**falsely truncates large ones** — `fa-ermg` (1,280 of 1,284) and `hcml` (3,605 of 3,610) every
+run, permanently, into ADR-0053's exclusion scope, which has no drain. One row per page is
+double the worst ratio observed and still separates a real loss by more than an order of
+magnitude: `egud` reads 10,000 of 11,056 (20.7 rows/page), `ejwl` 9,926 of 13,430 (~70) and
+`etud` 89 of 114 (25) are all still reported.
 
 **How many Boards actually paginate** — read against the committed ledger, not the sweep, for the
 reason §8 gives: **262 of 991** hiring Boards exceed one 200-row page. The largest real employer
-Board is Marriott at **13,379** postings (67 pages), comfortably inside `_MAX_PAGES = 100`. Only
-one Board in the ledger would exhaust that cap — Oracle's own 78,431-posting load-test instance,
-which would need 393 pages and is excluded in `config.EXCLUDED_BOARDS` instead. So the cap is
-never expected to fire on a real Board; if it does, `mark_truncated` says so rather than serving a
+Board is Marriott at **13,430** postings — but it cannot be read whole: the 10,000-row offset
+ceiling stops its walk at 9,926, which the shortfall check reports. `_MAX_PAGES = 100` is
+therefore never the binding limit on a real Board; if it does, `mark_truncated` says so rather than serving a
 short list silently. (The exploratory sweep's own figures — 199 of 1,331 over one page, largest
 4,947 — count *sites*, and are not the ones to size a page cap against.)
 
