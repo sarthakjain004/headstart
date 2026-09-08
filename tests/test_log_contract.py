@@ -19,7 +19,7 @@ loud instead: **change an emitter's wording without changing its consumer and a 
 
 One table, :data:`CONTRACT`, with one :class:`Line` per log line a consumer parses. Each entry
 names the consumer (`module.PATTERN` under `scripts/runlog/`), the emitter that writes the line,
-and the message body as it really appears. Four checks run over it:
+and the message body as it really appears. Five checks run over it:
 
 1. **The consumer parses a real line** — the pattern must match the body in both renderings
    `headstart.log._Formatter` produces: the local `HH:MM:SS [tag] body` and the GitHub Actions
@@ -32,7 +32,12 @@ and the message body as it really appears. Four checks run over it:
 3. **The emitter really emits it** (`emit=` entries only) — the emitter function is *called* under
    `caplog` and the pattern is matched against what it actually logged. This is the strongest form
    and it is used wherever the emitter is reachable without heavy deps or real data.
-4. **Nothing is unaccounted for** — every module-level `re.compile` in `scripts/runlog/*.py` is
+4. **The documented body is one of those lines** (`emit=` entries only) — the entry's own `body`
+   must appear, character for character, among the messages the emitter produced. Checks 1 and 3
+   both match the *pattern*, one against `body` and one against the records, and nothing compared
+   the two to each other until this check: an audit replaced `run_logs.DONE`'s `body` with
+   invented numbers and got a green run.
+5. **Nothing is unaccounted for** — every module-level `re.compile` in `scripts/runlog/*.py` is
    either in this table or in :data:`EXEMPT` with a reason. Adding an analyser regex without a
    contract entry is what fails, so no human has to remember.
 
@@ -40,8 +45,8 @@ and the message body as it really appears. Four checks run over it:
 `index.py` (lancedb/pyarrow/numpy), `role_trends.py` (numpy) and `embed_run.py` (torch,
 sentence-transformers) cannot be imported here at all, and several other lines sit inside a
 `main()` that wants a real ledger on disk. Those entries are source-verified: check 2 pins their
-wording, check 1 pins the shape the pattern reads out of it. Entries carrying `emit=` add check 3
-on top, so prefer `emit=` whenever an emitter becomes cheaply callable, and treat a growing
+wording, check 1 pins the shape the pattern reads out of it. Entries carrying `emit=` add checks 3
+and 4 on top, so prefer `emit=` whenever an emitter becomes cheaply callable, and treat a growing
 source-verified set as debt.
 
 **Where the line between them actually falls is *values*.** Check 2 reads format strings, so `{n}`
@@ -56,10 +61,16 @@ anything rendered through a float format — a minute figure, a percentage, an a
 ratio. Raising those would make the fixture lie about the pipeline rather than about the format
 string, which is a worse trade than the gap.
 
-**Neither check reads `body` against what the emitter produced**, either: check 1 matches the
-pattern against `body` and check 3 matches it against the real records, but nothing asserts the
-two are the same string. `body` is documentation, and it is only as honest as the person who last
-edited the fixture beside it.
+**And `body` itself is worth two different things, depending on the entry.** On the 14 `emit=`
+entries it is now a measured fact: check 4 asserts the documented string is one the emitter really
+logged, so a number drifting (`4804` to `4,804`) fails there as well, and the fabricated body an
+audit fed `run_logs.DONE` — `done: 111 jobs from 222 boards in 333s ...`, which passed every check
+this file had — now fails on the first run. On the other 86 it remains documentation: check 1
+proves the consumer's pattern reads it and check 2 proves the emitter still writes the literals
+around the numbers, but nothing has ever watched those emitters run, so **the values in a
+source-verified `body` are still only the word of whoever last edited the entry** — an invented
+count there would sail through exactly as `run_logs.DONE`'s did. That is the strongest argument
+for moving an entry to `emit=` the moment its emitter becomes cheaply callable.
 
 **One thing this file pins is not in the table at all**: the `stage= run= attempt=` line every
 ingest entry point opens with (`observability.context`). No analyser parses it — a human greps it
@@ -72,10 +83,12 @@ hold every call site to one rule, and catch an entry point that ships without th
 
 Append a `Line(...)`. `consumer` is `"<module>.<NAME>"` under `scripts/runlog/`; `emitter` is the
 dotted module that writes it (or a repo-relative path, for the workflow's own shell); `body` is the
-message without the clock or `[tag]` prefix, which the test adds. Give `why` one sentence saying
-what this entry pins that its neighbours do not — several lines exist twice on purpose, once per
-optional clause, because "a regex requiring an omitted-when-zero clause drops rows instead of
-erroring" is this repo's recorded failure mode and each variant needs its own row.
+message without the clock or `[tag]` prefix, which the test adds. Give it an `emit=` if you
+possibly can: without one, `body` is prose nobody has checked, and check 4 is what turns it into a
+fact. Give `why` one sentence saying what this entry pins that its neighbours do not — several
+lines exist twice on purpose, once per optional clause, because "a regex requiring an
+omitted-when-zero clause drops rows instead of erroring" is this repo's recorded failure mode and
+each variant needs its own row.
 """
 
 from __future__ import annotations
@@ -117,7 +130,11 @@ class Line:
     """The dotted module that writes it, or a repo-relative path for a non-Python emitter."""
 
     body: str
-    """The message as emitted — no clock, no `[tag]`; the test renders those around it."""
+    """The message as emitted — no clock, no `[tag]`; the test renders those around it.
+
+    With `emit=` this is checked against the emitter's real output (check 4) and is therefore a
+    fact. Without it, nothing has seen the line and its numbers are the entry author's word.
+    """
 
     why: str = ""
     """What this entry pins that its neighbours do not (which optional clause, which branch)."""
@@ -314,7 +331,12 @@ def _ledger_failures(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     )
     jobs = tmp_path / "jobs"
     jobs.mkdir()
-    ledger = tmp_path / "board_failures.csv"
+    # The ledger's own path is the last thing the `failures:` line prints, so it is inside the
+    # `body` check 4 matches exactly. Passed relative from inside `tmp_path`, or that `body`
+    # would have to carry this machine's temp directory; a real run prints the same filename
+    # under the checkout's own `data/state/`.
+    monkeypatch.chdir(tmp_path)
+    ledger = Path("board_failures.csv")
     row = functools.partial(
         board_failures.Failure,
         strikes=board_failures.QUARANTINE_AT - 1,
@@ -1314,6 +1336,21 @@ def _renderings(entry: Line) -> list[str]:
     return [f"12:00:00 [{entry.tag}] {body}", f"::warning::[{entry.tag}] {body}"]
 
 
+def _records(
+    entry: Line, caplog: pytest.LogCaptureFixture, *args: object
+) -> list[logging.LogRecord]:
+    """Call the emitter and hand back the records it logged, unrendered.
+
+    Two checks want these and want them differently: check 3 reads the CI *rendering*, check 4
+    reads `record.getMessage()` — the emitter's own words, with no clock, tag, level or
+    annotation prefix wrapped around them, which is exactly what a `body` claims to be.
+    """
+    logging.getLogger("headstart").setLevel(logging.INFO)
+    with caplog.at_level(logging.DEBUG, logger="headstart"):
+        entry.emit(*args)  # type: ignore[misc]
+    return list(caplog.records)
+
+
 def _emitted(entry: Line, caplog: pytest.LogCaptureFixture, *args: object) -> list[str]:
     """Call the emitter and render its records the way a CI log carries them.
 
@@ -1323,10 +1360,7 @@ def _emitted(entry: Line, caplog: pytest.LogCaptureFixture, *args: object) -> li
     against a line CI never produces.
     """
     formatter = log._Formatter()
-    logging.getLogger("headstart").setLevel(logging.INFO)
-    with caplog.at_level(logging.DEBUG, logger="headstart"):
-        entry.emit(*args)  # type: ignore[misc]
-    return [formatter.format(record) for record in caplog.records]
+    return [formatter.format(record) for record in _records(entry, caplog, *args)]
 
 
 def _id(entry: Line) -> str:
@@ -1413,6 +1447,47 @@ def test_the_emitter_really_emits_it(
     )
 
 
+@pytest.mark.parametrize(
+    "entry",
+    [entry for entry in CONTRACT if entry.emit is not None],
+    ids=[_id(entry) for entry in CONTRACT if entry.emit is not None],
+)
+def test_the_documented_body_is_a_line_that_was_logged(
+    entry: Line,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Check 4 — `body` is the emitter's own words, character for character.
+
+    Checks 1 and 3 both match the consumer's *pattern*: check 1 against `body`, check 3 against
+    the records the emitter really produced. Until this check existed nothing compared those two
+    to each other, so a `body` could be pure invention and every test still passed. That is not
+    a worry, it is measured: an audit replaced `run_logs.DONE`'s `body` with `done: 111 jobs
+    from 222 boards in 333s (444 board errors) | board seconds {'p50': 9.9, ...} | predicted
+    99.9 min, actual/predicted 9.99x` — numbers no emitter can produce — and got a full green
+    run. `body` is the one place a person reads to learn what a run log actually says, and a
+    fabricated one teaches them a line that does not exist.
+
+    Exact equality, deliberately. Every `emit=` fixture is driven by fixed inputs — an elapsed
+    of 3603.0, a stubbed `retry_stats`, a seeded ledger — so no clock and no ordering reaches a
+    body; the one line that prints a path (`update_ledgers`' `failures:`) is handed a relative
+    one by a fixture that chdirs, rather than this machine's temp directory. If an entry ever
+    does gain a genuinely volatile stretch, narrow it in that entry rather than loosening the
+    comparison for all of them — a `body` matched by prefix or by regex is back to being
+    documentation nobody checked.
+    """
+    messages = [
+        record.getMessage() for record in _records(entry, caplog, tmp_path, monkeypatch)
+    ]
+    assert entry.body in messages, (
+        f"the `body` documented for {entry.consumer} is not a line {entry.emitter} emits.\n"
+        f"  documented: {entry.body}\n"
+        f"  why this entry exists: {entry.why}\n"
+        "  emitted:\n    " + "\n    ".join(messages)
+    )
+
+
 def _compiled_patterns() -> dict[str, str]:
     """Every module-level `NAME = re.compile(...)` under `scripts/runlog/`, by `module.NAME`."""
     found: dict[str, str] = {}
@@ -1435,7 +1510,7 @@ def _compiled_patterns() -> dict[str, str]:
 
 
 def test_every_runlog_pattern_is_accounted_for() -> None:
-    """Check 4 — this file is what makes the contract self-maintaining.
+    """Check 5 — this file is what makes the contract self-maintaining.
 
     A new analyser regex with neither a CONTRACT entry nor an EXEMPT reason fails here, so the
     next person cannot add one silently. And a CONTRACT entry naming a pattern that no longer

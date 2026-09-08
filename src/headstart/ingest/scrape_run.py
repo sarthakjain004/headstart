@@ -207,7 +207,7 @@ def _report(
         # how `workday:dollartree/dollartreeus` was found on 2026-08-18, and it should have been
         # one log line. Capped: a shard killed early defers hundreds and the list is then noise.
         if deferred:
-            _log.warning("deferred: " + observability.named_sample(deferred))
+            _log.warning("deferred: " + log.named_sample(deferred))
     if progress.errors:
         _log.warning(
             f"{len(progress.errors)} board errors: {observability.error_summary(progress.errors)}"

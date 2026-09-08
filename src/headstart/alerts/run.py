@@ -28,7 +28,6 @@ from collections.abc import Mapping
 from dataclasses import replace
 
 from headstart import log
-from headstart.ingest import observability
 
 from . import digest, space_query, transports
 from .shortlist import CAP, shortlist
@@ -292,7 +291,7 @@ def main() -> int:
         _log.warning(
             f"{len(email_not_enabled)} allowlisted Account(s) keep Saved sets but have "
             "enabled email on none of them from the Matches tab, so this run delivered "
-            "nothing to them: " + observability.named_sample(sorted(email_not_enabled))
+            "nothing to them: " + log.named_sample(sorted(email_not_enabled))
         )
     _log.info(f"done: {sent} digest(s) sent, {skipped} skipped, {failed} failed")
     return 1 if failed else 0

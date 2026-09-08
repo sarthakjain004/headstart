@@ -253,9 +253,9 @@ def scrape_all(
 
     seen_ids: set[str] = set()
     errors: dict[str, str] = {}
-    # How many Boards have failed on something other than a transport error. Only the first one
-    # carries a traceback and an annotation (see the branch below); the rest are counted here.
-    unexpected = 0
+    # Boards failing on something other than a transport error all report through one bound:
+    # the first carries a traceback and an annotation, the rest are INFO (see the branch below).
+    unexpected = log.FirstOnly(_log)
     total, done = len(companies), 0
     start = time.monotonic()
     executor = ThreadPoolExecutor(max_workers=workers)
@@ -281,21 +281,12 @@ def scrape_all(
                     # traceback rides only on that branch, so the 150-250 routine Board errors
                     # a run collects stay one line each.
                     #
-                    # And only the FIRST one carries it. A parse break is systemic, not
-                    # per-Board: `KeyError: 'title'` raises on every Board of that ATS, so an
-                    # unconditional `exc_info=True` prints one full stack per Board — up to
-                    # ~1,300 on a shard, all of them the same stack — and one annotation per
-                    # Board with it, which is the run-level quota ADR-0039's amendment forbids
-                    # spending this way. The first stack says what broke; `errors` (written
-                    # above, for every failure) says how far it reached, and `scrape_run`'s
-                    # end-of-run digest groups it. Same shape as `index_plan`'s keep-set guard.
-                    unexpected += 1
-                    if unexpected == 1:
-                        _log.warning(
-                            f"{key}: unexpected {type(exc).__name__}", exc_info=True
-                        )
-                    else:
-                        _log.info(f"{key}: unexpected {type(exc).__name__}")
+                    # And only the FIRST one carries it (`log.FirstOnly`). A parse break is
+                    # systemic, not per-Board: `KeyError: 'title'` raises on every Board of that
+                    # ATS, up to ~1,300 on a shard, all the same stack. `errors` (written above,
+                    # for every failure) says how far it reached, and `scrape_run`'s end-of-run
+                    # digest groups it.
+                    unexpected.report(f"{key}: unexpected {type(exc).__name__}")
             else:
                 fresh = [j for j in jobs if j.id not in seen_ids]
                 seen_ids.update(j.id for j in fresh)

@@ -13,6 +13,12 @@ its own handlers. ``StreamHandler`` flushes per record, so the stream-incrementa
 even mid-crash.
 
 INFO is the default; ``HEADSTART_LOG=debug`` turns on per-board / per-retry detail.
+
+WARNING is a **budget**, not a severity: an annotation costs one of GitHub's 10 per step / 50
+per run, so ADR-0039's amendment forbids it on any line that can fire once per Board, per shard
+or per item. The two ways to stay inside that budget while still saying what happened live here
+beside the emit seam, so every stage spells them the same way: :class:`FirstOnly` (warn on the
+first occurrence, inform on the rest) and :func:`named_sample` (one line that names a set).
 """
 
 from __future__ import annotations
@@ -79,6 +85,56 @@ def fail(logger: logging.Logger, message: str) -> NoReturn:
     the one shape every fatal pipeline abort shares."""
     logger.error(message)
     raise SystemExit(1)
+
+
+def named_sample(items: list[str], cap: int = 10) -> str:
+    """``a, b, c, +N more`` — a warning that names what it is about, without becoming a dump.
+
+    A count sends the reader to diff two artifacts to learn *which* Board a run lost; a full
+    list of several hundred is skipped. Every caller wants the same compromise, so they share
+    one, and they agree on the cap by sharing its default.
+
+    Here rather than in the pipeline package because the callers are on both sides of it — the
+    ingest stages and ``alerts/run.py`` — and the sampling contract is part of what a bounded
+    log line is, which is what this module owns.
+    """
+    shown = ", ".join(items[:cap])
+    rest = len(items) - cap
+    return shown + (f", +{rest} more" if rest > 0 else "")
+
+
+class FirstOnly:
+    """A systemic fault costs one annotation, not one per item.
+
+    The faults worth reporting per item are rarely per-item faults: a scraper whose
+    ``board_key()`` starts raising fails on every Board it owns, and a parse break raises on
+    every Board of its ATS. One line each would spend the whole annotation budget restating one
+    bug and displace the aborts annotations exist for — but saying nothing loses the one thing
+    that names the broken line. So the **first** occurrence warns and carries its traceback, and
+    every one after it informs; the caller's own count or :func:`named_sample` says how far it
+    reached.
+
+    Level and traceback are decided together on purpose, because bounding one and not the other
+    is a bug this repo shipped: ``index_plan``'s keep-set guard chose its emit function from the
+    first occurrence and left ``exc_info=True`` unconditional, so a systemic failure printed one
+    full stack per Board — the same flood, one indirection later.
+
+    The traceback is whatever exception is being handled, so a site with none — a threshold
+    tripping, not a failure — simply gets a bare line rather than logging's ``NoneType: None``.
+    State is per-instance, so a per-run bound is a local and a bound shared by every caller of
+    one leaf function is a module-level instance.
+    """
+
+    def __init__(self, logger: logging.Logger) -> None:
+        self._logger = logger
+        self._fired = False
+
+    def report(self, message: str) -> None:
+        """WARNING with its traceback the first time; INFO, without one, thereafter."""
+        first, self._fired = not self._fired, True
+        (self._logger.warning if first else self._logger.info)(
+            message, exc_info=first and sys.exc_info()[0] is not None
+        )
 
 
 def setup() -> None:

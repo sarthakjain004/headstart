@@ -14,6 +14,46 @@ equivalent reporting, whose shape this mirrors),
 > `33283745755`→`33303633939`. This ADR's own decision — classify a detail loss, never
 > `mark_truncated` on it — is unchanged and was re-affirmed by ADR-0097.
 
+> **Amended 2026-09-08 — the threshold's *semantics* are unchanged; its *reporting* is now
+> bounded.** `_MAX_LOST_DETAIL_SHARE` still decides what a Board's gap is, at the same 0.5, and
+> the line still states `missing` and `len(details)`, so a reader can still see which side of it
+> every Board fell on. What changed is that only the **first** past-threshold Board in a shard
+> process warns; every later one states the identical line at INFO, through the shared
+> `log.FirstOnly` guard (`workday._DETAIL_LOSS_OVER_SHARE`).
+>
+> Why: [ADR-0039](0039-pipeline-logging.md)'s amendment of the same date holds that
+> a line which can fire once per Board, per shard or per item is never WARNING — under GitHub
+> Actions the formatter renders WARNING as a `::warning::` workflow annotation and GitHub keeps
+> **10 per step, 50 per job**, dropping the rest from the run page silently, so WARNING there is a
+> quota rather than a level. This line was the last per-Board WARNING in the repo, allowlisted in
+> `tests/test_log_levels.py` on the grounds that its threshold was an ADR decision. That
+> was true, and it was never the same claim as the line being *bounded*.
+>
+> It is not bounded in the case that matters. This ADR's framing was per-Board — NGC losing 97% of
+> its details — and at that scale a handful of annotations is affordable. The failure mode is not
+> per-Board:
+> [ADR-0115](0115-one-user-agent-identifies-and-hosts-constrain-its-shape.md)'s User-Agent
+> denylist emptied the detail pass of **102 Boards at once**, on five consecutive runs. All of
+> them trip the threshold in the same step, so the first ten spend the whole budget on ten samples
+> of one systemic fault and displace the aborts the annotations exist for. One annotation per
+> shard is enough to *raise* a systemic detail outage; the other 101 lines are how you *size* it,
+> and INFO carries them intact.
+>
+> The bound sits in the scraper rather than in a per-shard aggregate in `scrape_run._report`,
+> which was the other candidate. An aggregate would have to be fed by a counter workday increments
+> anyway, and it would split one fact across two places — restating per-Board numbers in a second
+> line somewhere else is precisely what this ADR declined when it *replaced* `report_detail_gaps`'s
+> count rather than adding beside it. Nothing about eviction, truncation, or the loss classes
+> changes here: this is a level, not a decision about the data.
+>
+> Same-day, same-file: the parenthesis is now formatted by `base.loss_breakdown`, shared with
+> `report_detail_gaps`, instead of by a near-copy inside `_report_detail_losses`. The two had
+> drifted within one commit — `unclassified` against `unlabelled` for the same residual, and a
+> bare `…` against a tail that states the residual's size — so the reported text changes in two
+> ways: the unlabelled remainder is now spelled **`unlabelled`**, and a fifth-and-beyond cause is
+> now summarised as **`…N more cause(s) xR`** rather than `…`. The numbers, the threshold and the
+> invariant (the tally always totals `missing`) are unchanged.
+
 > **Amended 2026-09-09 (PR #392).** *The cost claim is per-class, not universal.* "A detail loss
 > still costs ADR-0021 null fields and an ADR-0050 gap-ledger entry" (Consequences) held for every
 > loss class this ADR had when written, all of which are *fetch* failures. The `no externalPath`
@@ -23,7 +63,6 @@ equivalent reporting, whose shape this mirrors),
 > and neither cost is paid. That is a 22-of-125-Board sample, so the scraper counts a titled stub
 > separately and logs it rather than assuming the shape holds everywhere.
 > `docs/workday/2026-09-09_parser-shaped-detail-losses.md`.
-
 
 ## Context
 

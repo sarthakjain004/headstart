@@ -92,26 +92,34 @@ MIN_AUTHORITATIVE_SHARE = 0.99
 _DEFAULT_H2_STREAMS = 100
 
 
-def _loss_breakdown(losses: Counter[str], missing: int) -> str:
-    """`` (HTTP 403 x2114, no JSON-LD on a 200 x13)`` for a labelled detail pass, else ``""``.
+def loss_breakdown(losses: Counter[str], missing: int) -> str:
+    """`` (HTTP 403 x2114, no JSON-LD on a 200 x13)`` — one detail pass's losses, tallied.
 
-    Only the four largest are named — as workday's own loss report does, because what the line
-    is for is the *shape* of the failure — and whatever reached no label is counted into
-    ``unlabelled`` rather than dropped, so a partial tally cannot read as a full account of
-    ``missing``. A scraper that never calls :meth:`BaseScraper.note_detail_loss` gets nothing
-    appended, which is why every unmigrated scraper's line is byte-identical to before.
+    Public because it is shared: workday keeps its own richer loss `Counter` (ADR-0088) and
+    formats it through here rather than beside it. The two were written separately and had
+    already drifted inside one commit — one called the residual ``unlabelled`` and the other
+    ``unclassified``, one stated the tail's size and the other printed a bare ``…`` — which is
+    two spellings of one fact, the near-synonym failure CLAUDE.md §3 names.
+
+    Only the four largest are named, because what the line is for is the *shape* of the failure,
+    and whatever reached no label is counted into ``unlabelled`` rather than dropped, so a
+    partial tally cannot read as a full account of ``missing``.
 
     The tail names how much the four leave out, not merely *that* they leave something out: a
     bare ``…`` says a fifth cause exists and nothing about its size, so a long tail that
     outweighs everything shown reads as a footnote. With the residual stated, the four shown
     plus the tail always sum to ``missing``.
+
+    Accounts for the whole of ``missing`` even from an empty ``losses``. Whether a pass that
+    labelled *nothing* deserves a breakdown at all is the caller's question, not this one's, and
+    the two callers answer it differently — so it is asked at each call site instead.
     """
-    if not losses:
-        return ""
     tally = Counter(losses)
     unlabelled = missing - sum(tally.values())
     if unlabelled > 0:
         tally["unlabelled"] = unlabelled
+    if not tally:
+        return ""
     shown = tally.most_common(4)
     why = ", ".join(f"{cause} x{n}" for cause, n in shown)
     if len(tally) > len(shown):
@@ -660,7 +668,17 @@ class BaseScraper(ABC):
         if missing:
             self._log.info(
                 f"{self.board_key()}: {missing}/{len(results)} {what} missing"
-                + _loss_breakdown(self.detail_losses, missing)
+                # A scraper that never called `note_detail_loss` gets nothing appended, which is
+                # why every unmigrated scraper's line stays byte-identical to before. The check
+                # lives here rather than inside `loss_breakdown` because workday's caller answers
+                # it the other way round: its detail pass always passes a Counter, so a Board that
+                # labelled nothing there is a hole in the labelling worth naming, not a scraper
+                # that opted out.
+                + (
+                    loss_breakdown(self.detail_losses, missing)
+                    if self.detail_losses
+                    else ""
+                )
             )
         return missing
 

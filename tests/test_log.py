@@ -135,3 +135,39 @@ def test_a_record_without_exc_info_is_unchanged(monkeypatch):
     """The traceback branch must not perturb the ~200 call sites that pass no exception."""
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     assert log._Formatter().format(_record()).endswith(" [scrape_run] hello")
+
+
+def test_first_only_spends_one_annotation_and_one_stack(caplog):
+    """N occurrences of one systemic fault cost exactly one WARNING and exactly one traceback.
+
+    Both halves matter, and they are one test on purpose: ``index_plan``'s hand-rolled version
+    of this bounded the level and left ``exc_info=True`` unconditional, so a scraper whose
+    ``board_key`` started raising still printed a full stack per Board. Asserting only the
+    WARNING count would have passed against that bug.
+    """
+    guard = log.FirstOnly(logging.getLogger("headstart.test_first_only"))
+    with caplog.at_level(logging.INFO, logger="headstart.test_first_only"):
+        for i in range(50):
+            try:
+                raise ValueError("the boom")
+            except ValueError:
+                guard.report(f"board {i}: no board_key")
+
+    assert len(caplog.records) == 50
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert [r.getMessage() for r in warnings] == ["board 0: no board_key"]
+    assert [r for r in caplog.records if r.exc_info] == warnings
+    assert all(r.levelno == logging.INFO for r in caplog.records[1:])
+
+
+def test_first_only_outside_an_except_block_carries_no_traceback(caplog):
+    """A threshold tripping is not a failure, and `exc_info=True` with no live exception renders
+    ``NoneType: None`` — a stack-shaped line saying nothing. The fourth site of this idiom
+    (workday's detail-loss tally) is exactly that shape, so the helper has to hold there too."""
+    guard = log.FirstOnly(logging.getLogger("headstart.test_first_only_bare"))
+    with caplog.at_level(logging.INFO, logger="headstart.test_first_only_bare"):
+        guard.report("over the loss share")
+        guard.report("over the loss share")
+
+    assert [r.levelno for r in caplog.records] == [logging.WARNING, logging.INFO]
+    assert not any(r.exc_info for r in caplog.records)

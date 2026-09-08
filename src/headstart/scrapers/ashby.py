@@ -165,8 +165,18 @@ class AshbyScraper(BaseScraper):
         return f"https://jobs.ashbyhq.com/{self.slug}"
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
+        listed = raw.get("jobs")
+        if listed is None:
+            # A board with nothing open still answers `{"jobs": []}`, so a payload carrying no
+            # `jobs` at all was not *read* — and downstream that is the same zero as an empty
+            # board, which is what makes it worth a line (`note_unreadable_board`). Deliberately
+            # not marked truncated: what a container-less payload means on this API has not been
+            # measured, and ADR-0053's exclusion has no drain, so guessing wrong holds a departed
+            # tenant's rows in the index for as long as its slug stays in the ledger.
+            self.note_unreadable_board("a payload with a `jobs` list", "no `jobs` key")
+            return []
         jobs: list[Job] = []
-        for j in raw.get("jobs", []):
+        for j in listed:
             if not j.get("isListed", True):
                 continue  # skip postings the company has unlisted
             jobs.append(

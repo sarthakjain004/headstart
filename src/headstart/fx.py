@@ -30,8 +30,16 @@ The UI says so beside the control; this module only makes the arithmetic availab
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
+
+# `logging.getLogger` rather than `headstart.log.get`, which is the same call: `deploy-space.yml`
+# copies this module into the Space image as a flat `fx.py` with no `headstart` package beside it,
+# so the seam cannot be imported there (the same constraint `_candidates` documents for paths, and
+# the one `search.py` and `alerts/store.py` document for this). In the repo the name still resolves
+# under the `headstart` root, so a stage's `log.setup()` reaches it.
+_log = logging.getLogger(__name__)
 
 
 def _candidates() -> tuple[Path, ...]:
@@ -85,7 +93,24 @@ def table(path: Path | None = None) -> dict[str, Any] | None:
             if rates and base in rates and as_of
             else None
         )
-    except (OSError, ValueError, TypeError, AttributeError):
+    except (OSError, ValueError, TypeError, AttributeError) as exc:
+        # Named once, and named by its consequence rather than its symptom. `result` is cached
+        # below for the life of the process, so this is not one failed read: every salary bracket
+        # for the rest of this Space's uptime compares within a single currency and drops every
+        # Job priced in another — the exact trap the module docstring says converting exists to
+        # avoid — with nothing in the UI to say so. Swallowed silently, the feature simply never
+        # worked and no record anywhere said why.
+        #
+        # WARNING, not ERROR: the fallback is the narrower answer that predates this module, which
+        # is degraded rather than broken. And not INFO, because nothing calls `log.setup()` in the
+        # Space — `logging.lastResort` carries WARNING and above to stderr with no handler
+        # configured, and anything below it is discarded there.
+        _log.warning(
+            f"fx_rates.json unreadable ({type(exc).__name__}: {exc}) - no conversion for the "
+            "rest of this process: the salary bracket falls back to one currency and every Job "
+            "priced in another silently drops out of a cross-currency range",
+            exc_info=True,
+        )
         result = None
     if path is None:
         _CACHE = result

@@ -329,8 +329,7 @@ def main() -> int:
         _log.warning(
             f"value gate: skipped {len(gated)} Board(s) costing over "
             f"{_GATE_FLOOR_S / 60:.0f} min for under {_GATE_MIN_TECH_PER_MIN:.0f} tech "
-            f"jobs/min — "
-            + observability.named_sample([f"{k} ({d:.2f}/min)" for k, d in worst])
+            f"jobs/min — " + log.named_sample([f"{k} ({d:.2f}/min)" for k, d in worst])
         )
     unsettled = board_description_gap.load(Path(args.gap))
     companies = pick_boards(companies, scores, args.max_boards, unsettled=unsettled)

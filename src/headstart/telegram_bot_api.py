@@ -15,6 +15,13 @@ from typing import Any
 from headstart import log
 from headstart.alerts.store import chat_subscription_id
 
+# The sender's helper, imported rather than restated. `alerts/telegram.py` wrote down *why* a
+# Telegram failure may never be rendered as a bare exception — this API puts the bot token in the
+# URL path, so anything that can carry the URL into a log is a leaked credential — and this
+# client, which builds the identical `.../bot{token}` URL, did not follow it. A second copy of
+# that reasoning is how one of the two silently stops applying it, so there is one.
+from headstart.alerts.telegram import _reason
+
 _log = log.get(__name__)
 
 
@@ -52,4 +59,13 @@ class TelegramClient:
             # runs every fifteen minutes into a public repo's Actions log, where a chat id
             # is a stable handle on a real person. It is the store's own hash, so two lines
             # about one chat still correlate.
-            _log.warning(f"send to {chat_subscription_id(chat_id)} failed: {exc}")
+            #
+            # `_reason(exc)`, not `{exc}`: latent rather than live — `HTTPError.__str__` states
+            # only "HTTP Error 429: Too Many Requests" and omits the URL — but a bare exception
+            # is a promise about every exception type this can raise, kept only by accident.
+            # `_reason` also reads the body, which is where Telegram's own `description` and
+            # `retry_after` are, so this line gains the cause it never had. `HTTPError.filename`
+            # and `.url` DO carry the token and must never be logged.
+            _log.warning(
+                f"send to {chat_subscription_id(chat_id)} failed: {_reason(exc)}"
+            )

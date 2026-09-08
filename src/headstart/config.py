@@ -370,6 +370,11 @@ _IDENTITY_FAILURES_SEEN: set[str] = set()
 #: `named_sample` renders a list the caller already holds whereas this reports as it goes.
 _IDENTITY_REPORT_CAP = 10
 
+#: The annotation bound layered on that dedupe — one WARNING per process, the rest INFO. Two
+#: different bounds because they answer two different floods: the set stops one Board being
+#: restated ~15x, this stops N Boards each buying an annotation.
+_IDENTITY_FAILURE = log.FirstOnly(_log)
+
 
 def board_identity(company: CompanyRef) -> str:
     """The Board's canonical key: ``board_key`` where the scraper can build one, the plain
@@ -398,9 +403,14 @@ def _report_identity_failure(key: str, exc: Exception) -> None:
     Board quietly landing here can be scraped under one name and pruned under another. Worth a
     line even though nothing is dropped.
 
-    INFO, not WARNING: under Actions WARNING is an annotation against a run-level quota (ADR-0039's
-    2026-09-08 amendment). `index_plan`'s keep-set guard already warns, once, about the same
-    population.
+    The **first** distinct Board warns and carries its stack; every later one is INFO. Under
+    Actions a WARNING is an annotation against a run-level quota (ADR-0039's 2026-09-08
+    amendment), so N failing Boards must not buy N of them — but nor can this be INFO
+    throughout. `index_plan`'s keep-set guard warns about the same population and is *not* a
+    substitute: it runs in the **merge** job while this is reached from `scrape_plan` and
+    `board_priority` in the plan and scrape jobs, so its annotation never appears on the job
+    that hit the failure. A run whose plan stage silently re-keyed a whole ATS would show
+    nothing on its own summary until a later job noticed.
 
     No running total accompanies the cap. A hook to flush one to does exist —
     `ingest.observability.summary` — but it is in `ingest`, which this module may not import (the
@@ -412,7 +422,7 @@ def _report_identity_failure(key: str, exc: Exception) -> None:
         return
     _IDENTITY_FAILURES_SEEN.add(key)
     if len(_IDENTITY_FAILURES_SEEN) <= _IDENTITY_REPORT_CAP:
-        _log.info(
+        _IDENTITY_FAILURE.report(
             f"{key}: board_key() failed "
             f"({type(exc).__name__}: {exc}) — falling back to the plain ats:slug"
         )

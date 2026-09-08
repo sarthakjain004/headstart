@@ -8,6 +8,7 @@ at *import* — before the guarded read that was supposed to make a missing tabl
 """
 
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -107,3 +108,23 @@ def test_convert_returns_none_when_either_side_has_no_rate():
     assert fx.convert(100.0, "XTS", "INR", rates) is None
     # base-independent: the units-per-base factors cancel
     assert fx.convert(8300.0, "INR", "USD", rates) == 100.0
+
+
+def test_the_swallowed_read_leaves_a_record_naming_its_consequence(tmp_path, caplog):
+    """`None` is a supported state; being *silent* about it is not.
+
+    The result is cached for the life of the process, so a swallowed read is not one failed
+    lookup — every salary bracket after it compares within a single currency and drops every Job
+    priced in another, with nothing in the UI to say so. On the live Space that made
+    cross-currency conversion go permanently dark with zero records anywhere.
+    """
+    bad = tmp_path / "fx_rates.json"
+    bad.write_text("{ not json")
+    with caplog.at_level(logging.WARNING, logger="headstart.fx"):
+        assert fx.table(path=bad) is None
+
+    assert len(caplog.records) == 1
+    assert caplog.records[0].levelno == logging.WARNING
+    message = caplog.records[0].getMessage()
+    assert "JSONDecodeError" in message  # which failure, not merely that one did
+    assert "falls back to one currency" in message  # and what it costs

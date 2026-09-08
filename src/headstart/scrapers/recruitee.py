@@ -75,8 +75,20 @@ class RecruiteeScraper(BaseScraper):
         return f"https://{self.slug}.recruitee.com/api/offers/"
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
+        offers = raw.get("offers")
+        if offers is None:
+            # A tenant with nothing open still answers `{"offers": []}`, so a payload carrying no
+            # `offers` at all was not *read* — the same zero downstream as an empty board, which
+            # is what makes it worth a line (`note_unreadable_board`). Not marked truncated: what
+            # a container-less payload means on this API has not been measured, and ADR-0053's
+            # exclusion has no drain, so a wrong guess holds this Board's rows in the index
+            # indefinitely.
+            self.note_unreadable_board(
+                "a payload with an `offers` list", "no `offers` key"
+            )
+            return []
         jobs: list[Job] = []
-        for o in raw.get("offers", []):
+        for o in offers:
             raw_location = o.get("location")
             is_sentinel = _is_remote_sentinel(raw_location, o.get("city"))
             location = (

@@ -78,7 +78,7 @@ def test_greenhouse_reports_an_envelope_that_contradicts_itself(
     monkeypatch.setattr(type(s), "_get", lambda self: json.dumps(envelope))
     # INFO, not WARNING: this can fire once per Board and WARNING is a run-level annotation
     # quota under Actions (ADR-0039's 2026-09-08 amendment, pinned by
-    # tests/test_scraper_log_levels.py).
+    # tests/test_log_levels.py).
     caplog.set_level(logging.INFO, logger="headstart.scrapers.greenhouse")
 
     raw = s.fetch_raw()
@@ -1988,6 +1988,14 @@ def test_workday_detail_gap_names_what_the_failures_actually_were(monkeypatch, c
 
     # and a Board that loses most of its details says so at WARNING, naming the classes —
     # a 96%-empty detail pass previously produced no warning at all
+    #
+    # Only the FIRST past-threshold Board in a process warns (ADR-0088's 2026-09-08 amendment),
+    # and the `log.FirstOnly` that bounds it is module-level, so every test asserting a
+    # WARNING replaces it rather than depending on which test ran first.
+    from headstart import log
+    from headstart.scrapers import workday
+
+    monkeypatch.setattr(workday, "_DETAIL_LOSS_OVER_SHARE", log.FirstOnly(workday._log))
     caplog.set_level(logging.WARNING, logger="headstart.scrapers.workday")
     scraper._report_detail_losses([None, None, None, None, {"d": 1}], classes, 0)
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
@@ -2144,6 +2152,38 @@ def test_workday_stub_posting_parses_to_a_job_the_tech_gate_drops():
     assert not classify(job.title, job.department).is_tech
 
 
+def test_only_the_first_board_past_the_share_spends_an_annotation(monkeypatch, caplog):
+    """The threshold decides what a Board's gap *is*; it must not decide how loud a shard gets.
+
+    Under Actions a WARNING is a workflow annotation and the budget is 10 per step / 50 per job,
+    and the outage class this line exists to catch is not per-Board at all: ADR-0115's User-Agent
+    denylist emptied the detail pass of 102 Boards in one run, which unbounded would burn the
+    quota on the first ten of them. So the first past-threshold Board in the process warns and
+    every later one states the identical line at INFO — the counts in it still say which side of
+    the threshold each Board fell on (ADR-0088's 2026-09-08 amendment).
+    """
+    from collections import Counter
+
+    from headstart import log
+    from headstart.scrapers import workday
+    from headstart.scrapers.workday import WorkdayScraper
+
+    monkeypatch.setattr(workday, "_DETAIL_LOSS_OVER_SHARE", log.FirstOnly(workday._log))
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.workday")
+    for site in ("first", "second", "third"):
+        WorkdayScraper(
+            f"https://acme.wd1.myworkdayjobs.com/{site}"
+        )._report_detail_losses([None] * 4, Counter({"HTTP 403": 4}), 0)
+
+    assert [r.levelno for r in caplog.records] == [
+        logging.WARNING,
+        logging.INFO,
+        logging.INFO,
+    ]
+    # and the demoted ones are the same line, not a quieter summary of it
+    assert caplog.text.count("4 of 4 detail(s) failed mid-crawl (HTTP 403 x4)") == 3
+
+
 def test_workday_detail_classes_always_account_for_every_loss(monkeypatch, caplog):
     """The parenthesis must total `missing`, never a fraction of it presented as the reason.
 
@@ -2174,12 +2214,17 @@ def test_workday_detail_classes_always_account_for_every_loss(monkeypatch, caplo
     assert classes == Counter({"unparseable": 1})
 
     # and whatever still escapes labelling is named rather than silently dropped, so the
-    # classes shown always sum to the loss count
+    # classes shown always sum to the loss count. `unlabelled` is `base.loss_breakdown`'s
+    # spelling — workday's own copy of that formatter said `unclassified` for the same fact
+    # until the two were merged.
+    from headstart import log
+    from headstart.scrapers import workday
+
+    monkeypatch.setattr(workday, "_DETAIL_LOSS_OVER_SHARE", log.FirstOnly(workday._log))
     caplog.set_level(logging.WARNING, logger="headstart.scrapers.workday")
     scraper._report_detail_losses([None] * 4, Counter({"HTTP 404": 1}), 0)
     assert (
-        "4 of 4 detail(s) failed mid-crawl (unclassified x3, HTTP 404 x1)"
-        in caplog.text
+        "4 of 4 detail(s) failed mid-crawl (unlabelled x3, HTTP 404 x1)" in caplog.text
     )
 
 
@@ -2213,6 +2258,10 @@ def test_workday_detail_classes_reach_the_report_through_fetch_raw(monkeypatch, 
         return _R()
 
     monkeypatch.setattr(http, "fetch_async", fake_fetch_async)
+    from headstart import log
+    from headstart.scrapers import workday
+
+    monkeypatch.setattr(workday, "_DETAIL_LOSS_OVER_SHARE", log.FirstOnly(workday._log))
     caplog.set_level(logging.WARNING, logger="headstart.scrapers.workday")
     scraper.fetch_raw()
     assert "2 of 2 detail(s) failed mid-crawl (HTTP 404 x2)" in caplog.text
@@ -2309,7 +2358,7 @@ def test_workday_paginate_logs_once_on_missing_pages(monkeypatch, caplog):
     # a mid-crawl 404 (None from _post_async) skips that page but keeps the rest, and one
     # INFO line reports the gap — the tripwire for a partial board. INFO rather than WARNING
     # because it fires once per Board and WARNING is a run-level annotation quota under
-    # Actions (ADR-0039's 2026-09-08 amendment; tests/test_scraper_log_levels.py pins it)
+    # Actions (ADR-0039's 2026-09-08 amendment; tests/test_log_levels.py pins it)
     from headstart.scrapers.workday import WorkdayScraper
 
     s = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
@@ -7817,7 +7866,7 @@ def test_workday_detail_pass_breaks_off_after_consecutive_settled_5xx(
     s = _breaker_scraper()
     classes: Counter = Counter()
     # INFO: the break-off fires once per Board, and WARNING is a run-level annotation quota
-    # under Actions (ADR-0039's 2026-09-08 amendment; tests/test_scraper_log_levels.py pins it).
+    # under Actions (ADR-0039's 2026-09-08 amendment; tests/test_log_levels.py pins it).
     caplog.set_level(logging.INFO, logger="headstart.scrapers.workday")
     for i in range(_DETAIL_BREAK_STREAK + 10):
         assert s._job_detail(f"/job/x/J_{i}", classes) is None
@@ -8169,3 +8218,32 @@ def test_fetch_resolves_the_company_before_parsing(monkeypatch):
     assert captured["company"] == "1Password", (
         "fetch() must resolve the name before parse()"
     )
+
+
+@pytest.mark.parametrize(
+    ("ats", "container"),
+    [("ashby", "jobs"), ("recruitee", "offers"), ("workable", "jobs")],
+)
+def test_a_payload_with_no_postings_container_says_the_board_was_unread(
+    ats, container, caplog
+):
+    """Zero postings from a board with nothing open and zero from a payload nobody could read
+    are the same number downstream — `index sync` reads both as delistings — and these three
+    scrapers said nothing at all about which had happened.
+
+    The *empty* container stays silent on purpose: a live board at `jobs=0` is routine at this
+    scale, so a line for it would be noise, and `note_unreadable_board` is INFO rather than
+    WARNING for the same reason (ADR-0039's annotation budget). Neither exit marks the Board
+    truncated — what a container-less payload means on these APIs has not been measured, and
+    ADR-0053's exclusion has no drain.
+    """
+    scraper = get_scraper(ats, "acme", "Acme")
+    caplog.set_level(logging.INFO, logger=f"headstart.scrapers.{ats}")
+
+    assert scraper.parse({}, SCRAPED_AT) == []
+    assert "read no jobs — expected a payload with" in caplog.text
+    assert scraper.truncated is None
+
+    caplog.clear()
+    assert scraper.parse({container: []}, SCRAPED_AT) == []
+    assert caplog.text == ""

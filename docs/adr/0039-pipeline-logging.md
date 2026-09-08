@@ -144,3 +144,64 @@ otherwise checking the pattern's literals against the emitter's source with `ast
 regexes had already died silently against reworded emitters before it existed. Any new
 `scripts/runlog/` pattern must join that table or be exempted with a reason, so "anything grepping
 CI logs must use the module-name tags" is now enforced rather than asserted.
+
+## Amendment (2026-09-08, second): the level policy the code actually has, and where the rule is enforced
+
+**Status:** accepted. Reconciles the "Decision" section's level policy with the amendment above —
+which contradicted it the moment it landed — and records two constraints the original write-up
+assumed rather than stated. The decision itself still stands.
+
+**"DEBUG is per-item detail" is not the rule, and was never the code.** The Decision above puts
+per-item detail at DEBUG and then lists two deliberate INFO exceptions to it. The amendment above
+demoted every per-item WARNING it found to **INFO** — not one of them to DEBUG. Both cannot be the
+policy. Plainly, the rule now:
+
+- **INFO is per-item detail**, and the "two deliberate exceptions" are not exceptions; they were
+  the rule, stated early. A pipeline run is a CI job whose log is its only record: `HEADSTART_LOG`
+  defaults to `info` and nothing in `.github/workflows/` sets it otherwise, so a line written at
+  DEBUG does not exist in the one place anyone reads it. That is exactly what the `index sync`
+  exception already argued ("the merge log is the only record of *which* rows changed, and DEBUG
+  would record nothing in CI"); it generalises to every per-item line.
+- **DEBUG is what a local run wants and CI must not pay for** — `http.fetch`'s per-retry line,
+  `scrape_run`'s per-Board timing. Measured 2026-09-08 across `src/headstart/`: **4** `.debug(`
+  call sites against 189 `.info(` and 53 `.warning(`. "Per-item is DEBUG" describes 4 lines in
+  246, so the ADR was describing an intention, not the seam.
+- **WARNING remains a budget**, per the amendment above: never a line that can fire once per
+  Board, per shard or per item, however much it deserves the summary page.
+
+**The bounded first-occurrence idiom is one helper, `log.FirstOnly`.** How a fault that repeats
+gets reported without spending an annotation per occurrence: the first occurrence warns and
+carries its traceback, every one after it informs, and the caller's own count or
+`log.named_sample` says how far it reached. It is a class in `headstart/log.py` rather than a
+pattern to copy because the copies diverged into four spellings — a module-level set
+(`config.board_identity`), a counter (`harvest.scrape_all`), a list plus a chosen emit function
+(`index_plan.live_keep_set`) and a second counter plus a second chosen emit function
+(`scrapers/workday.py`, still on its own spelling) — each re-justifying the same rule
+in its own comment block, and one of them shipped the bug the shape exists to prevent:
+`index_plan` bounded the *level* to the first Board and left `exc_info=True` unconditional, so a
+systemic `board_key` failure printed one full stack per Board — the same flood, one indirection
+later. Level and traceback are now chosen together, in one place, and cannot be bounded
+separately.
+
+**The WARNING rule is test-enforced, on a partial scope — know which.**
+`tests/test_log_levels.py` parses source with `ast` and fails on any WARNING site absent
+from an allowlist that must name *why* that line is bounded to one per run. Two things about it
+matter at the call site. It is a **compile-time** check rather than a `logging.Filter`, because a
+filter suppresses records after the fact — hiding the volume rather than preventing it — while
+the budget is spent at emit time, in code a reader will copy. And its scope is
+**`src/headstart/scrapers/*.py` plus `harvest.py`**: the scrape path, where a per-Board line is
+easiest to write and a shard's ~1,300 Boards make it costliest. Everything else — the ingest
+stages, `alerts/`, `config.py`, `search.py` — is **unchecked**, so a green run is evidence about
+the scrape path only. (Widening the walk to the rest of `src/headstart/` is the obvious next step
+and is not taken here.)
+
+**The Space renders a second line format, and one level choice depends on it.**
+`deploy/hf-space/app.py` calls no `log.setup()`, and `deploy-space.yml` does not copy `log.py`
+into the image — there is no `headstart` package there at all, which is why `search.py` builds its
+logger with `logging.getLogger` directly. So `headstart.search`'s records reach stderr through
+`logging.lastResort`: a bare stderr handler, **level WARNING, no formatter** — no clock, no
+`[tag]`, no level name, just the message. Two consequences the ADR's "one format" claim does not
+cover. Below WARNING nothing is emitted at all in the deployment that serves users, which is why
+`search.py`'s boot line about a served table missing columns is a WARNING and not INFO — it is not
+a per-item line, and at INFO it would be invisible exactly where it matters. And anything grepping
+Space logs must not expect the `[tag]` the pipeline's own consumers key on.
