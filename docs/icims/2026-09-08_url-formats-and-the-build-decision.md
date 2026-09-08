@@ -21,16 +21,17 @@ surface the scraper actually reads:
 
 | | measured 2026-09-08 |
 |---|---|
-| tenants probed (full Wayback roster) | 6,430 |
+| tenants enumerated (`wayback_pages.py icims`, all 1,716 CDX pages) | 20,344 |
+| tenants probed | 16,742 |
 | non-tenant hosts filtered out (vendor infra + `.i.` mirrors, all `jobs=0`) | 107 |
-| **live boards** | **2,040** |
-| **Hiring Boards** (`min_jobs>=1`) | **1,583** |
-| live but empty | 457 |
-| **jobs reachable** | **143,964** |
+| **live boards** | **4,164** |
+| **Hiring Boards** (`min_jobs>=1`) | **3,061** |
+| live but empty | 1,103 |
+| **jobs reachable** | **282,778** |
 | jobs per board | median 9, p90 133, max 8,477 |
 
 For the comparison the prior document chose: Zwayam shipped at **224 Hiring Boards**. iCIMS has
-**1,583**. The dead-end verdict is withdrawn on scope, not on any disputed measurement.
+**3,061**. The dead-end verdict is withdrawn on scope, not on any disputed measurement.
 
 Two of its incidental findings were also superseded, both because it never checked `robots.txt`:
 it reports *"There is no JSON endpoint"* and treats the paginated HTML as the listing surface,
@@ -120,7 +121,9 @@ The fallback is not equivalent, which is why it is second. Where both a real `da
 `icims.com` domain-matching returns the vendor's ~120 infrastructure hosts alongside real
 tenants, and `cc_miner.tenant_from`'s `host` branch does not apply `BLOCK`. Two measured filters:
 
-- **The label must contain a hyphen.** All 2,040 live boards in the ledger do — zero exceptions —
+- **The label must contain a hyphen.** All 4,164 live boards in the ledger do — zero exceptions,
+  re-confirmed on the sweep's own new candidates: 0 of 60 sampled hyphen-less hosts were live,
+  against 10 of 60 hyphenated ones —
   while infra is overwhelmingly single-word (`login`, `dev`, `social`, `api`, `staging`,
   `marketplace`, `webservices`, `talent`). This cannot be a word list: the bare words are exactly
   the ones a real tenant prefix extends (`careers-acadiahealthcare`, `jobs-collaborationbetterstheworld`).
