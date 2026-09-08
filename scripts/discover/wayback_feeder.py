@@ -6,10 +6,17 @@ Company's slug out of one archived URL.
 archived CDX URLs and collect the slugs — so what a slug *looks like* is decided here rather than
 in each of them.
 
-`ATS_HOSTS` is derived from the scrapers' own URL construction and cross-checked against
-`data/validate/liveness/{ats}.csv`. An ATS is rarely one host, and sweeping only the obvious one
-loses boards silently: Zoho spreads 8,197 known slugs over 8 TLDs, of which `zohorecruit.com`
-holds 6,101.
+`ATS_HOSTS` is the set of hosts that serve **archivable board pages carrying a slug**. That is
+deliberately not the same set as the hosts the scrapers fetch from: five scrapers talk to an
+`api.`/`boards-api.` host whose paths begin with a version segment, and measuring Common Crawl
+found zero boards behind any of them that the board hosts did not already have.
+
+An ATS is rarely one host, and sweeping only the obvious one loses boards silently: Zoho spreads
+8,197 known slugs over 8 TLDs, of which `zohorecruit.com` holds 6,101 — and, found by the
+2026-09-08 audit, Trakstar's pre-rename `recruiterbox.com` holds *twice* the archive of the
+`hire.trakstar.com` this table used to list alone. The liveness ledger cannot be used to check
+this table: it was populated by this feeder, so it only ever contains hosts already swept. See
+`docs/discovery/2026-09-08_wayback-host-coverage-audit.md`.
 
 (The output column is still called `tenant`, matching every other discovery feeder's CSV.
 CONTEXT.md retires the term but parks the code/data rename as a separate change.)
@@ -35,7 +42,24 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 WB = ROOT / "data" / "wayback-ats"
 socket.setdefaulttimeout(120)
 
-Style = Literal["sub", "host", "path", "workday"]
+Style = Literal["sub", "host", "path", "workday", "workdaysite"]
+
+# An ATS that serves the same board from two hostnames. The value is the spelling the scraper
+# wants; `extract` emits it in place of the host it actually saw, which is what makes the two
+# collapse — `dedupe_key` keys every non-`path` style on the URL, so rewriting the URL here is
+# the whole of the fix and `dedupe_key` needs no special case. Do NOT put a regional pod in here:
+# Zoho's TLDs and Greenhouse's EU/ANZ hosts serve *different* board sets, and collapsing those
+# would drop a real second board (see `dedupe_key`).
+_CANONICAL_HOST = {
+    # Trakstar Hire is Recruiterbox renamed. `{slug}.recruiterbox.com` 301s to
+    # `{slug}.hire.trakstar.com` with a 1:1 label mapping, verified live on 1lattice, 1stopasia
+    # and recruiterbox itself. The scraper never learned the new name either — `trakstar.py:104`
+    # still carries `_FEED_NS = {"job": "https://recruiterbox.com/rss/job/"}`.
+    "recruiterbox.com": "hire.trakstar.com",
+    # `{slug}.kekahire.com/careers` 302s to `{slug}.keka.com/careers`, also 1:1. Tenants get a
+    # provisioned pod record (`10decoders` -> `cin01.career.kekahire.com`), not the wildcard.
+    "kekahire.com": "keka.com",
+}
 # `en`, `en-US`, `pt-BR` — a Workday board archived under a locale prefix.
 _LOCALE = re.compile(r"[a-z]{2}(-[A-Za-z]{2})?")
 # `www2`, `www4` — the vendor's own numbered web front-ends. INFRA holds bare `www`, which does
@@ -248,6 +272,10 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
         "boards.greenhouse.io",
         "job-boards.eu.greenhouse.io",
         "boards.eu.greenhouse.io",
+        # ANZ is Greenhouse's third production region (CT: prod-apse2-0/prod-apse4-0), not an
+        # alias: `boards.anz.` 301s region-preservingly, and 12/12 live EU slugs 404 here.
+        "job-boards.anz.greenhouse.io",
+        "boards.anz.greenhouse.io",
     ),
     # `host` style: `icims.py`'s slug IS the board host (`career-celanese.icims.com`).
     #
@@ -262,7 +290,9 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     # costs one `probe_icims.py` request and lands as a dead ledger row, so the error is bounded
     # and self-correcting rather than silent.
     "icims": _with_style("host", "icims.com"),
-    "keka": _with_style("sub", "keka.com"),
+    "keka": _with_style(
+        "sub", "keka.com", "kekahire.com"
+    ),  # alias, see _CANONICAL_HOST
     "lever": _with_style(
         "path", "jobs.lever.co", "jobs.eu.lever.co"
     ),  # EU: 154 rows, 92 live
@@ -300,6 +330,10 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
         "fa.la1.oraclecloud.com",
         "fa.em4.oraclecloud.com",
         "fa.ap4.oraclecloud.com",
+        # The pod-less tier: `jpmc.fa.oraclecloud.com` is live with 7,323 jobs and matches none
+        # of the 16 pods above. Not a duplicate — it CNAMEs to `eino.fa.ocs…`, which has zero
+        # ledger rows. `cc_miner` misses it too: its regex requires a pod segment.
+        "fa.oraclecloud.com",
     ),
     "personio": _with_style("sub", "jobs.personio.com", "jobs.personio.de"),
     "recruitee": _with_style("sub", "recruitee.com"),
@@ -318,7 +352,10 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     # careers-page scan, not a wider sweep.
     "successfactors": _with_style("host", "jobs2web.com", "jobs.hr.cloud.sap"),
     "teamtailor": _with_style("sub", "teamtailor.com"),
-    "trakstar": _with_style("sub", "hire.trakstar.com"),
+    # `recruiterbox.com` is the pre-rename namespace and holds 40 CDX pages against
+    # `hire.trakstar.com`'s 20 — the larger half of this provider's archive. Alias, so
+    # `_CANONICAL_HOST` rewrites it and the two spellings collapse.
+    "trakstar": _with_style("sub", "hire.trakstar.com", "recruiterbox.com"),
     # Two shapes at once: 15,238 ledger rows are `apply.workable.com/{slug}`, 1,623 are
     # `{slug}.workable.com`. Sweeping only the first leaves those 1,623 unreachable. The `sub`
     # half has a dense apex that sorts ahead of the slugs in urlkey order, so its page 1 is all
@@ -326,7 +363,10 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     # to that host so the `apply.` path walk is left alone.
     "workable": _with_style("path", "apply.workable.com")
     + _with_style("sub", "workable.com"),
-    "workday": _with_style("workday", "myworkdayjobs.com"),
+    "workday": (
+        ("myworkdayjobs.com", "workday"),
+        ("myworkdaysite.com", "workdaysite"),
+    ),
     # 8 TLDs; `.com` alone is 6,101 of 8,197 known slugs.
     "zoho": _with_style(
         "sub",
@@ -437,12 +477,59 @@ def extract(url: str, host: str, style: Style) -> tuple[str, str] | None:
             return None
         return f"{company}/{site}", f"https://{seen_host}/{site}"
 
+    if style == "workdaysite":
+        # Workday's *second* career-site domain, and the tenant is in the PATH rather than the
+        # host: `https://wd{N}.myworkdaysite.com/[{locale}/]recruiting/{tenant}/{site}`. The
+        # `workday` style above cannot read it — it takes the first host label as the company,
+        # and here that label IS the `wd\d+` instance. Measured over one Common Crawl snapshot:
+        # 108 Boards, 31 of them in no ledger, 12 of 14 sampled live (2,389 jobs).
+        #
+        # The emitted URL is the `myworkdayjobs.com` spelling, which is both what
+        # `WorkdayScraper._URL_PATTERN` accepts unchanged and what collapses this against the
+        # same board harvested from the other domain.
+        instance = seen_host.split(".")[0]
+        if not _WD_INSTANCE.fullmatch(instance):
+            return None  # impl-/perf-/wcpdev- are non-production tenants
+        segments = [seg for seg in path.split("/") if seg]
+        if segments and _LOCALE.fullmatch(segments[0]) and len(segments) > 1:
+            segments = segments[1:]
+        if len(segments) < 3 or segments[0].lower() != "recruiting":
+            return None
+        company = segments[1]
+        if not valid(company):
+            return None
+        site = _workday_site("/".join(segments[2:]))
+        if not site:
+            return None
+        return (
+            f"{company}/{site}",
+            f"https://{company}.{instance}.myworkdayjobs.com/{site}",
+        )
+
     label = seen_host[: -len("." + host)]
+    if label == "www" and style == "sub":
+        # Teamtailor's "powered by" backlink, on every career site it hosts:
+        # `https://www.teamtailor.com/?utm_campaign=poweredby&utm_content={slug}.teamtailor.com`.
+        # The slug is in the query, like Greenhouse's `embed?for=` above, and `www` is INFRA so
+        # the row was dropped. Measured: 183 ledger rows carry this shape (174 live) and 53 of
+        # those tenants — 51 live — appear in no Teamtailor harvest. Guarded on `utm_content`
+        # naming a host under this same ATS, so it cannot fire on another vendor's backlink.
+        content = urllib.parse.parse_qs(query).get("utm_content", [""])[0].lower()
+        content = content.split("/")[0].split(":")[0]
+        if not content.endswith("." + host):
+            return None
+        label = content[: -len("." + host)]
+        if "." in label or not valid(label):
+            return None
+        return label, f"https://{content}"
     if "." in label or not valid(label):
         return None  # a deeper subdomain, or furniture — not a slug
     # `host` ATSes are keyed by the whole board host, because that is what their scraper is
     # handed as a slug; a `sub` ATS is keyed by the label, and its scraper recovers the host
     # from the URL emitted alongside it.
+    canonical = _CANONICAL_HOST.get(host)
+    if canonical:
+        seen_host = f"{label}.{canonical}"
     return (seen_host if style == "host" else label), f"https://{seen_host}"
 
 
