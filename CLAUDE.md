@@ -53,8 +53,11 @@ per-company web research). Full research, endpoint probes, and provenance:
   (Ericsson-class, DWR-RPC) remain the known gap** — their sitemap isn't RMK-shaped, so liveness
   marks them `dead` and they're skipped, never mis-scraped.
 
-- **iCIMS** ✅ DONE (2026-09-08) — `scrapers/icims.py`, wired through liveness (2,040 live /
-  1,583 hiring boards in `data/validate/liveness/icims.csv`, 143,964 jobs reachable). Slug = the
+- **iCIMS** ✅ DONE (2026-09-08) — `scrapers/icims.py`, wired through liveness (4,164 live /
+  3,061 hiring boards in `data/validate/liveness/icims.csv`, 282,778 jobs reachable — the roster
+  came from `wayback_pages.py icims`, whose full 1,716-page sweep found 20,344 tenants against the
+  6,430 an earlier partial CDX dump had; running the feeder rather than trusting that dump is what
+  doubled the provider). Slug = the
   board host. **One surface only: `/sitemap.xml`.** The paginated `/jobs/search` HTML is
   deliberately not implemented — on 380 boards `robots.txt` predicted sitemap availability
   perfectly, and the boards returning 403 were *exactly* the boards serving `Disallow: /`, so the
@@ -77,7 +80,7 @@ per-company web research). Full research, endpoint probes, and provenance:
   browser HAR shows 6 XHR calls, all third-party). No rate limit found (conc 16 / 15.2 req/s, flat
   latency, zero non-200s) and UA-agnostic. Discovery is wired into both `cc_miner.py` and
   `wayback_feeder.py`; the URL-format census and the discriminator (every one of the
-  ledger's 2,040 live rows has a hyphen in its tenant label, and the vendor's own ~120
+  ledger's 4,164 live rows has a hyphen in its tenant label, and the vendor's own ~120
   infrastructure hosts are mostly single words) are in `docs/icims/`. The ledger holds tenant
   hosts only: `careers.icims.com`, `www.icims.com` and the `*.i.icims.com` archival mirrors are
   filtered out by that same rule, all of them `jobs=0`.
