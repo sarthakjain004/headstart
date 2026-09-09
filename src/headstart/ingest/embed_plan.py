@@ -60,9 +60,20 @@ _OUT = REPO_ROOT / "data" / "embeddings" / "assignments"
 # (`gh run view <id> --log | grep '[embed_run]'`) when runner performance drifts.
 _S_PER_DOC = {512: 0.8, 1024: 1.7, 2048: 4.4, 4096: 18.0}
 _MAX_SHARDS = 15  # == pipeline.yml `max-parallel`; Phase 1 runs one shard per lane
-_TARGET_SECONDS = (
-    20 * 60
-)  # per-shard makespan target; sized so a big backlog saturates the lanes
+# Per-shard makespan target: `binpack.shard_count` spins `ceil(total_cost / this)` shards, clamped
+# to [1, _MAX_SHARDS] when there is work. This was 20 min, "sized so a big backlog saturates the
+# lanes" — right for the backlog era, wrong for a steady state three orders of magnitude smaller.
+# Measured over the four full runs of 2026-09-09, all on SHA fd15455 (34312743097, 34316866965,
+# 34321068300, 34327339789): 257-450 new Docs, 714-1,146 s of planned cost, so `ceil(cost / 1200)`
+# was **always exactly 1** and the matrix took one of the 15 lanes every run — 6.2-13.5 min of
+# serial CPU on the critical path. At 300 s those four runs plan 3, 3, 3 and 4 shards.
+#
+# Plans above ~18,000 s are unchanged (both values clamp at _MAX_SHARDS); everything from ~300 s
+# up to that moves onto more lanes, which is the point. Fan-out is cheap but not free — each added
+# lane still pays the ~2.4 min job setup — and the 6-9 min/run saving is a projection, not a
+# measurement of a multi-shard run: docs/pipeline/2026-09-09_five-run-log-review.md §3 has the
+# per-lane costs and the workings.
+_TARGET_SECONDS = 5 * 60
 
 
 def _prior_rows(path: Path) -> tuple[set[str], set[str]]:

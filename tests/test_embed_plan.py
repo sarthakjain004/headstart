@@ -14,13 +14,19 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip(
-    "langdetect"
-)  # embed_plan imports headstart.ingest.doc_prep (langdetect gate)
-
-# Imported after the gate above, not at the top: on CI's base-deps-only install the module's
-# langdetect dependency is absent, and this must skip rather than error.
 import headstart.ingest.embed_plan as pe
+
+# The gate is per-test, not module-level. It used to be module-level, on the premise that
+# importing this module needs langdetect — measurably false: `doc_prep` imports langdetect lazily
+# inside `is_english`, and `_load_tokenizer` imports transformers lazily, so `embed_plan` imports
+# cleanly with langdetect, torch, sentence_transformers, transformers, lancedb, numpy and pyarrow
+# all blocked. That premise skipped the whole file on CI's base-deps-only install, so the sizing,
+# packing, `_prior_rows` and empty-plan tests below — which need none of it — never ran there.
+# Only the tests that push real job text through the English gate need the dependency, and they
+# say so themselves. Note `test_main_empty_plan_when_nothing_new` calls `main()` ungated: that is
+# safe only because its corpus is empty, so `is_english` is never reached. Give that fixture a job
+# and it needs the gate too — without one it would *error* on CI rather than skip.
+_NEEDS_LANGDETECT = "embed_plan.main() runs doc_prep.is_english over the corpus"
 
 
 class _FakeTok:
@@ -63,6 +69,26 @@ def test_shard_count_clamps_and_scales():
     assert pe.shard_count(2400.0, 10, 15, 1200) == 2
 
 
+def test_target_seconds_fans_a_steady_state_run_out_across_lanes():
+    """Guards the *constant*, which the test above does not: it passes 1200 as a literal, so it
+    stays green if `_TARGET_SECONDS` regresses to the 20 min that made `ceil(cost / target)`
+    exactly 1 on every run and left 14 of 15 lanes idle.
+
+    The four 2026-09-09 runs' planned costs are pinned to the shard counts the constant's own
+    comment claims for them (`docs/pipeline/2026-09-09_five-run-log-review.md` §3), rather than
+    merely asserting `> 1` — `> 1` is satisfied by a 700 s target, which would split the top of
+    the band in two and the bottom not at all, restoring almost none of the fan-out. Retuning the
+    constant should fail here so the comment gets updated with it. `n_items` is only
+    `shard_count`'s has-work guard.
+    """
+    planned = {792.0: 3, 714.0: 3, 876.0: 3, 1146.0: 4}
+    got = {
+        cost: pe.shard_count(cost, 300, pe._MAX_SHARDS, pe._TARGET_SECONDS)
+        for cost in planned
+    }
+    assert got == planned
+
+
 def _write_corpus(tech: Path) -> None:
     tech.mkdir(parents=True, exist_ok=True)
     jobs = [
@@ -101,6 +127,7 @@ def _write_corpus(tech: Path) -> None:
 
 
 def test_main_partitions_new_english_docs(tmp_path, monkeypatch):
+    pytest.importorskip("langdetect", reason=_NEEDS_LANGDETECT)
     tech = tmp_path / "tech"
     _write_corpus(tech)
     prior = tmp_path / "meta.jsonl"
@@ -220,6 +247,7 @@ def test_a_degraded_row_is_re_embedded_once_its_description_arrives(
 ):
     """The upgrade the store makes possible. `embed_plan` skips by id, so without this the
     title-only vector survives every future run no matter how good the scrape gets."""
+    pytest.importorskip("langdetect", reason=_NEEDS_LANGDETECT)
     monkeypatch.setattr(pe, "_load_tokenizer", lambda: _FakeTok())
     tech = tmp_path / "tech"
     tech.mkdir()
@@ -268,6 +296,7 @@ def test_a_degraded_row_is_re_embedded_once_its_description_arrives(
 
 def test_a_degraded_row_with_still_no_description_is_left_alone(tmp_path, monkeypatch):
     """Re-embedding it would produce the same title-only vector and spend the budget twice."""
+    pytest.importorskip("langdetect", reason=_NEEDS_LANGDETECT)
     monkeypatch.setattr(pe, "_load_tokenizer", lambda: _FakeTok())
     tech = tmp_path / "tech"
     tech.mkdir()
@@ -326,6 +355,7 @@ def test_a_degraded_row_whose_new_description_is_not_english_is_not_listed(
     delete-and-re-add of its row each time. An English title over a non-English body is the
     ordinary way to land here.
     """
+    pytest.importorskip("langdetect", reason=_NEEDS_LANGDETECT)
     monkeypatch.setattr(pe, "_load_tokenizer", lambda: _FakeTok())
     tech = tmp_path / "tech"
     tech.mkdir()
