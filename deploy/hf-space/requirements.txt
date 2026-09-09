@@ -1,11 +1,23 @@
-flask
-lancedb
-# Declared, not assumed: the trends ledger is Parquet (ADR-0120) and pyarrow currently
-# arrives only transitively via lancedb. `requests` used to arrive transitively via
-# huggingface_hub, which moved to httpx in 1.0 — and every state fetch died on
-# ModuleNotFoundError. A direct import gets a direct dependency.
-pyarrow
-sentence-transformers>=3.0
-einops
-huggingface_hub
-google-auth[requests]
+# PINNED, deliberately. This file was fully unpinned until 2026-09-09, and Docker's layer
+# cache was the only thing holding the stack still: the versions actually running were whatever
+# pip resolved the last time this file changed (2026-08-06, commit 2eda202). Adding one line on
+# 2026-09-09 (#394) invalidated that layer and re-resolved a month of drift in a single rebuild
+# — huggingface_hub 1.26.1 -> 1.30.0, lancedb 0.36.0 -> 0.38.0, sentence-transformers 5.7.0 ->
+# 6.0.1 — and the Space did not come back up. An unpinned production image is not "current", it
+# is "frozen until the next unrelated edit, then arbitrary". `pyproject.toml` pins `ruff` for
+# exactly this reason; this is the same rule applied to the deployment that serves users.
+#
+# These are the versions as of 2026-08-06, i.e. the stack the Space was actually running before
+# the rebuild. That build's log has aged out, so they are reconstructed from PyPI upload dates
+# rather than read off the working container — accurate to the day, not guaranteed identical.
+# Bump them deliberately, one at a time, with a deploy you watch.
+flask==3.1.3
+lancedb==0.36.0
+# Declared, not assumed: the trends ledger is Parquet (ADR-0120) and pyarrow otherwise arrives
+# only transitively via lancedb. `requests` used to arrive transitively via huggingface_hub,
+# which moved to httpx in 1.0 — and every state fetch died on ModuleNotFoundError.
+pyarrow==25.0.0
+sentence-transformers==5.7.0
+einops==0.8.2
+huggingface_hub==1.26.1
+google-auth[requests]==2.56.3
