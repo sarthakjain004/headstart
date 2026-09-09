@@ -11,6 +11,12 @@ alone spreads 8,197 known slugs over 8 TLDs. Writes new slugs to data/wayback-at
 as pages complete. Resumable: completed page numbers are recorded per host in
 data/wayback-ats/.{ats}_{host}_pages_done, so re-running skips finished pages.
 
+**A periodic sweep wants `--refresh`.** CDX orders pages by urlkey, so a new capture is *inserted*
+into an existing page rather than appended — a page finished months ago can hold slugs today.
+Measured 2026-09-08 by clearing every marker and re-sweeping: ashby +125 (1.9%, from 40 pages that
+were all complete) and greenhouse +96. Resume state is right for finishing an interrupted sweep and
+wrong for repeating a finished one, and deleting the files by hand was a step that got forgotten.
+
 Usage:  python scripts/discover/wayback_pages.py zoho
         python scripts/discover/wayback_pages.py zoho --workers 20
         python scripts/discover/wayback_pages.py zoho --domain zohorecruit.in   # one host only
@@ -33,7 +39,7 @@ from wayback_feeder import (
 )
 
 
-def sweep(ats, domain, style, workers, sink):
+def sweep(ats, domain, style, workers, sink, refresh=False):
     """Harvest every CDX page for one host, appending new slugs as pages land."""
     cdx = f"https://web.archive.org/cdx/search/cdx?url={urllib.parse.quote(domain)}&matchType=domain"
     base = cdx + "&fl=original&collapse=urlkey"  # showNumPages needs the clean url
@@ -54,7 +60,7 @@ def sweep(ats, domain, style, workers, sink):
 
     state = WB / f".{ats}_{domain}_pages_done"
     done = set()
-    if state.exists():
+    if state.exists() and not refresh:
         done = {int(x) for x in state.read_text().split() if x.strip().isdigit()}
     todo = [p for p in range(npages) if p not in done]
     print(
@@ -108,6 +114,11 @@ def sweep(ats, domain, style, workers, sink):
 def main():
     ap = cli(__doc__)
     ap.add_argument("--workers", type=int, default=10)
+    ap.add_argument(
+        "--refresh",
+        action="store_true",
+        help="re-fetch pages already marked done (a periodic sweep wants this)",
+    )
     args = ap.parse_args()
     # Resolve first: both calls below touch the filesystem, and a bad argument should
     # not leave a stray CSV or a renamed cursor behind before it is rejected.
@@ -115,7 +126,7 @@ def main():
     adopt_legacy_state(args.ats, "pages_done")
     with slug_sink(args.ats) as sink:
         for domain, style in targets:
-            sweep(args.ats, domain, style, args.workers, sink)
+            sweep(args.ats, domain, style, args.workers, sink, args.refresh)
 
 
 if __name__ == "__main__":
