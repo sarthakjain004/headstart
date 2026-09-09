@@ -84,8 +84,12 @@ class BrowserUnavailable(Exception):
     """
 
 
-# Hand-rolled rather than `log.FirstOnly` on purpose: `FirstOnly.report` takes a finished string
-# and no `%`-style lazy args, and the line below has three.
+# Hand-rolled rather than `log.FirstOnly` on purpose, and not for the reason it first looks:
+# an f-string would satisfy `report`'s finished-string signature perfectly well. The difference
+# is what happens after the first: `FirstOnly` demotes to INFO and keeps naming every later
+# occurrence, which is right when each one carries its own subject. Here they do not — every
+# line after the first restates one browser's one broken blocking install, so this goes silent
+# instead. Swap it for the helper the day a second thing can fail here.
 _blocking_failed = False
 
 

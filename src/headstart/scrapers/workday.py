@@ -915,7 +915,7 @@ class WorkdayScraper(BaseScraper):
         ``ValueError`` deliberately, not bare ``except``: it covers what a malformed body raises
         (``JSONDecodeError`` and ``UnicodeDecodeError`` both subclass it) without swallowing a
         real defect. A body that parses but isn't an object raises ``AttributeError`` instead and
-        is left alone — rarer, and it lands in the ``unclassified`` bucket rather than vanishing.
+        is left alone — rarer, and it lands in the ``unlabelled`` bucket rather than vanishing.
         """
         try:
             return self._extract_detail(response)

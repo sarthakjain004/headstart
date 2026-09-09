@@ -364,10 +364,10 @@ def load_active_companies(
 _IDENTITY_FAILURES_SEEN: set[str] = set()
 
 #: Distinct Boards named before the report goes quiet. Mirrors the compromise
-#: `ingest.observability.named_sample` strikes for the stages — enough examples to name the ATS
-#: and the parse error, never a dump. Not that helper itself: `config` is on the curated-feed
-#: path (`python -m headstart` -> `harvest`), which must not import from `ingest`, and
-#: `named_sample` renders a list the caller already holds whereas this reports as it goes.
+#: `log.named_sample` strikes for the stages — enough examples to name the ATS and the parse
+#: error, never a dump. Not that helper itself, though it is now importable from here: it
+#: renders a list the caller already holds, and this reports as it goes, one Board at a time,
+#: with no seam at which the whole set is in hand.
 _IDENTITY_REPORT_CAP = 10
 
 #: The annotation bound layered on that dedupe — one WARNING per process, the rest INFO. Two

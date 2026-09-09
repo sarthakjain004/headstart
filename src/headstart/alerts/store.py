@@ -516,6 +516,32 @@ def _is_absent(exc: BaseException) -> bool:
     )
 
 
+def _note_unreadable(what: str, exc: Exception) -> None:
+    """Separate "no record yet" from "the Hub did not answer", once per process.
+
+    Every ``get_*`` on this Store answers ``None`` for both, and the caller cannot tell them
+    apart — so the log is the only place the difference survives. ``Store.get`` grew this split
+    first, after a Hub outage read as "no record yet" and minted a replacement Subscription,
+    resetting a real person's Watermark and rotating the unsubscribe token in mail already sent.
+    The other readers kept ``absent and unreadable are one answer`` and said nothing at all,
+    which is the same defect one level down.
+
+    The absent arm is DEBUG because it is the overwhelmingly common path — a signed-in Account
+    with no Saved set, no starred Job, no Profile — and ``/sets`` reaches it on most page loads.
+    The loud arm shares one bound with every other reader: a Hub outage fails all of them for
+    all Accounts at once, and ERROR renders as a GitHub annotation on the 10-per-step budget.
+    """
+    if _is_absent(exc):
+        _log.debug(f"{what}: no record yet")
+        return
+    global _record_unreadable_reported
+    first = not _record_unreadable_reported
+    _record_unreadable_reported = True
+    (_log.warning if first else _log.info)(
+        f"{what} unreadable: {type(exc).__name__}: {exc}", exc_info=first
+    )
+
+
 def _read(repo: str, path: str, token: str) -> bytes:
     from huggingface_hub import hf_hub_download
 
@@ -680,7 +706,8 @@ class Store:
                 _read(self._repo, f"{SETS_PREFIX}{account}/{set_id}.json", self._token)
             )
             return SavedSet.from_dict(data)
-        except Exception:  # noqa: BLE001 — absent and unreadable are one answer
+        except Exception as exc:  # noqa: BLE001 — both answer None; only the log separates them
+            _note_unreadable(f"Saved set {account}/{set_id}", exc)
             return None
 
     def put_set(self, saved: SavedSet) -> None:
@@ -753,7 +780,8 @@ class Store:
                 )
             )
             return SavedJob.from_dict(data)
-        except Exception:  # noqa: BLE001 — absent and unreadable are one answer
+        except Exception as exc:  # noqa: BLE001 — both answer None; only the log separates them
+            _note_unreadable(f"Saved job {account}/{saved_id}", exc)
             return None
 
     def put_saved(self, job: SavedJob) -> None:
@@ -778,7 +806,8 @@ class Store:
                 _read(self._repo, f"{PROFILE_PREFIX}{account}.json", self._token)
             )
             return Profile.from_dict(data)
-        except Exception:  # noqa: BLE001 — absent and unreadable are one answer
+        except Exception as exc:  # noqa: BLE001 — both answer None; only the log separates them
+            _note_unreadable(f"Profile {account}", exc)
             return None
 
     def put_profile(self, profile: Profile) -> None:

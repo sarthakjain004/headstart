@@ -76,7 +76,12 @@ class RecruiteeScraper(BaseScraper):
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         offers = raw.get("offers")
-        if offers is None:
+        if offers is None and "offers" not in raw:
+            # Only an *absent* container answers here. A ``offers`` that is present but not a
+            # list falls through and raises, as it did before this guard existed: a loud
+            # Board error keeps the Board out of ADR-0053's eviction scope, where a quiet
+            # `[]` would land it in `boards_ok` and evict its rows two runs later — the
+            # failure this line exists to report, arriving by the path that reports it.
             # A tenant with nothing open still answers `{"offers": []}`, so a payload carrying no
             # `offers` at all was not *read* — the same zero downstream as an empty board, which
             # is what makes it worth a line (`note_unreadable_board`). Not marked truncated: what

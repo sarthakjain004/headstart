@@ -32,7 +32,7 @@ class TelegramError(Exception):
     """Telegram refused or could not be reached; the Watermark must not advance."""
 
 
-def _reason(exc: Exception) -> str:
+def reason(exc: Exception) -> str:
     """Why this call failed, in a form that names a cause — and never the URL.
 
     `HTTPError.__str__` is only "HTTP Error 429: Too Many Requests"; the `description` and
@@ -111,7 +111,7 @@ def send(
                 f"{API}/bot{token}/{method}", body, {"Content-Type": content_type}
             )
         except Exception as exc:  # refusal and unreachable are one outcome
-            raise TelegramError(f"{method}: {_reason(exc)}") from exc
+            raise TelegramError(f"{method}: {reason(exc)}") from exc
         # Telegram answers HTTP 200 with `"ok": false` for application-level refusals — a
         # blocked bot, an unknown chat id — so a status code alone reads those as sent.
         if not (isinstance(reply, dict) and reply.get("ok")):

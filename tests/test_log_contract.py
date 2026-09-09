@@ -42,20 +42,24 @@ and the message body as it really appears. Five checks run over it:
    either in this table or in :data:`EXEMPT` with a reason. Adding an analyser regex without a
    contract entry is what fails, so no human has to remember.
 
-**Emitter-verified vs source-verified, and why the mix.** 49 of the 100 entries carry `emit=`.
-The 51 that do not are blocked rather than neglected, and the block is one of three things:
+**Emitter-verified vs source-verified, and why the mix.** 76 of the 100 entries carry `emit=`,
+so their `body` is a line the emitter was watched producing rather than a line someone believed
+it produced. 27 of those 76 are marked `heavy`: they need a dependency CI does not install
+(`.[dev]` and nothing else — no numpy, torch, pyarrow, lancedb or langdetect), so they run for
+anyone editing `index`, `role_trends` or `embed_*` locally and skip in CI. That is weaker than a
+check that always runs, and it is the same trade `tests/test_readme_schema.py` already makes here.
 
-- **A dependency CI does not install** (`.[dev]` and nothing else — no numpy, torch, pyarrow,
-  lancedb or langdetect). `index` (16 entries), `role_trends` (11), `embed_merge` (7, whose merge
-  reads the vectors with numpy even though the module imports fine), `embed_run` (5) and
-  `embed_plan` (5, which needs langdetect for the English gate and transformers for the token
-  counts) cannot be *run* here. A check that skips in CI is not a check, so these stay on 1 and 2.
-- **An emitter that is not Python**: the storage check is shell inside `pipeline.yml` (3).
-- **A `body` that is not a whole line**: `fanout_plan.GATE_BOARD` (1) is a fragment of the value
-  gate's own sample, and check 4 asks whether `body` is one of the messages the emitter logged.
+The 24 that stay source-verified are blocked rather than neglected: the storage check's emitter is
+shell inside `pipeline.yml` (3); `fanout_plan.GATE_BOARD` documents a *fragment* of the value
+gate's sample rather than a whole line, and check 4 asks whether `body` is one of the messages
+logged; and `spare_egress`'s remaining sites sit inside the WARP rotation path (a subprocess and
+a SOCKS5 dial).
 
-That leaves `spare_egress`'s three, two of which sit inside the WARP rotation path (a subprocess
-and a SOCKS5 dial); the third, `mark_walled`, is plainly callable and is the next one worth taking.
+What source-verified does **not** buy is worth stating plainly, because the number above is
+reassuring and the residual is not: checks 1 and 2 only assert what the consumer's own regex
+demands, so on those 12 entries any prose outside the pattern's span — an invented path, a wrong
+filename, a count nobody emits — passes green. Seven such bodies were found and corrected the
+first time this table was converted, which is the measure of how well a body survives on trust.
 Prefer `emit=` whenever an emitter becomes cheaply callable, and treat the rest as debt.
 
 **Where the line between them actually falls is *values*.** Check 2 reads format strings, so `{n}`
@@ -100,7 +104,7 @@ long as it had been written down. Move an entry to `emit=` the moment its emitte
 callable.
 
 **One thing this file pins is not in the table at all**: the `stage= run= attempt=` line every
-ingest entry point opens with (`observability.context`). No analyser parses it — a human greps it
+ingest entry point opens with (`log.context`). No analyser parses it — a human greps it
 — so it has no CONTRACT row and no regex to drift against. What it can lose instead is its
 *vocabulary*, and it had: ten call sites saying the module's name, three borrowing
 `pipeline.yml`'s job name, and one hyphenated and alone in that. The last two tests in this file
@@ -2949,24 +2953,57 @@ def test_every_runlog_pattern_is_accounted_for() -> None:
 # --------------------------------------------------------------------------------------------
 
 _INGEST = _ROOT / "src" / "headstart" / "ingest"
+_ALERTS = _ROOT / "src" / "headstart" / "alerts"
 
 
-def _ingest_modules() -> dict[str, ast.Module]:
-    """Every module under `src/headstart/ingest/`, parsed — read, never imported.
+def _entry_point_paths() -> list[Path]:
+    """The modules either package could run as `python -m`. `__init__.py` is excluded: it is
+    the one stem the two packages share, and it is never an entry point."""
+    return [
+        path
+        for path in sorted(_INGEST.glob("*.py")) + sorted(_ALERTS.glob("*.py"))
+        if path.stem != "__init__"
+    ]
 
-    Same reason as `_emitter_strings`: `index`, `role_trends` and `embed_run` need
-    lancedb/numpy/torch, which CI does not install, and a check that skips in CI is not a check.
+
+def _entry_point_modules() -> dict[str, ast.Module]:
+    """Every module that can be a `python -m` entry point, parsed — read, never imported.
+
+    `ingest/` **and** `alerts/`. The alerts half is not decoration: `alerts.run` and `alerts.bot`
+    are wired into Actions (`alerts.yml`, and `bot.yml` every fifteen minutes), and scoping this
+    walk to `ingest/` alone is how they went without a run line long enough for a review to find
+    it. `log.context` was moved out of `ingest.observability` into the logging seam precisely so
+    `alerts/` could call it without importing `ingest` — enforcing it only where it already
+    happened would have left that move doing nothing.
+
+    Parsed, never imported, for the same reason as `_emitter_strings`: `index`, `role_trends`
+    and `embed_run` need lancedb/numpy/torch, which CI does not install, and a check that skips
+    in CI is not a check.
     """
     return {
+        # Keyed by the bare stem, which is what `stage=` carries. The two packages do not
+        # collide (`alerts/run.py` against `ingest/scrape_run.py`), and a collision would show
+        # up here as a silently dropped module rather than a duplicate, so it is asserted below.
         path.stem: ast.parse(path.read_text(encoding="utf-8"), str(path))
-        for path in sorted(_INGEST.glob("*.py"))
+        for path in _entry_point_paths()
     }
 
 
+def test_no_entry_point_module_is_shadowed_by_a_name_collision():
+    """`_entry_point_modules` keys by bare stem across two packages, and a dict comprehension
+    would drop a collision without a word — taking a real entry point out of every check above
+    it. Cheap to assert, and the failure it prevents is silent."""
+    stems = [p.stem for p in _entry_point_paths()]
+    assert len(stems) == len(set(stems)), (
+        "two entry-point modules share a stem, so one is invisible to the context and stage "
+        f"checks: {sorted({s for s in stems if stems.count(s) > 1})}"
+    )
+
+
 def _context_stages() -> dict[str, str]:
-    """The literal each module passes as `observability.context`'s `stage`, by module name."""
+    """The literal each module passes as `log.context`'s `stage`, by module name."""
     found: dict[str, str] = {}
-    for module, tree in _ingest_modules().items():
+    for module, tree in _entry_point_modules().items():
         for node in ast.walk(tree):
             if (
                 isinstance(node, ast.Call)
@@ -2993,7 +3030,7 @@ def test_the_stage_field_is_the_module_name(module: str, stage: str) -> None:
     """
     assert stage == module, (
         f"{module}.py logs `stage={stage}`, but the rule is the module's own name, "
-        f"`stage={module}` — `observability.context`'s docstring says why. A module running "
+        f"`stage={module}` — `log.context`'s docstring says why. A module running "
         "several passes puts the pass in an extra field (`step=`, `ledger=`), not in `stage`."
     )
 
@@ -3009,7 +3046,7 @@ def test_every_ingest_entry_point_opens_with_a_context_line() -> None:
     """
     entry_points = {
         module
-        for module, tree in _ingest_modules().items()
+        for module, tree in _entry_point_modules().items()
         if any(
             isinstance(node, ast.FunctionDef) and node.name == "main"
             for node in tree.body
@@ -3017,6 +3054,28 @@ def test_every_ingest_entry_point_opens_with_a_context_line() -> None:
     }
     missing = sorted(entry_points - set(_context_stages()))
     assert not missing, (
-        "these `python -m headstart.ingest.*` entry points never call `observability.context`, "
+        "these `python -m headstart.*` entry points never call `log.context`, "
         f"so nothing in their logs says which run, attempt or shard wrote them: {missing}"
     )
+
+
+def test_the_docstring_census_is_recomputed_not_remembered():
+    """The file that polices drift must not drift itself.
+
+    Its own census said "49 of the 100" while the table held 88 — stale because two conversion
+    rounds moved the number and nobody re-read the prose. `log.FirstOnly`'s identical census is
+    pinned this way and has caught three real staleness bugs since; this one was pinned only by
+    hope, and the review that found it is the reason it is pinned now."""
+    total = len(CONTRACT)
+    emit = sum(1 for entry in CONTRACT if entry.emit is not None)
+    heavy = sum(1 for entry in CONTRACT if entry.emit is not None and entry.heavy)
+    doc = __doc__ or ""
+    assert f"{emit} of the {total} entries carry `emit=`" in doc, (
+        f"the docstring's census is stale: {emit} of {total} entries carry `emit=`"
+    )
+    assert f"{heavy} of those {emit} are marked `heavy`" in doc, (
+        f"the docstring's heavy count is stale: {heavy} of the {emit} emit= entries are heavy"
+    )
+    assert (
+        total - emit == 12 or f"The {total - emit} that stay source-verified" in doc
+    ), f"the docstring names a source-verified count that is not {total - emit}"

@@ -59,6 +59,7 @@ _SCRAPERS = _ROOT / "scrapers"
 _ALERTS = _ROOT / "alerts"
 _HARVEST = _ROOT / "harvest.py"
 _SPARE_EGRESS = _ROOT / "spare_egress.py"
+_SEARCH = _ROOT / "search.py"
 
 #: Where *every* annotation-level site must be justified, because the repetition lives in the
 #: caller rather than in a loop the file shows. Two packages and two modules, each with its own
@@ -81,6 +82,13 @@ _PER_ITEM_BY_CONSTRUCTION = [
     *sorted(_ALERTS.glob("*.py")),
     _HARVEST,
     _SPARE_EGRESS,
+    # `search.py` runs once per HTTP request on the deployed Space, so every line in it is
+    # per-item by construction and none of it is lexically looped — the loop rule cannot see it.
+    # It is here because this is where the worst regression of the whole overhaul happened: a
+    # filter-drop warning re-entered by `facets.counts` once per facet option cost 58 records a
+    # request, driven by a URL parameter. That was fixed by hoisting the check to the single
+    # parse point, and nothing but this list would notice it coming back.
+    _SEARCH,
 ]
 
 #: Every spelling a logger has in this package — the receiver a matched ``.warning``/``.error``
@@ -100,6 +108,31 @@ _LOGGER_FACTORIES = ("log.get", "logging.getLogger")
 #: ``src/headstart`` rather than a bare filename because both scanned packages carry a
 #: ``registry.py`` and the two are unrelated modules — a bare name would let one waive the other.
 _ALLOWED: dict[str, str] = {
+    "alerts/store.py:_note_unreadable": (
+        "Bound: 1 per process, by the `_record_unreadable_reported` flag it shares with "
+        "`Store.get` — deliberately one bound across every reader, because a Hub outage fails "
+        "all of them for all Accounts at once and one incident should cost one annotation, not "
+        "one per method per Account. Hand-rolled rather than `log.FirstOnly` for the reason the "
+        "module's own `_log` is: `alerts/` is copied into the Space image as a flat package "
+        "with no `headstart` to import the seam from. The absent arm never reaches here — it "
+        "returns at DEBUG, because a signed-in Account with no Saved set is the common path."
+    ),
+    "search.py:_warn_unknown_filters": (
+        "Bound: 2 per HTTP request, and not against the annotation quota at all — `search.py` "
+        "runs only in the deployed Space, which calls no `log.setup()`, so these render through "
+        "`logging.lastResort` as bare stderr lines and no `::warning::` is ever produced. The "
+        "budget that binds here is request volume, and this is the site that once cost 58 "
+        "records a request: `facets.counts` re-entered `build_filter` once per facet option, "
+        "driven by a URL parameter, unauthenticated. Hoisting the check to `filter_kwargs` — "
+        "the single parse point — made it 2. WARNING rather than INFO is deliberate for the "
+        "same reason: `lastResort` carries WARNING and above only, so INFO here is invisible "
+        "in the one deployment that serves users."
+    ),
+    "search.py:__init__": (
+        "Bound: 1 per process. The boot line naming which schema columns are dark, so an "
+        "un-migrated table cannot silently ignore every `seen_within` filter and `salary` sort "
+        "with no record. Same `lastResort` reasoning as above: WARNING or invisible."
+    ),
     "harvest.py:scrape_all": (
         "Bounded by `log.FirstOnly` to the FIRST non-transport Board failure per run (the rest "
         "log at INFO). A parse break is systemic — `KeyError: 'title'` raises on every Board of "

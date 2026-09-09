@@ -166,7 +166,12 @@ class AshbyScraper(BaseScraper):
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         listed = raw.get("jobs")
-        if listed is None:
+        if listed is None and "jobs" not in raw:
+            # Only an *absent* container answers here. A ``jobs`` that is present but not a
+            # list falls through and raises, as it did before this guard existed: a loud
+            # Board error keeps the Board out of ADR-0053's eviction scope, where a quiet
+            # `[]` would land it in `boards_ok` and evict its rows two runs later — the
+            # failure this line exists to report, arriving by the path that reports it.
             # A board with nothing open still answers `{"jobs": []}`, so a payload carrying no
             # `jobs` at all was not *read* — and downstream that is the same zero as an empty
             # board, which is what makes it worth a line (`note_unreadable_board`). Deliberately

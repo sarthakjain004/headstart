@@ -8231,7 +8231,7 @@ def test_a_payload_with_no_postings_container_says_the_board_was_unread(
     are the same number downstream — `index sync` reads both as delistings — and these three
     scrapers said nothing at all about which had happened.
 
-    The *empty* container stays silent on purpose: a live board at `jobs=0` is routine at this
+    The *empty* container stays silent on purpose: a Live row at `jobs=0` is routine at this
     scale, so a line for it would be noise, and `note_unreadable_board` is INFO rather than
     WARNING for the same reason (ADR-0039's annotation budget). Neither exit marks the Board
     truncated — what a container-less payload means on these APIs has not been measured, and
