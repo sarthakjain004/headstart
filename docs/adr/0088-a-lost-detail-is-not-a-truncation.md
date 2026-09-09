@@ -7,6 +7,15 @@ equivalent reporting, whose shape this mirrors),
 [ADR-0021](0021-re-embed-on-content-change.md) (the null fields a lost detail leaves),
 [ADR-0050](0050-persist-descriptions-across-runs.md) (the store that survives one)
 
+> **Amended 2026-09-09 — the cost claim is per-class, not universal.** "A detail loss still
+> costs ADR-0021 null fields and an ADR-0050 gap-ledger entry" (Consequences) was true of every
+> loss class this ADR had when written, all of which are *fetch* failures. The
+> `no externalPath` class is not one: the listing serves the posting as a requisition id and
+> nothing else, so `parse` yields an `Untitled` Job that `tech_filter` drops before either the
+> description store or the index sees it — neither cost is paid. Measured live over 22 boards /
+> 31,028 postings: 38 such stubs, 0 with a title.
+> `docs/workday/2026-09-09_parser-shaped-detail-losses.md`.
+
 > **Amended 2026-08-30 by [ADR-0097](0097-a-postings-id-comes-from-the-listing-never-the-detail.md).**
 > The "Scope of the claim" section below predicted that a lost detail *renames* the Job and called
 > it "a defect in `_posting_key`'s detail-dependence — to be fixed there". It was, on 2026-08-30.
