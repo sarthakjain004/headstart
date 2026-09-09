@@ -354,9 +354,9 @@ def load_active_companies(
 #:
 #: `board_priority.csv` is keyed the same way (5,143 Workday keys, 5,120 of them that shorthand)
 #: but never reaches here: `board_priority.load` returns `row["board"]` verbatim, and `pick_boards`
-#: calls `board_identity` on liveness `CompanyRef`s. That is the check on this diagnosis — 1,142 of its
-#: Workday keys are absent from the cost ledger, so had it fed them back too the flood would have
-#: been their 11,703-key union, not the 10,561 actually observed.
+#: calls `board_identity` on liveness `CompanyRef`s. That is the check on this diagnosis — 1,142
+#: of its Workday keys are absent from the cost ledger, so had it fed them back too the flood
+#: would have been their 11,703-key union, not the 10,561 actually observed.
 #:
 #: So the blast radius was never nil, only mis-measured: the one population that was measured is
 #: the one that does not reach the path. The bound below stands regardless, for the case the old
