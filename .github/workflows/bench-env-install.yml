@@ -111,6 +111,22 @@ jobs:
           rm -rf /tmp/v1
           df -h / | tail -1
 
+      # ── V5: the same install with pip's HTTP cache switched off, i.e. what a job that did NOT
+      # restore a pip cache would pay. It exists because `setup-python`'s own step — which is
+      # almost entirely the restore of this repo's 4.4 GB pip cache — costs 49-56 s in
+      # production, and a cache is only worth restoring if it saves more than that. Compare
+      # V5 against (this job's setup-python step duration + V1).
+      - name: V5 fresh venv + pip, no pip HTTP cache
+        run: |
+          t0=$(date +%s.%N)
+          python -m venv /tmp/v5
+          /tmp/v5/bin/pip install --no-cache-dir -e ".[embed]" huggingface_hub
+          t1=$(date +%s.%N)
+          printf 'V5_pip_nocache\tinstall\t%s\n' "$(awk "BEGIN{printf \"%.2f\", $t1-$t0}")" | tee -a /tmp/bench.tsv
+          /tmp/v5/bin/python -c "import headstart, sentence_transformers, torch; print('imports OK torch', torch.__version__)"
+          rm -rf /tmp/v5
+          df -h / | tail -1
+
       # ── V3: uv. Measured twice on purpose. V3a is a genuinely cold uv cache (no
       # actions/cache entry, so zero cache-budget cost); V3b reuses the local ~/.cache/uv
       # V3a just filled, which is what an actions-cached uv would restore.
@@ -161,6 +177,21 @@ jobs:
           /tmp/v4/bin/python -c "import torch; print('cuda build:', torch.version.cuda)"
           du -sh /tmp/v4 | tee -a /tmp/bench.tsv
           rm -rf /tmp/v4
+          df -h / | tail -1
+
+      # ── V6: V4 and V5 combined — CPU-only torch AND no pip HTTP cache. This is the variant
+      # that would actually ship if both halves win, because it needs no Actions cache entry at
+      # all, and the repo's cache budget is already 8.1/10 GB full.
+      - name: V6 fresh venv + pip, CPU-only torch, no pip HTTP cache
+        run: |
+          t0=$(date +%s.%N)
+          python -m venv /tmp/v6
+          /tmp/v6/bin/pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+          /tmp/v6/bin/pip install --no-cache-dir -e ".[embed]" huggingface_hub
+          t1=$(date +%s.%N)
+          printf 'V6_cputorch_nocache\tinstall\t%s\n' "$(awk "BEGIN{printf \"%.2f\", $t1-$t0}")" | tee -a /tmp/bench.tsv
+          /tmp/v6/bin/python -c "import headstart, sentence_transformers, torch; print('imports OK torch', torch.__version__, 'cuda', torch.version.cuda)"
+          rm -rf /tmp/v6
           df -h / | tail -1
 
       # ── V1r: ordering control. Identical to V1, last in the sequence.
