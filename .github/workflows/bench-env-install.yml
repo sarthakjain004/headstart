@@ -70,6 +70,54 @@ jobs:
           python -c "import headstart, sentence_transformers, torch, lancedb, langdetect, huggingface_hub, sklearn, einops, curl_cffi; print('imports OK torch', torch.__version__)"
           python -c "import headstart.ingest.embed_plan, headstart.ingest.index; print('pipeline modules import OK')"
 
+  # The other three pipeline jobs install far smaller dependency sets than `.[embed]`:
+  # `scrape` installs `.[scrape]` (pydoll, no torch) and `scrape-plan` installs bare `.` plus
+  # huggingface_hub. Production already shows their pip-cache restore (29-63 s) dwarfing their
+  # whole install (5-12 s), but that is a bound, not a with/without measurement — this job is
+  # the measurement, same runner, sequential, warm cache vs no cache.
+  bench_small:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Small-install variants
+        run: |
+          run_one () {  # $1 label, $2... the pip args
+            local label="$1"; shift
+            local t0 t1
+            t0=$(date +%s.%N)
+            python -m venv /tmp/sv
+            /tmp/sv/bin/pip install "$@" > /dev/null
+            t1=$(date +%s.%N)
+            printf '%s\t%s\n' "$label" "$(awk "BEGIN{printf \"%.2f\", $t1-$t0}")"
+            /tmp/sv/bin/python -c "import headstart; print('   import headstart OK')"
+            rm -rf /tmp/sv
+          }
+          run_one S1_scrape_pipcache      -e ".[scrape]"
+          run_one S2_scrape_nopipcache    --no-cache-dir -e ".[scrape]"
+          run_one S3_base_pipcache        -e "." huggingface_hub
+          run_one S4_base_nopipcache      --no-cache-dir -e "." huggingface_hub
+          run_one S1r_scrape_pipcache_rpt -e ".[scrape]"
+      - name: uv on the same two dependency sets (cold uv cache)
+        run: |
+          pip install uv==0.12.11 > /dev/null
+          rm -rf ~/.cache/uv
+          t0=$(date +%s.%N)
+          uv venv /tmp/su --python "$(which python)" > /dev/null
+          uv pip install --python /tmp/su/bin/python -e ".[scrape]" > /dev/null
+          printf 'S5_scrape_uv_cold\t%s\n' "$(awk "BEGIN{printf \"%.2f\", $(date +%s.%N)-$t0}")"
+          /tmp/su/bin/python -c "import headstart; print('   import headstart OK')"
+          rm -rf /tmp/su ~/.cache/uv
+          t0=$(date +%s.%N)
+          uv venv /tmp/su2 --python "$(which python)" > /dev/null
+          uv pip install --python /tmp/su2/bin/python -e "." huggingface_hub > /dev/null
+          printf 'S6_base_uv_cold\t%s\n' "$(awk "BEGIN{printf \"%.2f\", $(date +%s.%N)-$t0}")"
+          /tmp/su2/bin/python -c "import headstart; print('   import headstart OK')"
+
   bench:
     runs-on: ubuntu-latest
     timeout-minutes: 75
