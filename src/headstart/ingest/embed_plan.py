@@ -61,14 +61,21 @@ _OUT = REPO_ROOT / "data" / "embeddings" / "assignments"
 _S_PER_DOC = {512: 0.8, 1024: 1.7, 2048: 4.4, 4096: 18.0}
 _MAX_SHARDS = 15  # == pipeline.yml `max-parallel`; Phase 1 runs one shard per lane
 # Per-shard makespan target: `binpack.shard_count` spins `ceil(total_cost / this)` shards, clamped
-# to [1, _MAX_SHARDS]. This was 20 min, "sized so a big backlog saturates the lanes" — right for
-# the backlog era, wrong for a steady state three orders of magnitude smaller. Measured over the
-# four full runs of 2026-09-09, all on SHA fd15455 (34312743097, 34316866965, 34321068300,
-# 34327339789): 257-450 new Docs, 714-1,146 s of planned cost, so `ceil(cost / 1200)` was **always
-# exactly 1** and the matrix took one of the 15 lanes every run — 6.2-13.5 min of serial CPU on the
-# critical path. Fan-out is close to free: model load is 4 s of that (08:45:19 -> 08:45:23 in
-# 34327339789), the rest is pure CPU encode at ~0.7 docs/s. At 300 s those four runs plan 3, 3, 3
-# and 4 shards. A large backlog is unaffected — it clamps at _MAX_SHARDS either way.
+# to [1, _MAX_SHARDS] when there is work. This was 20 min, "sized so a big backlog saturates the
+# lanes" — right for the backlog era, wrong for a steady state three orders of magnitude smaller.
+# Measured over the four full runs of 2026-09-09, all on SHA fd15455 (34312743097, 34316866965,
+# 34321068300, 34327339789): 257-450 new Docs, 714-1,146 s of planned cost, so `ceil(cost / 1200)`
+# was **always exactly 1** and the matrix took one of the 15 lanes every run — 6.2-13.5 min of
+# serial CPU on the critical path. At 300 s those four runs plan 3, 3, 3 and 4 shards.
+#
+# Fan-out is cheap, not free, and the in-process part is the cheap part: model load is 4 s
+# (08:45:19 -> 08:45:23 in 34327339789), the rest pure CPU encode at ~0.7 docs/s. Each added lane
+# still pays the ~2.4 min job setup (checkout + pip + model cache), which runs in parallel across
+# lanes, and `merge` then fetches 3-4 fragments rather than 1. The 6-9 min/run saving is a
+# projection from that per-doc rate, not a measurement of a multi-shard run.
+#
+# Only a steady-state plan moves: above ~18,000 s both values clamp at _MAX_SHARDS; between
+# 1,200 s and 18,000 s they differ (a 2 h backlog: 6 shards before, 15 now), in the same direction.
 # Workings: docs/pipeline/2026-09-09_five-run-log-review.md §3.
 _TARGET_SECONDS = 5 * 60
 

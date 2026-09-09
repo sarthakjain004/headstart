@@ -91,6 +91,14 @@ backlog era, wrong for a steady state that is now three orders of magnitude smal
 Estimated saving: **6–9 min per run, ~10–15% of wall.** This is a projection from the measured
 per-doc rate and the 4 s load cost, not a measurement of a run with more shards.
 
+> **Landed in PR #390** (`_TARGET_SECONDS = 5 * 60`). The observations above describe the code at
+> `fd15455`, so the `embed_plan.py:63` / `20*60` references are as-measured, not current. Two
+> refinements from that PR's review: "without changing behaviour under a large backlog" holds only
+> above ~18,000 s, where both values clamp at `_MAX_SHARDS` — between 1,200 s and 18,000 s the plan
+> does change (a 2 h backlog: 6 shards before, 15 after), in the intended direction. And "nearly
+> free" is the *in-process* cost only; each added lane still pays the ~2.4 min job setup, and
+> `merge` then fetches 3–4 fragments rather than 1. The saving remains a projection.
+
 ## 4. `pip install` runs three times serially, for ~6.8 min per run
 
 The three post-scrape jobs each rebuild the environment from scratch:
@@ -221,7 +229,12 @@ class — 24 occurrences with no run free of it. It is a fixable TLS-chain issue
 flakiness, and it is worth a look because successfactors is also the ATS behind the §2 floor board
 and most of §6's exclusions.
 
-`N of M page(s) failed mid-crawl` fires **866 times** across the four runs — it is a Workday-only line (807 carry the `[workday]` tag; no other scraper emits it). These are counts of log
+`N of M thing(s) failed mid-crawl` fires **866 times** across the four runs — it is a Workday-only line
+(807 carry the `[workday]` tag; no other scraper emits it). Note the noun is deliberately the variable
+part: `_report_detail_losses`' docstring (`workday.py:897-899`) says it is *"deliberately worded to
+`_paginate`'s shape … so one regex reads the listing and detail passes alike and the noun says which
+pass it was"*. The 866 is that noun-agnostic total, so it pools `page(s)` (listing) and `detail(s)`
+(detail) — see below. These are counts of log
 *lines*, not of individual pages — each line reports its own `xN` multiplicities — so read them as a
 distribution over incidents. Two of the classes are parser-shaped rather than network-shaped:
 **`no externalPath` (139 lines)** and **`unparseable` (41 lines)**. Neither is covered by any retry or
@@ -229,24 +242,34 @@ egress mechanism, and both would repay a direct look. The rest is HTTP 500 (381)
 (201), HTTP 429 (48), HTTP 403 (31), and a long tail of 404/520/522/SSLError.
 
 Only **60 of those 866 lines** end in a truncation verdict (`— Board unauthoritative this run` ×59,
-`— too little of T listed read to keep` ×1) — but that is two different failure kinds sharing one log
-shape, not a mis-calibrated threshold. Both scrapers follow the **same rule: `mark_truncated` iff the
-returned id set is short**, and both are correct. Workday's **listing** pass (`workday.py:1060-1080`)
-records every shortfall it sees — those are the 60. The other ~806 come from the **detail** pass
-(`workday.py:947-955`), whose line says so in as many words: `— not a truncation (the listing pass
-reports its own)`. Not marking is right there, because `ats_id = _posting_key(item)` is read from the
-*listing* item and `detail = item.get("_detail") or {}`, so a failed detail yields an empty dict and the
-Job is still emitted with null fields (ADR-0021; identity stopped depending on the detail at ADR-0097).
-The id set is complete, so `index sync` has nothing to misread.
+`— too little of T listed read to keep` ×1) — but that is two different failure kinds pooled by one
+log shape, not a mis-calibrated threshold. Both scrapers follow the **same rule: `mark_truncated` iff
+the returned id set is short**, and both are correct.
+
+Workday's **listing** pass (`workday.py:1060-1080`) emits the `page(s)` spelling and records *every*
+shortfall it sees, either as `— Board unauthoritative this run` plus `mark_truncated` or, past
+`_MAX_LOST_PAGE_SHARE`, as `— too little of T listed read to keep` plus a re-raise. Its **detail** pass
+(`workday.py:947-955`) emits the `detail(s)` spelling and marks nothing — its line says so in as many
+words: `— not a truncation (the listing pass reports its own)`. Not marking is right there, because
+`ats_id = _posting_key(item)` is read from the *listing* item and `detail = item.get("_detail") or {}`,
+so a failed detail yields an empty dict and the Job is still emitted with null fields (ADR-0021;
+identity stopped depending on the detail at ADR-0097). The id set is complete, so `index sync` has
+nothing to misread.
 
 successfactors marks truncated under that same rule for the opposite reason
 (`successfactors.py:315-320`): there **every** field comes from the job page, so `parse` drops a Job
 whose page did not arrive, the returned list is genuinely short, and an unmarked short list is exactly
 what `index sync` reads as a delisting — `docs/pipeline/2026-08-23_false-board-eviction-root-cause.md`
-records the incident that guard exists to prevent. So the cost of the ~806 Workday detail losses is
+records the incident that guard exists to prevent.
+
+So the 60 belong to the listing pass and the remainder are dominated by detail losses, whose cost is
 **ADR-0021 null fields and ADR-0050 description-store gaps, not evictions** — a data-completeness
-problem, not a scope-exclusion one. §6's case for giving the authoritative gate a tolerance stands on
-its own; it is not a Workday comparison.
+problem, not a scope-exclusion one. **The exact split is not measured here**: the 866 was grepped on
+the shared shape rather than on the noun, so re-grep `page(s)` and `detail(s)` separately before
+quoting a per-pass figure. (A caution that the pooling is real: 866 − 807 `[workday]`-tagged = 59,
+which is exactly the `— Board unauthoritative this run` count, and that coincidence is unexplained.)
+§6's case for giving the authoritative gate a tolerance stands on its own; it is not a Workday
+comparison.
 
 The one traceback in the window is `workday:https://generalmotors.wd5.myworkdayjobs.com/Careers_GM`
 raising `JSONDecodeError` inside `workday.py:1046 _paginate` — the host returned non-JSON mid-crawl.
@@ -258,7 +281,7 @@ run, which looks like a sink with no drain. I probed 24 quarantined boards live 
 **21 returned 404**, one DNS-failed, and the personio ones return the ATS's own "no personio board for
 {slug}" 404 through its resolver (my probe hit a 429 on the wrong endpoint). `workday:comcast/Comcast_Careers`
 is on an explicit **410 Gone**. The quarantine is correct and `0 cleared` is by design. Likewise the
-state ledgers are healthy: only 6.8% of `board_priority.csv` rows have no live Board, and 2,039 of
+state ledgers are healthy: only 6.8% of `board_priority.csv` rows match no Scrapable Board, and 2,039 of
 those 2,224 are `join`, the deliberately-disabled ATS — so ~185 real orphans out of 32,911.
 
 The cancelled run `34313429608` started no jobs at all: the 05:04 cron fired while the 04:53 dispatch
@@ -311,7 +334,7 @@ look like QA/test tenants rather than real employer boards and are candidates fo
 
 | # | change | est. saving / effect | confidence |
 | --- | --- | --- | --- |
-| 1 | Lower `embed_plan._TARGET_SECONDS` from 1200 s so the embed matrix fans out again (§3) | 6–9 min/run, 10–15% of wall | high — model load measured at 4 s |
+| 1 | ~~Lower `embed_plan._TARGET_SECONDS` from 1200 s so the embed matrix fans out again (§3)~~ **done, PR #390** | 6–9 min/run, 10–15% of wall (projected) | high — model load measured at 4 s |
 | 2 | Give ADR-0053's authoritative gate a tolerance (≥99% read) (§6) | returns most of ~2,900 permanently-shielded rows | high |
 | 3 | Cache the built venv / prebuilt image for join+embed+merge (§4) | up to ~5 min/run | medium |
 | 4 | Stop re-uploading `role_trends.csv` whole (§10) | ~1 GB/day of the binding storage cost | high |
