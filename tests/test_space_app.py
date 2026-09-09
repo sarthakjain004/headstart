@@ -843,29 +843,44 @@ _T1, _T2, _T3 = (
 )
 
 
-def _trends_csv(state: Path) -> None:
-    rows = [
-        "ts,version,metric,family,band,count",
-        f"{_T1},2,stock,software-engineering,mid,100",
-        f"{_T1},2,stock,ai-ml,mid,50",
-        f"{_T1},2,stock,non-tech,all,25",
-        f"{_T2},2,stock,software-engineering,mid,110",
-        f"{_T2},2,stock,ai-ml,mid,55",
-        f"{_T2},2,stock,watch:fde,mid,7",
-        f"{_T2},2,stock,non-tech,all,27",
-        f"{_T2},2,new,software-engineering,mid,12",
-        f"{_T2},2,new,watch:fde,mid,2",
-        f"{_T3},2,stock,software-engineering,mid,120",
-        f"{_T3},2,stock,ai-ml,mid,60",
-        f"{_T3},2,stock,watch:fde,mid,8",
-        f"{_T3},2,stock,non-tech,all,30",
-        f"{_T3},2,new,software-engineering,mid,9",
-        f"{_T3},2,new,ai-ml,mid,4",
-        f"{_T3},2,new,watch:fde,mid,1",
+def _trends_rows() -> list[dict]:
+    """The ledger rows these route tests chart, in `_load_trends`' output shape.
+
+    Built directly rather than round-tripped through a ledger file: since ADR-0120 the ledger
+    is Parquet, and pyarrow is not in the `[dev]` extra CI installs — reading a real one here
+    would make every /trends route test `importorskip` away in CI, which is exactly what
+    keeping flask in `[dev]` exists to prevent. `_load_trends` itself is covered separately,
+    under its own pyarrow gate. `ats='all'` on every row is the ADR-0075 sentinel these
+    fixtures always meant: rows carrying no per-ATS decomposition."""
+    return [
+        {
+            "ts": ts,
+            "version": 2,
+            "metric": m,
+            "family": f,
+            "band": b,
+            "ats": "all",
+            "count": c,
+        }
+        for ts, m, f, b, c in [
+            (_T1, "stock", "software-engineering", "mid", 100),
+            (_T1, "stock", "ai-ml", "mid", 50),
+            (_T1, "stock", "non-tech", "all", 25),
+            (_T2, "stock", "software-engineering", "mid", 110),
+            (_T2, "stock", "ai-ml", "mid", 55),
+            (_T2, "stock", "watch:fde", "mid", 7),
+            (_T2, "stock", "non-tech", "all", 27),
+            (_T2, "new", "software-engineering", "mid", 12),
+            (_T2, "new", "watch:fde", "mid", 2),
+            (_T3, "stock", "software-engineering", "mid", 120),
+            (_T3, "stock", "ai-ml", "mid", 60),
+            (_T3, "stock", "watch:fde", "mid", 8),
+            (_T3, "stock", "non-tech", "all", 30),
+            (_T3, "new", "software-engineering", "mid", 9),
+            (_T3, "new", "ai-ml", "mid", 4),
+            (_T3, "new", "watch:fde", "mid", 1),
+        ]
     ]
-    out = state / "data" / "state" / "role_trends.csv"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(rows) + "\n", encoding="utf-8")
 
 
 @pytest.fixture(scope="module")
@@ -874,14 +889,11 @@ def trends_app(tmp_path_factory):
     ride the snapshot stub — instead the module's own loader is pointed at the fixture file
     after import, which still exercises the real parsing (metric default included)."""
     state = tmp_path_factory.mktemp("state")
-    _trends_csv(state)
     # The wall pinned OFF explicitly ("" is falsy in _AUTH_ON): module-scoped fixtures from
     # earlier in this file hold their env until teardown, so without this the trends app can
     # inherit a live wall depending on test order and answer every request 401.
     with _space_app(state, env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}) as module:
-        module._TRENDS = module._load_trends(
-            state / "data" / "state" / "role_trends.csv"
-        )
+        module._TRENDS = _trends_rows()
         module._WATCH = {
             "watch:fde": {
                 "label": "Forward Deployed Engineer",
@@ -1006,29 +1018,34 @@ _U1, _U2 = (
 )
 
 
-def _ats_trends_csv(state: Path) -> None:
-    rows = [
-        "ts,version,metric,family,band,ats,count",
-        f"{_U1},2,stock,software-engineering,mid,all,100",
-        f"{_U1},2,stock,non-tech,all,all,10",
-        f"{_U2},2,stock,software-engineering,mid,greenhouse,60",
-        f"{_U2},2,stock,software-engineering,mid,lever,50",
-        f"{_U2},2,stock,ai-ml,mid,greenhouse,20",
-        f"{_U2},2,stock,non-tech,all,all,15",
+def _ats_trends_rows() -> list[dict]:
+    """Per-ATS rows in `_load_trends`' output shape — see `_trends_rows` on why not a file."""
+    return [
+        {
+            "ts": ts,
+            "version": 2,
+            "metric": "stock",
+            "family": f,
+            "band": b,
+            "ats": a,
+            "count": c,
+        }
+        for ts, f, b, a, c in [
+            (_U1, "software-engineering", "mid", "all", 100),
+            (_U1, "non-tech", "all", "all", 10),
+            (_U2, "software-engineering", "mid", "greenhouse", 60),
+            (_U2, "software-engineering", "mid", "lever", 50),
+            (_U2, "ai-ml", "mid", "greenhouse", 20),
+            (_U2, "non-tech", "all", "all", 15),
+        ]
     ]
-    out = state / "data" / "state" / "role_trends.csv"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(rows) + "\n", encoding="utf-8")
 
 
 @pytest.fixture(scope="module")
 def ats_trends_app(tmp_path_factory):
     state = tmp_path_factory.mktemp("ats-state")
-    _ats_trends_csv(state)
     with _space_app(state, env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}) as module:
-        module._TRENDS = module._load_trends(
-            state / "data" / "state" / "role_trends.csv"
-        )
+        module._TRENDS = _ats_trends_rows()
         module._WATCH = {}
         yield module
 
@@ -1372,3 +1389,68 @@ def test_the_door_and_the_app_share_one_palette():
                 f"the door sets {token}:{value}, which style.css does not — the two token "
                 "blocks must move together"
             )
+
+
+def test_load_trends_reads_the_parquet_ledger_back_as_the_stored_stamp_string(tmp_path):
+    """`_load_trends` must hand `/trends` a **string** `ts` (ADR-0120).
+
+    Parquet types the column as `timestamp[ms, tz=UTC]`, but the route filters `since`/`until`
+    by string comparison against a bound `_norm_stamp` renders as `+00:00` whole seconds. A
+    datetime here would raise on the first compare; a differently-spelled string would silently
+    reselect. Written with the pipeline's own writer, so the two halves cannot drift apart.
+    """
+    pytest.importorskip("pyarrow")  # not in the [dev] extra CI installs
+    pq = pytest.importorskip("pyarrow.parquet")
+    from headstart.ingest import role_trends
+
+    ledger = tmp_path / "role_trends.parquet"
+    rows = [
+        (
+            "2026-08-11T01:00:00+00:00",
+            2,
+            "stock",
+            "software-engineering",
+            "mid",
+            "all",
+            100,
+        ),
+        ("2026-08-12T01:00:00+00:00", 2, "new", "ai-ml", "senior", "greenhouse", 4),
+    ]
+    pq.write_table(role_trends._to_table(rows), ledger, compression="zstd")
+
+    with _space_app(tmp_path, env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}) as module:
+        got = module._load_trends(ledger)
+
+    assert got == [
+        {
+            "ts": "2026-08-11T01:00:00+00:00",
+            "version": 2,
+            "metric": "stock",
+            "family": "software-engineering",
+            "band": "mid",
+            "ats": "all",
+            "count": 100,
+        },
+        {
+            "ts": "2026-08-12T01:00:00+00:00",
+            "version": 2,
+            "metric": "new",
+            "family": "ai-ml",
+            "band": "senior",
+            "ats": "greenhouse",
+            "count": 4,
+        },
+    ]
+    assert all(isinstance(r["ts"], str) for r in got)
+
+
+def test_load_trends_is_empty_when_the_ledger_is_absent(tmp_path):
+    """The dark-until-ready shape (ADR-0120 rollout): between the Space deploying and the
+    first pipeline run writing a Parquet ledger, neither file exists. That must read as no
+    trend data — which `/trends` answers 503 to and the UI hides — never an exception."""
+    with _space_app(tmp_path, env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}) as module:
+        assert module._load_trends(tmp_path / "nope.parquet") == []
+        module._TRENDS = []
+        r = module.app.test_client().get("/trends")
+    assert r.status_code == 503
+    assert r.get_json()["error"] == "no trend data yet"
