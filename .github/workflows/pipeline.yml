@@ -33,8 +33,12 @@ name: nightly-pipeline
 #   inner `timeout Nm`  -> the work itself; fires first, `|| echo` absorbs it, the upload still runs
 #   step `timeout-minutes` -> that one step; must exceed inner + the step's own slack
 #   job `timeout-minutes`  -> setup + checkout + `pip install` + EVERY step + upload
-# The job margin must therefore cover pre-step setup (~100 s: checkout, setup-python, pip) *plus*
-# the upload, not merely exceed the step timeout. A job kill happens mid-step and skips even
+# The job margin must therefore cover pre-step setup (~20 s: checkout, setup-python, the install)
+# *plus* the upload, not merely exceed the step timeout. That figure was ~100 s until 2026-09-09,
+# when the pip cache was dropped and the `.[embed]` jobs moved to uv (measured 128.7 s -> 18.9 s
+# checkout-to-ready; docs/pipeline/2026-09-09_env-install-benchmark.md). The margins below were
+# sized against the old figure and are left as they are — they are hang detectors, and this change
+# only widens them. A job kill happens mid-step and skips even
 # `if: always()` steps, so too thin a job margin loses exactly the partial work the design protects.
 on:
   schedule:
@@ -144,7 +148,17 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-          cache: pip
+          # NO `cache: pip`, deliberately — measured 2026-09-09, full numbers in
+          # docs/pipeline/2026-09-09_env-install-benchmark.md. All five jobs here declared it
+          # with no `cache-dependency-path`, so they shared ONE 4.4 GB entry (torch plus the
+          # nvidia CUDA wheels the `.[embed]` jobs put in it) and every scrape shard restored the
+          # lot to install pydoll. Restoring cost 28-64 s; `setup-python` without it costs 0-1 s
+          # (n=16 job-observations in bot.yml/deploy-space.yml, which already omit it). It bought
+          # nothing back: pip with its HTTP cache switched off was never slower than pip with the
+          # cache restored (n=3 on `.[embed]`), because that install is dominated by unpacking
+          # 6.1 GB to disk rather than by downloading. On this job and `scrape` the case is
+          # arithmetic rather than measurement — the whole install is 5-12 s, so a 29-63 s
+          # restore cannot repay it at any hit rate.
       - name: Check HF_TOKEN (skips cleanly until set)
         id: gate
         env:
@@ -240,7 +254,9 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-          cache: pip
+          # No `cache: pip` — see the scrape-plan job's note. This job is the strongest case
+          # against it: 15 shards each restored 4.4 GB, in parallel, off the critical path's own
+          # wall, to accelerate an 8-11 s install.
         # [scrape]: pydoll, for the darwinbox browser escalation (ADR-0056). The browser starts
         # lazily — only a board that actually hits the wall pays for it.
       - run: pip install -e ".[scrape]"
@@ -493,8 +509,19 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-          cache: pip
-      - run: pip install -e ".[embed]" huggingface_hub
+          # No `cache: pip` — see the scrape-plan job's note.
+      # uv, not pip: 5.3x faster on this dependency set (median 16.0 s against 84.6 s, n=3
+      # within-run comparisons against a +-9% ordering-noise floor), and it needs no cache of any
+      # kind — uv with a cold cache beats pip holding a warm 4.4 GB one, so this removes the
+      # reason to have a cache rather than trading one for another. End-to-end, checkout to
+      # importable environment, this job's shape went 128.7 s -> 18.9 s. `--system` installs into
+      # the setup-python interpreter, which is what `python -m headstart.…` below runs; nothing
+      # in this workflow invokes a console script. uv is version-pinned for the same reason
+      # pyproject.toml pins ruff: a resolver whose behaviour shifts between releases would change
+      # what the pipeline installs with no commit to point at. Dependabot bumps it.
+      # Measurement: docs/pipeline/2026-09-09_env-install-benchmark.md.
+      - run: pip install uv==0.12.11
+      - run: uv pip install --system -e ".[embed]" huggingface_hub
       - name: Cache the embedding model
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -610,8 +637,9 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-          cache: pip
-      - run: pip install -e ".[embed]"
+          # No `cache: pip`, and uv rather than pip — see the join job's notes.
+      - run: pip install uv==0.12.11
+      - run: uv pip install --system -e ".[embed]"
       - name: Cache the embedding model
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -675,9 +703,11 @@ jobs:
         if: needs.scrape-plan.outputs.run == 'true'
         with:
           python-version: "3.12"
-          cache: pip
+          # No `cache: pip`, and uv rather than pip — see the join job's notes.
       - if: needs.scrape-plan.outputs.run == 'true'
-        run: pip install -e ".[embed]" huggingface_hub
+        run: pip install uv==0.12.11
+      - if: needs.scrape-plan.outputs.run == 'true'
+        run: uv pip install --system -e ".[embed]" huggingface_hub
       - name: Download the prior store + LanceDB (empty on first run)
         if: needs.scrape-plan.outputs.run == 'true'
         env:
