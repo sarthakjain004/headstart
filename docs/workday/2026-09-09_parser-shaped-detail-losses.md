@@ -117,7 +117,8 @@ Two secondary properties are worth recording because they *could* have made it n
 | intermittent (2-3 runs) | **34 of 125** | 1-6 postings per run, e.g. `medtronic`, `db/DBWebsite`, `citi/2` |
 | one run only | **90 of 125** | typically 1-3 postings on a 1,000-4,400-posting board |
 
-The live sweep confirms the split. Re-walking 22 of the 125 Boards — **31,028 postings read** —
+The live sweep confirms the split. Re-walking 22 of the 125 Boards that logged this class —
+**31,028 postings read** —
 found **38 stubs on 6 boards**: avanade 27, `walmart` 3, `ag/Airbus` 3, `cnx` 2, `thales` 2,
 `mastercard` 1. Meanwhile `db/DBWebsite` (6 logged), `citi/2` (6) and both `medtronic` boards
 (6 each) show **0 stubs now**. So outside avanade this is a momentary listing-index state, not a
@@ -217,10 +218,14 @@ then stopping, instead of grinding 550.
 
 Two independent checks say host, not request shape:
 
-- **Intermittent per board.** All six appear in all four runs' logs, but lose details in only 1-3
+- **Intermittent per Board.** All six appear in all four runs' logs, but lose details in only 1-3
   of them. A request-shape defect would be constant.
-- **Clean on live re-probe.** Re-running the detail pass with the same client against all six
-  episode boards — `xcelenergy` 208/208, `prudential` 300/300, `nwis` 300/300, `zendesk` 97/97,
+- **No shard was running bare.** `scripts/runlog/fanout_retries.py`'s egress detector — the check
+  the brief named for this question — reports **0 of 15 shards DIRECT in all four runs** (detail in
+  §2; it is a run-wide property, so it covers this section too). That rules out the reading where a
+  shard which lost its spare egress eats errors that merely look like host 5xx.
+- **Clean on live re-probe.** (A different 22 Boards from §1's listing sweep — these are the
+  HTTP-500 Boards.) Re-running the detail pass with the same client against all six episode boards — `xcelenergy` 208/208, `prudential` 300/300, `nwis` 300/300, `zendesk` 97/97,
   `myhcm` 93/93, `radiancetech` 74/74, **1,072 details** — plus 16 boards sampled from the
   1-per-board background tail. **22 boards, 5,410 details, zero non-200.**
 
@@ -244,7 +249,25 @@ readings, and they agree. **Verdict: no change.**
 5. **Sync-path counts are approximate.** On the `HEADSTART_ASYNC_FANOUT=0` fallback the class
    `Counter` increments race across threads. The async path is the default and is exact.
 
-## 5. Scope note
+## 5. Two statements this change is required to make
+
+**`DERIVATIONS_VERSION` needs no bump.** `headstart.ingest.doc_prep.DERIVATIONS_VERSION` gates
+re-derivation of fields `experience.extract()` or `salary.extract()` produce, and a fix that
+changes what either returns for already-scraped input must bump it or never reach data indexed
+before the fix. This change touches neither module, and touches nothing `to_meta()` reads: it
+alters one log line, adds a second, and adds a counter over the listing items. `extract()` returns
+exactly what it returned before for every input, new or already-scraped, so no stored row can
+differ and there is nothing for a sweep to re-derive.
+
+**Job-URL construction did not change, so the `verify-search-filters` coverage gate is not
+implicated** — stated rather than skipped silently. `parse`'s
+`url=f"{base}{external_path}" if external_path else base` is untouched by this diff, and Workday
+already has a shape in `scripts/eval/verify_filters.py` (`URL_SHAPES["workday"]`, line 101). Worth
+recording that the shape is a latent guard on exactly the risk §1 describes: it requires `/job/` in
+the path, which a stub's board-root url lacks, so the harness would catch a stub that reached the
+index if the tech gate ever stopped dropping one.
+
+## 6. Scope note
 
 The commissioning brief also asked about a "Workday vs successfactors, same mechanism, opposite
 thresholds" inconsistency in the ADR-0053 truncation gate. That premise is false and **no

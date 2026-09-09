@@ -1989,7 +1989,7 @@ def test_workday_detail_gap_names_what_the_failures_actually_were(monkeypatch, c
     # and a Board that loses most of its details says so at WARNING, naming the classes —
     # a 96%-empty detail pass previously produced no warning at all
     caplog.set_level(logging.WARNING, logger="headstart.scrapers.workday")
-    scraper._report_detail_losses([None, None, None, None, {"d": 1}], classes)
+    scraper._report_detail_losses([None, None, None, None, {"d": 1}], classes, 0)
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warnings) == 1
     message = warnings[0].getMessage()
@@ -2034,7 +2034,7 @@ def test_workday_complete_detail_pass_warns_about_nothing(monkeypatch, caplog):
 
     caplog.set_level(logging.INFO, logger="headstart.scrapers.workday")
     WorkdayScraper("https://acme.wd1.myworkdayjobs.com/careers")._report_detail_losses(
-        [{"d": 1}] * 5, Counter()
+        [{"d": 1}] * 5, Counter(), 0
     )
     assert caplog.records == []
 
@@ -2050,7 +2050,7 @@ def test_workday_detail_gap_under_the_share_stays_info(caplog):
 
     caplog.set_level(logging.INFO, logger="headstart.scrapers.workday")
     WorkdayScraper("https://acme.wd1.myworkdayjobs.com/careers")._report_detail_losses(
-        [None] + [{"d": 1}] * 9, Counter({"HTTP 404": 1})
+        [None] + [{"d": 1}] * 9, Counter({"HTTP 404": 1}), 0
     )
     assert [r.levelno for r in caplog.records] == [logging.INFO]
     assert "1 of 10 detail(s) failed mid-crawl (HTTP 404 x1)" in caplog.text
@@ -2073,6 +2073,7 @@ def test_workday_no_external_path_reports_separately_from_fetch_failures(caplog)
     WorkdayScraper("https://acme.wd1.myworkdayjobs.com/careers")._report_detail_losses(
         [None] * 4 + [{"d": 1}] * 6,
         Counter({"no externalPath": 3, "HTTP 404": 1}),
+        0,
     )
     assert "3 posting(s) carried no externalPath" in caplog.text
     # The tally counts the fetch failure only — not 4 of 10, and with no `unclassified` remainder
@@ -2093,7 +2094,7 @@ def test_workday_all_postings_lacking_external_path_logs_no_failure_line(caplog)
 
     caplog.set_level(logging.INFO, logger="headstart.scrapers.workday")
     WorkdayScraper("https://acme.wd1.myworkdayjobs.com/careers")._report_detail_losses(
-        [None] * 5, Counter({"no externalPath": 5})
+        [None] * 5, Counter({"no externalPath": 5}), 0
     )
     assert "5 posting(s) carried no externalPath" in caplog.text
     assert "failed mid-crawl" not in caplog.text
@@ -2114,10 +2115,10 @@ def test_workday_titled_stub_warns_because_it_would_serve_a_dead_link(caplog):
 
     caplog.set_level(logging.INFO, logger="headstart.scrapers.workday")
     WorkdayScraper("https://acme.wd1.myworkdayjobs.com/careers")._report_detail_losses(
-        [None] * 2, Counter({"no externalPath": 2}), titled_stubs=1
+        [None] * 2, Counter({"no externalPath": 2}), 1
     )
     assert "1 posting(s) had a title but no externalPath" in caplog.text
-    assert [r.levelno for r in caplog.records] == [logging.INFO, logging.WARNING]
+    assert [r.levelno for r in caplog.records] == [logging.INFO, logging.INFO]
 
 
 def test_workday_stub_posting_parses_to_a_job_the_tech_gate_drops():
@@ -2175,7 +2176,7 @@ def test_workday_detail_classes_always_account_for_every_loss(monkeypatch, caplo
     # and whatever still escapes labelling is named rather than silently dropped, so the
     # classes shown always sum to the loss count
     caplog.set_level(logging.WARNING, logger="headstart.scrapers.workday")
-    scraper._report_detail_losses([None] * 4, Counter({"HTTP 404": 1}))
+    scraper._report_detail_losses([None] * 4, Counter({"HTTP 404": 1}), 0)
     assert (
         "4 of 4 detail(s) failed mid-crawl (unclassified x3, HTTP 404 x1)"
         in caplog.text
@@ -7462,6 +7463,7 @@ def test_workday_recovered_details_report_once_and_stay_out_of_the_loss_tally(ca
         s._report_detail_losses(
             [{"description": "x"}, {"description": "y"}],
             Counter({_PAGE_RECOVERED: 2}),
+            0,
         )
     assert "2 detail(s) recovered from the public page" in caplog.text
     assert "failed mid-crawl" not in caplog.text

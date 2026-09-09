@@ -908,7 +908,7 @@ class WorkdayScraper(BaseScraper):
             return None
 
     def _report_detail_losses(
-        self, details: Sequence[Any], classes: Counter[str], titled_stubs: int = 0
+        self, details: Sequence[Any], classes: Counter[str], titled_stubs: int
     ) -> None:
         """Log what a detail pass's gaps actually were, once per Board, or nothing if it had none.
 
@@ -974,10 +974,14 @@ class WorkdayScraper(BaseScraper):
                 "docs/workday/2026-09-09_parser-shaped-detail-losses.md)"
             )
         if titled_stubs:
-            # The carve-out above is only safe while stubs stay title-less. One with a title can
-            # pass the tech gate and ship with the board root as its url — a dead link — so this
-            # is the tripwire for the assumption, not a restatement of it.
-            _log.warning(
+            # The tripwire for the assumption the quiet line above rests on. Deliberately counted
+            # over *every* posting, not just the ones this pass labelled: `parse` gives any
+            # `externalPath`-less posting the board root as its url regardless of whether a detail
+            # was attempted, so the dead-link risk does not depend on the detail pass running at
+            # all — and after ADR-0100's breaker trips, a stub is labelled `_BROKEN_OFF` and never
+            # reaches `_NO_DETAIL_URL`. INFO, not WARNING, because it can fire once per Board and
+            # ADR-0039's 2026-09-08 amendment reserves the annotation budget for lines that cannot.
+            _log.info(
                 f"{self.board_key()}: {titled_stubs} posting(s) had a title but no externalPath — "
                 "these can pass the tech gate and would serve the board root as their url"
             )
