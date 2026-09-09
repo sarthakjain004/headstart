@@ -170,23 +170,11 @@ class FirstOnly:
     site with no exception anywhere gets a bare line rather than logging's ``NoneType: None``,
     but a site reached from inside an *unrelated* ``except``, however many frames up, attaches
     that unrelated stack. 8 of the 15 call sites are lexically inside the ``except`` they report
-    on, so the stack is theirs by construction. The other seven report a *condition* rather than a
-    caught exception, and they are clean today for two different strengths of reason — which is
-    the part worth reading, not the count:
-
-    - ``scrapers/workday.py``'s detail-loss tally, the original of the shape, is clean **by
-      construction**: it is a threshold tripping at the end of a detail pass, with no ``except``
-      anywhere above it that could still be handling something.
-    - ``spare_egress``'s five tunnel checks are clean **by measurement** — an ``ast`` sweep of
-      ``src/headstart`` for a network call lexically inside an ``except`` found none, and both
-      of ``http.py``'s entries into them sit outside its ``except RequestsError``. That is the
-      weaker guarantee: it holds for the call graph as it is, and any new caller that dials
-      while handling an exception starts attaching that exception's stack to a line about WARP.
-    - ``config``'s identity fallback is clean for a third reason: ``_report_identity_failure``
-      is only ever called from ``board_identity``'s own ``except`` arm, so the live exception is
-      precisely the ``board_key()`` failure the line is about. The report sits one frame below
-      the handler rather than inside it, which is why it counts as outside here — the stack is
-      still the right one.
+    on, so the stack is theirs by construction. The other seven report a *condition* rather than
+    a caught exception; each is clean today, but for three different strengths of reason, and the
+    difference matters more than the count. ADR-0039's 2026-09-09 amendment sets them out — read
+    it before adding an eighth, because "clean by measurement" holds only for the call graph as
+    it is.
 
     ``tests/test_log.py`` recomputes both figures from the source with ``ast`` rather than
     trusting this paragraph: the version that said "five of the six" shipped in the very commit

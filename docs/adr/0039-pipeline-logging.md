@@ -243,3 +243,30 @@ cover. Below WARNING nothing is emitted at all in the deployment that serves use
 `search.py`'s boot line about a served table missing columns is a WARNING and not INFO — it is not
 a per-item line, and at INFO it would be invisible exactly where it matters. And anything grepping
 Space logs must not expect the `[tag]` the pipeline's own consumers key on.
+
+### Amendment, 2026-09-09: why each unhandled `FirstOnly` site is clean
+
+`FirstOnly.report` attaches `sys.exc_info()`, which is thread-wide rather than per-frame — the
+same rule `logging`'s own `exc_info=True` follows. Eight of its fifteen call sites are lexically
+inside the `except` they report on, so the stack is theirs by construction and needs no argument.
+The other seven report a *condition*, and they are clean for three different reasons. The
+distinction is design rationale, so it lives here rather than in the class's docstring, where it
+had grown to outweigh the nine lines of code it described.
+
+- **By construction** — `scrapers/workday.py`'s detail-loss tally, the original of the shape: a
+  threshold tripping at the end of a detail pass, with no `except` anywhere above it that could
+  still be handling something.
+- **By measurement** — `spare_egress`'s five tunnel checks. An `ast` sweep of `src/headstart` for
+  a network call lexically inside an `except` found none, and both of `http.py`'s entries into
+  them sit outside its `except RequestsError`. This is the weaker guarantee: it holds for the
+  call graph as it is, and the first caller that dials while handling an exception starts
+  attaching that exception's stack to a line about WARP.
+- **By the handler being the point** — `config`'s identity fallback. `_report_identity_failure`
+  is only ever reached from `board_identity`'s own `except` arm, so the live exception is
+  precisely the `board_key()` failure the line is about. It sits one frame below the handler
+  rather than inside it, which is why the census counts it as outside even though its stack is
+  the right one.
+
+`tests/test_log.py` recomputes the census from the source rather than trusting either document.
+That test exists because a hand-written count shipped stale three times during this overhaul —
+once inside the very commit correcting a different stale count.
