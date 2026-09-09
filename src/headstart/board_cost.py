@@ -95,11 +95,17 @@ def _rekeyed(board: str) -> str:
     Verified identical across all 85,839 rows of the live ledger, and a second implementation that
     had to stay in lockstep with the first is precisely what ADR-0049 and ADR-0059 are records of.
     Imported inside the function, as `board_priority` does, to keep the module import-light.
+
+    Passes ``report_failure=False`` because this caller's input is a *ledger key*, not a raw slug:
+    an already-migrated row is **meant** to raise, and that raise is how the shim tells migrated
+    from legacy. Reported, it flooded — every one of the ledger's 10,561 Workday keys is already
+    the shorthand Workday's parser rejects, so `scrape-plan` and `join` each logged 10,561
+    `board_key() failed` lines a run (21,122 total, 2026-09-09) describing rows that were correct.
     """
     from headstart.config import CompanyRef, board_identity
 
     ats, _, slug = board.partition(":")
-    return board_identity(CompanyRef(ats=ats, slug=slug, name=""))
+    return board_identity(CompanyRef(ats=ats, slug=slug, name=""), report_failure=False)
 
 
 def legacy_key_count(path: str | Path) -> int:

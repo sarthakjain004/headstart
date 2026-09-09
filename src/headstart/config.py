@@ -335,35 +335,81 @@ def load_active_companies(
 #: company list, so one bad slug restated itself ~15x per run — and a scraper whose `board_key()`
 #: starts raising would emit `N_Boards x 15` lines for one bug.
 #:
-#: Measured 2026-09-08: `load_active_companies('data/validate/liveness', min_jobs=0)` yields
-#: 91,325 Scrapable Boards and reaches this path zero times, so the blast radius today is nil.
-#: Latent, not live — but unbounded by construction, which is what the bound is for.
+#: Which population reaches the fallback is the whole question, and the two answers differ. A
+#: *liveness*-ledger slug is a raw scraper slug, so `board_key()` really parses it: measured
+#: 2026-09-09, `load_active_companies('data/validate/liveness', min_jobs=0)` yields 91,325
+#: Scrapable Boards and reaches this path **zero** times. A *state*-ledger key
+#: (`data/state/board_cost.csv`, `board_priority.csv`) is `board_key()`'s own **output**, and
+#: feeding one back in raises wherever the scraper's parser demands its input form — every one of
+#: `board_cost.csv`'s 10,561 Workday keys is the shorthand `{co}/{site}`, which Workday's parser
+#: rejects because it wants a careers URL. Until 2026-09-09 `board_cost._rekeyed` did exactly that
+#: round-trip on every row, so each of `scrape-plan` and `join` emitted 10,561 lines a run —
+#: 21,122 in total, and 99.8% of `scrape-plan`'s entire log. It now opts out of the report
+#: (`report_failure=False`) because for it a raise is the expected answer, not a defect.
+#:
+#: So the blast radius was never nil, only mis-measured: the one population that was measured is
+#: the one that does not reach the path. The bound below stands regardless, for the case the old
+#: note was reaching for — a scraper whose `board_key()` starts raising on its *own* slugs.
 _IDENTITY_REPORTED: set[str] = set()
 
+#: Distinct Boards named before the report goes quiet. Mirrors the compromise
+#: `ingest.observability.named_sample` strikes for the stages — enough examples to name the ATS
+#: and the parse error, never a dump. Not that helper itself: `config` is on the curated-feed
+#: path (`python -m headstart` -> `harvest`), which must not import from `ingest`, and
+#: `named_sample` renders a list the caller already holds whereas this reports as it goes.
+_IDENTITY_REPORT_CAP = 10
 
-def board_identity(company: CompanyRef) -> str:
+
+def board_identity(company: CompanyRef, *, report_failure: bool = True) -> str:
     """The Board's canonical key: ``board_key`` where the scraper can build one, the plain
-    ``ats:slug`` where a malformed slug defeats it — never dropping the Board either way."""
+    ``ats:slug`` where a malformed slug defeats it — never dropping the Board either way.
+
+    Pass ``report_failure=False`` when the argument is an **already-canonical** key rather than a
+    raw slug. There the raise is the expected answer — the fallback returns the key unchanged,
+    which is what makes the round-trip safe — so reporting it says nothing and floods the log.
+    :func:`headstart.board_cost._rekeyed` is the one such caller.
+    """
     from headstart.scrapers.registry import SCRAPERS
 
     try:
         return SCRAPERS[company.ats](company.slug).board_key()
     except Exception as exc:  # noqa: BLE001 - a malformed slug falls back to the plain key
-        # The fallback key is a *different* identity from the one the rest of the pipeline uses
-        # for this Board — `_dedupe_boards` collapses on it and `index prune` builds its keep-set
-        # from it — so a Board quietly landing here can be scraped under one name and pruned
-        # under another. Worth a line even though nothing is dropped.
-        #
-        # INFO, not WARNING: this fires once per Board, and under Actions WARNING is an
-        # annotation against a run-level quota (ADR-0039's 2026-09-08 amendment). `index_plan`'s
-        # keep-set guard already warns, once, about the same population.
         key = f"{company.ats}:{company.slug}"
-        if key not in _IDENTITY_REPORTED:
-            _IDENTITY_REPORTED.add(key)
-            _log.info(
-                f"{key}: board_key() failed "
-                f"({type(exc).__name__}: {exc}) — falling back to the plain ats:slug"
-            )
+        if report_failure:
+            _report_identity_failure(key, exc)
+        return key
+
+
+def _report_identity_failure(key: str, exc: Exception) -> None:
+    """Name a Board that fell back, once, up to :data:`_IDENTITY_REPORT_CAP` distinct Boards.
+
+    The fallback key is a *different* identity from the one the rest of the pipeline uses for this
+    Board — `_dedupe_boards` collapses on it and `index prune` builds its keep-set from it — so a
+    Board quietly landing here can be scraped under one name and pruned under another. Worth a
+    line even though nothing is dropped.
+
+    INFO, not WARNING: under Actions WARNING is an annotation against a run-level quota (ADR-0039's
+    2026-09-08 amendment). `index_plan`'s keep-set guard already warns, once, about the same
+    population.
+
+    No running total accompanies the cap, because there is no end-of-stage hook to flush one to and
+    a wrong total is worse than none. The expected count after the `_rekeyed` fix is zero, so any
+    line at all is the signal; the named ones carry the ATS and the parse error, which is what a
+    reader needs to find the scraper at fault.
+    """
+    if key in _IDENTITY_REPORTED:
+        return
+    _IDENTITY_REPORTED.add(key)
+    if len(_IDENTITY_REPORTED) <= _IDENTITY_REPORT_CAP:
+        _log.info(
+            f"{key}: board_key() failed "
+            f"({type(exc).__name__}: {exc}) — falling back to the plain ats:slug"
+        )
+    elif len(_IDENTITY_REPORTED) == _IDENTITY_REPORT_CAP + 1:
+        _log.info(
+            f"further board_key() failures not named ({_IDENTITY_REPORT_CAP} shown) — "
+            "each still falls back to the plain ats:slug"
+        )
         return key
 
 

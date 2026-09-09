@@ -4,6 +4,7 @@ from headstart import config
 from headstart.config import (
     EXCLUDED_BOARDS,
     PARKED_BOARDS,
+    CompanyRef,
     board_identity,
     load_active_companies,
     load_companies,
@@ -215,3 +216,47 @@ def test_load_active_companies_min_jobs(tmp_path):
     )
     assert len(load_active_companies(ledger, min_jobs=1)) == 2
     assert len(load_active_companies(ledger, min_jobs=5)) == 1
+
+
+def test_identity_failures_are_capped_not_unbounded(monkeypatch, caplog):
+    """One line per distinct Board is still `N_Boards` lines for one broken scraper.
+
+    The bound is what keeps a `board_key()` regression from costing a five-figure log again —
+    21,122 lines a run, measured 2026-09-09, before `board_cost._rekeyed` stopped asking. Pinned
+    against the cap rather than a literal so the two cannot drift apart.
+    """
+    monkeypatch.setattr(config, "_IDENTITY_REPORTED", set())
+    cap = config._IDENTITY_REPORT_CAP
+    with caplog.at_level("INFO", logger="headstart.config"):
+        for i in range(cap * 5):
+            board_identity(CompanyRef(ats="workday", slug=f"bad-{i}", name=""))
+
+    named = [r for r in caplog.records if "board_key() failed" in r.message]
+    assert len(named) == cap, f"expected {cap} named, got {len(named)}"
+    assert [r for r in caplog.records if "further board_key() failures" in r.message]
+    # Once, not once per Board past the cap — the flood this bound exists to stop.
+    assert len(caplog.records) == cap + 1
+
+
+def test_report_failure_false_changes_only_the_logging(monkeypatch, caplog):
+    """The flag must never move a key. `_rekeyed` sits on the read path that decides which
+    Board a measurement belongs to, so a divergence here would mis-price the shard pack."""
+    monkeypatch.setattr(config, "_IDENTITY_REPORTED", set())
+    refs = [
+        CompanyRef(ats="workday", slug="accenture/careers", name=""),
+        CompanyRef(ats="workday", slug="https://3m.wd1.myworkdayjobs.com/x", name=""),
+        CompanyRef(ats="greenhouse", slug="stripe", name=""),
+        CompanyRef(ats="notanats", slug="whatever", name=""),
+    ]
+    for ref in refs:
+        assert board_identity(ref) == board_identity(ref, report_failure=False)
+
+    monkeypatch.setattr(config, "_IDENTITY_REPORTED", set())
+    # The loop above ran with reporting ON and `caplog` collects for the whole test, so without
+    # this the assertion below reads that loop's lines and fails — but only once some earlier
+    # test has raised the `headstart` logger to INFO, which is why it passed run in isolation.
+    caplog.clear()
+    with caplog.at_level("INFO", logger="headstart.config"):
+        for ref in refs:
+            board_identity(ref, report_failure=False)
+    assert not caplog.records, [r.message for r in caplog.records]
