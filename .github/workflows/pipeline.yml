@@ -32,14 +32,20 @@ name: nightly-pipeline
 # the banking design:
 #   inner `timeout Nm`  -> the work itself; fires first, `|| echo` absorbs it, the upload still runs
 #   step `timeout-minutes` -> that one step; must exceed inner + the step's own slack
-#   job `timeout-minutes`  -> setup + checkout + `pip install` + EVERY step + upload
-# The job margin must therefore cover pre-step setup (~20 s: checkout, setup-python, the install)
-# *plus* the upload, not merely exceed the step timeout. That figure was ~100 s until 2026-09-09,
-# when the pip cache was dropped and the `.[embed]` jobs moved to uv (measured 128.7 s -> 18.9 s
-# checkout-to-ready; docs/pipeline/2026-09-09_env-install-benchmark.md). The margins below were
-# sized against the old figure and are left as they are — they are hang detectors, and this change
-# only widens them. A job kill happens mid-step and skips even
+#   job `timeout-minutes`  -> setup + checkout + the install + EVERY step + upload
+# The job margin must therefore cover pre-step setup (checkout, setup-python, the install) *plus*
+# the upload, not merely exceed the step timeout. A job kill happens mid-step and skips even
 # `if: always()` steps, so too thin a job margin loses exactly the partial work the design protects.
+# Until 2026-09-09 that pre-step setup measured ~110-140 s on `join`/`embed`/`merge` and ~50 s on
+# `scrape`/`scrape-plan` (the two install different dependency sets — see the ADR). The pip cache
+# was then dropped and the `.[embed]` jobs moved to uv (ADR-0122), which should cut all five
+# sharply. NO pipeline run has executed with that change yet: the end-to-end evidence is two
+# benchmark jobs replicating join's install on a bare runner (18.86 s and 18.58 s, against 128.73 s
+# for the old shape), and `scrape`/`scrape-plan` were not measured end-to-end at all. Treat the new
+# figures as projections until a real run lands. The job-level margins below were sized against the
+# old numbers and are deliberately left alone: as *job* margins they are hang detectors regardless
+# of whether the stage banks partial work, and a faster setup only widens them.
+# Numbers: docs/pipeline/2026-09-09_env-install-benchmark.md.
 on:
   schedule:
     # Hourly at :30, which still includes 21:30, the compulsory nightly. This is a BACK-TO-BACK
@@ -130,6 +136,13 @@ env:
   # budget re-trying a doomed operation. That took out 21 of 25 runs from 2026-08-02, and the
   # request rate scales with file count, which grows between compactions (ADR-0036).
   HF_HUB_DISABLE_XET: "1"
+  # The installer for the `.[embed]` jobs (ADR-0122). Pinned for the reason pyproject.toml pins
+  # `ruff==0.16.6`: a resolver whose behaviour shifts between releases would change what the
+  # pipeline installs with no commit to point at. Unlike ruff's pin, **Dependabot does not see
+  # this one** — it parses manifests and `uses:` refs, not a version literal inside a `run:`
+  # line — so it is hand-maintained, which is exactly why it lives here as one edit point rather
+  # than as three inline literals that would drift apart.
+  UV_VERSION: "0.12.11"
 
 jobs:
   # ── Stage 1: select this run's board slice and bin-pack it into scrape shards. Downloads only the
@@ -510,18 +523,21 @@ jobs:
         with:
           python-version: "3.12"
           # No `cache: pip` — see the scrape-plan job's note.
-      # uv, not pip: 5.3x faster on this dependency set (median 16.0 s against 84.6 s, n=3
-      # within-run comparisons against a +-9% ordering-noise floor), and it needs no cache of any
-      # kind — uv with a cold cache beats pip holding a warm 4.4 GB one, so this removes the
-      # reason to have a cache rather than trading one for another. End-to-end, checkout to
-      # importable environment, this job's shape went 128.7 s -> 18.9 s. `--system` installs into
-      # the setup-python interpreter, which is what `python -m headstart.…` below runs; nothing
-      # in this workflow invokes a console script. uv is version-pinned for the same reason
-      # pyproject.toml pins ruff: a resolver whose behaviour shifts between releases would change
-      # what the pipeline installs with no commit to point at. Dependabot bumps it.
+      # uv, not pip (ADR-0122): 5.3x faster on this dependency set (median 16.0 s against 84.6 s,
+      # n=3 within-run comparisons against a +-9% ordering-noise floor), and it needs no cache of
+      # any kind — uv with a cold cache beats pip holding a warm 4.4 GB one, so this removes the
+      # reason to have a cache rather than trading one for another. A benchmark job replicating
+      # this job's install, checkout to importable environment, went 128.7 s -> 18.9 s; that is a
+      # bench figure, not a measurement of this job.
+      #   `--system` installs into the setup-python interpreter, which is what `python -m
+      # headstart.…` runs. It must also keep CONSOLE SCRIPTS on PATH: `merge` shells out to
+      # `hf upload` in its "Upload index state" step, and losing that would break the step that
+      # ships the run's data. Verified on a real runner (`hf --version` under this exact install),
+      # not assumed. Version pinned at the workflow's `UV_VERSION` — see the note there.
       # Measurement: docs/pipeline/2026-09-09_env-install-benchmark.md.
-      - run: pip install uv==0.12.11
-      - run: uv pip install --system -e ".[embed]" huggingface_hub
+      - run: |
+          pip install "uv==$UV_VERSION"
+          uv pip install --system -e ".[embed]" huggingface_hub
       - name: Cache the embedding model
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -638,8 +654,9 @@ jobs:
         with:
           python-version: "3.12"
           # No `cache: pip`, and uv rather than pip — see the join job's notes.
-      - run: pip install uv==0.12.11
-      - run: uv pip install --system -e ".[embed]"
+      - run: |
+          pip install "uv==$UV_VERSION"
+          uv pip install --system -e ".[embed]"
       - name: Cache the embedding model
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -705,9 +722,9 @@ jobs:
           python-version: "3.12"
           # No `cache: pip`, and uv rather than pip — see the join job's notes.
       - if: needs.scrape-plan.outputs.run == 'true'
-        run: pip install uv==0.12.11
-      - if: needs.scrape-plan.outputs.run == 'true'
-        run: uv pip install --system -e ".[embed]" huggingface_hub
+        run: |
+          pip install "uv==$UV_VERSION"
+          uv pip install --system -e ".[embed]" huggingface_hub
       - name: Download the prior store + LanceDB (empty on first run)
         if: needs.scrape-plan.outputs.run == 'true'
         env:

@@ -1,7 +1,9 @@
 # CI environment-install A/B — 2026-09-09
 
 Every pipeline job rebuilds its Python environment from scratch. This measures whether that is
-avoidable, and by what mechanism.
+avoidable, and by what mechanism. The decision it led to is
+[ADR-0122](../adr/0122-the-pipeline-installs-with-uv-and-caches-nothing.md); this document is the
+evidence behind it.
 
 Four `bench-env-install` dispatches: `34341080096` (cold), `34341460481`, `34342977545`,
 `34344170457`. Production baselines come from pipeline runs `34332773221`, `34327339789`,
@@ -13,9 +15,10 @@ figures agree with the warm dispatches and are shown only for reference.
 
 The benchmark workflow that produced these numbers was deliberately not landed on `main` — the
 question it answers is now answered, and a permanently-installed workflow for it would be
-speculative. It lives on the branch **`bench/env-install-ab`**, which is kept for exactly that
-reason: `.github/workflows/bench-env-install.yml` there is the full methodology, re-runnable by
-pushing any `bench/**` branch.
+speculative. **This document is the authoritative record of the method**: §0 states the design, §2
+the variants and their exact commands, §6 the end-to-end shape. The workflow itself survives on the
+branch `bench/env-install-ab` as a convenience for re-running, but that branch is prunable and
+nothing here depends on it.
 
 ## 0. The noise floor, before any ratio
 
@@ -52,10 +55,21 @@ the `pip install` half. It is two costs, and they behave differently.
 |---|---|---|---|
 | `join` / `embed` / `merge` (`.[embed]`) | **28–64 s**, median ~52 | **75–80 s**, median 76.5 | 103–144 s |
 | `scrape` × 15 (`.[scrape]`) | **29–63 s**, median ~45 | **8–11 s**, median 9 | 37–74 s |
-| `scrape-plan` (bare `.`) | **41–60 s** | **5–12 s** | 46–72 s |
+| `scrape-plan` (`.` + `huggingface_hub`) | **41–60 s** | **5–12 s** | 46–72 s |
 
 n = 12 job-observations for each of the first two rows, 4 for `scrape-plan`, over the four runs
-named above.
+named above. Raw per-observation values, since Change A rests on them
+(`setup-python` / `pip install`, seconds):
+
+| run | `join` | `embed (0)` | `merge` | `scrape-plan` | `scrape (0)` | `scrape (7)` | `scrape (14)` |
+|---|---|---|---|---|---|---|---|
+| `34332773221` | 28 / 77 | 29 / 77 | 60 / 76 | 41 / 8 | 36 / 8 | 40 / 11 | 54 / 10 |
+| `34327339789` | 56 / 80 | 59 / 76 | 49 / 76 | 53 / 10 | 31 / 10 | 61 / 8 | 62 / 9 |
+| `34321068300` | 62 / 77 | 64 / 75 | 28 / 78 | 52 / 5 | 31 / 9 | 29 / 8 | 30 / 9 |
+| `34316866965` | 60 / 76 | 45 / 76 | 30 / 76 | 60 / 12 | 44 / 9 | 56 / 9 | 63 / 9 |
+
+Read down the restore column and then down the install column: the install never leaves a 5-point
+band on either dependency set, while the restore ranges 28–64 s on the same job across four runs.
 
 The install is the stable half; **the restore is the volatile half, swinging 2.3x on identical
 inputs**. Any saving from removing it must be quoted as a range, not a point estimate.
@@ -95,10 +109,10 @@ Small dependency sets, measured the same way on one runner (dispatch `3434417045
 | S1 `.[scrape]` with pip cache | 12.33 |
 | S2 `.[scrape]` **no** pip cache | 10.58 |
 | S1r `.[scrape]` with pip cache, repeated | 9.20 |
-| S3 bare `.` with pip cache | 7.99 |
-| S4 bare `.` **no** pip cache | 9.40 |
+| S3 `.` + `huggingface_hub`, with pip cache | 7.99 |
+| S4 `.` + `huggingface_hub`, **no** pip cache | 9.40 |
 | S5 `.[scrape]` uv, cold | **1.57** |
-| S6 bare `.` uv, cold | **1.16** |
+| S6 `.` + `huggingface_hub` uv, cold | **1.16** |
 
 ## 3. Change A — `cache: pip` returns nothing, and costs 28–64 s
 
@@ -115,16 +129,37 @@ finishes in 14–24 s.
 **On `scrape` and `scrape-plan`, this is arithmetic and needs no A/B.** The restore costs 29–63 s
 to accelerate an install whose *entire* duration is 5–12 s. Even a perfect cache driving the
 install to zero could not repay it: the maximum possible saving is bounded below the minimum
-observed restore. S1-vs-S2 and S3-vs-S4 confirm no benefit is present anyway (and the S1/S1r
-ordering drift of −25% on these short installs is larger than any effect being looked for, which
-is itself why the bound, not the delta, is the argument here).
+observed restore.
+
+The small-install A/B does **not** add to that, and is reported here rather than leaned on. S1
+(12.33 s, cache) against S2 (10.58 s, no cache) points the same way as `.[embed]`; but S3
+(7.99 s, cache) against S4 (9.40 s, no cache) points the **other** way — the cache won that pair by
+18%. Both are n=1, and the S1/S1r ordering drift on these short installs is **−25%**, larger than
+either effect. So the honest statement is that this A/B **cannot resolve** a difference this small,
+which is exactly why the bound, not the delta, is the argument for these two jobs.
 
 **Evidence coverage.** Change A is supported by direct measurement on the `.[embed]` jobs
 (`join`, `embed`, `merge`) and by a bound plus a confirming measurement on `scrape` and
 `scrape-plan`. All five jobs are covered.
 
-A side effect worth naming: with `cache: pip` gone from the pipeline, nothing refreshes its 4.4 GB
-cache entry and it expires, returning most of the repo's cache budget. See §5.
+**The cache budget does not come back, and an earlier draft of this document claimed it would.**
+That claim was wrong and is corrected here. `setup-python`'s cache key is
+os / arch / python-version / pyproject-hash — **repo-wide, not per-workflow**. Measured before
+this change landed, **ten** workflows declared `cache: pip`: `pipeline.yml` plus **nine** others
+(`ci`, `cleanup-index`, `cluster-roles`, `diff-role-assignments`, `embed-bench`, `embed-threads`,
+`pipeline-smoke`, `probe-successfactors-ua`, `probe-workday-400`). This change removes it from
+`pipeline.yml`, leaving those nine. Only `ci.yml` sets a distinct `cache-dependency-path`, and
+since the repo has a single root `pyproject.toml` that likely hashes to the same key anyway; the
+rest certainly share one. `cleanup-index.yml` declares it at line 159 and
+installs `.[embed]` at line 160 — the very install that fills the 4.4 GB entry — and it runs daily
+on its own cron. So deleting `cache: pip`
+from `pipeline.yml` alone frees **nothing**: the entry keeps being restored and stays alive.
+
+Two consequences follow. The ~1.9 GB headroom in §5 stays as it is, so the adoptability constraint
+on any future cache idea is unchanged. And `cleanup-index` — which runs the compaction ADR-0091
+ranks *above* the pipeline — keeps paying the same 28–64 s restore for no return. **Extending
+Change A to those nine workflows is the obvious follow-up** and is deliberately out of scope
+here, to keep this change to one workflow.
 
 ## 4. Change B — pinned `uv` instead of `pip`, on the three `.[embed]` jobs
 
@@ -197,7 +232,25 @@ jobs timing checkout → importable environment (dispatch `34344170457`):
 | `proposed` | `setup-python` no cache, `pip install uv==0.12.11`, `uv pip install --system -e ".[embed]" huggingface_hub` | **18.86** |
 
 Both then imported `headstart.ingest.embed_plan` and `headstart.ingest.index` successfully — the
-real pipeline modules, not a proxy. **6.8x, or 109.9 s saved.**
+real pipeline modules, not a proxy. **6.8x, or 109.9 s saved.** A second sample on dispatch
+`34363792555` put `proposed` at **18.58 s**, within 0.3 s of the first.
+
+**Console scripts survive the swap, and this was measured rather than assumed.** `merge` does not
+only import Python — it shells out to `hf upload` inside the `up()` retry helper of its "Upload
+index state" step, which is the step that ships the run's data. An installer that skipped entry
+points would break it, and §6's original job checked only imports. Run `34363792555` added the
+check under the exact shipping install:
+
+```text
+which hf      -> /opt/hostedtoolcache/Python/3.12.14/x64/bin/hf
+hf --version  -> 1.30.0
+CONSOLE SCRIPT OK: hf is executable
+```
+
+`uv pip install --system` writes entry points into the `setup-python` interpreter's `bin`, which is
+already on `PATH`. This was a real risk, not a theoretical one: the first version of this change
+shipped a comment asserting "nothing in this workflow invokes a console script", which review found
+to be false.
 
 These are two jobs on two runners, so the runner lottery applies and this pair is **not** the
 primary evidence — §2's within-run sequence is. It is a confirmation that the shipping command
@@ -256,4 +309,10 @@ question, out of scope here.
   (§4).
 - **A warm-uv-cache configuration was measured but not proposed** (§4).
 - **CPU-only torch composed with uv was not measured** (§5).
-- **No run has executed with these changes.** Everything in §7 is projection.
+- **No pipeline run has executed with these changes**, so every figure in §7 is projection. What
+  *was* verified, on a real runner under the exact shipping install
+  (`uv pip install --system -e ".[embed]" huggingface_hub`): the nine third-party imports listed in
+  §2; `headstart.ingest.embed_plan` and `headstart.ingest.index`, the real pipeline modules; and
+  `hf --version`, because `merge` shells out to the `hf` **console script** in its "Upload index
+  state" step and an installer that dropped entry points would break the step that ships the run's
+  data. The gap is end-to-end pipeline behaviour, not whether the environment is usable.
