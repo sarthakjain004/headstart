@@ -109,6 +109,24 @@ wall, and it is verified by test, not assumed. The window is bounded by the pipe
 - The ledger is no longer readable with `head`, `wc -l` or a spreadsheet. This is a real loss for
   ad-hoc inspection, accepted because the file had already passed the size where those tools were
   usable — `wc -l` on 172 MB is not an inspection anyone was performing.
+- **`_load_trends` no longer runs in CI.** The route tests used to exercise it by reading a CSV
+  fixture; a Parquet reader cannot be tested without pyarrow, which is not in the `[dev]` extra the
+  quality job installs. The route tests were therefore changed to build their rows directly — so
+  they keep running in CI, which is why `flask` is in `[dev]` at all — and the loader got its own
+  pyarrow-gated test that runs locally. Adding pyarrow to `[dev]` would fix the gap but pulls a
+  large binary wheel into a job whose stated purpose is to stay light; not worth it for one
+  function, and the loader is covered by the migration evidence below.
+- **The read-side saving does not arrive until the CSV is retired.** `join` fetches
+  `data/state/*`, so until the delete runs it still downloads the 172 MB CSV every run and passes
+  it to `merge` through the `corpus-state` artifact. Retirement is what banks the win on both
+  sides, not the format change alone.
+- **A pre-existing hazard the migration inherits, unchanged.** `merge` gets `data/state` only from
+  the `corpus-state` artifact, whose download is `continue-on-error: true`. If it is missing, the
+  ledger is absent and this step writes a fresh one — which the upload then publishes over the
+  real one. That was equally true of the CSV (a 2-row CSV would have replaced the 172 MB file the
+  same way), so this ADR neither introduces nor fixes it; it is called out because the migration
+  has a one-shot flavour that makes it look new. It is mitigated in practice by not deleting the
+  CSV until the landed Parquet has been checked for its full row count.
 - **The `/trends` route still compares `ts` as a string.** `_load_trends` renders the timestamp
   column back to the ledger's own `+00:00` whole-second spelling, so the date filters' semantics
   are byte-identical across the format change. Handing the route a `datetime` would raise on the

@@ -885,9 +885,10 @@ def _trends_rows() -> list[dict]:
 
 @pytest.fixture(scope="module")
 def trends_app(tmp_path_factory):
-    """The app with a trends ledger. `_STATE` is the hardcoded `/app/state`, so the CSV can't
-    ride the snapshot stub — instead the module's own loader is pointed at the fixture file
-    after import, which still exercises the real parsing (metric default included)."""
+    """The app with a trends ledger. `_STATE` is the hardcoded `/app/state`, so no ledger file
+    can ride the snapshot stub — `_TRENDS` is assigned after import instead. Since ADR-0120 the
+    rows are built directly rather than read from a file (see `_trends_rows`), so these are
+    route tests: the loader has its own test, under its own pyarrow gate."""
     state = tmp_path_factory.mktemp("state")
     # The wall pinned OFF explicitly ("" is falsy in _AUTH_ON): module-scoped fixtures from
     # earlier in this file hold their env until teardown, so without this the trends app can

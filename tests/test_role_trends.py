@@ -88,7 +88,6 @@ def _rows(ledger: Path) -> list[dict]:
     out = table.to_pylist()
     for r in out:
         r["ts"] = r["ts"].isoformat(timespec="seconds")
-        r["count"] = str(r["count"])
     return out
 
 
@@ -164,12 +163,10 @@ def test_counts_rows_by_family_and_band_and_isolates_non_tech(tmp_path, monkeypa
     ledger = _run(tmp_path, monkeypatch)
 
     rows = {(r["family"], r["band"]): r["count"] for r in _rows(ledger)}
-    assert (
-        rows[("software-engineering", "senior")] == "2"
-    )  # 5 and 6 years band together
-    assert rows[("data-science", "intern")] == "1"
+    assert rows[("software-engineering", "senior")] == 2  # 5 and 6 years band together
+    assert rows[("data-science", "intern")] == 1
     # the non-tech row is the diagnostic: one unbanded number, never a chart series
-    assert rows[("non-tech", "all")] == "1"
+    assert rows[("non-tech", "all")] == 1
     assert ("data-science", "mid") not in rows  # only non-empty groups
 
 
@@ -214,9 +211,9 @@ def test_ats_becomes_its_own_column_and_splits_same_family_band_rows(
     ledger = _run(tmp_path, monkeypatch)
 
     rows = {(r["family"], r["band"], r["ats"]): r["count"] for r in _rows(ledger)}
-    assert rows[("software-engineering", "senior", "greenhouse")] == "1"
-    assert rows[("software-engineering", "senior", "lever")] == "1"
-    assert rows[("non-tech", "all", "all")] == "1"  # never split by ats
+    assert rows[("software-engineering", "senior", "greenhouse")] == 1
+    assert rows[("software-engineering", "senior", "lever")] == 1
+    assert rows[("non-tech", "all", "all")] == 1  # never split by ats
 
 
 def test_ledger_accumulates_rows_across_runs(tmp_path, monkeypatch):
@@ -406,8 +403,8 @@ def test_new_metric_counts_only_rows_first_seen_inside_the_window(
     ledger = _run(tmp_path, monkeypatch)
 
     rows = {(r["metric"], r["family"], r["band"]): r["count"] for r in _rows(ledger)}
-    assert rows[("stock", "software-engineering", "mid")] == "3"
-    assert rows[("new", "software-engineering", "mid")] == "1"  # only the 1-day-old row
+    assert rows[("stock", "software-engineering", "mid")] == 3
+    assert rows[("new", "software-engineering", "mid")] == 1  # only the 1-day-old row
 
 
 def test_watch_role_counts_by_title_regardless_of_cluster(tmp_path, monkeypatch):
@@ -462,11 +459,11 @@ def test_watch_role_counts_by_title_regardless_of_cluster(tmp_path, monkeypatch)
     ledger = _run(tmp_path, monkeypatch)
 
     rows = {(r["metric"], r["family"], r["band"]): r["count"] for r in _rows(ledger)}
-    assert rows[("stock", "watch:fde", "mid")] == "1"
-    assert rows[("stock", "watch:fde", "senior")] == "1"
+    assert rows[("stock", "watch:fde", "mid")] == 1
+    assert rows[("stock", "watch:fde", "senior")] == 1
     # the watched rows still count in their assigned families — the watchlist observes, never moves
-    assert rows[("stock", "software-engineering", "mid")] == "2"
-    assert rows[("stock", "data-science", "senior")] == "1"
+    assert rows[("stock", "software-engineering", "mid")] == 2
+    assert rows[("stock", "data-science", "senior")] == 1
 
 
 def test_watchlist_with_unknown_parent_errors_visibly(tmp_path, monkeypatch, caplog):
@@ -518,9 +515,7 @@ def test_watchlist_with_unknown_parent_errors_visibly(tmp_path, monkeypatch, cap
     assert not ledger.exists()
 
 
-def test_pre_metric_ledger_is_migrated_in_place_before_the_first_append(
-    tmp_path, monkeypatch
-):
+def test_pre_metric_csv_is_folded_into_the_parquet_ledger(tmp_path, monkeypatch):
     """The ledger predates the metric AND ats columns and is append-only on HF, so the
     migration happens where the appends do — old rows become metric=stock, ats=all exactly,
     never a guess."""
@@ -556,15 +551,15 @@ def test_pre_metric_ledger_is_migrated_in_place_before_the_first_append(
         "family": "software-engineering",
         "band": "mid",
         "ats": "all",
-        "count": "10",
+        "count": 10,
     }
     # every row — folded-in and freshly appended alike — lands on the one schema
-    assert all(r["metric"] in ("stock", "new") and r["count"].isdigit() for r in rows)
+    assert all(
+        r["metric"] in ("stock", "new") and isinstance(r["count"], int) for r in rows
+    )
 
 
-def test_pre_ats_ledger_is_migrated_in_place_before_the_first_append(
-    tmp_path, monkeypatch
-):
+def test_pre_ats_csv_is_folded_into_the_parquet_ledger(tmp_path, monkeypatch):
     """A ledger already on the ADR-0051 six-column shape (has metric, not ats) gets only
     ats=all stamped — the metric it already carries is trusted, not re-derived."""
     ledger = tmp_path / "role_trends.parquet"
@@ -595,8 +590,8 @@ def test_pre_ats_ledger_is_migrated_in_place_before_the_first_append(
     assert [
         (r["metric"], r["family"], r["band"], r["ats"], r["count"]) for r in rows[:2]
     ] == [
-        ("stock", "software-engineering", "mid", "all", "10"),
-        ("new", "software-engineering", "mid", "all", "4"),
+        ("stock", "software-engineering", "mid", "all", 10),
+        ("new", "software-engineering", "mid", "all", 4),
     ]
     assert all(r["ats"] for r in rows)  # folded-in and freshly-appended rows alike
 

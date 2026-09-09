@@ -18,7 +18,7 @@ between families — so the transitions ride their own ledger rather than distor
 
 The ledger is **Parquet, not CSV** (ADR-0120). It is append-only but the merge job re-uploads
 it whole every run, so its on-disk size is a per-run upload cost: measured on the real ledger,
-zstd + dictionary encoding took 172,537,804 bytes of CSV to 3,430,793 — 50.3x — against a
+zstd + dictionary encoding took 172,537,804 bytes of CSV to 3,430,805 — 50.3x — against a
 storage budget CLAUDE.md names as this workflow's binding constraint. A pre-ADR-0120 CSV
 ledger sitting beside it is read once and folded in, so no history is lost on the cutover.
 
@@ -154,9 +154,10 @@ def count_groups(
     return counts, non_tech, assigned
 
 
-def _schema():
-    """The ledger's Arrow schema (ADR-0120). ``ts`` is a real timestamp rather than the string
-    the CSV stored, which is what lets dictionary encoding collapse 510 stamps to 510 entries.
+def _ledger_schema():
+    """The ledger's Arrow schema (ADR-0120). ``ts`` is a real instant rather than the 25-byte
+    ISO string the CSV stored; the 50x saving is dictionary encoding plus zstd across every
+    column, not this typing, which on its own is worth ~17 bytes per distinct stamp.
 
     Milliseconds, not seconds, because **Parquet has no second-resolution timestamp** — the
     format's logical types start at MILLIS, so a ``timestamp[s]`` column is silently written as
@@ -202,7 +203,7 @@ def _to_table(rows: list[tuple]):
             "ats": pa.array([str(a) for a in ats], pa.string()),
             "count": pa.array([int(c) for c in count], pa.int64()),
         },
-        schema=_schema(),
+        schema=_ledger_schema(),
     )
 
 
