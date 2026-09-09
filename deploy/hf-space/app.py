@@ -10,7 +10,6 @@ here is duplicated there any more.
 
 from __future__ import annotations
 
-import csv
 import hmac
 import json
 import os
@@ -52,9 +51,10 @@ snapshot_download(
     DATASET,
     repo_type="dataset",
     local_dir=_STATE,
-    # the trends ledger is tiny (a few dozen rows per run) and matches nothing until the
-    # first pipeline run writes it — an absent pattern downloads nothing rather than failing
-    allow_patterns=["data/lancedb/*", "data/state/role_trends.csv"],
+    # the trends ledger is ~3.4 MB of Parquet holding ~2.5M rows (ADR-0120 — it was 172 MB of
+    # CSV, and this download ran on every cold start), and matches nothing until the first
+    # pipeline run writes it — an absent pattern downloads nothing rather than failing
+    allow_patterns=["data/lancedb/*", "data/state/role_trends.parquet"],
     token=os.environ.get("HF_TOKEN"),
 )
 
@@ -72,31 +72,47 @@ _searcher = search.JobSearch(_model, _table)
 # Role trends (ADR-0040). Same dark-until-ready shape as the two above: the ledger only exists
 # after a pipeline run has written it, so an absent file hides the panel rather than erroring.
 # Read once at startup — the Space restarts after every run, so it is never more than one run
-# stale, and the file is a few dozen rows per run.
+# stale. ~2.5M rows as of 2026-09-09, which is why the file is Parquet (ADR-0120).
 _NON_TECH = "non-tech"  # reserved diagnostic series — mirrors headstart.roles.NON_TECH
 
 
 def _load_trends(path: Path) -> list[dict]:
+    """Every ledger row as a dict, with ``ts`` rendered back to the string the CSV ledger
+    stored (ADR-0120). Parquet types the column as ``timestamp[s, tz=UTC]``, but `/trends`
+    compares stamps as strings against a bound that `_norm_stamp` normalises to exactly this
+    shape — so the rendering is what keeps the date filters' semantics unchanged across the
+    format switch, rather than leaving a datetime to compare against a str and raise."""
     if not path.exists():
         return []
-    with path.open(encoding="utf-8", newline="") as fh:
-        return [
-            {
-                "ts": r["ts"],
-                "version": int(r["version"]),
-                # Absent on a pre-ADR-0051 ledger the pipeline has not migrated yet; every
-                # such row was a stock measurement, so the default is exact.
-                "metric": r.get("metric") or "stock",
-                "family": r["family"],
-                "band": r["band"],
-                # Absent the same way pre-ADR-0075, and on the non-tech diagnostic row every
-                # run writes deliberately undecomposed — 'all' means "not split by ATS" either
-                # way (ADR-0075).
-                "ats": r.get("ats") or "all",
-                "count": int(r["count"]),
-            }
-            for r in csv.DictReader(fh)
-        ]
+    import pyarrow.parquet as pq
+
+    table = pq.read_table(path)
+    cols = {name: table.column(name).to_pylist() for name in table.schema.names}
+    return [
+        {
+            # `timespec="seconds"` mirrors `_norm_stamp`, and the column is second-resolution,
+            # so this reproduces the ledger's own `+00:00` whole-second spelling exactly.
+            "ts": ts.isoformat(timespec="seconds"),
+            "version": int(version),
+            "metric": metric,
+            "family": family,
+            "band": band,
+            # 'all' on the non-tech diagnostic row every run writes deliberately undecomposed,
+            # and on rows migrated from a pre-ADR-0075 ledger — it means "not split by ATS"
+            # either way (ADR-0075).
+            "ats": ats,
+            "count": int(count),
+        }
+        for ts, version, metric, family, band, ats, count in zip(
+            cols["ts"],
+            cols["version"],
+            cols["metric"],
+            cols["family"],
+            cols["band"],
+            cols["ats"],
+            cols["count"],
+        )
+    ]
 
 
 def _family_labels(path: Path) -> dict[str, str]:
@@ -126,7 +142,7 @@ def _watch_meta(path: Path) -> dict[str, dict[str, str]]:
     }
 
 
-_TRENDS = _load_trends(_STATE / "data" / "state" / "role_trends.csv")
+_TRENDS = _load_trends(_STATE / "data" / "state" / "role_trends.parquet")
 _WATCH = _watch_meta(Path(__file__).with_name("role_watchlist.json"))
 _FAMILY_LABELS = _family_labels(Path(__file__).with_name("role_families.json"))
 # A refit re-bases every series (ADR-0040), so never plot two versions on one axis: keep the
