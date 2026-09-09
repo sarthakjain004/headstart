@@ -156,12 +156,20 @@ def count_groups(
 
 def _schema():
     """The ledger's Arrow schema (ADR-0120). ``ts`` is a real timestamp rather than the string
-    the CSV stored, which is what lets dictionary encoding collapse 510 stamps to 510 entries."""
+    the CSV stored, which is what lets dictionary encoding collapse 510 stamps to 510 entries.
+
+    Milliseconds, not seconds, because **Parquet has no second-resolution timestamp** — the
+    format's logical types start at MILLIS, so a ``timestamp[s]`` column is silently written as
+    ``timestamp[ms]`` and reads back that way. Declaring seconds here would therefore make the
+    *second* append raise on ``concat_tables``: the ledger read from disk would be ``ms`` and
+    this run's fresh rows ``s``. Measured, not reasoned — it failed exactly that way. Every
+    stamp is a whole second regardless, so the extra resolution stores nothing and costs
+    nothing."""
     import pyarrow as pa
 
     return pa.schema(
         [
-            pa.field("ts", pa.timestamp("s", tz="UTC")),
+            pa.field("ts", pa.timestamp("ms", tz="UTC")),
             pa.field("version", pa.int64()),
             pa.field("metric", pa.string()),
             pa.field("family", pa.string()),
@@ -185,7 +193,7 @@ def _to_table(rows: list[tuple]):
         {
             "ts": pa.array(
                 [datetime.fromisoformat(str(t)) for t in ts],
-                pa.timestamp("s", tz="UTC"),
+                pa.timestamp("ms", tz="UTC"),
             ),
             "version": pa.array([int(v) for v in version], pa.int64()),
             "metric": pa.array([str(m) for m in metric], pa.string()),
