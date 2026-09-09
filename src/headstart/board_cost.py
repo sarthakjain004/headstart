@@ -95,11 +95,20 @@ def _rekeyed(board: str) -> str:
     Verified identical across all 85,839 rows of the live ledger, and a second implementation that
     had to stay in lockstep with the first is precisely what ADR-0049 and ADR-0059 are records of.
     Imported inside the function, as `board_priority` does, to keep the module import-light.
+
+    Passes ``report_failure=False`` because this caller's input is a *ledger key*, not a raw slug:
+    an already-migrated row is **meant** to raise, and that raise is how the shim tells migrated
+    from legacy. Reported, it flooded both stages that read this ledger — see
+    :data:`headstart.config._IDENTITY_FAILURES_SEEN`'s note for the measured counts.
+
+    Note the round-trip itself stays. It cannot be skipped: the raise *is* the discriminator, so
+    there is no way to tell a migrated key from a legacy one without attempting the parse. Only
+    the log line is suppressed, which is the whole defect — the call was never the problem.
     """
     from headstart.config import CompanyRef, board_identity
 
     ats, _, slug = board.partition(":")
-    return board_identity(CompanyRef(ats=ats, slug=slug, name=""))
+    return board_identity(CompanyRef(ats=ats, slug=slug, name=""), report_failure=False)
 
 
 def legacy_key_count(path: str | Path) -> int:
