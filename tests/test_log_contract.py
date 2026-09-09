@@ -24,11 +24,12 @@ and the message body as it really appears. Five checks run over it:
 1. **The consumer parses a real line** — the pattern must match the body in both renderings
    `headstart.log._Formatter` produces: the local `HH:MM:SS [tag] body` and the GitHub Actions
    `::warning::[tag] body` an anomaly becomes.
-2. **The emitter still says it** — every literal run inside the consumer's regex must still appear
-   in a string the emitter's source can produce (f-strings composed through `+` and `if/else`,
-   read with `ast`, no import). This is what catches a rewording. It also pins the `[tag]` prefix
-   to the emitter module's own name, which is ADR-0039's rule and was broken once already
-   (`__main__.py` logged `[feed]`).
+2. **The emitter still says it** (source-verified entries only) — every literal run inside the
+   consumer's regex must still appear in a string the emitter's source can produce (f-strings
+   composed through `+` and `if/else`, read with `ast`, no import). This is what catches a
+   rewording. It also pins the `[tag]` prefix to the emitter module's own name, which is
+   ADR-0039's rule and was broken once already (`__main__.py` logged `[feed]`). An `emit=` entry
+   skips it because checks 3 and 4 subsume it: they read the rendered record, tag included.
 3. **The emitter really emits it** (`emit=` entries only) — the emitter function is *called* under
    `caplog` and the pattern is matched against what it actually logged. This is the strongest form
    and it is used wherever the emitter is reachable without heavy deps or real data.
@@ -41,13 +42,21 @@ and the message body as it really appears. Five checks run over it:
    either in this table or in :data:`EXEMPT` with a reason. Adding an analyser regex without a
    contract entry is what fails, so no human has to remember.
 
-**Emitter-verified vs source-verified, and why the mix.** CI installs base deps only, so
-`index.py` (lancedb/pyarrow/numpy), `role_trends.py` (numpy) and `embed_run.py` (torch,
-sentence-transformers) cannot be imported here at all, and several other lines sit inside a
-`main()` that wants a real ledger on disk. Those entries are source-verified: check 2 pins their
-wording, check 1 pins the shape the pattern reads out of it. Entries carrying `emit=` add checks 3
-and 4 on top, so prefer `emit=` whenever an emitter becomes cheaply callable, and treat a growing
-source-verified set as debt.
+**Emitter-verified vs source-verified, and why the mix.** 49 of the 100 entries carry `emit=`.
+The 51 that do not are blocked rather than neglected, and the block is one of three things:
+
+- **A dependency CI does not install** (`.[dev]` and nothing else — no numpy, torch, pyarrow,
+  lancedb or langdetect). `index` (16 entries), `role_trends` (11), `embed_merge` (7, whose merge
+  reads the vectors with numpy even though the module imports fine), `embed_run` (5) and
+  `embed_plan` (5, which needs langdetect for the English gate and transformers for the token
+  counts) cannot be *run* here. A check that skips in CI is not a check, so these stay on 1 and 2.
+- **An emitter that is not Python**: the storage check is shell inside `pipeline.yml` (3).
+- **A `body` that is not a whole line**: `fanout_plan.GATE_BOARD` (1) is a fragment of the value
+  gate's own sample, and check 4 asks whether `body` is one of the messages the emitter logged.
+
+That leaves `spare_egress`'s three, two of which sit inside the WARP rotation path (a subprocess
+and a SOCKS5 dial); the third, `mark_walled`, is plainly callable and is the next one worth taking.
+Prefer `emit=` whenever an emitter becomes cheaply callable, and treat the rest as debt.
 
 **Where the line between them actually falls is *values*.** Check 2 reads format strings, so `{n}`
 becoming `{n:,}` leaves every literal around the placeholder untouched and sails through. Check 3
@@ -55,22 +64,40 @@ reads the rendered line, so it can catch that — but only when the fixture's ow
 differently, and `{12:,}` is still `12`. Measured, not assumed: rewriting `scrape_run`'s job count
 as `{progress.jobs:,}` left this file green while `run_logs.DONE` provably no longer matched the
 line, because the fixture's shard had scraped 12 jobs. Every `emit=` fixture's counts are
-four-figure for that reason. Three kinds of number stay below the line and a `:,` on one of them
-would still pass: a per-run shard count (15 at most), `QUARANTINE_AT` (a five-strike streak), and
-anything rendered through a float format — a minute figure, a percentage, an actual/predicted
-ratio. Raising those would make the fixture lie about the pipeline rather than about the format
-string, which is a worse trade than the gap.
+four-figure for that reason, including where the emitter has no separator today — that is the
+case a `:,` would be *added* to. What stays below the line is a number the pipeline itself keeps
+small, where raising it would make the fixture lie about the run rather than about the format
+string: a shard count (15 at most) and its ATS-file count (21), the ATSes that contributed
+nothing (3), the Boards the ADR-0064 value gate skips (7), `QUARANTINE_AT` (a five-strike
+streak), `DERIVATIONS_VERSION` (pinned by the fixture, see `_meta_sweep`), and anything rendered
+through a float format — a minute figure, a percentage, an actual/predicted ratio.
 
-**And `body` itself is worth two different things, depending on the entry.** On the 14 `emit=`
-entries it is now a measured fact: check 4 asserts the documented string is one the emitter really
+**And `body` itself is worth two different things, depending on the entry.** On the 49 `emit=`
+entries it is a measured fact: check 4 asserts the documented string is one the emitter really
 logged, so a number drifting (`4804` to `4,804`) fails there as well, and the fabricated body an
 audit fed `run_logs.DONE` — `done: 111 jobs from 222 boards in 333s ...`, which passed every check
-this file had — now fails on the first run. On the other 86 it remains documentation: check 1
+this file had — now fails on the first run. On the other 51 it remains documentation: check 1
 proves the consumer's pattern reads it and check 2 proves the emitter still writes the literals
 around the numbers, but nothing has ever watched those emitters run, so **the values in a
 source-verified `body` are still only the word of whoever last edited the entry** — an invented
-count there would sail through exactly as `run_logs.DONE`'s did. That is the strongest argument
-for moving an entry to `emit=` the moment its emitter becomes cheaply callable.
+count there would sail through exactly as `run_logs.DONE`'s did.
+
+It is worth being exact about how much of a `body` those two checks leave unread, because it is
+more than it looks. Both are claims about the *pattern*: check 1 that it matches, check 2 that
+its literals survive. Neither reads what sits outside the pattern's own span, and an audit proved
+it by replacing `fanout_corpus.JOIN_TOTAL`'s tail with `-> /nonsense/invented/path AND A SENTENCE
+NOBODY EMITS` for a fully green run — that entry now carries an `emit=`, and the same fabrication
+fails on check 4.
+
+Converting is also how the fiction already in this table came to light, and there was more of it
+than anyone expected: **seven** entries documented a line no run can produce. A per-**ATS** cost
+median written as a Board (`ats_medians` keys by `_ats_of`); a gap Board written capitalised
+where the emitter lowercases (ADR-0049); a `gap: no ...` line naming the description store where
+the emitter names the embedding store's metadata; three right-aligned rows a space narrower than
+the emitter's own column widths; and a seven-item sample carrying a `+5 more` tail `named_sample`
+cannot produce for any count under eleven. Every one had passed every check this file had, for as
+long as it had been written down. Move an entry to `emit=` the moment its emitter becomes cheaply
+callable.
 
 **One thing this file pins is not in the table at all**: the `stage= run= attempt=` line every
 ingest entry point opens with (`observability.context`). No analyser parses it — a human greps it
@@ -93,6 +120,7 @@ each variant needs its own row.
 
 from __future__ import annotations
 
+import argparse
 import ast
 import functools
 import importlib
@@ -102,7 +130,7 @@ import re
 import re._parser as sre_parse
 import sys
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
@@ -293,6 +321,255 @@ def _join_fanout_nothing_attempted(
     scrape_join._report_shards([_shard_report(done=0)], 0, 0)
 
 
+# The 21 ATS files a real join writes, so the `21 ATS files` in the body below is the pipeline's
+# own number rather than an arbitrary one. Only `workday.jsonl` is written by every shard.
+_ATS_FILES = (
+    "workday",
+    "greenhouse",
+    "lever",
+    "ashby",
+    "smartrecruiters",
+    "recruitee",
+    "workable",
+    "personio",
+    "zoho",
+    "keka",
+    "darwinbox",
+    "freshteam",
+    "successfactors",
+    "icims",
+    "oracle",
+    "eightfold",
+    "jazzhr",
+    "jobvite",
+    "zwayam",
+    "trakstar",
+    "rippling",
+)
+
+
+def _jsonl(path: Path, rows: Iterable[dict]) -> None:
+    """Write one corpus or fragment file. Every fixture below builds its inputs through this."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as fh:
+        for row in rows:
+            fh.write(json.dumps(row) + "\n")
+
+
+def _run_main(module: ModuleType, monkeypatch: pytest.MonkeyPatch, *argv: str) -> None:
+    """Run a stage the way `pipeline.yml` does — `main()`, with a real argument vector.
+
+    Several emitters write their contract line inside `main()` and nowhere else, so reaching it
+    means parsing arguments. Every path passed is relative, under a `chdir`ed tmp dir: a `body`
+    check 4 compares character for character cannot carry this machine's temp directory, and a
+    real run prints exactly these names under the checkout's own root.
+    """
+    monkeypatch.setattr(sys, "argv", [module.__name__, *argv])
+    assert module.main() == 0
+
+
+def _join_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The join's union pass: 15 shards' fragments concatenated into one snapshot dir.
+
+    `workday.jsonl` is in every shard and the other twenty in one, which is what gives the
+    per-ATS line's `from N shard(s)` something to be wrong about. Four-figure line counts for the
+    reason `_scrape_shard` gives: neither carries a thousands separator today, and a fixture in
+    double digits would let one be added without this file noticing.
+    """
+    from headstart.ingest import scrape_join
+
+    monkeypatch.chdir(tmp_path)
+    for shard in range(15):
+        _jsonl(
+            Path(f"data/scrape/fragments/shard-{shard}/workday.jsonl"),
+            ({"id": f"workday:acme/External:{shard}-{n}"} for n in range(134)),
+        )
+    for ats in _ATS_FILES[1:]:
+        _jsonl(
+            Path(f"data/scrape/fragments/shard-0/{ats}.jsonl"),
+            ({"id": f"{ats}:beta:{n}"} for n in range(100)),
+        )
+    _run_main(
+        scrape_join,
+        monkeypatch,
+        "--shards",
+        "data/scrape/fragments",
+        "--out",
+        "data/jobs",
+        "--unauthoritative-boards",
+        "data/state/unauthoritative_boards.json",
+        "--speedup-ledger",
+        "data/state/shard_speedup.csv",
+    )
+
+
+def _tech_gate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The tech gate over one scraped ATS and three that contributed nothing.
+
+    The three empty files are the second line's whole point: `harvest` opens a handle per ATS in
+    the shard's list, so an ATS whose every Board failed or was deferred arrives here as a file
+    with no rows rather than as an absence, and used to be skipped out of the table entirely.
+    """
+    from headstart.ingest import filter_tech
+
+    monkeypatch.chdir(tmp_path)
+    _jsonl(
+        Path("data/jobs/workday.jsonl"),
+        [
+            {"id": f"workday:acme/External:{n}", "title": "Backend Engineer"}
+            for n in range(1204)
+        ]
+        + [
+            {"id": f"workday:acme/External:nt-{n}", "title": "Warehouse Associate"}
+            for n in range(3612)
+        ],
+    )
+    for ats in ("jazzhr", "jobvite", "sensehq"):
+        _jsonl(Path(f"data/jobs/{ats}.jsonl"), ())
+    _run_main(filter_tech, monkeypatch, "--src", "data/jobs", "--dst", "data/jobs/tech")
+
+
+def _tech_gate_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every ATS in the slice contributed zero rows — the corpus-wide zero, logged at ERROR."""
+    from headstart.ingest import filter_tech
+
+    monkeypatch.chdir(tmp_path)
+    for ats in ("jazzhr", "jobvite", "sensehq"):
+        _jsonl(Path(f"data/jobs/{ats}.jsonl"), ())
+    _run_main(filter_tech, monkeypatch, "--src", "data/jobs", "--dst", "data/jobs/tech")
+
+
+def _descriptions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """One reconcile pass over two ATSes — one with a Job nothing can describe, one without.
+
+    Both halves of the per-ATS line's optional tail come from a single call: `workday` carries
+    Jobs with no fresh text and none stored, `lever` carries none, so the `, N still unrecorded`
+    clause is present on one line and absent on the other. A pattern requiring it would drop
+    every healthy ATS's line rather than error — this repo's recorded failure mode.
+
+    Every count clears 999 because all four are formatted `{n:,}`, where check 3 can only see a
+    separator that actually renders: `{1002:,}` is `1,002` and `{12:,}` is still `12`.
+    """
+    import gzip
+
+    from headstart.ingest import update_descriptions
+
+    monkeypatch.chdir(tmp_path)
+    embedded: list[str] = []
+    for ats, unrecorded in (("lever", 0), ("workday", 1002)):
+        filled = [f"{ats}:beta:f{n}" for n in range(1204)]
+        learned = [f"{ats}:beta:l{n}" for n in range(1005)]
+        _jsonl(
+            Path(f"data/jobs/tech/{ats}.jsonl"),
+            [{"id": i} for i in filled]
+            + [{"id": i, "description": "a fresh detail fetch"} for i in learned]
+            + [{"id": f"{ats}:beta:u{n}"} for n in range(unrecorded)],
+        )
+        ats_dir = Path("data/descriptions") / ats
+        ats_dir.mkdir(parents=True)
+        with gzip.open(ats_dir / "0001.jsonl.gz", "wt", encoding="utf-8") as fh:
+            for job_id in filled:
+                fh.write(json.dumps({"id": job_id, "description": "held text"}) + "\n")
+        # Only a Job the embedding store already holds is queued to re-derive, so the prior meta
+        # has to carry the learned ids or `queued` is 0 whatever the store learned.
+        embedded += filled + learned
+    _jsonl(Path("data/embeddings/jobs/meta.jsonl"), ({"id": i} for i in embedded))
+    _run_main(
+        update_descriptions,
+        monkeypatch,
+        "--jobs",
+        "data/jobs/tech",
+        "--store",
+        "data/descriptions",
+        "--held-details",
+        "data/state/held_details.txt.gz",
+        "--pending-rederive",
+        "data/state/pending_rederive.txt",
+        "--prior-meta",
+        "data/embeddings/jobs/meta.jsonl",
+    )
+
+
+def _ledger_priority(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`update_ledgers priority` over one snapshot: Boards learned, decayed out, and carried.
+
+    All three of the header's counts are four-figure, and so is the sampled Board's tech count.
+    None of them carries a thousands separator today — which is exactly why the fixture has to
+    clear 999: check 4 compares the rendered line, so a `{n:,}` *added* to any of them fails here
+    rather than passing unnoticed.
+
+    `greenhouse:fading-*` are seeded one bad run from the prune floor and scrape zero tech jobs
+    this run, which is the only input that moves `pruned`; `greenhouse:carried-*` are absent from
+    the snapshot entirely, which is the only input that moves `carried`.
+    """
+    from headstart import board_priority
+    from headstart.ingest import update_ledgers
+
+    monkeypatch.chdir(tmp_path)
+    top = [f"greenhouse:top:{n}" for n in range(1204)]
+    fresh = [f"greenhouse:new-{n}:1" for n in range(1204)]
+    fading = [f"greenhouse:fading-{n}:1" for n in range(1010)]
+    _jsonl(
+        Path("data/jobs/greenhouse.jsonl"), ({"id": i} for i in top + fresh + fading)
+    )
+    _jsonl(Path("data/jobs/tech/greenhouse.jsonl"), ({"id": i} for i in top + fresh))
+    ledger = Path("data/state/board_priority.csv")
+    board_priority.save(
+        ledger,
+        {
+            **{
+                f"greenhouse:fading-{n}": board_priority.BoardPriority(
+                    board_priority.PRUNE_BELOW, 0, "2026-09-01"
+                )
+                for n in range(1010)
+            },
+            **{
+                f"greenhouse:carried-{n}": board_priority.BoardPriority(
+                    3.0, 3, "2026-09-01"
+                )
+                for n in range(1020)
+            },
+        },
+    )
+    update_ledgers.priority(
+        argparse.Namespace(
+            jobs=Path("data/jobs"), tech=Path("data/jobs/tech"), ledger=ledger
+        )
+    )
+
+
+def _ledger_cost(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`update_ledgers cost` over 15 shards' timing fragments, blended into a seeded ledger.
+
+    Boards are keyed `greenhouse:*` on purpose: the ADR-0096 read-time shim re-keys a legacy row
+    and logs how many it moved, and a Workday key that is not a careers URL would trip that
+    (and `board_identity`'s own warning) rather than exercise the plain path this line reports.
+    """
+    from headstart import board_cost
+    from headstart.harvest import COST_FILENAME
+    from headstart.ingest import update_ledgers
+
+    monkeypatch.chdir(tmp_path)
+    fragments = Path("data/scrape/fragments")
+    for shard in range(15):
+        rows = "".join(
+            board_cost.shard_row(f"greenhouse:timed-{shard}-{n}", 2393.0, 1204)
+            for n in range(80)
+        )
+        path = fragments / f"shard-{shard}" / COST_FILENAME
+        path.parent.mkdir(parents=True)
+        path.write_text(board_cost.SHARD_HEADER + rows, encoding="utf-8")
+    ledger = Path("data/state/board_cost.csv")
+    board_cost.save(
+        ledger,
+        {
+            f"greenhouse:carried-{n}": board_cost.BoardCost(2393.0, 1204, "2026-09-01")
+            for n in range(1010)
+        },
+    )
+    update_ledgers.cost(argparse.Namespace(fragments=fragments, ledger=ledger))
+
+
 def _ledger_failures(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """`update_ledgers failures` over one shard: boards read as gone, and boards that were not.
 
@@ -305,8 +582,6 @@ def _ledger_failures(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     The bulk is four-figure for the reason `_scrape_shard` gives, and at a realistic magnitude:
     the real ledger carries a row per Board that has ever 404'd across ~20k Scrapable Boards.
     """
-    import argparse
-
     from headstart.ingest import board_failures, update_ledgers
 
     gone = "HTTPError: HTTP Error 404: Not Found"
@@ -353,6 +628,364 @@ def _ledger_failures(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     update_ledgers.failures(
         argparse.Namespace(fragments=fragments, jobs=jobs, ledger=ledger)
     )
+
+
+def _gap_args(**over: object) -> argparse.Namespace:
+    """`update_ledgers gap`'s arguments, as its own parser builds them.
+
+    Every default is the real relative path the pipeline runs with, so the two paths that reach a
+    log line — the embedding store's metadata and the description store — are named in the body
+    exactly as a real run names them.
+    """
+    return argparse.Namespace(
+        meta=Path("data/embeddings/jobs/meta.jsonl"),
+        descriptions=Path("data/descriptions"),
+        jobs=Path("data/jobs"),
+        unauthoritative_boards=Path("data/state/unauthoritative_boards.json"),
+        ledger=Path("data/state/board_description_gap.csv"),
+        **over,
+    )
+
+
+def _ledger_gap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`update_ledgers gap` over a stored corpus holding all four classes of row at once.
+
+    The header's six counts are the whole point of the line, and only one input moves each:
+    `held` needs the description store to hold the Job, `on a disabled ATS` needs its `ats` to be
+    one the registry has switched off, `gone from a Board this run scraped in full` needs a Board
+    that emitted lines this run without re-emitting that id (#185), and `unsettled` is what is
+    left. All six are formatted `{n:,}`, so all six clear 999.
+    """
+    import gzip
+
+    from headstart.ingest import update_ledgers
+    from headstart.scrapers.registry import DISABLED_ATS
+
+    monkeypatch.chdir(tmp_path)
+    # Taken from the registry rather than named, because which ATS is switched off is its call;
+    # `min` rather than an arbitrary member, so the count this fixture asserts cannot depend on
+    # the frozenset's iteration order.
+    disabled = min(DISABLED_ATS)
+    held = [f"lever:held-{n}:1" for n in range(1204)]
+    ats_dir = Path("data/descriptions/lever")
+    ats_dir.mkdir(parents=True)
+    with gzip.open(ats_dir / "0001.jsonl.gz", "wt", encoding="utf-8") as fh:
+        for job_id in held:
+            fh.write(json.dumps({"id": job_id, "description": "held text"}) + "\n")
+    # One Board this run scraped authoritatively, re-emitting a single id: every *other* stored
+    # id on it has expired off the Board, so no future scrape can settle it.
+    _jsonl(Path("data/jobs/greenhouse.jsonl"), [{"id": "greenhouse:full:kept"}])
+    Path("data/state").mkdir(parents=True)
+    Path("data/state/unauthoritative_boards.json").write_text("{}", encoding="utf-8")
+    _jsonl(
+        Path("data/embeddings/jobs/meta.jsonl"),
+        [{"id": i, "ats": "lever"} for i in held]
+        + [{"id": f"{disabled}:off-{n}:1", "ats": disabled} for n in range(1010)]
+        + [{"id": f"greenhouse:full:{n}", "ats": "greenhouse"} for n in range(1005)]
+        + [{"id": f"lever:gap-{n}:1", "ats": "lever"} for n in range(1204)]
+        + [{"id": f"workday:acme/External:{n}", "ats": "workday"} for n in range(1204)],
+    )
+    update_ledgers.gap(_gap_args())
+
+
+def _ledger_gap_no_meta(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nothing has been embedded yet, so there is no stored corpus to count a gap against."""
+    from headstart.ingest import update_ledgers
+
+    monkeypatch.chdir(tmp_path)
+    update_ledgers.gap(_gap_args())
+
+
+def _ledger_gap_empty_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The store downloaded empty — distinct from the no-store case above, and it must be.
+
+    The join fetches the description store on a warn-only fallback, so an empty one here means a
+    lost download. Writing the ledger from it would mark every embedded Board gap-ful.
+    """
+    from headstart.ingest import update_ledgers
+
+    monkeypatch.chdir(tmp_path)
+    _jsonl(
+        Path("data/embeddings/jobs/meta.jsonl"),
+        [{"id": "lever:beta:1", "ats": "lever"}],
+    )
+    Path("data/descriptions").mkdir(parents=True)
+    update_ledgers.gap(_gap_args())
+
+
+# One stored metadata row per ADR-0066 direction bucket, as `(stored derivation, title,
+# description)`. The stored answer is wrong in a different way in each, so re-deriving it against
+# the text moves it in a different direction — which is the whole point of the split the
+# `experience derivations:` line reports, and the one thing a single "N changed" count cannot say.
+_DERIVATION_CASES = {
+    "gained": (
+        {"min_years": None, "max_years": None, "experience_source": None},
+        "Backend Engineer",
+        "We want 5+ years of experience.",
+    ),
+    "lost": (
+        {"min_years": 5, "max_years": None, "experience_source": "regex"},
+        "Backend Engineer",
+        "No numbers here at all, just prose about the team.",
+    ),
+    "retiered": (
+        {"min_years": 3, "max_years": None, "experience_source": "seniority"},
+        "Senior Backend Engineer",
+        "8+ years of experience required.",
+    ),
+    "moved": (
+        {"min_years": 3, "max_years": None, "experience_source": "regex"},
+        "Backend Engineer",
+        "Requires 5+ years of experience.",
+    ),
+    # The control: already right, so the sweep re-derives it and changes nothing. Without it
+    # `refreshed N rows` and `N with changed derivations` would be one number wearing two names,
+    # and neither could be wrong on its own.
+    "steady": (
+        {"min_years": 5, "max_years": None, "experience_source": "regex"},
+        "Backend Engineer",
+        "We want 5+ years of experience.",
+    ),
+}
+_DERIVATION_COUNTS = {
+    "gained": 1004,
+    "lost": 1002,
+    "retiered": 1003,
+    "moved": 1001,
+    "steady": 1006,
+}
+
+
+def _meta_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[Path, Path, Path]:
+    """The three stores `update_meta.refresh` reads, seeded so every count it prints is distinct.
+
+    The watermark is left to the caller: it is the input that picks the sweep branch, and the two
+    fixtures below differ in nothing else.
+
+    `location` is the one fact this run's corpus disagrees with, because it is the only fact that
+    is not also a cascade input: changing `title` or `experience` would re-derive the row through
+    `inputs_moved` as well, and then `N with changed facts` and `N with changed derivations` could
+    no longer be wrong independently.
+    """
+    import gzip
+
+    monkeypatch.chdir(tmp_path)
+    store = Path("data/embeddings/jobs")
+    store.mkdir(parents=True)
+    ats_dir = Path("data/descriptions/lever")
+    ats_dir.mkdir(parents=True)
+    rows: list[dict] = []
+    corpus: list[dict] = []
+    with gzip.open(ats_dir / "0001.jsonl.gz", "wt", encoding="utf-8") as fh:
+        for kind, count in _DERIVATION_COUNTS.items():
+            derived, title, description = _DERIVATION_CASES[kind]
+            for n in range(count):
+                job_id = f"lever:beta:{kind}-{n}"
+                fh.write(json.dumps({"id": job_id, "description": description}) + "\n")
+                row = {
+                    "id": job_id,
+                    "ats": "lever",
+                    "title": title,
+                    "location": "Remote",
+                    **derived,
+                }
+                # `has_description` is written once, on the rows that never had it — so only the
+                # rows deliberately missing it move `N given a has_description they never had`.
+                if kind != "lost":
+                    row["has_description"] = True
+                rows.append(row)
+                if kind == "steady":
+                    corpus.append(
+                        {"id": job_id, "title": title, "location": "Bengaluru, India"}
+                    )
+    _jsonl(store / "meta.jsonl", rows)
+    _jsonl(Path("data/jobs/tech/lever.jsonl"), corpus)
+    return store, Path("data/jobs/tech"), Path("data/descriptions")
+
+
+def _meta_sweep(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A DERIVATIONS_VERSION sweep: every stored row re-derived against its held description.
+
+    `DERIVATIONS_VERSION` is pinned rather than read, and this is the one fixture value that is
+    not simply a count. The constant moves whenever a fix to `experience.py` or `salary.py`
+    reaches already-indexed rows (CLAUDE.md requires it), and a `body` carrying its live value
+    would make every one of those bumps fail this file for no drift at all. What is under
+    contract here is the sentence around the number — `vN stored, vM in code`, the SWEEPING
+    branch, and the optional held-descriptions clause — not which version the repo is on today.
+    """
+    from headstart.ingest import update_meta
+
+    store, jobs, descriptions = _meta_store(tmp_path, monkeypatch)
+    monkeypatch.setattr(update_meta, "DERIVATIONS_VERSION", 15)
+    watermark = Path("data/state/derivations_version.json")
+    watermark.parent.mkdir(parents=True)
+    watermark.write_text(json.dumps({"version": 14}), encoding="utf-8")
+    pending = Path("data/state/pending_rederive.txt")
+    pending.write_text(
+        "".join(f"lever:beta:steady-{n}\n" for n in range(1204)), encoding="utf-8"
+    )
+    update_meta.refresh(store, jobs, descriptions, watermark, pending)
+
+
+def _meta_no_sweep(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The stored watermark already matches the code, and nothing is queued — no sweep.
+
+    Both optional pieces of the line are gone at once: `SWEEPING` becomes `no sweep`, and with no
+    queue there is nothing to load descriptions for, so the `; N held descriptions` clause is
+    omitted. A pattern requiring either drops the line rather than erroring.
+    """
+    from headstart.ingest import update_meta
+
+    store, jobs, descriptions = _meta_store(tmp_path, monkeypatch)
+    monkeypatch.setattr(update_meta, "DERIVATIONS_VERSION", 15)
+    watermark = Path("data/state/derivations_version.json")
+    watermark.parent.mkdir(parents=True)
+    watermark.write_text(json.dumps({"version": 15}), encoding="utf-8")
+    update_meta.refresh(store, jobs, descriptions, watermark, None)
+
+
+def _plan_args(*over: str) -> tuple[str, ...]:
+    """`scrape_plan main()`'s paths, all relative under a `chdir`ed tmp dir.
+
+    Every one is passed even when the fixture leaves the file absent, because absent is a branch:
+    no cost ledger is the cold start, no failures ledger quarantines nothing. Defaulting them
+    would point the planner at the real checkout's `data/state/`.
+    """
+    return (
+        "--ledger",
+        "data/validate/liveness",
+        "--priority",
+        "data/state/board_priority.csv",
+        "--cost",
+        "data/state/board_cost.csv",
+        "--failures",
+        "data/state/board_failures.csv",
+        "--gap",
+        "data/state/board_description_gap.csv",
+        "--speedup-ledger",
+        "data/state/shard_speedup.csv",
+        "--held-details",
+        "data/state/held_details.txt.gz",
+        "--out-dir",
+        "data/scrape/plan",
+        *over,
+    )
+
+
+def _plan_coldstart(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The first run of all: no cost ledger, so the pack is in unitless cost units.
+
+    This is the branch that motivated this whole file. `fanout_timing.PLAN_SHARD` and
+    `fanout_plan.MAKESPAN` both required a clause `scrape_plan` omits here, so both tools printed
+    nothing on exactly the runs whose plan is least trustworthy — a silent zero, not an error.
+
+    `load_active_companies` is stubbed, as `tests/test_scrape_plan.py` stubs it: the real one
+    reads the committed liveness ledger, whose ~20k Boards would make every count in this entry
+    drift with a data file that has nothing to do with the log's wording.
+
+    A full 15 shards of four-figure Boards apiece, because the per-shard *board count* is one
+    format string shared by both branches of the line below — so this branch clearing 999 is what
+    keeps a `{n:,}` on it catchable, whatever slice the measured fixture happens to plan.
+    """
+    from headstart.config import CompanyRef
+    from headstart.ingest import scrape_plan
+
+    monkeypatch.chdir(tmp_path)
+    companies = [
+        CompanyRef("greenhouse", f"cold-{n}", f"Cold {n}") for n in range(15000)
+    ]
+    monkeypatch.setattr(
+        scrape_plan, "load_active_companies", lambda ledger, min_jobs=0: companies
+    )
+    _run_main(scrape_plan, monkeypatch, *_plan_args("--target-boards", "1000"))
+
+
+def _plan_measured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A measured plan carrying every branch the planner reports on at once.
+
+    One Board (`greenhouse:giant`, 65 min) outweighs an even share of a slice that is otherwise
+    all sub-second Boards, which is what makes the makespan floor and the budget warning fire
+    together — that is not contrived, it is the shape of this pipeline's real cost distribution
+    (a handful of giants against ~20k Boards that answer in under a second).
+
+    Determinism is bought with distinct costs, not with a seed: `pick_boards` shuffles, and LPT
+    then deals items heaviest-first, so equal costs would make which Board lands on which shard —
+    and therefore the per-shard counts — depend on the shuffle.
+    """
+    from datetime import UTC, datetime
+
+    from headstart import board_cost, board_description_gap, board_priority
+    from headstart.config import CompanyRef
+    from headstart.ingest import board_failures, scrape_plan
+
+    monkeypatch.chdir(tmp_path)
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    quarantined = [f"gone-{n}" for n in range(1104)]
+    gated = [f"gate-{n}" for n in range(7)]
+    measured = [f"measured-{n}" for n in range(1204)]
+    explore = [f"explore-{n}" for n in range(1102)]
+    companies = [
+        CompanyRef("greenhouse", slug, slug.title())
+        for slug in [*quarantined, *gated, *measured, *explore, "giant"]
+    ]
+    monkeypatch.setattr(
+        scrape_plan, "load_active_companies", lambda ledger, min_jobs=0: companies
+    )
+
+    board_failures.save(
+        Path("data/state/board_failures.csv"),
+        {
+            f"greenhouse:{slug}": board_failures.Failure(
+                strikes=board_failures.QUARANTINE_AT,
+                last_reason="HTTPError: HTTP Error 404: Not Found",
+                last_seen_gone=f"{today}T00:00:00+00:00",
+            )
+            for slug in quarantined
+        },
+    )
+    # Distinct seconds per Board: LPT deals heaviest-first, so ties would leave the per-shard
+    # counts at the mercy of `pick_boards`' shuffle.
+    cost_rows = {
+        f"greenhouse:{slug}": board_cost.BoardCost(0.5 + n / 10000, 12, today)
+        for n, slug in enumerate(measured)
+    }
+    # The value gate's own inputs: over 15 min of measured scrape (`_GATE_FLOOR_S`) for a score
+    # that works out under 2 tech jobs a minute, and a measurement recent enough not to have
+    # expired into a re-check.
+    cost_rows.update(
+        {
+            f"greenhouse:{slug}": board_cost.BoardCost(1000.0 + 100 * n, 1204, today)
+            for n, slug in enumerate(gated)
+        }
+    )
+    cost_rows["greenhouse:giant"] = board_cost.BoardCost(3900.0, 1204, today)
+    board_cost.save(Path("data/state/board_cost.csv"), cost_rows)
+
+    scores = {
+        f"greenhouse:{slug}": board_priority.BoardPriority(1.0 + n / 100, 12, today)
+        for n, slug in enumerate(measured)
+    }
+    scores.update(
+        {
+            f"greenhouse:{slug}": board_priority.BoardPriority(
+                0.5 + n / 10, 1204, today
+            )
+            for n, slug in enumerate(gated)
+        }
+    )
+    # Above 2 tech jobs per minute of its 65, so the giant survives the gate it would otherwise
+    # be the first Board through.
+    scores["greenhouse:giant"] = board_priority.BoardPriority(200.0, 1204, today)
+    board_priority.save(Path("data/state/board_priority.csv"), scores)
+
+    board_description_gap.save(
+        Path("data/state/board_description_gap.csv"),
+        {f"greenhouse:{slug}": 98 for slug in measured},
+        today=today,
+    )
+    _run_main(scrape_plan, monkeypatch, *_plan_args())
 
 
 # --------------------------------------------------------------------------------------------
@@ -505,33 +1138,38 @@ CONTRACT: tuple[Line, ...] = (
         why="the per-Board sample the emitter caps at 20 — never a total (see fanout_errors' docstring)",
         emit=_ledger_failures,
     ),
-    # -- scrape_join corpus volume ------------------------------------------------------------
+    # -- scrape_join corpus volume (emitter-verified: `main()` over 15 fragment dirs) ----------
     Line(
         consumer="fanout_corpus.ATS_LINES",
         emitter=_SCRAPE_JOIN,
-        body="workday.jsonl: 541801 lines from 15 shard(s)",
+        body="workday.jsonl: 2010 lines from 15 shard(s)",
         why="raw per-ATS scrape volume, the denominator every later stage divides",
-        waived=(".jsonl: ",),
-        # `.jsonl` is part of the runtime filename (`f"{ats_file}: ..."`), not the format string.
+        emit=_join_snapshot,
     ),
     Line(
         consumer="fanout_corpus.JOIN_TOTAL",
         emitter=_SCRAPE_JOIN,
-        body="wrote 1204331 lines across 21 ATS files -> data/jobs",
+        body="wrote 4010 lines across 21 ATS files -> data/jobs",
         why="the corpus total the tech gate's percentage is taken against",
+        emit=_join_snapshot,
     ),
-    # -- filter_tech --------------------------------------------------------------------------
+    # -- filter_tech (emitter-verified: `main()` over a scraped dir and three empty ones) ------
     Line(
         consumer="fanout_corpus.TECH",
         emitter=_FILTER_TECH,
-        body="workday            76219   541801   14.1%",
-        why="a fixed-width table row: the pattern reads columns, so `\\s+` must stay greedy",
+        body="workday              1204     4816   25.0%",
+        why=(
+            "a fixed-width table row: the pattern reads columns, so `\\s+` must stay greedy. The "
+            "documented row was a space narrower than `{ats:<16}` renders until it was emitted"
+        ),
+        emit=_tech_gate,
     ),
     Line(
         consumer="fanout_corpus.TECH_TOTAL",
         emitter=_FILTER_TECH,
-        body="TOTAL             183044  1204331   15.2%  (dropped 1021287 non-tech) -> data/jobs/tech",
+        body="TOTAL                1204     4816   25.0%  (dropped 3612 non-tech) -> data/jobs/tech",
         why="the TOTAL row, which carries a tail the per-ATS rows do not",
+        emit=_tech_gate,
     ),
     Line(
         consumer="fanout_corpus.TECH_EMPTY",
@@ -541,43 +1179,49 @@ CONTRACT: tuple[Line, ...] = (
             "sensehq — their boards failed, were deferred, or are genuinely empty"
         ),
         why="an ATS that scraped nothing used to be simply absent from the table above",
+        emit=_tech_gate,
     ),
     Line(
         consumer="fanout_corpus.TECH_ZERO_TOTAL",
         emitter=_FILTER_TECH,
         body="no rows at all reached the tech filter -> data/jobs/tech is empty",
         why="the corpus-wide zero, which otherwise printed a header and stopped",
+        emit=_tech_gate_nothing,
     ),
-    # -- update_descriptions ------------------------------------------------------------------
+    # -- update_descriptions (emitter-verified: `main()` over a seeded store and corpus) -------
     Line(
         consumer="fanout_corpus.STORE",
         emitter=_DESCRIPTIONS,
-        body="prior store: 287,144 already-embedded ids",
+        body="prior store: 4,418 already-embedded ids",
         why="thousands separators: the group must be `[\\d,]+`, not `\\d+`",
+        emit=_descriptions,
     ),
     Line(
         consumer="fanout_corpus.DESC",
         emitter=_DESCRIPTIONS,
-        body="workday: filled 6,012 from the store, learned 1,204, queued 830 to re-derive",
+        body="lever: filled 1,204 from the store, learned 1,005, queued 1,005 to re-derive",
         why=(
             "the plain form. This pattern once also required a `settled N as having none` clause "
             "ADR-0089 deleted, so every ATS printed 0 while the log said `filled 6,012`"
         ),
+        emit=_descriptions,
     ),
     Line(
         consumer="fanout_corpus.DESC",
         emitter=_DESCRIPTIONS,
         body=(
-            "workday: filled 6,012 from the store, learned 1,204, queued 830 to re-derive, "
-            "412 still unrecorded"
+            "workday: filled 1,204 from the store, learned 1,005, queued 1,005 to re-derive, "
+            "1,002 still unrecorded"
         ),
         why="with the optional `, N still unrecorded` tail — the pattern must not require it",
+        emit=_descriptions,
     ),
     Line(
         consumer="fanout_corpus.SKIP",
         emitter=_DESCRIPTIONS,
-        body="skip-list: 118,433 Jobs held",
+        body="skip-list: 4,418 Jobs held",
         why="the ADR-0048 detail skip-list size",
+        emit=_descriptions,
     ),
     # -- embed_plan ---------------------------------------------------------------------------
     Line(
@@ -707,48 +1351,53 @@ CONTRACT: tuple[Line, ...] = (
         ),
         why="distinct from the healthy `nothing was planned` line — never conflate the two",
     ),
-    # -- update_meta --------------------------------------------------------------------------
+    # -- update_meta (emitter-verified: `refresh` takes four paths and a pinned version) -------
     Line(
         consumer="fanout_merge.META_LINE",
         emitter=_META,
         body=(
-            "derivations v14 stored, v15 in code — SWEEPING; corpus facts for 183044 Jobs; "
-            "287144 queued to re-derive; 168711 held descriptions"
+            "derivations v14 stored, v15 in code — SWEEPING; corpus facts for 1006 Jobs; "
+            "1204 queued to re-derive; 5016 held descriptions"
         ),
         why="a sweep, with the optional `; N held descriptions` clause present",
+        emit=_meta_sweep,
     ),
     Line(
         consumer="fanout_merge.META_LINE",
         emitter=_META,
         body=(
-            "derivations v15 stored, v15 in code — no sweep; corpus facts for 183044 Jobs; "
+            "derivations v15 stored, v15 in code — no sweep; corpus facts for 1006 Jobs; "
             "0 queued to re-derive"
         ),
         why="the no-sweep branch, and the held-descriptions clause omitted",
+        emit=_meta_no_sweep,
     ),
     Line(
         consumer="fanout_merge.META_REFRESHED",
         emitter=_META,
         body=(
-            "refreshed 41230 rows: 12004 with changed facts, 38112 with changed derivations, "
-            "220 given a has_description they never had"
+            "refreshed 5016 rows: 1006 with changed facts, 4010 with changed derivations, "
+            "1002 given a has_description they never had"
         ),
         why="what the sweep touched; direction-blind, hence the next line",
+        emit=_meta_sweep,
     ),
     Line(
         consumer="fanout_merge.META_DIRECTION",
         emitter=_META,
         body=(
-            "experience derivations: 4120 gained, 88 lost, 210 retiered, 640 moved (same tier, "
-            "new value) (ADR-0066)"
+            "experience derivations: 1004 gained, 1002 lost, 1003 retiered, 1001 moved (same "
+            "tier, new value) (ADR-0066)"
         ),
         why="ADR-0066's direction split — `lost` is the number worth an alarm",
+        emit=_meta_sweep,
     ),
     Line(
         consumer="fanout_merge.META_WATERMARK",
         emitter=_META,
         body="watermark -> v15",
         why="the stamp that stops the next run re-sweeping; absent when the store was lost",
+        emit=_meta_sweep,
     ),
     # -- index sync / prune (heavy: lancedb + pyarrow, so source-verified only) ----------------
     Line(
@@ -984,45 +1633,60 @@ CONTRACT: tuple[Line, ...] = (
         body="under 20 GB — nothing to reclaim",
         why="the reclaim deliberately did nothing — not the same as the step not running",
     ),
-    # -- scrape_plan --------------------------------------------------------------------------
+    # -- scrape_plan (emitter-verified: `main()` over a stubbed active list and four ledgers) --
     Line(
         consumer="fanout_plan.QUARANTINE_SKIP",
         emitter=_SCRAPE_PLAN,
-        body="quarantine: skipped 114 of 114 confirmed-gone board(s)",
+        body="quarantine: skipped 1104 of 1104 confirmed-gone board(s)",
         why="ADR-0058 quarantine acting on the plan; the ledger itself is untouched",
+        emit=_plan_measured,
     ),
     Line(
         consumer="fanout_plan.VALUE_GATE",
         emitter=_SCRAPE_PLAN,
         body=(
             "value gate: skipped 7 Board(s) costing over 15 min for under 2 tech jobs/min — "
-            "workday:dollartree/dollartreeus (0.03/min), icims:foo-bar (0.11/min), +5 more"
+            "greenhouse:gate-0 (0.03/min), greenhouse:gate-1 (0.03/min), "
+            "greenhouse:gate-2 (0.03/min), greenhouse:gate-3 (0.04/min), "
+            "greenhouse:gate-4 (0.04/min), greenhouse:gate-5 (0.04/min), "
+            "greenhouse:gate-6 (0.04/min)"
         ),
-        why="ADR-0064 removing work before packing; the sample is capped at 10 by `named_sample`",
+        why=(
+            "ADR-0064 removing work before packing. `named_sample`'s cap is 10, so seven gated "
+            "Boards are all named — the documented body had seven with a `+5 more` tail, which "
+            "that function cannot produce for any count under eleven"
+        ),
+        emit=_plan_measured,
     ),
     Line(
         consumer="fanout_plan.GATE_BOARD",
         emitter=_SCRAPE_PLAN,
         body="workday:dollartree/dollartreeus (0.03/min)",
-        why="one item inside the gate's sample above — a fragment pattern, not a whole line",
+        why=(
+            "one item inside the gate's sample above — a fragment pattern, not a whole line, "
+            "which is also why it stays source-verified: check 4 asks whether `body` is one of "
+            "the messages the emitter logged, and no run logs this fragment on its own"
+        ),
     ),
     Line(
         consumer="fanout_plan.SLICE",
         emitter=_SCRAPE_PLAN,
         body=(
-            "slice: 20114 boards (5000 priority + 15114 exploration); 712 hold unsettled "
-            "descriptions, out of 12,004 gap boards (118,433 jobs) still to drain"
+            "slice: 2307 boards (1205 priority + 1102 exploration); 1204 hold unsettled "
+            "descriptions, out of 1,204 gap boards (117,992 jobs) still to drain"
         ),
         why="a thin per-ATS scrape is often this run's exploration draw, not a regression",
+        emit=_plan_measured,
     ),
     Line(
         consumer="fanout_plan.COST_COVERAGE",
         emitter=_SCRAPE_PLAN,
         body=(
-            "cost: measured seconds for 18422/20114 boards (44210 in ledger); rest estimated from "
+            "cost: measured seconds for 1205/2307 boards (1212 in ledger); rest estimated from "
             "their ATS median"
         ),
         why="low coverage means the pack is sized on medians and a straggler can hide",
+        emit=_plan_measured,
     ),
     Line(
         consumer="fanout_plan.COST_COLDSTART",
@@ -1032,116 +1696,148 @@ CONTRACT: tuple[Line, ...] = (
             "data/state/board_cost.csv and the next run packs on seconds"
         ),
         why="the cold-start branch, which is what makes the two forms below reachable",
+        emit=_plan_coldstart,
     ),
     Line(
         consumer="fanout_plan.MAKESPAN",
         emitter=_SCRAPE_PLAN,
-        body="20114 boards across 15 shards; predicted makespan ~76.4 min (total work Σ 1043.2 min)",
+        body="2307 boards across 9 shards; predicted makespan ~67.1 min (total work Σ 86.5 min)",
         why="the measured form, with the makespan tail",
+        emit=_plan_measured,
     ),
     Line(
         consumer="fanout_plan.MAKESPAN",
         emitter=_SCRAPE_PLAN,
-        body="20114 boards across 15 shards (cold-start cost units)",
+        body="15000 boards across 15 shards (cold-start cost units)",
         why=(
             "the cold-start form. The makespan-only pattern matched nothing here and printed no "
             "`predicted:` line at all, on exactly the runs whose plan is least trustworthy"
         ),
+        emit=_plan_coldstart,
     ),
     Line(
         consumer="fanout_timing.PLAN_SHARD",
         emitter=_SCRAPE_PLAN,
-        body="shard 0: 1336 boards (~136.3 min)",
+        body="shard 0: 251 boards (~67.1 min)",
         why="the measured per-shard serial estimate — NOT a wall estimate",
+        emit=_plan_measured,
     ),
     Line(
         consumer="fanout_timing.PLAN_SHARD",
         emitter=_SCRAPE_PLAN,
-        body="shard 0: 1336 boards (cost ~4218)",
+        body="shard 0: 1000 boards (cost ~5000)",
         why="the cold-start form: unitless pack weights, deliberately not written as fake minutes",
+        emit=_plan_coldstart,
     ),
     Line(
         consumer="fanout_plan.SPREAD",
         emitter=_SCRAPE_PLAN,
         body=(
-            "predicted spread: min 100.6 / mean 100.8 / max 137.4 min (1.36x mean); "
-            "single-board floor 52.3 min"
+            "predicted spread: min 2.4 / mean 9.6 / max 67.1 min (6.98x mean); "
+            "single-board floor 65.0 min"
         ),
         why="the planner naming its own straggler, in the units floor_table reports after the fact",
+        emit=_plan_measured,
     ),
     Line(
         consumer="fanout_plan.FLOOR_WARN",
         emitter=_SCRAPE_PLAN,
         body=(
-            "one board costs 52.3 min, above the 9.1 min even share — the makespan floor is this "
+            "one board costs 65.0 min, above the 9.6 min even share — the makespan floor is this "
             "board, not the packing"
         ),
         why="fires only when it applies; a better packer cannot help a floor-bound shard",
+        emit=_plan_measured,
     ),
     Line(
         consumer="fanout_plan.BUDGET_WARN",
         emitter=_SCRAPE_PLAN,
         body=(
-            "predicted makespan ~76.4 min exceeds the 60 min shard budget — shards matching their "
+            "predicted makespan ~67.1 min exceeds the 60 min shard budget — shards matching their "
             "prediction will bank partials"
         ),
         why="an advance warning of budget kills, printed before any shard has run",
+        emit=_plan_measured,
     ),
-    # -- update_ledgers' other three subcommands ----------------------------------------------
+    # -- update_ledgers' other three subcommands (emitter-verified: seeded ledgers on disk) ----
     Line(
         consumer="fanout_ledgers.PRIORITY_HEADER",
         emitter=_LEDGERS,
         body=(
-            "priority: 20114 boards in snapshot | 63127 ledger rows (412 new, 38 pruned, "
-            "62677 carried) -> data/state/board_priority.csv"
+            "priority: 2215 boards in snapshot | 2225 ledger rows (1205 new, 1010 pruned, "
+            "1020 carried) -> data/state/board_priority.csv"
         ),
         why="the measured-tech-yield ledger the plan ranks Boards by",
+        emit=_ledger_priority,
     ),
     Line(
         consumer="fanout_ledgers.PRIORITY_TOP",
         emitter=_LEDGERS,
-        body="      41.3  workday:acme/External (1204 tech jobs)",
-        why="a right-aligned sample row, so the pattern reads it through `\\s+` not fixed columns",
+        body="      842.8  greenhouse:top (1204 tech jobs)",
+        why=(
+            "a right-aligned sample row, so the pattern reads it through `\\s+` not fixed columns "
+            "— which is also why the documented row could carry the wrong column width unnoticed"
+        ),
+        emit=_ledger_priority,
     ),
     Line(
         consumer="fanout_ledgers.COST_HEADER",
         emitter=_LEDGERS,
         body=(
-            "cost: 18422 boards timed across 15 shard(s) | 44210 ledger rows (1204 new) | "
-            "Σ 8431 board-minutes -> data/state/board_cost.csv"
+            "cost: 1200 boards timed across 15 shard(s) | 2210 ledger rows (1200 new) | "
+            "Σ 88142 board-minutes -> data/state/board_cost.csv"
         ),
         why="the cost ledger that decides whether the next plan is measured or a cold start",
+        emit=_ledger_cost,
     ),
     Line(
         consumer="fanout_ledgers.COST_MEDIAN",
         emitter=_LEDGERS,
-        body="    2393.0s median  workday:dollartree/dollartreeus",
-        why="the slowest Boards by measured median — where a makespan floor comes from",
+        body="    2393.0s median  greenhouse",
+        why=(
+            "the per-**ATS** median, which is what `costs_for` prices an unmeasured Board of that "
+            "ATS at. The documented body named a Board (`workday:dollartree/dollartreeus`) until "
+            "this entry was emitted: `ats_medians` keys by `_ats_of`, so no run can print one"
+        ),
+        emit=_ledger_cost,
     ),
     Line(
         consumer="fanout_ledgers.GAP_HEADER",
         emitter=_LEDGERS,
         body=(
-            "gap: 287,144 stored rows | 168,711 held | 118,433 unsettled across 12,004 boards "
-            "(2,110 on a disabled ATS, 3,402 gone from a Board this run scraped in full — both "
+            "gap: 5,627 stored rows | 1,204 held | 2,408 unsettled across 1,205 boards "
+            "(1,010 on a disabled ATS, 1,005 gone from a Board this run scraped in full — both "
             "unreachable) -> data/state/board_description_gap.csv"
         ),
         why=(
             "`held`, not `settled`: the emitter's wording moved and this pattern did not, so every "
             "run printed `no gap summary line found` while the line was right there"
         ),
+        emit=_ledger_gap,
     ),
     Line(
         consumer="fanout_ledgers.GAP_TOP",
         emitter=_LEDGERS,
-        body="   1,204 unsettled  workday:acme/External",
-        why="thousands separators again — `[\\d,]+`, and `\\s+` for the alignment",
+        body="   1,204 unsettled  workday:acme/external",
+        why=(
+            "thousands separators again — `[\\d,]+`, and `\\s+` for the alignment. The Board is "
+            "**lowercased** (ADR-0049), which the documented body had as `.../External`"
+        ),
+        emit=_ledger_gap,
     ),
     Line(
         consumer="fanout_ledgers.GAP_NO_STORE",
         emitter=_LEDGERS,
-        body="gap: no data/descriptions yet — nothing embedded, so no gap to record",
-        why="no store at all; distinct from the store existing and being empty, below",
+        body=(
+            "gap: no data/embeddings/jobs/meta.jsonl yet — nothing embedded, so no gap to record"
+        ),
+        why=(
+            "nothing embedded yet, so there is no stored corpus to count a gap against. This "
+            "names the **embedding store's metadata**, not the description store the line below "
+            "names — the documented body said `data/descriptions` and made the two read as one "
+            "file in two states"
+        ),
+        emit=_ledger_gap_no_meta,
     ),
     Line(
         consumer="fanout_ledgers.GAP_EMPTY_STORE",
@@ -1151,6 +1847,7 @@ CONTRACT: tuple[Line, ...] = (
             "ledger as it is"
         ),
         why="the store was lost in transit — writing a gap from it would erase real progress",
+        emit=_ledger_gap_empty_store,
     ),
     # -- spare egress -------------------------------------------------------------------------
     Line(
