@@ -20,7 +20,6 @@ from headstart.board_cost import (
     save,
     update,
 )
-from headstart.config import CompanyRef
 
 
 def _rows(**kw: float) -> dict[str, BoardCost]:
@@ -172,10 +171,9 @@ def test_a_key_no_scraper_can_read_keeps_its_row():
 def test_rekeying_a_canonical_key_says_nothing(monkeypatch, caplog):
     """An already-migrated row is *meant* to defeat `board_key()` — so it must not be reported.
 
-    Every one of `board_cost.csv`'s 10,561 Workday keys is the shorthand `{co}/{site}` that
-    Workday's parser rejects, and `load` re-keys every row, so reporting each raise cost 10,561
-    lines in `scrape-plan` and 10,561 more in `join` — 21,122 a run, 99.8% of `scrape-plan`'s
-    whole log, all of them describing rows that were correct.
+    `load` re-keys every row, so before this each of `scrape-plan` and `join` logged one line per
+    Workday key — every one of them describing a row that was correct.
+    `config._IDENTITY_REPORTED`'s note carries the measured counts.
 
     Asserted from both sides, because the silence alone passes vacuously if `_rekeyed` stops
     resolving anything: the key must still come back unchanged.
@@ -185,15 +183,6 @@ def test_rekeying_a_canonical_key_says_nothing(monkeypatch, caplog):
         assert _rekeyed("workday:accenture/careers") == "workday:accenture/careers"
         assert _rekeyed("personio:croftstone") == "personio:croftstone"
     assert not caplog.records, [r.message for r in caplog.records]
-
-
-def test_a_genuinely_malformed_slug_is_still_reported(monkeypatch, caplog):
-    """The counterweight: silencing `_rekeyed` must not silence the liveness-ledger population
-    the line was written for, where a raise really does mean a slug nothing can parse."""
-    monkeypatch.setattr(config, "_IDENTITY_REPORTED", set())
-    with caplog.at_level("INFO", logger="headstart.config"):
-        config.board_identity(CompanyRef(ats="workday", slug="not-a-url", name=""))
-    assert [r for r in caplog.records if "board_key() failed" in r.message]
 
 
 def test_load_normalises_legacy_keys_so_the_planner_finds_them(tmp_path):

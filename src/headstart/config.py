@@ -327,7 +327,9 @@ def load_active_companies(
     return _drop_parked(_dedupe_boards(companies))
 
 
-#: Boards already reported by :func:`board_identity`, so one malformed slug says so once.
+#: Every Board that has fallen back in :func:`board_identity`, so one malformed slug says so once.
+#: "Seen", not "reported": past :data:`_IDENTITY_REPORT_CAP` a Board is still added here but no
+#: longer named, and the membership test is what keeps the cap counting *distinct* Boards.
 #:
 #: Module-level, and never cleared: a pipeline stage is one process, and the point is that every
 #: caller shares one record. `board_identity` is reached from ~15 sites (`scrape_plan` x8,
@@ -335,17 +337,23 @@ def load_active_companies(
 #: company list, so one bad slug restated itself ~15x per run — and a scraper whose `board_key()`
 #: starts raising would emit `N_Boards x 15` lines for one bug.
 #:
-#: Which population reaches the fallback is the whole question, and the two answers differ. A
-#: *liveness*-ledger slug is a raw scraper slug, so `board_key()` really parses it: measured
-#: 2026-09-09, `load_active_companies('data/validate/liveness', min_jobs=0)` yields 91,325
-#: Scrapable Boards and reaches this path **zero** times. A *state*-ledger key
-#: (`data/state/board_cost.csv`, `board_priority.csv`) is `board_key()`'s own **output**, and
-#: feeding one back in raises wherever the scraper's parser demands its input form — every one of
-#: `board_cost.csv`'s 10,561 Workday keys is the shorthand `{co}/{site}`, which Workday's parser
-#: rejects because it wants a careers URL. Until 2026-09-09 `board_cost._rekeyed` did exactly that
-#: round-trip on every row, so each of `scrape-plan` and `join` emitted 10,561 lines a run —
-#: 21,122 in total, and 99.8% of `scrape-plan`'s entire log. It now opts out of the report
-#: (`report_failure=False`) because for it a raise is the expected answer, not a defect.
+#: What reaches the fallback is decided by the *provenance* of the slug, and the two answers
+#: differ. A **liveness**-ledger slug is a raw scraper slug, so `board_key()` really parses it:
+#: measured 2026-09-09, `load_active_companies('data/validate/liveness', min_jobs=0)` yields
+#: 91,325 Scrapable Boards and reaches this path **zero** times. A **state**-ledger key is
+#: `board_key()`'s own *output*, and feeding one back in raises wherever the scraper's parser
+#: demands its input form — every one of `data/state/board_cost.csv`'s 10,561 Workday keys is the
+#: shorthand `{co}/{site}`, which Workday's parser rejects because it wants a careers URL.
+#: Until 2026-09-09 `board_cost._rekeyed` did exactly that round-trip on every row, so each of
+#: `scrape-plan` and `join` emitted 10,561 lines a run — 21,122 in total, and 99.8% of
+#: `scrape-plan`'s entire log. It now opts out of the report (`report_failure=False`), because for
+#: it a raise is the expected answer rather than a defect.
+#:
+#: `board_priority.csv` is keyed the same way (5,143 shorthand Workday keys) but never reaches
+#: here: `board_priority.load` returns `row["board"]` verbatim, and `pick_boards` calls
+#: `board_identity` on liveness `CompanyRef`s. That is the check on this diagnosis — 1,142 of its
+#: Workday keys are absent from the cost ledger, so had it fed them back too the flood would have
+#: been their 11,703-key union, not the 10,561 actually observed.
 #:
 #: So the blast radius was never nil, only mis-measured: the one population that was measured is
 #: the one that does not reach the path. The bound below stands regardless, for the case the old
@@ -392,10 +400,12 @@ def _report_identity_failure(key: str, exc: Exception) -> None:
     2026-09-08 amendment). `index_plan`'s keep-set guard already warns, once, about the same
     population.
 
-    No running total accompanies the cap, because there is no end-of-stage hook to flush one to and
-    a wrong total is worse than none. The expected count after the `_rekeyed` fix is zero, so any
-    line at all is the signal; the named ones carry the ATS and the parse error, which is what a
-    reader needs to find the scraper at fault.
+    No running total accompanies the cap. A hook to flush one to does exist —
+    `ingest.observability.summary` — but it is in `ingest`, which this module may not import (the
+    curated-feed path reaches `config`), so the obstacle is the layering, not the absence of a
+    mechanism. The expected count after the `_rekeyed` fix is zero, so any line at all is the
+    signal; the named ones carry the ATS and the parse error, which is what a reader needs to find
+    the scraper at fault.
     """
     if key in _IDENTITY_REPORTED:
         return
@@ -410,7 +420,6 @@ def _report_identity_failure(key: str, exc: Exception) -> None:
             f"further board_key() failures not named ({_IDENTITY_REPORT_CAP} shown) — "
             "each still falls back to the plain ats:slug"
         )
-        return key
 
 
 def _drop_parked(companies: list[CompanyRef]) -> list[CompanyRef]:

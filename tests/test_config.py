@@ -260,3 +260,13 @@ def test_report_failure_false_changes_only_the_logging(monkeypatch, caplog):
         for ref in refs:
             board_identity(ref, report_failure=False)
     assert not caplog.records, [r.message for r in caplog.records]
+
+
+def test_a_genuinely_malformed_slug_is_still_reported(monkeypatch, caplog):
+    """The counterweight to `board_cost._rekeyed` opting out of the report: silencing that one
+    caller must not silence the liveness-ledger population the line was written for, where a
+    raise really does mean a slug nothing can parse."""
+    monkeypatch.setattr(config, "_IDENTITY_REPORTED", set())
+    with caplog.at_level("INFO", logger="headstart.config"):
+        board_identity(CompanyRef(ats="workday", slug="not-a-url", name=""))
+    assert [r for r in caplog.records if "board_key() failed" in r.message]

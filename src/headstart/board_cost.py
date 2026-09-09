@@ -98,9 +98,12 @@ def _rekeyed(board: str) -> str:
 
     Passes ``report_failure=False`` because this caller's input is a *ledger key*, not a raw slug:
     an already-migrated row is **meant** to raise, and that raise is how the shim tells migrated
-    from legacy. Reported, it flooded — every one of the ledger's 10,561 Workday keys is already
-    the shorthand Workday's parser rejects, so `scrape-plan` and `join` each logged 10,561
-    `board_key() failed` lines a run (21,122 total, 2026-09-09) describing rows that were correct.
+    from legacy. Reported, it flooded both stages that read this ledger — see
+    :data:`headstart.config._IDENTITY_REPORTED`'s note for the measured counts.
+
+    Note the round-trip itself stays. It cannot be skipped: the raise *is* the discriminator, so
+    there is no way to tell a migrated key from a legacy one without attempting the parse. Only
+    the log line is suppressed, which is the whole defect — the call was never the problem.
     """
     from headstart.config import CompanyRef, board_identity
 
