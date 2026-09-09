@@ -20,10 +20,12 @@ import headstart.ingest.embed_plan as pe
 # importing this module needs langdetect — measurably false: `doc_prep` imports langdetect lazily
 # inside `is_english`, and `_load_tokenizer` imports transformers lazily, so `embed_plan` imports
 # cleanly with langdetect, torch, sentence_transformers, transformers, lancedb, numpy and pyarrow
-# all blocked. That premise skipped the whole file on CI's base-deps-only install, so the pure
-# sizing/packing/`_prior_rows` tests below — which need none of it — never ran there. Only the
-# tests that push real job text through the English gate need the dependency; they say so
-# themselves.
+# all blocked. That premise skipped the whole file on CI's base-deps-only install, so the sizing,
+# packing, `_prior_rows` and empty-plan tests below — which need none of it — never ran there.
+# Only the tests that push real job text through the English gate need the dependency, and they
+# say so themselves. Note `test_main_empty_plan_when_nothing_new` calls `main()` ungated: that is
+# safe only because its corpus is empty, so `is_english` is never reached. Give that fixture a job
+# and it needs the gate too — without one it would *error* on CI rather than skip.
 _NEEDS_LANGDETECT = "embed_plan.main() runs doc_prep.is_english over the corpus"
 
 

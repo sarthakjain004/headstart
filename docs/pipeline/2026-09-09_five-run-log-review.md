@@ -241,7 +241,7 @@ distribution over incidents. Two of the classes are parser-shaped rather than ne
 egress mechanism, and both would repay a direct look. The rest is HTTP 500 (381), ConnectionError
 (201), HTTP 429 (48), HTTP 403 (31), and a long tail of 404/520/522/SSLError.
 
-Only **60 of those 866 lines** end in a truncation verdict (`— Board unauthoritative this run` ×59,
+Only **60 of those 866 lines** carry a truncation verdict (`— Board unauthoritative this run` ×59,
 `— too little of T listed read to keep` ×1) — but that is two different failure kinds pooled by one
 log shape, not a mis-calibrated threshold. Both scrapers follow the **same rule: `mark_truncated` iff
 the returned id set is short**, and both are correct.

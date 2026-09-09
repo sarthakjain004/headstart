@@ -68,15 +68,11 @@ _MAX_SHARDS = 15  # == pipeline.yml `max-parallel`; Phase 1 runs one shard per l
 # was **always exactly 1** and the matrix took one of the 15 lanes every run — 6.2-13.5 min of
 # serial CPU on the critical path. At 300 s those four runs plan 3, 3, 3 and 4 shards.
 #
-# Fan-out is cheap, not free, and the in-process part is the cheap part: model load is 4 s
-# (08:45:19 -> 08:45:23 in 34327339789), the rest pure CPU encode at ~0.7 docs/s. Each added lane
-# still pays the ~2.4 min job setup (checkout + pip + model cache), which runs in parallel across
-# lanes, and `merge` then fetches 3-4 fragments rather than 1. The 6-9 min/run saving is a
-# projection from that per-doc rate, not a measurement of a multi-shard run.
-#
-# Only a steady-state plan moves: above ~18,000 s both values clamp at _MAX_SHARDS; between
-# 1,200 s and 18,000 s they differ (a 2 h backlog: 6 shards before, 15 now), in the same direction.
-# Workings: docs/pipeline/2026-09-09_five-run-log-review.md §3.
+# Plans above ~18,000 s are unchanged (both values clamp at _MAX_SHARDS); everything from ~300 s
+# up to that moves onto more lanes, which is the point. Fan-out is cheap but not free — each added
+# lane still pays the ~2.4 min job setup — and the 6-9 min/run saving is a projection, not a
+# measurement of a multi-shard run: docs/pipeline/2026-09-09_five-run-log-review.md §3 has the
+# per-lane costs and the workings.
 _TARGET_SECONDS = 5 * 60
 
 
