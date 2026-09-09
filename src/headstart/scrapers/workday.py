@@ -245,8 +245,9 @@ _BROKEN_OFF = "skipped after the 5xx break-off"
 # A posting the *listing* served with no ``externalPath``. Not a fetch failure — there is no
 # detail URL to fetch — so `_report_detail_losses` reports it on its own line rather than in the
 # mid-crawl tally. Measured live 2026-09-09 (docs/workday/2026-09-09_parser-shaped-detail-losses.md):
-# such an item carries ``bulletFields`` and nothing else, so the Job it makes is titled "Untitled"
-# and `tech_filter.classify` drops it before the description store or the index ever see it.
+# on every one measured (38 stubs over 31,028 postings on 22 Boards) such an item carried
+# ``bulletFields`` and nothing else, so the Job it makes is titled "Untitled" and
+# `tech_filter.classify` drops it before the description store or the index ever see it.
 _NO_DETAIL_URL = "no externalPath"
 
 # ``remoteType`` is freeform; map the unambiguous values. "hybrid"/"flexible"
@@ -628,7 +629,7 @@ class WorkdayScraper(BaseScraper):
         # A no-`externalPath` posting that nonetheless carries a title is the one shape that would
         # make that loss cost something — it can pass the tech gate, and `parse` would then serve
         # it with the board root as its url (a dead link) and no description. Never observed:
-        # 0 of 38 stubs over 31,028 postings on 22 boards swept live 2026-09-09, every one of them
+        # 0 of 38 stubs over 31,028 postings on 22 Boards swept live 2026-09-09, every one of them
         # carrying `bulletFields` and no other key. Counted rather than assumed, because that
         # sample is 22 of the 125 Boards the class was seen on.
         titled_stubs = sum(
@@ -966,7 +967,7 @@ class WorkdayScraper(BaseScraper):
         if no_url:
             # Says only what this pass establishes: the listing gave no detail URL, so nothing was
             # fetched. What *becomes* of such a posting downstream (measured: dropped at the tech
-            # gate, because a stub has no title) is a claim about other modules on a 22-board
+            # gate, because a stub has no title) is a claim about other modules on a 22-Board
             # sample, and belongs in the write-up, not asserted per Board in a scrape log.
             _log.info(
                 f"{self.board_key()}: {no_url} posting(s) carried no externalPath — the listing "
