@@ -250,7 +250,13 @@ build it.
 These guidelines are working if: fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 
 ## Git Conventions
-- Do NOT add a `Co-Authored-By` trailer to commit messages.
+- **Do add a `Co-Authored-By` trailer to agent-authored commit messages.** This bullet said
+  the opposite until 2026-09-09, and practice had already left it behind: 39 `Co-Authored-By`
+  lines across the last 30 commits on `main`. A rule its own history contradicts that heavily
+  is a defect, not a standard — and this one was actively costing decisions, because a
+  session-level instruction mandates the trailer while this file forbade it: #390 merged
+  carrying it and #391 merged without, from the same information. Don't re-tighten it from
+  memory.
 - Do NOT add "Generated with Claude Code" (or any similar attribution line) to PR descriptions.
 - Keep commit messages to a maximum of 50 words.
 - **Run the `code-review` skill on every code-changing PR before it merges** (the two-axis
