@@ -9,6 +9,14 @@ takes one key) · **Relates to:**
 [ADR-0023](0023-prune-stale-and-duplicate-index-rows.md) (where `board_key` comes from),
 [ADR-0022](0022-tech-priority-board-ordering.md) (the ledger that was already keyed this way)
 
+> **Migration completed 2026-09-09.** The read-time shim described below (`board_cost._rekeyed`),
+> its removal trigger (`legacy_key_count`, and the `update_ledgers cost` line that logged it), and
+> the `config.board_identity(report_failure=...)` opt-out added for it are all removed. The trigger
+> fired on its own terms: `legacy_key_count` read **0** against the live HF ledger, and `load()`
+> returns byte-identical rows for all **93,919** of them with the shim gone. `load()` is back to
+> reading the key verbatim, as the priority ledger's loader always did. The decision below stands
+> unchanged — only its transitional scaffolding is gone.
+
 ## Context
 
 The pipeline keeps two per-Board ledgers on the same HF round-trip, and until now they named the
@@ -63,7 +71,8 @@ window in which a lookup misses. ADR-0059's objection is answered rather than ov
   callback**, because those name the URL this shard is actually fetching.
 - `scrape_plan` looks the ledger up with the same key, and `_gated_boards` takes one key instead
   of a `(cost_key, priority_key)` pair.
-- The ledger already on HF re-keys itself, via a read-time shim — see Migration below.
+- The ledger already on HF re-keys itself, via a read-time shim — see Migration below
+  (that shim did its job and was removed 2026-09-09).
 
 `board_key` rather than `{ats}:{slug}` because unifying the other way would mean re-keying every
 Job id — Workday ids would carry a full URL with `://` and `/` — and re-indexing 330k rows, while
@@ -71,6 +80,9 @@ Job id — Workday ids would carry a full URL with `://` and `/` — and re-inde
 canonical identity everywhere else: `_dedupe_boards`, `prune`'s keep-set, `PARKED_BOARDS`.
 
 ## Migration: a read-time shim, not a script
+
+> **Done 2026-09-09.** The shim, its trigger and the `report_failure` opt-out are removed —
+> see the banner at the top. This section is the record of the migration, not live guidance.
 
 The first draft of this ADR shipped a one-off migration script and called the gap before it ran
 "one run of degraded packing… not harmful". **Review measured that and it was wrong**, in the
