@@ -4677,6 +4677,271 @@ def test_mark_truncated_keeps_the_first_reason():
     assert scraper.truncated == "HTTP 429 on page 2 — got 10 of 300 postings"
 
 
+def test_a_negligible_shortfall_leaves_the_list_authoritative():
+    """ADR-0121, with `successfactors:careers.te.com`'s real shape: one unreadable page in 2,130.
+
+    ADR-0053 on its own excluded that whole Board from the eviction scope — 95 rows on run
+    34327339789 — and it did so on every run, with no drain, to protect a single id. At 99.953%
+    read the list *is* this Board's set of openings; the one missing id is ADR-0083's job, held
+    back for a scrape and evicted only on a second consecutive absence.
+    """
+    scraper = get_scraper("greenhouse", "acme")
+    scraper.mark_truncated_unless_negligible(
+        2129, 2130, "1/2130 job pages unreadable — those Jobs are listed but unbuilt"
+    )
+    assert scraper.truncated is None
+
+
+def test_a_shortfall_too_large_to_absorb_marks_the_board_unauthoritative():
+    """The other side, with `successfactors:careers.hcltech.com`'s real shape from run
+    34332773221: 1,022 unreadable of 11,302, 90.957% read.
+
+    The tolerance deliberately does not reach it. One Job in eleven missing is not a list that
+    can be read as the Board's openings, and releasing it would hand 1,022 ids to eviction. That
+    Board is a detail-fetch defect, not a gate-calibration one. The reason string passes through
+    verbatim, so `unauthoritative_boards.json` reads as it always did.
+    """
+    scraper = get_scraper("greenhouse", "acme")
+    scraper.mark_truncated_unless_negligible(
+        10280,
+        11302,
+        "1022/11302 job pages unreadable — those Jobs are listed but unbuilt",
+    )
+    assert (
+        scraper.truncated
+        == "1022/11302 job pages unreadable — those Jobs are listed but unbuilt"
+    )
+
+
+def test_a_shortfall_with_no_total_fails_closed():
+    """`expected` of 0 is *no total*, which is the shape the tolerance explicitly excludes.
+
+    It must not divide by it, and it must not tolerate it: a shortfall nobody can measure is
+    Unauthoritative, the same direction ADR-0053 chose for an unresolvable key. This method is
+    public and its docstring invites new callers, so the contract is pinned rather than left to
+    the fact that today's six call sites all happen to guard it.
+    """
+    scraper = get_scraper("greenhouse", "acme")
+    scraper.mark_truncated_unless_negligible(0, 0, "the feed gave no total")
+    assert scraper.truncated == "the feed gave no total"
+
+
+def test_a_tolerated_shortfall_stays_quiet_once_a_hard_cap_has_spoken(caplog):
+    """`mark_truncated` keeps the first reason, so a Board a cap already condemned is
+    Unauthoritative whatever a later measured shortfall decides — and must not then log that its
+    list "stays authoritative". Reachable: Oracle's page cap precedes its shortfall branch, and
+    SuccessFactors' listing cut-short precedes its detail pass.
+
+    The assertion is on the *log*, deliberately. Checking only that `truncated` kept the cap's
+    reason passes without the guard this test exists for — `mark_truncated` has kept the first
+    reason since ADR-0053 — so it would have been a test of nothing.
+    """
+    scraper = get_scraper("greenhouse", "acme")
+    scraper.mark_truncated("hit the 100-page cap — the rest unread")
+    with caplog.at_level(logging.INFO):
+        scraper.mark_truncated_unless_negligible(
+            999, 1000, "1/1000 job pages unreadable"
+        )
+
+    assert scraper.truncated == "hit the 100-page cap — the rest unread", (
+        "the cap's reason must survive"
+    )
+    assert "stays authoritative" not in caplog.text, (
+        "a Board a cap already condemned must never be logged as authoritative"
+    )
+
+
+def test_the_tolerance_draws_the_line_at_the_stated_share():
+    """Both sides of the one threshold, so moving `MIN_AUTHORITATIVE_SHARE` cannot pass silently.
+
+    The constant is asserted too: it is the whole policy, it is deliberately not per-scraper, and
+    the measurement behind 0.99 (loosening to 0.95 buys 55 rows of 3,055; tightening to 0.995
+    costs 128) lives in its docstring rather than in anyone's memory.
+    """
+    from headstart.scrapers.base import MIN_AUTHORITATIVE_SHARE
+
+    assert MIN_AUTHORITATIVE_SHARE == 0.99
+
+    at_the_line = get_scraper("greenhouse", "acme")
+    at_the_line.mark_truncated_unless_negligible(990, 1000, "990 of 1000")
+    assert at_the_line.truncated is None, "exactly at the share is still authoritative"
+
+    under = get_scraper("greenhouse", "acme")
+    under.mark_truncated_unless_negligible(989, 1000, "989 of 1000")
+    assert under.truncated == "989 of 1000"
+
+
+def test_successfactors_tolerates_one_unreadable_page_but_still_drops_its_job(
+    monkeypatch,
+):
+    """The shape that put 2,130-page Boards permanently out of eviction scope (ADR-0121).
+
+    Both halves matter. The Board stays authoritative, so its *other* closed postings can drain
+    — and the unreadable page's Job is still absent from the returned list, which is exactly what
+    hands that one id to ADR-0083 rather than to nothing at all.
+    """
+    from headstart.scrapers import successfactors as sf
+
+    scraper = sf.SuccessFactorsScraper("jobs.example.com")
+    monkeypatch.setattr(scraper, "_fetch_sitemap", lambda: ("urlset", "", None))
+    monkeypatch.setattr(
+        scraper,
+        "_search_job_urls",
+        lambda: (
+            [(f"https://jobs.example.com/job/x/{i}/", str(i)) for i in range(200)],
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        scraper,
+        "_job_fields",
+        lambda url: None if url.endswith("/7/") else {"title": "Engineer"},
+    )
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+
+    raw = scraper.fetch_raw()
+
+    assert scraper.truncated is None, (
+        "199 of 200 read is still this Board's set of openings"
+    )
+    assert len(scraper.parse(raw, "2026-01-01")) == 199, (
+        "the unreadable page's Job is still dropped — that absence is ADR-0083's input"
+    )
+
+
+def test_successfactors_truncates_on_a_surface_that_states_no_total(monkeypatch):
+    """The class no share can rescue: a shortfall with nothing to measure it against.
+
+    An RSS stream the tenant aborts mid-flight says how far it got and never how far it had to
+    go, so a read ratio would be fabricated. Those surfaces call `mark_truncated` directly and
+    stay unconditional — here every one of the 200 details reads perfectly and the Board is
+    still Unauthoritative, because the *listing* was never complete.
+    """
+    from headstart.scrapers import successfactors as sf
+
+    aborted = (
+        "the tenant's RSS feed aborted 31,457,280 bytes in — "
+        "postings past that point were not listed"
+    )
+    scraper = sf.SuccessFactorsScraper("jobs.example.com")
+    monkeypatch.setattr(scraper, "_fetch_sitemap", lambda: ("rss", "", None))
+    monkeypatch.setattr(scraper, "_search_job_urls", lambda: ([], None))
+    monkeypatch.setattr(
+        scraper,
+        "_rss_job_urls",
+        lambda: (
+            [(f"https://jobs.example.com/job/x/{i}/", str(i)) for i in range(200)],
+            aborted,
+        ),
+    )
+    monkeypatch.setattr(scraper, "_job_fields", lambda url: {"title": "Engineer"})
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+
+    scraper.fetch_raw()
+
+    assert scraper.truncated == aborted
+
+
+def test_eightfold_tolerates_a_replica_short_by_one_posting():
+    """`eightfold:careers.qualcomm.com` got 1,919 of 1,932 (99.327%) and left the eviction scope
+    for it. A replica that never deals a posting is the transient miss ADR-0083 exists for."""
+    from headstart.scrapers.eightfold import EightfoldScraper
+
+    class _Resp:
+        def __init__(self, ids):
+            self.status_code = 200
+            self._body = {"data": {"positions": [{"id": n} for n in ids], "count": 200}}
+
+        def json(self):
+            return self._body
+
+    # 20 pages of 10, except the last, which is one posting short of the stated 200. Every sweep
+    # deals the same 199, so the crawl gives up on sweep 2 — 99.5% read.
+    sweep = [range(i * 10, i * 10 + 10) for i in range(19)] + [range(190, 199)]
+    pages = [_Resp(ids) for _ in range(2) for ids in sweep]
+    scraper = EightfoldScraper("appliedmaterials.eightfold.ai")
+    scraper._get = lambda *a, **k: pages.pop(0)
+
+    got = scraper._api_search("appliedmaterials")
+
+    assert len({str(p["id"]) for p in got}) == 199
+    assert scraper.truncated is None
+
+
+def test_eightfold_child_sitemap_cap_truncates_even_when_every_detail_reads(
+    monkeypatch,
+):
+    """The one route by which a hard cap could reach the tolerance (ADR-0121).
+
+    `_MAX_INDEX_CHILDREN` bounds how much of a sitemap index is followed, and what it drops never
+    reaches `listed` — the denominator the detail pass measures against. So a Board whose index is
+    twice the cap can lose half its postings and still report every listed detail as read. The cap
+    must therefore say so itself: here all 50 followed children parse and every detail is fine,
+    and the Board is still Unauthoritative.
+    """
+    from headstart.scrapers import eightfold as ef
+
+    # The child URLs must carry "sitemap" and avoid "index" — that is what `_CHILD_SITEMAP`
+    # matches and what `_job_urls` filters on.
+    index = "".join(
+        f"<sitemap><loc>https://acme.eightfold.ai/sitemap-c{i}.xml</loc></sitemap>"
+        for i in range(ef._MAX_INDEX_CHILDREN * 2)
+    )
+
+    class _Resp:
+        def __init__(self, text):
+            self.status_code = 200
+            self.text = text
+
+        def raise_for_status(self):
+            return None
+
+    def fake_get(self, url=None, accept=None):
+        if url and "sitemap-c" in url:
+            n = url.rsplit("sitemap-c", 1)[1].split(".")[0]
+            return _Resp(
+                f"<urlset><url><loc>https://acme.eightfold.ai/careers/job/{n}</loc></url></urlset>"
+            )
+        return _Resp(f"<sitemapindex>{index}</sitemapindex>")
+
+    scraper = ef.EightfoldScraper("acme.eightfold.ai")
+    monkeypatch.setattr(type(scraper), "_get", fake_get)
+
+    urls = scraper._job_urls()
+
+    assert len(urls) == ef._MAX_INDEX_CHILDREN, "only the followed children are listed"
+    assert scraper.truncated and "child sitemaps" in scraper.truncated, (
+        "the cap must mark the Board itself — nothing downstream can see what it dropped"
+    )
+
+
+def test_oracle_offset_ceiling_truncates_however_complete_the_read_looks(monkeypatch):
+    """A hard cap is never tolerated, whatever share it leaves (ADR-0121).
+
+    The API serves no offset past 10,000, so a Board stating 10,050 reads exactly 10,000 —
+    99.5%, inside the tolerance — and the 50 it cannot reach are unreachable on *every* run, not
+    a transient miss. `oracle:ejwl.fa.us2.oraclecloud.com` is the live case, 187 shielded rows on
+    run 34327339789. Releasing this class would evict those rows for good.
+    """
+    full = _oracle_page(_oracle_reqs(0, 200), 10_050)
+    blank = _oracle_page([], 10_050)
+    s = get_scraper("oracle", "ejwl.fa.us2.oraclecloud.com", "Acme")
+    calls = {"n": 0}
+
+    def _get(self, url=None):
+        calls["n"] += 1
+        # 50 full pages take the walk to exactly the ceiling; past it the envelope goes blank
+        # rather than erroring, which is what ends the walk short of the Board's own total.
+        return full if calls["n"] <= 50 else blank
+
+    monkeypatch.setattr(type(s), "_get", _get)
+
+    reqs = s._listing()
+
+    assert len(reqs) == 10_000
+    assert s.truncated and "no offset past" in s.truncated
+
+
 def _successfactors_board(monkeypatch, *, search, rss, sitemap=("rss", "", None)):
     """A SuccessFactors scraper whose three listing surfaces are stubbed. Each returns what the
     real one does — its list plus why-it-came-up-short: ``sitemap`` as ``(kind, text, cut_short)``

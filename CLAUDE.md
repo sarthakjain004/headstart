@@ -475,9 +475,12 @@ be conflated — CONTEXT.md's **Eviction** and **Unconfirmed** glossary entries 
   Board*, never runs: only ~20k are in any run's slice, under a quarter of the Scrapable Boards
   (CONTEXT.md §Counting Boards — "live Boards" names no single number), and a Board the run
   did not read is no evidence, so its ids keep the state they had.
-- **scope-excluded** (ADR-0053) — the Board's scrape was not authoritative, so it leaves the
-  eviction scope entirely that run. Note this one has **no bound and no drain**: a Board that is
-  short on every run never re-enters scope, and its closed postings are served indefinitely
+- **scope-excluded** (ADR-0053, narrowed by ADR-0121) — the Board's scrape was not authoritative,
+  so it leaves the eviction scope entirely that run. Since ADR-0121 a *measured* shortfall at or
+  above 99% of the Board's own stated total no longer scope-excludes it — those ids go to the
+  per-Job grace period instead — so this now covers hard caps, unmeasurable shortfalls and losses
+  past the tolerance. For everything it still covers it has **no bound and no drain**: a Board
+  that is short on every run never re-enters scope, and its closed postings are served indefinitely
   (measured: 105 dead rows on `careers.qualcomm.com`, oldest 22 days —
   `docs/eightfold/no-client-side-fix-for-replica-instability.md`). It reports only a Board count,
   never a row count, so the accretion is invisible unless you go looking for it.

@@ -205,13 +205,20 @@ class OracleScraper(BaseScraper):
             # exists to prevent. The slack exists for a counter that over-counts by a row or two,
             # not for a Board the API will not serve.
             if self._offset >= _OFFSET_CEILING:
+                # Unconditional: the ceiling is a hard cap, so the remainder is unreachable on
+                # every run rather than a transient miss, and no share of it is negligible
+                # however close to `total` the read landed. A Board stating 10,050 and reading
+                # 10,000 is 99.5% and still must not be declared authoritative — the class
+                # ADR-0121 keeps outside the tolerance.
                 self.mark_truncated(
                     f"read {len(reqs)} of {total} requisitions — the API serves no offset past "
                     f"{_OFFSET_CEILING:,}, so the rest is unreachable, not absent"
                 )
             elif len(reqs) < total - pages * _SLACK_PER_PAGE:
-                self.mark_truncated(
-                    f"read {len(reqs)} of {total} requisitions — the rest is unread, not absent"
+                self.mark_truncated_unless_negligible(
+                    len(reqs),
+                    total,
+                    f"read {len(reqs)} of {total} requisitions — the rest is unread, not absent",
                 )
         return reqs
 
