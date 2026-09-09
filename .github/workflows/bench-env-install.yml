@@ -28,6 +28,48 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # End-to-end check of the exact configuration that would ship, against the exact
+  # configuration that runs today. These two are separate jobs on separate runners, so the
+  # runner lottery applies and the pair is NOT the primary evidence — the within-job variant
+  # sequence below is. They exist because the `bench` job measures uv installing into a venv,
+  # while production would use `uv pip install --system`, and that is not the same command.
+  # Each times the whole checkout -> importable-environment window.
+  proposed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Start clock
+        run: echo "T0=$(date +%s.%N)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12" # deliberately NO `cache: pip`
+      - run: pip install uv==0.12.11
+      - run: uv pip install --system -e ".[embed]" huggingface_hub
+      - name: Total, and prove the environment is real
+        run: |
+          printf 'PROPOSED_total_checkout_to_ready\t%s\n' "$(awk "BEGIN{printf \"%.2f\", $(date +%s.%N)-$T0}")"
+          python -c "import headstart, sentence_transformers, torch, lancedb, langdetect, huggingface_hub, sklearn, einops, curl_cffi; print('imports OK torch', torch.__version__)"
+          python -c "import headstart.ingest.embed_plan, headstart.ingest.index; print('pipeline modules import OK')"
+
+  baseline_prod:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Start clock
+        run: echo "T0=$(date +%s.%N)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[embed]" huggingface_hub
+      - name: Total, and prove the environment is real
+        run: |
+          printf 'BASELINE_total_checkout_to_ready\t%s\n' "$(awk "BEGIN{printf \"%.2f\", $(date +%s.%N)-$T0}")"
+          python -c "import headstart, sentence_transformers, torch, lancedb, langdetect, huggingface_hub, sklearn, einops, curl_cffi; print('imports OK torch', torch.__version__)"
+          python -c "import headstart.ingest.embed_plan, headstart.ingest.index; print('pipeline modules import OK')"
+
   bench:
     runs-on: ubuntu-latest
     timeout-minutes: 75
