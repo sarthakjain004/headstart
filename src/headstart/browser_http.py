@@ -84,6 +84,8 @@ class BrowserUnavailable(Exception):
     """
 
 
+# Hand-rolled rather than `log.FirstOnly` on purpose: `FirstOnly.report` takes a finished string
+# and no `%`-style lazy args, and the line below has three.
 _blocking_failed = False
 
 
@@ -197,8 +199,11 @@ def _ensure_started() -> None:
                 try:
                     browser._browser_process_manager.stop_process()
                     browser._temp_directory_manager.cleanup()
-                except BaseException:  # noqa: BLE001, S110 - already failing; don't mask the cause
-                    pass
+                except BaseException:  # noqa: BLE001 - already failing; don't mask the cause
+                    # DEBUG, not WARNING: this is per-Board, and an annotation is a quota
+                    # (ADR-0039). The reap is the thing whose failure the comment above
+                    # predicts, so it must at least be recoverable from a verbose run.
+                    _log.debug("reaping a failed Chrome launch raised", exc_info=True)
                 raise
             return browser
 
@@ -291,8 +296,11 @@ def origin(page_url: str):
             if tab is not None:
                 try:
                     await tab.close()
-                except BaseException:  # noqa: BLE001, S110 - already failing; don't mask the cause
-                    pass
+                except BaseException:  # noqa: BLE001 - already failing; don't mask the cause
+                    # DEBUG for the reason the reap above gives: once per walled Board.
+                    _log.debug(
+                        "closing the tab of a failed navigation raised", exc_info=True
+                    )
             _gate.release()
             raise
 
@@ -308,5 +316,7 @@ def origin(page_url: str):
     finally:
         try:
             _run(_close(tab), timeout=15)
-        except Exception:  # noqa: BLE001, S110 - a tab that won't close must not fail the board
-            pass
+        except Exception:  # noqa: BLE001 - a tab that won't close must not fail the board
+            # DEBUG for the reason the reap above gives: once per walled Board. A tab that
+            # will not close is also how `_TAB_WIDTH` leaks, so it must leave a trace.
+            _log.debug("closing a finished board's tab raised", exc_info=True)

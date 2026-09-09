@@ -19,6 +19,11 @@ per run, so ADR-0039's amendment forbids it on any line that can fire once per B
 or per item. The two ways to stay inside that budget while still saying what happened live here
 beside the emit seam, so every stage spells them the same way: :class:`FirstOnly` (warn on the
 first occurrence, inform on the rest) and :func:`named_sample` (one line that names a set).
+
+:func:`context` is here for the same reason: the ``stage= run= attempt= sha=`` line every
+``python -m`` entry point opens with is what says *which* run a log belongs to once it is off
+the Actions page, and its callers are on both sides of the pipeline package — the ingest stages
+and ``alerts/``, which may not import from ``ingest``.
 """
 
 from __future__ import annotations
@@ -27,7 +32,11 @@ import logging
 import os
 import sys
 from importlib.machinery import ModuleSpec
-from typing import NoReturn
+from typing import Any, NoReturn
+
+#: This module's own logger, for the one line it emits itself (:func:`context`). Everything
+#: else here writes through the caller's logger, which is the point of the seam.
+_log = logging.getLogger(__name__)
 
 _LEVELS = {
     "debug": logging.DEBUG,
@@ -87,6 +96,43 @@ def fail(logger: logging.Logger, message: str) -> NoReturn:
     raise SystemExit(1)
 
 
+def context(stage: str, **extra: Any) -> None:
+    """One line naming the run this log belongs to. Silent off CI, where it is noise.
+
+    ``stage`` is **the calling module's own name** — ``scrape_run``, never ``scrape``;
+    ``scrape_join``, never ``join``. The workflow's job names are the tempting alternative and
+    they name a different thing: ``join`` is one Actions job running seven of these modules, so a
+    log grepped by job answers "which runner" and a log grepped by stage answers "which code",
+    and a vocabulary mixing the two answers neither. Where one module is several passes behind
+    one entry point the pass rides as an ``extra`` instead of in ``stage`` — ``index``'s
+    ``step=``, ``update_ledgers``' ``ledger=``. ``tests/test_log_contract.py`` enforces the rule.
+
+    No bracketed prefix of its own: ADR-0039 fixes one line format whose only tag is the
+    module's name, which the formatter already supplies. ``stage`` rides as a field.
+
+    Here rather than in ``ingest/observability.py``, where it started, because its callers are
+    on both sides of the pipeline package: every ``python -m headstart.ingest.*`` stage, plus
+    ``alerts/run.py`` and ``alerts/bot.py``, which are ``python -m`` entry points under Actions
+    too (``alerts.yml``, ``bot.yml``) and may not import from ``ingest`` — the same reason
+    :func:`named_sample` and :class:`FirstOnly` are here rather than beside their first caller.
+    ``observability`` keeps its other seams: each of those is about a CI *artifact* — a step
+    summary, a shard report — where this one is a log line, which is what this module owns.
+    The curated-feed entry (``python -m headstart``) still does not call it, now for the only
+    reason that survives the move: no workflow runs it, so there is no run for it to name.
+    """
+    run = os.environ.get("GITHUB_RUN_ID")
+    if not run:
+        return
+    bits = {
+        "stage": stage,
+        "run": run,
+        "attempt": os.environ.get("GITHUB_RUN_ATTEMPT", "1"),
+        "sha": (os.environ.get("GITHUB_SHA") or "")[:7],
+        **{k: v for k, v in extra.items() if v is not None},
+    }
+    _log.info(" ".join(f"{k}={v}" for k, v in bits.items()))
+
+
 def named_sample(items: list[str], cap: int = 10) -> str:
     """``a, b, c, +N more`` — a warning that names what it is about, without becoming a dump.
 
@@ -123,10 +169,29 @@ class FirstOnly:
     and not a per-frame one — the same rule ``logging``'s own ``exc_info=True`` follows. So a
     site with no exception anywhere gets a bare line rather than logging's ``NoneType: None``,
     but a site reached from inside an *unrelated* ``except``, however many frames up, attaches
-    that unrelated stack. Five of the six call sites are lexically inside the ``except`` they
-    report on, so the stack is theirs by construction; the sixth (``scrapers/workday.py``'s
-    detail-loss tally — a threshold tripping, not a failure) has a clean chain today and would
-    start inheriting one if an ``except`` ever grew above it.
+    that unrelated stack. 8 of the 15 call sites are lexically inside the ``except`` they report
+    on, so the stack is theirs by construction. The other seven report a *condition* rather than a
+    caught exception, and they are clean today for two different strengths of reason — which is
+    the part worth reading, not the count:
+
+    - ``scrapers/workday.py``'s detail-loss tally, the original of the shape, is clean **by
+      construction**: it is a threshold tripping at the end of a detail pass, with no ``except``
+      anywhere above it that could still be handling something.
+    - ``spare_egress``'s five tunnel checks are clean **by measurement** — an ``ast`` sweep of
+      ``src/headstart`` for a network call lexically inside an ``except`` found none, and both
+      of ``http.py``'s entries into them sit outside its ``except RequestsError``. That is the
+      weaker guarantee: it holds for the call graph as it is, and any new caller that dials
+      while handling an exception starts attaching that exception's stack to a line about WARP.
+    - ``config``'s identity fallback is clean for a third reason: ``_report_identity_failure``
+      is only ever called from ``board_identity``'s own ``except`` arm, so the live exception is
+      precisely the ``board_key()`` failure the line is about. The report sits one frame below
+      the handler rather than inside it, which is why it counts as outside here — the stack is
+      still the right one.
+
+    ``tests/test_log.py`` recomputes both figures from the source with ``ast`` rather than
+    trusting this paragraph: the version that said "five of the six" shipped in the very commit
+    that took the census to nine, and a census stated in prose goes stale the next time a site
+    is added — so adding one means re-reading this, which is the point.
 
     Detected rather than declared, deliberately. Capturing ``sys.exc_info()`` at construction and
     diffing it at report time bounds nothing, because the instances that most need it are

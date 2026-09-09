@@ -230,6 +230,12 @@ def telegram_subscriptions(store: Store) -> list[Subscription]:
 
 def main() -> int:
     log.setup()
+    # Before the configuration check, not after: a run that skips because a secret is unset is
+    # exactly the one somebody goes looking for later, and without this line its log says
+    # nothing about which run it was. `stage` is this module's own name, the rule every ingest
+    # stage follows — so it reads `stage=run run=…`, the field and the value coinciding because
+    # the module really is called `run`.
+    log.context("run")
     missing = [name for name in _REQUIRED if not os.environ.get(name)]
     if missing:
         _log.info(f"alerts not configured (missing {', '.join(missing)}) - skipping")

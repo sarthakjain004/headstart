@@ -976,7 +976,7 @@ def main() -> int:
     # After parsing, not before it: one entry point runs four different passes, and `stage=index`
     # alone cannot say which of them a log belongs to — `sync` and `prune` even run back to back
     # in the same `merge` job. Same reason `update_ledgers` rides its ledger name.
-    observability.context("index", step=args.step)
+    log.context("index", step=args.step)
     return args.fn(args)
 
 

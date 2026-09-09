@@ -221,6 +221,10 @@ def _set_query(
 
 def main() -> int:
     log.setup()
+    # This one runs every fifteen minutes, so its logs are the ones most likely to be read out
+    # of context — 96 runs a day of otherwise identical lines, with nothing but GitHub's own
+    # timestamp to tell them apart once they are off the Actions page.
+    log.context("bot")
     required = ("TELEGRAM_BOT_TOKEN", "SUBSCRIBERS_REPO", "SUBSCRIBERS_TOKEN")
     missing = [name for name in required if not os.environ.get(name)]
     if missing:

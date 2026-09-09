@@ -66,12 +66,6 @@ def test_percentiles_expose_the_straggler_a_mean_would_hide():
     assert observability.percentiles([]) == {}
 
 
-def test_context_is_silent_off_ci(monkeypatch, caplog):
-    monkeypatch.delenv("GITHUB_RUN_ID", raising=False)
-    observability.context("scrape")
-    assert not caplog.records
-
-
 def test_error_summary_groups_by_type_and_ats():
     errors = {
         "lever:a": "Timeout: slow",

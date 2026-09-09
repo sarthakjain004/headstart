@@ -39,7 +39,7 @@ from pathlib import Path
 import numpy as np
 
 from headstart import log, roles
-from headstart.ingest import REPO_ROOT, observability, role_assignments
+from headstart.ingest import REPO_ROOT, role_assignments
 
 _log = log.get(__name__, __spec__)
 
@@ -300,7 +300,7 @@ def append_ledger(
 
 def main() -> int:
     log.setup()
-    observability.context("role_trends")
+    log.context("role_trends")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--db", default=str(_DB))
     ap.add_argument("--centroids", type=Path, default=_CENTROIDS)

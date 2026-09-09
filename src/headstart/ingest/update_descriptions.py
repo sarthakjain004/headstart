@@ -63,7 +63,6 @@ from headstart.ingest import (
     PENDING_REDERIVE_PATH,
     REPO_ROOT,
     append_id_list,
-    observability,
 )
 
 _log = log.get(__name__, __spec__)
@@ -327,7 +326,7 @@ def compact(ats_dir: Path) -> int:
 
 def main() -> int:
     log.setup()
-    observability.context("update_descriptions")
+    log.context("update_descriptions")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--jobs", default=str(_JOBS), help="tech corpus dir")
     ap.add_argument("--store", default=str(_STORE), help="description store dir")

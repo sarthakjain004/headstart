@@ -132,6 +132,7 @@ import sys
 from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from types import ModuleType
 
@@ -169,6 +170,15 @@ class Line:
 
     emit: EmitFn | None = None
     """Set to call the real emitter under `caplog`. Strongest check; use it where you can."""
+
+    heavy: bool = False
+    """The `emit` needs a dependency CI does not install, so it *skips* on the quality job.
+
+    A skipped check is not a check, so these entries keep check 2 as well — it is an `ast` read
+    of the emitter's source and needs no import, so it costs nothing and holds everywhere. Set it
+    on every entry whose `emit` opens with a `pytest.importorskip`, or CI silently drops from two
+    checks to one on the entry.
+    """
 
     waived: tuple[str, ...] = ()
     """Literal runs check 2 must skip because they are not the emitter's to say. `why` says why."""
@@ -989,6 +999,569 @@ def _plan_measured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 # --------------------------------------------------------------------------------------------
+# Emitters behind an import CI does not install. `pytest.importorskip` is the gate, and the two
+# rules that make it honest are in the module docstring: these entries keep check 2 (a source
+# read, which needs no import), and they gain checks 3 and 4 wherever the `[embed]` extra is
+# installed — which is every machine a person edits these modules on.
+# --------------------------------------------------------------------------------------------
+
+_INDEX_DIM = 4  # the served vector's width; 4 keeps a five-figure fixture table cheap
+
+#: Every served metadata column `index._schema` names, so a fixture row is a real table row.
+_INDEX_META = {
+    "company": "acme",
+    "title": "backend engineer",
+    "location": "remote",
+    "remote": True,
+    "employment_type": None,
+    "experience": None,
+    "min_years": None,
+    "max_years": None,
+    "experience_source": None,
+    "salary": None,
+    "min_salary_annual": None,
+    "max_salary_annual": None,
+    "salary_currency": None,
+    "salary_source": None,
+    "department": None,
+    "posted_at": None,
+}
+
+
+def _index_meta(job_id: str) -> dict:
+    """One store metadata row. `has_description` is planner-only (ADR-0050) and is dropped by
+    `sync` before the row reaches the table, so it belongs here and not in the schema above."""
+    return {
+        "id": job_id,
+        "ats": job_id.split(":", 1)[0],
+        "url": f"https://example.test/{job_id}",
+        **_INDEX_META,
+        "has_description": True,
+    }
+
+
+def _index_store(store: Path, ids: list[str]) -> None:
+    """The committed embedding store `sync` reads: row-aligned metadata, vectors, manifest."""
+    import numpy as np
+
+    store.mkdir(parents=True, exist_ok=True)
+    (store / "meta.jsonl").write_text(
+        "".join(json.dumps(_index_meta(i)) + "\n" for i in ids), encoding="utf-8"
+    )
+    np.zeros((len(ids), _INDEX_DIM), dtype="float32").tofile(store / "embeddings.f32")
+    (store / "manifest.json").write_text(
+        json.dumps({"dim": _INDEX_DIM}), encoding="utf-8"
+    )
+
+
+def _served_row(job_id: str, dim: int, **over: object) -> dict:
+    """One row of the served `jobs` table, carrying every column `index._schema` names."""
+    return {
+        "id": job_id,
+        "ats": job_id.split(":", 1)[0],
+        "url": f"https://example.test/{job_id}",
+        "description": None,
+        "first_seen": "2026-09-01T00:00:00+00:00",
+        "vector": [0.0] * dim,
+        **_INDEX_META,
+        **over,
+    }
+
+
+def _served_table(db: Path, rows: list[dict], dim: int) -> None:
+    """The table as a *previous* run left it — built directly rather than by a warm-up `sync`.
+
+    Prior table state is this fixture's input, not the emitter's output, and driving it through a
+    real `sync` would put that run's several thousand log lines into `caplog` alongside the ones
+    under contract: check 4 would still pass, but every failure in this file would print two runs
+    instead of one.
+    """
+    import lancedb
+
+    from headstart.ingest import index
+
+    table = lancedb.connect(str(db)).create_table(
+        index.PROD_TABLE, schema=index._schema(dim)
+    )
+    if (
+        rows
+    ):  # `add([])` raises; an empty served table is a branch, not a broken fixture
+        table.add(rows)
+
+
+def _index_table(db: Path, ids: list[str]) -> None:
+    """The prior served table for the `index` fixtures: one plain row per id."""
+    _served_table(db, [_served_row(job_id, _INDEX_DIM) for job_id in ids], _INDEX_DIM)
+
+
+def _index_paths(**over: object) -> argparse.Namespace:
+    """`index sync`'s arguments, every path relative under a `chdir`ed tmp dir.
+
+    Relative for the reason `_ledger_failures` gives: `done:` prints `args.db`, and a `body`
+    check 4 compares character for character cannot carry this machine's temp directory. A real
+    run prints exactly these names under the checkout's own root.
+    """
+    return argparse.Namespace(
+        source="data/jobs/tech",
+        scraped="data/jobs",
+        db="data/lancedb",
+        ledger="data/validate/liveness",
+        upgrades="data/state/pending_upgrades.txt",
+        unauthoritative_boards="data/state/unauthoritative_boards.json",
+        unconfirmed="data/state/unconfirmed_ids.txt",
+        backfill_descriptions=False,
+        **over,
+    )
+
+
+def _index_ledger(monkeypatch: pytest.MonkeyPatch, boards: list[str]) -> None:
+    """Stub the liveness ledger `live_keep_set` reads, as `_plan_coldstart` stubs it for the
+    planner: the committed one holds ~20k Boards, and every count below would then drift with a
+    data file that has nothing to do with the log's wording."""
+    from headstart.config import CompanyRef
+    from headstart.ingest import index_plan
+
+    monkeypatch.setattr(
+        index_plan,
+        "load_active_companies",
+        lambda ledger, min_jobs=0: [
+            CompanyRef(*board.split(":", 1), board) for board in boards
+        ],
+    )
+
+
+def _index_jsonl(path: Path, ids: list[str]) -> None:
+    _jsonl(path, ({"id": job_id, "description": "held text"} for job_id in ids))
+
+
+def _index_sync(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    excluded_hold_rows: bool = True,
+    growing: bool = True,
+) -> None:
+    """One `index sync` over a table a previous run left behind — nine patterns read this call.
+
+    Every count is four-figure, including the Boards ADR-0053 excludes: a run excluding a
+    thousand Boards is one ATS-wide outage, not a contrivance, and the count is formatted `{n}`
+    today — exactly the case a `{n:,}` would be added to.
+
+    `excluded_hold_rows` picks which branch the `scope exclusion keeps N ...` line takes: with it
+    the excluded Boards carry eviction candidates and the line ends in a `; worst: ...` sample;
+    without it every one of their rows came back this run, so the sample is empty and the whole
+    clause is omitted. `growing` drops the new listings, so `plan:` reports a net loss.
+    """
+    pytest.importorskip("lancedb")
+    pytest.importorskip("numpy")
+    pytest.importorskip("pyarrow")
+    from headstart.ingest import index
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(index, "_STORE", Path("data/embeddings/jobs"))
+    Path("data/state").mkdir(parents=True)
+
+    short = [f"lever:short-{n:04d}" for n in range(1012)]
+    _index_ledger(monkeypatch, [*short, "lever:ok", "lever:sat-out"])
+
+    # Held by both the table and this run's scrape: they neither move nor are counted anywhere.
+    stay = [f"lever:ok:stay-{n}" for n in range(1001)]
+    # Re-embedded (ADR-0050): deleted and re-added, so they are adds that are not new listings.
+    up = [f"lever:ok:up-{n}" for n in range(1204)]
+    # Absent, and already carried in as Unconfirmed — the only ids this run may evict.
+    closed = [f"lever:ok:closed-{n}" for n in range(1005)]
+    # Absent for the FIRST time: unconfirmed this run, evictable on the next.
+    gone = [f"lever:ok:gone-{n}" for n in range(1204)]
+    # Carried in Unconfirmed and back in this scrape — the `reappeared` half of the grace line.
+    back = [f"lever:ok:back-{n}" for n in range(1002)]
+    # Carried in on a Board this run did not scrape at all: unconfirmed again, the `still` half.
+    wait = [f"lever:sat-out:wait-{n}" for n in range(1003)]
+    # Rows on the Boards ADR-0053 excludes. One Board carries a four-figure share of them, which
+    # is what the per-Board line and the `worst:` sample are for.
+    stale = [f"{short[0]}:stale-{n}" for n in range(1105)] + [
+        f"{board}:stale" for board in short[1:]
+    ]
+    # One live id per excluded Board, so the Board is in this run's scrape at all.
+    kept = [f"{board}:keep" for board in short]
+    new = [f"lever:ok:new-{n}" for n in range(1200)] if growing else []
+
+    _index_table(
+        Path("data/lancedb"),
+        [
+            *stay,
+            *up,
+            *closed,
+            *gone,
+            *back,
+            *wait,
+            *(stale if excluded_hold_rows else []),
+            *kept,
+        ],
+    )
+    fresh = [*stay, *up, *back, *new, *kept]
+    _index_store(Path("data/embeddings/jobs"), fresh)
+    _index_jsonl(Path("data/jobs/lever.jsonl"), fresh)
+    _index_jsonl(Path("data/jobs/tech/lever.jsonl"), fresh)
+    Path("data/state/pending_upgrades.txt").write_text(
+        "".join(f"{i}\n" for i in up), encoding="utf-8"
+    )
+    Path("data/state/unconfirmed_ids.txt").write_text(
+        "".join(f"{i}\n" for i in [*closed, *back, *wait]), encoding="utf-8"
+    )
+    Path("data/state/unauthoritative_boards.json").write_text(
+        json.dumps(
+            {b.lower(): "HTTPError: HTTP Error 429: Too Many Requests" for b in short}
+        ),
+        encoding="utf-8",
+    )
+    assert index.sync(_index_paths()) == 0
+
+
+def _index_sync_all_returned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The excluded Boards held nothing this run missed, so the `; worst: ...` clause is gone."""
+    _index_sync(tmp_path, monkeypatch, excluded_hold_rows=False)
+
+
+def _index_sync_shrinking(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A run whose only adds are re-embeds — `plan:`'s net carries a leading `-`."""
+    _index_sync(tmp_path, monkeypatch, growing=False)
+
+
+#: `(ATS, Boards, duplicate pairs)` for the prune fixture's case-variant rows. Nine ATSes so the
+#: breakdown line's own top-5 ranking overflows into its `, +N more` tail, and a four-figure total
+#: because that count is formatted `{n}` — the case a `{n:,}` would be added to.
+_PRUNE_DUPES = (
+    ("keka", 400),
+    ("ashby", 300),
+    ("icims", 200),
+    ("smartrecruiters", 150),
+    ("freshteam", 100),
+    ("trakstar", 40),
+    ("rippling", 30),
+    ("greenhouse", 20),
+    ("recruitee", 10),
+)
+
+#: `(ATS, rows)` for Boards the ledger no longer lists. Exactly three, so the same breakdown line
+#: is pinned in its other shape — a ranking that fits inside the top 5 and has no tail at all.
+_PRUNE_OFF_BOARD = (("personio", 1000), ("zoho", 200), ("workable", 4))
+
+
+def _index_prune(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`index prune --apply` over a table holding both of ADR-0023's classes at once.
+
+    The keep-set is four-figure because `_MIN_KEEP_BOARDS` refuses to prune below 1,000 Boards —
+    so this is the one count in this file the emitter itself will not let a fixture shrink.
+
+    A duplicate is one job under two Board casings, and which row survives is the ledger's
+    casing (`plan_prune`), so the pairs are seeded `{ats}:DupCo:n` / `{ats}:dupco:n` against a
+    ledger holding `DupCo`. Seeding them the other way round would still produce a duplicate,
+    but the *kept* row would be the fossil — the bug that rule exists to fix.
+    """
+    pytest.importorskip("lancedb")
+    pytest.importorskip("numpy")
+    pytest.importorskip("pyarrow")
+    from headstart.ingest import index
+
+    monkeypatch.chdir(tmp_path)
+    live = [f"lever:keep-{n}" for n in range(1003)] + [
+        f"{ats}:DupCo" for ats, _ in _PRUNE_DUPES
+    ]
+    _index_ledger(monkeypatch, live)
+
+    rows = [f"lever:keep-0:live-{n}" for n in range(1005)]
+    for ats, count in _PRUNE_OFF_BOARD:
+        rows += [f"{ats}:left-the-ledger:{n}" for n in range(count)]
+    for ats, count in _PRUNE_DUPES:
+        rows += [f"{ats}:DupCo:{n}" for n in range(count)]
+        rows += [f"{ats}:dupco:{n}" for n in range(count)]
+    _index_table(Path("data/lancedb"), rows)
+
+    assert (
+        index.prune(
+            argparse.Namespace(
+                db="data/lancedb", ledger="data/validate/liveness", apply=True
+            )
+        )
+        == 0
+    )
+
+
+# The frozen fit the trends fixtures run against. `k` and the family count are curated numbers
+# the pipeline keeps small by design (`config/role_families.json`), so unlike a row count they
+# stay at their real order of magnitude rather than being pushed over 999.
+_TRENDS_K = 120
+_TRENDS_VERSION = 7
+#: `min_years` -> the band `roles.band` derives from it. Five bands, so a family's rows spread
+#: across every one of them and the group count the `appended` line reports is a real product.
+_TRENDS_BANDS = (
+    (None, "unspecified"),
+    (0, "entry"),
+    (3, "mid"),
+    (5, "senior"),
+    (9, "staff"),
+)
+_TRENDS_ATSES = ("workday", "lever", "greenhouse", "ashby", "icims")
+#: Curated family names, one per cluster below `len(_TRENDS_FAMILIES)`; every higher cluster is
+#: non-tech. The first five are real families because they are the ones the `top:` sample names.
+_TRENDS_FAMILIES = (
+    "software-engineering",
+    "data",
+    "ml",
+    "devops",
+    "security",
+    *(f"family-{n:02d}" for n in range(5, 41)),
+)
+#: `(family index, ats index, extra rows)` — the groups that outweigh the one-row-per-group base,
+#: so `stock_top`'s ranking is decided by the counts rather than by a tie-break. The first clears
+#: 999 because that count is formatted `{c}`: the case a `{c:,}` would be added to.
+_TRENDS_HEAVY = ((0, 0, 1203), (1, 1, 52), (2, 2, 41), (3, 3, 30), (4, 4, 19))
+_TRENDS_NON_TECH = 1102
+
+
+class _PinnedClock:
+    """Stands in for `datetime` inside an emitter whose line carries `now()`.
+
+    A `body` check 4 compares character for character cannot hold a real clock. Pinned rather
+    than matched loosely, for the reason check 4's own docstring gives: a `body` matched by
+    prefix is back to being documentation nobody checked.
+    """
+
+    def __init__(self, moment: str) -> None:
+        self._moment = datetime.fromisoformat(moment)
+
+    def now(self, tz: object = None) -> datetime:
+        return self._moment
+
+    # Only `now()` is pinned; everything else the emitter reaches for on `datetime` is the real
+    # thing. `role_trends` gained a `fromisoformat` call when the trends ledger moved to parquet,
+    # and a stub that pins the clock by replacing the whole module answers that with an
+    # AttributeError — the emitter stops before its line, and check 4 reports a body mismatch for
+    # what is really a fixture that went stale under a change to the code it stands in for.
+    @staticmethod
+    def fromisoformat(value: str) -> datetime:
+        return datetime.fromisoformat(value)
+
+
+def _trends_rows() -> tuple[list[dict], dict[str, str]]:
+    """The served rows the trends fixtures count, and the `id -> family` they must produce.
+
+    Vectors are one-hot and the centroid store is the identity matrix, so a row's cluster is
+    stated rather than hoped for: `roles.assign` is a plain `argmax` of `vectors @ centroids.T`.
+    """
+    rows: list[dict] = []
+    assigned: dict[str, str] = {}
+
+    def add(
+        cluster: int, band_index: int, ats_index: int, count: int, tag: str = ""
+    ) -> None:
+        years, _ = _TRENDS_BANDS[band_index]
+        ats = _TRENDS_ATSES[ats_index]
+        vector = [0.0] * _TRENDS_K
+        vector[cluster] = 1.0
+        for n in range(count):
+            # `tag` keeps the heavy groups' ids off the base grid's: a collision would put two
+            # rows in the table under one id, which the served table never holds and which
+            # would silently shrink `assigned` below the row count.
+            job_id = f"{ats}:acme:{cluster}-{band_index}-{ats_index}-{tag}{n}"
+            rows.append(
+                _served_row(
+                    job_id,
+                    _TRENDS_K,
+                    vector=list(vector),
+                    min_years=years,
+                    title="backend engineer",
+                    # Inside the ADR-0051 window the pinned clock puts this run in, so every
+                    # served row is also a `new` row and both metrics carry a count.
+                    first_seen="2026-09-07T00:00:00+00:00",
+                )
+            )
+            if cluster < len(_TRENDS_FAMILIES):
+                assigned[job_id] = _TRENDS_FAMILIES[cluster]
+
+    for cluster in range(len(_TRENDS_FAMILIES)):
+        for band_index in range(len(_TRENDS_BANDS)):
+            for ats_index in range(len(_TRENDS_ATSES)):
+                add(cluster, band_index, ats_index, 1)
+    for cluster, ats_index, extra in _TRENDS_HEAVY:
+        add(cluster, 2, ats_index, extra, "h")  # band 2 == mid
+    add(_TRENDS_K - 1, 0, 0, _TRENDS_NON_TECH)  # the tech filter's creep (ADR-0017)
+    return rows, assigned
+
+
+def _trends_taxonomy(tmp_path: Path, *, unmapped: bool = False) -> None:
+    """Write the centroid store and the curated family map, in the paths a real run reads."""
+    import numpy as np
+
+    centroids = Path("data/state/role_centroids")
+    centroids.mkdir(parents=True, exist_ok=True)
+    np.eye(_TRENDS_K, dtype="float32").tofile(centroids / "centroids.f32")
+    (centroids / "manifest.json").write_text(
+        json.dumps({"k": _TRENDS_K, "dim": _TRENDS_K, "version": _TRENDS_VERSION}),
+        encoding="utf-8",
+    )
+    families = Path("config/role_families.json")
+    families.parent.mkdir(parents=True, exist_ok=True)
+    non_tech = list(range(len(_TRENDS_FAMILIES), _TRENDS_K - int(unmapped)))
+    families.write_text(
+        json.dumps(
+            {
+                "centroid_version": _TRENDS_VERSION,
+                "families": [
+                    {"name": name, "clusters": [n]}
+                    for n, name in enumerate(_TRENDS_FAMILIES)
+                ],
+                "non_tech": {"clusters": non_tech},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _trends_argv() -> tuple[str, ...]:
+    """`role_trends main()`'s paths, all relative under a `chdir`ed tmp dir — two of them are
+    printed into lines this file pins, and a `body` cannot carry this machine's temp directory."""
+    return (
+        "--db",
+        "data/lancedb",
+        "--centroids",
+        "data/state/role_centroids",
+        "--families",
+        "config/role_families.json",
+        "--watchlist",
+        "config/role_watchlist.json",
+        "--ledger",
+        "data/state/role_trends.parquet",
+        "--assignments",
+        "data/state/role_assignments.parquet",
+        "--reassignments",
+        "data/state/role_reassignments.csv",
+    )
+
+
+def _trends(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    previous: str = "none",
+    rows: bool = True,
+) -> None:
+    """One `role_trends` tick over a served table whose every row's cluster is stated, not hoped.
+
+    `previous` picks which shape the `assignments:` line takes — `"none"` leaves no snapshot (the
+    first-snapshot branch), `"same"` writes this tick's own assignment back (nothing moved), and
+    `"moved"` re-files three groups so the transition ranking has something in it.
+    """
+    pytest.importorskip("lancedb")
+    pytest.importorskip("numpy")
+    pytest.importorskip("pyarrow")
+    from headstart.ingest import role_assignments, role_trends
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        role_trends, "datetime", _PinnedClock("2026-09-08T00:00:00+00:00")
+    )
+    _trends_taxonomy(tmp_path)
+    served, assigned = _trends_rows()
+    _served_table(Path("data/lancedb"), served if rows else [], _TRENDS_K)
+
+    if previous != "none":
+        snapshot = dict(assigned)
+        if previous == "moved":
+            # One whole group re-filed per pair, so each transition's count is the group's own
+            # size and the `top:` ranking cannot depend on dict order.
+            was = {
+                "software-engineering": "data",
+                "data": "ml",
+                "ml": "devops",
+            }
+            for job_id, family in assigned.items():
+                if family in was and job_id.split(":")[-1].startswith(
+                    f"{_TRENDS_FAMILIES.index(family)}-2-"
+                ):
+                    snapshot[job_id] = was[family]
+        role_assignments.save(
+            Path("data/state/role_assignments.parquet"), snapshot, _TRENDS_VERSION
+        )
+    _run_main(role_trends, monkeypatch, *_trends_argv())
+
+
+def _trends_first_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """No snapshot to diff against, so transitions start next run."""
+    _trends(tmp_path, monkeypatch)
+
+
+def _trends_moved(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Three groups re-filed since the last tick — the `| top:` tail is present."""
+    _trends(tmp_path, monkeypatch, previous="moved")
+
+
+def _trends_unmoved(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The snapshot matches this tick exactly, so the whole `| top:` clause is omitted."""
+    _trends(tmp_path, monkeypatch, previous="same")
+
+
+def _trends_all_non_tech(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every served row is the tech filter's creep, so no stock family has a row at all."""
+    pytest.importorskip("lancedb")
+    pytest.importorskip("numpy")
+    pytest.importorskip("pyarrow")
+    from headstart.ingest import role_trends
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        role_trends, "datetime", _PinnedClock("2026-09-08T00:00:00+00:00")
+    )
+    _trends_taxonomy(tmp_path)
+    served, _ = _trends_rows()
+    non_tech = [r for r in served if r["vector"][_TRENDS_K - 1] == 1.0]
+    _served_table(Path("data/lancedb"), non_tech, _TRENDS_K)
+    _run_main(role_trends, monkeypatch, *_trends_argv())
+
+
+def _trends_diff_skipped(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The reassignment diff raises — a diagnostic that must never sink a run that counted fine."""
+    pytest.importorskip("pyarrow")
+    from headstart.ingest import role_assignments
+
+    def _no_space(*_args: object, **_kwargs: object) -> None:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(role_assignments, "load_previous", _no_space)
+    _trends(tmp_path, monkeypatch)
+
+
+def _trends_empty_table(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The served table exists and holds nothing — `np.stack` has no empty case."""
+    _trends(tmp_path, monkeypatch, rows=False)
+
+
+def _trends_no_centroids(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Neither the fit nor the curated map is on disk — the pre-run skip, at WARNING."""
+    pytest.importorskip("numpy")
+    from headstart.ingest import role_trends
+
+    monkeypatch.chdir(tmp_path)
+    _run_main(role_trends, monkeypatch, *_trends_argv())
+
+
+def _trends_bad_taxonomy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A refit shipped without re-curating the map: one cluster lands in no family at all."""
+    pytest.importorskip("lancedb")
+    pytest.importorskip("numpy")
+    pytest.importorskip("pyarrow")
+    from headstart.ingest import role_trends
+
+    monkeypatch.chdir(tmp_path)
+    _trends_taxonomy(tmp_path, unmapped=True)
+    _served_table(Path("data/lancedb"), _trends_rows()[0], _TRENDS_K)
+    monkeypatch.setattr(sys, "argv", [role_trends.__name__, *_trends_argv()])
+    assert (
+        role_trends.main() == 1
+    )  # an unusable taxonomy is a defect, not a prerequisite
+
+
+# --------------------------------------------------------------------------------------------
 # The contract.
 # --------------------------------------------------------------------------------------------
 
@@ -1399,220 +1972,357 @@ CONTRACT: tuple[Line, ...] = (
         why="the stamp that stops the next run re-sweeping; absent when the store was lost",
         emit=_meta_sweep,
     ),
-    # -- index sync / prune (heavy: lancedb + pyarrow, so source-verified only) ----------------
+    # -- index sync / prune (emitter-verified behind `pytest.importorskip`, see `heavy`) -------
     Line(
         consumer="fanout_merge.SCOPE_OUTCOME",
         emitter=_INDEX,
         body=(
-            "scrape outcome: 96 Board(s) returned a list that is not authoritative (truncated, or "
-            "the scrape raised) and are excluded from the eviction scope — their missing rows are "
-            "unscraped, not closed: eightfold:careers.qualcomm.com, +95 more"
+            "scrape outcome: 1012 Board(s) returned a list that is not authoritative (truncated, "
+            "or the scrape raised) and are excluded from the eviction scope — their missing rows "
+            "are unscraped, not closed: lever:short-0000, lever:short-0001, lever:short-0002, "
+            "lever:short-0003, lever:short-0004, lever:short-0005, lever:short-0006, "
+            "lever:short-0007, lever:short-0008, lever:short-0009, +1002 more"
         ),
-        why="ADR-0053's per-run headline; the pattern prefix-searches so the sample tail may grow",
+        why=(
+            "ADR-0053's per-run headline; the pattern prefix-searches so the sample tail may grow. "
+            "The `body` here was FICTION until this entry gained its `emit`: it named ONE Board "
+            "and then claimed `+95 more`, a shape `log.named_sample` cannot produce for any count "
+            "— it shows ten and counts the rest, so 96 Boards render as ten names and `+86 more`"
+        ),
+        emit=_index_sync,
+        heavy=True,
     ),
     Line(
         consumer="fanout_merge.SCOPE_EXCLUDED",
         emitter=_INDEX,
-        body="scope-excluded Board: eightfold:careers.qualcomm.com — returned 412 of 1204 expected",
+        body="scope-excluded Board: lever:short-0000 — HTTPError: HTTP Error 429: Too Many Requests",
         why=(
             "one line per excluded Board with its reason, now INFO rather than WARNING (a GitHub "
             "annotation is a quota, not a level). `_log_reasons` builds it from a label argument, "
             "so the `label: ` join is not in any one format string"
         ),
+        emit=_index_sync,
+        heavy=True,
         waived=("scope-excluded Board: ",),
     ),
     Line(
         consumer="fanout_merge.SCOPE_ROWS",
         emitter=_INDEX,
         body=(
-            "scope exclusion keeps 1276 eviction-candidate row(s) out of scope across 96 Board(s) "
-            "— ADR-0053 has no drain, so a Board short on every run never re-enters scope; watch "
-            "this number across runs, not within one; worst: eightfold:careers.qualcomm.com (105), "
-            "+95 more"
+            "scope exclusion keeps 2116 eviction-candidate row(s) out of scope across 1012 "
+            "Board(s) — ADR-0053 has no drain, so a Board short on every run never re-enters "
+            "scope; watch this number across runs, not within one; worst: lever:short-0000 "
+            "(1105), lever:short-0001 (1), lever:short-0002 (1), lever:short-0003 (1), "
+            "lever:short-0004 (1), lever:short-0005 (1), lever:short-0006 (1), "
+            "lever:short-0007 (1), lever:short-0008 (1), lever:short-0009 (1), +1002 more"
         ),
-        why="with the `; worst: ...` sample present",
+        why=(
+            "with the `; worst: ...` sample present. FICTION until this entry gained its `emit`, "
+            "the same way as `SCOPE_OUTCOME` above: one named Board and a `+95 more` tail that "
+            "`named_sample`'s cap of ten cannot render"
+        ),
+        emit=_index_sync,
+        heavy=True,
     ),
     Line(
         consumer="fanout_merge.SCOPE_ROWS",
         emitter=_INDEX,
         body=(
-            "scope exclusion keeps 0 eviction-candidate row(s) out of scope across 96 Board(s) — "
-            "ADR-0053 has no drain, so a Board short on every run never re-enters scope; watch "
+            "scope exclusion keeps 0 eviction-candidate row(s) out of scope across 1012 Board(s) "
+            "— ADR-0053 has no drain, so a Board short on every run never re-enters scope; watch "
             "this number across runs, not within one"
         ),
-        why="the `; worst: ...` clause is omitted when the sample is empty — the omitted-when-zero shape",
+        why=(
+            "the `; worst: ...` clause is omitted when the sample is empty — the omitted-when-zero "
+            "shape. The 0 is the branch, not a small fixture: every row on every excluded Board "
+            "came back in this scrape, which is the only input that empties the ranking"
+        ),
+        emit=_index_sync_all_returned,
+        heavy=True,
     ),
     Line(
         consumer="fanout_merge.SCOPE_ROW_BOARD",
         emitter=_INDEX,
-        body="  105 eviction-candidate row(s) kept out of scope on eightfold:careers.qualcomm.com",
+        body="  1105 eviction-candidate row(s) kept out of scope on lever:short-0000",
         why=(
             "the per-Board row cost. No longer capped at a top-N and no longer WARNING, so every "
             "excluded Board now carries one"
         ),
+        emit=_index_sync,
+        heavy=True,
     ),
     Line(
         consumer="fanout_merge.GRACE",
         emitter=_INDEX,
         body=(
-            "grace period: 1176 id(s) unconfirmed, awaiting a second look before eviction; of the "
-            "842 carried in, 411 reappeared in this scrape and 431 are unconfirmed again (their "
-            "Board sat out this run's slice, or came back unauthoritative)"
+            "grace period: 2207 id(s) unconfirmed, awaiting a second look before eviction; of the "
+            "3010 carried in, 1002 reappeared in this scrape and 1003 are unconfirmed again "
+            "(their Board sat out this run's slice, was Unauthoritative, or emitted nothing at "
+            "all — all three leave the eviction scope) (ADR-0083)"
         ),
-        why="ADR-0083's per-Job grace period — the only mechanism left that withholds in-scope",
+        why=(
+            "ADR-0083's per-Job grace period — the only mechanism left that withholds in-scope. "
+            "The documented tail was FICTION: it read `(their Board sat out this run's slice, or "
+            "came back unauthoritative)`, naming two causes where the emitter names three and "
+            "says all three leave the scope. The pattern stops at `unconfirmed again`, so nothing "
+            "here ever read the half a person actually learns the mechanism from"
+        ),
+        emit=_index_sync,
+        heavy=True,
     ),
     Line(
         consumer="fanout_merge.SYNC_PLAN",
         emitter=_INDEX,
-        body="plan: add 12004 (11800 new listings + 204 re-embedded), evict 605 -> net +11195 rows",
+        body="plan: add 2404 (1200 new listings + 1204 re-embedded), evict 1005 -> net +195 rows",
         why="the one line saying whether the served index grew; `+d` on a gain",
+        emit=_index_sync,
+        heavy=True,
     ),
     Line(
         consumer="fanout_merge.SYNC_PLAN",
         emitter=_INDEX,
-        body="plan: add 204 (0 new listings + 204 re-embedded), evict 592 -> net -592 rows",
+        body="plan: add 1204 (0 new listings + 1204 re-embedded), evict 1005 -> net -1005 rows",
         why="a shrinking run: the net carries a leading `-`, so the group must be `[+-]\\d+`",
+        emit=_index_sync_shrinking,
+        heavy=True,
     ),
     Line(
         consumer="fanout_merge.SYNC_DONE",
         emitter=_INDEX,
-        body="done: table 'jobs' now holds 287144 rows at data/lancedb",
-        why="the served row count after sync, before prune touches it",
+        body="done: table 'jobs' now holds 9742 rows at data/lancedb",
+        why=(
+            "the served row count after sync, before prune touches it. The path is `args.db` and "
+            "is relative because the fixture chdirs — a real run prints this exact string"
+        ),
+        emit=_index_sync,
+        heavy=True,
     ),
     Line(
         consumer="fanout_merge.ID_BATCH",
         emitter=_INDEX,
-        body="add [1-3 of 12004]: workday:acme/External:R1 lever:beta:2 icims:foo-bar:3",
-        why="the add side of the id batches the per-ATS churn table is built from",
+        body=(
+            "add [2401-2404 of 2404]: lever:ok:up-996 lever:ok:up-997 lever:ok:up-998 "
+            "lever:ok:up-999"
+        ),
+        why=(
+            "the add side of the id batches the per-ATS churn table is built from. FICTION until "
+            "this entry gained its `emit`: it documented `add [1-3 of 12004]`, and `_log_ids` "
+            "steps by `_IDS_PER_LINE` (100) — so the FIRST batch of 12,004 ids is `[1-100 …]` and "
+            "only the LAST one is ever short. That is why this body is the tail of the run"
+        ),
+        emit=_index_sync,
+        heavy=True,
     ),
     Line(
         consumer="fanout_merge.ID_BATCH",
         emitter=_INDEX,
-        body="evict [101-103 of 605]: workday:acme/External:R9 lever:beta:8 rippling:rippling:7",
-        why="the evict side; both labels come from `_log_ids` call sites, not a format string",
+        body=(
+            "evict [1001-1005 of 1005]: lever:ok:closed-995 lever:ok:closed-996 "
+            "lever:ok:closed-997 lever:ok:closed-998 lever:ok:closed-999"
+        ),
+        why=(
+            "the evict side; both labels come from `_log_ids` call sites, not a format string. "
+            "FICTION too, and worse than its neighbour: `evict [101-103 of 605]` is a *middle* "
+            "batch three ids wide, which the 100-id step cannot produce at any position"
+        ),
+        emit=_index_sync,
+        heavy=True,
     ),
     Line(
         consumer="fanout_merge.KEEP_SET",
         emitter=_INDEX,
-        body="keep-set: 20114 Scrapable Boards (enabled ATSes)",
+        body="keep-set: 1012 Scrapable Boards (enabled ATSes)",
         why=(
             "CONTEXT.md's counting vocabulary. This pattern said `live Boards` — a phrase CLAUDE.md "
             "forbids — and matched nothing. `index_plan` also emits a `keep-set:` line, but under "
-            "the `[index_plan]` tag and saying `Scrapable Board(s)`, so it cannot collide"
+            "the `[index_plan]` tag and saying `Scrapable Board(s)`, so it cannot collide. The "
+            "count is four-figure because `_MIN_KEEP_BOARDS` aborts the prune below 1,000"
         ),
+        emit=_index_prune,
+        heavy=True,
     ),
     Line(
         consumer="fanout_merge.PRUNE_SUMMARY",
         emitter=_INDEX,
-        body="index: 287144 rows | evict 4312 (4012 off-Board + 300 duplicate) -> 282832 remain",
+        body="index: 4709 rows | evict 2454 (1204 off-Board + 1250 duplicate) -> 2255 remain",
         why="prune's two reasons split out; they have different fixes and must not be summed",
+        emit=_index_prune,
+        heavy=True,
     ),
     Line(
         consumer="fanout_merge.PRUNE_BREAKDOWN",
         emitter=_INDEX,
-        body="evict off-Board: 4012 rows across 3 ATSes (workday 3800, lever 200, ashby 12)",
+        body="evict off-Board: 1204 rows across 3 ATSes (personio 1000, zoho 200, workable 4)",
         why="the emitter's own top-5 ranking, with no overflow tail",
+        emit=_index_prune,
+        heavy=True,
     ),
     Line(
         consumer="fanout_merge.PRUNE_BREAKDOWN",
         emitter=_INDEX,
         body=(
-            "evict duplicate: 300 rows across 9 ATSes (workday 120, lever 60, ashby 40, "
-            "icims 30, keka 20, +4 more)"
+            "evict duplicate: 1250 rows across 9 ATSes (keka 400, ashby 300, icims 200, "
+            "smartrecruiters 150, freshteam 100, +4 more)"
         ),
         why="with the `, +N more` overflow inside the parens — `[^)]*` must reach past the commas",
+        emit=_index_prune,
+        heavy=True,
     ),
     Line(
         consumer="fanout_merge.PRUNE_DONE",
         emitter=_INDEX,
-        body="done: pruned 4312 rows; table 'jobs' now holds 282832",
+        body="done: pruned 2454 rows; table 'jobs' now holds 2255",
         why="the final served count; distinct wording from sync's own `done:` line",
+        emit=_index_prune,
+        heavy=True,
     ),
-    # -- role_trends (heavy: numpy, so source-verified only) -----------------------------------
+    # -- role_trends (emitter-verified behind `pytest.importorskip`, see `heavy`) --------------
     Line(
         consumer="fanout_merge.TRENDS_ASSIGNING",
         emitter=_TRENDS,
-        body="assigning 287144 served rows to 41 families via 120 clusters (centroid version 7)",
-        why="logged before the slow vector read, so a stalled step is not unnarrated",
+        body="assigning 3472 served rows to 41 families via 120 clusters (centroid version 7)",
+        why=(
+            "logged before the slow vector read, so a stalled step is not unnarrated. The family "
+            "and cluster counts are curated (`config/role_families.json`) and stay at their real "
+            "order of magnitude; the row count is the one a `{n:,}` could be added to"
+        ),
+        emit=_trends_first_snapshot,
+        heavy=True,
     ),
     Line(
         consumer="fanout_merge.TRENDS_APPENDED",
         emitter=_TRENDS,
         body=(
-            "appended 820 rows @ 2026-09-08T00:00:00+00:00 -> data/state/role_trends.parquet | top: "
-            "software-engineering/mid/workday 12004, data/mid/lever 3120 | new in 7d: 18422"
+            "appended 2051 rows @ 2026-09-08T00:00:00+00:00 -> data/state/role_trends.parquet | top: "
+            "software-engineering/mid/workday 1204, data/mid/lever 53, ml/mid/greenhouse 42, "
+            "devops/mid/ashby 31, security/mid/icims 20 | new in 7d: 2370"
         ),
         why="the trends ledger tick; `new` is a 7-day LEVEL, never inflow (CONTEXT.md)",
+        emit=_trends_moved,
+        heavy=True,
     ),
     Line(
         consumer="fanout_merge.TRENDS_APPENDED",
         emitter=_TRENDS,
-        body="appended 0 rows @ 2026-09-08T00:00:00+00:00 -> data/state/role_trends.parquet | top:  | new in 7d: 0",
+        body=(
+            "appended 1 rows @ 2026-09-08T00:00:00+00:00 -> data/state/role_trends.parquet | top:  "
+            "| new in 7d: 0"
+        ),
         why=(
             "the empty-`top` form: `stock_top` is a slice of a filtered comprehension, so a run "
             "with no stock-family row joins to '' and renders `| top:  |`. A `(.+)` group dropped "
-            "this line outright — no trends tick reported, no error raised"
+            "this line outright — no trends tick reported, no error raised. The count was FICTION: "
+            "it read `appended 0 rows`, and `append_ledger` returns `len(counts) + 1` — the "
+            "non-tech diagnostic row is written every run, so 0 is the one value it cannot return"
         ),
+        emit=_trends_all_non_tech,
+        heavy=True,
     ),
     Line(
         consumer="fanout_merge.TRENDS_NONTECH",
         emitter=_TRENDS,
         body=(
-            "non-tech: 4120 of 287144 served rows (1.4% — the ADR-0017 filter's creep) excluded "
+            "non-tech: 1102 of 3472 served rows (31.7% — the ADR-0017 filter's creep) excluded "
             "from the chart"
         ),
-        why="the measured creep of the recall-biased tech gate into the served table",
+        why=(
+            "the measured creep of the recall-biased tech gate into the served table. The share "
+            "is not the pipeline's (~1.4%): a four-figure non-tech count at that ratio needs a "
+            "70,000-row fixture table, so this body is verified, not representative"
+        ),
+        emit=_trends_first_snapshot,
+        heavy=True,
     ),
     Line(
         consumer="fanout_merge.TRENDS_ASSIGNMENTS",
         emitter=_TRENDS,
         body=(
-            "assignments: 957 of 287144 rows changed family (0.33%), 41 transition rows | top: "
-            "software-engineering->data 412, data->ml 120"
+            "assignments: 1311 of 2370 rows changed family (55.32%), 3 transition rows | top: "
+            "data->software-engineering 1208, ml->data 57, devops->ml 46"
         ),
-        why="reassignment vs closure — with the optional `| top:` tail present",
+        why=(
+            "reassignment vs closure — with the optional `| top:` tail present. The share is a "
+            "fixture's, not a run's: three whole groups are re-filed so the ranking cannot depend "
+            "on dict order, which no real refit would do"
+        ),
+        emit=_trends_moved,
+        heavy=True,
     ),
     Line(
         consumer="fanout_merge.TRENDS_ASSIGNMENTS",
         emitter=_TRENDS,
-        body="assignments: 0 of 287144 rows changed family (0.00%), 0 transition rows",
+        body="assignments: 0 of 2370 rows changed family (0.00%), 0 transition rows",
         why="nothing moved, so `top` is empty and the whole `| top:` clause is omitted",
+        emit=_trends_unmoved,
+        heavy=True,
     ),
     Line(
         consumer="fanout_merge.TRENDS_FIRST_SNAPSHOT",
         emitter=_TRENDS,
         body=(
-            "assignments: first snapshot — wrote 287144 rows to data/state/role_assignments.csv; "
-            "transitions start next run"
+            "assignments: first snapshot — wrote 2370 rows to "
+            "data/state/role_assignments.parquet; transitions start next run"
         ),
-        why="reachable on any run, not just the first: a centroid refit re-bases the snapshot",
+        why=(
+            "reachable on any run, not just the first: a centroid refit re-bases the snapshot. "
+            "The path was FICTION — the body named `role_assignments.csv`, but the line prints "
+            "`args.assignments`, and that snapshot is the `.parquet` `role_assignments.save` "
+            "writes. The `.csv` beside it is the *transition* ledger, a different file"
+        ),
+        emit=_trends_first_snapshot,
+        heavy=True,
     ),
     Line(
         consumer="fanout_merge.TRENDS_DIFF_SKIPPED",
         emitter=_TRENDS,
         body="assignment diff skipped: OSError: [Errno 28] No space left on device",
         why="the diff is `except Exception` on purpose — a diagnostic must not sink a good run",
+        emit=_trends_diff_skipped,
+        heavy=True,
     ),
     Line(
         consumer="fanout_merge.TRENDS_SKIP_MISSING",
         emitter=_TRENDS,
         body=(
-            "skipping trends this run — missing data/state/role_centroids.npz (fit centroids with "
-            "the cluster-roles workflow; the family map ships in git, ADR-0040)"
+            "skipping trends this run — missing data/state/role_centroids/manifest.json, "
+            "data/state/role_centroids/centroids.f32, config/role_families.json (fit centroids "
+            "with the cluster-roles workflow; the family map ships in git, ADR-0040)"
         ),
-        why="one of three distinct skip paths, matched on its own line rather than a substring",
+        why=(
+            "one of three distinct skip paths, matched on its own line rather than a substring. "
+            "FICTION: the body named `data/state/role_centroids.npz`, a file this project does "
+            "not have. `--centroids` is a *directory* and the guard names the three real paths it "
+            "stats — two inside that dir, plus the curated map, which go missing for different "
+            "reasons (one rides the state artifact, one ships in git)"
+        ),
+        emit=_trends_no_centroids,
+        heavy=True,
     ),
     Line(
         consumer="fanout_merge.TRENDS_SKIP_EMPTY",
         emitter=_TRENDS,
         body="served table 'jobs' is empty — no trend rows this run",
         why="the second skip path; `np.stack` has no empty case, so this returns before it",
+        emit=_trends_empty_table,
+        heavy=True,
     ),
     Line(
         consumer="fanout_merge.TRENDS_SKIP_TAXONOMY",
         emitter=_TRENDS,
-        body="role taxonomy unusable, no trends this run: 3 families have no centroid",
-        why="the third: a real defect (a refit shipped without re-curating the map), so ERROR",
+        body=(
+            "role taxonomy unusable, no trends this run: config/role_families.json leaves "
+            "cluster(s) [119] unmapped — every cluster must land in a family or in non_tech, or "
+            "its rows vanish from the chart"
+        ),
+        why=(
+            "the third: a real defect (a refit shipped without re-curating the map), so ERROR. "
+            "FICTION: the body read `3 families have no centroid`, which is backwards and is not "
+            "one of the five sentences `roles.load_families`/`load_watchlist` can raise — the "
+            "validated direction is a *cluster* with no family, because that is what silently "
+            "drops rows off the chart"
+        ),
+        emit=_trends_bad_taxonomy,
+        heavy=True,
     ),
     # -- the workflow's own storage check (shell in pipeline.yml, not the Python package) ------
     Line(
@@ -2086,16 +2796,21 @@ def test_the_consumer_parses_the_line(entry: Line) -> None:
         )
 
 
+_SOURCE_VERIFIED = [entry for entry in CONTRACT if entry.emit is None or entry.heavy]
+
+
 @pytest.mark.parametrize(
-    "entry",
-    [entry for entry in CONTRACT if entry.emit is None],
-    ids=[_id(entry) for entry in CONTRACT if entry.emit is None],
+    "entry", _SOURCE_VERIFIED, ids=[_id(entry) for entry in _SOURCE_VERIFIED]
 )
 def test_the_emitter_still_says_it(entry: Line) -> None:
     """Check 2 — every literal the pattern demands is still in the emitter's source.
 
     This is the check that catches a rewording. It is a source read, not a call, so it holds for
     the stages CI cannot import; what it cannot see is a change in the *values* a line carries.
+
+    Run for every entry with no `emit` — and for every `heavy` one too, whose `emit` skips
+    wherever the `[embed]` extra is missing. Dropping it there would leave those entries on
+    check 1 alone in CI, which is *less* than they had before they were converted.
     """
     pattern = _pattern(entry.consumer)
     runs = _literal_runs(pattern.pattern)

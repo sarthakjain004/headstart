@@ -187,6 +187,40 @@ systemic `board_key` failure printed one full stack per Board — the same flood
 later. Level and traceback are now chosen together, in one place, and cannot be bounded
 separately.
 
+That one place cannot be reached from `alerts/store.py`, and the exception is deliberate: the
+whole `alerts/` package is copied into the Space image, laid down beside `app.py` with no
+`headstart` package to import from — the same constraint that already makes that module's logger
+a bare `logging.getLogger`. Its `Store.get` Hub-failure arm was an `_log.error(..., exc_info=True)`
+running **once per Account**, so a Hub outage cost 40 `::error::` annotations and 40 tracebacks
+(measured, 40 Accounts against one outage); and it was invisible to both of the checks below,
+being neither on the scrape path nor lexically inside a loop, while `alerts/run.py`'s own bounded
+catch-all never saw it because this arm fires first and answers `None` rather than raising. It is
+now bounded by a module-level flag spelling `FirstOnly`'s contract by hand, pinned by
+`tests/test_alerts_store.py`. That is the one sanctioned copy of the idiom; wherever the seam is
+importable, importing it remains the rule. Its cost is stated where it is paid: the demoted lines
+land at INFO, which the Space's `logging.lastResort` handler does not print, so in the deployment
+the first occurrence is the only one a reader sees.
+
+**The run-context line is a log line, so it lives in `log.py` too — and `alerts/` now emits
+one.** `stage= run= attempt= sha=` is what says *which* run a log belongs to once it is off the
+Actions page, and it started as `ingest/observability.context` because the pipeline stages were
+its only callers. They were not: `alerts/run.py` and `alerts/bot.py` are `python -m` entry points
+wired into `alerts.yml` and `bot.yml` — the latter every fifteen minutes, so 96 runs a day of
+otherwise indistinguishable lines — and neither emitted one, because `alerts/` may not import from
+`ingest` (CLAUDE.md's repo conventions). Moving beats importing: it is now `log.context`, beside
+`FirstOnly` and `named_sample`, which are there for exactly the same reason — their callers sit on
+both sides of the pipeline package, and a correlation line is part of what a log line *is*, which
+is what that module owns. `observability` keeps its other three seams (step summary, shard-report
+round trip, error summary): each of those is about an artifact a run leaves behind rather than a
+line it writes. Two consequences. The tag the line carries changes with it, from `[observability]`
+to `[log]` — nothing parses this line (`tests/test_log_contract.py` says so in as many words: no
+analyser reads it, a human greps it), so the change costs nothing, but a doc or a habit keyed on
+the old tag is now wrong. And the `stage=<the emitting module's own name>` rule that file enforces
+holds across the move: the two new call sites say `stage=run` and `stage=bot`, so `stage=run
+run=32671773723` reads oddly for the one module whose name collides with the field beside it.
+The curated-feed entry (`python -m headstart`) still does not call it, now for the only reason
+that survives the move: no workflow runs it, so there is no run for it to name.
+
 **The WARNING rule is test-enforced, on a partial scope — know which.**
 `tests/test_log_levels.py` parses source with `ast` and fails on any WARNING site absent
 from an allowlist that must name *why* that line is bounded to one per run. Two things about it

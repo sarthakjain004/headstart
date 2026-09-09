@@ -1,14 +1,9 @@
 """What a pipeline run tells you about itself, beyond the raw log lines.
 
-Four seams, each closing a gap that made a real run undiagnosable:
-
-**Run context.** GitHub prefixes every raw log line with an ISO timestamp, so the missing
-correlation is not the date — it is *which* run, attempt and shard a log belongs to once it
-is off the Actions page. :func:`context` prints that once per stage — every ``python -m
-headstart.ingest.*`` entry point, and on the two fan-out stages after argument parsing, so the
-line can carry the shard that separates fifteen concurrent producers. The curated-feed entry
-(``python -m headstart``) deliberately does not call it: it is not a pipeline stage, and the feed
-path may not import from ``ingest`` (CLAUDE.md's repo conventions).
+Three seams, each closing a gap that made a real run undiagnosable. The fourth, the
+``stage= run= attempt=`` correlation line, moved to :func:`headstart.log.context` when
+``alerts/`` needed it too and could not import from this package; what is left here is the
+artifacts a run leaves behind rather than the lines it writes.
 
 **Step summary.** ``$GITHUB_STEP_SUMMARY`` was unused, so answering "what did this run
 actually do?" meant opening ~20 job logs across five stages. :func:`summary` appends
@@ -41,33 +36,6 @@ from headstart import log
 _log = log.get(__name__)
 
 _SHARD_REPORT = "_shard_report.json"
-
-
-def context(stage: str, **extra: Any) -> None:
-    """One line naming the run this log belongs to. Silent off CI, where it is noise.
-
-    ``stage`` is **the calling module's own name** — ``scrape_run``, never ``scrape``;
-    ``scrape_join``, never ``join``. The workflow's job names are the tempting alternative and
-    they name a different thing: ``join`` is one Actions job running seven of these modules, so a
-    log grepped by job answers "which runner" and a log grepped by stage answers "which code",
-    and a vocabulary mixing the two answers neither. Where one module is several passes behind
-    one entry point the pass rides as an ``extra`` instead of in ``stage`` — ``index``'s
-    ``step=``, ``update_ledgers``' ``ledger=``. ``tests/test_log_contract.py`` enforces the rule.
-
-    No bracketed prefix of its own: ADR-0039 fixes one line format whose only tag is the
-    module's name, which the formatter already supplies. ``stage`` rides as a field.
-    """
-    run = os.environ.get("GITHUB_RUN_ID")
-    if not run:
-        return
-    bits = {
-        "stage": stage,
-        "run": run,
-        "attempt": os.environ.get("GITHUB_RUN_ATTEMPT", "1"),
-        "sha": (os.environ.get("GITHUB_SHA") or "")[:7],
-        **{k: v for k, v in extra.items() if v is not None},
-    }
-    _log.info(" ".join(f"{k}={v}" for k, v in bits.items()))
 
 
 def summary(title: str, lines: list[str]) -> None:

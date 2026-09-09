@@ -44,6 +44,15 @@ from .access import normalize
 # pipeline the name still resolves under the `headstart` root, so `log.setup()` reaches it.
 _log = logging.getLogger(__name__)
 
+#: `Store.get`'s Hub-failure arm, bounded to the first occurrence in this process. Not
+#: `log.FirstOnly`, for the same reason `_log` above is not `log.get`: importing the seam here
+#: would break the Space image, where this package is laid down beside `app.py` with no
+#: `headstart` to import from. The contract is the shared one — the first occurrence warns and
+#: carries its traceback, every one after it informs. Module-level because both callers build a
+#: `Store` per item (per Account in the alerts run, per request in the Space), so an instance
+#: attribute would bound nothing.
+_record_unreadable_reported = False
+
 PREFIX = "subscriptions/"
 _ID = re.compile(r"[0-9a-f]{16}")  # exactly what subscription_id and saved_job_id mint
 ALLOWLIST_PATH = "subscriptions/allowlist.json"
@@ -595,8 +604,21 @@ class Store:
                 # would bury the two real failures below in routine traffic.
                 _log.debug(f"{sub_id}: no record yet")
             else:
-                _log.error(
-                    f"{sub_id} unreadable: {type(exc).__name__}: {exc}", exc_info=True
+                # One annotation for the outage, not one per Account. `get` runs once per
+                # Account, a Hub outage fails all of them at once, and ERROR renders as a
+                # GitHub annotation on the same 10-per-step budget as WARNING (ADR-0039) —
+                # 40 Accounts spent it here, forty stacks deep. The bound cannot be left to
+                # `alerts.run`'s per-Subscription catch-all, which already has one: this line
+                # fires *first* and then returns None rather than raising, so that bound never
+                # gets to speak. The later occurrences drop to INFO, which the Space's
+                # `logging.lastResort` handler (WARNING-only, no `log.setup()` there) does not
+                # print — accepted, because the first one still names the outage and every one
+                # of them still names its record.
+                global _record_unreadable_reported
+                first = not _record_unreadable_reported
+                _record_unreadable_reported = True
+                (_log.warning if first else _log.info)(
+                    f"{sub_id} unreadable: {type(exc).__name__}: {exc}", exc_info=first
                 )
             return None
 

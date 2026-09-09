@@ -452,7 +452,7 @@ def main() -> None:
     args = ap.parse_args()
     # After parsing, not before it: the shard number lives in the assignment's filename, and it
     # is the only key that tells fifteen concurrent embedders apart in a merged log.
-    observability.context(
+    log.context(
         "embed_run",
         shard=Path(args.assignment).stem.rsplit("-", 1)[-1]
         if args.assignment

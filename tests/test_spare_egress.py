@@ -916,6 +916,221 @@ def test_a_rotation_that_fails_is_still_an_annotation(monkeypatch, caplog):
     assert any("SOCKS5 did not come back" in m for m in warned), warned
 
 
+def _flapping(monkeypatch, *, warp="on"):
+    """A daemon that dials once and then never brings SOCKS5 back — the shape that floods.
+
+    The realistic fault, and the only one that reaches all three of `_TUNNEL_LOST`'s rotation-path
+    sites in turn: the first dial works, so the shard really is on the tunnel; every rotation after
+    that restarts a daemon whose listener never returns, and clearing `_resolved` sends the next
+    walled request back through `proxy_url` to re-dial and fail there too.
+
+    `_await_socks5` is the seam rather than `_socks5_ready` (which is what `_stub` and `_rotating`
+    patch) because this stub counts its calls: `_await_socks5` polls until `_CONNECT_TIMEOUT`, so
+    "the first handshake works" through the lower seam would depend on how many times a 10 ms
+    deadline happens to spin.
+    """
+    monkeypatch.setattr(spare_egress.sys, "platform", "linux")
+    monkeypatch.setattr(spare_egress.subprocess, "run", lambda argv, **kw: _Proc())
+    monkeypatch.setattr(spare_egress.time, "sleep", lambda *a: None)
+    monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.0)
+    dials: list[int] = []
+
+    def _await():
+        dials.append(1)
+        return len(dials) == 1
+
+    monkeypatch.setattr(spare_egress, "_await_socks5", _await)
+
+    class _Trace:
+        text = f"fl=123abc\nip=203.0.113.7\ncolo=SJC\nts=1\nwarp={warp}\n"
+
+    monkeypatch.setattr(spare_egress._rq, "get", lambda *a, **kw: _Trace())
+
+
+def test_a_flapping_tunnel_costs_one_annotation_not_one_per_walled_request(
+    monkeypatch, caplog
+):
+    """The bound this module needed: these lines are per *request*, not per process.
+
+    `rotate` is reached from `http.fetch`'s retry loop through `http._rotate_for` — two hops, so
+    `test_log_levels.py`'s lexical loop rule cannot see them — and the only thing pacing it is
+    `_ROTATION_COOLDOWN = 5.0`, i.e. up to ~720 rotations in a 60-minute shard against GitHub's
+    10-annotations-per-step quota. Worse, a failed rotation clears `_resolved`, which re-arms
+    `proxy_url`: one flap therefore emits three of these, not one.
+
+    Measured on this stub over 50 cycles: 150 annotations before `log.FirstOnly` bounded them,
+    1 after. Ten cycles here, which is enough to tell one from N.
+    """
+    import logging
+
+    _flapping(monkeypatch)
+
+    with caplog.at_level("INFO"):
+        for _ in range(10):
+            spare_egress.proxy_url()
+            assert spare_egress.rotate("workday:acme/careers") is False
+
+    warned = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert len(warned) == 1, [r.getMessage() for r in warned]
+    # The one that annotates is the most proximate cause, because it fires first: the shard was on
+    # the tunnel and the rotation is what lost it.
+    assert "rotated but SOCKS5 did not come back" in warned[0].getMessage()
+
+    # Bounded, not silenced. Every repeat is still in the shard log, in order, at INFO — including
+    # the two the re-dial adds, which is where an operator sees that it kept trying.
+    assert caplog.text.count("rotated but SOCKS5 did not come back") == 10
+    assert caplog.text.count("dialled but the SOCKS5 listener did not answer") == 9
+    assert (
+        caplog.text.count("every walled Board this run stays on the spent origin") == 9
+    )
+
+
+def test_the_bounded_repeats_still_name_their_lever_and_its_detail(monkeypatch, caplog):
+    """A bound that costs the operator the *content* of the line is not worth having.
+
+    Triaging a WARP outage means knowing which lever failed and how — exit code, stderr, which of
+    the two rotation paths — and there are now two levers, so "rotation failed" alone no longer
+    identifies one. `log.FirstOnly` demotes the level, never the message.
+    """
+    import logging
+
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    _rotating(monkeypatch, restart_ok=False)
+    monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.0)
+    real_run = spare_egress.subprocess.run
+
+    def _run(argv, **kw):
+        # The half-failure `_reregister` warns about: the old registration is gone and the new one
+        # did not arrive. `_rotating`'s own knob fails the delete too, which returns earlier.
+        if argv[-2:] == ["registration", "new"]:
+            return _Proc(returncode=1, stderr="Old registration is still around")
+        return real_run(argv, **kw)
+
+    monkeypatch.setattr(spare_egress.subprocess, "run", _run)
+
+    with caplog.at_level("INFO"):
+        for _ in range(5):
+            assert spare_egress.rotate("workday:acme/careers") is False
+
+    replaced = [
+        r
+        for r in caplog.records
+        if "registration deleted but not replaced" in r.getMessage()
+    ]
+    assert [r.levelno for r in replaced] == [logging.WARNING] + [logging.INFO] * 4
+    informed = [r.getMessage() for r in caplog.records if r.levelno == logging.INFO]
+    # The privileged lever keeps the exit code and the stderr the runner gave back...
+    assert sum("daemon restart failed (exit 1) no sudo" in m for m in informed) == 5
+    # ...and that it then tried the unprivileged one, which is the fact that decides whether a
+    # missing sudoers entry is the whole story.
+    assert all(
+        "re-registering instead" in m for m in informed if "daemon restart failed" in m
+    )
+    assert spare_egress.rotations()["failed"] == 5
+
+
+def test_only_the_first_lever_failure_carries_a_traceback(monkeypatch, caplog):
+    """Bounding the level and not the stack is the bug `log.FirstOnly` exists to prevent — the
+    shape `index_plan` shipped, where one full traceback per Board was the same flood one
+    indirection later. This site never had a stack at all before, only `type(exc).__name__`; the
+    first one now carries it, and only the first."""
+    import logging
+
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    calls = _rotating(monkeypatch)
+    monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.0)
+    real_run = spare_egress.subprocess.run
+
+    def _run(argv, **kw):
+        if argv[:2] == ["sudo", "-n"]:
+            calls.append(argv)
+            raise FileNotFoundError("sudo")
+        return real_run(argv, **kw)
+
+    monkeypatch.setattr(spare_egress.subprocess, "run", _run)
+
+    with caplog.at_level("INFO"):
+        for _ in range(5):
+            spare_egress.rotate("workday:acme/careers")
+
+    unavailable = [
+        r for r in caplog.records if "daemon restart unavailable" in r.getMessage()
+    ]
+    assert len(unavailable) == 5
+    assert [r.levelno for r in unavailable] == [logging.WARNING] + [logging.INFO] * 4
+    assert [bool(r.exc_info) for r in unavailable] == [True, False, False, False, False]
+    # The exception type stays on every one of them — it is the only thing that tells a missing
+    # `sudo` from a `TimeoutExpired`, and the four without a stack are where it does the work.
+    assert all("(FileNotFoundError)" in r.getMessage() for r in unavailable)
+
+
+def test_a_tunnel_that_does_not_tunnel_keeps_its_own_annotation(monkeypatch, caplog):
+    """Why this module has two `log.FirstOnly` instances rather than one.
+
+    `warp=off` is a different fault from "the tunnel could not be raised": the tunnel answered,
+    the request went through it, and it left on the direct address anyway — i.e. on the spent
+    origin the spare egress exists to escape. It is also the quieter of the two, so on one shared
+    instance a benign missing-sudoers annotation firing microseconds earlier would demote it for
+    the rest of the run. Both faults happen in a single rotation here, and both annotate.
+    """
+    import logging
+
+    _rotating(monkeypatch)
+    monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.0)
+    real_run = spare_egress.subprocess.run
+
+    def _run(argv, **kw):
+        if argv[:2] == ["sudo", "-n"]:
+            raise FileNotFoundError("sudo")  # falls back to the re-registration lever
+        return real_run(argv, **kw)
+
+    monkeypatch.setattr(spare_egress.subprocess, "run", _run)
+
+    class _Untunnelled:
+        text = "fl=123abc\nip=203.0.113.7\ncolo=SJC\nts=1\nwarp=off\n"
+
+    monkeypatch.setattr(spare_egress._rq, "get", lambda *a, **kw: _Untunnelled())
+
+    with caplog.at_level("INFO"):
+        spare_egress._proxy = "socks5://127.0.0.1:40000"
+        spare_egress._resolved = True
+        for _ in range(5):
+            assert spare_egress.rotate("workday:acme/careers") is True
+
+    warned = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
+    assert len(warned) == 2, warned
+    assert any("daemon restart unavailable" in m for m in warned)
+    assert any("trace reports warp=off" in m for m in warned)
+    # And the address is still refused, five times over — the bound is on the annotation, not on
+    # the guard it reports.
+    assert spare_egress.egress_ips()["unreadable"] == 5
+
+
+def test_a_successful_dial_is_not_an_annotation(monkeypatch, caplog):
+    """`proxy_url`'s success line was a WARNING on a *success* path, and not even one per process:
+    a rotation that loses SOCKS5 clears `_resolved`, so every reconnection re-announced itself.
+    This module's own docstring already conceded it was "as routine as" the four rotation lines
+    demoted with it, and then left it at WARNING.
+
+    What the run page loses is the at-a-glance fact that this shard raised a tunnel at all. That is
+    recoverable without an annotation: `report` names the addresses and colo it egressed from, and
+    `scrape_run._report` puts those lines in the shard log and the step summary.
+    """
+    import logging
+
+    _stub(monkeypatch, _happy)
+
+    with caplog.at_level("INFO"):
+        assert spare_egress.proxy_url() is not None
+
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+    assert "connected in" in caplog.text
+    assert "routing via socks5h://127.0.0.1:40000" in caplog.text
+    assert any(ln.startswith("egress addresses: ") for ln in spare_egress.report())
+
+
 def _fanout_retries():
     """`scripts/runlog/fanout_retries.py`, loaded from disk — it is a script, not an installed
     module, and it does `from run_logs import ...`, so its own directory must be importable."""
