@@ -6,6 +6,12 @@ FROM python:3.12-slim
 
 WORKDIR /app
 ENV HF_HOME=/app/hf-cache
+# Xet off, matching every other HF download in this repo (Xet has died mid-transfer here
+# before, silently and without a traceback). The Space was the one consumer that never got the
+# flag, because it had never been rebuilt onto an image carrying hf-xet — the 2026-09-09
+# rebuild pulled hf-xet 1.6.0 in for the first time. Baked in rather than set as a Space
+# variable so it is visible in the repo and cannot silently fail to propagate.
+ENV HF_HUB_DISABLE_XET=1
 
 # SSH client + autossh for the llm-router tunnel (ADR-0032). The router is reachable only
 # through it; the tunnel is optional at runtime — see start.sh, which must never let a
