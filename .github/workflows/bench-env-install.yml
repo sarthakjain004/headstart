@@ -1,0 +1,246 @@
+name: bench-env-install
+
+# THROWAWAY BENCHMARK — not part of any pipeline. Answers one question: is the ~1.3 min
+# `pip install -e ".[embed]"` that `join`, `embed` and `merge` each pay beatable by a cached
+# built environment or by `uv`?
+#
+# Methodology (see docs/pipeline/ for the write-up):
+#   - Every variant runs SEQUENTIALLY IN ONE JOB ON ONE RUNNER, because
+#     docs/pipeline/2026-09-08_five-run-log-review.md measured a 2.6x speed spread across
+#     nominally identical `ubuntu-latest` runners. A cross-job A/B is worthless; only a
+#     within-run ratio cancels the runner lottery.
+#   - `V1r` repeats `V1` verbatim at the end of the job. It is the ordering control: whatever
+#     it differs from `V1` by is position-in-sequence effect (warm page cache, disk state),
+#     not variant.
+#   - Timings print as each variant finishes; nothing is buffered to the end.
+#
+# It touches no HF repo, no LFS, and no pipeline state. It runs on `bench/**` pushes only.
+on:
+  push:
+    branches: ["bench/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bench-env-install
+  cancel-in-progress: false
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # `.[embed]` pulls torch, which on Linux/PyPI drags the whole nvidia CUDA wheel set
+      # (~5 GB installed). Six venvs' worth does not fit in the runner's ~21 GB, so free the
+      # unused language toolchains first. This is a bench-only deviation: it changes how much
+      # disk is free, not how fast the disk is.
+      - name: Free disk (bench-only)
+        run: |
+          df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          df -h / | tail -1
+
+      # Exactly what join/embed/merge do today, including the pip *download* cache.
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Start the results file
+        run: |
+          : > /tmp/bench.tsv
+          echo "runner=$(nproc) cpus, $(free -g | awk '/^Mem:/{print $2}') GB RAM, image ${ImageVersion:-?}"
+
+      # ── V2 first, in the position a production job would put it: immediately after setup.
+      - name: V2 restore cached venv (start clock)
+        run: echo "T_RESTORE0=$(date +%s.%N)" >> "$GITHUB_ENV"
+      - name: V2 cached venv
+        id: venvcache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/venv-cached
+          key: venv-embed-${{ runner.os }}-py3.12-${{ hashFiles('pyproject.toml') }}-v1
+      - name: V2 stop clock, verify the restored env actually works
+        run: |
+          t1=$(date +%s.%N)
+          d=$(awk "BEGIN{printf \"%.2f\", $t1-$T_RESTORE0}")
+          hit="${{ steps.venvcache.outputs.cache-hit }}"
+          printf 'V2_cachedvenv\trestore\t%s\thit=%s\n' "$d" "${hit:-false}" | tee -a /tmp/bench.tsv
+          if [ "$hit" = "true" ]; then
+            v0=$(date +%s.%N)
+            . ~/venv-cached/bin/activate
+            python -c "import headstart, sentence_transformers, torch, lancedb, langdetect, huggingface_hub, sklearn, einops, curl_cffi; print('imports OK torch', torch.__version__)"
+            python -c "import headstart, pathlib; print('headstart from', pathlib.Path(headstart.__file__).resolve())"
+            v1=$(date +%s.%N)
+            printf 'V2_cachedvenv\tverify\t%s\n' "$(awk "BEGIN{printf \"%.2f\", $v1-$v0}")" | tee -a /tmp/bench.tsv
+            du -sh ~/venv-cached | tee -a /tmp/bench.tsv
+            deactivate
+          else
+            echo "cache MISS — this dispatch is COLD for V2; it is built at the end of the job"
+          fi
+          df -h / | tail -1
+
+      # ── V0: the production command, verbatim, into the system interpreter.
+      - name: V0 system pip (production command)
+        run: |
+          t0=$(date +%s.%N)
+          pip install -e ".[embed]" huggingface_hub
+          t1=$(date +%s.%N)
+          printf 'V0_syspip\tinstall\t%s\n' "$(awk "BEGIN{printf \"%.2f\", $t1-$t0}")" | tee -a /tmp/bench.tsv
+          v0=$(date +%s.%N)
+          python -c "import headstart, sentence_transformers, torch; print('imports OK torch', torch.__version__)"
+          v1=$(date +%s.%N)
+          printf 'V0_syspip\tverify\t%s\n' "$(awk "BEGIN{printf \"%.2f\", $v1-$v0}")" | tee -a /tmp/bench.tsv
+          df -h / | tail -1
+
+      # ── V1: same install into a fresh venv, so it is comparable with V2/V3/V4.
+      - name: V1 fresh venv + pip
+        run: |
+          t0=$(date +%s.%N)
+          python -m venv /tmp/v1
+          /tmp/v1/bin/pip install -e ".[embed]" huggingface_hub
+          t1=$(date +%s.%N)
+          printf 'V1_venvpip\tinstall\t%s\n' "$(awk "BEGIN{printf \"%.2f\", $t1-$t0}")" | tee -a /tmp/bench.tsv
+          /tmp/v1/bin/python -c "import headstart, sentence_transformers, torch; print('imports OK torch', torch.__version__)"
+          du -sh /tmp/v1 | tee -a /tmp/bench.tsv
+          rm -rf /tmp/v1
+          df -h / | tail -1
+
+      # ── V3: uv. Measured twice on purpose. V3a is a genuinely cold uv cache (no
+      # actions/cache entry, so zero cache-budget cost); V3b reuses the local ~/.cache/uv
+      # V3a just filled, which is what an actions-cached uv would restore.
+      # uv comes from PyPI rather than `astral-sh/setup-uv`: the action's only remaining value
+      # here is its cache, which is deliberately not used (see above), and this repo pins every
+      # action to a SHA — one fewer third-party action to vet. `uv --version` is reported so the
+      # write-up can name the version measured.
+      - name: Install uv
+        run: |
+          t0=$(date +%s.%N)
+          pip install uv
+          printf 'uv_bootstrap\tinstall\t%s\n' "$(awk "BEGIN{printf \"%.2f\", $(date +%s.%N)-$t0}")" | tee -a /tmp/bench.tsv
+          uv --version | tee -a /tmp/bench.tsv
+      - name: V3a uv (cold uv cache)
+        run: |
+          rm -rf ~/.cache/uv
+          t0=$(date +%s.%N)
+          uv venv /tmp/v3a --python "$(which python)"
+          uv pip install --python /tmp/v3a/bin/python -e ".[embed]" huggingface_hub
+          t1=$(date +%s.%N)
+          printf 'V3a_uv_cold\tinstall\t%s\n' "$(awk "BEGIN{printf \"%.2f\", $t1-$t0}")" | tee -a /tmp/bench.tsv
+          /tmp/v3a/bin/python -c "import headstart, sentence_transformers, torch; print('imports OK torch', torch.__version__)"
+          du -sh /tmp/v3a ~/.cache/uv | tee -a /tmp/bench.tsv
+          rm -rf /tmp/v3a
+          df -h / | tail -1
+      - name: V3b uv (warm uv cache)
+        run: |
+          t0=$(date +%s.%N)
+          uv venv /tmp/v3b --python "$(which python)"
+          uv pip install --python /tmp/v3b/bin/python -e ".[embed]" huggingface_hub
+          t1=$(date +%s.%N)
+          printf 'V3b_uv_warm\tinstall\t%s\n' "$(awk "BEGIN{printf \"%.2f\", $t1-$t0}")" | tee -a /tmp/bench.tsv
+          /tmp/v3b/bin/python -c "import headstart, sentence_transformers, torch; print('imports OK torch', torch.__version__)"
+          rm -rf /tmp/v3b
+          df -h / | tail -1
+
+      # ── V4: the same pip, but torch from the CPU-only index. The runners have no GPU, so
+      # every nvidia-* wheel PyPI's default torch drags in is unpacked and never used.
+      - name: V4 fresh venv + pip, CPU-only torch
+        run: |
+          t0=$(date +%s.%N)
+          python -m venv /tmp/v4
+          /tmp/v4/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
+          /tmp/v4/bin/pip install -e ".[embed]" huggingface_hub
+          t1=$(date +%s.%N)
+          printf 'V4_pip_cputorch\tinstall\t%s\n' "$(awk "BEGIN{printf \"%.2f\", $t1-$t0}")" | tee -a /tmp/bench.tsv
+          /tmp/v4/bin/python -c "import headstart, sentence_transformers, torch; print('imports OK torch', torch.__version__)"
+          /tmp/v4/bin/python -c "import torch; print('cuda build:', torch.version.cuda)"
+          du -sh /tmp/v4 | tee -a /tmp/bench.tsv
+          rm -rf /tmp/v4
+          df -h / | tail -1
+
+      # ── V1r: ordering control. Identical to V1, last in the sequence.
+      - name: V1r fresh venv + pip (ordering control)
+        run: |
+          t0=$(date +%s.%N)
+          python -m venv /tmp/v1r
+          /tmp/v1r/bin/pip install -e ".[embed]" huggingface_hub
+          t1=$(date +%s.%N)
+          printf 'V1r_venvpip_repeat\tinstall\t%s\n' "$(awk "BEGIN{printf \"%.2f\", $t1-$t0}")" | tee -a /tmp/bench.tsv
+          rm -rf /tmp/v1r
+          df -h / | tail -1
+
+      # Build the venv the cache saves, but only when the restore missed.
+      - name: Build the venv for the cache (cold dispatch only)
+        if: steps.venvcache.outputs.cache-hit != 'true'
+        run: |
+          rm -rf ~/venv-cached
+          python -m venv ~/venv-cached
+          ~/venv-cached/bin/pip install -e ".[embed]" huggingface_hub
+          ~/venv-cached/bin/python -c "import headstart, sentence_transformers, torch; print('built OK')"
+          du -sh ~/venv-cached
+
+      # ── Secondary: artifact I/O. join uploads ~70 MB of JSONL to hand the corpus to merge.
+      - name: Build a ~70 MB JSONL fixture
+        run: |
+          python - <<'PY'
+          import json, pathlib
+          p = pathlib.Path("/tmp/fixture"); p.mkdir(exist_ok=True)
+          f = p / "corpus.jsonl"
+          rec = {"id": "ats:slug:12345", "title": "Senior Backend Engineer",
+                 "company": "Example Corp", "location": "Bengaluru, India",
+                 "url": "https://boards.example.com/jobs/12345",
+                 "description": "We are looking for a backend engineer. " * 40}
+          line = json.dumps(rec) + "\n"
+          n = (70 * 1024 * 1024) // len(line)
+          with f.open("w") as fh:
+              for i in range(n):
+                  fh.write(line)
+          print("wrote", f.stat().st_size, "bytes,", n, "lines", flush=True)
+          PY
+          ls -l /tmp/fixture
+      - name: A1 upload (production settings) — start clock
+        run: echo "T_UP0=$(date +%s.%N)" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bench-corpus-default
+          path: /tmp/fixture
+          retention-days: 1
+      - name: A1 stop clock
+        run: |
+          printf 'A1_upload_default\tupload\t%s\n' "$(awk "BEGIN{printf \"%.2f\", $(date +%s.%N)-$T_UP0}")" | tee -a /tmp/bench.tsv
+      - name: A2 upload (compression-level 1) — start clock
+        run: echo "T_UP1=$(date +%s.%N)" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bench-corpus-fast
+          path: /tmp/fixture
+          retention-days: 1
+          compression-level: 1
+      - name: A2 stop clock
+        run: |
+          printf 'A2_upload_level1\tupload\t%s\n' "$(awk "BEGIN{printf \"%.2f\", $(date +%s.%N)-$T_UP1}")" | tee -a /tmp/bench.tsv
+      - name: A3 download — start clock
+        run: |
+          rm -rf /tmp/fixture
+          echo "T_DL0=$(date +%s.%N)" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bench-corpus-default
+          path: /tmp/dl
+      - name: A3 stop clock
+        run: |
+          printf 'A3_download\tdownload\t%s\n' "$(awk "BEGIN{printf \"%.2f\", $(date +%s.%N)-$T_DL0}")" | tee -a /tmp/bench.tsv
+          ls -l /tmp/dl
+
+      - name: Results
+        if: always()
+        run: |
+          echo '## bench-env-install' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/bench.tsv | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
