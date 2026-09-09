@@ -64,6 +64,29 @@ def _candidates() -> tuple[Path, ...]:
 _CACHE: dict[str, Any] | None | bool = False
 
 
+def _no_conversion(reason: str, exc_info: bool = False) -> None:
+    """One WARNING for every way the table ends up unusable, naming ``reason`` and the cost.
+
+    Shared by both branches because they have one consequence between them, and named by that
+    consequence rather than by its symptom. :func:`table` caches its result for the life of the
+    process, so neither branch is one failed read: every salary bracket for the rest of this
+    Space's uptime compares within a single currency and drops every Job priced in another — the
+    exact trap the module docstring says converting exists to avoid — with nothing in the UI to
+    say so. Swallowed silently, the feature simply never worked and no record anywhere said why.
+
+    WARNING, not ERROR: the fallback is the narrower answer that predates this module, which is
+    degraded rather than broken. And not INFO, because nothing calls `log.setup()` in the Space —
+    `logging.lastResort` carries WARNING and above to stderr with no handler configured, and
+    anything below it is discarded there.
+    """
+    _log.warning(
+        f"fx_rates.json {reason} - no conversion for the rest of this process: the salary "
+        "bracket falls back to one currency and every Job priced in another silently drops "
+        "out of a cross-currency range",
+        exc_info=exc_info,
+    )
+
+
 def table(path: Path | None = None) -> dict[str, Any] | None:
     """The rate table, or ``None`` when it cannot be used.
 
@@ -79,38 +102,50 @@ def table(path: Path | None = None) -> dict[str, Any] | None:
         if found is None:
             raise FileNotFoundError("no fx_rates.json on either known path")
         raw = json.loads(found.read_text())
+        stated = {str(k).upper(): v for k, v in (raw.get("rates") or {}).items()}
         rates = {
-            str(k).upper(): float(v)
-            for k, v in (raw.get("rates") or {}).items()
+            k: float(v)
+            for k, v in stated.items()
             # A non-positive rate would divide by zero or invert the comparison; drop the
             # entry rather than the whole table, so one bad row cannot disable the feature.
             if isinstance(v, (int, float)) and float(v) > 0
         }
+        if dropped := sorted(stated.keys() - rates.keys()):
+            # Not `_no_conversion`: dropping the row is what keeps the feature up, so the cost is
+            # partial rather than total. But it is still a currency whose Jobs now vanish from
+            # every cross-currency range, and until now the drop named neither the currency nor
+            # the fact. Bounded to one line per process by the cache below, like the rest.
+            _log.warning(
+                f"fx_rates.json states {len(dropped)} unusable rate(s), dropped: "
+                f"{', '.join(dropped)} - Jobs priced in them stay out of every cross-currency "
+                "salary range"
+            )
         base = str(raw.get("base") or "").upper()
         as_of = str(raw.get("as_of") or "")
-        result = (
-            {"base": base, "as_of": as_of, "rates": rates}
-            if rates and base in rates and as_of
-            else None
-        )
+        # Refusing the table whole is a product decision (see the module docstring) — saying
+        # nothing about it was not. This is arguably the likelier dark path of the two: a rate
+        # refresh that writes valid JSON under a renamed `base` lands here, not in the `except`.
+        # The failing conditions are named individually because the operator's next move differs
+        # per shape — a `base` absent from its own `rates` is a one-word edit to the file, an
+        # empty `rates` is a broken refresh job — and a bare "unusable" would leave them guessing
+        # at a file they can see. All three are reported together rather than short-circuiting,
+        # for the same reason, and still cost exactly one annotation.
+        broken = [
+            reason
+            for reason, ok in (
+                ("no usable rates", bool(rates)),
+                (f"base {base or '(unset)'} has no rate of its own", base in rates),
+                ("no as_of date", bool(as_of)),
+            )
+            if not ok
+        ]
+        if broken:
+            _no_conversion(f"unusable ({'; '.join(broken)})")
+            result = None
+        else:
+            result = {"base": base, "as_of": as_of, "rates": rates}
     except (OSError, ValueError, TypeError, AttributeError) as exc:
-        # Named once, and named by its consequence rather than its symptom. `result` is cached
-        # below for the life of the process, so this is not one failed read: every salary bracket
-        # for the rest of this Space's uptime compares within a single currency and drops every
-        # Job priced in another — the exact trap the module docstring says converting exists to
-        # avoid — with nothing in the UI to say so. Swallowed silently, the feature simply never
-        # worked and no record anywhere said why.
-        #
-        # WARNING, not ERROR: the fallback is the narrower answer that predates this module, which
-        # is degraded rather than broken. And not INFO, because nothing calls `log.setup()` in the
-        # Space — `logging.lastResort` carries WARNING and above to stderr with no handler
-        # configured, and anything below it is discarded there.
-        _log.warning(
-            f"fx_rates.json unreadable ({type(exc).__name__}: {exc}) - no conversion for the "
-            "rest of this process: the salary bracket falls back to one currency and every Job "
-            "priced in another silently drops out of a cross-currency range",
-            exc_info=True,
-        )
+        _no_conversion(f"unreadable ({type(exc).__name__}: {exc})", exc_info=True)
         result = None
     if path is None:
         _CACHE = result

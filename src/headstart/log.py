@@ -119,8 +119,22 @@ class FirstOnly:
     first occurrence and left ``exc_info=True`` unconditional, so a systemic failure printed one
     full stack per Board — the same flood, one indirection later.
 
-    The traceback is whatever exception is being handled, so a site with none — a threshold
-    tripping, not a failure — simply gets a bare line rather than logging's ``NoneType: None``.
+    The traceback is whatever ``sys.exc_info()`` reports, which is a **thread**-wide question
+    and not a per-frame one — the same rule ``logging``'s own ``exc_info=True`` follows. So a
+    site with no exception anywhere gets a bare line rather than logging's ``NoneType: None``,
+    but a site reached from inside an *unrelated* ``except``, however many frames up, attaches
+    that unrelated stack. Five of the six call sites are lexically inside the ``except`` they
+    report on, so the stack is theirs by construction; the sixth (``scrapers/workday.py``'s
+    detail-loss tally — a threshold tripping, not a failure) has a clean chain today and would
+    start inheriting one if an ``except`` ever grew above it.
+
+    Detected rather than declared, deliberately. Capturing ``sys.exc_info()`` at construction and
+    diffing it at report time bounds nothing, because the instances that most need it are
+    module-level and built at import with no exception live. Guessing from frame identity would
+    silently *drop* the stack whenever a site reports through a helper — the same silent loss
+    ADR-0039 records the formatter shipping, one layer up. And an explicit ``exc_info`` argument
+    is flexibility no caller wants today; add it the day a site needs the choice made for it.
+
     State is per-instance, so a per-run bound is a local and a bound shared by every caller of
     one leaf function is a module-level instance.
     """
@@ -130,7 +144,7 @@ class FirstOnly:
         self._fired = False
 
     def report(self, message: str) -> None:
-        """WARNING with its traceback the first time; INFO, without one, thereafter."""
+        """WARNING with whatever traceback is live the first time; INFO, bare, thereafter."""
         first, self._fired = not self._fired, True
         (self._logger.warning if first else self._logger.info)(
             message, exc_info=first and sys.exc_info()[0] is not None

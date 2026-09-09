@@ -35,6 +35,10 @@ from .store import Invite, Store, Subscription, now_iso, subscription_id
 
 _log = log.get(__name__, __spec__)
 
+#: The per-Subscription catch-all in `main`, bounded to one annotation per run. Module-level
+#: because the bound has to span the whole loop, and the loop is the run.
+_SUBSCRIPTION_FAILURE = log.FirstOnly(_log)
+
 _REQUIRED = ("SUBSCRIBERS_REPO", "SUBSCRIBERS_TOKEN")
 
 
@@ -272,10 +276,17 @@ def main() -> int:
             continue
         except Exception as exc:  # noqa: BLE001 — one bad Subscription must not stop the rest
             failed += 1
-            # With the traceback: this is the arm nothing anticipated, so the exception's
-            # own message is rarely enough to say which of `subscription_for`, the search,
-            # the render or the send it came out of.
-            _log.error(f"{sub_id}: FAILED {type(exc).__name__}: {exc}", exc_info=True)
+            # First one with the traceback, the rest at INFO. This is the arm nothing
+            # anticipated, so the exception's own message is rarely enough to say which of
+            # `subscription_for`, the search, the render or the send it came out of — but
+            # what lands here is usually not per-Subscription at all: `space_query` raises
+            # `SearchUnavailable` into it, and a cold Space is cold for every Account at
+            # once, so one stack says what broke and N would say it N times. Every line
+            # still names its Subscription and the exception type, and `failed` plus the
+            # summary below say how many there were.
+            _SUBSCRIPTION_FAILURE.report(
+                f"{sub_id}: FAILED {type(exc).__name__}: {exc}"
+            )
             continue
         sent += bool(count)
         _log.info(

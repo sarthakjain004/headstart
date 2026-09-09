@@ -163,9 +163,13 @@ policy. Plainly, the rule now:
   exception already argued ("the merge log is the only record of *which* rows changed, and DEBUG
   would record nothing in CI"); it generalises to every per-item line.
 - **DEBUG is what a local run wants and CI must not pay for** — `http.fetch`'s per-retry line,
-  `scrape_run`'s per-Board timing. Measured 2026-09-08 across `src/headstart/`: **4** `.debug(`
-  call sites against 189 `.info(` and 53 `.warning(`. "Per-item is DEBUG" describes 4 lines in
-  246, so the ADR was describing an intention, not the seam.
+  `scrape_run`'s per-Board timing. Counted at `dd982fe` (`git grep -c` over
+  `src/headstart/**.py`, before this correction's own edits): **4** `.debug(` call sites against
+  190 `.info(` and 51 `.warning(`. "Per-item is DEBUG" describes 4 lines in 245, so the ADR was
+  describing an intention, not the seam. The commit is named because the first version of this
+  bullet quoted 4 / 189 / 53 — the tree *before* the commit it shipped in, stale on arrival — and
+  because these three counts move with every logging change. The ratio is what is load-bearing;
+  it survives a drift of a few lines either way.
 - **WARNING remains a budget**, per the amendment above: never a line that can fire once per
   Board, per shard or per item, however much it deserves the summary page.
 

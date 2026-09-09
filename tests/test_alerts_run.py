@@ -486,3 +486,65 @@ def test_main_builds_its_config_from_transports_not_a_name_list(monkeypatch):
 
     assert run.main() == 0
     assert seen.get("SLACK_WEBHOOK_URL") == "https://hooks.example"
+
+
+def test_a_dead_space_costs_one_annotation_not_one_per_subscription(
+    monkeypatch, caplog
+):
+    """ADR-0039: WARNING and ERROR are both GitHub annotations, capped at 10 per step.
+
+    The per-Subscription catch-all is where `space_query`'s `SearchUnavailable` lands, and a
+    cold Space is cold for every Account at once — so this arm is systemic in practice, not
+    per-item, and it used to spend one `::error::` per Subscription. What it must not lose is
+    *which* Subscriptions failed, or the one stack that says where the failure came from.
+    """
+
+    class _AllFail:
+        def __init__(self, *a, **k):
+            pass
+
+        def invites(self):
+            return [Invite(f"person{i}@example.com", "backend") for i in range(6)]
+
+        def get(self, sub_id):
+            return None
+
+        def put(self, sub):
+            pass
+
+        def accounts_with_sets(self):
+            return frozenset()
+
+        def all(self):
+            return []
+
+    def _cold(sub, store, space, config):
+        raise space_query.SearchUnavailable("HTTPError 503: Space is asleep")
+
+    monkeypatch.setenv("SUBSCRIBERS_REPO", "repo")
+    monkeypatch.setenv("SUBSCRIBERS_TOKEN", "token")
+    monkeypatch.setattr(run, "Store", _AllFail)
+    monkeypatch.setattr(run, "send_one", _cold)
+    # The bound is module-level, so it spans the process rather than one call — which is the
+    # point in production (one process per run) and means a test has to start it unfired.
+    monkeypatch.setattr(run._SUBSCRIPTION_FAILURE, "_fired", False)
+    caplog.set_level(logging.INFO, logger="headstart.alerts.run")
+
+    assert run.main() == 1, "the run must still go red"
+
+    failed = [r for r in caplog.records if "FAILED" in r.getMessage()]
+    assert len(failed) == 6, "every failure is still reported"
+    assert [r.levelno for r in failed] == [logging.WARNING] + [logging.INFO] * 5
+    # `bool`, not `is not None`: `logging` keeps an `exc_info=False` as False on the record.
+    assert [bool(r.exc_info) for r in failed] == [True] + [False] * 5, (
+        "one stack, not six"
+    )
+    # Demoting must not cost the operator the two things they act on: which Subscription,
+    # and what went wrong.
+    assert {r.getMessage().split(":")[0] for r in failed} == {
+        subscription_id(f"person{i}@example.com") for i in range(6)
+    }
+    assert all("SearchUnavailable" in r.getMessage() for r in failed)
+    assert any("6 failed" in r.getMessage() for r in caplog.records), (
+        "the summary still says how far the run reached"
+    )

@@ -31,6 +31,13 @@ from .store import Store, Subscription, chat_subscription_id, now_iso
 
 _log = log.get(__name__, __spec__)
 
+#: `main`'s two per-item failure arms, each bounded to one annotation per run. Two instances
+#: rather than one because they report different outages — a break in `handle` and a Telegram
+#: send failure — and sharing one would let whichever happened first silence the other. The bot
+#: runs every fifteen minutes, so an unbounded line here is the whole day's annotation budget.
+_UPDATE_FAILURE = log.FirstOnly(_log)
+_REPLY_FAILURE = log.FirstOnly(_log)
+
 HELP = (
     "HeadStart job alerts.\n\n"
     "/q <what you're looking for> — set your search, e.g.\n"
@@ -239,9 +246,11 @@ def main() -> int:
         try:
             replies.extend(handle(update, registry, store))
         except Exception as exc:  # noqa: BLE001 — one bad update must not stall the queue
-            # With the traceback: the offset has already advanced, so this update is gone
-            # and cannot be replayed to find out where in `handle` it broke.
-            _log.error(f"update {update.get('update_id')} failed: {exc}", exc_info=True)
+            # First one with the traceback, the rest at INFO: the offset has already
+            # advanced, so this update is gone and cannot be replayed to find out where in
+            # `handle` it broke — but a break in `handle` breaks on every update of the same
+            # shape, so one stack names the line and the rest name their update.
+            _UPDATE_FAILURE.report(f"update {update.get('update_id')} failed: {exc}")
 
     # `alerts.telegram.send` rather than the polling client's `send_message`, which swallows
     # failures. A swallowed failure here is not cosmetic: the update that put somebody in
@@ -261,7 +270,11 @@ def main() -> int:
             sender.send(bot_token, chat_id, [text], parse_mode=None)
         except sender.TelegramError as exc:
             failed += 1
-            _log.error(f"reply to {recipient} FAILED: {exc}")
+            # Bounded the same way: a bad token or a Telegram outage fails every reply in the
+            # batch, so the first one warns and the rest state the identical line at INFO —
+            # each still naming its recipient and the error. `failed`, the summary below and
+            # the non-zero exit still say how many there were and turn the run red.
+            _REPLY_FAILURE.report(f"reply to {recipient} FAILED: {exc}")
             continue
         _log.info(f"replied to {recipient}")
 

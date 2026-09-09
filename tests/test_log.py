@@ -171,3 +171,36 @@ def test_first_only_outside_an_except_block_carries_no_traceback(caplog):
 
     assert [r.levelno for r in caplog.records] == [logging.WARNING, logging.INFO]
     assert not any(r.exc_info for r in caplog.records)
+
+
+def test_first_only_inherits_an_unrelated_exception_from_up_the_stack(caplog):
+    """The documented limit, pinned: `exc_info` detection is thread-wide, not per-frame.
+
+    `FirstOnly.report` asks `sys.exc_info()`, exactly as `logging`'s own `exc_info=True` does,
+    and that answers "what is this *thread* handling", not "what is my caller handling". So a
+    site with no `except` of its own still attaches whatever stack is live above it — here a
+    transport blip three frames up, on a line reporting a detail-loss threshold.
+
+    Latent rather than live: five of the six `.report` sites sit lexically inside the `except`
+    they report on, and the sixth (`scrapers/workday.py`'s detail-loss tally, the shape below)
+    has a clean chain today. The class docstring says so; this pins it, so that a later change
+    making the code match the *original* claim — that a site with no failure of its own gets a
+    bare line — fails here loudly instead of quietly widening behaviour nobody re-read.
+    """
+    guard = log.FirstOnly(logging.getLogger("headstart.test_first_only_inherited"))
+
+    def over_the_loss_share():  # no `except` here — workday.py's shape
+        guard.report("acme: 900 of 1000 detail(s) failed mid-crawl")
+
+    with caplog.at_level(logging.INFO, logger="headstart.test_first_only_inherited"):
+        try:
+            raise ConnectionResetError("an unrelated transport blip three frames up")
+        except ConnectionResetError:
+            over_the_loss_share()
+
+    (record,) = caplog.records
+    assert record.levelno == logging.WARNING
+    assert record.exc_info is not None, (
+        "inherited, not suppressed — the documented behaviour"
+    )
+    assert record.exc_info[0] is ConnectionResetError
