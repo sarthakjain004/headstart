@@ -16,18 +16,36 @@ Unauthoritative and leaves the eviction scope entirely — and that exclusion ha
 drain**, as ADR-0088 already recorded: a Board short on every run never re-enters scope, and its
 closed postings are served indefinitely.
 
-The live ledger says what "any amount" means in practice. From
-`data/state/unauthoritative_boards.json` (133 Boards, pulled 2026-09-09):
+The evidence says what "any amount" means in practice. **Two sources, named per row, because they
+are different populations** — see the note below:
 
-| Board | shortfall | read |
-| --- | --- | --- |
-| `successfactors:careers.te.com` | 1 of 2,130 job pages unreadable | 99.953% |
-| `successfactors:careers.bureauveritas.com` | 1 of 2,032 | 99.951% |
-| `successfactors:basf.jobs` | 1 of 708 | 99.859% |
-| `successfactors:careers.wipro.com` | 7 of 4,757 | 99.853% |
-| `eightfold:careers.qualcomm.com` | got 1,919 of 1,932 postings | 99.327% |
+| Board | shortfall | read | source |
+| --- | --- | --- | --- |
+| `successfactors:careers.te.com` | 1 of 2,130 job pages unreadable | 99.953% | ledger |
+| `successfactors:careers.bureauveritas.com` | 1 of 2,032 | 99.951% | ledger |
+| `successfactors:basf.jobs` | 1 of 708 | 99.859% | ledger |
+| `successfactors:careers.wipro.com` | 7 of 4,757 | 99.853% | ledger |
+| `eightfold:appliedmaterials.eightfold.ai` | got 1,931 of 1,932 postings | 99.948% | run log `34321068300` |
+| `eightfold:careers.qualcomm.com` | got 1,919 of 1,932 postings | 99.327% | run log `34332773221`, and the ledger |
 
-Each of those Boards leaves the eviction scope, on every run, to protect one id.
+"ledger" is `data/state/unauthoritative_boards.json` (133 Boards, pulled 2026-09-09); "run log" is
+that run's `merge` job, whose `scope-excluded Board:` lines state each exclusion's own reason.
+
+> **The ledger and the run logs are different populations, and a figure absent from one is not
+> thereby wrong.** The ledger is a *snapshot*: it holds the Boards excluded by the most recent run
+> only, and it is rewritten every run (ADR-0053 — "written on every run, including clean ones").
+> The logs are the *history*: what each run actually did. `appliedmaterials` is the worked example.
+> It is scope-excluded in three consecutive runs — `34312743097` (`1930 of 1931`), `34316866965`
+> (`1932 of 1933`) and `34321068300` (`1931 of 1932`) — and in neither of the two runs after them,
+> which is why it is absent from the current snapshot: the run that wrote the snapshot did not find
+> it short. Each of those three figures was read from that run's own `merge` log.
+>
+> A review of this ADR checked that row against the snapshot alone, concluded the measurement was
+> invented, and had it replaced. It was not invented. This note exists so the next reader does not
+> repeat the inference — and, in the other direction, so nobody quotes a snapshot figure as if it
+> described every run.
+
+Each of those Boards leaves the eviction scope, on the runs that find it short, to protect one id.
 
 Measured across the four real pipeline runs of 2026-09-09 (all on SHA `fd15455` —
 `34316866965`, `34321068300`, `34327339789`, `34332773221`; a fifth same-day run was a

@@ -4843,8 +4843,11 @@ def test_successfactors_truncates_on_a_surface_that_states_no_total(monkeypatch)
 
 
 def test_eightfold_tolerates_a_replica_short_by_one_posting():
-    """`eightfold:careers.qualcomm.com` got 1,919 of 1,932 (99.327%) and left the eviction scope
-    for it. A replica that never deals a posting is the transient miss ADR-0083 exists for."""
+    """`eightfold:appliedmaterials.eightfold.ai` got 1,931 of 1,932 (99.948%) and left the
+    eviction scope for it — run `34321068300`'s merge log, which is where that figure lives.
+    It is *not* in `unauthoritative_boards.json`, because that file is a snapshot of the latest
+    run only and the latest run did not find this Board short; ADR-0121's Context note has the
+    distinction. A replica that never deals a posting is the transient miss ADR-0083 exists for."""
     from headstart.scrapers.eightfold import EightfoldScraper
 
     class _Resp:
