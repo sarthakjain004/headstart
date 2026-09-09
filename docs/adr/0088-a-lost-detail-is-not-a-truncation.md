@@ -14,6 +14,17 @@ equivalent reporting, whose shape this mirrors),
 > `33283745755`→`33303633939`. This ADR's own decision — classify a detail loss, never
 > `mark_truncated` on it — is unchanged and was re-affirmed by ADR-0097.
 
+> **Amended 2026-09-09 (PR #392).** *The cost claim is per-class, not universal.* "A detail loss
+> still costs ADR-0021 null fields and an ADR-0050 gap-ledger entry" (Consequences) held for every
+> loss class this ADR had when written, all of which are *fetch* failures. The `no externalPath`
+> class is not one. On every such posting measured — 38 stubs over 31,028 postings on 22 Boards,
+> swept live 2026-09-09 — the listing served `bulletFields` and no other key, so `parse` yields an
+> `Untitled` Job that `tech_filter` drops before either the description store or the index sees it,
+> and neither cost is paid. That is a 22-of-125-Board sample, so the scraper counts a titled stub
+> separately and logs it rather than assuming the shape holds everywhere.
+> `docs/workday/2026-09-09_parser-shaped-detail-losses.md`.
+
+
 ## Context
 
 `workday:ngc/Northrop_Grumman_External_Site` reported `3536/3691 details missing` (95.8%) in run
