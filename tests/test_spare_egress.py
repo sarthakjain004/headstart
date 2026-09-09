@@ -314,13 +314,18 @@ def test_unavailable_spare_egress_warns_rather_than_whispers(monkeypatch, caplog
 # process to the direct route permanently and nothing caught it.
 
 
-def _rotating(monkeypatch, *, restart_ok=True, comes_back=True):
-    """Stub a rotation: sudo/systemctl outcome, whether SOCKS5 answers afterwards, and the trace.
+def _rotating(monkeypatch, *, restart_ok=True, reregister_ok=True, comes_back=True):
+    """Stub a rotation: both levers' outcomes, whether SOCKS5 answers afterwards, and the trace.
 
     Pins the platform to linux, because the restart command is chosen per-platform and these
     tests assert on it — left to the host, the same test would expect `systemctl` in CI and
     `launchctl` on a developer's Mac. Which command each platform gets is covered separately by
     `test_restart_uses_the_platforms_own_service_manager`.
+
+    ``restart_ok`` is the privileged lever (``sudo -n``), ``reregister_ok`` the unprivileged one
+    it falls back to. They are separate knobs because the interesting cases are the *mixed* ones:
+    a laptop without passwordless sudo is `restart_ok=False, reregister_ok=True`, and only
+    failing both is a rotation that genuinely cannot happen.
     """
     monkeypatch.setattr(spare_egress.sys, "platform", "linux")
     calls: list[list[str]] = []
@@ -331,6 +336,11 @@ def _rotating(monkeypatch, *, restart_ok=True, comes_back=True):
             return _Proc(
                 returncode=0 if restart_ok else 1,
                 stderr="" if restart_ok else "no sudo",
+            )
+        if "registration" in argv:
+            return _Proc(
+                returncode=0 if reregister_ok else 1,
+                stderr="" if reregister_ok else "registration failed",
             )
         return _Proc()
 
@@ -366,10 +376,37 @@ def test_a_failed_rotation_does_not_pin_the_process_to_the_direct_route(monkeypa
     assert spare_egress.rotations()["failed"] == 1
 
 
-def test_rotation_without_sudo_degrades(monkeypatch):
+def test_rotation_without_sudo_reregisters_instead_of_giving_up(monkeypatch):
+    """A machine with no passwordless sudo still rotates — it just pays for it differently.
+
+    This test asserted the opposite until 2026-09-08, on the reading that a daemon restart was the
+    only lever and root was the only way to pull it. Measured on macOS 15 / warp-cli
+    2026.7.1343.0, `registration delete` + `registration new` needs no privileges and moves the
+    egress: 5 of 5 observations distinct over IPv6, 3 of 5 over the recycled IPv4 pool. So the
+    developer laptop that could never rotate now can.
+    """
     spare_egress._proxy = "socks5://127.0.0.1:40000"
     spare_egress._resolved = True
-    _rotating(monkeypatch, restart_ok=False)
+    calls = _rotating(monkeypatch, restart_ok=False)
+
+    assert spare_egress.rotate() is True
+    assert spare_egress.rotations()["succeeded"] == 1
+    # Ordered, and the delete is not optional: `new` refuses outright while the old registration
+    # stands ("Old registration is still around").
+    registration = [c[2:] for c in calls if "registration" in c]
+    assert registration == [["registration", "delete"], ["registration", "new"]]
+
+
+def test_rotation_degrades_when_neither_lever_can_move_the_address(monkeypatch):
+    """The contract the sudo-only test used to carry, kept at its new boundary.
+
+    A rotation that cannot happen must cost one bounded attempt and say so, rather than raising or
+    leaving the caller believing it has a fresh address.
+    """
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    _rotating(monkeypatch, restart_ok=False, reregister_ok=False)
+
     assert spare_egress.rotate() is False
     assert spare_egress.rotations()["failed"] == 1
 
@@ -677,13 +714,24 @@ def test_restart_uses_the_platforms_own_service_manager(
     assert calls[-1] == expected
 
 
-def test_restart_declines_an_unknown_platform_rather_than_guessing(monkeypatch):
-    """No recipe means one bounded failed attempt, not a wrong command aimed at root."""
+def test_an_unknown_platform_reregisters_rather_than_guessing_at_a_root_command(
+    monkeypatch,
+):
+    """No *restart* recipe still means no guessed command aimed at root — but not no rotation.
+
+    The per-platform thing is the service manager, and `warp-cli` is the same everywhere, so a
+    platform this module has no recipe for reaches the unprivileged lever instead of declining.
+    The original guarantee is unchanged and asserted below: nothing is run under `sudo`.
+    """
     calls = _stub(monkeypatch, lambda args: _Proc(0))
     monkeypatch.setattr(spare_egress.sys, "platform", "sunos5")
 
-    assert spare_egress._restart_daemon() is False
-    assert calls == []
+    assert spare_egress._restart_daemon() is True
+    assert [c[2:] for c in calls] == [
+        ["registration", "delete"],
+        ["registration", "new"],
+    ]
+    assert not any(c[:1] == ["sudo"] for c in calls)
 
 
 def test_rotation_drains_in_flight_requests_before_restarting_the_daemon(monkeypatch):
