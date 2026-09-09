@@ -8,6 +8,7 @@ of a shard's torn final row.
 
 from __future__ import annotations
 
+from headstart import config
 from headstart.board_cost import (
     BoardCost,
     ShardCost,
@@ -165,6 +166,23 @@ def test_a_key_no_scraper_can_read_keeps_its_row():
     """Losing a measurement is worse than carrying an odd key."""
     assert _rekeyed("notanats:whatever") == "notanats:whatever"
     assert _rekeyed("noslug:") == "noslug:"
+
+
+def test_rekeying_a_canonical_key_says_nothing(monkeypatch, caplog):
+    """An already-migrated row is *meant* to defeat `board_key()` — so it must not be reported.
+
+    `load` re-keys every row, so before this each of `scrape-plan` and `join` logged one line per
+    Workday key — every one of them describing a row that was correct.
+    `config._IDENTITY_FAILURES_SEEN`'s note carries the measured counts.
+
+    Asserted from both sides, because the silence alone passes vacuously if `_rekeyed` stops
+    resolving anything: the key must still come back unchanged.
+    """
+    monkeypatch.setattr(config, "_IDENTITY_FAILURES_SEEN", set())
+    with caplog.at_level("INFO", logger="headstart.config"):
+        assert _rekeyed("workday:accenture/careers") == "workday:accenture/careers"
+        assert _rekeyed("personio:croftstone") == "personio:croftstone"
+    assert not caplog.records, [r.message for r in caplog.records]
 
 
 def test_load_normalises_legacy_keys_so_the_planner_finds_them(tmp_path):
