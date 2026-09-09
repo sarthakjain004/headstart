@@ -1000,11 +1000,16 @@ def egress_ips() -> Counter[str]:
 #: local development, where the same rotation is wanted when a Board walls a sweep.
 #:
 #: Both need root, and that is not an oversight of either init system — the daemon is a system
-#: service in both. Measured 2026-08-25 on macOS 15: **every** unprivileged `warp-cli` lever
-#: leaves the egress IP exactly where it was — `tunnel rotate-keys` reports Success and does not
-#: move it, `disconnect`+`connect` does not move it (the same no-op ADR-0067 measured on Linux),
-#: `tunnel protocol set` does not move it, and `tunnel endpoint set` does not rotate but breaks
-#: the tunnel outright. So there is no unprivileged path to a fresh IP, and a restart it is.
+#: service in both. Measured 2026-08-25 on macOS 15, every unprivileged `warp-cli` lever *tried
+#: then* left the egress IP exactly where it was — `tunnel rotate-keys` reports Success and does
+#: not move it (it answers `Error(503)` outright on warp-cli 2026.7), `disconnect`+`connect` does
+#: not move it (the same no-op ADR-0067 measured on Linux), `tunnel protocol set` does not move
+#: it, and `tunnel endpoint set` does not rotate but breaks the tunnel outright.
+#:
+#: **That list concluded "there is no unprivileged path to a fresh IP". It was too strong**, and
+#: :func:`_reregister` is the counter-example it missed: a new *registration* moves the address
+#: without root (measured 2026-09-08, same platform). Read this block as what it is — the reason
+#: the *restart* needs root — not as a claim about every lever there is.
 #:
 #: The restart itself was then confirmed to rotate on macOS — the claim that matters, and one
 #: #289 could only argue by analogy because rotation needs a passwordless sudoers entry that did
@@ -1025,17 +1030,60 @@ _RESTART_COMMAND = {
 }
 
 
-def _restart_daemon() -> bool:
-    """Restart the WARP daemon under ``sudo -n``. False — logged, never raised — on any failure.
+def _reregister() -> bool:
+    """Rotate by taking a **new WARP registration**, which needs no privileges at all.
 
-    Unsupported platforms return False rather than guessing at a command, which costs the caller
-    one bounded attempt and leaves the spare egress itself intact — the same contract every other
-    failure path here keeps.
+    The unprivileged lever :data:`_RESTART_COMMAND`'s note says does not exist. That note is
+    accurate about what it tested — ``tunnel rotate-keys``, ``disconnect``+``connect``, ``tunnel
+    protocol set``, ``tunnel endpoint set`` — and this is simply not on that list. Measured
+    2026-09-08 on macOS 15, warp-cli 2026.7.1343.0, five observations across four cycles:
+
+    | resolution | distinct egress addresses |
+    | --- | --- |
+    | IPv6 (``socks5h``, so WARP resolves) | **5 of 5** |
+    | IPv4 (``socks5``, so we resolve) | 3 of 5 — ``.169``, ``.174``, ``.169``, ``.169``, ``.175`` |
+
+    Which is the same split `docs/spare-egress/how-warp-egress-works.md` measured for the daemon
+    restart, and for the same reason: the family decides the pool depth, not the lever. So this is
+    a *peer* of the restart rather than a lesser substitute — on a host publishing AAAA it moves
+    the address every time.
+
+    ``registration new`` refuses while the old one stands (``Old registration is still around``),
+    so the delete is required rather than tidy. That ordering is the one risk here: between the two
+    calls this device has no registration, and a failed ``new`` leaves it that way. Acceptable only
+    because every caller is a rotation the privileged path has *already* failed — the alternative
+    on offer is not a working tunnel, it is no rotation at all — and because `rotate` re-dials from
+    scratch afterwards, so a lost registration costs one bounded attempt rather than the run.
+
+    ``tunnel rotate-keys``, the obvious cheaper cousin, answers ``Error(503)`` here and moves
+    nothing; it stays untried.
+    """
+    if not _run("registration", "delete"):
+        return False
+    if not _run("registration", "new"):
+        _log.warning(
+            "spare egress: registration deleted but not replaced — re-dialling from scratch"
+        )
+        return False
+    return True
+
+
+def _restart_daemon() -> bool:
+    """Move to a new egress, privileged path first. False — logged, never raised — on any failure.
+
+    Two levers, tried in that order because they are not equivalent in cost: the daemon restart
+    keeps this device's registration and takes ~2s, while :func:`_reregister` throws the
+    registration away to get the same thing. So the restart is the one to want, and re-registering
+    is what a machine *without* passwordless sudo — every developer laptop here — gets instead of
+    nothing. An unsupported platform still has the second lever, since ``warp-cli`` is the same
+    everywhere; only the restart recipe is per-platform.
     """
     command = _RESTART_COMMAND.get(sys.platform)
     if command is None:
-        _log.info(f"spare egress: rotation unavailable (no recipe for {sys.platform})")
-        return False
+        _log.info(
+            f"spare egress: no restart recipe for {sys.platform} — re-registering instead"
+        )
+        return _reregister()
     try:
         proc = subprocess.run(
             ["sudo", "-n", *command],
@@ -1045,12 +1093,15 @@ def _restart_daemon() -> bool:
             timeout=_CALL_TIMEOUT,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        _log.warning(f"spare egress: rotation unavailable ({type(exc).__name__})")
-        return False
+        _log.warning(f"spare egress: daemon restart unavailable ({type(exc).__name__})")
+        return _reregister()
     if proc.returncode != 0:
         detail = (proc.stderr or "").strip().replace("\n", " ")[:160]
-        _log.warning(f"spare egress: rotation failed (exit {proc.returncode}) {detail}")
-        return False
+        _log.info(
+            f"spare egress: daemon restart failed (exit {proc.returncode}) {detail} "
+            f"— re-registering instead"
+        )
+        return _reregister()
     return True
 
 
