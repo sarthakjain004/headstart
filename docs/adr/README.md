@@ -124,3 +124,4 @@ supersedes it and note the supersession in both.
 | [0118](0118-a-fact-can-wear-a-derivations-column.md) | A fact can wear a derivation's column — but then it isn't a fact anymore | 2026-09-07 |
 | [0119](0119-the-trends-chart-plots-change-not-level.md) | The trends chart plots change, not level | 2026-09-07 |
 | [0120](0120-the-trends-ledger-is-parquet-not-csv.md) | The trends ledger is Parquet, not CSV | 2026-09-09 |
+| [0121](0121-a-negligible-shortfall-is-still-an-authoritative-list.md) | A negligible shortfall is still an authoritative list — let the per-Job grace period have it | 2026-09-09 |

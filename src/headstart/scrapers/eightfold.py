@@ -228,12 +228,14 @@ class EightfoldScraper(BaseScraper):
             while len(seen) < total and start < total and pages < _MAX_PAGES:
                 r = self._get(self._search_url(group_id, start))
                 if r.status_code != 200:
-                    self.mark_truncated(
+                    self.mark_truncated_unless_negligible(
+                        len(seen),
+                        total,
                         _short_reason(
                             f"HTTP {r.status_code} on page {pages + 1}",
                             len(seen),
                             total,
-                        )
+                        ),
                     )
                     return list(seen.values())
                 batch = (r.json().get("data") or {}).get("positions") or []
@@ -262,6 +264,9 @@ class EightfoldScraper(BaseScraper):
                     )
                 break
             if pages >= _MAX_PAGES:
+                # Unconditional: a ceiling is a hard cap, so the unread remainder is
+                # unreachable on every run and no share of it is negligible — the class
+                # ADR-0121 keeps outside the tolerance.
                 self.mark_truncated(
                     _short_reason(
                         f"hit the {_MAX_PAGES}-page ceiling", len(seen), total
@@ -270,18 +275,22 @@ class EightfoldScraper(BaseScraper):
                 break
             if sweep and len(seen) == before:
                 # Another full pass found nothing new — more sweeps won't either.
-                self.mark_truncated(
+                self.mark_truncated_unless_negligible(
+                    len(seen),
+                    total,
                     _short_reason(
                         f"no new postings on sweep {sweep + 1}", len(seen), total
-                    )
+                    ),
                 )
                 break
         else:
             if len(seen) < total:
-                self.mark_truncated(
+                self.mark_truncated_unless_negligible(
+                    len(seen),
+                    total,
                     _short_reason(
                         f"still short after {_MAX_SWEEPS} sweeps", len(seen), total
-                    )
+                    ),
                 )
         return list(seen.values())
 
@@ -410,8 +419,12 @@ class EightfoldScraper(BaseScraper):
             # not arrive — so the list is knowingly short and must say so or `index sync` reads
             # the gap as a delisting (ADR-0053). It matters most here: this is the fallback
             # taken whenever the API 403s, i.e. exactly when fetches are most likely to fail.
-            self.mark_truncated(
-                f"{lost}/{len(listed)} job pages unreadable — those Jobs are listed but unbuilt"
+            # The sitemap gives a real total to measure against, so a negligible loss is left to
+            # ADR-0083 rather than costing the Board its whole eviction scope (ADR-0121).
+            self.mark_truncated_unless_negligible(
+                len(listed) - lost,
+                len(listed),
+                f"{lost}/{len(listed)} job pages unreadable — those Jobs are listed but unbuilt",
             )
         return [
             {
@@ -436,6 +449,18 @@ class EightfoldScraper(BaseScraper):
             for c in _dedupe(_CHILD_SITEMAP.findall(r.text))
             if "index" not in c.lower()
         ]
+        if len(children) > _MAX_INDEX_CHILDREN:
+            # Unconditional, and load-bearing since ADR-0121. The cap silently shortens `listed`,
+            # which is the very denominator the detail pass measures its shortfall against — so
+            # without this line a Board missing a third of its sitemap could still read "100% of
+            # what we listed" and be declared authoritative. That is the one route by which a
+            # hard cap could reach the tolerance, and the tolerance's whole contract is that none
+            # can. Before the tolerance a stray unreadable detail page usually excluded such a
+            # Board anyway; that accident is gone, so the cap has to speak for itself.
+            self.mark_truncated(
+                f"followed {_MAX_INDEX_CHILDREN} of {len(children)} child sitemaps — "
+                "the rest of the index was not listed"
+            )
         found: list[str] = []
         for child in children[:_MAX_INDEX_CHILDREN]:
             cr = self._get(child, accept="application/xml")

@@ -315,8 +315,15 @@ class SuccessFactorsScraper(BaseScraper):
             # arrive. That makes the returned list knowingly short, and an unmarked short list
             # is exactly what `index sync` reads as a delisting — it would evict Jobs that are
             # still posted, purely because their detail fetch failed (ADR-0053).
-            self.mark_truncated(
-                f"{lost}/{len(listed)} job pages unreadable — those Jobs are listed but unbuilt"
+            #
+            # Measured against the listing, which this surface has: `listed` is what the sitemap
+            # (or the search walk, or the RSS stream) said the Board holds, so the share is real
+            # rather than inferred. A negligible one is left to ADR-0083 — this is the shape that
+            # excluded whole 2,130-page Boards over a single unreadable page (ADR-0121).
+            self.mark_truncated_unless_negligible(
+                len(listed) - lost,
+                len(listed),
+                f"{lost}/{len(listed)} job pages unreadable — those Jobs are listed but unbuilt",
             )
         return [
             {"url": url, "id": job_id, "fields": page_fields}

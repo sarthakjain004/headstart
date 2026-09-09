@@ -45,6 +45,47 @@ USER_AGENT = "headstart/0.1"
 _T = TypeVar("_T")
 _R = TypeVar("_R")
 
+#: The share of a Board's own stated total that must be read for its list to stay *authoritative*
+#: (ADR-0053) — the one tolerance, so the gate cannot mean different things on different ATSes
+#: (ADR-0121).
+#:
+#: One *policy*, but not yet every call site: `icims`, `jobvite`, `smartrecruiters` and `zwayam`
+#: still report a measured shortfall through the unconditional :meth:`BaseScraper.mark_truncated`.
+#: That is a measured scope boundary, not an oversight — on the live ledger the gate would never
+#: fire for them. All 13 excluded `icims` Boards read **0.000%** (`1515/1515` job pages unreadable
+#: on the worst): a total detail-pass failure, which is a broken scrape rather than a shortfall,
+#: and 0% clears no threshold. The one `smartrecruiters` Board raised `HTTP 401` and states no
+#: total at all, and `jobvite` and `zwayam` have no excluded Boards. Convert them when a Board of
+#: theirs is actually observed coming back marginally short.
+#:
+#: ADR-0053 shipped before ADR-0083 and has no tolerance: a Board one page short of complete
+#: leaves the eviction scope entirely, and that exclusion has **no drain**, so a Board short on
+#: every run serves its closed postings forever. A 1-in-2,130 shortfall
+#: (`successfactors:careers.te.com`, 99.953% read) is precisely what ADR-0083's per-Job grace
+#: period exists to absorb: the missing id is withheld for one scrape and evicted only if the
+#: *next* scrape of that Board misses it too. Excluding the whole Board to protect that one id is
+#: the blunt instrument, and it is the blunt instrument that never releases.
+#:
+#: 0.99, not looser, on measurement rather than taste. Measured on run `34327339789`'s own
+#: per-Board breakdown (3,055 shielded rows across the 44 Boards holding any), this releases
+#: **1,204 rows — 39.4%**. Loosening to 0.95 releases 1,259, only **55 rows more (+1.8pp)** for
+#: five times the tolerated loss: the 95–99% band is nearly empty, so there is almost nothing to
+#: buy down there. Tightening to 0.995 costs 128 rows. 0.99 is the knee.
+#:
+#: It deliberately does **not** reach `successfactors:careers.hcltech.com`. On run `34327339789`
+#: it read 91.20% (995 unreadable of 11,265) and was, alone, 1,533 rows — 50.2% of that run's
+#: shielded set, and 1,533 of the 1,590 rows that separate this threshold from a 0.90 one. (Both
+#: figures are that one run's: the Board reads 90.957% on the next run, and quoting one run's
+#: ratio beside another's row count is a conflation this comment made once already.) Reaching it
+#: is not a bargain: declaring a Board authoritative while one Job in eleven is missing feeds
+#: those ids to eviction. That Board is a detail-fetch defect — 971 -> 985 -> 995 -> 1,022
+#: unreadable pages across four consecutive runs against a flat ~11.3k board — not a
+#: gate-calibration one, and it is out of scope here.
+#:
+#: Not a class attribute, so a scraper cannot quietly hold itself to a different bar — the gate
+#: must not mean different things on different ATSes.
+MIN_AUTHORITATIVE_SHARE = 0.99
+
 # Default HTTP/2 multiplexing width (concurrent streams per host) for fan_out_async — 100 is around
 # the common server MAX_CONCURRENT_STREAMS. Override per-call, via HEADSTART_H2_STREAMS, or
 # run_scrapers --streams N. Read at call time (below) so a CLI flag can set the env before the scrape.
@@ -176,9 +217,60 @@ class BaseScraper(ABC):
         consequences of the first — so the thing that cut it short is the one worth reporting.
         Every scraper that can detect its own truncation goes through here, so ``harvest`` reads
         one attribute and never learns how many ways a crawl can end (ADR-0053).
+
+        This is the **unconditional** verdict, for a shortfall that is unreachable (a hard cap) or
+        unmeasurable (no stated total). A shortfall you can measure against the Board's own total
+        goes to :meth:`mark_truncated_unless_negligible`, which tolerates a negligible one (ADR-0121).
         """
         if self.truncated is None:
             self.truncated = why
+
+    def mark_truncated_unless_negligible(
+        self, read: int, expected: int, why: str
+    ) -> None:
+        """Report a shortfall you can *measure*, and truncate only if it is too big to absorb.
+
+        Use this wherever the Board states its own total and the crawl came back under it. Below
+        :data:`MIN_AUTHORITATIVE_SHARE` the list is not this Board's set of openings and the Board
+        leaves the eviction scope as before; at or above it the list stays authoritative and the
+        few missing ids are left to ADR-0083, which withholds each one for a scrape and evicts it
+        only on a second consecutive absence. That is the same protection ADR-0053 was giving,
+        applied per-Job — and unlike the scope exclusion it drains (ADR-0121).
+
+        Two shapes must **not** come through here, because no share makes them tolerable:
+
+        * **A hard cap.** Oracle's API serves no offset past 10,000 and a Workday query can cap at
+          2,000 with no facet left to split. The unread remainder is genuinely unreachable, not
+          noise, and it is unreachable identically on every run — so it calls
+          :meth:`mark_truncated` directly however close to complete the read looks.
+        * **A shortfall with no total to measure against.** A raised scrape, or a surface that
+          could not say how much it was missing, has no ``expected`` — the ratio would be
+          fabricated. Those call :meth:`mark_truncated` too.
+
+        ``why`` is the caller's own wording, unchanged, so the reason a Board lands in
+        ``unauthoritative_boards.json`` reads exactly as it did before this tolerance existed.
+        """
+        # A total of zero is no total, which is the second excluded shape above — so fail closed
+        # rather than divide by it. This is the same direction ADR-0053 chose for an unresolvable
+        # key: a shortfall we cannot measure is Unauthoritative, never silently tolerated.
+        if expected <= 0 or read < expected * MIN_AUTHORITATIVE_SHARE:
+            self.mark_truncated(why)
+            return
+        # Not logged when a hard cap already spoke: `mark_truncated` keeps the first reason, so
+        # the Board is Unauthoritative whatever this call decides, and saying "stays
+        # authoritative" about it would be flatly wrong. Reachable — Oracle's page cap runs
+        # before this branch, and SuccessFactors' listing cut-short before its detail pass.
+        if self.truncated is not None:
+            return
+        # INFO, not WARNING: this fires once per tolerated Board per run and a WARNING is an
+        # Actions annotation against a hard quota (ADR-0039). Logged at all because the
+        # alternative is a tolerance nobody can see working — the exact blindness ADR-0053's
+        # own row-count line had to be added to fix.
+        self._log.info(
+            f"{self.board_key()}: read {read} of {expected} "
+            f"({read / expected:.3%}) — within tolerance, so the list stays authoritative "
+            f"and ADR-0083 carries the {expected - read} missing id(s): {why}"
+        )
 
     def note_unreadable_board(self, expected: str, got: str) -> None:
         """Say, before returning nothing, that this Board could not be *read* — which is not

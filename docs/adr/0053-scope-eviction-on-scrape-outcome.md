@@ -1,6 +1,6 @@
 # ADR-0053: Scope eviction on a Board's scrape outcome, not on whether it emitted a line
 
-**Status:** accepted · **Date:** 2026-08-13 · **Amends:** [ADR-0046](0046-index-collapse-guard.md) · **Amended by:** [ADR-0101](0101-remove-the-collapse-guard-the-grace-period-is-the-line.md) — the collapse guard this ADR leans on as "the backstop" was removed; the scope exclusion decided here is untouched, but it and the ADR-0083 grace period are now the only two mechanisms
+**Status:** accepted · **Date:** 2026-08-13 · **Amends:** [ADR-0046](0046-index-collapse-guard.md) · **Amended by:** [ADR-0101](0101-remove-the-collapse-guard-the-grace-period-is-the-line.md) — the collapse guard this ADR leans on as "the backstop" was removed; the scope exclusion decided here is untouched, but it and the ADR-0083 grace period are now the only two mechanisms · **Amended by:** [ADR-0121](0121-a-negligible-shortfall-is-still-an-authoritative-list.md) — the gate decided here gains a tolerance: a shortfall the scraper can measure against the Board's own stated total no longer scope-excludes it at or above 99% read, those ids going to ADR-0083 instead
 
 ## Context
 
