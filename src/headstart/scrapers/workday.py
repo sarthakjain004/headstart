@@ -242,6 +242,13 @@ _JSON_LD = re.compile(
 _DETAIL_BREAK_STREAK = 30
 _BROKEN_OFF = "skipped after the 5xx break-off"
 
+# A posting the *listing* served with no ``externalPath``. Not a fetch failure — there is no
+# detail URL to fetch — so `_report_detail_losses` reports it on its own line rather than in the
+# mid-crawl tally. Measured live 2026-09-09 (docs/workday/2026-09-09_parser-shaped-detail-losses.md):
+# such an item carries ``bulletFields`` and nothing else, so the Job it makes is titled "Untitled"
+# and `tech_filter.classify` drops it before the description store or the index ever see it.
+_NO_DETAIL_URL = "no externalPath"
+
 # ``remoteType`` is freeform; map the unambiguous values. "hybrid"/"flexible"
 # stay None — neither purely remote nor onsite.
 _REMOTE_TYPE_PATTERNS = {
@@ -618,7 +625,18 @@ class WorkdayScraper(BaseScraper):
                 lambda item: self._job_detail(item.get("externalPath"), classes),
                 workers=_DETAIL_WORKERS,
             )
-        self._report_detail_losses(details, classes)
+        # A no-`externalPath` posting that nonetheless carries a title is the one shape that would
+        # make that loss cost something — it can pass the tech gate, and `parse` would then serve
+        # it with the board root as its url (a dead link) and no description. Never observed:
+        # 0 of 38 stubs over 31,028 postings on 22 boards swept live 2026-09-09, every one of them
+        # carrying `bulletFields` and no other key. Counted rather than assumed, because that
+        # sample is 22 of the 125 Boards the class was seen on.
+        titled_stubs = sum(
+            1
+            for item in postings
+            if not item.get("externalPath") and (item.get("title") or "").strip()
+        )
+        self._report_detail_losses(details, classes, titled_stubs)
         for item, detail in zip(postings, details):
             item["_detail"] = detail or {}
         return postings
@@ -672,7 +690,7 @@ class WorkdayScraper(BaseScraper):
             self._note_detail(classes, _BROKEN_OFF)
             return None
         if not external_path:
-            self._note_detail(classes, "no externalPath")
+            self._note_detail(classes, _NO_DETAIL_URL)
             return None
         try:
             response = http.fetch(
@@ -741,7 +759,7 @@ class WorkdayScraper(BaseScraper):
             self._note_detail(classes, _BROKEN_OFF)
             return None
         if not external_path:
-            self._note_detail(classes, "no externalPath")
+            self._note_detail(classes, _NO_DETAIL_URL)
             return None
         try:
             response = await http.fetch_async(
@@ -890,7 +908,7 @@ class WorkdayScraper(BaseScraper):
             return None
 
     def _report_detail_losses(
-        self, details: Sequence[Any], classes: Counter[str]
+        self, details: Sequence[Any], classes: Counter[str], titled_stubs: int = 0
     ) -> None:
         """Log what a detail pass's gaps actually were, once per Board, or nothing if it had none.
 
@@ -905,8 +923,12 @@ class WorkdayScraper(BaseScraper):
         narrow: it says only that *this* pass does not mark the Board truncated — unconditionally
         true — and points at the pass that would. It claims neither that the listing was whole
         (`_paginate` can `mark_truncated` and return, so one Board can lose pages *and* details in
-        a run) nor that the loss is harmless — it still costs ADR-0021's null fields and an
-        ADR-0050 gap entry. It no longer costs *identity*: :func:`_posting_key` read the detail's
+        a run) nor that the loss is harmless — a *fetch* loss still costs ADR-0021's null fields
+        and an ADR-0050 gap entry. (That cost is what a lost fetch carries; it is **not** universal
+        across the classes this line once tallied — a `_NO_DETAIL_URL` posting pays neither,
+        because it never reaches the tech subset those two are keyed on. ADR-0088 states the cost
+        unqualified, which was true of every class it had when written; see its 2026-09-09
+        amendment.) It no longer costs *identity*: :func:`_posting_key` read the detail's
         ``jobReqId`` until ADR-0097, so a lost detail used to *rename* the Job rather than merely
         under-fill it. ADR-0088 has both arguments and why neither widens this line's claim.
 
@@ -914,6 +936,19 @@ class WorkdayScraper(BaseScraper):
         detail is non-None, so leaving either in would overshoot ``missing`` — the one direction
         the invariant below says the tally can never move. Each gets its own INFO line instead, so
         the recovery is visible per Board without reading as a loss (ADR-0099, ADR-0103).
+
+        ``_NO_DETAIL_URL`` is popped for the opposite reason: it *is* a None, but it is not a
+        *fetch* failure — the listing gave no detail URL, so no request was made and neither the
+        retry ladder nor the spare-egress fallback was ever involved. Left in the tally it read as
+        one, and that reading is what sent a 2026-09-09 investigation looking for a network fix to
+        a listing-side artefact. Measured over the four runs of that day (747 loss lines, 2,813
+        lost postings in all): 335 postings on 125 Boards, of which **111 are one chronic tenant**
+        (`accenture/avanadecareers`, 24-30 every run, ~5% of its board) and 90 Boards saw it in
+        exactly one run. Probed live, such an item is unrecoverable — the API's own req-id search
+        returns the same stub, the CXS detail 404s, and 0 of 27 appear in the site's sitemap — so
+        this is reported, not retried. It is also uncosted: the Job it makes is titled "Untitled",
+        which `tech_filter.classify` drops, so it never reaches the description store or the index.
+        Full write-up: ``docs/workday/2026-09-09_parser-shaped-detail-losses.md``.
         """
         recovered = classes.pop(_PAGE_RECOVERED, 0)
         if recovered:
@@ -927,7 +962,31 @@ class WorkdayScraper(BaseScraper):
                 f"{self.board_key()}: {cookie_recovered} detail(s) recovered by clearing a stale "
                 "session cookie after a 400 (ADR-0103)"
             )
-        missing = sum(1 for detail in details if detail is None)
+        no_url = classes.pop(_NO_DETAIL_URL, 0)
+        if no_url:
+            # Says only what this pass establishes: the listing gave no detail URL, so nothing was
+            # fetched. What *becomes* of such a posting downstream (measured: dropped at the tech
+            # gate, because a stub has no title) is a claim about other modules on a 22-board
+            # sample, and belongs in the write-up, not asserted per Board in a scrape log.
+            _log.info(
+                f"{self.board_key()}: {no_url} posting(s) carried no externalPath — the listing "
+                "gave no detail URL, so none was fetched (not a fetch failure; see "
+                "docs/workday/2026-09-09_parser-shaped-detail-losses.md)"
+            )
+        if titled_stubs:
+            # The carve-out above is only safe while stubs stay title-less. One with a title can
+            # pass the tech gate and ship with the board root as its url — a dead link — so this
+            # is the tripwire for the assumption, not a restatement of it.
+            _log.warning(
+                f"{self.board_key()}: {titled_stubs} posting(s) had a title but no externalPath — "
+                "these can pass the tech gate and would serve the board root as their url"
+            )
+        # Subtracted from `missing` as well as popped from the tally, or the difference would
+        # resurface as `unclassified` and read as a loss nothing could name. Safe in the one
+        # direction that matters: both note sites return None immediately, so every counted
+        # `_NO_DETAIL_URL` is one of the Nones being subtracted from, and the threaded `fan_out`
+        # fallback's racing increments can only *under*count, never overshoot.
+        missing = sum(1 for detail in details if detail is None) - no_url
         if not missing:
             return
         # Every label is recorded on a path that also yields None, so the tally can only fall
