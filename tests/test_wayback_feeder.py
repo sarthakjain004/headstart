@@ -182,6 +182,9 @@ def test_every_table_host_yields_the_slug_its_own_scraper_expects():
         "workday": lambda host: (
             "acme/External_Careers"
         ),  # company/site, per board_key()
+        "workdaysite": lambda host: (
+            "acme/External_Careers"
+        ),  # same identity, reached from Workday's other domain
     }
     for ats, hosts in wf.ATS_HOSTS.items():
         for host, style in hosts:
@@ -190,12 +193,21 @@ def test_every_table_host_yields_the_slug_its_own_scraper_expects():
                 "sub": f"https://acme.{host}/jobs",
                 "host": f"https://acme.{host}/careers",
                 "workday": f"https://acme.wd1.{host}/en-US/External_Careers/job/1",
+                "workdaysite": f"https://wd1.{host}/en-US/recruiting/acme/External_Careers",
             }[style]
             got = wf.extract(probe, host, style)
             assert got, f"{ats}: {host} ({style}) reads nothing"
             assert got[0] == expected[style](host), (
                 f"{ats}: {host} ({style}) emitted {got[0]}"
             )
+            # An alias host must emit the CANONICAL spelling, because that is the whole mechanism
+            # by which the two spellings of one board collapse — `dedupe_key` keys every
+            # non-`path` style on the URL. A row still carrying the alias host would double-count.
+            canonical = wf._CANONICAL_HOST.get(host)
+            if canonical:
+                assert got[1] == f"https://acme.{canonical}", (
+                    f"{ats}: {host} emitted {got[1]}, not the canonical spelling"
+                )
 
 
 def test_a_workday_slug_keeps_the_site_its_scraper_parses():
@@ -467,3 +479,228 @@ def test_prune_does_not_truncate_a_dotted_path_slug(tmp_path, monkeypatch):
     assert wf.prune_encoded_slashes("ashby", out) == 1
     kept = {r["tenant"] for r in csv.DictReader(out.open(encoding="utf-8"))}
     assert kept == {"adept.ai", "2fadept"}
+
+
+# --- the four host gaps found by the 2026-09-08 coverage audit --------------------------------
+# docs/discovery/2026-09-08_wayback-host-coverage-audit.md. Every URL below is a real archived or
+# live shape from that audit, not an invented one.
+
+
+def test_myworkdaysite_is_read_as_the_myworkdayjobs_board_it_is():
+    """Workday's second domain puts the tenant in the PATH, and the old style cannot read it.
+
+    `workday` style takes the first host label as the company and requires `wd\\d+`; on
+    myworkdaysite that label IS the instance. Measured yield of the gap: 108 Boards in one Common
+    Crawl snapshot, 31 in no ledger, 12 of 14 sampled live.
+    """
+    assert wf.extract(
+        "https://wd5.myworkdaysite.com/recruiting/uw/UWHires",
+        "myworkdaysite.com",
+        "workdaysite",
+    ) == ("uw/UWHires", "https://uw.wd5.myworkdayjobs.com/UWHires")
+    # a locale Wayback archived the board under is skipped, as in the `workday` style
+    assert wf.extract(
+        "https://wd3.myworkdaysite.com/en-US/recruiting/gflenv/Careers",
+        "myworkdaysite.com",
+        "workdaysite",
+    ) == ("gflenv/Careers", "https://gflenv.wd3.myworkdayjobs.com/Careers")
+    # non-production instances are rejected exactly as `_WD_INSTANCE` does for the other domain
+    assert (
+        wf.extract(
+            "https://impl-wd12.myworkdaysite.com/recruiting/acme/Careers",
+            "myworkdaysite.com",
+            "workdaysite",
+        )
+        is None
+    )
+    assert (
+        wf.extract(
+            "https://wd5.myworkdaysite.com/assets/foo.js",
+            "myworkdaysite.com",
+            "workdaysite",
+        )
+        is None
+    )
+
+
+def test_alias_hosts_collapse_but_regional_pods_do_not():
+    """The distinction `_CANONICAL_HOST` exists to preserve, asserted in both directions.
+
+    Trakstar's `recruiterbox.com` is the same board under an old name and MUST collapse; Zoho's
+    TLDs are regional pods serving different board sets and MUST NOT. Getting this backwards
+    either double-counts every Trakstar tenant or silently drops a real second Zoho board.
+    """
+    legacy = wf.extract("https://1lattice.recruiterbox.com/", "recruiterbox.com", "sub")
+    current = wf.extract(
+        "https://1lattice.hire.trakstar.com/", "hire.trakstar.com", "sub"
+    )
+    assert legacy == current == ("1lattice", "https://1lattice.hire.trakstar.com")
+    assert wf.dedupe_key(*legacy, "sub") == wf.dedupe_key(*current, "sub")
+
+    # the same board reached from Workday's two domains also collapses, via the emitted URL
+    site = wf.extract(
+        "https://wd5.myworkdaysite.com/recruiting/uw/UWHires",
+        "myworkdaysite.com",
+        "workdaysite",
+    )
+    jobs = wf.extract(
+        "https://uw.wd5.myworkdayjobs.com/UWHires", "myworkdayjobs.com", "workday"
+    )
+    # keyed with each row's own harvest style, as `_Sink.add` does
+    assert wf.dedupe_key(*site, "workdaysite") == wf.dedupe_key(*jobs, "workday")
+
+    com = wf.extract(
+        "https://acme.zohorecruit.com/jobs/Careers", "zohorecruit.com", "sub"
+    )
+    eu = wf.extract("https://acme.zohorecruit.eu/jobs/Careers", "zohorecruit.eu", "sub")
+    assert wf.dedupe_key(*com, "sub") != wf.dedupe_key(*eu, "sub")
+
+
+def test_teamtailor_powered_by_backlink_yields_its_slug():
+    """The slug rides in `utm_content`, and `www` is INFRA so the row used to be dropped.
+
+    53 tenants (51 live) appear in the ledger under this shape and in no harvest. The guard is
+    that `utm_content` must name a host under the SAME ats, so another vendor's backlink on the
+    same page cannot inject a slug.
+    """
+    assert wf.extract(
+        "https://www.teamtailor.com/?utm_campaign=poweredby&utm_content=acme.teamtailor.com&x=1",
+        "teamtailor.com",
+        "sub",
+    ) == ("acme", "https://acme.teamtailor.com")
+    assert (
+        wf.extract(
+            "https://www.teamtailor.com/?utm_content=evil.example.com",
+            "teamtailor.com",
+            "sub",
+        )
+        is None
+    )
+    assert (
+        wf.extract("https://www.teamtailor.com/pricing", "teamtailor.com", "sub")
+        is None
+    )
+
+
+def test_oracle_podless_vanity_tier_is_swept():
+    """`jpmc.fa.oraclecloud.com` is live with 7,323 jobs and matches none of the 16 pod hosts."""
+    assert wf.extract(
+        "https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/requisitions",
+        "fa.oraclecloud.com",
+        "host",
+    ) == ("jpmc.fa.oraclecloud.com", "https://jpmc.fa.oraclecloud.com")
+    assert ("fa.oraclecloud.com", "host") in wf.ATS_HOSTS["oracle"]
+
+
+def test_greenhouse_anz_region_is_swept():
+    """ANZ is a third production region, not an alias — 12/12 live EU slugs 404 there."""
+    assert wf.extract(
+        "https://job-boards.anz.greenhouse.io/phoenixdx",
+        "job-boards.anz.greenhouse.io",
+        "path",
+    ) == ("phoenixdx", "https://job-boards.anz.greenhouse.io/phoenixdx")
+    hosts = dict(wf.ATS_HOSTS["greenhouse"])
+    assert hosts["job-boards.anz.greenhouse.io"] == "path"
+    assert hosts["boards.anz.greenhouse.io"] == "path"
+
+
+def test_the_backlink_shape_is_canonicalised_too():
+    """The `utm_content` branch returns early, so it can miss the alias rewrite.
+
+    It did: `www.recruiterbox.com/?utm_content=acme.recruiterbox.com` emitted the alias spelling
+    while `acme.recruiterbox.com` emitted the canonical one — one board, two dedupe keys, which
+    is precisely the double-count `_CANONICAL_HOST` exists to stop. The shape-based invariant
+    test never probed this path, so it passed throughout.
+    """
+    direct = wf.extract("https://acme.recruiterbox.com/", "recruiterbox.com", "sub")
+    backlink = wf.extract(
+        "https://www.recruiterbox.com/?utm_content=acme.recruiterbox.com",
+        "recruiterbox.com",
+        "sub",
+    )
+    assert direct == backlink == ("acme", "https://acme.hire.trakstar.com")
+    assert wf.dedupe_key(*direct, "sub") == wf.dedupe_key(*backlink, "sub")
+
+
+def test_repeated_utm_content_names_nobody():
+    """`parse_qs` returns every value; taking the first silently picked an attacker's."""
+    assert (
+        wf.extract(
+            "https://www.teamtailor.com/?utm_content=evil.teamtailor.com"
+            "&utm_content=acme.teamtailor.com",
+            "teamtailor.com",
+            "sub",
+        )
+        is None
+    )
+    # repeated but agreeing is not ambiguous, so it still reads
+    assert wf.extract(
+        "https://www.teamtailor.com/?utm_content=acme.teamtailor.com"
+        "&utm_content=acme.teamtailor.com",
+        "teamtailor.com",
+        "sub",
+    ) == ("acme", "https://acme.teamtailor.com")
+
+
+def test_workdaysite_reads_the_cxs_route_like_the_other_domain_does():
+    """`_workday_site` has a `/wday/cxs/` handler "to recover boards archived only in API form".
+
+    Requiring `recruiting` as the first segment made that handler unreachable on myworkdaysite,
+    so the same board was recoverable from one of Workday's two domains and not the other.
+    """
+    assert wf.extract(
+        "https://wd5.myworkdaysite.com/wday/cxs/uw/UWHires/jobs",
+        "myworkdaysite.com",
+        "workdaysite",
+    ) == ("uw/UWHires", "https://uw.wd5.myworkdayjobs.com/UWHires")
+    # everything else under /wday/ is machinery, exactly as for the other domain
+    assert (
+        wf.extract(
+            "https://wd5.myworkdaysite.com/wday/videoLabels",
+            "myworkdaysite.com",
+            "workdaysite",
+        )
+        is None
+    )
+
+
+def test_keka_alias_domain_is_deliberately_not_swept():
+    """Measured yield was zero, so it stays out — rule 2, not an oversight."""
+    assert "kekahire.com" not in dict(wf.ATS_HOSTS["keka"])
+
+
+def test_refresh_reharvests_pages_already_marked_done(tmp_path, monkeypatch):
+    """A periodic sweep must re-read finished pages, because CDX inserts new captures into them.
+
+    Without this a page marked done months ago is skipped forever, which measurably hid boards:
+    clearing every marker recovered ashby +125 and greenhouse +96 on 2026-09-08. Asserted by
+    recording which pages `sweep` actually fetches, not by restating its arithmetic.
+    """
+    import wayback_pages as wp
+
+    monkeypatch.setattr(wp, "WB", tmp_path)
+    (tmp_path / ".ashby_jobs.ashbyhq.com_pages_done").write_text("0 1\n")
+
+    fetched = []
+
+    def fake_fetch(url):
+        if "showNumPages" in url:
+            return "3\n"
+        fetched.append(int(url.rsplit("page=", 1)[1]))
+        return "https://acme.jobs.ashbyhq.com/x\n"
+
+    monkeypatch.setattr(wp, "fetch", fake_fetch)
+
+    class _NullSink:
+        def add(self, found, style):
+            return False
+
+        def flush(self):
+            pass
+
+    wp.sweep("ashby", "jobs.ashbyhq.com", "path", 1, _NullSink())
+    assert fetched == [2], "without --refresh, pages 0 and 1 must stay skipped"
+
+    fetched.clear()
+    wp.sweep("ashby", "jobs.ashbyhq.com", "path", 1, _NullSink(), refresh=True)
+    assert sorted(fetched) == [0, 1, 2], "--refresh must re-read the finished pages"
