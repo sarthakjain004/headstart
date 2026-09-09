@@ -51,6 +51,15 @@ jobs:
           printf 'PROPOSED_total_checkout_to_ready\t%s\n' "$(awk "BEGIN{printf \"%.2f\", $(date +%s.%N)-$T0}")"
           python -c "import headstart, sentence_transformers, torch, lancedb, langdetect, huggingface_hub, sklearn, einops, curl_cffi; print('imports OK torch', torch.__version__)"
           python -c "import headstart.ingest.embed_plan, headstart.ingest.index; print('pipeline modules import OK')"
+      # The merge job shells out to `hf upload` (pipeline.yml, inside the `up()` retry helper) —
+      # a CONSOLE SCRIPT, not an import. `uv pip install --system` must leave it on PATH or the
+      # ADR-0095 upload breaks, which is the step that ships the run's data. Reasoning about
+      # whether uv writes entry points is not evidence; this runs it.
+      - name: Console scripts must survive `uv pip install --system`
+        run: |
+          echo "which hf      -> $(which hf || echo MISSING)"
+          echo "hf --version  -> $(hf --version || echo FAILED)"
+          hf --help > /dev/null && echo "CONSOLE SCRIPT OK: hf is executable"
 
   baseline_prod:
     runs-on: ubuntu-latest
