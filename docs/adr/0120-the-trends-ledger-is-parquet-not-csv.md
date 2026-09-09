@@ -86,7 +86,10 @@ on HF until something removes it explicitly. The writer deliberately does not de
 it locally would not retire the remote copy, and would only make a re-run re-migrate. Retirement is
 a one-time `HfApi().delete_file("data/state/role_trends.csv", ...)` **after** the first Parquet has
 landed — in that order, so the ledger is never absent from the dataset. Until it runs, this change
-has added 3.4 MB rather than saved 169 MB.
+has added 3.4 MB rather than saved 169 MB. The step has an owner and a runnable recipe:
+`docs/agents/deployment.md` §"One-time: retire the pre-ADR-0120 trends CSV", which asserts the
+landed Parquet carries >2.4M rows *before* deleting anything — so a fold-in that silently did not
+happen leaves the CSV in place to migrate again rather than losing the history.
 
 **The rollout has a window.** The pipeline writes and the Space reads, and they deploy
 independently: `deploy-space.yml` pushes on any `deploy/hf-space/**` change to main, so the Space

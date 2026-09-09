@@ -182,7 +182,7 @@ def _ledger_schema():
 
 
 def _to_table(rows: list[tuple]):
-    """``rows`` — seven-tuples in ``_COLUMNS`` order — as an Arrow table on ``_schema()``.
+    """``rows`` — seven-tuples in ``_COLUMNS`` order — as an Arrow table on ``_ledger_schema()``.
 
     Values arrive as strings from a legacy CSV and as native ints from this run's own counts,
     so each column is coerced rather than trusted. ``ts`` is parsed with ``fromisoformat``,
