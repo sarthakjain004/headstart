@@ -329,9 +329,8 @@ def load_active_companies(
 
 #: Boards whose fallback reached the reporter, so one malformed slug says so once.
 #:
-#: "Seen", not "reported", on both edges: a caller passing ``report_failure=False`` never reaches
-#: the adder at all, and past :data:`_IDENTITY_REPORT_CAP` a Board is added but no longer named.
-#: The membership test is what keeps that cap counting *distinct* Boards.
+#: "Seen", not "reported": past :data:`_IDENTITY_REPORT_CAP` a Board is added but no longer
+#: named. The membership test is what keeps that cap counting *distinct* Boards.
 #:
 #: Module-level, and never cleared: a pipeline stage is one process, and the point is that every
 #: caller shares one record. `board_identity` is reached from ~15 sites (`scrape_plan` x8,
@@ -349,8 +348,9 @@ def load_active_companies(
 #: Until 2026-09-09 `board_cost._rekeyed` did exactly that round-trip on every row, so each of
 #: `scrape-plan` and `join` emitted 10,561 lines a run — 21,122 in total, and 99.8% of the
 #: `scrape_plan` *step*'s own output (10,561 of 10,585 lines; the surrounding job log is larger).
-#: It now opts out of the report (`report_failure=False`), because for it a raise is the expected
-#: answer rather than a defect.
+#: That caller is gone. ADR-0096's migration completed — the live ledger's legacy-key count read
+#: 0 on 2026-09-09 — so the shim, and the `report_failure` opt-out added for it, were both
+#: removed. Nothing feeds a state-ledger key back through here today.
 #:
 #: `board_priority.csv` is keyed the same way (5,143 Workday keys, 5,120 of them that shorthand)
 #: but never reaches here: `board_priority.load` returns `row["board"]` verbatim, and `pick_boards`
@@ -371,14 +371,14 @@ _IDENTITY_FAILURES_SEEN: set[str] = set()
 _IDENTITY_REPORT_CAP = 10
 
 
-def board_identity(company: CompanyRef, *, report_failure: bool = True) -> str:
+def board_identity(company: CompanyRef) -> str:
     """The Board's canonical key: ``board_key`` where the scraper can build one, the plain
     ``ats:slug`` where a malformed slug defeats it — never dropping the Board either way.
 
-    Pass ``report_failure=False`` when the argument is an **already-canonical** key rather than a
-    raw slug. There the raise is the expected answer — the fallback returns the key unchanged,
-    which is what makes the round-trip safe — so reporting it says nothing and floods the log.
-    :func:`headstart.board_cost._rekeyed` is the one such caller.
+    Every caller passes a **raw scraper slug**, so a raise here is a real parse failure and is
+    worth reporting. The one caller that fed an already-canonical key back in —
+    ``board_cost._rekeyed``, for which the raise was the expected answer — is gone with ADR-0096's
+    migration, and with it the ``report_failure`` opt-out that kept it from flooding the log.
     """
     from headstart.scrapers.registry import SCRAPERS
 
@@ -386,8 +386,7 @@ def board_identity(company: CompanyRef, *, report_failure: bool = True) -> str:
         return SCRAPERS[company.ats](company.slug).board_key()
     except Exception as exc:  # noqa: BLE001 - a malformed slug falls back to the plain key
         key = f"{company.ats}:{company.slug}"
-        if report_failure:
-            _report_identity_failure(key, exc)
+        _report_identity_failure(key, exc)
         return key
 
 
@@ -406,9 +405,8 @@ def _report_identity_failure(key: str, exc: Exception) -> None:
     No running total accompanies the cap. A hook to flush one to does exist —
     `ingest.observability.summary` — but it is in `ingest`, which this module may not import (the
     curated-feed path reaches `config`), so the obstacle is the layering, not the absence of a
-    mechanism. The expected count after the `_rekeyed` fix is zero, so any line at all is the
-    signal; the named ones carry the ATS and the parse error, which is what a reader needs to find
-    the scraper at fault.
+    mechanism. The expected count is zero, so any line at all is the signal; the named ones
+    carry the ATS and the parse error, which is what a reader needs to find the scraper at fault.
     """
     if key in _IDENTITY_FAILURES_SEEN:
         return

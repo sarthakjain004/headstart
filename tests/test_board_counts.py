@@ -129,10 +129,12 @@ def counts() -> dict[str, int]:
 def _scraped_not_unique(unique: set[str]) -> int | None:
     """Scraped Boards no longer in the live set, or ``None`` when the cost ledger is not here.
 
-    Read through `board_cost.load()`, never the raw CSV: the loader normalises legacy `{ats}:{slug}`
-    keys to `board_key` (ADR-0096), so this figure is the same before and after the ledger migrates
-    itself. Counted off the file directly it would jump the first time a pipeline run rewrote it,
-    turning this test red against a file nobody edited.
+    Read through `board_cost.load()`, never the raw CSV: the loader owns the row -> key contract,
+    so this figure follows the ledger's own definition of a key instead of re-deriving one here.
+    That was load-bearing across ADR-0096's migration — the loader re-keyed legacy `{ats}:{slug}`
+    rows, so the figure held steady while the file rewrote itself. The migration completed
+    2026-09-09 and the loader now reads the key verbatim, which leaves the contract as the reason.
+    Case folding is the caller's, below; the loader does not do it.
     """
     from headstart.board_cost import load as load_cost
 
