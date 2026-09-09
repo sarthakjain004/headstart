@@ -240,3 +240,39 @@ model, both L2-normalized; ranking effect is negligible (ADR-0020).
 scraped this run, so it can't reach a board that dropped off the live ledger — but `index prune`
 (flow step 7, ADR-0023) sweeps exactly those rows every run, keyed on the live ledger. (An earlier
 version of this note called it a known v1 gap; prune closes it.)
+
+
+## One-time: retire the pre-ADR-0120 trends CSV
+
+**Status: pending as of 2026-09-09.** The trends ledger moved from
+`data/state/role_trends.csv` (172,537,804 bytes) to `data/state/role_trends.parquet`
+(3,430,805 bytes) in ADR-0120. The `merge` job uploads `data/state` as a **folder without
+`--delete`**, so the old CSV survives on HF until someone removes it — and until it is gone the
+saving is only half banked: `join`'s `state_fetch 'data/state/*'` still downloads the 172 MB CSV
+every run and ships it to `merge` through the `corpus-state` artifact.
+
+Run this **after** a pipeline run has published the Parquet, never before — the writer folds the
+CSV in on its first Parquet write, so deleting it earlier loses every historical row.
+
+```bash
+python - <<'EOF'
+from huggingface_hub import HfApi
+import pyarrow.parquet as pq, huggingface_hub as hh
+
+api = HfApi()
+REPO = "imPoseidon/headstart-index"
+# 1. The Parquet must exist AND carry the full history — a short one means the fold-in did not
+#    happen (e.g. merge ran without the corpus-state artifact) and the CSV is still the truth.
+path = hh.hf_hub_download(REPO, "data/state/role_trends.parquet", repo_type="dataset")
+rows = pq.ParquetFile(path).metadata.num_rows
+print(f"parquet rows: {rows:,}")
+assert rows > 2_400_000, f"only {rows} rows — do NOT delete the CSV; re-run the migration first"
+# 2. Only then retire the CSV.
+api.delete_file("data/state/role_trends.csv", REPO, repo_type="dataset",
+                commit_message="retire the pre-ADR-0120 trends CSV (ADR-0120)")
+print("deleted data/state/role_trends.csv")
+EOF
+```
+
+The row-count assertion is the point: it is what turns a bad fold-in from silent permanent data
+loss into a recoverable state, because the CSV is still there to migrate again.

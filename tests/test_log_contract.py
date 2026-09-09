@@ -868,7 +868,7 @@ CONTRACT: tuple[Line, ...] = (
         consumer="fanout_merge.TRENDS_APPENDED",
         emitter=_TRENDS,
         body=(
-            "appended 820 rows @ 2026-09-08T00:00:00+00:00 -> data/state/role_trends.csv | top: "
+            "appended 820 rows @ 2026-09-08T00:00:00+00:00 -> data/state/role_trends.parquet | top: "
             "software-engineering/mid/workday 12004, data/mid/lever 3120 | new in 7d: 18422"
         ),
         why="the trends ledger tick; `new` is a 7-day LEVEL, never inflow (CONTEXT.md)",
@@ -876,7 +876,7 @@ CONTRACT: tuple[Line, ...] = (
     Line(
         consumer="fanout_merge.TRENDS_APPENDED",
         emitter=_TRENDS,
-        body="appended 0 rows @ 2026-09-08T00:00:00+00:00 -> data/state/role_trends.csv | top:  | new in 7d: 0",
+        body="appended 0 rows @ 2026-09-08T00:00:00+00:00 -> data/state/role_trends.parquet | top:  | new in 7d: 0",
         why=(
             "the empty-`top` form: `stock_top` is a slice of a filtered comprehension, so a run "
             "with no stock-family row joins to '' and renders `| top:  |`. A `(.+)` group dropped "

@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-20
+- Amended by: [ADR-0120](0120-the-trends-ledger-is-parquet-not-csv.md) — the ledger is stored as `data/state/role_trends.parquet`; the seven columns this ADR settled are unchanged
 - Relates to: [ADR-0040](0040-role-trend-ledger.md) (the ledger and `count_groups`/`append_ledger`
   this extends), [ADR-0051](0051-trends-as-share-flow-and-watched-roles.md) (added `metric` as a
   dimension the same way, and the `_migrate_ledger` in-place-rewrite this reuses), [ADR-0074](0074-browse-and-paginate-the-search-index.md)

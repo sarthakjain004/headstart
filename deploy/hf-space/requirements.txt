@@ -1,5 +1,10 @@
 flask
 lancedb
+# Declared, not assumed: the trends ledger is Parquet (ADR-0120) and pyarrow currently
+# arrives only transitively via lancedb. `requests` used to arrive transitively via
+# huggingface_hub, which moved to httpx in 1.0 — and every state fetch died on
+# ModuleNotFoundError. A direct import gets a direct dependency.
+pyarrow
 sentence-transformers>=3.0
 einops
 huggingface_hub

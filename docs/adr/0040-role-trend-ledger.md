@@ -4,7 +4,10 @@
 axis (stock/new), the chart plots share of index rather than raw counts, and named roles can
 be watched by title pattern · **Amended by:** [ADR-0052](0052-watch-the-large-domain-roles-too.md)
 — fifteen watched roles take a run from a few dozen rows to several hundred, so "a few dozen rows
-per run, tiny forever" below no longer describes the ledger
+per run, tiny forever" below no longer describes the ledger · **Amended by:**
+[ADR-0120](0120-the-trends-ledger-is-parquet-not-csv.md) — the ledger is stored as
+`data/state/role_trends.parquet`, not CSV; the deferred retention policy stays deferred, because
+at 50.3x compression the file no longer needs one
 
 ## Context
 

@@ -2,15 +2,15 @@
 
 Contracts: served rows are counted into (metric, family, band) groups with non-tech held
 apart; `new` counts only rows first seen inside the flow window; watched roles are counted by
-title in addition to their family; a pre-ADR-0051 ledger migrates in place; the ledger appends
-run over run with one header; and every degenerate input (missing centroids, missing family
-map, empty table, zero-byte ledger) exits without writing garbage — trends must never sink a
-run that already scraped and embedded, nor silently look healthy while accruing nothing.
+title in addition to their family; a pre-ADR-0120 CSV ledger of any of its three shapes is
+folded into the Parquet ledger without losing a row; the ledger accumulates run over run; and
+every degenerate input (missing centroids, missing family map, empty table, zero-byte or torn
+CSV) exits without writing garbage — trends must never sink a run that already scraped and
+embedded, nor silently look healthy while accruing nothing.
 """
 
 from __future__ import annotations
 
-import csv
 import json
 import sys
 from pathlib import Path
@@ -20,6 +20,7 @@ import pytest
 pytest.importorskip("lancedb")  # [embed] extra — not installed in CI's quality job
 np = pytest.importorskip("numpy")
 pa = pytest.importorskip("pyarrow")
+pq = pytest.importorskip("pyarrow.parquet")
 
 from datetime import UTC
 
@@ -81,8 +82,18 @@ def _centroids(store: Path, families_path: Path) -> None:
     )
 
 
+def _rows(ledger: Path) -> list[dict]:
+    """The Parquet ledger's rows as dicts, with `ts` rendered to the stamp string the
+    assertions below compare against (ADR-0120 stores it as a real timestamp)."""
+    table = pq.read_table(ledger)
+    out = table.to_pylist()
+    for r in out:
+        r["ts"] = r["ts"].isoformat(timespec="seconds")
+    return out
+
+
 def _run(tmp_path: Path, monkeypatch) -> Path:
-    ledger = tmp_path / "role_trends.csv"
+    ledger = tmp_path / "role_trends.parquet"
     monkeypatch.setattr(
         sys,
         "argv",
@@ -152,13 +163,11 @@ def test_counts_rows_by_family_and_band_and_isolates_non_tech(tmp_path, monkeypa
     )
     ledger = _run(tmp_path, monkeypatch)
 
-    rows = {(r["family"], r["band"]): r["count"] for r in csv.DictReader(ledger.open())}
-    assert (
-        rows[("software-engineering", "senior")] == "2"
-    )  # 5 and 6 years band together
-    assert rows[("data-science", "intern")] == "1"
+    rows = {(r["family"], r["band"]): r["count"] for r in _rows(ledger)}
+    assert rows[("software-engineering", "senior")] == 2  # 5 and 6 years band together
+    assert rows[("data-science", "intern")] == 1
     # the non-tech row is the diagnostic: one unbanded number, never a chart series
-    assert rows[("non-tech", "all")] == "1"
+    assert rows[("non-tech", "all")] == 1
     assert ("data-science", "mid") not in rows  # only non-empty groups
 
 
@@ -202,16 +211,13 @@ def test_ats_becomes_its_own_column_and_splits_same_family_band_rows(
     )
     ledger = _run(tmp_path, monkeypatch)
 
-    rows = {
-        (r["family"], r["band"], r["ats"]): r["count"]
-        for r in csv.DictReader(ledger.open())
-    }
-    assert rows[("software-engineering", "senior", "greenhouse")] == "1"
-    assert rows[("software-engineering", "senior", "lever")] == "1"
-    assert rows[("non-tech", "all", "all")] == "1"  # never split by ats
+    rows = {(r["family"], r["band"], r["ats"]): r["count"] for r in _rows(ledger)}
+    assert rows[("software-engineering", "senior", "greenhouse")] == 1
+    assert rows[("software-engineering", "senior", "lever")] == 1
+    assert rows[("non-tech", "all", "all")] == 1  # never split by ats
 
 
-def test_ledger_appends_with_one_header(tmp_path, monkeypatch):
+def test_ledger_accumulates_rows_across_runs(tmp_path, monkeypatch):
     _centroids(tmp_path / "rc", tmp_path / "families.json")
     _table(
         tmp_path / "db",
@@ -228,12 +234,13 @@ def test_ledger_appends_with_one_header(tmp_path, monkeypatch):
     ledger = _run(tmp_path, monkeypatch)
     _run(tmp_path, monkeypatch)  # second run appends
 
-    lines = ledger.read_text().splitlines()
-    assert lines[0] == "ts,version,metric,family,band,ats,count"
-    assert (
-        len(lines) == 5
-    )  # header + (one stock group + the non-tech diagnostic) per run
-    assert sum(1 for line in lines if line.startswith("ts,")) == 1
+    rows = _rows(ledger)
+    # Parquet has no repeated header to guard against, so what matters is that the second
+    # run's rows are ADDED to the first's rather than replacing them — the property the old
+    # single-header assertion was really protecting. (Both runs can share a stamp: they land
+    # inside the same second, so the stamp is not what distinguishes them.)
+    assert [f.name for f in pq.read_schema(ledger)] == list(role_trends._COLUMNS)
+    assert len(rows) == 4  # (one stock group + the non-tech diagnostic) per run
 
 
 def test_missing_centroid_store_degrades_to_noop(tmp_path, monkeypatch, caplog):
@@ -307,7 +314,7 @@ def test_stale_family_map_errors_visibly_instead_of_silently(
             }
         ],
     )
-    ledger = tmp_path / "role_trends.csv"
+    ledger = tmp_path / "role_trends.parquet"
     monkeypatch.setattr(
         sys,
         "argv",
@@ -396,12 +403,9 @@ def test_new_metric_counts_only_rows_first_seen_inside_the_window(
     )
     ledger = _run(tmp_path, monkeypatch)
 
-    rows = {
-        (r["metric"], r["family"], r["band"]): r["count"]
-        for r in csv.DictReader(ledger.open())
-    }
-    assert rows[("stock", "software-engineering", "mid")] == "3"
-    assert rows[("new", "software-engineering", "mid")] == "1"  # only the 1-day-old row
+    rows = {(r["metric"], r["family"], r["band"]): r["count"] for r in _rows(ledger)}
+    assert rows[("stock", "software-engineering", "mid")] == 3
+    assert rows[("new", "software-engineering", "mid")] == 1  # only the 1-day-old row
 
 
 def test_watch_role_counts_by_title_regardless_of_cluster(tmp_path, monkeypatch):
@@ -455,15 +459,12 @@ def test_watch_role_counts_by_title_regardless_of_cluster(tmp_path, monkeypatch)
     )
     ledger = _run(tmp_path, monkeypatch)
 
-    rows = {
-        (r["metric"], r["family"], r["band"]): r["count"]
-        for r in csv.DictReader(ledger.open())
-    }
-    assert rows[("stock", "watch:fde", "mid")] == "1"
-    assert rows[("stock", "watch:fde", "senior")] == "1"
+    rows = {(r["metric"], r["family"], r["band"]): r["count"] for r in _rows(ledger)}
+    assert rows[("stock", "watch:fde", "mid")] == 1
+    assert rows[("stock", "watch:fde", "senior")] == 1
     # the watched rows still count in their assigned families — the watchlist observes, never moves
-    assert rows[("stock", "software-engineering", "mid")] == "2"
-    assert rows[("stock", "data-science", "senior")] == "1"
+    assert rows[("stock", "software-engineering", "mid")] == 2
+    assert rows[("stock", "data-science", "senior")] == 1
 
 
 def test_watchlist_with_unknown_parent_errors_visibly(tmp_path, monkeypatch, caplog):
@@ -485,7 +486,7 @@ def test_watchlist_with_unknown_parent_errors_visibly(tmp_path, monkeypatch, cap
             }
         ],
     )
-    ledger = tmp_path / "role_trends.csv"
+    ledger = tmp_path / "role_trends.parquet"
     monkeypatch.setattr(
         sys,
         "argv",
@@ -515,14 +516,12 @@ def test_watchlist_with_unknown_parent_errors_visibly(tmp_path, monkeypatch, cap
     assert not ledger.exists()
 
 
-def test_pre_metric_ledger_is_migrated_in_place_before_the_first_append(
-    tmp_path, monkeypatch
-):
+def test_pre_metric_csv_is_folded_into_the_parquet_ledger(tmp_path, monkeypatch):
     """The ledger predates the metric AND ats columns and is append-only on HF, so the
     migration happens where the appends do — old rows become metric=stock, ats=all exactly,
     never a guess."""
-    ledger = tmp_path / "role_trends.csv"
-    ledger.write_text(
+    ledger = tmp_path / "role_trends.parquet"
+    ledger.with_suffix(".csv").write_text(
         "ts,version,family,band,count\n"
         "2026-08-11T00:00:00+00:00,2,software-engineering,mid,10\n"
         "2026-08-11T00:00:00+00:00,2,non-tech,all,3\n",
@@ -544,24 +543,28 @@ def test_pre_metric_ledger_is_migrated_in_place_before_the_first_append(
     )
     _run(tmp_path, monkeypatch)
 
-    lines = ledger.read_text().splitlines()
-    assert lines[0] == "ts,version,metric,family,band,ats,count"
-    assert (
-        lines[1] == "2026-08-11T00:00:00+00:00,2,stock,software-engineering,mid,all,10"
+    rows = _rows(ledger)
+    assert [f.name for f in pq.read_schema(ledger)] == list(role_trends._COLUMNS)
+    assert rows[0] == {
+        "ts": "2026-08-11T00:00:00+00:00",
+        "version": 2,
+        "metric": "stock",
+        "family": "software-engineering",
+        "band": "mid",
+        "ats": "all",
+        "count": 10,
+    }
+    # every row — folded-in and freshly appended alike — lands on the one schema
+    assert all(
+        r["metric"] in ("stock", "new") and isinstance(r["count"], int) for r in rows
     )
-    assert sum(1 for line in lines if line.startswith("ts,")) == 1
-    # every row — migrated and appended alike — parses under the one header
-    rows = list(csv.DictReader(ledger.open()))
-    assert all(r["metric"] in ("stock", "new") and r["count"].isdigit() for r in rows)
 
 
-def test_pre_ats_ledger_is_migrated_in_place_before_the_first_append(
-    tmp_path, monkeypatch
-):
+def test_pre_ats_csv_is_folded_into_the_parquet_ledger(tmp_path, monkeypatch):
     """A ledger already on the ADR-0051 six-column shape (has metric, not ats) gets only
     ats=all stamped — the metric it already carries is trusted, not re-derived."""
-    ledger = tmp_path / "role_trends.csv"
-    ledger.write_text(
+    ledger = tmp_path / "role_trends.parquet"
+    ledger.with_suffix(".csv").write_text(
         "ts,version,metric,family,band,count\n"
         "2026-08-11T00:00:00+00:00,2,stock,software-engineering,mid,10\n"
         "2026-08-11T00:00:00+00:00,2,new,software-engineering,mid,4\n",
@@ -583,23 +586,30 @@ def test_pre_ats_ledger_is_migrated_in_place_before_the_first_append(
     )
     _run(tmp_path, monkeypatch)
 
-    lines = ledger.read_text().splitlines()
-    assert lines[0] == "ts,version,metric,family,band,ats,count"
-    assert (
-        lines[1] == "2026-08-11T00:00:00+00:00,2,stock,software-engineering,mid,all,10"
+    rows = _rows(ledger)
+    assert [f.name for f in pq.read_schema(ledger)] == list(role_trends._COLUMNS)
+    assert [
+        (r["metric"], r["family"], r["band"], r["ats"], r["count"]) for r in rows[:2]
+    ] == [
+        ("stock", "software-engineering", "mid", "all", 10),
+        ("new", "software-engineering", "mid", "all", 4),
+    ]
+    assert all(r["ats"] for r in rows)  # folded-in and freshly-appended rows alike
+
+
+def test_current_shape_csv_is_folded_into_the_parquet_ledger(tmp_path, monkeypatch):
+    """The seven-column CSV is the shape the real HF ledger is in, so this is the branch the
+    production cutover actually takes — the other two migrate shapes that were already gone.
+
+    Its rows carry over verbatim: `ats` is whatever the row said, not the `all` sentinel the
+    older shapes get stamped with."""
+    ledger = tmp_path / "role_trends.parquet"
+    ledger.with_suffix(".csv").write_text(
+        "ts,version,metric,family,band,ats,count\n"
+        "2026-08-11T00:00:00+00:00,2,stock,software-engineering,mid,greenhouse,10\n"
+        "2026-08-11T00:00:00+00:00,2,new,ai-ml,senior,lever,4\n",
+        encoding="utf-8",
     )
-    assert lines[2] == "2026-08-11T00:00:00+00:00,2,new,software-engineering,mid,all,4"
-    assert sum(1 for line in lines if line.startswith("ts,")) == 1
-    rows = list(csv.DictReader(ledger.open()))
-    assert all(r["ats"] for r in rows)  # migrated and freshly-appended rows alike
-
-
-def test_a_zero_byte_ledger_does_not_sink_the_run(tmp_path, monkeypatch):
-    """A run killed between `open("a")` and the first write leaves a 0-byte file. It has no
-    header to migrate, and `append_ledger` writes one only for a file that does not exist —
-    so without this the step raises StopIteration and the ledger never recovers."""
-    ledger = tmp_path / "role_trends.csv"
-    ledger.touch()
     _centroids(tmp_path / "rc", tmp_path / "families.json")
     _table(
         tmp_path / "db",
@@ -615,9 +625,63 @@ def test_a_zero_byte_ledger_does_not_sink_the_run(tmp_path, monkeypatch):
     )
     _run(tmp_path, monkeypatch)
 
-    lines = ledger.read_text().splitlines()
-    assert lines[0] == "ts,version,metric,family,band,ats,count"
-    assert len(lines) == 3  # header + the one group + the non-tech diagnostic
+    rows = _rows(ledger)
+    assert [f.name for f in pq.read_schema(ledger)] == list(role_trends._COLUMNS)
+    # both carried rows, then this run's group + the non-tech diagnostic
+    assert len(rows) == 4
+    assert [
+        (r["metric"], r["family"], r["band"], r["ats"], r["count"]) for r in rows[:2]
+    ] == [
+        ("stock", "software-engineering", "mid", "greenhouse", 10),
+        ("new", "ai-ml", "senior", "lever", 4),
+    ]
+
+
+def test_a_torn_legacy_csv_row_fails_loudly_rather_than_shifting_columns(tmp_path):
+    """The pre-ADR-0120 writer appended without a temp-file rename, so a killed run could leave
+    a truncated final line. Folding that in must not quietly produce a mis-shaped table.
+
+    It does not: the short row makes `zip(*rows)` yield fewer than seven columns, and the
+    unpack raises. Pinned as a test because it is the reason `_legacy_rows` needs no arity
+    check of its own — the guard already exists, one layer down."""
+    csv_ledger = tmp_path / "role_trends.csv"
+    csv_ledger.write_text(
+        "ts,version,metric,family,band,ats,count\n"
+        "2026-08-11T00:00:00+00:00,2,stock,software-engineering,mid,all,10\n"
+        "2026-08-11T00:00:00+00:00,2,stock,ai-ml\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="not enough values to unpack"):
+        role_trends._to_table(role_trends._legacy_rows(csv_ledger))
+
+
+def test_a_zero_byte_legacy_csv_does_not_sink_the_run(tmp_path, monkeypatch):
+    """A pre-ADR-0120 run killed between `open("a")` and its first write left a 0-byte CSV,
+    and that file still arrives from HF. It has no header to read, so folding it in must
+    yield nothing rather than raising StopIteration on the empty reader.
+
+    The Parquet ledger itself has no such case: it is written to a temp file and renamed, so
+    a killed run leaves the previous ledger intact, never a 0-byte one."""
+    ledger = tmp_path / "role_trends.parquet"
+    ledger.with_suffix(".csv").touch()
+    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    _table(
+        tmp_path / "db",
+        [
+            {
+                "id": "a",
+                "title": "Dev",
+                "employment_type": None,
+                "min_years": 3,
+                "vector": [1.0, 0.0, 0.0, 0.0],
+            }
+        ],
+    )
+    _run(tmp_path, monkeypatch)
+
+    rows = _rows(ledger)
+    assert [f.name for f in pq.read_schema(ledger)] == list(role_trends._COLUMNS)
+    assert len(rows) == 2  # the one group + the non-tech diagnostic
 
 
 def test_count_groups_returns_assignments_excluding_non_tech_and_watch_roles():
