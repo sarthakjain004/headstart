@@ -63,6 +63,17 @@ def test_shard_count_clamps_and_scales():
     assert pe.shard_count(2400.0, 10, 15, 1200) == 2
 
 
+def test_target_seconds_fans_a_steady_state_run_out_across_lanes():
+    """Guards the *constant*, which the test above does not: it passes 1200 as a literal, so it
+    stays green if `_TARGET_SECONDS` regresses to the 20 min that made `ceil(cost / target)`
+    exactly 1 on every run and left 14 of 15 lanes idle. The four 2026-09-09 runs planned
+    714-1,146 s of work (`docs/pipeline/2026-09-09_five-run-log-review.md` §3); both ends of that
+    band must reach more than one shard. `n_items` is only `shard_count`'s has-work guard."""
+    for total_cost in (714.0, 1146.0):
+        m = pe.shard_count(total_cost, 300, pe._MAX_SHARDS, pe._TARGET_SECONDS)
+        assert m > 1, f"{total_cost}s of steady-state work planned onto {m} shard(s)"
+
+
 def _write_corpus(tech: Path) -> None:
     tech.mkdir(parents=True, exist_ok=True)
     jobs = [
