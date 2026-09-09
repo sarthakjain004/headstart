@@ -320,7 +320,7 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   returns live rows, and `data/jobs/tech/*.jsonl` has the fields the API projection omits.
 - **"How many Boards do we have" has five defensible answers — use the names, not a number.**
   CONTEXT.md §Counting Boards binds each to exactly one figure: **Ledger row** (a CSV line),
-  **Live row** (still a row — 6,619 are duplicate spellings), **Unique Board** (deduped),
+  **Live row** (still a row — 6,632 are duplicate spellings), **Unique Board** (deduped),
   **Scrapable Board** (what a run may pick — the right default), **Hiring Board** (`min_jobs=1`),
   plus **Slice**/**Head**/**Tail** for one run and **Scraped**/**Scored Board** for history. The
   phrase "live boards" names no single number and should not be written. Quoting the wrong one has
