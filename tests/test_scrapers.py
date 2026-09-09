@@ -1989,7 +1989,7 @@ def test_workday_detail_gap_names_what_the_failures_actually_were(monkeypatch, c
     # and a Board that loses most of its details says so at WARNING, naming the classes —
     # a 96%-empty detail pass previously produced no warning at all
     caplog.set_level(logging.WARNING, logger="headstart.scrapers.workday")
-    scraper._report_detail_losses([None, None, None, None, {"d": 1}], classes)
+    scraper._report_detail_losses([None, None, None, None, {"d": 1}], classes, 0)
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warnings) == 1
     message = warnings[0].getMessage()
@@ -2034,7 +2034,7 @@ def test_workday_complete_detail_pass_warns_about_nothing(monkeypatch, caplog):
 
     caplog.set_level(logging.INFO, logger="headstart.scrapers.workday")
     WorkdayScraper("https://acme.wd1.myworkdayjobs.com/careers")._report_detail_losses(
-        [{"d": 1}] * 5, Counter()
+        [{"d": 1}] * 5, Counter(), 0
     )
     assert caplog.records == []
 
@@ -2050,10 +2050,98 @@ def test_workday_detail_gap_under_the_share_stays_info(caplog):
 
     caplog.set_level(logging.INFO, logger="headstart.scrapers.workday")
     WorkdayScraper("https://acme.wd1.myworkdayjobs.com/careers")._report_detail_losses(
-        [None] + [{"d": 1}] * 9, Counter({"HTTP 404": 1})
+        [None] + [{"d": 1}] * 9, Counter({"HTTP 404": 1}), 0
     )
     assert [r.levelno for r in caplog.records] == [logging.INFO]
     assert "1 of 10 detail(s) failed mid-crawl (HTTP 404 x1)" in caplog.text
+
+
+def test_workday_no_external_path_reports_separately_from_fetch_failures(caplog):
+    """A posting the listing gave no `externalPath` is not a *fetch* failure and must not be
+    tallied as one.
+
+    No request is made for it, so neither the retry ladder nor the spare-egress fallback was ever
+    involved — and counting it inside "detail(s) failed mid-crawl" is what sent a 2026-09-09
+    investigation hunting a network fix for a listing-side artefact (measured that day: 335 such
+    postings over 125 Boards, 111 of them on `accenture/avanadecareers` alone). It gets its own
+    line, and the mid-crawl tally reports only the one real fetch loss."""
+    from collections import Counter
+
+    from headstart.scrapers.workday import WorkdayScraper
+
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.workday")
+    WorkdayScraper("https://acme.wd1.myworkdayjobs.com/careers")._report_detail_losses(
+        [None] * 4 + [{"d": 1}] * 6,
+        Counter({"no externalPath": 3, "HTTP 404": 1}),
+        0,
+    )
+    assert "3 posting(s) carried no externalPath" in caplog.text
+    # The tally counts the fetch failure only — not 4 of 10, and with no `unclassified` remainder
+    # standing in for the three that were popped.
+    assert "1 of 10 detail(s) failed mid-crawl (HTTP 404 x1)" in caplog.text
+    assert "unclassified" not in caplog.text
+
+
+def test_workday_all_postings_lacking_external_path_logs_no_failure_line(caplog):
+    """A Board whose every loss is a no-URL stub reports the stubs and nothing else.
+
+    The regression this pins is the WARNING escalation: `missing / len(details)` crosses
+    `_MAX_LOST_DETAIL_SHARE` on such a Board, so before the split it raised an Actions annotation
+    — against a run-level quota — for a Board where no request had failed at all."""
+    from collections import Counter
+
+    from headstart.scrapers.workday import WorkdayScraper
+
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.workday")
+    WorkdayScraper("https://acme.wd1.myworkdayjobs.com/careers")._report_detail_losses(
+        [None] * 5, Counter({"no externalPath": 5}), 0
+    )
+    assert "5 posting(s) carried no externalPath" in caplog.text
+    assert "failed mid-crawl" not in caplog.text
+    assert [r.levelno for r in caplog.records] == [logging.INFO]
+
+
+def test_workday_titled_stub_warns_because_it_would_serve_a_dead_link(caplog):
+    """A no-`externalPath` posting that *has* a title is the case the carve-out is unsafe for.
+
+    The quiet no-URL line is justified by such a posting being dropped at the tech gate — which
+    holds only because a stub has no title to classify on (measured: 0 of 38 stubs over 31,028
+    postings on 22 boards, every one `bulletFields`-only). A titled one would pass the gate and
+    ship with the board root as its url, so it warns instead of riding the same quiet line. This
+    is the tripwire for the assumption, not a restatement of it."""
+    from collections import Counter
+
+    from headstart.scrapers.workday import WorkdayScraper
+
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.workday")
+    WorkdayScraper("https://acme.wd1.myworkdayjobs.com/careers")._report_detail_losses(
+        [None] * 2, Counter({"no externalPath": 2}), 1
+    )
+    assert "1 posting(s) had a title but no externalPath" in caplog.text
+    assert [r.levelno for r in caplog.records] == [logging.INFO, logging.INFO]
+
+
+def test_workday_stub_posting_parses_to_a_job_the_tech_gate_drops():
+    """The real shape of a no-`externalPath` item, and why the loss costs nothing downstream.
+
+    Captured live 2026-09-09 from `accenture/avanadecareers` (27 of 605 postings): the listing
+    serves `bulletFields` and *nothing else* — no title, no path, no location. So `parse` yields
+    an "Untitled" Job whose url falls back to the board root, and `tech_filter.classify` drops it
+    before the description store or the index can see it. `_posting_key` still reads the req id
+    off `bulletFields`, so the id is stable rather than churning (ADR-0097)."""
+    from headstart.scrapers.workday import WorkdayScraper
+    from headstart.tech_filter import classify
+
+    scraper = WorkdayScraper("https://accenture.wd103.myworkdayjobs.com/avanadecareers")
+    (job,) = scraper.parse([{"bulletFields": ["R00322521"]}], "2026-09-09T00:00:00Z")
+    assert job.id.endswith(":R00322521")
+    assert job.title == "Untitled"
+    # The board root, not a job link — `parse`'s fallback when `external_path` is empty. Harmless
+    # only because the title is "Untitled" and the tech gate drops it; `_report_detail_losses`
+    # warns if a titled stub ever appears, which is when this url would really ship.
+    assert job.url == "https://accenture.wd103.myworkdayjobs.com/avanadecareers"
+    assert job.description is None
+    assert not classify(job.title, job.department).is_tech
 
 
 def test_workday_detail_classes_always_account_for_every_loss(monkeypatch, caplog):
@@ -2088,7 +2176,7 @@ def test_workday_detail_classes_always_account_for_every_loss(monkeypatch, caplo
     # and whatever still escapes labelling is named rather than silently dropped, so the
     # classes shown always sum to the loss count
     caplog.set_level(logging.WARNING, logger="headstart.scrapers.workday")
-    scraper._report_detail_losses([None] * 4, Counter({"HTTP 404": 1}))
+    scraper._report_detail_losses([None] * 4, Counter({"HTTP 404": 1}), 0)
     assert (
         "4 of 4 detail(s) failed mid-crawl (unclassified x3, HTTP 404 x1)"
         in caplog.text
@@ -7375,6 +7463,7 @@ def test_workday_recovered_details_report_once_and_stay_out_of_the_loss_tally(ca
         s._report_detail_losses(
             [{"description": "x"}, {"description": "y"}],
             Counter({_PAGE_RECOVERED: 2}),
+            0,
         )
     assert "2 detail(s) recovered from the public page" in caplog.text
     assert "failed mid-crawl" not in caplog.text
