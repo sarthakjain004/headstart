@@ -173,12 +173,12 @@ def test_rekeying_a_canonical_key_says_nothing(monkeypatch, caplog):
 
     `load` re-keys every row, so before this each of `scrape-plan` and `join` logged one line per
     Workday key — every one of them describing a row that was correct.
-    `config._IDENTITY_REPORTED`'s note carries the measured counts.
+    `config._IDENTITY_FAILURES_SEEN`'s note carries the measured counts.
 
     Asserted from both sides, because the silence alone passes vacuously if `_rekeyed` stops
     resolving anything: the key must still come back unchanged.
     """
-    monkeypatch.setattr(config, "_IDENTITY_REPORTED", set())
+    monkeypatch.setattr(config, "_IDENTITY_FAILURES_SEEN", set())
     with caplog.at_level("INFO", logger="headstart.config"):
         assert _rekeyed("workday:accenture/careers") == "workday:accenture/careers"
         assert _rekeyed("personio:croftstone") == "personio:croftstone"

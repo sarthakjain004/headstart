@@ -327,9 +327,11 @@ def load_active_companies(
     return _drop_parked(_dedupe_boards(companies))
 
 
-#: Every Board that has fallen back in :func:`board_identity`, so one malformed slug says so once.
-#: "Seen", not "reported": past :data:`_IDENTITY_REPORT_CAP` a Board is still added here but no
-#: longer named, and the membership test is what keeps the cap counting *distinct* Boards.
+#: Boards whose fallback reached the reporter, so one malformed slug says so once.
+#:
+#: "Seen", not "reported", on both edges: a caller passing ``report_failure=False`` never reaches
+#: the adder at all, and past :data:`_IDENTITY_REPORT_CAP` a Board is added but no longer named.
+#: The membership test is what keeps that cap counting *distinct* Boards.
 #:
 #: Module-level, and never cleared: a pipeline stage is one process, and the point is that every
 #: caller shares one record. `board_identity` is reached from ~15 sites (`scrape_plan` x8,
@@ -345,20 +347,21 @@ def load_active_companies(
 #: demands its input form — every one of `data/state/board_cost.csv`'s 10,561 Workday keys is the
 #: shorthand `{co}/{site}`, which Workday's parser rejects because it wants a careers URL.
 #: Until 2026-09-09 `board_cost._rekeyed` did exactly that round-trip on every row, so each of
-#: `scrape-plan` and `join` emitted 10,561 lines a run — 21,122 in total, and 99.8% of
-#: `scrape-plan`'s entire log. It now opts out of the report (`report_failure=False`), because for
-#: it a raise is the expected answer rather than a defect.
+#: `scrape-plan` and `join` emitted 10,561 lines a run — 21,122 in total, and 99.8% of the
+#: `scrape_plan` *step*'s own output (10,561 of 10,585 lines; the surrounding job log is larger).
+#: It now opts out of the report (`report_failure=False`), because for it a raise is the expected
+#: answer rather than a defect.
 #:
-#: `board_priority.csv` is keyed the same way (5,143 shorthand Workday keys) but never reaches
-#: here: `board_priority.load` returns `row["board"]` verbatim, and `pick_boards` calls
-#: `board_identity` on liveness `CompanyRef`s. That is the check on this diagnosis — 1,142 of its
+#: `board_priority.csv` is keyed the same way (5,143 Workday keys, 5,120 of them that shorthand)
+#: but never reaches here: `board_priority.load` returns `row["board"]` verbatim, and `pick_boards`
+#: calls `board_identity` on liveness `CompanyRef`s. That is the check on this diagnosis — 1,142 of its
 #: Workday keys are absent from the cost ledger, so had it fed them back too the flood would have
 #: been their 11,703-key union, not the 10,561 actually observed.
 #:
 #: So the blast radius was never nil, only mis-measured: the one population that was measured is
 #: the one that does not reach the path. The bound below stands regardless, for the case the old
 #: note was reaching for — a scraper whose `board_key()` starts raising on its *own* slugs.
-_IDENTITY_REPORTED: set[str] = set()
+_IDENTITY_FAILURES_SEEN: set[str] = set()
 
 #: Distinct Boards named before the report goes quiet. Mirrors the compromise
 #: `ingest.observability.named_sample` strikes for the stages — enough examples to name the ATS
@@ -407,15 +410,15 @@ def _report_identity_failure(key: str, exc: Exception) -> None:
     signal; the named ones carry the ATS and the parse error, which is what a reader needs to find
     the scraper at fault.
     """
-    if key in _IDENTITY_REPORTED:
+    if key in _IDENTITY_FAILURES_SEEN:
         return
-    _IDENTITY_REPORTED.add(key)
-    if len(_IDENTITY_REPORTED) <= _IDENTITY_REPORT_CAP:
+    _IDENTITY_FAILURES_SEEN.add(key)
+    if len(_IDENTITY_FAILURES_SEEN) <= _IDENTITY_REPORT_CAP:
         _log.info(
             f"{key}: board_key() failed "
             f"({type(exc).__name__}: {exc}) — falling back to the plain ats:slug"
         )
-    elif len(_IDENTITY_REPORTED) == _IDENTITY_REPORT_CAP + 1:
+    elif len(_IDENTITY_FAILURES_SEEN) == _IDENTITY_REPORT_CAP + 1:
         _log.info(
             f"further board_key() failures not named ({_IDENTITY_REPORT_CAP} shown) — "
             "each still falls back to the plain ats:slug"

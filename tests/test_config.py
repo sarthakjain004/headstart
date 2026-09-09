@@ -225,23 +225,26 @@ def test_identity_failures_are_capped_not_unbounded(monkeypatch, caplog):
     21,122 lines a run, measured 2026-09-09, before `board_cost._rekeyed` stopped asking. Pinned
     against the cap rather than a literal so the two cannot drift apart.
     """
-    monkeypatch.setattr(config, "_IDENTITY_REPORTED", set())
+    monkeypatch.setattr(config, "_IDENTITY_FAILURES_SEEN", set())
     cap = config._IDENTITY_REPORT_CAP
     with caplog.at_level("INFO", logger="headstart.config"):
         for i in range(cap * 5):
             board_identity(CompanyRef(ats="workday", slug=f"bad-{i}", name=""))
 
-    named = [r for r in caplog.records if "board_key() failed" in r.message]
+    # Only this module's records: another logger's line would otherwise be counted as one of
+    # ours, which is the leakage the sibling test below documents.
+    mine = [r for r in caplog.records if r.name == "headstart.config"]
+    named = [r for r in mine if "board_key() failed" in r.message]
     assert len(named) == cap, f"expected {cap} named, got {len(named)}"
-    assert [r for r in caplog.records if "further board_key() failures" in r.message]
+    assert [r for r in mine if "further board_key() failures" in r.message]
     # Once, not once per Board past the cap — the flood this bound exists to stop.
-    assert len(caplog.records) == cap + 1
+    assert len(mine) == cap + 1
 
 
 def test_report_failure_false_changes_only_the_logging(monkeypatch, caplog):
     """The flag must never move a key. `_rekeyed` sits on the read path that decides which
     Board a measurement belongs to, so a divergence here would mis-price the shard pack."""
-    monkeypatch.setattr(config, "_IDENTITY_REPORTED", set())
+    monkeypatch.setattr(config, "_IDENTITY_FAILURES_SEEN", set())
     refs = [
         CompanyRef(ats="workday", slug="accenture/careers", name=""),
         CompanyRef(ats="workday", slug="https://3m.wd1.myworkdayjobs.com/x", name=""),
@@ -251,7 +254,7 @@ def test_report_failure_false_changes_only_the_logging(monkeypatch, caplog):
     for ref in refs:
         assert board_identity(ref) == board_identity(ref, report_failure=False)
 
-    monkeypatch.setattr(config, "_IDENTITY_REPORTED", set())
+    monkeypatch.setattr(config, "_IDENTITY_FAILURES_SEEN", set())
     # The loop above ran with reporting ON and `caplog` collects for the whole test, so without
     # this the assertion below reads that loop's lines and fails — but only once some earlier
     # test has raised the `headstart` logger to INFO, which is why it passed run in isolation.
@@ -266,7 +269,7 @@ def test_a_genuinely_malformed_slug_is_still_reported(monkeypatch, caplog):
     """The counterweight to `board_cost._rekeyed` opting out of the report: silencing that one
     caller must not silence the liveness-ledger population the line was written for, where a
     raise really does mean a slug nothing can parse."""
-    monkeypatch.setattr(config, "_IDENTITY_REPORTED", set())
+    monkeypatch.setattr(config, "_IDENTITY_FAILURES_SEEN", set())
     with caplog.at_level("INFO", logger="headstart.config"):
         board_identity(CompanyRef(ats="workday", slug="not-a-url", name=""))
     assert [r for r in caplog.records if "board_key() failed" in r.message]

@@ -99,7 +99,7 @@ def _rekeyed(board: str) -> str:
     Passes ``report_failure=False`` because this caller's input is a *ledger key*, not a raw slug:
     an already-migrated row is **meant** to raise, and that raise is how the shim tells migrated
     from legacy. Reported, it flooded both stages that read this ledger — see
-    :data:`headstart.config._IDENTITY_REPORTED`'s note for the measured counts.
+    :data:`headstart.config._IDENTITY_FAILURES_SEEN`'s note for the measured counts.
 
     Note the round-trip itself stays. It cannot be skipped: the raise *is* the discriminator, so
     there is no way to tell a migrated key from a legacy one without attempting the parse. Only
