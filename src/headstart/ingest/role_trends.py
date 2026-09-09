@@ -5,7 +5,7 @@ Runs after ``index sync`` and ``index prune``, so it counts the **served stock**
 still in the ``jobs`` table is assigned to its nearest frozen centroid, that cluster is mapped
 to a curated role family (``config/role_families.json``), the row is banded by the experience
 columns the table already carries, and one ``(ts, version, family, band, ats, count)`` row per
-non-empty group is appended to ``data/state/role_trends.csv`` — plus one unbanded, undecomposed
+non-empty group is appended to ``data/state/role_trends.parquet`` — plus one unbanded, undecomposed
 ``(non-tech, all, all)`` diagnostic row. Series identity is ``(version, family)``; ``version``
 changes only on an explicit centroid refit (a re-base, ADR-0040). ``ats`` (ADR-0075) lets the
 Trends tab filter by which ATS posted a run; a pre-ADR-0075 row carries ``ats='all'`` on
@@ -15,6 +15,12 @@ It also records which family each row landed in and reports the rows that **chan
 since the last tick (ADR-0057, :mod:`headstart.ingest.role_assignments`). Counting stock alone
 cannot tell a closure apart from a reassignment, and re-embedding (ADR-0050) moves real jobs
 between families — so the transitions ride their own ledger rather than distorting this one.
+
+The ledger is **Parquet, not CSV** (ADR-0120). It is append-only but the merge job re-uploads
+it whole every run, so its on-disk size is a per-run upload cost: measured on the real ledger,
+zstd + dictionary encoding took 172,537,804 bytes of CSV to 3,430,793 — 50.3x — against a
+storage budget CLAUDE.md names as this workflow's binding constraint. A pre-ADR-0120 CSV
+ledger sitting beside it is read once and folded in, so no history is lost on the cutover.
 
 Degrades rather than dies: without the centroid store or the family map on disk (the fit
 hasn't shipped, or the join's state artifact was lost) it logs a warning and exits 0 — trends
@@ -41,7 +47,7 @@ _DB = REPO_ROOT / "data" / "lancedb"
 _CENTROIDS = REPO_ROOT / "data" / "state" / "role_centroids"
 _FAMILIES = REPO_ROOT / "config" / "role_families.json"  # curated, in git (ADR-0040)
 _WATCHLIST = REPO_ROOT / "config" / "role_watchlist.json"  # curated, in git (ADR-0051)
-_LEDGER = REPO_ROOT / "data" / "state" / "role_trends.csv"
+_LEDGER = REPO_ROOT / "data" / "state" / "role_trends.parquet"
 # id -> family snapshot + the transitions between snapshots (see role_assignments)
 _ASSIGNMENTS = REPO_ROOT / "data" / "state" / "role_assignments.parquet"
 _REASSIGNMENTS = REPO_ROOT / "data" / "state" / "role_reassignments.csv"
@@ -148,56 +154,81 @@ def count_groups(
     return counts, non_tech, assigned
 
 
-def _migrate_ledger(ledger: Path) -> None:
-    """Rewrite an old-shaped ledger in place onto the current seven-column schema.
+def _schema():
+    """The ledger's Arrow schema (ADR-0120). ``ts`` is a real timestamp rather than the string
+    the CSV stored, which is what lets dictionary encoding collapse 510 stamps to 510 entries."""
+    import pyarrow as pa
 
-    Two prior shapes are recognized, each stamped with whatever the schema after it added:
+    return pa.schema(
+        [
+            pa.field("ts", pa.timestamp("s", tz="UTC")),
+            pa.field("version", pa.int64()),
+            pa.field("metric", pa.string()),
+            pa.field("family", pa.string()),
+            pa.field("band", pa.string()),
+            pa.field("ats", pa.string()),
+            pa.field("count", pa.int64()),
+        ]
+    )
+
+
+def _to_table(rows: list[tuple]):
+    """``rows`` — seven-tuples in ``_COLUMNS`` order — as an Arrow table on ``_schema()``.
+
+    Values arrive as strings from a legacy CSV and as native ints from this run's own counts,
+    so each column is coerced rather than trusted. ``ts`` is parsed with ``fromisoformat``,
+    which reads the exact ``+00:00`` whole-second shape the ledger has always written."""
+    import pyarrow as pa
+
+    ts, version, metric, family, band, ats, count = zip(*rows) if rows else ((),) * 7
+    return pa.table(
+        {
+            "ts": pa.array(
+                [datetime.fromisoformat(str(t)) for t in ts],
+                pa.timestamp("s", tz="UTC"),
+            ),
+            "version": pa.array([int(v) for v in version], pa.int64()),
+            "metric": pa.array([str(m) for m in metric], pa.string()),
+            "family": pa.array([str(f) for f in family], pa.string()),
+            "band": pa.array([str(b) for b in band], pa.string()),
+            "ats": pa.array([str(a) for a in ats], pa.string()),
+            "count": pa.array([int(c) for c in count], pa.int64()),
+        },
+        schema=_schema(),
+    )
+
+
+def _legacy_rows(csv_ledger: Path) -> list[tuple]:
+    """Every row of a pre-ADR-0120 CSV ledger, on the current seven-column shape.
+
+    Three prior shapes are recognized, each stamped with whatever the schema after it added:
     a pre-ADR-0051 row (no ``metric``) gets ``metric='stock'`` AND ``ats='all'``; a
-    pre-ADR-0075 row (``metric`` but no ``ats``) gets only ``ats='all'``. ``'all'`` (ADR-0075)
-    means "not decomposed by ATS" — the same sentinel the non-tech diagnostic row already
-    writes for itself every run, migrated or not. Every pre-ADR-0051 row was a stock
-    measurement, so that backfill is exact, not a guess.
+    pre-ADR-0075 row (``metric`` but no ``ats``) gets only ``ats='all'``; the seven-column
+    shape is taken as it stands. ``'all'`` (ADR-0075) means "not decomposed by ATS" — the same
+    sentinel the non-tech diagnostic row already writes for itself every run, migrated or not.
+    Every pre-ADR-0051 row was a stock measurement, so that backfill is exact, not a guess.
 
-    The file is append-only and rides the HF state round trip, so the migration happens where
-    the appends do — once, idempotently, before the first seven-column write.
-
-    Rewriting the file whole is fine because this runs **once** — the next append sees the
-    seven-column header and returns immediately. It is not sized by ADR-0040's "a few dozen
-    rows per run", which ADR-0052's fifteen watched roles took to several hundred; if a
-    retention or rollup policy ever lands, this is the function that has to care.
+    A 0-byte CSV has no header at all — a run killed between ``open("a")`` and the first write
+    left exactly that. There is nothing to fold in, so it reads as empty rather than raising.
     """
-    with ledger.open(encoding="utf-8", newline="") as fh:
+    with csv_ledger.open(encoding="utf-8", newline="") as fh:
         reader = csv.reader(fh)
-        # A 0-byte ledger has no header at all — a run killed between `open("a")` and the
-        # first write leaves exactly that. Nothing to migrate, and the append below writes
-        # no header for a file that exists, so let it be rewritten from scratch.
         header = tuple(next(reader, ()))
         if not header:
-            ledger.unlink()
-            return
+            return []
         if header == _COLUMNS:
-            return
+            return [tuple(row) for row in reader]
         if header == _PRE_ATS_COLUMNS:
-            rows = [
-                [ts, version, metric, family, band, "all", count]
+            return [
+                (ts, version, metric, family, band, "all", count)
                 for ts, version, metric, family, band, count in reader
             ]
-        elif header == _PRE_METRIC_COLUMNS:
-            rows = [
-                [ts, version, "stock", family, band, "all", count]
+        if header == _PRE_METRIC_COLUMNS:
+            return [
+                (ts, version, "stock", family, band, "all", count)
                 for ts, version, family, band, count in reader
             ]
-        else:
-            raise ValueError(f"{ledger}: unrecognized header {header}")
-    tmp = ledger.with_suffix(".csv.tmp")
-    with tmp.open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.writer(fh)
-        writer.writerow(_COLUMNS)
-        writer.writerows(rows)
-    tmp.replace(ledger)
-    _log.info(
-        f"migrated {ledger} to the seven-column ADR-0075 schema ({len(rows)} rows)"
-    )
+        raise ValueError(f"{csv_ledger}: unrecognized header {header}")
 
 
 def append_ledger(
@@ -207,27 +238,55 @@ def append_ledger(
     version: int,
     ts: str,
 ) -> int:
-    """Append one row per non-empty group + the non-tech diagnostic. Header on first write.
+    """Append one row per non-empty group + the non-tech diagnostic to the Parquet ledger.
 
     The diagnostic rides the same file as ``(stock, non-tech, all, all)`` — one number per run,
     unbanded and undecomposed by ATS because either split means nothing for a Data Entry Clerk
     total. The chart filters it out; its trend is the tech filter's health over time. Returns
-    rows written."""
+    rows written.
+
+    Parquet has no append, so the file is read and rewritten whole (ADR-0120) — which is what
+    the merge job's folder upload does to it anyway. At 3.4 MB for 2.47M rows that costs less
+    than the 172 MB CSV cost to *append* to, so the rewrite is the cheap half of this change,
+    not a price paid for it.
+
+    A pre-ADR-0120 CSV sitting beside the ledger is folded in on the first Parquet write, once:
+    afterwards the Parquet exists and is read in preference, so the CSV is never consulted
+    again. It is deliberately NOT deleted here — the merge job uploads ``data/state`` as a
+    folder *without* ``--delete``, so removing it locally would not retire the remote copy and
+    would only make a re-run re-migrate. Retiring it is a one-time ``HfApi().delete_file`` once
+    the first Parquet has landed (ADR-0120)."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
     ledger.parent.mkdir(parents=True, exist_ok=True)
+    fresh = [
+        (ts, version, metric, family, band, ats, n)
+        for (metric, family, band, ats), n in sorted(counts.items())
+    ]
+    fresh.append((ts, version, "stock", roles.NON_TECH, "all", "all", non_tech))
+
+    tables = []
     if ledger.exists():
-        _migrate_ledger(ledger)
-    # Checked AFTER the migration, which discards a 0-byte ledger: a file that existed but
-    # held no header still needs one written here.
-    fresh = not ledger.exists()
-    with ledger.open("a", encoding="utf-8", newline="") as fh:
-        writer = csv.writer(fh)
-        if fresh:
-            writer.writerow(_COLUMNS)
-        for (metric, family, band, ats), n in sorted(counts.items()):
-            writer.writerow([ts, version, metric, family, band, ats, n])
-        writer.writerow([ts, version, "stock", roles.NON_TECH, "all", "all", non_tech])
-        fh.flush()
-    return len(counts) + 1
+        tables.append(pq.read_table(ledger))
+    else:
+        legacy = ledger.with_suffix(".csv")
+        if legacy.exists():
+            carried = _legacy_rows(legacy)
+            tables.append(_to_table(carried))
+            _log.info(
+                f"folded {len(carried)} rows from {legacy} into {ledger} (ADR-0120); "
+                "retire the remote CSV once this run's upload lands"
+            )
+    tables.append(_to_table(fresh))
+
+    tmp = ledger.with_suffix(ledger.suffix + ".tmp")
+    pq.write_table(
+        pa.concat_tables(tables), tmp, compression="zstd", use_dictionary=True
+    )
+    # atomic: a killed run leaves the previous ledger, never a half-written one
+    tmp.replace(ledger)
+    return len(fresh)
 
 
 def main() -> int:
