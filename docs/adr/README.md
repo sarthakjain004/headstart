@@ -126,3 +126,4 @@ supersedes it and note the supersession in both.
 | [0120](0120-the-trends-ledger-is-parquet-not-csv.md) | The trends ledger is Parquet, not CSV | 2026-09-09 |
 | [0121](0121-a-negligible-shortfall-is-still-an-authoritative-list.md) | A negligible shortfall is still an authoritative list — let the per-Job grace period have it | 2026-09-09 |
 | [0122](0122-the-pipeline-installs-with-uv-and-caches-nothing.md) | The pipeline installs with uv, and caches nothing to do it | 2026-09-09 |
+| [0123](0123-a-resume-is-three-layers-structure-layout-and-words.md) | A résumé is three layers — structure, layout, and words | 2026-09-09 |

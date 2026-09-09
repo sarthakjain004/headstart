@@ -206,7 +206,7 @@ _Avoid_: keyword search, keyword query — it is a filter and compiles to a dete
 
 **Résumé**:
 Text a user pastes or uploads to have their **Profile** extracted from it. The document itself is never stored or logged — it is read once by the extraction call and discarded; the **Profile** is the only thing that survives, and contact details are never part of it (ADR-0041, which superseded the earlier "nothing survives at all" rule).
-_Avoid_: CV. And keep it apart from **Profile** — the Résumé is the transient input, the Profile is the stored extraction.
+_Avoid_: CV. And keep it apart from two neighbours: the **Profile** is the stored extraction, and the **Résumé document** is the thing an Account builds on the Résumé tab. This entry names only the transient text pasted in for extraction.
 
 **Résumé query**:
 The role sentence an LLM writes from a **Résumé** — stored as the **Profile**'s sentence, editable there, and shown in the search box before it runs. Subject to the same rule as any Query: it names a role and must not carry years, salary, or location, however loudly the **Résumé** states them.
@@ -246,6 +246,28 @@ _Avoid_: bookmark, favourite.
 **Match ring**:
 The match percentage displayed on a search result — the raw cosine score stretched through two fixed anchors (≈0.60 → 0%, ≈0.85 → 100%, tuned once against real queries, revisited only when the embedding model changes). Display only: ranking orders by the raw score.
 _Avoid_: reading it as a probability, or re-scaling it per results page — the same Job must show the same percentage wherever it appears.
+
+### Résumé builder
+
+**Résumé document** (ADR-0123):
+The structured résumé an Account builds on the Résumé tab: a tree of **Component**s, the id of one **Layout**, and the **Content** map holding every word. Kept in that Account's own browser and nowhere else — HeadStart's servers never hold one, which is the same rule ADR-0041 and ADR-0107 already state for the **Résumé**.
+_Avoid_: **Résumé** — that names the transient text pasted in for **Profile** extraction. Different object, different lifetime, and the two are one letter apart in conversation, so say which one you mean.
+
+**Component** (ADR-0123):
+One block of a **Résumé document** — a header, a section, a job, a bullet. A **Component Type** declares what fields it owns, what it may contain, and its `shape`; an instance is a node in the tree. A Component never states how it looks: type, size, colour and position all belong to the **Layout**.
+_Avoid_: widget, element — and don't call a Component Type a template.
+
+**Layout** (ADR-0123):
+How a **Résumé document**'s Components are arranged and styled: page geometry, type tokens, one render strategy per `shape`, the **Finding** rules it wants checked, and the capability contract naming which drag and resize affordances are live in it. Three ship: `headless-headhunter`, `two-column`, `free-canvas`. Switching Layout changes no **Content**.
+_Avoid_: theme, template, skin — a Layout carries arrangement *and* looks *and* permissions, and none of those three words carries all of it.
+
+**Content** (ADR-0123):
+The words. A flat map from node id to that Component's field values, held outside the tree on purpose so a **Layout** change cannot reach it.
+_Avoid_: data, text — both are used loosely elsewhere in this document.
+
+**Finding** (ADR-0123):
+One piece of advice a **Layout**'s rules produce about a **Résumé document** — an error, a warning or a note, usually attached to the Component it is about. Advice, never a lock: the page prints whether or not the findings are cleared.
+_Avoid_: error, validation failure — a Finding never stops anything, and the Headless Headhunter rules it usually reports are a method, not a specification.
 
 ### Pipeline scheduling and sharding
 
