@@ -229,10 +229,24 @@ egress mechanism, and both would repay a direct look. The rest is HTTP 500 (381)
 (201), HTTP 429 (48), HTTP 403 (31), and a long tail of 404/520/522/SSLError.
 
 Only **60 of those 866 lines** end in a truncation verdict (`— Board unauthoritative this run` ×59,
-`— too little of T listed read to keep` ×1). So on Workday the great majority of mid-crawl page loss is
-absorbed silently without the Board leaving the eviction scope — the *opposite* calibration to §6,
-where a single unreadable successfactors/eightfold page excludes a whole Board. Two ATSes, one
-mechanism, thresholds at opposite extremes; that inconsistency is itself worth resolving.
+`— too little of T listed read to keep` ×1) — but that is two different failure kinds sharing one log
+shape, not a mis-calibrated threshold. Both scrapers follow the **same rule: `mark_truncated` iff the
+returned id set is short**, and both are correct. Workday's **listing** pass (`workday.py:1060-1080`)
+records every shortfall it sees — those are the 60. The other ~806 come from the **detail** pass
+(`workday.py:947-955`), whose line says so in as many words: `— not a truncation (the listing pass
+reports its own)`. Not marking is right there, because `ats_id = _posting_key(item)` is read from the
+*listing* item and `detail = item.get("_detail") or {}`, so a failed detail yields an empty dict and the
+Job is still emitted with null fields (ADR-0021; identity stopped depending on the detail at ADR-0097).
+The id set is complete, so `index sync` has nothing to misread.
+
+successfactors marks truncated under that same rule for the opposite reason
+(`successfactors.py:315-320`): there **every** field comes from the job page, so `parse` drops a Job
+whose page did not arrive, the returned list is genuinely short, and an unmarked short list is exactly
+what `index sync` reads as a delisting — `docs/pipeline/2026-08-23_false-board-eviction-root-cause.md`
+records the incident that guard exists to prevent. So the cost of the ~806 Workday detail losses is
+**ADR-0021 null fields and ADR-0050 description-store gaps, not evictions** — a data-completeness
+problem, not a scope-exclusion one. §6's case for giving the authoritative gate a tolerance stands on
+its own; it is not a Workday comparison.
 
 The one traceback in the window is `workday:https://generalmotors.wd5.myworkdayjobs.com/Careers_GM`
 raising `JSONDecodeError` inside `workday.py:1046 _paginate` — the host returned non-JSON mid-crawl.
