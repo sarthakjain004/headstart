@@ -1250,11 +1250,7 @@ let hoveredSeries = null;   // legend/chart hover-focus name — dims every othe
 let hoverIndex = null;      // the stamp the crosshair is parked on — the keyboard walks this
 let tableView = false;      // the WCAG-clean twin of the chart, independent of the SVG
 let lastGeom = null;        // scales + resolved values from the last drawTrends() — hover reads this
-// The /trends request currently in flight, so a newer one can cancel it. Every Trends control
-// re-requests, and the ATS picker issues one per checkbox: narrowing 21 ATSes down to 1 means
-// 20 requests, and without this each of the 20 answers painted the panel as it happened to
-// land. See loadTrends for the measurements.
-let trendReq = null;
+let trendReq = null;        // the /trends request in flight, so a newer one can cancel it
 const hiddenSeries = new Set();   // legend toggle-to-hide; keyed by name, so a re-rank keeps it
 const CHART_MAX = 8;        // matches the 8-slot validated categorical palette
 
@@ -1397,7 +1393,16 @@ async function loadTrends(family){
   // Worse than the flicker, the panel then settled on whichever answer landed last, which in
   // 3 runs of 5 was NOT the last request's — the chart named a scope the SOURCE control did
   // not. Cancelling the previous request is what makes the loser deterministic: an aborted
-  // fetch can never resolve, so it can neither paint nor be raced.
+  // fetch can never resolve, so it can neither paint nor be raced. That takes the same
+  // interaction to 1 repaint, and takes it there at any click rate FASTER than the round
+  // trip, which is the rate that produced the churn.
+  //
+  // What it deliberately does not do is bound the repaints when the reader clicks SLOWER than
+  // the round trip: nothing overlaps, so there is nothing to cancel, and 20 unchecks still
+  // paint 20 times (measured). Those 20 are in order and each is the true answer to a click
+  // just made — the panel updating per action, not churning — so the unconditional bound
+  // (committing the selection when the popover closes) is a change to what the control MEANS
+  // and is left as a product call rather than smuggled in with a race fix.
   if (trendReq) trendReq.abort();
   const req = trendReq = new AbortController();
   const q = new URLSearchParams();
@@ -1422,7 +1427,9 @@ async function loadTrends(family){
   setTrendsBusy(!trendData);
   // The outcome is decided first and acted on second, so there is ONE place a response may
   // touch the panel and one abort check guarding it. Reading the body is inside the try
-  // because an abort mid-download rejects r.json() exactly as it rejects the fetch.
+  // because an abort mid-download rejects r.json() exactly as it rejects the fetch — which
+  // also closes a hole that was already there: a malformed 200 body used to reject nowhere at
+  // all, leaving the panel dimmed for good instead of saying anything.
   let payload, err;
   try {
     const r = await fetch('/trends' + (q.size ? '?' + q : ''), { signal: req.signal });

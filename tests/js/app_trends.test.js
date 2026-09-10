@@ -38,7 +38,13 @@ function fakeEl() {
     // answer — every call site already guards on "not found" for the real DOM's own sake (the
     // crosshair group doesn't exist until the first draw), so this never needs to be smarter.
     querySelectorAll: () => [], querySelector: () => null,
-    setAttribute() {}, getAttribute: () => null, addEventListener() {},
+    setAttribute() {}, getAttribute: () => null,
+    // Recorded, not swallowed: the ATS picker's own handler is registered this way, and the
+    // racing tests below drive the control the bug report names rather than calling the
+    // loader behind it. `fire` is the harness's stand-in for dispatchEvent.
+    listeners: {},
+    addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); },
+    fire(type) { (this.listeners[type] || []).forEach(fn => fn({ target: this })); },
     tabIndex: 0, classList: { toggle() {}, add() {}, remove() {} },
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 0, height: 0 }),
   };
@@ -385,6 +391,10 @@ test('the popover forces closed regardless of its current state', () => {
 // round trips. Measured in Chromium before the fix: 20 requests, 20 repaints, 6-11 answers
 // arriving out of the order they were asked in, and 3 runs in 5 settling on an answer that
 // was not the last request's — the numbers churning, then coming to rest on the wrong scope.
+// The first two tests below are that bug and go red on the code that had it. The third cannot:
+// with nothing cancelled there is no cancellation to mis-report, so it is a forward guard on
+// the one obvious way to get the fix wrong (dropping the aborted check and letting an abort
+// raise the network-failure banner), not a reproduction.
 
 /** A /trends stub whose answers are released by hand, so a test can land them out of order.
  *
@@ -411,10 +421,18 @@ const tagged = n => ({ ...fixture(), version: n });
 
 test('a burst of selections repaints once, not once per checkbox', async () => {
   const { calls, impl } = deferredTrends();
-  const { t } = loadApp(impl);
+  const { nodes, t } = loadApp(impl);
+  const boxes = fakeAtsMenu(nodes, [['greenhouse', true], ['lever', true], ['workday', true],
+                                    ['ashby', true], ['zoho', true], ['keka', true]]);
   calls.length = 0;                 // drop anything the page asked for as it loaded
-  for (let i = 0; i < 5; i++) t.load(null);   // five boxes ticked before the first answer lands
+  // Through the picker's own `change` handler, not the loader behind it: this is the wiring
+  // the bug report named. Five boxes unchecked before the first answer can land.
+  for (let i = 0; i < 5; i++) {
+    boxes[i].checked = false;
+    nodes['trends-ats-menu'].fire('change');
+  }
   assert.equal(calls.length, 5, 'each selection still asks the server for its own answer');
+  assert.match(calls[4].url, /ats=keka/, 'and asks for the selection as it stood at that click');
   calls.forEach((c, i) => c.answer(tagged(i)));   // every answer comes back, oldest first
   await settle();
   assert.equal(t.draws(), 1);       // was 5: one full chart+legend+KPI rewrite per answer
