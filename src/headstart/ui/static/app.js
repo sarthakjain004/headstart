@@ -1361,20 +1361,30 @@ function setRangePreset(v){
   seg.querySelectorAll('button').forEach(b => setRadioChecked(b, b.dataset.days === v));
 }
 
-// Checked ATS names, or null when every box is checked — the only spelling of "no filter"
-// (ADR-0075): sending all of them explicitly would exclude pre-ship, undecomposed rows.
+// Checked ATS names, or null for "no filter" — the only spelling of it (ADR-0075): sending
+// all of them explicitly would exclude pre-ship, undecomposed rows.
+//
+// BOTH ends of the range mean that. Every box checked is the obvious one. Every box UNchecked
+// is the same thing and always has been, because `/trends` narrows on the `ats` params it is
+// given and an empty selection appends none — so the panel answers with every ATS. It used to
+// come back as `[]`, which is a truthy array, and each of the three places that ask "is a
+// filter on?" then said yes: the trigger read "0 ATS", the chart named itself "0 of the ATS
+// sources", and the short-history note blamed a narrow selection — all three over the
+// unfiltered figure. Answering `null` states once, here, what the request already did.
 function trendAtsSelected(){
   const menu = el('trends-ats-menu'); if (!menu) return null;
   const boxes = [...menu.querySelectorAll('input[type=checkbox]')];
   const checked = boxes.filter(b => b.checked).map(b => b.value);
-  return checked.length === boxes.length ? null : checked;
+  return checked.length && checked.length !== boxes.length ? checked : null;
 }
 
+// The trigger reads its state off trendAtsSelected rather than counting the boxes a second
+// time, so "no filter" is decided in exactly one place: both ends of the range — every box
+// checked and none checked — say "All ATS", because both are what the panel is showing.
 function trendAtsLabel(){
   const menu = el('trends-ats-menu'); if (!menu) return;
-  const boxes = menu.querySelectorAll('input[type=checkbox]');
-  const n = [...boxes].filter(b => b.checked).length;
-  el('trends-ats-trigger').textContent = (n === boxes.length ? 'All ATS' : `${n} ATS`) + ' ▾';
+  const sel = trendAtsSelected();
+  el('trends-ats-trigger').textContent = (sel ? `${sel.length} ATS` : 'All ATS') + ' ▾';
 }
 
 function toggleAtsPopover(force){
