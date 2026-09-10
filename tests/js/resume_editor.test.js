@@ -101,7 +101,9 @@ function loadEditor(options) {
     },
     window: {
       addEventListener() {},
-      localStorage: null,                 // -> MemoryRepository, so nothing touches a real store
+      /* Null by default -> MemoryRepository, so no test touches a real store. A test that needs
+         the localStorage path — "a résumé that was already in this browser" — passes one in. */
+      localStorage: opts.storage || null,
       prompt: () => (opts.prompt === undefined ? 'A version' : opts.prompt),
       confirm: () => !!opts.confirm,
       alert: () => {},
@@ -117,6 +119,24 @@ function loadEditor(options) {
   ctx.ResumeEditor.boot();
   get('rb-paper')._docKeydown = ctx._docHandlers.keydown || [];
   return { ctx, nodes, rail, tabs, el: get };
+}
+
+/** A localStorage stand-in, pre-loaded with documents. `ResumeRepository.detect` probes it with
+ *  a real write, so this has to behave rather than merely exist. */
+function fakeStorage(docs) {
+  const map = new Map();
+  const s = {
+    getItem: k => (map.has(k) ? map.get(k) : null),
+    setItem: (k, v) => map.set(k, String(v)),
+    removeItem: k => map.delete(k),
+  };
+  const index = (docs || []).map(d => ({ id: d.id, name: d.name, layoutId: d.layoutId, updatedAt: d.updatedAt }));
+  if (index.length) {
+    s.setItem('headstart.resumes.index', JSON.stringify(index));
+    s.setItem('headstart.resumes.last', index[0].id);
+    for (const d of docs) s.setItem('headstart.resume.' + d.id, JSON.stringify(d));
+  }
+  return s;
 }
 
 /** A hand-built event target: the rail's listeners are delegated, so what they receive is an
@@ -489,4 +509,41 @@ test('the Checks verdict is announced when it changes, and not otherwise', () =>
   rail.fire('input', { target: target({ node: header.id, field: 'fullName' },
     { type: 'text', value: 'Lee Korelitz' }) });
   assert.match(live.textContent, /^Checks: \d+ to fix/, 'a changed verdict went unannounced');
+});
+
+/* ---- the rail's own escaping -------------------------------------------------------------
+   `importJson` rewrites hostile identifiers at the boundary, and its own tests cover that. This
+   is the second lock, on the sinks: a document can reach the rail WITHOUT passing the import —
+   one already sitting in localStorage from before that fix shipped does exactly that — so the
+   rail has to escape what it is handed rather than trust where it came from. */
+
+test('a hostile node id cannot break out of the attributes the rail writes', () => {
+  let { ctx, el, rail } = loadEditor();
+  const doc = ctx.ResumeDocument.clone(ctx.ResumeEditor.current());
+  const nasty = 'x" onmouseover="alert(1)" data-x="';
+  const entry = ctx.ResumeDocument.flatten(doc).find(n => n.type === 'work_entry');
+  doc.content[nasty] = doc.content[entry.id];
+  entry.id = nasty;
+
+  /* Re-opened from this browser's own storage, which is how a document written before that
+     import fix shipped arrives: no import, so nothing has had a chance to rewrite the id. */
+  const second = loadEditor({ storage: fakeStorage([doc]) });
+  second.ctx.ResumeEditor.select(nasty);
+  el = second.el; rail = second.rail; ctx = second.ctx;
+  assert.equal(ctx.ResumeDocument.find(ctx.ResumeEditor.current(), nasty).type, 'work_entry',
+    'the seeded document did not come back out of storage');
+
+  /* The escaped form still CONTAINS the word `onmouseover` — as text inside an attribute value,
+     which is inert. What must not appear is the unescaped quote that would end the attribute and
+     start a new one, so that is what is asserted. */
+  for (const html of [el('rb-pane-content').innerHTML, el('rb-paper').innerHTML]) {
+    assert.ok(!html.includes('" onmouseover="'), 'the id closed its attribute and opened another');
+    assert.ok(html.includes('&quot; onmouseover=&quot;'), 'the id is not in this markup at all, so this test proves nothing');
+  }
+
+  /* And the round trip still works: the escaped attribute is only how it is written, so the
+     rail must still be able to edit the block it names. */
+  rail.fire('input', { target: target({ node: nasty, field: 'role' },
+    { type: 'text', value: 'Cashier' }) });
+  assert.equal(ctx.ResumeDocument.contentOf(ctx.ResumeEditor.current(), nasty).role, 'Cashier');
 });
