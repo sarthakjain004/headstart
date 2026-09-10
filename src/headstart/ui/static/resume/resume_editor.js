@@ -922,6 +922,22 @@
       'handles on the page drag.</span>' + rows + '</div>' : '';
   }
 
+  const MINI_OFF = 'headstart.resume.minioff';
+
+  /** Show or hide the miniature, and say so on the control that did it. Painting it while hidden
+   *  would be work nobody can see — and worse, a measurement taken against a hidden frame, which
+   *  is the trap that has produced three separate bugs on this tab. */
+  function showMini(on) {
+    el('rb-mini').hidden = !on;
+    el('rb-mini-toggle').textContent = on ? 'Hide preview' : 'Show preview';
+    el('rb-mini-toggle').setAttribute('aria-expanded', on ? 'true' : 'false');
+  }
+
+  /* Whether "Fine tuning" is open. Held here rather than read off the element, because the pane
+     is rebuilt wholesale on every paint and a <details> that closed itself mid-drag would be
+     worse than one that never opened. */
+  let fineOpen = false;
+
   function designPane() {
     const d = doc();
     const lay = layout();
@@ -940,28 +956,49 @@
       '<select id="rb-paper-size">' + Layouts.PAPERS.map(p =>
         '<option value="' + esc(p.id) + '"' + (p.id === Layouts.paperIdFor(lay, d) ? ' selected' : '') +
         '>' + esc(p.label) + '</option>').join('') + '</select></div>');
-    for (const t of lay.tunables) {
+    /* Two tiers, because a layout declares up to twelve tunables and opening the pane on all of
+       them reads as a control panel rather than a choice. What stays in the open is what a person
+       picks ONCE and can see the effect of at a glance — the typeface, the accent colour. What
+       folds away is the millimetre work: eight or nine sliders for sizes, leading and gaps, each
+       a refinement of a layout that already made a considered choice. Nothing is removed; the
+       pane simply stops opening on every dial it owns. */
+    const dial = t => {
       const value = theme[t.key];
       const id = 'rb-t-' + t.key;
       if (t.kind === 'range') {
-        out.push('<div class="rb-field rb-range"><label for="' + id + '">' + esc(t.label) +
+        return '<div class="rb-field rb-range"><label for="' + id + '">' + esc(t.label) +
           ' <b>' + esc(value) + esc(t.unit || '') + '</b></label>' +
           '<input type="range" id="' + id + '" data-token="' + t.key + '" min="' + t.min +
-          '" max="' + t.max + '" step="' + t.step + '" value="' + esc(value) + '"></div>');
-      } else if (t.kind === 'color') {
-        out.push('<div class="rb-field rb-colour"><label for="' + id + '">' + esc(t.label) +
+          '" max="' + t.max + '" step="' + t.step + '" value="' + esc(value) + '"></div>';
+      }
+      if (t.kind === 'color') {
+        return '<div class="rb-field rb-colour"><label for="' + id + '">' + esc(t.label) +
           '</label><input type="color" id="' + id + '" data-token="' + t.key + '" value="' +
-          esc(value) + '"></div>');
-      } else if (t.kind === 'select') {
-        out.push('<div class="rb-field"><label for="' + id + '">' + esc(t.label) + '</label>' +
+          esc(value) + '"></div>';
+      }
+      if (t.kind === 'select') {
+        return '<div class="rb-field"><label for="' + id + '">' + esc(t.label) + '</label>' +
           '<select id="' + id + '" data-token="' + t.key + '">' + t.options.map(([v, l]) =>
             '<option value="' + esc(v) + '"' + (value === v ? ' selected' : '') + '>' + esc(l) +
-            '</option>').join('') + '</select></div>');
+            '</option>').join('') + '</select></div>';
       }
+      return '';
+    };
+    const fine = lay.tunables.filter(t => t.kind === 'range');
+    for (const t of lay.tunables) if (t.kind !== 'range') out.push(dial(t));
+    if (fine.length) {
+      /* A real <details>, so the browser owns the open state and the keyboard behaviour. It stays
+         in the DOM either way, which is what keeps the delegated `data-token` listeners wired. */
+      out.push('<details class="rb-fine"' + (fineOpen ? ' open' : '') + '><summary>Fine tuning' +
+        '<span class="note"> \u2014 ' + fine.length + ' sizes and spacings</span></summary>' +
+        fine.map(dial).join('') + '</details>');
     }
     out.push('<div class="rb-actions"><button class="ghost rb-mini" id="rb-theme-reset">' +
       'Back to the layout’s own settings</button></div>');
     el('rb-pane-design').innerHTML = out.join('');
+    /* `toggle` does not bubble, so this cannot be delegated with the rest of the pane. */
+    const fold = el('rb-pane-design').querySelector('details.rb-fine');
+    if (fold) fold.addEventListener('toggle', () => { fineOpen = fold.open; });
   }
 
   /** Every finding the current layout's rules produce. The running lives in ResumeLayouts so it
@@ -1154,7 +1191,7 @@
     const d = doc();
     const lay = layout();
     const sheet = el('rb-mini-sheet');
-    if (!d || !lay || !sheet) return;
+    if (!d || !lay || !sheet || el('rb-mini').hidden) return;
     const page = Layouts.pageFor(lay, d);
     sheet.style.width = page.width + page.unit;
     sheet.style.minHeight = page.height + page.unit;
@@ -1440,6 +1477,16 @@
   function wire() {
     const paper = el('rb-paper');
     paper.addEventListener('pointerdown', onPointerDown);
+
+    /* Putting the miniature away. A per-viewer convenience, so it lives in localStorage rather
+       than in the document — it is not a property of the résumé and must not travel with it to
+       another machine. Every read and write is guarded: a private window exposes the object and
+       throws on use, which is the same trap `ResumeRepository.detect` probes for. */
+    el('rb-mini-toggle').addEventListener('click', () => {
+      const hide = !el('rb-mini').hidden;
+      showMini(!hide);
+      try { window.localStorage.setItem(MINI_OFF, hide ? '1' : ''); } catch (err) { /* not fatal */ }
+    });
 
     el('rb-name').addEventListener('input', e => store.dispatch(Cmd.rename(e.target.value), 'name'));
 
@@ -1864,6 +1911,12 @@
   function boot() {
     if (booted || !el('rb')) return;
     booted = true;
+
+    /* The miniature's remembered state, applied before the first paint so it is never drawn
+       only to be hidden — and never measured against a hidden frame. */
+    let miniOff = false;
+    try { miniOff = !!window.localStorage.getItem(MINI_OFF); } catch (err) { miniOff = false; }
+    showMini(!miniOff);
 
     repository = Repo.detect(window);
     store = new Doc.Store(repository, {
