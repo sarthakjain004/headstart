@@ -128,3 +128,4 @@ supersedes it and note the supersession in both.
 | [0122](0122-the-pipeline-installs-with-uv-and-caches-nothing.md) | The pipeline installs with uv, and caches nothing to do it | 2026-09-09 |
 | [0123](0123-a-resume-is-three-layers-structure-layout-and-words.md) | A résumé is three layers — structure, layout, and words | 2026-09-09 |
 | [0124](0124-a-resume-document-syncs-to-the-hf-dataset-as-one-file.md) | A Résumé document syncs to the HF dataset, as one file, and only when asked | 2026-09-10 |
+| [0125](0125-the-resume-rail-is-the-document-and-the-paper-is-its-preview.md) | The résumé rail is the document; the paper is its preview | 2026-09-10 |

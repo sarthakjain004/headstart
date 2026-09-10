@@ -30,6 +30,15 @@
   /* The terms the Keywords pane last checked. They decorate the preview so the answer to "is this
      keyword near the top" is visible on the page, not just tallied in the rail. */
   let keywordTerms = [];
+  /* Which rows of the document accordion are open. Node ids, plus the synthetic key `geo:<id>`
+     for a row's own size-and-spacing disclosure. Held here rather than in the DOM because the
+     rail's panes are rebuilt from innerHTML on every change, which would throw away any state
+     living on the elements themselves. */
+  const expanded = new Set();
+  /* Whether the tab opened this document because the browser held nothing at all. That is the
+     only moment the first-run card is honest — "this is an example, make it yours" is wrong
+     advice for the résumé somebody wrote yesterday — and no field on the document records it. */
+  let firstRun = false;
 
   const doc = () => store && store.get();
   /* What the reader sees: the master, or the active version with its words merged in and its
@@ -92,13 +101,13 @@
     versionPaint();
     el('rb-undo').disabled = !store.canUndo();
     el('rb-redo').disabled = !store.canRedo();
-    el('rb-layout-note').textContent = lay.summary || '';
-    el('rb-paper-size').value = (Layouts.PAPERS.find(x => x.id === d.paper) || Layouts.PAPERS[0]).id;
-    /* Credit where the reader can see it. `hidden` rather than an empty span, so a layout that
-       is nobody's method in particular leaves no gap beside the picker. */
-    const credit = el('rb-layout-credit');
-    credit.textContent = lay.credit || '';
-    credit.hidden = !lay.credit;
+    /* The strip under the page says what is being previewed and how big, and nothing else. The
+       layout picker, the sheet and the layout's own summary line moved into the Design pane and
+       the gallery — they are properties of the document, and putting them above the page made a
+       second band of chrome out of choices nobody makes twice in a session. */
+    el('rb-template-name').textContent = lay.label;
+    el('rb-zoom-read').textContent = Math.round(zoom * 100) + '%';
+    if (templatesOpen) templatesPaint();
 
     railPaint();
     badgePaint();
@@ -203,9 +212,22 @@
 
   /* ---- selection ------------------------------------------------------------------------ */
 
-  function select(id) {
+  /** Select a block, and open the rail down to it. The two views are one document seen twice, so
+   *  a click on the page has to leave the rail showing the same block's fields — otherwise
+   *  "click a block to edit it" ends at a rail that is still somewhere else, which is what the
+   *  arrangement this replaced actually did. `reveal` is false only for the paper's own drag and
+   *  resize gestures, where the rail scrolling under a held pointer is motion nobody asked for. */
+  function select(id, reveal) {
     selectedId = id;
+    if (id && reveal !== false) {
+      const d = doc();
+      /* Ancestors first: a bullet's fields are inside its entry's row, which is inside its
+         section's row, so opening only the bullet would open nothing anyone can see. */
+      for (let n = d && Doc.find(d, id); n && n !== d.root; n = Doc.parentOf(d, n.id)) expanded.add(n.id);
+      showSegment('document');
+    }
     paint();
+    if (id && reveal !== false) scrollRailTo(id);
   }
 
   /* ---- dragging and resizing --------------------------------------------------------------
@@ -465,7 +487,11 @@
   let contentShowing = null;
   const contentKey = () => {
     const d = doc();
-    return d ? [selectedId, d.layoutId, d.activeTailoring].join('|') : null;
+    /* Which rows are open belongs in this key too: opening a row is a repaint the user asked
+       for, and without it a click on a row's header while a field elsewhere held the caret
+       toggled `aria-expanded` in the model and nothing at all on screen. */
+    return d ? [selectedId, d.layoutId, d.activeTailoring,
+      Array.from(expanded).sort().join(',')].join('|') : null;
   };
 
   /* Rebuild every rail pane EXCEPT the one the user is currently typing in — replacing a field's
@@ -485,9 +511,11 @@
     const holdsCaret = pane => typing && pane && pane !== active && pane.contains(active);
 
     const key = contentKey();
-    if (!holdsCaret(el('rb-pane-content')) || key !== contentShowing) {
-      contentPane();
+    if (!holdsCaret(el('rb-pane-document')) || key !== contentShowing) {
+      documentPane();
       contentShowing = key;
+    } else {
+      patchChecks();
     }
     if (!holdsCaret(el('rb-pane-design'))) designPane();
     if (!holdsCaret(el('rb-pane-checks'))) checksPane();
@@ -513,76 +541,256 @@
       esc(field.placeholder) + '"></div>';
   }
 
-  function contentPane() {
+  /* ---- the document accordion --------------------------------------------------------------
+     The rail IS the résumé, as its own sections: Contact, then each Section, each opening to its
+     entries, each entry opening to its fields and its bullets. Editing happens where you
+     navigate, so the "Outline" and "Content" of the arrangement this replaces are one thing now.
+
+     What it replaces was a flat developer-style node tree — every node in the document at one
+     indent, which is how a debugger shows a tree and not how a résumé reads. Measured on the
+     guide's own worked example: 13 rows, 7 of them bullets truncated to "Bullet Operated our
+     Point of Sale (POS) cas…". This shows 3, and a bullet is now what it actually is — a field
+     of the job it belongs to, not a sibling of "Work History". */
+
+  /** The words that name a row: what the block SAYS, falling back to what it is. A row reading
+   *  "Work entry" for every job is a row nobody can navigate by. */
+  function rowTitle(d, spec, node) {
+    const content = Doc.contentOf(d, node.id);
+    const first = spec.fields.map(f => content[f.key])
+      .find(v => typeof v === 'string' && v.trim());
+    return String(first || '').trim().slice(0, 60) || spec.label;
+  }
+
+  /** Findings that name a block, and every block that contains one. Two different jobs: the
+   *  first shows a rule inline in the row it is about (which is where it can be acted on), the
+   *  second puts a mark on a COLLAPSED ancestor so a problem three levels down is still
+   *  findable without opening every row to hunt for it. */
+  function findingIndex(d) {
+    const byNode = new Map();
+    const marked = new Set();
+    if (untouched(view())) return { byNode, marked };
+    for (const f of findings()) {
+      if (!f.nodeId) continue;
+      if (!byNode.has(f.nodeId)) byNode.set(f.nodeId, []);
+      byNode.get(f.nodeId).push(f);
+      if (f.level === 'note') continue;
+      for (let n = Doc.find(d, f.nodeId); n && n !== d.root; n = Doc.parentOf(d, n.id)) marked.add(n.id);
+    }
+    return { byNode, marked };
+  }
+
+  const findingRows = list => (list || []).map(f =>
+    '<p class="rb-finding rb-' + esc(f.level) + '"><span class="rb-finding-rule">' +
+    esc(f.rule) + '</span><span class="rb-finding-msg">' + esc(f.message) + '</span></p>').join('');
+
+  /* The container is emitted even when it is empty, and the mark even when it is clear. Both are
+     refilled in place by `patchChecks` while the pane is frozen under a caret — and the pane IS
+     frozen exactly when this matters, because the rule you are breaking is the one you are
+     typing. Measured before this: a bullet given two sentences showed its warning on the badge
+     immediately and inside its own row not at all, until some later change happened to repaint
+     the pane. Same trick the range labels below use, and for the same reason. */
+  const findingsHtml = (id, list) =>
+    '<div class="rb-inline-checks" data-checks="' + esc(id) + '">' + findingRows(list) + '</div>';
+
+  const flagHtml = (id, marked) =>
+    '<span class="rb-row-flag" data-flag="' + esc(id) + '" aria-label="has a check to fix"' +
+    (marked ? '' : ' hidden') + '><span aria-hidden="true">●</span></span>';
+
+  function patchChecks() {
+    const pane = el('rb-pane-document');
+    if (!pane || typeof pane.querySelectorAll !== 'function') return;
+    const marks = findingIndex(doc());
+    for (const box of pane.querySelectorAll('[data-checks]')) {
+      box.innerHTML = findingRows(marks.byNode.get(box.dataset.checks));
+    }
+    for (const dot of pane.querySelectorAll('[data-flag]')) {
+      dot.hidden = !marks.marked.has(dot.dataset.flag);
+    }
+  }
+
+  /** The action row a block carries: reorder without a mouse, duplicate, delete, and — under a
+   *  version — the two tailoring choices. Alt + arrow does the same reorder from the keyboard;
+   *  these exist because a drag handle on the page was the only OTHER way to move a block, and
+   *  WCAG 2.2 SC 2.5.7 asks for a path that is not a drag. */
+  function actionsHtml(d, lay, spec, node) {
+    const tailoring = Doc.tailoringOf(d);
+    const parts = [];
+    if (lay.caps.reorder && spec.caps.reorder) {
+      const label = esc(rowTitle(d, spec, node));
+      parts.push('<button class="rb-act" data-act="moveup" data-node="' + esc(node.id) +
+        '" title="Move up" aria-label="Move ' + label + ' up">↑</button>' +
+        '<button class="rb-act" data-act="movedown" data-node="' + esc(node.id) +
+        '" title="Move down" aria-label="Move ' + label + ' down">↓</button>');
+    }
+    if (spec.caps.duplicate) {
+      parts.push('<button class="rb-act" data-act="duplicate" data-node="' + esc(node.id) +
+        '" title="Duplicate" aria-label="Duplicate ' + esc(rowTitle(d, spec, node)) + '">⧉</button>');
+    }
+    if (spec.caps.remove) {
+      parts.push('<button class="rb-act rb-act-danger" data-act="remove" data-node="' + esc(node.id) +
+        '" title="Delete" aria-label="Delete ' + esc(rowTitle(d, spec, node)) + '">✕</button>');
+    }
+    if (tailoring) {
+      const overridden = !!(tailoring.picks || {})[node.id];
+      const leftOut = (tailoring.hidden || []).includes(node.id);
+      if (overridden) {
+        parts.push('<button class="ghost rb-mini" data-act="unfork" data-node="' + esc(node.id) +
+          '">Use the master’s words</button>');
+      }
+      parts.push('<button class="ghost rb-mini" data-act="hide" data-node="' + esc(node.id) + '">' +
+        (leftOut ? 'Put back in this version' : 'Leave out of this version') + '</button>');
+    }
+    return parts.length ? '<div class="rb-acts">' + parts.join('') + '</div>' : '';
+  }
+
+  /** One bullet, inline. Deliberately not a row of its own: three levels of opening to reach a
+   *  sentence is three clicks to type, and a bullet has one field anybody edits. */
+  function bulletHtml(d, lay, node, ordinal, marks) {
+    const spec = Components.get(node.type);
+    const content = Doc.contentOf(d, node.id);
+    const tailoring = Doc.tailoringOf(d);
+    const leftOut = !!(tailoring && (tailoring.hidden || []).includes(node.id));
+    const id = esc('rb-f-' + node.id + '-text');
+    const flagId = esc('rb-f-' + node.id + '-role');
+    return '<div class="rb-bullet' + (leftOut ? ' rb-off' : '') + '">' +
+      '<label class="rb-bullet-no" for="' + id + '">Bullet ' + ordinal +
+      ((tailoring && (tailoring.picks || {})[node.id]) ? '<span class="rb-tag">tailored</span>' : '') +
+      (leftOut ? '<span class="rb-tag">left out</span>' : '') + '</label>' +
+      findingsHtml(node.id, marks.byNode.get(node.id)) +
+      '<textarea id="' + id + '" rows="3" data-node="' + esc(node.id) + '" data-field="text" ' +
+      'placeholder="' + esc(spec.fields[0].placeholder) + '">' + esc(content.text || '') + '</textarea>' +
+      '<div class="rb-bullet-foot"><label class="rb-flag-inline"><input type="checkbox" id="' +
+      flagId + '" data-node="' + esc(node.id) + '" data-field="role"' + (content.role ? ' checked' : '') +
+      '> Opening summary sentence</label><span class="spacer"></span>' +
+      actionsHtml(d, lay, spec, node) + '</div></div>';
+  }
+
+  /** One row of the accordion, and its children. `depth` is only for the indent and the heading
+   *  level — the nesting itself comes from the document. */
+  function rowHtml(d, lay, node, depth, index, marks) {
+    const spec = Components.get(node.type);
+    if (!spec) return '';
+    const open = expanded.has(node.id);
+    const bodyId = esc('rb-row-' + node.id);
+    /* h2 for a top-level row, h3 below it. The app's own h1 is the masthead and every other
+       tab uses h2 for a group inside a panel, so this continues that outline rather than
+       starting at h3 and skipping a level — a screen reader navigates this rail by heading, and
+       a gap in the sequence is a gap in the document it is describing. */
+    const heading = depth === 0 ? 'h2' : 'h3';
+    const tailoring = Doc.tailoringOf(d);
+    const leftOut = !!(tailoring && (tailoring.hidden || []).includes(node.id));
+    const kids = node.children || [];
+    const bullets = kids.filter(k => (Components.get(k.type) || {}).shape === 'bullet');
+    const rows = kids.filter(k => (Components.get(k.type) || {}).shape !== 'bullet');
+
+    const out = ['<div class="rb-row rb-row-d' + depth + (node.id === selectedId ? ' on' : '') +
+      (leftOut ? ' rb-off' : '') + '">'];
+    out.push('<' + heading + ' class="rb-row-head"><button class="rb-row-btn" data-row="' +
+      esc(node.id) + '" aria-expanded="' + (open ? 'true' : 'false') + '" aria-controls="' + bodyId + '">' +
+      '<span class="rb-caret" aria-hidden="true">›</span>' +
+      '<span class="rb-row-label">' + esc(rowTitle(d, spec, node)) + '</span>' +
+      '<span class="rb-row-kind">' + esc(spec.label) + '</span>' +
+      /* Spoken as well as drawn: a dot that only exists as a colour tells a screen-reader user
+         nothing, and it is the one mark in this rail that reports a problem. */
+      flagHtml(node.id, marks.marked.has(node.id)) +
+      '</button></' + heading + '>');
+
+    out.push('<div class="rb-row-body" id="' + bodyId + '"' + (open ? '' : ' hidden') + '>');
+    if (open) {
+      out.push(findingsHtml(node.id, marks.byNode.get(node.id)));
+      for (const f of spec.fields) out.push(fieldControl(node.id, f, Doc.contentOf(d, node.id)[f.key]));
+      if (bullets.length) {
+        out.push('<div class="rb-bullets">' +
+          bullets.map((b, i) => bulletHtml(d, lay, b, i + 1, marks)).join('') + '</div>');
+      }
+      for (let i = 0; i < rows.length; i++) out.push(rowHtml(d, lay, rows[i], depth + 1, i, marks));
+
+      const addable = spec.accepts.includes('*')
+        ? Components.all().filter(s => s.type !== 'header' && s.type !== 'section')
+        : spec.accepts.map(t => Components.get(t)).filter(Boolean);
+      if (addable.length) {
+        out.push('<div class="rb-add">' + addable.map(s =>
+          '<button class="ghost rb-mini" data-add="' + esc(s.type) + '" data-into="' + esc(node.id) +
+          '">+ ' + esc(s.label) + '</button>').join('') + '</div>');
+      }
+
+      /* Size and spacing, folded away. Every geometry the page lets you DRAG is typeable here —
+         that is the single-pointer alternative WCAG 2.2 SC 2.5.7 asks for — but it is not what
+         somebody opening a job came to do, so it does not sit above the words. */
+      const geo = geometryControls(lay, node);
+      if (geo) {
+        const geoKey = 'geo:' + node.id;
+        const geoId = esc('rb-geo-' + node.id);
+        out.push('<div class="rb-sub"><button class="rb-sub-btn" data-row="' + esc(geoKey) +
+          '" aria-expanded="' + (expanded.has(geoKey) ? 'true' : 'false') + '" aria-controls="' + geoId +
+          '"><span class="rb-caret" aria-hidden="true">›</span>Size and spacing</button>' +
+          '<div id="' + geoId + '"' + (expanded.has(geoKey) ? '' : ' hidden') + '>' + geo + '</div></div>');
+      }
+
+      /* Which column a top-level block sits in — only offered where the layout has more than
+         one, so a single-column template never shows a control that does nothing. */
+      if (lay.slots.length > 1 && d.root.children.includes(node)) {
+        const slotId = esc('rb-slot-' + node.id);
+        out.push('<div class="rb-field"><label for="' + slotId + '">Column</label><select id="' +
+          slotId + '" data-slot-for="' + esc(node.id) + '">' + lay.slots.map(s =>
+            '<option value="' + esc(s.id) + '"' +
+            ((node.slot || lay.slots[0].id) === s.id ? ' selected' : '') + '>' + esc(s.label) +
+            '</option>').join('') + '</select></div>');
+      }
+
+      out.push(actionsHtml(d, lay, spec, node));
+    }
+    out.push('</div></div>');
+    return out.join('');
+  }
+
+  /** The one thing a first visit should do next. Not a hint sentence — the arrangement this
+   *  replaces offered "Click a block on the page to edit its words" beside a page that gave no
+   *  sign a block was clickable, which is a sentence standing in for an affordance. A genuinely
+   *  first visit opens the guide's worked example, so the honest next step is "make it yours". */
+  function firstRunCard() {
+    return '<div class="rb-firstrun"><h2>Start here</h2>' +
+      '<p>This is the guide’s worked example, so you can see the shape of a good résumé before ' +
+      'you write one. Make it yours — your own name and contact details first.</p>' +
+      '<div class="rb-firstrun-acts"><button class="go rb-mini" data-act="startwriting">' +
+      'Start with my name &amp; contact</button>' +
+      '<button class="ghost rb-mini" id="rb-new-blank-2" data-act="blank">or start from an empty page</button>' +
+      '</div></div>';
+  }
+
+  function documentPane() {
     const d = doc();
     const lay = layout();
-    const pane = el('rb-pane-content');
-    const node = selectedId ? Doc.find(d, selectedId) : null;
     const out = [];
-
-    out.push('<div class="rb-prefill"><button class="ghost rb-mini" id="rb-prefill">Fill from my profile</button>' +
-      '<span class="note" id="rb-prefill-note"></span></div>');
-
     const tailoring = Doc.tailoringOf(d);
+    const marks = findingIndex(d);
+
+    if (firstRun) out.push(firstRunCard());
     if (tailoring) {
       out.push('<p class="rb-banner">Editing <b>' + esc(tailoring.name) + '</b>. What you type ' +
         'here is kept for this version only — the master keeps its own words, and a fix you make ' +
         'there still reaches every version that has not overridden it.</p>');
     }
 
-    if (!node) {
-      out.push('<p class="note">Click a block on the page to edit its words, or add one below.</p>');
-    } else {
-      const spec = Components.get(node.type);
-      const overridden = !!(tailoring && (tailoring.picks || {})[node.id]);
-      const leftOut = !!(tailoring && (tailoring.hidden || []).includes(node.id));
-      out.push('<div class="rb-sel"><b>' + esc(spec.label) + '</b>' +
-        (overridden ? '<span class="rb-tag">tailored</span>' : '') +
-        (spec.blurb ? '<p class="note">' + esc(spec.blurb) + '</p>' : '') +
-        (lay.caps.reorder && spec.caps.reorder
-          ? '<p class="note">Alt + ↑ or ↓ moves it, without the mouse.</p>' : '') + '</div>');
-      const content = Doc.contentOf(d, node.id);
-      for (const f of spec.fields) out.push(fieldControl(node.id, f, content[f.key]));
-      if (tailoring) {
-        out.push('<div class="rb-actions">' +
-          (overridden ? '<button class="ghost rb-mini" data-act="unfork">Use the master’s words</button>' : '') +
-          '<button class="ghost rb-mini" data-act="hide">' +
-          (leftOut ? 'Put back in this version' : 'Leave out of this version') + '</button></div>');
-      }
+    out.push('<div class="rb-tree">');
+    const kids = d.root.children || [];
+    if (!kids.length) out.push('<p class="note">Nothing on the page yet. Add a section below.</p>');
+    for (let i = 0; i < kids.length; i++) out.push(rowHtml(d, lay, kids[i], 0, i, marks));
+    out.push('</div>');
 
-      out.push(geometryControls(lay, node));
-
-      /* Which column a top-level block sits in — only offered where the layout has more than
-         one, so a single-column template never shows a control that does nothing. */
-      if (lay.slots.length > 1 && d.root.children.includes(node)) {
-        out.push('<div class="rb-field"><label for="rb-slot">Column</label><select id="rb-slot">' +
-          lay.slots.map(s => '<option value="' + esc(s.id) + '"' +
-            ((node.slot || lay.slots[0].id) === s.id ? ' selected' : '') + '>' + esc(s.label) +
-            '</option>').join('') + '</select></div>');
-      }
-
-      const addable = spec.accepts.includes('*')
-        ? Components.all().filter(s => s.type !== 'header')
-        : spec.accepts.map(t => Components.get(t)).filter(Boolean);
-      if (addable.length) {
-        out.push('<div class="rb-add"><span class="note">Add inside:</span>' + addable.map(s =>
-          '<button class="ghost rb-mini" data-add="' + esc(s.type) + '" data-into="' + esc(node.id) + '">' +
-          esc(s.label) + '</button>').join('') + '</div>');
-      }
-      out.push('<div class="rb-actions">' +
-        (spec.caps.duplicate ? '<button class="ghost rb-mini" data-act="duplicate">Duplicate</button>' : '') +
-        (spec.caps.remove ? '<button class="ghost rb-mini danger" data-act="remove">Delete</button>' : '') +
-        '</div>');
-    }
-
-    out.push('<div class="rb-outline"><div class="rb-outline-head">Outline</div>' +
-      outlineHtml(d) + '</div>');
-    out.push('<div class="rb-add rb-add-top"><span class="note">Add to the page:</span>' +
-      ['section', 'summary', 'skills_line'].map(t => Components.get(t)).filter(Boolean).map(s =>
+    /* One obvious way to grow the résumé, and the two blocks that are not sections kept quiet
+       beside it. The arrangement this replaces offered all three at equal weight under "Add to
+       the page:", which reads as three unrelated choices rather than one and two footnotes. */
+    out.push('<div class="rb-doc-foot">' +
+      '<button class="go rb-mini rb-add-section" data-add="section" data-into="">+ Add section</button>' +
+      '<div class="rb-add"><span class="note">Also:</span>' +
+      ['summary', 'skills_line'].map(t => Components.get(t)).filter(Boolean).map(s =>
         '<button class="ghost rb-mini" data-add="' + esc(s.type) + '" data-into="">' + esc(s.label) +
-        '</button>').join('') + '</div>');
+        '</button>').join('') + '</div>' +
+      '<div class="rb-prefill"><button class="ghost rb-mini" data-act="prefill">Fill from my profile</button>' +
+      '<span class="note" id="rb-prefill-note"></span></div></div>');
 
-    pane.innerHTML = out.join('');
+    el('rb-pane-document').innerHTML = out.join('');
   }
 
   /* Every geometry a layout lets you DRAG, you can also type. Dragging was the only way to
@@ -622,31 +830,24 @@
       'handles on the page drag.</span>' + rows + '</div>' : '';
   }
 
-  function outlineHtml(d) {
-    const rows = [];
-    const tailoring = Doc.tailoringOf(d);
-    const hidden = new Set((tailoring && tailoring.hidden) || []);
-    Doc.walk(d.root, (node, parent, index) => {
-      if (node === d.root) return;
-      const spec = Components.get(node.type);
-      const content = Doc.contentOf(d, node.id);
-      const first = spec.fields.map(f => content[f.key]).find(v => typeof v === 'string' && v.trim());
-      const depth = (function () { let n = node, k = 0; while ((n = Doc.parentOf(d, n.id)) && n !== d.root) k++; return k; })();
-      rows.push('<button class="rb-out-row' + (node.id === selectedId ? ' on' : '') +
-        (hidden.has(node.id) ? ' off' : '') +
-        '" data-select="' + esc(node.id) + '" style="padding-left:' + (8 + depth * 12) + 'px">' +
-        '<span class="rb-out-type">' + esc(spec.label) + '</span> ' +
-        '<span class="rb-out-text">' + esc(String(first || '').slice(0, 44)) + '</span>' +
-        (hidden.has(node.id) ? '<span class="rb-tag">left out</span>' : '') + '</button>');
-    });
-    return rows.join('') || '<p class="note">Nothing on the page yet.</p>';
-  }
-
   function designPane() {
     const d = doc();
     const lay = layout();
     const theme = Layouts.themeFor(lay, d);
-    const out = ['<p class="note">' + esc(lay.blurb) + '</p>'];
+    /* The template first, because every control under it belongs to the template: the tunables
+       are its own declared tokens, and the sheet is what it is laid out on. Both moved here out
+       of a chrome band above the page, where they read as per-session controls — they are not,
+       they are properties of the document, and one of them re-wraps every bullet. */
+    const out = ['<button class="rb-template-card" data-act="templates">' +
+      '<span class="rb-template-card-label">' + esc(lay.label) + '</span>' +
+      (lay.summary ? '<span class="note">' + esc(lay.summary) + '</span>' : '') +
+      '<span class="rb-chip-cue">Change template</span></button>'];
+    if (lay.blurb) out.push('<p class="note">' + esc(lay.blurb) + '</p>');
+    if (lay.credit) out.push('<p class="note rb-credit">' + esc(lay.credit) + '</p>');
+    out.push('<div class="rb-field"><label for="rb-paper-size">Paper size</label>' +
+      '<select id="rb-paper-size">' + Layouts.PAPERS.map(p =>
+        '<option value="' + esc(p.id) + '"' + (p.id === (d.paper || 'letter') ? ' selected' : '') +
+        '>' + esc(p.label) + '</option>').join('') + '</select></div>');
     for (const t of lay.tunables) {
       const value = theme[t.key];
       const id = 'rb-t-' + t.key;
@@ -719,15 +920,22 @@
   let lastVerdict = null;
 
   function badgePaint() {
-    const badge = el('rb-badge');
     const found = findings();
     const blank = untouched(view());
     const n = blank ? 0 : found.filter(f => f.level !== 'note').length;
     const notes = blank ? 0 : found.length - n;
-    badge.hidden = n === 0;
-    /* The number is the badge; the words beside it are only spoken. Without them the tab reads
-       as "Checks 3" and a screen reader user has to guess what the 3 counts. */
-    badge.innerHTML = String(n) + '<span class="rb-vh"> to fix</span>';
+    /* Two badges for one number, and both are needed: Checks now sits one level down inside
+       Polish, so the count has to ride the Polish segment as well — otherwise the demotion would
+       have hidden the one thing in this rail that reports a problem, which is exactly what the
+       persistent indicator exists to prevent. */
+    for (const id of ['rb-badge', 'rb-badge-checks']) {
+      const badge = el(id);
+      if (!badge) continue;
+      badge.hidden = n === 0;
+      /* The number is the badge; the words beside it are only spoken. Without them the tab reads
+         as "Checks 3" and a screen reader user has to guess what the 3 counts. */
+      badge.innerHTML = String(n) + '<span class="rb-vh"> to fix</span>';
+    }
     const verdict = blank ? 'Checks: waiting for the first words.'
       : n === 0 && notes === 0
       ? 'Checks: nothing to flag.'
@@ -739,27 +947,117 @@
     if (verdict !== lastVerdict) { lastVerdict = verdict; announce(verdict); }
   }
 
-  /* ---- the tab strip ----------------------------------------------------------------------
-     Four buttons that swap panels. They were marked `aria-current="page"`, which says
-     "navigation" — the wrong thing, and it cost the arrow-key traversal and the
-     panel-to-tab association a tablist gets for free. */
+  /* ---- the two tab strips -------------------------------------------------------------------
+     One strip of four became two of two and three. Design, Checks and Keywords are things done
+     TO the document rather than peers of it, and a four-across strip said the opposite; nesting
+     them inside Polish is the demotion, and it is the APG's own nested-tablist pattern, so the
+     roving tabindex and arrow traversal below are one behaviour applied twice rather than a
+     second mechanism to keep in step.
 
-  const PANES = ['content', 'design', 'checks', 'keywords'];
+     They were once marked `aria-current="page"`, which says "navigation" — the wrong thing, and
+     it cost the arrow-key traversal and the panel-to-tab association a tablist gets for free. */
 
-  /** Show one pane. `moveFocus` for a keyboard traversal, where focus must follow the
-   *  selection; a click has already put focus where it belongs. */
-  function showRailPane(name, moveFocus) {
+  const SEGMENTS = ['document', 'polish'];
+  const PANES = ['design', 'checks', 'keywords'];
+
+  /** Paint one strip's selection and show its panel. `moveFocus` for a keyboard traversal, where
+   *  focus must follow the selection; a click has already put focus where it belongs. */
+  function showStrip(stripId, key, names, name, moveFocus) {
     let picked = null;
-    for (const b of el('rb-rail-tabs').children) {
-      const on = b.dataset.pane === name;
+    for (const b of el(stripId).children) {
+      const on = b.dataset[key] === name;
       b.setAttribute('aria-selected', on ? 'true' : 'false');
-      /* Roving tabindex: the whole strip is one tab stop rather than four, which is what the
-         arrow keys above are for. */
+      /* Roving tabindex: the whole strip is one tab stop rather than one per button, which is
+         what the arrow keys are for. */
       b.tabIndex = on ? 0 : -1;
       if (on) picked = b;
     }
-    for (const pane of PANES) el('rb-pane-' + pane).hidden = pane !== name;
+    for (const one of names) el('rb-pane-' + one).hidden = one !== name;
     if (moveFocus && picked && picked.focus) picked.focus();
+  }
+
+  const showSegment = (name, moveFocus) =>
+    showStrip('rb-seg', 'seg', SEGMENTS, name, moveFocus);
+
+  /** Show one of the three Polish panels — and open Polish to do it, because reaching Checks
+   *  from the badge or from a test has to work whichever segment is on screen. */
+  function showRailPane(name, moveFocus) {
+    showSegment('polish', false);
+    showStrip('rb-rail-tabs', 'pane', PANES, name, moveFocus);
+  }
+
+  /* ---- the template gallery -----------------------------------------------------------------
+     A picker that shows the templates instead of naming them, taking the stage over rather than
+     dropping a list of words out of the chrome. Two reasons it is not a <select>. People choose
+     a résumé template by looking at it — a line of text cannot say what "two column" does to
+     their own bullets. And a select of seven entries (four more layouts are on their way) hides
+     the one thing a chooser most needs to be told at the moment of choosing: that a handsome
+     coloured sidebar is the template an ATS parses worst.
+
+     Each card is the CURRENT DOCUMENT rendered through that layout — not a stock thumbnail — so
+     what the card shows is what picking it gives you, page-break line included. That is only
+     affordable because a Layout's render is a pure string function (resume_layouts.js): seven
+     renders cost one paint, and only when the gallery is open. */
+
+  let templatesOpen = false;
+
+  /** The sheet is drawn at its true width and scaled, exactly as the real preview is, because a
+   *  miniature that reflowed to fit its card would misrepresent the very thing it is shown for:
+   *  where the lines break. */
+  const MINI_WIDTH = 190;
+
+  function templatesPaint() {
+    const d = doc();
+    const shown = view();
+    const grid = el('rb-template-grid');
+    const cards = [];
+    const sheets = [];
+    Layouts.all().forEach((lay, i) => {
+      const page = Layouts.pageFor(lay, d);
+      /* An index, not the layout's id: this string is interpolated straight into a CSS selector,
+         and an id is only guaranteed to be a registry key, not a valid one. */
+      const miniId = 'rb-tmini-' + i;
+      const scale = MINI_WIDTH / (page.width * 96);
+      sheets.push(lay.css(Layouts.themeFor(lay, d), '#' + miniId + ' .rb-doc'));
+      const on = lay.id === d.layoutId;
+      cards.push('<div class="rb-tcard' + (on ? ' on' : '') + '">' +
+        '<button class="rb-tpick" data-layout="' + esc(lay.id) + '" aria-pressed="' +
+        (on ? 'true' : 'false') + '">' +
+        '<span class="rb-tmini" style="height:' + Math.round(page.height * 96 * scale) + 'px">' +
+        '<span class="rb-tsheet" id="' + miniId + '" aria-hidden="true" style="width:' +
+        page.width + page.unit + '; min-height:' + page.height + page.unit + '; padding:' +
+        page.margin + page.unit + '; transform:scale(' + scale.toFixed(4) + ')">' +
+        Layouts.renderDocument(lay, shown) + '</span></span>' +
+        '<span class="rb-tname">' + esc(lay.label) +
+        (on ? '<span class="rb-tag">in use</span>' : '') + '</span>' +
+        (lay.summary ? '<span class="note">' + esc(lay.summary) + '</span>' : '') +
+        (lay.blurb ? '<span class="note rb-tblurb">' + esc(lay.blurb) + '</span>' : '') +
+        (lay.credit ? '<span class="note rb-credit">' + esc(lay.credit) + '</span>' : '') +
+        '</button></div>');
+    });
+    grid.innerHTML = cards.join('');
+
+    /* One <style> for every miniature, replaced wholesale. Appending would leave the previous
+       gallery's rules live over the next one's cards. */
+    let sheet = el('rb-tsheets');
+    if (!sheet) {
+      sheet = document.createElement('style');
+      sheet.id = 'rb-tsheets';
+      document.head.appendChild(sheet);
+    }
+    sheet.textContent = sheets.join('\n');
+  }
+
+  function showTemplates(on) {
+    templatesOpen = on;
+    el('rb-templates').hidden = !on;
+    el('rb-paper-wrap').hidden = on;
+    el('rb-stage-foot').hidden = on;
+    if (on) {
+      templatesPaint();
+      const close = el('rb-templates-close');
+      if (close && close.focus) close.focus();
+    }
   }
 
   /* ---- keyword coverage -------------------------------------------------------------------
@@ -941,15 +1239,24 @@
 
     el('rb-name').addEventListener('input', e => store.dispatch(Cmd.rename(e.target.value), 'name'));
 
-    el('rb-layout').addEventListener('change', e => {
+    /* The gallery takes the stage over and hands it back. Both triggers carry `data-act` rather
+       than an id, so the Design pane's card and the strip under the page reach one handler
+       instead of duplicating it — the panes are rebuilt from innerHTML, so a listener bound to a
+       control inside one would be replaced along with it. */
+    el('rb-templates').addEventListener('click', e => {
+      const pick = e.target.closest('[data-layout]');
+      if (!pick) return;
       selectedId = null;
-      changeLayout(e.target.value);
+      changeLayout(pick.dataset.layout);
+      showTemplates(false);
+      fitToWidth();
+      paint();
     });
-
-    el('rb-paper-size').innerHTML = Layouts.PAPERS.map(p =>
-      '<option value="' + esc(p.id) + '">' + esc(p.label) + '</option>').join('');
-    el('rb-paper-size').addEventListener('change', e =>
-      store.dispatch(Cmd.setPaper(e.target.value)));
+    el('rb-templates-close').addEventListener('click', () => showTemplates(false));
+    el('rb-stage-foot').addEventListener('click', e => {
+      if (e.target.closest('[data-act="templates"]')) showTemplates(true);
+    });
+    el('rb-zoom-fit').addEventListener('click', () => { fitToWidth(); paint(); });
 
     el('rb-version').addEventListener('change', e => {
       selectedId = null;
@@ -977,30 +1284,40 @@
     el('rb-undo').addEventListener('click', () => { selectedId = null; store.undo(); });
     el('rb-redo').addEventListener('click', () => { selectedId = null; store.redo(); });
 
-    el('rb-open').addEventListener('click', () => {
-      const pop = el('rb-pop-open');
-      pop.hidden = !pop.hidden;
-      el('rb-pop-download').hidden = true;
-      if (!pop.hidden) docListPaint();
+    /* A popover that says whether it is open. `aria-expanded` on the button that owns it is the
+       only thing telling a screen-reader user that "Résumés" reveals a list rather than
+       navigating somewhere, and both buttons were silent about it. */
+    const popover = (buttonId, popId, before) => el(buttonId).addEventListener('click', () => {
+      const pop = el(popId);
+      const opening = pop.hidden;
+      for (const [b, p] of [['rb-open', 'rb-pop-open'], ['rb-download', 'rb-pop-download']]) {
+        el(p).hidden = true;
+        el(b).setAttribute('aria-expanded', 'false');
+      }
+      pop.hidden = !opening;
+      el(buttonId).setAttribute('aria-expanded', opening ? 'true' : 'false');
+      if (opening && before) before();
     });
-    el('rb-download').addEventListener('click', () => {
-      const pop = el('rb-pop-download');
-      pop.hidden = !pop.hidden;
-      el('rb-pop-open').hidden = true;
-    });
+    popover('rb-open', 'rb-pop-open', docListPaint);
+    popover('rb-download', 'rb-pop-download', null);
 
-    el('rb-new').addEventListener('click', () => {
+    /* Two named buttons rather than one behind a confirm() whose OK and Cancel both start a
+       résumé. Which one you get is the choice; a dialog that spends it on OK-or-Cancel makes the
+       reader translate before they can answer. */
+    const startFresh = filled => {
       const lay = layout();
-      const filled = lay.example && window.confirm(
-        'Start from the guide’s worked example?\n\nOK fills a complete example résumé you ' +
-        'can edit over. Cancel starts an empty one.');
       selectedId = null;
-      const fresh = startDocument(lay.id, filled);
+      expanded.clear();
+      firstRun = false;
+      const fresh = startDocument(lay.id, filled && !!lay.example);
       repository.save(fresh);
       repository.setLastOpened(fresh.id);
       store.adopt(fresh);
       el('rb-pop-open').hidden = true;
-    });
+      el('rb-open').setAttribute('aria-expanded', 'false');
+    };
+    el('rb-new').addEventListener('click', () => startFresh(true));
+    el('rb-new-blank').addEventListener('click', () => startFresh(false));
 
     el('rb-doclist').addEventListener('click', e => {
       const open = e.target.closest('[data-open]');
@@ -1058,6 +1375,10 @@
       const t = e.target;
       if (t.dataset.field) {
         const value = t.type === 'checkbox' ? t.checked : t.value;
+        /* The card says "make it yours". Once a word has been typed it has been made theirs, so
+           it stands down — leaving it up would spend the top of the rail on advice already
+           taken, and it is the largest thing in the panel. */
+        firstRun = false;
         /* Under a version this forks a variant on the first keystroke and writes there after —
            copy-on-write, so tailoring a bullet never edits the master by accident. */
         store.dispatch(
@@ -1080,13 +1401,26 @@
       }
     });
     rail.addEventListener('change', e => {
-      if (e.target.id === 'rb-slot') store.dispatch(Cmd.setSlot(selectedId, e.target.value));
+      const slot = e.target.dataset ? e.target.dataset.slotFor : null;
+      if (slot) store.dispatch(Cmd.setSlot(slot, e.target.value));
+      if (e.target.id === 'rb-paper-size') store.dispatch(Cmd.setPaper(e.target.value));
     });
     rail.addEventListener('click', e => {
+      const row = e.target.closest('[data-row]');
       const pick = e.target.closest('[data-select]');
       const add = e.target.closest('[data-add]');
       const act = e.target.closest('[data-act]');
-      if (pick) { select(pick.dataset.select); scrollToNode(pick.dataset.select); }
+      /* Opening a row selects the block it names. The rail and the page are one document seen
+         twice, so navigating in one has to move the other — the "Outline" this replaces selected
+         without opening, and the fields it selected lived somewhere else on the panel. */
+      if (row) {
+        const key = row.dataset.row;
+        if (expanded.has(key)) expanded.delete(key); else expanded.add(key);
+        if (key.indexOf('geo:') !== 0) { select(expanded.has(key) ? key : null, false); return; }
+        paint();
+        return;
+      }
+      if (pick) { select(pick.dataset.select); scrollPaperTo(pick.dataset.select); }
       if (add) {
         const into = add.dataset.into || null;
         store.dispatch(Cmd.addNode(into, add.dataset.add));
@@ -1094,47 +1428,70 @@
         const created = parent && parent.children[parent.children.length - 1];
         if (created) select(created.id);
       }
-      if (act && selectedId) {
-        if (act.dataset.act === 'remove') {
-          const gone = selectedId;
-          selectedId = null;
-          store.dispatch(Cmd.removeNode(gone));
-        } else if (act.dataset.act === 'duplicate') {
-          store.dispatch(Cmd.duplicateNode(selectedId));
-        } else if (act.dataset.act === 'unfork') {
-          store.dispatch(Cmd.clearVariant(selectedId, activeTailoring()));
-        } else if (act.dataset.act === 'hide') {
+      if (act) {
+        /* The block the button is ON, not the block that happens to be selected. Every action
+           now sits inside the row it acts on, so reading the selection would have made a
+           button's meaning depend on something else the user last clicked. */
+        const on = act.dataset.node || selectedId;
+        const what = act.dataset.act;
+        if (what === 'templates') showTemplates(true);
+        else if (what === 'prefill') prefill();
+        else if (what === 'blank') startFresh(false);
+        else if (what === 'startwriting') {
+          const header = Doc.flatten(doc()).find(n => n.type === 'header');
+          firstRun = false;
+          if (header) {
+            select(header.id);
+            const first = el('rb-f-' + header.id + '-fullName');
+            if (first && first.focus) first.focus();
+          }
+        } else if (what === 'moveup' || what === 'movedown') {
+          nudge(on, what === 'moveup' ? -1 : 1);
+        } else if (on && what === 'remove') {
+          if (selectedId === on) selectedId = null;
+          expanded.delete(on);
+          store.dispatch(Cmd.removeNode(on));
+        } else if (on && what === 'duplicate') {
+          store.dispatch(Cmd.duplicateNode(on));
+        } else if (on && what === 'unfork') {
+          store.dispatch(Cmd.clearVariant(on, activeTailoring()));
+        } else if (on && what === 'hide') {
           const tailoring = Doc.tailoringOf(doc());
-          const isHidden = !!(tailoring && (tailoring.hidden || []).includes(selectedId));
-          store.dispatch(Cmd.setHidden(selectedId, !isHidden, activeTailoring()));
+          const isHidden = !!(tailoring && (tailoring.hidden || []).includes(on));
+          store.dispatch(Cmd.setHidden(on, !isHidden, activeTailoring()));
         }
       }
       if (e.target.id === 'rb-theme-reset') store.dispatch(Cmd.setTheme(blankTheme()));
-      if (e.target.id === 'rb-prefill') prefill();
       if (e.target.id === 'rb-kw-run') keywordCheck();
     });
 
-    const tabs = el('rb-rail-tabs');
-    tabs.addEventListener('click', e => {
-      const tab = e.target.closest('[data-pane]');
-      if (tab) showRailPane(tab.dataset.pane, false);
-    });
-    /* Arrow-key traversal, which is what makes a tablist a tablist. Automatic activation — the
-       panel follows focus — is the APG default for a set this small and with no expensive panel
-       to build, and it is what a mouse user already gets. */
-    tabs.addEventListener('keydown', e => {
-      const active = document.activeElement;
-      const at = PANES.indexOf(active && active.dataset ? active.dataset.pane : null);
-      if (at < 0) return;
-      const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
-      let to = null;
-      if (step != null) to = (at + step + PANES.length) % PANES.length;
-      else if (e.key === 'Home') to = 0;
-      else if (e.key === 'End') to = PANES.length - 1;
-      if (to == null) return;
-      e.preventDefault();
-      showRailPane(PANES[to], true);
-    });
+    /* One traversal, wired twice. Both strips are tablists, so both owe the same behaviour;
+       writing it once means the nested strip cannot drift from the outer one. Automatic
+       activation — the panel follows focus — is the APG default for sets this small with no
+       expensive panel to build, and it is what a mouse user already gets. */
+    const wireStrip = (stripId, key, names, show) => {
+      const strip = el(stripId);
+      strip.addEventListener('click', e => {
+        const tab = e.target.closest('[data-' + key + ']');
+        if (tab) show(tab.dataset[key], false);
+      });
+      strip.addEventListener('keydown', e => {
+        const active = document.activeElement;
+        const at = names.indexOf(active && active.dataset ? active.dataset[key] : null);
+        if (at < 0) return;
+        const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+        let to = null;
+        if (step != null) to = (at + step + names.length) % names.length;
+        else if (e.key === 'Home') to = 0;
+        else if (e.key === 'End') to = names.length - 1;
+        if (to == null) return;
+        e.preventDefault();
+        show(names[to], true);
+      });
+    };
+    wireStrip('rb-seg', 'seg', SEGMENTS, showSegment);
+    wireStrip('rb-rail-tabs', 'pane', PANES,
+      (name, moveFocus) => showStrip('rb-rail-tabs', 'pane', PANES, name, moveFocus));
 
     document.addEventListener('keydown', e => {
       if (el('panel-resume') && el('panel-resume').hidden) return;
@@ -1145,7 +1502,7 @@
         if (e.shiftKey) store.redo(); else store.undo();
       }
       if (e.altKey && (key === 'arrowup' || key === 'arrowdown')) {
-        if (nudge(key === 'arrowup' ? -1 : 1)) e.preventDefault();
+        if (nudge(selectedId, key === 'arrowup' ? -1 : 1)) e.preventDefault();
       }
       if (key === 'escape' && selectedId) select(null);
     });
@@ -1173,6 +1530,10 @@
     const lay = Layouts.get(layoutId);
     if (!lay) return;
     store.dispatch(Cmd.setLayout(layoutId, lay.adopt));
+    /* Said out loud, because the gallery closes on the choice and the only other confirmation is
+       the page itself, which a screen-reader user is not looking at. It also names the way back:
+       the switch is one Command, so Undo returns the previous template exactly. */
+    announce(lay.label + ' applied. Your words are unchanged; Undo puts the previous template back.');
   }
 
   /** Zoom so the sheet fits the space it has. A US Letter page is 816 CSS px wide and the stage
@@ -1196,11 +1557,11 @@
      moving a block was a drag and nothing else, which put the one decision this template says
      matters most (what a recruiter reads first) behind a pointer. Alt+Up/Down moves the selected
      block among its siblings; the same Command the drag dispatches, so undo is identical. */
-  function nudge(direction) {
+  function nudge(id, direction) {
     const d = doc();
-    if (!selectedId || !d) return false;
-    const node = Doc.find(d, selectedId);
-    const parent = Doc.parentOf(d, selectedId);
+    if (!id || !d) return false;
+    const node = Doc.find(d, id);
+    const parent = Doc.parentOf(d, id);
     const lay = layout();
     if (!node || !parent || !lay.caps.reorder) return false;
     const spec = Components.get(node.type);
@@ -1213,9 +1574,9 @@
       announce(spec.label + ' is already ' + (direction < 0 ? 'first' : 'last') + '.');
       return true;
     }
-    store.dispatch(Cmd.moveNode(selectedId, parent === d.root ? null : parent.id, to));
+    store.dispatch(Cmd.moveNode(id, parent === d.root ? null : parent.id, to));
     announce(spec.label + ' moved to position ' + (to + 1) + ' of ' + siblings.length + '.');
-    scrollToNode(selectedId);
+    scrollPaperTo(id);
     return true;
   }
 
@@ -1238,9 +1599,18 @@
     box.textContent = message;
   }
 
-  function scrollToNode(id) {
+  /* Two scrollers, named apart on purpose. `scrollToNode` was one function when there was one
+     place a block could be shown; the rail now shows the same block as a row, and a single name
+     covering both would be read as whichever one the reader had in mind. */
+  function scrollPaperTo(id) {
     const target = el('rb-paper').querySelector('[data-node="' + id + '"]');
     if (target && target.scrollIntoView) target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
+  function scrollRailTo(id) {
+    const pane = el('rb-pane-document');
+    const row = pane && pane.querySelector ? pane.querySelector('[data-row="' + id + '"]') : null;
+    if (row && row.scrollIntoView) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
   /* ---- boot --------------------------------------------------------------------------------- */
@@ -1257,9 +1627,6 @@
     });
     store.subscribe(paint);
 
-    el('rb-layout').innerHTML = Layouts.all().map(l =>
-      '<option value="' + esc(l.id) + '">' + esc(l.label) + '</option>').join('');
-
     const last = repository.lastOpened();
     const existing = (last && repository.get(last)) || null;
     const first = repository.list()[0];
@@ -1267,12 +1634,15 @@
        than an empty sheet. Reading a filled résumé is how the guide itself teaches the What /
        How / Result shape, and an empty page is the one starting point that teaches nothing while
        failing every rule the panel beside it states. "New" still offers both. */
+    /* And it is the ONLY moment the "Start here" card is honest: it says "this is an example,
+       make it yours", which is wrong advice for a résumé somebody wrote yesterday. Nothing on
+       the document records where it came from, so it is recorded here. */
+    firstRun = !existing && !first;
     const opening = existing || (first && repository.get(first.id)) ||
       startDocument('headless-headhunter', true);
     if (!Layouts.get(opening.layoutId)) opening.layoutId = Layouts.all()[0].id;
     store.adopt(opening);
     repository.setLastOpened(opening.id);
-    el('rb-layout').value = opening.layoutId;
 
     wire();
     if (!repository.durable) flashSaved('Storage is blocked here — download a backup.');
@@ -1284,7 +1654,6 @@
   function shown() {
     boot();
     if (store && store.get()) {
-      el('rb-layout').value = store.get().layoutId;
       paint();
       if (!fitted) { fitted = true; fitToWidth(); paint(); }
     }

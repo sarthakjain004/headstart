@@ -1,27 +1,46 @@
 {# The Résumé tab (ADR-0123). Everything here is client-side: no route, no endpoint, and no
    résumé text ever reaches the server — see resume_repository.js and ADR-0041. The skeleton is
-   static so the panel is legible before the scripts run; resume_editor.js fills the rail. #}
+   static so the panel is legible before the scripts run; resume_editor.js fills the rail.
+
+   The arrangement is a FORM WITH A LIVE PREVIEW, not a canvas with an inspector (ADR-0125). The
+   rail is the document and the paper is the preview of it; direct manipulation on the paper
+   survives as a second path, not the main road. Measured on the arrangement this replaced, at
+   1280x800 before a word is typed: 57 controls in the DOM, 33 of them on screen at once, across
+   three stacked rows of chrome above the page (the bar, plus a stage head that wrapped to two).
+   The same measurement here is 55 and 22. Every builder the research covered (Resume.io, Kickresume,
+   Novoresume, and the three read from source) edits in a rail and previews on the right; none of
+   them makes the rendered page the place you type. #}
 <section class="rb" id="rb">
 
+  {# ONE band, three groups, hairline-separated: the document, the version, the actions. Grouping
+     is the whole point — the eight controls that used to sit here at one visual weight gave a
+     newcomer no way to tell "Download" from "+ Version". Open / New / Import collapse into the
+     Résumés menu, and layout, paper size and zoom are gone from the chrome entirely: they belong
+     to the document and the preview, not to the session. #}
   <div class="rb-bar">
-    <div class="rb-bar-left">
+    <div class="rb-group">
       <label class="rb-vh" for="rb-name">Résumé name</label>
       <input id="rb-name" class="rb-name" placeholder="Untitled résumé" autocomplete="off">
-      <button class="ghost rb-mini" id="rb-open" title="Your saved résumés">Open</button>
-      <button class="ghost rb-mini" id="rb-new" title="Start a new résumé">New</button>
-      {# Tailoring: one résumé, many versions. A version stores only what it changes, so fixing a
-         sentence in the master reaches every version that never disagreed with it. #}
-      <label class="rb-vh" for="rb-version">Version</label>
-      <select id="rb-version" class="rb-layout"
+      <button class="ghost rb-mini" id="rb-open" aria-expanded="false" aria-controls="rb-pop-open"
+              title="Open, start or import a résumé">Résumés</button>
+    </div>
+    {# Tailoring: one résumé, many versions. A version stores only what it changes, so fixing a
+       sentence in the master reaches every version that never disagreed with it. The button says
+       what it is FOR — "+ Version" named the mechanism, and a newcomer reading it could not tell
+       what would happen. #}
+    <div class="rb-group rb-group-version">
+      <label class="rb-group-label" for="rb-version">Version</label>
+      <select id="rb-version" class="rb-select"
               title="Tailor this résumé for one job without copying the whole thing"></select>
-      <button class="ghost rb-mini" id="rb-version-new" title="Tailor a copy for one job">+ Version</button>
+      <button class="ghost rb-mini" id="rb-version-new" title="Tailor a copy for one job">Tailor for a job</button>
       <button class="ghost rb-mini danger" id="rb-version-del" hidden>Delete version</button>
     </div>
-    <div class="rb-bar-right">
-      <button class="ghost rb-mini" id="rb-undo" title="Undo (Ctrl+Z)" disabled>Undo</button>
-      <button class="ghost rb-mini" id="rb-redo" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
+    <div class="rb-group rb-group-actions">
       <span class="note rb-saved" id="rb-saved" role="status"></span>
-      <button class="go rb-mini" id="rb-download">Download</button>
+      <button class="ghost rb-icon" id="rb-undo" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>↶</button>
+      <button class="ghost rb-icon" id="rb-redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled>↷</button>
+      <button class="go rb-mini" id="rb-download" aria-expanded="false"
+              aria-controls="rb-pop-download">Download</button>
     </div>
   </div>
 
@@ -31,6 +50,13 @@
   <div class="rb-pop" id="rb-pop-open" hidden>
     <div class="rb-pop-head">Your résumés <button class="ghost rb-mini" id="rb-import">Import .json</button></div>
     <div id="rb-doclist" class="rb-doclist"></div>
+    {# Two named buttons rather than one "New" behind a confirm() asking "start from the worked
+       example? OK / Cancel". A modal that spends the user's only decision on an OK-or-Cancel it
+       has to read twice is the same defect as an unlabelled control. #}
+    <div class="rb-pop-new">
+      <button class="ghost rb-mini" id="rb-new">New — from the worked example</button>
+      <button class="ghost rb-mini" id="rb-new-blank">New — empty page</button>
+    </div>
     <p class="note rb-storage" id="rb-storage"></p>
   </div>
 
@@ -44,61 +70,86 @@
 
   <div class="rb-body">
     <div class="rb-stage">
-      <div class="rb-stage-head">
-        <label class="rb-vh" for="rb-layout">Layout</label>
-        <select id="rb-layout" class="rb-layout" title="How the same words are arranged and styled"></select>
-        <span class="note" id="rb-layout-note"></span>
-        {# The sheet, beside the layout, because it is the same kind of choice and the wrong one
-           re-wraps every bullet. Letter is the default only because it is what the templates
-           were written against, not because it is the common case. #}
-        <label class="rb-vh" for="rb-paper-size">Paper size</label>
-        <select id="rb-paper-size" class="rb-layout" title="The sheet this résumé is printed on"></select>
-        <span class="note rb-credit" id="rb-layout-credit" hidden></span>
-        <span class="spacer"></span>
-        <label class="rb-zoom"><span class="rb-vh">Zoom</span>
-          <input type="range" id="rb-zoom" min="25" max="130" step="5" value="100"></label>
-      </div>
       {# The page. Its width is the layout's own paper width, so what is on screen is what
          prints — the preview and the PDF are one stylesheet (resume_export.js). #}
-      <div class="rb-paper-wrap"><div class="rb-paper" id="rb-paper" role="group"
+      <div class="rb-paper-wrap" id="rb-paper-wrap"><div class="rb-paper" id="rb-paper" role="group"
            aria-label="Résumé preview"></div></div>
-      <p class="note rb-hint">Click a block to edit it, or pick one from the Outline in the
-        panel — that list is how the page is reached without a mouse. Drag the handle to
-        reorder, or Alt + ↑ / ↓; drag an edge to resize.</p>
+
+      {# A status strip for the preview, BELOW it: what am I looking at, and how big. It replaces
+         a hint sentence that told the user blocks were clickable without the page giving any sign
+         that they were. It is deliberately not a chrome band — nothing above the paper — and it
+         holds only the two facts about the view itself. #}
+      <div class="rb-stage-foot" id="rb-stage-foot">
+        <button class="rb-template-chip" data-act="templates">
+          <span class="rb-vh">Template — click to change: </span>
+          <span id="rb-template-name"></span><span class="rb-chip-cue">Change</span></button>
+        <span class="spacer"></span>
+        <label class="rb-zoom"><span class="rb-vh">Zoom</span>
+          <input type="range" id="rb-zoom" min="25" max="200" step="5" value="100"></label>
+        <output class="note rb-zoom-read" id="rb-zoom-read" for="rb-zoom">100%</output>
+        <button class="ghost rb-mini" id="rb-zoom-fit" title="Scale the page to the space it has">Fit</button>
+      </div>
+
+      {# The template gallery takes the stage over rather than opening as a dropdown of names:
+         people choose a résumé template by looking at it, and every card here is the CURRENT
+         DOCUMENT rendered through that layout, not a stock image — so what the card shows is what
+         choosing it gives you. Built to hold seven and to keep holding more: the grid wraps and
+         each card carries its own summary, warning and credit. #}
+      <div class="rb-templates" id="rb-templates" hidden role="group" aria-label="Choose a template">
+        <div class="rb-templates-head">
+          <h2>Choose a template</h2>
+          <p class="note">Every one of these renders the words you already have. Switching keeps
+            them — only the arrangement changes, and the dashed page-break line tells you if the
+            new one runs onto a second sheet.</p>
+          <button class="ghost rb-mini" id="rb-templates-close">Back to the page</button>
+        </div>
+        <div class="rb-template-grid" id="rb-template-grid"></div>
+      </div>
     </div>
 
     <aside class="rb-rail" aria-label="Résumé editor">
-      {# A tablist, not navigation. These four swap panels inside this panel; they go nowhere, so
-         `aria-current="page"` was describing the wrong thing entirely — and it left a screen
-         reader with no idea which panel each button controls, and a keyboard user with four tab
-         stops and no arrow-key traversal. Roving tabindex is set here and maintained by
-         resume_editor.js's showTab. #}
-      <div class="rb-rail-tabs" id="rb-rail-tabs" role="tablist" aria-label="Résumé editor panels">
-        <button class="rb-rail-tab" id="rb-tab-content" role="tab" data-pane="content"
-                aria-selected="true" aria-controls="rb-pane-content">Content</button>
-        <button class="rb-rail-tab" id="rb-tab-design" role="tab" data-pane="design"
-                aria-selected="false" aria-controls="rb-pane-design" tabindex="-1">Design</button>
-        <button class="rb-rail-tab" id="rb-tab-checks" role="tab" data-pane="checks"
-                aria-selected="false" aria-controls="rb-pane-checks" tabindex="-1">Checks<span
+      {# Two segments, not four tabs. Design, Checks and Keywords are not peers of the document —
+         they are things you do TO it — so they sit one level down, inside Polish, and the
+         document is what the rail shows unless you leave it. The four-across strip this replaces
+         said the opposite: that "Keywords" and "the résumé" were the same kind of thing.
+         Nested tablists are the APG's own pattern for exactly this, so the roving tabindex and
+         arrow traversal below are the same behaviour applied twice, not a second mechanism. #}
+      <div class="rb-seg" id="rb-seg" role="tablist" aria-label="Résumé editor sections">
+        <button class="rb-seg-tab" id="rb-seg-document" role="tab" data-seg="document"
+                aria-selected="true" aria-controls="rb-pane-document">Document</button>
+        <button class="rb-seg-tab" id="rb-seg-polish" role="tab" data-seg="polish"
+                aria-selected="false" aria-controls="rb-pane-polish" tabindex="-1">Polish<span
                 class="rb-badge" id="rb-badge" hidden>0</span></button>
-        <button class="rb-rail-tab" id="rb-tab-keywords" role="tab" data-pane="keywords"
-                aria-selected="false" aria-controls="rb-pane-keywords" tabindex="-1">Keywords</button>
       </div>
-      {# `tabindex="0"` on the panel itself: the Checks panel is a single paragraph when nothing
-         is flagged, so without it the panel a tab names can hold nothing focusable and a
+
+      {# `tabindex="0"` on the panel itself: a panel can be a single paragraph when there is
+         nothing to say, and without it the panel a tab names holds nothing focusable and a
          keyboard user arrives nowhere. #}
-      <div class="rb-pane" id="rb-pane-content" role="tabpanel" aria-labelledby="rb-tab-content" tabindex="0"></div>
-      <div class="rb-pane" id="rb-pane-design" role="tabpanel" aria-labelledby="rb-tab-design" tabindex="0" hidden></div>
-      <div class="rb-pane" id="rb-pane-checks" role="tabpanel" aria-labelledby="rb-tab-checks" tabindex="0" hidden></div>
-      <div class="rb-pane" id="rb-pane-keywords" role="tabpanel" aria-labelledby="rb-tab-keywords" tabindex="0" hidden>
-        <p class="note">The one step the guide puts before writing anything: find the
-          qualifications for the job title you want, from ten to fifteen real postings, and get
-          them into the first half of your first page. Paste them here — one a line — and this
-          checks which ones your résumé actually says.</p>
-        <textarea id="rb-kw" rows="7" placeholder="Customer Service&#10;Point of Sale&#10;Multitasking&#10;Basic Math"></textarea>
-        <div class="row"><button class="ghost rb-mini" id="rb-kw-run">Check coverage</button>
-          <span class="note" id="rb-kw-summary"></span></div>
-        <div id="rb-kw-out"></div>
+      <div class="rb-pane" id="rb-pane-document" role="tabpanel" aria-labelledby="rb-seg-document" tabindex="0"></div>
+
+      <div class="rb-pane rb-pane-polish" id="rb-pane-polish" role="tabpanel"
+           aria-labelledby="rb-seg-polish" tabindex="0" hidden>
+        <div class="rb-rail-tabs" id="rb-rail-tabs" role="tablist" aria-label="Polish">
+          <button class="rb-rail-tab" id="rb-tab-design" role="tab" data-pane="design"
+                  aria-selected="true" aria-controls="rb-pane-design">Design</button>
+          <button class="rb-rail-tab" id="rb-tab-checks" role="tab" data-pane="checks"
+                  aria-selected="false" aria-controls="rb-pane-checks" tabindex="-1">Checks<span
+                  class="rb-badge" id="rb-badge-checks" hidden>0</span></button>
+          <button class="rb-rail-tab" id="rb-tab-keywords" role="tab" data-pane="keywords"
+                  aria-selected="false" aria-controls="rb-pane-keywords" tabindex="-1">Keywords</button>
+        </div>
+        <div class="rb-subpane" id="rb-pane-design" role="tabpanel" aria-labelledby="rb-tab-design" tabindex="0"></div>
+        <div class="rb-subpane" id="rb-pane-checks" role="tabpanel" aria-labelledby="rb-tab-checks" tabindex="0" hidden></div>
+        <div class="rb-subpane" id="rb-pane-keywords" role="tabpanel" aria-labelledby="rb-tab-keywords" tabindex="0" hidden>
+          <p class="note">The one step the guide puts before writing anything: find the
+            qualifications for the job title you want, from ten to fifteen real postings, and get
+            them into the first half of your first page. Paste them here — one a line — and this
+            checks which ones your résumé actually says.</p>
+          <textarea id="rb-kw" rows="7" placeholder="Customer Service&#10;Point of Sale&#10;Multitasking&#10;Basic Math"></textarea>
+          <div class="row"><button class="ghost rb-mini" id="rb-kw-run">Check coverage</button>
+            <span class="note" id="rb-kw-summary"></span></div>
+          <div id="rb-kw-out"></div>
+        </div>
       </div>
     </aside>
   </div>
