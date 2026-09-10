@@ -137,3 +137,66 @@ test('a downloaded résumé carries no adornment at all', () => {
   assert.ok(!file.includes('data-tailored'));
   assert.ok(!ctx.ResumeExport.plainText(doc).includes('mark'));
 });
+
+test('a term is matched as a term — "Java" is not the first half of "JavaScript"', () => {
+  const ctx = load(ALL);
+  const lay = ctx.ResumeLayouts.get(HH);
+  const doc = ctx.ResumeDocument.builder().usingLayout(HH)
+    .section('Skills', s => s.add('bullet', { text: 'Fluent in JavaScript and TypeScript' })).build();
+  const dressed = ctx.ResumeDecorators.compose(lay, [ctx.ResumeDecorators.highlight(['Java'])]);
+  assert.ok(!render(ctx, dressed, doc).includes('<mark'),
+    '"Java" was marked inside "JavaScript"');
+});
+
+test('the one- and two-letter languages do not light up ordinary prose', () => {
+  const ctx = load(ALL);
+  const lay = ctx.ResumeLayouts.get(HH);
+  /* Not an edge case on a software job board: Go, R, C, ML and AI ARE the corpus, and every
+     one of them is a substring of words a résumé is full of. */
+  const doc = ctx.ResumeDocument.builder().usingLayout(HH)
+    .section('Work', s => s
+      .add('bullet', { text: 'Responsible for the roster, ran reports regularly' })
+      .add('bullet', { text: 'Coordinated the customer care crew, good at going the extra mile' })
+      .add('bullet', { text: 'Maintained the HTML and XML templates for the retail chain' })).build();
+  const dressed = ctx.ResumeDecorators.compose(lay,
+    [ctx.ResumeDecorators.highlight(['Go', 'R', 'C', 'ML', 'AI'])]);
+  const html = render(ctx, dressed, doc);
+  const marked = (html.match(/<mark class="rb-kw-hit">([\s\S]*?)<\/mark>/g) || [])
+    .map(m => m.replace(/<\/?mark[^>]*>/g, ''));
+  assert.deepEqual(marked, [], 'prose containing none of these terms was marked anyway');
+});
+
+test('a term made of punctuation still matches itself, even at the end of a bullet', () => {
+  const ctx = load(ALL);
+  const lay = ctx.ResumeLayouts.get(HH);
+  /* The trailing period is the trap. This template asks for one at the end of every bullet, so
+     a boundary that refuses a following "." reports a résumé written to the template's own
+     rules as mentioning none of its own languages. */
+  const doc = ctx.ResumeDocument.builder().usingLayout(HH)
+    .section('Work', s => s
+      .add('bullet', { text: 'Wrote the driver in C++ and the tooling in F#.' })
+      .add('bullet', { text: 'Built .NET 8 services and a Node.js gateway.' })
+      .add('bullet', { text: 'Ported the desktop app to C#.' })).build();
+  const dressed = ctx.ResumeDecorators.compose(lay,
+    [ctx.ResumeDecorators.highlight(['C++', 'C#', '.NET', 'F#', 'Node.js'])]);
+  const marked = (render(ctx, dressed, doc).match(/<mark class="rb-kw-hit">([\s\S]*?)<\/mark>/g) || [])
+    .map(m => m.replace(/<\/?mark[^>]*>/g, ''));
+  assert.deepEqual(marked.sort(), ['.NET', 'C#', 'C++', 'F#', 'Node.js']);
+});
+
+test('the score and the highlight answer the same question', () => {
+  const ctx = load(ALL);
+  const { mentions, highlight, compose } = ctx.ResumeDecorators;
+  const lay = ctx.ResumeLayouts.get(HH);
+  const text = 'Shipped a C++ trading engine in Java, plus JavaScript tooling.';
+  const doc = ctx.ResumeDocument.builder().usingLayout(HH)
+    .section('Work', s => s.add('bullet', { text })).build();
+  /* `C++` read as missing while the page was busy marking `C` all over it — two substring
+     tests, two answers. One matcher, one answer. */
+  for (const term of ['C++', 'C', 'Java', 'JavaScript', 'R', 'Go']) {
+    const marked = render(ctx, compose(lay, [highlight([term])]), doc).includes('<mark');
+    assert.equal(mentions(text, term), marked, `"${term}": the score and the page disagree`);
+  }
+  assert.deepEqual(['C++', 'C', 'Java', 'JavaScript', 'R', 'Go'].map(t => mentions(text, t)),
+    [true, false, true, true, false, false]);
+});

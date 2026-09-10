@@ -43,26 +43,12 @@
     return isBlack(v) || (c[2] > c[0] + 40 && c[2] > c[1] + 30);
   };
 
-  const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august',
-    'september', 'october', 'november', 'december'];
-
-  /** {y, m} from "June 2023", "Jun 2023", "06/2023" or "2023-06"; null when no month AND year
-   *  can be read. The guide is explicit that work and internship dates carry both. */
-  function parseMonth(text) {
-    const s = String(text || '').trim().toLowerCase();
-    if (!s) return null;
-    let m = s.match(/^([a-z]+)\.?\s+(\d{4})$/);
-    if (m) {
-      const i = MONTHS.findIndex(name => name.startsWith(m[1].slice(0, 3)));
-      return i < 0 ? null : { y: +m[2], m: i + 1 };
-    }
-    m = s.match(/^(\d{1,2})[/-](\d{4})$/);
-    if (m && +m[1] >= 1 && +m[1] <= 12) return { y: +m[2], m: +m[1] };
-    m = s.match(/^(\d{4})[/-](\d{1,2})$/);
-    if (m && +m[2] >= 1 && +m[2] <= 12) return { y: +m[1], m: +m[2] };
-    return null;
-  }
-  const asMonths = d => (d ? d.y * 12 + d.m : null);
+  /* Dates, line lengths, openers and outcomes are read the same way here as in every other
+     Layout, so they live in resume_layouts.js with the baseline that also reads them
+     (ADR-0127). What stays in this file is what is THIS TEMPLATE'S: its numbers, its colours,
+     its sentence count, and its one-sided tense test. */
+  const { parseMonth, asMonths, charsPerLine, opener, anyStemIn, SUPERFLUOUS, SCALE,
+    OUTCOME } = L;
 
   /** Sentence-ending periods, with the abbreviations and decimals that would inflate the count
    *  neutralised first — "B.A." and "4.5" are not sentences, and a rule that said they were
@@ -72,14 +58,6 @@
       .replace(/\b(?:[A-Za-z]{1,2}\.){2,}/g, 'X')
       .replace(/(\d)\.(\d)/g, '$1$2');
     return (cleaned.match(/\.(\s|$)/g) || []).length;
-  }
-
-  /* Roughly how many characters fit on one line, from the page and the type size actually in
-     force. Arial's average advance is close to half its point size at this measure; this is an
-     estimate and the finding says "about" for that reason. */
-  function charsPerLine(page, size, indentIn) {
-    const usable = page.width - 2 * page.margin - (indentIn || 0);
-    return Math.max(20, Math.round((usable * 72) / (size * 0.5)));
   }
 
   /* ---- how a bullet is written ------------------------------------------------------------
@@ -110,12 +88,6 @@
        · "Handled". The general standard lists it as weak and generic. The guide's example opens
          a bullet with "Handled a large lunch rush line", so it is absent from WEAK_OPENERS. */
 
-  /** The first word of a bullet, lowercased, without its punctuation. */
-  function opener(text) {
-    const m = String(text || '').trim().match(/^[A-Za-z][A-Za-z'’-]*/);
-    return m ? m[0].toLowerCase() : '';
-  }
-
   /* Base forms of the verbs a résumé actually opens with, drawn from the guide's own example
      vocabulary and the general standard's strong/weak verb tables. The tense test is ONE-SIDED
      on purpose: a word is called present tense only when it is positively on this list (or is
@@ -133,21 +105,6 @@
     'strengthen supervise support take test track train translate troubleshoot use utilise ' +
     'utilize validate work write').split(' '));
 
-  /** Every spelling `word` could be the -ed or -ing form of, `word` itself first. English adds
-   *  -ed / -ing four ways and this undoes all four; the lists below are therefore written once,
-   *  in the base form, and still match whichever tense somebody typed. */
-  function stems(word) {
-    const out = [word];
-    const cut = word.replace(/(?:ed|ing)$/, '');
-    if (cut !== word) {
-      out.push(cut, cut + 'e');
-      if (/(.)\1$/.test(cut)) out.push(cut.slice(0, -1));        // running  -> run
-      if (/i$/.test(cut)) out.push(cut.slice(0, -1) + 'y');      // amplified -> amplify
-    }
-    return out;
-  }
-  const anyStemIn = (set, word) => !!word && stems(word).some(w => set.has(w));
-
   function looksPresent(word) {
     if (!word) return false;
     if (PRESENT_VERBS.has(word)) return true;
@@ -158,40 +115,19 @@
     return /ing$/.test(word) && anyStemIn(PRESENT_VERBS, word);
   }
 
-  /* Openers that fill the line without saying what was done. Base forms — see `stems`. "Handle"
-     is deliberately absent: see the note above. */
-  const WEAK_OPENERS = new Set(['responsible', 'help', 'work', 'assist', 'participate',
-    'involve', 'was', 'task', 'duties']);
-
-  /* The general standard's superfluous-verb list, in base form. Checked on the OPENING word
-     only, and that scope is load-bearing rather than lazy: the guide's own example contains
-     "ensured customers had a good time with customer service" in the middle of a bullet, so a
-     whole-sentence scan would fail the calibration test. */
-  const SUPERFLUOUS = new Set(['amplify', 'conceptualize', 'conceptualise', 'craft', 'elevate',
-    'employ', 'engage', 'engineer', 'enhance', 'ensure', 'foster', 'head', 'hone', 'innovate',
-    'leverage', 'master', 'orchestrate', 'perfect', 'pioneer', 'revolutionize', 'revolutionise',
-    'spearhead', 'transform', 'utilize', 'utilise']);
-
-  /* A number, or a sense of scale. The general standard counts both — "multiple financial
-     products" is quantification in the way that matters, and the guide's own sixth bullet says
-     "for multiple tables of customers" and carries no digit at all. */
-  const SCALE = /\d|\b(?:multiple|several|dozens?|hundreds|thousands|millions|numerous|daily|weekly|monthly|every)\b/i;
-
-  /* A clause that says what came of it, or why it was done. The guide asks for What / How /
-     Result-OR-REASON, and it annotates its own third bullet — "Gave customers correct change by
-     adding and subtracting cash" — as reason-then-how, with no result and no number anywhere.
-     A bare metric test would therefore have flagged the guide's own writing. The `to ...` arm
-     excludes the determiners and pronouns that make it a destination rather than a purpose
-     ("delivered them to our kitchen staff" is not a reason). */
-  const OUTCOME = new RegExp('\\bwhich\\b|\\bresult|\\bso that\\b|\\bleading to\\b|' +
-    '\\bin order to\\b|\\bby \\w+ing\\b|' +
-    '\\bto (?!the|a|an|our|their|his|her|my|your|its|this|that|these|those|us|them|me|him|it)[a-z]+\\b', 'i');
+  /* The shared weak-opener list, less the one word this template disagrees about: the guide's
+     own example opens a bullet with "Handled a large lunch rush line", so flagging it would
+     fail the document this layout is calibrated against. Written as a subtraction rather than
+     as a second list, so the disagreement IS the code and a verb added to the baseline still
+     reaches this layout. */
+  const WEAK_OPENERS = new Set([...L.WEAK_OPENERS].filter(w => w !== 'handle'));
 
   /* ---- rules -------------------------------------------------------------------------- */
 
   const rules = [
     {
-      id: 'contact', label: 'Name and contact details',
+      id: 'contact', overridesBaseline: true,   // the guide asks for a phone AND an email AND a location line; the baseline asks for one way to answer
+      label: 'Name and contact details',
       check(doc, api) {
         const out = [];
         for (const n of api.nodesOfType('header')) {
@@ -212,7 +148,8 @@
       },
     },
     {
-      id: 'bullet-count', label: 'Three to eight bullets a job',
+      id: 'bullet-count', overridesBaseline: true,   // the guide states a floor of three, which the baseline deliberately does not
+      label: 'Three to eight bullets a job',
       check(doc, api) {
         const out = [];
         for (const n of api.nodesOfType('work_entry')) {
@@ -257,7 +194,8 @@
       },
     },
     {
-      id: 'three-lines', label: 'No bullet over three lines',
+      id: 'three-lines', overridesBaseline: true,   // same measurement, the guide's own wording
+      label: 'No bullet over three lines',
       check(doc, api) {
         const out = [];
         /* The indent is a tunable spanning 0.1-0.8in, so reading it beats the 0.3 default it
@@ -275,7 +213,8 @@
       },
     },
     {
-      id: 'dates', label: 'Month and year on every job',
+      id: 'dates', overridesBaseline: true,   // the guide takes no word in an end cell — “Still here” or a month
+      label: 'Month and year on every job',
       check(doc, api) {
         const out = [];
         for (const n of api.nodesOfType('work_entry')) {
@@ -291,7 +230,8 @@
       },
     },
     {
-      id: 'reverse-chronological', label: 'Newest job first',
+      id: 'reverse-chronological', overridesBaseline: true,   // same test, the guide's own wording
+      label: 'Newest job first',
       check(doc, api) {
         const out = [];
         for (const section of api.nodesOfType('section')) {
@@ -401,7 +341,8 @@
          "Worked…" that the guide plainly permits. It is therefore a `note`, and its message names
          where it comes from, so a user following the Headless Headhunter method can see it is
          someone else's opinion rather than a rule of the template they chose. */
-      id: 'opening-verb', label: 'Every bullet opens with a strong verb',
+      id: 'opening-verb', overridesBaseline: true,   // the shared list minus ‘handle’, above
+      label: 'Every bullet opens with a strong verb',
       check(doc, api) {
         const out = [];
         for (const n of api.nodesOfType('bullet')) {
@@ -420,7 +361,8 @@
       },
     },
     {
-      id: 'result', label: 'What, how, and the result or the reason',
+      id: 'result', overridesBaseline: true,   // same test, worded as the guide's What / How / Result-or-reason
+      label: 'What, how, and the result or the reason',
       check(doc, api) {
         const out = [];
         for (const n of api.nodesOfType('bullet')) {
@@ -645,6 +587,5 @@
 
   /* Exported for the tests and the rule panel — the parser and the sentence count are the two
      places a wrong answer would be invisible in the UI. */
-  root.ResumeHeadhunter = { CANON, CANON_FONT, parseMonth, periods, charsPerLine, rgb, isBlack,
-    isLinkColour, opener, looksPresent };
+  root.ResumeHeadhunter = { CANON, CANON_FONT, periods, rgb, isBlack, isLinkColour, looksPresent };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

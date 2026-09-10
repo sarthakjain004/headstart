@@ -201,8 +201,13 @@
   /* ---- rules ---------------------------------------------------------------------------
      Four, each one stated by the standard this layout implements, and two of them deliberately
      contradict the Headless Headhunter layout's. Nothing about tense or strong verbs is repeated
-     here: that layout already checks it, this one would only be a second copy, and a rule set is
-     worth reading only where every line in it is this template's own opinion. */
+     here, and a rule set is worth reading only where every line in it is this template's own
+     opinion.
+
+     "That layout already checks it" used to be the second half of that sentence, and it was the
+     bug: rules do not carry across layouts, so what the Headless Headhunter layout checks was
+     checked for its own users and nobody else's. What is genuinely common now lives in the
+     shared baseline (ADR-0127) and reaches every layout, this one included. */
 
   const PRONOUNS = /\b(?:I|I'm|I’m|me|my|mine|we|our|ours|us)\b/i;
 

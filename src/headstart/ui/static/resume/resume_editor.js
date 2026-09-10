@@ -1126,7 +1126,7 @@
       el('rb-kw-summary').textContent = '';
       return;
     }
-    const text = Export.plainText(d).toLowerCase();
+    const text = Export.plainText(d);
 
     /* "The first half of the first page" is measured on the PAGE, in inches, against the
        rendered document — not as a share of the whole text. The share version scored a hit
@@ -1143,24 +1143,29 @@
       const top0 = origin.getBoundingClientRect().top;
       paper.querySelectorAll('[data-node]').forEach(node => {
         blocks.push({
-          text: (node.textContent || '').toLowerCase(),
+          text: node.textContent || '',
           top: (node.getBoundingClientRect().top - top0) / ppi,
         });
       });
     }
+    /* Both questions below go through the SAME matcher the on-page highlight uses
+       (`resume_decorators.js`). They were two substring tests, and a substring answers yes to
+       "does JavaScript mention Java" — so `R`, `C` and `AI` were reported present in a résumé
+       containing none of them as terms, while `C++` was reported missing from one the page was
+       marking `C` all over. Two implementations of one question disagreed; now there is one. */
+
     /** How far down the page a term first appears, in inches, or null if it is absent. */
-    const firstAt = needle => {
+    const firstAt = term => {
       let best = null;
       for (const b of blocks) {
-        if (b.text.includes(needle) && (best === null || b.top < best)) best = b.top;
+        if (Decorators.mentions(b.text, term) && (best === null || b.top < best)) best = b.top;
       }
       return best;
     };
 
     const rows = terms.map(term => {
-      const needle = term.toLowerCase();
-      const at = firstAt(needle);
-      return { term, found: text.includes(needle), early: at !== null && at < halfOfPageOne };
+      const at = firstAt(term);
+      return { term, found: Decorators.mentions(text, term), early: at !== null && at < halfOfPageOne };
     });
     /* Repaint so the page marks them. Set before the paint, cleared by emptying the box. */
     keywordTerms = terms;
