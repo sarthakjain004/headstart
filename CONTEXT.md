@@ -143,7 +143,7 @@ One entry in the allowlist: an address the owner has permitted, optionally carry
 _Avoid_: "allowlist entry" as a distinct concept — the allowlist _is_ the set of Invites.
 
 **Master** (ADR-0038):
-The Telegram chat that approves everyone else — claimed by the first `/start` the bot ever sees. Telegram's counterpart to the allowlist: the Invite path is the owner editing a file, the Master path is the owner answering `/allow` in a chat.
+The Telegram chat that approves everyone else — claimed by the first `/start` the bot ever sees. (Not the **Master résumé**, which is a different thing entirely; say the whole phrase for that one.) Telegram's counterpart to the allowlist: the Invite path is the owner editing a file, the Master path is the owner answering `/allow` in a chat.
 
 **Watermark**:
 The instant a Subscription was last sent a **Digest**. The next Digest carries only Jobs whose `first_seen` is strictly after it, so an irregular pipeline cadence can neither double-send nor skip a window. Advanced only once a Digest has been accepted for delivery.
@@ -206,7 +206,7 @@ _Avoid_: keyword search, keyword query — it is a filter and compiles to a dete
 
 **Résumé**:
 Text a user pastes or uploads to have their **Profile** extracted from it. The document itself is never stored or logged — it is read once by the extraction call and discarded; the **Profile** is the only thing that survives, and contact details are never part of it (ADR-0041, which superseded the earlier "nothing survives at all" rule).
-_Avoid_: CV. And keep it apart from **Profile** — the Résumé is the transient input, the Profile is the stored extraction.
+_Avoid_: CV. And keep it apart from two neighbours: the **Profile** is the stored extraction, and the **Résumé document** is the thing an Account builds on the Résumé tab. This entry names only the transient text pasted in for extraction.
 
 **Résumé query**:
 The role sentence an LLM writes from a **Résumé** — stored as the **Profile**'s sentence, editable there, and shown in the search box before it runs. Subject to the same rule as any Query: it names a role and must not carry years, salary, or location, however loudly the **Résumé** states them.
@@ -246,6 +246,44 @@ _Avoid_: bookmark, favourite.
 **Match ring**:
 The match percentage displayed on a search result — the raw cosine score stretched through two fixed anchors (≈0.60 → 0%, ≈0.85 → 100%, tuned once against real queries, revisited only when the embedding model changes). Display only: ranking orders by the raw score.
 _Avoid_: reading it as a probability, or re-scaling it per results page — the same Job must show the same percentage wherever it appears.
+
+### Résumé builder
+
+**Résumé document** (ADR-0123):
+The structured résumé an Account builds on the Résumé tab: a tree of **Component**s, the id of one **Layout**, and the **Content** map holding every word. Kept in that Account's own browser today, and nowhere else. ADR-0041's rule for the **Résumé** — read once, discarded — is why; ADR-0124 amends it for this record alone, so a Résumé document may reach HeadStart's store if the Account switches syncing on for it, per document, off by default.
+_Avoid_: **Résumé** — that names the transient text pasted in for **Profile** extraction. Different object, different lifetime, and the two are one letter apart in conversation, so say which one you mean.
+
+**Component** (ADR-0123):
+One block of a **Résumé document** — a header, a section, a job, a bullet. A **Component Type** declares what fields it owns, what it may contain, and its `shape`; an instance is a node in the tree. A Component never states how it looks: type, size, colour and position all belong to the **Layout**.
+_Avoid_: widget, element — and don't call a Component Type a template.
+
+**Layout** (ADR-0123):
+How a **Résumé document**'s Components are arranged and styled: page geometry, type tokens, one render strategy per `shape`, the **Finding** rules it wants checked, and the capability contract naming which drag and resize affordances are live in it. Three ship: `headless-headhunter`, `two-column`, `free-canvas`. Switching Layout changes no **Content**.
+_Avoid_: theme, template, skin — a Layout carries arrangement *and* looks *and* permissions, and none of those three words carries all of it.
+
+**Content** (ADR-0123):
+The words. A flat map from node id to that Component's field values, held outside the tree on purpose so a **Layout** change cannot reach it.
+_Avoid_: data, text — both are used loosely elsewhere in this document.
+
+**Rule** (ADR-0123):
+One named check a **Layout** declares — "Three to eight bullets a job", "Month and year on every job". A Rule reads a **Résumé document** and returns **Finding**s; it changes nothing. Rules belong to the Layout because they are its method's opinions, not the **Component**'s: the same bullet is fine under one Layout and short under another.
+_Avoid_: validator, constraint — both suggest something that can refuse, and a Rule cannot.
+
+**Finding** (ADR-0123):
+One piece of advice a **Rule** produced about a **Résumé document** — an error, a warning or a note, usually attached to the **Component** it is about. Advice, never a lock: the page prints whether or not the findings are cleared. The tab calls the panel *Checks*, which is the word to use with users.
+_Avoid_: error, validation failure — a Finding never stops anything, and the Headless Headhunter rules it usually reports are a method, not a specification. And say which findings you mean out loud: this repo's own review workflow (`code-review`, `security-review`) produces "findings" about *code* all day, and the two are unrelated.
+
+**Tailoring** (ADR-0124):
+One job application's version of a **Résumé document**: which **Component**s it rewords, which it leaves out, and the **Job** it was written for where one is known. It stores *differences*, never a copy — so a sentence fixed on the master still reaches every Tailoring that never disagreed with it, which is the entire reason it is not a duplicate document. A document with no Tailoring active is showing its **master**.
+_Avoid_: version, copy, branch — "version" is what the UI calls it for users, but in this document a Tailoring is specifically the *difference set*, and calling it a copy describes the thing it was designed not to be.
+
+**Master résumé** (ADR-0124):
+A **Résumé document** as it reads with no **Tailoring** active: the base **Content**, every block present. The thing every Tailoring is a difference *from*, and what a job application gets when no version was made for it. Editing it reaches every Tailoring that has not overridden the block being edited — which is the property the whole model exists for. The tab labels the picker's first entry with exactly this phrase.
+_Avoid_: original, default, main — "original" implies the Tailorings are copies of it, which is exactly what they are not. And never the bare word **Master**: that is already the Telegram chat that approves everyone else (ADR-0038), and the two share no meaning at all.
+
+**Variant** (ADR-0124):
+One alternate wording of one **Component**, held against that Component's id and used by whichever **Tailoring** picked it. Partial: it carries only the fields that differ from the master's **Content**. Created by copy-on-write — editing a block while a Tailoring is active forks one on the first keystroke, so the master is never edited by accident.
+_Avoid_: override, revision — an override suggests it replaces the whole record, and it does not.
 
 ### Pipeline scheduling and sharding
 

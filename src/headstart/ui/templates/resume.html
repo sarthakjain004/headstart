@@ -1,0 +1,112 @@
+{# The Résumé tab (ADR-0123). Everything here is client-side: no route, no endpoint, and no
+   résumé text ever reaches the server — see resume_repository.js and ADR-0041. The skeleton is
+   static so the panel is legible before the scripts run; resume_editor.js fills the rail. #}
+<section class="rb" id="rb">
+
+  <div class="rb-bar">
+    <div class="rb-bar-left">
+      <label class="rb-vh" for="rb-name">Résumé name</label>
+      <input id="rb-name" class="rb-name" placeholder="Untitled résumé" autocomplete="off">
+      <button class="ghost rb-mini" id="rb-open" title="Your saved résumés">Open</button>
+      <button class="ghost rb-mini" id="rb-new" title="Start a new résumé">New</button>
+      {# Tailoring: one résumé, many versions. A version stores only what it changes, so fixing a
+         sentence in the master reaches every version that never disagreed with it. #}
+      <label class="rb-vh" for="rb-version">Version</label>
+      <select id="rb-version" class="rb-layout"
+              title="Tailor this résumé for one job without copying the whole thing"></select>
+      <button class="ghost rb-mini" id="rb-version-new" title="Tailor a copy for one job">+ Version</button>
+      <button class="ghost rb-mini danger" id="rb-version-del" hidden>Delete version</button>
+    </div>
+    <div class="rb-bar-right">
+      <button class="ghost rb-mini" id="rb-undo" title="Undo (Ctrl+Z)" disabled>Undo</button>
+      <button class="ghost rb-mini" id="rb-redo" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
+      <span class="note rb-saved" id="rb-saved" role="status"></span>
+      <button class="go rb-mini" id="rb-download">Download</button>
+    </div>
+  </div>
+
+  {# The document list and the download menu are popovers over the bar rather than panels in
+     the rail: both are momentary choices, and giving either a permanent column would spend the
+     page's width on something used once a session. #}
+  <div class="rb-pop" id="rb-pop-open" hidden>
+    <div class="rb-pop-head">Your résumés <button class="ghost rb-mini" id="rb-import">Import .json</button></div>
+    <div id="rb-doclist" class="rb-doclist"></div>
+    <p class="note rb-storage" id="rb-storage"></p>
+  </div>
+
+  <div class="rb-pop rb-pop-right" id="rb-pop-download" hidden>
+    <button class="rb-dl" data-fmt="pdf"><b>PDF</b><span>Through your browser's print dialog — choose "Save as PDF".</span></button>
+    <button class="rb-dl" data-fmt="word"><b>Word / Google Docs (HTML)</b><span>Opens and stays editable in both. It is HTML inside, which they read natively — so the right-aligned date column may reflow, and a strict upload check that sniffs the file may call it HTML.</span></button>
+    <button class="rb-dl" data-fmt="text"><b>Plain text</b><span>For the "paste your résumé" box on an application form.</span></button>
+    <button class="rb-dl" data-fmt="html"><b>HTML</b><span>One self-contained file.</span></button>
+    <button class="rb-dl" data-fmt="json"><b>JSON backup</b><span>Everything, re-importable. Browser storage is one cleared cache from empty.</span></button>
+  </div>
+
+  <div class="rb-body">
+    <div class="rb-stage">
+      <div class="rb-stage-head">
+        <label class="rb-vh" for="rb-layout">Layout</label>
+        <select id="rb-layout" class="rb-layout" title="How the same words are arranged and styled"></select>
+        <span class="note" id="rb-layout-note"></span>
+        {# The sheet, beside the layout, because it is the same kind of choice and the wrong one
+           re-wraps every bullet. Letter is the default only because it is what the templates
+           were written against, not because it is the common case. #}
+        <label class="rb-vh" for="rb-paper-size">Paper size</label>
+        <select id="rb-paper-size" class="rb-layout" title="The sheet this résumé is printed on"></select>
+        <span class="note rb-credit" id="rb-layout-credit" hidden></span>
+        <span class="spacer"></span>
+        <label class="rb-zoom"><span class="rb-vh">Zoom</span>
+          <input type="range" id="rb-zoom" min="25" max="130" step="5" value="100"></label>
+      </div>
+      {# The page. Its width is the layout's own paper width, so what is on screen is what
+         prints — the preview and the PDF are one stylesheet (resume_export.js). #}
+      <div class="rb-paper-wrap"><div class="rb-paper" id="rb-paper" role="group"
+           aria-label="Résumé preview"></div></div>
+      <p class="note rb-hint">Click a block to edit it, or pick one from the Outline in the
+        panel — that list is how the page is reached without a mouse. Drag the handle to
+        reorder, or Alt + ↑ / ↓; drag an edge to resize.</p>
+    </div>
+
+    <aside class="rb-rail" aria-label="Résumé editor">
+      {# A tablist, not navigation. These four swap panels inside this panel; they go nowhere, so
+         `aria-current="page"` was describing the wrong thing entirely — and it left a screen
+         reader with no idea which panel each button controls, and a keyboard user with four tab
+         stops and no arrow-key traversal. Roving tabindex is set here and maintained by
+         resume_editor.js's showTab. #}
+      <div class="rb-rail-tabs" id="rb-rail-tabs" role="tablist" aria-label="Résumé editor panels">
+        <button class="rb-rail-tab" id="rb-tab-content" role="tab" data-pane="content"
+                aria-selected="true" aria-controls="rb-pane-content">Content</button>
+        <button class="rb-rail-tab" id="rb-tab-design" role="tab" data-pane="design"
+                aria-selected="false" aria-controls="rb-pane-design" tabindex="-1">Design</button>
+        <button class="rb-rail-tab" id="rb-tab-checks" role="tab" data-pane="checks"
+                aria-selected="false" aria-controls="rb-pane-checks" tabindex="-1">Checks<span
+                class="rb-badge" id="rb-badge" hidden>0</span></button>
+        <button class="rb-rail-tab" id="rb-tab-keywords" role="tab" data-pane="keywords"
+                aria-selected="false" aria-controls="rb-pane-keywords" tabindex="-1">Keywords</button>
+      </div>
+      {# `tabindex="0"` on the panel itself: the Checks panel is a single paragraph when nothing
+         is flagged, so without it the panel a tab names can hold nothing focusable and a
+         keyboard user arrives nowhere. #}
+      <div class="rb-pane" id="rb-pane-content" role="tabpanel" aria-labelledby="rb-tab-content" tabindex="0"></div>
+      <div class="rb-pane" id="rb-pane-design" role="tabpanel" aria-labelledby="rb-tab-design" tabindex="0" hidden></div>
+      <div class="rb-pane" id="rb-pane-checks" role="tabpanel" aria-labelledby="rb-tab-checks" tabindex="0" hidden></div>
+      <div class="rb-pane" id="rb-pane-keywords" role="tabpanel" aria-labelledby="rb-tab-keywords" tabindex="0" hidden>
+        <p class="note">The one step the guide puts before writing anything: find the
+          qualifications for the job title you want, from ten to fifteen real postings, and get
+          them into the first half of your first page. Paste them here — one a line — and this
+          checks which ones your résumé actually says.</p>
+        <textarea id="rb-kw" rows="7" placeholder="Customer Service&#10;Point of Sale&#10;Multitasking&#10;Basic Math"></textarea>
+        <div class="row"><button class="ghost rb-mini" id="rb-kw-run">Check coverage</button>
+          <span class="note" id="rb-kw-summary"></span></div>
+        <div id="rb-kw-out"></div>
+      </div>
+    </aside>
+  </div>
+
+  <input type="file" id="rb-file" accept="application/json,.json" hidden>
+
+  {# Spoken, never seen. Present from the start rather than created on first use: a live region
+     inserted into the page with text already in it does not announce in most screen readers,
+     so the first thing it ever had to say would have been the one thing nobody heard. #}
+  <div id="rb-live" class="rb-vh" role="status" aria-live="polite" aria-atomic="true"></div>
+</section>
