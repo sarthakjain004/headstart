@@ -31,7 +31,23 @@ scrape = ["pydoll-python"]
 # required by nomic's custom modeling code; langdetect gates the English-only corpus.
 # scikit-learn arrives transitively via sentence-transformers; named because
 # scripts/embed/cluster_roles.py imports it directly (ADR-0040).
-embed = ["sentence-transformers>=3.0", "einops", "langdetect", "lancedb", "scikit-learn"]
+#
+# transformers is capped at <6 because nomic's *remote* modeling code — which
+# `trust_remote_code` fetches from the Hub, not from here — calls
+# `get_extended_attention_mask`, and 6.0 stops NomicBertModel inheriting it. Measured on
+# 2026-09-10: CI resolved transformers 6.0.1 and every embed batch failed with
+# `AttributeError: 'NomicBertModel' object has no attribute 'get_extended_attention_mask'`,
+# so the monolith embedded 0 of 16 and pipeline-smoke went red. 5.x is unaffected.
+# Pinned rather than fixed here because the broken code is the model's, not this repo's, so
+# the cap lifts when nomic publishes modeling code that works on 6 — not when we change ours.
+embed = [
+    "sentence-transformers>=3.0",
+    "transformers<6",
+    "einops",
+    "langdetect",
+    "lancedb",
+    "scikit-learn",
+]
 # Local dev UI for the semantic search (scripts/ui/serve.py)
 ui = ["flask"]
 # Retrieval-eval harness (scripts/eval/). anthropic = the LLM-judge that grades the
