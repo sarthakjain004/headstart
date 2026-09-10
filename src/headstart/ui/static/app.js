@@ -27,6 +27,9 @@ function showTab(name){
   if (name === 'saved' && el('saved-results')) loadSaved();   // re-check "closed" on every visit
   if (name === 'profile' && el('pquery')) loadProfile();      // server truth on every visit
   if (name === 'data' && el('cov') && !coverage) loadCoverage();
+  // The résumé builder converts pixels to inches from the page's measured width, and a hidden
+  // panel measures zero — so it re-paints on the way in rather than on page load.
+  if (name === 'resume' && window.ResumeEditor) ResumeEditor.shown();
 }
 window.addEventListener('hashchange', () => showTab(currentTab()));
 

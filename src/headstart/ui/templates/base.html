@@ -3,6 +3,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HeadStart — semantic job search</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='resume.css') }}">
 </head><body>
 <script>window.CFG = {{ cfg|tojson }};</script>
 <div class="shell">
@@ -38,6 +39,9 @@
       {% if trends_on %}
       <a class="nav-item" href="#trends" data-tab="trends" aria-current="false">Trends</a>
       {% endif %}
+      {# No server support and no feature flag: the builder is entirely client-side and stores
+         nothing on our side, so it works on the Space and on the local dev renderer alike. #}
+      <a class="nav-item" href="#resume" data-tab="resume" aria-current="false">Résumé</a>
       <a class="nav-item" href="#data" data-tab="data" aria-current="false">Data</a>
       {% if profile_on %}
       <a class="nav-item" href="#profile" data-tab="profile" aria-current="false">Profile</a>
@@ -60,6 +64,7 @@
       {% if trends_on %}
     <section class="panel" id="panel-trends" hidden>{% include "trends.html" %}</section>
       {% endif %}
+    <section class="panel" id="panel-resume" hidden>{% include "resume.html" %}</section>
     <section class="panel" id="panel-data" hidden>{% include "data.html" %}</section>
   </div>
 
@@ -69,5 +74,17 @@
     <a href="#data">What's in the index, and what isn't →</a></div>
 </div>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
+{# The résumé builder's three layers, in dependency order. Plain scripts, like app.js: no build
+   step and no module loader. A new layout is one more line here and one more file. #}
+<script defer src="{{ url_for('static', filename='resume/resume_components.js') }}"></script>
+<script defer src="{{ url_for('static', filename='resume/resume_document.js') }}"></script>
+<script defer src="{{ url_for('static', filename='resume/resume_layouts.js') }}"></script>
+<script defer src="{{ url_for('static', filename='resume/resume_layout_headhunter.js') }}"></script>
+<script defer src="{{ url_for('static', filename='resume/resume_layout_twocolumn.js') }}"></script>
+<script defer src="{{ url_for('static', filename='resume/resume_layout_canvas.js') }}"></script>
+<script defer src="{{ url_for('static', filename='resume/resume_repository.js') }}"></script>
+<script defer src="{{ url_for('static', filename='resume/resume_export.js') }}"></script>
+<script defer src="{{ url_for('static', filename='resume/resume_decorators.js') }}"></script>
+<script defer src="{{ url_for('static', filename='resume/resume_editor.js') }}"></script>
 {% if alerts_on %}<script src="https://accounts.google.com/gsi/client" async onload="initAlerts()"></script>{% endif %}
 </body></html>
