@@ -45,6 +45,7 @@ import argparse
 import os
 import re
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from fnmatch import fnmatch
 from pathlib import Path
@@ -171,6 +172,52 @@ def reset_after(exc: Exception) -> int | None:
     retry_after = str(headers.get("retry-after", "")).strip()
     # only the delay-seconds form; the HTTP-date form falls through to the ladder
     return int(retry_after) if retry_after.isdigit() else None
+
+
+def retry_hub[T](what: str, call: Callable[[], T]) -> T:
+    """Run one Hub call under ADR-0033's retry policy, and return its result.
+
+    Extracted for callers that make a Hub request *outside* :func:`fetch_state` — currently
+    ``state_guard``, whose ``record``/``verify`` bracket the fetch and sit on the critical path of
+    the job that publishes everything. Before this, that guard made a single unretried
+    ``repo_info`` call: a transient 429 or 5xx the fetch two lines later would have absorbed would
+    instead kill the merge job outright, which is a reliability regression in the one stage that
+    must not fail for a reason the Hub already told us how to wait out.
+
+    :func:`fetch_state` deliberately keeps its own loop rather than calling this. Its retry covers
+    the *download* as well as the listing, and its failure reasons are not all exceptions — a file
+    that silently did not land is a retryable failure with nothing raised — so the two loops share
+    the policy (:data:`_ATTEMPTS`, :data:`_WAIT_BUDGET`, :func:`retry_delay`, :func:`reason_for`,
+    :func:`reset_after`) without sharing a shape one of them would have to be bent into.
+
+    Waits are INFO, not WARNING. A retry can fire up to four times per call and twice per job, and
+    ``log.py``'s rule is that WARNING is a budget spent against GitHub's 50 annotations per run —
+    an exhausted ladder raises, and a failed step is already red without spending one.
+    """
+    spent = 0  # seconds slept so far, against _WAIT_BUDGET
+    for attempt in range(1, _ATTEMPTS + 1):
+        try:
+            return call()
+        except Exception as exc:
+            if attempt == _ATTEMPTS:
+                raise
+            advised = reset_after(exc)
+            # Budget checked on `spent`, never on the wait — an advised 0 means "the window is
+            # open now", which is a wait of 0 and not an exhausted budget. Same reading as
+            # `fetch_state`; getting it backwards there is what ADR-0033's amendment fixed.
+            if spent >= _WAIT_BUDGET:
+                raise
+            wait = retry_delay(attempt, advised, spent)
+            if advised is not None and wait < advised:
+                # Retrying before the Hub's window reopens is a request we already know will 429.
+                raise
+            _log.info(
+                f"{what}: {reason_for(exc)} — attempt {attempt} of {_ATTEMPTS}, "
+                f"waiting {wait}s ({spent + wait}s of {_WAIT_BUDGET}s budget)"
+            )
+            spent += wait
+            time.sleep(wait)
+    raise AssertionError("unreachable: the loop returns or raises")  # pragma: no cover
 
 
 def remote_files(repo: str, token: str | None) -> list[str]:

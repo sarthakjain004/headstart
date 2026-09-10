@@ -808,3 +808,74 @@ def test_download_does_nothing_for_an_empty_wanted_set(
     a pattern the repo has no files for must not require `huggingface_hub.hf_hub_url` to exist."""
     monkeypatch.delitem(sys.modules, "huggingface_hub", raising=False)
     sf._download("repo", [], set(), None, tmp_path)  # must not raise
+
+
+# --- retry_hub: ADR-0033's ladder around a single Hub call ------------------------------------
+#
+# It exists because `state_guard`'s record/verify bracket the fetch on the critical path of the
+# job that publishes everything, and an unretried `repo_info` there turns a transient 429 — the
+# kind the fetch two lines later absorbs routinely — into a dead merge job.
+
+
+class _Flaky:
+    """Fails `fail_times` times, then returns `value`. Counts its calls."""
+
+    def __init__(self, fail_times: int, exc: Exception, value: str = "ok"):
+        self.left, self.exc, self.value, self.calls = fail_times, exc, value, 0
+
+    def __call__(self) -> str:
+        self.calls += 1
+        if self.left > 0:
+            self.left -= 1
+            raise self.exc
+        return self.value
+
+
+@pytest.fixture
+def no_sleep(monkeypatch):
+    """The ladder's waits are policy, not behaviour under test — record them instead of serving them."""
+    waits: list[int] = []
+    monkeypatch.setattr(sf.time, "sleep", lambda s: waits.append(s))
+    return waits
+
+
+def test_a_transient_failure_is_retried_not_fatal(no_sleep):
+    call = _Flaky(2, RuntimeError("Hub 503"))
+    assert sf.retry_hub("listing data/lancedb/", call) == "ok"
+    assert call.calls == 3
+    assert no_sleep == [
+        30,
+        60,
+    ]  # the fallback ladder, for a failure that advises nothing
+
+
+def test_a_call_that_never_recovers_raises_the_real_failure(no_sleep):
+    boom = RuntimeError("Hub down")
+    call = _Flaky(99, boom)
+    with pytest.raises(RuntimeError, match="Hub down"):
+        sf.retry_hub("listing data/lancedb/", call)
+    assert call.calls == sf._ATTEMPTS  # tried the ceiling, not once, not forever
+
+
+def test_it_does_not_retry_before_a_window_it_cannot_afford(no_sleep, monkeypatch):
+    """A 429 carries its own reset. Retrying inside that window is a request we know will fail —
+    the habit ADR-0033 was written to stop — so an unaffordable window aborts instead."""
+    monkeypatch.setattr(sf, "reset_after", lambda exc: sf._WAIT_BUDGET + 60)
+    call = _Flaky(99, RuntimeError("HTTP 429"))
+    with pytest.raises(RuntimeError):
+        sf.retry_hub("listing data/lancedb/", call)
+    assert call.calls == 1
+    assert no_sleep == []
+
+
+def test_it_honours_the_window_the_hub_names(no_sleep, monkeypatch):
+    """When the Hub says how long to wait and the budget covers it, that wins over the ladder."""
+    monkeypatch.setattr(sf, "reset_after", lambda exc: 90)
+    assert sf.retry_hub("listing", _Flaky(1, RuntimeError("HTTP 429"))) == "ok"
+    assert no_sleep == [90]
+
+
+def test_a_first_attempt_that_works_costs_nothing(no_sleep):
+    call = _Flaky(0, RuntimeError("never raised"))
+    assert sf.retry_hub("listing", call) == "ok"
+    assert call.calls == 1 and no_sleep == []
