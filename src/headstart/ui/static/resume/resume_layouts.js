@@ -58,6 +58,11 @@
       blurb: spec.blurb || '',
       /* Named after what it is, so the picker can say it: "Single column, Arial, 10.5pt". */
       summary: spec.summary || '',
+      /* Whose method this is, for a layout that implements somebody else's. Shown beside the
+         picker: the Headless Headhunter's template was credited only in a source comment, which
+         is not a credit — nobody using the product ever reads it. Optional, because a layout
+         that is nobody's method in particular has nothing to say here. */
+      credit: spec.credit || '',
       page: Object.freeze(Object.assign({ width: 8.5, height: 11, margin: 1, unit: 'in' }, spec.page || {})),
       tokens: Object.freeze(Object.assign({}, spec.tokens || {})),
       /* Which tokens the user may move, and between what bounds. This is the "how they look"

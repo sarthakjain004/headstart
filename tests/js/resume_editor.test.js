@@ -325,6 +325,9 @@ function layPaperOut(el, blocks) {
 
 test('keyword coverage counts what the résumé says, and where on the page it says it', () => {
   const { ctx, el, rail } = loadEditor();
+  /* An empty sheet, so the only words on the page are the two this test writes — the tab opens
+     on the guide's worked example, whose own words would decide where the halfway mark falls. */
+  el('rb-new').fire('click');
   const bullets = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current())
     .filter(n => n.type === 'bullet');
   const write = (node, text) => rail.fire('input',
@@ -495,7 +498,8 @@ test('a keypress on the strip that is not a traversal is left alone', () => {
 test('the Checks verdict is announced when it changes, and not otherwise', () => {
   const { ctx, el, rail } = loadEditor();
   const live = el('rb-live');
-  assert.match(live.textContent, /^Checks: \d+ to fix/, 'the verdict was never announced at all');
+  assert.equal(live.textContent, 'Checks: nothing to flag.',
+    'the verdict was never announced at all');
   assert.match(el('rb-badge').innerHTML, /to fix<\/span>/,
     'the badge reads as a bare number to a screen reader');
 
@@ -505,10 +509,13 @@ test('the Checks verdict is announced when it changes, and not otherwise', () =>
   el('rb-name').fire('input', { target: { value: 'Another name' } });
   assert.equal(live.textContent, 'CLEARED', 'an unchanged verdict was announced again');
 
-  const header = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current()).find(n => n.type === 'header');
-  rail.fire('input', { target: target({ node: header.id, field: 'fullName' },
-    { type: 'text', value: 'Lee Korelitz' }) });
-  assert.match(live.textContent, /^Checks: \d+ to fix/, 'a changed verdict went unannounced');
+  /* Breaking a rule is news, and it is news a screen reader gets no other way: the badge and
+     the findings list are both silent on their own. */
+  const bullet = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current())
+    .filter(n => n.type === 'bullet')[1];
+  rail.fire('input', { target: target({ node: bullet.id, field: 'text' },
+    { type: 'textarea', value: 'Manage the till. And a second sentence.' }) });
+  assert.match(live.textContent, /^Checks: [1-9]\d* to fix/, 'a changed verdict went unannounced');
 });
 
 /* ---- the rail's own escaping -------------------------------------------------------------
@@ -546,4 +553,48 @@ test('a hostile node id cannot break out of the attributes the rail writes', () 
   rail.fire('input', { target: target({ node: nasty, field: 'role' },
     { type: 'text', value: 'Cashier' }) });
   assert.equal(ctx.ResumeDocument.contentOf(ctx.ResumeEditor.current(), nasty).role, 'Cashier');
+});
+
+/* ---- the first thing anyone sees ---------------------------------------------------------
+   A brand-new sheet breaks almost every rule this template states — no name, no phone, no dates
+   — so the tab used to open on an empty page with a red badge counting five faults in a
+   document the user had not started writing. The rules are advice about writing; there is
+   nothing to advise about yet. */
+
+test('a genuinely first visit opens the guide’s worked example', () => {
+  const { ctx, el } = loadEditor();
+  const doc = ctx.ResumeEditor.current();
+  const header = ctx.ResumeDocument.flatten(doc).find(n => n.type === 'header');
+  assert.ok(ctx.ResumeDocument.contentOf(doc, header.id).fullName,
+    'the first visit still opens an empty sheet');
+  assert.ok(el('rb-paper').innerHTML.includes('Lee Korelitz'), 'the page is blank');
+  assert.equal(ctx.ResumeEditor.findings().length, 0,
+    'the example must pass its own rules, or the first visit still opens on a red badge');
+});
+
+test('a visit that is not the first opens what was there, untouched', () => {
+  const first = loadEditor();
+  const mine = first.ctx.ResumeDocument.clone(first.ctx.ResumeEditor.current());
+  mine.name = 'My own résumé';
+  const { ctx } = loadEditor({ storage: fakeStorage([mine]) });
+  assert.equal(ctx.ResumeEditor.current().name, 'My own résumé',
+    'a returning visitor was handed the example over their own work');
+});
+
+test('an empty sheet does not count faults before anything has been typed', () => {
+  const { ctx, el, rail } = loadEditor();
+  el('rb-new').fire('click');            // window.confirm answers no -> an empty sheet
+  assert.equal(ctx.ResumeEditor.current().name, 'Untitled résumé');
+
+  assert.ok(el('rb-badge').hidden, 'a red badge on a document nobody has started');
+  assert.ok(el('rb-pane-checks').innerHTML.includes('when you start writing'),
+    'the panel listed faults in an empty page instead of saying it is waiting');
+
+  /* And the moment there are words, the checks are back — this must not be a way to make the
+     rule panel go quiet. */
+  const header = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current()).find(n => n.type === 'header');
+  rail.fire('input', { target: target({ node: header.id, field: 'fullName' },
+    { type: 'text', value: 'Lee' }) });
+  assert.ok(!el('rb-badge').hidden, 'the checks never came back');
+  assert.ok(el('rb-pane-checks').innerHTML.includes('rb-finding'));
 });

@@ -61,6 +61,10 @@
 .rb-layout, .rb-rail select { background: var(--raise-2); border: 1px solid var(--rule);
   color: var(--ink); border-radius: var(--r-md); padding: 6px 9px; font: inherit; font-size: .86rem; }
 .rb-zoom input { width: 110px; }
+/* A layout that implements somebody else's method says whose, beside the picker. `display` has
+   to be stated because `hidden` loses to any class that sets one — the same trap the panes hit. */
+.rb-credit { font-style: italic; }
+.rb-credit[hidden] { display: none !important; }
 .rb-hint { margin: 10px 0 0; text-align: center; }
 
 /* The paper. Scrolls on both axes at high zoom rather than pushing the rail off the screen. */

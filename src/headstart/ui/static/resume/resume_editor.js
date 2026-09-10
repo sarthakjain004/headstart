@@ -91,6 +91,11 @@
     el('rb-undo').disabled = !store.canUndo();
     el('rb-redo').disabled = !store.canRedo();
     el('rb-layout-note').textContent = lay.summary || '';
+    /* Credit where the reader can see it. `hidden` rather than an empty span, so a layout that
+       is nobody's method in particular leaves no gap beside the picker. */
+    const credit = el('rb-layout-credit');
+    credit.textContent = lay.credit || '';
+    credit.hidden = !lay.credit;
 
     railPaint();
     badgePaint();
@@ -620,11 +625,28 @@
     return d && lay ? Layouts.runRules(lay, d) : [];
   }
 
+  /* The words the starter document writes for you — its section titles — as plain text, so
+     "has anything been typed" is a comparison against what the tab handed you rather than a list
+     of fields to keep in step with each layout's `starter()`. Built once per layout. */
+  const starterText = new Map();
+  function untouched(d) {
+    if (!starterText.has(d.layoutId)) {
+      starterText.set(d.layoutId, Export.plainText(startDocument(d.layoutId, false)));
+    }
+    return Export.plainText(d) === starterText.get(d.layoutId);
+  }
+
   function checksPane() {
     const found = findings();
     const lay = layout();
     const out = ['<p class="note">Checked against the ' + esc(lay.label) +
       ' layout’s own rules. Advice, not locks — the page prints either way.</p>'];
+    if (untouched(view())) {
+      out.push('<p class="note">These start when you start writing. An empty page breaks nearly ' +
+        'every rule here, and saying so before you have typed a word is noise, not advice.</p>');
+      el('rb-pane-checks').innerHTML = out.join('');
+      return;
+    }
     if (!found.length) {
       out.push('<p class="rb-clear">Nothing to flag. Every rule this layout states is met.</p>');
     } else {
@@ -645,13 +667,15 @@
   function badgePaint() {
     const badge = el('rb-badge');
     const found = findings();
-    const n = found.filter(f => f.level !== 'note').length;
-    const notes = found.length - n;
+    const blank = untouched(view());
+    const n = blank ? 0 : found.filter(f => f.level !== 'note').length;
+    const notes = blank ? 0 : found.length - n;
     badge.hidden = n === 0;
     /* The number is the badge; the words beside it are only spoken. Without them the tab reads
        as "Checks 3" and a screen reader user has to guess what the 3 counts. */
     badge.innerHTML = String(n) + '<span class="rb-vh"> to fix</span>';
-    const verdict = n === 0 && notes === 0
+    const verdict = blank ? 'Checks: waiting for the first words.'
+      : n === 0 && notes === 0
       ? 'Checks: nothing to flag.'
       : 'Checks: ' + n + ' to fix' +
         (notes ? ', ' + notes + ' note' + (notes === 1 ? '' : 's') : '') + '.';
@@ -1173,8 +1197,12 @@
     const last = repository.lastOpened();
     const existing = (last && repository.get(last)) || null;
     const first = repository.list()[0];
+    /* Nothing stored at all — a genuinely first visit — opens the guide's worked example rather
+       than an empty sheet. Reading a filled résumé is how the guide itself teaches the What /
+       How / Result shape, and an empty page is the one starting point that teaches nothing while
+       failing every rule the panel beside it states. "New" still offers both. */
     const opening = existing || (first && repository.get(first.id)) ||
-      startDocument('headless-headhunter', false);
+      startDocument('headless-headhunter', true);
     if (!Layouts.get(opening.layoutId)) opening.layoutId = Layouts.all()[0].id;
     store.adopt(opening);
     repository.setLastOpened(opening.id);

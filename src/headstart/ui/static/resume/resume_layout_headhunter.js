@@ -575,6 +575,7 @@
     id: 'headless-headhunter',
     label: 'Headless Headhunter',
     summary: 'Single column · Arial · 10.5pt · 1.5 spacing',
+    credit: 'Method: “How to Get a Job” by the Headless Headhunter.',
     blurb: 'The template from "How to Get a Job". Built to be read in fifteen seconds by a ' +
       'recruiter checking whether you meet the minimum qualifications — which is the only ' +
       'thing a résumé is good at. Deliberately plain: one column, black ink, no design.',
