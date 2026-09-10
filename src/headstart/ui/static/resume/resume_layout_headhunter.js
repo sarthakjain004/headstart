@@ -198,13 +198,16 @@
       },
     },
     {
-      id: 'education-length', label: 'Education kept to three lines',
+      id: 'education-length', label: 'Education kept to three entries',
       check(doc, api) {
         const out = [];
         for (const section of api.nodesOfType('section')) {
           const entries = section.children.filter(c => c.type === 'education_entry');
+          /* Counted in entries, and worded in entries. The guide says "no longer than 3 lines",
+             and in this template one credential is one line — but a long credential wraps, and
+             this check cannot see that, so it claims only what it measures. */
           if (entries.length > 3) {
-            out.push({ level: 'warn', nodeId: section.id, message: entries.length + ' entries — the guide keeps Education & Certificates to 3 lines.' });
+            out.push({ level: 'warn', nodeId: section.id, message: entries.length + ' entries — the guide keeps Education & Certificates to about three lines. Cut the ones the job does not ask for.' });
           }
         }
         return out;
@@ -224,16 +227,20 @@
     {
       id: 'twelve-years', label: 'No more than twelve years back',
       check(doc, api) {
+        /* The guide's rule is about how far BACK the résumé reaches — "no more than 12 years of
+           experience in this manner" — not about how long you have been somewhere. Keyed on the
+           START date it told anyone with a long tenure to delete their current employer, which is
+           advice bad enough to be worth a comment: a job you still hold is never too old, and a
+           job is only out of range once it ENDED more than twelve years ago. */
         const out = [];
-        const starts = api.nodesOfType('work_entry')
-          .map(n => ({ n, at: asMonths(parseMonth(api.content(n.id).start)) }))
-          .filter(x => x.at != null);
-        if (!starts.length) return out;
         const now = new Date();
         const nowMonths = now.getFullYear() * 12 + now.getMonth() + 1;
-        for (const { n, at } of starts) {
-          if (nowMonths - at > 12 * 12) {
-            out.push({ level: 'warn', nodeId: n.id, message: 'Over 12 years old — the guide stops there unless you are a senior director.' });
+        for (const n of api.nodesOfType('work_entry')) {
+          const c = api.content(n.id);
+          if (c.current) continue;
+          const ended = asMonths(parseMonth(c.end));
+          if (ended != null && nowMonths - ended > 12 * 12) {
+            out.push({ level: 'warn', nodeId: n.id, message: 'This job ended over 12 years ago — the guide stops there unless you are a senior director. Drop it and keep the page for recent work.' });
           }
         }
         return out;

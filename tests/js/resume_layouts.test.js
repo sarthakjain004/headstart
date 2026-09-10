@@ -140,6 +140,45 @@ test('résumé text is escaped everywhere it reaches HTML', () => {
   assert.ok(!ctx.ResumeExport.standaloneHtml(doc).includes('onerror="alert'));
 });
 
+/* ---- a theme override is untrusted input ---- */
+
+test('a theme cannot escape the stylesheet it is interpolated into', () => {
+  const ctx = load(ALL);
+  const doc = example(ctx);
+  /* A résumé document is a file the product invites people to exchange — the JSON backup is the
+     only backup it offers — so its theme is untrusted input, and every token value is
+     interpolated straight into a <style> element by the print and download paths. */
+  doc.theme = {
+    fontFamily: 'Arial</style><script>alert(1)<\/script><style>',
+    ink: 'red; background: url(https://evil.test/x)',
+  };
+  const html = ctx.ResumeExport.standaloneHtml(doc);
+  assert.ok(!html.includes('</style><script'), 'the payload closed the style element');
+  assert.ok(!html.includes('evil.test'), 'a url() reached the stylesheet');
+  const theme = ctx.ResumeLayouts.themeFor(ctx.ResumeLayouts.get(HH), doc);
+  assert.equal(theme.fontFamily, 'Arial, Helvetica, sans-serif', 'fell back to the layout default');
+  assert.equal(theme.ink, '#000000');
+});
+
+test('a theme override is kept when the layout can vouch for it', () => {
+  const ctx = load(ALL);
+  const doc = example(ctx);
+  doc.theme = { bodySize: 11, ink: '#222222', fontFamily: 'Georgia, serif' };
+  const theme = ctx.ResumeLayouts.themeFor(ctx.ResumeLayouts.get(HH), doc);
+  assert.equal(theme.bodySize, 11, 'a number inside the tunable range');
+  assert.equal(theme.ink, '#222222', 'a hex colour');
+  assert.equal(theme.fontFamily, 'Georgia, serif', 'one of the font options the layout offers');
+});
+
+test('a number outside its tunable range is clamped rather than trusted', () => {
+  const ctx = load(ALL);
+  const doc = example(ctx);
+  doc.theme = { bodySize: 9999, bulletIndent: -50 };
+  const theme = ctx.ResumeLayouts.themeFor(ctx.ResumeLayouts.get(HH), doc);
+  assert.equal(theme.bodySize, 12, 'the tunable’s own maximum');
+  assert.equal(theme.bulletIndent, 0.1, 'the tunable’s own minimum');
+});
+
 /* ---- the Headless Headhunter template's own rules ---- */
 
 test('the guide’s own worked example passes every rule the template states', () => {
@@ -208,6 +247,27 @@ test('each rule actually fires — a check that cannot fail is not a check', () 
       for (let i = 0; i < 4; i++) s.add('education_entry', { credential: 'Degree ' + i });
     }).build();
   assert.ok(ids(schooled).includes('education-length'));
+});
+
+test('the twelve-year rule never tells you to delete the job you still have', () => {
+  const ctx = load(ALL);
+  const { ResumeDocument: D, ResumeLayouts: L } = ctx;
+  const hh = L.get(HH);
+  const job = (extra) => D.builder().usingLayout(HH)
+    .add('header', { fullName: 'A', phone: '1', email: 'e', locationLine: 'x' })
+    .section('Work History', s => s.add('work_entry', extra,
+      e => { e.bullet('a', true); e.bullet('b'); e.bullet('c'); }))
+    .build();
+  const ids = doc => L.runRules(hh, doc).map(f => f.ruleId);
+
+  // Fifteen years at the same employer, still there. The guide's rule is about how far BACK the
+  // résumé reaches, not how long you have been somewhere.
+  assert.ok(!ids(job({ role: 'R', start: 'January 2010', current: true })).includes('twelve-years'),
+    'told the user to drop their current employer');
+  // A job that ENDED fifteen years ago is genuinely out of range.
+  assert.ok(ids(job({ role: 'R', start: 'January 2008', end: 'January 2010' })).includes('twelve-years'));
+  // And a recent one is not.
+  assert.ok(!ids(job({ role: 'R', start: 'January 2022', end: 'January 2024' })).includes('twelve-years'));
 });
 
 test('a rule that throws is contained rather than taking the panel with it', () => {

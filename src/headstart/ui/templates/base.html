@@ -76,15 +76,15 @@
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 {# The résumé builder's three layers, in dependency order. Plain scripts, like app.js: no build
    step and no module loader. A new layout is one more line here and one more file. #}
-<script src="{{ url_for('static', filename='resume/resume_components.js') }}"></script>
-<script src="{{ url_for('static', filename='resume/resume_document.js') }}"></script>
-<script src="{{ url_for('static', filename='resume/resume_layouts.js') }}"></script>
-<script src="{{ url_for('static', filename='resume/resume_layout_headhunter.js') }}"></script>
-<script src="{{ url_for('static', filename='resume/resume_layout_twocolumn.js') }}"></script>
-<script src="{{ url_for('static', filename='resume/resume_layout_canvas.js') }}"></script>
-<script src="{{ url_for('static', filename='resume/resume_repository.js') }}"></script>
-<script src="{{ url_for('static', filename='resume/resume_export.js') }}"></script>
-<script src="{{ url_for('static', filename='resume/resume_decorators.js') }}"></script>
-<script src="{{ url_for('static', filename='resume/resume_editor.js') }}"></script>
+<script defer src="{{ url_for('static', filename='resume/resume_components.js') }}"></script>
+<script defer src="{{ url_for('static', filename='resume/resume_document.js') }}"></script>
+<script defer src="{{ url_for('static', filename='resume/resume_layouts.js') }}"></script>
+<script defer src="{{ url_for('static', filename='resume/resume_layout_headhunter.js') }}"></script>
+<script defer src="{{ url_for('static', filename='resume/resume_layout_twocolumn.js') }}"></script>
+<script defer src="{{ url_for('static', filename='resume/resume_layout_canvas.js') }}"></script>
+<script defer src="{{ url_for('static', filename='resume/resume_repository.js') }}"></script>
+<script defer src="{{ url_for('static', filename='resume/resume_export.js') }}"></script>
+<script defer src="{{ url_for('static', filename='resume/resume_decorators.js') }}"></script>
+<script defer src="{{ url_for('static', filename='resume/resume_editor.js') }}"></script>
 {% if alerts_on %}<script src="https://accounts.google.com/gsi/client" async onload="initAlerts()"></script>{% endif %}
 </body></html>

@@ -227,9 +227,18 @@
       apply: d => { d.theme = Object.assign({}, d.theme, patch); return d; },
     }),
 
-    /* Switching Layout touches layoutId and nothing else — that invariant is this whole
-       design's payoff, so it is one line here and a test in resume_document.test.js. */
-    setLayout: layoutId => ({ name: 'Change layout', apply: d => { d.layoutId = layoutId; return d; } }),
+    /* Switching Layout touches layoutId and the Layer-2 facts the incoming layout needs — never
+       a word of Content, which is this whole design's payoff and is pinned in
+       resume_document.test.js. `prepare` is the incoming Layout's own `adopt`, handed in by the
+       caller: Layer 3 runs it without knowing what a Layout is. */
+    setLayout: (layoutId, prepare) => ({
+      name: 'Change layout',
+      apply: d => {
+        d.layoutId = layoutId;
+        if (typeof prepare === 'function') prepare(d);
+        return d;
+      },
+    }),
 
     addNode: (parentId, type, index) => ({
       name: 'Add ' + ((Components.get(type) || {}).label || type).toLowerCase(),
@@ -278,11 +287,24 @@
         if (!parent || !original) return d;
         const copy = clone(original);
         /* Fresh ids all the way down, and the content copied across to them — a duplicate that
-           shared ids would edit both copies at once. */
+           shared ids would edit both copies at once.
+           Variants come too: without this, duplicating a block that a version had reworded gave
+           a copy showing the MASTER's words, with nothing to say the tailoring had been dropped.
+           Each Tailoring that had a pick for the original gets one for the copy. */
         walk(copy, n => {
           const was = n.id;
           n.id = newId();
           d.content[n.id] = clone(d.content[was] || {});
+          for (const tailoring of d.tailorings || []) {
+            const picked = (tailoring.picks || {})[was];
+            const fields = picked && ((d.variants || {})[was] || {})[picked];
+            if (!fields) continue;
+            const variantId = newId();
+            d.variants = d.variants || {};
+            d.variants[n.id] = d.variants[n.id] || {};
+            d.variants[n.id][variantId] = clone(fields);
+            (tailoring.picks = tailoring.picks || {})[n.id] = variantId;
+          }
         });
         parent.children.splice(parent.children.indexOf(original) + 1, 0, copy);
         return d;
@@ -449,6 +471,10 @@
     this._lastAt = 0;
     this._coalesceMs = opts.coalesceMs == null ? 1200 : opts.coalesceMs;
     this._now = opts.now || (() => Date.now());
+    /* Called when a write is REFUSED — a full quota, storage switched off mid-session. The
+       repository already reports this; without a caller it went nowhere, and the first the user
+       knew of it was an empty résumé after a reload. */
+    this._onError = opts.onError || null;
   }
 
   Store.prototype.subscribe = function (fn) {
@@ -460,8 +486,14 @@
   };
   Store.prototype.get = function () { return this._doc; };
 
-  /** Adopt a document without touching the undo stack — used by load and create. */
+  /** Adopt a document without touching the undo stack — used by load and create.
+   *
+   *  Writes the OUTGOING document first. A save is debounced by 400 ms, so opening another
+   *  résumé within that window used to leave a queued flush pointing at `this._doc` — which by
+   *  then was the new document. The pending edit was not written late; it was written to the
+   *  wrong file and lost, silently. */
   Store.prototype.adopt = function (doc) {
+    if (this._pending != null && this._doc) this.flush();
     this._doc = doc;
     this._undo = [];
     this._redo = [];
@@ -527,10 +559,14 @@
     this._pending = this._schedule(() => { this._pending = null; this.flush(); }, this._delay);
   };
 
-  /** Write now. Called on tab-hide and before export, so nothing in flight is lost. */
+  /** Write now. Called on tab-hide, on switching documents and before export, so nothing in
+   *  flight is lost. Returns the repository's own answer, and reports a refusal. */
   Store.prototype.flush = function () {
     if (this._pending != null) { this._cancel(this._pending); this._pending = null; }
-    if (this._repo && this._doc) this._repo.save(this._doc);
+    if (!this._repo || !this._doc) return { ok: true };
+    const result = this._repo.save(this._doc) || { ok: true };
+    if (!result.ok && this._onError) this._onError(result);
+    return result;
   };
 
   root.ResumeDocument = {

@@ -17,11 +17,14 @@
   'use strict';
 
   const Components = root.ResumeComponents;
-  const Doc = root.ResumeDocument;
 
   const registry = new Map();
   const order = [];
 
+  /* Its own copy of app.js's escape rather than a shared one, deliberately: these nine files are
+     the résumé builder and load independently of the search page's script, and a résumé must not
+     stop being escaped because the tab it sits beside was refactored. Eight lines is a cheaper
+     coupling than the alternative. */
   const esc = s => (s == null ? '' : String(s)).replace(/[&<>"']/g,
     c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -96,14 +99,51 @@
   const get = id => registry.get(id) || null;
   const all = () => order.map(id => registry.get(id));
 
+  /* Every token value is interpolated straight into a stylesheet, and that stylesheet is written
+     into a document by the print and download paths. So a token is only allowed to be the kind of
+     thing its Layout says it is. Without this, a résumé document — which the product invites
+     people to exchange as a .json backup — could carry
+     `fontFamily: 'Arial</style><script>…'` and run script in HeadStart's own origin the moment it
+     was previewed. Validation lives HERE rather than at the import, because this function is the
+     single point every render, print and export passes through; guarding the import alone would
+     leave any other future source of a document unguarded. */
+  const HEX = /^#[0-9a-fA-F]{3,8}$/;
+  /* Conservative on purpose: font stacks, keywords and lengths, and nothing that could close a
+     declaration, a rule, or the element itself. */
+  const SAFE_CSS_WORD = /^[\w\s,.'"()%#-]{0,120}$/;
+
+  /** The value to use for one token, or null if the override cannot be trusted. */
+  function vetted(tunable, value, fallback) {
+    if (value == null) return null;
+    if (tunable && tunable.kind === 'range') {
+      const n = Number(value);
+      if (!isFinite(n)) return null;
+      return clampNum(n, tunable.min, tunable.max);
+    }
+    if (tunable && tunable.kind === 'color') return HEX.test(String(value)) ? String(value) : null;
+    if (tunable && tunable.kind === 'select') {
+      return (tunable.options || []).some(o => o[0] === value) ? value : null;
+    }
+    /* No tunable: the UI offers no way to set this, so an override can only have arrived with a
+       document. Allow it only if it is the same shape as the layout's own default and cannot
+       carry markup or a second declaration. */
+    if (typeof fallback === 'number') {
+      const n = Number(value);
+      return isFinite(n) ? n : null;
+    }
+    return SAFE_CSS_WORD.test(String(value)) ? String(value) : null;
+  }
+
   /** The tokens in force for a document: the layout's defaults with the document's own
-   *  overrides on top, and only for keys the layout actually declares. A leftover override
-   *  from another layout is dropped rather than injected into a stylesheet that never
-   *  mentions it. */
+   *  overrides on top, for keys the layout declares and values it can vouch for. */
   function themeFor(layout, doc) {
     const out = Object.assign({}, layout.tokens);
     const over = (doc && doc.theme) || {};
-    for (const k of Object.keys(out)) if (over[k] != null) out[k] = over[k];
+    const tunables = new Map(layout.tunables.map(t => [t.key, t]));
+    for (const key of Object.keys(out)) {
+      const value = vetted(tunables.get(key), over[key], out[key]);
+      if (value != null) out[key] = value;
+    }
     return out;
   }
 
@@ -218,13 +258,25 @@
    *
    *  A rule that throws is caught and reported as one unrunnable check: the other rules still
    *  have something useful to say, and a résumé with one broken check is not a broken résumé. */
+  /* Its own walk rather than ResumeDocument's. Layer 2 importing Layer 3 was the one place the
+     layering this whole design rests on actually leaked, and the thing borrowed was six lines of
+     tree recursion over a plain object — not worth the dependency it cost. */
+  function nodesOf(doc) {
+    const out = [];
+    (function walkTree(node) {
+      for (const child of node.children || []) { out.push(child); walkTree(child); }
+    })(doc.root);
+    return out;
+  }
+
   function runRules(layout, doc) {
+    const all = nodesOf(doc);
     const api = {
       layout,
       theme: themeFor(layout, doc),
       content: id => doc.content[id] || {},
-      nodesOfType: type => Doc.flatten(doc).filter(n => n.type === type),
-      flatten: () => Doc.flatten(doc),
+      nodesOfType: type => all.filter(n => n.type === type),
+      flatten: () => all.slice(),
     };
     const out = [];
     for (const rule of layout.rules) {
@@ -305,6 +357,6 @@
 
   root.ResumeLayouts = {
     define, get, all, themeFor, geometryFor, renderDocument, renderNode, renderStandalone, runRules,
-    esc, escLines, attrs, dateRange, roleLine, plainStrategies, groupChildren, clampNum,
+    esc, escLines, attrs, dateRange, roleLine, plainStrategies, groupChildren, clampNum, nodesOf,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

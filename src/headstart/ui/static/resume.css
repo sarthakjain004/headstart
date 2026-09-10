@@ -24,6 +24,8 @@
 .rb-name:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .rb-mini { padding: 6px 11px !important; font-size: .84rem !important; }
 .rb-saved { min-width: 0; color: var(--pay); font-size: .8rem; }
+/* A refused write is not a confirmation — it reads as a warning and it stays on screen. */
+.rb-saved-bad { color: var(--alert); font-weight: 600; }
 .rb-vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);
   white-space: nowrap; }
 

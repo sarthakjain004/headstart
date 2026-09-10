@@ -87,9 +87,6 @@
          brand-new job trip the opening-summary check before anything had been typed. */
       seed: Object.freeze((spec.seed || []).map(s => Object.freeze(
         typeof s === 'string' ? [s, {}] : [s[0], Object.assign({}, s[1])]))),
-      /* Advice from the Layer-1 definition, checked by the rule validator. Only counts and
-         limits live here; the *reason* for a limit belongs to whichever Layout imposes it. */
-      limits: Object.freeze(Object.assign({}, spec.limits || {})),
     });
     registry.set(spec.type, frozen);
     return frozen;
@@ -131,8 +128,8 @@
       { key: 'phone', label: 'Phone', placeholder: '123-456-1234' },
       { key: 'email', label: 'Email', placeholder: 'myemail@email.com' },
       { key: 'link', label: 'LinkedIn or portfolio', placeholder: 'www.linkedin.com/in/leekorelitz' },
-      { key: 'locationLine', label: 'Status and location', placeholder: 'US Citizen in Los Angeles',
-        hint: 'Work authorisation, then city — recruiters screen on both.' },
+      { key: 'locationLine', label: 'Status and location', placeholder: 'Citizen or work permit, then your city',
+        hint: 'Whatever tells a recruiter they can hire you, then where you are — they screen on both.' },
       { key: 'languages', label: 'Languages (optional)', placeholder: 'English, Spanish' },
     ],
   });
@@ -146,7 +143,6 @@
         placeholder: 'Moving to Austin on 1 March, can move sooner if needed.',
         hint: 'Only for an industry change, a move, or a visa a recruiter may not know they can hire on.' },
     ],
-    limits: { maxChars: 320 },
   });
 
   define({
@@ -171,7 +167,6 @@
       { key: 'current', label: 'Still here', kind: 'flag' },
     ],
     seed: [['bullet', { role: true }], 'bullet', 'bullet'],
-    limits: { minBullets: 3, maxBullets: 8 },
   });
 
   define({
@@ -192,7 +187,6 @@
     caps: { resize: ['spaceAfter'] },
     fields: [{ key: 'name', label: 'Project', placeholder: 'Inventory tracker for a food bank' }],
     seed: ['bullet'],
-    limits: { maxBullets: 3 },
   });
 
   define({
@@ -206,7 +200,6 @@
          that role is the Layout's business. */
       { key: 'role', label: 'Opening summary sentence', kind: 'flag' },
     ],
-    limits: { maxSentences: 1, maxChars: 300 },
   });
 
   define({

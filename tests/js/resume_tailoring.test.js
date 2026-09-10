@@ -157,6 +157,26 @@ test('the version on screen is what gets checked and printed, under its own name
   assert.deepEqual(L.runRules(L.get(HH), resolve(store.get())), [], 'the master is still clean');
 });
 
+test('duplicating a reworded block keeps the words the version was showing', () => {
+  const ctx = load(ALL);
+  const { Commands: Cmd, contentOf, flatten } = ctx.ResumeDocument;
+  const store = opened(ctx);
+  const bullet = bullets(ctx, store)[0];
+
+  store.dispatch(Cmd.addTailoring('Acme'));
+  const version = store.get().tailorings[0].id;
+  store.dispatch(Cmd.setContentFor(bullet.id, { text: 'Tailored for Acme' }, version));
+  store.dispatch(Cmd.duplicateNode(bullet.id));
+
+  const copies = flatten(store.get()).filter(n => n.type === 'bullet');
+  const copy = copies[copies.indexOf(copies.find(n => n.id === bullet.id)) + 1];
+  assert.equal(contentOf(store.get(), copy.id).text, 'Tailored for Acme',
+    'the copy fell back to the master’s words with nothing to say the tailoring was dropped');
+  // and the copy is its own variant — editing it must not change the original
+  store.dispatch(Cmd.setContentFor(copy.id, { text: 'Changed' }, version));
+  assert.equal(contentOf(store.get(), bullet.id).text, 'Tailored for Acme');
+});
+
 test('the JSON backup carries every version; resolve is identity on the master', () => {
   const ctx = load(ALL);
   const { Commands: Cmd, resolve } = ctx.ResumeDocument;

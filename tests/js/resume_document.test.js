@@ -196,6 +196,42 @@ test('the store persists through the repository, debounced, and flush forces it'
   assert.equal(repo.list()[0].name, 'Renamed');
 });
 
+test('switching documents writes the one being left behind first', () => {
+  const ctx = load(MODEL);
+  const repo = new ctx.ResumeRepository.MemoryRepository();
+  /* A save is debounced, so a click landing inside that window used to leave a queued write
+     pointing at whatever document was current when it FIRED — by then, the new one. The edit was
+     not written late; it went to the wrong document and was lost without a word. */
+  const store = new ctx.ResumeDocument.Store(repo, { schedule: () => 1, cancel: () => {} });
+  const a = Object.assign(sample(ctx), { id: 'a', name: 'Document A' });
+  store.adopt(a);
+  store.dispatch(ctx.ResumeDocument.Commands.rename('Edited A'));
+
+  const b = Object.assign(sample(ctx), { id: 'b', name: 'Document B' });
+  store.adopt(b);   // the pending write for A must land before B is adopted
+
+  assert.equal(repo.get('a').name, 'Edited A', 'the edit to A was lost');
+  assert.equal(store.get().id, 'b');
+});
+
+test('a refused write is reported rather than swallowed', () => {
+  const ctx = load(MODEL);
+  const refusing = {
+    list: () => [], get: () => null, remove() {}, lastOpened: () => null, setLastOpened() {},
+    durable: true,
+    save: () => ({ ok: false, reason: 'quota' }),
+  };
+  const seen = [];
+  const store = new ctx.ResumeDocument.Store(refusing, {
+    schedule: () => 1, cancel: () => {}, onError: r => seen.push(r.reason),
+  });
+  store.adopt(sample(ctx));
+  store.dispatch(ctx.ResumeDocument.Commands.rename('Anything'));
+  const result = store.flush();
+  assert.equal(result.ok, false);
+  assert.deepEqual(seen, ['quota'], 'the editor is told, so it can tell the user');
+});
+
 /* ---- Layer 3: the repository ---- */
 
 test('the local-storage repository round-trips, lists newest first, and forgets on remove', () => {

@@ -456,7 +456,14 @@
      it counted the new one. Focus is the fact that actually matters, and it is readable. */
   function railPaint() {
     const active = document.activeElement;
-    const holdsCaret = pane => pane && active && pane !== active && pane.contains(active);
+    /* A CARET, not merely focus. This guard used to fire on any focused descendant — including
+       the button the user had just clicked — so clicking an Outline row, "Add inside", "Delete"
+       or "Duplicate" left the pane those controls live in frozen on its previous contents until
+       focus happened to move elsewhere. That is the primary editing loop, and it was broken:
+       selecting a block showed the block selected on the page and no fields beside it. */
+    const typing = active && typeof active.matches === 'function' &&
+      active.matches('input:not([type="checkbox"]), textarea, select');
+    const holdsCaret = pane => typing && pane && pane !== active && pane.contains(active);
     if (!holdsCaret(el('rb-pane-content'))) contentPane();
     if (!holdsCaret(el('rb-pane-design'))) designPane();
     if (!holdsCaret(el('rb-pane-checks'))) checksPane();
@@ -506,7 +513,9 @@
       const leftOut = !!(tailoring && (tailoring.hidden || []).includes(node.id));
       out.push('<div class="rb-sel"><b>' + esc(spec.label) + '</b>' +
         (overridden ? '<span class="rb-tag">tailored</span>' : '') +
-        (spec.blurb ? '<p class="note">' + esc(spec.blurb) + '</p>' : '') + '</div>');
+        (spec.blurb ? '<p class="note">' + esc(spec.blurb) + '</p>' : '') +
+        (lay.caps.reorder && spec.caps.reorder
+          ? '<p class="note">Alt + ↑ or ↓ moves it, without the mouse.</p>' : '') + '</div>');
       const content = Doc.contentOf(d, node.id);
       for (const f of spec.fields) out.push(fieldControl(node.id, f, content[f.key]));
       if (tailoring) {
@@ -731,11 +740,14 @@
       : 'This browser is blocking storage, so nothing is being kept. Download a JSON backup before you leave.';
   }
 
-  function flashSaved(message) {
+  /** A word in the bar. `sticky` is for the things the user must not miss — a refused write
+   *  stays put rather than fading after two seconds like a confirmation. */
+  function flashSaved(message, sticky) {
     const box = el('rb-saved');
     box.textContent = message;
+    box.classList.toggle('rb-saved-bad', !!sticky);
     clearTimeout(savedTimer);
-    savedTimer = setTimeout(() => { box.textContent = ''; }, 2600);
+    if (!sticky) savedTimer = setTimeout(() => { box.textContent = ''; }, 2600);
   }
 
   /* ---- profile prefill ---------------------------------------------------------------------
@@ -760,7 +772,11 @@
        editor where what you saw change was not what you were editing. */
     const into = activeTailoring();
     const header = Doc.flatten(d).find(n => n.type === 'header');
-    if (header && profile.location) {
+    /* Only when it is empty. This line means work authorisation AND city — "US Citizen in Los
+       Angeles" — and the Profile holds only the city. Overwriting a filled line with half of what
+       it is for replaced the recruiter-facing half with nothing, and the `contact` rule checks
+       only that the line is non-empty, so nothing would have said so. */
+    if (header && profile.location && !String(Doc.contentOf(d, header.id).locationLine || '').trim()) {
       store.dispatch(Cmd.setContentFor(header.id, { locationLine: profile.location }, into));
     }
     if (profile.skills) {
@@ -783,7 +799,8 @@
       if (job) store.dispatch(Cmd.setContentFor(job.id, { role: profile.title }, into));
     }
     note.textContent = 'Filled what the profile holds. It keeps no contact details, so name, ' +
-      'phone and email are still yours to type.';
+      'phone and email are still yours to type — and add your work authorisation in front of the ' +
+      'city, which is the half of that line a recruiter screens on.';
   }
 
   /* ---- wiring ------------------------------------------------------------------------------ */
@@ -975,6 +992,9 @@
         selectedId = null;
         if (e.shiftKey) store.redo(); else store.undo();
       }
+      if (e.altKey && (key === 'arrowup' || key === 'arrowdown')) {
+        if (nudge(key === 'arrowup' ? -1 : 1)) e.preventDefault();
+      }
       if (key === 'escape' && selectedId) select(null);
     });
 
@@ -1000,10 +1020,7 @@
   function changeLayout(layoutId) {
     const lay = Layouts.get(layoutId);
     if (!lay) return;
-    store.dispatch({
-      name: 'Change layout',
-      apply: d => { d.layoutId = layoutId; if (lay.adopt) lay.adopt(d); return d; },
-    });
+    store.dispatch(Cmd.setLayout(layoutId, lay.adopt));
   }
 
   /** Zoom so the sheet fits the space it has. A US Letter page is 816 CSS px wide and the stage
@@ -1023,6 +1040,47 @@
     el('rb-zoom').value = String(Math.round(zoom * 100));
   }
 
+  /* Reordering by keyboard. Selection was already reachable — the outline rows are buttons — but
+     moving a block was a drag and nothing else, which put the one decision this template says
+     matters most (what a recruiter reads first) behind a pointer. Alt+Up/Down moves the selected
+     block among its siblings; the same Command the drag dispatches, so undo is identical. */
+  function nudge(direction) {
+    const d = doc();
+    if (!selectedId || !d) return false;
+    const node = Doc.find(d, selectedId);
+    const parent = Doc.parentOf(d, selectedId);
+    const lay = layout();
+    if (!node || !parent || !lay.caps.reorder) return false;
+    const spec = Components.get(node.type);
+    if (!spec || !spec.caps.reorder) return false;
+
+    const siblings = parent.children;
+    const at = siblings.indexOf(node);
+    const to = at + direction;
+    if (to < 0 || to >= siblings.length) {
+      announce(spec.label + ' is already ' + (direction < 0 ? 'first' : 'last') + '.');
+      return true;
+    }
+    store.dispatch(Cmd.moveNode(selectedId, parent === d.root ? null : parent.id, to));
+    announce(spec.label + ' moved to position ' + (to + 1) + ' of ' + siblings.length + '.');
+    scrollToNode(selectedId);
+    return true;
+  }
+
+  /** Say something to a screen reader without changing what anyone sees. */
+  function announce(message) {
+    let box = el('rb-live');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'rb-live';
+      box.className = 'rb-vh';
+      box.setAttribute('role', 'status');
+      box.setAttribute('aria-live', 'polite');
+      el('rb').appendChild(box);
+    }
+    box.textContent = message;
+  }
+
   function scrollToNode(id) {
     const target = el('rb-paper').querySelector('[data-node="' + id + '"]');
     if (target && target.scrollIntoView) target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -1035,7 +1093,11 @@
     booted = true;
 
     repository = Repo.detect(window);
-    store = new Doc.Store(repository);
+    store = new Doc.Store(repository, {
+      onError: result => flashSaved(result.reason === 'quota'
+        ? 'This browser is out of storage — your last change is NOT saved. Download a JSON backup.'
+        : 'Could not save to this browser. Download a JSON backup.', true),
+    });
     store.subscribe(paint);
 
     el('rb-layout').innerHTML = Layouts.all().map(l =>
@@ -1067,12 +1129,15 @@
     }
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
-  else boot();
+  /* Booting is deliberately NOT on DOMContentLoaded. The nine scripts load on every page of the
+     app, and booting eagerly meant every visitor to Search or Trends probed localStorage, built
+     and rendered a document into a hidden panel, ran the rule set, and wrote a "last opened" key
+     — for a tab they never opened. `shown()` is called by app.js on the way in, which is the
+     first moment any of it is wanted. */
 
-  /* The tab's public surface. `current` and `flush` are here because the editor holds the only
-     reference to the live document — anything outside it (a console, a browser test, a future
-     "attach this résumé to an application") would otherwise have no way to read or commit it. */
+  /* The tab's public surface. `shown` is what app.js calls; the rest exists because the editor
+     holds the only reference to the live document, and the browser tests drive the real page
+     through it rather than reaching into a closure they cannot see. */
   root.ResumeEditor = {
     boot, shown, findings, keywordCheck, startDocument, changeLayout,
     current: () => doc(),
