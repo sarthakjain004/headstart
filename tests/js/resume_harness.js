@@ -27,7 +27,7 @@ function load(files, extra) {
 const ALL = [
   'resume_components', 'resume_document', 'resume_layouts',
   'resume_layout_headhunter', 'resume_layout_twocolumn', 'resume_layout_canvas',
-  'resume_repository', 'resume_export',
+  'resume_repository', 'resume_export', 'resume_decorators',
 ];
 
 module.exports = { load, ALL, DIR };

@@ -14,10 +14,13 @@
 .rb-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
   background: var(--raise); border: 1px solid var(--rule); border-radius: var(--r-lg);
   padding: 10px 12px; position: relative; }
-.rb-bar-left, .rb-bar-right { display: flex; gap: 8px; align-items: center; }
+ /* Both halves wrap: on a phone the left half ran to 610px in a 390px viewport and took the
+    whole page sideways with it. */
+.rb-bar-left, .rb-bar-right { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .rb-bar-right { margin-left: auto; }
 .rb-name { background: var(--raise-2); border: 1px solid var(--rule); color: var(--ink);
-  border-radius: var(--r-md); padding: 7px 10px; font: inherit; font-weight: 600; min-width: 220px; }
+  border-radius: var(--r-md); padding: 7px 10px; font: inherit; font-weight: 600;
+  flex: 1 1 180px; min-width: 0; }
 .rb-name:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .rb-mini { padding: 6px 11px !important; font-size: .84rem !important; }
 .rb-saved { min-width: 0; color: var(--pay); font-size: .8rem; }
@@ -59,9 +62,19 @@
 .rb-hint { margin: 10px 0 0; text-align: center; }
 
 /* The paper. Scrolls on both axes at high zoom rather than pushing the rail off the screen. */
+/* `align-items: flex-start` matters: the default stretches the sheet to the wrapper's height,
+   and the wrapper's height is set from the sheet's — a loop that pinned every résumé at exactly
+   one page however much was on it, so a three-page document drew no second or third page. */
 .rb-paper-wrap { overflow: auto; background: var(--ground); border-radius: var(--r-md);
-  padding: 18px 0; display: flex; justify-content: center; }
-.rb-paper { background: #fff; color: #000; box-shadow: 0 6px 24px rgba(0,0,0,.35);
+  padding: 18px 0; display: flex; justify-content: center; align-items: flex-start; }
+/* `flex: 0 0 auto` is the load-bearing line. The wrapper is a flex container, so without it the
+   sheet SHRINKS to whatever width the stage has — and then the résumé re-wraps instead of
+   scaling. Measured before the fix: an 8.5in sheet rendered 770px on a 1400px window and 450px
+   on a phone, and a bullet that prints on four lines showed as six (ten on the phone). For a
+   builder whose headline check is "no bullet over three lines", a preview that disagrees with
+   the printed page is not a cosmetic problem — it is the wrong answer, shown confidently. Width
+   is held true and the zoom does the fitting. */
+.rb-paper { flex: 0 0 auto; background: #fff; color: #000; box-shadow: 0 6px 24px rgba(0,0,0,.35);
   transform-origin: top center; padding: 0; position: relative; }
 :root[data-theme="light"] .rb-paper { box-shadow: 0 4px 18px rgba(0,0,0,.18); }
 
@@ -172,3 +185,22 @@
   letter-spacing: .04em; vertical-align: middle; }
 .rb-out-row.off { opacity: .55; text-decoration: line-through; }
 .rb-out-row.off .rb-tag { text-decoration: none; background: var(--ink-3); }
+
+/* Decorator output (ADR-0123). Both are preview-only adornments — a downloaded résumé carries
+   neither, because exports render from the registry's undecorated layout. */
+.rb-paper mark.rb-kw-hit { background: #FFF1A8; color: #000; padding: 0 1px; border-radius: 2px; }
+:root[data-theme="light"] .rb-paper mark.rb-kw-hit { background: #FFE873; }
+/* A block this version has reworded. A bar in the page margin rather than a background tint:
+   the paper has to keep looking like the printed page, and a tint would read as highlighting. */
+.rb-paper [data-tailored="1"]::after { content: ""; position: absolute; left: -10px; top: 0;
+  bottom: 0; width: 3px; border-radius: 2px; background: var(--accent); }
+
+/* Where the printer will cut (ADR-0123). Drawn on the preview because "does it fit on one page,
+   and where does page one end" is the question a résumé writer actually has, and the answer was
+   previously only discoverable by exporting a PDF and counting. */
+.rb-break { position: absolute; left: 0; right: 0; height: 0; pointer-events: none;
+  border-top: 1px dashed #C0392B; }
+.rb-break::after { content: attr(data-label); position: absolute; right: 4px; top: 2px;
+  font: 500 8px/1.4 ui-sans-serif, system-ui, sans-serif; letter-spacing: .06em;
+  text-transform: uppercase; color: #C0392B; background: #fff; padding: 0 3px; }
+@media print { .rb-break { display: none !important; } }

@@ -1,5 +1,5 @@
 {# The Résumé tab (ADR-0123). Everything here is client-side: no route, no endpoint, and no
-   résumé text ever reaches the server — see resume_repository.js and ADR-0107. The skeleton is
+   résumé text ever reaches the server — see resume_repository.js and ADR-0041. The skeleton is
    static so the panel is legible before the scripts run; resume_editor.js fills the rail. #}
 <section class="rb" id="rb">
 
@@ -50,7 +50,7 @@
         <span class="note" id="rb-layout-note"></span>
         <span class="spacer"></span>
         <label class="rb-zoom"><span class="rb-vh">Zoom</span>
-          <input type="range" id="rb-zoom" min="50" max="130" step="5" value="100"></label>
+          <input type="range" id="rb-zoom" min="25" max="130" step="5" value="100"></label>
       </div>
       {# The page. Its width is the layout's own paper width, so what is on screen is what
          prints — the preview and the PDF are one stylesheet (resume_export.js). #}

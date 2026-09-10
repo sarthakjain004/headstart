@@ -1,6 +1,11 @@
 # ADR-0124: Résumés sync to Postgres on the Oracle box, and only when asked
 
-**Status:** accepted · **Date:** 2026-09-09 · **Amends ADR-0107/0041's "the server never stores a Résumé" for the Résumé document only, and says so out loud. Follows ADR-0109's store recommendation. Extends ADR-0123.**
+**Status:** accepted · **Date:** 2026-09-09 · **Amends ADR-0041's "the Résumé is read once and discarded" for the Résumé document only, and says so out loud. Extends ADR-0123.**
+
+> Two things are settled here rather than one, deliberately: the **tailoring model** (§Context) and
+> the **store** (§The database). They are recorded together because the first is the only reason
+> the second is not a single blob — the schema exists to hold per-component variants, and splitting
+> them across two ADRs would leave each half unmotivated.
 
 ## Context
 
@@ -25,7 +30,7 @@ below is that model at rest.
 
 | | option | for | against |
 |---|---|---|---|
-| **A ✅** | **Postgres on the existing Oracle box**, over the SSH tunnel the llm-router already uses | no new vendor and no new trust boundary; real transactions and real deletes; `jsonb` for content with indexes on what is queried; `ON DELETE CASCADE` makes "delete this version" the database's job rather than application code's; matches the posture ADR-0109 recommended for the sibling problem, and the router's own "degrade rather than die" | the tunnel is a single point of failure; one more daemon to run and back up; credentials in the Space |
+| **A ✅** | **Postgres on the existing Oracle box**, over the SSH tunnel the llm-router already uses | no new vendor and no new trust boundary; real transactions and real deletes; `jsonb` for content with indexes on what is queried; `ON DELETE CASCADE` makes "delete this version" the database's job rather than application code's; the same posture the project already accepted for the llm-router — private box, tunnel, degrade rather than die | the tunnel is a single point of failure; one more daemon to run and back up; credentials in the Space |
 | B | Keep the HF dataset repo, as the Profile and Saved sets do | zero new infrastructure; already authenticated and backed up; free | **fatal on two counts.** A builder autosaves, so every save is a Git commit — thousands per user. And Git remembers: a deleted résumé's words stay in repository history behind any "delete", recoverable only by `super_squash_history` on a schedule. Résumé text is the most identity-laden data in the product; that is the wrong storage for it |
 | C | SQLite on the Oracle box | one file; transactional; trivial to back up | one writer at a time under concurrent Space workers, and it needs a service in front of it anyway — at which point Postgres costs the same to run |
 | D | Managed free tier (Neon / Supabase / Turso) | reachable from the Space with no tunnel; purpose-built; generous free tiers | a third party holding résumés and employment history; a free tier that may not stay free; another credential; cold starts |
@@ -42,7 +47,7 @@ for the llm-router. B is disqualified on write volume and on deletion semantics,
    lifetimes and different queries: `resume_document` (structure, layout, theme), `resume_content`
    (the words — one row per document/node/**variant**, with `'base'` as the master's wording), and
    `resume_tailoring` (one row per version, carrying the `job_id` it was written for).
-2. **Syncing is opt-in, per document, and off by default.** ADR-0107 and ADR-0041 promise that
+2. **Syncing is opt-in, per document, and off by default.** ADR-0041 promises that
    HeadStart's servers never hold a résumé. Storing one is a reversal of that promise, so it is a
    thing the Account switches on for a particular résumé, with the consequence stated in the same
    sentence as the switch — never a silent upgrade of what the product keeps. A résumé that is
@@ -52,8 +57,10 @@ for the llm-router. B is disqualified on write volume and on deletion semantics,
    sync target. A tunnel outage, a Space restart or a signed-out session degrades the tab to
    exactly ADR-0123's behaviour rather than breaking it. Nothing in the Résumé tab may block on the
    network.
-4. **Optimistic concurrency, and a conflict is never resolved by discarding.** Every document
-   carries a `rev`; a push with a stale one is refused with the server's copy. The client then
+4. **Optimistic concurrency, and a conflict is never resolved by discarding.** The **store**
+   assigns each document a `rev` and a push must carry the one it last saw; a push with a stale one
+   is refused with the server's copy. The client document has no `rev` today and does not need one
+   until it syncs — it is the store's counter, not a field of the model. The client then
    keeps **both** — the loser is saved beside it as "… (this device)" — because a résumé edited on
    two machines is someone's afternoon, and silently picking a winner is how it disappears. A real
    three-way merge is not attempted.

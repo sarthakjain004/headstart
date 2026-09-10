@@ -91,7 +91,24 @@
     this._parent.children.push(n);
     this._doc.content[n.id] = Object.assign(Components.blankContent(type), content || {});
     if (fill) fill(new NodeBuilder(this._doc, n));
-    else for (const seeded of spec.seed) new NodeBuilder(this._doc, n).add(seeded);
+    else for (const [type, seeded] of spec.seed) new NodeBuilder(this._doc, n).add(type, seeded);
+    return this;
+  };
+
+  /** Put the block just added into a named Layout slot. Starters for multi-column layouts need
+   *  this; without it they reached into `_doc.root.children` directly, and a starter that says
+   *  "seeded into the narrow column" in a comment while writing 'main' is how one shipped. */
+  NodeBuilder.prototype.into = function (slot) {
+    const kids = this._parent.children;
+    if (kids.length) kids[kids.length - 1].slot = slot;
+    return this;
+  };
+
+  /** Position and size the block just added — for free-positioning layouts, whose starters would
+   *  otherwise open as a pile in the corner. */
+  NodeBuilder.prototype.placed = function (x, y, w, h) {
+    const kids = this._parent.children;
+    if (kids.length) kids[kids.length - 1].geometry = { x, y, w, h };
     return this;
   };
 
@@ -133,6 +150,8 @@
   Builder.prototype.usingLayout = function (id) { this._doc.layoutId = id; return this; };
   Builder.prototype.add = function () { this._top.add.apply(this._top, arguments); return this; };
   Builder.prototype.section = function () { this._top.section.apply(this._top, arguments); return this; };
+  Builder.prototype.into = function (slot) { this._top.into(slot); return this; };
+  Builder.prototype.placed = function () { this._top.placed.apply(this._top, arguments); return this; };
   Builder.prototype.build = function () {
     if (!this._doc.layoutId) throw new Error('ResumeDocument: a document needs a layout');
     return this._doc;

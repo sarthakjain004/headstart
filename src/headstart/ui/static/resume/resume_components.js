@@ -81,9 +81,12 @@
       /* Content this type starts life with. A function, not an object: two nodes of the same
          type must not share one mutable default. */
       blank: typeof spec.blank === 'function' ? spec.blank : () => ({}),
-      /* Children a freshly added node is seeded with, as [type, ...] — a Work entry with no
-         bullet is a box the user has to guess at. */
-      seed: Object.freeze((spec.seed || []).slice()),
+      /* Children a freshly added node is seeded with. Each entry is a type id, or a
+         [type, content] pair where the seeded child needs to start with something set — a Work
+         entry's first bullet IS the job summary in this method, and seeding it unflagged made a
+         brand-new job trip the opening-summary check before anything had been typed. */
+      seed: Object.freeze((spec.seed || []).map(s => Object.freeze(
+        typeof s === 'string' ? [s, {}] : [s[0], Object.assign({}, s[1])]))),
       /* Advice from the Layer-1 definition, checked by the rule validator. Only counts and
          limits live here; the *reason* for a limit belongs to whichever Layout imposes it. */
       limits: Object.freeze(Object.assign({}, spec.limits || {})),
@@ -167,7 +170,7 @@
       { key: 'end', label: 'End', kind: 'month', placeholder: 'March 2025' },
       { key: 'current', label: 'Still here', kind: 'flag' },
     ],
-    seed: ['bullet', 'bullet', 'bullet'],
+    seed: [['bullet', { role: true }], 'bullet', 'bullet'],
     limits: { minBullets: 3, maxBullets: 8 },
   });
 
@@ -208,8 +211,8 @@
 
   define({
     type: 'skills_line', shape: 'line', label: 'Skills line',
-    blurb: 'One line of tools or skills. Not part of the Headless Headhunter template — proof a ' +
-      'component added later still renders in a layout that predates it.',
+    blurb: 'One line of tools or skills. The Headless Headhunter template does not ask for one — ' +
+      'its method puts skills inside the job bullets, where the recruiter is already reading.',
     fields: [
       { key: 'label', label: 'Label', placeholder: 'Skills' },
       { key: 'value', label: 'Value', placeholder: 'Python, Go, Postgres, Kubernetes' },

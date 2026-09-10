@@ -1,10 +1,10 @@
-/* Where a résumé is kept (ADR-0123, upholding ADR-0107).
+/* Where a résumé is kept (ADR-0123, upholding ADR-0041).
  *
  * HeadStart's servers do not store résumés. That is not an implementation detail of this
- * feature — it is a rule the Profile already lives by (ADR-0041: the document is read once and
- * discarded) and that ADR-0107 restated for auto-apply. So the builder writes to the Account's
- * own browser and to nothing else: no endpoint, no upload, no third party. Every word typed on
- * the Résumé tab stays on the machine it was typed on.
+ * feature — it is the rule the Profile already lives by (ADR-0041: the document is read once by
+ * the extraction call and discarded, and contact details are never kept). So the builder writes to
+ * the Account's own browser and to nothing else: no endpoint, no upload, no third party. Every
+ * word typed on the Résumé tab stays on the machine it was typed on.
  *
  * This module is the seam that makes that a *choice* rather than a fact welded into the editor.
  * Everything above it talks to a repository interface — list, get, save, remove — so moving to

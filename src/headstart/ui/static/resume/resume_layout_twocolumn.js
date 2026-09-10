@@ -58,8 +58,9 @@
       s + ' { font-family: ' + theme.bodyFont + '; color: ' + theme.ink + ';',
       '      font-size: ' + theme.bodySize + 'pt; line-height: ' + theme.bodyLead + ';',
       '      display: flex; gap: ' + theme.columnGap + 'in; align-items: flex-start; }',
-      /* The header spans both columns. It is the one node the split does not apply to, so it is
-         pulled out of the flex flow rather than living in a column. */
+      /* The header sits at the top of the wide column, not across both: the two slots are flex
+         columns, and spanning them would need a region the slot model does not have. Stated
+         because the comment here used to claim otherwise. */
       s + ' .tc-head { text-align: left; margin: 0 0 .9em; border-bottom: 1px solid ' + theme.rule + '; padding-bottom: .4em; }',
       s + ' .tc-name { font-family: ' + theme.headFont + '; font-size: ' + theme.nameSize + 'pt;',
       '      font-weight: 700; margin: 0; color: ' + theme.accent + '; }',
@@ -85,16 +86,17 @@
     b.add('header', {})
       .section('Experience', s => s.add('work_entry'))
       .section('Education', s => s.add('education_entry'));
-    /* Seeded into the narrow column, so the split is doing visible work from the first render
-       rather than looking like a one-column layout with dead space. */
-    b.add('skills_line', { label: 'Skills', value: '' });
-    b.section('Projects', s => s.add('project_entry'));
+    /* Into the narrow column, so the split is doing visible work from the first render rather
+       than looking like a one-column layout with dead space beside it — and so this layout's own
+       `balance` rule does not fire on the document it just created. */
+    b.add('skills_line', { label: 'Skills', value: '' }).into('side');
+    b.section('Projects', s => s.add('project_entry')).into('side');
   }
 
   L.define({
     id: 'two-column',
     label: 'Two column',
-    summary: 'Two columns · serif headings · a draggable split',
+    summary: 'Two columns · serif headings · Calibri body',
     blurb: 'A conventional two-column CV. Off the Headless Headhunter method on purpose — it is ' +
       'here to show that the same words re-lay themselves out under a layout that shares no ' +
       'code with the first one.',
@@ -119,8 +121,9 @@
           ['Arial, Helvetica, sans-serif', 'Arial']] },
     ],
     /* Two slots, so a node can be dragged from one column to the other — which is the only new
-       *interaction* this layout introduces. `grow` is the initial split; the editor writes a
-       user's drag of the divider back into the document's theme. */
+       *interaction* this layout introduces. `grow` fixes the split; the width between the columns
+       is the `columnGap` tunable in the Design pane. There is no divider gesture: this comment
+       used to claim one, and the layout's own summary advertised it to users. */
     slots: [{ id: 'main', label: 'Wide column', grow: 2.2 }, { id: 'side', label: 'Narrow column', grow: 1 }],
     caps: { mode: 'flow', reorder: true, resize: ['spaceAfter'] },
     rules: [

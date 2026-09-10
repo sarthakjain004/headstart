@@ -21,6 +21,28 @@
      disagree about what "on template" means. ---- */
   const CANON = { bodySize: 10.5, nameSize: 14, contactSize: 12, bodyLead: 1.5, headLead: 1.15 };
 
+  /* "Font: Arial, do not use any other font" and "Black and White are the only colors your résumé
+     should have (with the exception of your phone, email, LinkedIn/Portfolio which can be in
+     blue)" — both stated plainly in the guide, and both were going unchecked while this file's
+     own header claimed they were enforced. */
+  const CANON_FONT = 'arial';
+
+  /** [r, g, b] 0-255 from #rgb or #rrggbb; null for anything else. */
+  function rgb(value) {
+    const hex = String(value || '').trim().replace('#', '');
+    const full = hex.length === 3 ? hex.split('').map(c => c + c).join('') : hex;
+    if (!/^[0-9a-f]{6}$/i.test(full)) return null;
+    return [0, 2, 4].map(i => parseInt(full.slice(i, i + 2), 16));
+  }
+  const isBlack = v => { const c = rgb(v); return !c || c.every(x => x <= 40); };
+  /* Blue enough to read as a link rather than as decoration: the blue channel clearly ahead of
+     the other two. Black also passes — the guide permits blue, it does not require it. */
+  const isLinkColour = v => {
+    const c = rgb(v);
+    if (!c) return true;
+    return isBlack(v) || (c[2] > c[0] + 40 && c[2] > c[1] + 30);
+  };
+
   const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august',
     'september', 'october', 'november', 'december'];
 
@@ -227,6 +249,11 @@
         if (+t.nameSize !== CANON.nameSize) off.push('name ' + t.nameSize + 'pt (14)');
         if (+t.contactSize !== CANON.contactSize) off.push('contact ' + t.contactSize + 'pt (12)');
         if (+t.bodyLead !== CANON.bodyLead) off.push('line spacing ' + t.bodyLead + ' (1.5)');
+        if (!String(t.fontFamily || '').toLowerCase().includes(CANON_FONT)) {
+          off.push('the font is not Arial');
+        }
+        if (!isBlack(t.ink)) off.push('the body ink is not black');
+        if (!isLinkColour(t.linkInk)) off.push('the contact line is a colour other than blue');
         if (off.length) {
           out.push({ level: 'note', nodeId: null, message: 'Off template: ' + off.join(', ') + '. It will still print — the guide just does not ask for it.' });
         }
@@ -430,5 +457,5 @@
 
   /* Exported for the tests and the rule panel — the parser and the sentence count are the two
      places a wrong answer would be invisible in the UI. */
-  root.ResumeHeadhunter = { CANON, parseMonth, periods, charsPerLine };
+  root.ResumeHeadhunter = { CANON, CANON_FONT, parseMonth, periods, charsPerLine, rgb, isBlack, isLinkColour };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

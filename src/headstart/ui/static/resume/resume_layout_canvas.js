@@ -71,16 +71,10 @@
   /* Placed rather than stacked — a free layout whose starter had no coordinates would open as a
      pile in the top-left corner and read as broken. */
   function starter(b) {
-    b.add('header', {});
-    b.section('Experience', s => s.add('work_entry'));
-    b.section('Education', s => s.add('education_entry'));
-    b.add('skills_line', { label: 'Skills', value: '' });
-    const kids = b._doc.root.children;
-    const at = (i, x, y, w, h) => { if (kids[i]) kids[i].geometry = { x, y, w, h }; };
-    at(0, 0, 0, 6.9, 0.9);
-    at(1, 0, 1.1, 4.4, 3.4);
-    at(2, 4.7, 1.1, 2.2, 1.6);
-    at(3, 4.7, 2.9, 2.2, 1.6);
+    b.add('header', {}).placed(0, 0, 6.9, 0.9);
+    b.section('Experience', s => s.add('work_entry')).placed(0, 1.1, 4.4, 3.4);
+    b.section('Education', s => s.add('education_entry')).placed(4.7, 1.1, 2.2, 1.6);
+    b.add('skills_line', { label: 'Skills', value: '' }).placed(4.7, 2.9, 2.2, 1.6);
   }
 
   /** Give every top-level block a position, keeping the ones that already have one. Blocks

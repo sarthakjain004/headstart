@@ -166,7 +166,7 @@ _Avoid_: database, vector store — those name the storage, not the served set.
 Removing a Job from the **Search index** once its posting has closed, so a stale opening can never be a search result. Keyed on the fresh scrape: a Job whose id is absent from its Board's latest scrape is gone — but only where that scrape is authoritative. An **Unauthoritative Board** is subtracted from the scope outright, so nothing on it is ever evicted that run (ADR-0053). One absence is no longer enough on its own: an id missing from its Board's latest scrape becomes **Unconfirmed** and is only evicted if the *next* scrape of that Board misses it too (ADR-0083). The freshness counterpart to embedding newly-seen Jobs.
 
 **Unauthoritative Board** (ADR-0053):
-A **Board** whose scraped list this run cannot be read as its complete set of openings — the scraper gave up mid-crawl and reported the list truncated, or the scrape raised. A shortfall the scraper can *measure* against the Board's own stated total no longer qualifies on its own: at or above `MIN_AUTHORITATIVE_SHARE` (0.99) of that total the list stays authoritative and the few missing ids are left to **Unconfirmed**, so only a hard cap, an unmeasurable shortfall, or a loss past the tolerance reaches this set (ADR-0124). A property of the run, not of the Board: the same Board is authoritative again on the next scrape that finishes. This set is the one thing the scrape tells **Eviction**, written afresh every run to `data/state/unauthoritative_boards.json` (`scrape_join.write_unauthoritative_boards`, read back by `index_plan.read_unauthoritative_boards`) and subtracted from the eviction scope.
+A **Board** whose scraped list this run cannot be read as its complete set of openings — the scraper gave up mid-crawl and reported the list truncated, or the scrape raised. A shortfall the scraper can *measure* against the Board's own stated total no longer qualifies on its own: at or above `MIN_AUTHORITATIVE_SHARE` (0.99) of that total the list stays authoritative and the few missing ids are left to **Unconfirmed**, so only a hard cap, an unmeasurable shortfall, or a loss past the tolerance reaches this set (ADR-0121). A property of the run, not of the Board: the same Board is authoritative again on the next scrape that finishes. This set is the one thing the scrape tells **Eviction**, written afresh every run to `data/state/unauthoritative_boards.json` (`scrape_join.write_unauthoritative_boards`, read back by `index_plan.read_unauthoritative_boards`) and subtracted from the eviction scope.
 _Avoid_: failed Board, partial Board — a truncated Board still returned real Jobs and they are still indexed; it is only the absences from its list that cannot be trusted.
 
 **Unconfirmed** (ADR-0083):
@@ -250,7 +250,7 @@ _Avoid_: reading it as a probability, or re-scaling it per results page — the 
 ### Résumé builder
 
 **Résumé document** (ADR-0123):
-The structured résumé an Account builds on the Résumé tab: a tree of **Component**s, the id of one **Layout**, and the **Content** map holding every word. Kept in that Account's own browser and nowhere else — HeadStart's servers never hold one, which is the same rule ADR-0041 and ADR-0107 already state for the **Résumé**.
+The structured résumé an Account builds on the Résumé tab: a tree of **Component**s, the id of one **Layout**, and the **Content** map holding every word. Kept in that Account's own browser and nowhere else — HeadStart's servers never hold one, which is the same rule ADR-0041 already states for the **Résumé**.
 _Avoid_: **Résumé** — that names the transient text pasted in for **Profile** extraction. Different object, different lifetime, and the two are one letter apart in conversation, so say which one you mean.
 
 **Component** (ADR-0123):
@@ -268,6 +268,14 @@ _Avoid_: data, text — both are used loosely elsewhere in this document.
 **Finding** (ADR-0123):
 One piece of advice a **Layout**'s rules produce about a **Résumé document** — an error, a warning or a note, usually attached to the Component it is about. Advice, never a lock: the page prints whether or not the findings are cleared.
 _Avoid_: error, validation failure — a Finding never stops anything, and the Headless Headhunter rules it usually reports are a method, not a specification.
+
+**Tailoring** (ADR-0124):
+One job application's version of a **Résumé document**: which **Component**s it rewords, which it leaves out, and the **Job** it was written for where one is known. It stores *differences*, never a copy — so a sentence fixed on the master still reaches every Tailoring that never disagreed with it, which is the entire reason it is not a duplicate document. A document with no Tailoring active is showing its **master**.
+_Avoid_: version, copy, branch — "version" is what the UI calls it for users, but in this document a Tailoring is specifically the *difference set*, and calling it a copy describes the thing it was designed not to be.
+
+**Variant** (ADR-0124):
+One alternate wording of one **Component**, held against that Component's id and used by whichever **Tailoring** picked it. Partial: it carries only the fields that differ from the master's **Content**. Created by copy-on-write — editing a block while a Tailoring is active forks one on the first keystroke, so the master is never edited by accident.
+_Avoid_: override, revision — an override suggests it replaces the whole record, and it does not.
 
 ### Pipeline scheduling and sharding
 

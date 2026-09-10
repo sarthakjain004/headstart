@@ -15,6 +15,7 @@
   const Layouts = root.ResumeLayouts;
   const Repo = root.ResumeRepository;
   const Export = root.ResumeExport;
+  const Decorators = root.ResumeDecorators;
   const Cmd = Doc.Commands;
   const esc = Layouts.esc;
 
@@ -26,6 +27,9 @@
   let zoom = 1;
   let booted = false;
   let savedTimer = null;
+  /* The terms the Keywords pane last checked. They decorate the preview so the answer to "is this
+     keyword near the top" is visible on the page, not just tallied in the rail. */
+  let keywordTerms = [];
 
   const doc = () => store && store.get();
   /* What the reader sees: the master, or the active version with its words merged in and its
@@ -50,6 +54,8 @@
        paper cropped to the text column they landed outside it and were clipped away by the
        scrolling wrapper — present in the DOM, impossible to grab. */
     paper.style.width = page.width + page.unit;
+    /* At least one sheet, and as many as the content needs — `minHeight` rather than `height`,
+       so a three-page résumé is three pages of paper with the cuts drawn on it. */
     paper.style.minHeight = page.height + page.unit;
     paper.style.padding = page.margin + page.unit;
     paper.style.transform = 'scale(' + zoom + ')';
@@ -70,8 +76,15 @@
     sheet.textContent = lay.css(Layouts.themeFor(lay, d), '#rb-paper .rb-doc');
 
     const shown = view();
-    paper.innerHTML = Layouts.renderDocument(lay, shown);
+    /* Decorated for the preview only. Exports resolve the layout from the registry by id, so a
+       downloaded résumé never carries a highlight or a version marker. */
+    const dressed = Decorators.compose(lay, [
+      Decorators.highlight(keywordTerms),
+      Decorators.tailored(d),
+    ]);
+    paper.innerHTML = Layouts.renderDocument(dressed, shown);
     decorate(paper, lay, shown);
+    paintPageBreaks(paper, lay);
 
     el('rb-name').value = d.name || '';
     versionPaint();
@@ -110,6 +123,64 @@
       if (granted.includes('box')) {
         node.appendChild(handle('box', '', 'Drag to resize'));
       }
+    });
+  }
+
+  /* ---- page breaks -------------------------------------------------------------------------
+     The preview is one continuous sheet, but the printer is not: it cuts every
+     `height - 2 * margin` of content, and `break-inside: avoid` on an entry pushes a whole entry
+     down rather than splitting it. A résumé writer's first question is "where does page one
+     end", so the preview draws the cuts instead of leaving them to be discovered in the PDF. */
+
+  /** Where the printer will cut, as unscaled px from the top of the document's content box. */
+  function pageBreaks(paper, lay) {
+    const origin = paper.querySelector('.rb-doc');
+    if (!origin) return [];
+    const perPage = (lay.page.height - 2 * lay.page.margin) * (paper.offsetWidth / lay.page.width);
+    if (!(perPage > 0)) return [];
+    const total = origin.offsetHeight;
+    if (total <= perPage + 1) return [];
+
+    /* Blocks the stylesheets mark unbreakable. Any layout's entry class counts — a layout that
+       adds another simply gets a slightly coarser estimate, never a wrong page count. */
+    const atoms = Array.from(origin.querySelectorAll('.hh-entry, .tc-entry, .cv-entry, .rb-entry'));
+    const top0 = origin.getBoundingClientRect().top;
+    const scale = origin.getBoundingClientRect().height / (origin.offsetHeight || 1) || 1;
+    const boxOf = e => {
+      const r = e.getBoundingClientRect();
+      return { top: (r.top - top0) / scale, bottom: (r.bottom - top0) / scale };
+    };
+
+    const breaks = [];
+    let bottom = perPage;
+    const guard = Math.ceil(total / perPage) + 4;   // a cut can only move up, so this terminates
+    for (const atom of atoms) {
+      if (breaks.length > guard) break;
+      const box = boxOf(atom);
+      while (box.top >= bottom) { breaks.push(bottom); bottom += perPage; }
+      if (box.bottom > bottom && box.top < bottom && box.bottom - box.top <= perPage) {
+        /* It would straddle the cut and it fits on a page of its own, so the printer moves the
+           whole block down — exactly what `break-inside: avoid` does. */
+        breaks.push(box.top);
+        bottom = box.top + perPage;
+      }
+    }
+    while (bottom < total && breaks.length <= guard) { breaks.push(bottom); bottom += perPage; }
+    return breaks;
+  }
+
+  function paintPageBreaks(paper, lay) {
+    paper.querySelectorAll('.rb-break').forEach(e => e.remove());
+    const origin = paper.querySelector('.rb-doc');
+    if (!origin) return;
+    const offsetTop = origin.offsetTop;
+    pageBreaks(paper, lay).forEach((y, i) => {
+      const marker = document.createElement('div');
+      marker.className = 'rb-break';
+      marker.style.top = (offsetTop + y) + 'px';
+      marker.dataset.label = 'Page ' + (i + 2);
+      marker.setAttribute('aria-hidden', 'true');
+      paper.appendChild(marker);
     });
   }
 
@@ -243,7 +314,7 @@
     } else if (g.kind === 'move') {
       if (g.target) {
         if (g.target.parentId == null && g.target.slot) store.dispatch(Cmd.setSlot(g.id, g.target.slot));
-        store.dispatch(Cmd.moveNode(g.id, g.target.parentId, g.target.index));
+        store.dispatch(Cmd.moveNode(g.id, g.target.parentId, masterIndex(g.target)));
       } else paint();
     } else if (g.kind === 'spaceAfter') {
       store.dispatch(Cmd.setGeometry(g.id, {
@@ -277,14 +348,20 @@
     Doc.walk(dragged, n => inside.add(n.id));
 
     const points = [];
+    /* A drop point names the sibling to land BEFORE (or null for "at the end"), never a
+       positional index. The DOM the pointer is over is the RESOLVED document — under a version
+       that leaves blocks out, its indices are short by one per hidden sibling, and applying them
+       to the master dropped the block in the wrong place. A node id survives the translation;
+       a number does not. */
     const addRun = (containerEl, kids, parentId, slot) => {
       if (!containerEl) return;
       const rows = kids.map(k => k.getBoundingClientRect());
-      rows.forEach((r, i) => points.push({ parentId, slot, index: i, x: r.left + r.width / 2, y: r.top }));
+      rows.forEach((r, i) => points.push({
+        parentId, slot, beforeId: kids[i].dataset.node, x: r.left + r.width / 2, y: r.top }));
       const last = rows[rows.length - 1];
       const box = containerEl.getBoundingClientRect();
       points.push({
-        parentId, slot, index: rows.length,
+        parentId, slot, beforeId: null,
         x: last ? last.left + last.width / 2 : box.left + box.width / 2,
         y: last ? last.bottom : box.top + 8,
       });
@@ -313,6 +390,16 @@
         id, null);
     });
     return points;
+  }
+
+  /** Where `point` lands in the master document — the tree the Command will actually edit. */
+  function masterIndex(point) {
+    const d = doc();
+    const parent = point.parentId ? Doc.find(d, point.parentId) : d.root;
+    if (!parent) return null;
+    if (!point.beforeId) return parent.children.length;
+    const at = parent.children.findIndex(c => c.id === point.beforeId);
+    return at < 0 ? parent.children.length : at;
   }
 
   function nearestDrop(points, x, y) {
@@ -362,6 +449,11 @@
     el('rb-version-del').hidden = !d.activeTailoring;
   }
 
+  /* Rebuild every rail pane EXCEPT the one the user is currently typing in — replacing a field's
+     HTML under the caret loses the caret, and the position with it. Keyed on focus rather than on
+     a "the last change came from the rail" flag, which is what this was first: that flag froze the
+     WHOLE rail on every keystroke, so the Checks panel sat on a stale list while the badge beside
+     it counted the new one. Focus is the fact that actually matters, and it is readable. */
   function railPaint() {
     const active = document.activeElement;
     const holdsCaret = pane => pane && active && pane !== active && pane.contains(active);
@@ -411,7 +503,7 @@
     } else {
       const spec = Components.get(node.type);
       const overridden = !!(tailoring && (tailoring.picks || {})[node.id]);
-      const left_out = !!(tailoring && (tailoring.hidden || []).includes(node.id));
+      const leftOut = !!(tailoring && (tailoring.hidden || []).includes(node.id));
       out.push('<div class="rb-sel"><b>' + esc(spec.label) + '</b>' +
         (overridden ? '<span class="rb-tag">tailored</span>' : '') +
         (spec.blurb ? '<p class="note">' + esc(spec.blurb) + '</p>' : '') + '</div>');
@@ -421,7 +513,7 @@
         out.push('<div class="rb-actions">' +
           (overridden ? '<button class="ghost rb-mini" data-act="unfork">Use the master’s words</button>' : '') +
           '<button class="ghost rb-mini" data-act="hide">' +
-          (left_out ? 'Put back in this version' : 'Leave out of this version') + '</button></div>');
+          (leftOut ? 'Put back in this version' : 'Leave out of this version') + '</button></div>');
       }
 
       /* Which column a top-level block sits in — only offered where the layout has more than
@@ -546,6 +638,7 @@
 
   function keywordCheck() {
     const d = view();
+    const lay = layout();
     const raw = el('rb-kw').value || '';
     const terms = raw.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean);
     const out = el('rb-kw-out');
@@ -555,22 +648,51 @@
       return;
     }
     const text = Export.plainText(d).toLowerCase();
-    /* "First half of the first page" is measured in characters of the résumé's own text, not in
-       rendered inches — an estimate, and the summary line says so rather than implying the
-       figure is exact. */
-    const early = text.slice(0, Math.floor(text.length * 0.42));
+
+    /* "The first half of the first page" is measured on the PAGE, in inches, against the
+       rendered document — not as a share of the whole text. The share version scored a hit
+       halfway down page three of a three-page résumé as "near the top", which is the opposite
+       of what the guide asks for. This is exact now that the preview is dimensionally the
+       printed page. */
+    const halfOfPageOne = (lay.page.height - 2 * lay.page.margin) / 2;
+    const ppi = pxPerInch();
+    const paper = el('rb-paper');
+    const origin = paper.querySelector('.rb-doc');
+    const blocks = [];
+    if (origin && ppi) {
+      const top0 = origin.getBoundingClientRect().top;
+      paper.querySelectorAll('[data-node]').forEach(node => {
+        blocks.push({
+          text: (node.textContent || '').toLowerCase(),
+          top: (node.getBoundingClientRect().top - top0) / ppi,
+        });
+      });
+    }
+    /** How far down the page a term first appears, in inches, or null if it is absent. */
+    const firstAt = needle => {
+      let best = null;
+      for (const b of blocks) {
+        if (b.text.includes(needle) && (best === null || b.top < best)) best = b.top;
+      }
+      return best;
+    };
+
     const rows = terms.map(term => {
       const needle = term.toLowerCase();
-      return { term, found: text.includes(needle), early: early.includes(needle) };
+      const at = firstAt(needle);
+      return { term, found: text.includes(needle), early: at !== null && at < halfOfPageOne };
     });
+    /* Repaint so the page marks them. Set before the paint, cleared by emptying the box. */
+    keywordTerms = terms;
     const hits = rows.filter(r => r.found).length;
     const earlyHits = rows.filter(r => r.early).length;
     el('rb-kw-summary').textContent = hits + ' of ' + rows.length + ' present · ' +
-      Math.round((earlyHits / rows.length) * 100) + '% near the top (the guide asks for 75%)';
+      Math.round((earlyHits / rows.length) * 100) + '% in the top half of page one ' +
+      '(the guide asks for 75%)';
     out.innerHTML = rows.map(r =>
       '<div class="rb-kwrow rb-kw-' + (r.early ? 'early' : r.found ? 'late' : 'missing') + '">' +
       '<span>' + esc(r.term) + '</span><span class="rb-kwtag">' +
-      (r.early ? 'near the top' : r.found ? 'present, further down' : 'missing') +
+      (r.early ? 'top half, page one' : r.found ? 'present, further down' : 'missing') +
       '</span></div>').join('');
   }
 
@@ -633,24 +755,32 @@
       return;
     }
     const d = doc();
+    /* Through the active version, like every other edit — filling from the profile while a
+       version is on screen used to write straight to the master, which is the one place in the
+       editor where what you saw change was not what you were editing. */
+    const into = activeTailoring();
     const header = Doc.flatten(d).find(n => n.type === 'header');
-    if (header && profile.location) store.dispatch(Cmd.setContent(header.id, { locationLine: profile.location }));
+    if (header && profile.location) {
+      store.dispatch(Cmd.setContentFor(header.id, { locationLine: profile.location }, into));
+    }
     if (profile.skills) {
       const line = Doc.flatten(d).find(n => n.type === 'skills_line');
-      if (line) store.dispatch(Cmd.setContent(line.id, { value: profile.skills }));
+      if (line) store.dispatch(Cmd.setContentFor(line.id, { value: profile.skills }, into));
       else {
         store.dispatch(Cmd.addNode(null, 'skills_line'));
         const added = Doc.flatten(doc()).filter(n => n.type === 'skills_line').pop();
-        if (added) store.dispatch(Cmd.setContent(added.id, { label: 'Skills', value: profile.skills }));
+        if (added) {
+          store.dispatch(Cmd.setContentFor(added.id, { label: 'Skills', value: profile.skills }, into));
+        }
       }
     }
     if (profile.education) {
       const entry = Doc.flatten(doc()).find(n => n.type === 'education_entry');
-      if (entry) store.dispatch(Cmd.setContent(entry.id, { credential: profile.education }));
+      if (entry) store.dispatch(Cmd.setContentFor(entry.id, { credential: profile.education }, into));
     }
     if (profile.title) {
       const job = Doc.flatten(doc()).find(n => n.type === 'work_entry');
-      if (job) store.dispatch(Cmd.setContent(job.id, { role: profile.title }));
+      if (job) store.dispatch(Cmd.setContentFor(job.id, { role: profile.title }, into));
     }
     note.textContent = 'Filled what the profile holds. It keeps no contact details, so name, ' +
       'phone and email are still yours to type.';
@@ -877,15 +1007,19 @@
   }
 
   /** Zoom so the sheet fits the space it has. A US Letter page is 816 CSS px wide and the stage
-   *  is narrower than that on most laptops, so 100% opened with the page clipped and a scrollbar
-   *  across it. Only on the way in — after that the zoom is the user's. */
+   *  is narrower than that on most laptops — and far narrower on a phone. The sheet keeps its
+   *  true width (see `flex: 0 0 auto` in resume.css); this is what makes it fit, because scaling
+   *  preserves the line breaks the printed page will have and shrinking does not.
+   *
+   *  The floor is 0.25 rather than 0.5 because a 390px phone needs about 0.42 — clamping higher
+   *  left the tab scrolling sideways. Only on the way in; after that the zoom is the user's. */
   function fitToWidth() {
     const paper = el('rb-paper');
     const wrap = paper.parentElement;
     const available = wrap.clientWidth - 24;
     const natural = paper.offsetWidth;
     if (!available || !natural) return;
-    zoom = Math.max(0.5, Math.min(1, Math.round((available / natural) * 20) / 20));
+    zoom = Math.max(0.25, Math.min(1, Math.floor((available / natural) * 20) / 20));
     el('rb-zoom').value = String(Math.round(zoom * 100));
   }
 

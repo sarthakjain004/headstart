@@ -1,6 +1,6 @@
 # ADR-0123: A résumé is three layers — structure, layout, and words
 
-**Status:** accepted · **Date:** 2026-09-09 · **Upholds ADR-0107/0041 (HeadStart's servers never store a Résumé). Sibling of ADR-0116 (the app's own palette stops at the paper's edge)**
+**Status:** accepted · **Date:** 2026-09-09 · **Upholds ADR-0041 (the Résumé is read once and discarded; HeadStart's servers never store one). Sibling of ADR-0116 (the app's own palette stops at the paper's edge)**
 
 ## Context
 
@@ -48,14 +48,26 @@ layout ignores is kept, not deleted, so a trip through a strict layout and back 
 
 **4. Patterns, where each earns its place.** Composite (the node tree), Builder (assembly, so ids
 and content cannot drift apart), Registry/Factory (the two extension points), Strategy (per-shape
-rendering), Repository (persistence, below), Command (a named operation vocabulary — every gesture,
-including a drag, is one, which is why undo covers drags), Observer (store → views), Visitor (the
-exporters and the rule runner, dispatching on shape). Undo is a bounded stack of prior documents —
-a memento, not inverse operations: undoing a subtree deletion needs the subtree back, so an inverse
-would have carried a snapshot anyway under a name that hid it.
+rendering), **Decorator** (`resume_decorators.js` — a decorator has a render strategy's exact
+shape and wraps one, so a decorated Layout is still a Layout and the renderer cannot tell),
+Repository (persistence, below), Command (a named operation vocabulary — every gesture, including a
+drag, is one, which is why undo covers drags), Observer (store → views), Visitor (the exporters and
+the rule runner, dispatching on shape). Undo is a bounded stack of prior documents — a memento, not
+inverse operations: undoing a subtree deletion needs the subtree back, so an inverse would have
+carried a snapshot anyway under a name that hid it.
 
-**5. The words stay in the browser.** ADR-0041 and ADR-0107 already say HeadStart's servers do not
-store a Résumé. The builder honours that: `localStorage`, no endpoint, no upload. The Repository
+The Decorator is the one worth justifying, because it could have been a flag. Highlighting the
+job's keywords on the page, and marking which blocks a version has reworded, are things a *reader*
+wants at a particular moment; neither is a property of any layout. As flags they would have been
+written into all three layouts and into every layout added afterwards. As decorators they are
+written once and apply to layouts that predate them. They are also preview-only for free: exports
+resolve the layout from the registry by id, so a downloaded résumé cannot carry an adornment.
+One consequence is worth recording — a node's rendered output *contains* its children's, so a
+parent's decorator sees markup a child's decorator already produced. `highlight` is therefore
+idempotent; a decorator that is not must say so.
+
+**5. The words stay in the browser.** ADR-0041 already says HeadStart's servers do not
+store a Résumé — it is read once by the extraction call and discarded. The builder honours that: `localStorage`, no endpoint, no upload. The Repository
 interface is the seam that makes this a choice rather than a weld, and `MemoryRepository` is a real
 fallback for browsers that block storage, not only a test double — with a visible warning, because
 a builder that silently forgets is worse than one that says it will.
@@ -77,7 +89,7 @@ straitjacket; silence would make "Headless Headhunter" a label rather than a cla
 | **A (taken)** | Three layers, shape dispatch, layout-granted affordances | the same words re-lay under any layout; a component and a layout are each one file; the template's rules are data | more moving parts than a form; the shape vocabulary is a small up-front commitment |
 | B | One templating layer: each template renders the whole document | simplest to write the first template | the second template duplicates the first; adding a component edits every template; no separation to test |
 | C | Free canvas only, like a design tool | maximal flexibility, one interaction model | it is the wrong default for the one method this tab exists to teach, and the guide says so plainly |
-| D | Server-rendered PDF (WeasyPrint on the Space) | exact typography, no print dialog | a heavy dependency on an image already carrying torch, and the résumé would have to be uploaded — which ADR-0107 forbids |
+| D | Server-rendered PDF (WeasyPrint on the Space) | exact typography, no print dialog | a heavy dependency on an image already carrying torch, and the résumé would have to be uploaded — which ADR-0041's rule forbids |
 
 ## Consequences
 
@@ -93,4 +105,12 @@ could assert the capability contract and never be tested on it.
 
 Editing is through the rail, not on the page. Direct manipulation covers position and size; words
 are typed into fields beside the preview. Inline editing on the paper is the obvious next step and
-is deliberately not half-built here.
+is deliberately not half-built here. Reordering has no keyboard equivalent yet — selection does,
+through the outline — which is the feature's clearest accessibility gap.
+
+The preview is the printed page, dimensionally: the sheet holds its true width and zoom does the
+fitting, because a sheet that shrinks re-wraps the text and then the page on screen is not the page
+that prints. That mattered more than it looks — one of this layout's own checks is "no bullet over
+three lines", and a preview two-thirds of the correct width shows six lines where four will print.
+The cuts the printer will make are drawn on the preview, simulating the same `break-inside: avoid`
+the stylesheet asks for; the count is checked against a real PDF rather than asserted.
