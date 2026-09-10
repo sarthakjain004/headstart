@@ -18,12 +18,17 @@
   const render = {
     byShape: Object.assign({}, plain, {
       section: ctx => ctx.el('section', { class: 'tc-section' },
-        '<h2 class="tc-h">' + ctx.esc(ctx.content.title) + '</h2>' + L.groupChildren(ctx, 'tc-list')),
-      bullet: ctx => ctx.el('li', { class: 'tc-bullet' }, ctx.escLines(ctx.content.text)),
-      text: ctx => ctx.el('p', { class: 'tc-note' }, ctx.escLines(ctx.content.text)),
-      line: ctx => ctx.el('p', { class: 'tc-line' },
-        (ctx.content.label ? '<b>' + ctx.esc(ctx.content.label) + '</b><br>' : '') +
-        ctx.escLines(ctx.content.value)),
+        '<h2 class="tc-h">' + ctx.escLines((L.headAndRest(ctx).head || {}).value || '') + '</h2>' +
+        L.groupChildren(ctx, 'tc-list')),
+      bullet: ctx => ctx.el('li', { class: 'tc-bullet' }, ctx.textOf(' ')),
+      text: ctx => ctx.el('p', { class: 'tc-note' }, ctx.textOf(' ')),
+      line: ctx => {
+        const { head, rest } = L.headAndRest(ctx);
+        if (!head) return ctx.el('p', { class: 'tc-line' }, '');
+        return ctx.el('p', { class: 'tc-line' }, rest.length
+          ? '<b>' + ctx.escLines(head.value) + '</b><br>' + rest.map(f => ctx.escLines(f.value)).join(' &middot; ')
+          : ctx.escLines(head.value));
+      },
     }),
     byType: {
       header: ctx => {
@@ -32,7 +37,12 @@
         return ctx.el('header', { class: 'tc-head' },
           '<h1 class="tc-name">' + ctx.esc(c.fullName) + '</h1>' +
           (line ? '<p class="tc-contact">' + line + '</p>' : '') +
-          (c.locationLine ? '<p class="tc-contact">' + ctx.esc(c.locationLine) + '</p>' : ''));
+          (c.locationLine ? '<p class="tc-contact">' + ctx.esc(c.locationLine) + '</p>' : '') +
+          /* The header owns a `languages` field and this renderer forgot it, so a résumé that
+             listed its languages lost them on arriving here — measured over one node of every
+             catalogue type, 2026-09-10. A `byType` renderer may name fields; naming all but one
+             of them is how a field goes missing in one layout and nowhere else. */
+          (c.languages ? '<p class="tc-contact">' + ctx.esc(c.languages) + '</p>' : ''));
       },
       work_entry: ctx => ctx.el('div', { class: 'tc-entry' },
         '<div class="tc-role">' + ctx.esc(ctx.content.role || '') + '</div>' +
