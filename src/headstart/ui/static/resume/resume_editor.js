@@ -446,6 +446,10 @@
      it counted the new one. Focus is the fact that actually matters, and it is readable. */
   /** The version picker: the master plus every Tailoring, and the delete button only when one
    *  is active. */
+  /* "Version" is what this control is called for users; **Tailoring** is what the model calls the
+     same thing (CONTEXT.md). The two words are deliberate and this is the only place they meet —
+     everything below the view says `tailoring`, so a reader seeing both in one file is not looking
+     at two concepts. */
   function versionPaint() {
     const d = doc();
     const pick = el('rb-version');

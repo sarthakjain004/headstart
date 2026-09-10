@@ -265,13 +265,21 @@ _Avoid_: theme, template, skin — a Layout carries arrangement *and* looks *and
 The words. A flat map from node id to that Component's field values, held outside the tree on purpose so a **Layout** change cannot reach it.
 _Avoid_: data, text — both are used loosely elsewhere in this document.
 
+**Rule** (ADR-0123):
+One named check a **Layout** declares — "Three to eight bullets a job", "Month and year on every job". A Rule reads a **Résumé document** and returns **Finding**s; it changes nothing. Rules belong to the Layout because they are its method's opinions, not the **Component**'s: the same bullet is fine under one Layout and short under another.
+_Avoid_: validator, constraint — both suggest something that can refuse, and a Rule cannot.
+
 **Finding** (ADR-0123):
-One piece of advice a **Layout**'s rules produce about a **Résumé document** — an error, a warning or a note, usually attached to the Component it is about. Advice, never a lock: the page prints whether or not the findings are cleared.
-_Avoid_: error, validation failure — a Finding never stops anything, and the Headless Headhunter rules it usually reports are a method, not a specification.
+One piece of advice a **Rule** produced about a **Résumé document** — an error, a warning or a note, usually attached to the **Component** it is about. Advice, never a lock: the page prints whether or not the findings are cleared. The tab calls the panel *Checks*, which is the word to use with users.
+_Avoid_: error, validation failure — a Finding never stops anything, and the Headless Headhunter rules it usually reports are a method, not a specification. And say which findings you mean out loud: this repo's own review workflow (`code-review`, `security-review`) produces "findings" about *code* all day, and the two are unrelated.
 
 **Tailoring** (ADR-0124):
 One job application's version of a **Résumé document**: which **Component**s it rewords, which it leaves out, and the **Job** it was written for where one is known. It stores *differences*, never a copy — so a sentence fixed on the master still reaches every Tailoring that never disagreed with it, which is the entire reason it is not a duplicate document. A document with no Tailoring active is showing its **master**.
 _Avoid_: version, copy, branch — "version" is what the UI calls it for users, but in this document a Tailoring is specifically the *difference set*, and calling it a copy describes the thing it was designed not to be.
+
+**Master** (ADR-0124):
+A **Résumé document** as it reads with no **Tailoring** active: the base **Content**, every block present. The thing every Tailoring is a difference *from*, and what a job application gets when no version was made for it. Editing the master reaches every Tailoring that has not overridden the block being edited — which is the property the whole model exists for.
+_Avoid_: original, default, main — "original" implies the Tailorings are copies of it, which is exactly what they are not.
 
 **Variant** (ADR-0124):
 One alternate wording of one **Component**, held against that Component's id and used by whichever **Tailoring** picked it. Partial: it carries only the fields that differ from the master's **Content**. Created by copy-on-write — editing a block while a Tailoring is active forks one on the first keystroke, so the master is never edited by accident.
