@@ -374,6 +374,13 @@
       },
     }),
 
+    /** Which sheet this résumé is printed on. A plain lookup key — Layer 2 turns it into
+     *  geometry, and an unreadable one falls back there rather than being validated here. */
+    setPaper: id => ({
+      name: 'Change paper size',
+      apply: d => { d.paper = id; return d; },
+    }),
+
     activateTailoring: id => ({
       name: id ? 'Switch version' : 'Back to the master',
       apply: d => { d.activeTailoring = id; return d; },

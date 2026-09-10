@@ -48,6 +48,11 @@
         <label class="rb-vh" for="rb-layout">Layout</label>
         <select id="rb-layout" class="rb-layout" title="How the same words are arranged and styled"></select>
         <span class="note" id="rb-layout-note"></span>
+        {# The sheet, beside the layout, because it is the same kind of choice and the wrong one
+           re-wraps every bullet. Letter is the default only because it is what the templates
+           were written against, not because it is the common case. #}
+        <label class="rb-vh" for="rb-paper-size">Paper size</label>
+        <select id="rb-paper-size" class="rb-layout" title="The sheet this résumé is printed on"></select>
         <span class="note rb-credit" id="rb-layout-credit" hidden></span>
         <span class="spacer"></span>
         <label class="rb-zoom"><span class="rb-vh">Zoom</span>

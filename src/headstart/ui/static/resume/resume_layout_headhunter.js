@@ -256,7 +256,7 @@
       id: 'three-lines', label: 'No bullet over three lines',
       check(doc, api) {
         const out = [];
-        const cap = charsPerLine(api.layout.page, +api.theme.bodySize || CANON.bodySize, 0.3) * 3;
+        const cap = charsPerLine(api.page, +api.theme.bodySize || CANON.bodySize, 0.3) * 3;
         for (const n of api.nodesOfType('bullet')) {
           const text = String(api.content(n.id).text || '');
           if (text.length > cap) {

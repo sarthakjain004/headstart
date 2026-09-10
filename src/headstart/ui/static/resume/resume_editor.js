@@ -47,7 +47,9 @@
     if (!d || !lay) return;
     const paper = el('rb-paper');
 
-    const page = lay.page;
+    /* The sheet the DOCUMENT chose. Everything below measures against it, so a résumé set to A4
+       previews, breaks and prints on A4 rather than on the Letter every layout declares. */
+    const page = Layouts.pageFor(lay, d);
     /* The whole sheet, margins included, rather than just the text column. Two reasons, and the
        second one is not cosmetic: it looks like the page that comes out of the printer, and it
        gives the drag handles somewhere to sit. Handles hang off a block's left edge; with the
@@ -84,13 +86,14 @@
     ]);
     paper.innerHTML = Layouts.renderDocument(dressed, shown);
     decorate(paper, lay, shown);
-    paintPageBreaks(paper, lay);
+    paintPageBreaks(paper, page);
 
     el('rb-name').value = d.name || '';
     versionPaint();
     el('rb-undo').disabled = !store.canUndo();
     el('rb-redo').disabled = !store.canRedo();
     el('rb-layout-note').textContent = lay.summary || '';
+    el('rb-paper-size').value = (Layouts.PAPERS.find(x => x.id === d.paper) || Layouts.PAPERS[0]).id;
     /* Credit where the reader can see it. `hidden` rather than an empty span, so a layout that
        is nobody's method in particular leaves no gap beside the picker. */
     const credit = el('rb-layout-credit');
@@ -138,10 +141,10 @@
      end", so the preview draws the cuts instead of leaving them to be discovered in the PDF. */
 
   /** Where the printer will cut, as unscaled px from the top of the document's content box. */
-  function pageBreaks(paper, lay) {
+  function pageBreaks(paper, page) {
     const origin = paper.querySelector('.rb-doc');
     if (!origin) return [];
-    const perPage = (lay.page.height - 2 * lay.page.margin) * (paper.offsetWidth / lay.page.width);
+    const perPage = (page.height - 2 * page.margin) * (paper.offsetWidth / page.width);
     if (!(perPage > 0)) return [];
     const total = origin.offsetHeight;
     if (total <= perPage + 1) return [];
@@ -174,12 +177,12 @@
     return breaks;
   }
 
-  function paintPageBreaks(paper, lay) {
+  function paintPageBreaks(paper, page) {
     paper.querySelectorAll('.rb-break').forEach(e => e.remove());
     const origin = paper.querySelector('.rb-doc');
     if (!origin) return;
     const offsetTop = origin.offsetTop;
-    pageBreaks(paper, lay).forEach((y, i) => {
+    pageBreaks(paper, page).forEach((y, i) => {
       const marker = document.createElement('div');
       marker.className = 'rb-break';
       marker.style.top = (offsetTop + y) + 'px';
@@ -219,7 +222,7 @@
     /* Measured, not assumed: it already includes the zoom transform, and a panel that is hidden
        measures zero — which is why `shown()` re-paints when the tab opens. */
     /* `border-box` is the app's global default, so the measured width IS the sheet width. */
-    return rect.width > 0 ? rect.width / lay.page.width : 96;
+    return rect.width > 0 ? rect.width / Layouts.pageFor(lay, doc()).width : 96;
   }
 
   function onPointerDown(e) {
@@ -732,7 +735,8 @@
        halfway down page three of a three-page résumé as "near the top", which is the opposite
        of what the guide asks for. This is exact now that the preview is dimensionally the
        printed page. */
-    const halfOfPageOne = (lay.page.height - 2 * lay.page.margin) / 2;
+    const page = Layouts.pageFor(lay, d);
+    const halfOfPageOne = (page.height - 2 * page.margin) / 2;
     const ppi = pxPerInch();
     const paper = el('rb-paper');
     const origin = paper.querySelector('.rb-doc');
@@ -890,6 +894,11 @@
       selectedId = null;
       changeLayout(e.target.value);
     });
+
+    el('rb-paper-size').innerHTML = Layouts.PAPERS.map(p =>
+      '<option value="' + esc(p.id) + '">' + esc(p.label) + '</option>').join('');
+    el('rb-paper-size').addEventListener('change', e =>
+      store.dispatch(Cmd.setPaper(e.target.value)));
 
     el('rb-version').addEventListener('change', e => {
       selectedId = null;

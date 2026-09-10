@@ -484,3 +484,46 @@ test('the download filename comes from the résumé’s own name, safely', () =>
   doc.name = '';
   assert.equal(ctx.ResumeExport.filename(doc, 'txt'), 'resume.txt');
 });
+
+/* ---- paper size ---------------------------------------------------------------------------
+   Every layout here is written for US Letter, which is the wrong sheet almost everywhere outside
+   North America — and HeadStart is deliberately not a North American product. The sheet is the
+   DOCUMENT's choice, not the layout's: the same template is printed on both. */
+
+test('a document chooses its paper, and every layout is laid out on the one it chose', () => {
+  const ctx = load(ALL);
+  const L = ctx.ResumeLayouts;
+  for (const lay of L.all()) {
+    assert.deepEqual(
+      [L.pageFor(lay, {}).width, L.pageFor(lay, {}).height], [8.5, 11], `${lay.id} default`);
+    const a4 = L.pageFor(lay, { paper: 'a4' });
+    assert.deepEqual([a4.width, a4.height], [8.27, 11.69], `${lay.id} on A4`);
+    assert.equal(a4.margin, lay.page.margin, 'the sheet changed, not the layout’s margin');
+    assert.equal(a4.unit, lay.page.unit);
+  }
+});
+
+test('an unreadable paper name falls back rather than laying out on nothing', () => {
+  const ctx = load(ALL);
+  const hh = ctx.ResumeLayouts.get(HH);
+  for (const paper of ['', null, undefined, 'foolscap', '<script>', 0]) {
+    assert.equal(ctx.ResumeLayouts.pageFor(hh, { paper }).width, 8.5, JSON.stringify(paper));
+  }
+});
+
+test('the printed file carries the sheet the document chose, not the layout’s own', () => {
+  const ctx = load(ALL);
+  const doc = example(ctx);
+  assert.ok(ctx.ResumeExport.standaloneHtml(doc).includes('8.5in 11in'));
+  doc.paper = 'a4';
+  const html = ctx.ResumeExport.standaloneHtml(doc);
+  assert.ok(html.includes('8.27in 11.69in'), 'the @page rule still says US Letter');
+  assert.ok(html.includes('width: 6.27in'), 'the text column was not re-measured for A4');
+});
+
+test('a rule that measures the page measures the sheet in use', () => {
+  const { ResumeHeadhunter: H } = load(ALL);
+  const letter = H.charsPerLine({ width: 8.5, margin: 1 }, 10.5, 0.3);
+  const a4 = H.charsPerLine({ width: 8.27, margin: 1 }, 10.5, 0.3);
+  assert.ok(a4 < letter, 'A4 is narrower, so fewer characters fit on a line and a bullet wraps sooner');
+});

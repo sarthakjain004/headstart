@@ -598,3 +598,23 @@ test('an empty sheet does not count faults before anything has been typed', () =
   assert.ok(!el('rb-badge').hidden, 'the checks never came back');
   assert.ok(el('rb-pane-checks').innerHTML.includes('rb-finding'));
 });
+
+/* ---- paper size ---- */
+
+test('choosing A4 re-lays the page, and it survives a reload', () => {
+  const { ctx, el } = loadEditor();
+  assert.equal(el('rb-paper').style.width, '8.5in', 'the tab did not open on the layout’s sheet');
+  assert.deepEqual(ctx.ResumeLayouts.PAPERS.map(p => p.id), ['letter', 'a4'],
+    'the picker offers whatever Layer 2 declares; this test names what it expects to find');
+
+  el('rb-paper-size').fire('change', { target: { value: 'a4' } });
+  assert.equal(el('rb-paper').style.width, '8.27in', 'the sheet on screen is still US Letter');
+  assert.equal(el('rb-paper').style.minHeight, '11.69in');
+  assert.equal(el('rb-paper-size').value, 'a4', 'the control does not show what is in force');
+
+  /* It is the document's, not the session's — so it comes back with the document. */
+  ctx.ResumeEditor.flush();
+  const saved = ctx.ResumeDocument.clone(ctx.ResumeEditor.current());
+  const back = loadEditor({ storage: fakeStorage([saved]) });
+  assert.equal(back.el('rb-paper').style.width, '8.27in', 'the sheet was a session setting, not the résumé’s');
+});
