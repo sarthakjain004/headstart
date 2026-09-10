@@ -1,5 +1,10 @@
 /* Tailoring — one résumé, many versions, each storing only what it changes (ADR-0124).
  *
+ * Covers `resume_document.js`'s tailoring half: the commands, `resolve()` and `contentOf()`. Its
+ * other half — the tree, the builder, the command vocabulary and the undo store — is in
+ * `resume_document.test.js`, and the filename says which is which because one module needed two
+ * suites, not because either is named after a feature.
+ *
  * The property worth guarding is not "a version can differ". It is that a version stores
  * DIFFERENCES: fixing a sentence on the master has to reach every version that never disagreed
  * with it, or the feature is whole-document copies wearing a better name, and every typo has to

@@ -21,7 +21,7 @@
   const registry = new Map();
   const order = [];
 
-  /* Its own copy of app.js's escape rather than a shared one, deliberately: these nine files are
+  /* Its own copy of app.js's escape rather than a shared one, deliberately: these ten files are
      the résumé builder and load independently of the search page's script, and a résumé must not
      stop being escaped because the tab it sits beside was refactored. Eight lines is a cheaper
      coupling than the alternative. */
@@ -283,6 +283,14 @@
       '<body><div class="rb-sheet">' + renderDocument(layout, doc) + '</div></body></html>';
   }
 
+  function nodesOf(doc) {
+    const out = [];
+    (function walkTree(node) {
+      for (const child of node.children || []) { out.push(child); walkTree(child); }
+    })(doc.root);
+    return out;
+  }
+
   /** Run a Layout's own rules over a document. Pure — no DOM — so the rule set can be tested
    *  as data rather than by reading a panel, which is how the Headless Headhunter checks are
    *  pinned against the guide's own worked example.
@@ -292,14 +300,6 @@
   /* Its own walk rather than ResumeDocument's. Layer 2 importing Layer 3 was the one place the
      layering this whole design rests on actually leaked, and the thing borrowed was six lines of
      tree recursion over a plain object — not worth the dependency it cost. */
-  function nodesOf(doc) {
-    const out = [];
-    (function walkTree(node) {
-      for (const child of node.children || []) { out.push(child); walkTree(child); }
-    })(doc.root);
-    return out;
-  }
-
   function runRules(layout, doc) {
     const all = nodesOf(doc);
     const api = {

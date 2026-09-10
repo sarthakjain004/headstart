@@ -201,7 +201,11 @@
             out.push({ level: 'error', nodeId: n.id, message: 'The guide asks for a phone number and an email on the contact line.' });
           }
           if (!String(c.locationLine || '').trim()) {
-            out.push({ level: 'warn', nodeId: n.id, message: 'Add work authorisation and city — "US Citizen in Los Angeles". Recruiters screen on both.' });
+            /* The city is asked for flatly; work authorisation is conditional in the guide —
+               "Put US Citizen/Green Card Holder (**if you are one**)" — so it is offered rather
+               than demanded. Telling every user to state a status they may not have is advice
+               the source never gave. */
+            out.push({ level: 'warn', nodeId: n.id, message: 'Say where you are — the city is enough. If you hold citizenship or a work permit worth stating, put it in front: "US Citizen in Los Angeles".' });
           }
         }
         return out;
@@ -256,7 +260,11 @@
       id: 'three-lines', label: 'No bullet over three lines',
       check(doc, api) {
         const out = [];
-        const cap = charsPerLine(api.page, +api.theme.bodySize || CANON.bodySize, 0.3) * 3;
+        /* The indent is a tunable spanning 0.1-0.8in, so reading it beats the 0.3 default it
+           used to hardcode: move the bullet indent and the "about N lines" figure was wrong by
+           up to half an inch of measure. */
+        const indent = +api.theme.bulletIndent || 0.3;
+        const cap = charsPerLine(api.page, +api.theme.bodySize || CANON.bodySize, indent) * 3;
         for (const n of api.nodesOfType('bullet')) {
           const text = String(api.content(n.id).text || '');
           if (text.length > cap) {
@@ -388,6 +396,11 @@
       },
     },
     {
+      /* NOT from the guide. This one comes from the Harvard / r/EngineeringResumes school, which
+         the guide never contradicts but never asks for either — it fires on openers like
+         "Worked…" that the guide plainly permits. It is therefore a `note`, and its message names
+         where it comes from, so a user following the Headless Headhunter method can see it is
+         someone else's opinion rather than a rule of the template they chose. */
       id: 'opening-verb', label: 'Every bullet opens with a strong verb',
       check(doc, api) {
         const out = [];

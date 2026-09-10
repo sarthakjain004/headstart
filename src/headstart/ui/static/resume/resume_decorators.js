@@ -18,8 +18,6 @@
 (function (root) {
   'use strict';
 
-  const Components = root.ResumeComponents;
-
   /** Escape a term for use inside a RegExp — a keyword like "C++" is otherwise a syntax error. */
   const forRegex = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -96,5 +94,5 @@
     });
   }
 
-  root.ResumeDecorators = { compose, highlight, tailored, inTextNodes };
+  root.ResumeDecorators = { compose, highlight, tailored };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

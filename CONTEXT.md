@@ -143,7 +143,7 @@ One entry in the allowlist: an address the owner has permitted, optionally carry
 _Avoid_: "allowlist entry" as a distinct concept — the allowlist _is_ the set of Invites.
 
 **Master** (ADR-0038):
-The Telegram chat that approves everyone else — claimed by the first `/start` the bot ever sees. Telegram's counterpart to the allowlist: the Invite path is the owner editing a file, the Master path is the owner answering `/allow` in a chat.
+The Telegram chat that approves everyone else — claimed by the first `/start` the bot ever sees. (Not the **Master résumé**, which is a different thing entirely; say the whole phrase for that one.) Telegram's counterpart to the allowlist: the Invite path is the owner editing a file, the Master path is the owner answering `/allow` in a chat.
 
 **Watermark**:
 The instant a Subscription was last sent a **Digest**. The next Digest carries only Jobs whose `first_seen` is strictly after it, so an irregular pipeline cadence can neither double-send nor skip a window. Advanced only once a Digest has been accepted for delivery.
@@ -250,7 +250,7 @@ _Avoid_: reading it as a probability, or re-scaling it per results page — the 
 ### Résumé builder
 
 **Résumé document** (ADR-0123):
-The structured résumé an Account builds on the Résumé tab: a tree of **Component**s, the id of one **Layout**, and the **Content** map holding every word. Kept in that Account's own browser and nowhere else — HeadStart's servers never hold one, which is the same rule ADR-0041 already states for the **Résumé**.
+The structured résumé an Account builds on the Résumé tab: a tree of **Component**s, the id of one **Layout**, and the **Content** map holding every word. Kept in that Account's own browser today, and nowhere else. ADR-0041's rule for the **Résumé** — read once, discarded — is why; ADR-0124 amends it for this record alone, so a Résumé document may reach HeadStart's store if the Account switches syncing on for it, per document, off by default.
 _Avoid_: **Résumé** — that names the transient text pasted in for **Profile** extraction. Different object, different lifetime, and the two are one letter apart in conversation, so say which one you mean.
 
 **Component** (ADR-0123):
@@ -277,9 +277,9 @@ _Avoid_: error, validation failure — a Finding never stops anything, and the H
 One job application's version of a **Résumé document**: which **Component**s it rewords, which it leaves out, and the **Job** it was written for where one is known. It stores *differences*, never a copy — so a sentence fixed on the master still reaches every Tailoring that never disagreed with it, which is the entire reason it is not a duplicate document. A document with no Tailoring active is showing its **master**.
 _Avoid_: version, copy, branch — "version" is what the UI calls it for users, but in this document a Tailoring is specifically the *difference set*, and calling it a copy describes the thing it was designed not to be.
 
-**Master** (ADR-0124):
-A **Résumé document** as it reads with no **Tailoring** active: the base **Content**, every block present. The thing every Tailoring is a difference *from*, and what a job application gets when no version was made for it. Editing the master reaches every Tailoring that has not overridden the block being edited — which is the property the whole model exists for.
-_Avoid_: original, default, main — "original" implies the Tailorings are copies of it, which is exactly what they are not.
+**Master résumé** (ADR-0124):
+A **Résumé document** as it reads with no **Tailoring** active: the base **Content**, every block present. The thing every Tailoring is a difference *from*, and what a job application gets when no version was made for it. Editing it reaches every Tailoring that has not overridden the block being edited — which is the property the whole model exists for. The tab labels the picker's first entry with exactly this phrase.
+_Avoid_: original, default, main — "original" implies the Tailorings are copies of it, which is exactly what they are not. And never the bare word **Master**: that is already the Telegram chat that approves everyone else (ADR-0038), and the two share no meaning at all.
 
 **Variant** (ADR-0124):
 One alternate wording of one **Component**, held against that Component's id and used by whichever **Tailoring** picked it. Partial: it carries only the fields that differ from the master's **Content**. Created by copy-on-write — editing a block while a Tailoring is active forks one on the first keystroke, so the master is never edited by accident.

@@ -96,8 +96,8 @@ straitjacket; silence would make "Headless Headhunter" a label rather than a cla
 The Résumé tab needs no route, no endpoint and no feature flag: it works on the Space and on the
 local dev renderer alike, and it stores nothing on our side. That also fixes its limits — a résumé
 lives in one browser, so the tab pushes the JSON backup rather than pretending otherwise, and
-anything that needs a résumé to exist server-side (attaching one to an auto-apply run, ADR-0105) is
-a decision that has not been made here.
+anything that needs a résumé to exist server-side is a decision that has not been made here — see
+ADR-0124, which settles where one goes if an Account asks for it.
 
 Three layouts ship: the Headless Headhunter template, a two-column CV, and a free canvas. The
 second and third exist to keep the extensibility claim falsifiable — a build with only flow layouts

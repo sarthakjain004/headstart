@@ -439,11 +439,6 @@
 
   /* ---- the rail -------------------------------------------------------------------------- */
 
-  /* Rebuild every rail pane EXCEPT the one the user is currently typing in — replacing a field's
-     HTML under the caret loses the caret, and the position with it. Keyed on focus rather than on
-     a "the last change came from the rail" flag, which is what this was first: that flag froze the
-     WHOLE rail on every keystroke, so the Checks panel sat on a stale list while the badge beside
-     it counted the new one. Focus is the fact that actually matters, and it is readable. */
   /** The version picker: the master plus every Tailoring, and the delete button only when one
    *  is active. */
   /* "Version" is what this control is called for users; **Tailoring** is what the model calls the
@@ -461,11 +456,6 @@
     el('rb-version-del').hidden = !d.activeTailoring;
   }
 
-  /* Rebuild every rail pane EXCEPT the one the user is currently typing in — replacing a field's
-     HTML under the caret loses the caret, and the position with it. Keyed on focus rather than on
-     a "the last change came from the rail" flag, which is what this was first: that flag froze the
-     WHOLE rail on every keystroke, so the Checks panel sat on a stale list while the badge beside
-     it counted the new one. Focus is the fact that actually matters, and it is readable. */
   /* What the Content pane is currently showing. The caret guard below may only skip a repaint
      while the pane would rebuild the SAME thing; if the selection, the layout or the active
      version changed, the pane must repaint even though a field holds focus — otherwise clicking a
@@ -758,7 +748,7 @@
 
   /** Show one pane. `moveFocus` for a keyboard traversal, where focus must follow the
    *  selection; a click has already put focus where it belongs. */
-  function showTab(name, moveFocus) {
+  function showRailPane(name, moveFocus) {
     let picked = null;
     for (const b of el('rb-rail-tabs').children) {
       const on = b.dataset.pane === name;
@@ -1127,7 +1117,7 @@
     const tabs = el('rb-rail-tabs');
     tabs.addEventListener('click', e => {
       const tab = e.target.closest('[data-pane]');
-      if (tab) showTab(tab.dataset.pane, false);
+      if (tab) showRailPane(tab.dataset.pane, false);
     });
     /* Arrow-key traversal, which is what makes a tablist a tablist. Automatic activation — the
        panel follows focus — is the APG default for a set this small and with no expensive panel
@@ -1143,7 +1133,7 @@
       else if (e.key === 'End') to = PANES.length - 1;
       if (to == null) return;
       e.preventDefault();
-      showTab(PANES[to], true);
+      showRailPane(PANES[to], true);
     });
 
     document.addEventListener('keydown', e => {
@@ -1300,7 +1290,7 @@
     }
   }
 
-  /* Booting is deliberately NOT on DOMContentLoaded. The nine scripts load on every page of the
+  /* Booting is deliberately NOT on DOMContentLoaded. The ten scripts load on every page of the
      app, and booting eagerly meant every visitor to Search or Trends probed localStorage, built
      and rendered a document into a hidden panel, ran the rule set, and wrote a "last opened" key
      — for a tab they never opened. `shown()` is called by app.js on the way in, which is the
@@ -1310,7 +1300,7 @@
      holds the only reference to the live document, and the browser tests drive the real page
      through it rather than reaching into a closure they cannot see. */
   root.ResumeEditor = {
-    boot, shown, findings, keywordCheck, startDocument, changeLayout, showTab,
+    boot, shown, findings, keywordCheck, startDocument, changeLayout, showRailPane,
     current: () => doc(),
     flush: () => store && store.flush(),
     select,

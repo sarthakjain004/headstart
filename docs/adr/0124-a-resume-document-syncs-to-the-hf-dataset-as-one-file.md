@@ -97,9 +97,10 @@ it is recorded as a thing to watch, not a thing to solve now.
    written on coarse events, never on a keystroke. A signed-out session, a Hub outage or a missing
    token degrades the tab to exactly ADR-0123's behaviour rather than breaking it. Nothing in the
    Résumé tab may block on the network.
-4. **A conflict is never resolved by discarding.** The document carries a `rev` the client
-   increments; a push whose `rev` is not one past what is stored is refused, and the client then
-   keeps **both** — the loser saved beside it as "… (this device)". A résumé edited on two machines
+4. **A conflict is never resolved by discarding.** The synced document will carry a `rev` the
+   client increments — it has none today, and gains one when sync is built, because a revision
+   counter on a record that is never pushed anywhere counts nothing. A push whose `rev` is not one
+   past what is stored is refused, and the client then keeps **both** — the loser saved beside it as "… (this device)". A résumé edited on two machines
    is someone's afternoon, and silently picking a winner is how it disappears. Whole-document
    last-write-wins: unlike a row-per-field store, two devices editing *different bullets* still
    conflict. That limit is real and is stated in the product rather than papered over.
