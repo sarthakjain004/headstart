@@ -239,7 +239,9 @@ test('every rule an added layout states can actually fire', () => {
   }
   /* A mother tongue is exempt from the CEFR check: nobody grades their own first language. */
   const native = D.builder().usingLayout('europass')
-    .add('header', { fullName: 'A' })
+    /* Reachable, because the baseline (ADR-0127) asks every layout for a name and one way to
+       answer — and this assertion is that europass's OWN rules have nothing left to say. */
+    .add('header', { fullName: 'A', email: 'a@example.com' })
     .section('Language skills', s => {
       s.add('language_line', { language: 'Mother tongue', level: 'Slovenian' });
       s.add('language_line', { language: 'English', level: 'C1' });
@@ -564,7 +566,9 @@ test('a rule that throws is contained rather than taking the panel with it', () 
     ],
   });
   const found = ctx.ResumeLayouts.runRules(ctx.ResumeLayouts.get('explosive'), example(ctx));
-  assert.equal(found.length, 2);
+  /* Counted per rule, not in total: this layout states nothing, so it also inherits the shared
+     baseline (ADR-0127), and a total would be a count of that rather than of containment. */
+  assert.equal(found.filter(f => f.ruleId === 'boom').length, 1, 'the throwing rule reported once');
   assert.ok(found.some(f => f.message === 'still here'), 'the other rules still ran');
 });
 
@@ -664,12 +668,12 @@ test('a bullet with no number and no outcome gets a note, not a warning', () => 
 });
 
 test('dates are read in the formats people type, and a bare year is refused', () => {
-  const { ResumeHeadhunter: H } = load(ALL);
+  const { ResumeLayouts: H } = load(ALL);
   assert.deepEqual(H.parseMonth('June 2023'), { y: 2023, m: 6 });
   assert.deepEqual(H.parseMonth('Jun 2023'), { y: 2023, m: 6 });
   assert.deepEqual(H.parseMonth('06/2023'), { y: 2023, m: 6 });
   assert.deepEqual(H.parseMonth('2023-06'), { y: 2023, m: 6 });
-  assert.equal(H.parseMonth('2023'), null, 'the guide asks for a month as well');
+  assert.equal(H.parseMonth('2023'), null, 'every standard here asks for a month as well');
   assert.equal(H.parseMonth('sometime'), null);
   assert.equal(H.parseMonth(''), null);
 });
@@ -773,8 +777,101 @@ test('the printed file carries the sheet the document chose, not the layout’s 
 });
 
 test('a rule that measures the page measures the sheet in use', () => {
-  const { ResumeHeadhunter: H } = load(ALL);
+  const { ResumeLayouts: H } = load(ALL);
   const letter = H.charsPerLine({ width: 8.5, margin: 1 }, 10.5, 0.3);
   const a4 = H.charsPerLine({ width: 8.27, margin: 1 }, 10.5, 0.3);
   assert.ok(a4 < letter, 'A4 is narrower, so fewer characters fit on a line and a bullet wraps sooner');
+});
+
+/* ---- the shared baseline (ADR-0127) ---- */
+
+/** A résumé nobody should send: no name and no way to reach the writer, one job with no dates,
+ *  two more in the wrong order, twelve bullets on one of them, each opening "Responsible for"
+ *  and running well past three printed lines with no number, result or reason anywhere. */
+function badResume(ctx, layoutId) {
+  const b = ctx.ResumeDocument.builder().named('Bad').usingLayout(layoutId);
+  b.add('header', { fullName: '', phone: '', email: '', locationLine: '' });
+  b.section('Work History', s => {
+    s.add('work_entry', { role: 'Engineer', company: 'Undated Co', start: '', end: '' },
+      w => w.bullet('Responsible for the running of things.'));
+    s.add('work_entry', { role: 'Engineer', company: 'Older Co', start: 'January 2015', end: 'March 2018' },
+      w => { for (let i = 0; i < 12; i++) {
+        w.bullet('Responsible for a stretch of prose that runs on and on well past any sensible ' +
+          'bullet length and keeps going, and going, so that it certainly wraps past three ' +
+          'printed lines on any sheet of paper at any body size these layouts offer, while ' +
+          'saying nothing whatsoever about what was actually done, how it was done, who it ' +
+          'was done for, or what on earth came of any of it in the end.');
+      } });
+    s.add('work_entry', { role: 'Engineer', company: 'Newer Co', start: 'June 2020', end: 'August 2023' },
+      w => w.bullet('Responsible for the newer things.'));
+  });
+  return b.build();
+}
+
+test('every registered layout checks the baseline — a bad résumé is never called clean', () => {
+  const ctx = load(ALL);
+  const { ResumeLayouts: L } = ctx;
+  const baseline = L.COMMON_RULES.map(r => r.id).sort();
+  assert.ok(baseline.length, 'there is no baseline to check');
+  /* Iterating the registry, never a list written here: the whole point is that layout number
+     eight cannot ship with a silent Checks panel, and a hardcoded list would not see it. */
+  for (const lay of L.all()) {
+    const fired = [...new Set(L.runRules(lay, badResume(ctx, lay.id))
+      .map(f => f.ruleId).filter(id => baseline.includes(id)))].sort();
+    assert.deepEqual(fired, baseline,
+      `${lay.id} said nothing about ${baseline.filter(id => !fired.includes(id)).join(', ')}`);
+  }
+});
+
+test('an end date that is a word is a job still held — and only the words that mean that', () => {
+  const ctx = load(ALL);
+  const { ResumeDocument: D, ResumeLayouts: L } = ctx;
+  const ended = end => {
+    const doc = D.builder().usingLayout('jakes-resume')
+      .add('header', { fullName: 'A', email: 'a@example.com' })
+      .section('Work', s => s.add('work_entry',
+        { role: 'R', company: 'C', start: 'June 2020', end }, w => {
+          w.bullet('Built the ingest path for 40 teams.');
+          w.bullet('Shipped it daily.');
+        }))
+      .build();
+    return L.runRules(L.get('jakes-resume'), doc).map(f => f.ruleId);
+  };
+  /* The words a résumé actually uses for a job it still holds. Which one is RIGHT is a Layout's
+     argument — harvard-classic's `present-not-current` makes it — so the baseline accepts all. */
+  for (const word of ['Present', 'Current', 'now', 'Ongoing', 'to date', 'till date']) {
+    assert.deepEqual(ended(word), [], `"${word}" should read as a job still held`);
+  }
+  /* And nothing else. Factoring "to date"/"till date" down to a shared arm once left a bare
+     `date`, and an end cell reading literally "date" then silenced this rule altogether. */
+  for (const word of ['date', '2020', 'soon', 'TBD', '']) {
+    assert.ok(ended(word).includes('dates'), `"${word}" is not a date and is not "still here"`);
+  }
+});
+
+test('shadowing a baseline rule is refused unless the layout says it means to', () => {
+  const ctx = load(ALL);
+  const { ResumeLayouts: L } = ctx;
+  const spec = (id, rules) => ({
+    id, css: () => '', starter: () => {},
+    render: { byShape: L.plainStrategies() }, rules,
+  });
+  /* The failure ADR-0127 exists to prevent: layout number eight names a rule `dates` for its own
+     reasons and silently loses the baseline's, which reads as a Checks panel that says nothing. */
+  assert.throws(() => L.define(spec('shadower',
+    [{ id: 'dates', label: 'my own dates thing', check: () => [] }])),
+    /shadow a baseline rule/);
+  /* Declared, it registers — and the baseline's is genuinely replaced, not doubled. */
+  L.define(spec('deliberate', [{
+    id: 'dates', overridesBaseline: true, label: 'my own dates thing',
+    check: () => [{ level: 'warn', nodeId: null, message: 'mine' }],
+  }]));
+  const rules = L.get('deliberate').rules.filter(r => r.id === 'dates');
+  assert.equal(rules.length, 1, 'the baseline rule was kept alongside the override');
+  assert.equal(rules[0].label, 'my own dates thing');
+  /* And a flag naming nothing is refused too, so renaming a baseline rule cannot leave a layout
+     claiming to override one that is gone. */
+  assert.throws(() => L.define(spec('stale',
+    [{ id: 'not-a-baseline-rule', overridesBaseline: true, label: 'x', check: () => [] }])),
+    /no baseline rule has that id/);
 });

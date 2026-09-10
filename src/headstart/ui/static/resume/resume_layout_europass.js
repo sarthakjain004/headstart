@@ -228,7 +228,13 @@
   /* ---- rules ---------------------------------------------------------------------------
      Three, each one a thing the Europass form itself states or requires. Nothing here is about
      how a bullet is written: Europass has no opinion about that and inventing one would be
-     putting words in the Commission's mouth. */
+     putting words in the Commission's mouth.
+
+     That was once the whole rule set, and it left this layout's Checks panel silent over a
+     résumé with no dates and twelve "Responsible for" bullets — because a form with no opinion
+     about a bullet is not the same as a form saying that bullet is fine. The shared baseline
+     (ADR-0127) says the general standard's part, in the general standard's voice; the three
+     below stay the Commission's. */
 
   const CEFR = /^(?:A1|A2|B1|B2|C1|C2)\b/i;
   const NATIVE = /\b(?:mother tongue|native|first language)\b/i;

@@ -39,6 +39,283 @@
 
   const clampNum = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
+  /* ---- reading a résumé's dates and prose --------------------------------------------------
+     The vocabulary the rules below are written in. It lived in resume_layout_headhunter.js
+     while that layout was the only one checking anything; it is here now because the baseline
+     and that layout both read it, and two copies of "what counts as a month" would drift. */
+
+  const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august',
+    'september', 'october', 'november', 'december'];
+
+  /** {y, m} from "June 2023", "Jun 2023", "06/2023" or "2023-06"; null when no month AND year
+   *  can be read. Every standard here asks a job's dates for both. */
+  function parseMonth(text) {
+    const s = String(text || '').trim().toLowerCase();
+    if (!s) return null;
+    let m = s.match(/^([a-z]+)\.?\s+(\d{4})$/);
+    if (m) {
+      const i = MONTHS.findIndex(name => name.startsWith(m[1].slice(0, 3)));
+      return i < 0 ? null : { y: +m[2], m: i + 1 };
+    }
+    m = s.match(/^(\d{1,2})[/-](\d{4})$/);
+    if (m && +m[1] >= 1 && +m[1] <= 12) return { y: +m[2], m: +m[1] };
+    m = s.match(/^(\d{4})[/-](\d{1,2})$/);
+    if (m && +m[2] >= 1 && +m[2] <= 12) return { y: +m[1], m: +m[2] };
+    return null;
+  }
+  const asMonths = d => (d ? d.y * 12 + d.m : null);
+
+  /** An end date written as a word rather than a month — a job still held. Which word is right
+   *  is a Layout's argument ("Present" against "Current", see harvard's `present-not-current`);
+   *  that the cell is filled in at all is not, so the baseline accepts every spelling and lets
+   *  the layout that cares object to the wording on its own terms. */
+  /* Anchored, and every arm spelled in full: factoring "to date"/"till date" down to a
+     shared `date` arm left a bare one, and an end cell reading literally "date" then
+     counted as a job still held — which silenced this rule's own error and sent
+     `reverse-chronological` an Infinity start. Measured: that document reported nothing. */
+  const STILL_HERE = /^\s*(?:present|current|now|ongoing|to date|till date)\s*$/i;
+
+  /* Roughly how many characters fit on one line, from the page and the type size actually in
+     force. An average advance close to half the point size at this measure; this is an estimate
+     and the findings that use it say "about" for that reason. */
+  function charsPerLine(page, size, indentIn) {
+    const usable = page.width - 2 * page.margin - (indentIn || 0);
+    return Math.max(20, Math.round((usable * 72) / (size * 0.5)));
+  }
+
+  /** The first word of a bullet, lowercased, without its punctuation. */
+  function opener(text) {
+    const m = String(text || '').trim().match(/^[A-Za-z][A-Za-z'’-]*/);
+    return m ? m[0].toLowerCase() : '';
+  }
+
+  /** Every spelling `word` could be the -ed or -ing form of, `word` itself first. English adds
+   *  -ed / -ing four ways and this undoes all four; the lists below are therefore written once,
+   *  in the base form, and still match whichever tense somebody typed. */
+  function stems(word) {
+    const out = [word];
+    const cut = word.replace(/(?:ed|ing)$/, '');
+    if (cut !== word) {
+      out.push(cut, cut + 'e');
+      if (/(.)\1$/.test(cut)) out.push(cut.slice(0, -1));        // running  -> run
+      if (/i$/.test(cut)) out.push(cut.slice(0, -1) + 'y');      // amplified -> amplify
+    }
+    return out;
+  }
+  const anyStemIn = (set, word) => !!word && stems(word).some(w => set.has(w));
+
+  /* Openers that fill the line without saying what was done. Base forms — see `stems`. */
+  const WEAK_OPENERS = new Set(['responsible', 'help', 'work', 'assist', 'participate',
+    'involve', 'was', 'task', 'duties', 'handle']);
+
+  /* Verbs the standard calls dressed-up rather than wrong, in base form. Checked on the OPENING
+     word only, and that scope is load-bearing rather than lazy: "ensured customers had a good
+     time with customer service" is a real sentence from a worked example this repo calibrates
+     against, and a whole-sentence scan would flag it. */
+  const SUPERFLUOUS = new Set(['amplify', 'conceptualize', 'conceptualise', 'craft', 'elevate',
+    'employ', 'engage', 'engineer', 'enhance', 'ensure', 'foster', 'head', 'hone', 'innovate',
+    'leverage', 'master', 'orchestrate', 'perfect', 'pioneer', 'revolutionize', 'revolutionise',
+    'spearhead', 'transform', 'utilize', 'utilise']);
+
+  /* A number, or a sense of scale. Both count — "multiple financial products" is quantification
+     in the way that matters, and a bare-metric test would fail bullets that are true. */
+  const SCALE = new RegExp('\\d|\\b(?:multiple|several|dozens?|hundreds|thousands|millions|' +
+    'numerous|daily|weekly|monthly|every|' +
+    /* Spelled out. The standard asks for digits and this repo's own `modern-sidebar` example
+       writes "brought four engineers through onboarding in six months" anyway — which the
+       digits-only test called a bullet with no number in it at all. Preferring digits is
+       advice; pretending a spelled number is not a number is a wrong finding. */
+    'one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\\b', 'i');
+
+  /* A clause saying what came of it, or why it was done. */
+  const OUTCOME = new RegExp('\\bwhich\\b|\\bresult|\\bso that\\b|\\bleading to\\b|' +
+    '\\bin order to\\b|\\bby \\w+ing\\b|' +
+    '\\bto (?!the|a|an|our|their|his|her|my|your|its|this|that|these|those|us|them|me|him|it)[a-z]+\\b', 'i');
+
+  /* ---- the baseline every Layout checks (ADR-0127) -----------------------------------------
+     ADR-0123 put every Rule on the Layout, on the argument that a Rule is its method's opinion.
+     That is true of most of them and false of these seven: a job with no dates on it, a name
+     nobody can answer, twelve bullets opening "Responsible for" — no template on the picker
+     holds a different view, and four of the seven Layouts held NO view, so the panel read
+     "Nothing to flag. Every rule this layout states is met." over a résumé nobody should send.
+
+     What is here is hygiene; what is not here is opinion, and the line was drawn against the
+     standards packaged in this machine's `resume-builder` skill (Harvard Career Services,
+     r/EngineeringResumes) rather than by taste. Four candidates were considered and REFUSED
+     because the sources disagree with each other about them, and a baseline that flattened a
+     Layout's considered opposite position would be a worse defect than the silence it fixes:
+
+       · `twelve-years` — every source says drop the ancient jobs, none states a number, and
+         Europass is a full-history form by design. The Headless Headhunter's twelve is the
+         guide's, so it stays the guide's.
+       · `past-tense` — the general standard permits the present tense for a job you still hold
+         ("pick one, be consistent"); the guide's words are "even if you are still employed".
+       · `one-sentence` / `no-terminal-period` — a bullet takes exactly one period, or none.
+         Flatly opposite, one per Layout, already written down that way.
+       · `pronouns` — the standard forbids I / my / we; the Headless Headhunter's own worked
+         example contains "while I prepared their food", so that layout would fire on the
+         document it is calibrated against.
+
+     A Layout OPTS OUT by declaring a Rule with the same id AND marking it `overridesBaseline`,
+     and `define` then keeps its own — a better lever than a flag on the layout, because it puts
+     the disagreement on the rule, where its author is already looking, and refuses the silent
+     version of it outright.
+
+     All seven ids below are already declared by the Headless Headhunter layout, so no baseline
+     Rule is ADDED to it. That is not the same as "nothing changed for it": `SCALE` gained the
+     spelled-out numbers when this baseline was calibrated, and that layout's own `result` reads
+     `SCALE` from here — so a bullet reading "brought four engineers through onboarding in six
+     months" used to earn a note there and no longer does. Measured, and correct: it has two
+     numbers in it. */
+
+  const COMMON_RULES = Object.freeze([
+    {
+      id: 'contact', label: 'A name, and a way to reach you',
+      check(doc, api) {
+        const out = [];
+        const headers = api.nodesOfType('header');
+        if (!headers.length) {
+          return [{ level: 'error', nodeId: null,
+            message: 'No name and no contact details anywhere on the page.' }];
+        }
+        for (const n of headers) {
+          const c = api.content(n.id);
+          if (!String(c.fullName || '').trim()) {
+            out.push({ level: 'error', nodeId: n.id, message: 'No name on the résumé.' });
+          }
+          if (!String(c.email || '').trim() && !String(c.phone || '').trim()) {
+            /* Email OR phone, not both: the Harvard guide asks for both, the
+               r/EngineeringResumes wiki calls the phone unnecessary, and a baseline states only
+               what they agree on. Which of the two to print, and whether to add a city, is the
+               Layout's argument — the Headless Headhunter layout makes it. */
+            out.push({ level: 'error', nodeId: n.id,
+              message: 'No email and no phone number. A résumé nobody can answer is the one fault no rewrite fixes — it is second on Harvard’s list of the commonest résumé mistakes.' });
+          }
+        }
+        return out;
+      },
+    },
+    {
+      id: 'dates', label: 'Month and year on every job',
+      check(doc, api) {
+        const out = [];
+        for (const n of api.nodesOfType('work_entry')) {
+          const c = api.content(n.id);
+          if (!parseMonth(c.start)) {
+            out.push({ level: 'error', nodeId: n.id,
+              message: 'Start date needs a month and a year — “June 2023”. A bare year leaves an eleven-month hole, and a parser files the job on this line.' });
+          }
+          if (!c.current && !parseMonth(c.end) && !STILL_HERE.test(String(c.end || ''))) {
+            out.push({ level: 'error', nodeId: n.id,
+              message: 'End date needs a month and a year, or tick “Still here”.' });
+          }
+        }
+        return out;
+      },
+    },
+    {
+      /* The CEILING only, and the asymmetry is measured rather than tidy. Every source caps a
+         job at seven or eight bullets, so twelve is nobody's advice. The floor is a different
+         matter: the guide says three, the general standard's own table gives an old role two,
+         and this repo's `harvard-classic` and `europass` examples each give a minor entry ONE
+         on purpose — a Leadership line and a compressed first job. A baseline that flagged
+         those would be house style wearing a baseline's clothes, so the floor stays with the
+         Headless Headhunter layout, which has a source that states it. */
+      id: 'bullet-count', label: 'No more than eight bullets a job',
+      check(doc, api) {
+        const out = [];
+        for (const n of api.nodesOfType('work_entry')) {
+          const count = n.children.filter(c => c.type === 'bullet').length;
+          if (count > 8) {
+            out.push({ level: 'warn', nodeId: n.id,
+              message: count + ' bullets. No standard here asks a single job for more than eight, and a recruiter reads the first three.' });
+          }
+        }
+        return out;
+      },
+    },
+    {
+      id: 'three-lines', label: 'No bullet over three lines',
+      check(doc, api) {
+        const out = [];
+        const cap = charsPerLine(api.page, +api.theme.bodySize || 10.5,
+          +api.theme.bulletIndent || 0.3) * 3;
+        for (const n of api.nodesOfType('bullet')) {
+          const text = String(api.content(n.id).text || '');
+          if (text.length > cap) {
+            out.push({ level: 'warn', nodeId: n.id,
+              message: 'About ' + Math.ceil(text.length / (cap / 3)) + ' lines long. Three is the ceiling every standard here states; past that, split it in two.' });
+          }
+        }
+        return out;
+      },
+    },
+    {
+      id: 'reverse-chronological', label: 'Newest job first',
+      check(doc, api) {
+        const out = [];
+        for (const section of api.nodesOfType('section')) {
+          const jobs = section.children.filter(c => c.type === 'work_entry');
+          let previous = null;
+          for (const job of jobs) {
+            const c = api.content(job.id);
+            const started = (c.current || STILL_HERE.test(String(c.end || '')))
+              ? Infinity : asMonths(parseMonth(c.start));
+            if (started == null) { previous = null; continue; }
+            if (previous != null && started > previous) {
+              out.push({ level: 'warn', nodeId: job.id,
+                message: 'Out of order. Reverse chronological — newest job first — is the one thing every résumé standard agrees on, and it is what a reader assumes without checking. Drag it up.' });
+            }
+            previous = started;
+          }
+        }
+        return out;
+      },
+    },
+    {
+      id: 'opening-verb', label: 'Every bullet opens with a strong verb',
+      check(doc, api) {
+        const out = [];
+        for (const n of api.nodesOfType('bullet')) {
+          const word = opener(api.content(n.id).text);
+          if (anyStemIn(WEAK_OPENERS, word)) {
+            out.push({ level: 'warn', nodeId: n.id, message: '“' + word +
+              '” opens the bullet without saying what you did. “Using passive language ' +
+              'instead of action words” is third on Harvard’s list of the commonest résumé ' +
+              'mistakes. Start with the action — Built, Operated, Reduced.' });
+          } else if (anyStemIn(SUPERFLUOUS, word)) {
+            out.push({ level: 'warn', nodeId: n.id, message: '“' + word +
+              '” is a dressed-up verb. A résumé gets fifteen seconds, which is not long ' +
+              'enough to decode one; use the plain word.' });
+          }
+        }
+        return out;
+      },
+    },
+    {
+      id: 'result', label: 'What, how, and the result or the reason',
+      check(doc, api) {
+        const out = [];
+        for (const n of api.nodesOfType('bullet')) {
+          const c = api.content(n.id);
+          /* A bullet flagged as a job's opening summary is exempt: it says what the job WAS,
+             and the outcomes belong to the bullets under it. */
+          if (c.role) continue;
+          const text = String(c.text || '');
+          if (!text.trim()) continue;
+          if (!SCALE.test(text) && !OUTCOME.test(text)) {
+            /* A note, not a warning. "Not demonstrating results" is fifth on Harvard's list,
+               but a reason counts where there is no number, and plenty of true bullets have
+               neither to claim. */
+            out.push({ level: 'note', nodeId: n.id,
+              message: 'No number, no result and no reason. A bullet is worth reading when it says what you did, how you did it, and what came of it.' });
+          }
+        }
+        return out;
+      },
+    },
+  ]);
+
   /** Register a Layout. */
   function define(spec) {
     if (!spec || !spec.id) fail('a layout id is required');
@@ -51,6 +328,28 @@
        promise of shape dispatch is that it renders anyway. */
     const missing = Components.SHAPES.filter(s => typeof spec.render.byShape[s] !== 'function');
     if (missing.length) fail(spec.id + ': no renderer for shape(s) ' + missing.join(', '));
+
+    const ownRules = (spec.rules || []).slice();
+    const ownIds = new Set(ownRules.map(r => r.id));
+    /* Shadowing a baseline Rule is allowed and is the opt-out mechanism (see COMMON_RULES) —
+       but only ON PURPOSE. Silence here is the exact failure ADR-0127 exists to prevent: an
+       author of the next layout who names a rule `dates` for their own reasons would drop the
+       baseline's without a word, and rediscover it as a Checks panel that says nothing. So a
+       collision must be declared on the rule itself, where its author is already looking. */
+    const baselineIds = new Set(COMMON_RULES.map(r => r.id));
+    const shadows = ownRules.filter(r => baselineIds.has(r.id) && !r.overridesBaseline);
+    if (shadows.length) {
+      fail(spec.id + ': rule id(s) ' + shadows.map(r => r.id).join(', ') +
+        ' shadow a baseline rule. Set overridesBaseline: true on the rule if replacing it is ' +
+        'deliberate — a layout that disagrees should say what it believes — or rename it.');
+    }
+    /* And the flag must still name something. A baseline rule renamed later would otherwise
+       leave a layout claiming to override a rule that no longer exists. */
+    const stale = ownRules.filter(r => r.overridesBaseline && !baselineIds.has(r.id));
+    if (stale.length) {
+      fail(spec.id + ': rule id(s) ' + stale.map(r => r.id).join(', ') +
+        ' are marked overridesBaseline but no baseline rule has that id.');
+    }
 
     const layout = Object.freeze({
       id: spec.id,
@@ -93,7 +392,9 @@
          have none, which is the difference between "switched layout" and "half the page is
          stacked in the corner on top of the other half". */
       adopt: typeof spec.adopt === 'function' ? spec.adopt : null,
-      rules: Object.freeze((spec.rules || []).slice()),
+      /* The Layout's own rules first, then every baseline rule it did NOT state itself. A
+         Layout opts out of one by declaring its own with that id — see COMMON_RULES. */
+      rules: Object.freeze(ownRules.concat(COMMON_RULES.filter(r => !ownIds.has(r.id)))),
       _render: spec.render,
     });
     registry.set(layout.id, layout);
@@ -459,8 +760,11 @@
 
   root.ResumeLayouts = {
     define, get, all, PAPERS, pageFor, paperIdFor, themeFor, geometryFor, renderDocument, renderNode,
-    renderStandalone, runRules,
+    renderStandalone, runRules, COMMON_RULES,
     esc, escLines, dateRange, roleLine, plainStrategies, groupChildren, clampNum, headAndRest,
     marginRow,
+    /* The vocabulary a Rule is written in, shared with the layouts that state their own. */
+    parseMonth, asMonths, charsPerLine, opener, anyStemIn, WEAK_OPENERS, SUPERFLUOUS, SCALE,
+    OUTCOME,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
