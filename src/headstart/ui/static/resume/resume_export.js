@@ -140,6 +140,51 @@
     else frame.onload = go;
   }
 
+  /* Identifiers are woven into HTML attributes and into `querySelector('[data-node="…"]')`
+     all over the editor, so a document that arrived from outside must not be able to choose them.
+     This is the shape `newId()` produces; anything else is rewritten to something that is.
+
+     Escaping at each sink is the other half of this and is done there too — but a value that can
+     never be hostile is worth more than a promise that every present and future consumer of it
+     remembered to escape. A quote in an id also makes `querySelector` throw, which this fixes at
+     the same time. */
+  const SAFE_ID = /^[\w-]{1,64}$/;
+
+  /** Rewrite every identifier an imported document carries that is not the shape we issue,
+   *  remapping consistently so the tree, the content map, the variants and the tailorings all
+   *  still refer to each other. Returns how many had to be replaced. */
+  function sanitiseIds(doc) {
+    const remap = new Map();
+    const safe = value => {
+      const id = String(value);
+      if (SAFE_ID.test(id)) return id;
+      if (!remap.has(id)) remap.set(id, 'n' + Math.random().toString(36).slice(2, 10));
+      return remap.get(id);
+    };
+    const rekey = (table, mapValue) => {
+      const out = {};
+      for (const key of Object.keys(table || {})) {
+        out[safe(key)] = mapValue ? mapValue(table[key]) : table[key];
+      }
+      return out;
+    };
+
+    (function walk(node) {
+      node.id = safe(node.id);
+      for (const child of node.children || []) walk(child);
+    })(doc.root);
+
+    doc.content = rekey(doc.content);
+    doc.variants = rekey(doc.variants, inner => rekey(inner));
+    for (const tailoring of doc.tailorings || []) {
+      tailoring.id = safe(tailoring.id);
+      tailoring.picks = rekey(tailoring.picks, variantId => safe(variantId));
+      tailoring.hidden = (tailoring.hidden || []).map(safe);
+    }
+    if (doc.activeTailoring) doc.activeTailoring = safe(doc.activeTailoring);
+    return remap.size;
+  }
+
   /** Read a .json export back. Returns the document or throws with a message meant for a person
    *  — an import that fails silently looks like a lost résumé. */
   function importJson(text) {
@@ -153,11 +198,13 @@
     }
     /* A fresh id, so importing a backup never overwrites the résumé you are looking at. */
     parsed.id = 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    if (!parsed.root || typeof parsed.root !== 'object') throw new Error('That JSON is not a HeadStart résumé.');
+    sanitiseIds(parsed);
     return parsed;
   }
 
   root.ResumeExport = {
     plainText, standaloneHtml, filename, download,
-    asHtml, asWord, asText, asJson, print, importJson,
+    asHtml, asWord, asText, asJson, print, importJson, sanitiseIds, SAFE_ID,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

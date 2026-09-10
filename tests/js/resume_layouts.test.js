@@ -142,6 +142,49 @@ test('résumé text is escaped everywhere it reaches HTML', () => {
 
 /* ---- a theme override is untrusted input ---- */
 
+test('an imported document cannot choose its own identifiers', () => {
+  const ctx = load(ALL);
+  /* Node ids are woven into HTML attributes across the editor's rail and into
+     querySelector('[data-node="…"]'). In an imported file every one of them is attacker-chosen,
+     and the rail wrote them unescaped — so a résumé "backup" someone sent you ran script in
+     HeadStart's own origin the moment you picked the file, and again on every later visit,
+     because the import is saved. Identifiers are rewritten at the boundary now. */
+  const hostile = 'a">&lt;img src=x onerror=alert(1)&gt;'.replace('&lt;', '<').replace('&gt;', '>');
+  const doc = {
+    schema: 1, id: 'r1', name: 'Backup', layoutId: HH,
+    root: { id: '__root__', type: '__root__', slot: null, geometry: {}, children: [
+      { id: hostile, type: 'section', slot: 'main', geometry: {}, children: [] }] },
+    content: { [hostile]: { title: 'Work History' } },
+    variants: { [hostile]: { 'v">x': { title: 'Other' } } },
+    tailorings: [{ id: 'bad"id', name: 'V', picks: { [hostile]: 'v">x' }, hidden: [hostile] }],
+    activeTailoring: 'bad"id', theme: {},
+  };
+  const back = ctx.ResumeExport.importJson(JSON.stringify(doc));
+  const id = back.root.children[0].id;
+
+  assert.ok(ctx.ResumeExport.SAFE_ID.test(id), 'the hostile id survived');
+  assert.equal(back.content[id].title, 'Work History', 'the words came through the rewrite');
+  assert.deepEqual(Object.keys(back.variants), [id], 'variants follow the node');
+  assert.ok(ctx.ResumeExport.SAFE_ID.test(Object.keys(back.variants[id])[0]));
+  const tailoring = back.tailorings[0];
+  assert.ok(ctx.ResumeExport.SAFE_ID.test(tailoring.id));
+  assert.equal(back.activeTailoring, tailoring.id, 'the active version still points at it');
+  assert.deepEqual(Object.keys(tailoring.picks), [id], 'picks follow the node');
+  assert.deepEqual(tailoring.hidden, [id]);
+  /* And the whole document renders without a tag escaping an attribute. */
+  const html = ctx.ResumeLayouts.renderDocument(ctx.ResumeLayouts.get(HH), back);
+  assert.ok(!html.includes('<img'), 'a tag reached the page');
+});
+
+test('an identifier that is already the right shape is left alone', () => {
+  const ctx = load(ALL);
+  const doc = example(ctx);
+  const before = ctx.ResumeDocument.flatten(doc).map(n => n.id);
+  const back = ctx.ResumeExport.importJson(JSON.stringify(doc));
+  assert.deepEqual(ctx.ResumeDocument.flatten(back).map(n => n.id), before,
+    'a normal backup must round-trip unchanged');
+});
+
 test('a theme cannot escape the stylesheet it is interpolated into', () => {
   const ctx = load(ALL);
   const doc = example(ctx);

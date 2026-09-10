@@ -469,22 +469,27 @@
     if (!holdsCaret(el('rb-pane-checks'))) checksPane();
   }
 
+  /* Every identifier reaching an attribute is escaped here, exactly as `attrs()` does on the
+     render path and `checksPane()` does for a finding. The rail was the one consumer that did
+     not, and a node id is attacker-chosen in an imported document. `resume_export.js` now also
+     rewrites hostile identifiers at the import boundary; this is the second lock on the door. */
   function fieldControl(nodeId, field, value) {
-    const id = 'rb-f-' + nodeId + '-' + field.key;
+    const safeNode = esc(nodeId);
+    const id = esc('rb-f-' + nodeId + '-' + field.key);
     const label = '<label for="' + id + '">' + esc(field.label) +
       (field.hint ? '<span class="rb-hint-i" title="' + esc(field.hint) + '">?</span>' : '') + '</label>';
     if (field.kind === 'flag') {
       return '<div class="rb-field rb-flag"><label><input type="checkbox" id="' + id +
-        '" data-node="' + nodeId + '" data-field="' + field.key + '"' + (value ? ' checked' : '') +
+        '" data-node="' + safeNode + '" data-field="' + esc(field.key) + '"' + (value ? ' checked' : '') +
         '> ' + esc(field.label) + '</label></div>';
     }
     if (field.kind === 'multiline') {
       return '<div class="rb-field">' + label + '<textarea id="' + id + '" rows="3" data-node="' +
-        nodeId + '" data-field="' + field.key + '" placeholder="' + esc(field.placeholder) + '">' +
+        safeNode + '" data-field="' + esc(field.key) + '" placeholder="' + esc(field.placeholder) + '">' +
         esc(value || '') + '</textarea></div>';
     }
-    return '<div class="rb-field">' + label + '<input id="' + id + '" data-node="' + nodeId +
-      '" data-field="' + field.key + '" value="' + esc(value || '') + '" placeholder="' +
+    return '<div class="rb-field">' + label + '<input id="' + id + '" data-node="' + safeNode +
+      '" data-field="' + esc(field.key) + '" value="' + esc(value || '') + '" placeholder="' +
       esc(field.placeholder) + '"></div>';
   }
 
@@ -539,7 +544,7 @@
         : spec.accepts.map(t => Components.get(t)).filter(Boolean);
       if (addable.length) {
         out.push('<div class="rb-add"><span class="note">Add inside:</span>' + addable.map(s =>
-          '<button class="ghost rb-mini" data-add="' + s.type + '" data-into="' + node.id + '">' +
+          '<button class="ghost rb-mini" data-add="' + esc(s.type) + '" data-into="' + esc(node.id) + '">' +
           esc(s.label) + '</button>').join('') + '</div>');
       }
       out.push('<div class="rb-actions">' +
@@ -552,7 +557,7 @@
       outlineHtml(d) + '</div>');
     out.push('<div class="rb-add rb-add-top"><span class="note">Add to the page:</span>' +
       ['section', 'summary', 'skills_line'].map(t => Components.get(t)).filter(Boolean).map(s =>
-        '<button class="ghost rb-mini" data-add="' + s.type + '" data-into="">' + esc(s.label) +
+        '<button class="ghost rb-mini" data-add="' + esc(s.type) + '" data-into="">' + esc(s.label) +
         '</button>').join('') + '</div>');
 
     pane.innerHTML = out.join('');
@@ -570,7 +575,7 @@
       const depth = (function () { let n = node, k = 0; while ((n = Doc.parentOf(d, n.id)) && n !== d.root) k++; return k; })();
       rows.push('<button class="rb-out-row' + (node.id === selectedId ? ' on' : '') +
         (hidden.has(node.id) ? ' off' : '') +
-        '" data-select="' + node.id + '" style="padding-left:' + (8 + depth * 12) + 'px">' +
+        '" data-select="' + esc(node.id) + '" style="padding-left:' + (8 + depth * 12) + 'px">' +
         '<span class="rb-out-type">' + esc(spec.label) + '</span> ' +
         '<span class="rb-out-text">' + esc(String(first || '').slice(0, 44)) + '</span>' +
         (hidden.has(node.id) ? '<span class="rb-tag">left out</span>' : '') + '</button>');
