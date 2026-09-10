@@ -1713,8 +1713,9 @@
   /* Booting is deliberately NOT on DOMContentLoaded. The ten scripts load on every page of the
      app, and booting eagerly meant every visitor to Search or Trends probed localStorage, built
      and rendered a document into a hidden panel, ran the rule set, and wrote a "last opened" key
-     — for a tab they never opened. `shown()` is called by app.js on the way in, which is the
-     first moment any of it is wanted. */
+     — for a tab they never opened. Two things call it, both at the first moment any of it is
+     wanted: app.js on the way in, and the block at the foot of this file for the one load app.js
+     cannot catch. */
 
   /* The tab's public surface. `shown` is what app.js calls; the rest exists because the editor
      holds the only reference to the live document, and the browser tests drive the real page
@@ -1725,4 +1726,22 @@
     flush: () => store && store.flush(),
     select,
   };
+
+  /* There is one path on which app.js cannot make that call. app.js is not deferred and this is,
+     so on a load that lands straight on #resume — a refresh, a bookmark, a shared link — its
+     `showTab()` has already run by the time this script executes. Its guard reads
+     `window.ResumeEditor`, finds nothing, and moves on; no later event revisits a tab the page
+     opened on. The panel is left rendered but never painted: blank sheet, empty layout and paper
+     controls, empty rail.
+
+     So the editor boots itself in exactly that case, and the condition is the panel already being
+     visible — which is true only when showTab chose this tab and found nobody home. A visitor who
+     lands on Search or Trends still pays nothing.
+
+     Deferring app.js instead would be the tidier seam, since the routing decision is its own. It
+     is not available: base.html loads Google's GSI client `async` with `onload="initAlerts()"`,
+     and that handler is defined in app.js — deferring it lets a third-party script call a
+     function that does not exist yet. */
+  const opened = document.getElementById('panel-resume');
+  if (opened && !opened.hidden) shown();
 })(typeof globalThis !== 'undefined' ? globalThis : this);

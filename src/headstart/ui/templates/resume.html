@@ -42,30 +42,30 @@
       <button class="go rb-mini" id="rb-download" aria-expanded="false"
               aria-controls="rb-pop-download">Download</button>
     </div>
-  </div>
 
-  {# The document list and the download menu are popovers over the bar rather than panels in
-     the rail: both are momentary choices, and giving either a permanent column would spend the
-     page's width on something used once a session. #}
-  <div class="rb-pop" id="rb-pop-open" hidden>
-    <div class="rb-pop-head">Your résumés <button class="ghost rb-mini" id="rb-import">Import .json</button></div>
-    <div id="rb-doclist" class="rb-doclist"></div>
-    {# Two named buttons rather than one "New" behind a confirm() asking "start from the worked
-       example? OK / Cancel". A modal that spends the user's only decision on an OK-or-Cancel it
-       has to read twice is the same defect as an unlabelled control. #}
-    <div class="rb-pop-new">
-      <button class="ghost rb-mini" id="rb-new">New — from the worked example</button>
-      <button class="ghost rb-mini" id="rb-new-blank">New — empty page</button>
+    {# The document list and the download menu are popovers over the bar rather than panels in
+       the rail: both are momentary choices, and giving either a permanent column would spend the
+       page's width on something used once a session. #}
+    <div class="rb-pop" id="rb-pop-open" hidden>
+      <div class="rb-pop-head">Your résumés <button class="ghost rb-mini" id="rb-import">Import .json</button></div>
+      <div id="rb-doclist" class="rb-doclist"></div>
+      {# Two named buttons rather than one "New" behind a confirm() asking "start from the worked
+         example? OK / Cancel". A modal that spends the user's only decision on an OK-or-Cancel it
+         has to read twice is the same defect as an unlabelled control. #}
+      <div class="rb-pop-new">
+        <button class="ghost rb-mini" id="rb-new">New — from the worked example</button>
+        <button class="ghost rb-mini" id="rb-new-blank">New — empty page</button>
+      </div>
+      <p class="note rb-storage" id="rb-storage"></p>
     </div>
-    <p class="note rb-storage" id="rb-storage"></p>
-  </div>
 
-  <div class="rb-pop rb-pop-right" id="rb-pop-download" hidden>
-    <button class="rb-dl" data-fmt="pdf"><b>PDF</b><span>Through your browser's print dialog — choose "Save as PDF".</span></button>
-    <button class="rb-dl" data-fmt="word"><b>Word / Google Docs (HTML)</b><span>Opens and stays editable in both. It is HTML inside, which they read natively — so the right-aligned date column may reflow, and a strict upload check that sniffs the file may call it HTML.</span></button>
-    <button class="rb-dl" data-fmt="text"><b>Plain text</b><span>For the "paste your résumé" box on an application form.</span></button>
-    <button class="rb-dl" data-fmt="html"><b>HTML</b><span>One self-contained file.</span></button>
-    <button class="rb-dl" data-fmt="json"><b>JSON backup</b><span>Everything, re-importable. Browser storage is one cleared cache from empty.</span></button>
+    <div class="rb-pop rb-pop-right" id="rb-pop-download" hidden>
+      <button class="rb-dl" data-fmt="pdf"><b>PDF</b><span>Through your browser's print dialog — choose "Save as PDF".</span></button>
+      <button class="rb-dl" data-fmt="word"><b>Word / Google Docs (HTML)</b><span>Opens and stays editable in both. It is HTML inside, which they read natively — so the right-aligned date column may reflow, and a strict upload check that sniffs the file may call it HTML.</span></button>
+      <button class="rb-dl" data-fmt="text"><b>Plain text</b><span>For the "paste your résumé" box on an application form.</span></button>
+      <button class="rb-dl" data-fmt="html"><b>HTML</b><span>One self-contained file.</span></button>
+      <button class="rb-dl" data-fmt="json"><b>JSON backup</b><span>Everything, re-importable. Browser storage is one cleared cache from empty.</span></button>
+    </div>
   </div>
 
   <div class="rb-body">
