@@ -71,6 +71,10 @@ data/ats-tenants-merged/active/.*
 data/eval/pool.jsonl
 # point-in-time filter-verification reports (scripts/eval/verify_filters.py)
 data/eval/filter_checks/
+# The ADR-0129 write guard's fingerprint, written by `state_guard record` and read by `verify`
+# minutes later in the same job. Runtime scratch, not data: it names every file under a prefix of
+# the PRIVATE dataset with its blob id, and this repo is public.
+data/.write_guard.json
 # Subscription records pulled from the private headstart-subscribers dataset — email addresses,
 # never committed to this public repo (ADR-0035). The data/ ignores above are per-directory, so a
 # new top-level path needs its own line.

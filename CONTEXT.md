@@ -300,6 +300,30 @@ distinction is the design. `data/embeddings/jobs/manifest.json` (the vector stor
 _Avoid_: reading it as complete. It can only ever **under**-claim: a root it omits costs nothing,
 while a root it wrongly claimed would fail every later fetch closed.
 
+**Write guard** (ADR-0129):
+the compare-and-swap on an HF state prefix. `state_guard record` fingerprints the prefix before the
+fetch, `state_guard verify` retakes it immediately before the upload, and a difference means another
+workflow wrote while this one worked — so the upload is refused and the step goes red. The
+fingerprint is **content**, sorted `path:blob_id` pairs hashed: the pipeline publishes four or five
+commits per run and the daily squash rewrites every sha, so a commit id identifies nothing here.
+Both writers of `data/lancedb` carry it — the pipeline's `merge` job and `cleanup-index`.
+_Avoid_: calling it a lock. It serialises nothing and prevents no collision; it converts a silent
+overwrite into a visible refusal, and the loser still loses its run's work.
+_Avoid_: confusing it with the **Base record** below — one guards a write *within* a run, the other
+compares row counts *across* runs, and they fail in different directions.
+
+**Base record** (ADR-0129):
+`data/lancedb/_index_base.json`, the row count each writer left behind. `index sync` and
+`index prune` log it beside the count they opened, and refuse a base they cannot explain. It lives
+inside `data/lancedb` so it ships in the same commit as the table it describes — `cleanup-index`
+never uploads `data/state`, so a copy kept there would go stale on every compaction.
+_Avoid_: reading it as a rollback detector in general. Because it travels *with* the table, a
+writer that replaces the whole directory replaces the record too, and the pair stays self-consistent
+— it cannot see the 2026-09-10 clobber that motivated ADR-0129. What it catches is table and record
+**diverging**: a partial upload, an out-of-band edit, a fetch that delivered an older snapshot.
+_Avoid_: treating a missing or unreadable record as a failure. It fails open on purpose, so a first
+run and a corrupt scratch file do not become an outage.
+
 **Board-priority ledger (EWMA)**:
 The per-Board tech-yield score in `data/state/board_priority.csv`, kept as an **EWMA** — an Exponentially-Weighted Moving Average. Each run blends a Board's fresh tech-Job count into its prior score (`0.7·now + 0.3·history`), so recent nights dominate while older counts decay rather than being forgotten or weighted equally (ADR-0022). Boards the run didn't scrape keep their score unchanged — a partial harvest must not decay what it never looked at — and a score decayed below a floor drops out. The ledger orders both the scrape slice (high-yield Boards first) and the within-**Bucket** embed order.
 _Avoid_: reading it as an exact count — it is a decaying average, an estimate of a Board's tech yield. _Avoid_: using it as a **cost** estimate. It answers "is this Board worth scraping?", not "how long will it take" — ADR-0026 conflated the two and the resulting pack was measurably useless. Cost lives in the **Board-cost ledger**.

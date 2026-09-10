@@ -65,6 +65,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 from collections import Counter
 from datetime import UTC, datetime
@@ -437,6 +438,77 @@ def _corpus_descriptions(source: str | Path, wanted: set[str]) -> dict[str, str]
     }
 
 
+#: Name of the base-row record, written beside the ``.lance`` table directories rather than into
+#: ``data/state/``. It has to travel with the table it describes: ``cleanup-index`` legitimately
+#: changes the row count and never fetches or uploads ``data/state``, so a record kept there would
+#: go stale on every compaction and red-run the next pipeline for a correct compaction. Inside
+#: ``data/lancedb`` both writers already publish it in the same commit as the table, so the record
+#: and the rows it vouches for cannot disagree. LanceDB ignores a non-``.lance`` sibling in its
+#: database directory (verified 2026-09-10: ``list_tables()`` still returns only the real tables).
+_BASE_RECORD = "_index_base.json"
+
+
+def read_base(db_path: str | Path) -> dict[str, Any] | None:
+    """The row count the previous writer left, or ``None`` before this record ever existed."""
+    path = Path(db_path) / _BASE_RECORD
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        # Unreadable is not "no prior run": say so and let the caller treat it as absent rather
+        # than as agreement. The alternative — crashing the stage on a corrupt scratch file —
+        # trades a silent rollback for a guaranteed outage.
+        _log.warning(f"base record at {path} is unreadable — treating as absent")
+        return None
+
+
+def write_base(db_path: str | Path, rows: int, by: str) -> None:
+    """Record what this writer is leaving behind, for the next one to check against."""
+    path = Path(db_path) / _BASE_RECORD
+    path.write_text(
+        json.dumps(
+            {
+                "rows": rows,
+                "by": by,
+                "run": os.environ.get("GITHUB_RUN_ID", "local"),
+                "at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            }
+        )
+    )
+
+
+def check_base(db_path: str | Path, observed: int) -> bool:
+    """Log the base this run opened beside the one the last writer published.
+
+    Returns False when they disagree, which means the table moved between two runs without a
+    writer accounting for it — the 2026-09-10 signature, where a completed run's 410,516 was
+    overwritten by a concurrent compaction's 409,810 and the next run opened on the older value
+    with nothing anywhere reporting it. ``index prune`` reported ``evict 0`` that run, so no
+    existing counter moved; this line is the one that would have.
+    """
+    base = read_base(db_path)
+    if base is None:
+        _log.info(
+            f"base: {observed} rows opened; no prior base recorded (first run of this check)"
+        )
+        return True
+    expected = base.get("rows")
+    if expected == observed:
+        _log.info(
+            f"base: {observed} rows opened, {expected} expected from {base.get('by')} "
+            f"in run {base.get('run')} — matches"
+        )
+        return True
+    _log.error(
+        f"base: {observed} rows opened but {expected} expected from {base.get('by')} in run "
+        f"{base.get('run')} at {base.get('at')} — the served table moved between runs with no "
+        f"writer accounting for it ({observed - expected:+d} rows). Another workflow overwrote "
+        "a completed write; refusing to build on a base this run cannot explain."
+    )
+    return False
+
+
 def sync(args: argparse.Namespace) -> int:
     metas, vectors = _load_store()
     row_of = {meta["id"]: i for i, meta in enumerate(metas)}
@@ -492,6 +564,11 @@ def sync(args: argparse.Namespace) -> int:
         table = db.create_table(PROD_TABLE, schema=_schema(dim))
         index_ids = []
     _log.info(f"index: {len(index_ids)} rows in table '{PROD_TABLE}'")
+    if not check_base(args.db, len(index_ids)):
+        # Checked before the plan, not after: every add and evict below is computed against this
+        # base, so building on one the run cannot explain would publish a table derived from a
+        # write someone else already lost.
+        return 1
     if excluded:
         # How many rows the ADR-0053 exclusion actually withholds — deliberately a second line
         # here rather than folded into the warning above, because `index_ids` is only read from
@@ -677,6 +754,7 @@ def sync(args: argparse.Namespace) -> int:
     )
 
     final = table.count_rows()
+    write_base(args.db, final, "sync")
     _log.info(f"done: table '{PROD_TABLE}' now holds {final} rows at {args.db}")
     observability.summary(
         "Index sync",
@@ -705,6 +783,12 @@ def prune(args: argparse.Namespace) -> int:
 
     table = lancedb.connect(args.db).open_table(PROD_TABLE)
     index_ids = _all_ids(table)
+    if not check_base(args.db, len(index_ids)):
+        # Checked here too, not only in `sync`. `cleanup-index` runs `prune` as its FIRST table
+        # operation, with no `sync` ahead of it — so without this a compaction would read a
+        # rolled-back table, rebuild it, and publish a fresh self-consistent record, laundering
+        # the loss into the new base.
+        return 1
     off_board, duplicate = plan_prune(index_ids, keep)
     evict = off_board + duplicate
     _log.info(
@@ -735,6 +819,7 @@ def prune(args: argparse.Namespace) -> int:
     _log_ids("prune duplicate", duplicate)
     apply_sync(table, [], evict)
     final = table.count_rows()
+    write_base(args.db, final, "prune")
     _log.info(f"done: pruned {len(evict)} rows; table '{PROD_TABLE}' now holds {final}")
     observability.summary(
         "Index prune",
@@ -760,14 +845,24 @@ def compact(args: argparse.Namespace) -> int:
     rebuilt = db_path.with_name(db_path.name + ".rebuild")
     shutil.rmtree(rebuilt, ignore_errors=True)
     fresh = lancedb.connect(rebuilt)
+    served = None
     for name in names:
         rows = db.open_table(name).to_arrow()  # only the live version's rows
         fresh.create_table(name, rows)
-        _log.info(f"rebuilt '{name}': {fresh.open_table(name).count_rows()} rows")
+        count = fresh.open_table(name).count_rows()
+        if name == PROD_TABLE:
+            served = count
+        _log.info(f"rebuilt '{name}': {count} rows")
 
     # Swap the rebuilt store in for the bloated one (orphan fragments dropped with the old dir).
     shutil.rmtree(db_path)
     rebuilt.rename(db_path)
+    # Written after the swap, into the rebuilt directory that is about to be uploaded. A
+    # compaction legitimately changes the row count, so it must publish the new base itself or
+    # the next pipeline run would read its correct work as an unexplained move. The rmtree above
+    # destroyed the previous record, so this must run on every path that reaches here: leaving
+    # the uploaded directory with no record at all fails open, and silently.
+    write_base(db_path, served if served is not None else 0, "compact")
     _log.info(f"compacted: rebuilt {len(names)} table(s) fresh at {db_path}")
     return 0
 

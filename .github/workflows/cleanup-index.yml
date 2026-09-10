@@ -163,6 +163,14 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           df -h / | tail -1
+          # BEFORE the fetch (ADR-0129), so the download itself is inside the guarded window: a
+          # pipeline upload landing mid-fetch would otherwise be invisible to a fingerprint taken
+          # afterwards. The upload at the end of this job passes `--delete "*"`, so it reaps every
+          # remote file this runner's folder does not hold — including anything a pipeline commits
+          # while this job works. `window` above already asked whether one was in flight; on
+          # 2026-09-10 the endpoint it asks said no while one was, and the answer would have been
+          # 8 minutes stale by upload time regardless. So the write checks for itself.
+          python -m headstart.ingest.state_guard record data/lancedb
           python -m headstart.ingest.state_fetch 'data/lancedb/*'
           du -sh data/lancedb
       - name: Prune stale + duplicate rows
@@ -209,6 +217,10 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           du -sh data/lancedb
+          # Compare, then swap. Non-zero here fails the job on purpose: a compaction is daily and
+          # idempotent, so losing one to a collision costs a day of fragment reclamation, while
+          # uploading over a pipeline's completed write costs rows nothing reports.
+          python -m headstart.ingest.state_guard verify data/lancedb
           hf upload "$HF_DATASET" data/lancedb data/lancedb \
             --repo-type dataset --delete "*" --commit-message "cleanup: prune + rebuild fresh (ADR-0023)"
       - name: Restart the Space
