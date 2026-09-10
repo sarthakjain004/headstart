@@ -135,6 +135,15 @@ wall, and it is verified by test, not assumed. The window is bounded by the pipe
   are byte-identical across the format change. Handing the route a `datetime` would raise on the
   first `r["ts"] >= since`; handing it a differently-spelled string would silently reselect.
 
+## Live outcome (2026-09-10)
+
+The pipeline has written the Parquet ledger and the reduction is live, not projected. On HF:
+`role_trends.parquet` is **3,597,994 bytes / 2,596,598 rows / 529 stamps**, against the CSV's
+174,894,709 bytes — **48.6x**. The fold-in was lossless in production, not only in test: every one
+of the CSV's 515 stamps is present in the Parquet with an identical row count, and 14 further
+ticks have accrued since. The CSV had **not** yet been deleted when this was written, so the
+per-run saving is not yet banked — see `docs/agents/deployment.md`.
+
 ## Verification
 
 All figures measured on the real ledger pulled from HF on 2026-09-09, not on a fixture.
