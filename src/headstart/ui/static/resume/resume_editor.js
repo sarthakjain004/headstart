@@ -740,8 +740,14 @@
       '<button class="ghost rb-mini danger" data-drop="' + esc(r.id) + '" title="Delete">×</button>' +
       '</div>').join('') : '<p class="note">Nothing saved yet.</p>';
 
+    /* States what is true TODAY, and marks what is decided but unbuilt as exactly that. The
+       previous wording — "never uploaded" — was an unconditional promise made while ADR-0124 had
+       already accepted an opt-in account sync, so it was a sentence the product had decided to
+       break. */
     el('rb-storage').textContent = repository.durable
-      ? 'Saved in this browser only — never uploaded. Clearing site data deletes them, so keep a JSON backup.'
+      ? 'Saved in this browser and nowhere else — nothing here is uploaded. Clearing site data ' +
+        'deletes it, so keep a JSON backup. Saving to your account is planned, and will be ' +
+        'per-résumé and off unless you turn it on.'
       : 'This browser is blocking storage, so nothing is being kept. Download a JSON backup before you leave.';
   }
 

@@ -1,7 +1,7 @@
 # ADR-0041: Profile — store the LLM extraction, discard the Résumé
 
 **Status:** accepted · **Date:** 2026-08-11
-**Amended by:** [ADR-0124](0124-resumes-sync-to-postgres-on-the-oracle-box-opt-in.md) — the **Résumé document** an Account builds in the Résumé tab may, if the Account switches it on for that document, be stored. This entry's rule about the **Résumé** (the text pasted in for extraction) is unchanged: read once, discarded.
+**Amended by:** [ADR-0124](0124-a-resume-document-syncs-to-the-hf-dataset-as-one-file.md) — the **Résumé document** an Account builds in the Résumé tab may, if the Account switches it on for that document, be stored. This entry's rule about the **Résumé** (the text pasted in for extraction) is unchanged: read once, discarded.
 
 ## Context
 

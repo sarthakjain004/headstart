@@ -127,4 +127,4 @@ supersedes it and note the supersession in both.
 | [0121](0121-a-negligible-shortfall-is-still-an-authoritative-list.md) | A negligible shortfall is still an authoritative list — let the per-Job grace period have it | 2026-09-09 |
 | [0122](0122-the-pipeline-installs-with-uv-and-caches-nothing.md) | The pipeline installs with uv, and caches nothing to do it | 2026-09-09 |
 | [0123](0123-a-resume-is-three-layers-structure-layout-and-words.md) | A résumé is three layers — structure, layout, and words | 2026-09-09 |
-| [0124](0124-resumes-sync-to-postgres-on-the-oracle-box-opt-in.md) | Résumés sync to Postgres on the Oracle box, and only when asked | 2026-09-09 |
+| [0124](0124-a-resume-document-syncs-to-the-hf-dataset-as-one-file.md) | A Résumé document syncs to the HF dataset, as one file, and only when asked | 2026-09-10 |

@@ -7,9 +7,11 @@
  * word typed on the Résumé tab stays on the machine it was typed on.
  *
  * This module is the seam that makes that a *choice* rather than a fact welded into the editor.
- * Everything above it talks to a repository interface — list, get, save, remove — so moving to
- * server storage, or to a file the user picks, is a new implementation of six methods rather
- * than a rewrite. The in-memory one is not a stub for tests alone: it is what the editor falls
+ * Everything above it talks to a repository interface — list, get, save, remove — so the account
+ * sync ADR-0124 settled (one JSON file per document in the private HF dataset, beside the Profile
+ * and the Saved sets, opt-in per résumé) is a second implementation of six methods rather than a
+ * rewrite. Note what that sync must NOT reuse: the debounce below exists because localStorage is
+ * free to write, and a Git commit is not. The in-memory one is not a stub for tests alone: it is what the editor falls
  * back to when localStorage is unavailable (private windows, storage disabled), which keeps the
  * builder usable for the session instead of failing at the first keystroke.
  *
