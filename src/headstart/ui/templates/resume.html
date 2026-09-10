@@ -93,8 +93,9 @@
       {# The template gallery takes the stage over rather than opening as a dropdown of names:
          people choose a résumé template by looking at it, and every card here is the CURRENT
          DOCUMENT rendered through that layout, not a stock image — so what the card shows is what
-         choosing it gives you. Built to hold seven and to keep holding more: the grid wraps and
-         each card carries its own summary, warning and credit. #}
+         choosing it gives you. Three layouts are registered as this is written; the grid reads
+         the registry and wraps, so it holds however many there are, and each card carries that
+         layout's own summary, warning and credit. #}
       <div class="rb-templates" id="rb-templates" hidden role="group" aria-label="Choose a template">
         <div class="rb-templates-head">
           <h2>Choose a template</h2>

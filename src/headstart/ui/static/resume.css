@@ -123,10 +123,10 @@
 
 /* ---- the template gallery ----
    It takes the stage rather than dropping out of the chrome, because choosing a template is a
-   looking task: a <select> of seven names cannot say what "two column" does to your own bullets,
+   looking task: a <select> of names cannot say what "two column" does to your own bullets,
    and it hides the warning that matters most at the moment of choosing — that a handsome
-   coloured sidebar is the template an ATS parses worst. The grid wraps, so seven cards need no
-   more room than three. */
+   coloured sidebar is the template an ATS parses worst. The grid wraps, so it costs no more
+   room as layouts are added. */
 .rb-templates[hidden] { display: none !important; }
 .rb-templates-head h2 { margin: 0 0 4px; font-size: 1rem; }
 .rb-templates-head { margin-bottom: 12px; }

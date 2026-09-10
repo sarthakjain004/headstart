@@ -64,9 +64,12 @@ path, not the main road.**
 
 4. **The layout picker becomes a gallery that takes the stage over**, and every card is the
    *current document* rendered through that layout — not a stock thumbnail. Affordable because a
-   Layout's render is a pure string function (ADR-0123), so seven renders cost one paint and only
-   when the gallery is open. Each card carries the layout's own `summary`, `blurb` (which is where
-   an honest ATS warning about coloured sidebars or multi-column parsing belongs) and `credit`.
+   Layout's render is a pure string function (ADR-0123), so it costs one render per registered
+   layout — three today — and only while the gallery is open. Each card carries that layout's own
+   `summary`, `blurb` (which is where an honest ATS warning about coloured sidebars or
+   multi-column parsing belongs) and `credit`. The miniature's scale is **measured** from the
+   rendered sheet rather than derived from `page.width × 96`: `page.unit` is whatever the layout
+   declared, and a layout declaring mm would have rendered ~25× off.
 
 5. **Checks are reported twice, deliberately.** The `Polish` segment carries a persistent count
    badge, and each finding is *also* rendered inline at the top of the block it names, with a mark
@@ -85,6 +88,14 @@ No pointer target under 24 CSS px, and no horizontal overflow at 390×844 in eit
 Every capability is preserved: drag reorder, resize with typed equivalents, undo/redo, tailoring,
 layout switching, decorators, all five exports, page-break markers, the rules panel and keyword
 coverage. Verified end to end in Chromium.
+
+That claim was false on the first cut and the two-axis review caught it, so both halves are now
+asserted by the browser harness rather than argued: a **bullet** carried no rail anchor (so the
+"clicking a block reveals it in the rail" tie silently no-oped on the block type edited most), and
+under the free-canvas layout a bullet was given move and box handles on the page with **zero**
+typed equivalents — measured 1 handle / 0 controls against the pre-fix commit, which is a WCAG 2.2
+SC 2.5.7 failure visible on one layout only. Both are fixed; the harness now fails if either
+returns.
 
 **What this costs.**
 
