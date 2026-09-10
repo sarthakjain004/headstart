@@ -113,6 +113,16 @@
       updatedAt: new Date().toISOString(),
       root: node('__root__'),
       content: {},
+      /* Alternate wordings, per node: variants[nodeId][variantId] holds the fields that differ
+         from the base in `content`. Sparse and partial — a variant that changes a bullet's text
+         says nothing about its flags, so fixing the base still reaches every variant that never
+         disagreed with it. */
+      variants: {},
+      /* One Tailoring is one job application's version of this résumé: which variant each node
+         uses, and which nodes it leaves out. It stores only the differences, which is what makes
+         "fix the typo once" work across twenty applications. */
+      tailorings: [],
+      activeTailoring: null,
       /* Layout token overrides the user has dialled in — Layer 2 values, stored per document
          so the same Layout can look slightly different in two of them. */
       theme: {},
@@ -127,6 +137,49 @@
     if (!this._doc.layoutId) throw new Error('ResumeDocument: a document needs a layout');
     return this._doc;
   };
+
+  /* ---- resolution -------------------------------------------------------------------------
+     The document as one Tailoring sees it: base words with that Tailoring's variants merged over
+     them, and the nodes it leaves out pruned away. Everything downstream — render, rules, every
+     export — runs on the resolved document, so a tailored résumé is checked and printed as the
+     thing that will actually be sent, not as the master it came from.
+
+     Pure, and identity when nothing is active, so the master path costs nothing. */
+
+  function tailoringOf(doc, id) {
+    const wanted = id === undefined ? doc.activeTailoring : id;
+    return (doc.tailorings || []).find(t => t.id === wanted) || null;
+  }
+
+  function resolve(doc, id) {
+    const tailoring = tailoringOf(doc, id);
+    if (!tailoring) return doc;
+    const out = clone(doc);
+    /* The resolved document is what gets printed and downloaded, so it carries the version's own
+       name — three tailored PDFs in a downloads folder all called "Lee Korelitz.pdf" is a real
+       way to send the wrong one to the wrong employer. */
+    out.name = (doc.name || 'Résumé') + ' — ' + tailoring.name;
+    const hidden = new Set(tailoring.hidden || []);
+    (function prune(n) {
+      n.children = n.children.filter(c => !hidden.has(c.id));
+      n.children.forEach(prune);
+    })(out.root);
+    for (const nodeId of Object.keys(tailoring.picks || {})) {
+      const variant = (doc.variants || {})[nodeId];
+      const fields = variant && variant[tailoring.picks[nodeId]];
+      if (fields) out.content[nodeId] = Object.assign({}, doc.content[nodeId] || {}, fields);
+    }
+    return out;
+  }
+
+  /** The words one node shows under a Tailoring — base, with that Tailoring's variant over it. */
+  function contentOf(doc, nodeId, id) {
+    const tailoring = tailoringOf(doc, id);
+    const base = doc.content[nodeId] || {};
+    if (!tailoring) return base;
+    const fields = ((doc.variants || {})[nodeId] || {})[(tailoring.picks || {})[nodeId]];
+    return fields ? Object.assign({}, base, fields) : base;
+  }
 
   /* ---- Commands -----------------------------------------------------------------------
      Each returns { name, apply(doc) -> doc }. `apply` receives a private clone and may edit it
@@ -184,7 +237,16 @@
         /* Drop the subtree's content too. Leaving it would grow the saved document without
            bound as sections are added and deleted, and would resurrect stale text if an id
            were ever reused. */
-        if (gone) walk(gone, n => { delete d.content[n.id]; });
+        if (gone) {
+          walk(gone, n => {
+            delete d.content[n.id];
+            if (d.variants) delete d.variants[n.id];
+            for (const t of d.tailorings || []) {
+              if (t.picks) delete t.picks[n.id];
+              if (t.hidden) t.hidden = t.hidden.filter(id => id !== n.id);
+            }
+          });
+        }
         return d;
       },
     }),
@@ -227,6 +289,105 @@
         const at = index == null ? to.children.length : Math.max(0, Math.min(index, to.children.length));
         to.children.splice(at, 0, moving);
         moving.slot = to === d.root ? (moving.slot || 'main') : null;
+        return d;
+      },
+    }),
+
+    /* ---- tailoring ---------------------------------------------------------------------- */
+
+    addTailoring: (name, jobId) => ({
+      name: 'Add version',
+      apply: d => {
+        const tailoring = { id: newId(), name: name || 'Untitled version', jobId: jobId || null,
+          picks: {}, hidden: [], createdAt: new Date().toISOString() };
+        (d.tailorings = d.tailorings || []).push(tailoring);
+        d.activeTailoring = tailoring.id;
+        return d;
+      },
+    }),
+
+    renameTailoring: (id, name) => ({
+      name: 'Rename version',
+      apply: d => {
+        const t = (d.tailorings || []).find(x => x.id === id);
+        if (t) t.name = name;
+        return d;
+      },
+    }),
+
+    removeTailoring: id => ({
+      name: 'Delete version',
+      apply: d => {
+        d.tailorings = (d.tailorings || []).filter(t => t.id !== id);
+        if (d.activeTailoring === id) d.activeTailoring = null;
+        /* The variants that version forked are dropped with it — no other Tailoring can be
+           pointing at them, because a fork belongs to the Tailoring that made it. */
+        for (const nodeId of Object.keys(d.variants || {})) {
+          for (const variantId of Object.keys(d.variants[nodeId])) {
+            const used = (d.tailorings || []).some(t => (t.picks || {})[nodeId] === variantId);
+            if (!used) delete d.variants[nodeId][variantId];
+          }
+          if (!Object.keys(d.variants[nodeId]).length) delete d.variants[nodeId];
+        }
+        return d;
+      },
+    }),
+
+    activateTailoring: id => ({
+      name: id ? 'Switch version' : 'Back to the master',
+      apply: d => { d.activeTailoring = id; return d; },
+    }),
+
+    /** Write words for one node under one Tailoring, forking a variant on the first edit.
+     *  `tailoringId` null writes the base, which every Tailoring that has not disagreed will
+     *  keep seeing — that is the whole point of storing differences rather than copies. */
+    setContentFor: (nodeId, patch, tailoringId) => ({
+      name: tailoringId ? 'Edit this version' : 'Edit text',
+      apply: d => {
+        if (!tailoringId) {
+          d.content[nodeId] = Object.assign(d.content[nodeId] || {}, patch);
+          return d;
+        }
+        const tailoring = (d.tailorings || []).find(t => t.id === tailoringId);
+        if (!tailoring) return d;
+        d.variants = d.variants || {};
+        d.variants[nodeId] = d.variants[nodeId] || {};
+        let variantId = (tailoring.picks || {})[nodeId];
+        if (!variantId || !d.variants[nodeId][variantId]) {
+          variantId = newId();
+          d.variants[nodeId][variantId] = {};
+          (tailoring.picks = tailoring.picks || {})[nodeId] = variantId;
+        }
+        Object.assign(d.variants[nodeId][variantId], patch);
+        return d;
+      },
+    }),
+
+    /** Drop this node's override, so the Tailoring goes back to the master's words for it. */
+    clearVariant: (nodeId, tailoringId) => ({
+      name: 'Use the master’s words',
+      apply: d => {
+        const tailoring = (d.tailorings || []).find(t => t.id === tailoringId);
+        if (!tailoring || !tailoring.picks) return d;
+        const variantId = tailoring.picks[nodeId];
+        delete tailoring.picks[nodeId];
+        if (variantId && d.variants && d.variants[nodeId]) {
+          delete d.variants[nodeId][variantId];
+          if (!Object.keys(d.variants[nodeId]).length) delete d.variants[nodeId];
+        }
+        return d;
+      },
+    }),
+
+    /** Leave a node out of one Tailoring without deleting it from the résumé. */
+    setHidden: (nodeId, hidden, tailoringId) => ({
+      name: hidden ? 'Leave out of this version' : 'Put back in this version',
+      apply: d => {
+        const tailoring = (d.tailorings || []).find(t => t.id === tailoringId);
+        if (!tailoring) return d;
+        const set = new Set(tailoring.hidden || []);
+        if (hidden) set.add(nodeId); else set.delete(nodeId);
+        tailoring.hidden = Array.from(set);
         return d;
       },
     }),
@@ -356,6 +517,6 @@
   root.ResumeDocument = {
     SCHEMA, Commands, Store,
     builder: () => new Builder(),
-    node, walk, find, parentOf, flatten, clone,
+    node, walk, find, parentOf, flatten, clone, resolve, contentOf, tailoringOf,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

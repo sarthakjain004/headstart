@@ -28,6 +28,11 @@
   let savedTimer = null;
 
   const doc = () => store && store.get();
+  /* What the reader sees: the master, or the active version with its words merged in and its
+     left-out blocks pruned. Rendering, the rule panel and every export except the JSON backup
+     run on this, so a tailored résumé is checked and printed as the thing that will be sent. */
+  const view = () => { const d = doc(); return d ? Doc.resolve(d) : null; };
+  const activeTailoring = () => { const d = doc(); return d ? d.activeTailoring : null; };
   const layout = () => { const d = doc(); return d ? Layouts.get(d.layoutId) : null; };
 
   /* ---- painting ------------------------------------------------------------------------ */
@@ -64,10 +69,12 @@
     }
     sheet.textContent = lay.css(Layouts.themeFor(lay, d), '#rb-paper .rb-doc');
 
-    paper.innerHTML = Layouts.renderDocument(lay, d);
-    decorate(paper, lay, d);
+    const shown = view();
+    paper.innerHTML = Layouts.renderDocument(lay, shown);
+    decorate(paper, lay, shown);
 
     el('rb-name').value = d.name || '';
+    versionPaint();
     el('rb-undo').disabled = !store.canUndo();
     el('rb-redo').disabled = !store.canRedo();
     el('rb-layout-note').textContent = lay.summary || '';
@@ -260,7 +267,7 @@
    *  Layer 1's answer (`Components.accepts`), never a rule invented here — which is what stops
    *  a bullet being dropped into the Education section it has no renderer for. */
   function dropPoints(dragId) {
-    const d = doc();
+    const d = view();
     const lay = layout();
     const paper = el('rb-paper');
     const dragged = Doc.find(d, dragId);
@@ -342,6 +349,19 @@
      a "the last change came from the rail" flag, which is what this was first: that flag froze the
      WHOLE rail on every keystroke, so the Checks panel sat on a stale list while the badge beside
      it counted the new one. Focus is the fact that actually matters, and it is readable. */
+  /** The version picker: the master plus every Tailoring, and the delete button only when one
+   *  is active. */
+  function versionPaint() {
+    const d = doc();
+    const pick = el('rb-version');
+    const tailorings = d.tailorings || [];
+    pick.innerHTML = '<option value="">Master résumé</option>' + tailorings.map(t =>
+      '<option value="' + esc(t.id) + '"' + (d.activeTailoring === t.id ? ' selected' : '') + '>' +
+      esc(t.name) + '</option>').join('');
+    pick.value = d.activeTailoring || '';
+    el('rb-version-del').hidden = !d.activeTailoring;
+  }
+
   function railPaint() {
     const active = document.activeElement;
     const holdsCaret = pane => pane && active && pane !== active && pane.contains(active);
@@ -379,14 +399,30 @@
     out.push('<div class="rb-prefill"><button class="ghost rb-mini" id="rb-prefill">Fill from my profile</button>' +
       '<span class="note" id="rb-prefill-note"></span></div>');
 
+    const tailoring = Doc.tailoringOf(d);
+    if (tailoring) {
+      out.push('<p class="rb-banner">Editing <b>' + esc(tailoring.name) + '</b>. What you type ' +
+        'here is kept for this version only — the master keeps its own words, and a fix you make ' +
+        'there still reaches every version that has not overridden it.</p>');
+    }
+
     if (!node) {
       out.push('<p class="note">Click a block on the page to edit its words, or add one below.</p>');
     } else {
       const spec = Components.get(node.type);
+      const overridden = !!(tailoring && (tailoring.picks || {})[node.id]);
+      const left_out = !!(tailoring && (tailoring.hidden || []).includes(node.id));
       out.push('<div class="rb-sel"><b>' + esc(spec.label) + '</b>' +
+        (overridden ? '<span class="rb-tag">tailored</span>' : '') +
         (spec.blurb ? '<p class="note">' + esc(spec.blurb) + '</p>' : '') + '</div>');
-      const content = d.content[node.id] || {};
+      const content = Doc.contentOf(d, node.id);
       for (const f of spec.fields) out.push(fieldControl(node.id, f, content[f.key]));
+      if (tailoring) {
+        out.push('<div class="rb-actions">' +
+          (overridden ? '<button class="ghost rb-mini" data-act="unfork">Use the master’s words</button>' : '') +
+          '<button class="ghost rb-mini" data-act="hide">' +
+          (left_out ? 'Put back in this version' : 'Leave out of this version') + '</button></div>');
+      }
 
       /* Which column a top-level block sits in — only offered where the layout has more than
          one, so a single-column template never shows a control that does nothing. */
@@ -423,16 +459,20 @@
 
   function outlineHtml(d) {
     const rows = [];
+    const tailoring = Doc.tailoringOf(d);
+    const hidden = new Set((tailoring && tailoring.hidden) || []);
     Doc.walk(d.root, (node, parent, index) => {
       if (node === d.root) return;
       const spec = Components.get(node.type);
-      const content = d.content[node.id] || {};
+      const content = Doc.contentOf(d, node.id);
       const first = spec.fields.map(f => content[f.key]).find(v => typeof v === 'string' && v.trim());
       const depth = (function () { let n = node, k = 0; while ((n = Doc.parentOf(d, n.id)) && n !== d.root) k++; return k; })();
       rows.push('<button class="rb-out-row' + (node.id === selectedId ? ' on' : '') +
+        (hidden.has(node.id) ? ' off' : '') +
         '" data-select="' + node.id + '" style="padding-left:' + (8 + depth * 12) + 'px">' +
         '<span class="rb-out-type">' + esc(spec.label) + '</span> ' +
-        '<span class="rb-out-text">' + esc(String(first || '').slice(0, 44)) + '</span></button>');
+        '<span class="rb-out-text">' + esc(String(first || '').slice(0, 44)) + '</span>' +
+        (hidden.has(node.id) ? '<span class="rb-tag">left out</span>' : '') + '</button>');
     });
     return rows.join('') || '<p class="note">Nothing on the page yet.</p>';
   }
@@ -469,7 +509,7 @@
   /** Every finding the current layout's rules produce. The running lives in ResumeLayouts so it
    *  is testable without a DOM; this is only the lookup. */
   function findings() {
-    const d = doc();
+    const d = view();
     const lay = layout();
     return d && lay ? Layouts.runRules(lay, d) : [];
   }
@@ -505,7 +545,7 @@
      only a person can do. */
 
   function keywordCheck() {
-    const d = doc();
+    const d = view();
     const raw = el('rb-kw').value || '';
     const terms = raw.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean);
     const out = el('rb-kw-out');
@@ -629,6 +669,27 @@
       changeLayout(e.target.value);
     });
 
+    el('rb-version').addEventListener('change', e => {
+      selectedId = null;
+      store.dispatch(Cmd.activateTailoring(e.target.value || null));
+    });
+    el('rb-version-new').addEventListener('click', () => {
+      const name = window.prompt(
+        'Name this version after the job you are applying to — "Acme, Backend Engineer".\n\n' +
+        'It starts as a copy of the master and only stores what you change.');
+      if (name == null) return;
+      selectedId = null;
+      store.dispatch(Cmd.addTailoring(name.trim() || 'Untitled version'));
+    });
+    el('rb-version-del').addEventListener('click', () => {
+      const tailoring = Doc.tailoringOf(doc());
+      if (!tailoring) return;
+      if (!window.confirm('Delete the version “' + tailoring.name + '”? The master résumé and ' +
+        'every other version are untouched.')) return;
+      selectedId = null;
+      store.dispatch(Cmd.removeTailoring(tailoring.id));
+    });
+
     el('rb-zoom').addEventListener('input', e => { zoom = (+e.target.value) / 100; paint(); });
 
     el('rb-undo').addEventListener('click', () => { selectedId = null; store.undo(); });
@@ -698,10 +759,13 @@
       const button = e.target.closest('[data-fmt]');
       if (!button) return;
       store.flush();
-      const d = doc();
+      const format = button.dataset.fmt;
+      /* The JSON backup is the WHOLE document — every version, every variant — because it is the
+         only copy that exists off this browser. Everything else is the version on screen. */
+      const payload = format === 'json' ? doc() : view();
       const by = { pdf: Export.print, word: Export.asWord, text: Export.asText,
-        html: Export.asHtml, json: Export.asJson }[button.dataset.fmt];
-      if (by) by(window, d);
+        html: Export.asHtml, json: Export.asJson }[format];
+      if (by) by(window, payload);
       el('rb-pop-download').hidden = true;
     });
 
@@ -712,7 +776,10 @@
       const t = e.target;
       if (t.dataset.field) {
         const value = t.type === 'checkbox' ? t.checked : t.value;
-        store.dispatch(Cmd.setContent(t.dataset.node, { [t.dataset.field]: value }),
+        /* Under a version this forks a variant on the first keystroke and writes there after —
+           copy-on-write, so tailoring a bullet never edits the master by accident. */
+        store.dispatch(
+          Cmd.setContentFor(t.dataset.node, { [t.dataset.field]: value }, activeTailoring()),
           'content:' + t.dataset.node + ':' + t.dataset.field);
       } else if (t.dataset.token) {
         store.dispatch(Cmd.setTheme({ [t.dataset.token]: t.type === 'range' ? +t.value : t.value }),
@@ -746,6 +813,12 @@
           store.dispatch(Cmd.removeNode(gone));
         } else if (act.dataset.act === 'duplicate') {
           store.dispatch(Cmd.duplicateNode(selectedId));
+        } else if (act.dataset.act === 'unfork') {
+          store.dispatch(Cmd.clearVariant(selectedId, activeTailoring()));
+        } else if (act.dataset.act === 'hide') {
+          const tailoring = Doc.tailoringOf(doc());
+          const isHidden = !!(tailoring && (tailoring.hidden || []).includes(selectedId));
+          store.dispatch(Cmd.setHidden(selectedId, !isHidden, activeTailoring()));
         }
       }
       if (e.target.id === 'rb-theme-reset') store.dispatch(Cmd.setTheme(blankTheme()));

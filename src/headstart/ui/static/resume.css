@@ -161,3 +161,14 @@
   .rb-h, .rb-dropline { display: none !important; }
   .rb-stage { border: 0; padding: 0; background: #fff; }
 }
+
+/* Tailoring: one résumé, many versions. The banner and the tags are the only signals that the
+   words on screen belong to a version rather than to the master, so they are stated rather than
+   implied by a colour. */
+.rb-banner { background: var(--raise-2); border-left: 3px solid var(--accent); border-radius: var(--r-md);
+  margin: 0; padding: 8px 10px; font-size: .82rem; color: var(--ink-2); }
+.rb-tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: var(--r-pill);
+  background: var(--accent); color: #fff; font-size: .68rem; text-transform: uppercase;
+  letter-spacing: .04em; vertical-align: middle; }
+.rb-out-row.off { opacity: .55; text-decoration: line-through; }
+.rb-out-row.off .rb-tag { text-decoration: none; background: var(--ink-3); }

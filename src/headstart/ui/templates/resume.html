@@ -9,6 +9,13 @@
       <input id="rb-name" class="rb-name" placeholder="Untitled résumé" autocomplete="off">
       <button class="ghost rb-mini" id="rb-open" title="Your saved résumés">Open</button>
       <button class="ghost rb-mini" id="rb-new" title="Start a new résumé">New</button>
+      {# Tailoring: one résumé, many versions. A version stores only what it changes, so fixing a
+         sentence in the master reaches every version that never disagreed with it. #}
+      <label class="rb-vh" for="rb-version">Version</label>
+      <select id="rb-version" class="rb-layout"
+              title="Tailor this résumé for one job without copying the whole thing"></select>
+      <button class="ghost rb-mini" id="rb-version-new" title="Tailor a copy for one job">+ Version</button>
+      <button class="ghost rb-mini danger" id="rb-version-del" hidden>Delete version</button>
     </div>
     <div class="rb-bar-right">
       <button class="ghost rb-mini" id="rb-undo" title="Undo (Ctrl+Z)" disabled>Undo</button>
