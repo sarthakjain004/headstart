@@ -467,7 +467,7 @@ def sync(args: argparse.Namespace) -> int:
             f"scrape outcome: {len(excluded)} Board(s) returned a list that is not authoritative "
             "(truncated, or the scrape raised) and are excluded from the eviction scope — their "
             "missing rows are unscraped, not closed: "
-            + observability.named_sample(sorted(excluded))
+            + log.named_sample(sorted(excluded))
         )
         _log_reasons(
             "scope-excluded Board",
@@ -531,7 +531,7 @@ def sync(args: argparse.Namespace) -> int:
         # The sample is omitted rather than left empty when every excluded Board happens to hold
         # no eviction candidate — a real outcome, and "worst: " with nothing after it reads as
         # a truncated line.
-        worst = observability.named_sample([f"{b} ({n})" for b, n in ranked])
+        worst = log.named_sample([f"{b} ({n})" for b, n in ranked])
         _log.warning(
             f"scope exclusion keeps {sum(out_of_scope.values())} eviction-candidate row(s) out of "
             f"scope across {len(excluded)} Board(s) — ADR-0053 has no drain, so a "
@@ -976,7 +976,7 @@ def main() -> int:
     # After parsing, not before it: one entry point runs four different passes, and `stage=index`
     # alone cannot say which of them a log belongs to — `sync` and `prune` even run back to back
     # in the same `merge` job. Same reason `update_ledgers` rides its ledger name.
-    observability.context("index", step=args.step)
+    log.context("index", step=args.step)
     return args.fn(args)
 
 

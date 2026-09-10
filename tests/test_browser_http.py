@@ -7,6 +7,8 @@ test resets that state via the ``fresh`` fixture rather than sharing it.
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from headstart import browser_http as bh
@@ -237,3 +239,82 @@ def test_missing_pydoll_says_so_instead_of_blaming_chrome_startup(monkeypatch):
         bh.origin("https://acme.darwinbox.in/careers"),
     ):
         pass
+
+
+def test_a_reap_that_itself_fails_leaves_a_record(monkeypatch, caplog):
+    """The reap's own failure is the very "Directory not empty" race its comment predicts, and
+    a bare `pass` made the one symptom the code names unreportable.
+
+    DEBUG rather than WARNING on purpose: the reap runs once per launch attempt on the per-Board
+    path, and under Actions a WARNING is a 10-per-step annotation quota (ADR-0039), not a
+    severity. `exc_info` is what makes the record worth having — the OSError's own errno is the
+    difference between a raced temp dir and a dead process manager.
+    """
+
+    class _WontClean(_FakeTempDirManager):
+        def cleanup(self) -> None:
+            raise OSError("[Errno 39] Directory not empty")
+
+    class _DiesOnStart(_FakeChrome):
+        def __init__(self) -> None:
+            super().__init__()
+            self._temp_directory_manager = _WontClean()
+
+        async def start(self):
+            raise OSError("xvfb had a bad day")
+
+    monkeypatch.setattr(bh, "_chrome_factory", _DiesOnStart)
+    monkeypatch.setattr(bh, "_browser", None)
+    with (
+        caplog.at_level(logging.DEBUG, logger="headstart"),
+        pytest.raises(RuntimeError, match="failed to start"),
+        bh.origin("https://acme.darwinbox.in/careers"),
+    ):
+        pass
+
+    reaps = [r for r in caplog.records if "reaping a failed Chrome launch" in r.message]
+    assert len(reaps) == bh._LAUNCH_ATTEMPTS
+    assert all(r.levelno == logging.DEBUG and r.exc_info for r in reaps)
+
+
+@pytest.mark.parametrize("nav_fails", [False, True])
+def test_a_tab_that_will_not_close_leaves_a_record(
+    fresh, monkeypatch, caplog, nav_fails
+):
+    """Both close sites, which are separate `except`s reached by opposite outcomes.
+
+    A tab that will not close is how `_TAB_WIDTH` leaks — the slot comes back either way, but
+    the tab does not — so the failure has to be recoverable from a verbose run rather than
+    swallowed. DEBUG for the reason the reap above gives: once per walled Board.
+    """
+
+    async def _wont_close(self):
+        raise RuntimeError("the tab is wedged")
+
+    monkeypatch.setattr(_FakeTab, "close", _wont_close)
+    if nav_fails:
+
+        async def _boom(self, url, timeout=None):
+            raise TimeoutError("navigation gave up")
+
+        monkeypatch.setattr(_FakeTab, "go_to", _boom)
+
+    with caplog.at_level(logging.DEBUG, logger="headstart"):
+        if nav_fails:
+            with (
+                pytest.raises(TimeoutError),
+                bh.origin("https://acme.darwinbox.in/careers"),
+            ):
+                pass
+        else:
+            with bh.origin("https://acme.darwinbox.in/careers"):
+                pass
+
+    expected = (
+        "closing the tab of a failed navigation raised"
+        if nav_fails
+        else "closing a finished board's tab raised"
+    )
+    closes = [r for r in caplog.records if r.message == expected]
+    assert len(closes) == 1
+    assert closes[0].levelno == logging.DEBUG and closes[0].exc_info

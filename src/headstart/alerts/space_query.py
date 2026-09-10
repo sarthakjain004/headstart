@@ -32,6 +32,12 @@ from .store import Subscription
 
 _log = log.get(__name__)
 
+#: Module-level, so the bound spans the whole alerts run rather than one Subscription.
+#: `newly_seen` is called once per Account and retries up to three times inside, so a Space
+#: that is merely slow to wake costs accounts x retries annotations — and a cold Space is slow
+#: for every Account at once, which is exactly the systemic shape that empties the budget.
+_SEARCH_RETRY = log.FirstOnly(_log)
+
 K = 100  # the Space's page cap (JobSearch.max_k)
 _TIMEOUT = 120  # a cold Space reloads the index and the encoder before it answers
 _WAITS = (15, 30, 60)  # three retries, sized to a Space cold start
@@ -105,7 +111,7 @@ def newly_seen(
             # while the Space wakes reads nothing like a 500 from the app itself, and the
             # exception type alone renders both as `HTTPError`.
             status = f" {exc.code}" if isinstance(exc, urllib.error.HTTPError) else ""
-            _log.warning(
+            _SEARCH_RETRY.report(
                 f"search attempt {attempt} failed ({type(exc).__name__}{status}); "
                 f"retrying in {wait}s"
             )

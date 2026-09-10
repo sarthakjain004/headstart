@@ -100,7 +100,7 @@ def write_unauthoritative_boards(reports: list[dict], path: Path) -> dict[str, s
 
 def main() -> int:
     log.setup()
-    observability.context("scrape_join")
+    log.context("scrape_join")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--shards",
@@ -241,7 +241,7 @@ def _report_shards(reports: list[dict], lines: int, ats_files: int) -> None:
         # one shard's bad luck — and a name is what turns "a shard was killed" into a fix.
         lost = [b for r in killed for b in (r.get("deferred") or [])]
         if lost:
-            _log.warning("deferred boards: " + observability.named_sample(lost))
+            _log.warning("deferred boards: " + log.named_sample(lost))
     if errors:
         # Classified and with a denominator, not a bare count. "N board errors across 15 shards"
         # cannot say whether the run met throttling, dead hosts, or a parse bug, nor on which

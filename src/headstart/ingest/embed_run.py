@@ -278,6 +278,14 @@ def _length_sorted(idxs: list[int], tokens: list[int], batch: int) -> list[int]:
     return out
 
 
+#: A wedged accelerator fails every batch it is given, so this line's population is the queue,
+#: not the bug: the `consec_failed >= 64` circuit-breaker below caps it at 64 identical failures
+#: — 64 annotations and 64 identical tracebacks against a 50-per-job budget. The first names the
+#: allocator error and carries its stack; the rest state the skipped ids at INFO, which is what
+#: `--resume` actually needs.
+_BATCH_FAILURE = log.FirstOnly(_log)
+
+
 def _encode_groups(
     model,
     device: str,
@@ -335,10 +343,9 @@ def _encode_groups(
                     failed += len(chunk)
                     consec_failed += len(chunk)
                     bad = [m["id"] for m in batch_metas]
-                    _log.warning(
+                    _BATCH_FAILURE.report(
                         f"batch FAILED ({type(exc).__name__}: {exc}) — skipped "
-                        f"{len(bad)} (e.g. {bad[:2]}); retry with --resume",
-                        exc_info=True,
+                        f"{len(bad)} (e.g. {bad[:2]}); retry with --resume"
                     )
                 else:
                     store.add(vectors, batch_metas)
@@ -445,7 +452,7 @@ def main() -> None:
     args = ap.parse_args()
     # After parsing, not before it: the shard number lives in the assignment's filename, and it
     # is the only key that tells fifteen concurrent embedders apart in a merged log.
-    observability.context(
+    log.context(
         "embed_run",
         shard=Path(args.assignment).stem.rsplit("-", 1)[-1]
         if args.assignment

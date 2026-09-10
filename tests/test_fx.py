@@ -8,6 +8,7 @@ at *import* — before the guarded read that was supposed to make a missing tabl
 """
 
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -107,3 +108,103 @@ def test_convert_returns_none_when_either_side_has_no_rate():
     assert fx.convert(100.0, "XTS", "INR", rates) is None
     # base-independent: the units-per-base factors cancel
     assert fx.convert(8300.0, "INR", "USD", rates) == 100.0
+
+
+def test_the_swallowed_read_leaves_a_record_naming_its_consequence(tmp_path, caplog):
+    """`None` is a supported state; being *silent* about it is not.
+
+    The result is cached for the life of the process, so a swallowed read is not one failed
+    lookup — every salary bracket after it compares within a single currency and drops every Job
+    priced in another, with nothing in the UI to say so. On the live Space that made
+    cross-currency conversion go permanently dark with zero records anywhere.
+    """
+    bad = tmp_path / "fx_rates.json"
+    bad.write_text("{ not json")
+    with caplog.at_level(logging.WARNING, logger="headstart.fx"):
+        assert fx.table(path=bad) is None
+
+    assert len(caplog.records) == 1
+    assert caplog.records[0].levelno == logging.WARNING
+    message = caplog.records[0].getMessage()
+    assert "JSONDecodeError" in message  # which failure, not merely that one did
+    assert "falls back to one currency" in message  # and what it costs
+
+
+@pytest.mark.parametrize(
+    "payload, names",
+    [
+        (
+            {"base": "USD", "as_of": "2024-06-01", "rates": {}},
+            ["no usable rates", "base USD has no rate of its own"],
+        ),
+        (
+            {"rates": {"USD": 1.0}, "base": "EUR", "as_of": "2024-06-01"},
+            ["base EUR has no rate of its own"],
+        ),
+        (
+            {"rates": {"USD": 1.0}, "base": "USD"},
+            ["no as_of date"],
+        ),
+    ],
+    ids=["empty-rates", "base-has-no-rate", "no-as_of"],
+)
+def test_a_refused_table_says_which_shape_refused_it(tmp_path, caplog, payload, names):
+    """The `else None` beside the swallowed read was the second dark path, and the quieter one.
+
+    A malformed table is refused whole (the test above), and the refusal costs the same thing the
+    exception costs: `_CACHE` holds the `None` for the process, so cross-currency comparison is
+    off for the Space's whole uptime. This shape is arguably the likelier of the two — a rate
+    refresh that writes valid JSON under a renamed `base` never reaches the `except` — and it
+    reported nothing at all.
+
+    Which shape failed is asserted, not merely that one did: "unusable" sends the operator back
+    to a file they can already see, while "base USD has no rate of its own" is a one-word fix.
+    """
+    f = tmp_path / "fx_rates.json"
+    f.write_text(json.dumps(payload))
+    with caplog.at_level(logging.WARNING, logger="headstart.fx"):
+        assert fx.table(path=f) is None
+
+    assert len(caplog.records) == 1, (
+        "one refusal is one annotation, however many parts failed"
+    )
+    assert caplog.records[0].levelno == logging.WARNING
+    message = caplog.records[0].getMessage()
+    for name in names:
+        assert name in message
+    assert "falls back to one currency" in message  # the same cost, said the same way
+
+
+def test_a_healthy_table_says_nothing(tmp_path, caplog):
+    """The control: no line unless something is actually wrong. WARNING is an annotation budget
+    (ADR-0039), and a table that loads cleanly must not spend one on every Space boot."""
+    f = tmp_path / "fx_rates.json"
+    f.write_text(
+        json.dumps(
+            {"as_of": "2024-06-01", "base": "USD", "rates": {"USD": 1.0, "INR": 83.0}}
+        )
+    )
+    with caplog.at_level(logging.DEBUG, logger="headstart.fx"):
+        assert fx.table(path=f) is not None
+    assert caplog.records == []
+
+
+def test_a_dropped_rate_names_the_currency_it_silences(tmp_path, caplog):
+    """Dropping the row keeps the feature up — that is the point — but the dropped currency's
+    Jobs leave every cross-currency range, and the drop used to name neither."""
+    f = tmp_path / "fx_rates.json"
+    f.write_text(
+        json.dumps(
+            {"as_of": "x", "base": "USD", "rates": {"USD": 1.0, "INR": 0, "EUR": -2}}
+        )
+    )
+    with caplog.at_level(logging.WARNING, logger="headstart.fx"):
+        t = fx.table(path=f)
+    assert t is not None and set(t["rates"]) == {"USD"}  # still up, per the test above
+
+    assert len(caplog.records) == 1
+    message = caplog.records[0].getMessage()
+    assert "EUR, INR" in message  # which currencies went quiet, not just how many
+    assert "falls back to one currency" not in message, (
+        "a dropped rate is a partial loss; borrowing the whole-table line would overstate it"
+    )

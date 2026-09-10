@@ -5,6 +5,7 @@ repo layout and the deny-on-missing-allowlist rule are exercised without a netwo
 """
 
 import json
+import logging
 
 import pytest
 
@@ -538,3 +539,38 @@ def test_absent_is_separated_from_an_unreachable_hub():
     assert _is_absent(hub_errors.EntryNotFoundError("no such file")) is True
     assert _is_absent(hub_errors.LocalEntryNotFoundError("hub unreachable")) is False
     assert _is_absent(ValueError("corrupt json")) is False
+
+
+def test_a_hub_outage_costs_one_annotation_not_one_per_account(monkeypatch, caplog):
+    """ADR-0039: WARNING and ERROR are both GitHub annotations, capped at 10 per step.
+
+    `get` runs once per Account and a Hub outage fails every one of them at once, so this arm
+    was systemic in practice, not per-item: 40 Accounts cost 40 `::error::` annotations and 40
+    tracebacks — the whole step's budget spent restating one outage, displacing the aborts
+    annotations exist for. It cannot be left to `alerts.run`'s own per-Subscription bound
+    either: this line fires *first* and then answers None rather than raising, so that bound
+    never sees the failure. What the demotion must not lose is which records were affected, or
+    the one stack that says where the failure came from.
+    """
+
+    def _outage(repo, path, token):
+        raise ConnectionError("hub unreachable")
+
+    # The bound is module-level, so it spans the process rather than one `Store` — which is the
+    # point (both callers build one per item) and means a test has to start it unfired.
+    monkeypatch.setattr(st, "_record_unreadable_reported", False)
+    monkeypatch.setattr(st, "_read", _outage)
+    ids = [f"{n:016x}" for n in range(40)]
+    caplog.set_level(logging.INFO, logger="headstart.alerts.store")
+
+    assert [st.Store(REPO, TOKEN).get(sub_id) for sub_id in ids] == [None] * 40
+
+    reported = [r for r in caplog.records if "unreadable" in r.getMessage()]
+    assert len(reported) == 40, "every failed read is still reported"
+    assert [r.levelno for r in reported] == [logging.WARNING] + [logging.INFO] * 39
+    # `bool`, not `is not None`: `logging` keeps an `exc_info=False` as False on the record.
+    assert [bool(r.exc_info) for r in reported] == [True] + [False] * 39, (
+        "one stack, not forty"
+    )
+    assert [r.getMessage().split(" ")[0] for r in reported] == ids
+    assert all("ConnectionError" in r.getMessage() for r in reported)

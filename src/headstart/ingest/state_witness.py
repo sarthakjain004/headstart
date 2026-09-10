@@ -35,7 +35,7 @@ import json
 from pathlib import Path
 
 from headstart import log
-from headstart.ingest import REPO_ROOT, observability
+from headstart.ingest import REPO_ROOT
 
 _log = log.get(__name__, __spec__)
 
@@ -148,7 +148,7 @@ def publish(root: Path = REPO_ROOT) -> list[str]:
 
 def main() -> int:
     log.setup()
-    observability.context("state_witness")
+    log.context("state_witness")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("command", choices=["publish"])
     ap.parse_args()
