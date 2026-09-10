@@ -32,17 +32,23 @@ scrape = ["pydoll-python"]
 # scikit-learn arrives transitively via sentence-transformers; named because
 # scripts/embed/cluster_roles.py imports it directly (ADR-0040).
 #
-# transformers is capped at <6 because nomic's *remote* modeling code — which
-# `trust_remote_code` fetches from the Hub, not from here — calls
-# `get_extended_attention_mask`, and 6.0 stops NomicBertModel inheriting it. Measured on
-# 2026-09-10: CI resolved transformers 6.0.1 and every embed batch failed with
-# `AttributeError: 'NomicBertModel' object has no attribute 'get_extended_attention_mask'`,
-# so the monolith embedded 0 of 16 and pipeline-smoke went red. 5.x is unaffected.
-# Pinned rather than fixed here because the broken code is the model's, not this repo's, so
-# the cap lifts when nomic publishes modeling code that works on 6 — not when we change ours.
+# transformers is capped because nomic's *remote* modeling code — which `trust_remote_code`
+# fetches from the Hub, not from here — calls `get_extended_attention_mask`, and newer
+# transformers stops NomicBertModel inheriting it. Every embed batch then fails with
+# `AttributeError: 'NomicBertModel' object has no attribute 'get_extended_attention_mask'`
+# and the store is written empty — silently, because a failed batch is skipped, not raised.
+#
+# Measured 2026-09-10, and the cap is drawn at what was measured rather than where the break
+# looks like it should be: **5.12.1 works**, **5.17.0 and 6.0.1 both fail** (monolith embedded
+# 0 of 16, pipeline-smoke red on both). The first broken release between 5.12 and 5.17 was not
+# bisected, so `<5.13` is the last version this repo has evidence for, not the last that works.
+# Widen it by measuring, not by reasoning about the changelog.
+#
+# Pinned rather than worked around because the broken code is the model's, not this repo's:
+# the cap lifts when nomic publishes modeling that runs on current transformers.
 embed = [
     "sentence-transformers>=3.0",
-    "transformers<6",
+    "transformers<5.13",
     "einops",
     "langdetect",
     "lancedb",
