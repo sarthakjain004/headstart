@@ -18,7 +18,10 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { DIR, ALL } = require('./resume_harness.js');
 
-const TABS = ['content', 'design', 'checks', 'keywords'];
+/* Two strips now, nested: Design, Checks and Keywords sit one level down inside Polish,
+   because they are things done TO the document rather than peers of it. */
+const SEGMENTS = ['document', 'polish'];
+const TABS = ['design', 'checks', 'keywords'];
 
 /** One stub element. Listeners are RECORDED and replayed by `fire`, which is the only way to
  *  test that a control is wired to the right thing — a no-op addEventListener would make the
@@ -61,6 +64,9 @@ function matches(el, sel) {
   if (sel === '[data-select]') return el.dataset.select != null;
   if (sel === '[data-add]') return el.dataset.add != null;
   if (sel === '[data-act]') return el.dataset.act != null;
+  if (sel === '[data-row]') return el.dataset.row != null;
+  if (sel === '[data-layout]') return el.dataset.layout != null;
+  if (sel === '[data-act="templates"]') return el.dataset.act === 'templates';
   if (sel === '[data-fmt]') return el.dataset.fmt != null;
   if (sel === '[data-open]') return el.dataset.open != null;
   if (sel === '[data-drop]') return el.dataset.drop != null;
@@ -77,12 +83,25 @@ function loadEditor(options) {
   const nodes = {};
   const get = id => (nodes[id] ||= fakeEl(id));
   const rail = fakeEl('rail');
-  const tabs = get('rb-rail-tabs');
-  tabs.children = TABS.map(name => {
-    const b = fakeEl('rb-tab-' + name);
-    b.dataset.pane = name;
-    return b;
-  });
+  /* Seeded the way the TEMPLATE ships it — first tab selected, the rest at tabIndex -1 — because
+     that is where the initial state genuinely lives: the strips are static markup so the panel is
+     legible before the scripts run, and the editor only ever moves the selection from there. A
+     stub that started every tab blank would let "the rail opens on the document" pass by
+     accident. */
+  const strip = (id, key, names, prefix) => {
+    const holder = get(id);
+    holder.children = names.map((name, i) => {
+      const b = fakeEl(prefix + name);
+      b.dataset[key] = name;
+      b.setAttribute('aria-selected', i === 0 ? 'true' : 'false');
+      b.tabIndex = i === 0 ? 0 : -1;
+      get('rb-pane-' + name).hidden = i !== 0;
+      return b;
+    });
+    return holder;
+  };
+  const segs = strip('rb-seg', 'seg', SEGMENTS, 'rb-seg-');
+  const tabs = strip('rb-rail-tabs', 'pane', TABS, 'rb-tab-');
   // The paper sits inside a scrolling wrapper; `paint` reads the wrapper to reserve height.
   get('rb-paper').parentElement = fakeEl('rb-paper-wrap');
 
@@ -118,7 +137,7 @@ function loadEditor(options) {
   }
   ctx.ResumeEditor.boot();
   get('rb-paper')._docKeydown = ctx._docHandlers.keydown || [];
-  return { ctx, nodes, rail, tabs, el: get };
+  return { ctx, nodes, rail, tabs, segs, el: get };
 }
 
 /** A localStorage stand-in, pre-loaded with documents. `ResumeRepository.detect` probes it with
@@ -170,7 +189,7 @@ test('booting opens a document and paints the page and the rail from it', () => 
   assert.ok(doc && doc.root, 'no document was opened');
   assert.equal(doc.layoutId, 'headless-headhunter', 'the tab opens on the template it ships');
   assert.ok(el('rb-paper').innerHTML.includes('data-node='), 'the page was not rendered');
-  assert.ok(el('rb-pane-content').innerHTML.includes('Outline'), 'the rail was not painted');
+  assert.ok(el('rb-pane-document').innerHTML.includes('data-row='), 'the rail was not painted');
 });
 
 /* ---- the rail's repaint guard ----------------------------------------------------------
@@ -185,13 +204,13 @@ test('a focused BUTTON does not freeze the pane it lives in', () => {
   const { ctx, el, rail } = loadEditor();
   const bullets = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current())
     .filter(n => n.type === 'bullet');
-  const pane = el('rb-pane-content');
+  const pane = el('rb-pane-document');
 
   ctx.ResumeEditor.select(bullets[0].id);
   assert.ok(pane.innerHTML.includes('data-node="' + bullets[0].id + '"'), 'the first block is shown');
 
-  /* An Outline row: a button, inside the pane, still focused after its own click — exactly
-     where the browser leaves focus. */
+  /* A button inside the pane, still focused after its own click — exactly where the browser
+     leaves focus. A Checks finding is one; so is every row header in the accordion. */
   const row = target({ select: bullets[1].id });
   focusInside(ctx, pane, row, false);
   rail.fire('click', { target: row });
@@ -207,7 +226,7 @@ test('a focused TEXT FIELD does freeze its own pane, and only its own', () => {
      pass whatever the guard did. */
   const bullet = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current())
     .filter(n => n.type === 'bullet')[1];
-  const pane = el('rb-pane-content');
+  const pane = el('rb-pane-document');
   const checks = el('rb-pane-checks');
 
   ctx.ResumeEditor.select(bullet.id);
@@ -232,7 +251,7 @@ test('the caret guard yields the moment the pane would show something else', () 
   const nodes = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current());
   const bullet = nodes.filter(n => n.type === 'bullet')[1];
   const other = nodes.filter(n => n.type === 'work_entry')[0];
-  const pane = el('rb-pane-content');
+  const pane = el('rb-pane-document');
 
   /* Type in one block's field, leaving the caret in the pane... */
   ctx.ResumeEditor.select(bullet.id);
@@ -265,20 +284,22 @@ test('clicking a block on the page selects it, and Escape lets it go', () => {
   /* The real path: a pointerdown on the page, not the exported `select`. A press with no handle
      under it selects; the handle is what starts a drag instead. */
   paper.fire('pointerdown', { target: target({ node: entry.id }) });
-  assert.ok(el('rb-pane-content').innerHTML.includes('Work entry'),
+  assert.ok(el('rb-pane-document').innerHTML.includes('Work entry'),
     'the rail did not follow the click on the page');
-  assert.ok(el('rb-pane-content').innerHTML.includes('data-node="' + entry.id + '"'));
+  assert.ok(el('rb-pane-document').innerHTML.includes('data-node="' + entry.id + '"'));
 
+  assert.ok(el('rb-pane-document').innerHTML.includes(' on"'), 'the row is not marked selected');
   fireKey(el, { key: 'Escape' });
-  assert.ok(el('rb-pane-content').innerHTML.includes('Click a block on the page'),
-    'Escape left the block selected');
+  assert.ok(!el('rb-pane-document').innerHTML.includes(' on"'), 'Escape left the block selected');
+  assert.ok(el('rb-pane-document').innerHTML.includes('data-node="' + entry.id + '"'),
+    'Escape also collapsed the row, which would throw away where the user had navigated to');
 });
 
 test('a click on a block that is not in the document changes nothing', () => {
   const { ctx, el } = loadEditor();
-  const before = el('rb-pane-content').innerHTML;
+  const before = el('rb-pane-document').innerHTML;
   el('rb-paper').fire('pointerdown', { target: target({ node: 'n-never-existed' }) });
-  assert.equal(el('rb-pane-content').innerHTML, before);
+  assert.equal(el('rb-pane-document').innerHTML, before);
 });
 
 /* ---- adding, duplicating and deleting through the rail ---- */
@@ -291,7 +312,7 @@ test('the rail adds a block, selects what it added, and can add inside a contain
   const after = ctx.ResumeEditor.current().root.children;
   assert.equal(after.length, before + 1, 'nothing was added to the page');
   assert.equal(after[after.length - 1].type, 'section');
-  assert.ok(el('rb-pane-content').innerHTML.includes('data-node="' + after[after.length - 1].id + '"'),
+  assert.ok(el('rb-pane-document').innerHTML.includes('data-node="' + after[after.length - 1].id + '"'),
     'the rail must land on the block it just made, or the user has to go and find it');
 
   const entry = D.flatten(ctx.ResumeEditor.current()).find(n => n.type === 'work_entry');
@@ -315,7 +336,7 @@ test('duplicate copies the selected block, delete removes it and clears the sele
   ctx.ResumeEditor.select(entry.id);
   rail.fire('click', { target: target({ act: 'remove' }) });
   assert.equal(D.find(ctx.ResumeEditor.current(), entry.id), null, 'the block is still there');
-  assert.ok(el('rb-pane-content').innerHTML.includes('Click a block on the page'),
+  assert.ok(!el('rb-pane-document').innerHTML.includes('data-node="' + entry.id + '"'),
     'the rail kept offering Delete and Duplicate for a block that no longer exists');
 });
 
@@ -354,7 +375,7 @@ test('keyword coverage counts what the résumé says, and where on the page it s
   const { ctx, el, rail } = loadEditor();
   /* An empty sheet, so the only words on the page are the two this test writes — the tab opens
      on the guide's worked example, whose own words would decide where the halfway mark falls. */
-  el('rb-new').fire('click');
+  el('rb-new-blank').fire('click');
   const bullets = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current())
     .filter(n => n.type === 'bullet');
   const write = (node, text) => rail.fire('input',
@@ -483,32 +504,55 @@ test('the rail strip keeps one tab stop and moves the selection with the arrows'
   const { ctx, el, tabs } = loadEditor();
   const state = () => tabs.children.map(b => b.getAttribute('aria-selected') + '/' + b.tabIndex);
 
-  tabs.fire('click', { target: tabs.children[2] });   // Checks
-  assert.deepEqual(state(), ['false/-1', 'false/-1', 'true/0', 'false/-1'],
-    'a tablist is ONE tab stop; four tabIndex-0 buttons is four');
+  tabs.fire('click', { target: tabs.children[1] });   // Checks
+  assert.deepEqual(state(), ['false/-1', 'true/0', 'false/-1'],
+    'a tablist is ONE tab stop; three tabIndex-0 buttons is three');
   assert.deepEqual(TABS.filter(n => !el('rb-pane-' + n).hidden), ['checks']);
 
-  ctx.document.activeElement = tabs.children[2];
+  ctx.document.activeElement = tabs.children[1];
   tabs.fire('keydown', { key: 'ArrowRight', preventDefault() {} });
-  assert.equal(tabs.children[3].getAttribute('aria-selected'), 'true');
-  assert.ok(tabs.children[3]._focused, 'the arrow moved the selection but not the focus');
+  assert.equal(tabs.children[2].getAttribute('aria-selected'), 'true');
+  assert.ok(tabs.children[2]._focused, 'the arrow moved the selection but not the focus');
   assert.deepEqual(TABS.filter(n => !el('rb-pane-' + n).hidden), ['keywords'],
     'the panel must follow the selection, as it does for a mouse');
 
   /* Wrapping, and Home/End, are what stops the last tab being a dead end. */
-  ctx.document.activeElement = tabs.children[3];
+  ctx.document.activeElement = tabs.children[2];
   tabs.fire('keydown', { key: 'ArrowRight', preventDefault() {} });
   assert.equal(tabs.children[0].getAttribute('aria-selected'), 'true');
   ctx.document.activeElement = tabs.children[0];
   tabs.fire('keydown', { key: 'End', preventDefault() {} });
-  assert.equal(tabs.children[3].getAttribute('aria-selected'), 'true');
+  assert.equal(tabs.children[2].getAttribute('aria-selected'), 'true');
+});
+
+/* The OUTER strip owes the same behaviour, and gets it from the same code — one `wireStrip`
+   wired twice. Asserted separately anyway: "they share an implementation" is exactly the claim a
+   later change breaks silently, and a nested tablist that lost its arrow keys would leave the
+   document and Polish reachable only by mouse. */
+test('the Document / Polish segments are a tablist too, with the same traversal', () => {
+  const { ctx, el, segs } = loadEditor();
+  assert.deepEqual(segs.children.map(b => b.getAttribute('aria-selected') + '/' + b.tabIndex),
+    ['true/0', 'false/-1'], 'the rail must open on the document');
+  assert.deepEqual(SEGMENTS.filter(n => !el('rb-pane-' + n).hidden), ['document']);
+
+  ctx.document.activeElement = segs.children[0];
+  segs.fire('keydown', { key: 'ArrowRight', preventDefault() {} });
+  assert.equal(segs.children[1].getAttribute('aria-selected'), 'true');
+  assert.ok(segs.children[1]._focused);
+  assert.deepEqual(SEGMENTS.filter(n => !el('rb-pane-' + n).hidden), ['polish']);
+
+  /* And reaching a Polish panel from anywhere — the badge, a test — has to open Polish to do
+     it, or the panel it selects is behind a segment nobody switched. */
+  ctx.ResumeEditor.showRailPane('checks', false);
+  assert.deepEqual(SEGMENTS.filter(n => !el('rb-pane-' + n).hidden), ['polish']);
+  assert.deepEqual(TABS.filter(n => !el('rb-pane-' + n).hidden), ['checks']);
 });
 
 test('a keypress on the strip that is not a traversal is left alone', () => {
   const { ctx, el, tabs } = loadEditor();
-  tabs.fire('click', { target: tabs.children[1] });
+  tabs.fire('click', { target: tabs.children[0] });
   const before = tabs.children.map(b => b.getAttribute('aria-selected'));
-  ctx.document.activeElement = tabs.children[1];
+  ctx.document.activeElement = tabs.children[0];
   tabs.fire('keydown', { key: 'a', preventDefault() { throw new Error('swallowed a keystroke'); } });
   assert.deepEqual(tabs.children.map(b => b.getAttribute('aria-selected')), before);
   assert.deepEqual(TABS.filter(n => !el('rb-pane-' + n).hidden), ['design']);
@@ -570,7 +614,7 @@ test('a hostile node id cannot break out of the attributes the rail writes', () 
   /* The escaped form still CONTAINS the word `onmouseover` — as text inside an attribute value,
      which is inert. What must not appear is the unescaped quote that would end the attribute and
      start a new one, so that is what is asserted. */
-  for (const html of [el('rb-pane-content').innerHTML, el('rb-paper').innerHTML]) {
+  for (const html of [el('rb-pane-document').innerHTML, el('rb-paper').innerHTML]) {
     assert.ok(!html.includes('" onmouseover="'), 'the id closed its attribute and opened another');
     assert.ok(html.includes('&quot; onmouseover=&quot;'), 'the id is not in this markup at all, so this test proves nothing');
   }
@@ -610,7 +654,7 @@ test('a visit that is not the first opens what was there, untouched', () => {
 
 test('an empty sheet does not count faults before anything has been typed', () => {
   const { ctx, el, rail } = loadEditor();
-  el('rb-new').fire('click');            // window.confirm answers no -> an empty sheet
+  el('rb-new-blank').fire('click');      // the button that says which one it starts
   assert.equal(ctx.ResumeEditor.current().name, 'Untitled résumé');
 
   assert.ok(el('rb-badge').hidden, 'a red badge on a document nobody has started');
@@ -629,15 +673,18 @@ test('an empty sheet does not count faults before anything has been typed', () =
 /* ---- paper size ---- */
 
 test('choosing A4 re-lays the page, and it survives a reload', () => {
-  const { ctx, el } = loadEditor();
+  const loadedA4 = loadEditor();
+  const { ctx, el } = loadedA4;
   assert.equal(el('rb-paper').style.width, '8.5in', 'the tab did not open on the layout’s sheet');
   assert.deepEqual(ctx.ResumeLayouts.PAPERS.map(p => p.id), ['letter', 'a4'],
     'the picker offers whatever Layer 2 declares; this test names what it expects to find');
 
-  el('rb-paper-size').fire('change', { target: { value: 'a4' } });
+  const { rail } = loadedA4;
+  rail.fire('change', { target: { id: 'rb-paper-size', value: 'a4', dataset: {} } });
   assert.equal(el('rb-paper').style.width, '8.27in', 'the sheet on screen is still US Letter');
   assert.equal(el('rb-paper').style.minHeight, '11.69in');
-  assert.equal(el('rb-paper-size').value, 'a4', 'the control does not show what is in force');
+  assert.match(el('rb-pane-design').innerHTML, /value="a4" selected/,
+    'the control does not show what is in force');
 
   /* It is the document's, not the session's — so it comes back with the document. */
   ctx.ResumeEditor.flush();

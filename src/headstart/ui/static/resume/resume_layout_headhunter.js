@@ -451,13 +451,20 @@
       /* Anything the template has no opinion about still has to land somewhere sane. A `line`
          (the Skills line, added after this layout was written) renders as a left-aligned
          labelled line in the body type — off-template, but legible and never blank. */
-      line: ctx => ctx.el('p', { class: 'hh-line' },
-        (ctx.content.label ? '<b>' + ctx.esc(ctx.content.label) + ':</b> ' : '') +
-        ctx.escLines(ctx.content.value)),
-      text: ctx => ctx.el('p', { class: 'hh-note' }, ctx.escLines(ctx.content.text)),
+      /* Field-agnostic, like every byShape renderer must be: this one is handed components the
+         template never anticipated, and naming a field would render them blank. */
+      line: ctx => {
+        const { head, rest } = L.headAndRest(ctx);
+        if (!head) return ctx.el('p', { class: 'hh-line' }, '');
+        return ctx.el('p', { class: 'hh-line' }, rest.length
+          ? '<b>' + ctx.escLines(head.value) + ':</b> ' + rest.map(f => ctx.escLines(f.value)).join(' &middot; ')
+          : ctx.escLines(head.value));
+      },
+      text: ctx => ctx.el('p', { class: 'hh-note' }, ctx.textOf(' ')),
       section: ctx => ctx.el('section', { class: 'hh-section' },
-        '<h2 class="hh-h">' + ctx.esc(ctx.content.title) + '</h2>' + L.groupChildren(ctx, 'hh-list')),
-      bullet: ctx => ctx.el('li', { class: 'hh-bullet' }, ctx.escLines(ctx.content.text)),
+        '<h2 class="hh-h">' + ctx.escLines((L.headAndRest(ctx).head || {}).value || '') + '</h2>' +
+        L.groupChildren(ctx, 'hh-list')),
+      bullet: ctx => ctx.el('li', { class: 'hh-bullet' }, ctx.textOf(' ')),
     }),
 
     byType: {
