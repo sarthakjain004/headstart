@@ -98,17 +98,51 @@
 .rb-h-box { right: -6px; bottom: -6px; width: 12px; height: 12px; cursor: nwse-resize; }
 .rb-paper .rb-selected > .rb-h-spaceAfter { opacity: .75; }
 
+/* WCAG 2.2 SC 2.5.8 asks for 24 x 24 CSS px of pointer target. Measured before this rule, at
+   100% zoom on the guide's worked example: move 16x18, spaceAfter (full width) x 5, gutter
+   6x17 — all three fail, and the two thin ones fail badly enough that a hand-held pointer
+   misses them. The furniture keeps its size: a 5px strip that read as an edge to drag would
+   read as a bar if it were 24px tall, and the whole template's argument is that the page looks
+   like paper. So the catching is done by a transparent ::before, which is not an event target
+   in its own right — the pointerdown still reports the handle, and `closest('.rb-h')` is
+   unaffected. `min-*` is the floor for the two that are sized in `em`: at the 9pt body the
+   layout allows, 1.2em is 14px and the insets alone would not reach 24. */
+.rb-h::before { content: ""; position: absolute; min-width: 24px; min-height: 24px; }
+/* Grown UPWARD, not centred. Every block carries one of these at its own top-left, so they stack
+   down the left margin at whatever pitch the document's own line height gives — about 21px at
+   the template's 10.5pt/1.5. Two boxes of 24 cannot both be exclusive at that pitch, so the
+   question is only which neighbour eats which edge. Centred, a Work entry's box lost its bottom
+   3px to its FIRST BULLET's handle (a child, which wins on DOM order) — so the bottom of "grab
+   the entry" grabbed a bullet. Grown up, it loses 2px of its top to its parent Section's handle
+   instead, which is at worst a handle standing in for its own container. Measured either way:
+   24 x 22 effective. The residual is the document's line pitch, not this rule, and shrinking the
+   box back does not recover it. */
+.rb-h-move::before { left: -4px; right: -4px; top: -6px; bottom: 0; }
+/* Biased DOWNWARD, into the gap this handle actually controls, because everything above the
+   strip is content somebody still has to be able to click. The split is measured, not guessed:
+   at the template's own settings the strip ends up covering -7px to +16px around a Work entry's
+   bottom edge, which costs the last 7px of its final bullet and reaches 0px into the next entry
+   — the 17px gap absorbs the whole downward half. Do not centre it: that spends 12px on the
+   block's own content and buys nothing. */
+.rb-h-spaceAfter::before { left: 0; right: 0; top: -7px; bottom: -12px; }
+.rb-h-gutter::before { left: -10px; right: -10px; top: -4px; bottom: -4px; }
+.rb-h-box::before { left: -6px; right: -6px; top: -6px; bottom: -6px; }
+
 .rb-dropline { position: fixed; z-index: 60; width: 180px; height: 3px; border-radius: 2px;
   background: #4F46E5; box-shadow: 0 0 0 1px rgba(255,255,255,.6); pointer-events: none; }
 
 /* ---- the rail ---- */
 .rb-rail { background: var(--raise); border: 1px solid var(--rule); border-radius: var(--r-lg);
-  padding: 0 0 12px; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
+  padding: 0 0 12px; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto;
+  /* The tab strip is sticky over the top of this scroller, so a control scrolled to the top of
+     the rail lands underneath it — focus obscured (WCAG 2.2 SC 2.4.11). Reserving the strip's
+     own height as scroll padding is what stops that; measured at 37px. */
+  scroll-padding-top: 40px; }
 .rb-rail-tabs { display: flex; gap: 2px; padding: 8px 8px 0; border-bottom: 1px solid var(--rule);
   position: sticky; top: 0; background: var(--raise); z-index: 2; }
 .rb-rail-tab { flex: 1; background: transparent; border: 0; border-bottom: 2px solid transparent;
   color: var(--ink-3); padding: 8px 4px; cursor: pointer; font: inherit; font-size: .84rem; }
-.rb-rail-tab[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
+.rb-rail-tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
 .rb-badge { display: inline-block; margin-left: 5px; background: var(--alert); color: #fff;
   border-radius: var(--r-pill); font-size: .7rem; padding: 0 5px; }
 .rb-pane { padding: 12px; display: flex; flex-direction: column; gap: 10px; }

@@ -637,11 +637,51 @@
     el('rb-pane-checks').innerHTML = out.join('');
   }
 
+  /* What the Checks tab last said. `paint()` runs on every keystroke, so announcing the verdict
+     unconditionally would read the whole panel out again on each character typed; only a change
+     of verdict is news. */
+  let lastVerdict = null;
+
   function badgePaint() {
     const badge = el('rb-badge');
-    const n = findings().filter(f => f.level !== 'note').length;
+    const found = findings();
+    const n = found.filter(f => f.level !== 'note').length;
+    const notes = found.length - n;
     badge.hidden = n === 0;
-    badge.textContent = String(n);
+    /* The number is the badge; the words beside it are only spoken. Without them the tab reads
+       as "Checks 3" and a screen reader user has to guess what the 3 counts. */
+    badge.innerHTML = String(n) + '<span class="rb-vh"> to fix</span>';
+    const verdict = n === 0 && notes === 0
+      ? 'Checks: nothing to flag.'
+      : 'Checks: ' + n + ' to fix' +
+        (notes ? ', ' + notes + ' note' + (notes === 1 ? '' : 's') : '') + '.';
+    /* The badge changing and the findings list being rewritten were both silent: the panel is
+       the one part of this builder that tells you something you did not already know, and it
+       announced nothing at all. */
+    if (verdict !== lastVerdict) { lastVerdict = verdict; announce(verdict); }
+  }
+
+  /* ---- the tab strip ----------------------------------------------------------------------
+     Four buttons that swap panels. They were marked `aria-current="page"`, which says
+     "navigation" — the wrong thing, and it cost the arrow-key traversal and the
+     panel-to-tab association a tablist gets for free. */
+
+  const PANES = ['content', 'design', 'checks', 'keywords'];
+
+  /** Show one pane. `moveFocus` for a keyboard traversal, where focus must follow the
+   *  selection; a click has already put focus where it belongs. */
+  function showTab(name, moveFocus) {
+    let picked = null;
+    for (const b of el('rb-rail-tabs').children) {
+      const on = b.dataset.pane === name;
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+      /* Roving tabindex: the whole strip is one tab stop rather than four, which is what the
+         arrow keys above are for. */
+      b.tabIndex = on ? 0 : -1;
+      if (on) picked = b;
+    }
+    for (const pane of PANES) el('rb-pane-' + pane).hidden = pane !== name;
+    if (moveFocus && picked && picked.focus) picked.focus();
   }
 
   /* ---- keyword coverage -------------------------------------------------------------------
@@ -984,15 +1024,26 @@
       if (e.target.id === 'rb-kw-run') keywordCheck();
     });
 
-    el('rb-rail-tabs').addEventListener('click', e => {
+    const tabs = el('rb-rail-tabs');
+    tabs.addEventListener('click', e => {
       const tab = e.target.closest('[data-pane]');
-      if (!tab) return;
-      for (const b of el('rb-rail-tabs').children) {
-        b.setAttribute('aria-current', b === tab ? 'page' : 'false');
-      }
-      for (const name of ['content', 'design', 'checks', 'keywords']) {
-        el('rb-pane-' + name).hidden = name !== tab.dataset.pane;
-      }
+      if (tab) showTab(tab.dataset.pane, false);
+    });
+    /* Arrow-key traversal, which is what makes a tablist a tablist. Automatic activation — the
+       panel follows focus — is the APG default for a set this small and with no expensive panel
+       to build, and it is what a mouse user already gets. */
+    tabs.addEventListener('keydown', e => {
+      const active = document.activeElement;
+      const at = PANES.indexOf(active && active.dataset ? active.dataset.pane : null);
+      if (at < 0) return;
+      const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+      let to = null;
+      if (step != null) to = (at + step + PANES.length) % PANES.length;
+      else if (e.key === 'Home') to = 0;
+      else if (e.key === 'End') to = PANES.length - 1;
+      if (to == null) return;
+      e.preventDefault();
+      showTab(PANES[to], true);
     });
 
     document.addEventListener('keydown', e => {
@@ -1078,7 +1129,11 @@
     return true;
   }
 
-  /** Say something to a screen reader without changing what anyone sees. */
+  /** Say something to a screen reader without changing what anyone sees. The region itself is
+   *  in the template — a live region inserted with its text already in it does not announce in
+   *  most screen readers, so building it here on first use would have swallowed the first
+   *  thing it ever had to say. This still builds one if it is missing, because the editor is
+   *  also driven by tests that mount less than the whole partial. */
   function announce(message) {
     let box = el('rb-live');
     if (!box) {
@@ -1087,6 +1142,7 @@
       box.className = 'rb-vh';
       box.setAttribute('role', 'status');
       box.setAttribute('aria-live', 'polite');
+      box.setAttribute('aria-atomic', 'true');
       el('rb').appendChild(box);
     }
     box.textContent = message;
@@ -1150,7 +1206,7 @@
      holds the only reference to the live document, and the browser tests drive the real page
      through it rather than reaching into a closure they cannot see. */
   root.ResumeEditor = {
-    boot, shown, findings, keywordCheck, startDocument, changeLayout,
+    boot, shown, findings, keywordCheck, startDocument, changeLayout, showTab,
     current: () => doc(),
     flush: () => store && store.flush(),
     select,
