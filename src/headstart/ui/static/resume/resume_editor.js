@@ -462,6 +462,23 @@
      a "the last change came from the rail" flag, which is what this was first: that flag froze the
      WHOLE rail on every keystroke, so the Checks panel sat on a stale list while the badge beside
      it counted the new one. Focus is the fact that actually matters, and it is readable. */
+  /* What the Content pane is currently showing. The caret guard below may only skip a repaint
+     while the pane would rebuild the SAME thing; if the selection, the layout or the active
+     version changed, the pane must repaint even though a field holds focus — otherwise clicking a
+     new block while a rail input is focused leaves the previous block's fields on screen, wired to
+     a node the user is no longer looking at. Measured: selecting a block on the free-canvas layout
+     right after typing in a range control showed the previous layout's controls. */
+  let contentShowing = null;
+  const contentKey = () => {
+    const d = doc();
+    return d ? [selectedId, d.layoutId, d.activeTailoring].join('|') : null;
+  };
+
+  /* Rebuild every rail pane EXCEPT the one the user is currently typing in — replacing a field's
+     HTML under the caret loses the caret, and the position with it. Keyed on focus rather than on
+     a "the last change came from the rail" flag, which is what this was first: that flag froze the
+     WHOLE rail on every keystroke, so the Checks panel sat on a stale list while the badge beside
+     it counted the new one. Focus is the fact that actually matters, and it is readable. */
   function railPaint() {
     const active = document.activeElement;
     /* A CARET, not merely focus. This guard used to fire on any focused descendant — including
@@ -472,15 +489,16 @@
     const typing = active && typeof active.matches === 'function' &&
       active.matches('input:not([type="checkbox"]), textarea, select');
     const holdsCaret = pane => typing && pane && pane !== active && pane.contains(active);
-    if (!holdsCaret(el('rb-pane-content'))) contentPane();
+
+    const key = contentKey();
+    if (!holdsCaret(el('rb-pane-content')) || key !== contentShowing) {
+      contentPane();
+      contentShowing = key;
+    }
     if (!holdsCaret(el('rb-pane-design'))) designPane();
     if (!holdsCaret(el('rb-pane-checks'))) checksPane();
   }
 
-  /* Every identifier reaching an attribute is escaped here, exactly as `attrs()` does on the
-     render path and `checksPane()` does for a finding. The rail was the one consumer that did
-     not, and a node id is attacker-chosen in an imported document. `resume_export.js` now also
-     rewrites hostile identifiers at the import boundary; this is the second lock on the door. */
   function fieldControl(nodeId, field, value) {
     const safeNode = esc(nodeId);
     const id = esc('rb-f-' + nodeId + '-' + field.key);
@@ -538,6 +556,8 @@
           (leftOut ? 'Put back in this version' : 'Leave out of this version') + '</button></div>');
       }
 
+      out.push(geometryControls(lay, node));
+
       /* Which column a top-level block sits in — only offered where the layout has more than
          one, so a single-column template never shows a control that does nothing. */
       if (lay.slots.length > 1 && d.root.children.includes(node)) {
@@ -569,6 +589,43 @@
         '</button>').join('') + '</div>');
 
     pane.innerHTML = out.join('');
+  }
+
+  /* Every geometry a layout lets you DRAG, you can also type. Dragging was the only way to
+     change the space below a block or the width of its date column — no keyboard path and no
+     single-pointer alternative, which is a WCAG 2.2 SC 2.5.7 failure and, less formally, means
+     the two affordances were unusable by anyone who cannot drag precisely. These read from the
+     same `caps.resize` the handles do, so a layout cannot grant one without the other. */
+  const GEOMETRY_LABELS = {
+    spaceAfter: ['Space below', 'px', 1],
+    gutter: ['Date column width', 'in', 0.05],
+    w: ['Width', 'in', 0.05],
+    h: ['Height', 'in', 0.05],
+    x: ['From the left', 'in', 0.05],
+    y: ['From the top', 'in', 0.05],
+  };
+
+  function geometryControls(lay, node) {
+    const spec = Components.get(node.type);
+    if (!spec) return '';
+    const granted = lay.caps.resize.filter(k => k === 'box' || spec.caps.resize.includes(k));
+    if (!granted.length) return '';
+    const keys = granted.includes('box') ? ['x', 'y', 'w', 'h'] : granted;
+    const geo = Layouts.geometryFor(lay, node);
+    const rows = keys.map(key => {
+      const [label, unit, step] = GEOMETRY_LABELS[key] || [key, '', 1];
+      const bound = lay.bounds[key];
+      if (!bound) return '';
+      const value = geo[key] != null ? geo[key] : bound[0];
+      const id = 'rb-g-' + esc(node.id) + '-' + key;
+      return '<div class="rb-field rb-range"><label for="' + id + '">' + esc(label) +
+        ' <b>' + esc(String(value)) + esc(unit) + '</b></label>' +
+        '<input type="range" id="' + id + '" data-geo="' + key + '" data-node="' + esc(node.id) +
+        '" min="' + bound[0] + '" max="' + bound[1] + '" step="' + step +
+        '" value="' + esc(String(value)) + '"></div>';
+    }).join('');
+    return rows ? '<div class="rb-geo"><span class="note">Size and spacing — the same thing the ' +
+      'handles on the page drag.</span>' + rows + '</div>' : '';
   }
 
   function outlineHtml(d) {
@@ -1012,6 +1069,12 @@
         store.dispatch(
           Cmd.setContentFor(t.dataset.node, { [t.dataset.field]: value }, activeTailoring()),
           'content:' + t.dataset.node + ':' + t.dataset.field);
+      } else if (t.dataset.geo) {
+        store.dispatch(Cmd.setGeometry(t.dataset.node, { [t.dataset.geo]: +t.value }),
+          'geo:' + t.dataset.node + ':' + t.dataset.geo);
+        const label = t.parentElement.querySelector('label b');
+        const spec = GEOMETRY_LABELS[t.dataset.geo];
+        if (label && spec) label.textContent = t.value + spec[1];
       } else if (t.dataset.token) {
         store.dispatch(Cmd.setTheme({ [t.dataset.token]: t.type === 'range' ? +t.value : t.value }),
           'theme:' + t.dataset.token);

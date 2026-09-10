@@ -227,6 +227,33 @@ test('a focused TEXT FIELD does freeze its own pane, and only its own', () => {
     'every OTHER pane must still repaint — a frozen Checks panel is how this was wrong before');
 });
 
+test('the caret guard yields the moment the pane would show something else', () => {
+  const { ctx, el, rail } = loadEditor();
+  const nodes = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current());
+  const bullet = nodes.filter(n => n.type === 'bullet')[1];
+  const other = nodes.filter(n => n.type === 'work_entry')[0];
+  const pane = el('rb-pane-content');
+
+  /* Type in one block's field, leaving the caret in the pane... */
+  ctx.ResumeEditor.select(bullet.id);
+  const field = target({ node: bullet.id, field: 'text' },
+    { type: 'textarea', value: 'Ran the till' });
+  focusInside(ctx, pane, field, true);
+  rail.fire('input', { target: field });
+  const frozen = pane.innerHTML;
+
+  /* ...then select a different block WITHOUT the caret moving first. The guard protects a caret
+     against a rebuild of the same thing; it must not survive a change of subject. Left alone, the
+     pane kept the bullet's single text box while the page showed the job selected, and the box was
+     still wired to the bullet — so the next keystroke edited a block the user was not looking at. */
+  ctx.ResumeEditor.select(other.id);
+
+  assert.notEqual(pane.innerHTML, frozen, 'the pane stayed on the previous block');
+  const fields = (pane.innerHTML.match(/data-field="([^"]+)"/g) || []).join(',');
+  assert.ok(fields.includes('company'), 'it is not showing the newly selected block’s fields');
+  assert.ok(pane.innerHTML.includes(other.id), 'the controls are still wired to the old block');
+});
+
 /* ---- selection ---- */
 
 test('clicking a block on the page selects it, and Escape lets it go', () => {
