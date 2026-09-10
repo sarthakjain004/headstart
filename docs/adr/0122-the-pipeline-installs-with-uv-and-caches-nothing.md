@@ -80,8 +80,17 @@ re-imports the cache-budget problem above for a ~15 s saving.
 
 ## Consequences
 
-Projected **~4.8–8.6 min** off a 53.8–68.3 min run. That is a projection: it composes measured
-per-job costs and no run has executed with the change in place.
+Projected ~4.8–8.6 min off a 53.8–68.3 min run when this was written. **Confirmed 2026-09-10 at
+≈6.0 min**, from four runs on the merged code (`34433479155`, `34429796522`, `34426795362`,
+`34423283174`). Per-job pre-work cost fell from ~108 s / ~110 s / ~139 s on `join` / `embed` /
+`merge` to medians of 22.5 s / 21 s / 27 s, and from ~52 s / ~47 s to ~12 s on `scrape-plan` /
+`scrape`. `setup-python` measured 0–1 s in **20 of 20** job-observations, confirming the restore
+was its entire cost.
+
+One correction the real runs force: uv's install is **less consistent** in production than on the
+bench. It ran 16–38 s (median ~18.5, n=12) against the bench's 14.1–24.2 s, so the honest
+production figure is **4.1x** faster than pip, not the bench's 5.3x. Size any timeout off the
+16–38 s range. Details: `docs/pipeline/2026-09-09_env-install-benchmark.md` §7b.
 
 The cache-budget headroom does **not** come back. `setup-python`'s key is
 os/arch/python-version/pyproject-hash — repo-wide, not per-workflow — and **nine** other workflows

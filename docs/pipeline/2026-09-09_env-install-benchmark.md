@@ -281,6 +281,40 @@ critical path (`scrape` remains floor-bound on `successfactors:careers.hcltech.c
 any of this), and that uv resolves the same dependency set as pip — the import checks confirm the
 packages are present and importable, not that every transitive version matches.
 
+## 7b. Confirmed after merge — the projection held
+
+**Added 2026-09-10.** §7 was a projection. PR #395 merged as `81c21ff`, and four successful
+pipeline runs have since executed on it (`34433479155`, `34429796522`, `34426795362`,
+`34423283174`, all on `febb4ad`, which contains the merge). Pre-work cost per job — "Set up job" +
+checkout + `setup-python` + the install step, in seconds:
+
+| job | before (n=12) | 34433479155 | 34429796522 | 34426795362 | 34423283174 |
+|---|---|---|---|---|---|
+| `join` | ~108 | 23 | 22 | 44 | 19 |
+| `embed (0)` | ~110 | 21 | 21 | 21 | 20 |
+| `merge` | ~139 | 22 | 32 | 22 | 36 |
+| `scrape-plan` | ~52 | 10 | 15 | 11 | 12 |
+| `scrape (0)` | ~47 | 12 | 11 | 14 | 10 |
+
+**Three predictions, all confirmed:**
+
+- **`setup-python` collapses to 0–1 s.** Measured 0 s or 1 s in **20 of 20** job-observations
+  across these four runs, exactly as the pre-merge n=16 sample predicted. The 28–64 s was entirely
+  the pip-cache restore.
+- **The uv install lands where the bench said**, though with a wider tail: the install step ran
+  **16–38 s** (median ~18.5, n=12 across `join`/`embed`/`merge` × 4 runs) against pip's very stable
+  75–80 s. That is a **4.1x** median improvement — slightly below the bench's 5.3x, because
+  production's upper tail (38 s on one `join`, 32 s on one `merge`) is longer than anything the
+  bench saw (14.1–24.2 s). Report the 4.1x, not the 5.3x, for production.
+- **The wall-clock saving lands inside the projected band.** Taking medians: `join` ~85 s,
+  `embed` ~89 s, `merge` ~112 s, `scrape-plan` ~40 s, `scrape` ~35 s. The three serial jobs add and
+  the two matrix jobs contribute once each, giving **≈6.0 min** against the projected **4.8–8.6
+  min**.
+
+The one thing the bench understated is variance: uv's install is less consistent in production than
+on a bare bench runner. It never approached pip's cost, so the decision is unaffected, but a future
+reader sizing a timeout should use the 16–38 s range rather than the bench median.
+
 ## 8. Artifact I/O — measured, no change proposed
 
 The brief that prompted this work stated that `join` uploads a ~70 MB fragment in ~3.2 min, which
@@ -309,7 +343,7 @@ question, out of scope here.
   (§4).
 - **A warm-uv-cache configuration was measured but not proposed** (§4).
 - **CPU-only torch composed with uv was not measured** (§5).
-- **No pipeline run has executed with these changes**, so every figure in §7 is projection. What
+- **§7 was a projection when written; §7b now confirms it against four real runs.** What
   *was* verified, on a real runner under the exact shipping install
   (`uv pip install --system -e ".[embed]" huggingface_hub`): the nine third-party imports listed in
   §2; `headstart.ingest.embed_plan` and `headstart.ingest.index`, the real pipeline modules; and

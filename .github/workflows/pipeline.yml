@@ -38,13 +38,13 @@ name: nightly-pipeline
 # `if: always()` steps, so too thin a job margin loses exactly the partial work the design protects.
 # Until 2026-09-09 that pre-step setup measured ~110-140 s on `join`/`embed`/`merge` and ~50 s on
 # `scrape`/`scrape-plan` (the two install different dependency sets — see the ADR). The pip cache
-# was then dropped and the `.[embed]` jobs moved to uv (ADR-0122), which should cut all five
-# sharply. NO pipeline run has executed with that change yet: the end-to-end evidence is two
-# benchmark jobs replicating join's install on a bare runner (18.86 s and 18.58 s, against 128.73 s
-# for the old shape), and `scrape`/`scrape-plan` were not measured end-to-end at all. Treat the new
-# figures as projections until a real run lands. The job-level margins below were sized against the
-# old numbers and are deliberately left alone: as *job* margins they are hang detectors regardless
-# of whether the stage banks partial work, and a faster setup only widens them.
+# was then dropped and the `.[embed]` jobs moved to uv (ADR-0122). Measured on four runs since
+# (2026-09-10, n=4): `join`/`embed`/`merge` now sit at 19-44 s and `scrape`/`scrape-plan` at
+# 10-15 s, and `setup-python` reads 0-1 s in 20 of 20 job-observations. Size anything off the
+# RANGE, not the median — uv's install is less consistent than the benchmark suggested (16-38 s in
+# production against 14-24 s on a bare bench runner). The job-level margins below were sized
+# against the old numbers and are deliberately left alone: as *job* margins they are hang detectors
+# regardless of whether the stage banks partial work, and a faster setup only widens them.
 # Numbers: docs/pipeline/2026-09-09_env-install-benchmark.md.
 on:
   schedule:
