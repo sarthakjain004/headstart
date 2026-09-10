@@ -47,7 +47,9 @@
     if (!d || !lay) return;
     const paper = el('rb-paper');
 
-    const page = lay.page;
+    /* The sheet the DOCUMENT chose. Everything below measures against it, so a résumé set to A4
+       previews, breaks and prints on A4 rather than on the Letter every layout declares. */
+    const page = Layouts.pageFor(lay, d);
     /* The whole sheet, margins included, rather than just the text column. Two reasons, and the
        second one is not cosmetic: it looks like the page that comes out of the printer, and it
        gives the drag handles somewhere to sit. Handles hang off a block's left edge; with the
@@ -84,13 +86,19 @@
     ]);
     paper.innerHTML = Layouts.renderDocument(dressed, shown);
     decorate(paper, lay, shown);
-    paintPageBreaks(paper, lay);
+    paintPageBreaks(paper, page);
 
     el('rb-name').value = d.name || '';
     versionPaint();
     el('rb-undo').disabled = !store.canUndo();
     el('rb-redo').disabled = !store.canRedo();
     el('rb-layout-note').textContent = lay.summary || '';
+    el('rb-paper-size').value = (Layouts.PAPERS.find(x => x.id === d.paper) || Layouts.PAPERS[0]).id;
+    /* Credit where the reader can see it. `hidden` rather than an empty span, so a layout that
+       is nobody's method in particular leaves no gap beside the picker. */
+    const credit = el('rb-layout-credit');
+    credit.textContent = lay.credit || '';
+    credit.hidden = !lay.credit;
 
     railPaint();
     badgePaint();
@@ -133,10 +141,10 @@
      end", so the preview draws the cuts instead of leaving them to be discovered in the PDF. */
 
   /** Where the printer will cut, as unscaled px from the top of the document's content box. */
-  function pageBreaks(paper, lay) {
+  function pageBreaks(paper, page) {
     const origin = paper.querySelector('.rb-doc');
     if (!origin) return [];
-    const perPage = (lay.page.height - 2 * lay.page.margin) * (paper.offsetWidth / lay.page.width);
+    const perPage = (page.height - 2 * page.margin) * (paper.offsetWidth / page.width);
     if (!(perPage > 0)) return [];
     const total = origin.offsetHeight;
     if (total <= perPage + 1) return [];
@@ -169,12 +177,12 @@
     return breaks;
   }
 
-  function paintPageBreaks(paper, lay) {
+  function paintPageBreaks(paper, page) {
     paper.querySelectorAll('.rb-break').forEach(e => e.remove());
     const origin = paper.querySelector('.rb-doc');
     if (!origin) return;
     const offsetTop = origin.offsetTop;
-    pageBreaks(paper, lay).forEach((y, i) => {
+    pageBreaks(paper, page).forEach((y, i) => {
       const marker = document.createElement('div');
       marker.className = 'rb-break';
       marker.style.top = (offsetTop + y) + 'px';
@@ -214,7 +222,7 @@
     /* Measured, not assumed: it already includes the zoom transform, and a panel that is hidden
        measures zero — which is why `shown()` re-paints when the tab opens. */
     /* `border-box` is the app's global default, so the measured width IS the sheet width. */
-    return rect.width > 0 ? rect.width / lay.page.width : 96;
+    return rect.width > 0 ? rect.width / Layouts.pageFor(lay, doc()).width : 96;
   }
 
   function onPointerDown(e) {
@@ -620,11 +628,28 @@
     return d && lay ? Layouts.runRules(lay, d) : [];
   }
 
+  /* The words the starter document writes for you — its section titles — as plain text, so
+     "has anything been typed" is a comparison against what the tab handed you rather than a list
+     of fields to keep in step with each layout's `starter()`. Built once per layout. */
+  const starterText = new Map();
+  function untouched(d) {
+    if (!starterText.has(d.layoutId)) {
+      starterText.set(d.layoutId, Export.plainText(startDocument(d.layoutId, false)));
+    }
+    return Export.plainText(d) === starterText.get(d.layoutId);
+  }
+
   function checksPane() {
     const found = findings();
     const lay = layout();
     const out = ['<p class="note">Checked against the ' + esc(lay.label) +
       ' layout’s own rules. Advice, not locks — the page prints either way.</p>'];
+    if (untouched(view())) {
+      out.push('<p class="note">These start when you start writing. An empty page breaks nearly ' +
+        'every rule here, and saying so before you have typed a word is noise, not advice.</p>');
+      el('rb-pane-checks').innerHTML = out.join('');
+      return;
+    }
     if (!found.length) {
       out.push('<p class="rb-clear">Nothing to flag. Every rule this layout states is met.</p>');
     } else {
@@ -637,11 +662,53 @@
     el('rb-pane-checks').innerHTML = out.join('');
   }
 
+  /* What the Checks tab last said. `paint()` runs on every keystroke, so announcing the verdict
+     unconditionally would read the whole panel out again on each character typed; only a change
+     of verdict is news. */
+  let lastVerdict = null;
+
   function badgePaint() {
     const badge = el('rb-badge');
-    const n = findings().filter(f => f.level !== 'note').length;
+    const found = findings();
+    const blank = untouched(view());
+    const n = blank ? 0 : found.filter(f => f.level !== 'note').length;
+    const notes = blank ? 0 : found.length - n;
     badge.hidden = n === 0;
-    badge.textContent = String(n);
+    /* The number is the badge; the words beside it are only spoken. Without them the tab reads
+       as "Checks 3" and a screen reader user has to guess what the 3 counts. */
+    badge.innerHTML = String(n) + '<span class="rb-vh"> to fix</span>';
+    const verdict = blank ? 'Checks: waiting for the first words.'
+      : n === 0 && notes === 0
+      ? 'Checks: nothing to flag.'
+      : 'Checks: ' + n + ' to fix' +
+        (notes ? ', ' + notes + ' note' + (notes === 1 ? '' : 's') : '') + '.';
+    /* The badge changing and the findings list being rewritten were both silent: the panel is
+       the one part of this builder that tells you something you did not already know, and it
+       announced nothing at all. */
+    if (verdict !== lastVerdict) { lastVerdict = verdict; announce(verdict); }
+  }
+
+  /* ---- the tab strip ----------------------------------------------------------------------
+     Four buttons that swap panels. They were marked `aria-current="page"`, which says
+     "navigation" — the wrong thing, and it cost the arrow-key traversal and the
+     panel-to-tab association a tablist gets for free. */
+
+  const PANES = ['content', 'design', 'checks', 'keywords'];
+
+  /** Show one pane. `moveFocus` for a keyboard traversal, where focus must follow the
+   *  selection; a click has already put focus where it belongs. */
+  function showTab(name, moveFocus) {
+    let picked = null;
+    for (const b of el('rb-rail-tabs').children) {
+      const on = b.dataset.pane === name;
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+      /* Roving tabindex: the whole strip is one tab stop rather than four, which is what the
+         arrow keys above are for. */
+      b.tabIndex = on ? 0 : -1;
+      if (on) picked = b;
+    }
+    for (const pane of PANES) el('rb-pane-' + pane).hidden = pane !== name;
+    if (moveFocus && picked && picked.focus) picked.focus();
   }
 
   /* ---- keyword coverage -------------------------------------------------------------------
@@ -668,7 +735,8 @@
        halfway down page three of a three-page résumé as "near the top", which is the opposite
        of what the guide asks for. This is exact now that the preview is dimensionally the
        printed page. */
-    const halfOfPageOne = (lay.page.height - 2 * lay.page.margin) / 2;
+    const page = Layouts.pageFor(lay, d);
+    const halfOfPageOne = (page.height - 2 * page.margin) / 2;
     const ppi = pxPerInch();
     const paper = el('rb-paper');
     const origin = paper.querySelector('.rb-doc');
@@ -827,6 +895,11 @@
       changeLayout(e.target.value);
     });
 
+    el('rb-paper-size').innerHTML = Layouts.PAPERS.map(p =>
+      '<option value="' + esc(p.id) + '">' + esc(p.label) + '</option>').join('');
+    el('rb-paper-size').addEventListener('change', e =>
+      store.dispatch(Cmd.setPaper(e.target.value)));
+
     el('rb-version').addEventListener('change', e => {
       selectedId = null;
       store.dispatch(Cmd.activateTailoring(e.target.value || null));
@@ -984,15 +1057,26 @@
       if (e.target.id === 'rb-kw-run') keywordCheck();
     });
 
-    el('rb-rail-tabs').addEventListener('click', e => {
+    const tabs = el('rb-rail-tabs');
+    tabs.addEventListener('click', e => {
       const tab = e.target.closest('[data-pane]');
-      if (!tab) return;
-      for (const b of el('rb-rail-tabs').children) {
-        b.setAttribute('aria-current', b === tab ? 'page' : 'false');
-      }
-      for (const name of ['content', 'design', 'checks', 'keywords']) {
-        el('rb-pane-' + name).hidden = name !== tab.dataset.pane;
-      }
+      if (tab) showTab(tab.dataset.pane, false);
+    });
+    /* Arrow-key traversal, which is what makes a tablist a tablist. Automatic activation — the
+       panel follows focus — is the APG default for a set this small and with no expensive panel
+       to build, and it is what a mouse user already gets. */
+    tabs.addEventListener('keydown', e => {
+      const active = document.activeElement;
+      const at = PANES.indexOf(active && active.dataset ? active.dataset.pane : null);
+      if (at < 0) return;
+      const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+      let to = null;
+      if (step != null) to = (at + step + PANES.length) % PANES.length;
+      else if (e.key === 'Home') to = 0;
+      else if (e.key === 'End') to = PANES.length - 1;
+      if (to == null) return;
+      e.preventDefault();
+      showTab(PANES[to], true);
     });
 
     document.addEventListener('keydown', e => {
@@ -1078,7 +1162,11 @@
     return true;
   }
 
-  /** Say something to a screen reader without changing what anyone sees. */
+  /** Say something to a screen reader without changing what anyone sees. The region itself is
+   *  in the template — a live region inserted with its text already in it does not announce in
+   *  most screen readers, so building it here on first use would have swallowed the first
+   *  thing it ever had to say. This still builds one if it is missing, because the editor is
+   *  also driven by tests that mount less than the whole partial. */
   function announce(message) {
     let box = el('rb-live');
     if (!box) {
@@ -1087,6 +1175,7 @@
       box.className = 'rb-vh';
       box.setAttribute('role', 'status');
       box.setAttribute('aria-live', 'polite');
+      box.setAttribute('aria-atomic', 'true');
       el('rb').appendChild(box);
     }
     box.textContent = message;
@@ -1117,8 +1206,12 @@
     const last = repository.lastOpened();
     const existing = (last && repository.get(last)) || null;
     const first = repository.list()[0];
+    /* Nothing stored at all — a genuinely first visit — opens the guide's worked example rather
+       than an empty sheet. Reading a filled résumé is how the guide itself teaches the What /
+       How / Result shape, and an empty page is the one starting point that teaches nothing while
+       failing every rule the panel beside it states. "New" still offers both. */
     const opening = existing || (first && repository.get(first.id)) ||
-      startDocument('headless-headhunter', false);
+      startDocument('headless-headhunter', true);
     if (!Layouts.get(opening.layoutId)) opening.layoutId = Layouts.all()[0].id;
     store.adopt(opening);
     repository.setLastOpened(opening.id);
@@ -1150,7 +1243,7 @@
      holds the only reference to the live document, and the browser tests drive the real page
      through it rather than reaching into a closure they cannot see. */
   root.ResumeEditor = {
-    boot, shown, findings, keywordCheck, startDocument, changeLayout,
+    boot, shown, findings, keywordCheck, startDocument, changeLayout, showTab,
     current: () => doc(),
     flush: () => store && store.flush(),
     select,

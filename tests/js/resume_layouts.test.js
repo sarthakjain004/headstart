@@ -337,6 +337,92 @@ test('the sentence count ignores abbreviations and decimals', () => {
   assert.equal(H.periods('Worked in the U.S. and in the E.U. for years'), 0);
 });
 
+/* ---- how a bullet is written ---------------------------------------------------------------
+   Three rules the guide states in words and the general résumé standard also asks for. Each test
+   below pairs "it fires on what it is for" with the calibration that matters more: the guide's
+   own worked example still produces nothing. A rule that flags the document this layout was
+   copied from is a wrong rule, not a strict one. */
+
+/** One work entry carrying `bullets`, with everything else the other rules want already right,
+ *  so the ids that come back are only the ones under test. */
+function oneJob(ctx, bullets) {
+  const b = ctx.ResumeDocument.builder().usingLayout(HH)
+    .add('header', { fullName: 'A', phone: '1', email: 'e', locationLine: 'x' })
+    .section('Work History', s => s.add('work_entry',
+      { role: 'R', company: 'C', start: 'June 2023', current: true },
+      e => bullets.forEach((text, i) => e.bullet(text, i === 0))));
+  return b.build();
+}
+const ruleIds = (ctx, doc) => ctx.ResumeLayouts.runRules(ctx.ResumeLayouts.get(HH), doc)
+  .filter(f => f.ruleId).map(f => f.ruleId);
+
+test('a bullet in the present tense is flagged, and an irregular past tense is not', () => {
+  const ctx = load(ALL);
+  const past = ['Operated the till by counting cash', 'Gave customers correct change by adding cash',
+    'Spoke with customers to take their orders'];
+  assert.ok(!ruleIds(ctx, oneJob(ctx, past)).includes('past-tense'),
+    'Gave and Spoke are past tense; an "-ed or wrong" test would flag them');
+
+  for (const bad of ['Manage a team of four people by running the rota',
+                     'Managing a team of four people by running the rota',
+                     'Run the till by counting cash',
+                     'Using a desktop computer to read company emails']) {
+    const ids = ruleIds(ctx, oneJob(ctx, [past[0], bad, past[1]]));
+    assert.ok(ids.includes('past-tense'), `did not flag ${JSON.stringify(bad)}`);
+  }
+
+  /* A noun that ends in -ing is not a verb in the progressive, and treating it as one would
+     flag a correct bullet. */
+  assert.ok(!ruleIds(ctx, oneJob(ctx,
+    [past[0], 'Marketing campaigns were rewritten by the team to reach more people', past[1]]))
+    .includes('past-tense'), 'Marketing is a noun here');
+});
+
+test('a weak or dressed-up opening verb is named, and the guide’s own openers are not', () => {
+  const ctx = load(ALL);
+  const good = ['Operated the till by counting cash', 'Handled the lunch rush by multitasking',
+    'Used a desktop computer to read company emails'];
+  assert.ok(!ruleIds(ctx, oneJob(ctx, good)).includes('opening-verb'),
+    'Handled opens a bullet in the guide’s own example; the general standard calls it weak and loses');
+
+  for (const bad of ['Responsible for the till and the lunch rush by rota',
+                     'Helped the team by covering the lunch rush',
+                     'Spearheaded the rota by rewriting it every week',
+                     'Leveraged the till software to reduce queue times',
+                     /* The lists are written in one tense and people write in another. A browser
+                        pass caught "Spearheading the front counter" producing no finding at all:
+                        it is not the past-tense spelling on the list, and its stem is not a verb
+                        the tense rule knows either, so it fell through both. */
+                     'Spearheading the rota by rewriting it every week',
+                     'Working the till by counting cash',
+                     'Utilising the till software to reduce queue times']) {
+    assert.ok(ruleIds(ctx, oneJob(ctx, [good[0], bad, good[1]])).includes('opening-verb'),
+      `did not flag ${JSON.stringify(bad)}`);
+  }
+});
+
+test('a bullet with no number and no outcome gets a note, not a warning', () => {
+  const ctx = load(ALL);
+  const bare = oneJob(ctx, ['Operated the till by counting cash', 'Gave customers correct change',
+    'Ran the front counter']);
+  const found = ctx.ResumeLayouts.runRules(ctx.ResumeLayouts.get(HH), bare)
+    .filter(f => f.ruleId === 'result');
+  assert.equal(found.length, 2, 'both bullets with no result and no reason');
+  assert.ok(found.every(f => f.level === 'note'), 'plenty of good bullets carry no metric');
+
+  /* The guide's own third bullet is "Gave customers correct change by adding and subtracting
+     cash" — no number anywhere; the REASON is the main clause and the "by ..." is the how. */
+  assert.equal(ruleIds(ctx, oneJob(ctx, ['Operated the till by counting cash',
+    'Gave customers correct change by adding and subtracting cash',
+    'Served multiple tables of customers'])).filter(id => id === 'result').length, 0);
+
+  /* The opening summary is exempt: the guide asks it for what you did, and puts the
+     What / How / Result shape on the bullets after it. */
+  assert.equal(ruleIds(ctx, oneJob(ctx, ['Ran the front counter',
+    'Gave customers correct change by adding cash', 'Handled the rush by multitasking']))
+    .filter(id => id === 'result').length, 0);
+});
+
 test('dates are read in the formats people type, and a bare year is refused', () => {
   const { ResumeHeadhunter: H } = load(ALL);
   assert.deepEqual(H.parseMonth('June 2023'), { y: 2023, m: 6 });
@@ -397,4 +483,47 @@ test('the download filename comes from the résumé’s own name, safely', () =>
   assert.equal(ctx.ResumeExport.filename(doc, 'pdf'), 'Lee_Korelitz_BaristaCashier.pdf');
   doc.name = '';
   assert.equal(ctx.ResumeExport.filename(doc, 'txt'), 'resume.txt');
+});
+
+/* ---- paper size ---------------------------------------------------------------------------
+   Every layout here is written for US Letter, which is the wrong sheet almost everywhere outside
+   North America — and HeadStart is deliberately not a North American product. The sheet is the
+   DOCUMENT's choice, not the layout's: the same template is printed on both. */
+
+test('a document chooses its paper, and every layout is laid out on the one it chose', () => {
+  const ctx = load(ALL);
+  const L = ctx.ResumeLayouts;
+  for (const lay of L.all()) {
+    assert.deepEqual(
+      [L.pageFor(lay, {}).width, L.pageFor(lay, {}).height], [8.5, 11], `${lay.id} default`);
+    const a4 = L.pageFor(lay, { paper: 'a4' });
+    assert.deepEqual([a4.width, a4.height], [8.27, 11.69], `${lay.id} on A4`);
+    assert.equal(a4.margin, lay.page.margin, 'the sheet changed, not the layout’s margin');
+    assert.equal(a4.unit, lay.page.unit);
+  }
+});
+
+test('an unreadable paper name falls back rather than laying out on nothing', () => {
+  const ctx = load(ALL);
+  const hh = ctx.ResumeLayouts.get(HH);
+  for (const paper of ['', null, undefined, 'foolscap', '<script>', 0]) {
+    assert.equal(ctx.ResumeLayouts.pageFor(hh, { paper }).width, 8.5, JSON.stringify(paper));
+  }
+});
+
+test('the printed file carries the sheet the document chose, not the layout’s own', () => {
+  const ctx = load(ALL);
+  const doc = example(ctx);
+  assert.ok(ctx.ResumeExport.standaloneHtml(doc).includes('8.5in 11in'));
+  doc.paper = 'a4';
+  const html = ctx.ResumeExport.standaloneHtml(doc);
+  assert.ok(html.includes('8.27in 11.69in'), 'the @page rule still says US Letter');
+  assert.ok(html.includes('width: 6.27in'), 'the text column was not re-measured for A4');
+});
+
+test('a rule that measures the page measures the sheet in use', () => {
+  const { ResumeHeadhunter: H } = load(ALL);
+  const letter = H.charsPerLine({ width: 8.5, margin: 1 }, 10.5, 0.3);
+  const a4 = H.charsPerLine({ width: 8.27, margin: 1 }, 10.5, 0.3);
+  assert.ok(a4 < letter, 'A4 is narrower, so fewer characters fit on a line and a bullet wraps sooner');
 });

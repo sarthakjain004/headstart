@@ -58,6 +58,11 @@
       blurb: spec.blurb || '',
       /* Named after what it is, so the picker can say it: "Single column, Arial, 10.5pt". */
       summary: spec.summary || '',
+      /* Whose method this is, for a layout that implements somebody else's. Shown beside the
+         picker: the Headless Headhunter's template was credited only in a source comment, which
+         is not a credit — nobody using the product ever reads it. Optional, because a layout
+         that is nobody's method in particular has nothing to say here. */
+      credit: spec.credit || '',
       page: Object.freeze(Object.assign({ width: 8.5, height: 11, margin: 1, unit: 'in' }, spec.page || {})),
       tokens: Object.freeze(Object.assign({}, spec.tokens || {})),
       /* Which tokens the user may move, and between what bounds. This is the "how they look"
@@ -98,6 +103,32 @@
 
   const get = id => registry.get(id) || null;
   const all = () => order.map(id => registry.get(id));
+
+  /* ---- paper ---------------------------------------------------------------------------
+     Every layout here is written for US Letter, which is the wrong sheet almost everywhere
+     outside North America — and HeadStart is deliberately a global product, not a US one. A4 is
+     0.23in narrower and 0.69in taller, so a résumé laid out on Letter and printed on A4 re-wraps
+     every bullet and moves its page break: for a builder whose headline check is "no bullet over
+     three lines", that is a wrong answer shown confidently.
+
+     The sheet is the DOCUMENT's choice, not the Layout's. The same template is printed on both,
+     and a Layout that declared A4 would be a second copy of itself. It is deliberately not a
+     tunable either: tunables are type tokens interpolated into a stylesheet, and this is
+     geometry every rule and every measurement reads. */
+  const PAPERS = Object.freeze([
+    Object.freeze({ id: 'letter', label: 'US Letter · 8.5 × 11in', width: 8.5, height: 11 }),
+    Object.freeze({ id: 'a4', label: 'A4 · 210 × 297mm', width: 8.27, height: 11.69 }),
+  ]);
+
+  /** The page a document is actually laid out on: the Layout's own page with the document's
+   *  sheet substituted. An absent or unreadable name falls back to the Layout's — a document is
+   *  a file people exchange, so `paper` is untrusted, and it is only ever a lookup key here. */
+  function pageFor(layout, doc) {
+    const paper = PAPERS.find(p => p.id === (doc && doc.paper));
+    return paper
+      ? Object.assign({}, layout.page, { width: paper.width, height: paper.height })
+      : layout.page;
+  }
 
   /* Every token value is interpolated straight into a stylesheet, and that stylesheet is written
      into a document by the print and download paths. So a token is only allowed to be the kind of
@@ -236,7 +267,7 @@
   function renderStandalone(layout, doc, options) {
     const opts = options || {};
     const theme = themeFor(layout, doc);
-    const page = layout.page;
+    const page = pageFor(layout, doc);
     const frame = [
       '@page { size: ' + page.width + page.unit + ' ' + page.height + page.unit +
         '; margin: ' + page.margin + page.unit + '; }',
@@ -273,6 +304,9 @@
     const all = nodesOf(doc);
     const api = {
       layout,
+      /* The sheet in use, which is not `layout.page` once the document has chosen one. A rule
+         that measures the page must measure the page it will be printed on. */
+      page: pageFor(layout, doc),
       theme: themeFor(layout, doc),
       content: id => doc.content[id] || {},
       nodesOfType: type => all.filter(n => n.type === type),
@@ -356,7 +390,8 @@
   }
 
   root.ResumeLayouts = {
-    define, get, all, themeFor, geometryFor, renderDocument, renderNode, renderStandalone, runRules,
+    define, get, all, PAPERS, pageFor, themeFor, geometryFor, renderDocument, renderNode,
+    renderStandalone, runRules,
     esc, escLines, attrs, dateRange, roleLine, plainStrategies, groupChildren, clampNum, nodesOf,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

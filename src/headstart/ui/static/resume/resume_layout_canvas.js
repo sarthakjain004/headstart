@@ -121,7 +121,7 @@
         id: 'overflow', label: 'Blocks stay on the page',
         check(doc, api) {
           const out = [];
-          const maxY = api.layout.page.height - 2 * api.layout.page.margin;
+          const maxY = api.page.height - 2 * api.page.margin;
           for (const n of doc.root.children) {
             const g = n.geometry || {};
             if ((g.y || 0) + (g.h || 0) > maxY + 0.05) {
