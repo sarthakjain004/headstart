@@ -38,7 +38,13 @@ function fakeEl() {
     // answer — every call site already guards on "not found" for the real DOM's own sake (the
     // crosshair group doesn't exist until the first draw), so this never needs to be smarter.
     querySelectorAll: () => [], querySelector: () => null,
-    setAttribute() {}, getAttribute: () => null, addEventListener() {},
+    setAttribute() {}, getAttribute: () => null,
+    // Recorded, not swallowed: the ATS picker's own handler is registered this way, and the
+    // racing tests below drive the control the bug report names rather than calling the
+    // loader behind it. `fire` is the harness's stand-in for dispatchEvent.
+    listeners: {},
+    addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); },
+    fire(type) { (this.listeners[type] || []).forEach(fn => fn({ target: this })); },
     tabIndex: 0, classList: { toggle() {}, add() {}, remove() {} },
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 0, height: 0 }),
   };
@@ -49,7 +55,7 @@ function fakeEl() {
  * `fetches` records every URL requested. It is the only way to tell "the click was ignored"
  * from "the click ran and happened to land on the same split" — asserting on `trendSplit`
  * alone passes either way, because 'bands' is also the fallback. */
-function loadApp() {
+function loadApp(fetchImpl) {
   const nodes = {};
   const fetches = [];
   const ctx = {
@@ -66,8 +72,14 @@ function loadApp() {
     window: { addEventListener() {}, location: { hash: '' } },
     location: { hash: '' },
     console, CFG: {}, URLSearchParams, Date, Math, isNaN,
+    // loadTrends cancels its own previous request, so app.js does not evaluate without this.
+    // Node's real one, not a stub: the abort tests below need a signal that genuinely fires.
+    AbortController,
     getComputedStyle: () => ({ getPropertyValue: () => '#000000' }),
-    fetch: url => { fetches.push(String(url)); return Promise.resolve({ ok: false }); },
+    fetch: (url, opts) => {
+      fetches.push(String(url));
+      return fetchImpl ? fetchImpl(String(url), opts) : Promise.resolve({ ok: false });
+    },
   };
   ctx.globalThis = ctx;
   const src = fs.readFileSync(APP_JS, 'utf8')
@@ -77,7 +89,14 @@ function loadApp() {
     + ' hasIndexBase: hasIndexBase,'
     + ' atsSelected: trendAtsSelected, atsLabel: trendAtsLabel, atsToggle: toggleAtsPopover,'
     + ' colorSlot: name => seriesColorAssignment.get(name), setUnit: setUnit,'
-    + ' set: (d, drill) => { trendData = d; trendDrill = drill || null; } };';
+    + ' load: loadTrends,'
+    + ' data: () => trendData,'
+    + ' set: (d, drill) => { trendData = d; trendDrill = drill || null; } };'
+    // Repaints are counted at the global binding, which is what loadTrends' own `drawTrends()`
+    // call resolves — so this counts the real paints, not a copy of them.
+    + '\n;(() => { let n = 0; const real = drawTrends;'
+    + ' globalThis.drawTrends = (...a) => { n++; return real(...a); };'
+    + ' globalThis.__t.draws = () => n; })();';
   vm.runInNewContext(src, ctx);
   // The page fetches on load (the feed, the trends chart). Those are not what any test here is
   // asserting about, so the log starts empty from the caller's point of view.
@@ -364,6 +383,86 @@ test('the popover forces closed regardless of its current state', () => {
   nodes['trends-ats-menu'].hidden = false;
   t.atsToggle(false);
   assert.equal(nodes['trends-ats-menu'].hidden, true);
+});
+
+// ---- one request owns the panel --------------------------------------------------------
+//
+// The ATS picker fires one loadTrends per checkbox, so narrowing 21 ATSes to 1 starts 20
+// round trips. Measured in Chromium before the fix: 20 requests, 20 repaints, 6-11 answers
+// arriving out of the order they were asked in, and 3 runs in 5 settling on an answer that
+// was not the last request's — the numbers churning, then coming to rest on the wrong scope.
+// The first two tests below are that bug and go red on the code that had it. The third cannot:
+// with nothing cancelled there is no cancellation to mis-report, so it is a forward guard on
+// the one obvious way to get the fix wrong (dropping the aborted check and letting an abort
+// raise the network-failure banner), not a reproduction.
+
+/** A /trends stub whose answers are released by hand, so a test can land them out of order.
+ *
+ * `signal` is honoured the way a browser honours it — an aborted fetch rejects — and is read
+ * defensively on purpose: against a loadTrends that passes no signal at all these tests still
+ * RUN, and fail on their assertion rather than on a TypeError about `undefined.signal`. */
+function deferredTrends() {
+  const calls = [];
+  const impl = (url, opts) => new Promise((resolve, reject) => {
+    calls.push({ url, answer: body => resolve({ ok: true, json: async () => body }) });
+    const signal = opts && opts.signal;
+    if (signal) signal.addEventListener('abort', () => {
+      const err = new Error('aborted'); err.name = 'AbortError'; reject(err);
+    });
+  });
+  return { calls, impl };
+}
+
+/** Let every settled promise run its continuations — including the ones created inside the vm. */
+const settle = () => new Promise(r => setTimeout(r, 0));
+
+/** The fixture, tagged so a test can say WHICH request's answer reached the panel. */
+const tagged = n => ({ ...fixture(), version: n });
+
+test('a burst of selections repaints once, not once per checkbox', async () => {
+  const { calls, impl } = deferredTrends();
+  const { nodes, t } = loadApp(impl);
+  const boxes = fakeAtsMenu(nodes, [['greenhouse', true], ['lever', true], ['workday', true],
+                                    ['ashby', true], ['zoho', true], ['keka', true]]);
+  calls.length = 0;                 // drop anything the page asked for as it loaded
+  // Through the picker's own `change` handler, not the loader behind it: this is the wiring
+  // the bug report named. Five boxes unchecked before the first answer can land.
+  for (let i = 0; i < 5; i++) {
+    boxes[i].checked = false;
+    nodes['trends-ats-menu'].fire('change');
+  }
+  assert.equal(calls.length, 5, 'each selection still asks the server for its own answer');
+  assert.match(calls[4].url, /ats=keka/, 'and asks for the selection as it stood at that click');
+  calls.forEach((c, i) => c.answer(tagged(i)));   // every answer comes back, oldest first
+  await settle();
+  assert.equal(t.draws(), 1);       // was 5: one full chart+legend+KPI rewrite per answer
+  assert.equal(t.data().version, 4);
+});
+
+test('an answer that arrives after a newer one never paints over it', async () => {
+  const { calls, impl } = deferredTrends();
+  const { t } = loadApp(impl);
+  calls.length = 0;
+  t.load(null);                     // the first box ticked
+  t.load(null);                     // the second, which supersedes it
+  calls[1].answer(tagged(2));
+  await settle();
+  calls[0].answer(tagged(1));       // the older request crawls in last
+  await settle();
+  assert.equal(t.data().version, 2, 'the panel must hold the newest selection, not the newest arrival');
+  assert.equal(t.draws(), 1);
+});
+
+test('a cancelled request raises no error banner over the render replacing it', async () => {
+  const { calls, impl } = deferredTrends();
+  const { t, nodes } = loadApp(impl);
+  calls.length = 0;
+  t.load(null);
+  t.load(null);                     // cancels the first, whose fetch now rejects
+  calls[1].answer(tagged(2));
+  await settle();
+  assert.equal(nodes['trends-error'].hidden, true);
+  assert.equal(t.data().version, 2);
 });
 
 /** One stamp only, so `runs < 2` and the empty-runs message renders. */
