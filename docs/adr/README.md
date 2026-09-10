@@ -131,3 +131,4 @@ supersedes it and note the supersession in both.
 | [0125](0125-the-resume-rail-is-the-document-and-the-paper-is-its-preview.md) | The résumé rail is the document; the paper is its preview | 2026-09-10 |
 | [0126](0126-the-picker-carries-the-layouts-people-actually-use.md) | The picker carries the layouts people actually use, and says where each one is a bad idea | 2026-09-10 |
 | [0127](0127-hygiene-is-a-shared-baseline-opinion-stays-on-the-layout.md) | Hygiene is a shared baseline; opinion stays on the Layout | 2026-09-10 |
+| [0128](0128-the-resume-tab-is-two-segments-edit-and-preview.md) | The Résumé tab is two segments — Edit and Preview | 2026-09-10 |

@@ -18,10 +18,10 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { DIR, ALL } = require('./resume_harness.js');
 
-/* Two strips now, nested: Design, Checks and Keywords sit one level down inside Polish,
-   because they are things done TO the document rather than peers of it. */
-const SEGMENTS = ['document', 'polish'];
-const TABS = ['design', 'checks', 'keywords'];
+/* ONE strip: Edit and Preview (ADR-0128). The four panes are still four panes — they are simply
+   permanently visible inside whichever segment they belong to, so there is no second tablist and
+   nothing left to name them by. */
+const SEGMENTS = ['edit', 'preview'];
 
 /** One stub element. Listeners are RECORDED and replayed by `fire`, which is the only way to
  *  test that a control is wired to the right thing — a no-op addEventListener would make the
@@ -60,7 +60,8 @@ function fakeEl(id) {
 /* Only the selector shapes the editor actually uses. Anything else is a test bug, not a
    feature request, so it throws rather than quietly answering "no". */
 function matches(el, sel) {
-  if (sel === '[data-pane]') return el.dataset.pane != null;
+  if (sel === '[data-seg]') return el.dataset.seg != null;
+  if (sel === '[data-show]') return el.dataset.show != null;
   if (sel === '[data-select]') return el.dataset.select != null;
   if (sel === '[data-add]') return el.dataset.add != null;
   if (sel === '[data-act]') return el.dataset.act != null;
@@ -73,6 +74,9 @@ function matches(el, sel) {
   if (sel === 'input:not([type="checkbox"]), textarea, select') return !!el._caret;
   if (sel === '.rb-h') return el.dataset.handle != null;
   if (sel === '[data-node]') return el.dataset.node != null;
+  /* The popover dismissal asks "is this pointerdown inside the menu or on its own button", by
+     id. The stub answers about the element itself, which is all these tests fire at. */
+  if (sel.charAt(0) === '#') return el.id === sel.slice(1);
   throw new Error('the DOM stub was asked about an unknown selector: ' + sel);
 }
 
@@ -82,28 +86,32 @@ function loadEditor(options) {
   const opts = options || {};
   const nodes = {};
   const get = id => (nodes[id] ||= fakeEl(id));
-  const rail = fakeEl('rail');
+  /* The delegated listeners are bound to the whole tab, not to a rail: the panes sit in two
+     workspaces on opposite sides of the segment switch (ADR-0128). */
+  const panel = get('rb');
   /* Seeded the way the TEMPLATE ships it — first tab selected, the rest at tabIndex -1 — because
      that is where the initial state genuinely lives: the strips are static markup so the panel is
      legible before the scripts run, and the editor only ever moves the selection from there. A
-     stub that started every tab blank would let "the rail opens on the document" pass by
-     accident. */
-  const strip = (id, key, names, prefix) => {
-    const holder = get(id);
-    holder.children = names.map((name, i) => {
-      const b = fakeEl(prefix + name);
-      b.dataset[key] = name;
-      b.setAttribute('aria-selected', i === 0 ? 'true' : 'false');
-      b.tabIndex = i === 0 ? 0 : -1;
-      get('rb-pane-' + name).hidden = i !== 0;
-      return b;
-    });
-    return holder;
-  };
-  const segs = strip('rb-seg', 'seg', SEGMENTS, 'rb-seg-');
-  const tabs = strip('rb-rail-tabs', 'pane', TABS, 'rb-tab-');
-  // The paper sits inside a scrolling wrapper; `paint` reads the wrapper to reserve height.
-  get('rb-paper').parentElement = fakeEl('rb-paper-wrap');
+     stub that started every tab blank would let "the tab opens on Edit" pass by accident. */
+  const segs = get('rb-seg');
+  segs.children = SEGMENTS.map((name, i) => {
+    const b = fakeEl('rb-seg-' + name);
+    b.dataset.seg = name;
+    b.setAttribute('aria-selected', i === 0 ? 'true' : 'false');
+    b.tabIndex = i === 0 ? 0 : -1;
+    get('rb-pane-' + name).hidden = i !== 0;
+    return b;
+  });
+  /* Closed, the way the template ships them. Escape asks the popovers before it deselects a
+     block, so a stub that started them open made Escape a no-op on the page. */
+  get('rb-pop-open').hidden = true;
+  get('rb-pop-download').hidden = true;
+  /* The paper and the miniature both sit inside a frame their painter reserves height on.
+     600px of usable width against an 816px sheet, so `fitToWidth` has a real answer to give —
+     at the stub's default 900 it clamps to 1 and every fit is indistinguishable from no fit. */
+  get('rb-paper-wrap').clientWidth = 600;
+  get('rb-paper').parentElement = get('rb-paper-wrap');
+  get('rb-mini-sheet').parentElement = fakeEl('rb-mini-frame');
 
   const ctx = {
     console, setTimeout, clearTimeout, Date, Math, JSON, Set, Map, Object, Array, String, Number,
@@ -111,7 +119,7 @@ function loadEditor(options) {
     document: {
       getElementById: id => (id in nodes ? nodes[id] : (opts.missing || []).includes(id) ? null : get(id)),
       createElement: tag => fakeEl(tag),
-      querySelector: sel => (sel === '.rb-rail' ? rail : null),
+      querySelector: () => null,
       querySelectorAll: () => [],
       addEventListener(type, fn) { (ctx._docHandlers[type] ||= []).push(fn); },
       head: fakeEl('head'), body: fakeEl('body'),
@@ -143,7 +151,8 @@ function loadEditor(options) {
      script did on its own, rather than what this harness then asked it to do. */
   if (!opts.skipBoot) ctx.ResumeEditor.boot();
   get('rb-paper')._docKeydown = ctx._docHandlers.keydown || [];
-  return { ctx, nodes, rail, tabs, segs, el: get };
+  get('rb-paper')._docPointer = ctx._docHandlers.pointerdown || [];
+  return { ctx, nodes, panel, segs, el: get };
 }
 
 /** A localStorage stand-in, pre-loaded with documents. `ResumeRepository.detect` probes it with
@@ -164,7 +173,7 @@ function fakeStorage(docs) {
   return s;
 }
 
-/** A hand-built event target: the rail's listeners are delegated, so what they receive is an
+/** A hand-built event target: the tab's listeners are delegated, so what they receive is an
  *  element carrying a data attribute and nothing else. */
 function target(dataset, extra) {
   const el = fakeEl('');
@@ -189,25 +198,25 @@ function focusInside(ctx, pane, node, caret) {
 
 /* ---- booting ---- */
 
-test('booting opens a document and paints the page and the rail from it', () => {
+test('booting opens a document and paints the page and the form from it', () => {
   const { ctx, el } = loadEditor();
   const doc = ctx.ResumeEditor.current();
   assert.ok(doc && doc.root, 'no document was opened');
   assert.equal(doc.layoutId, 'headless-headhunter', 'the tab opens on the template it ships');
   assert.ok(el('rb-paper').innerHTML.includes('data-node='), 'the page was not rendered');
-  assert.ok(el('rb-pane-document').innerHTML.includes('data-row='), 'the rail was not painted');
+  assert.ok(el('rb-pane-document').innerHTML.includes('data-row='), 'the form was not painted');
 });
 
-/* ---- the rail's repaint guard ----------------------------------------------------------
+/* ---- the repaint guard ------------------------------------------------------------------
    The pane the user is typing in must not be rebuilt under the caret; every other pane must be
    rebuilt on every change. Getting that distinction wrong in either direction is a P0, and it
-   has been wrong in both: first the whole rail froze on any change from the rail, so the Checks
+   has been wrong in both: first every pane froze on any change from the form, so the Checks
    panel sat on a stale list while the badge beside it counted the new one; then the guard fired
    on any focused descendant, so clicking a button in the pane froze the pane that button lives
    in — which is the primary editing loop. */
 
 test('a focused BUTTON does not freeze the pane it lives in', () => {
-  const { ctx, el, rail } = loadEditor();
+  const { ctx, el, panel } = loadEditor();
   const bullets = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current())
     .filter(n => n.type === 'bullet');
   const pane = el('rb-pane-document');
@@ -219,14 +228,14 @@ test('a focused BUTTON does not freeze the pane it lives in', () => {
      leaves focus. A Checks finding is one; so is every row header in the accordion. */
   const row = target({ select: bullets[1].id });
   focusInside(ctx, pane, row, false);
-  rail.fire('click', { target: row });
+  panel.fire('click', { target: row });
 
   assert.ok(pane.innerHTML.includes('data-node="' + bullets[1].id + '"'),
     'the pane stayed on the previous selection: selecting a block showed nothing beside it');
 });
 
 test('a focused TEXT FIELD does freeze its own pane, and only its own', () => {
-  const { ctx, el, rail } = loadEditor();
+  const { ctx, el, panel } = loadEditor();
   /* The SECOND bullet: the first is a job's opening summary, which two rules exempt, so a
      change to it moves no finding and the "every other pane repaints" half of this test would
      pass whatever the guard did. */
@@ -242,7 +251,7 @@ test('a focused TEXT FIELD does freeze its own pane, and only its own', () => {
   const field = target({ node: bullet.id, field: 'text' },
     { type: 'textarea', value: 'Manage the till' });
   focusInside(ctx, pane, field, true);
-  rail.fire('input', { target: field });
+  panel.fire('input', { target: field });
 
   assert.equal(pane.innerHTML, before,
     'the pane was rebuilt under the caret, which loses the caret and its position');
@@ -253,7 +262,7 @@ test('a focused TEXT FIELD does freeze its own pane, and only its own', () => {
 });
 
 test('the caret guard yields the moment the pane would show something else', () => {
-  const { ctx, el, rail } = loadEditor();
+  const { ctx, el, panel } = loadEditor();
   const nodes = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current());
   const bullet = nodes.filter(n => n.type === 'bullet')[1];
   const other = nodes.filter(n => n.type === 'work_entry')[0];
@@ -264,7 +273,7 @@ test('the caret guard yields the moment the pane would show something else', () 
   const field = target({ node: bullet.id, field: 'text' },
     { type: 'textarea', value: 'Ran the till' });
   focusInside(ctx, pane, field, true);
-  rail.fire('input', { target: field });
+  panel.fire('input', { target: field });
   const frozen = pane.innerHTML;
 
   /* ...then select a different block WITHOUT the caret moving first. The guard protects a caret
@@ -291,7 +300,7 @@ test('clicking a block on the page selects it, and Escape lets it go', () => {
      under it selects; the handle is what starts a drag instead. */
   paper.fire('pointerdown', { target: target({ node: entry.id }) });
   assert.ok(el('rb-pane-document').innerHTML.includes('Work entry'),
-    'the rail did not follow the click on the page');
+    'the form did not follow the click on the page');
   assert.ok(el('rb-pane-document').innerHTML.includes('data-node="' + entry.id + '"'));
 
   assert.ok(el('rb-pane-document').innerHTML.includes(' on"'), 'the row is not marked selected');
@@ -308,49 +317,49 @@ test('a click on a block that is not in the document changes nothing', () => {
   assert.equal(el('rb-pane-document').innerHTML, before);
 });
 
-/* ---- adding, duplicating and deleting through the rail ---- */
+/* ---- adding, duplicating and deleting through the form ---- */
 
-test('the rail adds a block, selects what it added, and can add inside a container', () => {
-  const { ctx, el, rail } = loadEditor();
+test('the form adds a block, selects what it added, and can add inside a container', () => {
+  const { ctx, el, panel } = loadEditor();
   const D = ctx.ResumeDocument;
   const before = ctx.ResumeEditor.current().root.children.length;
-  rail.fire('click', { target: target({ add: 'section', into: '' }) });
+  panel.fire('click', { target: target({ add: 'section', into: '' }) });
   const after = ctx.ResumeEditor.current().root.children;
   assert.equal(after.length, before + 1, 'nothing was added to the page');
   assert.equal(after[after.length - 1].type, 'section');
   assert.ok(el('rb-pane-document').innerHTML.includes('data-node="' + after[after.length - 1].id + '"'),
-    'the rail must land on the block it just made, or the user has to go and find it');
+    'the form must land on the block it just made, or the user has to go and find it');
 
   const entry = D.flatten(ctx.ResumeEditor.current()).find(n => n.type === 'work_entry');
   const bullets = entry.children.filter(c => c.type === 'bullet').length;
-  rail.fire('click', { target: target({ add: 'bullet', into: entry.id }) });
+  panel.fire('click', { target: target({ add: 'bullet', into: entry.id }) });
   assert.equal(D.find(ctx.ResumeEditor.current(), entry.id).children.filter(c => c.type === 'bullet').length,
     bullets + 1, 'the bullet did not land inside the job it was added to');
 });
 
 test('duplicate copies the selected block, delete removes it and clears the selection', () => {
-  const { ctx, el, rail } = loadEditor();
+  const { ctx, el, panel } = loadEditor();
   const D = ctx.ResumeDocument;
   const entry = D.flatten(ctx.ResumeEditor.current()).find(n => n.type === 'work_entry');
   const parent = D.parentOf(ctx.ResumeEditor.current(), entry.id);
   const before = D.find(ctx.ResumeEditor.current(), parent.id).children.length;
 
   ctx.ResumeEditor.select(entry.id);
-  rail.fire('click', { target: target({ act: 'duplicate' }) });
+  panel.fire('click', { target: target({ act: 'duplicate' }) });
   assert.equal(D.find(ctx.ResumeEditor.current(), parent.id).children.length, before + 1);
 
   ctx.ResumeEditor.select(entry.id);
-  rail.fire('click', { target: target({ act: 'remove' }) });
+  panel.fire('click', { target: target({ act: 'remove' }) });
   assert.equal(D.find(ctx.ResumeEditor.current(), entry.id), null, 'the block is still there');
   assert.ok(!el('rb-pane-document').innerHTML.includes('data-node="' + entry.id + '"'),
-    'the rail kept offering Delete and Duplicate for a block that no longer exists');
+    'the form kept offering Delete and Duplicate for a block that no longer exists');
 });
 
 test('an action with nothing selected does nothing at all', () => {
-  const { ctx, rail } = loadEditor();
+  const { ctx, panel } = loadEditor();
   const before = JSON.stringify(ctx.ResumeEditor.current().root);
   for (const act of ['remove', 'duplicate', 'unfork', 'hide']) {
-    rail.fire('click', { target: target({ act }) });
+    panel.fire('click', { target: target({ act }) });
   }
   assert.equal(JSON.stringify(ctx.ResumeEditor.current().root), before);
 });
@@ -378,13 +387,13 @@ function layPaperOut(el, blocks) {
 }
 
 test('keyword coverage counts what the résumé says, and where on the page it says it', () => {
-  const { ctx, el, rail } = loadEditor();
+  const { ctx, el, panel } = loadEditor();
   /* An empty sheet, so the only words on the page are the two this test writes — the tab opens
      on the guide's worked example, whose own words would decide where the halfway mark falls. */
   el('rb-new-blank').fire('click');
   const bullets = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current())
     .filter(n => n.type === 'bullet');
-  const write = (node, text) => rail.fire('input',
+  const write = (node, text) => panel.fire('input',
     { target: target({ node: node.id, field: 'text' }, { type: 'textarea', value: text }) });
 
   write(bullets[0], 'Operated the Point of Sale by counting cash');
@@ -470,10 +479,10 @@ function recordExports(ctx) {
 }
 
 test('the download menu sends the version on screen — except the JSON backup', () => {
-  const { ctx, el, rail } = loadEditor();
+  const { ctx, el, panel } = loadEditor();
   const D = ctx.ResumeDocument;
   const bullet = D.flatten(ctx.ResumeEditor.current()).filter(n => n.type === 'bullet')[1];
-  const write = text => rail.fire('input',
+  const write = text => panel.fire('input',
     { target: target({ node: bullet.id, field: 'text' }, { type: 'textarea', value: text }) });
 
   write('Gave customers correct change by adding cash');
@@ -502,13 +511,13 @@ test('the download menu sends the version on screen — except the JSON backup',
 });
 
 test('a version that leaves a block out prints without it, and backs up with it', () => {
-  const { ctx, el, rail } = loadEditor();
+  const { ctx, el, panel } = loadEditor();
   const D = ctx.ResumeDocument;
   const bullet = D.flatten(ctx.ResumeEditor.current()).filter(n => n.type === 'bullet')[1];
 
   el('rb-version-new').fire('click');
   ctx.ResumeEditor.select(bullet.id);
-  rail.fire('click', { target: target({ act: 'hide' }) });
+  panel.fire('change', { target: target({ show: bullet.id }, { checked: false }) });
 
   const calls = recordExports(ctx);
   el('rb-pop-download').fire('click', { target: target({ fmt: 'text' }) });
@@ -525,76 +534,209 @@ test('a format the menu does not offer is ignored rather than throwing', () => {
   assert.deepEqual(calls, []);
 });
 
-/* ---- the tab strip ---- */
+/* ---- what a hidden segment costs -----------------------------------------------------------
 
-test('the rail strip keeps one tab stop and moves the selection with the arrows', () => {
-  const { ctx, el, tabs } = loadEditor();
-  const state = () => tabs.children.map(b => b.getAttribute('aria-selected') + '/' + b.tabIndex);
+   A HIDDEN ELEMENT MEASURES ZERO, and the sheet now starts inside a segment that is hidden. This
+   is the trap the whole arrangement had to answer, and it is not theoretical: measured in
+   Chromium on a three-page résumé, with the switch NOT repainting, the first switch to Preview
+   showed the sheet at its raw 816px inside a 734px column, reserved 0px of height for it (so the
+   page drew over whatever followed), and drew ZERO of the two page-break markers. `fitToWidth`
+   had run and computed the right zoom; nothing had applied it, because `paint()` is what writes
+   the transform, the wrapper's height and the markers.
 
-  tabs.fire('click', { target: tabs.children[1] });   // Checks
-  assert.deepEqual(state(), ['false/-1', 'true/0', 'false/-1'],
-    'a tablist is ONE tab stop; three tabIndex-0 buttons is three');
-  assert.deepEqual(TABS.filter(n => !el('rb-pane-' + n).hidden), ['checks']);
+   The stub cannot make an element measure zero — it knows nothing about nesting. What it can do
+   is prove the two halves of the fix separately: that the switch repaints, and that it fits once
+   rather than every time. */
 
-  ctx.document.activeElement = tabs.children[1];
-  tabs.fire('keydown', { key: 'ArrowRight', preventDefault() {} });
-  assert.equal(tabs.children[2].getAttribute('aria-selected'), 'true');
-  assert.ok(tabs.children[2]._focused, 'the arrow moved the selection but not the focus');
-  assert.deepEqual(TABS.filter(n => !el('rb-pane-' + n).hidden), ['keywords'],
-    'the panel must follow the selection, as it does for a mouse');
+test('opening Preview measures the sheet again, rather than trusting what it read while hidden', () => {
+  const { el, segs } = loadEditor();
+  const wrap = el('rb-paper-wrap');
+  assert.equal(wrap.style.height, '1056px', 'the wrapper never reserved the sheet height at all');
 
-  /* Wrapping, and Home/End, are what stops the last tab being a dead end. */
-  ctx.document.activeElement = tabs.children[2];
-  tabs.fire('keydown', { key: 'ArrowRight', preventDefault() {} });
-  assert.equal(tabs.children[0].getAttribute('aria-selected'), 'true');
-  ctx.document.activeElement = tabs.children[0];
-  tabs.fire('keydown', { key: 'End', preventDefault() {} });
-  assert.equal(tabs.children[2].getAttribute('aria-selected'), 'true');
+  /* The sheet grows while nobody is looking at it — which is what typing in the Edit segment
+     does. Nothing repaints the wrapper until the segment carrying it opens. */
+  el('rb-paper').offsetHeight = 2000;
+  assert.equal(wrap.style.height, '1056px', 'something painted the hidden segment unprompted');
+
+  segs.fire('click', { target: segs.children[1] });
+  assert.equal(wrap.style.height, '1400px',
+    'the wrapper still reserves what the sheet measured while it was hidden — 2000 x 0.7');
+  assert.equal(el('rb-zoom-read').textContent, '70%',
+    'the sheet was never fitted to the space the Preview segment actually gives it');
 });
 
-/* The OUTER strip owes the same behaviour, and gets it from the same code — one `wireStrip`
-   wired twice. Asserted separately anyway: "they share an implementation" is exactly the claim a
-   later change breaks silently, and a nested tablist that lost its arrow keys would leave the
-   document and Polish reachable only by mouse. */
-test('the Document / Polish segments are a tablist too, with the same traversal', () => {
+test('the tenth switch behaves like the first, and neither throws away a chosen zoom', () => {
+  const { el, segs } = loadEditor();
+  const toPreview = () => segs.fire('click', { target: segs.children[1] });
+  const toEdit = () => segs.fire('click', { target: segs.children[0] });
+
+  toPreview();
+  assert.equal(el('rb-zoom-read').textContent, '70%');
+
+  /* A zoom the user chose. Re-fitting on every switch would take it away — which is why the fit
+     is latched and the paint is not. */
+  el('rb-zoom').value = '150';
+  el('rb-zoom').fire('input', { target: el('rb-zoom') });
+  assert.equal(el('rb-zoom-read').textContent, '150%');
+
+  for (let i = 0; i < 9; i++) { toEdit(); toPreview(); }
+  assert.equal(el('rb-zoom-read').textContent, '150%',
+    'a later switch re-fitted the page and threw away the zoom the user had set');
+  /* Still repainting, though: the height follows the sheet on the tenth switch as on the first. */
+  toEdit();
+  el('rb-paper').offsetHeight = 3000;
+  toPreview();
+  assert.equal(el('rb-paper-wrap').style.height, '4500px',
+    'the tenth switch stopped repainting, so Preview shows what it measured nine switches ago');
+});
+
+/* ---- keeping an entry, and choosing whether it prints -------------------------------------- */
+
+test('unticking a block keeps every word and takes it off the page', () => {
+  const { ctx, el, panel } = loadEditor();
+  const D = ctx.ResumeDocument;
+  const entry = D.flatten(ctx.ResumeEditor.current()).find(n => n.type === 'work_entry');
+
+  ctx.ResumeEditor.select(entry.id);
+  assert.match(el('rb-pane-document').innerHTML, /data-show="/, 'no tick is offered at all');
+
+  panel.fire('change', { target: target({ show: entry.id }, { checked: false }) });
+
+  const doc = ctx.ResumeEditor.current();
+  assert.ok(D.find(doc, entry.id), 'the block was DELETED — the whole point is that it is kept');
+  assert.deepEqual(doc.hidden, [entry.id], 'the document does not record what it leaves out');
+  assert.equal(D.find(D.resolve(doc), entry.id), null, 'the résumé still prints the block');
+  assert.ok(el('rb-pane-document').innerHTML.includes('not shown'),
+    'nothing on the row says the block is being kept rather than printed');
+
+  panel.fire('change', { target: target({ show: entry.id }, { checked: true }) });
+  assert.ok(D.find(D.resolve(ctx.ResumeEditor.current()), entry.id), 'ticking it back did nothing');
+});
+
+/* The header cannot be removed (Layer 1 says so), so it cannot be switched off either — a
+   résumé with no name on it is not a thing to offer. */
+test('a block Layer 1 says is not optional is offered no tick', () => {
+  const { ctx, el } = loadEditor();
+  const header = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current()).find(n => n.type === 'header');
+  ctx.ResumeEditor.select(header.id);
+  assert.ok(!el('rb-pane-document').innerHTML.includes('data-show="' + header.id + '"'),
+    'the name and contact block can be switched off');
+});
+
+/* One control, two layers. Which list the tick writes is which layer the user is editing — and
+   the master's choice reaches every version, because a version is a difference FROM the master. */
+test('the tick writes the layer being edited, and the master reaches every version', () => {
+  const { ctx, el, panel } = loadEditor();
+  const D = ctx.ResumeDocument;
+  const bullets = D.flatten(ctx.ResumeEditor.current()).filter(n => n.type === 'bullet');
+
+  panel.fire('change', { target: target({ show: bullets[0].id }, { checked: false }) });
+  assert.deepEqual(ctx.ResumeEditor.current().hidden, [bullets[0].id],
+    'with no version active the tick must write the document itself');
+
+  el('rb-version-new').fire('click');
+  panel.fire('change', { target: target({ show: bullets[1].id }, { checked: false }) });
+  const doc = ctx.ResumeEditor.current();
+  assert.deepEqual(doc.hidden, [bullets[0].id], 'the version edited the MASTER by surprise');
+  assert.deepEqual(doc.tailorings[0].hidden, [bullets[1].id],
+    'the tick did not reach the version that was on screen');
+
+  /* And the two compose in the printed document, which is the claim that matters. */
+  const printed = D.resolve(doc);
+  assert.equal(D.find(printed, bullets[0].id), null, 'the master\u2019s choice did not reach the version');
+  assert.equal(D.find(printed, bullets[1].id), null, 'the version\u2019s own choice was not applied');
+
+  /* Under a version, a block the master leaves out is ticked off and DISABLED — turning it on
+     here could only do nothing or edit the master by surprise. */
+  ctx.ResumeEditor.select(bullets[0].id);
+  const row = el('rb-pane-document').innerHTML;
+  const at = row.indexOf('data-show="' + bullets[0].id + '"');
+  assert.ok(at > -1 && row.slice(at, at + 120).includes('disabled'),
+    'a block the master leaves out offers a live tick the version cannot honour');
+});
+
+/* ---- dismissing the menus over the bar ----
+
+   A menu that can only be closed by finding its own button again is a trap, and it became a
+   visible one when these moved under the bar: the Résumés panel is 247px tall and covers what is
+   behind it. */
+
+test('Escape closes an open popover and puts the focus back on its button', () => {
+  const { el } = loadEditor();
+  el('rb-open').fire('click');
+  assert.equal(el('rb-pop-open').hidden, false, 'the menu never opened');
+
+  fireKey(el, { key: 'Escape' });
+  assert.equal(el('rb-pop-open').hidden, true, 'Escape left the menu open');
+  assert.equal(el('rb-open').getAttribute('aria-expanded'), 'false');
+  assert.ok(el('rb-open')._focused, 'Escape dropped the focus wherever the menu had left it');
+});
+
+test('a pointerdown outside closes the menu, and one on its own button still toggles', () => {
+  const { ctx, el } = loadEditor();
+  const outside = fn => (ctx._docHandlers.pointerdown || []).forEach(h => h({ target: fn }));
+
+  el('rb-download').fire('click');
+  assert.equal(el('rb-pop-download').hidden, false);
+  outside(el('rb-paper'));
+  assert.equal(el('rb-pop-download').hidden, true, 'a click on the page left the menu open');
+
+  /* The owning button is excluded from the outside handler on purpose. It decides by reading
+     `pop.hidden`, so a pointerdown that closed the menu first would make its own click reopen
+     the thing the user asked to close. */
+  el('rb-download').fire('click');
+  outside(el('rb-download'));
+  assert.equal(el('rb-pop-download').hidden, false,
+    'the pointerdown closed the menu before the button that owns it had its click');
+  el('rb-download').fire('click');
+  assert.equal(el('rb-pop-download').hidden, true, 'the button no longer closes its own menu');
+});
+
+/* ---- the segment strip ---- */
+
+test('the segment strip keeps one tab stop and moves the selection with the arrows', () => {
   const { ctx, el, segs } = loadEditor();
-  assert.deepEqual(segs.children.map(b => b.getAttribute('aria-selected') + '/' + b.tabIndex),
-    ['true/0', 'false/-1'], 'the rail must open on the document');
-  assert.deepEqual(SEGMENTS.filter(n => !el('rb-pane-' + n).hidden), ['document']);
+  const state = () => segs.children.map(b => b.getAttribute('aria-selected') + '/' + b.tabIndex);
+
+  assert.deepEqual(state(), ['true/0', 'false/-1'], 'the tab must open on Edit');
+  assert.deepEqual(SEGMENTS.filter(n => !el('rb-pane-' + n).hidden), ['edit']);
+
+  segs.fire('click', { target: segs.children[1] });   // Preview
+  assert.deepEqual(state(), ['false/-1', 'true/0'],
+    'a tablist is ONE tab stop; two tabIndex-0 buttons is two');
+  assert.deepEqual(SEGMENTS.filter(n => !el('rb-pane-' + n).hidden), ['preview']);
+
+  ctx.document.activeElement = segs.children[1];
+  segs.fire('keydown', { key: 'ArrowRight', preventDefault() {} });
+  assert.equal(segs.children[0].getAttribute('aria-selected'), 'true',
+    'the arrows must wrap, or the last tab is a dead end');
+  assert.ok(segs.children[0]._focused, 'the arrow moved the selection but not the focus');
+  assert.deepEqual(SEGMENTS.filter(n => !el('rb-pane-' + n).hidden), ['edit'],
+    'the panel must follow the selection, as it does for a mouse');
 
   ctx.document.activeElement = segs.children[0];
-  segs.fire('keydown', { key: 'ArrowRight', preventDefault() {} });
+  segs.fire('keydown', { key: 'End', preventDefault() {} });
   assert.equal(segs.children[1].getAttribute('aria-selected'), 'true');
-  assert.ok(segs.children[1]._focused);
-  assert.deepEqual(SEGMENTS.filter(n => !el('rb-pane-' + n).hidden), ['polish']);
-
-  /* And reaching a Polish panel from anywhere — the badge, a test — has to open Polish to do
-     it, or the panel it selects is behind a segment nobody switched. */
-  ctx.ResumeEditor.showRailPane('checks', false);
-  assert.deepEqual(SEGMENTS.filter(n => !el('rb-pane-' + n).hidden), ['polish']);
-  assert.deepEqual(TABS.filter(n => !el('rb-pane-' + n).hidden), ['checks']);
 });
 
 test('a keypress on the strip that is not a traversal is left alone', () => {
-  const { ctx, el, tabs } = loadEditor();
-  tabs.fire('click', { target: tabs.children[0] });
-  const before = tabs.children.map(b => b.getAttribute('aria-selected'));
-  ctx.document.activeElement = tabs.children[0];
-  tabs.fire('keydown', { key: 'a', preventDefault() { throw new Error('swallowed a keystroke'); } });
-  assert.deepEqual(tabs.children.map(b => b.getAttribute('aria-selected')), before);
-  assert.deepEqual(TABS.filter(n => !el('rb-pane-' + n).hidden), ['design']);
+  const { ctx, el, segs } = loadEditor();
+  const before = segs.children.map(b => b.getAttribute('aria-selected'));
+  ctx.document.activeElement = segs.children[0];
+  segs.fire('keydown', { key: 'a', preventDefault() { throw new Error('swallowed a keystroke'); } });
+  assert.deepEqual(segs.children.map(b => b.getAttribute('aria-selected')), before);
 
   /* A keydown that reaches the strip from somewhere else — the panel below it, say — must not
      move the selection either. */
-  ctx.document.activeElement = el('rb-pane-design');
-  tabs.fire('keydown', { key: 'ArrowRight', preventDefault() { throw new Error('claimed a key it does not own'); } });
-  assert.deepEqual(tabs.children.map(b => b.getAttribute('aria-selected')), before);
+  ctx.document.activeElement = el('rb-pane-document');
+  segs.fire('keydown', { key: 'ArrowRight', preventDefault() { throw new Error('claimed a key it does not own'); } });
+  assert.deepEqual(segs.children.map(b => b.getAttribute('aria-selected')), before);
 });
 
 /* ---- what the Checks tab says out loud ---- */
 
 test('the Checks verdict is announced when it changes, and not otherwise', () => {
-  const { ctx, el, rail } = loadEditor();
+  const { ctx, el, panel } = loadEditor();
   const live = el('rb-live');
   assert.equal(live.textContent, 'Checks: nothing to flag.',
     'the verdict was never announced at all');
@@ -611,19 +753,19 @@ test('the Checks verdict is announced when it changes, and not otherwise', () =>
      the findings list are both silent on their own. */
   const bullet = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current())
     .filter(n => n.type === 'bullet')[1];
-  rail.fire('input', { target: target({ node: bullet.id, field: 'text' },
+  panel.fire('input', { target: target({ node: bullet.id, field: 'text' },
     { type: 'textarea', value: 'Manage the till. And a second sentence.' }) });
   assert.match(live.textContent, /^Checks: [1-9]\d* to fix/, 'a changed verdict went unannounced');
 });
 
-/* ---- the rail's own escaping -------------------------------------------------------------
+/* ---- the form's own escaping -------------------------------------------------------------
    `importJson` rewrites hostile identifiers at the boundary, and its own tests cover that. This
-   is the second lock, on the sinks: a document can reach the rail WITHOUT passing the import —
+   is the second lock, on the sinks: a document can reach the form WITHOUT passing the import —
    one already sitting in localStorage from before that fix shipped does exactly that — so the
-   rail has to escape what it is handed rather than trust where it came from. */
+   form has to escape what it is handed rather than trust where it came from. */
 
-test('a hostile node id cannot break out of the attributes the rail writes', () => {
-  let { ctx, el, rail } = loadEditor();
+test('a hostile node id cannot break out of the attributes the form writes', () => {
+  let { ctx, el, panel } = loadEditor();
   const doc = ctx.ResumeDocument.clone(ctx.ResumeEditor.current());
   const nasty = 'x" onmouseover="alert(1)" data-x="';
   const entry = ctx.ResumeDocument.flatten(doc).find(n => n.type === 'work_entry');
@@ -634,7 +776,7 @@ test('a hostile node id cannot break out of the attributes the rail writes', () 
      import fix shipped arrives: no import, so nothing has had a chance to rewrite the id. */
   const second = loadEditor({ storage: fakeStorage([doc]) });
   second.ctx.ResumeEditor.select(nasty);
-  el = second.el; rail = second.rail; ctx = second.ctx;
+  el = second.el; panel = second.panel; ctx = second.ctx;
   assert.equal(ctx.ResumeDocument.find(ctx.ResumeEditor.current(), nasty).type, 'work_entry',
     'the seeded document did not come back out of storage');
 
@@ -647,8 +789,8 @@ test('a hostile node id cannot break out of the attributes the rail writes', () 
   }
 
   /* And the round trip still works: the escaped attribute is only how it is written, so the
-     rail must still be able to edit the block it names. */
-  rail.fire('input', { target: target({ node: nasty, field: 'role' },
+     form must still be able to edit the block it names. */
+  panel.fire('input', { target: target({ node: nasty, field: 'role' },
     { type: 'text', value: 'Cashier' }) });
   assert.equal(ctx.ResumeDocument.contentOf(ctx.ResumeEditor.current(), nasty).role, 'Cashier');
 });
@@ -680,7 +822,7 @@ test('a visit that is not the first opens what was there, untouched', () => {
 });
 
 test('an empty sheet does not count faults before anything has been typed', () => {
-  const { ctx, el, rail } = loadEditor();
+  const { ctx, el, panel } = loadEditor();
   el('rb-new-blank').fire('click');      // the button that says which one it starts
   assert.equal(ctx.ResumeEditor.current().name, 'Untitled résumé');
 
@@ -691,7 +833,7 @@ test('an empty sheet does not count faults before anything has been typed', () =
   /* And the moment there are words, the checks are back — this must not be a way to make the
      rule panel go quiet. */
   const header = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current()).find(n => n.type === 'header');
-  rail.fire('input', { target: target({ node: header.id, field: 'fullName' },
+  panel.fire('input', { target: target({ node: header.id, field: 'fullName' },
     { type: 'text', value: 'Lee' }) });
   assert.ok(!el('rb-badge').hidden, 'the checks never came back');
   assert.ok(el('rb-pane-checks').innerHTML.includes('rb-finding'));
@@ -706,8 +848,8 @@ test('choosing A4 re-lays the page, and it survives a reload', () => {
   assert.deepEqual(ctx.ResumeLayouts.PAPERS.map(p => p.id), ['letter', 'a4'],
     'the picker offers whatever Layer 2 declares; this test names what it expects to find');
 
-  const { rail } = loadedA4;
-  rail.fire('change', { target: { id: 'rb-paper-size', value: 'a4', dataset: {} } });
+  const { panel } = loadedA4;
+  panel.fire('change', { target: { id: 'rb-paper-size', value: 'a4', dataset: {} } });
   assert.equal(el('rb-paper').style.width, '8.27in', 'the sheet on screen is still US Letter');
   assert.equal(el('rb-paper').style.minHeight, '11.69in');
   assert.match(el('rb-pane-design').innerHTML, /value="a4" selected/,
@@ -732,7 +874,7 @@ test('a page that opened on the résumé tab paints without anyone calling shown
   assert.ok(el('rb-paper').innerHTML.length > 0,
     'the tab was left rendered but never painted — a blank sheet, exactly what a refresh showed');
   assert.match(el('rb-pane-design').innerHTML, /rb-paper-size/,
-    'the paper control never got built, so the rail is empty too');
+    'the paper control never got built, so the Design pane is empty too');
 });
 
 test('a page that opened on another tab pays nothing until the résumé tab is opened', () => {

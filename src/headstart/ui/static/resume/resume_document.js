@@ -170,20 +170,39 @@
     return (doc.tailorings || []).find(t => t.id === wanted) || null;
   }
 
+  /** Every node left out of what `id` would print: the document's own set, plus that Tailoring's.
+   *
+   *  TWO LAYERS, one meaning. A node in `doc.hidden` is kept in the résumé but off every version
+   *  of it — the answer to "I have five projects and this one is for a different kind of job".
+   *  A node in `tailoring.hidden` is off THAT version only. They compose the way the rest of the
+   *  model composes: a Tailoring is a difference from the master, so a block the master does not
+   *  print is not printed by a difference from it either. */
+  function hiddenIn(doc, tailoring) {
+    return new Set((doc.hidden || []).concat(tailoring ? tailoring.hidden || [] : []));
+  }
+
+  /** Whether one node prints, as `id` sees it. The editor's tick reads this rather than either
+   *  list, so the control cannot disagree with the page. */
+  function isHidden(doc, nodeId, id) {
+    return hiddenIn(doc, tailoringOf(doc, id)).has(nodeId);
+  }
+
   function resolve(doc, id) {
     const tailoring = tailoringOf(doc, id);
-    if (!tailoring) return doc;
+    const hidden = hiddenIn(doc, tailoring);
+    /* Identity while nothing is active AND nothing is left out, which is the common case and the
+       one the master path is meant to cost nothing. */
+    if (!tailoring && !hidden.size) return doc;
     const out = clone(doc);
     /* The resolved document is what gets printed and downloaded, so it carries the version's own
        name — three tailored PDFs in a downloads folder all called "Lee Korelitz.pdf" is a real
        way to send the wrong one to the wrong employer. */
-    out.name = (doc.name || 'Résumé') + ' — ' + tailoring.name;
-    const hidden = new Set(tailoring.hidden || []);
+    if (tailoring) out.name = (doc.name || 'Résumé') + ' — ' + tailoring.name;
     (function prune(n) {
       n.children = n.children.filter(c => !hidden.has(c.id));
       n.children.forEach(prune);
     })(out.root);
-    for (const nodeId of Object.keys(tailoring.picks || {})) {
+    for (const nodeId of Object.keys((tailoring && tailoring.picks) || {})) {
       const variant = (doc.variants || {})[nodeId];
       const fields = variant && variant[tailoring.picks[nodeId]];
       if (fields) out.content[nodeId] = Object.assign({}, doc.content[nodeId] || {}, fields);
@@ -269,6 +288,7 @@
           walk(gone, n => {
             delete d.content[n.id];
             if (d.variants) delete d.variants[n.id];
+            if (d.hidden) d.hidden = d.hidden.filter(id => id !== n.id);
             for (const t of d.tailorings || []) {
               if (t.picks) delete t.picks[n.id];
               if (t.hidden) t.hidden = t.hidden.filter(id => id !== n.id);
@@ -286,6 +306,12 @@
         const original = find(d, id);
         if (!parent || !original) return d;
         const copy = clone(original);
+        /* Whether each copied node prints, carried over with its words. A duplicate of a block
+           the résumé leaves out is another block the résumé leaves out — "duplicate" means
+           another one like this, and `like this` includes off. Collected before the ids are
+           reissued below, and applied after. */
+        const wasHidden = new Set(d.hidden || []);
+        const carry = [];
         /* Fresh ids all the way down, and the content copied across to them — a duplicate that
            shared ids would edit both copies at once.
            Variants come too: without this, duplicating a block that a version had reworded gave
@@ -295,6 +321,7 @@
           const was = n.id;
           n.id = newId();
           d.content[n.id] = clone(d.content[was] || {});
+          if (wasHidden.has(was)) carry.push(n.id);
           for (const tailoring of d.tailorings || []) {
             const picked = (tailoring.picks || {})[was];
             const fields = picked && ((d.variants || {})[was] || {})[picked];
@@ -306,6 +333,7 @@
             (tailoring.picks = tailoring.picks || {})[n.id] = variantId;
           }
         });
+        if (carry.length) d.hidden = (d.hidden || []).concat(carry);
         parent.children.splice(parent.children.indexOf(original) + 1, 0, copy);
         return d;
       },
@@ -427,15 +455,22 @@
       },
     }),
 
-    /** Leave a node out of one Tailoring without deleting it from the résumé. */
+    /** Leave a node out of what is on screen, without deleting it from the résumé.
+     *
+     *  ONE command for one control. Which list it writes is which layer the user is editing —
+     *  the named Tailoring's when a version is active, the document's own otherwise — because
+     *  the tick beside a block means the same thing in both places: "print this". Splitting it
+     *  into two commands would have put two controls that look identical next to each other and
+     *  left the user to work out which layer each one reached. */
     setHidden: (nodeId, hidden, tailoringId) => ({
-      name: hidden ? 'Leave out of this version' : 'Put back in this version',
+      name: hidden ? 'Leave out of the résumé' : 'Put back in the résumé',
       apply: d => {
-        const tailoring = (d.tailorings || []).find(t => t.id === tailoringId);
-        if (!tailoring) return d;
-        const set = new Set(tailoring.hidden || []);
+        const tailoring = tailoringId ? (d.tailorings || []).find(t => t.id === tailoringId) : null;
+        if (tailoringId && !tailoring) return d;
+        const holder = tailoring || d;
+        const set = new Set(holder.hidden || []);
         if (hidden) set.add(nodeId); else set.delete(nodeId);
-        tailoring.hidden = Array.from(set);
+        holder.hidden = Array.from(set);
         return d;
       },
     }),
@@ -579,6 +614,6 @@
   root.ResumeDocument = {
     SCHEMA, Commands, Store,
     builder: () => new Builder(),
-    node, walk, find, parentOf, flatten, clone, resolve, contentOf, tailoringOf,
+    node, walk, find, parentOf, flatten, clone, resolve, contentOf, tailoringOf, isHidden,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

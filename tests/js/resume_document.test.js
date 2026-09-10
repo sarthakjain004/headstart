@@ -91,6 +91,31 @@ test('a duplicate gets fresh ids, so editing the copy leaves the original alone'
   assert.equal(store.get().content[jobs[0].id].role, 'Cashier', 'the original is untouched');
 });
 
+/* ADR-0128: a block can be kept in the résumé and left off the page. The copy of one that is off
+   is off too — "duplicate" means another one like this, and *like this* includes off. Getting this
+   wrong is not loud: you duplicate a project the résumé does not print and a second one appears on
+   the page. */
+test('duplicating a block that is switched off gives a copy that is switched off', () => {
+  const ctx = load(MODEL);
+  const { Commands, flatten, resolve, find } = ctx.ResumeDocument;
+  const store = new ctx.ResumeDocument.Store(null);
+  store.adopt(sample(ctx));
+  const job = flatten(store.get()).filter(n => n.type === 'work_entry')[0];
+
+  store.dispatch(Commands.setHidden(job.id, true, null));
+  store.dispatch(Commands.duplicateNode(job.id));
+  const jobs = flatten(store.get()).filter(n => n.type === 'work_entry');
+  assert.equal(jobs.length, 2, 'the duplicate was not made');
+  assert.deepEqual(store.get().hidden.sort(), [jobs[0].id, jobs[1].id].sort(),
+    'the copy of a block the résumé leaves out is printed');
+  assert.equal(flatten(resolve(store.get())).filter(n => n.type === 'work_entry').length, 0);
+
+  /* And deleting one takes only its own id out of the list. */
+  store.dispatch(Commands.removeNode(jobs[1].id));
+  assert.deepEqual(store.get().hidden, [jobs[0].id]);
+  assert.equal(find(store.get(), jobs[1].id), null);
+});
+
 test('a node cannot be dropped inside itself', () => {
   const ctx = load(MODEL);
   const { Commands, flatten } = ctx.ResumeDocument;

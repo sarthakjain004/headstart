@@ -2,6 +2,14 @@
 
 **Status:** accepted · **Date:** 2026-09-10 · **Rearranges the view of ADR-0123 (a résumé is three layers). Changes no model layer: Components, Layouts, Content, Tailoring and the repository are untouched.**
 
+> **Narrowed by [ADR-0128](0128-the-resume-tab-is-two-segments-edit-and-preview.md) (2026-09-10).**
+> Points 1, 5 and 6 below stand. Point 2 does not: `Design`, `Checks` and `Keywords` are no longer
+> a `Polish` segment beside `Document` — Design moved beside the page and the other two beside the
+> form, and the nested tablist is gone. Nor does the side-by-side arrangement: the form and the
+> page are two segments of one tab, `Edit` and `Preview`. ADR-0128 states what that costs and what
+> replaces the live preview. The gallery cost in *Consequences* below (*O(layouts)*, ~30 as the
+> threshold) was a projection and is corrected there by measurement.
+
 ## Context
 
 ADR-0123 built the Résumé tab as a **canvas with an inspector** — the shape Figma has. The
