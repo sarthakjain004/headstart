@@ -205,6 +205,11 @@
 
     doc.content = rekey(doc.content);
     doc.variants = rekey(doc.variants, inner => rekey(inner));
+    /* The document's own left-out list, alongside each Tailoring's below (ADR-0128). Missed, an
+       imported backup keeps ids nothing in the tree answers to any more, so every block the
+       résumé had switched off comes back on — silently, and only for a file that needed
+       sanitising at all. */
+    doc.hidden = (doc.hidden || []).map(safe);
     for (const tailoring of doc.tailorings || []) {
       tailoring.id = safe(tailoring.id);
       tailoring.picks = rekey(tailoring.picks, variantId => safe(variantId));

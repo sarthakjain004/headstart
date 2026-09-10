@@ -278,7 +278,7 @@ One job application's version of a **Résumé document**: which **Component**s i
 _Avoid_: version, copy, branch — "version" is what the UI calls it for users, but in this document a Tailoring is specifically the *difference set*, and calling it a copy describes the thing it was designed not to be.
 
 **Master résumé** (ADR-0124):
-A **Résumé document** as it reads with no **Tailoring** active: the base **Content**, every block present. The thing every Tailoring is a difference *from*, and what a job application gets when no version was made for it. Editing it reaches every Tailoring that has not overridden the block being edited — which is the property the whole model exists for. The tab labels the picker's first entry with exactly this phrase.
+A **Résumé document** as it reads with no **Tailoring** active: the base **Content**, and every block the document itself has not switched off (ADR-0128 — a block can be kept in the document and left off the page, which a **Tailoring** can then do again for one application). The thing every Tailoring is a difference *from*, and what a job application gets when no version was made for it. Editing it reaches every Tailoring that has not overridden the block being edited — which is the property the whole model exists for. The tab labels the picker's first entry with exactly this phrase.
 _Avoid_: original, default, main — "original" implies the Tailorings are copies of it, which is exactly what they are not. And never the bare word **Master**: that is already the Telegram chat that approves everyone else (ADR-0038), and the two share no meaning at all.
 
 **Variant** (ADR-0124):

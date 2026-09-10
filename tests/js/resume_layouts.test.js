@@ -399,6 +399,7 @@ test('an imported document cannot choose its own identifiers', () => {
     content: { [hostile]: { title: 'Work History' } },
     variants: { [hostile]: { 'v">x': { title: 'Other' } } },
     tailorings: [{ id: 'bad"id', name: 'V', picks: { [hostile]: 'v">x' }, hidden: [hostile] }],
+    hidden: [hostile],
     activeTailoring: 'bad"id', theme: {},
   };
   const back = ctx.ResumeExport.importJson(JSON.stringify(doc));
@@ -413,6 +414,10 @@ test('an imported document cannot choose its own identifiers', () => {
   assert.equal(back.activeTailoring, tailoring.id, 'the active version still points at it');
   assert.deepEqual(Object.keys(tailoring.picks), [id], 'picks follow the node');
   assert.deepEqual(tailoring.hidden, [id]);
+  /* And the DOCUMENT's own left-out list, which is the other half of ADR-0128's two layers. A
+     list left holding ids the tree no longer answers to does not fail loudly — every block the
+     résumé had switched off simply comes back on, in an imported backup, silently. */
+  assert.deepEqual(back.hidden, [id], 'the document\u2019s own left-out list did not follow the node');
   /* And the whole document renders without a tag escaping an attribute. */
   const html = ctx.ResumeLayouts.renderDocument(ctx.ResumeLayouts.get(HH), back);
   assert.ok(!html.includes('<img'), 'a tag reached the page');

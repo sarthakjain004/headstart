@@ -39,6 +39,15 @@
      read. `header` and `entry` print every string field a node owns and so may name fields
      freely, and `line` was made field-agnostic for the same reason.
 
+     THAT LICENCE IS ABOUT THE FALLBACKS ONLY, and it does not make adding a field to an EXISTING
+     type free. A `byType` strategy is written for a type it knows and names that type's fields,
+     so a field added to one is printed by no Layout that overrides it. Counted 2026-09-10 across
+     the seven registered Layouts: `project_entry` is overridden by all seven, so a `link` added
+     to it today would be typed by the user and printed by nothing at all; `header` by six, the
+     exception being `free-canvas`, whose header is a field-agnostic `byShape` strategy. Widening
+     an existing type therefore means a pass over the Layouts that name it; adding a NEW type is
+     what the shape contract above actually makes cheap (ADR-0128).
+
      The rule for a new Component Type: name your fields for what they ARE. If a fallback cannot
      find them, the fallback is the defect. */
 

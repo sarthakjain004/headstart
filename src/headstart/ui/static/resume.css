@@ -91,19 +91,32 @@
 .rb-dl b { display: block; }
 .rb-dl span { color: var(--ink-3); font-size: .8rem; }
 
-/* ---- the two-column body ----
-   The rail is wider than it was (340 -> 400) and the paper is smaller for it. That trade is the
-   point of the rearrangement: the rail is where the résumé is written, the paper is a preview of
-   it, and the sheet loses nothing by being previewed smaller because zoom does the fitting and
-   its line breaks are held true either way. At 340 the fields were 300px wide and a job title
-   and its dates could not sit on one line. */
-.rb-body { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 14px; align-items: start; }
-@media (max-width: 1100px) { .rb-body { grid-template-columns: minmax(0, 1fr) 340px; } }
-@media (max-width: 900px) { .rb-body { grid-template-columns: minmax(0, 1fr); } }
+/* ---- the split, and the two workspaces under it ----
+   Edit and Preview (ADR-0128). One strip of two, drawn as a pill so it reads as a switch between
+   two views of one document rather than two more places to go. It is content-width and
+   left-aligned: a segmented control stretched across 1280px stops looking like a switch.
+
+   Each workspace is the same shape — the thing you came for, and a column of what helps with it.
+   The main column gets the width that a 400px rail beside a sheet of paper could never give it:
+   measured on the arrangement this replaces, a Work entry's six fields sat one per row at 330px
+   wide, and its bullets — which are paragraphs — were typed in a three-line box narrower than the
+   sentence. Here they are 600px+ and the short fields pair up. */
+.rb-seg { display: flex; gap: 3px; padding: 3px; align-self: flex-start; background: var(--raise-2);
+  border: 1px solid var(--rule); border-radius: var(--r-md); }
+.rb-seg-tab { min-width: 132px; background: transparent; border: 0; border-radius: 7px;
+  color: var(--ink-3); padding: 8px 14px; cursor: pointer; font: inherit; font-size: .9rem;
+  font-weight: 500; min-height: 24px; transition: background var(--step), color var(--step); }
+.rb-seg-tab[aria-selected="true"] { background: var(--raise); color: var(--ink);
+  box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+@media (max-width: 560px) { .rb-seg { align-self: stretch; } .rb-seg-tab { flex: 1; min-width: 0; } }
+
+.rb-work { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px; align-items: start; }
+.rb-work[hidden] { display: none !important; }
+@media (max-width: 1000px) { .rb-work { grid-template-columns: minmax(0, 1fr); } }
 
 .rb-stage { background: var(--raise); border: 1px solid var(--rule); border-radius: var(--r-lg);
   padding: 12px; min-width: 0; }
-.rb-rail select { background: var(--raise-2); border: 1px solid var(--rule);
+.rb-aside select { background: var(--raise-2); border: 1px solid var(--rule);
   color: var(--ink); border-radius: var(--r-md); padding: 6px 9px; font: inherit; font-size: .86rem; }
 .rb-credit { font-style: italic; }
 .rb-credit[hidden] { display: none !important; }
@@ -168,7 +181,7 @@
   background: #fff; color: #000; }
 .rb-tblurb { color: var(--ink-2); }
 
-/* The paper. Scrolls on both axes at high zoom rather than pushing the rail off the screen. */
+/* The paper. Scrolls on both axes at high zoom rather than pushing the aside off the screen. */
 /* `align-items: flex-start` matters: the default stretches the sheet to the wrapper's height,
    and the wrapper's height is set from the sheet's — a loop that pinned every résumé at exactly
    one page however much was on it, so a three-page document drew no second or third page. */
@@ -253,56 +266,66 @@
 .rb-dropline { position: fixed; z-index: 60; width: 180px; height: 3px; border-radius: 2px;
   background: var(--accent); box-shadow: 0 0 0 1px rgba(255,255,255,.6); pointer-events: none; }
 
-/* ---- the rail ---- */
-.rb-rail { background: var(--raise); border: 1px solid var(--rule); border-radius: var(--r-lg);
-  padding: 0 0 12px; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto;
-  /* The segmented control is sticky over the top of this scroller, so a control scrolled to the
-     top of the rail lands underneath it — focus obscured (WCAG 2.2 SC 2.4.11). Reserving the
-     strip's own height plus its offset as scroll padding is what stops that; measured at 44px
-     for the pill (8px top offset + 36px) against the 37px the flat strip it replaces needed. */
-  scroll-padding-top: 52px; }
-/* Two segments, not four tabs. Design, Checks and Keywords are things done TO the document
-   rather than peers of it; a four-across strip claimed they were the same kind of thing as the
-   résumé itself, and cost the document three quarters of the rail's head. The segmented control
-   is drawn as one pill so the two read as a switch, not as two more buttons. */
-/* The WRAPPER is what sticks, not the pill. A sticky element with a margin leaves the margin
-   scrollable: measured, rows slid up through the 8px above the pill and the 10px either side and
-   drew over the rail's own background, so a button from the card above appeared to float over the
-   segments. The wrapper carries the offsets and the rail's background; the pill just sits in it. */
-.rb-seg-wrap { position: sticky; top: 0; z-index: 3; background: var(--raise); padding: 8px 10px; }
-.rb-seg { display: flex; gap: 3px; padding: 3px; background: var(--raise-2);
-  border: 1px solid var(--rule); border-radius: var(--r-md); }
-.rb-seg-tab { flex: 1; background: transparent; border: 0; border-radius: 7px; color: var(--ink-3);
-  padding: 7px 6px; cursor: pointer; font: inherit; font-size: .86rem; font-weight: 500;
-  min-height: 24px; transition: background var(--step), color var(--step); }
-.rb-seg-tab[aria-selected="true"] { background: var(--raise); color: var(--ink);
-  box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+/* ---- the aside ----
+   The column of what helps, beside the thing you came for: the miniature, Checks and Keywords
+   next to the form; Design next to the page. Sticky, so a finding stays reachable however far
+   down the form you have scrolled. */
+.rb-aside { display: flex; flex-direction: column; gap: 12px; min-width: 0;
+  position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
+@media (max-width: 1000px) { .rb-aside { position: static; max-height: none; } }
 
-/* One level down, inside Polish, and drawn as the lighter underline strip that the outer
-   segments deliberately are not — the difference in weight is what says which is which. */
-.rb-rail-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--rule); }
-.rb-rail-tab { flex: 1; background: transparent; border: 0; border-bottom: 2px solid transparent;
-  color: var(--ink-3); padding: 8px 4px; cursor: pointer; font: inherit; font-size: .84rem;
-  min-height: 24px; }
-.rb-rail-tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.rb-card { background: var(--raise); border: 1px solid var(--rule); border-radius: var(--r-lg);
+  padding: 12px; min-width: 0; }
+.rb-card-head { margin: 0 0 8px; font-size: .9rem; display: flex; align-items: center; gap: 6px; }
+/* A disclosure whose heading is the button, so the heading outline still reads correctly. */
+.rb-card-btn { display: flex; gap: 6px; align-items: center; width: 100%; text-align: left;
+  background: transparent; border: 0; color: var(--ink); font: inherit; font-size: inherit;
+  font-weight: inherit; cursor: pointer; padding: 0; min-height: 24px; }
+.rb-cardbody { display: flex; flex-direction: column; gap: 10px; }
+.rb-cardbody[hidden] { display: none !important; }
+
+/* The miniature. What a live preview is actually consulted for while somebody is typing is two
+   questions — did my words land, and does it still fit on one page — and both survive being
+   small. It is the real document through the real layout, scaled by the same measured arithmetic
+   the gallery's cards use, so it cannot drift from the page it stands in for. The page-break
+   lines are drawn on it; their labels are not, at this scale they would be 2px tall. */
+.rb-minicard { display: flex; flex-direction: column; gap: 8px; width: 100%; padding: 12px;
+  background: var(--raise); border: 1px solid var(--rule); border-radius: var(--r-lg);
+  color: var(--ink); font: inherit; cursor: pointer; text-align: left; }
+.rb-minicard:hover { border-color: var(--accent); }
+/* Capped, and clipped rather than scrolled: a three-page résumé's miniature is 740px tall, which
+   would push Checks off the bottom of the column it shares. The count in words below says what
+   the clipping does not. */
+.rb-mini-frame { max-height: 360px; }
+.rb-mini-foot { display: flex; align-items: center; gap: 8px; }
+.rb-mini-pages { flex: 1; min-width: 0; color: var(--ink-2); font-size: .82rem; }
+.rb-minicard .rb-break::after { display: none; }
+
+.rb-form { background: var(--raise); border: 1px solid var(--rule); border-radius: var(--r-lg);
+  padding: 14px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
 .rb-badge { display: inline-block; margin-left: 5px; background: var(--alert); color: #fff;
   border-radius: var(--r-pill); font-size: .7rem; padding: 0 5px; }
-.rb-pane { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
-.rb-pane-polish { gap: 12px; }
-.rb-subpane { display: flex; flex-direction: column; gap: 10px; }
-.rb-subpane[hidden] { display: none !important; }
 /* `display` on a class beats the `hidden` attribute's UA default of `display: none`, so every
    element here that is toggled by `hidden` needs to say so explicitly. Without these two rules
    the Design pane rendered underneath the Content pane and the Checks badge showed a red "0". */
-.rb-pane[hidden], .rb-badge[hidden], .rb-pop[hidden] { display: none !important; }
+.rb-badge[hidden], .rb-pop[hidden] { display: none !important; }
 
-.rb-field { display: flex; flex-direction: column; gap: 4px; }
+/* A block's own fields, as a grid rather than a stack. In a 400px rail every field was a full
+   row whatever it held, so "TX" and "June 2023" each took a 330px line and a job ran to six of
+   them; here they pair up and a paragraph field takes the whole width on its own. `auto-fit`
+   rather than a fixed count so this needs no breakpoint of its own — it is already the answer at
+   1280, at 1000 where the aside drops below, and on a phone. */
+.rb-fields { display: grid; gap: 10px 12px;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.rb-field-wide { grid-column: 1 / -1; }
+.rb-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .rb-field label { font-size: .8rem; color: var(--ink-2); }
-.rb-field input[type="text"], .rb-field input:not([type]), .rb-field textarea, .rb-rail textarea {
+.rb-field input[type="text"], .rb-field input:not([type]), .rb-field textarea, .rb-aside textarea {
   background: var(--raise-2); border: 1px solid var(--rule); color: var(--ink);
-  border-radius: var(--r-md); padding: 7px 9px; font: inherit; font-size: .86rem; width: 100%;
+  border-radius: var(--r-md); padding: 9px 11px; font: inherit; font-size: .9rem; width: 100%;
   resize: vertical; }
-.rb-field input:focus-visible, .rb-field textarea:focus-visible, .rb-rail textarea:focus-visible {
+.rb-field textarea { min-height: 5.2em; line-height: 1.5; }
+.rb-field input:focus-visible, .rb-field textarea:focus-visible, .rb-aside textarea:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 1px; }
 .rb-flag label { display: flex; gap: 7px; align-items: center; color: var(--ink); font-size: .86rem; }
 .rb-range label { display: flex; justify-content: space-between; }
@@ -311,10 +334,11 @@
   text-align: center; border-radius: 50%; background: var(--raise-2); color: var(--ink-3);
   font-size: .7rem; cursor: help; }
 .rb-add, .rb-actions, .rb-prefill { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.rb-add[hidden] { display: none !important; }
 .rb-prefill { border-bottom: 1px solid var(--rule); padding-bottom: 10px; }
 
 /* ---- the document accordion ----
-   The rail IS the résumé, as its own sections. What it replaces was a flat node tree that listed
+   The form IS the résumé, as its own sections. What it replaces was a flat node tree that listed
    every block at one indent — all seven bullets included, each truncated to "Bullet Operated our
    Point of Sale (POS) cas…" — which is how a debugger draws a tree and not how a résumé reads.
    Measured on the guide's own worked example: 13 rows then, 3 now, and the words are edited in
@@ -325,7 +349,18 @@
 .rb-row-d0.on { border-color: var(--accent); }
 .rb-row-d1 { background: var(--raise); border-color: var(--rule); margin-top: 4px; }
 .rb-row-d1.on { border-color: var(--accent); }
-.rb-row-head { margin: 0; font-size: inherit; font-weight: inherit; }
+/* The row's own header line: an include tick, then the disclosure. The tick cannot live INSIDE
+   the disclosure button — a control inside a control is not operable — so the two are siblings
+   on one line, and the tick comes first because it is the thing being read down the column when
+   somebody is deciding what this résumé says. */
+.rb-row-line { display: flex; align-items: stretch; }
+.rb-row-head { margin: 0; font-size: inherit; font-weight: inherit; flex: 1; min-width: 0; }
+/* 24 CSS px of pointer target (SC 2.5.8) around a 14px box, bought with padding rather than by
+   growing the box — a tick the size of a button reads as a button. */
+.rb-show { display: flex; align-items: center; padding: 0 5px 0 9px; cursor: pointer; }
+.rb-show input { width: 15px; height: 15px; margin: 0; cursor: pointer; accent-color: var(--accent); }
+.rb-show-none { width: 29px; }
+.rb-show input:disabled { cursor: not-allowed; }
 .rb-row-btn { display: flex; width: 100%; gap: 7px; align-items: baseline; text-align: left;
   background: transparent; border: 0; color: var(--ink); padding: 9px 10px; cursor: pointer;
   font: inherit; border-radius: var(--r-md); min-height: 24px; }
@@ -355,6 +390,11 @@
 .rb-bullet.on { border-left-color: var(--accent); }
 .rb-bullet-foot, .rb-acts { display: flex; gap: 5px; align-items: center; flex-wrap: wrap;
   margin-top: 5px; }
+/* The same tick a row carries, worded rather than drawn bare: a bullet has no header line to sit
+   on, and an unlabelled box in a row of icon buttons says nothing about what it does. */
+.rb-show-inline { display: flex; gap: 6px; align-items: center; color: var(--ink-2);
+  font-size: .8rem; cursor: pointer; padding: 4px 2px; }
+.rb-show-inline input { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); }
 .rb-bullet-foot .spacer, .rb-acts .spacer { flex: 1; }
 /* 26px square. SC 2.5.8 asks for 24 and these sit in a row of four, where the two pixels are
    the difference between hitting the bin and hitting duplicate. */
@@ -424,9 +464,19 @@
 /* Printing the tab itself is not how the PDF is made — resume_export.js prints an iframe holding
    only the document. This is the safety net for anyone who reaches for Ctrl+P anyway. */
 @media print {
-  .top, .tabs, .foot, .rb-bar, .rb-rail, .rb-stage-foot, .rb-templates,
+  .top, .tabs, .foot, .rb-bar, .rb-seg, .rb-aside, .rb-form, .rb-stage-foot, .rb-templates,
   .rb-pop { display: none !important; }
-  .rb-paper-wrap { overflow: visible; padding: 0; background: #fff; }
+  /* The Preview workspace is `hidden` whenever Edit is the segment on screen — which is the
+     default — so without this Ctrl+P from the Edit segment printed a blank sheet of paper. The
+     rules above have already taken the form and both columns out, so unhiding the workspace
+     brings back the page and nothing else. Its wrapper carries an inline height from the last
+     paint, scaled to the zoom; the printed page is unscaled, so that has to go too. */
+  .rb-work[hidden] { display: block !important; }
+  /* The wrapper caps its height on screen so the strip below the page stays reachable; on paper
+     there is no strip and no viewport, and it also carries an inline height from the last paint
+     scaled to the zoom. Both go. */
+  .rb-paper-wrap { overflow: visible; padding: 0; background: #fff;
+    height: auto !important; max-height: none !important; }
   .rb-paper { box-shadow: none; transform: none !important; }
   .rb-h, .rb-dropline { display: none !important; }
   .rb-stage { border: 0; padding: 0; background: #fff; }
