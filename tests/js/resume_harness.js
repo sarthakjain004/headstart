@@ -31,7 +31,7 @@ const ALL = [
      step — a test that exercises a different order from the product is a test of nothing. */
   'resume_layout_headhunter', 'resume_layout_jakes', 'resume_layout_harvard',
   'resume_layout_twocolumn', 'resume_layout_sidebar', 'resume_layout_europass',
-  'resume_layout_canvas',
+  'resume_layout_mcdowell', 'resume_layout_deedy', 'resume_layout_canvas',
   'resume_repository', 'resume_export', 'resume_decorators',
 ];
 

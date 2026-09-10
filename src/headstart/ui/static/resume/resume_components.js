@@ -285,6 +285,51 @@
     seed: ['bullet', 'bullet'],
   });
 
+  /* The two blocks a tech résumé carries that nothing above could hold, each required by a
+     Layout that ships and each measured against the templates people actually use (ADR-0130).
+     What was REFUSED is recorded in that ADR rather than here, but one refusal belongs beside
+     the code it would have sat next to: `education_entry` is labelled "Education or
+     certificate", and ADR-0126 declined a Certification type on exactly that ground. That was a
+     judgement about the LABEL and not about the fields — `education_entry` owns `credential`
+     and `status`, so an AWS certification has nowhere to put the body that issued it, the month
+     it was earned, or the id an employer verifies it by, and stuffing four facts into one
+     `credential` string is how a field stops being a field. */
+
+  define({
+    type: 'certification', shape: 'entry', label: 'Certification',
+    blurb: 'One certification: what it is, who issued it, when, and the id it is verified by. ' +
+      'Real in infrastructure, cloud and security hiring — AWS, GCP, Azure, CKA, CISSP — and ' +
+      'worth little anywhere else. Drop one the moment it expires.',
+    caps: { resize: ['spaceAfter'] },
+    /* No `accepts`, and no seeded bullet: every template that ships this block renders it as a
+       line of facts, and a certification with bullets under it is a job entry wearing the wrong
+       name. */
+    fields: [
+      { key: 'name', label: 'Certification', placeholder: 'AWS Certified Solutions Architect – Associate' },
+      { key: 'issuer', label: 'Issued by', placeholder: 'Amazon Web Services' },
+      { key: 'earned', label: 'Earned', kind: 'month', placeholder: 'March 2024' },
+      { key: 'credential', label: 'Credential id or link', placeholder: 'credly.com/badges/9f2c11a0',
+        hint: 'What an employer checks it against. Leave it empty rather than writing “available on request”.' },
+    ],
+  });
+
+  define({
+    type: 'award_entry', shape: 'entry', label: 'Award or honour',
+    blurb: 'One thing you won or were given, who gave it, and when — a hackathon, a contest ' +
+      'placing, a scholarship, an internal engineering award. Say the field you beat: “1st of ' +
+      '340 teams” is the award, “Winner” is a word.',
+    caps: { resize: ['spaceAfter'] },
+    /* Four fields, and they are the union of the two templates that carry this block as a
+       first-class one rather than a sentence: Deedy's `Awards` is a year/rank/award table and
+       Awesome-CV's `\cvhonor` takes award, event, location, date. */
+    fields: [
+      { key: 'title', label: 'Award', placeholder: 'Winner, Smart India Hackathon' },
+      { key: 'awarder', label: 'Given by', placeholder: 'Ministry of Education, Government of India' },
+      { key: 'place', label: 'Location', placeholder: 'New Delhi, India' },
+      { key: 'when', label: 'When', kind: 'month', placeholder: 'August 2021' },
+    ],
+  });
+
   define({
     type: 'bullet', shape: 'bullet', label: 'Bullet', inList: true,
     blurb: 'One sentence: what you did, how you did it, and what came of it.',
@@ -305,6 +350,29 @@
     fields: [
       { key: 'label', label: 'Label', placeholder: 'Skills' },
       { key: 'value', label: 'Value', placeholder: 'Python, Go, Postgres, Kubernetes' },
+    ],
+  });
+
+  define({
+    type: 'profile_line', shape: 'line', label: 'Profile or link',
+    blurb: 'One place someone can read more — GitHub, a portfolio, a personal site. The header ' +
+      'holds a single link; this is for the second and third, and it is also how the standards ' +
+      'say to handle everything a résumé does not have room for: put it where it lives and link ' +
+      'to it, rather than growing a section for it.',
+    /* This is the DEFERRAL mechanism, and that is why it is a component rather than a second
+       field on the header. University career services draw a hard line between a résumé and a
+       CV — publications, presentations, patents, grants and affiliations belong on the CV — and
+       the advice for someone who has those is not "delete them" but "keep them where they live
+       and link to them". A résumé with one link field cannot do that. A field added to `header`
+       could not either: measured 2026-09-10, eight of the nine registered Layouts render the
+       header with a `byType` strategy that names its fields, so a tenth field would have been
+       typed by the user and printed by exactly one layout (ADR-0130). */
+    fields: [
+      { key: 'network', label: 'Where', placeholder: 'GitHub' },
+      { key: 'url', label: 'Address', placeholder: 'github.com/ananyarao',
+        hint: 'Plain text, no https:// and no www. Every standard here asks for links that do ' +
+          'not stand out — an underlined blue URL is the one thing on the page a reader’s eye ' +
+          'goes to instead of your work.' },
     ],
   });
 
