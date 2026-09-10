@@ -1455,3 +1455,50 @@ def test_load_trends_is_empty_when_the_ledger_is_absent(tmp_path):
         r = module.app.test_client().get("/trends")
     assert r.status_code == 503
     assert r.get_json()["error"] == "no trend data yet"
+
+
+def test_pull_index_retries_a_failed_attempt_then_succeeds(tmp_path, monkeypatch):
+    """One bad response out of ~150 files must not take the container down.
+
+    `snapshot_download` gives up if any single file fails, and the call runs at module import,
+    so without a retry a single unreachable file leaves a Space that cannot start AND cannot
+    recover — every restart re-runs the same one attempt.
+
+    Deliberately not attributed to the 2026-09-09 outage: that failure was *deterministic*
+    (same file every time), so retrying would only have failed more slowly. This covers the
+    transient case, which is a different and still-real fragility."""
+    with _space_app(tmp_path, env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}) as module:
+        calls = []
+
+        def flaky(*a, **k):
+            calls.append(1)
+            if len(calls) < 3:
+                raise OSError("missing the 'X-Repo-Commit' header")
+            return str(tmp_path)
+
+        monkeypatch.setattr(module, "snapshot_download", flaky)
+        monkeypatch.setattr(module.time, "sleep", lambda s: None)  # no waiting in tests
+        module._pull_index()
+
+    assert len(calls) == 3  # failed twice, third succeeded
+
+
+def test_pull_index_gives_up_and_raises_so_a_real_outage_stays_loud(
+    tmp_path, monkeypatch
+):
+    """The retry is bounded. A dataset that is genuinely unreachable must still fail the boot:
+    a Space that came up without its index would serve empty results, which reads as "no jobs
+    match" — a wrong answer, and worse than an honest outage."""
+    with _space_app(tmp_path, env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}) as module:
+        calls = []
+
+        def always_fails(*a, **k):
+            calls.append(1)
+            raise OSError("nope")
+
+        monkeypatch.setattr(module, "snapshot_download", always_fails)
+        monkeypatch.setattr(module.time, "sleep", lambda s: None)
+        with pytest.raises(OSError, match="nope"):
+            module._pull_index(attempts=3)
+
+    assert len(calls) == 3  # bounded: three attempts, then it raises

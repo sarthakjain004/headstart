@@ -13,6 +13,7 @@ from __future__ import annotations
 import hmac
 import json
 import os
+import time
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -46,17 +47,65 @@ from huggingface_hub import snapshot_download
 DATASET = os.environ.get("HF_DATASET", "imPoseidon/headstart-index")
 _STATE = Path("/app/state")
 
+
+def _pull_index(attempts: int = 5) -> None:
+    """Pull the served index, retrying rather than dying on one bad response.
+
+    ``snapshot_download`` fetches ~150 files and gives up if **any** one of them fails, at module
+    import, with no retry. On 2026-09-09 that took the Space down for about an hour: a single
+    ``data/lancedb/.../_deletions/*.arrow`` answered without an ``X-Repo-Commit`` header and the
+    unguarded call turned it into a container that could not start — and could not recover,
+    because every restart re-ran the same single attempt
+    (``docs/pipeline/2026-09-09_space-outage-unpinned-stack.md``).
+
+    That particular failure was deterministic, so this would not have fixed it; it is not
+    presented as that fix. What it addresses is the shape of the fragility — one unreachable
+    file out of ~150 costing the whole product, with no self-recovery — which is worth removing
+    on its own.
+
+    Retrying is cheap because the download resumes: measured against this dataset, a repeat pull
+    of an already-complete directory costs 0.34s against 13.80s cold, and one missing five files
+    costs 1.58s. An attempt that dies at file 19 of 150 keeps those 19.
+
+    The backoff is ``2**attempt``, so five attempts add 2+4+8+16 = **30s** at most. That is the
+    cost side: against a *deterministic* failure the boot still fails, just 30s later, delaying
+    HF's ``RUNTIME_ERROR`` — which is today's only alarm. 30s against a boot that already spends
+    longer loading the encoder is a fair trade; much more would not be.
+
+    Catching ``Exception`` rather than a named list is deliberate. The observed failure surfaced
+    as ``LocalEntryNotFoundError``, which subclasses ``EntryNotFoundError`` but means "could not
+    reach or resolve", not "file absent" — enumerating types here is exactly how that trap
+    inverts a guard. A bounded retry is safe whatever the cause: a genuinely unreachable dataset
+    exhausts the attempts and still raises, so a real outage is still loud.
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            snapshot_download(
+                DATASET,
+                repo_type="dataset",
+                local_dir=_STATE,
+                # the trends ledger is ~3.4 MB of Parquet holding ~2.5M rows (ADR-0120 — it was
+                # 172 MB of CSV, and this download ran on every cold start), and matches nothing
+                # until the first pipeline run writes it — an absent pattern downloads nothing
+                # rather than failing
+                allow_patterns=["data/lancedb/*", "data/state/role_trends.parquet"],
+                token=os.environ.get("HF_TOKEN"),
+            )
+            return
+        except Exception as exc:  # broad on purpose — see the docstring
+            if attempt == attempts:
+                raise
+            wait = 2**attempt
+            print(
+                f"index pull attempt {attempt}/{attempts} failed "
+                f"({type(exc).__name__}: {exc}); retrying in {wait}s",
+                flush=True,
+            )
+            time.sleep(wait)
+
+
 print(f"pulling index from {DATASET} ...", flush=True)
-snapshot_download(
-    DATASET,
-    repo_type="dataset",
-    local_dir=_STATE,
-    # the trends ledger is ~3.4 MB of Parquet holding ~2.5M rows (ADR-0120 — it was 172 MB of
-    # CSV, and this download ran on every cold start), and matches nothing until the first
-    # pipeline run writes it — an absent pattern downloads nothing rather than failing
-    allow_patterns=["data/lancedb/*", "data/state/role_trends.parquet"],
-    token=os.environ.get("HF_TOKEN"),
-)
+_pull_index()
 
 print("loading encoder ...", flush=True)
 from sentence_transformers import (

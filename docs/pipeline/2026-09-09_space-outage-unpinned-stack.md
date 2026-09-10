@@ -110,10 +110,12 @@ container's egress *and* to the newly-resolved stack.
 
 ## Open follow-ups
 
-- **A retry around the startup download.** Not this bug's fix, but a real fragility: one
-  unreachable file out of 150 takes the whole product down with no self-recovery. Cheap, because
-  the download resumes — measured against this dataset: cold 13.80s, warm 0.34s (40×), and 1.58s
-  with five files missing.
+- ~~**A retry around the startup download.**~~ **Done** — `_pull_index` in
+  `deploy/hf-space/app.py`. Not this bug's fix, but a real fragility: one unreachable file out of
+  150 took the whole product down with no self-recovery. Cheap, because the download resumes —
+  measured against this dataset: cold 13.80s, warm 0.34s (40×), and 1.58s with five files
+  missing. It still raises after the last attempt, so a genuinely unreachable dataset fails the
+  boot loudly rather than serving an index-less Space.
 - **Failing soft on the index pull**, *conditionally*. A search product that comes up without its
   index must refuse index-backed requests explicitly and never return empty results — a wrong
   answer is worse than an honest outage. It also needs a replacement health signal: HF's
