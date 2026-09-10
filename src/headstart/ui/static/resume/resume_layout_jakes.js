@@ -221,7 +221,7 @@
         }, e => {
           e.bullet('Rebuilt the settlement reconciliation service in Go, cutting the nightly batch from 90 minutes to 7 across 14 million transactions a day');
           e.bullet('Moved 40 endpoints behind an idempotency layer in Postgres, which took duplicate-charge incidents from 3 a month to 0 over two quarters');
-          e.bullet('Wrote the on-call runbook and the load tests for the UPI payout path, then ran the game day that found a connection-pool ceiling before Diwali traffic did');
+          e.bullet('Wrote the on-call runbook and the load tests for the UPI payout path, then ran the game day that found a connection-pool ceiling at 800 concurrent payouts before Diwali traffic did');
         });
         s.add('work_entry', {
           role: 'Software Engineer', company: 'Zoho', place: 'Chennai, India',
@@ -236,7 +236,7 @@
           name: 'Gitlytics', tech: 'Python, Flask, React, PostgreSQL, Docker',
           start: 'June 2023', end: 'Present',
         }, e => {
-          e.bullet('Built a dashboard that ranks a repository’s review latency by author, on GitHub’s GraphQL API and a Celery queue');
+          e.bullet('Built a dashboard that ranks a repository’s review latency by author, on GitHub’s GraphQL API and a Celery queue that refreshes every six hours');
           e.bullet('Ran it against 120 public repositories to check the numbers against GitHub’s own insights before publishing');
         });
         s.add('tech_project', {
@@ -258,7 +258,11 @@
      Three, and every one of them is about the TEMPLATE'S OWN SHAPE rather than about résumé
      writing in general — this template is a .tex file, not a method, so it states nothing about
      verbs, tense or metrics and no such rule is invented for it here. The Headless Headhunter
-     layout has fourteen because its source is a guide that says fourteen things. */
+     layout has fourteen because its source is a guide that says fourteen things.
+
+     Résumé hygiene it does not state — dates, bullet counts, weak openers — is the shared
+     baseline's (ADR-0127), which every layout gets. Three used to mean the panel said nothing
+     at all about a résumé this template would render perfectly and no employer would read. */
 
   const rules = [
     {

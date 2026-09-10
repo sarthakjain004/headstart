@@ -421,6 +421,27 @@ test('keyword coverage counts what the résumé says, and where on the page it s
   ctx.ResumeEditor.keywordCheck();
   assert.match(el('rb-kw-summary').textContent, /^1 of 1 present · 0%/);
   assert.ok(el('rb-kw-out').innerHTML.includes('present, further down'));
+
+  /* Now the terms this is actually used with. Every word above was chosen so that no term is a
+     substring of any other word in the fixture, which made the check above assert carefully and
+     never fail — and a raw substring match called `R`, `C` and `AI` present in a résumé holding
+     none of them, on a job board where those three ARE the corpus. */
+  write(bullets[0], 'Shipped a C++ trading engine and the JavaScript tooling around it.');
+  write(bullets[1], 'Coordinated the release train and ran the retail migration.');
+  layPaperOut(el, [
+    { text: 'shipped a c++ trading engine and the javascript tooling around it.', top: 100 },
+    { text: 'coordinated the release train and ran the retail migration.', top: 200 },
+  ]);
+  el('rb-kw').value = 'C++, JavaScript, Java, C, R, Go, AI';
+  ctx.ResumeEditor.keywordCheck();
+  assert.match(el('rb-kw-summary').textContent, /^2 of 7 present/,
+    'a term is matched as a term, not as a substring of a longer word');
+  const kw = el('rb-kw-out').innerHTML.split('rb-kwrow');
+  assert.ok(kw[1].includes('top half, page one'), '"C++" was not found at all — a naive \\b matches none of it');
+  assert.ok(kw[2].includes('top half, page one'), '"JavaScript" was not found');
+  for (const [i, term] of [[3, 'Java'], [4, 'C'], [5, 'R'], [6, 'Go'], [7, 'AI']]) {
+    assert.ok(kw[i].includes('missing'), `"${term}" is not in this résumé, only inside longer words`);
+  }
 });
 
 test('an empty keyword box clears the panel rather than dividing by nothing', () => {

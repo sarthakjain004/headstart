@@ -1,6 +1,6 @@
 # ADR-0123: A résumé is three layers — structure, layout, and words
 
-**Status:** accepted · **Date:** 2026-09-09 · **Upholds ADR-0041 (the Résumé is read once and discarded; HeadStart's servers never store one). Sibling of ADR-0116 (the app's own palette stops at the paper's edge)**
+**Status:** accepted, amended by ADR-0127 · **Date:** 2026-09-09 · **Upholds ADR-0041 (the Résumé is read once and discarded; HeadStart's servers never store one). Sibling of ADR-0116 (the app's own palette stops at the paper's edge)**
 
 ## Context
 
@@ -81,6 +81,14 @@ literally one stylesheet, so fidelity is structural rather than a thing to keep 
 in the guide's own words and links each to the block it is about. A user may set a 12pt body and the
 page will print — the panel then says the template asks for 10.5. Locking would make the tab a
 straitjacket; silence would make "Headless Headhunter" a label rather than a claim about the output.
+
+**Amended by ADR-0127.** "A Layout owns … the rules it wants checked" reads, in decision 1
+above, as though every Rule is written by the Layout that states it. Measured after ADR-0126 took
+the picker from three Layouts to seven: four of the seven stated no rule about the words at all,
+and the Checks panel called a résumé with no dates and twelve "Responsible for" bullets clean.
+ADR-0127 narrows the sentence to **a Rule belongs to a Layout, and a Layout may inherit one it
+did not write** — seven hygiene Rules merge in at `define`, a Layout opts out by declaring its
+own with that id, and everything that is one method's opinion still lives where it always did.
 
 ## Options considered
 

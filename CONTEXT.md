@@ -265,9 +265,9 @@ _Avoid_: theme, template, skin — a Layout carries arrangement *and* looks *and
 The words. A flat map from node id to that Component's field values, held outside the tree on purpose so a **Layout** change cannot reach it.
 _Avoid_: data, text — both are used loosely elsewhere in this document.
 
-**Rule** (ADR-0123):
-One named check a **Layout** declares — "Three to eight bullets a job", "Month and year on every job". A Rule reads a **Résumé document** and returns **Finding**s; it changes nothing. Rules belong to the Layout because they are its method's opinions, not the **Component**'s: the same bullet is fine under one Layout and short under another.
-_Avoid_: validator, constraint — both suggest something that can refuse, and a Rule cannot.
+**Rule** (ADR-0123, amended by ADR-0127):
+One named check a **Layout** states — "Three to eight bullets a job", "Month and year on every job". A Rule reads a **Résumé document** and returns **Finding**s; it changes nothing. A Rule belongs to the Layout because most of them are its method's opinions, not the **Component**'s: the same bullet is fine under one Layout and short under another, and two Layouts here hold flatly opposite views on a bullet's final period. But a Layout may state a Rule it did not *write*: seven of them are résumé hygiene every source agrees on — a name and a way to answer, dates, bullet length — and every Layout states those, whether or not its own file spells them out. A Layout that disagrees with one replaces it, and has to say so.
+_Avoid_: validator, constraint — both suggest something that can refuse, and a Rule cannot. And don't say "the layout's own rules" to mean the ones written in its file — after `define` they are all its own.
 
 **Finding** (ADR-0123):
 One piece of advice a **Rule** produced about a **Résumé document** — an error, a warning or a note, usually attached to the **Component** it is about. Advice, never a lock: the page prints whether or not the findings are cleared. The tab calls the panel *Checks*, which is the word to use with users.
