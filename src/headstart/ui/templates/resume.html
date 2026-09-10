@@ -114,12 +114,14 @@
          said the opposite: that "Keywords" and "the résumé" were the same kind of thing.
          Nested tablists are the APG's own pattern for exactly this, so the roving tabindex and
          arrow traversal below are the same behaviour applied twice, not a second mechanism. #}
+      <div class="rb-seg-wrap">
       <div class="rb-seg" id="rb-seg" role="tablist" aria-label="Résumé editor sections">
         <button class="rb-seg-tab" id="rb-seg-document" role="tab" data-seg="document"
                 aria-selected="true" aria-controls="rb-pane-document">Document</button>
         <button class="rb-seg-tab" id="rb-seg-polish" role="tab" data-seg="polish"
                 aria-selected="false" aria-controls="rb-pane-polish" tabindex="-1">Polish<span
                 class="rb-badge" id="rb-badge" hidden>0</span></button>
+      </div>
       </div>
 
       {# `tabindex="0"` on the panel itself: a panel can be a single paragraph when there is

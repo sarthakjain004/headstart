@@ -215,11 +215,12 @@
   /** Select a block, and open the rail down to it. The two views are one document seen twice, so
    *  a click on the page has to leave the rail showing the same block's fields — otherwise
    *  "click a block to edit it" ends at a rail that is still somewhere else, which is what the
-   *  arrangement this replaced actually did. `reveal` is false only for the paper's own drag and
-   *  resize gestures, where the rail scrolling under a held pointer is motion nobody asked for. */
-  function select(id, reveal) {
+   *  arrangement this replaced actually did. `quiet` is for the callers that must NOT move the
+   *  rail — collapsing a row, and the paper's own drag and resize gestures, where the rail
+   *  scrolling under a held pointer is motion nobody asked for. */
+  function select(id, quiet) {
     selectedId = id;
-    if (id && reveal !== false) {
+    if (id && !quiet) {
       const d = doc();
       /* Ancestors first: a bullet's fields are inside its entry's row, which is inside its
          section's row, so opening only the bullet would open nothing anyone can see. */
@@ -227,7 +228,7 @@
       showSegment('document');
     }
     paint();
-    if (id && reveal !== false) scrollRailTo(id);
+    if (id && !quiet) scrollRailTo(id);
   }
 
   /* ---- dragging and resizing --------------------------------------------------------------
@@ -579,9 +580,14 @@
     return { byNode, marked };
   }
 
+  /* The two lines of a finding, spelled once. The Checks panel wraps them in a button that
+     selects the block; inline in the block's own row they are a paragraph, because you are
+     already there. Different element, same body. */
+  const findingBody = f => '<span class="rb-finding-rule">' + esc(f.rule) +
+    '</span><span class="rb-finding-msg">' + esc(f.message) + '</span>';
+
   const findingRows = list => (list || []).map(f =>
-    '<p class="rb-finding rb-' + esc(f.level) + '"><span class="rb-finding-rule">' +
-    esc(f.rule) + '</span><span class="rb-finding-msg">' + esc(f.message) + '</span></p>').join('');
+    '<p class="rb-finding rb-' + esc(f.level) + '">' + findingBody(f) + '</p>').join('');
 
   /* The container is emitted even when it is empty, and the mark even when it is clear. Both are
      refilled in place by `patchChecks` while the pane is frozen under a caret — and the pane IS
@@ -608,6 +614,8 @@
     }
   }
 
+  const isLeftOut = (tailoring, id) => !!(tailoring && (tailoring.hidden || []).includes(id));
+
   /** The action row a block carries: reorder without a mouse, duplicate, delete, and — under a
    *  version — the two tailoring choices. Alt + arrow does the same reorder from the keyboard;
    *  these exist because a drag handle on the page was the only OTHER way to move a block, and
@@ -632,7 +640,7 @@
     }
     if (tailoring) {
       const overridden = !!(tailoring.picks || {})[node.id];
-      const leftOut = (tailoring.hidden || []).includes(node.id);
+      const leftOut = isLeftOut(tailoring, node.id);
       if (overridden) {
         parts.push('<button class="ghost rb-mini" data-act="unfork" data-node="' + esc(node.id) +
           '">Use the master’s words</button>');
@@ -644,30 +652,54 @@
   }
 
   /** One bullet, inline. Deliberately not a row of its own: three levels of opening to reach a
-   *  sentence is three clicks to type, and a bullet has one field anybody edits. */
+   *  sentence is three clicks to type, and a bullet has one field anybody edits.
+   *
+   *  It still carries `data-block` and the geometry disclosure, because "not a row" is a drawing
+   *  decision and neither of those is about drawing. Without the first, clicking a bullet on the
+   *  page revealed nothing in the rail — `scrollRailTo` found no anchor and no-oped silently, on
+   *  the block type that gets edited most. Without the second, the free-canvas layout grants a
+   *  bullet move and box handles on the page (it grants them to every node) with no typed way to
+   *  set the same numbers — a WCAG 2.2 SC 2.5.7 failure visible on one layout only. */
   function bulletHtml(d, lay, node, ordinal, marks) {
     const spec = Components.get(node.type);
     const content = Doc.contentOf(d, node.id);
     const tailoring = Doc.tailoringOf(d);
-    const leftOut = !!(tailoring && (tailoring.hidden || []).includes(node.id));
-    const id = esc('rb-f-' + node.id + '-text');
-    const flagId = esc('rb-f-' + node.id + '-role');
-    return '<div class="rb-bullet' + (leftOut ? ' rb-off' : '') + '">' +
-      '<label class="rb-bullet-no" for="' + id + '">Bullet ' + ordinal +
+    const leftOut = isLeftOut(tailoring, node.id);
+    /* Rendered through `fieldControl` over the type's OWN declared fields, like every other block
+       in this rail. Hand-rolling the textarea and the checkbox meant naming `text` and `role` as
+       literals and reaching for `fields[0]` by position — Layer-1 facts copied into Layer 3,
+       which ADR-0123 puts on the Component. Only the first field's label is overridden, to carry
+       the bullet's number. */
+    const fields = spec.fields.map((f, i) =>
+      (i === 0 ? Object.assign({}, f, { label: 'Bullet ' + ordinal }) : f));
+    return '<div class="rb-bullet' + (node.id === selectedId ? ' on' : '') +
+      (leftOut ? ' rb-off' : '') + '" data-block="' + esc(node.id) + '">' +
       ((tailoring && (tailoring.picks || {})[node.id]) ? '<span class="rb-tag">tailored</span>' : '') +
-      (leftOut ? '<span class="rb-tag">left out</span>' : '') + '</label>' +
+      (leftOut ? '<span class="rb-tag">left out</span>' : '') +
       findingsHtml(node.id, marks.byNode.get(node.id)) +
-      '<textarea id="' + id + '" rows="3" data-node="' + esc(node.id) + '" data-field="text" ' +
-      'placeholder="' + esc(spec.fields[0].placeholder) + '">' + esc(content.text || '') + '</textarea>' +
-      '<div class="rb-bullet-foot"><label class="rb-flag-inline"><input type="checkbox" id="' +
-      flagId + '" data-node="' + esc(node.id) + '" data-field="role"' + (content.role ? ' checked' : '') +
-      '> Opening summary sentence</label><span class="spacer"></span>' +
-      actionsHtml(d, lay, spec, node) + '</div></div>';
+      fields.map(f => fieldControl(node.id, f, content[f.key])).join('') +
+      geometryHtml(lay, node) +
+      '<div class="rb-bullet-foot">' + actionsHtml(d, lay, spec, node) + '</div></div>';
+  }
+
+  /** The "Size and spacing" disclosure a block carries when its layout grants it any geometry.
+   *  Shared by rows and bullets so a layout cannot grant a handle on the page that has no typed
+   *  equivalent in the rail — that pairing is the whole of SC 2.5.7 here. Folded away because it
+   *  is not what somebody opening a job came to do, so it does not sit above the words. */
+  function geometryHtml(lay, node) {
+    const geo = geometryControls(lay, node);
+    if (!geo) return '';
+    const key = 'geo:' + node.id;
+    const id = esc('rb-geo-' + node.id);
+    return '<div class="rb-sub"><button class="rb-sub-btn" data-row="' + esc(key) +
+      '" aria-expanded="' + (expanded.has(key) ? 'true' : 'false') + '" aria-controls="' + id +
+      '"><span class="rb-caret" aria-hidden="true">›</span>Size and spacing</button>' +
+      '<div id="' + id + '"' + (expanded.has(key) ? '' : ' hidden') + '>' + geo + '</div></div>';
   }
 
   /** One row of the accordion, and its children. `depth` is only for the indent and the heading
    *  level — the nesting itself comes from the document. */
-  function rowHtml(d, lay, node, depth, index, marks) {
+  function rowHtml(d, lay, node, depth, marks) {
     const spec = Components.get(node.type);
     if (!spec) return '';
     const open = expanded.has(node.id);
@@ -678,13 +710,13 @@
        a gap in the sequence is a gap in the document it is describing. */
     const heading = depth === 0 ? 'h2' : 'h3';
     const tailoring = Doc.tailoringOf(d);
-    const leftOut = !!(tailoring && (tailoring.hidden || []).includes(node.id));
+    const leftOut = isLeftOut(tailoring, node.id);
     const kids = node.children || [];
     const bullets = kids.filter(k => (Components.get(k.type) || {}).shape === 'bullet');
     const rows = kids.filter(k => (Components.get(k.type) || {}).shape !== 'bullet');
 
     const out = ['<div class="rb-row rb-row-d' + depth + (node.id === selectedId ? ' on' : '') +
-      (leftOut ? ' rb-off' : '') + '">'];
+      (leftOut ? ' rb-off' : '') + '" data-block="' + esc(node.id) + '">'];
     out.push('<' + heading + ' class="rb-row-head"><button class="rb-row-btn" data-row="' +
       esc(node.id) + '" aria-expanded="' + (open ? 'true' : 'false') + '" aria-controls="' + bodyId + '">' +
       '<span class="rb-caret" aria-hidden="true">›</span>' +
@@ -703,10 +735,14 @@
         out.push('<div class="rb-bullets">' +
           bullets.map((b, i) => bulletHtml(d, lay, b, i + 1, marks)).join('') + '</div>');
       }
-      for (let i = 0; i < rows.length; i++) out.push(rowHtml(d, lay, rows[i], depth + 1, i, marks));
+      for (const child of rows) out.push(rowHtml(d, lay, child, depth + 1, marks));
 
+      /* Everything Layer 1 says this type accepts, minus the header, which is addable nowhere.
+         Filtering `section` out too would have quietly narrowed what the model allows —
+         `Components.accepts('*')` still permits a Section inside a Section and the drag path
+         still does it, so the rail refusing it is a disagreement, not a simplification. */
       const addable = spec.accepts.includes('*')
-        ? Components.all().filter(s => s.type !== 'header' && s.type !== 'section')
+        ? Components.all().filter(s => s.type !== 'header')
         : spec.accepts.map(t => Components.get(t)).filter(Boolean);
       if (addable.length) {
         out.push('<div class="rb-add">' + addable.map(s =>
@@ -714,18 +750,7 @@
           '">+ ' + esc(s.label) + '</button>').join('') + '</div>');
       }
 
-      /* Size and spacing, folded away. Every geometry the page lets you DRAG is typeable here —
-         that is the single-pointer alternative WCAG 2.2 SC 2.5.7 asks for — but it is not what
-         somebody opening a job came to do, so it does not sit above the words. */
-      const geo = geometryControls(lay, node);
-      if (geo) {
-        const geoKey = 'geo:' + node.id;
-        const geoId = esc('rb-geo-' + node.id);
-        out.push('<div class="rb-sub"><button class="rb-sub-btn" data-row="' + esc(geoKey) +
-          '" aria-expanded="' + (expanded.has(geoKey) ? 'true' : 'false') + '" aria-controls="' + geoId +
-          '"><span class="rb-caret" aria-hidden="true">›</span>Size and spacing</button>' +
-          '<div id="' + geoId + '"' + (expanded.has(geoKey) ? '' : ' hidden') + '>' + geo + '</div></div>');
-      }
+      out.push(geometryHtml(lay, node));
 
       /* Which column a top-level block sits in — only offered where the layout has more than
          one, so a single-column template never shows a control that does nothing. */
@@ -754,7 +779,7 @@
       'you write one. Make it yours — your own name and contact details first.</p>' +
       '<div class="rb-firstrun-acts"><button class="go rb-mini" data-act="startwriting">' +
       'Start with my name &amp; contact</button>' +
-      '<button class="ghost rb-mini" id="rb-new-blank-2" data-act="blank">or start from an empty page</button>' +
+      '<button class="ghost rb-mini" data-act="blank">or start from an empty page</button>' +
       '</div></div>';
   }
 
@@ -775,7 +800,7 @@
     out.push('<div class="rb-tree">');
     const kids = d.root.children || [];
     if (!kids.length) out.push('<p class="note">Nothing on the page yet. Add a section below.</p>');
-    for (let i = 0; i < kids.length; i++) out.push(rowHtml(d, lay, kids[i], 0, i, marks));
+    for (const kid of kids) out.push(rowHtml(d, lay, kid, 0, marks));
     out.push('</div>');
 
     /* One obvious way to grow the résumé, and the two blocks that are not sections kept quiet
@@ -908,8 +933,7 @@
       out.push(found.map(f =>
         '<button class="rb-finding rb-' + esc(f.level) + '"' +
         (f.nodeId ? ' data-select="' + esc(f.nodeId) + '"' : ' disabled') + '>' +
-        '<span class="rb-finding-rule">' + esc(f.rule) + '</span>' +
-        '<span class="rb-finding-msg">' + esc(f.message) + '</span></button>').join(''));
+        findingBody(f) + '</button>').join(''));
     }
     el('rb-pane-checks').innerHTML = out.join('');
   }
@@ -979,25 +1003,30 @@
   const showSegment = (name, moveFocus) =>
     showStrip('rb-seg', 'seg', SEGMENTS, name, moveFocus);
 
+  const showTool = (name, moveFocus) =>
+    showStrip('rb-rail-tabs', 'pane', PANES, name, moveFocus);
+
   /** Show one of the three Polish panels — and open Polish to do it, because reaching Checks
    *  from the badge or from a test has to work whichever segment is on screen. */
   function showRailPane(name, moveFocus) {
     showSegment('polish', false);
-    showStrip('rb-rail-tabs', 'pane', PANES, name, moveFocus);
+    showTool(name, moveFocus);
   }
 
   /* ---- the template gallery -----------------------------------------------------------------
      A picker that shows the templates instead of naming them, taking the stage over rather than
      dropping a list of words out of the chrome. Two reasons it is not a <select>. People choose
      a résumé template by looking at it — a line of text cannot say what "two column" does to
-     their own bullets. And a select of seven entries (four more layouts are on their way) hides
-     the one thing a chooser most needs to be told at the moment of choosing: that a handsome
-     coloured sidebar is the template an ATS parses worst.
+     their own bullets. And a list of names hides the one thing a chooser most needs to be told
+     at the moment of choosing: that a handsome coloured sidebar is the template an ATS parses
+     worst. That warning is the Layout's own `blurb`, so the card carries it.
 
      Each card is the CURRENT DOCUMENT rendered through that layout — not a stock thumbnail — so
      what the card shows is what picking it gives you, page-break line included. That is only
-     affordable because a Layout's render is a pure string function (resume_layouts.js): seven
-     renders cost one paint, and only when the gallery is open. */
+     affordable because a Layout's render is a pure string function (resume_layouts.js): one
+     render per registered layout, and only while the gallery is open. Three are registered as
+     this is written; the grid wraps and reads every card from the registry, so it neither knows
+     nor cares how many there are. */
 
   let templatesOpen = false;
 
@@ -1017,16 +1046,15 @@
       /* An index, not the layout's id: this string is interpolated straight into a CSS selector,
          and an id is only guaranteed to be a registry key, not a valid one. */
       const miniId = 'rb-tmini-' + i;
-      const scale = MINI_WIDTH / (page.width * 96);
       sheets.push(lay.css(Layouts.themeFor(lay, d), '#' + miniId + ' .rb-doc'));
       const on = lay.id === d.layoutId;
       cards.push('<div class="rb-tcard' + (on ? ' on' : '') + '">' +
         '<button class="rb-tpick" data-layout="' + esc(lay.id) + '" aria-pressed="' +
         (on ? 'true' : 'false') + '">' +
-        '<span class="rb-tmini" style="height:' + Math.round(page.height * 96 * scale) + 'px">' +
+        '<span class="rb-tmini">' +
         '<span class="rb-tsheet" id="' + miniId + '" aria-hidden="true" style="width:' +
         page.width + page.unit + '; min-height:' + page.height + page.unit + '; padding:' +
-        page.margin + page.unit + '; transform:scale(' + scale.toFixed(4) + ')">' +
+        page.margin + page.unit + '">' +
         Layouts.renderDocument(lay, shown) + '</span></span>' +
         '<span class="rb-tname">' + esc(lay.label) +
         (on ? '<span class="rb-tag">in use</span>' : '') + '</span>' +
@@ -1046,6 +1074,22 @@
       document.head.appendChild(sheet);
     }
     sheet.textContent = sheets.join('\n');
+
+    /* The scale is MEASURED after the sheets are in the document, not computed from the page
+       numbers. `page.unit` is whatever the layout declared — every one registered today says
+       `in`, and a `MINI_WIDTH / (page.width * 96)` shortcut quietly assumed that; a layout
+       declaring mm would have rendered its miniature about 25x off. The browser already knows
+       how wide `210mm` is, so this asks it. Same reason `pxPerInch()` measures the real paper
+       rather than trusting the same arithmetic. */
+    for (const sheetEl of grid.querySelectorAll('.rb-tsheet')) {
+      const natural = sheetEl.offsetWidth;
+      if (!natural) continue;
+      const scale = MINI_WIDTH / natural;
+      sheetEl.style.transform = 'scale(' + scale.toFixed(4) + ')';
+      /* `transform` does not affect layout, so the frame has to reserve the scaled height
+         itself — the same thing `paint()` does for the real preview's wrapper. */
+      sheetEl.parentElement.style.height = Math.round(sheetEl.offsetHeight * scale) + 'px';
+    }
   }
 
   function showTemplates(on) {
@@ -1490,8 +1534,7 @@
       });
     };
     wireStrip('rb-seg', 'seg', SEGMENTS, showSegment);
-    wireStrip('rb-rail-tabs', 'pane', PANES,
-      (name, moveFocus) => showStrip('rb-rail-tabs', 'pane', PANES, name, moveFocus));
+    wireStrip('rb-rail-tabs', 'pane', PANES, showTool);
 
     document.addEventListener('keydown', e => {
       if (el('panel-resume') && el('panel-resume').hidden) return;
@@ -1609,8 +1652,11 @@
 
   function scrollRailTo(id) {
     const pane = el('rb-pane-document');
-    const row = pane && pane.querySelector ? pane.querySelector('[data-row="' + id + '"]') : null;
-    if (row && row.scrollIntoView) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    /* `data-block`, which every row AND every bullet carries — `data-row` is the toggle on a
+       row's own header, and a bullet has no toggle, so keying on it revealed nothing at all for
+       the block type that gets edited most. */
+    const at = pane && pane.querySelector ? pane.querySelector('[data-block="' + id + '"]') : null;
+    if (at && at.scrollIntoView) at.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
   /* ---- boot --------------------------------------------------------------------------------- */
