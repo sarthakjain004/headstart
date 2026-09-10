@@ -220,6 +220,23 @@
       childNodes: node.children,
       geo,
       esc, escLines, attrs,
+      /* The node's own words, in the order its Component Type declares them, skipping empties.
+         A `byShape` renderer must never name a FIELD: it is handed components it has never heard
+         of, and the moment it writes `content.label` it renders every component that spells that
+         field differently as an empty box. Measured before this existed: a Language line with
+         fields `name`/`level` rendered as literally nothing in all three layouts — a user's
+         languages would have vanished off the page in silence. `byType` renderers may name
+         fields freely; they are written for a type they know. */
+      fields() {
+        const declared = spec ? spec.fields : [];
+        return declared
+          .map(f => ({ key: f.key, label: f.label, value: doc.content[node.id] ? doc.content[node.id][f.key] : null }))
+          .filter(f => typeof f.value === 'string' && f.value.trim());
+      },
+      /** Every field's value, joined — the last-resort rendering of an unknown component. */
+      textOf(separator) {
+        return ctx.fields().map(f => escLines(f.value)).join(separator || ' &middot; ');
+      },
       /** The outer element of a rendered node. Adds the id hook, the editor's classes and the
        *  geometry the layout honours; a strategy passes its own class and inner HTML. */
       el(tag, a, inner) {
@@ -373,25 +390,39 @@
 
   /** A generic last resort. Every layout gets this for shapes it has no opinion about, so
    *  "no renderer" is never a blank box. */
+  /** The first declared field, treated as the node's own heading or label, and the rest. Shape
+   *  renderers need "the important one and the others" without knowing what either is called. */
+  function headAndRest(ctx) {
+    const all = ctx.fields();
+    return { head: all[0] || null, rest: all.slice(1) };
+  }
+
+  /* A generic last resort for every shape. None of these names a field — see `ctx.fields`. */
   function plainStrategies() {
-    const textOf = ctx => Object.keys(ctx.content)
-      .filter(k => ctx.content[k] && typeof ctx.content[k] === 'string')
-      .map(k => ctx.escLines(ctx.content[k])).join(' &middot; ');
     return {
-      header: ctx => ctx.el('header', { class: 'rb-header' }, textOf(ctx)),
-      text: ctx => ctx.el('p', { class: 'rb-text' }, ctx.escLines(ctx.content.text)),
-      section: ctx => ctx.el('section', { class: 'rb-section' },
-        '<h2>' + ctx.esc(ctx.content.title) + '</h2>' + groupChildren(ctx)),
-      entry: ctx => ctx.el('div', { class: 'rb-entry' }, textOf(ctx) + ctx.children.join('')),
-      line: ctx => ctx.el('p', { class: 'rb-line' },
-        '<b>' + ctx.esc(ctx.content.label) + '</b> ' + ctx.escLines(ctx.content.value)),
-      bullet: ctx => ctx.el('li', { class: 'rb-bullet' }, ctx.escLines(ctx.content.text)),
+      header: ctx => ctx.el('header', { class: 'rb-header' }, ctx.textOf()),
+      text: ctx => ctx.el('p', { class: 'rb-text' }, ctx.textOf(' ')),
+      section: ctx => {
+        const { head } = headAndRest(ctx);
+        return ctx.el('section', { class: 'rb-section' },
+          (head ? '<h2>' + escLines(head.value) + '</h2>' : '') + groupChildren(ctx));
+      },
+      entry: ctx => ctx.el('div', { class: 'rb-entry' }, ctx.textOf() + ctx.children.join('')),
+      line: ctx => {
+        const { head, rest } = headAndRest(ctx);
+        if (!head) return ctx.el('p', { class: 'rb-line' }, '');
+        /* One field is just a line; two or more read as "label: the rest". */
+        return ctx.el('p', { class: 'rb-line' }, rest.length
+          ? '<b>' + escLines(head.value) + '</b> ' + rest.map(f => escLines(f.value)).join(' &middot; ')
+          : escLines(head.value));
+      },
+      bullet: ctx => ctx.el('li', { class: 'rb-bullet' }, ctx.textOf(' ')),
     };
   }
 
   root.ResumeLayouts = {
     define, get, all, PAPERS, pageFor, themeFor, geometryFor, renderDocument, renderNode,
     renderStandalone, runRules,
-    esc, escLines, attrs, dateRange, roleLine, plainStrategies, groupChildren, clampNum, nodesOf,
+    esc, escLines, dateRange, roleLine, plainStrategies, groupChildren, clampNum, headAndRest,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

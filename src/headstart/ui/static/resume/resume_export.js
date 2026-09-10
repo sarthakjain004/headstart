@@ -35,19 +35,34 @@
      dropped — a silently missing section in the copy someone pastes into an application form
      is the worst failure this module could have. */
 
+  /** Every declared field with a value, in the order the Component Type lists them. The shape
+   *  visitors below fall back to this when the fields they know by name are all absent — which is
+   *  what happens for a component added after they were written. Without it an unknown component's
+   *  words were dropped from the plain-text export entirely, and that export is the copy people
+   *  paste into an application form. */
+  function declared(content, spec) {
+    if (!spec) return [];
+    return spec.fields
+      .map(f => content[f.key])
+      .filter(v => typeof v === 'string' && v.trim());
+  }
+
   const TEXT_VISITORS = {
-    header: (content) => {
+    header: (content, node, spec) => {
       const lines = [];
       if (content.fullName) lines.push(String(content.fullName).toUpperCase());
       const contact = [content.phone, content.email, content.link].filter(Boolean).join(' | ');
       if (contact) lines.push(contact);
       if (content.locationLine) lines.push(content.locationLine);
       if (content.languages) lines.push(content.languages);
-      return lines.join('\n');
+      if (lines.length) return lines.join('\n');
+      const own = declared(content, spec);
+      return own.length ? [String(own[0]).toUpperCase()].concat(own.slice(1)).join('\n') : '';
     },
-    text: content => String(content.text || ''),
-    section: content => '\n' + String(content.title || '').toUpperCase(),
-    entry: (content, node) => {
+    text: (content, node, spec) => String(content.text || declared(content, spec).join(' ')),
+    section: (content, node, spec) =>
+      '\n' + String(content.title || declared(content, spec)[0] || '').toUpperCase(),
+    entry: (content, node, spec) => {
       if (node.type === 'work_entry') {
         const left = Layouts.roleLine(content);
         const dates = Layouts.dateRange(content);
@@ -56,10 +71,16 @@
       if (node.type === 'education_entry') {
         return '- ' + [content.credential, content.status].filter(Boolean).join('   ');
       }
-      return '\n' + String(content.name || content.title || '');
+      const own = declared(content, spec);
+      return '\n' + String(content.name || content.title || own.join('   '));
     },
-    line: content => [content.label, content.value].filter(Boolean).join(': '),
-    bullet: content => '- ' + String(content.text || '').replace(/\s*\n\s*/g, ' '),
+    line: (content, node, spec) => {
+      if (content.label || content.value) return [content.label, content.value].filter(Boolean).join(': ');
+      const own = declared(content, spec);
+      return own.length > 1 ? own[0] + ': ' + own.slice(1).join(', ') : (own[0] || '');
+    },
+    bullet: (content, node, spec) =>
+      '- ' + String(content.text || declared(content, spec).join(' ')).replace(/\s*\n\s*/g, ' '),
   };
 
   function plainText(doc) {
@@ -70,7 +91,7 @@
       const visit = TEXT_VISITORS[spec ? spec.shape : 'text'];
       /* An unregistered type still has content; join its string fields rather than skip it. */
       const content = doc.content[node.id] || {};
-      const line = visit ? visit(content, node)
+      const line = visit ? visit(content, node, spec)
         : Object.values(content).filter(v => typeof v === 'string' && v).join(' ');
       if (line != null && String(line).trim()) out.push(String(line));
     });
