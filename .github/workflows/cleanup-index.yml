@@ -163,15 +163,16 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           df -h / | tail -1
+          # BEFORE the fetch (ADR-0129), so the download itself is inside the guarded window: a
+          # pipeline upload landing mid-fetch would otherwise be invisible to a fingerprint taken
+          # afterwards. The upload at the end of this job passes `--delete "*"`, so it reaps every
+          # remote file this runner's folder does not hold — including anything a pipeline commits
+          # while this job works. `window` above already asked whether one was in flight; on
+          # 2026-09-10 the endpoint it asks said no while one was, and the answer would have been
+          # 8 minutes stale by upload time regardless. So the write checks for itself.
+          python -m headstart.ingest.state_guard record data/lancedb
           python -m headstart.ingest.state_fetch 'data/lancedb/*'
           du -sh data/lancedb
-          # Fingerprint what we just read (ADR-0129). The upload at the end of this job passes
-          # `--delete "*"`, so it reaps every remote file this runner's folder does not hold —
-          # including anything a pipeline commits during the ~4 minutes of work between here and
-          # there. `window` above already asked whether one was in flight; on 2026-09-10 the
-          # endpoint it asks said no while one was, and the answer would have been 8 minutes
-          # stale by upload time regardless. So the write checks for itself.
-          python -m headstart.ingest.state_guard record data/lancedb
       - name: Prune stale + duplicate rows
         run: python -m headstart.ingest.index prune --apply
       - name: Backfill descriptions into rows that predate the column (ADR-0104)

@@ -783,6 +783,12 @@ def prune(args: argparse.Namespace) -> int:
 
     table = lancedb.connect(args.db).open_table(PROD_TABLE)
     index_ids = _all_ids(table)
+    if not check_base(args.db, len(index_ids)):
+        # Checked here too, not only in `sync`. `cleanup-index` runs `prune` as its FIRST table
+        # operation, with no `sync` ahead of it — so without this a compaction would read a
+        # rolled-back table, rebuild it, and publish a fresh self-consistent record, laundering
+        # the loss into the new base.
+        return 1
     off_board, duplicate = plan_prune(index_ids, keep)
     evict = off_board + duplicate
     _log.info(
@@ -851,11 +857,12 @@ def compact(args: argparse.Namespace) -> int:
     # Swap the rebuilt store in for the bloated one (orphan fragments dropped with the old dir).
     shutil.rmtree(db_path)
     rebuilt.rename(db_path)
-    if served is not None:
-        # Written after the swap, into the rebuilt directory that is about to be uploaded. A
-        # compaction legitimately changes the row count, so it must publish the new base itself
-        # or the next pipeline run would read its correct work as an unexplained move.
-        write_base(db_path, served, "compact")
+    # Written after the swap, into the rebuilt directory that is about to be uploaded. A
+    # compaction legitimately changes the row count, so it must publish the new base itself or
+    # the next pipeline run would read its correct work as an unexplained move. The rmtree above
+    # destroyed the previous record, so this must run on every path that reaches here: leaving
+    # the uploaded directory with no record at all fails open, and silently.
+    write_base(db_path, served if served is not None else 0, "compact")
     _log.info(f"compacted: rebuilt {len(names)} table(s) fresh at {db_path}")
     return 0
 

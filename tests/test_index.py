@@ -695,3 +695,46 @@ def test_sync_refuses_to_build_on_a_base_it_cannot_explain(tmp_path, monkeypatch
     # Someone else's write landed: the record says a count this table does not have.
     idx.write_base(tmp_path / "db", 99_999, "prune")
     assert _sync(tmp_path, monkeypatch, ["greenhouse:a:1", "greenhouse:a:2"]) == 1
+
+
+def _prune_args(tmp_path, monkeypatch):
+    """`prune` past its keep-set floor. `_MIN_KEEP_BOARDS` is 1,000 and building that many ledger
+    rows would test the ledger loader, not this — so the keep-set is stubbed at the seam, wide
+    enough to clear the floor and containing the table's own Board."""
+    monkeypatch.setattr(
+        idx,
+        "live_keep_set",
+        lambda ledger: {"greenhouse:a"} | {f"lever:f{i}" for i in range(1200)},
+    )
+    return argparse.Namespace(
+        db=str(tmp_path / "db"),
+        ledger=str(tmp_path / "liveness"),
+        apply=True,
+        limit=None,
+    )
+
+
+def test_prune_refuses_a_base_it_cannot_explain(tmp_path, monkeypatch):
+    """`cleanup-index` runs `prune` as its FIRST table operation, with no `sync` ahead of it — so
+    without this check a compaction would read a rolled-back table, rebuild it, and publish a
+    fresh self-consistent record, laundering the loss into the new base."""
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:1", "greenhouse:a:2"])
+    idx.write_base(tmp_path / "db", 99_999, "sync")
+    assert idx.prune(_prune_args(tmp_path, monkeypatch)) == 1
+
+
+def test_prune_proceeds_on_a_base_that_agrees(tmp_path, monkeypatch):
+    """The control for the test above: without it, a `prune` that returns 1 for any other reason
+    (its keep-set floor, say) would make that assertion pass while checking nothing."""
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:1", "greenhouse:a:2"])
+    assert idx.prune(_prune_args(tmp_path, monkeypatch)) == 0
+
+
+def test_compact_always_leaves_a_record(tmp_path):
+    """Its rmtree destroys the previous one, so a path that reaches the swap without writing a new
+    record would upload a directory with none at all — failing open, and silently."""
+    db = tmp_path / "db"
+    lancedb.connect(str(db)).create_table("wellfound", [{"id": "a", "n": 1}])
+    idx.compact(argparse.Namespace(db=str(db)))
+    assert idx.read_base(db) is not None
+    assert idx.read_base(db)["by"] == "compact"

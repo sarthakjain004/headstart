@@ -732,12 +732,13 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          python -m headstart.ingest.state_fetch 'data/embeddings/jobs/*' 'data/lancedb/*'
-          # Fingerprint the table as fetched (ADR-0129), checked again just before the upload
-          # below. This job's own upload is additive, so it cannot delete a compaction's work —
-          # but it can append fragments onto a base `cleanup-index` replaced underneath it, which
-          # publishes a table stitched from two different rebuilds.
+          # BEFORE the fetch, not after (ADR-0129). The fetch is this job's longest step — the
+          # timeout above budgets ~18 min of retries for the ~1.3k-file lancedb dir — so a
+          # compaction landing *during* it would be invisible to a fingerprint taken afterwards,
+          # and the download would already be a mix of two rebuilds. Recording first puts the
+          # fetch inside the guarded window.
           python -m headstart.ingest.state_guard record data/lancedb
+          python -m headstart.ingest.state_fetch 'data/embeddings/jobs/*' 'data/lancedb/*'
       - name: Download corpus + refreshed state
         # continue-on-error: `join` is the one un-bankable stage, so if it timed out this artifact
         # is missing. Proceeding degrades to a safe no-op rather than a hard failure — with no

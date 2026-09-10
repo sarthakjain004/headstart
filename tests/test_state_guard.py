@@ -160,3 +160,20 @@ def test_record_is_readable_json_carrying_the_prefix(tmp_path, monkeypatch):
     assert saved["prefix"] == "data/lancedb/"
     assert saved["count"] == len(BASE)
     assert saved["files"] == BASE
+
+
+def test_a_record_for_another_prefix_is_refused_not_compared(tmp_path, monkeypatch):
+    """Reachable the moment a second prefix is guarded and both use `DEFAULT_FILE`. Comparing the
+    digests would be meaningless in both directions — a match waves an unguarded upload through,
+    a mismatch fails a safe one — so it is refused rather than resolved."""
+    _serve(monkeypatch, BASE, extra={"data/descriptions/greenhouse.jsonl": "d1"})
+    guard = tmp_path / "guard.json"
+    sg.record(guard, REPO, "data/lancedb", None)
+    assert sg.verify(guard, REPO, "data/descriptions", None) == 1
+
+
+def test_a_record_for_another_repo_is_refused(tmp_path, monkeypatch):
+    _serve(monkeypatch, BASE)
+    guard = tmp_path / "guard.json"
+    sg.record(guard, REPO, "data/lancedb", None)
+    assert sg.verify(guard, "imPoseidon/some-other-dataset", "data/lancedb", None) == 1

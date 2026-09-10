@@ -74,9 +74,23 @@ minutes stale. Any check that precedes a long piece of work is a statement about
    next run recomputes from the corpus.
 
 4. **A cross-run base record** (`data/lancedb/_index_base.json`) carries the row count each writer
-   left; `index sync` logs it beside the count it opened and refuses a base it cannot explain.
-   `state_guard` catches a collision *inside* a run; this catches a rollback that already
-   happened, by any route.
+   left; `index sync` and `index prune` log it beside the count they opened and refuse a base they
+   cannot explain.
+
+   **Its remit is narrower than it first looks, and the limit is worth stating plainly.** Because
+   the record ships *inside* `data/lancedb`, a writer that replaces the whole directory replaces
+   the record with it — so replaying 2026-09-10, compaction's `--delete "*"` upload would carry its
+   own `compact`-written base of 409,810, the next `sync` would open 409,810, and the check would
+   log **"matches"**. This mechanism does **not** catch the incident that motivated the ADR. What
+   it catches is a rollback where the table and its record *diverge*: a partial upload, an
+   out-of-band edit, a fetch that silently delivered an older snapshot.
+
+   Nor is that fixed by moving it. A record kept outside `data/lancedb` would catch the atomic
+   overwrite — and would then fire on every legitimate compaction, because "the table shrank and a
+   writer says it meant to" is the same observation in both cases. The two are indistinguishable
+   from the published state alone; the only thing that separates them is *whether the writer
+   branched from a stale base*, which is exactly what point 1 measures and nothing after the fact
+   can. **The CAS is the fix; this is a second, weaker net.**
 
 ## Alternatives considered
 
@@ -98,12 +112,16 @@ GitHub keeps one *pending* run per group and a newer arrival replaces it, so an 
 starved the once-a-day compaction into three missed days and `_deletions/` past HF's
 10,000-file directory limit. Reintroducing it trades silent data loss for a known outage.
 
-**Keep the base record in `data/state/`.** Rejected: `cleanup-index` never fetches or uploads
-`data/state`, so a record kept there would go stale on every compaction and red-run the next
-pipeline for a compaction that was entirely correct. Inside `data/lancedb` both writers publish it
-in the same commit as the table, so the record and the rows it vouches for cannot disagree.
-LanceDB ignores a non-`.lance` sibling in its database directory (verified: `list_tables()` still
-returns only the real tables).
+**Keep the base record in `data/state/`.** This is the sharper of the two placements against the
+2026-09-10 incident specifically — `cleanup-index` never fetches or uploads `data/state`, so the
+record would have survived the clobber and named the loss on the next run. It is rejected because
+the same property makes it fire on *every* legitimate compaction: `cleanup-index` runs
+`prune --apply`, which evicts rows on purpose, and it has no way to publish the new count. A daily
+false red run is a worse trade than a second net with a hole in it, and the hole is covered by the
+CAS above. Inside `data/lancedb` both writers publish the record in the same commit as the table,
+so the two cannot disagree — which is the property that makes it safe and, as point 4 admits, also
+the property that blinds it. LanceDB ignores a non-`.lance` sibling in its database directory
+(verified: `list_tables()` still returns only the real tables).
 
 **Retry on conflict instead of failing.** Re-fetch the moved base, redo the work, upload again.
 Recovers the run rather than losing it, but adds a second execution path through the stage that
@@ -123,3 +141,13 @@ how often it actually fires.
 - The guard cannot see a collision whose two writes both land between `record` and `verify` of a
   *third* party, and it does not serialise anything. It converts silent loss into a visible refusal;
   it is not mutual exclusion.
+- `record` runs **before** the fetch in both writers, not after, so the download sits inside the
+  guarded window. The pipeline's merge job budgets ~18 minutes of retries for the ~1.3k-file
+  `data/lancedb` fetch; a fingerprint taken afterwards would leave the longest step in the job
+  unguarded and could describe a directory already stitched from two rebuilds.
+- A conflict at the pipeline's guard aborts the remaining uploads in that step — description store
+  and `data/state` — because they share one `bash -e` block. That is the intended order and not a
+  side effect: `data/state` carries the ADR-0095 witness, which must never be published naming
+  roots this run did not in fact publish, so stopping before it leaves the prior witness standing.
+- The base record fails open, deliberately, when it is absent or unreadable: a first run, and a
+  corrupt scratch file, must not convert a silent rollback into a guaranteed outage.

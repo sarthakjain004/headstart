@@ -74,6 +74,7 @@ import json
 import os
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TypedDict
 
 from headstart import log
 
@@ -113,13 +114,25 @@ def _under(repo: str, prefix: str, token: str | None) -> dict[str, str]:
     return out
 
 
+class Fingerprint(TypedDict):
+    """What `record` writes and `verify` reads back. Named rather than a bare dict so the two
+    ends cannot drift, and so `verify` can read `files` without casting."""
+
+    repo: str
+    prefix: str
+    files: dict[str, str]
+    count: int
+    digest: str
+    at: str
+
+
 def digest_of(files: dict[str, str]) -> str:
     """A stable digest of a path→blob-id map. Sorted, so listing order cannot move it."""
     joined = "\n".join(f"{path}:{blob}" for path, blob in sorted(files.items()))
     return hashlib.sha256(joined.encode()).hexdigest()
 
 
-def fingerprint(repo: str, prefix: str, token: str | None) -> dict[str, object]:
+def fingerprint(repo: str, prefix: str, token: str | None) -> Fingerprint:
     files = _under(repo, prefix, token)
     return {
         "repo": repo,
@@ -166,13 +179,23 @@ def verify(path: Path, repo: str, prefix: str, token: str | None) -> int:
         return 1
     before = json.loads(path.read_text())
     now = fingerprint(repo, prefix, token)
+    if (before.get("repo"), before.get("prefix")) != (now["repo"], now["prefix"]):
+        # Recorded against something else. Comparing the two digests would be meaningless in both
+        # directions — a match would wave through an unguarded upload and a mismatch would fail a
+        # safe one — so this is refused rather than resolved. Reachable the moment a second prefix
+        # is guarded and the two share `DEFAULT_FILE`.
+        _log.error(
+            f"recorded base is for {before.get('repo')}:{before.get('prefix')}, but this is "
+            f"verifying {now['repo']}:{now['prefix']} — refusing to compare unrelated prefixes"
+        )
+        return 1
     if before.get("digest") == now["digest"]:
         _log.info(
             f"{now['prefix']} unchanged since {before.get('at')} "
             f"({now['count']} file(s), digest {str(now['digest'])[:12]}) — safe to upload"
         )
         return 0
-    added, removed, modified = changes(before.get("files", {}), now["files"])  # type: ignore[arg-type]
+    added, removed, modified = changes(before.get("files", {}), now["files"])
     _log.error(
         f"{now['prefix']} changed under this run since {before.get('at')}: "
         f"{len(added)} added, {len(removed)} removed, {len(modified)} modified "
