@@ -98,6 +98,12 @@
          scaling the template gallery's cards use — so the two questions a live preview is
          actually consulted for while typing are still answered without leaving the form: did my
          words land on the page, and does it still fit on one. Clicking it opens Preview. #}
+      {# The miniature is the only thing in this column that is optional: Checks is advice you
+         asked for, the miniature is a convenience, and on a narrow window it is the one that
+         costs the form its width. So it is the one thing here that can be put away, and the
+         choice is remembered per browser. #}
+      <div class="rb-aside-head"><button class="ghost rb-mini" id="rb-mini-toggle"
+           aria-expanded="true" aria-controls="rb-mini">Hide preview</button></div>
       <button class="rb-minicard" id="rb-mini">
         <span class="rb-tmini rb-mini-frame"><span class="rb-tsheet" id="rb-mini-sheet" aria-hidden="true"></span></span>
         <span class="rb-mini-foot"><span class="rb-mini-pages" id="rb-mini-pages"></span>
