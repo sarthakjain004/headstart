@@ -40,8 +40,9 @@ that install is dominated by unpacking 6.1 GB to disk rather than by downloading
 5–12 s total install at any hit rate. `setup-python` without the cache costs 0–1 s (n=16), so the
 whole restore is recovered.
 
-**B. Install `.[embed]` with a pinned `uv` on `join`, `embed` and `merge`.** 5.3x faster than pip
-(median 16.0 s against 84.6 s, n=3 within-run), and — the property that actually decides it — uv
+**B. Install `.[embed]` with a pinned `uv` on `join`, `embed` and `merge`.** On the bench, 5.3x
+faster than pip (median 16.0 s against 84.6 s, n=3 within-run, install-only); **in production the
+like-for-like figure is 4.0x** — see Consequences. And — the property that actually decides it — uv
 with a *cold* cache beats pip holding a warm 4.4 GB one. So B removes the reason to hold a cache
 rather than trading one cache for another. End to end, on the command that ships
 (`uv pip install --system`), checkout-to-importable-environment went **128.7 s → 18.9 s**.
@@ -81,16 +82,32 @@ re-imports the cache-budget problem above for a ~15 s saving.
 ## Consequences
 
 Projected ~4.8–8.6 min off a 53.8–68.3 min run when this was written. **Confirmed 2026-09-10 at
-≈6.0 min**, from four runs on the merged code (`34433479155`, `34429796522`, `34426795362`,
-`34423283174`). Per-job pre-work cost fell from ~108 s / ~110 s / ~139 s on `join` / `embed` /
-`merge` to medians of 22.5 s / 21 s / 27 s, and from ~52 s / ~47 s to ~12 s on `scrape-plan` /
-`scrape`. `setup-python` measured 0–1 s in **20 of 20** job-observations, confirming the restore
-was its entire cost.
+≈6.8 min**, from four runs on the merged code (`34433479155`, `34429796522`, `34426795362`,
+`34423283174`). Per-job pre-work cost, median of four runs on each side, fell from
+141 s / 132.5 s / 120 s on `join` / `embed` / `merge` to 22.5 s / 21 s / 27 s, and from
+64 s / 46 s to 11.5 s / 11.5 s on `scrape-plan` / `scrape`. `setup-python` measured 0–1 s in
+**20 of 20** job-observations, confirming the restore was its entire cost.
 
-One correction the real runs force: uv's install is **less consistent** in production than on the
-bench. It ran 16–38 s (median ~18.5, n=12) against the bench's 14.1–24.2 s, so the honest
-production figure is **4.1x** faster than pip, not the bench's 5.3x. Size any timeout off the
-16–38 s range. Details: `docs/pipeline/2026-09-09_env-install-benchmark.md` §7b.
+Two corrections the real runs force. **The like-for-like multiplier is 4.0x, not 5.3x** — on
+`join` + `merge`, the jobs that are singletons on both sides, pip's median 76 s (n=8) became uv's
+19 s (n=8, range 16–38), and production's step includes uv's own bootstrap while pip's did not.
+The bench was *not* wrong: its 5.29x compared install-only against install-only, and its
+end-to-end shipping-command figures (18.86 s / 18.58 s) match production's 19 s median almost
+exactly.
+
+**And uv has a tail the bench could not have found.** Across all 68 `.[embed]` installs the range
+is 16–107 s (p50 18, p90 32) against pip's very stable 75–80 s, and two exceed pip's floor. Every
+install of 40 s or more was on an `embed` shard (4 of 60), none on `join`/`merge` — plausibly
+fifteen shards installing cold at once, which a one-job bench cannot reproduce. **Size timeouts off
+16–107 s, not off a median.**
+
+End-to-end median wall clock over the same four runs fell 62.2 → 52.9 min, but **that −9.3 min is
+not this ADR's to claim**: PR #390's `embed` fan-out (1 shard at 6.2–13.5 min → 15 at 1.0–2.4) is
+the largest component, and PR #398's 3,646 new Boards raised Σ `scrape` work ~10% in the same
+window, so the comparison is not controlled. This change's share is the ~6.8 min of pre-work above.
+`join` also regressed (13.9–15.2 → 14.4–17.8 min) despite gaining this change's install saving —
+its own work grew, most plausibly from the larger corpus; noted, not fixed here.
+Details: `docs/pipeline/2026-09-09_env-install-benchmark.md` §7b.
 
 The cache-budget headroom does **not** come back. `setup-python`'s key is
 os/arch/python-version/pyproject-hash — repo-wide, not per-workflow — and **nine** other workflows

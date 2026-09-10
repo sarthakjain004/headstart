@@ -281,39 +281,102 @@ critical path (`scrape` remains floor-bound on `successfactors:careers.hcltech.c
 any of this), and that uv resolves the same dependency set as pip — the import checks confirm the
 packages are present and importable, not that every transitive version matches.
 
-## 7b. Confirmed after merge — the projection held
+## 7b. Confirmed after merge — with three corrections to this document's own first draft
 
-**Added 2026-09-10.** §7 was a projection. PR #395 merged as `81c21ff`, and four successful
-pipeline runs have since executed on it (`34433479155`, `34429796522`, `34426795362`,
-`34423283174`, all on `febb4ad`, which contains the merge). Pre-work cost per job — "Set up job" +
-checkout + `setup-python` + the install step, in seconds:
+**Added 2026-09-10, corrected the same day after review.** §7 was a projection. PR #395 merged as
+`81c21ff`, and four successful pipeline runs have since executed on it (`34433479155`,
+`34429796522`, `34426795362`, `34423283174`, all on `febb4ad`, which contains the merge).
 
-| job | before (n=12) | 34433479155 | 34429796522 | 34426795362 | 34423283174 |
-|---|---|---|---|---|---|
-| `join` | ~108 | 23 | 22 | 44 | 19 |
-| `embed (0)` | ~110 | 21 | 21 | 21 | 20 |
-| `merge` | ~139 | 22 | 32 | 22 | 36 |
-| `scrape-plan` | ~52 | 10 | 15 | 11 | 12 |
-| `scrape (0)` | ~47 | 12 | 11 | 14 | 10 |
+The first draft of this section got three things wrong, all caught by review before merge. They are
+corrected below and named explicitly, because the whole point of this document is that published
+figures get quoted back later.
 
-**Three predictions, all confirmed:**
+### Pre-work cost per job
 
-- **`setup-python` collapses to 0–1 s.** Measured 0 s or 1 s in **20 of 20** job-observations
-  across these four runs, exactly as the pre-merge n=16 sample predicted. The 28–64 s was entirely
-  the pip-cache restore.
-- **The uv install lands where the bench said**, though with a wider tail: the install step ran
-  **16–38 s** (median ~18.5, n=12 across `join`/`embed`/`merge` × 4 runs) against pip's very stable
-  75–80 s. That is a **4.1x** median improvement — slightly below the bench's 5.3x, because
-  production's upper tail (38 s on one `join`, 32 s on one `merge`) is longer than anything the
-  bench saw (14.1–24.2 s). Report the 4.1x, not the 5.3x, for production.
-- **The wall-clock saving lands inside the projected band.** Taking medians: `join` ~85 s,
-  `embed` ~89 s, `merge` ~112 s, `scrape-plan` ~40 s, `scrape` ~35 s. The three serial jobs add and
-  the two matrix jobs contribute once each, giving **≈6.0 min** against the projected **4.8–8.6
-  min**.
+"Set up job" + checkout + `setup-python` + the install step, in seconds. **Both columns are the
+median of four runs** — the first draft's "before" column was a single run (`34332773221`),
+mislabelled `n=12`, and it happened to take the *fastest* baseline for `join`/`embed` and the
+*slowest* for `merge`, which is no statistic at all.
 
-The one thing the bench understated is variance: uv's install is less consistent in production than
-on a bare bench runner. It never approached pip's cost, so the decision is unaffected, but a future
-reader sizing a timeout should use the 16–38 s range rather than the bench median.
+| job | before, median of 4 | after, median of 4 | saving |
+|---|---|---|---|
+| `join` | 141 (109/140/142/142) | 22.5 (19/22/23/44) | 118.5 |
+| `embed (0)` | 132.5 (110/126/139/144) | 21 (20/21/21/21) | 111.5 |
+| `merge` | 120 (110/110/130/139) | 27 (22/22/32/36) | 93 |
+| `scrape-plan` | 64 (53/60/68/75) | 11.5 (10/11/12/15) | 52.5 |
+| `scrape (0)` | 46 (43/44/48/56) | 11.5 (10/11/12/14) | 34.5 |
+
+The three serial jobs add and the two matrix jobs contribute once each: **410 s ≈ 6.8 min**, inside
+the projected 4.8–8.6 min band. The first draft said 6.0 min, which was that same n=1 baseline
+understating the change's own win.
+
+**`setup-python` collapses to 0–1 s**, measured in **20 of 20** job-observations across these four
+runs — exactly as the pre-merge n=16 sample predicted. The 28–64 s was entirely the pip-cache
+restore, confirmed.
+
+### The uv install has a tail the bench could not have found
+
+Every `.[embed]` install step in the four runs, **n=68** (`join` 4 + `merge` 4 + `embed` 15×4):
+**16–107 s, p50 18, p90 32.** Against pip's **n=12, 75–80 s, p50 76** — remarkably stable by
+comparison.
+
+Two of those 68 (86 s and 107 s) **exceed pip's floor**, so the first draft's "it never approached
+pip's cost" was false. But the tail is not spread evenly, and where it sits is the useful part:
+
+**Every install of 40 s or more was on an `embed` shard — 4 of 60 — and none on `join` or
+`merge`.** The plausible mechanism is fifteen shards doing simultaneous cold installs; a
+single-job benchmark could not have produced it, and this document's bench never did.
+
+So the like-for-like comparison is `join` + `merge`, the two jobs that exist as singletons on both
+sides: **pip n=8, median 76 s → uv n=8, median 19 s, range 16–38.** That is **4.0x**, and it is if
+anything generous to pip, because the production uv step includes its own `pip install uv`
+bootstrap while the pip step has nothing equivalent.
+
+### Correcting the "the bench overstated it" claim — it did not
+
+The first draft reported "4.1x in production, not the bench's 5.3x" and blamed the bench. That
+comparison was not like-for-like and the conclusion was wrong. The bench's 5.29x was
+V1 (venv + pip) against V3a (**uv install only**, no bootstrap). Production's step is bootstrap
+*plus* install, so the figure it should be compared against is §6's end-to-end shipping command:
+**18.86 s and 18.58 s**. Production's median install is **19 s**. The bench was accurate.
+
+What the bench genuinely did not capture is the 15-way fan-out tail above, because it ran one job
+on one runner — the same design choice that made its within-run ratios trustworthy. **Size any
+timeout off the 16–107 s range, not off any median**, and note that the risk lives on the `embed`
+shards specifically.
+
+### End to end — and what this change may NOT claim
+
+Wall clock, `run_started_at` to `updated_at`, four runs each side, one SHA per side:
+
+| | before (`fd15455`) | after (`febb4ad`) |
+|---|---|---|
+| wall (min) | 65.4 / 59.2 / 65.1 / 56.9 | 53.9 / 57.2 / 45.5 / 51.8 |
+| **median** | **62.2** | **52.9** |
+| `scrape-plan` | 1.2–1.5 | 0.4–0.6 |
+| `scrape` max | 20.6–29.2 | 21.4–27.1 |
+| `join` | 13.9–15.2 | **14.4–17.8** |
+| `embed` | **1 shard, 6.2–13.5** | **15 shards, 1.0–2.4** |
+| `merge` | 7.9–9.4 | 7.6–8.9 |
+
+The median moved **62.2 → 52.9 min, −9.3 min**. **That figure is not this change's, and must not
+be quoted as it.** Three things moved in the same window and the experiment is not controlled:
+
+1. **PR #390 fanned `embed` out across 15 lanes**, from one shard at 6.2–13.5 min to fifteen at
+   1.0–2.4 min. That is the single largest component of the −9.3 min and it belongs to #390, not
+   to uv. It is also why the before/after `embed` install populations differ 4 against 60.
+2. **PR #398 landed 3,646 new live Boards**, so the workload is *not* held constant. Σ `scrape`
+   job-minutes rose from 221.9–251.1 to 254.8–265.6 — about **+10%**. The run got faster while
+   doing more work: a better outcome, a weaker experiment.
+3. **This change's own contribution is the ~6.8 min of pre-work** measured per job above — a real
+   component of the −9.3 min, not the whole of it.
+
+**And one stage moved the wrong way.** `join` went from 13.9–15.2 min to **14.4–17.8 min** —
+worse, *despite* gaining ~118 s of pre-work saving from this change. So `join`'s own work grew by
+roughly three minutes, most plausibly the larger corpus from #398 flowing through the union, tech
+filter and description reconcile. This change did not cause it and does not fix it; it is recorded
+because a write-up that lists the improved stages and omits the regressed one is advocacy, not
+measurement. Whether `join` needs attention is a separate question this document does not answer.
 
 ## 8. Artifact I/O — measured, no change proposed
 

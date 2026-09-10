@@ -38,11 +38,12 @@ name: nightly-pipeline
 # `if: always()` steps, so too thin a job margin loses exactly the partial work the design protects.
 # Until 2026-09-09 that pre-step setup measured ~110-140 s on `join`/`embed`/`merge` and ~50 s on
 # `scrape`/`scrape-plan` (the two install different dependency sets — see the ADR). The pip cache
-# was then dropped and the `.[embed]` jobs moved to uv (ADR-0122). Measured on four runs since
-# (2026-09-10, n=4): `join`/`embed`/`merge` now sit at 19-44 s and `scrape`/`scrape-plan` at
-# 10-15 s, and `setup-python` reads 0-1 s in 20 of 20 job-observations. Size anything off the
-# RANGE, not the median — uv's install is less consistent than the benchmark suggested (16-38 s in
-# production against 14-24 s on a bare bench runner). The job-level margins below were sized
+# was then dropped and the `.[embed]` jobs moved to uv (ADR-0122). Measured over four runs since
+# (2026-09-10): pre-step setup now medians 22.5 s on `join`, 21 s on `embed`, 27 s on `merge` and
+# 11.5 s on both `scrape` and `scrape-plan`, and `setup-python` reads 0-1 s in 20 of 20
+# job-observations. SIZE OFF THE RANGE, NOT THE MEDIAN: uv's install spans 16-107 s across all 68
+# `.[embed]` installs, and every one over 40 s was on an `embed` shard (4 of 60) — fifteen shards
+# installing cold at once is a tail the single-job benchmark could not produce. The job-level margins below were sized
 # against the old numbers and are deliberately left alone: as *job* margins they are hang detectors
 # regardless of whether the stage banks partial work, and a faster setup only widens them.
 # Numbers: docs/pipeline/2026-09-09_env-install-benchmark.md.
@@ -523,9 +524,10 @@ jobs:
         with:
           python-version: "3.12"
           # No `cache: pip` — see the scrape-plan job's note.
-      # uv, not pip (ADR-0122): 5.3x faster on this dependency set (median 16.0 s against 84.6 s,
-      # n=3 within-run comparisons against a +-9% ordering-noise floor), and it needs no cache of
-      # any kind — uv with a cold cache beats pip holding a warm 4.4 GB one, so this removes the
+      # uv, not pip (ADR-0122): 4.0x faster on this dependency set in production (median 19 s
+      # against pip's 76 s, n=8 on the two singleton jobs; the bench's 5.3x was install-only and
+      # is not like-for-like with this step, which includes its own uv bootstrap). It needs no
+      # cache of any kind — uv with a cold cache beats pip holding a warm 4.4 GB one, removing the
       # reason to have a cache rather than trading one for another. A benchmark job replicating
       # this job's install, checkout to importable environment, went 128.7 s -> 18.9 s; that is a
       # bench figure, not a measurement of this job.
