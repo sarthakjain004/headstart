@@ -1250,6 +1250,11 @@ let hoveredSeries = null;   // legend/chart hover-focus name — dims every othe
 let hoverIndex = null;      // the stamp the crosshair is parked on — the keyboard walks this
 let tableView = false;      // the WCAG-clean twin of the chart, independent of the SVG
 let lastGeom = null;        // scales + resolved values from the last drawTrends() — hover reads this
+// The /trends request currently in flight, so a newer one can cancel it. Every Trends control
+// re-requests, and the ATS picker issues one per checkbox: narrowing 21 ATSes down to 1 means
+// 20 requests, and without this each of the 20 answers painted the panel as it happened to
+// land. See loadTrends for the measurements.
+let trendReq = null;
 const hiddenSeries = new Set();   // legend toggle-to-hide; keyed by name, so a re-rank keeps it
 const CHART_MAX = 8;        // matches the 8-slot validated categorical palette
 
@@ -1383,6 +1388,18 @@ function toggleAtsPopover(force){
 }
 
 async function loadTrends(family){
+  // Exactly one request owns the panel. Every Trends control calls this, and the ATS picker
+  // calls it once per checkbox — so unchecking 20 of 21 boxes to reach "1 ATS" starts 20
+  // round trips that all used to run to completion and paint, in arrival order. Measured in
+  // Chromium against a stub serving the real templates at the Space's own latency: 20
+  // requests, 20 repaints, and the numbers churning non-monotonically (32k, 33k, 35k, 30k,
+  // 37k, 28k …) because 6-11 of the 20 answers arrived out of the order they were asked in.
+  // Worse than the flicker, the panel then settled on whichever answer landed last, which in
+  // 3 runs of 5 was NOT the last request's — the chart named a scope the SOURCE control did
+  // not. Cancelling the previous request is what makes the loser deterministic: an aborted
+  // fetch can never resolve, so it can neither paint nor be raced.
+  if (trendReq) trendReq.abort();
+  const req = trendReq = new AbortController();
   const q = new URLSearchParams();
   // The roles split only exists for families that HAVE watched roles. Carrying a sticky
   // 'roles' into one that doesn't returns an empty series with its toggle hidden — nothing
@@ -1403,17 +1420,24 @@ async function loadTrends(family){
   // right answer (a filter change must never read as "it broke"). With nothing to keep, a
   // skeleton in the same grid holds the same space rather than letting the panel jump.
   setTrendsBusy(!trendData);
-  let r;
-  try { r = await fetch('/trends' + (q.size ? '?' + q : '')); }
-  catch(e){ showTrendsError('That request didn’t go through.'); return; }
-  if (!r.ok){
-    showTrendsError(r.status === 401
+  // The outcome is decided first and acted on second, so there is ONE place a response may
+  // touch the panel and one abort check guarding it. Reading the body is inside the try
+  // because an abort mid-download rejects r.json() exactly as it rejects the fetch.
+  let payload, err;
+  try {
+    const r = await fetch('/trends' + (q.size ? '?' + q : ''), { signal: req.signal });
+    if (r.ok) payload = await r.json();
+    else err = r.status === 401
       ? 'Your session expired — sign in again to see trends.'
-      : 'Trends didn’t load. Try again.');
-    return;
-  }
+      : 'Trends didn’t load. Try again.';
+  } catch(e){ err = 'That request didn’t go through.'; }
+  // Cancelled by a newer request, which now owns the panel: say nothing, paint nothing. An
+  // abort lands in the catch above like a dropped connection, and reporting it would put
+  // "that request didn't go through" over a render that is about to be replaced anyway.
+  if (req.signal.aborted) return;
+  if (err){ showTrendsError(err); return; }
   hideTrendsError();
-  trendData = await r.json(); trendDrill = family || null;
+  trendData = payload; trendDrill = family || null;
   drawTrends();
 }
 
