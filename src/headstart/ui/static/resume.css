@@ -53,8 +53,23 @@
 .rb-vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);
   white-space: nowrap; }
 
-/* Popovers over the bar. Both are momentary; neither earns a permanent column. */
-.rb-pop { position: absolute; z-index: 40; top: 100%; left: 12px; margin-top: 6px; width: min(420px, 92vw);
+/* Popovers over the bar. Both are momentary; neither earns a permanent column.
+
+   `top: 100%` means "below the bar" only while these live INSIDE .rb-bar, which is the nearest
+   positioned ancestor. As siblings of it they resolved against the page shell instead, and the
+   Download menu opened 1,004px below its own button — off the bottom of a 900px viewport, so
+   the only sign the button had worked was the page growing a scrollbar. Keep them inside it. */
+.rb-pop { position: absolute; z-index: 40; top: 100%; left: 12px; margin-top: 6px;
+  /* Inset from the BAR, not the viewport. `92vw` was right while these hung off the page shell
+     and wrong the moment they moved: the bar's padding box is already inset, so at 390px the
+     Résumés panel ran 8px past the page and took it sideways, while the right-hand one started
+     7px off the left edge. Both are the same arithmetic error, in opposite directions. */
+  width: min(420px, calc(100% - 24px));
+  /* A phone cannot show five download options and a paragraph of explanation each. The menu
+     scrolls itself rather than growing the page under it. On the smallest phone measured
+     (375x667) 61px of the box still falls below the fold and the page scroll reaches it; at
+     390x844 it fits whole. */
+  max-height: min(60vh, 520px); overflow-y: auto; overscroll-behavior: contain;
   background: var(--raise); border: 1px solid var(--rule-2); border-radius: var(--r-lg);
   box-shadow: var(--shadow); padding: 12px; }
 .rb-pop-right { left: auto; right: 12px; }

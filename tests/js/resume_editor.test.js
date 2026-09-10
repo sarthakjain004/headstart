@@ -131,11 +131,17 @@ function loadEditor(options) {
   };
   ctx.globalThis = ctx;
   vm.createContext(ctx);
+  /* The panel's own visibility, which the editor reads as it loads to decide whether the page
+     already opened on this tab. Default is visible because every other test here is about a tab
+     someone is looking at. */
+  get('panel-resume').hidden = !!opts.panelHidden;
   for (const name of ALL.concat(['resume_editor'])) {
     const file = path.join(DIR, name + '.js');
     vm.runInContext(fs.readFileSync(file, 'utf8'), ctx, { filename: file });
   }
-  ctx.ResumeEditor.boot();
+  /* `skipBoot` leaves the editor exactly as loading it left it — the only way to see what the
+     script did on its own, rather than what this harness then asked it to do. */
+  if (!opts.skipBoot) ctx.ResumeEditor.boot();
   get('rb-paper')._docKeydown = ctx._docHandlers.keydown || [];
   return { ctx, nodes, rail, tabs, segs, el: get };
 }
@@ -691,4 +697,25 @@ test('choosing A4 re-lays the page, and it survives a reload', () => {
   const saved = ctx.ResumeDocument.clone(ctx.ResumeEditor.current());
   const back = loadEditor({ storage: fakeStorage([saved]) });
   assert.equal(back.el('rb-paper').style.width, '8.27in', 'the sheet was a session setting, not the résumé’s');
+});
+
+/* ---- booting on a page that opened on this tab ----
+
+   app.js is not deferred and the résumé scripts are, so on a load that lands straight on
+   #resume — a refresh, a bookmark, a shared link — app.js has already run its `showTab()` and
+   found no `window.ResumeEditor` to call. Nothing revisits the tab afterwards. The editor has to
+   notice this itself, and the only evidence available to it is the panel already being visible. */
+
+test('a page that opened on the résumé tab paints without anyone calling shown()', () => {
+  const { el } = loadEditor({ skipBoot: true });
+  assert.ok(el('rb-paper').innerHTML.length > 0,
+    'the tab was left rendered but never painted — a blank sheet, exactly what a refresh showed');
+  assert.match(el('rb-pane-design').innerHTML, /rb-paper-size/,
+    'the paper control never got built, so the rail is empty too');
+});
+
+test('a page that opened on another tab pays nothing until the résumé tab is opened', () => {
+  const { el } = loadEditor({ skipBoot: true, panelHidden: true });
+  assert.equal(el('rb-paper').innerHTML, '',
+    'every visitor to Search or Trends now builds and renders a document they never asked for');
 });
