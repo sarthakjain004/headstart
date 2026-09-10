@@ -124,6 +124,27 @@
     return spec.accepts.includes('*') || spec.accepts.includes(childType);
   }
 
+  /* What may sit at the top level of a document. The root has no Component Type of its own, so
+     it cannot answer through `accepts` — and every path that needed the answer therefore made
+     one up. They disagreed: the form's add menu offered `text` and `line` beside a section,
+     while the drag path offered every slot to every dragged node and the model exempted the root
+     from the check entirely. A bullet could be dragged above the header, and the plain-text
+     export — the copy people paste into application forms — then opened with "- Operated our
+     Point of Sale…" and printed the candidate's name on the line below.
+
+     So the rule is written once, here, in shapes rather than types: a résumé is an identity
+     block, then titled sections with free paragraphs and labelled lines between them. Entries
+     live in sections and bullets in entries, and neither is a thing a page is made of. A
+     component added later inherits the answer from the shape it wears. */
+  const ROOT_SHAPES = Object.freeze(['header', 'text', 'section', 'line']);
+
+  /** Whether `childType` may sit at the document root — the one rule, read by the form's add
+   *  menu, by the drag path's drop points, and by the model's own move guard. */
+  function acceptsAtRoot(childType) {
+    const spec = get(childType);
+    return !!spec && ROOT_SHAPES.includes(spec.shape);
+  }
+
   /** A blank content record for a type — every declared field present, so the editor never has
    *  to distinguish "field absent" from "field empty". */
   function blankContent(type) {
@@ -301,5 +322,7 @@
     ],
   });
 
-  root.ResumeComponents = { SHAPES, KINDS, define, get, all, has, accepts, blankContent };
+  root.ResumeComponents = {
+    SHAPES, KINDS, ROOT_SHAPES, define, get, all, has, accepts, acceptsAtRoot, blankContent,
+  };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
