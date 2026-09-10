@@ -119,7 +119,7 @@ pass now does the same thing with the same helper:
   it — the two carried the same two numbers, and a second near-synonym line double-counted every
   Board for anything grepping them.
 - The classes shown always total the loss count: anything that escaped labelling is reported as
-  `unclassified xN`, so `(HTTP 404 x10)` on a 3,536-loss Board can never read as the explanation.
+  `unlabelled xN`, so `(HTTP 404 x10)` on a 3,536-loss Board can never read as the explanation.
 
 The line is worded to `_paginate`'s shape — `N of M thing(s) failed mid-crawl (…) — tail` — so one
 regex reads both passes and the noun says which. The tail is narrow on purpose: it asserts only

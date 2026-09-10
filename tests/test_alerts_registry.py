@@ -86,25 +86,63 @@ def test_a_denial_is_remembered_so_the_gate_cannot_be_reopened():
     assert reg.Registry.from_dict({"master": "1"}).denied == []
 
 
-def test_an_unreachable_hub_is_loud_where_a_first_run_is_not(monkeypatch, caplog):
-    """Both start empty; only the level and the message separate them.
+def _read_raising(exc):
+    """A `read_bytes` that fails the way one real failure mode fails."""
 
-    `bot.main` *saves* whatever `load` returned, so a read blip that reads as "first run"
-    erases the master and everyone pending — and the next `/start` claims the master seat,
-    with `/allow`, `/deny` and `/revoke` behind it, every 15 minutes. `LocalEntryNotFound
-    Error` subclasses `EntryNotFoundError` while meaning the opposite, so the split is drawn
-    by `store._is_absent` rather than by an `isinstance` on the parent.
+    def read(repo, path, token):
+        raise exc
+
+    return read
+
+
+def test_an_unreadable_registry_is_loud_and_names_what_it_will_erase(
+    monkeypatch, caplog
+):
+    """The branch that destroys state, pinned under the deps CI actually installs.
+
+    `bot.main` *saves* whatever `load` returned, so a read that fails and answers "starting
+    empty" erases the master and everyone pending — and the next `/start` claims the master
+    seat, with `/allow`, `/deny` and `/revoke` behind it, every 15 minutes.
+
+    A plain exception rather than one of the Hub's, on purpose: `store._is_absent` answers False
+    for anything that is not the Hub's own `EntryNotFoundError`, and False again when
+    `huggingface_hub` is not importable at all — so this reaches the loud branch with nothing but
+    `.[dev]` installed. That is what makes it a CI check. `huggingface_hub` sits in the `alerts`
+    extra and CI installs `.[dev]` alone, so the test below skips there; before this one existed,
+    the only behaviour that can erase the bot's state was pinned on a developer's laptop and
+    nowhere else, and a green CI said nothing about it.
     """
-    hub_errors = pytest.importorskip("huggingface_hub.errors")
+    monkeypatch.setattr(reg, "read_bytes", _read_raising(Exception("connection reset")))
+    with caplog.at_level(logging.DEBUG, logger="headstart.alerts.registry"):
+        assert reg.load(REPO, TOKEN) == reg.Registry()
 
-    def raising(exc):
-        def read(repo, path, token):
-            raise exc
+    unreadable = caplog.records[-1]
+    assert unreadable.levelno == logging.ERROR, (
+        "an ::error:: annotation on the run, not a line in a scroll nobody reads"
+    )
+    assert (
+        unreadable.exc_info is not None
+    )  # the traceback is the only clue to which read
+    # The consequence, not just the symptom — this empty Registry is about to be persisted.
+    assert "SAVED OVER" in unreadable.getMessage()
 
-        return read
+
+def test_an_unreachable_hub_is_not_filed_as_a_first_run(monkeypatch, caplog):
+    """Where the line falls between "no such record" and "no answer" — both start empty.
+
+    Only the level and the message separate them. `LocalEntryNotFoundError` subclasses
+    `EntryNotFoundError` while meaning the opposite, so the split is drawn by `store._is_absent`
+    rather than by an `isinstance` on the parent — and only the real classes can prove that
+    holds, which is why this half keeps an `importorskip` and does not run in CI. What the loud
+    side then *says* is pinned by the test above, which does.
+    """
+    hub_errors = pytest.importorskip(
+        "huggingface_hub.errors",
+        reason="the real exception hierarchy; CI installs `.[dev]`, which has no huggingface_hub",
+    )
 
     monkeypatch.setattr(
-        reg, "read_bytes", raising(hub_errors.EntryNotFoundError("gone"))
+        reg, "read_bytes", _read_raising(hub_errors.EntryNotFoundError("gone"))
     )
     with caplog.at_level(logging.DEBUG, logger="headstart.alerts.registry"):
         assert reg.load(REPO, TOKEN) == reg.Registry()
@@ -114,17 +152,15 @@ def test_an_unreachable_hub_is_loud_where_a_first_run_is_not(monkeypatch, caplog
 
     caplog.clear()
     monkeypatch.setattr(
-        reg, "read_bytes", raising(hub_errors.LocalEntryNotFoundError("unreachable"))
+        reg,
+        "read_bytes",
+        _read_raising(hub_errors.LocalEntryNotFoundError("unreachable")),
     )
     with caplog.at_level(logging.DEBUG, logger="headstart.alerts.registry"):
         assert reg.load(REPO, TOKEN) == reg.Registry()
-    unreachable = caplog.records[-1]
-    assert unreachable.levelno == logging.ERROR
-    assert (
-        unreachable.exc_info is not None
-    )  # the traceback is the only clue to which read
-    # The consequence, not just the symptom — this empty Registry is about to be persisted.
-    assert "SAVED OVER" in unreachable.getMessage()
+    assert caplog.records[-1].levelno == logging.ERROR, (
+        "an unreachable Hub read as an absent record is how the master seat is lost"
+    )
 
 
 def test_a_broken_install_is_not_reported_as_an_absent_registry(monkeypatch):

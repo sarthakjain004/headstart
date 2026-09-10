@@ -4,6 +4,8 @@
 replies out.
 """
 
+import logging
+
 import pytest
 
 from headstart.alerts import bot
@@ -294,3 +296,114 @@ def test_allow_still_rejects_an_id_that_never_asked():
     assert [chat for chat, _ in replies] == [MASTER]
     assert "isn't waiting" in replies[0][1]
     assert store.get(chat_subscription_id("99999")) is None
+
+
+def _wire_main(monkeypatch, updates, registry=None, store=None):
+    """`main`'s collaborators replaced: the Hub-backed registry, the store, and polling.
+
+    The bot resolves all three by importing them *inside* `main`, so the patches land on the
+    modules rather than on `bot`'s namespace. Returns the registry so a test can read the
+    offset back.
+    """
+    from headstart import telegram_bot_api
+    from headstart.alerts import registry as registry_store
+
+    registry = registry or Registry(master=MASTER)
+    for name in ("TELEGRAM_BOT_TOKEN", "SUBSCRIBERS_REPO", "SUBSCRIBERS_TOKEN"):
+        monkeypatch.setenv(name, "set")
+    monkeypatch.setattr(registry_store, "load", lambda repo, token: registry)
+    monkeypatch.setattr(registry_store, "save", lambda repo, token, reg: None)
+    monkeypatch.setattr(bot, "Store", lambda repo, token: store or _Store())
+
+    class _Polling:
+        def __init__(self, token):
+            pass
+
+        def get_updates(self, offset=0):
+            return updates
+
+    monkeypatch.setattr(telegram_bot_api, "TelegramClient", _Polling)
+    return registry
+
+
+def test_a_broken_handle_costs_one_annotation_not_one_per_update(monkeypatch, caplog):
+    """ADR-0039: WARNING and ERROR are both GitHub annotations, capped at 10 per step.
+
+    A break in `handle` breaks on every update of the same shape, and the bot polls every
+    fifteen minutes — so this arm is systemic, and unbounded it would spend a whole day's
+    annotation budget restating one bug. The offset has already advanced when it fires, so the
+    update cannot be replayed to find out where `handle` broke: the one stack is the only
+    record of that, and every line still has to name the update it lost.
+    """
+    updates = [_update(ADA, "/status", update_id=n) for n in range(7)]
+    _wire_main(monkeypatch, updates)
+
+    def _broken(update, registry, store):
+        raise KeyError("chat")
+
+    monkeypatch.setattr(bot, "handle", _broken)
+    # The bound is module-level, so it spans the process rather than one call — which is the
+    # point in production (one process per poll) and means a test has to start it unfired.
+    monkeypatch.setattr(bot._UPDATE_FAILURE, "_fired", False)
+    caplog.set_level(logging.INFO, logger="headstart.alerts.bot")
+
+    # A `handle` break produces no reply to fail, so the run is not red — `failed` counts
+    # send failures only, and the summary line is what says the updates were dropped.
+    assert bot.main() == 0
+
+    reported = [r for r in caplog.records if "failed:" in r.getMessage()]
+    assert len(reported) == 7, "every dropped update is still reported"
+    assert [r.levelno for r in reported] == [logging.WARNING] + [logging.INFO] * 6
+    # `bool`, not `is not None`: `logging` keeps an `exc_info=False` as False on the record.
+    assert [bool(r.exc_info) for r in reported] == [True] + [False] * 6, (
+        "one stack, not seven"
+    )
+    assert [r.getMessage().split(" ")[1] for r in reported] == [
+        str(n) for n in range(7)
+    ]
+    # The exception's own `str` — this line states no `type(exc).__name__`, unlike
+    # `alerts/run.py`'s, so a `KeyError` reaches the log as a bare `'chat'`.
+    assert all("'chat'" in r.getMessage() for r in reported)
+
+
+def test_a_telegram_outage_costs_one_annotation_not_one_per_reply(monkeypatch, caplog):
+    """The same bound on the other arm, which a separate `FirstOnly` instance owns.
+
+    A bad token or a Telegram outage fails every reply in the batch, so one warning names the
+    outage and the rest state the identical line at INFO — each still naming its recipient, by
+    the hash the store keys on rather than the chat id itself. Two instances rather than one
+    because sharing would let whichever arm fired first silence the other.
+    """
+    chats = [str(3000 + n) for n in range(7)]
+    updates = [_update(ADA, "/status", update_id=n) for n in range(7)]
+    _wire_main(monkeypatch, updates)
+    monkeypatch.setattr(
+        bot,
+        "handle",
+        lambda update, registry, store: [(chats[update["update_id"]], "hi")],
+    )
+
+    from headstart.alerts import telegram as sender
+
+    def _down(token, chat_id, chunks, **kwargs):
+        raise sender.TelegramError("400 Bad Request: chat not found")
+
+    monkeypatch.setattr(sender, "send", _down)
+    monkeypatch.setattr(bot._REPLY_FAILURE, "_fired", False)
+    caplog.set_level(logging.INFO, logger="headstart.alerts.bot")
+
+    assert bot.main() == 1, "the run must still go red"
+
+    reported = [r for r in caplog.records if "FAILED" in r.getMessage()]
+    assert len(reported) == 7, "every undelivered reply is still reported"
+    assert [r.levelno for r in reported] == [logging.WARNING] + [logging.INFO] * 6
+    assert [bool(r.exc_info) for r in reported] == [True] + [False] * 6, (
+        "one stack, not seven"
+    )
+    assert [r.getMessage().split(" ")[2] for r in reported] == [
+        chat_subscription_id(chat) for chat in chats
+    ]
+    assert all("chat not found" in r.getMessage() for r in reported)
+    assert any("7 failed" in r.getMessage() for r in caplog.records), (
+        "the summary still says how many there were"
+    )

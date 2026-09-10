@@ -58,12 +58,21 @@ buried barely moves between those runs, 376 lines against 383, so the signal was
 ~380 sitting under 5-6x its own volume.
 
 Those four now log at INFO, the default level, so the shard log still carries them in order and
-``scripts/runlog/fanout_retries.py`` still counts them; only the annotation goes. A rotation that
-*fails*, a dial that never answers and :func:`mark_walled` keep theirs, and :func:`report`
-annotates aggregate rotation health once per shard — the right granularity for one. This is not a
-claim that every remaining warning earns its annotation (:func:`proxy_url`'s success line is as
-routine as these were); it is that these four could not be found among their own volume. Do not
-promote them back without a reason that survives that ratio.
+``scripts/runlog/fanout_retries.py`` still counts them; only the annotation goes. :func:`report`
+carries aggregate rotation health once per shard — the right granularity for one. Do not promote
+them back without a reason that survives that ratio.
+
+**The failure lines are bounded rather than demoted**, because a WARP that is broken is exactly
+what an annotation is for. They are per-*request* all the same — every one of them sits on the
+retry path, so a flapping daemon re-emits them for as long as it flaps — so they share
+:data:`_TUNNEL_LOST` and :data:`_WARP_OFF` (``log.FirstOnly``): the first warns and carries its
+stack, the rest keep every detail at INFO. Measured on a stubbed flapping daemon, 50 rotation
+cycles: 150 annotations before, 1 after. :func:`proxy_url`'s *success* line went the way of the
+four above — this module's earlier note conceded it was "as routine as these were" and then left
+it at WARNING, and it is re-armed by every failed rotation, so it was never one per process.
+:func:`mark_walled` keeps its annotation unbounded, because it already is bounded: it fires once
+per *group*, and a group is an ATS that sets ``egress_fallback_on`` — eightfold, workday and
+workable, so three per shard at the ceiling, not one per Board.
 """
 
 from __future__ import annotations
@@ -121,6 +130,26 @@ _POLL = 1.0
 _lock = threading.Lock()
 _resolved = False
 _proxy: str | None = None
+
+#: The annotation bounds (`log.FirstOnly`) for the lines a broken WARP emits. Everything below
+#: sits on the retry path, so its population is *requests*, not processes: `rotate` runs once per
+#: walled request and is bounded only by :data:`_ROTATION_COOLDOWN` — ~720 per 60-minute shard
+#: against GitHub's 10-per-step annotation quota, which is what ADR-0039's amendment forbids.
+#:
+#: :data:`_TUNNEL_LOST` is shared by every "there is no working tunnel right now" line — the dial,
+#: the rotation, and both rotation levers — because one fault fires several of them in turn rather
+#: than one each. Measured on a stubbed daemon that restarts but never brings SOCKS5 back, 50
+#: rotation cycles: `rotate` warns, then clearing `_resolved` re-arms `proxy_url`, whose re-dial
+#: warns twice more, for 150 annotations from one fault. A machine that cannot run `sudo` pays two
+#: per rotation, the restart lever and the re-registration one. Sharing one instance is what makes
+#: an incident cost one annotation instead of three; the rest keep their detail at INFO.
+#:
+#: :data:`_WARP_OFF` stays separate for `alerts/bot.py`'s reason: it reports a *different* fault —
+#: a tunnel that answers but is not tunnelling, so the traffic is leaving on the spent origin
+#: anyway — and sharing one instance would let whichever fired first silence the other. Of the
+#: two, the one worth protecting is the silent one.
+_TUNNEL_LOST = log.FirstOnly(_log)
+_WARP_OFF = log.FirstOnly(_log)
 
 
 def _call(*args: str, timeout: float) -> subprocess.CompletedProcess[str] | None:
@@ -211,7 +240,9 @@ def _connect() -> str | None:
         # Safe for hosts with no AAAA: WARP resolves, finds only A records, and egresses IPv4
         # exactly as before — verified against `api.lever.co` and Workday, both IPv4-only.
         return f"socks5h://127.0.0.1:{_PORT}"
-    _log.warning(
+    # Bounded, not per-dial: this is not one dial per process. `rotate` clears `_resolved` when
+    # SOCKS5 does not come back, so a flapping daemon re-enters here on every walled request.
+    _TUNNEL_LOST.report(
         f"spare egress: dialled but the SOCKS5 listener did not answer within "
         f"{_CONNECT_TIMEOUT:.0f}s — staying on the direct route"
     )
@@ -239,11 +270,14 @@ def proxy_url() -> str | None:
         took = time.monotonic() - started
         connected = _proxy
         if _proxy:
-            _log.warning(
-                f"spare egress: connected in {took:.1f}s, routing via {_proxy}"
-            )
+            # INFO, on the module docstring's own reasoning: this is a *success*, "as routine as"
+            # the four rotation lines that were demoted with it, and it is not one per process
+            # either — a rotation that loses SOCKS5 clears `_resolved`, so a flapping daemon
+            # re-announces every reconnection. What the run page loses, `report`'s "egress
+            # addresses: N distinct ... via colo X" line already carries into the step summary.
+            _log.info(f"spare egress: connected in {took:.1f}s, routing via {_proxy}")
         else:
-            _log.warning(
+            _TUNNEL_LOST.report(
                 f"spare egress: unavailable after {took:.1f}s — every walled Board this run "
                 f"stays on the spent origin"
             )
@@ -876,7 +910,7 @@ def rotate(board: str | None = None, *, deadline: float | None = None) -> bool:
                 # Do NOT pin the process to the direct route. Clearing `_resolved` alongside
                 # `_proxy` is what lets a later caller re-dial; leaving it set would make one bad
                 # rotation permanent, which is strictly worse than never having rotated.
-                _log.warning(
+                _TUNNEL_LOST.report(
                     "spare egress: rotated but SOCKS5 did not come back — direct for now, "
                     "will re-dial"
                 )
@@ -963,7 +997,7 @@ def _observe_egress_ip() -> None:
     # `warp=off` means the trace did not travel the tunnel, so the address is the direct one and
     # would be a lie in this log line. Say so rather than record it as an egress address.
     if fields.get("warp", "on") == "off":
-        _log.warning(
+        _WARP_OFF.report(
             "spare egress: trace reports warp=off — not recording a direct address"
         )
         with _rotation_lock:
@@ -1000,11 +1034,16 @@ def egress_ips() -> Counter[str]:
 #: local development, where the same rotation is wanted when a Board walls a sweep.
 #:
 #: Both need root, and that is not an oversight of either init system — the daemon is a system
-#: service in both. Measured 2026-08-25 on macOS 15: **every** unprivileged `warp-cli` lever
-#: leaves the egress IP exactly where it was — `tunnel rotate-keys` reports Success and does not
-#: move it, `disconnect`+`connect` does not move it (the same no-op ADR-0067 measured on Linux),
-#: `tunnel protocol set` does not move it, and `tunnel endpoint set` does not rotate but breaks
-#: the tunnel outright. So there is no unprivileged path to a fresh IP, and a restart it is.
+#: service in both. Measured 2026-08-25 on macOS 15, every unprivileged `warp-cli` lever *tried
+#: then* left the egress IP exactly where it was — `tunnel rotate-keys` reports Success and does
+#: not move it (it answers `Error(503)` outright on warp-cli 2026.7), `disconnect`+`connect` does
+#: not move it (the same no-op ADR-0067 measured on Linux), `tunnel protocol set` does not move
+#: it, and `tunnel endpoint set` does not rotate but breaks the tunnel outright.
+#:
+#: **That list concluded "there is no unprivileged path to a fresh IP". It was too strong**, and
+#: :func:`_reregister` is the counter-example it missed: a new *registration* moves the address
+#: without root (measured 2026-09-08, same platform). Read this block as what it is — the reason
+#: the *restart* needs root — not as a claim about every lever there is.
 #:
 #: The restart itself was then confirmed to rotate on macOS — the claim that matters, and one
 #: #289 could only argue by analogy because rotation needs a passwordless sudoers entry that did
@@ -1025,17 +1064,60 @@ _RESTART_COMMAND = {
 }
 
 
-def _restart_daemon() -> bool:
-    """Restart the WARP daemon under ``sudo -n``. False — logged, never raised — on any failure.
+def _reregister() -> bool:
+    """Rotate by taking a **new WARP registration**, which needs no privileges at all.
 
-    Unsupported platforms return False rather than guessing at a command, which costs the caller
-    one bounded attempt and leaves the spare egress itself intact — the same contract every other
-    failure path here keeps.
+    The unprivileged lever :data:`_RESTART_COMMAND`'s note says does not exist. That note is
+    accurate about what it tested — ``tunnel rotate-keys``, ``disconnect``+``connect``, ``tunnel
+    protocol set``, ``tunnel endpoint set`` — and this is simply not on that list. Measured
+    2026-09-08 on macOS 15, warp-cli 2026.7.1343.0, five observations across four cycles:
+
+    | resolution | distinct egress addresses |
+    | --- | --- |
+    | IPv6 (``socks5h``, so WARP resolves) | **5 of 5** |
+    | IPv4 (``socks5``, so we resolve) | 3 of 5 — ``.169``, ``.174``, ``.169``, ``.169``, ``.175`` |
+
+    Which is the same split `docs/spare-egress/how-warp-egress-works.md` measured for the daemon
+    restart, and for the same reason: the family decides the pool depth, not the lever. So this is
+    a *peer* of the restart rather than a lesser substitute — on a host publishing AAAA it moves
+    the address every time.
+
+    ``registration new`` refuses while the old one stands (``Old registration is still around``),
+    so the delete is required rather than tidy. That ordering is the one risk here: between the two
+    calls this device has no registration, and a failed ``new`` leaves it that way. Acceptable only
+    because every caller is a rotation the privileged path has *already* failed — the alternative
+    on offer is not a working tunnel, it is no rotation at all — and because `rotate` re-dials from
+    scratch afterwards, so a lost registration costs one bounded attempt rather than the run.
+
+    ``tunnel rotate-keys``, the obvious cheaper cousin, answers ``Error(503)`` here and moves
+    nothing; it stays untried.
+    """
+    if not _run("registration", "delete"):
+        return False
+    if not _run("registration", "new"):
+        _TUNNEL_LOST.report(
+            "spare egress: registration deleted but not replaced — re-dialling from scratch"
+        )
+        return False
+    return True
+
+
+def _restart_daemon() -> bool:
+    """Move to a new egress, privileged path first. False — logged, never raised — on any failure.
+
+    Two levers, tried in that order because they are not equivalent in cost: the daemon restart
+    keeps this device's registration and takes ~2s, while :func:`_reregister` throws the
+    registration away to get the same thing. So the restart is the one to want, and re-registering
+    is what a machine *without* passwordless sudo — every developer laptop here — gets instead of
+    nothing. An unsupported platform still has the second lever, since ``warp-cli`` is the same
+    everywhere; only the restart recipe is per-platform.
     """
     command = _RESTART_COMMAND.get(sys.platform)
     if command is None:
-        _log.info(f"spare egress: rotation unavailable (no recipe for {sys.platform})")
-        return False
+        _log.info(
+            f"spare egress: no restart recipe for {sys.platform} — re-registering instead"
+        )
+        return _reregister()
     try:
         proc = subprocess.run(
             ["sudo", "-n", *command],
@@ -1045,12 +1127,21 @@ def _restart_daemon() -> bool:
             timeout=_CALL_TIMEOUT,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        _log.warning(f"spare egress: rotation unavailable ({type(exc).__name__})")
-        return False
+        # The first one carries the traceback `type(exc).__name__` alone never had — which is the
+        # whole reason to keep an annotation here rather than demote this to INFO beside its
+        # exit-code twin below: a `sudo` that cannot be *run* names a broken runner, and the
+        # stack says which call failed and how.
+        _TUNNEL_LOST.report(
+            f"spare egress: daemon restart unavailable ({type(exc).__name__})"
+        )
+        return _reregister()
     if proc.returncode != 0:
         detail = (proc.stderr or "").strip().replace("\n", " ")[:160]
-        _log.warning(f"spare egress: rotation failed (exit {proc.returncode}) {detail}")
-        return False
+        _log.info(
+            f"spare egress: daemon restart failed (exit {proc.returncode}) {detail} "
+            f"— re-registering instead"
+        )
+        return _reregister()
     return True
 
 
@@ -1087,7 +1178,14 @@ def reset() -> None:
         _last_egress_ip, \
         _inflight, \
         _drain_cap_seen, \
-        _drains_capped
+        _drains_capped, \
+        _TUNNEL_LOST, \
+        _WARP_OFF
+    # Both bounds are module-level, so without this the first test to trip one demotes it for
+    # every test after it in the same process — a silent pass, since the assertion under test is
+    # "exactly one warning" and zero also satisfies "at most one".
+    _TUNNEL_LOST = log.FirstOnly(_log)
+    _WARP_OFF = log.FirstOnly(_log)
     with _lock:
         _resolved = False
         _proxy = None

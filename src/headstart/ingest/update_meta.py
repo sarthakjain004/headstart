@@ -64,7 +64,6 @@ from headstart.experience import extract, from_field, from_seniority
 from headstart.ingest import (
     PENDING_REDERIVE_PATH,
     REPO_ROOT,
-    observability,
     read_id_list,
 )
 from headstart.ingest.doc_prep import DERIVATIONS_VERSION, META_FIELDS
@@ -502,7 +501,7 @@ def refresh(
 
 def main() -> int:
     log.setup()
-    observability.context("update_meta")
+    log.context("update_meta")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--store", type=Path, default=_STORE)
     parser.add_argument("--source", type=Path, default=_JOBS)

@@ -31,18 +31,16 @@ Each is run as ``python -m headstart.ingest.<module>``. They live here rather th
 makes them unit-testable without ``importlib`` path-loading, and keeps the run's fourteen entry
 points from being scattered across five ``scripts/`` subdirs mixed in with R&D scripts.
 
-Alongside them, the pipeline's own helper modules. One of them is now read from outside the
-package: ``alerts/run.py`` imports ``observability.named_sample`` for its post-loop summary line.
-That is allowed — the rule CLAUDE.md fixes is narrower than "nothing imports ``ingest``", and it
-still holds: the **curated feed** (``python -m headstart`` -> ``harvest``) may never reach in
-here, and ``alerts`` is not the feed::
+Alongside them, the helper modules with no consumer outside this package::
 
     binpack        LPT packing + shard sizing, shared by both planners
     board_failures The consecutive-gone quarantine ledger (ADR-0058), written in the join
                    and read by scrape_plan
     doc_prep       Doc build / English gate / typed metadata, shared by embed_run and embed_plan
     index_plan     Pure add-evict and prune planners for the jobs table (no LanceDB import)
-    observability  Run context, step summaries, and the shard-report round trip
+    observability  Step summaries, the shard-report round trip, and the error summary
+                   (the run-context line moved to ``headstart.log.context``, which
+                   ``alerts/`` needs too and cannot reach from here)
     role_assignments  The id->family snapshot and the transitions between them (ADR-0057)
     shard_speedup  The measured fan-out speedup the makespan divides by (ADR-0054)
 

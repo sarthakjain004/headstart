@@ -21,6 +21,12 @@ on:
     paths:
       - "src/headstart/ingest/**"
       - ".github/workflows/pipeline-smoke.yml"
+      # The embed stage runs a real encoder, so its dependencies decide whether this passes as
+      # much as the stage code does — and a version resolved transitively is not visible in any
+      # diff. Measured 2026-09-10: transformers 6.0.1 broke nomic's remote modeling code, the
+      # monolith embedded 0 of 16, and the pin that fixed it touched only this file, so the run
+      # that would have proved the fix never fired.
+      - "pyproject.toml"
 
 permissions:
   contents: read

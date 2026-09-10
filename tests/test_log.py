@@ -5,7 +5,9 @@ are pinned here once: tag derivation, the WARNING/ERROR renderings (plain vs Git
 annotation), the HEADSTART_LOG level switch, and setup idempotence.
 """
 
+import ast
 import logging
+import pathlib
 
 import pytest
 
@@ -135,3 +137,166 @@ def test_a_record_without_exc_info_is_unchanged(monkeypatch):
     """The traceback branch must not perturb the ~200 call sites that pass no exception."""
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     assert log._Formatter().format(_record()).endswith(" [scrape_run] hello")
+
+
+def test_first_only_spends_one_annotation_and_one_stack(caplog):
+    """N occurrences of one systemic fault cost exactly one WARNING and exactly one traceback.
+
+    Both halves matter, and they are one test on purpose: ``index_plan``'s hand-rolled version
+    of this bounded the level and left ``exc_info=True`` unconditional, so a scraper whose
+    ``board_key`` started raising still printed a full stack per Board. Asserting only the
+    WARNING count would have passed against that bug.
+    """
+    guard = log.FirstOnly(logging.getLogger("headstart.test_first_only"))
+    with caplog.at_level(logging.INFO, logger="headstart.test_first_only"):
+        for i in range(50):
+            try:
+                raise ValueError("the boom")
+            except ValueError:
+                guard.report(f"board {i}: no board_key")
+
+    assert len(caplog.records) == 50
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert [r.getMessage() for r in warnings] == ["board 0: no board_key"]
+    assert [r for r in caplog.records if r.exc_info] == warnings
+    assert all(r.levelno == logging.INFO for r in caplog.records[1:])
+
+
+def test_first_only_outside_an_except_block_carries_no_traceback(caplog):
+    """A threshold tripping is not a failure, and `exc_info=True` with no live exception renders
+    ``NoneType: None`` — a stack-shaped line saying nothing. Every site of this idiom that
+    reports a condition rather than a caught exception (workday's detail-loss tally,
+    `spare_egress`'s tunnel checks) is exactly that shape, so the helper has to hold there
+    too."""
+    guard = log.FirstOnly(logging.getLogger("headstart.test_first_only_bare"))
+    with caplog.at_level(logging.INFO, logger="headstart.test_first_only_bare"):
+        guard.report("over the loss share")
+        guard.report("over the loss share")
+
+    assert [r.levelno for r in caplog.records] == [logging.WARNING, logging.INFO]
+    assert not any(r.exc_info for r in caplog.records)
+
+
+def test_first_only_inherits_an_unrelated_exception_from_up_the_stack(caplog):
+    """The documented limit, pinned: `exc_info` detection is thread-wide, not per-frame.
+
+    `FirstOnly.report` asks `sys.exc_info()`, exactly as `logging`'s own `exc_info=True` does,
+    and that answers "what is this *thread* handling", not "what is my caller handling". So a
+    site with no `except` of its own still attaches whatever stack is live above it — here a
+    transport blip three frames up, on a line reporting a detail-loss threshold.
+
+    Latent rather than live: most `.report` sites sit lexically inside the `except` they report
+    on, and the ones that do not (`scrapers/workday.py`'s detail-loss tally, the shape below,
+    and `spare_egress`'s tunnel checks) have a clean chain today. The class docstring carries
+    the census — recomputed by the test below, not remembered — and this pins the behaviour it
+    describes, so that a later change
+    making the code match the *original* claim — that a site with no failure of its own gets a
+    bare line — fails here loudly instead of quietly widening behaviour nobody re-read.
+    """
+    guard = log.FirstOnly(logging.getLogger("headstart.test_first_only_inherited"))
+
+    def over_the_loss_share():  # no `except` here — workday.py's shape
+        guard.report("acme: 900 of 1000 detail(s) failed mid-crawl")
+
+    with caplog.at_level(logging.INFO, logger="headstart.test_first_only_inherited"):
+        try:
+            raise ConnectionResetError("an unrelated transport blip three frames up")
+        except ConnectionResetError:
+            over_the_loss_share()
+
+    (record,) = caplog.records
+    assert record.levelno == logging.WARNING
+    assert record.exc_info is not None, (
+        "inherited, not suppressed — the documented behaviour"
+    )
+    assert record.exc_info[0] is ConnectionResetError
+
+
+def _report_sites() -> tuple[int, list[str]]:
+    """Every ``FirstOnly.report()`` call in the package, and the files of those not in an
+    ``except`` — read with ``ast``, never imported (CI installs base deps only)."""
+    root = pathlib.Path(log.__file__).parent
+    total, outside = 0, []
+    for path in sorted(root.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        bound = {
+            target.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Assign)
+            and isinstance(node.value, ast.Call)
+            and ast.unparse(node.value.func) == "log.FirstOnly"
+            for target in node.targets
+            if isinstance(target, ast.Name)
+        }
+        guarded = {
+            id(child)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ExceptHandler)
+            for stmt in node.body
+            for child in ast.walk(stmt)
+        }
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "report"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id in bound
+            ):
+                total += 1
+                if id(node) not in guarded:
+                    outside.append(path.relative_to(root).as_posix())
+    return total, outside
+
+
+def test_the_first_only_docstring_census_is_recomputed_not_remembered():
+    """The class docstring counts its own call sites, and that count has shipped stale.
+
+    `FirstOnly`'s traceback caveat turns on how many `.report` sites sit inside the `except`
+    they report on, and the sentence saying so was written when there were six — in the same
+    commit that took the census to nine. A number in prose cannot notice the tenth site, so it
+    is recomputed here instead: this fails the moment a site is added, which is exactly when
+    the caveat needs re-reading.
+    """
+    total, outside = _report_sites()
+    assert total, (
+        "found no `.report` sites at all — this scan has stopped matching them"
+    )
+    assert (
+        f"{total - len(outside)} of the {total} call sites" in log.FirstOnly.__doc__
+    ), (
+        f"`FirstOnly`'s docstring names a different census than the source has: "
+        f"{total - len(outside)} of {total} sites are inside an `except`"
+    )
+    assert "scrapers/workday.py" in outside, (
+        "the docstring names workday's detail-loss tally as the original site with no `except` "
+        f"of its own, and the source no longer agrees: {sorted(set(outside))}"
+    )
+
+
+def test_context_is_silent_off_ci(monkeypatch, caplog):
+    """Off CI there is no run to correlate, so the line would be noise in every local run."""
+    monkeypatch.delenv("GITHUB_RUN_ID", raising=False)
+    log.context("scrape_run")
+    assert not caplog.records
+
+
+def test_context_names_the_run_and_carries_its_extras(monkeypatch, caplog):
+    """The whole point of the line: which run, which attempt, which commit — and which shard,
+    since fifteen concurrent producers write into one log. An extra that is `None` is dropped
+    rather than rendered as `shard=None`, so a non-fanned-out stage says nothing about shards."""
+    for name, value in {
+        "GITHUB_RUN_ID": "32671773723",
+        "GITHUB_RUN_ATTEMPT": "2",
+        "GITHUB_SHA": "674b0679d4e0ab0f2f6e5b6a1c8a9d0e1f2a3b4c",
+    }.items():
+        monkeypatch.setenv(name, value)
+    caplog.set_level(logging.INFO, logger="headstart.log")
+
+    log.context("scrape_run", shard=3, held=None)
+
+    (record,) = caplog.records
+    assert (
+        record.getMessage()
+        == "stage=scrape_run run=32671773723 attempt=2 sha=674b067 shard=3"
+    )

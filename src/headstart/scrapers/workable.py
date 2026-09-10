@@ -34,8 +34,23 @@ class WorkableScraper(BaseScraper):
         return f"https://apply.workable.com/api/v1/widget/accounts/{self.slug}?details=true"
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
+        listed = raw.get("jobs")
+        if listed is None and "jobs" not in raw:
+            # Only an *absent* container answers here. A ``jobs`` that is present but not a
+            # list falls through and raises, as it did before this guard existed: a loud
+            # Board error keeps the Board out of ADR-0053's eviction scope, where a quiet
+            # `[]` would land it in `boards_ok` and evict its rows two runs later — the
+            # failure this line exists to report, arriving by the path that reports it.
+            # An account with nothing open still answers `{"jobs": []}`, so a widget payload
+            # carrying no `jobs` at all was not *read* — indistinguishable downstream from an
+            # empty board, which is why it gets a line (`note_unreadable_board`). Not marked
+            # truncated: what a container-less payload means here has not been measured, and
+            # ADR-0053's exclusion has no drain, so a wrong guess pins this Board's rows against
+            # eviction on every future run.
+            self.note_unreadable_board("a payload with a `jobs` list", "no `jobs` key")
+            return []
         jobs: list[Job] = []
-        for j in raw.get("jobs", []):
+        for j in listed:
             location = (
                 ", ".join(
                     p for p in (j.get("city"), j.get("state"), j.get("country")) if p

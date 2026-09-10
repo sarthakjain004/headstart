@@ -22,7 +22,7 @@ the 9 min even share", the actual run confirming a straggler is not a new findin
    still hide in the estimated tail.
 3. **The value gate** (ADR-0064, `scrape_plan` only) — `value gate: skipped N Board(s) costing over
    15 min for under 2 tech jobs/min — board (rate/min), ...`. This is the gate *removing* Boards
-   before packing; the sample is `observability.named_sample`, capped at 10 and sorted worst-first,
+   before packing; the sample is `log.named_sample`, capped at 10 and sorted worst-first,
    so a count above 10 is a lower bound on what's shown. The gate is reactive — it can only act on a
    Board that already has a cost row — so a giant on its *first* uncapped run is invisible here and
    shows up only as an actual straggler once (ADR-0077's `dollartree` case, and the `AdeebaEServicesPvtLtd`
@@ -167,7 +167,7 @@ def scrape_plan_report(run: Run) -> None:
             print(f"    {board} ({rate}/min)", flush=True)
         if int(n) > len(boards):
             print(
-                f"    ({len(boards)} of {n} shown — observability.named_sample caps the "
+                f"    ({len(boards)} of {n} shown — log.named_sample caps the "
                 "printed list at 10)",
                 flush=True,
             )

@@ -32,7 +32,6 @@ from headstart import log
 from headstart.ingest import (
     PENDING_UPGRADES_PATH,
     REPO_ROOT,
-    observability,
     read_id_list,
 )
 from headstart.search import DOC_PREFIX, MODEL
@@ -185,7 +184,7 @@ def evict_ids(meta_path: Path, vec_path: Path, dim: int, ids: set[str]) -> int:
 
 def main() -> int:
     log.setup()
-    observability.context("embed_merge")
+    log.context("embed_merge")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--store",

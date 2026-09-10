@@ -28,13 +28,16 @@ from collections.abc import Mapping
 from dataclasses import replace
 
 from headstart import log
-from headstart.ingest import observability
 
 from . import digest, space_query, transports
 from .shortlist import CAP, shortlist
 from .store import Invite, Store, Subscription, now_iso, subscription_id
 
 _log = log.get(__name__, __spec__)
+
+#: The per-Subscription catch-all in `main`, bounded to one annotation per run. Module-level
+#: because the bound has to span the whole loop, and the loop is the run.
+_SUBSCRIPTION_FAILURE = log.FirstOnly(_log)
 
 _REQUIRED = ("SUBSCRIBERS_REPO", "SUBSCRIBERS_TOKEN")
 
@@ -227,6 +230,12 @@ def telegram_subscriptions(store: Store) -> list[Subscription]:
 
 def main() -> int:
     log.setup()
+    # Before the configuration check, not after: a run that skips because a secret is unset is
+    # exactly the one somebody goes looking for later, and without this line its log says
+    # nothing about which run it was. `stage` is this module's own name, the rule every ingest
+    # stage follows — so it reads `stage=run run=…`, the field and the value coinciding because
+    # the module really is called `run`.
+    log.context("run")
     missing = [name for name in _REQUIRED if not os.environ.get(name)]
     if missing:
         _log.info(f"alerts not configured (missing {', '.join(missing)}) - skipping")
@@ -273,10 +282,17 @@ def main() -> int:
             continue
         except Exception as exc:  # noqa: BLE001 — one bad Subscription must not stop the rest
             failed += 1
-            # With the traceback: this is the arm nothing anticipated, so the exception's
-            # own message is rarely enough to say which of `subscription_for`, the search,
-            # the render or the send it came out of.
-            _log.error(f"{sub_id}: FAILED {type(exc).__name__}: {exc}", exc_info=True)
+            # First one with the traceback, the rest at INFO. This is the arm nothing
+            # anticipated, so the exception's own message is rarely enough to say which of
+            # `subscription_for`, the search, the render or the send it came out of — but
+            # what lands here is usually not per-Subscription at all: `space_query` raises
+            # `SearchUnavailable` into it, and a cold Space is cold for every Account at
+            # once, so one stack says what broke and N would say it N times. Every line
+            # still names its Subscription and the exception type, and `failed` plus the
+            # summary below say how many there were.
+            _SUBSCRIPTION_FAILURE.report(
+                f"{sub_id}: FAILED {type(exc).__name__}: {exc}"
+            )
             continue
         sent += bool(count)
         _log.info(
@@ -292,7 +308,7 @@ def main() -> int:
         _log.warning(
             f"{len(email_not_enabled)} allowlisted Account(s) keep Saved sets but have "
             "enabled email on none of them from the Matches tab, so this run delivered "
-            "nothing to them: " + observability.named_sample(sorted(email_not_enabled))
+            "nothing to them: " + log.named_sample(sorted(email_not_enabled))
         )
     _log.info(f"done: {sent} digest(s) sent, {skipped} skipped, {failed} failed")
     return 1 if failed else 0

@@ -45,7 +45,7 @@ from typing import Any
 
 from headstart import fanout_stats, http, log, spare_egress
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper, loss_breakdown
 
 _log = log.get(__name__)
 
@@ -196,8 +196,23 @@ _MAX_LOST_PAGE_SHARE = 0.5
 # INFO count. The same half as `_MAX_LOST_PAGE_SHARE` by analogy, *not* by derivation, and unlike
 # it this only picks a log level — it never fails the crawl and never marks the Board truncated.
 # ADR-0088 has the reasoning for both halves of that; re-set the number from real
-# `failed mid-crawl` lines rather than defending 0.5 on principle.
+# `failed mid-crawl` lines rather than defending 0.5 on principle. The WARNING it selects is
+# itself bounded to one Board per shard — `_DETAIL_LOSS_OVER_SHARE`, below.
 _MAX_LOST_DETAIL_SHARE = 0.5
+
+#: The past-threshold detail report, bounded to one annotation per shard (ADR-0088's 2026-09-08
+#: amendment). The threshold above decides what a Board's gap *is*; this decides how many times a
+#: shard may spend a GitHub annotation saying so.
+#:
+#: Under Actions WARNING is not a level but a quota — 10 per step, 50 per job — and the outage
+#: class this line exists to catch is not per-Board at all: ADR-0115's User-Agent denylist emptied
+#: the detail pass of 102 Boards in one run, so an unbounded line burns the whole budget on ten
+#: samples of one fault and displaces the aborts annotations exist for. One is enough to raise it;
+#: the other 101 INFO lines are how it gets sized.
+#:
+#: Module-level, so the bound is per shard *process* — every Board builds its own scraper, so an
+#: instance attribute would bound nothing (`log.FirstOnly`'s own note on where to put one).
+_DETAIL_LOSS_OVER_SHARE = log.FirstOnly(_log)
 
 # A whole sub-site can list live postings whose CXS details ALL 404 (ADR-0099): iheartmedia's
 # eight sub-sites ran 12/12 pipeline runs at 100% detail loss (2,900+ details), reproduced from a
@@ -900,7 +915,7 @@ class WorkdayScraper(BaseScraper):
         ``ValueError`` deliberately, not bare ``except``: it covers what a malformed body raises
         (``JSONDecodeError`` and ``UnicodeDecodeError`` both subclass it) without swallowing a
         real defect. A body that parses but isn't an object raises ``AttributeError`` instead and
-        is left alone — rarer, and it lands in the ``unclassified`` bucket rather than vanishing.
+        is left alone — rarer, and it lands in the ``unlabelled`` bucket rather than vanishing.
         """
         try:
             return self._extract_detail(response)
@@ -950,6 +965,20 @@ class WorkdayScraper(BaseScraper):
         this is reported, not retried. It is also uncosted: the Job it makes is titled "Untitled",
         which `tech_filter.classify` drops, so it never reaches the description store or the index.
         Full write-up: ``docs/workday/2026-09-09_parser-shaped-detail-losses.md``.
+
+        The parenthesis is formatted by that shared helper rather than here. This function used to
+        build its own, and the two had drifted within a commit — ``unclassified`` against
+        ``unlabelled`` for the same residual, a bare ``…`` against a tail that states its size —
+        so one fact had two spellings and the poorer one was the copy. What is workday's own is
+        the ``classes`` Counter it feeds it, which is richer than
+        :meth:`~BaseScraper.note_detail_loss`'s — and the invariant that makes the helper's
+        residual meaningful here: every label is recorded on a path that also yields ``None``,
+        so the tally can only ever fall *short* of ``missing``, never overshoot it.
+
+        The level is bounded as well as thresholded (ADR-0088's 2026-09-08 amendment): past
+        ``_MAX_LOST_DETAIL_SHARE`` the *first* Board in the process warns and the rest report at
+        INFO, because the outage that trips this trips it on every affected Board at once and a
+        GitHub annotation is a quota. ``_DETAIL_LOSS_OVER_SHARE`` carries the reasoning.
         """
         recovered = classes.pop(_PAGE_RECOVERED, 0)
         if recovered:
@@ -994,30 +1023,19 @@ class WorkdayScraper(BaseScraper):
         missing = sum(1 for detail in details if detail is None) - no_url
         if not missing:
             return
-        # Every label is recorded on a path that also yields None, so the tally can only fall
-        # *short* of `missing` — and it does whenever a loss escaped labelling. Naming the
-        # remainder stops "(HTTP 404 x10)" on a 3,536-loss Board reading as the explanation.
-        tally = Counter(classes)
-        unclassified = missing - sum(tally.values())
-        if unclassified > 0:
-            tally["unclassified"] = unclassified
-        # Only the four largest are shown (as `_paginate` does — the shape is what's wanted, not
-        # a long tail), so the trailing "…" marks the times that is a sample rather than the
-        # whole tally. Without it a truncated list reads as a complete account of `missing`.
-        shown = tally.most_common(4)
-        why = ", ".join(f"{cls} x{n}" for cls, n in shown)
-        if len(tally) > len(shown):
-            why += ", …"
-        report = (
-            _log.warning
-            if missing / len(details) > _MAX_LOST_DETAIL_SHARE
-            else _log.info
-        )
-        report(
+        line = (
             f"{self.board_key()}: {missing} of {len(details)} detail(s) failed mid-crawl"
-            + (f" ({why})" if why else "")
+            + loss_breakdown(classes, missing)
             + " — not a truncation (the listing pass reports its own)"
         )
+        # The threshold still decides which channel a Board's gap goes down, and the counts in
+        # the line say which side of it every Board fell on. What it no longer decides is how
+        # loud the loud channel gets: only the first past-threshold Board in this process
+        # annotates, the rest inform (`_DETAIL_LOSS_OVER_SHARE`).
+        if missing / len(details) > _MAX_LOST_DETAIL_SHARE:
+            _DETAIL_LOSS_OVER_SHARE.report(line)
+        else:
+            _log.info(line)
 
     def _exhaust(self, applied: dict[str, list[str]], absorb, depth: int) -> None:
         """Exhaust one filter combination: paginate normally, or subdivide when the

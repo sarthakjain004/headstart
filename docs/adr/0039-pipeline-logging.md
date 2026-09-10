@@ -144,3 +144,129 @@ otherwise checking the pattern's literals against the emitter's source with `ast
 regexes had already died silently against reworded emitters before it existed. Any new
 `scripts/runlog/` pattern must join that table or be exempted with a reason, so "anything grepping
 CI logs must use the module-name tags" is now enforced rather than asserted.
+
+## Amendment (2026-09-08, second): the level policy the code actually has, and where the rule is enforced
+
+**Status:** accepted. Reconciles the "Decision" section's level policy with the amendment above —
+which contradicted it the moment it landed — and records two constraints the original write-up
+assumed rather than stated. The decision itself still stands.
+
+**"DEBUG is per-item detail" is not the rule, and was never the code.** The Decision above puts
+per-item detail at DEBUG and then lists two deliberate INFO exceptions to it. The amendment above
+demoted every per-item WARNING it found to **INFO** — not one of them to DEBUG. Both cannot be the
+policy. Plainly, the rule now:
+
+- **INFO is per-item detail**, and the "two deliberate exceptions" are not exceptions; they were
+  the rule, stated early. A pipeline run is a CI job whose log is its only record: `HEADSTART_LOG`
+  defaults to `info` and nothing in `.github/workflows/` sets it otherwise, so a line written at
+  DEBUG does not exist in the one place anyone reads it. That is exactly what the `index sync`
+  exception already argued ("the merge log is the only record of *which* rows changed, and DEBUG
+  would record nothing in CI"); it generalises to every per-item line.
+- **DEBUG is what a local run wants and CI must not pay for** — `http.fetch`'s per-retry line,
+  `scrape_run`'s per-Board timing. Counted at `dd982fe` (`git grep -c` over
+  `src/headstart/**.py`, before this correction's own edits): **4** `.debug(` call sites against
+  190 `.info(` and 51 `.warning(`. "Per-item is DEBUG" describes 4 lines in 245, so the ADR was
+  describing an intention, not the seam. The commit is named because the first version of this
+  bullet quoted 4 / 189 / 53 — the tree *before* the commit it shipped in, stale on arrival — and
+  because these three counts move with every logging change. The ratio is what is load-bearing;
+  it survives a drift of a few lines either way.
+- **WARNING remains a budget**, per the amendment above: never a line that can fire once per
+  Board, per shard or per item, however much it deserves the summary page.
+
+**The bounded first-occurrence idiom is one helper, `log.FirstOnly`.** How a fault that repeats
+gets reported without spending an annotation per occurrence: the first occurrence warns and
+carries its traceback, every one after it informs, and the caller's own count or
+`log.named_sample` says how far it reached. It is a class in `headstart/log.py` rather than a
+pattern to copy because the copies diverged into four spellings — a module-level set
+(`config.board_identity`), a counter (`harvest.scrape_all`), a list plus a chosen emit function
+(`index_plan.live_keep_set`) and a second counter plus a second chosen emit function
+(`scrapers/workday.py`, still on its own spelling) — each re-justifying the same rule
+in its own comment block, and one of them shipped the bug the shape exists to prevent:
+`index_plan` bounded the *level* to the first Board and left `exc_info=True` unconditional, so a
+systemic `board_key` failure printed one full stack per Board — the same flood, one indirection
+later. Level and traceback are now chosen together, in one place, and cannot be bounded
+separately.
+
+That one place cannot be reached from `alerts/store.py`, and the exception is deliberate: the
+whole `alerts/` package is copied into the Space image, laid down beside `app.py` with no
+`headstart` package to import from — the same constraint that already makes that module's logger
+a bare `logging.getLogger`. Its `Store.get` Hub-failure arm was an `_log.error(..., exc_info=True)`
+running **once per Account**, so a Hub outage cost 40 `::error::` annotations and 40 tracebacks
+(measured, 40 Accounts against one outage); and it was invisible to both of the checks below,
+being neither on the scrape path nor lexically inside a loop, while `alerts/run.py`'s own bounded
+catch-all never saw it because this arm fires first and answers `None` rather than raising. It is
+now bounded by a module-level flag spelling `FirstOnly`'s contract by hand, pinned by
+`tests/test_alerts_store.py`. That is the one sanctioned copy of the idiom; wherever the seam is
+importable, importing it remains the rule. Its cost is stated where it is paid: the demoted lines
+land at INFO, which the Space's `logging.lastResort` handler does not print, so in the deployment
+the first occurrence is the only one a reader sees.
+
+**The run-context line is a log line, so it lives in `log.py` too — and `alerts/` now emits
+one.** `stage= run= attempt= sha=` is what says *which* run a log belongs to once it is off the
+Actions page, and it started as `ingest/observability.context` because the pipeline stages were
+its only callers. They were not: `alerts/run.py` and `alerts/bot.py` are `python -m` entry points
+wired into `alerts.yml` and `bot.yml` — the latter every fifteen minutes, so 96 runs a day of
+otherwise indistinguishable lines — and neither emitted one, because `alerts/` may not import from
+`ingest` (CLAUDE.md's repo conventions). Moving beats importing: it is now `log.context`, beside
+`FirstOnly` and `named_sample`, which are there for exactly the same reason — their callers sit on
+both sides of the pipeline package, and a correlation line is part of what a log line *is*, which
+is what that module owns. `observability` keeps its other three seams (step summary, shard-report
+round trip, error summary): each of those is about an artifact a run leaves behind rather than a
+line it writes. Two consequences. The tag the line carries changes with it, from `[observability]`
+to `[log]` — nothing parses this line (`tests/test_log_contract.py` says so in as many words: no
+analyser reads it, a human greps it), so the change costs nothing, but a doc or a habit keyed on
+the old tag is now wrong. And the `stage=<the emitting module's own name>` rule that file enforces
+holds across the move: the two new call sites say `stage=run` and `stage=bot`, so `stage=run
+run=32671773723` reads oddly for the one module whose name collides with the field beside it.
+The curated-feed entry (`python -m headstart`) still does not call it, now for the only reason
+that survives the move: no workflow runs it, so there is no run for it to name.
+
+**The WARNING rule is test-enforced, on a partial scope — know which.**
+`tests/test_log_levels.py` parses source with `ast` and fails on any WARNING site absent
+from an allowlist that must name *why* that line is bounded to one per run. Two things about it
+matter at the call site. It is a **compile-time** check rather than a `logging.Filter`, because a
+filter suppresses records after the fact — hiding the volume rather than preventing it — while
+the budget is spent at emit time, in code a reader will copy. And its scope is
+**`src/headstart/scrapers/*.py` plus `harvest.py`**: the scrape path, where a per-Board line is
+easiest to write and a shard's ~1,300 Boards make it costliest. Everything else — the ingest
+stages, `alerts/`, `config.py`, `search.py` — is **unchecked**, so a green run is evidence about
+the scrape path only. (Widening the walk to the rest of `src/headstart/` is the obvious next step
+and is not taken here.)
+
+**The Space renders a second line format, and one level choice depends on it.**
+`deploy/hf-space/app.py` calls no `log.setup()`, and `deploy-space.yml` does not copy `log.py`
+into the image — there is no `headstart` package there at all, which is why `search.py` builds its
+logger with `logging.getLogger` directly. So `headstart.search`'s records reach stderr through
+`logging.lastResort`: a bare stderr handler, **level WARNING, no formatter** — no clock, no
+`[tag]`, no level name, just the message. Two consequences the ADR's "one format" claim does not
+cover. Below WARNING nothing is emitted at all in the deployment that serves users, which is why
+`search.py`'s boot line about a served table missing columns is a WARNING and not INFO — it is not
+a per-item line, and at INFO it would be invisible exactly where it matters. And anything grepping
+Space logs must not expect the `[tag]` the pipeline's own consumers key on.
+
+### Amendment, 2026-09-09: why each unhandled `FirstOnly` site is clean
+
+`FirstOnly.report` attaches `sys.exc_info()`, which is thread-wide rather than per-frame — the
+same rule `logging`'s own `exc_info=True` follows. Eight of its fifteen call sites are lexically
+inside the `except` they report on, so the stack is theirs by construction and needs no argument.
+The other seven report a *condition*, and they are clean for three different reasons. The
+distinction is design rationale, so it lives here rather than in the class's docstring, where it
+had grown to outweigh the nine lines of code it described.
+
+- **By construction** — `scrapers/workday.py`'s detail-loss tally, the original of the shape: a
+  threshold tripping at the end of a detail pass, with no `except` anywhere above it that could
+  still be handling something.
+- **By measurement** — `spare_egress`'s five tunnel checks. An `ast` sweep of `src/headstart` for
+  a network call lexically inside an `except` found none, and both of `http.py`'s entries into
+  them sit outside its `except RequestsError`. This is the weaker guarantee: it holds for the
+  call graph as it is, and the first caller that dials while handling an exception starts
+  attaching that exception's stack to a line about WARP.
+- **By the handler being the point** — `config`'s identity fallback. `_report_identity_failure`
+  is only ever reached from `board_identity`'s own `except` arm, so the live exception is
+  precisely the `board_key()` failure the line is about. It sits one frame below the handler
+  rather than inside it, which is why the census counts it as outside even though its stack is
+  the right one.
+
+`tests/test_log.py` recomputes the census from the source rather than trusting either document.
+That test exists because a hand-written count shipped stale three times during this overhaul —
+once inside the very commit correcting a different stale count.
