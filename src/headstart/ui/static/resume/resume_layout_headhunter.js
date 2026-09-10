@@ -82,6 +82,111 @@
     return Math.max(20, Math.round((usable * 72) / (size * 0.5)));
   }
 
+  /* ---- how a bullet is written ------------------------------------------------------------
+
+     The three rules at the end of the set below check the guide's own instructions about the
+     WORDS in a bullet, which nothing checked before. A general résumé standard — Harvard /
+     r/EngineeringResumes, as packaged in this machine's `resume-builder` skill — asks for the
+     same three. Where the two disagree, THIS FILE FOLLOWS THE GUIDE: a user who chose "Headless
+     Headhunter" chose a template, not a committee. The disagreements are written down rather
+     than resolved in silence, because each one is a place a future reader will otherwise
+     "correct" the template into something the user did not pick:
+
+       · "to Current" vs "Present". The general standard says never write "Current" or "Now".
+         The guide's Job Information slide says put "to current", and its worked example reads
+         "June 2023 to Current". `L.dateRange` emits the guide's spelling; neither is checked.
+       · Skills first. The general standard puts a Skills block at the top for a technical role.
+         The guide's order is Education & Certificates, then Work History, then Projects, and it
+         puts skills INSIDE the job bullets where the recruiter is already reading. `starter()`
+         follows the guide, and `skills_line`'s own blurb says so.
+       · Calibri vs Arial. The general standard specifies Calibri 10.5pt. The guide says "Font:
+         Arial, do not use any other font", which is what `on-template` checks for.
+       · Personal pronouns. The general standard forbids I / my / we outright. The guide's worked
+         example contains "while I prepared their food and beverages", so no pronoun rule is
+         added — it would fire on the document this layout is calibrated against.
+       · A terminal period. The general standard says a bullet is not a sentence and takes no
+         final period. The guide's example ends every bullet with one, and its stated limit is
+         "should not include more than 1 period" — which is what `one-sentence` implements.
+       · "Handled". The general standard lists it as weak and generic. The guide's example opens
+         a bullet with "Handled a large lunch rush line", so it is absent from WEAK_OPENERS. */
+
+  /** The first word of a bullet, lowercased, without its punctuation. */
+  function opener(text) {
+    const m = String(text || '').trim().match(/^[A-Za-z][A-Za-z'’-]*/);
+    return m ? m[0].toLowerCase() : '';
+  }
+
+  /* Base forms of the verbs a résumé actually opens with, drawn from the guide's own example
+     vocabulary and the general standard's strong/weak verb tables. The tense test is ONE-SIDED
+     on purpose: a word is called present tense only when it is positively on this list (or is
+     this list's own -ing form), never merely because it could not be proved past. The guide's
+     example opens with Operated, Handled, Gave, Used, Spoke, Took and Upsold — four of those
+     seven are irregular, so an "ends in -ed or it is wrong" test would have flagged the very
+     document this layout is calibrated against. */
+  const PRESENT_VERBS = new Set(('analyse analyze architect assess assist audit automate boost ' +
+    'build collaborate configure consult contribute coordinate create debug define deliver ' +
+    'deploy design develop diagnose direct document drive enable ensure establish evaluate ' +
+    'expand facilitate find gather give handle help identify implement improve increase ' +
+    'integrate keep lead maintain make manage mentor migrate operate optimise optimize ' +
+    'oversee perform prepare present prioritise prioritize process program provide publish ' +
+    'reduce refactor resolve run scale serve speak standardise standardize streamline ' +
+    'strengthen supervise support take test track train translate troubleshoot use utilise ' +
+    'utilize validate work write').split(' '));
+
+  /** Every spelling `word` could be the -ed or -ing form of, `word` itself first. English adds
+   *  -ed / -ing four ways and this undoes all four; the lists below are therefore written once,
+   *  in the base form, and still match whichever tense somebody typed. */
+  function stems(word) {
+    const out = [word];
+    const cut = word.replace(/(?:ed|ing)$/, '');
+    if (cut !== word) {
+      out.push(cut, cut + 'e');
+      if (/(.)\1$/.test(cut)) out.push(cut.slice(0, -1));        // running  -> run
+      if (/i$/.test(cut)) out.push(cut.slice(0, -1) + 'y');      // amplified -> amplify
+    }
+    return out;
+  }
+  const anyStemIn = (set, word) => !!word && stems(word).some(w => set.has(w));
+
+  function looksPresent(word) {
+    if (!word) return false;
+    if (PRESENT_VERBS.has(word)) return true;
+    /* Only the -ing branch. Running the -ed branch here would read "Used" back to "use" and
+       call the guide's own fourth bullet present tense — the stem walk answers "which verb is
+       this", never "which tense is this". "Managing" is a verb; "Marketing" is a noun, and its
+       stem is on no list, so it stays quiet. */
+    return /ing$/.test(word) && anyStemIn(PRESENT_VERBS, word);
+  }
+
+  /* Openers that fill the line without saying what was done. Base forms — see `stems`. "Handle"
+     is deliberately absent: see the note above. */
+  const WEAK_OPENERS = new Set(['responsible', 'help', 'work', 'assist', 'participate',
+    'involve', 'was', 'task', 'duties']);
+
+  /* The general standard's superfluous-verb list, in base form. Checked on the OPENING word
+     only, and that scope is load-bearing rather than lazy: the guide's own example contains
+     "ensured customers had a good time with customer service" in the middle of a bullet, so a
+     whole-sentence scan would fail the calibration test. */
+  const SUPERFLUOUS = new Set(['amplify', 'conceptualize', 'conceptualise', 'craft', 'elevate',
+    'employ', 'engage', 'engineer', 'enhance', 'ensure', 'foster', 'head', 'hone', 'innovate',
+    'leverage', 'master', 'orchestrate', 'perfect', 'pioneer', 'revolutionize', 'revolutionise',
+    'spearhead', 'transform', 'utilize', 'utilise']);
+
+  /* A number, or a sense of scale. The general standard counts both — "multiple financial
+     products" is quantification in the way that matters, and the guide's own sixth bullet says
+     "for multiple tables of customers" and carries no digit at all. */
+  const SCALE = /\d|\b(?:multiple|several|dozens?|hundreds|thousands|millions|numerous|daily|weekly|monthly|every)\b/i;
+
+  /* A clause that says what came of it, or why it was done. The guide asks for What / How /
+     Result-OR-REASON, and it annotates its own third bullet — "Gave customers correct change by
+     adding and subtracting cash" — as reason-then-how, with no result and no number anywhere.
+     A bare metric test would therefore have flagged the guide's own writing. The `to ...` arm
+     excludes the determiners and pronouns that make it a destination rather than a purpose
+     ("delivered them to our kitchen staff" is not a reason). */
+  const OUTCOME = new RegExp('\\bwhich\\b|\\bresult|\\bso that\\b|\\bleading to\\b|' +
+    '\\bin order to\\b|\\bby \\w+ing\\b|' +
+    '\\bto (?!the|a|an|our|their|his|her|my|your|its|this|that|these|those|us|them|me|him|it)[a-z]+\\b', 'i');
+
   /* ---- rules -------------------------------------------------------------------------- */
 
   const rules = [
@@ -263,6 +368,61 @@
         if (!isLinkColour(t.linkInk)) off.push('the contact line is a colour other than blue');
         if (off.length) {
           out.push({ level: 'note', nodeId: null, message: 'Off template: ' + off.join(', ') + '. It will still print — the guide just does not ask for it.' });
+        }
+        return out;
+      },
+    },
+    {
+      id: 'past-tense', label: 'Bullets written in the past tense',
+      check(doc, api) {
+        const out = [];
+        for (const n of api.nodesOfType('bullet')) {
+          const word = opener(api.content(n.id).text);
+          if (looksPresent(word)) {
+            out.push({ level: 'warn', nodeId: n.id, message: '\u201c' + word +
+              '\u201d is the present tense. The guide asks for the past tense on every bullet \u2014 ' +
+              'its words are "even if you are still employed".' });
+          }
+        }
+        return out;
+      },
+    },
+    {
+      id: 'opening-verb', label: 'Every bullet opens with a strong verb',
+      check(doc, api) {
+        const out = [];
+        for (const n of api.nodesOfType('bullet')) {
+          const word = opener(api.content(n.id).text);
+          if (anyStemIn(WEAK_OPENERS, word)) {
+            out.push({ level: 'warn', nodeId: n.id, message: '\u201c' + word +
+              '\u201d opens the bullet without saying what you did. Start with the action \u2014 ' +
+              'Operated, Handled, Gave.' });
+          } else if (anyStemIn(SUPERFLUOUS, word)) {
+            out.push({ level: 'warn', nodeId: n.id, message: '\u201c' + word +
+              '\u201d is a dressed-up verb. Fifteen seconds is not long enough to decode one; ' +
+              'use the plain word.' });
+          }
+        }
+        return out;
+      },
+    },
+    {
+      id: 'result', label: 'What, how, and the result or the reason',
+      check(doc, api) {
+        const out = [];
+        for (const n of api.nodesOfType('bullet')) {
+          const c = api.content(n.id);
+          /* The opening summary is exempt. The guide asks it only for what you did at this job,
+             and puts the What / How / Result shape on the bullets that follow it. */
+          if (c.role) continue;
+          const text = String(c.text || '');
+          if (!text.trim()) continue;
+          if (!SCALE.test(text) && !OUTCOME.test(text)) {
+            /* A note, not a warning: the guide accepts a reason where there is no result, and
+               plenty of true bullets have neither a number nor an outcome to claim. */
+            out.push({ level: 'note', nodeId: n.id, message: 'No number, no result and no reason. ' +
+              'The guide asks each bullet for what you did, how you did it, and what came of it.' });
+          }
         }
         return out;
       },
@@ -464,5 +624,6 @@
 
   /* Exported for the tests and the rule panel — the parser and the sentence count are the two
      places a wrong answer would be invisible in the UI. */
-  root.ResumeHeadhunter = { CANON, CANON_FONT, parseMonth, periods, charsPerLine, rgb, isBlack, isLinkColour };
+  root.ResumeHeadhunter = { CANON, CANON_FONT, parseMonth, periods, charsPerLine, rgb, isBlack,
+    isLinkColour, opener, looksPresent };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

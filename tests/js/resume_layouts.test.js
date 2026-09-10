@@ -337,6 +337,92 @@ test('the sentence count ignores abbreviations and decimals', () => {
   assert.equal(H.periods('Worked in the U.S. and in the E.U. for years'), 0);
 });
 
+/* ---- how a bullet is written ---------------------------------------------------------------
+   Three rules the guide states in words and the general résumé standard also asks for. Each test
+   below pairs "it fires on what it is for" with the calibration that matters more: the guide's
+   own worked example still produces nothing. A rule that flags the document this layout was
+   copied from is a wrong rule, not a strict one. */
+
+/** One work entry carrying `bullets`, with everything else the other rules want already right,
+ *  so the ids that come back are only the ones under test. */
+function oneJob(ctx, bullets) {
+  const b = ctx.ResumeDocument.builder().usingLayout(HH)
+    .add('header', { fullName: 'A', phone: '1', email: 'e', locationLine: 'x' })
+    .section('Work History', s => s.add('work_entry',
+      { role: 'R', company: 'C', start: 'June 2023', current: true },
+      e => bullets.forEach((text, i) => e.bullet(text, i === 0))));
+  return b.build();
+}
+const ruleIds = (ctx, doc) => ctx.ResumeLayouts.runRules(ctx.ResumeLayouts.get(HH), doc)
+  .filter(f => f.ruleId).map(f => f.ruleId);
+
+test('a bullet in the present tense is flagged, and an irregular past tense is not', () => {
+  const ctx = load(ALL);
+  const past = ['Operated the till by counting cash', 'Gave customers correct change by adding cash',
+    'Spoke with customers to take their orders'];
+  assert.ok(!ruleIds(ctx, oneJob(ctx, past)).includes('past-tense'),
+    'Gave and Spoke are past tense; an "-ed or wrong" test would flag them');
+
+  for (const bad of ['Manage a team of four people by running the rota',
+                     'Managing a team of four people by running the rota',
+                     'Run the till by counting cash',
+                     'Using a desktop computer to read company emails']) {
+    const ids = ruleIds(ctx, oneJob(ctx, [past[0], bad, past[1]]));
+    assert.ok(ids.includes('past-tense'), `did not flag ${JSON.stringify(bad)}`);
+  }
+
+  /* A noun that ends in -ing is not a verb in the progressive, and treating it as one would
+     flag a correct bullet. */
+  assert.ok(!ruleIds(ctx, oneJob(ctx,
+    [past[0], 'Marketing campaigns were rewritten by the team to reach more people', past[1]]))
+    .includes('past-tense'), 'Marketing is a noun here');
+});
+
+test('a weak or dressed-up opening verb is named, and the guide’s own openers are not', () => {
+  const ctx = load(ALL);
+  const good = ['Operated the till by counting cash', 'Handled the lunch rush by multitasking',
+    'Used a desktop computer to read company emails'];
+  assert.ok(!ruleIds(ctx, oneJob(ctx, good)).includes('opening-verb'),
+    'Handled opens a bullet in the guide’s own example; the general standard calls it weak and loses');
+
+  for (const bad of ['Responsible for the till and the lunch rush by rota',
+                     'Helped the team by covering the lunch rush',
+                     'Spearheaded the rota by rewriting it every week',
+                     'Leveraged the till software to reduce queue times',
+                     /* The lists are written in one tense and people write in another. A browser
+                        pass caught "Spearheading the front counter" producing no finding at all:
+                        it is not the past-tense spelling on the list, and its stem is not a verb
+                        the tense rule knows either, so it fell through both. */
+                     'Spearheading the rota by rewriting it every week',
+                     'Working the till by counting cash',
+                     'Utilising the till software to reduce queue times']) {
+    assert.ok(ruleIds(ctx, oneJob(ctx, [good[0], bad, good[1]])).includes('opening-verb'),
+      `did not flag ${JSON.stringify(bad)}`);
+  }
+});
+
+test('a bullet with no number and no outcome gets a note, not a warning', () => {
+  const ctx = load(ALL);
+  const bare = oneJob(ctx, ['Operated the till by counting cash', 'Gave customers correct change',
+    'Ran the front counter']);
+  const found = ctx.ResumeLayouts.runRules(ctx.ResumeLayouts.get(HH), bare)
+    .filter(f => f.ruleId === 'result');
+  assert.equal(found.length, 2, 'both bullets with no result and no reason');
+  assert.ok(found.every(f => f.level === 'note'), 'plenty of good bullets carry no metric');
+
+  /* The guide's own third bullet is "Gave customers correct change by adding and subtracting
+     cash" — no number anywhere; the REASON is the main clause and the "by ..." is the how. */
+  assert.equal(ruleIds(ctx, oneJob(ctx, ['Operated the till by counting cash',
+    'Gave customers correct change by adding and subtracting cash',
+    'Served multiple tables of customers'])).filter(id => id === 'result').length, 0);
+
+  /* The opening summary is exempt: the guide asks it for what you did, and puts the
+     What / How / Result shape on the bullets after it. */
+  assert.equal(ruleIds(ctx, oneJob(ctx, ['Ran the front counter',
+    'Gave customers correct change by adding cash', 'Handled the rush by multitasking']))
+    .filter(id => id === 'result').length, 0);
+});
+
 test('dates are read in the formats people type, and a bare year is refused', () => {
   const { ResumeHeadhunter: H } = load(ALL);
   assert.deepEqual(H.parseMonth('June 2023'), { y: 2023, m: 6 });
