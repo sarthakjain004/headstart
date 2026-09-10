@@ -632,3 +632,66 @@ def test_backfill_refuses_a_table_that_predates_the_column(tmp_path, monkeypatch
     )
     with pytest.raises(SystemExit):
         _backfill(tmp_path, tmp_path / "descriptions")
+
+
+# --- the cross-run base record (ADR-0129) -----------------------------------------------------
+#
+# `state_guard` catches a collision *within* a run — one writer's upload landing on a base another
+# writer moved. It cannot see a rollback that already happened: on 2026-09-10 run 34450830376
+# closed at 410,516 rows and its successor opened at 409,810, and every counter the pipeline
+# reports stayed silent (`prune` logged `evict 0`). These cover the line that would have spoken.
+
+
+def test_a_matching_base_is_accepted(tmp_path):
+    idx.write_base(tmp_path, 410_516, "prune")
+    assert idx.check_base(tmp_path, 410_516) is True
+
+
+def test_an_unexplained_rollback_is_refused(tmp_path):
+    """The exact 2026-09-10 numbers: the previous run left 410,516, this one opened on 409,810."""
+    idx.write_base(tmp_path, 410_516, "prune")
+    assert idx.check_base(tmp_path, 409_810) is False
+
+
+def test_a_growth_nobody_accounted_for_is_also_refused(tmp_path):
+    """Not just shrinkage. A base larger than the last writer left is equally unexplained."""
+    idx.write_base(tmp_path, 410_516, "prune")
+    assert idx.check_base(tmp_path, 411_000) is False
+
+
+def test_absent_base_is_permitted(tmp_path):
+    """The first run after this ships has no record, and must not be blocked by its own arrival."""
+    assert idx.check_base(tmp_path, 409_810) is True
+
+
+def test_an_unreadable_base_is_treated_as_absent(tmp_path):
+    """A corrupt scratch file must not convert a silent rollback into a guaranteed outage."""
+    (tmp_path / idx._BASE_RECORD).write_text("{not json")
+    assert idx.check_base(tmp_path, 409_810) is True
+
+
+def test_compaction_publishes_its_own_base(tmp_path):
+    """`cleanup-index` legitimately changes the row count and never uploads `data/state` — so the
+    record lives with the table and compaction must refresh it, or the next pipeline red-runs on
+    a compaction that was entirely correct."""
+    idx.write_base(tmp_path, 410_516, "prune")
+    idx.write_base(tmp_path, 409_990, "compact")
+    assert idx.check_base(tmp_path, 409_990) is True
+    assert idx.read_base(tmp_path)["by"] == "compact"
+
+
+def test_the_base_record_does_not_become_a_table(tmp_path):
+    """It sits beside the `.lance` directories in the database dir, so LanceDB must ignore it."""
+    db = lancedb.connect(str(tmp_path / "db"))
+    db.create_table("jobs", [{"id": "a", "n": 1}])
+    idx.write_base(tmp_path / "db", 1, "sync")
+    assert list(lancedb.connect(str(tmp_path / "db")).list_tables().tables) == ["jobs"]
+
+
+def test_sync_refuses_to_build_on_a_base_it_cannot_explain(tmp_path, monkeypatch):
+    """End to end: a table whose row count disagrees with the last writer's record stops `sync`
+    before it plans a single add against it."""
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:1", "greenhouse:a:2"])
+    # Someone else's write landed: the record says a count this table does not have.
+    idx.write_base(tmp_path / "db", 99_999, "prune")
+    assert _sync(tmp_path, monkeypatch, ["greenhouse:a:1", "greenhouse:a:2"]) == 1

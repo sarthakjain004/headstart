@@ -132,3 +132,4 @@ supersedes it and note the supersession in both.
 | [0126](0126-the-picker-carries-the-layouts-people-actually-use.md) | The picker carries the layouts people actually use, and says where each one is a bad idea | 2026-09-10 |
 | [0127](0127-hygiene-is-a-shared-baseline-opinion-stays-on-the-layout.md) | Hygiene is a shared baseline; opinion stays on the Layout | 2026-09-10 |
 | [0128](0128-the-resume-tab-is-two-segments-edit-and-preview.md) | The Résumé tab is two segments — Edit and Preview | 2026-09-10 |
+| [0129](0129-the-lancedb-write-checks-its-own-base-instead-of-asking-first.md) | The LanceDB write checks its own base instead of asking first | 2026-09-10 |

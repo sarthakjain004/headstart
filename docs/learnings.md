@@ -2,6 +2,87 @@
 
 Running log of non-obvious findings worth keeping. Newest first.
 
+## Two workflows, one file, no lock: a green run that lost 706 rows (2026-09-10)
+
+Five consecutive pipeline runs, every job green, every check passing. One of them silently
+discarded its entire index write. Nothing in the system reported it; it was found by reading the
+logs of runs that had already passed.
+
+**The symptom.** Run `34450830376` closed its index sync at **410,516** rows. The next run
+*opened* the table at **409,810** — its predecessor's *pre*-sync count. Every other run boundary
+in the window chained correctly (410,570 → 411,500 → 412,224 → 412,692), so this was one event,
+not drift.
+
+**The mechanism** is a textbook read-modify-write lost update, and the two runs' own logs date it
+to the second:
+
+```
+08:22:32  cleanup-index: "no pipeline in flight — compacting"   (one had run since 07:36:48)
+08:26:51  cleanup-index reads the table          409,810
+08:27:55  pipeline merge reads the table         409,810        (same base, independently)
+08:28:30  pipeline merge writes                  410,516        (+706)
+08:29:49  pipeline uploads  -> 410,516 lands on HF
+08:30:27  cleanup-index uploads --delete "*"  -> 409,810 overwrites it.  -706
+```
+
+The pipeline's upload is additive; the compaction's passes `--delete "*"`, which reaps every
+remote file its own local folder does not hold. The pipeline's new fragments existed on the Hub
+for 38 seconds and were then deleted for not being in a folder built four minutes before they
+were written.
+
+User-visible cost, measured by diffing the runs' id batches: all **215** of that run's evictions
+were resurrected (**43** never re-evicted, so closed postings kept being served), and **327** of
+its 922 adds were dropped, **178** of them never re-added.
+
+### Four things worth keeping from it
+
+**1. A wait loop that works is not a lock.** `cleanup-index` *does* wait for the pipeline — it
+printed `pipeline in flight (1); re-checking in 60s` **30 times** before proceeding, out of a
+45-attempt budget. It did not time out and fall through. It asked, and got a wrong answer.
+
+**2. The data source lied, not the predicate.** The first diagnosis was that
+`gh run list --status in_progress` misses a run that is momentarily `queued` between jobs — a
+tidy story, supported by the fact that `pipeline.yml`'s own gate matches `!= "completed"`
+*specifically to catch `queued`*, with a comment saying so. Then I measured it: 239 polls at 4s
+against a live repo, comparing that query against an unfiltered listing issued milliseconds later
+in the same iteration.
+
+```
+16:33:05  *** GUARD=0 BUT RUN LIVE ***  live=[34502721821:in_progress]
+DONE polls=239 false_zeros=1
+```
+
+The run was `in_progress` at the instant the filtered query said the field was clear. **The
+plausible explanation was wrong**, and only the measurement said so. GitHub's *filtered* run-list
+endpoint is served from an index that lags; no predicate written against it can be made correct.
+
+**3. Any check that precedes long work is a statement about the past.** Even a perfect liveness
+answer would not have saved this. Compaction checked at 08:22:32, read at 08:26:51 and wrote at
+08:30:27 — by upload time its authorisation was **eight minutes stale**. This is the general
+lesson: *check-then-act across a network is not atomic*, and the gap is however long the work
+takes. The fix has to live at the write (compare-and-swap), not at the door.
+
+**4. The obvious CAS token was the wrong one.** "Record the commit sha at fetch, refuse if it
+changed" is the natural first sketch and it fails here twice over. The pipeline publishes four or
+five commits per run, so the repo head always differs between its own fetch and its own upload —
+a sha guard would refuse every run. And the daily history squash rewrites every sha without
+changing a byte of content (`list_repo_commits` returned exactly one
+`Super-squash branch 'main'` commit). A **content** fingerprint — sorted `path:blob_id` pairs,
+hashed — ignores commits to other prefixes and survives a history rewrite, because git blob ids
+are hashes of content.
+
+### Why nothing caught it
+
+`index sync` logs `index: N rows in table 'jobs'` every run and never compares `N` to the previous
+run's closing count. `prune` reported `evict 0` on all five runs. The number that would have
+screamed was **printed every single run** and read by nothing — which is its own lesson: an
+emitted fact with no consumer is not observability, it is a log line.
+
+Fixed in ADR-0129: both writers fingerprint the prefix at fetch and re-check it immediately before
+uploading, and a base-row record travels *inside* `data/lancedb` so the next run can say what it
+expected beside what it opened.
+
+
 ## Liveness probes can't tell "no jobs" from "no Board" — four ATSes, one failure class (2026-07-27)
 
 A ten-agent discovery sweep turned up the same bug in four unrelated probes: **an ATS answers 200

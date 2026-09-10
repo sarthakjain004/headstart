@@ -731,7 +731,13 @@ jobs:
         if: needs.scrape-plan.outputs.run == 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: python -m headstart.ingest.state_fetch 'data/embeddings/jobs/*' 'data/lancedb/*'
+        run: |
+          python -m headstart.ingest.state_fetch 'data/embeddings/jobs/*' 'data/lancedb/*'
+          # Fingerprint the table as fetched (ADR-0129), checked again just before the upload
+          # below. This job's own upload is additive, so it cannot delete a compaction's work —
+          # but it can append fragments onto a base `cleanup-index` replaced underneath it, which
+          # publishes a table stitched from two different rebuilds.
+          python -m headstart.ingest.state_guard record data/lancedb
       - name: Download corpus + refreshed state
         # continue-on-error: `join` is the one un-bankable stage, so if it timed out this artifact
         # is missing. Proceeding degrades to a safe no-op rather than a hard failure — with no
@@ -828,6 +834,11 @@ jobs:
           # full-table replace again — the exact cost this change removes. The daily
           # `cleanup-index` run compacts and re-uploads *with* --delete, which is where superseded
           # fragments get reaped.
+          # Compare, then swap (ADR-0129). Fails the step rather than publishing over a base
+          # that moved: this run's scrape work is already banked in the embedding store above, so
+          # what is lost is one run's index write — which the next run recomputes — against a
+          # silent overwrite that nothing reports.
+          python -m headstart.ingest.state_guard verify data/lancedb
           up "$HF_DATASET" data/lancedb data/lancedb \
             --repo-type dataset --commit-message "nightly: lancedb index"
           # Append-only (ADR-0050): each run adds small per-ATS fragments and leaves the base
