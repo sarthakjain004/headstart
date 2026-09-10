@@ -38,7 +38,11 @@ function fakeEl() {
     // answer — every call site already guards on "not found" for the real DOM's own sake (the
     // crosshair group doesn't exist until the first draw), so this never needs to be smarter.
     querySelectorAll: () => [], querySelector: () => null,
-    setAttribute() {}, getAttribute: () => null,
+    // Recorded, not swallowed: drawTrends writes the chart's own aria-label, which is one of
+    // the places that reports the ATS selection.
+    attrs: {},
+    setAttribute(k, v) { this.attrs[k] = String(v); },
+    getAttribute(k) { return this.attrs[k] ?? null; },
     // Recorded, not swallowed: the ATS picker's own handler is registered this way, and the
     // racing tests below drive the control the bug report names rather than calling the
     // loader behind it. `fire` is the harness's stand-in for dispatchEvent.
@@ -344,6 +348,54 @@ test('all-checked sends no ats param on the wire', () => {
   t.set(fixture(), null);
   t.click('software-engineering');   // drills, which calls loadTrends and issues a fetch
   assert.doesNotMatch(fetches[0], /ats=/);
+});
+
+// An EMPTY selection is the same "no filter" as a full one, because /trends narrows on the
+// `ats` params it is given and an empty one appends none — so the panel answers with every
+// ATS. Before this was said once in trendAtsSelected, `[]` came back instead of null and every
+// truthiness test read it as an active filter: the trigger said "0 ATS", the chart named
+// itself "0 of the ATS sources" and the short-history note blamed a narrow selection, all
+// three over the unfiltered figure (verified in Chromium: legend 39k, zero ats params).
+
+test('no box checked selects nothing either — the same spelling of "no filter"', () => {
+  const { t, nodes } = loadApp();
+  fakeAtsMenu(nodes, [['greenhouse', false], ['lever', false], ['workday', false]]);
+  assert.equal(t.atsSelected(), null);
+});
+
+// This one cannot go red on the code that had the bug, and is not meant to: the WIRE was
+// always right (`[]` is truthy, so `if (ats)` ran, but `forEach` over it appended nothing).
+// That is exactly the behaviour being KEPT here, so it is pinned rather than reproduced — the
+// fix must change what the panel SAYS and nothing about what it asks for.
+test('no box checked sends no ats param, exactly as every box checked does', () => {
+  const { t, nodes, fetches } = loadApp();
+  fakeAtsMenu(nodes, [['greenhouse', false], ['lever', false]]);
+  t.set(fixture(), null);
+  t.click('software-engineering');
+  assert.doesNotMatch(fetches[0], /ats=/);
+});
+
+test('the trigger says "All ATS" with nothing checked, which is what the panel shows', () => {
+  const { t, nodes } = loadApp();
+  fakeAtsMenu(nodes, [['greenhouse', false], ['lever', false]]);
+  t.atsLabel();
+  assert.equal(nodes['trends-ats-trigger'].textContent, 'All ATS ▾');
+});
+
+test('the chart does not name an ATS scope it is not filtered to', () => {
+  const { t, nodes } = loadApp();
+  fakeAtsMenu(nodes, [['greenhouse', false], ['lever', false]]);
+  t.set(fixture(), null);
+  t.draw();
+  assert.doesNotMatch(nodes['trends-chart'].getAttribute('aria-label'), /of the ATS sources/);
+});
+
+test('a short history with nothing checked blames the pipeline, not a selection', () => {
+  const { t, nodes } = loadApp();
+  fakeAtsMenu(nodes, [['greenhouse', false], ['lever', false]]);
+  t.set(oneStampFixture(), null);
+  t.draw();
+  assert.doesNotMatch(nodes['trends-empty'].textContent, /ATS selection/);
 });
 
 test('a narrowed selection is sent as repeated ats params', () => {
