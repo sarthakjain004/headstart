@@ -4,7 +4,15 @@
 `allowlist`), Saved sets (`sets_for`, `get_set`, `put_set`, `remove_set`), Saved jobs
 (`saved_for`, `saved_ids`, `get_saved`, `put_saved`, `remove_saved`) and Profiles
 (`get_profile`, `put_profile`, `remove_profile`, plus the parse-cap counter `parses_used`
-/ `put_parses`). Behind it sit the repo layout, the JSON shapes, and the HF client.
+/ `put_parses`) and Résumé documents (`resume_ids`, `resumes_for`, `get_resume`,
+`put_resume`, `remove_resume`). Behind it sit the repo layout, the JSON shapes, and the HF
+client.
+
+One of those records has no shape here on purpose. A **Résumé document** is stored as the
+browser's own JSON export, byte for byte (ADR-0124), so there is no dataclass for it and no
+second schema to keep in step with the editor's model. What this module still owns for it is
+the path, the traversal guard and the size bound — everything that is about *the store*
+rather than about the document.
 
 Two records, deliberately distinct. An **Invite** is what the owner writes by hand — an
 address, optionally the Query to run for it. A **Subscription** is the state that Invite
@@ -65,6 +73,18 @@ MAX_SAVED = (
 )
 PROFILE_PREFIX = "profiles/"
 MAX_PARSES = 3  # Résumé parses per Account, lifetime — bounds router spend (ADR-0041)
+RESUMES_PREFIX = "resumes/"
+#: Exactly what the builder mints — `'r' + Date.now().toString(36) + Math.random()…` in
+#: `resume_document.js`'s Builder, re-minted by `resume_export.importJson` on every import,
+#: so no document id can carry a path separator or a dot. Same job as `_ID`: this half of the
+#: path comes from the URL, and the account half comes from the session.
+_RESUME_ID = re.compile(r"r[0-9a-z]{8,40}")
+MAX_RESUMES = 10  # per Account — an abuse bound, not a product promise (ADR-0124)
+#: One document's ceiling. The record is opaque here (it is the client's export, unchanged),
+#: so a per-field bound like `_kept`'s is not available and the whole thing is bounded instead.
+#: 512 KB against a worked example that serialises to ~8 KB: room for a long résumé with
+#: twenty Tailorings, and still far too small to make this a file host.
+MAX_RESUME_BYTES = 512 * 1024
 
 # The Space `/search` parameters a Subscription may carry. `seen_within` is deliberately
 # absent — it filters `first_seen`, which is exactly what the Watermark already decides, so
@@ -104,6 +124,16 @@ def chat_subscription_id(chat_id: str) -> str:
     address's id — the two live in one directory, and a collision would silently hand one
     person another's Watermark and unsubscribe token."""
     return hashlib.sha256(f"telegram:{chat_id}".encode()).hexdigest()[:16]
+
+
+def is_resume_id(doc_id: str) -> bool:
+    """Whether this is a document id this store will accept (ADR-0124).
+
+    Public because a *create* has no prior read to fail on: every other record's route
+    reaches its guard through a `get_*` that answers None, but `put_resume` on a malformed
+    id would otherwise be a silent no-op the browser reads as a successful sync. The route
+    checks at the door and answers 400 instead."""
+    return bool(_RESUME_ID.fullmatch(doc_id or ""))
 
 
 def _kept(search_filters: dict[str, Any]) -> dict[str, str]:
@@ -850,6 +880,77 @@ class Store:
             json.dumps({"parses_used": int(used)}).encode("utf-8"),
             self._token,
         )
+
+    def resume_ids(self, account: str) -> set[str]:
+        """Just the document ids this Account keeps — the cheap cap-and-existence check,
+        one listing instead of reading every document (mirrors :meth:`saved_ids`)."""
+        if not _ID.fullmatch(account):
+            return set()
+        prefix = f"{RESUMES_PREFIX}{account}/"
+        return {
+            p[len(prefix) : -len(".json")]
+            for p in _list_files(self._repo, self._token)
+            if p.startswith(prefix) and p.endswith(".json")
+        }
+
+    def resumes_for(self, account: str) -> list[dict[str, Any]]:
+        """Every Résumé document this Account keeps, newest edit first.
+
+        Returns the stored records **as they are** — dicts, not a dataclass — because the
+        record is the browser's own export (ADR-0124) and giving it a Python shape here
+        would be the second schema that decision exists to avoid. Unreadable records are
+        skipped like everywhere else: one bad file must not empty the list."""
+        if not _ID.fullmatch(account):
+            return []
+        prefix = f"{RESUMES_PREFIX}{account}/"
+        out: list[dict[str, Any]] = []
+        for path in _list_files(self._repo, self._token):
+            if not (path.startswith(prefix) and path.endswith(".json")):
+                continue
+            try:
+                out.append(json.loads(_read(self._repo, path, self._token)))
+            except Exception as exc:  # noqa: BLE001 — a malformed record is data, not a crash
+                _log.info(f"skipping unreadable {path}: {exc}")
+        # `updatedAt`, not `updated_at`: these are the browser's keys, and translating them
+        # would be exactly the mapping-between-two-shapes ADR-0124 refused.
+        out.sort(key=lambda d: str(d.get("updatedAt") or ""), reverse=True)
+        return out
+
+    def get_resume(self, account: str, doc_id: str) -> dict[str, Any] | None:
+        """One Résumé document by id, or None — same traversal guard as :meth:`get_set`."""
+        if not (_ID.fullmatch(account) and is_resume_id(doc_id)):
+            return None
+        try:
+            data = json.loads(
+                _read(
+                    self._repo, f"{RESUMES_PREFIX}{account}/{doc_id}.json", self._token
+                )
+            )
+            return data if isinstance(data, dict) else None
+        except Exception as exc:  # noqa: BLE001 — both answer None; only the log separates them
+            _note_unreadable(f"Résumé document {account}/{doc_id}", exc)
+            return None
+
+    def put_resume(self, account: str, doc_id: str, document: dict[str, Any]) -> None:
+        """Write one Résumé document. The bytes are the caller's JSON, re-serialised but
+        not reshaped — nothing here adds, renames or drops a field."""
+        if not (_ID.fullmatch(account) and is_resume_id(doc_id)):
+            return
+        _write(
+            self._repo,
+            f"{RESUMES_PREFIX}{account}/{doc_id}.json",
+            json.dumps(document, ensure_ascii=False).encode("utf-8"),
+            self._token,
+        )
+
+    def remove_resume(self, account: str, doc_id: str) -> None:
+        """Delete one Résumé document from the tree at once. It leaves the *history* until
+        the scheduled squash runs (ADR-0124's 30-day retention promise, kept by
+        `.github/workflows/squash-subscribers-history.yml`) — so the product's wording about
+        deletion is bound to that workflow existing, not to this line."""
+        if not (_ID.fullmatch(account) and is_resume_id(doc_id)):
+            return
+        _delete(self._repo, f"{RESUMES_PREFIX}{account}/{doc_id}.json", self._token)
 
     def invites(self) -> list[Invite]:
         """Everyone the allowlist names, with whatever Query the owner set for them.

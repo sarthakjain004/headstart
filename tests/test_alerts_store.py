@@ -355,6 +355,138 @@ def test_profile_delete_leaves_the_counter_file(monkeypatch):
     assert store.parses_used(account) == 3  # the cap survives deletion (ADR-0041)
 
 
+# ---- Résumé documents (ADR-0124) ----
+#
+# The record has no dataclass on purpose — it is the browser's own JSON export, byte for byte —
+# so what there is to test here is exactly what the store still owns: the path, the traversal
+# guard, and the promise that nothing reshapes the document on its way through.
+
+
+def _document(doc_id="rmfk3n2abcd", name="Ada's résumé", rev=1, **fields):
+    document = {
+        "schema": 1,
+        "id": doc_id,
+        "name": name,
+        "layoutId": "headless-headhunter",
+        "updatedAt": "2026-09-10T10:00:00+00:00",
+        "root": {"id": "__root__", "type": "__root__", "children": []},
+        "content": {},
+        "sync": True,
+        "rev": rev,
+    }
+    document.update(fields)
+    return document
+
+
+def test_a_resume_round_trips_without_being_reshaped(monkeypatch):
+    hub = _Hub().install(monkeypatch)
+    store = st.Store(REPO, TOKEN)
+    account = st.subscription_id("ada@example.com")
+    document = _document(content={"n1": {"text": "Shipped the thing. Twice."}})
+
+    store.put_resume(account, document["id"], document)
+    assert f"resumes/{account}/rmfk3n2abcd.json" in hub.files
+    # Byte for byte the same object — no added key, no dropped key, no renamed key. This is the
+    # whole of ADR-0124 decision 1, and a store that "helpfully" normalised anything would be
+    # the second schema that decision exists to avoid.
+    assert store.get_resume(account, document["id"]) == document
+
+
+def test_resumes_are_scoped_to_their_account_and_sorted_newest_edit_first(monkeypatch):
+    _Hub().install(monkeypatch)
+    store = st.Store(REPO, TOKEN)
+    mine = st.subscription_id("ada@example.com")
+    yours = st.subscription_id("bob@example.com")
+    store.put_resume(
+        mine,
+        "rmfk3n2abcd",
+        _document("rmfk3n2abcd", updatedAt="2026-09-01T00:00:00+00:00"),
+    )
+    store.put_resume(
+        mine,
+        "rmfk3n2wxyz",
+        _document("rmfk3n2wxyz", updatedAt="2026-09-09T00:00:00+00:00"),
+    )
+    store.put_resume(yours, "rmfk3n2zzzz", _document("rmfk3n2zzzz"))
+
+    assert [d["id"] for d in store.resumes_for(mine)] == ["rmfk3n2wxyz", "rmfk3n2abcd"]
+    assert store.resume_ids(mine) == {"rmfk3n2abcd", "rmfk3n2wxyz"}
+    assert [d["id"] for d in store.resumes_for(yours)] == ["rmfk3n2zzzz"]
+    assert (
+        store.get_resume(yours, "rmfk3n2abcd") is None
+    )  # never across the account boundary
+
+
+@pytest.mark.parametrize(
+    "account,doc_id",
+    [
+        ("../../etc", "rmfk3n2abcd"),
+        ("0123456789abcdef", "../../../secrets"),
+        ("0123456789abcdef", "r1/../../x"),
+        ("0123456789abcdef", "rshort"),
+        ("0123456789abcdef", ""),
+    ],
+)
+def test_resume_paths_that_are_not_paths_never_reach_the_hub(
+    monkeypatch, account, doc_id
+):
+    """Both halves are shape-checked, and a refused write must not silently look like one.
+
+    The account half comes from the session and the document half comes from the URL, so this
+    is the same traversal guard `get_set` applies — and `is_resume_id` exists so the route can
+    answer 400 rather than letting `put_resume` no-op into a browser that reads it as saved."""
+    hub = _Hub().install(monkeypatch)
+    # RECORDED, not raised. Every reader here funnels through one `except Exception`, so a
+    # spy that raises is indistinguishable from the guard doing its job — which is how the
+    # first version of this test passed with the guard deleted.
+    reached: list[str] = []
+    for call in ("_read", "_write", "_delete"):
+        monkeypatch.setattr(st, call, lambda repo, path, *a, **k: reached.append(path))
+    store = st.Store(REPO, TOKEN)
+    assert store.get_resume(account, doc_id) is None
+    store.put_resume(account, doc_id, _document())
+    store.remove_resume(account, doc_id)
+    assert reached == [], f"a malformed id built the Hub path {reached}"
+    assert hub.files == {}
+
+
+def test_is_resume_id_accepts_exactly_what_the_builder_mints():
+    # `'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)`
+    assert st.is_resume_id("rmfk3n2abcd")
+    assert st.is_resume_id("r" + "0123456789abcdefghij" * 2)  # 40 chars, the ceiling
+    assert not st.is_resume_id("r" + "0123456789abcdefghij" * 3)  # over it
+    assert not st.is_resume_id("rMFK3N2ABCD")  # base36 is lowercase
+    assert not st.is_resume_id("resume.json")
+    assert not st.is_resume_id(None)
+
+
+def test_one_unreadable_resume_does_not_empty_the_list(monkeypatch):
+    account = st.subscription_id("ada@example.com")
+    _Hub(
+        {
+            f"resumes/{account}/rmfk3n2abcd.json": b"{ this is not json",
+            f"resumes/{account}/rmfk3n2wxyz.json": json.dumps(
+                _document("rmfk3n2wxyz")
+            ).encode(),
+        }
+    ).install(monkeypatch)
+    # Same rule as `sets_for` and `all`: one bad file is data, not a crash, and must not take
+    # the rest of somebody's résumés off the list with it.
+    assert [d["id"] for d in st.Store(REPO, TOKEN).resumes_for(account)] == [
+        "rmfk3n2wxyz"
+    ]
+
+
+def test_removing_a_resume_takes_it_out_of_the_tree(monkeypatch):
+    hub = _Hub().install(monkeypatch)
+    store = st.Store(REPO, TOKEN)
+    account = st.subscription_id("ada@example.com")
+    store.put_resume(account, "rmfk3n2abcd", _document())
+    store.remove_resume(account, "rmfk3n2abcd")
+    assert hub.files == {}
+    assert store.get_resume(account, "rmfk3n2abcd") is None
+
+
 # ---- Saved jobs (ADR-0044) ----
 
 

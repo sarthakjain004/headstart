@@ -32,6 +32,8 @@ import search  # the shared search path — synced from src/headstart/search.py 
 from alerts import access, identity
 from alerts.store import (
     MAX_PARSES,
+    MAX_RESUME_BYTES,
+    MAX_RESUMES,
     MAX_SAVED,
     MAX_SETS,
     Profile,
@@ -39,6 +41,7 @@ from alerts.store import (
     SavedSet,
     Store,
     Subscription,
+    is_resume_id,
     subscription_id,
 )
 from flask import Flask, jsonify, render_template, request, session
@@ -741,6 +744,145 @@ def unstar_job(saved_id: str):
     return jsonify({"ok": True})
 
 
+# ---- Résumé documents (ADR-0124) ----------------------------------------------------------
+#
+# The stored record IS the browser's own JSON export, unchanged, so these four routes carry no
+# schema: they check the path, the size, the cap and the revision, and hand the bytes through.
+# Everything else about a Résumé document — what a Component is, how a Tailoring resolves — is
+# the client's, and the store deliberately does not learn it.
+#
+# The browser stays the working copy. Nothing here is on an edit path: the client pushes on an
+# explicit save, on tab-hide, and at most once every few minutes, because each write is a Git
+# commit on a repo head shared with every other Account.
+
+
+def _resume_summary(document: dict) -> dict:
+    """The listing row for one stored document — enough to show it and open it, never its words.
+
+    The keys are the browser's own (`updatedAt`, not `updated_at`): the record is its export,
+    and renaming them here would be the shape-to-shape mapping ADR-0124 refused."""
+    return {
+        "id": str(document.get("id") or ""),
+        "name": str(document.get("name") or ""),
+        "layoutId": str(document.get("layoutId") or ""),
+        "updatedAt": str(document.get("updatedAt") or ""),
+        "rev": int(document.get("rev") or 0),
+    }
+
+
+@app.route("/resumes")
+def list_resumes():
+    """Every Résumé document on this Account, newest edit first — summaries only.
+
+    This is what makes sync worth having rather than merely true: a browser that has never seen
+    these documents (a new machine, a cleared cache) finds them here and pulls one down."""
+    gate = _account_gate()
+    if not gate:
+        return jsonify({"error": "account copies are not configured"}), 503
+    email, store = gate
+    return jsonify(
+        [_resume_summary(d) for d in store.resumes_for(subscription_id(email))]
+    )
+
+
+@app.route("/resumes/<doc_id>")
+def get_resume(doc_id: str):
+    """One stored document, verbatim — the restore path."""
+    gate = _account_gate()
+    if not gate:
+        return jsonify({"error": "account copies are not configured"}), 503
+    email, store = gate
+    document = store.get_resume(subscription_id(email), doc_id)
+    if document is None:
+        return jsonify({"error": "no such résumé"}), 404
+    return jsonify(document)
+
+
+@app.route("/resumes/<doc_id>", methods=["PUT"])
+def put_resume(doc_id: str):
+    """Store one Résumé document — the sync push (ADR-0124 decisions 1 and 4).
+
+    **A conflict is refused, never merged and never overwritten.** The document carries a `rev`
+    the client increments, and a push is accepted only when it is exactly one past what is
+    stored; anything else answers 409 *with the stored document in the body*, so the client can
+    keep both copies. Two devices editing the same résumé is somebody's afternoon, and the one
+    thing this must never do is pick a winner quietly.
+
+    The check is read-then-write, not a transaction — this is a Git repo, not a database. Two
+    pushes landing inside the same few hundred milliseconds can both read the same `rev` and
+    both be accepted, the second overwriting the first. The window is the Hub round trip, both
+    devices still hold their own copy in the browser, and closing it properly is what ADR-0124
+    weighed a transactional store for and declined. It is named rather than hidden."""
+    gate = _account_gate()
+    if not gate:
+        return jsonify({"error": "account copies are not configured"}), 503
+    email, store = gate
+    if not is_resume_id(doc_id):
+        return jsonify({"error": "that is not a résumé id"}), 400
+
+    raw = request.get_data(cache=False)
+    if len(raw) > MAX_RESUME_BYTES:
+        return jsonify(
+            {
+                "error": f"that résumé is too large — the limit is {MAX_RESUME_BYTES // 1024} KB"
+            }
+        ), 413
+    try:
+        document = json.loads(raw)
+    except ValueError:
+        document = None
+    if not isinstance(document, dict):
+        return jsonify({"error": "that is not a résumé"}), 400
+    # The document must name itself. Without this one line a client could file document A at
+    # document B's path and silently replace it — the id in the URL and the id in the record
+    # are two claims about the same thing, and only one of them is the record.
+    if document.get("id") != doc_id:
+        return jsonify({"error": "that résumé does not match its id"}), 400
+    rev = document.get("rev")
+    if not isinstance(rev, int) or isinstance(rev, bool) or rev < 1:
+        return jsonify({"error": "that résumé is missing its revision"}), 400
+
+    account = subscription_id(email)
+    stored = store.get_resume(account, doc_id)
+    if stored is None:
+        # Nothing stored means nothing to lose, so any revision is accepted — the counter
+        # guards stored content, and there is none. This is also the path a second device
+        # takes after the first deleted the record, which a strict `rev == 1` would have
+        # turned into an unresolvable conflict against an empty slot.
+        held = store.resume_ids(account)
+        if doc_id not in held and len(held) >= MAX_RESUMES:
+            return jsonify({"error": f"that's the limit — {MAX_RESUMES} résumés"}), 400
+    elif rev != int(stored.get("rev") or 0) + 1:
+        return jsonify(
+            {
+                "error": "this résumé changed somewhere else",
+                "stored": stored,
+            }
+        ), 409
+
+    store.put_resume(account, doc_id, document)
+    return jsonify({"ok": True, "rev": rev})
+
+
+@app.route("/resumes/<doc_id>", methods=["DELETE"])
+def delete_resume(doc_id: str):
+    """Take one Résumé document off the Account.
+
+    Gone from the tree immediately; gone from the repository's history when the scheduled
+    squash next runs (`.github/workflows/squash-subscribers-history.yml`). ADR-0124 states the
+    window as 30 days and the product says so — that sentence is true only while that workflow
+    exists, which is why the workflow shipped in the same change as this route."""
+    gate = _account_gate()
+    if not gate:
+        return jsonify({"error": "account copies are not configured"}), 503
+    email, store = gate
+    account = subscription_id(email)
+    if doc_id not in store.resume_ids(account):
+        return jsonify({"error": "no such résumé"}), 404
+    store.remove_resume(account, doc_id)
+    return jsonify({"ok": True})
+
+
 @app.route("/trends")
 def trends():
     """Role counts over time (ADR-0040, ADR-0051), or 503 until the ledger exists.
@@ -1027,6 +1169,11 @@ def index():
         sets_on=_SETS_ON,
         saved_on=_SETS_ON,  # same prerequisites — see the _SETS_ON comment
         profile_on=_SETS_ON,  # likewise (the parse button 503s on its own if the router is down)
+        # The Résumé tab's account-copy switch (ADR-0124). Same prerequisites again — an
+        # identity and somewhere to file per-Account records. Undefined renders falsy, so a
+        # deployment that forgets the kwarg shows no switch at all, which is the safe
+        # direction here: the control must never appear where nothing can be stored.
+        resume_sync_on=_SETS_ON,
     )
 
 

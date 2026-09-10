@@ -1,19 +1,29 @@
-/* Where a résumé is kept (ADR-0123, upholding ADR-0041).
+/* Where a résumé is kept (ADR-0123, amended by ADR-0124).
  *
- * HeadStart's servers do not store résumés. That is not an implementation detail of this
- * feature — it is the rule the Profile already lives by (ADR-0041: the document is read once by
- * the extraction call and discarded, and contact details are never kept). So the builder writes to
- * the Account's own browser and to nothing else: no endpoint, no upload, no third party. Every
- * word typed on the Résumé tab stays on the machine it was typed on.
+ * **This browser is the working copy, always.** Every word typed on the Résumé tab is written
+ * here — to the Account's own machine — and the editor never reads a résumé from anywhere else.
+ * That is not merely how it is built: it is what makes the account copy safe to add, because a
+ * signed-out session, an outage or a deployment with no account store all leave the tab working
+ * exactly as it did before there was one.
  *
- * This module is the seam that makes that a *choice* rather than a fact welded into the editor.
- * Everything above it talks to a repository interface — list, get, save, remove — so the account
- * sync ADR-0124 settled (one JSON file per document in the private HF dataset, beside the Profile
- * and the Saved sets, opt-in per résumé) is a second implementation of six methods rather than a
- * rewrite. Note what that sync must NOT reuse: the debounce below exists because localStorage is
- * free to write, and a Git commit is not. The in-memory one is not a stub for tests alone: it is what the editor falls
- * back to when localStorage is unavailable (private windows, storage disabled), which keeps the
- * builder usable for the session instead of failing at the first keystroke.
+ * **One thing has changed, and it is opt-in.** The header here used to say HeadStart's servers do
+ * not store résumés, full stop. That is no longer true and must not be left standing: ADR-0124
+ * accepted an account copy — one JSON file per document in the same private dataset the Profile
+ * and the Saved sets live in — and `resume_sync.js` implements it. It is **off by default and
+ * switched on for one résumé at a time**, in the Résumés popover, beside the sentence saying what
+ * turning it on means. A résumé nobody switches on never leaves this browser. ADR-0041's rule for
+ * the **Résumé** — the text pasted into the Profile tab for extraction, read once and discarded —
+ * is a different object with a different lifetime and is untouched by any of it.
+ *
+ * ADR-0124's own header predicted the sync would be "a second implementation of six methods"
+ * against this interface. It is not, and the reason is that ADR's own decision 3: HF is a sync
+ * *target*, not a place the editor reads from, so making it a Repository would have put a Git
+ * commit behind a keystroke. Note what it must NOT reuse either way — the debounce below exists
+ * because localStorage is free to write, and a commit is not.
+ *
+ * The in-memory repository is not a stub for tests alone: it is what the editor falls back to when
+ * localStorage is unavailable (private windows, storage disabled), which keeps the builder usable
+ * for the session instead of failing at the first keystroke.
  *
  *   list()          -> [{id, name, layoutId, updatedAt}]  (newest first, no document parsed)
  *   get(id)         -> document | null

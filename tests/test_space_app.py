@@ -814,6 +814,198 @@ def test_saved_tab_appears_when_configured(sets_app, hub, monkeypatch):
     assert b'data-tab="saved"' in client.get("/", base_url=_HTTPS).data
 
 
+# ---- Résumé documents (ADR-0124, ADR-0131) ----
+#
+# The store half is tested in tests/test_alerts_store.py. What only these routes own is the
+# policy: the revision check that refuses a conflicting push, the cap, the size bound, and the
+# rule that a document must name itself.
+
+
+def _doc(doc_id="rmfk3n2abcd", rev=1, **fields):
+    document = {
+        "schema": 1,
+        "id": doc_id,
+        "name": "Ada's résumé",
+        "layoutId": "headless-headhunter",
+        "updatedAt": "2026-09-10T10:00:00+00:00",
+        "root": {"id": "__root__", "type": "__root__", "children": []},
+        "content": {},
+        "sync": True,
+        "rev": rev,
+    }
+    document.update(fields)
+    return document
+
+
+def _put(client, document):
+    return client.put("/resumes/" + document["id"], json=document, base_url=_HTTPS)
+
+
+def test_a_resume_pushes_lists_reads_back_and_deletes(sets_app, hub, monkeypatch):
+    client = _signed_in(sets_app, monkeypatch)
+    assert client.get("/resumes", base_url=_HTTPS).json == []
+
+    pushed = _put(client, _doc(rev=1))
+    assert pushed.status_code == 200 and pushed.json == {"ok": True, "rev": 1}
+
+    # The listing carries enough to show a row and open it, and none of the words. Its keys are
+    # the browser's own (`updatedAt`) because the record IS the browser's export (ADR-0124).
+    rows = client.get("/resumes", base_url=_HTTPS).json
+    assert rows == [
+        {
+            "id": "rmfk3n2abcd",
+            "name": "Ada's résumé",
+            "layoutId": "headless-headhunter",
+            "updatedAt": "2026-09-10T10:00:00+00:00",
+            "rev": 1,
+        }
+    ]
+    # …and the document itself comes back unchanged — the restore path a second browser uses.
+    assert client.get("/resumes/rmfk3n2abcd", base_url=_HTTPS).json == _doc(rev=1)
+
+    assert client.delete("/resumes/rmfk3n2abcd", base_url=_HTTPS).json == {"ok": True}
+    assert client.get("/resumes", base_url=_HTTPS).json == []
+    assert client.get("/resumes/rmfk3n2abcd", base_url=_HTTPS).status_code == 404
+    assert client.delete("/resumes/rmfk3n2abcd", base_url=_HTTPS).status_code == 404
+
+
+def test_a_push_that_is_not_one_past_the_stored_revision_is_refused(
+    sets_app, hub, monkeypatch
+):
+    """The conflict rule, and the only thing that stops one device silently erasing another.
+
+    The refusal hands back the STORED document, because the client cannot keep both copies
+    without it — ADR-0124 decision 4 is "never resolved by discarding", and a bare 409 would
+    leave the loser with nothing to adopt."""
+    client = _signed_in(sets_app, monkeypatch)
+    assert _put(client, _doc(rev=1)).status_code == 200
+    assert _put(client, _doc(rev=2, name="second edit")).status_code == 200
+
+    # This device still thinks the account copy is at rev 1, so it offers 2. It is not.
+    stale = _put(client, _doc(rev=2, name="written on the laptop"))
+    assert stale.status_code == 409
+    assert stale.json["stored"]["name"] == "second edit"
+    # And nothing was overwritten by the refusal.
+    assert (
+        client.get("/resumes/rmfk3n2abcd", base_url=_HTTPS).json["name"]
+        == "second edit"
+    )
+    # Skipping ahead is refused for the same reason as falling behind.
+    assert _put(client, _doc(rev=9)).status_code == 409
+
+
+def test_a_first_push_takes_any_revision_because_there_is_nothing_to_lose(
+    sets_app, hub, monkeypatch
+):
+    """A strict `rev == 1` would turn "the other device deleted it" into a conflict against an
+    empty slot that no retry ever resolves. The counter guards stored content; there is none."""
+    client = _signed_in(sets_app, monkeypatch)
+    assert _put(client, _doc(rev=7)).status_code == 200
+    assert client.get("/resumes/rmfk3n2abcd", base_url=_HTTPS).json["rev"] == 7
+
+
+def test_a_resume_must_name_itself(sets_app, hub, monkeypatch):
+    """Without this, a client could file document A at document B's path and replace it."""
+    client = _signed_in(sets_app, monkeypatch)
+    answer = client.put(
+        "/resumes/rmfk3n2abcd", json=_doc("rmfk3n2wxyz"), base_url=_HTTPS
+    )
+    assert answer.status_code == 400
+    assert client.get("/resumes", base_url=_HTTPS).json == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"id": "rmfk3n2abcd"},  # no revision at all
+        {"id": "rmfk3n2abcd", "rev": 0},  # 0 means "no account copy", never a push
+        {"id": "rmfk3n2abcd", "rev": "1"},  # a string is not a counter
+        {
+            "id": "rmfk3n2abcd",
+            "rev": True,
+        },  # nor is a bool, which int() would have taken
+        ["not", "a", "document"],
+    ],
+)
+def test_a_push_without_a_usable_revision_is_refused(sets_app, hub, monkeypatch, body):
+    client = _signed_in(sets_app, monkeypatch)
+    assert (
+        client.put("/resumes/rmfk3n2abcd", json=body, base_url=_HTTPS).status_code
+        == 400
+    )
+    assert hub == {}
+
+
+def test_a_malformed_document_id_is_a_400_not_a_silent_no_op(
+    sets_app, hub, monkeypatch
+):
+    """`put_resume` refuses a bad id by doing nothing, which the browser would read as saved.
+    The route checks at the door so the answer is visible (`is_resume_id`)."""
+    client = _signed_in(sets_app, monkeypatch)
+    assert (
+        client.put("/resumes/nope", json=_doc("nope"), base_url=_HTTPS).status_code
+        == 400
+    )
+    assert hub == {}
+
+
+def test_resumes_are_capped_but_an_overwrite_never_hits_the_cap(
+    sets_app, hub, monkeypatch
+):
+    client = _signed_in(sets_app, monkeypatch)
+    ids = [f"rmfk3n2ab{i:02d}" for i in range(sets_app.MAX_RESUMES)]
+    for doc_id in ids:
+        assert _put(client, _doc(doc_id)).status_code == 200
+    over = _put(client, _doc("rmfk3n2abzz"))
+    assert over.status_code == 400 and "limit" in over.json["error"]
+    # The one already stored is an update, not a create, so the cap must not refuse it.
+    assert _put(client, _doc(ids[0], rev=2)).status_code == 200
+
+
+def test_a_resume_over_the_size_bound_is_refused_before_it_is_parsed(
+    sets_app, hub, monkeypatch
+):
+    client = _signed_in(sets_app, monkeypatch)
+    huge = _doc(content={"n1": {"text": "x" * (sets_app.MAX_RESUME_BYTES + 1000)}})
+    assert _put(client, huge).status_code == 413
+    assert hub == {}
+
+
+def test_resumes_are_scoped_to_the_signed_in_account(sets_app, hub, monkeypatch):
+    ada = _signed_in(sets_app, monkeypatch, email="ada@example.com")
+    assert _put(ada, _doc()).status_code == 200
+    bob = _signed_in(sets_app, monkeypatch, email="bob@example.com")
+    assert bob.get("/resumes", base_url=_HTTPS).json == []
+    assert bob.get("/resumes/rmfk3n2abcd", base_url=_HTTPS).status_code == 404
+
+
+def test_resumes_require_wall_and_storage(auth_app, monkeypatch):
+    """Signed in, but this deployment keeps no per-Account records: 503, and the tab renders
+    without the switch at all rather than offering to store what nothing can store."""
+    client = _signed_in(auth_app, monkeypatch)
+    assert client.get("/resumes", base_url=_HTTPS).status_code == 503
+    assert (
+        client.put("/resumes/rmfk3n2abcd", json=_doc(), base_url=_HTTPS).status_code
+        == 503
+    )
+    assert b'id="rb-sync"' not in client.get("/", base_url=_HTTPS).data
+
+
+def test_resumes_are_gated_by_the_wall(sets_app):
+    assert sets_app.app.test_client().get("/resumes").status_code == 401
+    assert (
+        sets_app.app.test_client().put("/resumes/rmfk3n2abcd", json={}).status_code
+        == 401
+    )
+
+
+def test_the_account_switch_renders_when_configured(sets_app, hub, monkeypatch):
+    page = _signed_in(sets_app, monkeypatch).get("/", base_url=_HTTPS).data
+    assert b'id="rb-sync"' in page
+    # The consequence is stated with the switch, not three rows away (ADR-0124 decision 2).
+    assert b"Keep a copy on my account" in page
+
+
 def test_sets_keep_seen_within_but_the_projection_drops_it(sets_app, hub, monkeypatch):
     import json as _json
 
