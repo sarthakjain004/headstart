@@ -64,21 +64,62 @@ test('the same words survive every layout, unchanged', () => {
   }
 });
 
-test('a component type registered after a layout still renders in it', () => {
+test('a component registered after a layout renders in it — whatever its fields are called', () => {
   const ctx = load(ALL);
-  // Nothing here knows this type exists; it arrives wearing a shape, which is the whole point.
-  ctx.ResumeComponents.define({
-    type: 'award', shape: 'line', label: 'Award',
-    fields: [{ key: 'label', label: 'Award' }, { key: 'value', label: 'Detail' }],
-  });
-  const doc = ctx.ResumeDocument.builder().usingLayout(HH)
-    .add('award', { label: 'Best Barista', value: '2025' }).build();
+  /* This test used to define its new component with fields named `label` and `value` — the exact
+     two keys every `line` fallback happened to hardcode — so it passed while the guarantee it
+     names was false. Measured at the time: a Language line with fields `name`/`level` rendered as
+     literally nothing in all three layouts, and a childless Certification was an empty box on the
+     canvas. A user's languages would have vanished off the page in silence.
+     So every field name below is deliberately one no renderer has ever seen, and there is one
+     component per SHAPE, because the fallback is chosen by shape. If a future field-name
+     coincidence creeps back in, this fails. */
+  const NEW = [
+    ['id_block', 'header', [['who', 'Ada Lovelace'], ['reach', 'ada@example.test']]],
+    ['motto', 'text', [['saying', 'Ship it on Friday']]],
+    ['panel', 'section', [['heading', 'Further Reading']]],
+    ['certification', 'entry', [['awarded', 'AWS Solutions Architect'], ['by', 'Amazon'], ['when', '2024']]],
+    ['language_line', 'line', [['tongue', 'French'], ['fluency', 'Full professional']]],
+    ['note_item', 'bullet', [['body', 'A thing worth noting']]],
+  ];
+  for (const [type, shape, fields] of NEW) {
+    ctx.ResumeComponents.define({
+      type, shape, label: type,
+      accepts: shape === 'section' ? ['*'] : [],
+      inList: shape === 'bullet',
+      fields: fields.map(([key]) => ({ key, label: key })),
+    });
+  }
+
+  const b = ctx.ResumeDocument.builder().usingLayout(HH);
+  for (const [type, shape, fields] of NEW) {
+    const content = Object.fromEntries(fields);
+    if (shape === 'section') b.add(type, content, s2 => s2.add('note_item', { body: 'A thing worth noting' }));
+    else if (shape !== 'bullet') b.add(type, content);
+  }
+  const doc = b.build();
+  const words = NEW.flatMap(([, , fields]) => fields.map(([, value]) => value));
+
   for (const lay of ctx.ResumeLayouts.all()) {
     const html = ctx.ResumeLayouts.renderDocument(lay, Object.assign({}, doc, { layoutId: lay.id }));
-    assert.equal(hits(html), 1, `${lay.id} did not render the new type`);
-    assert.ok(html.includes('Best Barista'), `${lay.id} rendered it empty`);
+    const text = html.replace(/<[^>]+>/g, ' ').replace(/&middot;/g, '.').replace(/\s+/g, ' ');
+    for (const word of words) {
+      assert.ok(text.includes(word),
+        `${lay.id} rendered nothing for "${word}" — a shape fallback is naming a field`);
+    }
+    assert.equal(hits(html), ctx.ResumeDocument.flatten(doc).length,
+      `${lay.id} dropped or doubled a node`);
   }
-  assert.ok(ctx.ResumeExport.plainText(doc).includes('Best Barista'), 'and it exports');
+  /* And the plain-text export, which had the same defect in its own shape visitors — the words of
+     an unknown component were dropped from the copy people paste into an application form. The
+     name is upper-cased by the header visitor, as it always has been for the known header. */
+  /* Case-insensitive: the export upper-cases the name and the section headings on purpose, as it
+     always has for the known header and "WORK HISTORY". What matters here is that no word is
+     dropped. */
+  const text = ctx.ResumeExport.plainText(doc).toLowerCase();
+  for (const word of words) {
+    assert.ok(text.includes(word.toLowerCase()), `the export dropped "${word}"`);
+  }
 });
 
 test('a layout registered at runtime works end to end', () => {

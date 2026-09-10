@@ -21,16 +21,30 @@
   const render = {
     byShape: Object.assign({}, plain, {
       section: ctx => box(ctx, 'cv-section',
-        '<h2 class="cv-h">' + ctx.esc(ctx.content.title) + '</h2>' + L.groupChildren(ctx, 'cv-list')),
-      bullet: ctx => ctx.el('li', { class: 'cv-bullet' }, ctx.escLines(ctx.content.text)),
-      text: ctx => box(ctx, 'cv-note', ctx.escLines(ctx.content.text)),
-      line: ctx => box(ctx, 'cv-line',
-        (ctx.content.label ? '<b>' + ctx.esc(ctx.content.label) + '</b> ' : '') + ctx.escLines(ctx.content.value)),
-      entry: ctx => box(ctx, 'cv-entry', ctx.children.join('')),
-      header: ctx => box(ctx, 'cv-head',
-        '<h1 class="cv-name">' + ctx.esc(ctx.content.fullName) + '</h1>' +
-        '<p class="cv-contact">' + [ctx.content.phone, ctx.content.email, ctx.content.link,
-          ctx.content.locationLine].filter(Boolean).map(ctx.esc).join(' &middot; ') + '</p>'),
+        '<h2 class="cv-h">' + ctx.escLines((L.headAndRest(ctx).head || {}).value || '') + '</h2>' +
+        L.groupChildren(ctx, 'cv-list')),
+      bullet: ctx => ctx.el('li', { class: 'cv-bullet' }, ctx.textOf(' ')),
+      text: ctx => box(ctx, 'cv-note', ctx.textOf(' ')),
+      line: ctx => {
+        const { head, rest } = L.headAndRest(ctx);
+        return box(ctx, 'cv-line', head
+          ? (rest.length
+            ? '<b>' + ctx.escLines(head.value) + '</b> ' + rest.map(f => ctx.escLines(f.value)).join(' &middot; ')
+            : ctx.escLines(head.value))
+          : '');
+      },
+      /* Its OWN words as well as its children. Rendering only children made any entry without
+         them — a certification, an award — an empty box on the page. */
+      entry: ctx => box(ctx, 'cv-entry', ctx.textOf() + ctx.children.join('')),
+      /* First declared field as the name, the rest as the contact line — a byShape renderer is
+         handed components it does not know, so it may not name `fullName` or `phone`. */
+      header: ctx => {
+        const { head, rest } = L.headAndRest(ctx);
+        return box(ctx, 'cv-head',
+          (head ? '<h1 class="cv-name">' + ctx.escLines(head.value) + '</h1>' : '') +
+          (rest.length ? '<p class="cv-contact">' +
+            rest.map(f => ctx.escLines(f.value)).join(' &middot; ') + '</p>' : ''));
+      },
     }),
     byType: {
       work_entry: ctx => box(ctx, 'cv-entry',
