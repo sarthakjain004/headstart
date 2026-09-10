@@ -301,6 +301,13 @@
 .rb-mini-pages { flex: 1; min-width: 0; color: var(--ink-2); font-size: .82rem; }
 .rb-minicard .rb-break::after { display: none; }
 
+/* The folded half of the Design pane. Closed it is one row; open it is the millimetre work. */
+.rb-fine { border: 1px solid var(--rule); border-radius: var(--r-md); padding: 8px 10px; }
+.rb-fine > summary { cursor: pointer; font-size: .86rem; color: var(--ink-2); min-height: 24px;
+  display: flex; align-items: center; }
+.rb-fine[open] > summary { margin-bottom: 10px; }
+.rb-fine > .rb-field + .rb-field { margin-top: 10px; }
+
 .rb-form { background: var(--raise); border: 1px solid var(--rule); border-radius: var(--r-lg);
   padding: 14px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
 .rb-badge { display: inline-block; margin-left: 5px; background: var(--alert); color: #fff;
@@ -315,8 +322,14 @@
    them; here they pair up and a paragraph field takes the whole width on its own. `auto-fit`
    rather than a fixed count so this needs no breakpoint of its own — it is already the answer at
    1280, at 1000 where the aside drops below, and on a phone. */
-.rb-fields { display: grid; gap: 10px 12px;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.rb-fields { display: grid; gap: 12px 14px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+/* Two columns at most once there is room, rather than as many 210px columns as fit. `auto-fit`
+   alone spends new width on MORE columns, so widening the Edit segment made every field
+   narrower: at 1200px it drew five columns of 220px. A pair per row is what the fields are for
+   — a job's title beside its employer, a start date beside an end date — and everything wider
+   than a pair is a paragraph, which already takes the whole row. */
+@media (min-width: 1150px) { .rb-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .rb-field-wide { grid-column: 1 / -1; }
 .rb-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .rb-field label { font-size: .8rem; color: var(--ink-2); }
@@ -324,7 +337,12 @@
   background: var(--raise-2); border: 1px solid var(--rule); color: var(--ink);
   border-radius: var(--r-md); padding: 9px 11px; font: inherit; font-size: .9rem; width: 100%;
   resize: vertical; }
-.rb-field textarea { min-height: 5.2em; line-height: 1.5; }
+/* A bullet is 150-250 characters. Four rows showed the tail of one and hid how it began, on the
+   single most-edited field in the product — and the layout's own three-lines rule is about
+   exactly this text. `field-sizing` grows the box to its content where it is supported; the
+   min-height is the floor everywhere else, and `paint` scrolls each box back to its first line
+   so a re-render never leaves you looking at the end of your own sentence. */
+.rb-field textarea { min-height: 7.5em; max-height: 60vh; line-height: 1.55; field-sizing: content; }
 .rb-field input:focus-visible, .rb-field textarea:focus-visible, .rb-aside textarea:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 1px; }
 .rb-flag label { display: flex; gap: 7px; align-items: center; color: var(--ink); font-size: .86rem; }
