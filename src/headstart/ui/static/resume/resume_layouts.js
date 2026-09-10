@@ -105,16 +105,22 @@
   const all = () => order.map(id => registry.get(id));
 
   /* ---- paper ---------------------------------------------------------------------------
-     Every layout here is written for US Letter, which is the wrong sheet almost everywhere
+     Most layouts here are written for US Letter, which is the wrong sheet almost everywhere
      outside North America — and HeadStart is deliberately a global product, not a US one. A4 is
      0.23in narrower and 0.69in taller, so a résumé laid out on Letter and printed on A4 re-wraps
      every bullet and moves its page break: for a builder whose headline check is "no bullet over
      three lines", that is a wrong answer shown confidently.
 
-     The sheet is the DOCUMENT's choice, not the Layout's. The same template is printed on both,
-     and a Layout that declared A4 would be a second copy of itself. It is deliberately not a
-     tunable either: tunables are type tokens interpolated into a stylesheet, and this is
-     geometry every rule and every measurement reads. */
+     The sheet is the DOCUMENT's choice, and it OVERRIDES whatever the Layout declares. What a
+     Layout declares is only where a new document starts: this used to read "not the Layout's at
+     all", on the argument that a Letter template and an A4 one would be two copies of the same
+     layout. That holds for a template. It does not hold for a FORM — Europass is an A4 document
+     the way a passport is a passport-sized one, and starting it on Letter is not a preference,
+     it is the wrong form. So `europass` declares A4 and everything else declares Letter, and a
+     document that names a paper still wins over both.
+
+     It is deliberately not a tunable either: tunables are type tokens interpolated into a
+     stylesheet, and this is geometry every rule and every measurement reads. */
   const PAPERS = Object.freeze([
     Object.freeze({ id: 'letter', label: 'US Letter · 8.5 × 11in', width: 8.5, height: 11 }),
     Object.freeze({ id: 'a4', label: 'A4 · 210 × 297mm', width: 8.27, height: 11.69 }),
@@ -349,12 +355,22 @@
      Small pieces more than one layout wants. A helper here must be about *structure*
      ("a left label and a right date"), never about a particular look. */
 
-  /** "June 2023 to Current" from a work entry's own fields. */
-  function dateRange(content) {
+  /** "June 2023 to Current" from a work entry's own fields.
+   *
+   *  `style` overrides the two words templates disagree about. The Headless Headhunter guide
+   *  says "June 2023 to Current" and is the default, so the three layouts written before this
+   *  argument existed are untouched; Jake's Resume and the Harvard standard both write
+   *  "June 2023 – Present", and the general résumé standard is explicit that "Current" is wrong.
+   *  Neither spelling is checked anywhere — it is the layout's call, which is the point. */
+  function dateRange(content, style) {
+    const s = Object.assign({ joiner: ' to ', current: 'Current' }, style || {});
     const start = (content.start || '').trim();
-    if (!start) return content.current ? 'to Current' : '';
-    const end = content.current ? 'Current' : (content.end || '').trim();
-    return end ? start + ' to ' + end : start;
+    const end = content.current ? s.current : (content.end || '').trim();
+    /* An end with no start prints the end. Education is the reason — every standard here asks
+       for the graduation date alone — and a job that carries only an end date used to render
+       its dates as nothing at all, which is a word lost rather than a word withheld. */
+    if (!start) return end ? (content.current ? s.joiner.trim() + ' ' + end : end) : '';
+    return end ? start + s.joiner + end : start;
   }
 
   /** "Cashier at Large Ducks Coffee, TX" — the parts that exist, in the guide's own order. */
@@ -365,6 +381,15 @@
     let line = bits.join(' ');
     if (content.place) line = line ? line + ', ' + content.place : content.place;
     return line;
+  }
+
+  /** A row with one thing against each margin — the shape Jake's Resume and the Harvard template
+   *  both build their entries out of ("institution left, location right", then "degree left,
+   *  dates right"). Structure only: the caller passes the classes, so the two layouts that use it
+   *  look nothing like each other. */
+  function marginRow(cls, left, right) {
+    return '<div class="' + esc(cls) + '"><span class="rb-row-left">' + left + '</span>' +
+      '<span class="rb-row-right">' + right + '</span></div>';
   }
 
   /** Consecutive `inList` children collected into one list, everything else left alone.
@@ -424,5 +449,6 @@
     define, get, all, PAPERS, pageFor, themeFor, geometryFor, renderDocument, renderNode,
     renderStandalone, runRules,
     esc, escLines, dateRange, roleLine, plainStrategies, groupChildren, clampNum, headAndRest,
+    marginRow,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

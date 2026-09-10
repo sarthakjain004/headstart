@@ -37,7 +37,12 @@
         return ctx.el('header', { class: 'tc-head' },
           '<h1 class="tc-name">' + ctx.esc(c.fullName) + '</h1>' +
           (line ? '<p class="tc-contact">' + line + '</p>' : '') +
-          (c.locationLine ? '<p class="tc-contact">' + ctx.esc(c.locationLine) + '</p>' : ''));
+          (c.locationLine ? '<p class="tc-contact">' + ctx.esc(c.locationLine) + '</p>' : '') +
+          /* The header owns a `languages` field and this renderer forgot it, so a résumé that
+             listed its languages lost them on arriving here — measured over one node of every
+             catalogue type, 2026-09-10. A `byType` renderer may name fields; naming all but one
+             of them is how a field goes missing in one layout and nowhere else. */
+          (c.languages ? '<p class="tc-contact">' + ctx.esc(c.languages) + '</p>' : ''));
       },
       work_entry: ctx => ctx.el('div', { class: 'tc-entry' },
         '<div class="tc-role">' + ctx.esc(ctx.content.role || '') + '</div>' +

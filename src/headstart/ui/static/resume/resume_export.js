@@ -72,7 +72,15 @@
         return '- ' + [content.credential, content.status].filter(Boolean).join('   ');
       }
       const own = declared(content, spec);
-      return '\n' + String(content.name || content.title || own.join('   '));
+      /* Every declared field, NOT `content.name` first. Preferring a known key and falling back
+         only when it is absent looks safe and is not: `tech_project` has a `name` AND carries the
+         stack it was built with and the dates it ran, so the shortcut printed the project's name
+         and silently dropped the rest — out of the plain-text copy, which is the one an ATS reads
+         and the one people paste into an application form. Measured 2026-09-10 over one node of
+         every catalogue type. */
+      /* `declared` is empty only for a type this build has never registered — an older backup, or
+         a file from a newer build — so the last arm is the unregistered case, not dead code. */
+      return '\n' + (own.length ? own.join('   ') : String(content.name || content.title || ''));
     },
     line: (content, node, spec) => {
       if (content.label || content.value) return [content.label, content.value].filter(Boolean).join(': ');

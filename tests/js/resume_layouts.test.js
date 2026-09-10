@@ -79,7 +79,9 @@ test('a component registered after a layout renders in it — whatever its field
     ['motto', 'text', [['saying', 'Ship it on Friday']]],
     ['panel', 'section', [['heading', 'Further Reading']]],
     ['certification', 'entry', [['awarded', 'AWS Solutions Architect'], ['by', 'Amazon'], ['when', '2024']]],
-    ['language_line', 'line', [['tongue', 'French'], ['fluency', 'Full professional']]],
+    /* Not `language_line`: the catalogue has a real one now, and `define` refuses a duplicate.
+       A throwaway type in a test is a name in the same namespace as the shipped components. */
+    ['tongue_line', 'line', [['tongue', 'French'], ['fluency', 'Full professional']]],
     ['note_item', 'bullet', [['body', 'A thing worth noting']]],
   ];
   for (const [type, shape, fields] of NEW) {
@@ -119,6 +121,181 @@ test('a component registered after a layout renders in it — whatever its field
   const text = ctx.ResumeExport.plainText(doc).toLowerCase();
   for (const word of words) {
     assert.ok(text.includes(word.toLowerCase()), `the export dropped "${word}"`);
+  }
+});
+
+test('every component in the catalogue reaches the page and the export, in every layout', () => {
+  const ctx = load(ALL);
+  /* The companion to the test above, and the one that covers the components actually shipped
+     rather than six throwaways. One node of every registered type, every string field filled
+     with a token only that field has, rendered through every layout: anything a renderer forgets
+     shows up as a token that never made it to the page. It caught three real losses the first
+     time it ran — the two-column header's `languages`, and the plain-text export truncating a
+     project with a stack to its name alone. */
+  const b = ctx.ResumeDocument.builder().usingLayout(HH);
+  const want = [];
+  for (const spec of ctx.ResumeComponents.all()) {
+    const content = {};
+    for (const field of spec.fields) {
+      if (field.kind === 'flag') continue;
+      content[field.key] = 'Zx' + spec.type + field.key;
+      want.push(content[field.key]);
+    }
+    b.add(spec.type, content);
+  }
+  const doc = b.build();
+
+  for (const lay of ctx.ResumeLayouts.all()) {
+    const html = ctx.ResumeLayouts.renderDocument(lay, Object.assign({}, doc, { layoutId: lay.id }));
+    const text = html.replace(/<[^>]+>/g, ' ');
+    for (const token of want) {
+      assert.ok(text.includes(token), `${lay.id} rendered nothing for ${token}`);
+    }
+  }
+  /* And the same words reach the plain-text export. Case-insensitive: the export upper-cases the
+     name and the section headings, deliberately and always has. */
+  const exported = ctx.ResumeExport.plainText(doc).toLowerCase();
+  for (const token of want) {
+    assert.ok(exported.includes(token.toLowerCase()), `the export dropped ${token}`);
+  }
+});
+
+/* ---- the layouts added in 2026-09 ---- */
+
+const ADDED = ['jakes-resume', 'harvard-classic', 'modern-sidebar', 'europass'];
+
+test('every added layout ships a worked example that passes its own rules', () => {
+  const ctx = load(ALL);
+  /* The calibration that keeps a rule set honest: a layout whose own example trips its own
+     checks is stating a rule its author did not believe. The Headless Headhunter layout is held
+     to this against the guide's worked example; these four are held to it against theirs. */
+  for (const id of ADDED) {
+    const lay = ctx.ResumeLayouts.get(id);
+    assert.ok(lay.example, `${id} ships no example`);
+    const doc = ctx.ResumeDocument.builder().named('E').usingLayout(id);
+    lay.example(doc);
+    assert.deepEqual(ctx.ResumeLayouts.runRules(lay, doc.build()), [], `${id}'s example trips its own rules`);
+  }
+});
+
+test('every rule an added layout states can actually fire', () => {
+  const ctx = load(ALL);
+  const { ResumeDocument: D, ResumeLayouts: L } = ctx;
+  const idsFor = (layoutId, doc) => L.runRules(L.get(layoutId), doc).map(f => f.ruleId);
+
+  // Jake's: a project with no stack, an uncategorised skills line, and a summary block the
+  // template has no place for.
+  const jakes = D.builder().usingLayout('jakes-resume')
+    .add('header', { fullName: 'A' })
+    .add('professional_summary', { text: 'Backend engineer' })
+    .section('Projects', s => s.add('tech_project', { name: 'Gitlytics', tech: '' }))
+    .section('Technical Skills', s => s.add('skills_line', { label: '', value: 'Go, Python' }))
+    .build();
+  const jakesIds = idsFor('jakes-resume', jakes);
+  for (const rule of ['stack', 'skills-grouped', 'off-template']) {
+    assert.ok(jakesIds.includes(rule), `jakes-resume: ${rule} did not fire`);
+  }
+
+  // Harvard: a pronoun, a full stop, "Current" typed into a date, a heading nothing parses.
+  const harvard = D.builder().usingLayout('harvard-classic')
+    .add('header', { fullName: 'A' })
+    .section('My Journey So Far', s => s.add('work_entry',
+      { company: 'C', role: 'R', start: 'June 2023', end: 'Current' },
+      e => e.bullet('I ran the counter and closed the till.')))
+    .build();
+  const harvardIds = idsFor('harvard-classic', harvard);
+  for (const rule of ['pronouns', 'no-terminal-period', 'present-not-current', 'standard-headings']) {
+    assert.ok(harvardIds.includes(rule), `harvard-classic: ${rule} did not fire`);
+  }
+  /* And the same document under the Headless Headhunter layout does NOT report a terminal
+     period, because that template asks for one. Two layouts, opposite advice, same words —
+     which is the whole reason a rule belongs to a Layout. */
+  assert.ok(!idsFor(HH, harvard).includes('no-terminal-period'));
+
+  // Sidebar: a job history dragged into the band, and a band left empty.
+  const sidebar = D.builder().usingLayout('modern-sidebar')
+    .add('header', { fullName: 'A' }).into('side')
+    .section('Experience', s => s.add('work_entry', { role: 'R', start: 'June 2023' })).into('side')
+    .add('professional_summary', { text: 'x' })
+    .build();
+  assert.ok(idsFor('modern-sidebar', sidebar).includes('column-order'));
+
+  const flat = D.builder().usingLayout('modern-sidebar')
+    .add('header', { fullName: 'A' })
+    .add('professional_summary', { text: 'x' })
+    .section('Experience', s => s.add('work_entry', { role: 'R' }))
+    .build();
+  assert.ok(idsFor('modern-sidebar', flat).includes('band-empty'));
+
+  // Europass: a level that is not CEFR, no mother tongue, and the wrong sheet.
+  const europass = D.builder().usingLayout('europass')
+    .add('header', { fullName: 'A' })
+    .section('Language skills', s => s.add('language_line', { language: 'German', level: 'Fluent' }))
+    .build();
+  europass.paper = 'letter';
+  const europassIds = idsFor('europass', europass);
+  for (const rule of ['cefr', 'mother-tongue', 'a4']) {
+    assert.ok(europassIds.includes(rule), `europass: ${rule} did not fire`);
+  }
+  /* A mother tongue is exempt from the CEFR check: nobody grades their own first language. */
+  const native = D.builder().usingLayout('europass')
+    .add('header', { fullName: 'A' })
+    .section('Language skills', s => {
+      s.add('language_line', { language: 'Mother tongue', level: 'Slovenian' });
+      s.add('language_line', { language: 'English', level: 'C1' });
+    })
+    .build();
+  native.paper = 'a4';
+  assert.deepEqual(idsFor('europass', native), []);
+});
+
+test('the sidebar puts an arriving document in the wide column, never inside the band', () => {
+  const ctx = load(ALL);
+  /* `renderDocument` sends a node whose slot this layout does not know to `slots[0]`, and
+     `resume_document.js` writes the literal slot id 'main' when a block is added. A layout that
+     declared its band first would therefore swallow every migrated résumé whole. This asserts
+     the split that keeps that from happening, and that the trip costs no block. */
+  const sidebar = ctx.ResumeLayouts.get('modern-sidebar');
+  assert.equal(sidebar.slots[0].id, 'main', 'the wide column must be the first slot');
+
+  const source = ctx.ResumeLayouts.get(HH);
+  const b = ctx.ResumeDocument.builder().named('E').usingLayout(HH);
+  source.example(b);
+  const doc = b.build();
+  const before = ctx.ResumeDocument.flatten(doc).length;
+
+  const moved = ctx.ResumeDocument.clone(doc);
+  moved.layoutId = 'modern-sidebar';
+  sidebar.adopt(moved);
+
+  assert.equal(ctx.ResumeDocument.flatten(moved).length, before, 'adopt dropped a block');
+  assert.equal(JSON.stringify(moved.content), JSON.stringify(doc.content), 'adopt touched a word');
+  const banded = moved.root.children.filter(n => n.slot === 'side').map(n => n.type);
+  assert.deepEqual(banded, ['header'], 'only the contact block belongs in the band by default');
+  /* And the layout's own rule agrees with its own adopt — no dated block ended up in the band. */
+  assert.ok(!ctx.ResumeLayouts.runRules(sidebar, moved).some(f => f.ruleId === 'column-order'));
+
+  const html = ctx.ResumeLayouts.renderDocument(sidebar, moved);
+  const bandInner = html.split('data-slot="side"')[1] || '';
+  assert.ok(!bandInner.includes('data-type="work_entry"'), 'a job rendered inside the band');
+});
+
+test('an added layout starts you on section headings a parser knows', () => {
+  const ctx = load(ALL);
+  /* The starter document is the only résumé most people will ever see from this layout, and a
+     heading a parser cannot file is the cheapest possible own goal. Harvard's own rule is
+     borrowed to check the other three, which is exactly the sort of thing a rule being data
+     rather than code makes free. */
+  const harvard = ctx.ResumeLayouts.get('harvard-classic');
+  const headings = harvard.rules.find(r => r.id === 'standard-headings');
+  for (const id of ADDED) {
+    const lay = ctx.ResumeLayouts.get(id);
+    const b = ctx.ResumeDocument.builder().named('S').usingLayout(id);
+    lay.starter(b);
+    const doc = b.build();
+    const api = { nodesOfType: type => ctx.ResumeDocument.flatten(doc).filter(n => n.type === type),
+      content: nodeId => doc.content[nodeId] || {} };
+    assert.deepEqual(headings.check(doc, api), [], `${id}'s starter uses a non-standard heading`);
   }
 });
 
@@ -527,21 +704,32 @@ test('the download filename comes from the résumé’s own name, safely', () =>
 });
 
 /* ---- paper size ---------------------------------------------------------------------------
-   Every layout here is written for US Letter, which is the wrong sheet almost everywhere outside
+   Most layouts here are written for US Letter, which is the wrong sheet almost everywhere outside
    North America — and HeadStart is deliberately not a North American product. The sheet is the
-   DOCUMENT's choice, not the layout's: the same template is printed on both. */
+   DOCUMENT's choice and overrides the layout's: the same template prints on both. A layout may
+   still declare where a new document starts, and one does — Europass is an A4 form. */
 
 test('a document chooses its paper, and every layout is laid out on the one it chose', () => {
   const ctx = load(ALL);
   const L = ctx.ResumeLayouts;
   for (const lay of L.all()) {
-    assert.deepEqual(
-      [L.pageFor(lay, {}).width, L.pageFor(lay, {}).height], [8.5, 11], `${lay.id} default`);
+    /* A layout with no document has its own declared sheet. This used to assert US Letter for
+       every layout, which was true while every layout was a US one — Europass is an A4 form and
+       declares A4, and a form laid out on the wrong sheet re-wraps every line of it. */
+    assert.deepEqual([L.pageFor(lay, {}).width, L.pageFor(lay, {}).height],
+      [lay.page.width, lay.page.height], `${lay.id} default`);
+    /* And the DOCUMENT still wins, in both directions — the Europass layout prints on Letter if
+       that is what the résumé asks for, and the US layouts print on A4. */
     const a4 = L.pageFor(lay, { paper: 'a4' });
     assert.deepEqual([a4.width, a4.height], [8.27, 11.69], `${lay.id} on A4`);
+    const letter = L.pageFor(lay, { paper: 'letter' });
+    assert.deepEqual([letter.width, letter.height], [8.5, 11], `${lay.id} on US Letter`);
     assert.equal(a4.margin, lay.page.margin, 'the sheet changed, not the layout’s margin');
     assert.equal(a4.unit, lay.page.unit);
   }
+  /* Which layouts default to which sheet is a decision, not an accident: exactly one of them is
+     a European form. If a layout starts defaulting to A4 for taste, this says so. */
+  assert.deepEqual(L.all().filter(lay => lay.page.width < 8.4).map(lay => lay.id), ['europass']);
 });
 
 test('an unreadable paper name falls back rather than laying out on nothing', () => {
