@@ -1,22 +1,27 @@
 {# The Résumé tab (ADR-0123). Everything here is client-side: no route, no endpoint, and no
    résumé text ever reaches the server — see resume_repository.js and ADR-0041. The skeleton is
-   static so the panel is legible before the scripts run; resume_editor.js fills the rail.
+   static so the panel is legible before the scripts run; resume_editor.js fills the panes.
 
-   The arrangement is a FORM WITH A LIVE PREVIEW, not a canvas with an inspector (ADR-0125). The
-   rail is the document and the paper is the preview of it; direct manipulation on the paper
-   survives as a second path, not the main road. Measured on the arrangement this replaced, at
-   1280x800 before a word is typed: 57 controls in the DOM, 33 of them on screen at once, across
-   three stacked rows of chrome above the page (the bar, plus a stage head that wrapped to two).
-   The same measurement here is 55 and 22. Every builder the research covered (Resume.io, Kickresume,
-   Novoresume, and the three read from source) edits in a rail and previews on the right; none of
-   them makes the rendered page the place you type. #}
+   TWO SEGMENTS — Edit and Preview (ADR-0128), narrowing ADR-0125's side-by-side arrangement.
+   Writing a résumé and looking at one are two different sittings, and giving each the whole
+   panel is what buys the form room to be a form: a job's six fields sat one-per-row in a 400px
+   rail, and its bullets were paragraphs in a three-line box 330px wide.
+
+   The split is ONE level of tabs, not a third. Design moves to Preview, where its effect is what
+   you are looking at; Checks and Keywords move into a column beside the form, where the block
+   they name is what you fix. So the four panes that were a segment plus a nested tablist —
+   Document / Design / Checks / Keywords — are now two workspaces with no nesting at all. #}
 <section class="rb" id="rb">
 
   {# ONE band, three groups, hairline-separated: the document, the version, the actions. Grouping
      is the whole point — the eight controls that used to sit here at one visual weight gave a
      newcomer no way to tell "Download" from "+ Version". Open / New / Import collapse into the
      Résumés menu, and layout, paper size and zoom are gone from the chrome entirely: they belong
-     to the document and the preview, not to the session. #}
+     to the document and the preview, not to the session.
+
+     It sits ABOVE both segments on purpose. Download is the highest-intent control on the tab and
+     the last one anybody uses; a segment switch that hid it would be the one failure the research
+     names outright — a control that is hardest to reach exactly when it is most wanted. #}
   <div class="rb-bar">
     <div class="rb-group">
       <label class="rb-vh" for="rb-name">Résumé name</label>
@@ -44,7 +49,7 @@
     </div>
 
     {# The document list and the download menu are popovers over the bar rather than panels in
-       the rail: both are momentary choices, and giving either a permanent column would spend the
+       a column: both are momentary choices, and giving either a permanent column would spend the
        page's width on something used once a session. #}
     <div class="rb-pop" id="rb-pop-open" hidden>
       <div class="rb-pop-head">Your résumés <button class="ghost rb-mini" id="rb-import">Import .json</button></div>
@@ -68,17 +73,56 @@
     </div>
   </div>
 
-  <div class="rb-body">
+  {# The split, full width and directly under the bar. Two tabs, drawn as one pill so they read
+     as a switch between two views of one document rather than as two more places to go. #}
+  <div class="rb-seg" id="rb-seg" role="tablist" aria-label="Résumé workspace">
+    <button class="rb-seg-tab" id="rb-seg-edit" role="tab" data-seg="edit"
+            aria-selected="true" aria-controls="rb-pane-edit">Edit<span
+            class="rb-badge" id="rb-badge" hidden>0</span></button>
+    <button class="rb-seg-tab" id="rb-seg-preview" role="tab" data-seg="preview"
+            aria-selected="false" aria-controls="rb-pane-preview" tabindex="-1">Preview</button>
+  </div>
+
+  {# `tabindex="0"` on the panel itself: a panel can be a single paragraph when there is nothing
+     to say, and without it the panel a tab names holds nothing focusable and a keyboard user
+     arrives nowhere. #}
+  <div class="rb-work" id="rb-pane-edit" role="tabpanel" aria-labelledby="rb-seg-edit" tabindex="0">
+    {# The form. It IS the document, as its own sections — Contact, then each Section, each
+       opening to its entries and their fields. What it gains here is width: a job's title and
+       employer now sit on one line, and a bullet is typed in a box the width of the bullet. #}
+    <div class="rb-form" id="rb-pane-document"></div>
+
+    <aside class="rb-aside" aria-label="While you write">
+      {# The live loop, kept in the only form a hidden page can keep it (ADR-0128). It is the
+         current document rendered through the current layout, scaled down — the same measured
+         scaling the template gallery's cards use — so the two questions a live preview is
+         actually consulted for while typing are still answered without leaving the form: did my
+         words land on the page, and does it still fit on one. Clicking it opens Preview. #}
+      <button class="rb-minicard" id="rb-mini">
+        <span class="rb-tmini rb-mini-frame"><span class="rb-tsheet" id="rb-mini-sheet" aria-hidden="true"></span></span>
+        <span class="rb-mini-foot"><span class="rb-mini-pages" id="rb-mini-pages"></span>
+          <span class="rb-chip-cue">Preview</span></span>
+      </button>
+
+      <section class="rb-card">
+        <h2 class="rb-card-head">Checks<span class="rb-badge" id="rb-badge-checks" hidden>0</span></h2>
+        <div class="rb-cardbody" id="rb-pane-checks"></div>
+      </section>
+
+    </aside>
+  </div>
+
+  <div class="rb-work" id="rb-pane-preview" role="tabpanel" aria-labelledby="rb-seg-preview"
+       tabindex="0" hidden>
     <div class="rb-stage">
       {# The page. Its width is the layout's own paper width, so what is on screen is what
          prints — the preview and the PDF are one stylesheet (resume_export.js). #}
       <div class="rb-paper-wrap" id="rb-paper-wrap"><div class="rb-paper" id="rb-paper" role="group"
            aria-label="Résumé preview"></div></div>
 
-      {# A status strip for the preview, BELOW it: what am I looking at, and how big. It replaces
-         a hint sentence that told the user blocks were clickable without the page giving any sign
-         that they were. It is deliberately not a chrome band — nothing above the paper — and it
-         holds only the two facts about the view itself. #}
+      {# A status strip for the preview, BELOW it: what am I looking at, and how big. It is
+         deliberately not a chrome band — nothing above the paper — and it holds only the two
+         facts about the view itself. #}
       <div class="rb-stage-foot" id="rb-stage-foot">
         <button class="rb-template-chip" data-act="templates">
           <span class="rb-vh">Template — click to change: </span>
@@ -93,9 +137,8 @@
       {# The template gallery takes the stage over rather than opening as a dropdown of names:
          people choose a résumé template by looking at it, and every card here is the CURRENT
          DOCUMENT rendered through that layout, not a stock image — so what the card shows is what
-         choosing it gives you. Three layouts are registered as this is written; the grid reads
-         the registry and wraps, so it holds however many there are, and each card carries that
-         layout's own summary, warning and credit. #}
+         choosing it gives you. The grid reads the registry and wraps, so it holds however many
+         layouts there are, and each card carries that layout's own summary, warning and credit. #}
       <div class="rb-templates" id="rb-templates" hidden role="group" aria-label="Choose a template">
         <div class="rb-templates-head">
           <h2>Choose a template</h2>
@@ -108,42 +151,27 @@
       </div>
     </div>
 
-    <aside class="rb-rail" aria-label="Résumé editor">
-      {# Two segments, not four tabs. Design, Checks and Keywords are not peers of the document —
-         they are things you do TO it — so they sit one level down, inside Polish, and the
-         document is what the rail shows unless you leave it. The four-across strip this replaces
-         said the opposite: that "Keywords" and "the résumé" were the same kind of thing.
-         Nested tablists are the APG's own pattern for exactly this, so the roving tabindex and
-         arrow traversal below are the same behaviour applied twice, not a second mechanism. #}
-      <div class="rb-seg-wrap">
-      <div class="rb-seg" id="rb-seg" role="tablist" aria-label="Résumé editor sections">
-        <button class="rb-seg-tab" id="rb-seg-document" role="tab" data-seg="document"
-                aria-selected="true" aria-controls="rb-pane-document">Document</button>
-        <button class="rb-seg-tab" id="rb-seg-polish" role="tab" data-seg="polish"
-                aria-selected="false" aria-controls="rb-pane-polish" tabindex="-1">Polish<span
-                class="rb-badge" id="rb-badge" hidden>0</span></button>
-      </div>
-      </div>
+    {# Design sits with the page, not with the words. Every control in it — template, type size,
+       colour, paper — is judged by looking at the sheet beside it, which is the one place in
+       this tab where a live loop is genuinely load-bearing. Standard Resume reaches the same
+       arrangement: its design rail lives inside Preview mode. #}
+    <aside class="rb-aside" id="rb-preview-aside" aria-label="Design and keywords">
+      <section class="rb-card">
+        <h2 class="rb-card-head">Design</h2>
+        <div class="rb-cardbody" id="rb-pane-design"></div>
+      </section>
 
-      {# `tabindex="0"` on the panel itself: a panel can be a single paragraph when there is
-         nothing to say, and without it the panel a tab names holds nothing focusable and a
-         keyboard user arrives nowhere. #}
-      <div class="rb-pane" id="rb-pane-document" role="tabpanel" aria-labelledby="rb-seg-document" tabindex="0"></div>
-
-      <div class="rb-pane rb-pane-polish" id="rb-pane-polish" role="tabpanel"
-           aria-labelledby="rb-seg-polish" tabindex="0" hidden>
-        <div class="rb-rail-tabs" id="rb-rail-tabs" role="tablist" aria-label="Polish">
-          <button class="rb-rail-tab" id="rb-tab-design" role="tab" data-pane="design"
-                  aria-selected="true" aria-controls="rb-pane-design">Design</button>
-          <button class="rb-rail-tab" id="rb-tab-checks" role="tab" data-pane="checks"
-                  aria-selected="false" aria-controls="rb-pane-checks" tabindex="-1">Checks<span
-                  class="rb-badge" id="rb-badge-checks" hidden>0</span></button>
-          <button class="rb-rail-tab" id="rb-tab-keywords" role="tab" data-pane="keywords"
-                  aria-selected="false" aria-controls="rb-pane-keywords" tabindex="-1">Keywords</button>
-        </div>
-        <div class="rb-subpane" id="rb-pane-design" role="tabpanel" aria-labelledby="rb-tab-design" tabindex="0"></div>
-        <div class="rb-subpane" id="rb-pane-checks" role="tabpanel" aria-labelledby="rb-tab-checks" tabindex="0" hidden></div>
-        <div class="rb-subpane" id="rb-pane-keywords" role="tabpanel" aria-labelledby="rb-tab-keywords" tabindex="0" hidden>
+      {# Keywords is HERE, not beside the form, and that is a measurement fact rather than a
+         taste. Its answer is "is this term on the page, and is it in the top half of page one" —
+         it reads the rendered sheet's own geometry, and a hidden element measures zero. Measured
+         on a three-page résumé: a block 18.91in down the document reports 0in from the top while
+         the paper is off screen, so every term would be scored "near the top" whatever the truth
+         was. The highlight it draws is on that same sheet, so this is also simply where its
+         output is. Folded away because it is a task somebody opts into once per application. #}
+      <section class="rb-card">
+        <h2 class="rb-card-head"><button class="rb-card-btn" id="rb-kw-toggle" aria-expanded="false"
+            aria-controls="rb-pane-keywords"><span class="rb-caret" aria-hidden="true">›</span>Keywords</button></h2>
+        <div class="rb-cardbody" id="rb-pane-keywords" hidden>
           <p class="note">The one step the guide puts before writing anything: find the
             qualifications for the job title you want, from ten to fifteen real postings, and get
             them into the first half of your first page. Paste them here — one a line — and this
@@ -153,7 +181,7 @@
             <span class="note" id="rb-kw-summary"></span></div>
           <div id="rb-kw-out"></div>
         </div>
-      </div>
+      </section>
     </aside>
   </div>
 

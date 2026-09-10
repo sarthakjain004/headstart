@@ -28,11 +28,11 @@
   let booted = false;
   let savedTimer = null;
   /* The terms the Keywords pane last checked. They decorate the preview so the answer to "is this
-     keyword near the top" is visible on the page, not just tallied in the rail. */
+     keyword near the top" is visible on the page, not just tallied beside the form. */
   let keywordTerms = [];
   /* Which rows of the document accordion are open. Node ids, plus the synthetic key `geo:<id>`
      for a row's own size-and-spacing disclosure. Held here rather than in the DOM because the
-     rail's panes are rebuilt from innerHTML on every change, which would throw away any state
+     form is rebuilt from innerHTML on every change, which would throw away any state
      living on the elements themselves. */
   const expanded = new Set();
   /* Whether the tab opened this document because the browser held nothing at all. That is the
@@ -108,8 +108,9 @@
     el('rb-template-name').textContent = lay.label;
     el('rb-zoom-read').textContent = Math.round(zoom * 100) + '%';
     if (templatesOpen) templatesPaint();
+    miniPaint();
 
-    railPaint();
+    panesPaint();
     badgePaint();
   }
 
@@ -186,12 +187,15 @@
     return breaks;
   }
 
+  /** Draw the cuts, and hand back where they are — the miniature reports the page count in
+   *  words, and counting them twice would mean measuring the sheet twice. */
   function paintPageBreaks(paper, page) {
     paper.querySelectorAll('.rb-break').forEach(e => e.remove());
     const origin = paper.querySelector('.rb-doc');
-    if (!origin) return;
+    if (!origin) return [];
     const offsetTop = origin.offsetTop;
-    pageBreaks(paper, page).forEach((y, i) => {
+    const breaks = pageBreaks(paper, page);
+    breaks.forEach((y, i) => {
       const marker = document.createElement('div');
       marker.className = 'rb-break';
       marker.style.top = (offsetTop + y) + 'px';
@@ -199,6 +203,7 @@
       marker.setAttribute('aria-hidden', 'true');
       paper.appendChild(marker);
     });
+    return breaks;
   }
 
   function handle(kind, glyph, title) {
@@ -212,11 +217,11 @@
 
   /* ---- selection ------------------------------------------------------------------------ */
 
-  /** Select a block, and open the rail down to it. The two views are one document seen twice, so
-   *  a click on the page has to leave the rail showing the same block's fields — otherwise
-   *  "click a block to edit it" ends at a rail that is still somewhere else, which is what the
+  /** Select a block, and open the form down to it. The two views are one document seen twice, so
+   *  a click on the page has to leave the form showing the same block's fields — otherwise
+   *  "click a block to edit it" ends at a form that is still somewhere else, which is what the
    *  arrangement this replaced actually did. `quiet` is for the callers that must NOT move the
-   *  rail — collapsing a row, and the paper's own drag and resize gestures, where the rail
+   *  form — collapsing a row, and the paper's own drag and resize gestures, where the form
    *  scrolling under a held pointer is motion nobody asked for. */
   function select(id, quiet) {
     selectedId = id;
@@ -225,10 +230,10 @@
       /* Ancestors first: a bullet's fields are inside its entry's row, which is inside its
          section's row, so opening only the bullet would open nothing anyone can see. */
       for (let n = d && Doc.find(d, id); n && n !== d.root; n = Doc.parentOf(d, n.id)) expanded.add(n.id);
-      showSegment('document');
-    }
-    paint();
-    if (id && !quiet) scrollRailTo(id);
+      /* Which paints — `showSegment` re-measures whatever it put on screen. */
+      showSegment('edit');
+      scrollFormTo(id);
+    } else paint();
   }
 
   /* ---- dragging and resizing --------------------------------------------------------------
@@ -460,7 +465,7 @@
   }
   function hideDropLine() { const l = el('rb-dropline'); if (l) l.hidden = true; }
 
-  /* ---- the rail -------------------------------------------------------------------------- */
+  /* ---- the panes -------------------------------------------------------------------------- */
 
   /** The version picker: the master plus every Tailoring, and the delete button only when one
    *  is active. */
@@ -482,7 +487,7 @@
   /* What the Content pane is currently showing. The caret guard below may only skip a repaint
      while the pane would rebuild the SAME thing; if the selection, the layout or the active
      version changed, the pane must repaint even though a field holds focus — otherwise clicking a
-     new block while a rail input is focused leaves the previous block's fields on screen, wired to
+     new block while a form input is focused leaves the previous block's fields on screen, wired to
      a node the user is no longer looking at. Measured: selecting a block on the free-canvas layout
      right after typing in a range control showed the previous layout's controls. */
   let contentShowing = null;
@@ -495,12 +500,12 @@
       Array.from(expanded).sort().join(',')].join('|') : null;
   };
 
-  /* Rebuild every rail pane EXCEPT the one the user is currently typing in — replacing a field's
+  /* Rebuild every pane EXCEPT the one the user is currently typing in — replacing a field's
      HTML under the caret loses the caret, and the position with it. Keyed on focus rather than on
-     a "the last change came from the rail" flag, which is what this was first: that flag froze the
-     WHOLE rail on every keystroke, so the Checks panel sat on a stale list while the badge beside
+     a "the last change came from the form" flag, which is what this was first: that flag froze
+     every pane on every keystroke, so the Checks panel sat on a stale list while the badge beside
      it counted the new one. Focus is the fact that actually matters, and it is readable. */
-  function railPaint() {
+  function panesPaint() {
     const active = document.activeElement;
     /* A CARET, not merely focus. This guard used to fire on any focused descendant — including
        the button the user had just clicked — so clicking an Outline row, "Add inside", "Delete"
@@ -533,7 +538,8 @@
         '> ' + esc(field.label) + '</label></div>';
     }
     if (field.kind === 'multiline') {
-      return '<div class="rb-field">' + label + '<textarea id="' + id + '" rows="3" data-node="' +
+      /* The whole width of the grid, because it holds a paragraph. Everything else pairs up. */
+      return '<div class="rb-field rb-field-wide">' + label + '<textarea id="' + id + '" rows="4" data-node="' +
         safeNode + '" data-field="' + esc(field.key) + '" placeholder="' + esc(field.placeholder) + '">' +
         esc(value || '') + '</textarea></div>';
     }
@@ -543,7 +549,7 @@
   }
 
   /* ---- the document accordion --------------------------------------------------------------
-     The rail IS the résumé, as its own sections: Contact, then each Section, each opening to its
+     The form IS the résumé, as its own sections: Contact, then each Section, each opening to its
      entries, each entry opening to its fields and its bullets. Editing happens where you
      navigate, so the "Outline" and "Content" of the arrangement this replaces are one thing now.
 
@@ -614,7 +620,45 @@
     }
   }
 
-  const isLeftOut = (tailoring, id) => !!(tailoring && (tailoring.hidden || []).includes(id));
+  /** The tick that says whether a block is printed — the answer to "I keep five projects and
+   *  show two". ONE control, whichever layer is being edited: on the master it writes the
+   *  document's own list, under a version it writes that version's, and `Cmd.setHidden` decides
+   *  which from the tailoring id it is handed. Two controls that looked identical and reached
+   *  different layers would have been the confusing way to say the same thing.
+   *
+   *  It is not offered where Layer 1 says the block is not optional — the header cannot be
+   *  removed, so it cannot be switched off either.
+   *
+   *  Under a version, a block the MASTER leaves out is ticked off and disabled rather than
+   *  silently dead: a version is a difference from the master, so turning it on here could only
+   *  either do nothing or edit the master by surprise. */
+  function showTick(d, spec, node, inline) {
+    /* A row that cannot be switched off still owes the tick's column, or its label starts 24px
+       left of every other row's and the accordion reads as two lists. */
+    if (!spec.caps.remove) return inline ? '' : '<span class="rb-show rb-show-none"></span>';
+    const tailoring = Doc.tailoringOf(d);
+    const byMaster = !!tailoring && (d.hidden || []).includes(node.id);
+    const on = !Doc.isHidden(d, node.id);
+    const what = rowTitle(d, spec, node);
+    const title = byMaster
+      ? 'Left off the master résumé, so every version leaves it off too.'
+      : tailoring
+      ? 'Show this in “' + tailoring.name + '”. Unticked keeps every word — it just does not print here.'
+      : 'Show this on your résumé. Unticked keeps every word — it just does not print.';
+    return '<label class="' + (inline ? 'rb-show-inline' : 'rb-show') + '" title="' + esc(title) + '">' +
+      '<input type="checkbox" id="' + esc('rb-show-' + node.id) + '" data-show="' + esc(node.id) + '"' +
+      (on ? ' checked' : '') + (byMaster ? ' disabled' : '') + '>' +
+      (inline ? '<span>Show on the résumé</span>'
+        : '<span class="rb-vh">Show ' + esc(what) + ' on the résumé</span>') + '</label>';
+  }
+
+  /** Every field a block owns, as a grid. In a 400px rail each was a full row whatever it held. */
+  const fieldsHtml = (d, spec, node, override) =>
+    (spec.fields.length
+      ? '<div class="rb-fields">' + spec.fields.map((f, i) =>
+        fieldControl(node.id, override ? override(f, i) : f, Doc.contentOf(d, node.id)[f.key])).join('') +
+        '</div>'
+      : '');
 
   /** The action row a block carries: reorder without a mouse, duplicate, delete, and — under a
    *  version — the two tailoring choices. Alt + arrow does the same reorder from the keyboard;
@@ -638,15 +682,12 @@
       parts.push('<button class="rb-act rb-act-danger" data-act="remove" data-node="' + esc(node.id) +
         '" title="Delete" aria-label="Delete ' + esc(rowTitle(d, spec, node)) + '">✕</button>');
     }
-    if (tailoring) {
-      const overridden = !!(tailoring.picks || {})[node.id];
-      const leftOut = isLeftOut(tailoring, node.id);
-      if (overridden) {
-        parts.push('<button class="ghost rb-mini" data-act="unfork" data-node="' + esc(node.id) +
-          '">Use the master’s words</button>');
-      }
-      parts.push('<button class="ghost rb-mini" data-act="hide" data-node="' + esc(node.id) + '">' +
-        (leftOut ? 'Put back in this version' : 'Leave out of this version') + '</button>');
+    /* "Leave out of this version" was a button here. It is a tick on the row now, beside the
+       one the master carries — the same question, asked once, in the place somebody scanning
+       "what does this résumé say" is already looking. */
+    if (tailoring && (tailoring.picks || {})[node.id]) {
+      parts.push('<button class="ghost rb-mini" data-act="unfork" data-node="' + esc(node.id) +
+        '">Use the master’s words</button>');
     }
     return parts.length ? '<div class="rb-acts">' + parts.join('') + '</div>' : '';
   }
@@ -656,35 +697,34 @@
    *
    *  It still carries `data-block` and the geometry disclosure, because "not a row" is a drawing
    *  decision and neither of those is about drawing. Without the first, clicking a bullet on the
-   *  page revealed nothing in the rail — `scrollRailTo` found no anchor and no-oped silently, on
+   *  page revealed nothing in the form — `scrollFormTo` found no anchor and no-oped silently, on
    *  the block type that gets edited most. Without the second, the free-canvas layout grants a
    *  bullet move and box handles on the page (it grants them to every node) with no typed way to
    *  set the same numbers — a WCAG 2.2 SC 2.5.7 failure visible on one layout only. */
   function bulletHtml(d, lay, node, ordinal, marks) {
     const spec = Components.get(node.type);
-    const content = Doc.contentOf(d, node.id);
     const tailoring = Doc.tailoringOf(d);
-    const leftOut = isLeftOut(tailoring, node.id);
+    const off = Doc.isHidden(d, node.id);
     /* Rendered through `fieldControl` over the type's OWN declared fields, like every other block
-       in this rail. Hand-rolling the textarea and the checkbox meant naming `text` and `role` as
+       in this form. Hand-rolling the textarea and the checkbox meant naming `text` and `role` as
        literals and reaching for `fields[0]` by position — Layer-1 facts copied into Layer 3,
        which ADR-0123 puts on the Component. Only the first field's label is overridden, to carry
        the bullet's number. */
-    const fields = spec.fields.map((f, i) =>
-      (i === 0 ? Object.assign({}, f, { label: 'Bullet ' + ordinal }) : f));
     return '<div class="rb-bullet' + (node.id === selectedId ? ' on' : '') +
-      (leftOut ? ' rb-off' : '') + '" data-block="' + esc(node.id) + '">' +
+      (off ? ' rb-off' : '') + '" data-block="' + esc(node.id) + '">' +
       ((tailoring && (tailoring.picks || {})[node.id]) ? '<span class="rb-tag">tailored</span>' : '') +
-      (leftOut ? '<span class="rb-tag">left out</span>' : '') +
+      (off ? '<span class="rb-tag">not shown</span>' : '') +
       findingsHtml(node.id, marks.byNode.get(node.id)) +
-      fields.map(f => fieldControl(node.id, f, content[f.key])).join('') +
+      fieldsHtml(d, spec, node, (f, i) =>
+        (i === 0 ? Object.assign({}, f, { label: 'Bullet ' + ordinal }) : f)) +
       geometryHtml(lay, node) +
-      '<div class="rb-bullet-foot">' + actionsHtml(d, lay, spec, node) + '</div></div>';
+      '<div class="rb-bullet-foot">' + showTick(d, spec, node, true) +
+      '<span class="spacer"></span>' + actionsHtml(d, lay, spec, node) + '</div></div>';
   }
 
   /** The "Size and spacing" disclosure a block carries when its layout grants it any geometry.
    *  Shared by rows and bullets so a layout cannot grant a handle on the page that has no typed
-   *  equivalent in the rail — that pairing is the whole of SC 2.5.7 here. Folded away because it
+   *  equivalent in the form — that pairing is the whole of SC 2.5.7 here. Folded away because it
    *  is not what somebody opening a job came to do, so it does not sit above the words. */
   function geometryHtml(lay, node) {
     const geo = geometryControls(lay, node);
@@ -706,31 +746,36 @@
     const bodyId = esc('rb-row-' + node.id);
     /* h2 for a top-level row, h3 below it. The app's own h1 is the masthead and every other
        tab uses h2 for a group inside a panel, so this continues that outline rather than
-       starting at h3 and skipping a level — a screen reader navigates this rail by heading, and
+       starting at h3 and skipping a level — a screen reader navigates this form by heading, and
        a gap in the sequence is a gap in the document it is describing. */
     const heading = depth === 0 ? 'h2' : 'h3';
-    const tailoring = Doc.tailoringOf(d);
-    const leftOut = isLeftOut(tailoring, node.id);
+    const off = Doc.isHidden(d, node.id);
     const kids = node.children || [];
     const bullets = kids.filter(k => (Components.get(k.type) || {}).shape === 'bullet');
     const rows = kids.filter(k => (Components.get(k.type) || {}).shape !== 'bullet');
 
     const out = ['<div class="rb-row rb-row-d' + depth + (node.id === selectedId ? ' on' : '') +
-      (leftOut ? ' rb-off' : '') + '" data-block="' + esc(node.id) + '">'];
-    out.push('<' + heading + ' class="rb-row-head"><button class="rb-row-btn" data-row="' +
+      (off ? ' rb-off' : '') + '" data-block="' + esc(node.id) + '">'];
+    /* The tick and the disclosure are siblings on one line. The tick cannot go inside the
+       disclosure button — a control inside a control is not operable — and it has to be on the
+       CLOSED row: "which of my five projects does this résumé show" is a question answered by
+       reading down the column, not by opening every row to look. */
+    out.push('<div class="rb-row-line">' + showTick(d, spec, node) +
+      '<' + heading + ' class="rb-row-head"><button class="rb-row-btn" data-row="' +
       esc(node.id) + '" aria-expanded="' + (open ? 'true' : 'false') + '" aria-controls="' + bodyId + '">' +
       '<span class="rb-caret" aria-hidden="true">›</span>' +
       '<span class="rb-row-label">' + esc(rowTitle(d, spec, node)) + '</span>' +
+      (off ? '<span class="rb-tag">not shown</span>' : '') +
       '<span class="rb-row-kind">' + esc(spec.label) + '</span>' +
       /* Spoken as well as drawn: a dot that only exists as a colour tells a screen-reader user
-         nothing, and it is the one mark in this rail that reports a problem. */
+         nothing, and it is the one mark in this form that reports a problem. */
       flagHtml(node.id, marks.marked.has(node.id)) +
-      '</button></' + heading + '>');
+      '</button></' + heading + '></div>');
 
     out.push('<div class="rb-row-body" id="' + bodyId + '"' + (open ? '' : ' hidden') + '>');
     if (open) {
       out.push(findingsHtml(node.id, marks.byNode.get(node.id)));
-      for (const f of spec.fields) out.push(fieldControl(node.id, f, Doc.contentOf(d, node.id)[f.key]));
+      out.push(fieldsHtml(d, spec, node));
       if (bullets.length) {
         out.push('<div class="rb-bullets">' +
           bullets.map((b, i) => bulletHtml(d, lay, b, i + 1, marks)).join('') + '</div>');
@@ -740,14 +785,31 @@
       /* Everything Layer 1 says this type accepts, minus the header, which is addable nowhere.
          Filtering `section` out too would have quietly narrowed what the model allows —
          `Components.accepts('*')` still permits a Section inside a Section and the drag path
-         still does it, so the rail refusing it is a disagreement, not a simplification. */
+         still does it, so the form refusing it is a disagreement, not a simplification. */
       const addable = spec.accepts.includes('*')
         ? Components.all().filter(s => s.type !== 'header')
         : spec.accepts.map(t => Components.get(t)).filter(Boolean);
       if (addable.length) {
-        out.push('<div class="rb-add">' + addable.map(s =>
-          '<button class="ghost rb-mini" data-add="' + esc(s.type) + '" data-into="' + esc(node.id) +
-          '">+ ' + esc(s.label) + '</button>').join('') + '</div>');
+        /* A Section accepts '*', so this is eleven buttons in a row unless it is grouped — and
+           "Project" and "Project with a stack", the two somebody adding a second project is
+           looking for, were in the middle of it beside "Situation note" and "Language". The
+           entries a section is FOR come first; everything the model still allows is one
+           disclosure away, so nothing is narrowed, only ordered. */
+        const first = addable.filter(x => x.shape === 'entry' || x.shape === 'bullet');
+        const rest = addable.filter(x => first.indexOf(x) < 0);
+        const addBtn = x => '<button class="ghost rb-mini" data-add="' + esc(x.type) +
+          '" data-into="' + esc(node.id) + '" title="' + esc(x.blurb) + '">+ ' + esc(x.label) +
+          '</button>';
+        out.push('<div class="rb-add">' + (first.length ? first : rest).map(addBtn).join('') + '</div>');
+        if (first.length && rest.length) {
+          const key = 'add:' + node.id;
+          const listId = esc('rb-add-' + node.id);
+          out.push('<div class="rb-sub"><button class="rb-sub-btn" data-row="' + esc(key) +
+            '" aria-expanded="' + (expanded.has(key) ? 'true' : 'false') + '" aria-controls="' +
+            listId + '"><span class="rb-caret" aria-hidden="true">›</span>More block types</button>' +
+            '<div class="rb-add" id="' + listId + '"' + (expanded.has(key) ? '' : ' hidden') + '>' +
+            rest.map(addBtn).join('') + '</div></div>');
+        }
       }
 
       out.push(geometryHtml(lay, node));
@@ -953,10 +1015,10 @@
     const blank = untouched(view());
     const n = blank ? 0 : found.filter(f => f.level !== 'note').length;
     const notes = blank ? 0 : found.length - n;
-    /* Two badges for one number, and both are needed: Checks now sits one level down inside
-       Polish, so the count has to ride the Polish segment as well — otherwise the demotion would
-       have hidden the one thing in this rail that reports a problem, which is exactly what the
-       persistent indicator exists to prevent. */
+    /* Two badges for one number, and both are needed: the Checks panel is beside the form, so
+       the count has to ride the Edit segment tab as well — otherwise a finding raised while
+       somebody was looking at the page would be silent, which is exactly what a persistent
+       indicator exists to prevent. */
     for (const id of ['rb-badge', 'rb-badge-checks']) {
       const badge = el(id);
       if (!badge) continue;
@@ -976,46 +1038,57 @@
     if (verdict !== lastVerdict) { lastVerdict = verdict; announce(verdict); }
   }
 
-  /* ---- the two tab strips -------------------------------------------------------------------
-     One strip of four became two of two and three. Design, Checks and Keywords are things done
-     TO the document rather than peers of it, and a four-across strip said the opposite; nesting
-     them inside Polish is the demotion, and it is the APG's own nested-tablist pattern, so the
-     roving tabindex and arrow traversal below are one behaviour applied twice rather than a
-     second mechanism to keep in step.
+  /* ---- the split ----------------------------------------------------------------------------
+     Edit and Preview (ADR-0128), and ONE strip where there were two nested ones. The four panes
+     this replaces were a segment (Document / Polish) with a tablist inside it (Design / Checks /
+     Keywords), which is two levels of tabs to reach the layout picker; a third level on top of
+     that is what adding Edit / Preview naively would have cost. Instead Design moved to the
+     Preview segment, where what it changes is what you are looking at, and Checks and Keywords
+     moved into a column beside the form, where the block they name is what you fix. So there is
+     no nesting left at all.
 
-     They were once marked `aria-current="page"`, which says "navigation" — the wrong thing, and
-     it cost the arrow-key traversal and the panel-to-tab association a tablist gets for free. */
+     Still a real tablist: roving tabindex and arrow traversal, automatic activation, and
+     `aria-selected` rather than the `aria-current="page"` this was once written with — that says
+     "navigation", which is the wrong thing, and it cost the panel-to-tab association a tablist
+     gets for free. */
 
-  const SEGMENTS = ['document', 'polish'];
-  const PANES = ['design', 'checks', 'keywords'];
+  const SEGMENTS = ['edit', 'preview'];
 
-  /** Paint one strip's selection and show its panel. `moveFocus` for a keyboard traversal, where
-   *  focus must follow the selection; a click has already put focus where it belongs. */
-  function showStrip(stripId, key, names, name, moveFocus) {
+  let segment = 'edit';
+
+  /** Show one segment. `moveFocus` for a keyboard traversal, where focus must follow the
+   *  selection; a click has already put focus where it belongs. */
+  function showSegment(name, moveFocus) {
+    if (SEGMENTS.indexOf(name) < 0) return;
+    segment = name;
     let picked = null;
-    for (const b of el(stripId).children) {
-      const on = b.dataset[key] === name;
+    for (const b of el('rb-seg').children) {
+      const on = b.dataset.seg === name;
       b.setAttribute('aria-selected', on ? 'true' : 'false');
       /* Roving tabindex: the whole strip is one tab stop rather than one per button, which is
          what the arrow keys are for. */
       b.tabIndex = on ? 0 : -1;
       if (on) picked = b;
     }
-    for (const one of names) el('rb-pane-' + one).hidden = one !== name;
+    for (const one of SEGMENTS) el('rb-pane-' + one).hidden = one !== name;
     if (moveFocus && picked && picked.focus) picked.focus();
+    measureShown();
   }
 
-  const showSegment = (name, moveFocus) =>
-    showStrip('rb-seg', 'seg', SEGMENTS, name, moveFocus);
+  /* A HIDDEN ELEMENT MEASURES ZERO, and both segments hold something this editor measures: the
+     sheet in Preview, the miniature in Edit. Every reading taken while its segment is off screen
+     is a zero — `fitToWidth` divides by it, `pageBreaks` refuses to draw on it, and the wrapper
+     reserves no height for it. So whatever just became visible is painted again, and the sheet is
+     fitted the first time it is genuinely on screen rather than at load.
 
-  const showTool = (name, moveFocus) =>
-    showStrip('rb-rail-tabs', 'pane', PANES, name, moveFocus);
-
-  /** Show one of the three Polish panels — and open Polish to do it, because reaching Checks
-   *  from the badge or from a test has to work whichever segment is on screen. */
-  function showRailPane(name, moveFocus) {
-    showSegment('polish', false);
-    showTool(name, moveFocus);
+     Fitting is once, painting is every time. Re-fitting on every switch would throw away a zoom
+     the user had chosen; not painting would leave the tenth switch showing what the first one
+     measured, which for the page-break markers means showing nothing. */
+  let fitted = false;
+  function measureShown() {
+    if (!store || !store.get()) return;
+    if (segment === 'preview' && !fitted) { fitted = true; fitToWidth(); }
+    paint();
   }
 
   /* ---- the template gallery -----------------------------------------------------------------
@@ -1029,16 +1102,83 @@
      Each card is the CURRENT DOCUMENT rendered through that layout — not a stock thumbnail — so
      what the card shows is what picking it gives you, page-break line included. That is only
      affordable because a Layout's render is a pure string function (resume_layouts.js): one
-     render per registered layout, and only while the gallery is open. Three are registered as
-     this is written; the grid wraps and reads every card from the registry, so it neither knows
-     nor cares how many there are. */
+     render per registered layout, and only while the gallery is open. The grid wraps and reads
+     every card from the registry, so it neither knows nor cares how many there are.
+
+     SEVEN are registered as this is written, and ADR-0125 guessed the wrong cost for that. It
+     called the gallery O(layouts) full document renders and named ~30 as the point where
+     thumbnails would need caching or virtualising. Measured in Chromium at 1280x800 on the worked
+     example, the seven cards open in 15.3ms — of which the seven renders are 0.6ms. The render is
+     not the cost; the forced synchronous layout for MEASURING each sheet is (`fitSheet`), and at
+     ~2.1ms a card the frame budget is not in danger until well past thirty. */
 
   let templatesOpen = false;
 
   /** The sheet is drawn at its true width and scaled, exactly as the real preview is, because a
    *  miniature that reflowed to fit its card would misrepresent the very thing it is shown for:
-   *  where the lines break. */
+   *  where the lines break. The gallery's cards are a fixed width; the Edit segment's single
+   *  miniature measures its own frame instead. */
   const MINI_WIDTH = 190;
+
+  /** Scale one true-width sheet into a fixed-width frame.
+   *
+   *  MEASURED, not computed from the page numbers. `page.unit` is whatever the layout declared —
+   *  every one registered today says `in`, and a `MINI_WIDTH / (page.width * 96)` shortcut quietly
+   *  assumed that; a layout declaring mm would have rendered its miniature about 25x off. The
+   *  browser already knows how wide `210mm` is, so this asks it. Same reason `pxPerInch()`
+   *  measures the real paper rather than trusting the same arithmetic.
+   *
+   *  Returns false when the sheet measures zero, which is what a sheet inside a hidden segment
+   *  does — the caller has nothing to draw and must be painted again when its segment opens. */
+  function fitSheet(sheetEl, width) {
+    const natural = sheetEl.offsetWidth;
+    if (!natural || !width) return false;
+    const scale = width / natural;
+    sheetEl.style.transform = 'scale(' + scale.toFixed(4) + ')';
+    /* `transform` does not affect layout, so the frame has to reserve the scaled height
+       itself — the same thing `paint()` does for the real preview's wrapper. */
+    sheetEl.parentElement.style.height = Math.round(sheetEl.offsetHeight * scale) + 'px';
+    return true;
+  }
+
+  /* ---- the miniature, in the Edit segment ---------------------------------------------------
+     What a live preview beside a form is actually consulted for while somebody is typing is two
+     questions: did my words land on the page, and does it still fit on one. Both survive being
+     small, and this is the real document through the real layout — the same pure render function
+     the page and the gallery use — so it cannot drift from the sheet it stands in for.
+
+     It is the deliberate softening of what ADR-0128 gives up. The page itself is one click away
+     and this card is the click. */
+
+  function miniPaint() {
+    const d = doc();
+    const lay = layout();
+    const sheet = el('rb-mini-sheet');
+    if (!d || !lay || !sheet) return;
+    const page = Layouts.pageFor(lay, d);
+    sheet.style.width = page.width + page.unit;
+    sheet.style.minHeight = page.height + page.unit;
+    sheet.style.padding = page.margin + page.unit;
+
+    let sheetCss = el('rb-mini-css');
+    if (!sheetCss) {
+      sheetCss = document.createElement('style');
+      sheetCss.id = 'rb-mini-css';
+      document.head.appendChild(sheetCss);
+    }
+    sheetCss.textContent = lay.css(Layouts.themeFor(lay, d), '#rb-mini-sheet .rb-doc');
+    sheet.innerHTML = Layouts.renderDocument(lay, view());
+
+    /* As wide as the column gives it, MEASURED — the card is ~276px at 1280 and a fixed 190
+       would have thrown away a third of the only look at the page this segment offers. Zero is
+       what the frame measures while the Edit segment is off screen, and `fitSheet` refuses it:
+       nothing below here reads correctly then, and `measureShown` paints again on the way in. */
+    if (!fitSheet(sheet, sheet.parentElement.offsetWidth)) return;
+    const breaks = paintPageBreaks(sheet, page);
+    el('rb-mini-pages').textContent = breaks.length
+      ? (breaks.length + 1) + ' pages'
+      : 'Fits on one page';
+  }
 
   function templatesPaint() {
     const d = doc();
@@ -1080,21 +1220,9 @@
     }
     sheet.textContent = sheets.join('\n');
 
-    /* The scale is MEASURED after the sheets are in the document, not computed from the page
-       numbers. `page.unit` is whatever the layout declared — every one registered today says
-       `in`, and a `MINI_WIDTH / (page.width * 96)` shortcut quietly assumed that; a layout
-       declaring mm would have rendered its miniature about 25x off. The browser already knows
-       how wide `210mm` is, so this asks it. Same reason `pxPerInch()` measures the real paper
-       rather than trusting the same arithmetic. */
-    for (const sheetEl of grid.querySelectorAll('.rb-tsheet')) {
-      const natural = sheetEl.offsetWidth;
-      if (!natural) continue;
-      const scale = MINI_WIDTH / natural;
-      sheetEl.style.transform = 'scale(' + scale.toFixed(4) + ')';
-      /* `transform` does not affect layout, so the frame has to reserve the scaled height
-         itself — the same thing `paint()` does for the real preview's wrapper. */
-      sheetEl.parentElement.style.height = Math.round(sheetEl.offsetHeight * scale) + 'px';
-    }
+    /* Scaled after the sheets are in the document, because the scale is measured off them —
+       see `fitSheet`. */
+    for (const sheetEl of grid.querySelectorAll('.rb-tsheet')) fitSheet(sheetEl, MINI_WIDTH);
   }
 
   function showTemplates(on) {
@@ -1102,6 +1230,10 @@
     el('rb-templates').hidden = !on;
     el('rb-paper-wrap').hidden = on;
     el('rb-stage-foot').hidden = on;
+    /* The column beside the page goes with it. The gallery takes the stage over (ADR-0125), and
+       the panel that column holds — Keywords — measures the sheet the gallery has just hidden;
+       leaving it reachable there is the same zero-measurement bug by another door. */
+    el('rb-preview-aside').hidden = on;
     if (on) {
       templatesPaint();
       const close = el('rb-templates-close');
@@ -1197,7 +1329,9 @@
     selectedId = null;
     store.adopt(loaded);
     repository.setLastOpened(id);
-    el('rb-pop-open').hidden = true;
+    /* Through the shared close, so `aria-expanded` goes with it. Hiding the panel alone left the
+       button still telling a screen reader the menu was open. */
+    closePopovers();
   }
 
   function docListPaint() {
@@ -1287,6 +1421,22 @@
 
   /* ---- wiring ------------------------------------------------------------------------------ */
 
+  /* The two menus over the bar, as [button, popover] — one list, so opening one, closing both and
+     dismissing on an outside click cannot drift apart. */
+  const POPOVERS = [['rb-open', 'rb-pop-open'], ['rb-download', 'rb-pop-download']];
+
+  /** Shut every popover. Returns the id of the button whose menu was open, so Escape can put the
+   *  focus back where the user left it rather than on whatever the page had. */
+  function closePopovers() {
+    let wasOpen = null;
+    for (const [buttonId, popId] of POPOVERS) {
+      if (!el(popId).hidden) wasOpen = buttonId;
+      el(popId).hidden = true;
+      el(buttonId).setAttribute('aria-expanded', 'false');
+    }
+    return wasOpen;
+  }
+
   function wire() {
     const paper = el('rb-paper');
     paper.addEventListener('pointerdown', onPointerDown);
@@ -1307,10 +1457,24 @@
       paint();
     });
     el('rb-templates-close').addEventListener('click', () => showTemplates(false));
-    el('rb-stage-foot').addEventListener('click', e => {
-      if (e.target.closest('[data-act="templates"]')) showTemplates(true);
-    });
+    /* The strip under the page used to need its own listener for the template chip, because the
+       delegated one was bound to the rail and the chip was not in it. The delegated listener now
+       covers the whole tab and already answers `data-act="templates"`, so a second one here would
+       open the gallery twice. */
     el('rb-zoom-fit').addEventListener('click', () => { fitToWidth(); paint(); });
+
+    /* The miniature IS the way through to the page — a segment nobody finds is a segment that
+       hides the résumé. Its own click, not `data-seg` on the strip, because the button is not in
+       the strip and a roving tabindex is not what a card wants. */
+    el('rb-mini').addEventListener('click', () => showSegment('preview', true));
+
+    /* Keywords is the one thing in that column folded away: it is a task somebody opts into once
+       per application rather than something to read while writing. */
+    el('rb-kw-toggle').addEventListener('click', e => {
+      const open = el('rb-pane-keywords').hidden;
+      el('rb-pane-keywords').hidden = !open;
+      e.currentTarget.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
 
     el('rb-version').addEventListener('change', e => {
       selectedId = null;
@@ -1344,16 +1508,26 @@
     const popover = (buttonId, popId, before) => el(buttonId).addEventListener('click', () => {
       const pop = el(popId);
       const opening = pop.hidden;
-      for (const [b, p] of [['rb-open', 'rb-pop-open'], ['rb-download', 'rb-pop-download']]) {
-        el(p).hidden = true;
-        el(b).setAttribute('aria-expanded', 'false');
-      }
+      closePopovers();
       pop.hidden = !opening;
       el(buttonId).setAttribute('aria-expanded', opening ? 'true' : 'false');
       if (opening && before) before();
     });
     popover('rb-open', 'rb-pop-open', docListPaint);
     popover('rb-download', 'rb-pop-download', null);
+
+    /* A menu you can only close by finding its own button again is a trap, and it became a
+       visible one when these moved under the bar: the Résumés panel is 247px tall and covers the
+       top of what is behind it, so somebody who opens it and changes their mind has nowhere
+       obvious to click. Escape and a click outside both close it.
+       `pointerdown`, not `click`, is deliberate — but the OWNING BUTTON is excluded from it,
+       because that button decides by reading `pop.hidden` and closing the menu before its own
+       click arrived would make it reopen the thing it was asked to close. */
+    document.addEventListener('pointerdown', e => {
+      const inside = !!e.target && !!e.target.closest &&
+        POPOVERS.some(([b, popId]) => e.target.closest('#' + popId) || e.target.closest('#' + b));
+      if (!inside) closePopovers();
+    });
 
     /* Two named buttons rather than one behind a confirm() whose OK and Cancel both start a
        résumé. Which one you get is the choice; a dialog that spends it on OK-or-Cancel makes the
@@ -1367,8 +1541,7 @@
       repository.save(fresh);
       repository.setLastOpened(fresh.id);
       store.adopt(fresh);
-      el('rb-pop-open').hidden = true;
-      el('rb-open').setAttribute('aria-expanded', 'false');
+      closePopovers();
     };
     el('rb-new').addEventListener('click', () => startFresh(true));
     el('rb-new-blank').addEventListener('click', () => startFresh(false));
@@ -1419,18 +1592,22 @@
       const by = { pdf: Export.print, word: Export.asWord, text: Export.asText,
         html: Export.asHtml, json: Export.asJson }[format];
       if (by) by(window, payload);
-      el('rb-pop-download').hidden = true;
+      closePopovers();
     });
 
-    /* One delegated listener for the whole rail: its panes are re-rendered from scratch on
-       every change, so a listener bound to a control inside them would be replaced with it. */
-    const rail = document.querySelector('.rb-rail');
-    rail.addEventListener('input', e => {
+    /* One delegated listener for the whole tab: every pane is re-rendered from scratch on every
+       change, so a listener bound to a control inside one would be replaced along with it. It was
+       bound to the rail while there was a rail; the panes now sit in two workspaces on opposite
+       sides of a segment switch, and binding it twice would be one contract kept in two places.
+       Nothing in the bar carries the data attributes these handlers read, so widening the target
+       adds no reachable case. */
+    const panel = el('rb');
+    panel.addEventListener('input', e => {
       const t = e.target;
       if (t.dataset.field) {
         const value = t.type === 'checkbox' ? t.checked : t.value;
         /* The card says "make it yours". Once a word has been typed it has been made theirs, so
-           it stands down — leaving it up would spend the top of the rail on advice already
+           it stands down — leaving it up would spend the top of the form on advice already
            taken, and it is the largest thing in the panel. */
         firstRun = false;
         /* Under a version this forks a variant on the first keystroke and writes there after —
@@ -1447,30 +1624,43 @@
       } else if (t.dataset.token) {
         store.dispatch(Cmd.setTheme({ [t.dataset.token]: t.type === 'range' ? +t.value : t.value }),
           'theme:' + t.dataset.token);
-        /* The range's own label carries the live value, and the rail is deliberately not being
+        /* The range's own label carries the live value, and the pane is deliberately not being
            rebuilt under the user's thumb — so nudge just that label. */
         const label = t.parentElement.querySelector('label b');
         const tunable = layout().tunables.find(x => x.key === t.dataset.token);
         if (label && tunable) label.textContent = t.value + (tunable.unit || '');
       }
     });
-    rail.addEventListener('change', e => {
+    panel.addEventListener('change', e => {
       const slot = e.target.dataset ? e.target.dataset.slotFor : null;
       if (slot) store.dispatch(Cmd.setSlot(slot, e.target.value));
       if (e.target.id === 'rb-paper-size') store.dispatch(Cmd.setPaper(e.target.value));
+      const show = e.target.dataset ? e.target.dataset.show : null;
+      if (show) {
+        store.dispatch(Cmd.setHidden(show, !e.target.checked, activeTailoring()));
+        /* The pane is rebuilt from innerHTML on the repaint, which takes the focused checkbox
+           with it — so somebody ticking four projects off in a row would lose the keyboard after
+           the first. The tick carries an id for exactly this. */
+        const again = el('rb-show-' + show);
+        if (again && again.focus) again.focus();
+      }
     });
-    rail.addEventListener('click', e => {
+    panel.addEventListener('click', e => {
       const row = e.target.closest('[data-row]');
       const pick = e.target.closest('[data-select]');
       const add = e.target.closest('[data-add]');
       const act = e.target.closest('[data-act]');
-      /* Opening a row selects the block it names. The rail and the page are one document seen
+      /* Opening a row selects the block it names. The form and the page are one document seen
          twice, so navigating in one has to move the other — the "Outline" this replaces selected
          without opening, and the fields it selected lived somewhere else on the panel. */
       if (row) {
         const key = row.dataset.row;
         if (expanded.has(key)) expanded.delete(key); else expanded.add(key);
-        if (key.indexOf('geo:') !== 0) { select(expanded.has(key) ? key : null, false); return; }
+        /* A node id or one of this form's synthetic keys — `geo:<id>`, `add:<id>`. Ids are
+           `[\w-]` (resume_export.js SAFE_ID), so a colon is the discriminator and cannot collide.
+           Keyed on the `geo:` prefix alone before, which made "More block types" select a block
+           whose id was the whole key and show nothing. */
+        if (key.indexOf(':') < 0) { select(expanded.has(key) ? key : null, false); return; }
         paint();
         return;
       }
@@ -1509,42 +1699,34 @@
           store.dispatch(Cmd.duplicateNode(on));
         } else if (on && what === 'unfork') {
           store.dispatch(Cmd.clearVariant(on, activeTailoring()));
-        } else if (on && what === 'hide') {
-          const tailoring = Doc.tailoringOf(doc());
-          const isHidden = !!(tailoring && (tailoring.hidden || []).includes(on));
-          store.dispatch(Cmd.setHidden(on, !isHidden, activeTailoring()));
         }
       }
       if (e.target.id === 'rb-theme-reset') store.dispatch(Cmd.setTheme(blankTheme()));
       if (e.target.id === 'rb-kw-run') keywordCheck();
     });
 
-    /* One traversal, wired twice. Both strips are tablists, so both owe the same behaviour;
-       writing it once means the nested strip cannot drift from the outer one. Automatic
-       activation — the panel follows focus — is the APG default for sets this small with no
-       expensive panel to build, and it is what a mouse user already gets. */
-    const wireStrip = (stripId, key, names, show) => {
-      const strip = el(stripId);
-      strip.addEventListener('click', e => {
-        const tab = e.target.closest('[data-' + key + ']');
-        if (tab) show(tab.dataset[key], false);
-      });
-      strip.addEventListener('keydown', e => {
-        const active = document.activeElement;
-        const at = names.indexOf(active && active.dataset ? active.dataset[key] : null);
-        if (at < 0) return;
-        const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
-        let to = null;
-        if (step != null) to = (at + step + names.length) % names.length;
-        else if (e.key === 'Home') to = 0;
-        else if (e.key === 'End') to = names.length - 1;
-        if (to == null) return;
-        e.preventDefault();
-        show(names[to], true);
-      });
-    };
-    wireStrip('rb-seg', 'seg', SEGMENTS, showSegment);
-    wireStrip('rb-rail-tabs', 'pane', PANES, showTool);
+    /* The segment strip. Automatic activation — the panel follows focus — is the APG default
+       for a set this small with no expensive panel to build, and it is what a mouse user already
+       gets. This was once a generic `wireStrip` called twice, over two nested tablists; there is
+       one strip now, so it is written once, here. */
+    const strip = el('rb-seg');
+    strip.addEventListener('click', e => {
+      const tab = e.target.closest('[data-seg]');
+      if (tab) showSegment(tab.dataset.seg, false);
+    });
+    strip.addEventListener('keydown', e => {
+      const active = document.activeElement;
+      const at = SEGMENTS.indexOf(active && active.dataset ? active.dataset.seg : null);
+      if (at < 0) return;
+      const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+      let to = null;
+      if (step != null) to = (at + step + SEGMENTS.length) % SEGMENTS.length;
+      else if (e.key === 'Home') to = 0;
+      else if (e.key === 'End') to = SEGMENTS.length - 1;
+      if (to == null) return;
+      e.preventDefault();
+      showSegment(SEGMENTS[to], true);
+    });
 
     document.addEventListener('keydown', e => {
       if (el('panel-resume') && el('panel-resume').hidden) return;
@@ -1557,7 +1739,15 @@
       if (e.altKey && (key === 'arrowup' || key === 'arrowdown')) {
         if (nudge(selectedId, key === 'arrowup' ? -1 : 1)) e.preventDefault();
       }
-      if (key === 'escape' && selectedId) select(null);
+      if (key === 'escape') {
+        /* The menu first: it is the thing on top, and Escape means "close what is over me"
+           before it means "deselect the block underneath". */
+        const owner = closePopovers();
+        if (owner) {
+          const button = el(owner);
+          if (button && button.focus) button.focus();
+        } else if (selectedId) select(null);
+      }
     });
 
     /* Anything not yet written is written now, rather than on a timer that the tab closing
@@ -1653,14 +1843,14 @@
   }
 
   /* Two scrollers, named apart on purpose. `scrollToNode` was one function when there was one
-     place a block could be shown; the rail now shows the same block as a row, and a single name
+     place a block could be shown; the form shows the same block as a row, and a single name
      covering both would be read as whichever one the reader had in mind. */
   function scrollPaperTo(id) {
     const target = el('rb-paper').querySelector('[data-node="' + id + '"]');
     if (target && target.scrollIntoView) target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
-  function scrollRailTo(id) {
+  function scrollFormTo(id) {
     const pane = el('rb-pane-document');
     /* `data-block`, which every row AND every bullet carries — `data-row` is the toggle on a
        row's own header, and a bullet has no toggle, so keying on it revealed nothing at all for
@@ -1705,14 +1895,11 @@
   }
 
   /* The panel is hidden until its tab opens, and a hidden element measures zero — so every
-     pixels-per-inch reading taken before then would be wrong. app.js calls this on the way in. */
-  let fitted = false;
+     reading taken before then would be wrong. app.js calls this on the way in, and `measureShown`
+     is the same rule applied one level down, to whichever segment is on screen. */
   function shown() {
     boot();
-    if (store && store.get()) {
-      paint();
-      if (!fitted) { fitted = true; fitToWidth(); paint(); }
-    }
+    measureShown();
   }
 
   /* Booting is deliberately NOT on DOMContentLoaded. The ten scripts load on every page of the
@@ -1726,7 +1913,7 @@
      holds the only reference to the live document, and the browser tests drive the real page
      through it rather than reaching into a closure they cannot see. */
   root.ResumeEditor = {
-    boot, shown, findings, keywordCheck, startDocument, changeLayout, showRailPane,
+    boot, shown, findings, keywordCheck, startDocument, changeLayout,
     current: () => doc(),
     flush: () => store && store.flush(),
     select,
@@ -1737,7 +1924,7 @@
      `showTab()` has already run by the time this script executes. Its guard reads
      `window.ResumeEditor`, finds nothing, and moves on; no later event revisits a tab the page
      opened on. The panel is left rendered but never painted: blank sheet, empty layout and paper
-     controls, empty rail.
+     controls, empty form.
 
      So the editor boots itself in exactly that case, and the condition is the panel already being
      visible — which is true only when showTab chose this tab and found nobody home. A visitor who
