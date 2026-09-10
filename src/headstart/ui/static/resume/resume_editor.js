@@ -809,7 +809,12 @@
     out.push('<div class="rb-doc-foot">' +
       '<button class="go rb-mini rb-add-section" data-add="section" data-into="">+ Add section</button>' +
       '<div class="rb-add"><span class="note">Also:</span>' +
-      ['summary', 'skills_line'].map(t => Components.get(t)).filter(Boolean).map(s =>
+      /* Derived from the registry, not a list. It used to name three types, so a component added
+         later — `professional_summary`, `language_line` — could be reached inside a section but
+         never added at the top level, and nothing said so. Anything that belongs beside a section
+         rather than inside one is a `text` or a `line`; entries live in sections and bullets in
+         entries, so neither belongs here. */
+      Components.all().filter(s => s.shape === 'text' || s.shape === 'line').map(s =>
         '<button class="ghost rb-mini" data-add="' + esc(s.type) + '" data-into="">' + esc(s.label) +
         '</button>').join('') + '</div>' +
       '<div class="rb-prefill"><button class="ghost rb-mini" data-act="prefill">Fill from my profile</button>' +
@@ -871,7 +876,7 @@
     if (lay.credit) out.push('<p class="note rb-credit">' + esc(lay.credit) + '</p>');
     out.push('<div class="rb-field"><label for="rb-paper-size">Paper size</label>' +
       '<select id="rb-paper-size">' + Layouts.PAPERS.map(p =>
-        '<option value="' + esc(p.id) + '"' + (p.id === (d.paper || 'letter') ? ' selected' : '') +
+        '<option value="' + esc(p.id) + '"' + (p.id === Layouts.paperIdFor(lay, d) ? ' selected' : '') +
         '>' + esc(p.label) + '</option>').join('') + '</select></div>');
     for (const t of lay.tunables) {
       const value = theme[t.key];

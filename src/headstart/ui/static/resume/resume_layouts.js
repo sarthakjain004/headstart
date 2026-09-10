@@ -136,6 +136,18 @@
       : layout.page;
   }
 
+  /** Which entry in PAPERS the sheet in force corresponds to — the Layout's own when the document
+   *  states nothing. The Design pane's control read `doc.paper || 'letter'`, so a fresh Europass
+   *  document rendered and printed A4 while the control beside it said "US Letter": the one place
+   *  in the tab where a control disagreed with the page it governs. Matched on width because a
+   *  Layout declares inches, not a paper name. */
+  function paperIdFor(layout, doc) {
+    if (doc && PAPERS.some(p => p.id === doc.paper)) return doc.paper;
+    const page = layout.page || {};
+    const match = PAPERS.find(p => Math.abs(p.width - page.width) < 0.05);
+    return match ? match.id : PAPERS[0].id;
+  }
+
   /* Every token value is interpolated straight into a stylesheet, and that stylesheet is written
      into a document by the print and download paths. So a token is only allowed to be the kind of
      thing its Layout says it is. Without this, a résumé document — which the product invites
@@ -446,7 +458,7 @@
   }
 
   root.ResumeLayouts = {
-    define, get, all, PAPERS, pageFor, themeFor, geometryFor, renderDocument, renderNode,
+    define, get, all, PAPERS, pageFor, paperIdFor, themeFor, geometryFor, renderDocument, renderNode,
     renderStandalone, runRules,
     esc, escLines, dateRange, roleLine, plainStrategies, groupChildren, clampNum, headAndRest,
     marginRow,

@@ -358,6 +358,28 @@ test('résumé text is escaped everywhere it reaches HTML', () => {
   assert.ok(!ctx.ResumeExport.standaloneHtml(doc).includes('onerror="alert'));
 });
 
+test('the paper control names the sheet actually in force, including a layout that is A4', () => {
+  const ctx = load(ALL);
+  const { ResumeLayouts: L, ResumeDocument: D } = ctx;
+  /* The Design pane read `doc.paper || 'letter'`, so a fresh Europass document rendered and
+     printed A4 while the control beside it said "US Letter" — a control disagreeing with the page
+     it governs. */
+  for (const id of L.all().map(l => l.id)) {
+    const lay = L.get(id);
+    const b = D.builder().usingLayout(id);
+    lay.starter(b);
+    const doc = b.build();
+    const named = L.PAPERS.find(p => p.id === L.paperIdFor(lay, doc));
+    assert.ok(named, `${id}: no paper named`);
+    assert.ok(Math.abs(named.width - L.pageFor(lay, doc).width) < 0.05,
+      `${id}: control says ${named.id} but the sheet is ${L.pageFor(lay, doc).width}in`);
+  }
+  /* And a document that states its own sheet still wins over the layout's. */
+  const eu = L.get('europass');
+  assert.equal(L.paperIdFor(eu, { paper: 'letter' }), 'letter');
+  assert.equal(L.paperIdFor(eu, {}), 'a4', 'the layout\'s own sheet is the fallback');
+});
+
 /* ---- a theme override is untrusted input ---- */
 
 test('an imported document cannot choose its own identifiers', () => {
