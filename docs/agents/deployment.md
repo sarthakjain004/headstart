@@ -244,7 +244,9 @@ version of this note called it a known v1 gap; prune closes it.)
 
 ## One-time: retire the pre-ADR-0120 trends CSV
 
-**Status: pending as of 2026-09-09.** The trends ledger moved from
+**Status: verified and ready to run; the delete itself is NOT yet done (2026-09-10).** The
+condition below has been checked against live data and passes — see "Verified" at the end of this
+section. The trends ledger moved from
 `data/state/role_trends.csv` (172,537,804 bytes) to `data/state/role_trends.parquet`
 (3,430,805 bytes) in ADR-0120. The `merge` job uploads `data/state` as a **folder without
 `--delete`**, so the old CSV survives on HF until someone removes it — and until it is gone the
@@ -276,3 +278,24 @@ EOF
 
 The row-count assertion is the point: it is what turns a bad fold-in from silent permanent data
 loss into a recoverable state, because the CSV is still there to migrate again.
+
+### Verified 2026-09-10, before deleting anything
+
+The check above passes, and a stronger one was run alongside it — **that the live Parquet is a
+strict superset of the CSV**, not merely bigger:
+
+| | rows | distinct stamps |
+|---|---|---|
+| `role_trends.csv` on HF | 2,502,388 | 515 |
+| `role_trends.parquet` on HF | **2,596,598** | **529** |
+
+**0** CSV stamps missing from the Parquet, **0** with a changed row count. Every row the CSV holds
+is in the Parquet, plus 14 further ticks written since the cutover.
+
+Check against the CSV **currently on HF**, not a local copy. The CSV kept growing after the
+Parquet work began — the last pre-cutover pipeline run still wrote to it — so a stale copy pulled
+before the cutover verifies 510 stamps and silently misses 5. Re-pull it first.
+
+Sizes at that moment: CSV 174,894,709 bytes, Parquet 3,597,994 — **48.6x**, so retiring the CSV is
+what banks the ~171 MB/run saving. Until it goes, the dataset carries both and `join`'s
+`state_fetch 'data/state/*'` still downloads the CSV every run.
