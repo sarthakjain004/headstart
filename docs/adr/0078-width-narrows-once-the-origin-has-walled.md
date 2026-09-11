@@ -82,8 +82,10 @@ walls, it returns `ceiling` unchanged. It only ever narrows.**
 **An undefended shard degrades to slow rather than lossy — which is the trade, not a free win.**
 Narrowing converts loss into wall-clock, and that lands on the shards already having the worst run.
 Whether it fits the 60-minute budget is exactly what the next production run has to answer; the
-`origin returned {status}` warning `mark_walled` already logs, once per group per shard, is what
-says which shards narrowed.
+`origin returned {status}` line `mark_walled` already logs, once per group per shard, is what
+says which shards narrowed. (That line was a WARNING when this was written; it is INFO since
+2026-09-11 — once per group per *shard* is 45 of GitHub's 50 run-wide annotations across a
+15-shard matrix, and `scrape_run`'s own per-shard summary already carries the same fact.)
 
 **Re-measuring 12 needs a harness that cannot wall itself.** `scripts/bench/probe_eightfold_throttle.py`
 passes no `egress_group`, so nothing in it reaches `mark_walled` and its width arms still measure
