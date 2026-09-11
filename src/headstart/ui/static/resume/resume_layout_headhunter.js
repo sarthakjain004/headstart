@@ -47,8 +47,8 @@
      Layout, so they live in resume_layouts.js with the baseline that also reads them
      (ADR-0127). What stays in this file is what is THIS TEMPLATE'S: its numbers, its colours,
      its sentence count, and its one-sided tense test. */
-  const { parseMonth, asMonths, charsPerLine, opener, anyStemIn, SUPERFLUOUS, SCALE,
-    OUTCOME } = L;
+  const { parseMonth, dateFinding, asMonths, charsPerLine, opener, anyStemIn, SUPERFLUOUS,
+    SCALE, OUTCOME } = L;
 
   /** Sentence-ending periods, with the abbreviations and decimals that would inflate the count
    *  neutralised first — "B.A." and "4.5" are not sentences, and a rule that said they were
@@ -217,13 +217,16 @@
       label: 'Month and year on every job',
       check(doc, api) {
         const out = [];
+        /* The guide's wording for the verdict the guide owns; `dateFinding` supplies the other
+           one, because whether this build can READ a month is not a thing the template has an
+           opinion about — the guide was not written in Polish either way. */
         for (const n of api.nodesOfType('work_entry')) {
           const c = api.content(n.id);
           if (!parseMonth(c.start)) {
-            out.push({ level: 'error', nodeId: n.id, message: 'Start date needs a month and a year — "June 2023".' });
+            out.push(dateFinding(n.id, c.start, 'Start date needs a month and a year — "June 2023".'));
           }
           if (!c.current && !parseMonth(c.end)) {
-            out.push({ level: 'error', nodeId: n.id, message: 'End date needs a month and a year, or tick "Still here".' });
+            out.push(dateFinding(n.id, c.end, 'End date needs a month and a year, or tick "Still here".'));
           }
         }
         return out;
