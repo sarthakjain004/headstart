@@ -137,3 +137,5 @@ supersedes it and note the supersession in both.
 | [0131](0131-forgetting-a-resume-costs-the-subscriptions-dataset-its-history.md) | Forgetting a résumé costs the Subscriptions dataset its whole history | 2026-09-11 |
 | [0132](0132-a-date-rule-may-refuse-to-read-a-month-it-may-not-guess-one.md) | A date rule may refuse to read a month; it may not guess one | 2026-09-11 |
 | [0133](0133-the-resume-tab-reads-the-saved-jobs-the-page-already-fetched.md) | The Résumé tab reads the Saved jobs the page already fetched | 2026-09-11 |
+| [0134](0134-the-shape-says-which-blocks-the-printer-may-not-split.md) | The shape says which blocks the printer may not split | 2026-09-11 |
+| [0135](0135-two-baseline-rules-for-the-blocks-that-shipped-without-any.md) | Two baseline Rules for the blocks that shipped without any | 2026-09-11 |

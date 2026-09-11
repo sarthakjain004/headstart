@@ -322,19 +322,33 @@
    down the form you have scrolled. */
 .rb-aside { display: flex; flex-direction: column; gap: 12px; min-width: 0;
   position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
-/* Below 1000px `.rb-work` is one column and the aside stacks under the form, where `sticky` has
-   nothing to stick inside — its grid area is exactly its own height. So ADR-0128's "the aside is
-   sticky so Checks stays reachable" was simply false there: Checks landed 1,107px down an
-   1,855px page. The column goes ABOVE the form instead, and the one thing in it that is a
-   convenience rather than advice — the miniature, the only part of this column that can be put
-   away at all — goes last within it. Checks is then the first thing under the tab strip. */
+/* Below 1000px `.rb-work` is one column and the aside stacks with the pane it belongs to, where
+   `sticky` has nothing to stick inside — its grid area is exactly its own height. So ADR-0128's
+   "the aside is sticky so Checks stays reachable" was simply false there: Checks landed 1,107px
+   down an 1,855px page.
+
+   Moving the whole aside above its pane — which is what `order: -1` on the box did — only swapped
+   which one was buried, because the box moves whole. Measured at 390x844: Preview drew the Design
+   panel with the sheet 1,144px down, and Edit drew the miniature and Checks with the form at
+   1,100px. Each segment showed everything except the thing it is named after.
+
+   The three things in this column are not one thing, so they do not move as one. `display:
+   contents` makes each card a grid item of `.rb-work` itself, which is what lets `order` put them
+   on either side of the pane: Checks ABOVE the form, because it is advice you act on in the form
+   right under it; the miniature BELOW it, because it is the one thing here that is a convenience
+   rather than advice (and the only one that can be put away at all); and the whole Preview aside
+   below the sheet, because Design is judged by looking at the page above it. */
 @media (max-width: 1000px) {
-  .rb-aside { position: static; max-height: none; overflow: visible; order: -1; }
-  .rb-aside-head, .rb-minicard { order: 1; }
+  .rb-aside { display: contents; }
+  /* The aside's own 12px, not the grid's 14: with no aside box left there is no `gap` on it, and
+     the cards were spaced against each other rather than against a column beside them. */
+  .rb-work { gap: 12px; }
+  .rb-aside-head, .rb-minicard, #rb-preview-aside > .rb-card { order: 1; }
+  .rb-checkscard { order: -1; }
 }
 /* Same trap as the miniature: the gallery puts this column away while it holds the stage, and
-   `display: flex` above would have outranked the attribute and left Design and Keywords on
-   screen beside a sheet that is no longer there. */
+   `display: flex` — or the `display: contents` the narrow window swaps in — would have outranked
+   the attribute and left Design and Keywords on screen beside a sheet that is no longer there. */
 .rb-aside[hidden] { display: none !important; }
 
 .rb-card { background: var(--raise); border: 1px solid var(--rule); border-radius: var(--r-lg);
