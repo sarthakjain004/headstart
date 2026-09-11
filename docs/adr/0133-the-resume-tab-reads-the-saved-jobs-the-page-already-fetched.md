@@ -57,8 +57,9 @@ Four things are load-bearing:
    one truth, and no way to tell which one is stale.
 
 **A Tailoring keeps the job's id and its own name, and nothing else of the posting.** The name
-defaults to `Company · Title` and is the visitor's to change before the version is created —
-which is the only chance, since nothing renames a Tailoring afterwards. That name is what still
+defaults to `Company · Title` and is the visitor's to change before the version is created, and
+again afterwards through Rename in the same group (added 2026-09-11 — when this was written the
+control did not exist and the sentence here said so). That name is what still
 reads once the star is gone: a **Saved job** is already a copy taken at star time (ADR-0042), so
 a third copy inside the résumé document would be one more thing to keep in step and one more
 thing to go stale.

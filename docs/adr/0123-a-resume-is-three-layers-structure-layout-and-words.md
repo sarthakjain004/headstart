@@ -122,3 +122,43 @@ that prints. That mattered more than it looks — one of this layout's own check
 three lines", and a preview two-thirds of the correct width shows six lines where four will print.
 The cuts the printer will make are drawn on the preview, simulating the same `break-inside: avoid`
 the stylesheet asks for; the count is checked against a real PDF rather than asserted.
+
+## Amendment (2026-09-11): a Command may carry a Layer-2 measurement, but never read Layer 2
+
+`Cmd.setPaper` took a paper id and wrote it. It now takes an optional second argument — `{ x, y }`
+multipliers — and scales every top-level block's `x`/`y`/`w`/`h` by them.
+
+The defect that forced it: a box carries **inches, measured against the sheet it was placed on**,
+and changing the sheet moves the margin out from under it. Measured on a fresh `free-canvas`
+document switched from US Letter to A4, `free-canvas`'s own `overflow` rule reported **two** "Runs
+off the right-hand edge" warnings on blocks the user had never touched — 4.7 + 2.2 is 6.9in against
+A4's 6.67in usable measure, and the rule was right.
+
+**The caller supplies the numbers; the Command does not go and get them.** Only a Layout granting
+`resize: ['box']` has blocks measured in inches, and that is a `caps` fact — Layer 2's. A Layer-1
+Command that read `caps` to decide whether to scale would be the layer inversion this ADR's whole
+split exists to prevent, so `resume_editor.js` derives the two usable areas from
+`Layouts.usable(Layouts.pageFor(...))`, hands down two ratios, and passes nothing at all for a flow
+layout. The Command applies what it is told to whatever geometry it finds, which is a Layer-1
+operation on Layer-1 data. It is the same shape `Cmd.setLayout(layoutId, prepare)` already had:
+the caller passes in the incoming Layout's own `adopt`, rather than the Command reaching for it.
+
+That guard is not decoration. Coordinates **outlive** the layout that gave them — nothing strips
+`geometry` when a document moves to a flow layout, `geometryFor` merely declines to read it — so a
+document that has been on the canvas once is still carrying inches while it sits on a layout whose
+own geometry is a margin in pixels. Without the `caps` check, changing the paper there would
+rescale coordinates nothing on screen shows, and the trip back to the canvas would land on a page
+nobody drew. `tests/js/resume_editor.test.js` pins both halves.
+
+**Scaled, not clamped.** Clamping (shift left, then shrink to fit) is lossy: Letter → A4 → Letter
+would leave a permanent 0.23in gutter down the right of the page. Scaling keeps the composition and
+returns the inches on the trip back — to the hundredth of an inch, since each hop rounds, which is
+what the `Letter → A4 → Letter` assertion measures on the starter's four blocks.
+
+**Why not give `starter` a document instead**, which was the other option on the table: there is no
+path on which it would help. A new résumé is minted with **no `paper` at all**, so `pageFor` falls
+back to the Layout's own page wherever a starter runs — the sheet in force there is always the
+Layout's, and a starter handed a document would place exactly the same four boxes. The sheet only
+ever differs *later*, when somebody picks A4 in the Design pane, and at that moment the blocks a
+**person** placed by hand need re-fitting every bit as much as the four the starter placed. A
+starter fix could never reach those.

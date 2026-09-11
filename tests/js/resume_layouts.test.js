@@ -192,6 +192,18 @@ test('every component in the catalogue reaches the page and the export, in every
    typed into a test. */
 const withExample = ctx => ctx.ResumeLayouts.all().filter(l => l.example);
 
+test('every layout on the picker ships a worked example to start from', () => {
+  const ctx = load(ALL);
+  /* "New — from the worked example" is offered for whatever layout is on screen, and a layout
+     with none silently hands back the empty starter instead — the same button, a different
+     result, with nothing saying so. `two-column` and `free-canvas` were the two without one, and
+     they are the two whose arrangement most needs demonstrating: neither reads as a conventional
+     résumé at a glance, so an empty page teaches nothing about where a block belongs. */
+  const missing = ctx.ResumeLayouts.all().filter(lay => !lay.example).map(lay => lay.id);
+  assert.deepEqual(missing, [],
+    'these layouts offer "from the worked example" and have no example to give');
+});
+
 test('every layout that ships a worked example passes its own rules on it', () => {
   const ctx = load(ALL);
   /* The calibration that keeps a rule set honest: a layout whose own example trips its own

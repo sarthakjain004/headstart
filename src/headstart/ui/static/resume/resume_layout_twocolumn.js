@@ -103,6 +103,74 @@
     b.section('Projects', s => s.add('project_entry')).into('side');
   }
 
+  /** A worked example in this layout's own shape. What it teaches is the SPLIT: the wide column
+   *  carries the narrative a reader follows top to bottom — summary, jobs, projects — and the
+   *  narrow one carries the lists they scan for a match. Reading a filled page is how somebody
+   *  learns which side a block belongs on; the starter's four empty blocks cannot show it.
+   *
+   *  No bullets in the narrow column, and that is a measurement rather than a preference: the
+   *  side slot is 2.16in of a 6.9in measure, so `three-lines` gives a bullet there about 27
+   *  characters a line. A list of skills and a one-line degree are what fits. */
+  function example(b) {
+    b.add('header', {
+      fullName: 'Katarzyna Wójcik', phone: '+48 512 340 118', email: 'k.wojcik@gmail.com',
+      link: 'linkedin.com/in/kwojcik', locationLine: 'Kraków, Poland · EU citizen',
+    });
+    b.add('professional_summary', {
+      text: 'Backend engineer, six years on payment and settlement systems for Central European ' +
+        'banks. Most at home where money moves and the audit trail has to survive it. Looking ' +
+        'for platform work on a team that runs what it writes.',
+    });
+    b.section('Experience', s => {
+      s.add('work_entry', {
+        role: 'Senior Backend Engineer', company: 'Blik', place: 'Warsaw, Poland',
+        start: 'April 2022', current: true,
+      }, e => {
+        e.bullet('Rebuilt the settlement reconciliation job as an event-sourced service, cutting the nightly close from 4 hours to 35 minutes');
+        e.bullet('Cut p99 latency on the transfer API from 840ms to 190ms by moving the fraud lookup off the request path');
+        e.bullet('Wrote the runbook the on-call rota now uses, which took mean time to recovery from 51 minutes to 12');
+        e.bullet('Brought three engineers through onboarding in six months, two of them straight out of university');
+      });
+      s.add('work_entry', {
+        role: 'Backend Engineer', company: 'Nordea', place: 'Gdańsk, Poland',
+        start: 'September 2019', end: 'March 2022',
+      }, e => {
+        e.bullet('Migrated 60 SOAP endpoints to REST with no downtime, retiring a mainframe adapter that cost 40 hours of maintenance a month');
+        e.bullet('Built the PSD2 consent flow used by 11 partner banks, passing external audit on the first submission');
+        e.bullet('Reduced the batch job suite from 9 hours to 2 by parallelising the account-balance pass');
+      });
+    });
+    /* `project_entry`, not `tech_project`: this layout renders the first by name and the second
+       through the shape fallback, which emits the entry's bullets as bare <li> outside any <ul>
+       — a stray bullet at the page margin. An example is the one document that must not
+       demonstrate that, so the stack goes in the project's own name here. */
+    b.section('Projects', s => {
+      s.add('project_entry', {
+        name: 'Ledgerfmt — ISO 20022 message formatter in Rust and WebAssembly',
+      }, e => {
+        e.bullet('Open source since 2023; 1,400 downloads a month and in use inside two of the banks above');
+      });
+    });
+    b.section('Skills', s => {
+      s.add('skills_line', { label: 'Languages', value: 'Java, Kotlin, Rust, SQL' });
+      s.add('skills_line', { label: 'Platform', value: 'Kafka, PostgreSQL, Kubernetes, Terraform' });
+      s.add('skills_line', { label: 'Domain', value: 'ISO 20022, SEPA, PSD2, double-entry ledgers' });
+    }).into('side');
+    b.section('Education', s => {
+      s.add('education_entry', {
+        credential: 'MSc Computer Science, AGH University, Kraków', status: '2019',
+      });
+      s.add('education_entry', {
+        credential: 'BSc Computer Science, AGH University, Kraków', status: '2017',
+      });
+    }).into('side');
+    b.section('Languages', s => {
+      s.add('language_line', { language: 'Polish', level: 'Native' });
+      s.add('language_line', { language: 'English', level: 'C1 · Proficient' });
+      s.add('language_line', { language: 'German', level: 'B2 · Independent' });
+    }).into('side');
+  }
+
   L.define({
     id: 'two-column',
     label: 'Two column',
@@ -149,6 +217,6 @@
         },
       },
     ],
-    css, render, starter,
+    css, render, starter, example,
   });
 })(typeof globalThis !== 'undefined' ? globalThis : this);
