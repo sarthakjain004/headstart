@@ -74,6 +74,7 @@ function matches(el, sel) {
   if (sel === '[data-drop-yes]') return el.dataset.dropYes != null;
   if (sel === '[data-drop-no]') return el.dataset.dropNo != null;
   if (sel === '[data-pull]') return el.dataset.pull != null;
+  if (sel === '[data-saved]') return el.dataset.saved != null;
   if (sel === 'input:not([type="checkbox"]), textarea, select') return !!el._caret;
   if (sel === '.rb-h') return el.dataset.handle != null;
   if (sel === '[data-node]') return el.dataset.node != null;
@@ -145,6 +146,14 @@ function loadEditor(options) {
       prompt: () => { throw new Error('window.prompt is not a control this tab may use'); },
       confirm: () => { throw new Error('window.confirm is not a control this tab may use'); },
       alert: () => { throw new Error('window.alert is not a control this tab may use'); },
+      /* app.js's hand-off of the stars it already fetched — the seam the "Tailor for a job"
+         picker reads. Absent by default, which is the signed-out page and every other test in
+         this file: no list, no picker. `saved: []` is the signed-in-with-nothing-starred page,
+         and the two are deliberately not the same answer. */
+      /* A copy per call, like the real seam: the editor sorts what it is handed, and a stub
+         that shared its array would let a test's own fixture be reordered under it. */
+      savedJobs: opts.saved === undefined ? undefined
+        : () => (opts.saved ? opts.saved.slice() : opts.saved),
     },
     _docHandlers: {},
   };
@@ -1155,6 +1164,145 @@ test('the editor calls none of the three native dialogs', () => {
   const source = fs.readFileSync(path.join(DIR, 'resume_editor.js'), 'utf8');
   const found = ['prompt', 'confirm', 'alert'].filter(fn => source.includes('window.' + fn + '('));
   assert.deepEqual(found, [], 'these are back in the editor: ' + found.join(', '));
+});
+
+/* ---- tailoring for a job the visitor already saved ----
+
+   A résumé builder inside a job board exists so a résumé can be tailored to a job in THIS app,
+   and `addTailoring` has taken a `jobId` since the day it was written while its only caller
+   passed one argument — so every Tailoring ever made recorded `null` for the job it was for.
+   These drive the picker the way the page offers it: open the menu, click a row, create. */
+
+/** Two stars, in the shape `GET /saved` really answers with (SavedJob.to_dict + `open`). */
+const STARS = [
+  { job_id: 'greenhouse:razorpay:9001', title: 'Backend Engineer', company: 'Razorpay',
+    url: 'https://example.test/9001', location: 'Bengaluru', salary: '₹40L–₹60L',
+    starred_at: '2026-09-02T09:00:00+00:00', open: true },
+  { job_id: 'lever:dreamsports:42', title: 'Platform Engineer', company: 'Dream11',
+    url: 'https://example.test/42', location: 'Mumbai', salary: '',
+    starred_at: '2026-09-05T09:00:00+00:00', open: true },
+];
+
+/** Open the popover and click one saved row, which is the whole gesture the picker offers. */
+function pickSaved(el, jobId) {
+  el('rb-version-new').fire('click');
+  el('rb-version-jobs').fire('click', { target: target({ saved: jobId }) });
+}
+
+test('a version made from a saved job is named after it and remembers which job it is for', () => {
+  const { ctx, el } = loadEditor({ saved: STARS });
+  pickSaved(el, 'greenhouse:razorpay:9001');
+  assert.equal(el('rb-version-name').value, 'Razorpay · Backend Engineer',
+    'picking a job did not name the version after it');
+
+  el('rb-version-create').fire('click');
+  const made = ctx.ResumeEditor.current().tailorings;
+  assert.equal(made.length, 1, 'no version was created');
+  assert.equal(made[0].name, 'Razorpay · Backend Engineer');
+  assert.equal(made[0].jobId, 'greenhouse:razorpay:9001',
+    'the Tailoring does not know which Job it was written for');
+});
+
+test('the picker lists the stars newest first, and marks the one that was chosen', () => {
+  const { el } = loadEditor({ saved: STARS });
+  el('rb-version-new').fire('click');
+  const html = el('rb-version-jobs').innerHTML;
+  assert.ok(html.indexOf('Dream11') < html.indexOf('Razorpay'),
+    'the newest star is not at the top, so the job just saved is the hardest one to find');
+  assert.ok(html.includes('Bengaluru · ₹40L–₹60L'), 'the row says nothing about the job itself');
+  assert.ok(!/aria-pressed="true"/.test(html), 'a row reads as chosen before anything was clicked');
+
+  el('rb-version-jobs').fire('click', { target: target({ saved: 'lever:dreamsports:42' }) });
+  const chosen = el('rb-version-jobs').innerHTML;
+  assert.ok(/data-saved="lever:dreamsports:42" aria-pressed="true"/.test(chosen),
+    'the chosen row does not say it was chosen');
+  assert.equal((chosen.match(/aria-pressed="true"/g) || []).length, 1,
+    'more than one row reads as chosen');
+});
+
+test('the name stays the visitor\'s to change, and the job it is for survives the edit', () => {
+  const { ctx, el } = loadEditor({ saved: STARS });
+  pickSaved(el, 'lever:dreamsports:42');
+  /* Nothing renames a Tailoring afterwards, so this is the only moment the name can be fixed —
+     and a picker that overrode it, or dropped the job id when it changed, would waste it. */
+  el('rb-version-name').value = 'Dream11 — the one I actually want';
+  el('rb-version-create').fire('click');
+  const made = ctx.ResumeEditor.current().tailorings[0];
+  assert.equal(made.name, 'Dream11 — the one I actually want', 'the typed name was overwritten');
+  assert.equal(made.jobId, 'lever:dreamsports:42', 'editing the name forgot the job');
+});
+
+test('the next version does not inherit the last one\'s job', () => {
+  const { ctx, el } = loadEditor({ saved: STARS });
+  pickSaved(el, 'greenhouse:razorpay:9001');
+  el('rb-version-create').fire('click');
+
+  /* Opened again and typed out by hand, for a job that is not starred at all. */
+  el('rb-version-new').fire('click');
+  el('rb-version-name').value = 'A speculative application';
+  el('rb-version-create').fire('click');
+
+  /* And the path a created version does not cover: a job picked and then thought better of.
+     The menu is dismissed without creating anything, so nothing after it clears the pick except
+     the next opening — which is why the reset lives there rather than beside the dispatch. */
+  el('rb-version-new').fire('click');
+  el('rb-version-jobs').fire('click', { target: target({ saved: 'lever:dreamsports:42' }) });
+  el('rb-version-new').fire('click');                       // dismissed, nothing created
+  el('rb-version-new').fire('click');                       // and opened again
+  assert.ok(!/aria-pressed="true"/.test(el('rb-version-jobs').innerHTML),
+    'the abandoned pick is still showing as chosen in the reopened menu');
+  el('rb-version-name').value = 'Another hand-typed one';
+  el('rb-version-create').fire('click');
+
+  const made = ctx.ResumeEditor.current().tailorings;
+  assert.equal(made.length, 3);
+  assert.equal(made[1].jobId, null,
+    'the second version carries the first version\'s job id — a wrong answer, not a missing one');
+  assert.equal(made[2].jobId, null,
+    'a pick that was abandoned still ended up on the next version made');
+});
+
+test('a signed-out visit is offered no picker at all, and the field still works', () => {
+  /* No `saved` option: `window.savedJobs` is absent, which is a deployment with no account store
+     and every signed-out visitor. The popover must be what it always was, not a picker that
+     appears and then has nothing in it. */
+  const { ctx, el } = loadEditor();
+  el('rb-version-new').fire('click');
+  assert.equal(el('rb-version-jobs').hidden, true, 'an empty picker was offered to a signed-out visitor');
+  assert.equal(el('rb-version-jobs').innerHTML, '', 'the picker painted rows it could not have');
+
+  el('rb-version-name').value = 'Typed by hand';
+  el('rb-version-create').fire('click');
+  const made = ctx.ResumeEditor.current().tailorings;
+  assert.equal(made.length, 1, 'the free-text fallback stopped making versions');
+  assert.equal(made[0].jobId, null);
+});
+
+test('signed in with nothing starred says where jobs get starred, rather than listing none', () => {
+  const { el } = loadEditor({ saved: [] });
+  el('rb-version-new').fire('click');
+  assert.equal(el('rb-version-jobs').hidden, false,
+    'an account with no stars is told nothing at all about the picker it could have');
+  assert.ok(!/data-saved=/.test(el('rb-version-jobs').innerHTML), 'it listed a row from nowhere');
+  assert.match(el('rb-version-jobs').innerHTML, /☆/,
+    'the empty state does not point at how a job gets saved');
+});
+
+test('the picker is read when the menu opens, not once at boot', () => {
+  /* `/saved` is fetched on page load and answers after it; the résumé tab can be open before it
+     does, and the tab boots the first time it is shown. A picker built once at boot would be
+     permanently empty for exactly the visitor it exists for — so this boots against a list that
+     is not there yet and lets it arrive. */
+  const options = { saved: null };
+  const { el } = loadEditor(options);
+  el('rb-version-new').fire('click');
+  assert.equal(el('rb-version-jobs').hidden, true, 'a list that has not answered was drawn as empty');
+
+  el('rb-version-new').fire('click');            // close it again
+  options.saved = STARS;
+  el('rb-version-new').fire('click');
+  assert.equal(el('rb-version-jobs').hidden, false, 'the stars arrived and the picker never saw them');
+  assert.ok(el('rb-version-jobs').innerHTML.includes('Razorpay'));
 });
 
 test('deleting a version asks in the bar, and Keep really keeps it', () => {

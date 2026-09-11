@@ -86,6 +86,15 @@
 .rb-pop-head { display: flex; align-items: center; justify-content: space-between; gap: 8px;
   font-weight: 600; margin-bottom: 8px; }
 .rb-doclist { display: flex; flex-direction: column; gap: 4px; max-height: 40vh; overflow: auto; }
+/* The saved-job picker inside the "Tailor for a job" popover. Same row button as the Résumés
+   list — it is the same gesture in the same menu shape — and the same self-scrolling cap, since
+   an account with forty stars would otherwise push the name field off the bottom of the menu.
+   The `[hidden]` rule is not optional: the editor puts this away by setting `.hidden`, and the
+   `display: flex` above would outrank the attribute's own UA rule and leave it on screen. */
+.rb-jobpick { display: flex; flex-direction: column; gap: 4px; max-height: 32vh; overflow: auto;
+  margin-bottom: 10px; }
+.rb-jobpick[hidden] { display: none !important; }
+.rb-docopen.on { border-color: var(--accent); }
 .rb-docrow { display: flex; gap: 6px; align-items: stretch; }
 .rb-docrow.on .rb-docopen { border-color: var(--accent); }
 .rb-docopen { flex: 1; text-align: left; background: var(--raise-2); border: 1px solid var(--rule);

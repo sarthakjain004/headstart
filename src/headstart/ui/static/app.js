@@ -1005,6 +1005,18 @@ async function loadSaved(){
   paintStars();
 }
 
+// The one thing outside this file that reads the stars: the Résumé tab's "Tailor for a job"
+// picker (ADR-0124), which names a version after a job the visitor already saved. A hand-off,
+// not a second GET /saved — the rows are on the page already, and this list is the one every
+// star and unstar keeps current, so the picker can never disagree with the Saved tab.
+//
+// Null, never [], while there is no list to offer: a deployment with no account store, a
+// signed-out visitor, or a /saved that has not answered (or failed). Empty means signed in
+// with nothing starred, which is a different thing and the picker says it out loud.
+//
+// A copy, so a reader sorting or trimming it cannot reorder the Saved tab underneath itself.
+window.savedJobs = () => (mySaved ? mySaved.slice() : null);
+
 // Repaint every star button in place — cheaper than redrawing three results lists.
 function paintStars(){
   document.querySelectorAll('button[data-star]').forEach(b => {

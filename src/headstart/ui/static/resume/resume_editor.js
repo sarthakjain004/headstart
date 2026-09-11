@@ -514,6 +514,59 @@
      `versionPaint` runs on every keystroke and would otherwise put the Delete button back over
      the question it had just asked. */
   let askVersionDrop = false;
+  /* Which **Saved job** the version about to be created is for, or null for one named by hand.
+     It is the popover's state rather than the document's: it lives only between opening the menu
+     and creating the version, and `addTailoring` is where it stops being a UI fact and becomes
+     the Tailoring's own `jobId`. */
+  let versionJob = null;
+
+  /* The stars app.js already fetched (`window.savedJobs`), not a second GET /saved from here.
+     The rows are on the same page and that list is the one every star and unstar keeps current,
+     so a picker reading it can never disagree with the Saved tab — and this tab stays what it has
+     always been: a feature that needs no server at all.
+
+     Null and empty mean different things and both are handled: null is "there is no such list"
+     — signed out, no account store, or /saved has not answered — and the picker is not offered;
+     empty is "signed in, nothing starred", which it says out loud. */
+  function savedJobs() {
+    const read = typeof window !== 'undefined' && window.savedJobs;
+    const rows = typeof read === 'function' ? read() : null;
+    return Array.isArray(rows) ? rows : null;
+  }
+
+  /** What a version made from a Saved job is called: "Razorpay · Backend Engineer". The company
+   *  first, because the picker and the version dropdown are both read down their left edge and
+   *  the company is what tells two applications apart; the same `·` the result cards and the
+   *  Résumés list already join fields with. A row with no company is its title alone.
+   *
+   *  It is a starting point, not a lock — the field it fills is editable before Create, which is
+   *  the only chance to name it: nothing renames a Tailoring afterwards. */
+  const versionName = j => [j.company, j.title].filter(Boolean).join(' · ') || 'Untitled version';
+
+  /** The picker: every Saved job, newest star first, with the chosen one marked.
+   *
+   *  Sorted here rather than trusted: app.js keeps `mySaved` nearly in star order but not exactly
+   *  — a refused unstar puts its row back on the end — which is why the Saved tab sorts its own
+   *  copy too. The list handed over is ours to reorder. */
+  function versionJobsPaint() {
+    const box = el('rb-version-jobs');
+    const rows = savedJobs();
+    box.hidden = !rows;
+    if (!rows) return;
+    if (!rows.length) {
+      box.innerHTML = '<p class="note">No saved jobs yet — hit the ☆ on any search result and it ' +
+        'shows up here, ready to tailor for.</p>';
+      return;
+    }
+    const newest = rows.sort((a, b) => String(b.starred_at || '').localeCompare(String(a.starred_at || '')));
+    box.innerHTML = '<p class="rb-doclist-head">Your saved jobs</p>' + newest.map(j => {
+      const where = [j.location, j.salary].filter(Boolean).join(' · ');
+      return '<button class="rb-docopen' + (versionJob === j.job_id ? ' on' : '') +
+        '" data-saved="' + esc(j.job_id) + '" aria-pressed="' + (versionJob === j.job_id) + '">' +
+        esc(versionName(j)) + (where ? '<span class="note">' + esc(where) + '</span>' : '') +
+        '</button>';
+    }).join('');
+  }
 
   function versionPaint() {
     const d = doc();
@@ -1782,9 +1835,28 @@
          first place. Back to the button that opened it. */
       const opener = el('rb-version-new');
       if (opener.focus) opener.focus();
-      store.dispatch(Cmd.addTailoring(name || 'Untitled version'));
+      /* The Job this version is for, where the visitor picked one (CONTEXT.md — **Tailoring**).
+         The Tailoring keeps the id and its own name, and nothing else about the job: the name is
+         what still reads once the star is gone, and the Saved job is already a copy taken at star
+         time, so a third copy here would be one more thing to keep in step. */
+      store.dispatch(Cmd.addTailoring(name || 'Untitled version', versionJob));
     };
     el('rb-version-create').addEventListener('click', createVersion);
+    /* Picking a job fills the name rather than creating the version outright. Two reasons, and
+       the second is not taste: the free-text field and the picker then converge on one path that
+       makes a version, and the name stays editable for the one moment it can be — no control
+       renames a Tailoring afterwards. */
+    el('rb-version-jobs').addEventListener('click', e => {
+      const hit = e.target && e.target.closest && e.target.closest('[data-saved]');
+      if (!hit) return;
+      const row = (savedJobs() || []).find(j => j.job_id === hit.dataset.saved);
+      if (!row) return;
+      versionJob = row.job_id;
+      const box = el('rb-version-name');
+      box.value = versionName(row);
+      versionJobsPaint();
+      if (box.focus) box.focus();
+    });
     /* Enter in the name field is what a text field with one button beside it promises. */
     el('rb-version-name').addEventListener('keydown', e => {
       if (e.key === 'Enter') { if (e.preventDefault) e.preventDefault(); createVersion(); }
@@ -1834,6 +1906,13 @@
     popover('rb-version-new', 'rb-pop-version', () => {
       const box = el('rb-version-name');
       box.value = '';
+      /* The previous visit's pick goes with the previous visit's name. Left standing, the next
+         version — typed out by hand, for another job entirely — would quietly carry the job id of
+         the one before it. */
+      versionJob = null;
+      /* Painted on the way in, not at boot: `/saved` answers after the page settles, and this is
+         the moment the list is both wanted and known. */
+      versionJobsPaint();
       if (box.focus) box.focus();
     });
 

@@ -118,6 +118,12 @@
       <div class="rb-pop-head">Tailor for a job</div>
       <p class="note">Name it after the job you are applying to. It starts as a copy of the
         master résumé and only stores what you change.</p>
+      {# The jobs this visitor already starred, so the job does not have to be typed out again —
+         and so the version can remember WHICH job it was written for, which is the whole reason
+         a Tailoring carries a job id. Built by resume_editor.js from the list app.js already
+         fetched; it stays empty and hidden on a signed-out visit, where the field below is the
+         only control and is exactly what this popover was before. #}
+      <div class="rb-jobpick" id="rb-version-jobs" hidden></div>
       <label class="rb-vh" for="rb-version-name">Version name</label>
       <input id="rb-version-name" class="rb-name rb-name-wide" placeholder="Acme, Backend Engineer"
              autocomplete="off">
