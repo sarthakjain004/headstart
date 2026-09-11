@@ -142,3 +142,4 @@ supersedes it and note the supersession in both.
 | [0136](0136-the-value-gate-keeps-one-dimension-because-the-data-has-one.md) | The value gate keeps one dimension, because the data has one | 2026-09-11 |
 | [0137](0137-an-agent-reads-a-resume-by-running-the-resume-tabs-own-javascript.md) | An agent reads a Résumé document by running the Résumé tab's own JavaScript | 2026-09-11 |
 | [0138](0138-a-materialized-country-column-serves-the-india-filter.md) | A materialized `country` column serves the India filter's country-level case | 2026-09-11 |
+| [0139](0139-a-single-company-board-is-its-own-ats.md) | A single-company board is its own `ats`, not a slug under one | 2026-09-11 |
