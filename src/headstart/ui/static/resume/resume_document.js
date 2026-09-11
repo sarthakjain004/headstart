@@ -120,10 +120,21 @@
     return this.add('bullet', { text, role: !!isSummary });
   };
 
+  /** A DOCUMENT's own id — `newId` above mints NODE ids, and the two are not interchangeable:
+   *  node ids are woven into HTML attributes and `querySelector`, a document id is a path
+   *  segment in the account store. Named apart for that reason (the near-homograph rule in
+   *  CLAUDE.md §3); a file that declares both must never let one stand in for the other.
+   *
+   *  Exported because it is no longer only the Builder's: the account sync mints one for the
+   *  copy it keeps aside after a conflict (ADR-0124 decision 4), and `store.py`'s `_RESUME_ID`
+   *  is this exact shape spelled as a regex on the far side of the wire. */
+  const newDocumentId = () =>
+    'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
   function Builder() {
     this._doc = {
       schema: SCHEMA,
-      id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      id: newDocumentId(),
       name: 'Untitled résumé',
       layoutId: null,
       createdAt: new Date().toISOString(),
@@ -143,6 +154,14 @@
       /* Layout token overrides the user has dialled in — Layer 2 values, stored per document
          so the same Layout can look slightly different in two of them. */
       theme: {},
+      /* Account sync (ADR-0124), and both fields are OFF-by-default facts rather than state the
+         editor maintains. `sync` is the opt-in: false until the Account switches it on for this
+         particular résumé, because storing one reverses a promise ADR-0041 made and that is not
+         something to inherit silently. `rev` is what the store's conflict check compares — the
+         revision the account copy is at, 0 while there is no account copy. Neither is content:
+         no Command touches them and they never enter the undo stack. */
+      sync: false,
+      rev: 0,
     };
     this._top = new NodeBuilder(this._doc, this._doc.root);
   }
@@ -524,6 +543,12 @@
        repository already reports this; without a caller it went nowhere, and the first the user
        knew of it was an empty résumé after a reload. */
     this._onError = opts.onError || null;
+    /* Called after a write the repository ACCEPTED. The account sync (ADR-0124) hangs off this
+       rather than off `subscribe`, and the difference matters: `subscribe` also fires on
+       `adopt`, which changes no words at all, so a sync driven by it would push a document
+       nobody had edited every time somebody opened one. This fires only where the browser copy
+       actually changed, and no more often than the debounce below allows. */
+    this._onSaved = opts.onSaved || null;
   }
 
   Store.prototype.subscribe = function (fn) {
@@ -615,11 +640,12 @@
     if (!this._repo || !this._doc) return { ok: true };
     const result = this._repo.save(this._doc) || { ok: true };
     if (!result.ok && this._onError) this._onError(result);
+    if (result.ok && this._onSaved) this._onSaved(this._doc);
     return result;
   };
 
   root.ResumeDocument = {
-    SCHEMA, Commands, Store,
+    SCHEMA, Commands, Store, newDocumentId,
     builder: () => new Builder(),
     node, walk, find, parentOf, flatten, clone, resolve, contentOf, tailoringOf, isHidden,
   };

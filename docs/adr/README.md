@@ -134,3 +134,4 @@ supersedes it and note the supersession in both.
 | [0128](0128-the-resume-tab-is-two-segments-edit-and-preview.md) | The Résumé tab is two segments — Edit and Preview | 2026-09-10 |
 | [0129](0129-the-lancedb-write-checks-its-own-base-instead-of-asking-first.md) | The LanceDB write checks its own base instead of asking first | 2026-09-10 |
 | [0130](0130-two-more-arrangements-and-the-blocks-a-resume-carries-that-a-cv-does-not.md) | Two more arrangements, and the blocks a résumé carries that a CV does not | 2026-09-11 |
+| [0131](0131-forgetting-a-resume-costs-the-subscriptions-dataset-its-history.md) | Forgetting a résumé costs the Subscriptions dataset its whole history | 2026-09-11 |

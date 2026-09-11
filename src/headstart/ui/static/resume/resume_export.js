@@ -247,6 +247,12 @@
     }
     /* A fresh id, so importing a backup never overwrites the résumé you are looking at. */
     parsed.id = 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    /* And a fresh account state. A backup taken from a synced résumé carries `sync: true` and
+       a revision, and inheriting either would be an import silently switching on storage the
+       Account never asked for — the one thing ADR-0124 decision 2 says must never happen. The
+       revision would be wrong anyway: this is a new document, with nothing stored under it. */
+    parsed.sync = false;
+    parsed.rev = 0;
     if (!parsed.root || typeof parsed.root !== 'object') throw new Error('That JSON is not a HeadStart résumé.');
     sanitiseIds(parsed);
     return parsed;

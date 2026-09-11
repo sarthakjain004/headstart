@@ -1,0 +1,123 @@
+name: squash-subscribers-history
+
+# Make deletion real in the Subscriptions dataset (ADR-0124, ADR-0131).
+#
+# Deleting a file from an HF dataset removes it from the tree and leaves it in the repository's
+# history, where anyone with the token can still read it. For a Saved set that is untidy; for a
+# **Résumé document** — employment history, contact details, everything a person wrote — it means
+# "delete" would not have been deletion at all. `HfApi.super_squash_history` is the only lever the
+# API offers, so the product's promise ("gone from your account at once, out of the backups within
+# 30 days") is bound to this workflow existing. ADR-0124 decision 5 made that binding explicit:
+# until this job existed, syncing did not ship.
+#
+# **What the squash costs, said plainly.** It collapses the branch to a single commit holding the
+# CURRENT tree. Live files are untouched — that is checked below, before success is announced —
+# but every earlier revision of every record in this dataset is destroyed: Profiles, Saved sets,
+# Saved jobs and Subscriptions, not only résumés. That is a real loss of rollback for
+# irreplaceable user data, and it is accepted here for reasons ADR-0131 records rather than
+# assumes. The short version: writes are per-record files, so a bug can only damage the record it
+# was writing; the sibling `squash-dataset-history` workflow's own justification ("everything here
+# is derived state the pipeline regenerates") does NOT transfer to this repo and is not being
+# borrowed; and the one record that is genuinely irreplaceable — the résumé — is the one whose
+# working copy lives in the Account's own browser, because HF is its sync target and never its
+# source (ADR-0124 decision 3).
+#
+# **Weekly, not monthly, and the reason is schedule reliability rather than urgency.** GitHub
+# drops scheduled events silently — this repo has measured it twice — so a monthly cron aiming at
+# a 30-day promise has no margin at all: one dropped fire breaks the sentence the product says.
+# Weekly leaves room for three consecutive misses before the promise is at risk, and the job
+# itself is two API calls.
+#
+# **The race, named rather than papered over.** The Space and the alerts run write this repo
+# whenever somebody stars a job or a Digest advances a Watermark. A write landing inside the
+# squash's own window could be lost. It is seconds wide, it runs at a quiet hour, and the
+# before/after check below catches the shapes of it that are detectable. It deliberately does NOT
+# share a concurrency group with `email-alerts`: only one run may be pending per group, so a
+# Digest fired by the pipeline would displace a queued squash and silently disable the retention
+# this promise rests on — the exact failure `squash-dataset-history` documents.
+on:
+  schedule:
+    - cron: "17 3 * * 0" # Sundays, 03:17 UTC — quiet, and off the hour so it isn't queued behind everything else
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: squash-subscribers
+  cancel-in-progress: false
+
+jobs:
+  squash:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Actions pinned to full commit SHAs (tags are mutable — cf. tj-actions CVE-2025-30066).
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install "huggingface_hub>=0.34"
+      - name: Forget deleted records (skips cleanly until the secrets are set)
+        env:
+          SUBSCRIBERS_REPO: ${{ vars.SUBSCRIBERS_REPO }}
+          SUBSCRIBERS_TOKEN: ${{ secrets.SUBSCRIBERS_TOKEN }}
+        run: |
+          python -u - <<'PY'
+          import os
+
+          from huggingface_hub import HfApi
+
+          repo = os.environ.get("SUBSCRIBERS_REPO") or ""
+          token = os.environ.get("SUBSCRIBERS_TOKEN") or ""
+          # A green no-op until the deployment is configured, exactly as the alerts run is —
+          # a fork of this repo has no subscribers dataset and must not fail for it.
+          if not (repo and token):
+              print("SUBSCRIBERS_REPO/SUBSCRIBERS_TOKEN unset — nothing to squash", flush=True)
+              raise SystemExit(0)
+
+          api = HfApi(token=token)
+
+          def state():
+              info = api.repo_info(repo, repo_type="dataset", files_metadata=True)
+              files = {f.rfilename: (f.size or 0) for f in info.siblings}
+              commits = len(api.list_repo_commits(repo, repo_type="dataset"))
+              return files, commits
+
+          before, commits = state()
+          print(
+              f"before: {len(before)} files · {sum(before.values())/1e6:.2f} MB "
+              f"· {commits} commits",
+              flush=True,
+          )
+          if commits <= 1:
+              print("already a single commit; nothing to forget", flush=True)
+              raise SystemExit(0)
+
+          api.super_squash_history(repo_id=repo, repo_type="dataset")
+          print("squashed", flush=True)
+
+          after, commits = state()
+          print(
+              f"after:  {len(after)} files · {sum(after.values())/1e6:.2f} MB "
+              f"· {commits} commits",
+              flush=True,
+          )
+          # Checked BEFORE announcing success, and against the file MAP rather than a total:
+          # these are per-Account records, so one Account's set vanishing while another's grows
+          # is invisible in a byte count. The live tree surviving untouched is the whole safety
+          # property of a squash, and it is the only part of the concurrent-write race that is
+          # detectable from here.
+          lost = sorted(set(before) - set(after))
+          if lost:
+              print(
+                  f"::error::{len(lost)} live file(s) did not survive the squash, first few "
+                  f"{lost[:5]} — investigate before the next run",
+                  flush=True,
+              )
+              raise SystemExit(1)
+
+          print(
+              f"::notice::history collapsed to {commits} commit(s); {len(after)} live records "
+              "intact. Anything deleted before this run is now unrecoverable, which is the point."
+          )
+          PY

@@ -101,6 +101,7 @@ def index():
         sets_on=False,
         saved_on=False,
         profile_on=False,
+        resume_sync_on=False,  # no sign-in here, so there is no account to keep a copy on
     )
 
 

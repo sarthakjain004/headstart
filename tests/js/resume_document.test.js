@@ -292,6 +292,47 @@ test('a refused write is reported rather than swallowed', () => {
   assert.deepEqual(seen, ['quota'], 'the editor is told, so it can tell the user');
 });
 
+test('onSaved fires where the browser copy CHANGED — never merely because one was opened', () => {
+  /* The seam the account sync hangs off (ADR-0124, ADR-0131). It exists as its own hook rather
+     than as a `subscribe` listener for one reason: `subscribe` also fires on `adopt`, which
+     changes no words at all, so a sync driven by it would commit a document nobody had edited
+     every time somebody opened one — and every push here is a Git commit on a repo head shared
+     with every other Account. */
+  const ctx = load(MODEL);
+  const repo = new ctx.ResumeRepository.MemoryRepository();
+  const saved = [];
+  const store = new ctx.ResumeDocument.Store(repo, {
+    schedule: () => 1, cancel: () => {}, onSaved: doc => saved.push(doc.name),
+  });
+  store.adopt(Object.assign(sample(ctx), { id: 'a', name: 'Document A' }));
+  assert.deepEqual(saved, [], 'opening a document announced a save');
+
+  store.dispatch(ctx.ResumeDocument.Commands.rename('Edited A'));
+  store.flush();
+  assert.deepEqual(saved, ['Edited A']);
+
+  /* Adopting with nothing pending must stay silent — this is the case a `subscribe` listener
+     gets wrong, and it is the common one: every time the Résumés popover opens one. */
+  store.adopt(Object.assign(sample(ctx), { id: 'b', name: 'Document B' }));
+  assert.deepEqual(saved, ['Edited A'], 'opening another document announced a save');
+});
+
+test('a REFUSED write announces nothing, so nothing is pushed as if it had been kept', () => {
+  const ctx = load(MODEL);
+  const refusing = {
+    list: () => [], get: () => null, remove() {}, lastOpened: () => null, setLastOpened() {},
+    durable: true, save: () => ({ ok: false, reason: 'quota' }),
+  };
+  const saved = [];
+  const store = new ctx.ResumeDocument.Store(refusing, {
+    schedule: () => 1, cancel: () => {}, onSaved: doc => saved.push(doc.name), onError() {},
+  });
+  store.adopt(sample(ctx));
+  store.dispatch(ctx.ResumeDocument.Commands.rename('Anything'));
+  store.flush();
+  assert.deepEqual(saved, [], 'a write the browser refused was announced as a save');
+});
+
 /* ---- Layer 3: the repository ---- */
 
 test('the local-storage repository round-trips, lists newest first, and forgets on remove', () => {

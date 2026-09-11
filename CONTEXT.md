@@ -249,9 +249,22 @@ _Avoid_: reading it as a probability, or re-scaling it per results page — the 
 
 ### Résumé builder
 
-**Résumé document** (ADR-0123):
-The structured résumé an Account builds on the Résumé tab: a tree of **Component**s, the id of one **Layout**, and the **Content** map holding every word. Kept in that Account's own browser today, and nowhere else. ADR-0041's rule for the **Résumé** — read once, discarded — is why; ADR-0124 amends it for this record alone, so a Résumé document may reach HeadStart's store if the Account switches syncing on for it, per document, off by default.
+**Résumé document** (ADR-0123, ADR-0124, ADR-0131):
+The structured résumé an Account builds on the Résumé tab: a tree of **Component**s, the id of one **Layout**, and the **Content** map holding every word. The Account's own browser holds the **working copy** and always does — every edit is written there and read back from there. ADR-0041's rule for the **Résumé** — read once, discarded — is why; ADR-0124 amends it for this record alone, so a Résumé document may also be kept as an **Account copy** if the Account switches syncing on for it, per document, off by default.
 _Avoid_: **Résumé** — that names the transient text pasted in for **Profile** extraction. Different object, different lifetime, and the two are one letter apart in conversation, so say which one you mean.
+_Avoid_: saying a Résumé document "is stored on the server" without naming which of the two copies you mean, or saying it "never leaves the browser" — the first was true of no résumé before ADR-0124 and is true of a minority of them now, and the second stopped being true of the switched-on ones.
+
+**Subscriptions dataset** (ADR-0035, ADR-0042):
+The private HF dataset every per-Account record is filed in — `Subscription`s, **Saved set**s, **Saved job**s, **Profile**s and now **Account copies** of a **Résumé document**, one file per record so two writers can never lose one another's. Named here because five ADRs and a dozen modules say it and none of them defined it; the repo id itself ends `-subscribers`, which is the one place that spelling is correct.
+_Avoid_: the subscribers dataset, the subscribers repo — **Account** already says not to call a person a subscriber, and the store holds far more than Subscriptions. Keep it apart from the **index** dataset, which holds the served table and is derived state a pipeline regenerates; the two have opposite recovery stories and one scheduled squash each.
+
+**Account copy** (ADR-0124, ADR-0131):
+The **Résumé document** as one JSON file at `resumes/{account}/{document_id}.json` in the private Subscriptions dataset — the same store, the same `subscription_id(email)` identifier and the same traversal guard as the **Profile**, **Saved set** and **Saved job**. It is the browser's own export byte for byte, so there is no second schema. A *sync target*, never a source: it is written on three coarse events (an explicit save, the tab going away, and at most one push every three minutes while editing) and read only to restore a document onto a browser that does not have it. Carries a **revision** the client increments; a push that is not exactly one past the stored one is refused, and the client then keeps both copies rather than picking a winner.
+_Avoid_: backup — nothing here restores automatically, and calling it a backup invites reading a conflict refusal as data loss. And don't call the write a save: locally a save is free and happens on a timer, while this one is a Git commit on a head shared with every Account.
+
+**Revision** (ADR-0124):
+The integer `rev` on a **Résumé document**, counting accepted pushes of its **Account copy**. 0 means no account copy exists. It is not a version of the words — a **Tailoring** is that — and no Command touches it, so it never enters the undo stack.
+_Avoid_: version — that is what the UI calls a **Tailoring** to users, and the two are unrelated.
 
 **Component** (ADR-0123):
 One block of a **Résumé document** — a header, a section, a job, a bullet. A **Component Type** declares what fields it owns, what it may contain, and its `shape`; an instance is a node in the tree. A Component never states how it looks: type, size, colour and position all belong to the **Layout**.

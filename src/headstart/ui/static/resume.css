@@ -84,6 +84,22 @@
 .rb-docopen:hover { border-color: var(--rule-2); }
 .rb-pop-new { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px;
   border-top: 1px solid var(--rule); padding-top: 10px; }
+/* The account switch (ADR-0124), inside the Résumés popover and directly above the sentence
+   that says where a résumé is kept — so the control and its consequence are one block rather
+   than two. Same top rule the "New" row uses, which is what makes them read as the popover's
+   two footers: what you can start, and where it goes. */
+.rb-account { margin-top: 10px; border-top: 1px solid var(--rule); padding-top: 10px; }
+.rb-account-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rb-account-row .spacer { flex: 1; }
+.rb-account-switch { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.rb-account-switch input[disabled] { cursor: not-allowed; }
+.rb-account-switch:has(input[disabled]) { cursor: not-allowed; color: var(--ink-3); }
+/* Account-only rows in the list: a résumé this browser has never seen, offered to be pulled
+   down. Dashed, because it is not here yet — the solid rows are the ones already in this
+   browser, and the two must not look like the same thing. */
+.rb-doclist-remote { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.rb-doclist-remote .rb-docopen { border-style: dashed; }
+.rb-doclist-head { color: var(--ink-3); font-size: .78rem; margin: 8px 0 0; }
 .rb-storage { margin: 10px 0 0; }
 .rb-dl { display: block; width: 100%; text-align: left; background: transparent; border: 0;
   border-radius: var(--r-md); padding: 9px 10px; color: var(--ink); cursor: pointer; font: inherit; }

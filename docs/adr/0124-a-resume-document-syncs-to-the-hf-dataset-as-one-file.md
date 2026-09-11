@@ -1,6 +1,6 @@
 # ADR-0124: A Résumé document syncs to the HF dataset, as one file, and only when asked
 
-**Status:** accepted · **Date:** 2026-09-10 · **Amends ADR-0041's "the Résumé is read once and discarded" for the Résumé document only, and says so out loud. Extends ADR-0123.**
+**Status:** accepted, amended by [ADR-0131](0131-forgetting-a-resume-costs-the-subscriptions-dataset-its-history.md) (which settles the four things this one left open, and builds the scheduled squash decision 5 makes the feature wait for — so decision 5's "syncing does not ship" is satisfied, not outstanding) · **Date:** 2026-09-10 · **Amends ADR-0041's "the Résumé is read once and discarded" for the Résumé document only, and says so out loud. Extends ADR-0123.**
 
 > Two things are settled here rather than one, deliberately: the **tailoring model** (§Context) and
 > where a **Résumé document** is stored (§Where it lives). They are recorded together because the
