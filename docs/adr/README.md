@@ -137,3 +137,4 @@ supersedes it and note the supersession in both.
 | [0131](0131-forgetting-a-resume-costs-the-subscriptions-dataset-its-history.md) | Forgetting a résumé costs the Subscriptions dataset its whole history | 2026-09-11 |
 | [0132](0132-a-date-rule-may-refuse-to-read-a-month-it-may-not-guess-one.md) | A date rule may refuse to read a month; it may not guess one | 2026-09-11 |
 | [0133](0133-the-resume-tab-reads-the-saved-jobs-the-page-already-fetched.md) | The Résumé tab reads the Saved jobs the page already fetched | 2026-09-11 |
+| [0134](0134-the-value-gate-keeps-one-dimension-because-the-data-has-one.md) | The value gate keeps one dimension, because the data has one | 2026-09-11 |

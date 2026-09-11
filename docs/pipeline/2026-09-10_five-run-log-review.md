@@ -153,7 +153,14 @@ the floor, so its tech yield is never consulted. The gate's rationale is explici
 board's cost is not makespan; it is **volume**: 56,527 rows pushed through `filter_tech`, the join
 artifact, and the description store every run, twice so far.
 
-The gate has a time dimension and no volume dimension. The docstring's own survey found only 12
+The gate has a time dimension and no volume dimension.
+
+> **Resolved 2026-09-11 (ADR-0134).** Measured: neither axis has a gap a threshold could sit
+> in — rows-per-tech decays smoothly, and raw volume splits once with a single Board above
+> it. `teamtailor:waymaneducation-1710232669` is parked; the gate is unchanged. Note the
+> figures here were refined on review: the Board emits 56,527 rows in 2 of these 5 runs and
+> raises `HTTP Error 400` in the other 3, and `board_cost.csv` measures it at 562 s — at the
+> 12 tech jobs it is credited, 1.28 tech/min, which fails the gate's own 2.0 threshold. The docstring's own survey found only 12
 Boards over 15 min in a 68,715-row ledger, so the floor was calibrated for giants; a fast,
 enormous, zero-yield board is a shape it was not built for.
 
@@ -325,8 +332,10 @@ critical path. With infinitely many scrape shards the wall still cannot fall bel
    failure mode present. Log the expected base row count and HF commit sha beside the observed.
 2. **Demote `spare_egress.mark_walled` to INFO** (§2). One line; un-breaches the run budget and
    returns ~28 annotation slots.
-3. **Give the value gate a volume dimension** (§3). One board is 3% of scrape volume at zero yield
-   and sits below the time floor by design.
+3. ~~**Give the value gate a volume dimension** (§3).~~ **Resolved 2026-09-11, the other way** —
+   the gap test that set ADR-0064's own floor finds no gap on either axis, so a threshold would
+   be the tuned parameter that ADR refused. The one Board is parked instead; ADR-0134 records it,
+   including that the gap §3 names is real and still open.
 4. ~~**Filter Oracle non-production pods at discovery** (§4).~~ **Withdrawn 2026-09-11** — reading
    the candidates' own postings found 156 of 223 serving real content, and the rule would have
    reversed `config.py`'s documented keep on `eczy-test`. See the rewritten §4; what is left is
