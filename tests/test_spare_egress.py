@@ -225,14 +225,25 @@ def test_report_is_empty_when_nothing_walled():
     assert spare_egress.report() == []
 
 
-def test_mark_walled_warns_once_per_group(caplog):
+def test_mark_walled_says_it_once_per_group(caplog):
     import logging
 
-    caplog.set_level(logging.WARNING, logger="headstart.spare_egress")
+    caplog.set_level(logging.INFO, logger="headstart.spare_egress")
     spare_egress.mark_walled("eightfold", 403)
     spare_egress.mark_walled("eightfold", 405)
     assert len(caplog.records) == 1  # the second Board must not re-announce the wall
     assert "403" in caplog.records[0].getMessage()
+
+
+def test_mark_walled_does_not_spend_an_annotation(caplog):
+    """WARNING here costs one of GitHub's 50 run-wide annotations per shard, which is what
+    `mark_walled`'s docstring works through. Pinned so a re-promotion has to argue with it.
+    """
+    import logging
+
+    caplog.set_level(logging.DEBUG, logger="headstart.spare_egress")
+    spare_egress.mark_walled("workday", 429)
+    assert [r.levelno for r in caplog.records] == [logging.INFO]
 
 
 def test_reset_clears_traffic_as_well_as_walls():

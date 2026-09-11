@@ -70,9 +70,19 @@ stack, the rest keep every detail at INFO. Measured on a stubbed flapping daemon
 cycles: 150 annotations before, 1 after. :func:`proxy_url`'s *success* line went the way of the
 four above — this module's earlier note conceded it was "as routine as these were" and then left
 it at WARNING, and it is re-armed by every failed rotation, so it was never one per process.
-:func:`mark_walled` keeps its annotation unbounded, because it already is bounded: it fires once
-per *group*, and a group is an ATS that sets ``egress_fallback_on`` — eightfold, workday and
-workable, so three per shard at the ceiling, not one per Board.
+:func:`mark_walled` lost its annotation too, and for a reason worth keeping: the bound that
+defended it — once per *group*, and a group is an ATS that sets ``egress_fallback_on``, so three
+per shard at the ceiling — is per **process**, while the budget is spent per **run**. Across a
+15-shard matrix that ceiling is 45 of GitHub's 50 from one call site, and it measured 30 of the 42
+the scrape shards emit (2026-09-10). ADR-0039's amendment settles it without the arithmetic: never
+a line that can fire once per shard.
+
+A consequence, accepted rather than overlooked: with :func:`report`'s lines at INFO as well, a wall
+that rescues *nothing* — ``walled, but no spare egress was available — Boards lost`` — now raises no
+annotation of its own. Promoting that one branch would re-import the same per-shard unboundedness
+this paragraph removes. The line itself still prints, and a shard that loses Boards this way also
+carries them in its own ``done: … (N board errors)`` total — but no annotation names the cause, so
+a total-loss wall is found by reading the shard log, not from the run summary.
 """
 
 from __future__ import annotations
@@ -362,12 +372,23 @@ _traffic_lock = threading.Lock()
 
 
 def mark_walled(group: str, status: int) -> None:
-    """Record that ``group``'s origin budget is spent, once per process, and say so loudly."""
+    """Record that ``group``'s origin budget is spent, once per process.
+
+    INFO rather than WARNING, because the bound that once justified an annotation here — three per
+    shard at the ceiling — is per *process*, while ADR-0039's budget is spent per *run*: across a
+    15-shard matrix that is 45 of GitHub's 50 from this one call. Measured 2026-09-10 at 30 of the
+    42 annotations the scrape shards emit; counts and the run it breached are in
+    ``docs/pipeline/2026-09-10_five-run-log-review.md`` §2.
+
+    Nothing is lost. ``scrape_run`` reports the same fact per shard and carries more with it
+    (``walled; spare egress rescued 1,685/1,685 (100%)``), also at INFO; ``fanout_retries.SPENT``
+    matches this line's text, not its level.
+    """
     with _walled_lock:
         if group in _walled:
             return
         _walled.add(group)
-    _log.warning(
+    _log.info(
         f"{group}: origin returned {status} — spending this shard's spare egress for the "
         f"rest of the run"
     )

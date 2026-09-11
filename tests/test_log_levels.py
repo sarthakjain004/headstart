@@ -221,14 +221,6 @@ _ALLOWED: dict[str, str] = {
         "by this file's loop rule — they are two hops from their caller with no loop in this "
         "module to key on — which is why the total check is what has to cover them."
     ),
-    "spare_egress.py:mark_walled": (
-        "Already bounded, which is why it is left a raw WARNING rather than routed through a "
-        "`FirstOnly`: the `_walled` set makes it fire once per *group* per process, and a group "
-        "is an ATS that sets `egress_fallback_on` — eightfold, workday and workable are the only "
-        "three, so three per shard at the ceiling, not one per Board. Worth an annotation at "
-        "that price, because it says an origin budget is spent and the rest of the run is riding "
-        "the spare egress."
-    ),
     "spare_egress.py:reset": (
         "Zero emissions. `reset` re-*arms* the two instances by rebuilding them; it never "
         "reports through them, and these are sites at all only because `_annotation_sites` "
