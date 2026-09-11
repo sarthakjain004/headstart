@@ -23,6 +23,7 @@ browser tests use.
 
 from __future__ import annotations
 
+import re
 import socket
 import subprocess
 import sys
@@ -277,4 +278,246 @@ def test_no_page_break_is_drawn_through_a_block_the_layout_refuses_to_split(page
     assert through == [], (
         "a page-break marker is drawn through a block the printer will move whole, so the "
         f"preview is claiming a page ends where it does not: {through}"
+    )
+
+
+def test_check_coverage_marks_the_page_the_moment_it_is_clicked(page):
+    """The keyword check's highlights must land on the click that asked for them.
+
+    Measured before the fix: straight after clicking **Check coverage** the summary read
+    "2 of 2 present · 100% in the top half of page one" with ZERO `<mark>` elements on the sheet.
+    Typing one space into the résumé's name box then produced five. The check set the terms and
+    returned, under a comment saying "Repaint so the page marks them", so the marks arrived on
+    whatever unrelated change happened next — which is worse than not marking at all, because by
+    then the reader has stopped looking for them.
+    """
+    summary = page.evaluate("""() => {
+      document.getElementById('rb-kw-toggle').click();
+      document.getElementById('rb-kw').value = 'Point of Sale\\nCustomer Service';
+      document.getElementById('rb-kw-run').click();
+      return document.getElementById('rb-kw-summary').textContent;
+    }""")
+    marks = page.evaluate(
+        "() => document.querySelectorAll('#rb-paper mark.rb-kw-hit').length"
+    )
+    assert "present" in summary, f"the check did not run at all: {summary!r}"
+    assert marks > 0, (
+        f"the panel reported {summary!r} and marked nothing on the page — the highlights are "
+        "waiting for some later repaint"
+    )
+
+
+def test_the_sheet_is_refitted_when_the_stage_narrows(page):
+    """A window narrowed after load must not leave the page hanging out of its wrapper.
+
+    `fitToWidth` ran once behind a `fitted` flag and nothing listened for a resize. Measured:
+    load at 1440 so the sheet fits, narrow to 420, and the paper overflowed its wrapper by 211px
+    while the zoom readout still said 100%; clicking "Fit" dropped it to 45%, which is the answer
+    the editor could have given itself.
+
+    `node --test` cannot make this check — the DOM stub has no layout and no ResizeObserver.
+    """
+    before = page.evaluate("""() => {
+      const p = document.getElementById('rb-paper');
+      return Math.round(p.getBoundingClientRect().width - p.parentElement.clientWidth);
+    }""")
+    assert before <= 0, (
+        f"the sheet already overflowed at the fixture's width by {before}px"
+    )
+
+    page.set_viewport_size({"width": 420, "height": 900})
+    # The refit is debounced, and the repaint behind it is a full re-render of the sheet.
+    page.wait_for_timeout(800)
+
+    after = page.evaluate("""() => {
+      const p = document.getElementById('rb-paper');
+      return {over: Math.round(p.getBoundingClientRect().width - p.parentElement.clientWidth),
+              zoom: document.getElementById('rb-zoom-read').textContent};
+    }""")
+    assert after["over"] <= 0, (
+        f"the page hangs {after['over']}px out of its wrapper at 420px, and the zoom reads "
+        f"{after['zoom']}"
+    )
+
+
+def test_a_drag_inside_one_column_costs_one_undo_press(page):
+    """Dropping a top-level block where it already was column-wise is ONE command, not two.
+
+    `Cmd.setSlot` fired on every top-level drop, changed or not, and `Cmd.moveNode` followed it.
+    So a drag within a single column pushed two undo entries — the second a visible no-op — and
+    the label on the whole move read "Move to column". `UNDO_LIMIT` is 60, so a drag-heavy
+    session spends half of it undoing nothing.
+
+    Asserted through the Undo button's own `disabled`, because that is the only place the stack's
+    depth is visible from outside: a freshly opened document has an empty stack, so after one
+    drag and one undo the button must be dead again.
+    """
+    state = page.evaluate("""() => ({
+      undo: document.getElementById('rb-undo').disabled,
+      root: window.ResumeEditor.current().root.children.map(c => c.id),
+    })""")
+    assert state["undo"], (
+        "the document arrived with something already on the undo stack"
+    )
+    assert len(state["root"]) >= 3, (
+        "the worked example no longer has three top-level blocks"
+    )
+
+    grab = page.evaluate(
+        """([moved, above]) => {
+          const paper = document.getElementById('rb-paper');
+          const block = paper.querySelector('[data-node="' + moved + '"]');
+          /* The block's OWN handle. A descendant selector finds the first handle anywhere
+             inside it, which for a section is one of its entries' — so the drag under test
+             would have been a different block's. */
+          const handle = [...block.querySelectorAll('.rb-h[data-handle="move"]')]
+            .find(h => h.closest('[data-node]') === block);
+          const onto = paper.querySelector('[data-node="' + above + '"]');
+          const h = handle.getBoundingClientRect(), t = onto.getBoundingClientRect();
+          return {fromX: h.left + h.width / 2, fromY: h.top + h.height / 2,
+                  toX: t.left + t.width / 2, toY: t.top + 2};
+        }""",
+        [state["root"][2], state["root"][1]],
+    )
+    page.mouse.move(grab["fromX"], grab["fromY"])
+    page.mouse.down()
+    for step in range(1, 21):
+        page.mouse.move(
+            grab["fromX"] + (grab["toX"] - grab["fromX"]) * step / 20,
+            grab["fromY"] + (grab["toY"] - grab["fromY"]) * step / 20,
+        )
+    page.mouse.up()
+    page.wait_for_timeout(250)
+
+    after = page.evaluate(
+        "() => window.ResumeEditor.current().root.children.map(c => c.id)"
+    )
+    assert after != state["root"], (
+        "the drag moved nothing, so there is no undo to count"
+    )
+
+    page.evaluate("() => document.getElementById('rb-undo').click()")
+    page.wait_for_timeout(250)
+    back = page.evaluate("""() => ({
+      undo: document.getElementById('rb-undo').disabled,
+      root: window.ResumeEditor.current().root.children.map(c => c.id),
+    })""")
+    assert back["root"] == state["root"], "one undo did not put the block back"
+    assert back["undo"], (
+        "one drag left a second undo entry behind it — the no-op column change, which the user "
+        "has to press Undo again to clear"
+    )
+
+
+def test_every_template_card_says_how_many_pages_it_runs_to(page):
+    """The gallery must answer the question its own copy promises to answer.
+
+    The heading said "the dashed page-break line tells you if the new one runs onto a second
+    sheet" and `templatesPaint` never called the break painter: nine cards, zero lines. At a
+    190px card a hairline is near-invisible anyway, so the card states the count in words — the
+    same answer the miniature beside the form already gives — and the copy says so.
+    """
+    page.evaluate("() => document.querySelector('[data-act=\"templates\"]').click()")
+    page.wait_for_timeout(400)
+    seen = page.evaluate("""() => ({
+      cards: document.querySelectorAll('.rb-tcard').length,
+      pages: [...document.querySelectorAll('.rb-tpages')].map(e => e.textContent),
+      copy: document.querySelector('.rb-templates-head .note').textContent,
+    })""")
+    assert seen["cards"] >= 9, f"only {seen['cards']} templates are registered"
+    assert len(seen["pages"]) == seen["cards"], "some cards carry no page count at all"
+    bad = [t for t in seen["pages"] if not re.fullmatch(r"\d+ pages?", t.strip())]
+    assert bad == [], f"these cards say nothing useful about their length: {bad}"
+    assert "dashed" not in seen["copy"], (
+        "the gallery still promises a dashed page-break line: " + seen["copy"]
+    )
+
+
+def test_below_a_thousand_pixels_checks_is_still_near_the_top(browser, base_url):
+    """ADR-0128 says the aside is sticky so Checks stays reachable. Below 1000px it was not.
+
+    `.rb-aside` is `position: static` under that breakpoint, where `.rb-work` is a single column
+    and the aside stacks under the form — so `sticky` has nothing to stick inside even when it is
+    left on. Measured at 820px: the Checks card landed 1,107px down an 1,855px page, which is
+    past the end of the form rather than beside it.
+    """
+    pg = browser.new_page(viewport={"width": 820, "height": 900})
+    errors: list[str] = []
+    pg.on("pageerror", lambda e: errors.append(str(e)))
+    try:
+        pg.goto(f"{base_url}/#resume")
+        pg.wait_for_function(
+            "() => window.ResumeEditor && window.ResumeEditor.current()"
+        )
+        pg.wait_for_timeout(400)
+        assert not errors, f"the page threw: {errors}"
+        where = pg.evaluate("""() => {
+          const top = el => Math.round(el.getBoundingClientRect().top + window.scrollY);
+          return {checks: top(document.getElementById('rb-pane-checks').closest('.rb-card')),
+                  form: top(document.getElementById('rb-pane-document')),
+                  page: Math.round(document.documentElement.scrollHeight)};
+        }""")
+        assert where["checks"] < where["form"], (
+            f"Checks sits {where['checks']}px down a {where['page']}px page, below the "
+            f"{where['form']}px form it is supposed to be advising on"
+        )
+    finally:
+        pg.close()
+
+
+def test_a_free_canvas_drag_is_bounded_by_the_document_s_own_paper(page):
+    """A block dragged off the right edge must stop where the *document's* sheet ends.
+
+    #423 gave `ResumeLayouts` a `boundsFor(layout, doc)` deriving the free canvas's maxima from
+    the paper the document chose — 6.9 x 9.4in on Letter, 6.67 x 10.09 on A4. The editor read
+    the Layout's own raw `bounds` at three sites, so on an A4 document the drag offered the
+    Letter maximum while the renderer clamped to A4: the UI invited a position it then took
+    away, and the new horizontal-overflow rule warned about it afterwards.
+
+    This is a real pointer drag against real bounds, which `node --test` has no geometry for.
+    """
+    setup = page.evaluate("""() => {
+      const ed = window.ResumeEditor;
+      ed.changeLayout('free-canvas');
+      const paper = document.getElementById('rb-paper-size');
+      paper.value = 'a4';
+      paper.dispatchEvent(new Event('change', {bubbles: true}));
+      const lay = window.ResumeLayouts.get('free-canvas');
+      return {letter: window.ResumeLayouts.boundsFor(lay, null).x[1],
+              a4: window.ResumeLayouts.boundsFor(lay, ed.current()).x[1],
+              paper: ed.current().paper,
+              block: ed.current().root.children[0].id};
+    }""")
+    assert setup["paper"] == "a4", f"the paper did not change: {setup['paper']!r}"
+    assert setup["a4"] < setup["letter"], (
+        "A4 and Letter bound the canvas identically, so this test proves nothing"
+    )
+
+    page.wait_for_timeout(200)
+    grab = page.evaluate(
+        """(id) => {
+          const paper = document.getElementById('rb-paper');
+          const block = paper.querySelector('[data-node="' + id + '"]');
+          const handle = [...block.querySelectorAll('.rb-h[data-handle="move"]')]
+            .find(h => h.closest('[data-node]') === block);
+          const h = handle.getBoundingClientRect();
+          return {fromX: h.left + h.width / 2, fromY: h.top + h.height / 2};
+        }""",
+        setup["block"],
+    )
+    page.mouse.move(grab["fromX"], grab["fromY"])
+    page.mouse.down()
+    # Far past the right edge of any sheet, so only the bound decides where it stops.
+    for step in range(1, 21):
+        page.mouse.move(grab["fromX"] + 40 * step, grab["fromY"])
+    page.mouse.up()
+    page.wait_for_timeout(250)
+
+    landed = page.evaluate(
+        "(id) => (window.ResumeDocument.find(window.ResumeEditor.current(), id).geometry || {}).x",
+        setup["block"],
+    )
+    assert landed == setup["a4"], (
+        f"the drag stopped at {landed}in — this document is A4, whose canvas ends at "
+        f"{setup['a4']}in, and Letter's is {setup['letter']}in"
     )

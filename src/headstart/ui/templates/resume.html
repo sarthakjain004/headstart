@@ -44,8 +44,19 @@
       <label class="rb-group-label" for="rb-version">Version</label>
       <select id="rb-version" class="rb-select"
               title="Tailor this résumé for one job without copying the whole thing"></select>
-      <button class="ghost rb-mini" id="rb-version-new" title="Tailor a copy for one job">Tailor for a job</button>
+      <button class="ghost rb-mini" id="rb-version-new" aria-expanded="false"
+              aria-controls="rb-pop-version" title="Tailor a copy for one job">Tailor for a job</button>
       <button class="ghost rb-mini danger" id="rb-version-del" hidden>Delete version</button>
+      {# Deleting a version was a native confirm(): a modal box outside the page, unstyled, and
+         out of the reading order. The question is asked here instead, where the version it is
+         about is named two controls away, and the two answers are the two words the reader
+         actually has to choose between rather than OK and Cancel. #}
+      <span class="rb-confirm" id="rb-version-confirm" hidden role="group"
+            aria-label="Confirm deleting this version">
+        <span class="note" id="rb-version-confirm-text"></span>
+        <button class="ghost rb-mini danger" id="rb-version-yes">Delete</button>
+        <button class="ghost rb-mini" id="rb-version-no">Keep</button>
+      </span>
     </div>
     <div class="rb-group rb-group-actions">
       <span class="note rb-saved" id="rb-saved" role="status"></span>
@@ -98,6 +109,19 @@
       </div>
       {% endif %}
       <p class="note rb-storage" id="rb-storage"></p>
+    </div>
+
+    {# Naming a version was a window.prompt — modal, unstyled, and unreachable for a screen
+       reader in the flow of the page. It is a field in the panel now, in the same popover shape
+       the other two menus use, so Escape and a click outside dismiss it like everything else. #}
+    <div class="rb-pop rb-pop-mid" id="rb-pop-version" hidden>
+      <div class="rb-pop-head">Tailor for a job</div>
+      <p class="note">Name it after the job you are applying to. It starts as a copy of the
+        master résumé and only stores what you change.</p>
+      <label class="rb-vh" for="rb-version-name">Version name</label>
+      <input id="rb-version-name" class="rb-name rb-name-wide" placeholder="Acme, Backend Engineer"
+             autocomplete="off">
+      <div class="rb-pop-new"><button class="go rb-mini" id="rb-version-create">Create version</button></div>
     </div>
 
     <div class="rb-pop rb-pop-right" id="rb-pop-download" hidden>
@@ -185,8 +209,8 @@
         <div class="rb-templates-head">
           <h2>Choose a template</h2>
           <p class="note">Every one of these renders the words you already have. Switching keeps
-            them — only the arrangement changes, and the dashed page-break line tells you if the
-            new one runs onto a second sheet.</p>
+            them — only the arrangement changes, and each card says how many pages the new
+            arrangement runs to.</p>
           <button class="ghost rb-mini" id="rb-templates-close">Back to the page</button>
         </div>
         <div class="rb-template-grid" id="rb-template-grid"></div>
