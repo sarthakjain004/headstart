@@ -1953,10 +1953,16 @@ CONTRACT: tuple[Line, ...] = (
         consumer="fanout_merge.META_REFRESHED",
         emitter=_META,
         body=(
-            "refreshed 5016 rows: 1006 with changed facts, 4010 with changed derivations, "
+            "refreshed 5016 rows: 1006 with changed facts, 5016 with changed derivations, "
             "1002 given a has_description they never had"
         ),
-        why="what the sweep touched; direction-blind, hence the next line",
+        why=(
+            "what the sweep touched; direction-blind, hence the next line. All 5016 rows now "
+            "report a changed derivation in this fixture, not 4010: `country` (ADR-0138) is a "
+            "new derivation with no held-description gate, so it runs on every row a sweep "
+            "touches, and this fixture's synthetic locations happen to gain a country tag on "
+            "exactly the 1006 rows the pre-existing experience/salary derivations left alone"
+        ),
         emit=_meta_sweep,
     ),
     Line(

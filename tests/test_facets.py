@@ -67,6 +67,7 @@ def _kwargs(**overrides):
         "currencies": ["USD"],
         "has_first_seen": True,
         "has_min_salary_annual": True,
+        "has_country": True,
     }
     return {**base, **overrides}
 
@@ -186,6 +187,7 @@ def test_the_runtime_facts_of_the_index_are_never_offered_as_droppable():
         "currencies",
         "has_first_seen",
         "has_min_salary_annual",
+        "has_country",
     )
 
 
