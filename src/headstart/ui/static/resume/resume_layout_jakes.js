@@ -163,7 +163,7 @@
       s + ' .jr-h { font-size: ' + theme.headSize + 'pt; text-transform: uppercase; font-weight: 400;',
       '      letter-spacing: .04em; margin: 0 0 .25em; padding-bottom: .1em;',
       '      border-bottom: 1px solid ' + theme.rule + '; }',
-      s + ' .jr-entry { margin: 0 0 ' + theme.entryGap + 'em; page-break-inside: avoid; break-inside: avoid; }',
+      s + ' .jr-entry { margin: 0 0 ' + theme.entryGap + 'em; }',
       s + ' .jr-thin { margin-bottom: .2em; }',
       s + ' .jr-row { display: flex; gap: 1em; align-items: baseline; }',
       /* The two cells are the framework's (`L.marginRow`), so the class names are its own. */

@@ -140,12 +140,14 @@
     /* The one layout that grants free positioning, and therefore the one that exercises the
        `box` resize path and the absolute-position branch in ResumeLayouts.renderNode. */
     caps: { mode: 'free', reorder: false, resize: ['box'] },
-    /* This layout's own sheet. A document that chose another one is bounded by THAT: the render
-       and the rules clamp through `ResumeLayouts.boundsFor`, which derives the four maxima from
-       the page in force. What is stated here is still load-bearing, and not only as a default —
-       `resume_editor.js` reads `layout.bounds` directly for its drag clamps and its range
-       controls, so on an A4 document the handles still offer the Letter maximum until that file
-       calls `boundsFor` too. Both ends are numbers because a range control needs two. */
+    /* This layout's own sheet. A document that chose another one is bounded by THAT: the render,
+       the rules, the drag clamps and the range controls all go through
+       `ResumeLayouts.boundsFor`, which derives the four maxima from the page in force — the
+       editor's three call sites were the last to be converted (#423), and this comment used to
+       say they still read `layout.bounds` directly. What is stated here is the MINIMA, which stay
+       the Layout's (how small a block may be dragged is a readability call, not a paper one), and
+       the maxima a document with no paper of its own falls back to. Both ends are numbers because
+       a range control needs two. */
     bounds: { x: [0, WIDE], y: [0, TALL], w: [0.8, WIDE], h: [0.3, TALL] },
     rules: [
       {

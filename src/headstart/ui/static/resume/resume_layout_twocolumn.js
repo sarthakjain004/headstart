@@ -79,7 +79,7 @@
       s + ' .tc-h { font-family: ' + theme.headFont + '; font-size: ' + theme.headSize + 'pt; font-weight: 700;',
       '      margin: 0 0 .3em; color: ' + theme.accent + '; text-transform: uppercase; letter-spacing: .06em;',
       '      border-bottom: 1px solid ' + theme.rule + '; padding-bottom: .15em; }',
-      s + ' .tc-entry { margin: 0 0 .7em; page-break-inside: avoid; break-inside: avoid; }',
+      s + ' .tc-entry { margin: 0 0 .7em; }',
       s + ' .tc-role { font-weight: 700; }',
       s + ' .tc-meta { font-size: ' + theme.metaSize + 'pt; color: ' + theme.muted + '; display: flex; gap: .5em; }',
       s + ' .tc-dates { margin-left: auto; white-space: nowrap; }',

@@ -154,7 +154,7 @@
       '      letter-spacing: .05em; color: ' + theme.accent + '; margin: 0 0 .5em;',
       '      padding-bottom: .15em; border-bottom: 2px solid ' + theme.accent + '; }',
       s + ' .ep-section { margin: 0 0 ' + theme.blockGap + 'em; }',
-      s + ' .ep-entry { margin: 0 0 ' + theme.entryGap + 'em; page-break-inside: avoid; break-inside: avoid; }',
+      s + ' .ep-entry { margin: 0 0 ' + theme.entryGap + 'em; }',
       s + ' .ep-block { margin: 0 0 .1em; }',
       s + ' .ep-title { font-weight: 700; }',
       s + ' .ep-org { color: ' + theme.muted + '; }',

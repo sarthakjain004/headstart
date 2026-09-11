@@ -176,7 +176,10 @@
           <span class="rb-chip-cue">Preview</span></span>
       </button>
 
-      <section class="rb-card">
+      {# `rb-checkscard` is a hook, not a look: below 1000px the stylesheet orders this card above
+         the form and the miniature below it, and keying that on "the .rb-card in this aside"
+         would silently catch the next card added here. #}
+      <section class="rb-card rb-checkscard">
         <h2 class="rb-card-head">Checks<span class="rb-badge" id="rb-badge-checks" hidden>0</span></h2>
         <div class="rb-cardbody" id="rb-pane-checks"></div>
       </section>
