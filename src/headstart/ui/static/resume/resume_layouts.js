@@ -75,12 +75,59 @@
      `reverse-chronological` an Infinity start. Measured: that document reported nothing. */
   const STILL_HERE = /^\s*(?:present|current|now|ongoing|to date|till date)\s*$/i;
 
-  /* Roughly how many characters fit on one line, from the page and the type size actually in
-     force. An average advance close to half the point size at this measure; this is an estimate
-     and the findings that use it say "about" for that reason. */
-  function charsPerLine(page, size, indentIn) {
-    const usable = page.width - 2 * page.margin - (indentIn || 0);
+  /* Roughly how many characters fit on one line, from a MEASURE in inches and the type size
+     actually in force. An average advance close to half the point size; this is an estimate and
+     the findings that use it say "about" for that reason. */
+  function charsIn(measureIn, size, indentIn) {
+    const usable = measureIn - (indentIn || 0);
     return Math.max(20, Math.round((usable * 72) / (size * 0.5)));
+  }
+
+  /** The same, measured across the whole page. Kept because a Layout's own rules read it, and
+   *  because it is the right answer for a single-column template. */
+  function charsPerLine(page, size, indentIn) {
+    return charsIn(page.width - 2 * page.margin, size, indentIn);
+  }
+
+  /** How wide the text of one top-level block actually is, in inches.
+   *
+   *  The page is not the measure once a Layout has columns, and `three-lines` was handed the page
+   *  regardless — so on every layout that puts body text in a column it believed the line held
+   *  24-39% more characters than it does, and stayed silent on bullets that really print four
+   *  lines. Measured 2026-09-10 on one 281-character bullet: `two-column`, `europass` and
+   *  `modern-sidebar` each print about 75 characters to a line where the page-wide sum says
+   *  95, 93 and 104. The constant above is NOT the fault and must not be tuned to cover this —
+   *  it lands within 1% on `headless-headhunter` (86 true against 85) and would have to be
+   *  wrong by 39% somewhere else to fix `modern-sidebar` by that route.
+   *
+   *  The default is the slot's share of the measure by `grow`, less the gaps between columns.
+   *  A Layout whose geometry is not a plain column split says so with its own `measure(slotId,
+   *  page, theme)` — Europass is the reason that exists: it has ONE slot and still gives a quarter
+   *  of every row to a label gutter, so no share of `grow` could describe it. */
+  function measureOf(layout, page, theme, slotId, topNode) {
+    const full = page.width - 2 * page.margin;
+    /* A free-positioning layout has no columns to share out: a block is as wide as the user
+       dragged it, and that width is on the block itself. Measured 2026-09-10 on `free-canvas`,
+       whose adopted blocks come out 4.25in wide — the page-wide answer said a line held 95
+       characters where it held 56, so a bullet printing five lines was reported as fine. */
+    if (layout.caps && layout.caps.mode === 'free') {
+      const geo = geometryFor(layout, topNode || {});
+      return geo.w != null ? Math.min(geo.w, full) : full;
+    }
+    if (typeof layout.measure === 'function') {
+      const own = +layout.measure(slotId, page, theme);
+      if (isFinite(own) && own > 0) return Math.min(own, full);
+    }
+    const slots = layout.slots || [];
+    if (slots.length < 2) return full;
+    const total = slots.reduce((sum, s) => sum + (+s.grow || 1), 0);
+    const slot = slots.find(s => s.id === slotId) || slots[0];
+    /* The gap between the columns is deliberately NOT subtracted here. Every layout with columns
+       has a `columnGap` token and they do not agree on what it means — `two-column` and
+       `deedy-resume` state inches, `modern-sidebar` states em — so reading it as one number
+       would be wrong for whichever spelling lost. It is worth 3-5% of the measure against an
+       estimate whose own findings say "about"; a Layout that wants it counted states `measure`. */
+    return Math.max(1, full * ((+slot.grow || 1) / total));
   }
 
   /** The first word of a bullet, lowercased, without its punctuation. */
@@ -238,13 +285,18 @@
       id: 'three-lines', label: 'No bullet over three lines',
       check(doc, api) {
         const out = [];
-        const cap = charsPerLine(api.page, +api.theme.bodySize || 10.5,
-          +api.theme.bulletIndent || 0.3) * 3;
+        const size = +api.theme.bodySize || 10.5;
+        const indent = +api.theme.bulletIndent || 0.3;
         for (const n of api.nodesOfType('bullet')) {
           const text = String(api.content(n.id).text || '');
-          if (text.length > cap) {
+          /* The width of the COLUMN this bullet sits in, not of the page. A bullet in a third
+             of the measure wraps three times as often, and reporting the page-wide answer for
+             it is the difference between "nothing to flag" and a bullet that really prints
+             four lines. */
+          const perLine = charsIn(api.measure(n), size, indent);
+          if (text.length > perLine * 3) {
             out.push({ level: 'warn', nodeId: n.id,
-              message: 'About ' + Math.ceil(text.length / (cap / 3)) + ' lines long. Three is the ceiling every standard here states; past that, split it in two.' });
+              message: 'About ' + Math.ceil(text.length / perLine) + ' lines long. Three is the ceiling every standard here states; past that, split it in two.' });
           }
         }
         return out;
@@ -392,6 +444,10 @@
          have none, which is the difference between "switched layout" and "half the page is
          stacked in the corner on top of the other half". */
       adopt: typeof spec.adopt === 'function' ? spec.adopt : null,
+      /* Optional: how wide the text of one slot really is, in inches, when the Layout's geometry
+         is not a plain share of `grow` — a label gutter, a fixed band. Read by `measureOf`, which
+         is what tells a Rule how many characters reach the end of a line. */
+      measure: typeof spec.measure === 'function' ? spec.measure : null,
       /* The Layout's own rules first, then every baseline rule it did NOT state itself. A
          Layout opts out of one by declaring its own with that id — see COMMON_RULES. */
       rules: Object.freeze(ownRules.concat(COMMON_RULES.filter(r => !ownIds.has(r.id)))),
@@ -638,12 +694,31 @@
      tree recursion over a plain object — not worth the dependency it cost. */
   function runRules(layout, doc) {
     const all = nodesOf(doc);
+    const page = pageFor(layout, doc);
+    const theme = themeFor(layout, doc);
+    /* Which slot each node's words end up in. Built once by walking down from the top-level
+       blocks, because a Rule is handed a bullet and the slot is a fact about its ancestor. */
+    const slotOf = new Map();
+    const topOf = new Map();
+    const known = new Set(layout.slots.map(sl => sl.id));
+    for (const top of doc.root.children) {
+      const slot = known.has(top.slot) ? top.slot : layout.slots[0].id;
+      (function mark(node) {
+        slotOf.set(node.id, slot);
+        topOf.set(node.id, top);
+        for (const kid of node.children || []) mark(kid);
+      })(top);
+    }
     const api = {
       layout,
       /* The sheet in use, which is not `layout.page` once the document has chosen one. A rule
          that measures the page must measure the page it will be printed on. */
-      page: pageFor(layout, doc),
-      theme: themeFor(layout, doc),
+      page,
+      theme,
+      /** The usable width in inches for one node's text — the column it sits in, not the page.
+       *  A single-column Layout answers with the whole measure, which is what it always was. */
+      measure: node => measureOf(layout, page, theme,
+        slotOf.get(node && node.id) || layout.slots[0].id, topOf.get(node && node.id)),
       content: id => doc.content[id] || {},
       nodesOfType: type => all.filter(n => n.type === type),
       flatten: () => all.slice(),
@@ -764,7 +839,7 @@
     esc, escLines, dateRange, roleLine, plainStrategies, groupChildren, clampNum, headAndRest,
     marginRow,
     /* The vocabulary a Rule is written in, shared with the layouts that state their own. */
-    parseMonth, asMonths, charsPerLine, opener, anyStemIn, WEAK_OPENERS, SUPERFLUOUS, SCALE,
-    OUTCOME,
+    parseMonth, asMonths, charsPerLine, charsIn, measureOf, opener, anyStemIn, WEAK_OPENERS,
+    SUPERFLUOUS, SCALE, OUTCOME,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

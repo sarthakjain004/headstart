@@ -64,8 +64,29 @@ never for what a generic renderer happens to read. Getting that wrong is invisib
 
 The extensibility claim in ADR-0123 held **for the layouts and not for the components**. Four
 layouts were added as four files plus four `<script>` tags, and no existing layout needed a
-rendering change to accommodate any of them. But every new Component Type of a shape whose fallback
-read fields *by name* rendered blank in the layouts that predated it, and the test that was meant to
+rendering change to accommodate any of them.
+
+> **Corrected by ADR-0130 (2026-09-11).** That last clause is false as written, and the falseness
+> had a cost. The merge that landed this change (`ec8950d3`) altered the render strategies of
+> **all three** pre-existing layouts — `resume_layout_headhunter.js`, `resume_layout_twocolumn.js`
+> and `resume_layout_canvas.js` — plus `resume_export.js` and 115 lines of `resume_layouts.js`.
+> The paragraph below does describe those changes; what is wrong is attributing them to a prior
+> commit and then reporting the layout addition itself as costing zero. Believing the zero is
+> what left `resume_editor.js`'s page-break simulation behind: its `pageBreaks()` selects
+> `.hh-entry, .tc-entry, .cv-entry, .rb-entry`, and the four layouts added here introduced
+> `.jr-entry`, `.hv-entry`, `.sb-entry` and `.ep-entry`. Measured on each layout's own example,
+> 2026-09-10, that selector finds **0 of 5** entries on `jakes-resume`, **0 of 4** on
+> `harvard-classic`, **0 of 3** on `modern-sidebar` and **0 of 3** on `europass` — so on those
+> four the preview draws its page cuts as though no block were unbreakable, while the stylesheet
+> these same four files emit says `break-inside: avoid` on every entry. The honest form of the
+> claim is ADR-0130's: a new **Component Type** is free (9 of 9 layouts render one whose field
+> names no renderer has seen), a new **field on an existing type** is not (0 of 9), and a new
+> **Layout** is free only as far as the layer boundary reaches — anything outside it that names
+> layouts by their own class or id, as the page-break simulation does, still has to be found by
+> hand.
+
+But every new Component Type of a shape whose fallback read fields *by name* rendered blank in the
+layouts that predated it, and the test that was meant to
 catch that had itself picked the two field names the fallbacks hardcoded — so it passed while the
 guarantee was false. That was found while designing these components and fixed **separately, in the
 commit this branch is built on** (`ctx.fields()`, `ctx.textOf()`, `L.headAndRest` are that commit's,

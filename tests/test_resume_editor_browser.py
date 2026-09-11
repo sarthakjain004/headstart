@@ -180,10 +180,16 @@ LONG_BULLET = (
 @pytest.mark.xfail(
     strict=True,
     raises=AssertionError,
-    reason="the fix is in resume_layouts.js's charsPerLine, which another agent holds; this "
-    "records the measurement so the estimate cannot be called correct by default. `raises` is "
-    "narrow on purpose — a broken drive of the page throws something else and fails loudly, "
-    "rather than being swallowed as the expected failure",
+    reason="STILL FAILS after ADR-0130, and the reason is worth keeping: that change fixed the "
+    "width `three-lines` is handed (it measured the page where the text has a column, so the "
+    "three column layouts were 24-39% over and stayed silent on real four-line bullets) and it "
+    "does not touch this case, because `headless-headhunter` has ONE column and its width was "
+    "already right. This is a different defect — estimator variance. Measured in Chromium: this "
+    "281-character bullet lays out in 3 line boxes at 94 characters a line, and a different "
+    "281-character bullet lays out in 4 at 70, same layout, same width, same font. A character "
+    "count cannot see which text is which, so no width fix separates them and raising the cap "
+    "would re-break the column layouts. `raises` is narrow on purpose — a broken drive of the "
+    "page throws something else and fails loudly, rather than being swallowed as expected",
 )
 def test_a_bullet_that_fits_on_three_lines_is_not_called_four(page):
     """The "no bullet over three lines" finding must agree with the sheet it is measuring.

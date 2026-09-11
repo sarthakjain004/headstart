@@ -78,9 +78,11 @@ test('a component registered after a layout renders in it — whatever its field
     ['id_block', 'header', [['who', 'Ada Lovelace'], ['reach', 'ada@example.test']]],
     ['motto', 'text', [['saying', 'Ship it on Friday']]],
     ['panel', 'section', [['heading', 'Further Reading']]],
-    ['certification', 'entry', [['awarded', 'AWS Solutions Architect'], ['by', 'Amazon'], ['when', '2024']]],
-    /* Not `language_line`: the catalogue has a real one now, and `define` refuses a duplicate.
-       A throwaway type in a test is a name in the same namespace as the shipped components. */
+    /* Not `certification` and not `language_line`: the catalogue has a real one of each now, and
+       `define` refuses a duplicate. A throwaway type in a test is a name in the same namespace
+       as the shipped components, and this has now caught two additions — the note is here so the
+       third does not spend a build wondering why the extensibility test broke. */
+    ['merit_badge', 'entry', [['awarded', 'AWS Solutions Architect'], ['by', 'Amazon'], ['when', '2024']]],
     ['tongue_line', 'line', [['tongue', 'French'], ['fluency', 'Full professional']]],
     ['note_item', 'bullet', [['body', 'A thing worth noting']]],
   ];
@@ -162,19 +164,24 @@ test('every component in the catalogue reaches the page and the export, in every
 
 /* ---- the layouts added in 2026-09 ---- */
 
-const ADDED = ['jakes-resume', 'harvard-classic', 'modern-sidebar', 'europass'];
+/* Derived from the registry, never written out here. This used to be a list of the four layouts
+   ADR-0126 added, so the two ADR-0130 added were held to neither of the checks below and both
+   passed a full run without their examples ever being read. Iterating is the same argument
+   ADR-0127 made for the baseline gate: layout number ten cannot opt itself out by not being
+   typed into a test. */
+const withExample = ctx => ctx.ResumeLayouts.all().filter(l => l.example);
 
-test('every added layout ships a worked example that passes its own rules', () => {
+test('every layout that ships a worked example passes its own rules on it', () => {
   const ctx = load(ALL);
   /* The calibration that keeps a rule set honest: a layout whose own example trips its own
-     checks is stating a rule its author did not believe. The Headless Headhunter layout is held
-     to this against the guide's worked example; these four are held to it against theirs. */
-  for (const id of ADDED) {
-    const lay = ctx.ResumeLayouts.get(id);
-    assert.ok(lay.example, `${id} ships no example`);
-    const doc = ctx.ResumeDocument.builder().named('E').usingLayout(id);
+     checks is stating a rule its author did not believe. */
+  const shipped = withExample(ctx);
+  assert.ok(shipped.length >= 7, 'the registry should hold the layouts that ship examples');
+  for (const lay of shipped) {
+    const doc = ctx.ResumeDocument.builder().named('E').usingLayout(lay.id);
     lay.example(doc);
-    assert.deepEqual(ctx.ResumeLayouts.runRules(lay, doc.build()), [], `${id}'s example trips its own rules`);
+    assert.deepEqual(ctx.ResumeLayouts.runRules(lay, doc.build()), [],
+      `${lay.id}'s example trips its own rules`);
   }
 });
 
@@ -282,16 +289,36 @@ test('the sidebar puts an arriving document in the wide column, never inside the
   assert.ok(!bandInner.includes('data-type="work_entry"'), 'a job rendered inside the band');
 });
 
+/* An explicit list, and unlike `withExample` above it stays one on purpose. This test borrows
+   ONE layout's rule and applies it to others, so opting a layout in is an editorial claim that
+   it accepts harvard-classic's heading vocabulary — and `headless-headhunter` does not: its
+   guide's own words are "Work History" and "Education & Certificates", which this rule calls
+   non-standard and which that layout is entitled to keep. Iterating the registry here would
+   assert a rule against a layout that deliberately disagrees with it, which is the exact failure
+   ADR-0127 §D was written to avoid.
+
+   Three of the nine are out, and all three for the same KIND of reason rather than by oversight:
+   they implement somebody else's template and keep that template's own section names.
+   `headless-headhunter` writes "Work History" and "Education & Certificates"; `mcdowell-cv`
+   writes "Additional Experience and Awards" and "Languages and Technologies"; `deedy-resume`
+   writes "Links" and "Coursework". Every one of those is spelled as its source spells it, and
+   renaming a template's sections to pass a neighbouring layout's rule would be the tail wagging
+   the dog — the same call resume_layout_jakes.js records as "the template wins here". Their
+   users still get the note, because `standard-headings` is a rule harvard-classic states and
+   the panel shows it to whoever picked harvard-classic. */
+const ACCEPT_STANDARD_HEADINGS = ['jakes-resume', 'harvard-classic', 'modern-sidebar', 'europass'];
+
 test('an added layout starts you on section headings a parser knows', () => {
   const ctx = load(ALL);
   /* The starter document is the only résumé most people will ever see from this layout, and a
      heading a parser cannot file is the cheapest possible own goal. Harvard's own rule is
-     borrowed to check the other three, which is exactly the sort of thing a rule being data
-     rather than code makes free. */
+     borrowed to check the others, which is exactly the sort of thing a rule being data rather
+     than code makes free. */
   const harvard = ctx.ResumeLayouts.get('harvard-classic');
   const headings = harvard.rules.find(r => r.id === 'standard-headings');
-  for (const id of ADDED) {
+  for (const id of ACCEPT_STANDARD_HEADINGS) {
     const lay = ctx.ResumeLayouts.get(id);
+    assert.ok(lay, `${id} is not registered`);
     const b = ctx.ResumeDocument.builder().named('S').usingLayout(id);
     lay.starter(b);
     const doc = b.build();
@@ -884,6 +911,161 @@ test('an end date that is a word is a job still held — and only the words that
   for (const word of ['date', '2020', 'soon', 'TBD', '']) {
     assert.ok(ended(word).includes('dates'), `"${word}" is not a date and is not "still here"`);
   }
+});
+
+test('every rule the two ADR-0130 layouts state can actually fire', () => {
+  const ctx = load(ALL);
+  const { ResumeDocument: D, ResumeLayouts: L } = ctx;
+  const idsFor = (layoutId, doc) => L.runRules(L.get(layoutId), doc).map(f => f.ruleId);
+
+  /* McDowell: a job with no employer (the centre cell is the whole format), a DEGREE whose row
+     will wrap — the widened `one-line-row`, which used to look at jobs only and therefore said
+     nothing about this layout's own worked example — and a Coursework section, which this
+     template writes as a line inside Education. */
+  const mc = D.builder().usingLayout('mcdowell-cv')
+    .add('header', { fullName: 'A Name', email: 'a@example.com' })
+    .section('Education', s => s.add('degree_entry', {
+      credential: 'B.S. Computer Science and Engineering with a Minor in Mathematics',
+      institution: 'University of Washington', place: 'Seattle, WA', end: 'June 2017' }))
+    .section('Experience', s => s.add('work_entry',
+      { role: 'Engineer', company: '', start: 'June 2020', end: 'May 2023' },
+      w => w.bullet('Cut the nightly batch from 90 minutes to 7')))
+    .section('Coursework', s => s.add('skills_line', { label: 'Undergraduate', value: 'Compilers' }))
+    .build();
+  const mcIds = idsFor('mcdowell-cv', mc);
+  for (const rule of ['centre-cell', 'one-line-row', 'coursework-inline']) {
+    assert.ok(mcIds.includes(rule), `mcdowell-cv: ${rule} did not fire`);
+  }
+
+  /* Deedy: a job dragged into the narrow column, and a project with no dates — which on this
+     template is invisible rather than a visible hole, because it prints its dates on a third
+     line instead of against a margin. */
+  const dy = D.builder().usingLayout('deedy-resume')
+    .add('header', { fullName: 'A Name', email: 'a@example.com' }).into('top')
+    .section('Experience', s => s.add('work_entry',
+      { role: 'Engineer', company: 'Co', start: 'June 2020', end: 'May 2023' },
+      w => w.bullet('Cut the nightly batch from 90 minutes to 7'))).into('side')
+    .section('Projects', s => s.add('tech_project', { name: 'Kessel', tech: 'Go' }))
+    .build();
+  const dyIds = idsFor('deedy-resume', dy);
+  for (const rule of ['narrow-column', 'stacked-dates']) {
+    assert.ok(dyIds.includes(rule), `deedy-resume: ${rule} did not fire`);
+  }
+
+  /* And the empty-column note, which needs a document that uses only one of the two. */
+  const flat = D.builder().usingLayout('deedy-resume')
+    .add('header', { fullName: 'A Name', email: 'a@example.com' }).into('top')
+    .section('Experience', s => s.add('work_entry',
+      { role: 'Engineer', company: 'Co', start: 'June 2020', end: 'May 2023' },
+      w => w.bullet('Cut the nightly batch from 90 minutes to 7')))
+    .section('Projects', s => s.add('tech_project',
+      { name: 'Kessel', tech: 'Go', start: 'June 2023', end: 'Present' }))
+    .section('Awards', s => s.add('award_entry', { title: 'A prize', when: '2024' }))
+    .build();
+  assert.ok(idsFor('deedy-resume', flat).includes('both-columns'));
+});
+
+/* ---- a bullet is measured against the column it sits in (ADR-0130) ---- */
+
+/** A realistic 281-character bullet. Deliberately NOT `'x'.repeat(1200)`, which is what the
+ *  suite used to test this rule with: four times every layout's cap flags under any width, so a
+ *  rule handed the wrong width still passed. The boundary is where the defect lives. */
+const LONG_BULLET =
+  'Rebuilt the settlement reconciliation service in Go and moved forty endpoints behind an ' +
+  'idempotency layer in Postgres, which cut the nightly batch from ninety minutes to seven ' +
+  'across fourteen million transactions a day and took duplicate charges to zero for good.';
+
+/** That bullet, in the wide column of `layoutId`, with a header good enough that nothing else
+ *  in the baseline has anything to say. */
+function oneBullet(ctx, layoutId, text) {
+  return ctx.ResumeDocument.builder().named('B').usingLayout(layoutId)
+    .add('header', { fullName: 'A Name', email: 'a@example.com' })
+    .section('Experience', s => s.add('work_entry',
+      { role: 'Engineer', company: 'Co', start: 'June 2020', end: 'May 2023' },
+      w => w.bullet(text)))
+    .build();
+}
+
+test('a bullet is measured against the column it sits in, not the whole page', () => {
+  const ctx = load(ALL);
+  const { ResumeLayouts: L } = ctx;
+  /* Measured in Chromium on 2026-09-10: this bullet really prints five lines on `two-column`
+     and four on `modern-sidebar` and `europass`, and the rule said nothing at all about any of
+     them — it was handed the page width where the text has a column, so it believed a line held
+     24-39% more characters than it does. These three are the layouts that put body text in a
+     narrower measure, and every one of them must now report it. */
+  for (const id of ['two-column', 'modern-sidebar', 'europass']) {
+    const lay = L.get(id);
+    const found = L.runRules(lay, oneBullet(ctx, id, LONG_BULLET))
+      .filter(f => f.ruleId === 'three-lines');
+    assert.equal(found.length, 1, `${id} said nothing about a bullet that prints four lines`);
+    assert.match(found[0].message, /About [45] lines long/,
+      `${id} reported the wrong length: ${found[0].message}`);
+  }
+  /* And the layouts that really do run the full measure are unchanged — a fix that made every
+     layout stricter would be a different bug, not this one fixed. `jakes-resume` prints this
+     bullet in three lines and must stay quiet. */
+  for (const id of ['jakes-resume', 'harvard-classic']) {
+    const found = L.runRules(L.get(id), oneBullet(ctx, id, LONG_BULLET))
+      .filter(f => f.ruleId === 'three-lines');
+    assert.ok(found.length <= 1, `${id} doubled a finding`);
+  }
+  const wide = L.runRules(L.get('jakes-resume'), oneBullet(ctx, 'jakes-resume', LONG_BULLET));
+  assert.deepEqual(wide, [], 'jakes-resume runs the full measure and prints this in three lines');
+});
+
+test('the measure of a block is the column it is in, and a layout may state its own', () => {
+  const ctx = load(ALL);
+  const { ResumeLayouts: L, ResumeDocument: D } = ctx;
+  const measures = id => {
+    const lay = L.get(id);
+    const b = D.builder().usingLayout(id);
+    (lay.example || lay.starter)(b);
+    const doc = b.build();
+    const page = L.pageFor(lay, doc);
+    const theme = L.themeFor(lay, doc);
+    return { full: page.width - 2 * page.margin, lay, page, theme };
+  };
+
+  /* One slot: the measure IS the page, which is what it always was. */
+  const hh = measures('headless-headhunter');
+  assert.equal(L.measureOf(hh.lay, hh.page, hh.theme, 'main'), hh.full);
+
+  /* Two slots: the wide one gets its share of `grow` and the narrow one the rest, so neither is
+     the page. Measured true width in Chromium on 2026-09-10: 4.35in against this 4.74in. */
+  const tc = measures('two-column');
+  const wide = L.measureOf(tc.lay, tc.page, tc.theme, 'main');
+  const narrow = L.measureOf(tc.lay, tc.page, tc.theme, 'side');
+  assert.ok(wide < tc.full, 'a column is narrower than the page');
+  assert.ok(narrow < wide, 'the narrow column is the narrow one');
+  assert.ok(Math.abs(wide + narrow - tc.full) < 0.01, 'the two columns account for the measure');
+
+  /* A layout whose geometry is not a share of `grow` states its own. Europass has ONE slot and
+     still gives 26% of every row to a label gutter, so the default would have handed it the
+     whole page — which is exactly the wrong answer this rule had before. */
+  const ep = measures('europass');
+  const body = L.measureOf(ep.lay, ep.page, ep.theme, 'main');
+  assert.ok(body < ep.full * 0.8, `europass body column should exclude its gutter, got ${body}`);
+
+  /* And a free-positioning layout answers with the block's own width, because there are no
+     columns to share — a block is as wide as it was dragged. */
+  const doc = ctx.ResumeDocument.builder().named('C').usingLayout(HH);
+  L.get(HH).example(doc);
+  const moved = ctx.ResumeDocument.clone(doc.build());
+  moved.layoutId = 'free-canvas';
+  const canvas = L.get('free-canvas');
+  canvas.adopt(moved);
+  const top = moved.root.children[0];
+  const page = L.pageFor(canvas, moved);
+  const full = page.width - 2 * page.margin;
+  /* Narrowed first, and that is load-bearing rather than tidy: `adopt` hands every arriving
+     block the FULL measure, so a block straight out of it cannot tell "the page" apart from
+     "this block's width" — the assertion passed with the free-positioning branch deleted. Half
+     the page is what a user dragging a block onto a two-up canvas actually produces. */
+  top.geometry = Object.assign({}, top.geometry, { w: full / 2 });
+  const seen = L.measureOf(canvas, page, L.themeFor(canvas, moved), 'main', top);
+  assert.equal(seen, full / 2, 'a placed block is measured at the width it was placed at');
+  assert.notEqual(seen, full, 'the page is not the measure once a block has its own width');
 });
 
 test('shadowing a baseline rule is refused unless the layout says it means to', () => {
