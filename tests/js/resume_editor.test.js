@@ -1168,8 +1168,14 @@ test('a local résumé behind the account says so, and keeps both when it catche
 
 test('a row indexed before revisions were recorded is not called stale', () => {
   /* The half that would make the warning above useless the day it shipped: an index row written
-     by an older build carries no `rev`, an unknown revision reads as 0, and every synced résumé
-     would be announced as out of date against an account copy it is identical to. */
+     by an older build carries no `rev`, and if an unknown revision is read as 0 then every
+     synced résumé is announced out of date against a copy it is identical to.
+
+     What turns this red is `(theirs.rev || 0) > (row.rev || 0)` — the natural way to write that
+     comparison, and the mistake this exists to catch. Deleting `behindAccount`'s explicit
+     `typeof row.rev !== 'number'` alone does NOT turn it red, because `4 > undefined` is already
+     false: the guard is belt to that braces, kept because the next person to touch the line will
+     reach for `|| 0` and the comment there is the only thing that says not to. */
   const local = {
     schema: 1, id: 'rmfk3n2wxyz', name: 'Ada', layoutId: 'headless-headhunter',
     updatedAt: '2026-09-08T00:00:00+00:00', root: { id: '__root__', type: '__root__', children: [] },

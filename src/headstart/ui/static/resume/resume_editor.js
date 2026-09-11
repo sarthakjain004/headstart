@@ -1607,7 +1607,9 @@
      editor never compared the two revisions at all: opening a résumé on a second machine gave
      you the stale local copy with nothing said, and you found out when the push was refused —
      after redoing the work. A local row written before `rev` was indexed says nothing rather
-     than guessing, since an unknown revision would read as 0 and call every row stale. */
+     than guessing: `|| 0` here would read every unknown revision as 0 and call every synced
+     résumé stale against a copy it is identical to. (`> undefined` is false on its own, so the
+     `typeof` is belt and braces — it is here to stop that `|| 0` being added.) */
   const behindAccount = row => {
     if (!sync || typeof row.rev !== 'number') return false;
     const theirs = sync.rows().find(r => r.id === row.id);

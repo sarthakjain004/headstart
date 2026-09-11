@@ -944,6 +944,28 @@ def test_a_push_is_refused_when_the_stored_copy_cannot_be_READ(
     assert _put(client, _doc(rev=2, name="written on the laptop")).status_code == 409
 
 
+def test_a_stored_record_that_is_not_a_resume_refuses_the_push(
+    sets_app, hub, monkeypatch
+):
+    """Answered garbage is still not an empty slot, and this is the deliberate half of that.
+
+    `resumes_for` skips a malformed record so one bad file cannot empty the list — a read path,
+    where skipping costs a row. This is the WRITE path, where "I cannot read it" would otherwise
+    become "so I will write over it", and the bytes underneath might be the only copy of a
+    revision. The client is told (409), and the way out is the switch: turning sync off deletes
+    the record — `delete_resume` keys on the listing, which still answers — and turning it back
+    on pushes fresh. That is a wedge with an exit, which overwriting is not."""
+    client = _signed_in(sets_app, monkeypatch)
+    assert _put(client, _doc(rev=1)).status_code == 200
+    key = next(k for k in hub if k.endswith("rmfk3n2abcd.json"))
+    hub[key] = b"<!doctype html><title>504 Gateway Timeout</title>"
+    refused = _put(client, _doc(rev=2))
+    assert refused.status_code == 409
+    assert hub[key].startswith(b"<!doctype html"), (
+        "the push overwrote a record it could not read"
+    )
+
+
 def test_a_first_push_still_goes_through_when_the_record_is_merely_ABSENT(
     sets_app, hub, monkeypatch
 ):
@@ -966,7 +988,6 @@ def test_a_conflict_that_cannot_read_the_stored_copy_still_refuses(
     client = _signed_in(sets_app, monkeypatch)
     assert _put(client, _doc(rev=1)).status_code == 200
     # The first read (the revision) works, the second (the body) does not.
-    _flaky_resume_read(monkeypatch, times=0)
     import headstart.alerts.store as st
 
     real_read = st._read

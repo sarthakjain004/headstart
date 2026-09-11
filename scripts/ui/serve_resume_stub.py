@@ -15,6 +15,14 @@ leaving it out set `sync = null` in `resume_editor.js` and put the entire accoun
 Used by `tests/test_resume_editor_browser.py`, and runnable by hand:
 
     python scripts/ui/serve_resume_stub.py 8123    # then open http://127.0.0.1:8123/#resume
+
+The account surface is the part that needs a person: open the Résumés popover, switch
+"Keep a copy on my account" on, and watch the status line beside it.
+
+    GET /stub/fail/unreadable   # every push now answers the 409 the real route gives when the
+                                # stored copy cannot be READ — the line must stop saying "Saved"
+    GET /stub/fail/none         # back to a working account
+    ^C the server               # an unreachable account: the other half of the same line
 """
 
 from __future__ import annotations
