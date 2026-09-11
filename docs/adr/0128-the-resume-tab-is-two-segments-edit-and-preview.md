@@ -197,6 +197,16 @@ disabled box saying so: turning it on there could only do nothing or edit the ma
   height became 2,109 px with a job open. That is the trade for a full-width form, and it is the
   better half — a nested scroller inside a page that also scrolls is its own usability problem, and
   the aside is sticky so Checks stays reachable.
+
+  **Amended 2026-09-11.** That last clause was true only above 1,000 px. Below it `.rb-work`
+  collapses to one column, `.rb-aside` is `position: static`, and a sticky column would have
+  nothing to stick inside anyway — its grid area is exactly its own height. Measured at 820 px:
+  Checks sat **1,251 px down a 1,610 px page**, past the end of the form it advises on. The
+  column now comes *before* the form under that breakpoint (`order: -1`), with the one thing in
+  it that is a convenience rather than advice — the miniature, which is also the only part of
+  the column that can be put away — ordered last within it. So Checks is the first thing under
+  the tab strip at every width, by stickiness above 1,000 px and by source order below it.
+  `tests/test_resume_editor_browser.py` measures it; nothing in `node --test` can.
 - **`.rb-body` is gone; `.rb-work` is the workspace**, and the Edit column is an `<aside>` of
   `<section>` cards. `tests/js/resume_markup.test.js`'s containment walk read `<div>` only and now
   reads `<section|div|aside>` — a walk that skipped them would have kept answering, about the wrong

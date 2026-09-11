@@ -73,6 +73,16 @@
   background: var(--raise); border: 1px solid var(--rule-2); border-radius: var(--r-lg);
   box-shadow: var(--shadow); padding: 12px; }
 .rb-pop-right { left: auto; right: 12px; }
+/* Under the middle group of the bar, which is where the button that opens it is. */
+.rb-pop-mid { left: 50%; transform: translateX(-50%); }
+.rb-name-wide { width: 100%; }
+
+/* A question asked in the page rather than in a modal box. Both of the tab's destructive
+   actions ask it the same way — two named answers, beside the thing they are about — so
+   neither needs a `confirm()` whose OK and Cancel have to be translated first. */
+.rb-confirm { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rb-confirm[hidden] { display: none !important; }
+.rb-confirm-row { flex: 1; justify-content: flex-end; }
 .rb-pop-head { display: flex; align-items: center; justify-content: space-between; gap: 8px;
   font-weight: 600; margin-bottom: 8px; }
 .rb-doclist { display: flex; flex-direction: column; gap: 4px; max-height: 40vh; overflow: auto; }
@@ -184,7 +194,12 @@
 .rb-tpick:hover { border-color: var(--rule-2); }
 .rb-tcard.on .rb-tpick { border-color: var(--accent); }
 .rb-tpick .note { font-size: .76rem; }
-.rb-tname { font-weight: 600; font-size: .88rem; }
+.rb-tname { font-weight: 600; font-size: .88rem; display: flex; align-items: center; gap: 6px;
+  flex-wrap: wrap; }
+/* How many sheets this arrangement runs to. The gallery's copy promised a dashed page-break
+   line and nothing drew one; at a 190px card a hairline would have been near-invisible anyway,
+   so the card says the number in words. */
+.rb-tpages { font-weight: 400; font-size: .74rem; color: var(--ink-3); }
 /* The miniature keeps the sheet's TRUE width and scales it, exactly as the real preview does.
    A thumbnail that reflowed to fit its card would misrepresent the one thing it is shown for.
    White paper and black ink are hardcoded here for the same reason the header at the top of this
@@ -288,7 +303,16 @@
    down the form you have scrolled. */
 .rb-aside { display: flex; flex-direction: column; gap: 12px; min-width: 0;
   position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
-@media (max-width: 1000px) { .rb-aside { position: static; max-height: none; } }
+/* Below 1000px `.rb-work` is one column and the aside stacks under the form, where `sticky` has
+   nothing to stick inside — its grid area is exactly its own height. So ADR-0128's "the aside is
+   sticky so Checks stays reachable" was simply false there: Checks landed 1,107px down an
+   1,855px page. The column goes ABOVE the form instead, and the one thing in it that is a
+   convenience rather than advice — the miniature, the only part of this column that can be put
+   away at all — goes last within it. Checks is then the first thing under the tab strip. */
+@media (max-width: 1000px) {
+  .rb-aside { position: static; max-height: none; overflow: visible; order: -1; }
+  .rb-aside-head, .rb-minicard { order: 1; }
+}
 /* Same trap as the miniature: the gallery puts this column away while it holds the stage, and
    `display: flex` above would have outranked the attribute and left Design and Keywords on
    screen beside a sheet that is no longer there. */
@@ -370,6 +394,10 @@
 .rb-field input:focus-visible, .rb-field textarea:focus-visible, .rb-aside textarea:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 1px; }
 .rb-flag label { display: flex; gap: 7px; align-items: center; color: var(--ink); font-size: .86rem; }
+/* A field another control has already answered — the End date under a ticked "Still here". Two
+   controls that contradict each other, with nothing saying which one wins, is the whole defect. */
+.rb-field-off { opacity: .55; }
+.rb-field-off input { cursor: not-allowed; }
 .rb-range label { display: flex; justify-content: space-between; }
 .rb-colour { flex-direction: row; align-items: center; justify-content: space-between; }
 .rb-hint-i { display: inline-block; margin-left: 5px; width: 14px; height: 14px; line-height: 14px;
@@ -495,6 +523,28 @@
 .rb-finding-rule { display: block; font-size: .74rem; color: var(--ink-3); text-transform: uppercase;
   letter-spacing: .04em; }
 .rb-finding-msg { display: block; font-size: .84rem; }
+/* Which block a finding is about — the first thing on the row, because it is what the reader
+   scans for. It was not on the row at all: 24 identical rows named nothing. */
+.rb-finding-where { display: block; font-size: .82rem; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Findings, grouped by the rule they come from. A résumé of four jobs raised 44 of them from
+   two rules, each repeating the same 150-character explanation, in a panel 7,598px tall. The
+   rule is named once, counted once, explained once, and the rows under it are the blocks. */
+.rb-fgroup { border-left: 3px solid var(--rule); border-radius: var(--r-md);
+  background: var(--raise-2); padding: 8px 9px; }
+.rb-fgroup + .rb-fgroup { margin-top: 10px; }
+.rb-fgroup.rb-error { border-left-color: var(--alert); }
+.rb-fgroup.rb-warn { border-left-color: var(--series-4); }
+.rb-fgroup.rb-note { border-left-color: var(--ink-3); }
+.rb-fgroup-head { margin: 0 0 4px; font-size: .78rem; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
+.rb-fcount { font-size: .72rem; background: var(--rule); color: var(--ink);
+  border-radius: 999px; padding: 1px 7px; letter-spacing: 0; }
+.rb-fgroup-why { margin: 0 0 8px; font-size: .8rem; color: var(--ink-2); }
+/* Inside a group the rows are the list, so they drop the border the standalone finding wears. */
+.rb-fgroup .rb-finding { background: transparent; border: 0; padding: 4px 0; }
+.rb-fgroup .rb-finding + .rb-finding { margin-top: 0; border-top: 1px solid var(--rule); }
 .rb-clear { color: var(--pay); font-size: .88rem; }
 
 .rb-kwrow { display: flex; justify-content: space-between; gap: 8px; padding: 5px 8px;
