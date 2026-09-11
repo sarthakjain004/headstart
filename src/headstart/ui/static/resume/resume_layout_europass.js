@@ -321,6 +321,16 @@
     ],
     slots: [{ id: 'main', label: 'The form', grow: 1 }],
     caps: { mode: 'flow', reorder: true, resize: ['spaceAfter'] },
+    /* This form has ONE slot and still gives a quarter of every row away, so no share of `grow`
+       could describe how wide its body text is — `.ep-row` is a grid of `gutter`% and the rest,
+       with `gutterGap` em between. Without this, the shared `three-lines` rule measured a bullet
+       against the whole 6.77in sheet and believed a line held about a quarter more characters
+       than it does. `gutterGap` is em, so it is converted at the body size actually in force. */
+    measure(slotId, page, theme) {
+      const full = page.width - 2 * page.margin;
+      const gap = ((+theme.gutterGap || 0) * (+theme.bodySize || 10)) / 72;
+      return full * (1 - (+theme.gutter || 26) / 100) - gap;
+    },
     css, render, starter, example, rules,
   });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

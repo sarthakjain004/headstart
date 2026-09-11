@@ -258,7 +258,7 @@ One block of a **Résumé document** — a header, a section, a job, a bullet. A
 _Avoid_: widget, element — and don't call a Component Type a template.
 
 **Layout** (ADR-0123):
-How a **Résumé document**'s Components are arranged and styled: page geometry, type tokens, one render strategy per `shape`, the **Finding** rules it wants checked, and the capability contract naming which drag and resize affordances are live in it. Seven ship: `headless-headhunter` (the default), `jakes-resume`, `harvard-classic`, `two-column`, `modern-sidebar`, `europass`, `free-canvas`. Switching Layout changes no **Content**.
+How a **Résumé document**'s Components are arranged and styled: page geometry, type tokens, one render strategy per `shape`, the **Finding** rules it wants checked, and the capability contract naming which drag and resize affordances are live in it. Nine ship: `headless-headhunter` (the default), `jakes-resume`, `harvard-classic`, `two-column`, `modern-sidebar`, `europass`, `mcdowell-cv`, `deedy-resume`, `free-canvas`. Switching Layout changes no **Content**.
 _Avoid_: theme, template, skin — a Layout carries arrangement *and* looks *and* permissions, and none of those three words carries all of it.
 
 **Content** (ADR-0123):
