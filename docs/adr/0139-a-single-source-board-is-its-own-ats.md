@@ -1,4 +1,4 @@
-# ADR-0139: A single-company board is its own `ats`, not a slug under one
+# ADR-0139: A Single source scraper is its own `ats`, not a slug under one
 
 **Status:** accepted · **Date:** 2026-09-11 · **Relates to:**
 [ADR-0028](0028-ingest-package-layout.md) (the module layout this stays inside),
@@ -11,7 +11,8 @@ Every scraper in `src/headstart/scrapers/` today adapts one third-party ATS *pla
 companies rent: `ats="workday"` serves thousands of tenants, keyed apart by `slug`. Eight large
 employers — Amazon, Apple, Google, Meta, Tesla, Uber, ByteDance, TikTok — run their public careers
 site on an in-house system instead: one company, one board, never a second tenant. None of them
-sits on a platform this repo (or the wider ATS-scraper ecosystem) already speaks.
+sits on a platform this repo (or the wider ATS-scraper ecosystem) already speaks. This ADR names
+that shape a **Single source scraper** (CONTEXT.md's glossary carries the term).
 
 These still need to enter the pipeline the same way every other Board does — scraped, tech-filtered,
 embedded, indexed, evicted, prioritized — so the question is only how to name them, not whether to
@@ -46,9 +47,9 @@ first-class `ats` values cost eight registry lines and buy independent tuning fo
   module-naming rule warns against, not a fix for the stretch.
 - **`alias_key()` is a per-company judgment call, not a blanket default.** The base implementation
   (follow a redirect, compare hosts) assumes a platform with vanity-hostname proliferation; a
-  single-tenant company board has no sibling to alias against, so most of these can return their own
-  slug outright. Decide it per scraper against what that company's site actually does, the same way
-  `alias_vendor_hosts` is decided per ATS today — don't default all eight without checking.
+  Single source scraper's board has no sibling to alias against, so most of these can return their
+  own slug outright. Decide it per scraper against what that company's site actually does, the same
+  way `alias_vendor_hosts` is decided per ATS today — don't default all eight without checking.
 - **`DISABLED_ATS` does not apply.** These ship live-wired, not arrival-disabled — unlike jazzhr/
   jobvite, cost and tech-yield are unknown per company until measured, so each is judged on its own
   numbers rather than pre-gated.
