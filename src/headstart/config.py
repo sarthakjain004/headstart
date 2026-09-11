@@ -259,6 +259,31 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         # Un-park if its tech yield ever justifies the floor, or once a per-board deadline bounds
         # it — the same condition that would un-park Accenture above.
         "smartrecruiters:adeebaeservicespvtltd",
+        # 56,527 postings per run for **zero** tech jobs — ~3% of the corpus-wide scrape total
+        # (1.91 M, runs 34466352099/34470668397) returning nothing at all. Not a straggler like the
+        # three above: it is *fast*, 56,527 jobs in 9.6 min at ~98/s, which is exactly why
+        # ADR-0064's value gate never sees it — that gate opens at 15 min, so a Board this size is
+        # below its floor and its yield is never consulted.
+        #
+        # Content read before parking, per EXCLUDED_BOARDS' rule above: this is **Wayman Learning
+        # Trust**, a real UK teacher-recruitment agency, and its postings are real — "Maths ECT —
+        # Outstanding Secondary School — Bristol", "Physics Teacher Needed", "Drama ECT". Genuine,
+        # simply not tech, which is why it is parked rather than excluded. Running `tech_filter`
+        # over 100 of its live postings (2026-09-11) keeps **0**; the 12 tech jobs
+        # `board_priority.csv` still credits it are stale noise, not a reason to keep scraping it.
+        #
+        # Parked as one Board rather than gated as a class, because the data has no class. Over the
+        # 421 slow Boards of runs 34450830376..34470668397 (787,027 rows), rows-per-tech-job decays
+        # smoothly — the largest gap anywhere is 2.1x — so a yield threshold would be a guessed
+        # number, which is what ADR-0064's floor was chosen to avoid. Raw volume splits exactly
+        # once: 5.5x below this Board, and no other gap in the distribution exceeds 1.1x. A
+        # threshold there would gate this Board and nothing else.
+        #
+        # Worth knowing why it stayed invisible: `data/validate/liveness/teamtailor.csv` records it
+        # at **100** jobs — one page — so every ledger-driven view of it is 565x too small.
+        #
+        # Un-park if the trust ever posts tech roles, or if the index ever serves non-tech.
+        "teamtailor:waymaneducation-1710232669",
     }
 )
 
