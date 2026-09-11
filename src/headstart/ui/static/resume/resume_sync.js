@@ -36,13 +36,15 @@
  * account copies), an offline machine or a Hub outage all leave the tab exactly as ADR-0123
  * shipped it: the browser copy is authoritative and nothing blocks on the network.
  *
- *   status()               -> {state, at, error}   state: unknown|ready|signed-out|off
+ *   status()               -> {state, at, error}   state: unknown|ready|signed-out|off|unreachable
  *   refresh()              -> Promise<state>       probe + list what the Account holds
  *   rows()                 -> [{id, name, layoutId, updatedAt, rev}]  (last refresh, cached)
  *   note(doc)                                      a local save happened; may schedule a push
  *   flush(reason)          -> Promise              push now if dirty
  *   setEnabled(doc, on)    -> Promise              the per-document opt-in
  *   pull(id)               -> Promise<doc|null>    bring an account copy into this browser
+ *   adoptAccountCopy(id)   -> Promise<bool>        …when this browser also has that document,
+ *                                                  keeping the local one beside it
  *   forget(id)             -> Promise              take one off the Account
  */
 (function (root) {
@@ -113,7 +115,14 @@
         this._state = 'ready';
         return result;
       });
-    }, () => ({ state: 'unreachable' }));
+    }, () => {
+      /* The state moves too, and that is not bookkeeping: a rejected request left `_state` at
+         whatever the last ANSWERED one set, so a tab that went offline mid-session kept saying
+         `ready` — and every control keyed on that state kept offering a round trip nothing was
+         making. `refresh` has always corrected this for itself (below); the push path did not. */
+      this._state = 'unreachable';
+      return { state: 'unreachable' };
+    });
   };
 
   Sync.prototype.refresh = function () {
@@ -127,8 +136,39 @@
   };
 
   Sync.prototype.pull = function (id) {
+    const self = this;
     return this._call('/resumes/' + encodeURIComponent(id)).then(result =>
-      (result.state === 'ready' && result.status === 200 && result.body) || null);
+      self._fromWire(result.state === 'ready' && result.status === 200 ? result.body : null));
+  };
+
+  /** A document arriving from the Account, hardened exactly as one arriving as a file the user
+   *  picked. `Export.sanitiseIds` was called from `importJson` and nowhere else, so the account
+   *  path — which the user never sees a file dialog for — was the LESS checked of the two: a
+   *  record whose `root.children` is an object (the #418 shape) reached the renderer and threw
+   *  "not iterable" out of the middle of a paint. The bytes here are the browser's own export
+   *  round-tripped through a store, so the same normaliser is the right one.
+   *
+   *  `importJson`'s other two moves stay out of this deliberately: a pulled copy keeps its id,
+   *  its `sync` flag and its revision, because it IS the account's copy and clearing the
+   *  revision would make the next push land as a first push. */
+  Sync.prototype._fromWire = function (doc) {
+    if (!doc || !doc.root || typeof doc.root !== 'object') return null;
+    root.ResumeExport.sanitiseIds(doc);
+    return doc;
+  };
+
+  /** Take the Account's copy of a document this browser already has, keeping the local one
+   *  beside it — the same both-copies-kept resolution a refused push gets (ADR-0124 decision
+   *  4), asked for on purpose rather than discovered after an afternoon's work. */
+  Sync.prototype.adoptAccountCopy = function (id) {
+    const self = this;
+    const mine = this._repo && this._repo.get(id);
+    if (!mine) return Promise.resolve(false);
+    return this.pull(id).then(stored => {
+      if (!stored) return false;
+      self._conflict(mine, stored);
+      return true;
+    });
   };
 
   /** Take one document off the Account. Answers whether it actually went — a caller that
@@ -253,6 +293,13 @@
     }
     if (result.state === 'off' || result.state === 'unreachable') {
       this._dirty = doc;   // try again at the next coarse event; nothing is lost meanwhile
+      /* Silence here is what let the status line read "Saved 3 min ago" while every push since
+         had failed: `_lastPush` still held the last SUCCESS, nothing marked the failures, and
+         the line that paints it falls back to that timestamp unless there is an error to show.
+         A switch reading "on" while nothing is being stored is the dishonest state the header
+         of this file says must never happen, and this was it — quieter than the signed-out
+         case above only because nobody had written the sentence. */
+      this._error = result.state === 'off' ? 'no account copies here' : 'offline';
       this._onChange();
       return null;
     }
@@ -282,7 +329,8 @@
    *  under the original id, this browser's beside it under a new one. Silently picking a winner
    *  is how an afternoon's work disappears (ADR-0124 decision 4). */
   Sync.prototype._conflict = function (doc, stored) {
-    if (!stored || !stored.root) {
+    stored = this._fromWire(stored);
+    if (!stored) {
       /* The server refused but told us nothing usable. Stop pushing rather than guess: the
          browser copy is intact and the user is told to look at it. */
       this._error = 'conflict';
