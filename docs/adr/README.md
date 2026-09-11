@@ -139,3 +139,4 @@ supersedes it and note the supersession in both.
 | [0133](0133-the-resume-tab-reads-the-saved-jobs-the-page-already-fetched.md) | The Résumé tab reads the Saved jobs the page already fetched | 2026-09-11 |
 | [0134](0134-the-shape-says-which-blocks-the-printer-may-not-split.md) | The shape says which blocks the printer may not split | 2026-09-11 |
 | [0135](0135-two-baseline-rules-for-the-blocks-that-shipped-without-any.md) | Two baseline Rules for the blocks that shipped without any | 2026-09-11 |
+| [0136](0136-the-value-gate-keeps-one-dimension-because-the-data-has-one.md) | The value gate keeps one dimension, because the data has one | 2026-09-11 |
