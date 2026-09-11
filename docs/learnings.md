@@ -2,6 +2,65 @@
 
 Running log of non-obvious findings worth keeping. Newest first.
 
+## A "0% overlap" that was really a sample size, and the rule it nearly justified (2026-09-11)
+
+A pipeline review found that a third of Oracle's ingested volume comes from tenants whose pod label
+carries a `-dev<N>` / `-test` marker — `jpmc-dev1…dev9` and `jpmc-test` beside `jpmc`. To check
+whether they were just duplicates of production, it compared the first 50 postings of each:
+
+```
+jpmc-dev3   id-overlap 0/50   title-overlap 0/50
+jpmc-test   id-overlap 0/50   title-overlap 0/50
+```
+
+and concluded they were **not** duplicates — distinct postings on no production careers site, which
+sounded worse and read as a stronger finding. On that basis it recommended filtering ~193,000 jobs
+out of discovery.
+
+**The zero was arithmetic, not evidence.** Production holds 7,402 postings and the dev pod 7,691.
+Two 50-item samples of sets that size share ~0.3 titles *by chance even when the sets are
+identical*. The measurement described the sample size. Re-run at 200 per board, only **13 of 208**
+comparisons were decidable at all — the rest were boards bigger than the sample — and those 13 came
+back **11 partial, 2 identical, zero disjoint**: the opposite conclusion.
+
+Enumerating one pair in full (38 pages, every posting, zero duplicate ids) gave the real figure:
+**16.1% shared**, not 0%.
+
+**The rule it nearly justified was wrong for a second, independent reason**, and the repo had
+already written that one down. `config.py`'s `EXCLUDED_BOARDS` says:
+
+> Every entry was confirmed by READING that Board's own postings, never from the shape of its slug.
+> That distinction is the whole point: a slug-pattern rule would also have dropped
+> `greenhouse:stage`, which is KKR's real board of 128 jobs, and `recruitee:test1234`, which belongs
+> to a real Austrian education agency.
+
+Reading all 223 candidates that passed the strictest structural test: **156 served real content**,
+63 served nothing (a shape ADR-0053 already handles), 4 looked fabricated — and two of those four
+were the classifier misfiring exactly as a slug rule does, one of them on
+`Sr. Production Testing Engineer`, a real job. The rule would also have parked `eczy-test`, which
+that same comment names as a **deliberate keep**, silently reversing a prior reasoned decision.
+
+### Three things worth carrying
+
+**1. Before believing an overlap, ask what the denominator was.** An intersection of two samples is
+only meaningful when the samples cover their sets. `|A∩B|` between k-item draws from n-item sets is
+~k²/n — for k=50, n=7,400 that is 0.3, so *zero is the expected result under the null you are
+trying to reject*. The check is one line of arithmetic and it was never done.
+
+**2. A surprising result that makes the finding stronger deserves more scepticism, not less.**
+"They're not even duplicates — that's worse" was the moment to re-measure. It was instead the
+moment the finding got written up.
+
+**3. Grep the repo for the rule before inventing one.** The content-over-slug standard, the
+counter-examples, and a decision on one of the exact hosts in question were all already in
+`config.py`. The review proposed the rule that comment exists to forbid.
+
+Corrected in `docs/pipeline/2026-09-10_five-run-log-review.md` §4. What survived is narrower and
+differently shaped: those boards are genuinely staler (median posting age 233 days against 7 on a
+same-day control), so ~84% of that dev pod's postings are closed or stale reqs — a **posting-age**
+problem, not a board-identity one, and one that judges postings rather than boards.
+
+
 ## Two workflows, one file, no lock: a green run that lost 706 rows (2026-09-10)
 
 Five consecutive pipeline runs, every job green, every check passing. One of them silently

@@ -159,48 +159,82 @@ enormous, zero-yield board is a shape it was not built for.
 
 ---
 
-## 4. Oracle: 343 non-production pods, a third of its volume, 33x staler
+## 4. Oracle non-production pods — a finding that did not survive follow-up
+
+> **Corrected 2026-09-11. The original §4 claimed these boards serve jobs that appear on no
+> production careers site, and recommended filtering ~32% of Oracle's volume at discovery. Both
+> the central evidence and the conclusion were wrong. The section is rewritten here rather than
+> deleted, because the *way* it was wrong is the useful part.**
+
+### What is still true
 
 Against `origin/main`'s ledger (2,025 live Oracle boards, 596,829 jobs), tenants whose pod label
-carries a `-dev<N>` / `-test` / `-uat` / `-stage` marker:
+carries a `-dev<N>` / `-test` / `-uat` / `-stage` marker: **343 boards (16.9%), 193,640 jobs
+(32.4%)**, of which **288 have a live production sibling** in the same ledger. Sampled against a
+same-day, same-method production control, they are markedly staler — median posting age **233 days
+against 7**, and **41.4% over a year old against 5.7%**.
 
-- **343 boards — 16.9% of live Oracle boards**
-- **193,640 jobs — 32.4% of Oracle's job volume**
-- **288 of the 343 (84%) already have a production sibling in the same ledger**
-  (`ecyq-dev1` and `ecyq-test` beside `ecyq`; `edmk-dev1…dev5`; `jpmc-dev1,3,5,6,7,8,9` and
-  `jpmc-test` beside `jpmc`)
+### The claim that was wrong, and why
 
-They are **not duplicates** — probed live, `jpmc-dev3`, `jpmc-test`, `jpmc-dev1` and `jpmc-dev9`
-each returned **0/50 id overlap and 0/50 title overlap** with production `jpmc`. They are distinct,
-and that is worse: those postings appear on no production careers site.
+The original section reported that `jpmc-dev3`, `jpmc-test`, `jpmc-dev1` and `jpmc-dev9` each
+returned **0/50 id overlap and 0/50 title overlap** with production, and concluded: *"They are not
+duplicates… they are distinct — and that is worse: those postings appear on no production careers
+site."*
 
-Measured against a same-method production control, same day, same page size:
+**That inference does not hold.** Drawing 50 items from a 7,402-posting board and 50 from a
+7,691-posting board yields almost no shared titles *even when the two sets are identical*. The
+measurement described the sample size, not the data. Re-run at 200 per board, only **13 of 208**
+comparisons are decidable at all — the rest are boards larger than the sample — and among those
+13 the result is **11 partial overlaps, 2 identical, zero disjoint**.
 
-| | non-prod (25 hosts, 1,639 postings) | production control (25 hosts, 2,433) |
+Enumerating the flagship case in full (every page of both boards, 38 pages, zero failures, zero
+duplicate ids) gives the real number: `jpmc-dev9` shares **1,077 of its 6,693 distinct titles with
+production — 16.1%**, not 0%. Its remaining titles are mostly real JPMorgan postings production has
+since closed, plus a little test data.
+
+### Why the recommended fix was also wrong
+
+`config.py`'s `EXCLUDED_BOARDS` sets the bar this review failed to apply:
+
+> Every entry was confirmed by **reading that Board's own postings**, never from the shape of its
+> slug. That distinction is the whole point: a slug-pattern rule would also have dropped
+> `greenhouse:stage`, which is KKR's real board of 128 jobs, and `recruitee:test1234`, which
+> belongs to a real Austrian education agency.
+
+Reading all 223 candidates that pass the strictest structural test (marker + live production
+sibling + an **identical site configuration**, the Fusion clone signature):
+
+| Verdict from the board's own postings | Boards | Jobs |
 |---|---|---|
-| median posting age | **233 days** | **7 days** |
-| p90 age | 1,073 days | 191 days |
-| max age | 2,261 days | 1,310 days |
-| older than 1 year | **41.4%** | 5.7% |
-| tech-shaped titles | **13.4%** | 10.7% |
+| Real-looking content — the slug is not confirmed | **156** | 128,498 |
+| Serves nothing — already handled by ADR-0053 | 63 | 6,987 |
+| Possibly fabricated | 4 | 2,117 |
 
-They are *more* tech-shaped than production, so the ADR-0017 gate passes them through at a higher
-rate. Sampled titles from `jpmc-dev1` include `Java Automation Software Engineer (602)` dated
-**2022-03-24** and a posting titled simply `Assessment`.
+`eluq-dev19`, `jpmc-test` and `jpmc-dev3` all read 0.0% test-marker titles. And at least two of the
+four "fabricated" verdicts are the classifier misfiring the same way a slug rule does: `egmn-dev2`
+was flagged on **`Sr. Production Testing Engineer`**, a real job, and `eiqg-test` serves zero rows
+at all.
 
-**They reach the served index.** `oracle:ejwl-dev7.fa.us2.oraclecloud.com` carries 58 / 54 / 85
-unconfirmed index rows across three of these runs, and `oracle:jpmc-test` is the single largest
-description-store backlog carrier at 2,687 rows, unchanged every run.
+The rule would also have parked **`eczy-test.fa.us2.oraclecloud.com`**, which `config.py` names
+explicitly as a deliberate keep with its own handling — silently reversing a prior reasoned
+decision. `oracle:eubt`, the genuine load-test instance, was already excluded on content evidence
+in #382, which is the standard working as intended.
 
-**This is a data-quality finding, not a wall-clock one.** At Oracle's 2.6 s median board cost,
-these boards are worth roughly 9 board-minutes per run against a 12.9x fan-out speedup — negligible
-time. The cost is served staleness, index rows, vectors and description backlog.
+### What is left
 
-A discovery-side filter on the pod label would remove ~32% of Oracle's ingested volume while
-*improving* what is served. It needs care: the marker is a hostname heuristic, and 55 of the 343
-have no production sibling, so a blanket drop would lose whatever those are.
+A real but differently-shaped problem: ~84% of `jpmc-dev9`'s postings are closed or stale reqs.
+That is **posting age**, not board identity — it exists on production boards too (5.7% over a year
+old), just far worse on these (41.4%). A staleness lever judges postings rather than boards, so it
+carries none of the misclassification risk this section ran into, and it would apply corpus-wide
+rather than to one ATS. Recorded as a candidate, not a recommendation: nothing here measures what
+a user would lose to it.
 
----
+### The transferable lesson
+
+Two failures, one shape. The overlap number described the *method* (a 50-item sample) rather than
+the data, and the exclusion rule described the *hostname* rather than the postings. Both produced
+a confident, wrong answer that survived until someone asked what the denominator was. The repo had
+already written the second lesson down in `config.py`; this review did not read it first.
 
 ## 5. What is **not** wrong
 
@@ -293,8 +327,10 @@ critical path. With infinitely many scrape shards the wall still cannot fall bel
    returns ~28 annotation slots.
 3. **Give the value gate a volume dimension** (§3). One board is 3% of scrape volume at zero yield
    and sits below the time floor by design.
-4. **Filter Oracle non-production pods at discovery** (§4). ~32% of Oracle's ingested volume, 41.4%
-   of it over a year old. Handle the 55 sibling-less pods explicitly.
+4. ~~**Filter Oracle non-production pods at discovery** (§4).~~ **Withdrawn 2026-09-11** — reading
+   the candidates' own postings found 156 of 223 serving real content, and the rule would have
+   reversed `config.py`'s documented keep on `eczy-test`. See the rewritten §4; what is left is
+   a posting-age question, recorded there as a candidate rather than a recommendation.
 5. **Guard `workday.py:602`.** Both tracebacks in the window are the same unguarded
    `response.json()` on a non-JSON 200 (`gilead.wd1`, `msd.wd5`). Caught and non-fatal, but it
    costs a 35-line stack and the board.
@@ -318,10 +354,12 @@ that are entirely workflow YAML text.
   its peers). That is GitHub's archive-assembly lag, not a pipeline finding; the per-job API fetch
   has everything.
 - **End-to-end serving was not verified.** `imposeidon-headstart-search.hf.space/search` returns
-  401 behind the sign-in wall, so §4's index presence is established from the merge logs' per-Board
+  401 behind the sign-in wall, so the index presence noted in §4 is established from the merge logs' per-Board
   row counts, not from a live query.
-- **The non-production pod classifier is a hostname heuristic.** 25 sampled labels showed no false
-  positives, but it is a regex over Oracle's opaque pod codes, not an authoritative signal.
+- **The non-production pod classifier was a hostname heuristic, and that was the defect.** Eyeballing
+  25 labels for false positives tested whether they *looked* like dev pods — not whether the boards
+  serve real jobs, which is the question that decided it and the one `config.py` already required
+  be asked. See the rewritten §4.
 - **The staleness sample is the first page of 100 per host**, which is not a random draw from a
   large board. The production control was sampled identically on the same day, so the comparison
   holds even where the absolute figures are biased.
