@@ -101,7 +101,12 @@
          side by side in the one export an ATS parses. `work_entry` above has always joined them
          with `to`; every other entry type that declares the pair — `degree_entry`,
          `tech_project` — now does too, in the place the first of the two fields sits, so the
-         order the Component Type declares is still the order printed. */
+         order the Component Type declares is still the order printed.
+
+         `certification` is deliberately untouched and its line is byte-identical: it declares one
+         date (`earned`), not a pair, so `CERT   ISS   March 2024   CID` is a single date between
+         two other facts and there is no range to join. A `certification` test below pins that,
+         so "unchanged" is asserted rather than assumed. */
       const own = datedFields(content, spec);
       /* Every declared field, NOT `content.name` first. Preferring a known key and falling back
          only when it is absent looks safe and is not: `tech_project` has a `name` AND carries the

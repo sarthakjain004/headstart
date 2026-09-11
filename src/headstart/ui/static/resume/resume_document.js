@@ -437,7 +437,10 @@
      *  free-canvas document switched from Letter to A4 reported two "Runs off the right-hand
      *  edge" warnings about blocks nobody had touched, and the warnings were right — 4.7 + 2.2
      *  is 6.9in on a 6.67in measure. Scaling rather than clamping because it keeps the
-     *  composition, and because it is reversible: switching back gives the inches back.
+     *  composition, and because the trip back returns the inches rather than leaving a permanent
+     *  0.23in gutter down the right of a Letter page. Each hop rounds to the hundredth, so that
+     *  is reversibility to a hundredth of an inch and not an identity — measured on the
+     *  free-canvas starter's four blocks, where Letter → A4 → Letter comes back exactly.
      *
      *  Whether to scale at all is the CALLER's call, not this command's — only a Layout that
      *  grants `resize: ['box']` has blocks placed in inches, and Layer 1 does not read caps.

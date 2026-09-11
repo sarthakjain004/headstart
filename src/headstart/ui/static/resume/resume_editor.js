@@ -518,10 +518,17 @@
      `versionPaint` runs on every keystroke and would otherwise put the Delete button back over
      the question it had just asked. */
   let askVersionDrop = false;
-  /* And whether it is asking for a new NAME for the active one. Out here for the same reason, and
-     the two are mutually exclusive: each hides the other's opener, so the bar never shows a
-     question and a field about the same version at once. */
-  let renameVersion = false;
+  /* And WHICH version the bar is currently asking a new name for — an id rather than a flag, and
+     that is the fix for a measured defect rather than taste. As a boolean it survived the active
+     Tailoring changing underneath it: open Rename on "Version A", make "Version B" from the
+     popover two controls away (whose button this does not hide), press Save, and the field —
+     still holding A's name and still on screen — renamed B. Measured: `["Version A", "Version
+     A"]`, which is the very state this control exists to prevent. Keyed on the id, the field is
+     shown only while the version it was opened on is still the one on screen, so every path that
+     moves `activeTailoring` — the dropdown, a new version, a delete, an undo, opening another
+     résumé — closes it without having to remember to. Its sibling `askVersionDrop` needs no id:
+     nothing can change the active version while the delete question is up. */
+  let renamingVersionId = null;
   /* Which **Saved job** the version about to be created is for, or null for one named by hand.
      It is the popover's state rather than the document's: it lives only between opening the menu
      and creating the version, and `addTailoring` is where it stops being a UI fact and becomes
@@ -597,7 +604,7 @@
       esc(t.name) + '</option>').join('');
     pick.value = d.activeTailoring || '';
     const asking = askVersionDrop && !!d.activeTailoring;
-    const naming = renameVersion && !!d.activeTailoring;
+    const naming = !!renamingVersionId && d.activeTailoring === renamingVersionId;
     el('rb-version-del').hidden = !d.activeTailoring || asking || naming;
     el('rb-version-ren').hidden = !d.activeTailoring || asking || naming;
     /* The field's VALUE is seeded where the field is opened, not here: this runs on every
@@ -1890,10 +1897,9 @@
     el('rb-version').addEventListener('change', e => {
       selectedId = null;
       askVersionDrop = false;
-      /* Both questions are about the version that was on screen when they were asked. Left
-         standing, the half-typed name would come back attached to whichever version the
-         dropdown had just moved to. */
-      renameVersion = false;
+      /* The id keeps the field off the screen for another version, but not out of memory —
+         without this, switching away and back would reopen it on the name typed last time. */
+      renamingVersionId = null;
       store.dispatch(Cmd.activateTailoring(e.target.value || null));
     });
     /* Naming a version was a `window.prompt`: a modal box drawn outside the page, unstyled, and
@@ -1945,7 +1951,7 @@
       const tailoring = Doc.tailoringOf(doc());
       if (!tailoring) return;
       askVersionDrop = false;
-      renameVersion = true;
+      renamingVersionId = tailoring.id;
       const box = el('rb-version-rename-name');
       box.value = tailoring.name || '';
       versionPaint();
@@ -1954,7 +1960,7 @@
     /* Put away without writing anything — and the focus back on the button that opened it,
        rather than on the <body> the hidden field leaves it on. */
     const closeRename = () => {
-      renameVersion = false;
+      renamingVersionId = null;
       versionPaint();
       const opener = el('rb-version-ren');
       if (opener.focus) opener.focus();
@@ -1962,8 +1968,12 @@
     const saveRename = () => {
       const tailoring = Doc.tailoringOf(doc());
       const name = (el('rb-version-rename-name').value || '').trim();
+      const stale = !tailoring || tailoring.id !== renamingVersionId;
       closeRename();
-      if (!tailoring) return;
+      /* The field names ONE version. If the one on screen is no longer it, this writes nothing —
+         `versionPaint` has already put the field away, so only a stale event can arrive here, and
+         it must not land the old name on the new version. */
+      if (stale) return;
       /* The same fallback `createVersion` uses, and for the same reason: a version with no name
          at all is a blank row in the dropdown, which is worse than a dull one. */
       store.dispatch(Cmd.renameTailoring(tailoring.id, name || 'Untitled version'));

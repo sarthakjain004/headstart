@@ -1500,10 +1500,51 @@ test('a version can be renamed after it is made, and the dropdown says so', () =
   assert.ok(el('rb-version').innerHTML.includes('Razorpay · Staff Engineer'),
     'the dropdown still offers the old name, which is the only place a version is chosen');
 
-  /* Words are untouched: a rename is Layer-1 metadata, and a version that lost its picks on
-     being renamed would be a rename that quietly threw the tailoring away. */
   assert.equal(ctx.ResumeEditor.current().activeTailoring, made.id,
     'renaming deselected the version it renamed');
+});
+
+test('an open rename field never lands on a version it was not opened on', () => {
+  const { ctx, el } = loadEditor();
+  newVersion(el, 'Version A');
+  el('rb-version-ren').fire('click');
+  assert.equal(el('rb-version-rename').hidden, false, 'Rename opened nothing');
+
+  /* "Tailor for a job" sits two controls away and is NOT hidden while the field is open, so this
+     is a sequence a user can really perform. Measured before the fix: the field stayed on screen
+     holding A's name, Save wrote it onto B, and the document read ["Version A", "Version A"] —
+     the exact state a rename control exists to prevent. */
+  newVersion(el, 'Version B');
+  assert.equal(el('rb-version-rename').hidden, true,
+    'the field is still up, now aimed at a version it was never opened on');
+  assert.equal(el('rb-version-ren').hidden, false, 'and the button that opens it never came back');
+
+  /* And the event itself, not only the chrome: a Save that arrives anyway writes nothing. */
+  el('rb-version-rename-save').fire('click');
+  assert.deepEqual(ctx.ResumeEditor.current().tailorings.map(t => t.name), ['Version A', 'Version B'],
+    'a stale Save renamed the new version after the old one');
+});
+
+test('renaming a version keeps every word it had reworded', () => {
+  const { ctx, el, panel } = loadEditor();
+  const D = ctx.ResumeDocument;
+  const bullet = D.flatten(ctx.ResumeEditor.current()).filter(n => n.type === 'bullet')[1];
+  newVersion(el, 'Acme, Backend Engineer');
+  /* One reworded block, which is what a Tailoring IS — a pick pointing at a Variant. A rename
+     that dropped it would be a rename that quietly threw the tailoring away, and the version
+     would go back to reading the master's words with nothing saying so. */
+  panel.fire('input',
+    { target: target({ node: bullet.id, field: 'text' }, { type: 'textarea', value: 'Tailored for Acme' }) });
+  const before = ctx.ResumeEditor.current().tailorings[0];
+  const picked = before.picks[bullet.id];
+  assert.ok(picked, 'the edit never forked a variant, so this test is not about a rename');
+
+  renameVersion(el, 'Razorpay · Staff Engineer');
+  const after = ctx.ResumeEditor.current().tailorings[0];
+  assert.equal(after.name, 'Razorpay · Staff Engineer');
+  assert.equal(after.picks[bullet.id], picked, 'the rename dropped the version\u2019s pick');
+  assert.equal(D.contentOf(ctx.ResumeEditor.current(), bullet.id).text, 'Tailored for Acme',
+    'the version went back to the master\u2019s words on being renamed');
 });
 
 test('Cancel leaves the name alone, and so does Escape in the field', () => {
