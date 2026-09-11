@@ -222,8 +222,14 @@
    *  "click a block to edit it" ends at a form that is still somewhere else, which is what the
    *  arrangement this replaced actually did. `quiet` is for the callers that must NOT move the
    *  form — collapsing a row, and the paper's own drag and resize gestures, where the form
-   *  scrolling under a held pointer is motion nobody asked for. */
-  function select(id, quiet) {
+   *  scrolling under a held pointer is motion nobody asked for.
+   *
+   *  `keepSegment` is for the click that came FROM the page. The form is still opened down to
+   *  the block and scrolled to it, so Edit is ready when the user goes there — but the segment
+   *  they are reading in is theirs to change. Switching it for them threw somebody inspecting a
+   *  block in Preview straight out of Preview, which is the auto-switching ADR-0128 rejected
+   *  arriving through a second door: a mode that changes itself is a mode nobody can rely on. */
+  function select(id, quiet, keepSegment) {
     selectedId = id;
     if (id && !quiet) {
       const d = doc();
@@ -231,7 +237,7 @@
          section's row, so opening only the bullet would open nothing anyone can see. */
       for (let n = d && Doc.find(d, id); n && n !== d.root; n = Doc.parentOf(d, n.id)) expanded.add(n.id);
       /* Which paints — `showSegment` re-measures whatever it put on screen. */
-      showSegment('edit');
+      if (keepSegment) paint(); else showSegment('edit');
       scrollFormTo(id);
     } else paint();
   }
@@ -262,7 +268,7 @@
     const model = Doc.find(doc(), id);
     if (!model) return;
 
-    if (!handleEl) { select(id); return; }
+    if (!handleEl) { select(id, /* quiet */ false, /* keepSegment */ true); return; }
 
     e.preventDefault();
     const kind = handleEl.dataset.handle;
@@ -409,7 +415,11 @@
         .filter(e => wanted.has(e.dataset.node));
     };
 
-    for (const slot of lay.slots) {
+    /* The slots ARE the document root, so they are offered only for a node that may sit there
+       (resume_components.js states that rule once). Offering every slot to every dragged node
+       is how a bullet reached the root — the model refuses it now, but a drop point the model
+       will refuse is a target the page drew and then ignored, which reads as a broken drag. */
+    if (Components.acceptsAtRoot(dragged.type)) for (const slot of lay.slots) {
       const slotEl = paper.querySelector('[data-slot="' + slot.id + '"]');
       if (!slotEl) continue;
       const kids = Array.from(slotEl.children).filter(e => e.dataset && e.dataset.node &&
@@ -873,10 +883,12 @@
       '<div class="rb-add"><span class="note">Also:</span>' +
       /* Derived from the registry, not a list. It used to name three types, so a component added
          later — `professional_summary`, `language_line` — could be reached inside a section but
-         never added at the top level, and nothing said so. Anything that belongs beside a section
-         rather than inside one is a `text` or a `line`; entries live in sections and bullets in
-         entries, so neither belongs here. */
-      Components.all().filter(s => s.shape === 'text' || s.shape === 'line').map(s =>
+         never added at the top level, and nothing said so. What belongs at the top level is
+         `Components.acceptsAtRoot`, the SAME rule the drag path and the model's move guard read
+         — it used to be spelled out again here, and the three spellings disagreed. Minus the two
+         handled elsewhere: a section has its own button above, and the header is addable nowhere. */
+      Components.all().filter(s => Components.acceptsAtRoot(s.type) &&
+        s.shape !== 'section' && s.shape !== 'header').map(s =>
         '<button class="ghost rb-mini" data-add="' + esc(s.type) + '" data-into="">' + esc(s.label) +
         '</button>').join('') + '</div>' +
       '<div class="rb-prefill"><button class="ghost rb-mini" data-act="prefill">Fill from my profile</button>' +
@@ -1946,6 +1958,13 @@
     if (!Layouts.get(opening.layoutId)) opening.layoutId = Layouts.all()[0].id;
     store.adopt(opening);
     repository.setLastOpened(opening.id);
+    /* `last` has to name a document the repository actually HOLDS. The worked example is minted
+       here rather than loaded, and nothing wrote it: the next visit read `last`, found nothing
+       under that id, minted a second example with a second id, and showed the "Start here" card
+       again — while the Résumés list stayed empty however much had been typed into it. Only on
+       the first run, so a visit that opened a stored résumé still writes nothing it did not
+       change. */
+    if (firstRun) store.flush();
 
     wire();
     if (!repository.durable) flashSaved('Storage is blocked here — download a backup.');

@@ -521,14 +521,34 @@ test('each rule actually fires — a check that cannot fail is not a check', () 
   const off = L.runRules(hh, restyled).find(f => f.ruleId === 'on-template');
   assert.ok(off && /10\.5/.test(off.message), 'the finding should name what the template asks for');
 
-  // a bullet longer than three lines
+  /* A bullet longer than three lines — and a REALISTIC one. This was `'x'.repeat(1200)`, four
+     times the cap on every sheet and type size the builder offers, so it could not have failed
+     however far the measurement drifted. The cap here is 85 characters a line (US Letter, 10.5pt,
+     0.3in indent) times three, so 289 characters of English is a bullet genuinely over the line
+     and 139 is one comfortably under it — and the rule has to tell them apart. */
+  const overLong = 'Rebuilt the nightly billing reconciliation so a failed batch retries from the ' +
+    'last good checkpoint instead of starting over, which cut the on-call pages it raised from ' +
+    'eleven a week down to one and saved the finance team about six hours of manual re-keying ' +
+    'every month across four regions.';
+  const fits = 'Cut the nightly billing reconciliation from eleven on-call pages a week to one ' +
+    'by retrying each failed batch from its last good checkpoint.';
+  assert.equal(overLong.length, 289);
+  assert.equal(fits.length, 139);
   const wordy = D.builder().usingLayout(HH)
     .add('header', { fullName: 'A', phone: '1', email: 'e', locationLine: 'x' })
     .section('Work History', s => s.add('work_entry',
       { role: 'R', start: 'June 2023', current: true },
-      e => { e.bullet('x'.repeat(1200), true); e.bullet('b'); e.bullet('c'); }))
+      e => { e.bullet(overLong, true); e.bullet('b'); e.bullet('c'); }))
     .build();
   assert.ok(ids(wordy).includes('three-lines'));
+
+  const brief = D.builder().usingLayout(HH)
+    .add('header', { fullName: 'A', phone: '1', email: 'e', locationLine: 'x' })
+    .section('Work History', s => s.add('work_entry',
+      { role: 'R', start: 'June 2023', current: true },
+      e => { e.bullet(fits, true); e.bullet('b'); e.bullet('c'); }))
+    .build();
+  assert.ok(!ids(brief).includes('three-lines'), 'a bullet well inside three lines was flagged');
 
   // more than three lines of education
   const schooled = D.builder().usingLayout(HH)
@@ -786,6 +806,18 @@ test('a rule that measures the page measures the sheet in use', () => {
   const letter = H.charsPerLine({ width: 8.5, margin: 1 }, 10.5, 0.3);
   const a4 = H.charsPerLine({ width: 8.27, margin: 1 }, 10.5, 0.3);
   assert.ok(a4 < letter, 'A4 is narrower, so fewer characters fit on a line and a bullet wraps sooner');
+  /* The exact figures, not just their order. `a4 < letter` holds for an average advance of
+     `size * 5` and one of `size * 0.05` alike — every estimate in that range orders the two
+     sheets correctly while putting the ceiling anywhere from 9 characters to 900 — so the
+     ordering on its own says nothing about whether the number a user is advised on is right.
+     These are `(usable inches * 72) / (points * 0.5)`: 6.2in and 5.97in of measure at 10.5pt.
+     They are the ESTIMATE, not the truth — `tests/test_resume_editor_browser.py` measures a
+     281-character bullet laying out in three real line boxes against this 255-character ceiling
+     and xfails on the gap, so whoever closes it edits both files. */
+  assert.equal(letter, 85);
+  assert.equal(a4, 82);
+  /* Bigger type, fewer characters — the other half of "measures the sheet in use". */
+  assert.ok(H.charsPerLine({ width: 8.5, margin: 1 }, 14, 0.3) < letter);
 });
 
 /* ---- the shared baseline (ADR-0127) ---- */

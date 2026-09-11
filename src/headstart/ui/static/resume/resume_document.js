@@ -352,7 +352,14 @@
         let inside = false;
         walk(moving, n => { if (n === to) inside = true; });
         if (inside) return d;
-        if (to !== d.root && !Components.accepts(to.type, moving.type)) return d;
+        /* The root answers through `acceptsAtRoot`, never by being exempted from the check:
+           exempting it let a bullet be dropped above the header, which put a stray <li>
+           outside any <ul> on the page and a bullet ahead of the name in the plain-text
+           export. Same rule the add menu and the drop points read (resume_components.js). */
+        const legal = to === d.root
+          ? Components.acceptsAtRoot(moving.type)
+          : Components.accepts(to.type, moving.type);
+        if (!legal) return d;
 
         from.children = from.children.filter(c => c.id !== id);
         const at = index == null ? to.children.length : Math.max(0, Math.min(index, to.children.length));

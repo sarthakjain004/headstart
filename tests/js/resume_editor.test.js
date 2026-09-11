@@ -207,6 +207,18 @@ test('booting opens a document and paints the page and the form from it', () => 
   assert.ok(el('rb-pane-document').innerHTML.includes('data-row='), 'the form was not painted');
 });
 
+test('the worked example a first visit opens is written, not just pointed at', () => {
+  const storage = fakeStorage([]);
+  const { ctx } = loadEditor({ storage });
+  const id = ctx.ResumeEditor.current().id;
+  /* `last` used to name a document nothing had saved: the next visit found nothing under that
+     id, minted a second example, and showed the "Start here" card again — with the Résumés list
+     empty however much had been typed into it. */
+  assert.equal(storage.getItem('headstart.resumes.last'), id);
+  assert.ok(storage.getItem('headstart.resume.' + id), 'the example was never written');
+  assert.deepEqual(JSON.parse(storage.getItem('headstart.resumes.index')).map(r => r.id), [id]);
+});
+
 /* ---- the repaint guard ------------------------------------------------------------------
    The pane the user is typing in must not be rebuilt under the caret; every other pane must be
    rebuilt on every change. Getting that distinction wrong in either direction is a P0, and it
@@ -308,6 +320,25 @@ test('clicking a block on the page selects it, and Escape lets it go', () => {
   assert.ok(!el('rb-pane-document').innerHTML.includes(' on"'), 'Escape left the block selected');
   assert.ok(el('rb-pane-document').innerHTML.includes('data-node="' + entry.id + '"'),
     'Escape also collapsed the row, which would throw away where the user had navigated to');
+});
+
+test('a click on the page does not move the user out of the segment they are reading', () => {
+  const { ctx, el, segs } = loadEditor();
+  const paper = el('rb-paper');
+  const entry = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current())
+    .find(n => n.type === 'work_entry');
+  const seg = name => segs.children.find(b => b.dataset.seg === name).getAttribute('aria-selected');
+
+  el('rb-seg').fire('click', { target: target({ seg: 'preview' }) });
+  assert.equal(seg('preview'), 'true', 'the test did not reach Preview');
+
+  /* Clicking a block to look at it used to switch the segment underneath the reader — the
+     auto-switching ADR-0128 rejected, arriving through the page instead of the form. The block
+     is still selected and the form still opened down to it; only the segment is left alone. */
+  paper.fire('pointerdown', { target: target({ node: entry.id }) });
+  assert.equal(seg('preview'), 'true', 'a click on the page threw the reader out of Preview');
+  assert.equal(seg('edit'), 'false');
+  assert.ok(el('rb-pane-document').innerHTML.includes(' on"'), 'the block was not selected');
 });
 
 test('a click on a block that is not in the document changes nothing', () => {

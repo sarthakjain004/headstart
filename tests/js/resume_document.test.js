@@ -141,6 +141,41 @@ test('a move a parent would not accept is refused', () => {
   assert.equal(store.get().root.children.some(c => c.id === header.id), true);
 });
 
+test('the document root refuses a node that has no business at the top level', () => {
+  const ctx = load(MODEL);
+  const { Commands, flatten } = ctx.ResumeDocument;
+  const store = new ctx.ResumeDocument.Store(null);
+  store.adopt(sample(ctx));
+  const bullet = flatten(store.get()).filter(n => n.type === 'bullet')[0];
+  /* Dragging a bullet above the header used to land it at the root: the sheet then drew an <li>
+     outside any <ul>, and the plain-text export — the copy that goes into an application form —
+     opened with the bullet and printed the candidate's name on the line below it. The root has
+     no Component Type, so it answers through `acceptsAtRoot`, and every path reads that one. */
+  store.dispatch(Commands.moveNode(bullet.id, null, 0));
+  assert.deepEqual(store.get().root.children.map(c => c.type), ['header', 'section'],
+    'a bullet reached the document root');
+
+  // and the rule still lets through what a page IS made of
+  const section = flatten(store.get()).filter(n => n.type === 'section')[0];
+  store.dispatch(Commands.moveNode(section.id, null, 0));
+  assert.equal(store.get().root.children[0].type, 'section');
+});
+
+test('one rule, read off the shape, says what may sit at the document root', () => {
+  const ctx = load(MODEL);
+  const { acceptsAtRoot, all, ROOT_SHAPES } = ctx.ResumeComponents;
+  assert.equal(acceptsAtRoot('bullet'), false);
+  assert.equal(acceptsAtRoot('work_entry'), false);
+  assert.equal(acceptsAtRoot('section'), true);
+  assert.equal(acceptsAtRoot('skills_line'), true);
+  assert.equal(acceptsAtRoot('professional_summary'), true);
+  /* Shape-derived, so a component added later inherits the answer instead of being forgotten. */
+  for (const spec of all()) {
+    assert.equal(acceptsAtRoot(spec.type), ROOT_SHAPES.includes(spec.shape),
+      `${spec.type} (${spec.shape}) disagrees with the shape rule`);
+  }
+});
+
 test('undo and redo walk the same path back and forward', () => {
   const ctx = load(MODEL);
   const { Commands, flatten } = ctx.ResumeDocument;
