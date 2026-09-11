@@ -150,10 +150,11 @@ function loadEditor(options) {
          picker reads. Absent by default, which is the signed-out page and every other test in
          this file: no list, no picker. `saved: []` is the signed-in-with-nothing-starred page,
          and the two are deliberately not the same answer. */
-      /* A copy per call, like the real seam: the editor sorts what it is handed, and a stub
-         that shared its array would let a test's own fixture be reordered under it. */
-      savedJobs: opts.saved === undefined ? undefined
-        : () => (opts.saved ? opts.saved.slice() : opts.saved),
+      /* Read at CALL time, not captured: `/saved` answers after the page settles, so a test can
+         change what this returns between two openings of the menu the way a late fetch does.
+         It hands back its own array — the real seam copies, and the editor is not allowed to
+         depend on that, which is what `tests/js/app_saved.test.js` and this disagreement pin. */
+      savedJobs: opts.saved === undefined ? undefined : () => opts.saved,
     },
     _docHandlers: {},
   };
@@ -1286,6 +1287,30 @@ test('signed in with nothing starred says where jobs get starred, rather than li
   assert.ok(!/data-saved=/.test(el('rb-version-jobs').innerHTML), 'it listed a row from nowhere');
   assert.match(el('rb-version-jobs').innerHTML, /☆/,
     'the empty state does not point at how a job gets saved');
+});
+
+test('a version outlives the saved job it was made from', () => {
+  /* The third case the picker has to be honest about. A star can be removed — by this visitor,
+     on the Saved tab, any time after the version was made — and the Tailoring is on a document in
+     this browser, which knows nothing about that. It keeps the id and its own name, and the name
+     is the half that still reads: nothing here re-reads the posting to draw the version. */
+  const options = { saved: STARS.slice() };
+  const { ctx, el } = loadEditor(options);
+  pickSaved(el, 'greenhouse:razorpay:9001');
+  el('rb-version-create').fire('click');
+
+  options.saved = STARS.filter(j => j.job_id !== 'greenhouse:razorpay:9001');   // unstarred
+  const kept = ctx.ResumeEditor.current().tailorings[0];
+  assert.equal(kept.name, 'Razorpay · Backend Engineer',
+    'the version stopped naming the job it was written for once the star went');
+  assert.equal(kept.jobId, 'greenhouse:razorpay:9001', 'the version forgot which Job it was for');
+  assert.ok(el('rb-version').innerHTML.includes('Razorpay · Backend Engineer'),
+    'the version is no longer offered in the bar, so the work in it is unreachable');
+
+  /* And the picker, reopened, simply no longer lists it — no broken row, no error. */
+  el('rb-version-new').fire('click');
+  assert.ok(!el('rb-version-jobs').innerHTML.includes('greenhouse:razorpay:9001'),
+    'the picker still offers a job that is no longer saved');
 });
 
 test('the picker is read when the menu opens, not once at boot', () => {

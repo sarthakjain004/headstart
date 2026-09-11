@@ -520,10 +520,10 @@
      the Tailoring's own `jobId`. */
   let versionJob = null;
 
-  /* The stars app.js already fetched (`window.savedJobs`), not a second GET /saved from here.
-     The rows are on the same page and that list is the one every star and unstar keeps current,
-     so a picker reading it can never disagree with the Saved tab — and this tab stays what it has
-     always been: a feature that needs no server at all.
+  /* The stars app.js already fetched (`window.savedJobs`, ADR-0133), not a second GET /saved from
+     here. The rows are on the same page and that list is the one every star and unstar keeps
+     current, so a picker reading it can never disagree with the Saved tab — and this tab stays
+     what it has always been: a feature that needs no server at all.
 
      Null and empty mean different things and both are handled: null is "there is no such list"
      — signed out, no account store, or /saved has not answered — and the picker is not offered;
@@ -540,37 +540,44 @@
    *  Résumés list already join fields with. A row with no company is its title alone.
    *
    *  It is a starting point, not a lock — the field it fills is editable before Create, which is
-   *  the only chance to name it: nothing renames a Tailoring afterwards. */
-  const versionName = j => [j.company, j.title].filter(Boolean).join(' · ') || 'Untitled version';
+   *  the only chance to name it: nothing renames a Tailoring afterwards.
+   *
+   *  No empty-name fallback, because a Saved job cannot have one: `POST /saved` refuses a body
+   *  with no title (deploy/hf-space/app.py), so every row here has at least that. `createVersion`
+   *  carries the fallback for the field a person can genuinely leave blank. */
+  const versionName = j => [j.company, j.title].filter(Boolean).join(' · ');
 
   /** The picker: every Saved job, newest star first, with the chosen one marked.
    *
-   *  Sorted here rather than trusted: app.js keeps `mySaved` nearly in star order but not exactly
-   *  — a refused unstar puts its row back on the end — which is why the Saved tab sorts its own
-   *  copy too. The list handed over is ours to reorder. */
+   *  Sorted rather than trusted: app.js keeps `mySaved` nearly in star order but not exactly — a
+   *  refused unstar puts its row back on the end — which is why the Saved tab sorts its own copy
+   *  too. On a copy this function makes, so "may I reorder this?" is answered here rather than
+   *  being an invariant held across two modules. */
   function versionJobsPaint() {
-    const box = el('rb-version-jobs');
     const rows = savedJobs();
-    /* Spelled out rather than through `box`, and not for style: `resume_markup.test.js` derives
-       the list of elements this file hides by scanning for `el('…').hidden =`, and that is what
+    /* Through `el(…)` rather than a local, and not for style: `resume_markup.test.js` derives the
+       list of elements this file hides by scanning for `el('…').hidden =`, and that scan is what
        makes the stylesheet's matching `[hidden]` rule enforced rather than remembered. Hidden
-       through a local, the element is invisible to the scan — and `.rb-jobpick` sets `display`,
-       which outranks the attribute, so the picker would stay on screen after being put away. */
+       through a local the element is invisible to it — and `.rb-jobpick` sets `display`, which
+       outranks the attribute, so the picker would stay on screen after being put away. */
     el('rb-version-jobs').hidden = !rows;
     if (!rows) return;
     if (!rows.length) {
-      box.innerHTML = '<p class="note">No saved jobs yet — hit the ☆ on any search result and it ' +
-        'shows up here, ready to tailor for.</p>';
+      el('rb-version-jobs').innerHTML =
+        '<p class="note">No saved jobs yet — hit the ☆ on any search result and it shows up ' +
+        'here, ready to tailor for.</p>';
       return;
     }
-    const newest = rows.sort((a, b) => String(b.starred_at || '').localeCompare(String(a.starred_at || '')));
-    box.innerHTML = '<p class="rb-doclist-head">Your saved jobs</p>' + newest.map(j => {
-      const where = [j.location, j.salary].filter(Boolean).join(' · ');
-      return '<button class="rb-docopen' + (versionJob === j.job_id ? ' on' : '') +
-        '" data-saved="' + esc(j.job_id) + '" aria-pressed="' + (versionJob === j.job_id) + '">' +
-        esc(versionName(j)) + (where ? '<span class="note">' + esc(where) + '</span>' : '') +
-        '</button>';
-    }).join('');
+    const newest = rows.slice()
+      .sort((a, b) => String(b.starred_at || '').localeCompare(String(a.starred_at || '')));
+    el('rb-version-jobs').innerHTML = '<p class="rb-doclist-head">Your saved jobs</p>' +
+      newest.map(j => {
+        const where = [j.location, j.salary].filter(Boolean).join(' · ');
+        return '<button class="rb-docopen' + (versionJob === j.job_id ? ' on' : '') +
+          '" data-saved="' + esc(j.job_id) + '" aria-pressed="' + (versionJob === j.job_id) + '">' +
+          esc(versionName(j)) + (where ? '<span class="note">' + esc(where) + '</span>' : '') +
+          '</button>';
+      }).join('');
   }
 
   function versionPaint() {

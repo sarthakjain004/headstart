@@ -1006,7 +1006,7 @@ async function loadSaved(){
 }
 
 // The one thing outside this file that reads the stars: the Résumé tab's "Tailor for a job"
-// picker (ADR-0124), which names a version after a job the visitor already saved. A hand-off,
+// picker (ADR-0133), which names a version after a job the visitor already saved. A hand-off,
 // not a second GET /saved — the rows are on the page already, and this list is the one every
 // star and unstar keeps current, so the picker can never disagree with the Saved tab.
 //

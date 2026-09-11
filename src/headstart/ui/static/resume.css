@@ -103,9 +103,10 @@
 .rb-pop-pick > * { flex: none; }
 .rb-pop-pick > .rb-jobpick { flex: 0 1 auto; min-height: 3.5rem; }
 .rb-jobpick[hidden] { display: none !important; }
-.rb-docopen.on { border-color: var(--accent); }
 .rb-docrow { display: flex; gap: 6px; align-items: stretch; }
-.rb-docrow.on .rb-docopen { border-color: var(--accent); }
+/* The row that is currently chosen — the open résumé in the Résumés list, and the saved job the
+   next version will be tailored for in the picker. One declaration, because it is one idea. */
+.rb-docrow.on .rb-docopen, .rb-docopen.on { border-color: var(--accent); }
 .rb-docopen { flex: 1; text-align: left; background: var(--raise-2); border: 1px solid var(--rule);
   color: var(--ink); border-radius: var(--r-md); padding: 8px 10px; cursor: pointer; font: inherit;
   display: flex; flex-direction: column; gap: 2px; }

@@ -575,6 +575,7 @@ def test_the_saved_job_picker_scrolls_and_leaves_the_menu_usable(page):
     # And on a phone, where the menu's own cap is 60vh rather than 520px and there is far less
     # room for the list to give back. 390x844 is the viewport the popover's max-height comment
     # already cites as the one it fits whole on.
+    wide = page.viewport_size
     page.set_viewport_size({"width": 390, "height": 844})
     page.wait_for_timeout(150)
     phone = page.evaluate("""() => {
@@ -585,7 +586,7 @@ def test_the_saved_job_picker_scrolls_and_leaves_the_menu_usable(page):
         f"on a 390x844 phone Create version ends {phone['create']}px down and the menu at "
         f"{phone['pop']}px"
     )
-    page.set_viewport_size({"width": 1500, "height": 1100})
+    page.set_viewport_size(wide)
     page.wait_for_timeout(150)
 
     # The click a real pointer makes: on the row's own second line, not on the button's padding.
