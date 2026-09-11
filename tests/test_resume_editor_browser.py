@@ -108,6 +108,12 @@ def page(browser, base_url):
     assert not errors, f"the page threw before the test began: {errors}"
     yield pg
     pg.close()
+    # And again AFTER the test, which is the half that was missing. `errors` was asserted once,
+    # before the yield, and never read again — so a JS exception thrown by the very behaviour
+    # under test was collected into a list nothing looked at, and a test could pass green while
+    # the editor threw underneath it. Teardown is the only place this can be checked: the handler
+    # fires whenever Chromium reports the error, which may be after the test body has returned.
+    assert not errors, f"the page threw while the test ran: {errors}"
 
 
 def _first_bullet(pg) -> str:

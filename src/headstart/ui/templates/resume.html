@@ -46,6 +46,12 @@
               title="Tailor this résumé for one job without copying the whole thing"></select>
       <button class="ghost rb-mini" id="rb-version-new" aria-expanded="false"
               aria-controls="rb-pop-version" title="Tailor a copy for one job">Tailor for a job</button>
+      {# A version's name was fixed at the moment it was created — the field in the popover below
+         was the only chance to type one, and after ten applications that is ten names you are
+         stuck with in one dropdown. `renameTailoring` has been in the model since Tailorings
+         were; this is the control that reaches it. Not a `window.prompt`: this tab has none. #}
+      <button class="ghost rb-mini" id="rb-version-ren" hidden
+              title="Give this version a different name">Rename</button>
       <button class="ghost rb-mini danger" id="rb-version-del" hidden>Delete version</button>
       {# Deleting a version was a native confirm(): a modal box outside the page, unstyled, and
          out of the reading order. The question is asked here instead, where the version it is
@@ -56,6 +62,17 @@
         <span class="note" id="rb-version-confirm-text"></span>
         <button class="ghost rb-mini danger" id="rb-version-yes">Delete</button>
         <button class="ghost rb-mini" id="rb-version-no">Keep</button>
+      </span>
+      {# The new name, asked in the bar beside the version it renames — the same inline group the
+         delete question uses, because it is the same gesture: a momentary two-answer exchange
+         about the version the dropdown two controls away is naming. #}
+      <span class="rb-confirm" id="rb-version-rename" hidden role="group"
+            aria-label="Rename this version">
+        <label class="rb-vh" for="rb-version-rename-name">New version name</label>
+        <input id="rb-version-rename-name" class="rb-name" autocomplete="off"
+               placeholder="Acme · Backend Engineer">
+        <button class="go rb-mini" id="rb-version-rename-save">Save</button>
+        <button class="ghost rb-mini" id="rb-version-rename-cancel">Cancel</button>
       </span>
     </div>
     <div class="rb-group rb-group-actions">

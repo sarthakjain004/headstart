@@ -342,7 +342,11 @@
     } else if (gesture.kind === 'spaceAfter') {
       node.style.marginBottom = clamp(gesture.from.spaceAfter + dy, b.spaceAfter[0], b.spaceAfter[1]) + 'px';
     } else if (gesture.kind === 'gutter') {
-      const dates = node.querySelector('.hh-dates, .tc-dates');
+      /* One class, because one Layout grants `resize: ['gutter']` and it is the only one that
+         emits a date column to drag. `.tc-dates` sat here too and was never reachable:
+         `two-column` renders that class but grants `spaceAfter` alone, so no gutter gesture can
+         start on it. Nine layouts on and still unreachable — dead, not merely unused. */
+      const dates = node.querySelector('.hh-dates');
       const width = clamp(gesture.from.gutter - dx / gesture.ppi, b.gutter[0], b.gutter[1]);
       if (dates) dates.style.minWidth = width + lay.page.unit;
     } else if (gesture.kind === 'box') {
@@ -514,6 +518,17 @@
      `versionPaint` runs on every keystroke and would otherwise put the Delete button back over
      the question it had just asked. */
   let askVersionDrop = false;
+  /* And WHICH version the bar is currently asking a new name for — an id rather than a flag, and
+     that is the fix for a measured defect rather than taste. As a boolean it survived the active
+     Tailoring changing underneath it: open Rename on "Version A", make "Version B" from the
+     popover two controls away (whose button this does not hide), press Save, and the field —
+     still holding A's name and still on screen — renamed B. Measured: `["Version A", "Version
+     A"]`, which is the very state this control exists to prevent. Keyed on the id, the field is
+     shown only while the version it was opened on is still the one on screen, so every path that
+     moves `activeTailoring` — the dropdown, a new version, a delete, an undo, opening another
+     résumé — closes it without having to remember to. Its sibling `askVersionDrop` needs no id:
+     nothing can change the active version while the delete question is up. */
+  let renamingVersionId = null;
   /* Which **Saved job** the version about to be created is for, or null for one named by hand.
      It is the popover's state rather than the document's: it lives only between opening the menu
      and creating the version, and `addTailoring` is where it stops being a UI fact and becomes
@@ -539,8 +554,8 @@
    *  the company is what tells two applications apart; the same `·` the result cards and the
    *  Résumés list already join fields with. A row with no company is its title alone.
    *
-   *  It is a starting point, not a lock — the field it fills is editable before Create, which is
-   *  the only chance to name it: nothing renames a Tailoring afterwards.
+   *  It is a starting point, not a lock — the field it fills is editable before Create, and
+   *  "Rename" in the same group changes it afterwards.
    *
    *  No empty-name fallback, because a Saved job cannot have one: `POST /saved` refuses a body
    *  with no title (deploy/hf-space/app.py), so every row here has at least that. `createVersion`
@@ -589,7 +604,13 @@
       esc(t.name) + '</option>').join('');
     pick.value = d.activeTailoring || '';
     const asking = askVersionDrop && !!d.activeTailoring;
-    el('rb-version-del').hidden = !d.activeTailoring || asking;
+    const naming = !!renamingVersionId && d.activeTailoring === renamingVersionId;
+    el('rb-version-del').hidden = !d.activeTailoring || asking || naming;
+    el('rb-version-ren').hidden = !d.activeTailoring || asking || naming;
+    /* The field's VALUE is seeded where the field is opened, not here: this runs on every
+       keystroke elsewhere in the tab, and writing the stored name back into a box someone is
+       typing in would undo them a character at a time. */
+    el('rb-version-rename').hidden = !naming;
     el('rb-version-confirm').hidden = !asking;
     if (asking) {
       el('rb-version-confirm-text').textContent =
@@ -1571,6 +1592,26 @@
       '</span></div>').join('');
   }
 
+  /** How far each axis moves when the document changes sheet — for a free-positioning layout,
+   *  whose blocks carry inches measured against the sheet they were placed on. Null for every
+   *  flow layout, which has no such blocks and wants the sheet changed and nothing else.
+   *
+   *  The starter is the reason this exists. It places by the Layout's own page because it is
+   *  handed a builder and no document — and it could not do otherwise: a new résumé is minted
+   *  with no `paper` at all, so the sheet in force at starter time IS the Layout's. Handing it a
+   *  document would therefore have changed nothing here. The sheet only ever differs LATER, when
+   *  somebody picks A4 in the Design pane, and at that moment the blocks a person placed by hand
+   *  need re-fitting every bit as much as the four the starter placed. Measured before the fix:
+   *  a fresh `free-canvas` document switched to A4 reported two "Runs off the right-hand edge"
+   *  warnings, on blocks the user had never touched. */
+  function paperScale(paperId) {
+    const lay = layout();
+    if (!lay.caps.resize.includes('box')) return null;
+    const before = Layouts.usable(Layouts.pageFor(lay, doc()));
+    const after = Layouts.usable(Layouts.pageFor(lay, { paper: paperId }));
+    return { x: after.wide / before.wide, y: after.tall / before.tall };
+  }
+
   /* ---- documents -------------------------------------------------------------------------- */
 
   function startDocument(layoutId, filled) {
@@ -1856,6 +1897,9 @@
     el('rb-version').addEventListener('change', e => {
       selectedId = null;
       askVersionDrop = false;
+      /* The id keeps the field off the screen for another version, but not out of memory —
+         without this, switching away and back would reopen it on the name typed last time. */
+      renamingVersionId = null;
       store.dispatch(Cmd.activateTailoring(e.target.value || null));
     });
     /* Naming a version was a `window.prompt`: a modal box drawn outside the page, unstyled, and
@@ -1880,8 +1924,7 @@
     el('rb-version-create').addEventListener('click', createVersion);
     /* Picking a job fills the name rather than creating the version outright. Two reasons, and
        the second is not taste: the free-text field and the picker then converge on one path that
-       makes a version, and the name stays editable for the one moment it can be — no control
-       renames a Tailoring afterwards. */
+       makes a version, and the name stays editable before it is committed. */
     el('rb-version-jobs').addEventListener('click', e => {
       const hit = e.target && e.target.closest && e.target.closest('[data-saved]');
       if (!hit) return;
@@ -1896,6 +1939,53 @@
     /* Enter in the name field is what a text field with one button beside it promises. */
     el('rb-version-name').addEventListener('keydown', e => {
       if (e.key === 'Enter') { if (e.preventDefault) e.preventDefault(); createVersion(); }
+    });
+
+    /* Renaming one. `Cmd.renameTailoring` has existed since Tailorings did and no control on the
+       page reached it, so a version's name was fixed at the moment it was created — which is the
+       one thing this feature's whole model is meant to spare you: ten applications became ten
+       names you could not change in one dropdown. The field opens in the bar rather than in a
+       popover because it is about the version the dropdown beside it is naming, and it is the
+       same shape the delete question already uses. */
+    el('rb-version-ren').addEventListener('click', () => {
+      const tailoring = Doc.tailoringOf(doc());
+      if (!tailoring) return;
+      askVersionDrop = false;
+      renamingVersionId = tailoring.id;
+      const box = el('rb-version-rename-name');
+      box.value = tailoring.name || '';
+      versionPaint();
+      if (box.focus) box.focus();
+    });
+    /* Put away without writing anything — and the focus back on the button that opened it,
+       rather than on the <body> the hidden field leaves it on. */
+    const closeRename = () => {
+      renamingVersionId = null;
+      versionPaint();
+      const opener = el('rb-version-ren');
+      if (opener.focus) opener.focus();
+    };
+    const saveRename = () => {
+      const tailoring = Doc.tailoringOf(doc());
+      const name = (el('rb-version-rename-name').value || '').trim();
+      const stale = !tailoring || tailoring.id !== renamingVersionId;
+      closeRename();
+      /* The field names ONE version. If the one on screen is no longer it, this writes nothing —
+         `versionPaint` has already put the field away, so only a stale event can arrive here, and
+         it must not land the old name on the new version. */
+      if (stale) return;
+      /* The same fallback `createVersion` uses, and for the same reason: a version with no name
+         at all is a blank row in the dropdown, which is worse than a dull one. */
+      store.dispatch(Cmd.renameTailoring(tailoring.id, name || 'Untitled version'));
+    };
+    el('rb-version-rename-save').addEventListener('click', saveRename);
+    el('rb-version-rename-cancel').addEventListener('click', closeRename);
+    /* Enter saves and Escape abandons — what a text field with two buttons beside it promises.
+       Escape is handled HERE and not in the document-level shortcut: that one closes popovers
+       and this is not one, and a field with the caret in it should answer its own keys. */
+    el('rb-version-rename-name').addEventListener('keydown', e => {
+      if (e.key === 'Enter') { if (e.preventDefault) e.preventDefault(); saveRename(); }
+      else if (e.key === 'Escape') { if (e.preventDefault) e.preventDefault(); closeRename(); }
     });
 
     /* And deleting one was a `window.confirm`. Two named buttons in the bar instead: the choice
@@ -2135,7 +2225,7 @@
     panel.addEventListener('change', e => {
       const slot = e.target.dataset ? e.target.dataset.slotFor : null;
       if (slot) store.dispatch(Cmd.setSlot(slot, e.target.value));
-      if (e.target.id === 'rb-paper-size') store.dispatch(Cmd.setPaper(e.target.value));
+      if (e.target.id === 'rb-paper-size') store.dispatch(Cmd.setPaper(e.target.value, paperScale(e.target.value)));
       const show = e.target.dataset ? e.target.dataset.show : null;
       if (show) {
         store.dispatch(Cmd.setHidden(show, !e.target.checked, activeTailoring()));

@@ -54,6 +54,24 @@
       .filter(v => typeof v === 'string' && v.trim());
   }
 
+  /** `declared`, with a `start`/`end` pair collapsed into the range the layouts print. Entry
+   *  types that declare neither come back unchanged, so this is `declared` for all of them. */
+  function datedFields(content, spec) {
+    if (!spec) return [];
+    const range = Layouts.dateRange(content);
+    const out = [];
+    let dated = false;
+    for (const f of spec.fields) {
+      if (f.key === 'start' || f.key === 'end') {
+        if (range && !dated) { out.push(range); dated = true; }
+        continue;
+      }
+      const value = content[f.key];
+      if (typeof value === 'string' && value.trim()) out.push(value);
+    }
+    return out;
+  }
+
   const TEXT_VISITORS = {
     header: (content, node, spec) => {
       const lines = [];
@@ -78,7 +96,18 @@
       if (node.type === 'education_entry') {
         return '- ' + [content.credential, content.status].filter(Boolean).join('   ');
       }
-      const own = declared(content, spec);
+      /* A start and an end are ONE fact, and the generic arm printed them as two adjacent
+         fields: a degree came out `INST   DCRED   DPL   June 2020   May 2024`, two bare dates
+         side by side in the one export an ATS parses. `work_entry` above has always joined them
+         with `to`; every other entry type that declares the pair — `degree_entry`,
+         `tech_project` — now does too, in the place the first of the two fields sits, so the
+         order the Component Type declares is still the order printed.
+
+         `certification` is deliberately untouched and its line is byte-identical: it declares one
+         date (`earned`), not a pair, so `CERT   ISS   March 2024   CID` is a single date between
+         two other facts and there is no range to join. A `certification` test below pins that,
+         so "unchanged" is asserted rather than assumed. */
+      const own = datedFields(content, spec);
       /* Every declared field, NOT `content.name` first. Preferring a known key and falling back
          only when it is absent looks safe and is not: `tech_project` has a `name` AND carries the
          stack it was built with and the dates it ran, so the shortcut printed the project's name

@@ -115,6 +115,9 @@ function loadEditor(options) {
   /* And the version-delete confirmation, which the template also ships closed. A stub that
      started it open would let "asking before deleting" pass without the editor asking. */
   get('rb-version-confirm').hidden = true;
+  /* And the rename field, likewise shipped closed. Started open it would let "Rename opens the
+     field" pass without the button doing anything. */
+  get('rb-version-rename').hidden = true;
   /* The paper and the miniature both sit inside a frame their painter reserves height on.
      600px of usable width against an 816px sheet, so `fitToWidth` has a real answer to give —
      at the stub's default 900 it clamps to 1 and every fit is indistinguishable from no fit. */
@@ -1460,6 +1463,237 @@ test('deleting a version asks in the bar, and Keep really keeps it', () => {
   el('rb-version-del').fire('click');
   el('rb-version-yes').fire('click');
   assert.equal(ctx.ResumeEditor.current().tailorings.length, 0, 'Delete did not delete it');
+});
+
+/* ---- renaming a version ----
+
+   `Cmd.renameTailoring` shipped with the model and no control anywhere called it, so a version's
+   name was fixed at the moment it was created. That is the one thing tailoring-as-a-difference is
+   supposed to spare you: ten applications, ten names, one dropdown, nothing editable. */
+
+/** Rename the active version through the controls the bar actually offers. */
+function renameVersion(el, name) {
+  el('rb-version-ren').fire('click');
+  el('rb-version-rename-name').value = name;
+  el('rb-version-rename-save').fire('click');
+}
+
+test('a version can be renamed after it is made, and the dropdown says so', () => {
+  const { ctx, el } = loadEditor();
+  newVersion(el, 'Acme, Backend Engineer');
+  const made = ctx.ResumeEditor.current().tailorings[0];
+
+  el('rb-version-ren').fire('click');
+  assert.equal(el('rb-version-rename').hidden, false, 'Rename opened nothing');
+  assert.equal(el('rb-version-rename-name').value, 'Acme, Backend Engineer',
+    'the field did not open on the name it is about to replace');
+  assert.equal(el('rb-version-ren').hidden, true, 'the field and the button that opens it are both up');
+
+  el('rb-version-rename-name').value = 'Razorpay · Staff Engineer';
+  el('rb-version-rename-save').fire('click');
+
+  const after = ctx.ResumeEditor.current().tailorings;
+  assert.equal(after.length, 1, 'renaming made a second version instead of renaming the one');
+  assert.equal(after[0].id, made.id, 'the version was replaced rather than renamed');
+  assert.equal(after[0].name, 'Razorpay · Staff Engineer', 'the new name never reached the document');
+  assert.equal(el('rb-version-rename').hidden, true, 'the field stayed open after Save');
+  assert.ok(el('rb-version').innerHTML.includes('Razorpay · Staff Engineer'),
+    'the dropdown still offers the old name, which is the only place a version is chosen');
+
+  assert.equal(ctx.ResumeEditor.current().activeTailoring, made.id,
+    'renaming deselected the version it renamed');
+});
+
+test('an open rename field never lands on a version it was not opened on', () => {
+  const { ctx, el } = loadEditor();
+  newVersion(el, 'Version A');
+  el('rb-version-ren').fire('click');
+  assert.equal(el('rb-version-rename').hidden, false, 'Rename opened nothing');
+
+  /* "Tailor for a job" sits two controls away and is NOT hidden while the field is open, so this
+     is a sequence a user can really perform. Measured before the fix: the field stayed on screen
+     holding A's name, Save wrote it onto B, and the document read ["Version A", "Version A"] —
+     the exact state a rename control exists to prevent. */
+  newVersion(el, 'Version B');
+  assert.equal(el('rb-version-rename').hidden, true,
+    'the field is still up, now aimed at a version it was never opened on');
+  assert.equal(el('rb-version-ren').hidden, false, 'and the button that opens it never came back');
+
+  /* And the event itself, not only the chrome: a Save that arrives anyway writes nothing. */
+  el('rb-version-rename-save').fire('click');
+  assert.deepEqual(ctx.ResumeEditor.current().tailorings.map(t => t.name), ['Version A', 'Version B'],
+    'a stale Save renamed the new version after the old one');
+});
+
+test('renaming a version keeps every word it had reworded', () => {
+  const { ctx, el, panel } = loadEditor();
+  const D = ctx.ResumeDocument;
+  const bullet = D.flatten(ctx.ResumeEditor.current()).filter(n => n.type === 'bullet')[1];
+  newVersion(el, 'Acme, Backend Engineer');
+  /* One reworded block, which is what a Tailoring IS — a pick pointing at a Variant. A rename
+     that dropped it would be a rename that quietly threw the tailoring away, and the version
+     would go back to reading the master's words with nothing saying so. */
+  panel.fire('input',
+    { target: target({ node: bullet.id, field: 'text' }, { type: 'textarea', value: 'Tailored for Acme' }) });
+  const before = ctx.ResumeEditor.current().tailorings[0];
+  const picked = before.picks[bullet.id];
+  assert.ok(picked, 'the edit never forked a variant, so this test is not about a rename');
+
+  renameVersion(el, 'Razorpay · Staff Engineer');
+  const after = ctx.ResumeEditor.current().tailorings[0];
+  assert.equal(after.name, 'Razorpay · Staff Engineer');
+  assert.equal(after.picks[bullet.id], picked, 'the rename dropped the version\u2019s pick');
+  assert.equal(D.contentOf(ctx.ResumeEditor.current(), bullet.id).text, 'Tailored for Acme',
+    'the version went back to the master\u2019s words on being renamed');
+});
+
+test('Cancel leaves the name alone, and so does Escape in the field', () => {
+  const { ctx, el } = loadEditor();
+  newVersion(el, 'Acme, Backend Engineer');
+
+  el('rb-version-ren').fire('click');
+  el('rb-version-rename-name').value = 'Typed and thought better of';
+  el('rb-version-rename-cancel').fire('click');
+  assert.equal(el('rb-version-rename').hidden, true, 'Cancel left the field up');
+  assert.equal(ctx.ResumeEditor.current().tailorings[0].name, 'Acme, Backend Engineer',
+    'Cancel renamed it anyway');
+
+  el('rb-version-ren').fire('click');
+  el('rb-version-rename-name').value = 'And again';
+  el('rb-version-rename-name').fire('keydown', { key: 'Escape', preventDefault() {} });
+  assert.equal(el('rb-version-rename').hidden, true, 'Escape left the field up');
+  assert.equal(ctx.ResumeEditor.current().tailorings[0].name, 'Acme, Backend Engineer',
+    'Escape renamed it anyway');
+
+  /* Enter is what a text field with a button beside it promises. */
+  el('rb-version-ren').fire('click');
+  el('rb-version-rename-name').value = 'Committed with the keyboard';
+  el('rb-version-rename-name').fire('keydown', { key: 'Enter', preventDefault() {} });
+  assert.equal(ctx.ResumeEditor.current().tailorings[0].name, 'Committed with the keyboard',
+    'Enter did not save the rename');
+});
+
+test('there is nothing to rename on the master, and a blank name is refused', () => {
+  const { ctx, el } = loadEditor();
+  assert.equal(el('rb-version-ren').hidden, true,
+    'the master résumé offered a Rename, which would rename nothing');
+
+  newVersion(el, 'Acme, Backend Engineer');
+  assert.equal(el('rb-version-ren').hidden, false, 'a version on screen offers no way to rename it');
+
+  renameVersion(el, '   ');
+  assert.equal(ctx.ResumeEditor.current().tailorings[0].name, 'Untitled version',
+    'a blank name left a blank row in the dropdown');
+
+  /* Back to the master, and the control goes with it. */
+  el('rb-version').fire('change', { target: { value: '' } });
+  assert.equal(el('rb-version-ren').hidden, true, 'Rename is still offered with no version active');
+});
+
+test('renaming is undoable, like every other change to the document', () => {
+  const { ctx, el } = loadEditor();
+  newVersion(el, 'Acme, Backend Engineer');
+  renameVersion(el, 'Razorpay · Staff Engineer');
+  el('rb-undo').fire('click');
+  assert.equal(ctx.ResumeEditor.current().tailorings[0].name, 'Acme, Backend Engineer',
+    'undo did not take the rename back');
+});
+
+/* ---- changing the sheet under blocks that were placed on it ----
+
+   A free-canvas block carries inches, measured against the sheet it was placed on. Switching the
+   paper moves the margin out from under it: measured on a fresh `free-canvas` document switched
+   from Letter to A4, the layout's own overflow rule reported TWO "Runs off the right-hand edge"
+   warnings about blocks the user had never touched — 4.7 + 2.2 is 6.9in on a 6.67in measure, and
+   the rule was right. `starter` could not have prevented it: a new résumé is minted with no
+   `paper`, so the sheet in force where the starter runs is always the Layout's own, and handing
+   it a document would have changed nothing. */
+
+test('changing the paper re-fits the blocks that were placed against the old one', () => {
+  const { ctx, el, panel } = loadEditor();
+  const L = ctx.ResumeLayouts;
+  const lay = L.get('free-canvas');
+  const overflows = () => L.runRules(lay, ctx.ResumeEditor.current())
+    .filter(f => f.ruleId === 'overflow').map(f => f.message);
+
+  /* The starter document, on the layout it was written for — the "New — empty page" path, which
+     starts from whatever layout is on screen. */
+  ctx.ResumeEditor.changeLayout('free-canvas');
+  el('rb-new-blank').fire('click');
+  assert.equal(ctx.ResumeEditor.current().layoutId, 'free-canvas', 'the new document is on the wrong layout');
+  assert.deepEqual(overflows(), [], 'the starter hangs off its OWN sheet, which is a different bug');
+
+  const before = ctx.ResumeEditor.current().root.children.map(n => Object.assign({}, n.geometry));
+  panel.fire('change', { target: target({}, { id: 'rb-paper-size', value: 'a4' }) });
+  assert.equal(ctx.ResumeEditor.current().paper, 'a4', 'the sheet never changed');
+  assert.deepEqual(overflows(), [],
+    'blocks the user never touched hang off the right-hand edge of the sheet they were moved to');
+
+  /* Scaled, not clamped — so the trip back gives the inches back rather than leaving a
+     permanent 0.23in gutter down the right of a Letter page. */
+  panel.fire('change', { target: target({}, { id: 'rb-paper-size', value: 'letter' }) });
+  assert.deepEqual(ctx.ResumeEditor.current().root.children.map(n => Object.assign({}, n.geometry)),
+    before, 'Letter → A4 → Letter did not come back to where it started');
+});
+
+test('a flow layout changes sheet and leaves box coordinates alone', () => {
+  const { ctx, el, panel } = loadEditor();
+  /* Coordinates OUTLIVE the layout that gave them: nothing strips `geometry` when a document
+     moves to a flow layout, and `geometryFor` merely declines to read it. So a document that has
+     been on the canvas once is still carrying inches while it sits on a layout whose own
+     geometry is a margin in pixels — and rescaling those to a sheet writes a wrong answer into a
+     field nothing on screen would show. Which layouts get a scale is decided from `caps`, in the
+     editor, because Layer 1 does not read caps and the command only applies what it is told. */
+  ctx.ResumeEditor.changeLayout('free-canvas');
+  el('rb-new-blank').fire('click');
+  const placed = ctx.ResumeEditor.current().root.children.map(n => Object.assign({}, n.geometry));
+
+  ctx.ResumeEditor.changeLayout('headless-headhunter');
+  assert.ok(!ctx.ResumeLayouts.get('headless-headhunter').caps.resize.includes('box'),
+    'the layout this test calls a flow one now grants box geometry');
+  panel.fire('change', { target: target({}, { id: 'rb-paper-size', value: 'a4' }) });
+  assert.equal(ctx.ResumeEditor.current().paper, 'a4', 'the sheet never changed');
+  assert.deepEqual(ctx.ResumeEditor.current().root.children.map(n => Object.assign({}, n.geometry)),
+    placed, 'a layout with no boxes rescaled the boxes a previous layout had placed');
+});
+
+/* ---- the gutter drag's selector ----
+
+   The drag widens a date column in place, so it has to FIND that column in the rendered node —
+   by class, which is the one place the editor knows a layout's own CSS names. The selector read
+   `.hh-dates, .tc-dates`, and the second half could never match: a gutter gesture only starts on
+   a layout that grants `resize: ['gutter']`, and `two-column` — the only layout that emits
+   `.tc-dates` — grants `spaceAfter` alone.
+
+   Derived from the registry rather than restated, so the branch cannot come back by being typed
+   in again, and a tenth layout that really does grant a gutter is free to add its own class. */
+
+test('the gutter drag looks only for a class a gutter-granting layout renders', () => {
+  const { ctx } = loadEditor();
+  const { ResumeLayouts: L, ResumeDocument: D } = ctx;
+  const granting = L.all().filter(lay => lay.caps.resize.includes('gutter'));
+  assert.ok(granting.length, 'no layout grants a gutter at all, so the drag is unreachable');
+
+  const editor = fs.readFileSync(path.join(DIR, 'resume_editor.js'), 'utf8');
+  const branch = /gesture\.kind === 'gutter'[\s\S]*?querySelector\('([^']+)'\)/.exec(editor);
+  assert.ok(branch, 'the gutter branch no longer finds its column with a querySelector');
+  const wanted = branch[1].split(',').map(part => part.trim()).filter(Boolean);
+
+  /* What each granting layout actually puts on the page for a dated job — rendered, not assumed.
+     A class nobody renders is a branch nobody reaches. */
+  const dated = D.builder().named('G').usingLayout(granting[0].id)
+    .add('header', { fullName: 'A Name', email: 'a@example.com' })
+    .section('Experience', s => s.add('work_entry',
+      { role: 'Engineer', company: 'Acme', start: 'June 2023', end: 'March 2025' }))
+    .build();
+  const rendered = granting.map(lay => L.renderDocument(lay, Object.assign(
+    D.clone(dated), { layoutId: lay.id }))).join('\n');
+
+  for (const selector of wanted) {
+    assert.ok(rendered.includes(selector.slice(1) + '"') || rendered.includes(selector.slice(1) + ' '),
+      'the gutter drag hunts for ' + selector + ', which no gutter-granting layout renders — ' +
+      'that branch can never run');
+  }
 });
 
 test('a résumé is deleted only after the row itself asks', () => {
