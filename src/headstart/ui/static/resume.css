@@ -273,6 +273,10 @@
 .rb-aside { display: flex; flex-direction: column; gap: 12px; min-width: 0;
   position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
 @media (max-width: 1000px) { .rb-aside { position: static; max-height: none; } }
+/* Same trap as the miniature: the gallery puts this column away while it holds the stage, and
+   `display: flex` above would have outranked the attribute and left Design and Keywords on
+   screen beside a sheet that is no longer there. */
+.rb-aside[hidden] { display: none !important; }
 
 .rb-card { background: var(--raise); border: 1px solid var(--rule); border-radius: var(--r-lg);
   padding: 12px; min-width: 0; }
@@ -293,6 +297,10 @@
   background: var(--raise); border: 1px solid var(--rule); border-radius: var(--r-lg);
   color: var(--ink); font: inherit; cursor: pointer; text-align: left; }
 .rb-minicard:hover { border-color: var(--accent); }
+/* `display` on the class beats the `hidden` attribute's UA default, so putting the miniature
+   away needs saying twice. Without this the toggle set the attribute, flipped its own label, and
+   changed nothing on screen. */
+.rb-minicard[hidden] { display: none !important; }
 /* Capped, and clipped rather than scrolled: a three-page résumé's miniature is 740px tall, which
    would push Checks off the bottom of the column it shares. The count in words below says what
    the clipping does not. */

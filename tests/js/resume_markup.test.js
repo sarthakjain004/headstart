@@ -155,3 +155,42 @@ test('the print rules bring the hidden workspace back, or Ctrl+P prints a blank 
   assert.match(block[1], /\.rb-paper-wrap\s*\{[^}]*height:\s*auto\s*!important/);
   assert.match(block[1], /\.rb-paper-wrap\s*\{[^}]*max-height:\s*none\s*!important/);
 });
+
+/* ---- hiding something actually hides it ----
+
+   The `hidden` attribute's only power is a UA rule of `display: none`, and any `display` in this
+   stylesheet outranks it. So every element the editor puts away by setting `.hidden` needs its
+   class to say `display: none` under `[hidden]` as well — six rules here already do, and the
+   miniature's did not: the toggle set the attribute, relabelled its own button, and changed
+   nothing on screen.
+
+   This derives the list rather than restating it, so an element toggled tomorrow is covered
+   without anyone remembering to add it here. */
+
+test('every element the editor hides has a class that agrees it is hidden', () => {
+  const editor = fs.readFileSync(
+    path.join(UI, 'static', 'resume', 'resume_editor.js'), 'utf8');
+  const html = fs.readFileSync(TEMPLATE, 'utf8');
+  const css = fs.readFileSync(CSS, 'utf8');
+
+  const hiddenIds = new Set();
+  const assign = /el\('([\w-]+)'\)\.hidden\s*=/g;
+  let m;
+  while ((m = assign.exec(editor))) hiddenIds.add(m[1]);
+  assert.ok(hiddenIds.size >= 3,
+    'found almost nothing the editor hides — this walk has stopped matching the code');
+
+  const offenders = [];
+  for (const id of hiddenIds) {
+    const tag = new RegExp('<[^>]*\\bid="' + id + '"[^>]*>').exec(html);
+    if (!tag) continue;                       // built at runtime, not in the static skeleton
+    const classes = (/class="([^"]*)"/.exec(tag[0]) || [, ''])[1].split(/\s+/).filter(Boolean);
+    for (const cls of classes) {
+      const rule = new RegExp('\\.' + cls + '\\s*\\{[^}]*\\}').exec(css);
+      if (!rule || !/display:/.test(rule[0])) continue;      // no display to outrank the attribute
+      if (!new RegExp('\\.' + cls + '\\[hidden\\]').test(css)) offenders.push(id + ' (.' + cls + ')');
+    }
+  }
+  assert.deepEqual(offenders, [],
+    'these set display on a class, so setting .hidden on them changes nothing on screen');
+});

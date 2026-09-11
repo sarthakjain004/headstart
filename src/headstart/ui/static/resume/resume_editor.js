@@ -1485,6 +1485,10 @@
     el('rb-mini-toggle').addEventListener('click', () => {
       const hide = !el('rb-mini').hidden;
       showMini(!hide);
+      /* `miniPaint` refuses to draw into a hidden frame, so bringing it back has to ask for the
+         paint it skipped — otherwise the miniature returns as an empty sheet and stays that way
+         until some unrelated edit repaints it. */
+      if (!hide) miniPaint();
       try { window.localStorage.setItem(MINI_OFF, hide ? '1' : ''); } catch (err) { /* not fatal */ }
     });
 
