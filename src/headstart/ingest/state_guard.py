@@ -83,7 +83,7 @@ from headstart import log
 # forbid intra-package use — and it carries the fail-closed guard on a Hub that omits `siblings`,
 # which this module must not reimplement: a fingerprint over an empty listing would compare
 # equal to an empty prefix and wave through exactly the overwrite this file exists to stop.
-from headstart.ingest.state_fetch import _siblings
+from headstart.ingest.state_fetch import _siblings, retry_hub
 
 _log = log.get(__name__, __spec__)
 
@@ -97,7 +97,9 @@ def _under(repo: str, prefix: str, token: str | None) -> dict[str, str]:
     """``{repo-relative path: blob id}`` for every file under ``prefix``, from one Hub request."""
     prefix = prefix.rstrip("/") + "/"
     out: dict[str, str] = {}
-    for sibling in _siblings(repo, token):
+    # Retried on ADR-0033's ladder. This call brackets the fetch on the critical path of the job
+    # that publishes everything, so a transient Hub failure must cost a wait, not the run.
+    for sibling in retry_hub(f"listing {prefix}", lambda: _siblings(repo, token)):
         name = sibling.rfilename
         if not name.startswith(prefix):
             continue

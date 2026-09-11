@@ -22,6 +22,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import headstart.ingest.state_fetch as sf
 import headstart.ingest.state_guard as sg
 
 REPO = "imPoseidon/headstart-index"
@@ -177,3 +178,42 @@ def test_a_record_for_another_repo_is_refused(tmp_path, monkeypatch):
     guard = tmp_path / "guard.json"
     sg.record(guard, REPO, "data/lancedb", None)
     assert sg.verify(guard, "imPoseidon/some-other-dataset", "data/lancedb", None) == 1
+
+
+def test_a_transient_hub_failure_does_not_kill_the_guard(tmp_path, monkeypatch):
+    """The regression this guard introduced and then closed: `record`/`verify` bracket the fetch on
+    the critical path of the job that publishes everything, so one 503 must cost a wait, not the
+    run. Before `retry_hub` the call was bare and the merge job died on it."""
+    monkeypatch.setattr(sf.time, "sleep", lambda s: None)
+    calls = {"n": 0}
+
+    def flaky(repo, token):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("Hub 503")
+        return _listing(BASE)
+
+    monkeypatch.setattr(sg, "_siblings", flaky)
+    assert sg.record(tmp_path / "guard.json", REPO, "data/lancedb", None) == 0
+    assert calls["n"] == 2
+
+
+def test_verify_retries_too_not_only_record(tmp_path, monkeypatch):
+    """Both guard entry points sit on the critical path; `verify` is the one immediately before
+    the upload, so a transient failure there is the more expensive of the two to be fatal."""
+    monkeypatch.setattr(sf.time, "sleep", lambda s: None)
+    _serve(monkeypatch, BASE)
+    guard = tmp_path / "guard.json"
+    sg.record(guard, REPO, "data/lancedb", None)
+
+    calls = {"n": 0}
+
+    def flaky(repo, token):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("Hub 503")
+        return _listing(BASE)
+
+    monkeypatch.setattr(sg, "_siblings", flaky)
+    assert sg.verify(guard, REPO, "data/lancedb", None) == 0
+    assert calls["n"] == 2
