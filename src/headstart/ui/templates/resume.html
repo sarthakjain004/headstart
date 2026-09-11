@@ -1,6 +1,13 @@
-{# The Résumé tab (ADR-0123). Everything here is client-side: no route, no endpoint, and no
-   résumé text ever reaches the server — see resume_repository.js and ADR-0041. The skeleton is
-   static so the panel is legible before the scripts run; resume_editor.js fills the panes.
+{# The Résumé tab (ADR-0123, ADR-0124). The editor is entirely client-side and the browser is
+   the working copy: every keystroke is written to this browser's own storage and to nothing
+   else. There is now one way a résumé can leave it, and it is a switch the Account throws for
+   one résumé at a time — "Keep a copy on my account", below, which stores that document in the
+   private dataset the rest of an Account's records live in. Off by default, per résumé, and
+   nothing else on this tab talks to the server. See resume_sync.js, ADR-0124 and ADR-0041 (whose
+   rule for the pasted-in **Résumé** — read once, discarded — is untouched by any of this).
+
+   The skeleton is static so the panel is legible before the scripts run; resume_editor.js
+   fills the panes.
 
    TWO SEGMENTS — Edit and Preview (ADR-0128), narrowing ADR-0125's side-by-side arrangement.
    Writing a résumé and looking at one are two different sittings, and giving each the whole
@@ -54,6 +61,10 @@
     <div class="rb-pop" id="rb-pop-open" hidden>
       <div class="rb-pop-head">Your résumés <button class="ghost rb-mini" id="rb-import">Import .json</button></div>
       <div id="rb-doclist" class="rb-doclist"></div>
+      {# Résumés this browser has never seen, offered to be pulled down (ADR-0124). Always
+         present, empty on a deployment with no account store, so the editor needs no null
+         check for a container that holds nothing. #}
+      <div id="rb-doclist-remote" class="rb-doclist-remote"></div>
       {# Two named buttons rather than one "New" behind a confirm() asking "start from the worked
          example? OK / Cancel". A modal that spends the user's only decision on an OK-or-Cancel it
          has to read twice is the same defect as an unlabelled control. #}
@@ -61,6 +72,31 @@
         <button class="ghost rb-mini" id="rb-new">New — from the worked example</button>
         <button class="ghost rb-mini" id="rb-new-blank">New — empty page</button>
       </div>
+      {# Where this résumé is kept, and the one control that changes the answer (ADR-0124).
+
+         It is HERE and not in the bar on purpose. The bar is the document, the version and the
+         actions (ADR-0128), and bolting a fourth group onto it is the "everything bundled
+         together" complaint that produced the two-segment split in the first place. This
+         popover is already the panel about where résumés live — it holds the storage sentence
+         below — so the switch sits beside the consequence it causes rather than three rows
+         away from it, which is what ADR-0124 decision 2 asks for in as many words.
+
+         Rendered only where an account copy is actually possible: `resume_sync_on` is false on
+         a deployment with no sign-in or no Subscriptions dataset, and an undefined name renders
+         falsy, so a renderer that forgets the flag shows no switch at all. That is the safe
+         direction — a control that offers to store something nothing can store is worse than
+         no control. #}
+      {% if resume_sync_on %}
+      <div class="rb-account" id="rb-account">
+        <div class="rb-account-row">
+          <label class="rb-account-switch"><input type="checkbox" id="rb-sync">
+            <span>Keep a copy on my account</span></label>
+          <span class="spacer"></span>
+          <span class="note" id="rb-sync-state" role="status"></span>
+          <button class="ghost rb-mini" id="rb-sync-now" hidden>Save now</button>
+        </div>
+      </div>
+      {% endif %}
       <p class="note rb-storage" id="rb-storage"></p>
     </div>
 

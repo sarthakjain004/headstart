@@ -16,6 +16,7 @@
   const Repo = root.ResumeRepository;
   const Export = root.ResumeExport;
   const Decorators = root.ResumeDecorators;
+  const AccountSync = root.ResumeSync;
   const Cmd = Doc.Commands;
   const esc = Layouts.esc;
 
@@ -23,6 +24,9 @@
 
   let store = null;
   let repository = null;
+  /* The account copy (ADR-0124). Null on a deployment that keeps none — every use is guarded,
+     because the tab must work identically with no account behind it. */
+  let sync = null;
   let selectedId = null;
   let zoom = 1;
   let booted = false;
@@ -1386,23 +1390,84 @@
   function docListPaint() {
     const rows = repository.list();
     const current = doc();
+    const onAccount = new Set((sync ? sync.rows() : []).map(r => r.id));
     el('rb-doclist').innerHTML = rows.length ? rows.map(r =>
       '<div class="rb-docrow' + (current && r.id === current.id ? ' on' : '') + '">' +
       '<button class="rb-docopen" data-open="' + esc(r.id) + '">' + esc(r.name || 'Untitled') +
       '<span class="note">' + esc((Layouts.get(r.layoutId) || {}).label || r.layoutId) + ' · ' +
-      esc(String(r.updatedAt || '').slice(0, 10)) + '</span></button>' +
+      esc(String(r.updatedAt || '').slice(0, 10)) +
+      (onAccount.has(r.id) ? ' · on your account' : '') + '</span></button>' +
       '<button class="ghost rb-mini danger" data-drop="' + esc(r.id) + '" title="Delete">×</button>' +
       '</div>').join('') : '<p class="note">Nothing saved yet.</p>';
 
-    /* States what is true TODAY, and marks what is decided but unbuilt as exactly that. The
-       previous wording — "never uploaded" — was an unconditional promise made while ADR-0124 had
-       already accepted an opt-in account sync, so it was a sentence the product had decided to
-       break. */
-    el('rb-storage').textContent = repository.durable
-      ? 'Saved in this browser and nowhere else — nothing here is uploaded. Clearing site data ' +
-        'deletes it, so keep a JSON backup. Saving to your account is planned, and will be ' +
-        'per-résumé and off unless you turn it on.'
+    /* The other half of the list, and the reason the account copy is worth having at all: a
+       résumé this browser has never seen. On a new machine, or after a cleared cache, the
+       local list above is empty and these are the only rows there are — so leaving them out
+       would have made "synced" true and useless in the same change. */
+    const here = new Set(rows.map(r => r.id));
+    const elsewhere = (sync ? sync.rows() : []).filter(r => !here.has(r.id));
+    el('rb-doclist-remote').innerHTML = elsewhere.length
+      ? '<p class="rb-doclist-head">On your account, not on this device</p>' + elsewhere.map(r =>
+        '<button class="rb-docopen" data-pull="' + esc(r.id) + '">' + esc(r.name || 'Untitled') +
+        '<span class="note">' + esc(String(r.updatedAt || '').slice(0, 10)) +
+        ' · open a copy here</span></button>').join('')
+      : '';
+
+    /* What is true right now for THIS résumé, never a general claim about the product. The
+       wording before this said "nothing here is uploaded" and, later, that account saving was
+       "planned" — both were accurate when written and both stop being true the moment the
+       switch above exists, which is the worst kind of stale sentence to leave in a privacy
+       claim. */
+    /* The last clause is only offered where it is available: a signed-out session, or a
+       deployment with no account store, would otherwise be told to use a switch that is
+       disabled or absent. */
+    const offer = sync && sync.status().state === 'ready'
+      ? ' — or switch on "Keep a copy on my account" above for this résumé.' : '';
+    const kept = current && current.sync
+      ? 'Saved in this browser, and a copy is kept on your account because you switched it on ' +
+        'for this résumé. Turning it off, or deleting the résumé, removes that copy at once — ' +
+        'and it is out of the backups within 30 days.'
+      : 'Saved in this browser and nowhere else. Clearing site data deletes it, so keep a JSON ' +
+        'backup' + (offer || '.');
+    el('rb-storage').textContent = repository.durable ? kept
       : 'This browser is blocking storage, so nothing is being kept. Download a JSON backup before you leave.';
+    syncPaint();
+  }
+
+  /* ---- the account copy (ADR-0124) ---------------------------------------------------------
+     Every path here is best-effort and none of it blocks the editor: a signed-out session, a
+     deployment with no account store, or an unreachable Hub leaves the tab exactly as ADR-0123
+     shipped it, with the browser copy authoritative. */
+
+  /** How long ago, in the coarsest honest unit — a status line nobody reads twice. */
+  function ago(at) {
+    const seconds = Math.max(0, Math.round((Date.now() - at) / 1000));
+    if (seconds < 60) return 'just now';
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) return minutes + ' min ago';
+    const hours = Math.round(minutes / 60);
+    return hours < 24 ? hours + 'h ago' : Math.round(hours / 24) + 'd ago';
+  }
+
+  function syncPaint() {
+    const box = el('rb-account');
+    if (!box || !sync) return;
+    const d = doc();
+    const status = sync.status();
+    const on = !!(d && d.sync);
+    const toggle = el('rb-sync');
+    toggle.checked = on;
+    /* Signed out is the one state where the control must refuse rather than pretend. It is
+       disabled AND says why: a switch that flips and then silently stores nothing is the
+       dishonest failure this whole feature has to avoid. */
+    toggle.disabled = status.state === 'signed-out';
+    el('rb-sync-now').hidden = !on || status.state !== 'ready';
+    el('rb-sync-state').textContent =
+      status.state === 'signed-out' ? 'Sign in to use this'
+      : !on ? ''
+      : status.error ? 'Not saved — ' + status.error
+      : status.at ? 'Saved ' + ago(status.at)
+      : 'Saving…';
   }
 
   /** A word in the bar. `sticky` is for the things the user must not miss — a refused write
@@ -1609,13 +1674,41 @@
     el('rb-new').addEventListener('click', () => startFresh(true));
     el('rb-new-blank').addEventListener('click', () => startFresh(false));
 
+    el('rb-doclist-remote').addEventListener('click', e => {
+      const pull = e.target.closest('[data-pull]');
+      if (!pull || !sync) return;
+      flashSaved('Opening from your account…');
+      sync.pull(pull.dataset.pull).then(incoming => {
+        if (!incoming || !incoming.root) { flashSaved('That résumé could not be read.', true); return; }
+        repository.save(incoming);
+        openDocument(incoming.id);
+        flashSaved('Opened from your account.');
+      });
+    });
+
     el('rb-doclist').addEventListener('click', e => {
       const open = e.target.closest('[data-open]');
       const drop = e.target.closest('[data-drop]');
       if (open) openDocument(open.dataset.open);
       if (drop) {
         const id = drop.dataset.drop;
-        if (!window.confirm('Delete this résumé? It is only stored in this browser, so this cannot be undone.')) return;
+        /* The old sentence — "only stored in this browser" — is false for a résumé the Account
+           switched sync on for, and a delete confirmation is the worst place to be wrong about
+           where a thing lives. Which sentence is shown is read from the account list, not from
+           the open document: this row may be some other résumé. */
+        const kept = !!sync && sync.rows().some(r => r.id === id);
+        if (!window.confirm(kept
+          ? 'Delete this résumé? It is removed from this browser and from your account, and cannot be undone.'
+          : 'Delete this résumé? It is only stored in this browser, so this cannot be undone.')) return;
+        /* The local delete goes ahead either way — the user asked for it and this browser is
+           theirs. But a refused account delete must not be silent: the copy is still up there,
+           and the row it leaves behind in "On your account" is the only other sign of it. */
+        if (kept) {
+          sync.forget(id).then(gone => {
+            if (!gone) flashSaved('Still on your account — that did not go through.', true);
+            docListPaint();
+          });
+        }
         repository.remove(id);
         if (doc() && doc().id === id) {
           const next = repository.list()[0];
@@ -1625,6 +1718,29 @@
         docListPaint();
       }
     });
+
+    /* The opt-in, per résumé (ADR-0124 decision 2). Turning it ON pushes immediately, so the
+       switch means something the moment it is flipped; turning it OFF takes the copy off the
+       Account rather than merely stopping future pushes. */
+    if (el('rb-account') && sync) {
+      el('rb-sync').addEventListener('change', e => {
+        const d = doc();
+        if (!d) return;
+        /* Repainted only once it has settled. Painting straight away redrew the switch from a
+           document whose `sync` flag had not changed yet — turning it off, which waits for the
+           account copy to really be gone, visibly bounced back on first. */
+        sync.setEnabled(d, !!e.target.checked).then(docListPaint);
+      });
+      /* The explicit "Save to my account" ADR-0124 names. Everything else is coarse and
+         automatic; this is the one control that answers "is it up there NOW?". */
+      el('rb-sync-now').addEventListener('click', () => {
+        const d = doc();
+        if (!d || !d.sync) return;
+        store.flush();
+        sync.note(d);
+        sync.flush('save').then(syncPaint);
+      });
+    }
 
     el('rb-import').addEventListener('click', () => el('rb-file').click());
     el('rb-file').addEventListener('change', async e => {
@@ -1817,7 +1933,13 @@
        would cancel. */
     window.addEventListener('beforeunload', () => store && store.flush());
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden' && store) store.flush();
+      if (document.visibilityState !== 'hidden') return;
+      if (store) store.flush();
+      /* One of ADR-0124's three coarse events. It is not on `beforeunload`: a push is a network
+         round trip a closing page will not finish, and a half-sent commit is worse than a late
+         one. Leaving the tab is the moment somebody has stopped typing, and the browser copy is
+         already safe by the line above. */
+      if (sync) sync.flush('tab hidden');
     });
   }
 
@@ -1935,10 +2057,32 @@
     showMini(!miniOff);
 
     repository = Repo.detect(window);
+    /* The account copy, on a deployment that has one. `rb-account` is server-rendered only where
+       an Account can actually hold records, so its absence is the whole feature switch — and the
+       editor is identical without it. */
+    sync = el('rb-account') && AccountSync ? AccountSync.create({
+      repository,
+      live: () => doc(),
+      onChange: () => { docListPaint(); },
+      onMessage: (message, sticky) => flashSaved(message, sticky),
+      /* The conflict path (ADR-0124 decision 4): the Account's copy becomes the open document
+         and this device's is kept beside it under a new id. Nothing is discarded, and the user
+         is looking at the one that won rather than at a stale editor. */
+      onAdopt: incoming => {
+        selectedId = null;
+        expanded.clear();
+        store.adopt(incoming);
+        repository.setLastOpened(incoming.id);
+      },
+    }) : null;
     store = new Doc.Store(repository, {
       onError: result => flashSaved(result.reason === 'quota'
         ? 'This browser is out of storage — your last change is NOT saved. Download a JSON backup.'
         : 'Could not save to this browser. Download a JSON backup.', true),
+      /* The account push hangs off a completed local write, never off a keystroke and never off
+         a repaint — see the `_onSaved` comment in resume_document.js, and the write-cadence
+         header in resume_sync.js. This is the seam ADR-0124 says must not reuse the debounce. */
+      onSaved: saved => { if (sync) sync.note(saved); },
     });
     store.subscribe(paint);
 
@@ -1967,6 +2111,9 @@
     if (firstRun) store.flush();
 
     wire();
+    /* One listing, after the tab is usable rather than before it. What comes back changes only
+       the Résumés popover, so nothing on screen is waiting for it. */
+    if (sync) sync.refresh();
     if (!repository.durable) flashSaved('Storage is blocked here — download a backup.');
   }
 

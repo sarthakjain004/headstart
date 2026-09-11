@@ -71,6 +71,7 @@ function matches(el, sel) {
   if (sel === '[data-fmt]') return el.dataset.fmt != null;
   if (sel === '[data-open]') return el.dataset.open != null;
   if (sel === '[data-drop]') return el.dataset.drop != null;
+  if (sel === '[data-pull]') return el.dataset.pull != null;
   if (sel === 'input:not([type="checkbox"]), textarea, select') return !!el._caret;
   if (sel === '.rb-h') return el.dataset.handle != null;
   if (sel === '[data-node]') return el.dataset.node != null;
@@ -137,13 +138,27 @@ function loadEditor(options) {
     },
     _docHandlers: {},
   };
+  /* An account-configured deployment (ADR-0124). Without this the tab loads exactly as it
+     always has — `resume_sync.js` is absent, `rb-account` is not rendered, and the editor holds
+     no sync at all — which is the shape every other test in this file exercises and the shape a
+     Space with no Subscriptions dataset really serves. */
+  const wire = [];
+  if (opts.account) {
+    ctx.fetch = (url, init) => {
+      const method = (init && init.method) || 'GET';
+      wire.push({ url, method, body: init && init.body ? JSON.parse(init.body) : null });
+      const answer = (opts.account[method + ' ' + url] || opts.account[url] ||
+        { status: 200, body: { ok: true, rev: 1 } });
+      return Promise.resolve({ status: answer.status, json: () => Promise.resolve(answer.body) });
+    };
+  }
   ctx.globalThis = ctx;
   vm.createContext(ctx);
   /* The panel's own visibility, which the editor reads as it loads to decide whether the page
      already opened on this tab. Default is visible because every other test here is about a tab
      someone is looking at. */
   get('panel-resume').hidden = !!opts.panelHidden;
-  for (const name of ALL.concat(['resume_editor'])) {
+  for (const name of ALL.concat(opts.account ? ['resume_sync', 'resume_editor'] : ['resume_editor'])) {
     const file = path.join(DIR, name + '.js');
     vm.runInContext(fs.readFileSync(file, 'utf8'), ctx, { filename: file });
   }
@@ -152,7 +167,8 @@ function loadEditor(options) {
   if (!opts.skipBoot) ctx.ResumeEditor.boot();
   get('rb-paper')._docKeydown = ctx._docHandlers.keydown || [];
   get('rb-paper')._docPointer = ctx._docHandlers.pointerdown || [];
-  return { ctx, nodes, panel, segs, el: get };
+  get('rb-paper')._docVisibility = ctx._docHandlers.visibilitychange || [];
+  return { ctx, nodes, panel, segs, el: get, wire };
 }
 
 /** A localStorage stand-in, pre-loaded with documents. `ResumeRepository.detect` probes it with
@@ -912,4 +928,123 @@ test('a page that opened on another tab pays nothing until the résumé tab is o
   const { el } = loadEditor({ skipBoot: true, panelHidden: true });
   assert.equal(el('rb-paper').innerHTML, '',
     'every visitor to Search or Trends now builds and renders a document they never asked for');
+});
+
+/* ---- the account copy (ADR-0124, ADR-0131) -------------------------------------------------
+   These drive the REAL editor against a stubbed wire. What is being checked is the wiring the
+   browser pass cannot cover cheaply — that the switch is connected to the sync layer and not to
+   the repository, that a delete tells the truth about where the résumé lives, and that a
+   deployment with no account store is unchanged. */
+
+/** Let the queued promises the wire returns actually run. */
+const settled = () => new Promise(resolve => setTimeout(resolve, 0));
+
+test('with no account store the tab is exactly what it was — no sync, no listing, no request', () => {
+  /* Real browser storage, so the storage sentence is the one a working browser is shown —
+     the MemoryRepository fallback prints a different one about storage being blocked. */
+  const { ctx, el } = loadEditor({ storage: fakeStorage() });  // no `account`: resume_sync.js is not even loaded
+  assert.equal(ctx.ResumeSync, undefined);
+  el('rb-open').fire('click');   // the storage sentence is painted with the Résumés popover
+  assert.ok(/Saved in this browser and nowhere else/.test(el('rb-storage').textContent));
+  assert.equal(el('rb-doclist-remote').innerHTML, '', 'account rows on a page with no account');
+});
+
+test('the switch stores this résumé, and the storage sentence stops saying "nowhere else"', () => {
+  const { ctx, el, wire } = loadEditor({ account: {}, storage: fakeStorage() });
+  assert.ok(ctx.ResumeSync, 'the sync module did not load');
+  el('rb-open').fire('click');   // the switch and the sentence both live in the Résumés popover
+  assert.ok(/nowhere else/.test(el('rb-storage').textContent), 'it claims a copy before there is one');
+
+  el('rb-sync').checked = true;
+  el('rb-sync').fire('change', { target: el('rb-sync') });
+  return settled().then(() => {
+    const push = wire.find(c => c.method === 'PUT');
+    assert.ok(push, 'flipping the switch stored nothing');
+    assert.equal(push.body.sync, true);
+    assert.equal(push.body.rev, 1, 'the first push did not offer revision 1');
+    assert.ok(/copy is kept on your account/.test(el('rb-storage').textContent),
+      'the storage sentence still says the résumé is in this browser and nowhere else');
+  });
+});
+
+test('forty keystrokes cost no commits; leaving the tab costs one', () => {
+  /* The end-to-end half of the cadence rule. What the module-level tests in
+     tests/js/resume_sync.test.js pin precisely — the interval, the dirty gate, the floor — this
+     one checks is actually WIRED: that a run of typing through the real editor reaches the wire
+     not at all, and that the tab going away reaches it once. */
+  const { ctx, el, wire } = loadEditor({ account: {} });
+  el('rb-sync').checked = true;
+  el('rb-sync').fire('change', { target: el('rb-sync') });
+  return settled().then(() => {
+    const before = wire.filter(c => c.method === 'PUT').length;
+    const bullet = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current())
+      .filter(n => n.type === 'bullet')[0];
+    ctx.ResumeEditor.select(bullet.id);
+    for (let i = 0; i < 40; i++) {
+      el('rb-pane-document').fire('input', {
+        target: target({ node: bullet.id, field: 'text' }, { value: 'Shipped it ' + i }),
+      });
+    }
+    assert.equal(wire.filter(c => c.method === 'PUT').length, before,
+      'typing reached the account — the localStorage debounce was reused for the commit');
+
+    /* One of ADR-0124's three coarse events, and the one that matters most: the tab going away
+       is when somebody has actually stopped typing. */
+    ctx.document.visibilityState = 'hidden';
+    el('rb-paper')._docVisibility.forEach(fn => fn({}));
+    return settled();
+  }).then(() => {
+    assert.ok(wire.filter(c => c.method === 'PUT').length >= 1, 'tab-hide pushed nothing');
+  });
+});
+
+test('a résumé on the account but not in this browser is offered, and opens', () => {
+  const stored = {
+    schema: 1, id: 'rmfk3n2wxyz', name: 'From the desktop', layoutId: 'headless-headhunter',
+    updatedAt: '2026-09-09T00:00:00+00:00', root: { id: '__root__', type: '__root__', children: [] },
+    content: {}, variants: {}, tailorings: [], activeTailoring: null, theme: {}, sync: true, rev: 4,
+  };
+  const { ctx, el } = loadEditor({ account: {
+    '/resumes': { status: 200, body: [{ id: 'rmfk3n2wxyz', name: 'From the desktop',
+      layoutId: 'headless-headhunter', updatedAt: '2026-09-09T00:00:00+00:00', rev: 4 }] },
+    '/resumes/rmfk3n2wxyz': { status: 200, body: stored },
+  } });
+  return settled().then(() => {
+    /* The whole point of syncing: a browser that has never seen this document can still find
+       it. Without these rows a cleared cache is still an empty tab. */
+    assert.ok(el('rb-doclist-remote').innerHTML.includes('data-pull="rmfk3n2wxyz"'),
+      'the account row was not offered');
+    el('rb-doclist-remote').fire('click', { target: target({ pull: 'rmfk3n2wxyz' }) });
+    return settled();
+  }).then(() => {
+    assert.equal(ctx.ResumeEditor.current().id, 'rmfk3n2wxyz', 'pulling it did not open it');
+    assert.equal(ctx.ResumeEditor.current().name, 'From the desktop');
+  });
+});
+
+test('deleting a synced résumé says it leaves the account too, and takes it off', () => {
+  const rows = [{ id: 'rmfk3n2wxyz', name: 'On the account', layoutId: 'headless-headhunter',
+    updatedAt: '2026-09-09T00:00:00+00:00', rev: 1 }];
+  const asked = [];
+  const { el, wire, ctx } = loadEditor({ confirm: true,
+    account: { '/resumes': { status: 200, body: rows } } });
+  ctx.window.confirm = message => { asked.push(message); return true; };
+  return settled().then(() => {
+    el('rb-doclist').fire('click', { target: target({ drop: 'rmfk3n2wxyz' }) });
+    return settled();
+  }).then(() => {
+    /* The old sentence said "only stored in this browser", which is false for this row — and a
+       delete confirmation is the worst place in the product to be wrong about that. */
+    assert.ok(/from your account/.test(asked[0]), 'the confirmation still claims browser-only');
+    assert.ok(wire.some(c => c.method === 'DELETE' && c.url === '/resumes/rmfk3n2wxyz'),
+      'the account copy was left behind');
+  });
+});
+
+test('signed out disables the switch and says why, rather than pretending', () => {
+  const { el } = loadEditor({ account: { '/resumes': { status: 401, body: { error: 'sign in first' } } } });
+  return settled().then(() => {
+    assert.equal(el('rb-sync').disabled, true, 'a switch that flips and stores nothing');
+    assert.ok(/sign in/i.test(el('rb-sync-state').textContent));
+  });
 });

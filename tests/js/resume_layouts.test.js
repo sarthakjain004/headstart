@@ -772,6 +772,20 @@ test('a JSON export re-imports, under a new id, and survives an unknown layout',
   assert.throws(() => ctx.ResumeExport.importJson('{"hello":1}'), /not a HeadStart/);
 });
 
+test('importing a backup never inherits the account opt-in (ADR-0124)', () => {
+  const ctx = load(ALL);
+  const synced = JSON.parse(JSON.stringify(example(ctx)));
+  synced.sync = true;
+  synced.rev = 12;
+  const back = ctx.ResumeExport.importJson(JSON.stringify(synced));
+  /* A backup taken from a synced résumé carries both fields, and inheriting either would be an
+     import switching on server storage the Account never asked for — the one thing ADR-0124
+     decision 2 says must never happen. The revision would be wrong anyway: `importJson` mints a
+     fresh id, so there is nothing stored under it to be revision 12 of. */
+  assert.equal(back.sync, false, 'an import turned on account storage by itself');
+  assert.equal(back.rev, 0);
+});
+
 test('the download filename comes from the résumé’s own name, safely', () => {
   const ctx = load(ALL);
   const doc = example(ctx);

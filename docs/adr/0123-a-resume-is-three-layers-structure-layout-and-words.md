@@ -1,6 +1,6 @@
 # ADR-0123: A résumé is three layers — structure, layout, and words
 
-**Status:** accepted, amended by ADR-0127 · **Date:** 2026-09-09 · **Upholds ADR-0041 (the Résumé is read once and discarded; HeadStart's servers never store one). Sibling of ADR-0116 (the app's own palette stops at the paper's edge)**
+**Status:** accepted, amended by ADR-0124 (point 5 — the words no longer stay in the browser unconditionally: an Account may switch on an opt-in account copy per résumé) and ADR-0127 · **Date:** 2026-09-09 · **Upholds ADR-0041 (the Résumé is read once and discarded; HeadStart's servers never store one). Sibling of ADR-0116 (the app's own palette stops at the paper's edge)**
 
 ## Context
 
