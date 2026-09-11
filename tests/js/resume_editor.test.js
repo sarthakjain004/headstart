@@ -71,6 +71,8 @@ function matches(el, sel) {
   if (sel === '[data-fmt]') return el.dataset.fmt != null;
   if (sel === '[data-open]') return el.dataset.open != null;
   if (sel === '[data-drop]') return el.dataset.drop != null;
+  if (sel === '[data-dropyes]') return el.dataset.dropyes != null;
+  if (sel === '[data-dropno]') return el.dataset.dropno != null;
   if (sel === '[data-pull]') return el.dataset.pull != null;
   if (sel === 'input:not([type="checkbox"]), textarea, select') return !!el._caret;
   if (sel === '.rb-h') return el.dataset.handle != null;
@@ -107,6 +109,10 @@ function loadEditor(options) {
      block, so a stub that started them open made Escape a no-op on the page. */
   get('rb-pop-open').hidden = true;
   get('rb-pop-download').hidden = true;
+  get('rb-pop-version').hidden = true;
+  /* And the version-delete confirmation, which the template also ships closed. A stub that
+     started it open would let "asking before deleting" pass without the editor asking. */
+  get('rb-version-confirm').hidden = true;
   /* The paper and the miniature both sit inside a frame their painter reserves height on.
      600px of usable width against an 816px sheet, so `fitToWidth` has a real answer to give —
      at the stub's default 900 it clamps to 1 and every fit is indistinguishable from no fit. */
@@ -132,9 +138,13 @@ function loadEditor(options) {
       /* Null by default -> MemoryRepository, so no test touches a real store. A test that needs
          the localStorage path — "a résumé that was already in this browser" — passes one in. */
       localStorage: opts.storage || null,
-      prompt: () => (opts.prompt === undefined ? 'A version' : opts.prompt),
-      confirm: () => !!opts.confirm,
-      alert: () => {},
+      /* The three native dialogs, wired to THROW. Every one of them is gone from the editor —
+         they are modal, unstyled, outside the page's reading order, and one of them asked the
+         user to type what the app already knew. A test that merely stopped answering them would
+         pass on a reintroduction; this one fails loudly. */
+      prompt: () => { throw new Error('window.prompt is not a control this tab may use'); },
+      confirm: () => { throw new Error('window.confirm is not a control this tab may use'); },
+      alert: () => { throw new Error('window.alert is not a control this tab may use'); },
     },
     _docHandlers: {},
   };
@@ -187,6 +197,14 @@ function fakeStorage(docs) {
     for (const d of docs) s.setItem('headstart.resume.' + d.id, JSON.stringify(d));
   }
   return s;
+}
+
+/** Make a version, through the controls the page actually offers: the button opens a popover
+ *  holding a text field, and the field's own button creates it. */
+function newVersion(el, name) {
+  el('rb-version-new').fire('click');
+  el('rb-version-name').value = name === undefined ? 'A version' : name;
+  el('rb-version-create').fire('click');
 }
 
 /** A hand-built event target: the tab's listeners are delegated, so what they receive is an
@@ -535,7 +553,7 @@ test('the download menu sends the version on screen — except the JSON backup',
   write('Gave customers correct change by adding cash');
   const masterName = ctx.ResumeEditor.current().name;
 
-  el('rb-version-new').fire('click');                 // window.prompt answers "A version"
+  newVersion(el, 'A version');
   assert.equal((ctx.ResumeEditor.current().tailorings || []).length, 1, 'no version was created');
   write('Tailored for Acme');
 
@@ -562,7 +580,7 @@ test('a version that leaves a block out prints without it, and backs up with it'
   const D = ctx.ResumeDocument;
   const bullet = D.flatten(ctx.ResumeEditor.current()).filter(n => n.type === 'bullet')[1];
 
-  el('rb-version-new').fire('click');
+  newVersion(el);
   ctx.ResumeEditor.select(bullet.id);
   panel.fire('change', { target: target({ show: bullet.id }, { checked: false }) });
 
@@ -681,7 +699,7 @@ test('the tick writes the layer being edited, and the master reaches every versi
   assert.deepEqual(ctx.ResumeEditor.current().hidden, [bullets[0].id],
     'with no version active the tick must write the document itself');
 
-  el('rb-version-new').fire('click');
+  newVersion(el);
   panel.fire('change', { target: target({ show: bullets[1].id }, { checked: false }) });
   const doc = ctx.ResumeEditor.current();
   assert.deepEqual(doc.hidden, [bullets[0].id], 'the version edited the MASTER by surprise');
@@ -1025,17 +1043,33 @@ test('a résumé on the account but not in this browser is offered, and opens', 
 test('deleting a synced résumé says it leaves the account too, and takes it off', () => {
   const rows = [{ id: 'rmfk3n2wxyz', name: 'On the account', layoutId: 'headless-headhunter',
     updatedAt: '2026-09-09T00:00:00+00:00', rev: 1 }];
-  const asked = [];
-  const { el, wire, ctx } = loadEditor({ confirm: true,
-    account: { '/resumes': { status: 200, body: rows } } });
-  ctx.window.confirm = message => { asked.push(message); return true; };
+  const stored = {
+    schema: 1, id: 'rmfk3n2wxyz', name: 'On the account', layoutId: 'headless-headhunter',
+    updatedAt: '2026-09-09T00:00:00+00:00', root: { id: '__root__', type: '__root__', children: [] },
+    content: {}, variants: {}, tailorings: [], activeTailoring: null, theme: {}, sync: true, rev: 1,
+  };
+  const { el, wire } = loadEditor({ account: {
+    '/resumes': { status: 200, body: rows },
+    '/resumes/rmfk3n2wxyz': { status: 200, body: stored },
+  } });
   return settled().then(() => {
-    el('rb-doclist').fire('click', { target: target({ drop: 'rmfk3n2wxyz' }) });
+    /* Pulled down first, because a row you can delete is a row that is HERE — the × lives on the
+       local list, and the account-only list below it offers "open a copy" and nothing else. */
+    el('rb-doclist-remote').fire('click', { target: target({ pull: 'rmfk3n2wxyz' }) });
     return settled();
   }).then(() => {
+    el('rb-open').fire('click');
+    /* The × arms the question; it no longer deletes on the spot behind a modal box. */
+    el('rb-doclist').fire('click', { target: target({ drop: 'rmfk3n2wxyz' }) });
     /* The old sentence said "only stored in this browser", which is false for this row — and a
-       delete confirmation is the worst place in the product to be wrong about that. */
-    assert.ok(/from your account/.test(asked[0]), 'the confirmation still claims browser-only');
+       delete confirmation is the worst place in the product to be wrong about that. It is asked
+       in the row now, so it can also say WHICH résumé it means. */
+    assert.ok(/from your account/.test(el('rb-doclist').innerHTML),
+      'the confirmation still claims browser-only');
+    assert.ok(!wire.some(c => c.method === 'DELETE'), 'it deleted before anyone confirmed');
+    el('rb-doclist').fire('click', { target: target({ dropyes: 'rmfk3n2wxyz' }) });
+    return settled();
+  }).then(() => {
     assert.ok(wire.some(c => c.method === 'DELETE' && c.url === '/resumes/rmfk3n2wxyz'),
       'the account copy was left behind');
   });
@@ -1047,4 +1081,161 @@ test('signed out disables the switch and says why, rather than pretending', () =
     assert.equal(el('rb-sync').disabled, true, 'a switch that flips and stores nothing');
     assert.ok(/sign in/i.test(el('rb-sync-state').textContent));
   });
+});
+
+/* ---- the Checks panel at real volume ------------------------------------------------------
+   Measured on a résumé of four jobs with seven bullets each: 44 findings in a panel 7,598px
+   tall, from two rules. Each finding repeated the same 150-character explanation verbatim, and
+   not one of them said which bullet it was about. */
+
+test('a rule that fires many times is one group, explained once, naming the blocks', () => {
+  const { ctx, el, panel } = loadEditor();
+  const D = ctx.ResumeDocument;
+  const bullets = D.flatten(ctx.ResumeEditor.current()).filter(n => n.type === 'bullet');
+  assert.ok(bullets.length >= 3, 'the worked example no longer has enough bullets to group');
+  /* A weak opener and no result anywhere, on every bullet — so both rules fire on all of them,
+     which is the volume the panel could not carry. */
+  bullets.forEach((b, i) => panel.fire('input', {
+    target: target({ node: b.id, field: 'text' },
+      { type: 'textarea', value: 'Responsible for the till in shop number ' + (i + 1) }),
+  }));
+
+  const fired = ctx.ResumeEditor.findings().filter(f => f.ruleId === 'opening-verb');
+  assert.ok(fired.length >= 3, 'the rule under test fired ' + fired.length + ' times, too few to group');
+  const html = el('rb-pane-checks').innerHTML;
+
+  /* The explanation, once. It was printed once per occurrence — which is what made the panel
+     taller than three laptop screens. */
+  /* The explanation this layout's own `opening-verb` rule states, which every one of its
+     findings ends with. */
+  const shared = 'opens the bullet without saying what you did';
+  const copies = html.split(shared).length - 1;
+  assert.equal(copies, 1, 'the explanation is still repeated per finding: ' + copies + ' copies');
+
+  /* One group per rule, wearing its count. */
+  const heads = html.match(/class="rb-fgroup-head"/g) || [];
+  assert.equal(heads.length, new Set(ctx.ResumeEditor.findings().map(f => f.ruleId)).size,
+    'the findings are not grouped by rule');
+  assert.ok(html.includes('<span class="rb-fcount">' + fired.length + '</span>'),
+    'the group does not say how many blocks broke its rule');
+
+  /* And every finding names the block it is about, by that block's own opening words. */
+  for (const b of bullets.slice(0, 3)) {
+    const words = D.contentOf(ctx.ResumeEditor.current(), b.id).text.slice(0, 48);
+    assert.ok(html.includes(words), 'no finding names the bullet ' + JSON.stringify(words));
+  }
+});
+
+/* ---- Check coverage paints when it is clicked --------------------------------------------- */
+
+test('Check coverage marks the page at once, not on the next unrelated keystroke', () => {
+  const { el, panel } = loadEditor();
+  /* Through the delegated listener, which is the path the button really takes. */
+  const run = Object.assign(target({}), { id: 'rb-kw-run' });
+  el('rb-kw').value = 'Point of Sale';
+  panel.fire('click', { target: run });
+  /* Measured before this: the summary said "2 of 2 present · 100% in the top half" with zero
+     <mark> elements on the sheet, and typing one space into the name box then produced five. */
+  assert.ok(/<mark/.test(el('rb-paper').innerHTML),
+    'the page was not repainted, so the highlights arrive on some later change or not at all');
+  /* And emptying the box takes them off again, which the comment there claimed and the code
+     did not: that branch returned before either clearing the terms or repainting. */
+  el('rb-kw').value = '';
+  panel.fire('click', { target: run });
+  assert.ok(!/<mark/.test(el('rb-paper').innerHTML), 'the marks outlived the terms that drew them');
+});
+
+/* ---- no native dialogs --------------------------------------------------------------------
+   `window.prompt`, `window.confirm` and `window.alert` are modal, unstyled, outside the page's
+   own reading order, and answerable only by typing into a box the app drew nothing of. The stub
+   throws on all three (see `loadEditor`), so a reintroduction fails wherever it is called; this
+   reads the shipped file as well, because a path no test drives would otherwise slip through. */
+
+test('the editor calls none of the three native dialogs', () => {
+  const source = fs.readFileSync(path.join(DIR, 'resume_editor.js'), 'utf8');
+  const found = ['prompt', 'confirm', 'alert'].filter(fn => source.includes('window.' + fn + '('));
+  assert.deepEqual(found, [], 'these are back in the editor: ' + found.join(', '));
+});
+
+test('deleting a version asks in the bar, and Keep really keeps it', () => {
+  const { ctx, el } = loadEditor();
+  newVersion(el, 'Acme, Backend Engineer');
+  assert.equal(ctx.ResumeEditor.current().tailorings.length, 1);
+
+  el('rb-version-del').fire('click');
+  assert.equal(el('rb-version-confirm').hidden, false, 'nothing asked before deleting');
+  assert.ok(/Acme, Backend Engineer/.test(el('rb-version-confirm-text').textContent),
+    'the question does not name the version it would delete');
+  assert.equal(el('rb-version-del').hidden, true, 'the question and the button it replaces are both up');
+  assert.equal(ctx.ResumeEditor.current().tailorings.length, 1, 'it deleted before anyone answered');
+
+  el('rb-version-keep').fire('click');
+  assert.equal(el('rb-version-confirm').hidden, true, 'Keep left the question up');
+  assert.equal(ctx.ResumeEditor.current().tailorings.length, 1, 'Keep deleted it anyway');
+
+  el('rb-version-del').fire('click');
+  el('rb-version-drop').fire('click');
+  assert.equal(ctx.ResumeEditor.current().tailorings.length, 0, 'Delete did not delete it');
+});
+
+test('a résumé is deleted only after the row itself asks', () => {
+  const storage = fakeStorage([]);
+  const { ctx, el } = loadEditor({ storage });
+  const id = ctx.ResumeEditor.current().id;
+  el('rb-open').fire('click');
+
+  el('rb-doclist').fire('click', { target: target({ drop: id }) });
+  assert.ok(/data-dropyes="/.test(el('rb-doclist').innerHTML), 'the row did not ask');
+  assert.ok(storage.getItem('headstart.resume.' + id), 'it deleted before anyone answered');
+
+  el('rb-doclist').fire('click', { target: target({ dropno: id }) });
+  assert.ok(!/data-dropyes="/.test(el('rb-doclist').innerHTML), 'Keep left the question up');
+  assert.ok(storage.getItem('headstart.resume.' + id), 'Keep deleted it anyway');
+
+  el('rb-doclist').fire('click', { target: target({ drop: id }) });
+  el('rb-doclist').fire('click', { target: target({ dropyes: id }) });
+  assert.ok(!storage.getItem('headstart.resume.' + id), 'Delete did not delete it');
+});
+
+test('an unreadable import says so in the bar rather than in a modal box', () => {
+  const { el } = loadEditor();
+  el('rb-file').fire('change', {
+    target: { files: [{ text: () => Promise.resolve('{ not json') }], value: 'x' },
+  });
+  return settled().then(() => {
+    assert.ok(el('rb-saved').textContent, 'a failed import said nothing anywhere');
+  });
+});
+
+/* ---- two controls that contradicted each other -------------------------------------------- */
+
+test('the End date is switched off while “Still here” is ticked', () => {
+  const { ctx, el, panel } = loadEditor();
+  const entry = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current())
+    .find(n => n.type === 'work_entry');
+  ctx.ResumeEditor.select(entry.id);
+
+  const endField = () => {
+    const html = el('rb-pane-document').innerHTML;
+    const at = html.indexOf('data-field="end"');
+    assert.notEqual(at, -1, 'the End field is not in the form');
+    const tag = html.slice(html.lastIndexOf('<input', at), html.indexOf('>', at) + 1);
+    assert.ok(tag.includes('data-field="end"'), 'this is not the End field: ' + tag);
+    return tag;
+  };
+  const tick = on => panel.fire('input', {
+    target: target({ node: entry.id, field: 'current' }, { type: 'checkbox', checked: on }),
+  });
+
+  /* The worked example's first job IS a current one, so start by leaving it. */
+  tick(false);
+  assert.ok(!/disabled/.test(endField()), 'a job with no “Still here” tick cannot type an end date');
+
+  tick(true);
+  assert.ok(/disabled/.test(endField()),
+    '“Still here” is ticked and the End date still invites a date that is thrown away');
+  assert.ok(/Still here/.test(endField()), 'the field does not say which control settled it');
+
+  tick(false);
+  assert.ok(!/disabled/.test(endField()), 'unticking it left the field switched off');
 });

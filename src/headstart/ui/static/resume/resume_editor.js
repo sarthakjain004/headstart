@@ -370,7 +370,16 @@
       }));
     } else if (g.kind === 'move') {
       if (g.target) {
-        if (g.target.parentId == null && g.target.slot) store.dispatch(Cmd.setSlot(g.id, g.target.slot));
+        /* Only when the column really changes. This fired on EVERY top-level drop, so a drag
+           within one column pushed two undo entries — the second a visible no-op — and labelled
+           the whole move "Move to column". `UNDO_LIMIT` is 60, so a drag-heavy session spent
+           half of it undoing nothing. A node arriving from inside a section carries no slot of
+           its own; `moveNode` gives it the first one, which is what it is compared against. */
+        const moving = Doc.find(doc(), g.id);
+        const was = (moving && moving.slot) || (lay.slots[0] && lay.slots[0].id) || null;
+        if (g.target.parentId == null && g.target.slot && g.target.slot !== was) {
+          store.dispatch(Cmd.setSlot(g.id, g.target.slot));
+        }
         store.dispatch(Cmd.moveNode(g.id, g.target.parentId, masterIndex(g.target)));
       } else paint();
     } else if (g.kind === 'spaceAfter') {
@@ -498,6 +507,11 @@
      same thing (CONTEXT.md). The two words are deliberate and this is the only place they meet —
      everything below the view says `tailoring`, so a reader seeing both in one file is not looking
      at two concepts. */
+  /* Whether the bar is currently asking "delete this version?". It lives out here because
+     `versionPaint` runs on every keystroke and would otherwise put the Delete button back over
+     the question it had just asked. */
+  let askVersionDrop = false;
+
   function versionPaint() {
     const d = doc();
     const pick = el('rb-version');
@@ -506,7 +520,14 @@
       '<option value="' + esc(t.id) + '"' + (d.activeTailoring === t.id ? ' selected' : '') + '>' +
       esc(t.name) + '</option>').join('');
     pick.value = d.activeTailoring || '';
-    el('rb-version-del').hidden = !d.activeTailoring;
+    const asking = askVersionDrop && !!d.activeTailoring;
+    el('rb-version-del').hidden = !d.activeTailoring || asking;
+    el('rb-version-confirm').hidden = !asking;
+    if (asking) {
+      el('rb-version-confirm-text').textContent =
+        'Delete “' + (Doc.tailoringOf(d) || {}).name + '”? The master and every other version ' +
+        'keep every word.';
+    }
   }
 
   /* What the Content pane is currently showing. The caret guard below may only skip a repaint
@@ -552,7 +573,13 @@
     if (!holdsCaret(el('rb-pane-checks'))) checksPane();
   }
 
-  function fieldControl(nodeId, field, value) {
+  /* A field whose answer another control has already given. "Still here" and an End date are two
+     controls that contradict each other and nothing on screen said which one wins — the layouts'
+     own `dates` rule reads the tick and ignores the field, so the tick wins, and the field it
+     settles is switched off rather than left inviting an answer that is thrown away. */
+  const SETTLED_BY = Object.freeze({ end: 'current' });
+
+  function fieldControl(nodeId, field, value, settled) {
     const safeNode = esc(nodeId);
     const id = esc('rb-f-' + nodeId + '-' + field.key);
     const label = '<label for="' + id + '">' + esc(field.label) +
@@ -568,9 +595,12 @@
         safeNode + '" data-field="' + esc(field.key) + '" placeholder="' + esc(field.placeholder) + '">' +
         esc(value || '') + '</textarea></div>';
     }
-    return '<div class="rb-field">' + label + '<input id="' + id + '" data-node="' + safeNode +
+    return '<div class="rb-field' + (settled ? ' rb-field-off' : '') + '">' + label +
+      '<input id="' + id + '" data-node="' + safeNode +
       '" data-field="' + esc(field.key) + '" value="' + esc(value || '') + '" placeholder="' +
-      esc(field.placeholder) + '"></div>';
+      esc(field.placeholder) + '"' +
+      (settled ? ' disabled title="' + esc('Settled by “' + settled + '”. Untick it to type a date.') + '"' : '') +
+      '></div>';
   }
 
   /* ---- the document accordion --------------------------------------------------------------
@@ -678,12 +708,21 @@
   }
 
   /** Every field a block owns, as a grid. In a 400px rail each was a full row whatever it held. */
-  const fieldsHtml = (d, spec, node, override) =>
-    (spec.fields.length
-      ? '<div class="rb-fields">' + spec.fields.map((f, i) =>
-        fieldControl(node.id, override ? override(f, i) : f, Doc.contentOf(d, node.id)[f.key])).join('') +
-        '</div>'
-      : '');
+  const fieldsHtml = (d, spec, node, override) => {
+    if (!spec.fields.length) return '';
+    const content = Doc.contentOf(d, node.id);
+    /* The label of the tick that settles a field, or null — the words the user sees, so the
+       disabled field can say which control answered for it. */
+    const settledBy = f => {
+      const key = SETTLED_BY[f.key];
+      if (!key || !content[key]) return null;
+      const tick = spec.fields.find(other => other.key === key);
+      return tick ? tick.label : key;
+    };
+    return '<div class="rb-fields">' + spec.fields.map((f, i) =>
+      fieldControl(node.id, override ? override(f, i) : f, content[f.key], settledBy(f))).join('') +
+      '</div>';
+  };
 
   /** The action row a block carries: reorder without a mouse, duplicate, delete, and — under a
    *  version — the two tailoring choices. Alt + arrow does the same reorder from the keyboard;
@@ -1047,6 +1086,59 @@
     return Export.plainText(d) === starterText.get(d.layoutId);
   }
 
+  /** Split a group's messages into the tail they all share and the part each one owns.
+   *
+   *  A rule that fires twenty times states its explanation twenty times, verbatim: `result`
+   *  fired 24 times and `opening-verb` 20 on a résumé of four jobs, and the panel was 7,598px
+   *  tall because 44 copies of a 150-character paragraph were in it. The shared tail is printed
+   *  once under the group's heading and what is left on each row is the part that is genuinely
+   *  about that block — the quoted word `opening-verb` opens with, and nothing where every
+   *  message is identical. Split on spaces so the cut can never fall inside a word.
+   */
+  function sharedTail(messages) {
+    const words = messages.map(m => String(m).split(' '));
+    let n = 0;
+    while (words.every(w => n < w.length &&
+      w[w.length - 1 - n] === words[0][words[0].length - 1 - n])) n++;
+    return {
+      tail: words[0].slice(words[0].length - n).join(' '),
+      heads: words.map(w => w.slice(0, w.length - n).join(' ')),
+    };
+  }
+
+  /** What to call the block a finding is about. Nothing in this panel named one, so "24 bullets
+   *  have no result" was 24 identical rows and no way to tell which bullet each meant. A block's
+   *  own opening words are how somebody recognises their own sentence; the kind of block is the
+   *  fallback for one that has not been written yet. */
+  function findingWhere(d, nodeId) {
+    const node = nodeId ? Doc.find(d, nodeId) : null;
+    const spec = node ? Components.get(node.type) : null;
+    if (!node || !spec) return 'The résumé';
+    return rowTitle(d, spec, node).slice(0, 48);
+  }
+
+  /** Every finding of one rule, as one block: the rule named once, a count, the explanation
+   *  once, and one row per block that broke it. */
+  function findingGroupHtml(d, rule, list) {
+    const split = sharedTail(list.map(f => f.message));
+    /* The group wears the worst level in it, so a rule holding one error among its notes is not
+       drawn as a note. */
+    const worst = list.some(f => f.level === 'error') ? 'error'
+      : list.some(f => f.level === 'warn') ? 'warn' : 'note';
+    return '<section class="rb-fgroup rb-' + esc(worst) + '">' +
+      '<h3 class="rb-fgroup-head">' + esc(rule) +
+      '<span class="rb-fcount">' + list.length + '</span></h3>' +
+      (split.tail ? '<p class="rb-fgroup-why">' + esc(split.tail) + '</p>' : '') +
+      list.map((f, i) =>
+        '<button class="rb-finding rb-' + esc(f.level) + '"' +
+        (f.nodeId ? ' data-select="' + esc(f.nodeId) + '"' : ' disabled') + '>' +
+        '<span class="rb-finding-where">' + esc(findingWhere(d, f.nodeId)) + '</span>' +
+        (split.heads[i]
+          ? '<span class="rb-finding-msg">' + esc(split.heads[i]) + '</span>' : '') +
+        '</button>').join('') +
+      '</section>';
+  }
+
   function checksPane() {
     const found = findings();
     const lay = layout();
@@ -1061,10 +1153,17 @@
     if (!found.length) {
       out.push('<p class="rb-clear">Nothing to flag. Every rule this layout states is met.</p>');
     } else {
-      out.push(found.map(f =>
-        '<button class="rb-finding rb-' + esc(f.level) + '"' +
-        (f.nodeId ? ' data-select="' + esc(f.nodeId) + '"' : ' disabled') + '>' +
-        findingBody(f) + '</button>').join(''));
+      /* Grouped by rule, in the order the rules ran — which is the order a reader met them on
+         the page above, not an order invented here. */
+      const order = [];
+      const byRule = new Map();
+      for (const f of found) {
+        if (!byRule.has(f.ruleId)) { byRule.set(f.ruleId, []); order.push(f.ruleId); }
+        byRule.get(f.ruleId).push(f);
+      }
+      const d = view();
+      out.push(order.map(id =>
+        findingGroupHtml(d, byRule.get(id)[0].rule, byRule.get(id))).join(''));
     }
     el('rb-pane-checks').innerHTML = out.join('');
   }
@@ -1266,7 +1365,8 @@
         page.margin + page.unit + '">' +
         Layouts.renderDocument(lay, shown) + '</span></span>' +
         '<span class="rb-tname">' + esc(lay.label) +
-        (on ? '<span class="rb-tag">in use</span>' : '') + '</span>' +
+        (on ? '<span class="rb-tag">in use</span>' : '') +
+        '<span class="rb-tpages" id="rb-tpages-' + i + '"></span></span>' +
         (lay.summary ? '<span class="note">' + esc(lay.summary) + '</span>' : '') +
         (lay.blurb ? '<span class="note rb-tblurb">' + esc(lay.blurb) + '</span>' : '') +
         (lay.credit ? '<span class="note rb-credit">' + esc(lay.credit) + '</span>' : '') +
@@ -1285,8 +1385,20 @@
     sheet.textContent = sheets.join('\n');
 
     /* Scaled after the sheets are in the document, because the scale is measured off them —
-       see `fitSheet`. */
-    for (const sheetEl of grid.querySelectorAll('.rb-tsheet')) fitSheet(sheetEl, MINI_WIDTH);
+       see `fitSheet` — and then counted.
+
+       The gallery's copy used to promise "the dashed page-break line tells you if the new one
+       runs onto a second sheet" and `templatesPaint` never called the break painter: nine cards,
+       zero lines. Drawing them would not have been much of an answer either — at a 190px card a
+       hairline is all but invisible — so the count is said in words, the way the miniature
+       beside the form already says it, and the promise in the template says the same thing. */
+    Layouts.all().forEach((lay, i) => {
+      const sheetEl = el('rb-tmini-' + i);
+      const label = el('rb-tpages-' + i);
+      if (!sheetEl || !label || !fitSheet(sheetEl, MINI_WIDTH)) return;
+      const breaks = paintPageBreaks(sheetEl, Layouts.pageFor(lay, d));
+      label.textContent = breaks.length ? (breaks.length + 1) + ' pages' : '1 page';
+    });
   }
 
   function showTemplates(on) {
@@ -1320,6 +1432,11 @@
     if (!terms.length) {
       out.innerHTML = '';
       el('rb-kw-summary').textContent = '';
+      /* Emptying the box really does clear the marks now. The comment below said so while this
+         branch returned before either clearing the terms or repainting, so the previous check's
+         highlights stayed on the page with nothing left beside them to explain them. */
+      keywordTerms = [];
+      paint();
       return;
     }
     const text = Export.plainText(d);
@@ -1363,8 +1480,12 @@
       const at = firstAt(term);
       return { term, found: Decorators.mentions(text, term), early: at !== null && at < halfOfPageOne };
     });
-    /* Repaint so the page marks them. Set before the paint, cleared by emptying the box. */
+    /* Repaint so the page marks them, NOW. This set the terms and returned: measured straight
+       after clicking Check coverage the summary read "2 of 2 present · 100% in the top half"
+       with zero <mark> elements on the sheet, and typing one space into the name box then
+       produced five. A highlight that arrives on an unrelated keystroke is worse than none. */
     keywordTerms = terms;
+    paint();
     const hits = rows.filter(r => r.found).length;
     const earlyHits = rows.filter(r => r.early).length;
     el('rb-kw-summary').textContent = hits + ' of ' + rows.length + ' present · ' +
@@ -1398,17 +1519,37 @@
     closePopovers();
   }
 
+  /* Which row, if any, is currently asking to be confirmed. The confirmation used to be a
+     `window.confirm`; it is the row itself now, which is also the only place that can show you
+     WHICH résumé you are about to lose. */
+  let askDocDrop = null;
+
+  /* The old sentence — "only stored in this browser" — is false for a résumé the Account
+     switched sync on for, and a delete confirmation is the worst place to be wrong about where
+     a thing lives. Read from the account list, not from the open document: this row may be some
+     other résumé. */
+  const onAccount = id => !!sync && sync.rows().some(r => r.id === id);
+
   function docListPaint() {
     const rows = repository.list();
     const current = doc();
-    const onAccount = new Set((sync ? sync.rows() : []).map(r => r.id));
+    const accounted = new Set((sync ? sync.rows() : []).map(r => r.id));
+    if (askDocDrop && !rows.some(r => r.id === askDocDrop)) askDocDrop = null;
     el('rb-doclist').innerHTML = rows.length ? rows.map(r =>
       '<div class="rb-docrow' + (current && r.id === current.id ? ' on' : '') + '">' +
       '<button class="rb-docopen" data-open="' + esc(r.id) + '">' + esc(r.name || 'Untitled') +
       '<span class="note">' + esc((Layouts.get(r.layoutId) || {}).label || r.layoutId) + ' · ' +
       esc(String(r.updatedAt || '').slice(0, 10)) +
-      (onAccount.has(r.id) ? ' · on your account' : '') + '</span></button>' +
-      '<button class="ghost rb-mini danger" data-drop="' + esc(r.id) + '" title="Delete">×</button>' +
+      (accounted.has(r.id) ? ' · on your account' : '') + '</span></button>' +
+      (askDocDrop === r.id
+        ? '<span class="rb-confirm rb-confirm-row"><span class="note">' +
+          esc(accounted.has(r.id)
+            ? 'Delete? It goes from this browser and from your account, and cannot be undone.'
+            : 'Delete? It is only in this browser, so this cannot be undone.') + '</span>' +
+          '<button class="ghost rb-mini danger" data-dropyes="' + esc(r.id) + '">Delete</button>' +
+          '<button class="ghost rb-mini" data-dropno="' + esc(r.id) + '">Keep</button></span>'
+        : '<button class="ghost rb-mini danger" data-drop="' + esc(r.id) +
+          '" title="Delete" aria-label="Delete ' + esc(r.name || 'Untitled') + '">×</button>') +
       '</div>').join('') : '<p class="note">Nothing saved yet.</p>';
 
     /* The other half of the list, and the reason the account copy is worth having at all: a
@@ -1548,7 +1689,8 @@
 
   /* The two menus over the bar, as [button, popover] — one list, so opening one, closing both and
      dismissing on an outside click cannot drift apart. */
-  const POPOVERS = [['rb-open', 'rb-pop-open'], ['rb-download', 'rb-pop-download']];
+  const POPOVERS = [['rb-open', 'rb-pop-open'], ['rb-download', 'rb-pop-download'],
+    ['rb-version-new', 'rb-pop-version']];
 
   /** Shut every popover. Returns the id of the button whose menu was open, so Escape can put the
    *  focus back where the user left it rather than on whatever the page had. */
@@ -1600,7 +1742,7 @@
        delegated one was bound to the rail and the chip was not in it. The delegated listener now
        covers the whole tab and already answers `data-act="templates"`, so a second one here would
        open the gallery twice. */
-    el('rb-zoom-fit').addEventListener('click', () => { fitToWidth(); paint(); });
+    el('rb-zoom-fit').addEventListener('click', () => { zoomChosen = false; fitToWidth(); paint(); });
 
     /* The miniature IS the way through to the page — a segment nobody finds is a segment that
        hides the résumé. Its own click, not `data-seg` on the strip, because the button is not in
@@ -1617,26 +1759,49 @@
 
     el('rb-version').addEventListener('change', e => {
       selectedId = null;
+      askVersionDrop = false;
       store.dispatch(Cmd.activateTailoring(e.target.value || null));
     });
-    el('rb-version-new').addEventListener('click', () => {
-      const name = window.prompt(
-        'Name this version after the job you are applying to — "Acme, Backend Engineer".\n\n' +
-        'It starts as a copy of the master and only stores what you change.');
-      if (name == null) return;
+    /* Naming a version was a `window.prompt`: a modal box drawn outside the page, unstyled, and
+       out of the reading order a screen-reader user is in. It is a field in the panel now, in
+       the same popover shape the other two menus use — so Escape and a click outside dismiss it
+       like everything else here. */
+    const createVersion = () => {
+      const name = (el('rb-version-name').value || '').trim();
       selectedId = null;
-      store.dispatch(Cmd.addTailoring(name.trim() || 'Untitled version'));
+      closePopovers();
+      store.dispatch(Cmd.addTailoring(name || 'Untitled version'));
+    };
+    el('rb-version-create').addEventListener('click', createVersion);
+    /* Enter in the name field is what a text field with one button beside it promises. */
+    el('rb-version-name').addEventListener('keydown', e => {
+      if (e.key === 'Enter') { if (e.preventDefault) e.preventDefault(); createVersion(); }
     });
+
+    /* And deleting one was a `window.confirm`. Two named buttons in the bar instead: the choice
+       is Delete or Keep, which is what the reader has to answer — an OK/Cancel pair makes them
+       translate the question before they can. */
     el('rb-version-del').addEventListener('click', () => {
+      if (!Doc.tailoringOf(doc())) return;
+      askVersionDrop = true;
+      versionPaint();
+      const yes = el('rb-version-drop');
+      if (yes.focus) yes.focus();
+    });
+    el('rb-version-keep').addEventListener('click', () => { askVersionDrop = false; versionPaint(); });
+    el('rb-version-drop').addEventListener('click', () => {
       const tailoring = Doc.tailoringOf(doc());
-      if (!tailoring) return;
-      if (!window.confirm('Delete the version “' + tailoring.name + '”? The master résumé and ' +
-        'every other version are untouched.')) return;
+      askVersionDrop = false;
+      if (!tailoring) { versionPaint(); return; }
       selectedId = null;
       store.dispatch(Cmd.removeTailoring(tailoring.id));
     });
 
-    el('rb-zoom').addEventListener('input', e => { zoom = (+e.target.value) / 100; paint(); });
+    el('rb-zoom').addEventListener('input', e => {
+      zoom = (+e.target.value) / 100;
+      zoomChosen = true;
+      paint();
+    });
 
     el('rb-undo').addEventListener('click', () => { selectedId = null; store.undo(); });
     el('rb-redo').addEventListener('click', () => { selectedId = null; store.redo(); });
@@ -1654,6 +1819,11 @@
     });
     popover('rb-open', 'rb-pop-open', docListPaint);
     popover('rb-download', 'rb-pop-download', null);
+    popover('rb-version-new', 'rb-pop-version', () => {
+      const box = el('rb-version-name');
+      box.value = '';
+      if (box.focus) box.focus();
+    });
 
     /* A menu you can only close by finding its own button again is a trap, and it became a
        visible one when these moved under the bar: the Résumés panel is 247px tall and covers the
@@ -1700,17 +1870,16 @@
     el('rb-doclist').addEventListener('click', e => {
       const open = e.target.closest('[data-open]');
       const drop = e.target.closest('[data-drop]');
+      const keep = e.target.closest('[data-dropno]');
+      const go = e.target.closest('[data-dropyes]');
       if (open) openDocument(open.dataset.open);
-      if (drop) {
-        const id = drop.dataset.drop;
-        /* The old sentence — "only stored in this browser" — is false for a résumé the Account
-           switched sync on for, and a delete confirmation is the worst place to be wrong about
-           where a thing lives. Which sentence is shown is read from the account list, not from
-           the open document: this row may be some other résumé. */
-        const kept = !!sync && sync.rows().some(r => r.id === id);
-        if (!window.confirm(kept
-          ? 'Delete this résumé? It is removed from this browser and from your account, and cannot be undone.'
-          : 'Delete this résumé? It is only stored in this browser, so this cannot be undone.')) return;
+      /* Ask in the row, rather than in a modal box that cannot say which row it means. */
+      if (drop) { askDocDrop = drop.dataset.drop; docListPaint(); }
+      if (keep) { askDocDrop = null; docListPaint(); }
+      if (go) {
+        const id = go.dataset.dropyes;
+        const kept = onAccount(id);
+        askDocDrop = null;
         /* The local delete goes ahead either way — the user asked for it and this browser is
            theirs. But a refused account delete must not be silent: the copy is still up there,
            and the row it leaves behind in "On your account" is the only other sign of it. */
@@ -1766,7 +1935,9 @@
         docListPaint();
         flashSaved('Imported.');
       } catch (err) {
-        window.alert(err.message || 'That file could not be read.');
+        /* `window.alert` was the last modal here. The bar already carries every other thing that
+           went wrong, and `sticky` keeps this one up rather than fading after two seconds. */
+        flashSaved(err.message || 'That file could not be read.', true);
       }
       e.target.value = '';
     });
@@ -1992,6 +2163,43 @@
     el('rb-zoom').value = String(Math.round(zoom * 100));
   }
 
+  /** Does the sheet, at the zoom it is drawn at, still fit the space it has? */
+  function overflowsStage() {
+    const paper = el('rb-paper');
+    const wrap = paper.parentElement;
+    return paper.offsetWidth * zoom > wrap.clientWidth - 24 && !!paper.offsetWidth;
+  }
+
+  /* Whether the zoom on screen is one the user chose. A fit is the editor's guess and may be
+     replaced freely; a number somebody dragged the slider to is theirs, and is only overruled
+     when it stops fitting — which is the defect this exists for. */
+  let zoomChosen = false;
+
+  /* Refitting when the space changes. `fitToWidth` ran once behind the `fitted` flag and nothing
+     watched for a resize, so a tab opened at 1440 and narrowed to 420 drew the sheet 211px wider
+     than its wrapper while the readout still said 100%.
+
+     A ResizeObserver on the STAGE, not a `resize` listener on the window: the Edit/Preview split
+     hands the whole panel from one segment to the other, and the template gallery takes it over
+     and hands it back, so the stage changes width plenty of times the window does not. Debounced,
+     because a drag of the window edge fires this on every frame and each pass re-renders the
+     sheet. */
+  const REFIT_MS = 120;
+  let refitTimer = null;
+  function watchStage() {
+    const wrap = el('rb-paper-wrap');
+    if (!wrap || typeof ResizeObserver !== 'function' || !wrap.getBoundingClientRect) return;
+    new ResizeObserver(() => {
+      clearTimeout(refitTimer);
+      refitTimer = setTimeout(() => {
+        if (!store || !store.get() || segment !== 'preview' || templatesOpen) return;
+        if (zoomChosen && !overflowsStage()) return;
+        fitToWidth();
+        paint();
+      }, REFIT_MS);
+    }).observe(wrap);
+  }
+
   /* Reordering by keyboard. Selection was already reachable — the outline rows are buttons — but
      moving a block was a drag and nothing else, which put the one decision this template says
      matters most (what a recruiter reads first) behind a pointer. Alt+Up/Down moves the selected
@@ -2122,6 +2330,7 @@
     if (firstRun) store.flush();
 
     wire();
+    watchStage();
     /* One listing, after the tab is usable rather than before it. What comes back changes only
        the Résumés popover, so nothing on screen is waiting for it. */
     if (sync) sync.refresh();
