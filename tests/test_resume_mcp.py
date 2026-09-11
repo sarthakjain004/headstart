@@ -398,7 +398,7 @@ def test_an_unexpected_crash_is_reported_rather_than_killing_the_session(
 
 
 def test_a_real_client_handshake_over_a_real_subprocess():
-    """The transport is hand-written (ADR-0136), so it is measured rather than reasoned about:
+    """The transport is hand-written (ADR-0137), so it is measured rather than reasoned about:
     a real `python -m headstart.resume_mcp`, real pipes, a real initialize/tools-list exchange.
     Run without credentials — what is under test is the protocol and the rule that stdout
     carries nothing but protocol, which the stderr explanation must not violate."""

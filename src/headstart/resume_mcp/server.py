@@ -7,7 +7,7 @@ uvicorn to a local subprocess that answers four method names, and this repo's ba
 two packages. Nothing here needs a dependency the test suite does not already have — there is
 no `importorskip` in `tests/test_resume_mcp.py` and there is not meant to be one.
 
-**Read-only, on purpose.** ADR-0136 §"What it may not do": the browser is the working copy, a
+**Read-only, on purpose.** ADR-0137 §"What it may not do": the browser is the working copy, a
 push carries a revision the store checks, and a writer here would be a second client of that
 conflict protocol with none of the recovery the tab has. An agent that could rewrite someone's
 employment history silently is also not what was asked for.
@@ -15,7 +15,7 @@ employment history silently is also not what was asked for.
 **One Account.** Every tool's schema is closed (`additionalProperties: false`) and none of
 them names an account, an address or a path; the arguments are checked against the schema here
 too, because a client is free to ignore it. Under that, `account.Account` holds the id and
-offers no method that takes one. See ADR-0136.
+offers no method that takes one. See ADR-0137.
 """
 
 from __future__ import annotations

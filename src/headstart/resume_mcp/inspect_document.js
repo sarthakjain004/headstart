@@ -1,4 +1,4 @@
-/* The block-by-block reading of one Résumé document, produced by the REAL model (ADR-0136).
+/* The block-by-block reading of one Résumé document, produced by the REAL model (ADR-0137).
  *
  * This file exists so that nothing about a Résumé document is decided twice. The rules that
  * say what a block is made of (`resume_components.js`'s catalogue), which words one Tailoring

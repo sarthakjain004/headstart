@@ -1,4 +1,4 @@
-"""The one Account this server may read, and the only way it reaches the store (ADR-0136).
+"""The one Account this server may read, and the only way it reaches the store (ADR-0137).
 
 The single-account rule is not a check somewhere in the request path — it is this class's
 shape. An ``Account`` is constructed from an address and then *holds* the derived id; the two

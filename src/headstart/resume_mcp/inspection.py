@@ -1,8 +1,8 @@
-"""The Inspection — one Résumé document read block by block, and how it reads (ADR-0136).
+"""The Inspection — one Résumé document read block by block, and how it reads (ADR-0137).
 
 Two halves, and the split is the whole point. :func:`read_document` gets the *facts* by running
 `inspect_document.js` under `node`, because every rule that decides them is JavaScript and
-ADR-0136 refused to own a second copy of any of them. :func:`render` turns those facts into
+ADR-0137 refused to own a second copy of any of them. :func:`render` turns those facts into
 the outline a caller sees, and decides nothing — it has no opinion about which block prints or
 what a Component Type's fields are, only about indentation and wording.
 
@@ -33,7 +33,7 @@ class Unreadable(Exception):
     the model refused the record (malformed, or no such version).
 
     One class for both, because there is one thing to do about either: say which it was and
-    point at `get_resume`. In particular there is no Python fallback reading. ADR-0136's
+    point at `get_resume`. In particular there is no Python fallback reading. ADR-0137's
     decision is that `resolve` and the component catalogue have one implementation, and a
     second-best answer that quietly disagrees with the Résumé tab is the failure that decision
     exists to prevent.
@@ -46,7 +46,7 @@ def read_document(document: dict[str, Any], view: str = "master") -> dict[str, A
     if shutil.which("node") is None:
         raise Unreadable(
             "`node` is not on this machine's PATH. The block-by-block view runs the Résumé "
-            "tab's own JavaScript rather than a second copy of it (ADR-0136), so it needs "
+            "tab's own JavaScript rather than a second copy of it (ADR-0137), so it needs "
             "Node. Install Node, or use get_resume for the stored JSON."
         )
     try:

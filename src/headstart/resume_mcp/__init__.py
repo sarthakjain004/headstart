@@ -1,4 +1,4 @@
-"""A local MCP server that reads one Account's Résumé documents (ADR-0136).
+"""A local MCP server that reads one Account's Résumé documents (ADR-0137).
 
 Three read-only tools — `list_resumes`, `get_resume`, `inspect_resume` — served over stdio to
 an agent running on the same machine, under that person's own credentials. No new
