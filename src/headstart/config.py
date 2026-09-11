@@ -226,8 +226,11 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
 # keeps being scraped while the entry looks effective.
 #
 # A parked Board also leaves `index_plan.live_keep_set`, so whatever rows it holds in the index
-# are evicted as off-Board. Accepted either way: this Board has never finished a scrape, so it
-# has little or nothing indexed — and could not keep those rows fresh if it did.
+# are evicted as off-Board. That was first accepted on the grounds that the Board had never
+# finished a scrape and so had little indexed — true of Accenture, and no longer true of the set:
+# Adeeba holds 136 tech rows and Wayman 12, both of which finish. The eviction is still accepted,
+# but on the other half of the original reason rather than that one — a Board we stop scraping
+# cannot keep its rows fresh, so serving them would be serving a snapshot that only ages.
 PARKED_BOARDS: frozenset[str] = frozenset(
     {
         # 48,369 jobs. Workday reports a query's total as at most 2,000, so the scraper
@@ -259,6 +262,31 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         # Un-park if its tech yield ever justifies the floor, or once a per-board deadline bounds
         # it — the same condition that would un-park Accenture above.
         "smartrecruiters:adeebaeservicespvtltd",
+        # Fails ADR-0064's value test on the gate's own numbers and escapes only its floor.
+        # `board_cost.csv` measures it at 562 s for 56,527 postings (2026-09-11); against the 12
+        # tech jobs `board_priority.csv` credits it, that is **1.28 tech/min, under the gate's 2.0
+        # threshold** — but 562 s is under the 900 s floor, so its yield is never consulted. It is
+        # not a straggler like the three above; it is fast and enormous, the shape that floor was
+        # never meant to catch. It is also unreliable: in 3 of the 5 runs
+        # 34450830376..34470668397 it raised `HTTP Error 400` after 44-271 s and produced nothing.
+        #
+        # Content read before parking, per EXCLUDED_BOARDS' rule above: **Wayman Learning Trust**,
+        # a real UK teacher-recruitment agency — "Maths ECT — Outstanding Secondary School —
+        # Bristol", "Physics Teacher Needed". Real postings, simply not tech, which is why this is
+        # a park and not an exclusion. (`tech_filter` keeps 0 of 100 sampled titles, but note that
+        # a credited 12 in 56,527 predicts 0.02 hits in a sample that size, so the sample bounds
+        # the rate low and cannot show the 12 are gone. The 1.28 tech/min above is the argument.)
+        #
+        # Parked as one Board rather than gated as a class: ADR-0134 records the gap analysis that
+        # rejected a volume dimension, and `docs/pipeline/2026-09-10_five-run-log-review.md` §3 has
+        # the run figures. Its 100-job row in `data/validate/liveness/teamtailor.csv` is one page,
+        # so every ledger-driven view of this Board is 565x too small — which is why it stayed
+        # invisible, and is a probe-side gap this park does not close.
+        #
+        # Un-park once a per-Board row budget bounds the cost — the same condition as Accenture
+        # above — or if the index ever serves non-tech roles. Both are observable here; "if the
+        # trust posts tech roles" is not, because parking is what stops us looking.
+        "teamtailor:waymaneducation-1710232669",
     }
 )
 
