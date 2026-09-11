@@ -429,10 +429,33 @@
     }),
 
     /** Which sheet this résumé is printed on. A plain lookup key — Layer 2 turns it into
-     *  geometry, and an unreadable one falls back there rather than being validated here. */
-    setPaper: id => ({
+     *  geometry, and an unreadable one falls back there rather than being validated here.
+     *
+     *  `scale` re-fits blocks that were PLACED by hand — `{ x, y }` multipliers, one per axis,
+     *  the caller derives from the two usable areas. A box carries inches measured against the
+     *  sheet it was placed on, so changing the sheet moves the margin out from under it: a fresh
+     *  free-canvas document switched from Letter to A4 reported two "Runs off the right-hand
+     *  edge" warnings about blocks nobody had touched, and the warnings were right — 4.7 + 2.2
+     *  is 6.9in on a 6.67in measure. Scaling rather than clamping because it keeps the
+     *  composition, and because it is reversible: switching back gives the inches back.
+     *
+     *  Whether to scale at all is the CALLER's call, not this command's — only a Layout that
+     *  grants `resize: ['box']` has blocks placed in inches, and Layer 1 does not read caps.
+     *  Omit it and the sheet changes alone, which is what every flow layout wants. */
+    setPaper: (id, scale) => ({
       name: 'Change paper size',
-      apply: d => { d.paper = id; return d; },
+      apply: d => {
+        d.paper = id;
+        if (!scale) return d;
+        for (const n of d.root.children) {
+          const g = n.geometry;
+          if (!g) continue;
+          for (const [key, factor] of [['x', scale.x], ['w', scale.x], ['y', scale.y], ['h', scale.y]]) {
+            if (g[key] != null) g[key] = Math.round(g[key] * factor * 100) / 100;
+          }
+        }
+        return d;
+      },
     }),
 
     activateTailoring: id => ({

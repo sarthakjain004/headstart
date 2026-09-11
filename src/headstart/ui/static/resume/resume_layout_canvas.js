@@ -98,6 +98,68 @@
     b.add('skills_line', { label: 'Skills', value: '' }).placed(WIDE - 2.2, 2.9, 2.2, 1.6);
   }
 
+  /** A worked example, placed. What it teaches is the one thing the starter cannot: that the
+   *  layout is a PAGE, not a list — a narrative column down the left and a scan column down the
+   *  right, both of them put there by hand. Somebody who opens four empty boxes has no way to
+   *  see that, and the blurb's "good for a portfolio one-pager" is a claim until a filled page
+   *  demonstrates it.
+   *
+   *  Placed against WIDE and TALL, which are this Layout's own sheet — and that is correct here
+   *  for the same reason it is correct in `starter`: a new résumé is minted with no `paper`, so
+   *  the Layout's sheet IS the one in force. A document later switched to A4 is re-fitted by
+   *  `Cmd.setPaper` rather than by these numbers.
+   *
+   *  The bullets are kept under about 170 characters on purpose: a block 4.3in wide holds
+   *  roughly 58 characters to a line at 10pt, and `three-lines` measures the BLOCK here, not the
+   *  page. */
+  function example(b) {
+    b.add('header', {
+      fullName: 'Noor Haddad', phone: '+971 50 412 9083', email: 'noor.haddad@gmail.com',
+      link: 'noorhaddad.design', locationLine: 'Dubai, UAE · open to remote in GMT±4',
+    }).placed(0, 0, WIDE, 1);
+    b.add('professional_summary', {
+      text: 'Front-end engineer, five years turning design systems into things teams actually ' +
+        'use. Happiest between a component library and the people shipping on it.',
+    }).placed(0, 1.15, WIDE, 0.75);
+    b.section('Experience', s => {
+      s.add('work_entry', {
+        role: 'Senior Front-End Engineer', company: 'Careem', place: 'Dubai, UAE',
+        start: 'February 2022', current: true,
+      }, e => {
+        e.bullet('Shipped the design-system package 42 product teams build on, cutting the time to a new screen from 3 days to 4 hours');
+        e.bullet('Cut first contentful paint on the booking flow from 3.1s to 0.8s by rendering the first screen at the edge');
+        e.bullet('Ran the accessibility audit that took checkout from 61 to 98 on Lighthouse, which unblocked a government contract');
+      });
+      s.add('work_entry', {
+        role: 'Front-End Engineer', company: 'Bayzat', place: 'Dubai, UAE',
+        start: 'June 2019', end: 'January 2022',
+      }, e => {
+        e.bullet('Built the interactive benefits planner 30,000 employees use each month, in React and D3');
+        e.bullet('Replaced four bespoke chart components with one, removing 6,200 lines and three months of drift');
+      });
+    }).placed(0, 2.1, 4.3, 3.2);
+    b.section('Projects', s => {
+      s.add('project_entry', { name: 'Contrastly — open-source colour picker' }, e => {
+        e.bullet('Picks accessible palettes from a brand colour; 9,000 users a month and taught in two university courses');
+      });
+    }).placed(0, 5.5, 4.3, 1.4);
+    b.section('Education', s => {
+      s.add('education_entry', {
+        credential: 'BSc Computer Science, American University of Sharjah', status: '2019',
+      });
+    }).placed(4.55, 2.1, 2.35, 1);
+    b.section('Skills', s => {
+      s.add('skills_line', { label: 'Build', value: 'TypeScript, React, Svelte, Vite' });
+      s.add('skills_line', { label: 'Design', value: 'Figma, design tokens, Storybook' });
+      s.add('skills_line', { label: 'Practice', value: 'WCAG 2.2, performance budgets' });
+    }).placed(4.55, 3.3, 2.35, 1.6);
+    b.section('Languages', s => {
+      s.add('language_line', { language: 'Arabic', level: 'Native' });
+      s.add('language_line', { language: 'English', level: 'C2' });
+      s.add('language_line', { language: 'French', level: 'B1' });
+    }).placed(4.55, 5.1, 2.35, 1.2);
+  }
+
   /** Give every top-level block a position, keeping the ones that already have one. Blocks
    *  arriving from a flow layout carry no coordinates at all, and absolute positioning without
    *  them collapses the page into a pile at the origin. */
@@ -105,7 +167,11 @@
     /* The width of the sheet THIS document chose. A block handed the Letter measure on an A4
        page arrives already hanging over the right margin, which the overflow rule would then
        have to report about a block the user never touched. (`starter` cannot do the same — it is
-       handed a builder and no document — so a Letter starter switched to A4 does report two.) */
+       handed a builder and no document — and it does not need to: a new résumé is minted with no
+       `paper`, so the Layout's own sheet IS the one in force there. The sheet only differs later,
+       when somebody picks A4 in the Design pane, and `Cmd.setPaper` re-fits every placed block
+       at that moment — including the ones a person placed by hand, which this could never
+       reach.) */
     const wide = L.boundsFor(FREE_CANVAS, doc).w[1];
     let y = 0;
     for (const node of doc.root.children) {
@@ -172,6 +238,6 @@
         },
       },
     ],
-    css, render, starter, adopt,
+    css, render, starter, example, adopt,
   });
 })(typeof globalThis !== 'undefined' ? globalThis : this);
