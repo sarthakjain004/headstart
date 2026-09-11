@@ -163,9 +163,20 @@
     const total = origin.offsetHeight;
     if (total <= perPage + 1) return [];
 
-    /* Blocks the stylesheets mark unbreakable. Any layout's entry class counts — a layout that
-       adds another simply gets a slightly coarser estimate, never a wrong page count. */
-    const atoms = Array.from(origin.querySelectorAll('.hh-entry, .tc-entry, .cv-entry, .rb-entry'));
+    /* Blocks the stylesheets mark unbreakable, found by the shape every layout already stamps
+       (`data-shape`, written in renderNode) rather than by naming each layout's own CSS class.
+
+       The list of classes this replaces was wrong for four of the seven layouts registered at the
+       time and had no way of knowing: `jakes-resume`, `harvard-classic`, `modern-sidebar` and
+       `europass` name their entries something else, so the sweep found ZERO unbreakable blocks on
+       them and the preview's page count was simply a different number from the printer's —
+       measured at 14 wrong counts across 63 layout/length combinations, every one of them on a
+       layout the selector could not see. The comment here used to promise "never a wrong page
+       count", which is the kind of claim that stops the next reader looking.
+
+       Keying on the shape is what makes that unfixable-by-omission: a layout cannot register
+       without declaring the shapes it renders, so an entry it draws is an entry this finds. */
+    const atoms = Array.from(origin.querySelectorAll('[data-shape="entry"]'));
     const top0 = origin.getBoundingClientRect().top;
     const scale = origin.getBoundingClientRect().height / (origin.offsetHeight || 1) || 1;
     const boxOf = e => {

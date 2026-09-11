@@ -223,3 +223,58 @@ def test_a_bullet_that_fits_on_three_lines_is_not_called_four(page):
     assert result["findings"] == [], (
         f"a bullet that renders in 3 lines was flagged: {result['findings']}"
     )
+
+
+def test_no_page_break_is_drawn_through_a_block_the_layout_refuses_to_split(page):
+    """A drawn page break must never fall inside a block whose stylesheet says `break-inside: avoid`.
+
+    That is the whole job of the unbreakable-block sweep: the printer pushes such a block whole
+    onto the next sheet, so a marker drawn through one is telling the user the page ends somewhere
+    it does not.
+
+    The sweep used to find those blocks by naming four CSS classes — `.hh-entry, .tc-entry,
+    .cv-entry, .rb-entry` — which four of the seven then-registered layouts do not use. It found
+    ZERO unbreakable blocks on `jakes-resume`, `harvard-classic`, `modern-sidebar` and `europass`,
+    and drew its cuts by raw height alone: 14 wrong page counts across 63 layout/length
+    combinations, and `europass` previewing two pages for a document that printed on three.
+
+    `node --test` cannot make this check at all — `break-inside` is a computed style and the DOM
+    stub has none — which is how a wrong class list sat here while the suite stayed green.
+
+    This asserts the EDITOR's own output, not a selector restated: it reads the `.rb-break`
+    elements the editor drew, against the elements Chromium says are unbreakable.
+    """
+    long_text = LONG_BULLET * 3
+    page.evaluate(
+        """(text) => {
+          /* Fatten every bullet so the document runs past one sheet on every layout. */
+          const doc = window.ResumeEditor.current();
+          window.ResumeDocument.walk(doc.root, n => {
+            if (n.type === 'bullet' && doc.content[n.id]) doc.content[n.id].text = text;
+          });
+        }""",
+        long_text,
+    )
+
+    through = []
+    for layout_id in page.evaluate("() => window.ResumeLayouts.all().map(l => l.id)"):
+        page.evaluate("(id) => window.ResumeEditor.changeLayout(id)", layout_id)
+        page.wait_for_timeout(200)
+        result = page.evaluate("""() => {
+          const paper = document.getElementById('rb-paper');
+          const cuts = [...paper.querySelectorAll('.rb-break')]
+            .map(el => el.getBoundingClientRect().top);
+          const avoid = [...paper.querySelectorAll('*')]
+            .filter(el => getComputedStyle(el).breakInside === 'avoid')
+            .map(el => el.getBoundingClientRect());
+          /* Strictly inside: a cut level with a block's own edge is the printer agreeing. */
+          const bad = cuts.filter(y => avoid.some(r => y > r.top + 1 && y < r.bottom - 1));
+          return {cuts: cuts.length, avoid: avoid.length, bad: bad.length};
+        }""")
+        if result["avoid"] and result["bad"]:
+            through.append(f"{layout_id}: {result}")
+
+    assert through == [], (
+        "a page-break marker is drawn through a block the printer will move whole, so the "
+        f"preview is claiming a page ends where it does not: {through}"
+    )
