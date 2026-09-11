@@ -35,6 +35,10 @@ _Avoid_: adapter, parser, client.
 **Company**:
 The employer listed on an ATS, behind a Board; a `CompanyRef` (`ats`, `slug`, `name`) is the reference that tells the scrape step which Board to read.
 
+**Single source scraper**:
+A Scraper for a company that runs its own in-house careers system rather than a third-party ATS platform other companies also rent — Amazon, Apple, Google, Meta, Tesla, Uber, ByteDance, TikTok. Modelled exactly like any other Scraper (`ats` = the company itself, `slug` fixed to its own careers host, never discovered) rather than a parallel dispatch path, so every consumer that already keys off `ats:slug` needs no new code (ADR-0139). Has no **Discovery** step — its liveness ledger carries exactly one hand-entered row, since there is only ever one Board.
+_Avoid_: "single-company scraper" — an earlier draft of ADR-0139 used it before this term was settled; don't reintroduce it.
+
 **Required experience**:
 The years of prior experience a Job asks for, as a whole-year range — a floor with an optional ceiling, open-ended when only a minimum is stated. Extracted to a number so it can be filtered on ("at most N years"); the raw phrasing the ATS gave is kept separately. The number is either **stated** (read from a field or the description) or, when none is stated, a lower-confidence **floor estimated from the Job's seniority level** (its title/level suffix, e.g. "Senior" → 5; ADR-0018) — the `source` records which. Only a Job with **neither** a stated number **nor** a seniority signal is **unknown**, and unknown is deliberately not treated as too senior — it passes the "at most N years" filter rather than being hidden; a seniority-estimated floor, by contrast, can place a Job above the filter.
 _Avoid_: conflating **seniority** (a title level) with required experience — seniority only *estimates* a year count as a fallback, it is not itself the requirement.
