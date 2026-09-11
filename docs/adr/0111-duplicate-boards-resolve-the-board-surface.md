@@ -162,7 +162,8 @@ outage page appends a per-request `?d=&s=&e=&o=` tail that would otherwise make 
 same tombstone compare as a different key).
 
 **Run against the full live population, not a sample — 12,844 Boards, `dedupe_boards.py --ats
-workday`:**
+workday`. Full transcripts, including the deferred-signal and instance-split passes this
+section also cites, are in `docs/workday/2026-09-11_alias-key-full-population-scan.md`:**
 
 | class | n | verdict |
 | --- | --- | --- |

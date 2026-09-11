@@ -2430,6 +2430,21 @@ def test_workday_alias_key_is_none_when_unreachable(monkeypatch):
     assert s.alias_key() is None
 
 
+def test_workday_alias_key_is_none_on_a_malformed_slug_not_a_crash(monkeypatch):
+    """`_parts()` raises `ValueError` on a slug `_URL_PATTERN` cannot parse, and the real caller,
+    `dedupe_boards.py`'s `probe_all`, reads this method's result from an unguarded
+    `future.result()` inside a `ThreadPoolExecutor` -- one malformed slug anywhere in a
+    12,844-Board scan would abort the whole run on whichever Board happened to raise, not just
+    mark that one unreachable. `alias_key` must never let that escape."""
+
+    def fetch(method, url, **kw):
+        raise AssertionError("must not be reached: _parts() should have failed first")
+
+    monkeypatch.setattr("headstart.http.fetch", fetch)
+    s = get_scraper("workday", "not-a-careers-url", "Acme")
+    assert s.alias_key() is None
+
+
 def test_workday_paginate_logs_once_on_missing_pages(monkeypatch, caplog):
     # a mid-crawl 404 (None from _post_async) skips that page but keeps the rest, and one
     # INFO line reports the gap — the tripwire for a partial board. INFO rather than WARNING
