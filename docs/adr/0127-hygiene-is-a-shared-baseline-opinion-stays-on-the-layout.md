@@ -2,6 +2,14 @@
 
 **Status:** accepted · **Date:** 2026-09-10 · **Amends ADR-0123 (a résumé is three layers), whose "a Rule belongs to a Layout" is narrowed here rather than reversed. Extends ADR-0126 (the picker carries the layouts people actually use), which is where the silence became visible.**
 
+- **Amended by:** [ADR-0135](0135-two-baseline-rules-for-the-blocks-that-shipped-without-any.md) — the
+  baseline is **nine** Rules, not seven, and **six** candidates have been refused, not four. The
+  two added (`plain-links`, `award-scale`) are the first that `headless-headhunter` did not already
+  declare, so "all seven baseline ids were already declared by it" is now seven of nine. The
+  mechanism, the bar and the per-id opt-out below are unchanged; only the arithmetic is. That ADR
+  also records that the `resume_rules.js` split trigger named at the end of this one is now met and
+  has not yet been discharged.
+
 ## Context
 
 ADR-0123 put every Rule on the Layout, and gave a reason: "the same bullet is fine under one

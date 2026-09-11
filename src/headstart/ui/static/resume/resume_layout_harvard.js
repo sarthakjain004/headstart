@@ -119,7 +119,7 @@
       s + ' .hv-h { font-size: ' + theme.headSize + 'pt; font-weight: 700; text-transform: uppercase;',
       '      letter-spacing: .03em; margin: 0 0 .3em; padding-bottom: .12em;',
       '      border-bottom: 1px solid ' + theme.rule + '; }',
-      s + ' .hv-entry { margin: 0 0 ' + theme.entryGap + 'em; page-break-inside: avoid; break-inside: avoid; }',
+      s + ' .hv-entry { margin: 0 0 ' + theme.entryGap + 'em; }',
       s + ' .hv-thin { margin-bottom: .25em; }',
       s + ' .hv-row { display: flex; gap: 1em; align-items: baseline; }',
       /* The two cells are the framework's (`L.marginRow`), so the class names are its own. */

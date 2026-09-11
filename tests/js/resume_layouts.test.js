@@ -32,6 +32,27 @@ test('every registered layout has a strategy for every component shape', () => {
   }
 });
 
+test('every layout tells the printer not to split an entry, in the sweep’s own vocabulary', () => {
+  const ctx = load(ALL);
+  const { ResumeLayouts: L } = ctx;
+  /* The editor's page-break sweep finds unbreakable blocks by `[data-shape="entry"]`, and for
+     eight of the nine layouts here the stylesheet answered in its own entry class instead — so
+     the two sides disagreed about which blocks the printer moves whole. `define` emits the rule
+     now, which is why this can be asked of every registered layout and of the tenth.
+
+     The measurement that matters is `tests/test_resume_editor_browser.py`'s — only a browser
+     knows what `break-inside` computes to — and that file SKIPS in CI, which has no Chromium.
+     This is the check CI can still make: the declaration is emitted, and it is scoped to the
+     caller's own sheet rather than leaking into the page around it. */
+  for (const lay of L.all()) {
+    const css = lay.css(L.themeFor(lay, {}), '#probe .rb-doc');
+    const rule = css.match(/#probe \.rb-doc \[data-shape="entry"\]\s*\{([^}]*)\}/);
+    assert.ok(rule, `${lay.id} emits no scoped rule for [data-shape="entry"]`);
+    assert.match(rule[1], /(^|;)\s*break-inside:\s*avoid\s*(;|$)/,
+      `${lay.id}: ${rule[1]}`);
+  }
+});
+
 test('a layout missing a shape is refused at registration, not at render time', () => {
   const ctx = load(ALL);
   assert.throws(() => ctx.ResumeLayouts.define({
@@ -955,12 +976,14 @@ test('a rule that measures the page measures the sheet in use', () => {
 
 /* ---- the shared baseline (ADR-0127) ---- */
 
-/** A résumé nobody should send: no name and no way to reach the writer, one job with no dates,
- *  two more in the wrong order, twelve bullets on one of them, each opening "Responsible for"
- *  and running well past three printed lines with no number, result or reason anywhere. */
+/** A résumé nobody should send: no name and no way to reach the writer, a LinkedIn address
+ *  pasted straight out of the browser bar, one job with no dates, two more in the wrong order,
+ *  twelve bullets on one of them, each opening "Responsible for" and running well past three
+ *  printed lines with no number, result or reason anywhere, and an award that is one word. */
 function badResume(ctx, layoutId) {
   const b = ctx.ResumeDocument.builder().named('Bad').usingLayout(layoutId);
-  b.add('header', { fullName: '', phone: '', email: '', locationLine: '' });
+  b.add('header', { fullName: '', phone: '', email: '', locationLine: '',
+    link: 'https://www.linkedin.com/in/nobody/' });
   b.section('Work History', s => {
     s.add('work_entry', { role: 'Engineer', company: 'Undated Co', start: '', end: '' },
       w => w.bullet('Responsible for the running of things.'));
@@ -974,9 +997,70 @@ function badResume(ctx, layoutId) {
       } });
     s.add('work_entry', { role: 'Engineer', company: 'Newer Co', start: 'June 2020', end: 'August 2023' },
       w => w.bullet('Responsible for the newer things.'));
+    s.add('award_entry', { title: 'Winner', awarder: 'Some Hackathon', place: '', when: '' });
   });
   return b.build();
 }
+
+/* The two blocks ADR-0130 added shipped with no rule of any kind, on any layout: a deliberately
+   bad `certification`, `award_entry` and `profile_line` produced zero findings on all nine. Two of
+   the three candidates survived the ADR-0127 test — "baseline only where the mainstream sources
+   agree" — and what did NOT survive is written down beside them in COMMON_RULES. */
+test('an award that is only a ranking word, and a link wearing its scheme, are both flagged', () => {
+  const ctx = load(ALL);
+  const { ResumeDocument: D, ResumeLayouts: L } = ctx;
+  const doc = D.builder().usingLayout('jakes-resume')
+    .add('header', { fullName: 'Ravi Menon', email: 'r@example.com',
+      link: 'https://www.linkedin.com/in/ravimenon/' })
+    .section('Awards', s => {
+      s.add('award_entry', { title: 'Winner', awarder: 'Smart India Hackathon' });
+      s.add('profile_line', { network: 'GitHub', url: 'https://github.com/ravi' });
+      /* The third address field, and the one that proves the rule cannot key on a field's NAME:
+         it is called `credential`, and so are `degree_entry`'s and `education_entry`'s, which
+         hold the name of a qualification and are not addresses at all. */
+      s.add('certification', { name: 'CKA', issuer: 'CNCF',
+        credential: 'https://credly.com/badges/9f2c11a0' });
+    })
+    .build();
+  /* Every registered layout, because this is a baseline: a layout cannot opt out of it by not
+     being typed into a test. */
+  for (const lay of L.all()) {
+    const ids = L.runRules(lay, Object.assign({}, doc, { layoutId: lay.id })).map(f => f.ruleId);
+    assert.ok(ids.includes('award-scale'), `${lay.id} read “Winner” as an award`);
+    assert.equal(ids.filter(id => id === 'plain-links').length, 3,
+      `${lay.id} flagged ${ids.filter(id => id === 'plain-links').length} of the three schemed links`);
+  }
+});
+
+test('an award that names its field, and a plain link, are left alone', () => {
+  const ctx = load(ALL);
+  const { ResumeDocument: D, ResumeLayouts: L } = ctx;
+  /* The four award titles the shipped worked examples actually carry are the calibration here:
+     `mcdowell-cv` writes "Engineering Excellence Award", which has no number in it at all and
+     must not fire, and `deedy-resume` writes "1st of 340 teams, Smart India Hackathon". A rule
+     that asked every award for a number would flag the first, so this one asks only of a title
+     that is a ranking word and NOTHING else — and then only when no field of the entry carries a
+     number either, because "Winner" beside "2 of 190 entrants" has already said it. */
+  const doc = D.builder().usingLayout('jakes-resume')
+    .add('header', { fullName: 'Ravi Menon', email: 'r@example.com',
+      link: 'linkedin.com/in/ravimenon' })
+    .section('Awards', s => {
+      s.add('award_entry', { title: 'Engineering Excellence Award', awarder: 'Acme' });
+      s.add('award_entry', { title: 'Winner', awarder: 'Smart India Hackathon, 340 teams' });
+      s.add('award_entry', { title: '', awarder: '' });
+      s.add('profile_line', { network: 'GitHub', url: 'github.com/ravi' });
+      /* A credential id is not an address, and a degree's `credential` never is. */
+      s.add('certification', { name: 'CKA', issuer: 'CNCF', credential: 'LF-9f2c11a0be' });
+      s.add('degree_entry', { institution: 'IIT Bombay', credential: 'B.Tech, CSE',
+        start: 'August 2018', end: 'May 2022' });
+    })
+    .build();
+  for (const lay of L.all()) {
+    const ids = L.runRules(lay, Object.assign({}, doc, { layoutId: lay.id })).map(f => f.ruleId);
+    assert.ok(!ids.includes('award-scale'), `${lay.id} flagged an award that names its field`);
+    assert.ok(!ids.includes('plain-links'), `${lay.id} flagged a link already in plain text`);
+  }
+});
 
 test('every registered layout checks the baseline — a bad résumé is never called clean', () => {
   const ctx = load(ALL);
@@ -990,6 +1074,30 @@ test('every registered layout checks the baseline — a bad résumé is never ca
       .map(f => f.ruleId).filter(id => baseline.includes(id)))].sort();
     assert.deepEqual(fired, baseline,
       `${lay.id} said nothing about ${baseline.filter(id => !fired.includes(id)).join(', ')}`);
+  }
+});
+
+test('findings come back worst first, on every layout that has all three levels', () => {
+  const ctx = load(ALL);
+  const { ResumeLayouts: L } = ctx;
+  /* The order `runRules` hands them over IS the order the Checks panel draws them — it groups by
+     rule and invents no order of its own — so this is the panel's reading order, not a tidiness
+     preference. Asserted on every layout because a Layout's own rules are concatenated ahead of
+     the baseline's, and it is the sort that has to undo that, not luck.
+
+     `rank` was written `{ error: 0, warn: 1, note: 2 }` and read `rank[a.level] || 3`, and 0 is
+     falsy: every error scored 3 and sorted BELOW every note. Measured in Chromium on a résumé
+     with no contact details and no dates, the first error — "A résumé nobody can answer is the
+     one fault no rewrite fixes" — rendered 1,524px down, under twelve lower-priority rows and
+     off the bottom of an 1,100px viewport. */
+  const RANK = { error: 0, warn: 1, note: 2 };
+  for (const lay of L.all()) {
+    const levels = L.runRules(lay, badResume(ctx, lay.id)).map(f => f.level);
+    assert.deepEqual([...new Set(levels)].sort(), ['error', 'note', 'warn'],
+      `${lay.id} did not produce all three levels, so this proves nothing about their order`);
+    const ranks = levels.map(l => RANK[l]);
+    assert.deepEqual(ranks, [...ranks].sort((a, b) => a - b),
+      `${lay.id} ordered its findings ${levels.join(', ')}`);
   }
 });
 

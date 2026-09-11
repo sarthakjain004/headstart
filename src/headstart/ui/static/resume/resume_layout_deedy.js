@@ -195,7 +195,7 @@
       '      padding-bottom: .1em; border-bottom: 1px solid ' + theme.rule + '; }',
 
       /* Three stacked left-aligned lines, and nothing anywhere against a right margin. */
-      s + ' .dy-entry { margin: 0 0 ' + theme.entryGap + 'em; page-break-inside: avoid; break-inside: avoid; }',
+      s + ' .dy-entry { margin: 0 0 ' + theme.entryGap + 'em; }',
       s + ' .dy-thin { margin-bottom: ' + (theme.entryGap / 2) + 'em; }',
       s + ' .dy-head { font-size: ' + theme.titleSize + 'pt; font-weight: 700; }',
       s + ' .dy-sub { font-style: italic; }',

@@ -124,13 +124,28 @@ adding a type:
 - A **new Component Type** with field names no renderer has ever seen renders in **9 of 9**
   Layouts and in the plain-text export. The promise holds, and it is what made the three types
   above cost no change to any existing Layout's rendering.
-- A **new field on an existing Type** renders in **0 of 9**. `work_entry`, `education_entry` and
-  `project_entry` are overridden `byType` by every Layout; `header` by eight of nine. A `byType`
-  strategy is written for a type it knows and names that type's fields, so a field added to one is
-  printed by nobody. It is worse than the source comment in `resume_components.js` claims: for
-  `work_entry` the **plain-text export drops it too**, because that visitor is hardcoded to
-  `roleLine` and `dateRange`. For `project_entry` the export does print it, which makes the
-  failure inconsistent as well as silent.
+- A **new field on an existing Type** renders in **0 to 9 of 9, depending on the type** — it is
+  not one number, and the "0 of 9" this bullet originally stated is right only for the four types
+  it goes on to name. What decides it is how many Layouts claim that type `byType`: a `byType`
+  strategy names the fields of a type it knows, so a field added to one is printed by nobody,
+  while a `byShape` fallback prints every string field a node owns. Re-measured 2026-09-11 across
+  the nine registered Layouts:
+
+  | renders a new field in | Component Types |
+  |---|---|
+  | **0 of 9** | `work_entry`, `education_entry`, `project_entry` |
+  | **1 of 9** | `header` |
+  | **3 of 9** | `degree_entry`, `tech_project` |
+  | **7 of 9** | `certification`, `award_entry`, `language_line`, `professional_summary` |
+  | **9 of 9** | `section`, `bullet`, `skills_line`, `profile_line`, `summary` |
+
+  Worth saying which end this ADR's own three additions landed on: `certification`, `award_entry`
+  and `profile_line` are at 7, 7 and 9 of 9, so widening one of them later is cheap — the opposite
+  of the case this bullet was written to warn about. It is still worse than the source comment in
+  `resume_components.js` claims for the types at the top of the table: for `work_entry` the
+  **plain-text export drops a new field too**, because that visitor is hardcoded to `roleLine` and
+  `dateRange`. For `project_entry` the export does print it, which makes the failure inconsistent
+  as well as silent.
 
 So ADR-0123's extensibility guarantee is about **types, not fields**, and the honest statement of
 it is: *a `byShape` renderer may never name a field, so a new type is cheap; a `byType` renderer

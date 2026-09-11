@@ -252,18 +252,19 @@
     '\\bin order to\\b|\\bby \\w+ing\\b|' +
     '\\bto (?!the|a|an|our|their|his|her|my|your|its|this|that|these|those|us|them|me|him|it)[a-z]+\\b', 'i');
 
-  /* ---- the baseline every Layout checks (ADR-0127) -----------------------------------------
+  /* ---- the baseline every Layout checks (ADR-0127, ADR-0135) --------------------------------
      ADR-0123 put every Rule on the Layout, on the argument that a Rule is its method's opinion.
-     That is true of most of them and false of these seven: a job with no dates on it, a name
+     That is true of most of them and false of these nine: a job with no dates on it, a name
      nobody can answer, twelve bullets opening "Responsible for" — no template on the picker
      holds a different view, and four of the seven Layouts held NO view, so the panel read
      "Nothing to flag. Every rule this layout states is met." over a résumé nobody should send.
 
      What is here is hygiene; what is not here is opinion, and the line was drawn against the
      standards packaged in this machine's `resume-builder` skill (Harvard Career Services,
-     r/EngineeringResumes) rather than by taste. Four candidates were considered and REFUSED
-     because the sources disagree with each other about them, and a baseline that flattened a
-     Layout's considered opposite position would be a worse defect than the silence it fixes:
+     r/EngineeringResumes) rather than by taste. Six candidates were considered and REFUSED
+     because the sources disagree with each other about them — or say nothing at all — and a
+     baseline that flattened a Layout's considered opposite position would be a worse defect than
+     the silence it fixes:
 
        · `twelve-years` — every source says drop the ancient jobs, none states a number, and
          Europass is a full-history form by design. The Headless Headhunter's twelve is the
@@ -275,18 +276,46 @@
        · `pronouns` — the standard forbids I / my / we; the Headless Headhunter's own worked
          example contains "while I prepared their food", so that layout would fire on the
          document it is calibrated against.
+       · `no-www` — the other half of the wiki's "do NOT include https://www.". Refused for the
+         same reason as `pronouns`, and measured: `headless-headhunter`'s example writes
+         `www.linkedin.com/in/leekorelitz`, and it is the only one of the eighteen shipped
+         starters and examples that contains `www.` or `://` at all. The scheme half is below as
+         `plain-links`; this half stays in the hint on each of the three `holdsUrl` fields —
+         `header.link` had no hint at all until this change, so for the one address every résumé
+         carries the advice had nowhere to live.
+       · `certification-provenance` — a certification with no issuer and no date. It is
+         defensible advice and it is nobody's *stated* standard: certifications appear twice in
+         the packaged sources and neither is a requirement — "certifications that are expired or
+         irrelevant" (advice to DROP one, not to date it) and a bare section-order listing in the
+         India notes. An AWS certification also names its issuer inside its own name, so the
+         issuer half would fire on correct entries. Absence of a source is not agreement, which
+         is the bar ADR-0127 set. A Layout that ships the block may still state it:
+         `deedy-resume` and `mcdowell-cv` are the two that render `certification` by name.
 
      A Layout OPTS OUT by declaring a Rule with the same id AND marking it `overridesBaseline`,
      and `define` then keeps its own — a better lever than a flag on the layout, because it puts
      the disagreement on the rule, where its author is already looking, and refuses the silent
      version of it outright.
 
-     All seven ids below are already declared by the Headless Headhunter layout, so no baseline
-     Rule is ADDED to it. That is not the same as "nothing changed for it": `SCALE` gained the
-     spelled-out numbers when this baseline was calibrated, and that layout's own `result` reads
+     Seven of the nine ids below are already declared by the Headless Headhunter layout, so those
+     seven add nothing to it; `plain-links` and `award-scale` are new to every layout, which is
+     the point — the three components ADR-0130 added shipped with no rule of any kind on any of
+     the nine, so a certification with an empty issuer, an award titled "Winner" and a profile
+     line reading `https://github.com/ravi` produced zero findings everywhere.
+
+     That the seven add nothing to it is not the same as "nothing changed for it": `SCALE` gained
+     the spelled-out numbers when this baseline was calibrated, and that layout's own `result` reads
      `SCALE` from here — so a bullet reading "brought four engineers through onboarding in six
      months" used to earn a note there and no longer does. Measured, and correct: it has two
      numbers in it. */
+
+  /* A title that is a ranking and nothing else. Deliberately anchored and deliberately short: the
+     shipped worked examples include "Engineering Excellence Award", which carries no number at
+     all, and a rule that asked every award for one would flag the document `mcdowell-cv` is
+     calibrated against. */
+  const BARE_PLACING = new RegExp('^(?:winners?|finalists?|semi-?finalists?|runners?[\\s-]?up|' +
+    'champions?|awardee|recipient|honou?ree|' +
+    '(?:1st|2nd|3rd|first|second|third|top)\\s+(?:place|prize|position|finish))\\s*[.!]?$', 'i');
 
   const COMMON_RULES = Object.freeze([
     {
@@ -440,7 +469,80 @@
         return out;
       },
     },
+    {
+      /* The one piece of link advice every source here states outright, and the narrowest form of
+         it. The wiki's line is "do NOT include https://www.", and the `https://` half is the half
+         nobody disagrees with — no template on the picker writes a scheme, and no worked example
+         in this repo contains one. The `www.` half is NOT baseline: `headless-headhunter`'s own
+         example writes `www.linkedin.com/in/leekorelitz`, so a baseline that included it would
+         fire on the document that layout is calibrated against — the same test that kept
+         `pronouns` out. It lives in the hint on every `holdsUrl` field instead. */
+      id: 'plain-links', label: 'Links in plain text',
+      check(doc, api) {
+        const out = [];
+        for (const n of api.flatten()) {
+          const spec = Components.get(n.type);
+          if (!spec) continue;
+          const c = api.content(n.id);
+          for (const f of spec.fields) {
+            /* `holdsUrl`, declared by the Component Type, not a list of field names kept here.
+               The names do not carry the fact: `certification`'s address field is `credential`,
+               and so are `degree_entry`'s and `education_entry`'s, which hold the name of a
+               qualification. A list keyed on `credential` would flag a degree; one that left it
+               out missed a certification's link, which is what the first draft of this did. */
+            if (!f.holdsUrl || !/:\/\//.test(String(c[f.key] || ''))) continue;
+            out.push({ level: 'warn', nodeId: n.id, message: '“' + f.label +
+              '” starts with a scheme. Drop it — a résumé writes its links as plain text, ' +
+              'because an underlined blue URL is the one thing on the page a reader’s eye goes ' +
+              'to instead of your work.' });
+          }
+        }
+        return out;
+      },
+    },
+    {
+      /* Quantification — the thing every source here agrees on — at its narrowest. It asks only
+         of a title that is a ranking word and NOTHING else, and then only when neither the giver
+         nor the place has named a number either: "Winner" beside "Smart India Hackathon, 340
+         teams" has already said what was beaten. `when` is not read, because a date is digits and
+         reading it would silence this rule on every award that states one. */
+      id: 'award-scale', label: 'An award says what you beat',
+      check(doc, api) {
+        const out = [];
+        for (const n of api.nodesOfType('award_entry')) {
+          const c = api.content(n.id);
+          const title = String(c.title || '').trim();
+          if (!BARE_PLACING.test(title)) continue;
+          if (SCALE.test(String(c.awarder || '') + ' ' + String(c.place || ''))) continue;
+          out.push({ level: 'note', nodeId: n.id, message: '“' + title +
+            '” is a word, not an award. Say the field you beat — “1st of 340 teams” — because ' +
+            'the size of the field is the only part of a placing a reader can weigh.' });
+        }
+        return out;
+      },
+    },
   ]);
+
+  /* ---- what the printer may not split -------------------------------------------------------
+     A résumé entry is ATOMIC: the printer moves a whole job or degree onto the next sheet rather
+     than cutting it in half, and the editor's page-break sweep draws its cuts on that promise.
+
+     The promise used to be made twice, in two vocabularies, by two parties who then drifted: the
+     sweep asks the SHAPE, the stylesheets answered in each layout's own entry CLASS, and they
+     disagreed on 5 of 9 layouts. ADR-0134 has the measurement and the two options refused.
+
+     So the shape owns the answer and the stylesheet is DERIVED from it, rather than each layout
+     restating it and the sweep hoping. Emitted here, after the layout's own rules and at equal
+     specificity, so it reaches the preview, the miniature, the gallery card, the print dialog and
+     the HTML download through the one `css()` all five already call — and `scope` falls back the
+     same way every layout's own `css()` already falls it back, rather than emitting a rule that
+     begins `undefined`.
+
+     It is deliberately not a per-layout choice: eight of nine layouts already declared it by
+     hand, unanimously, and the ninth had simply never written entry CSS, so there was no seam
+     here — only a duplicated fact. A layout that one day wants a splittable entry has to change
+     this line, which is also the line the sweep reads. */
+  const ATOMIC_ENTRY = ' [data-shape="entry"] { page-break-inside: avoid; break-inside: avoid; }';
 
   /** Register a Layout. */
   function define(spec) {
@@ -506,7 +608,7 @@
       bounds: Object.freeze(Object.assign({
         spaceAfter: [0, 48], gutter: [0.6, 3.2], w: [0.5, 8], h: [0.2, 10], x: [0, 8], y: [0, 10],
       }, spec.bounds || {})),
-      css: spec.css,
+      css: (theme, scope) => spec.css(theme, scope) + '\n' + (scope || '.rb-doc') + ATOMIC_ENTRY,
       starter: spec.starter,
       /* Optional: a second, filled starting point. A layout that ships a worked example teaches
          the shape of good content far faster than placeholder text can, so the picker offers it
@@ -843,8 +945,12 @@
     }
     /* Errors first, then warnings, then notes — the panel renders them in this order and the
        badge counts everything above a note. */
+    /* `??`, not `||`: an error's rank is 0, which is falsy, so `||` gave every error the
+       unknown-level rank of 3 and sorted it BELOW every note. Measured in Chromium before the
+       fix — the first error landed 1,524px down, under twelve lower-priority rows and off the
+       bottom of an 1,100px viewport. Nine PRs read the comment above and none read the line. */
     const rank = { error: 0, warn: 1, note: 2 };
-    return out.sort((a, b) => (rank[a.level] || 3) - (rank[b.level] || 3));
+    return out.sort((a, b) => (rank[a.level] ?? 3) - (rank[b.level] ?? 3));
   }
 
   /* ---- shared strategy helpers ---------------------------------------------------------

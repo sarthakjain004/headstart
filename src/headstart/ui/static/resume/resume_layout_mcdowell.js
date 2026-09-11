@@ -187,7 +187,7 @@
       '      letter-spacing: .04em; margin: 0 0 .28em; padding-bottom: .1em;',
       '      border-bottom: 1px solid ' + theme.rule + '; }',
 
-      s + ' .mc-entry { margin: 0 0 ' + theme.entryGap + 'em; page-break-inside: avoid; break-inside: avoid; }',
+      s + ' .mc-entry { margin: 0 0 ' + theme.entryGap + 'em; }',
       /* The three cells. A flex row rather than a table: the source uses `tabu` because LaTeX
          has no other way to do it, and a table is the one layout device every ATS guide in this
          repo tells people to keep off a résumé. Equal basis with the centre cell centred gives
