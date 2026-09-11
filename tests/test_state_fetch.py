@@ -879,3 +879,24 @@ def test_a_first_attempt_that_works_costs_nothing(no_sleep):
     call = _Flaky(0, RuntimeError("never raised"))
     assert sf.retry_hub("listing", call) == "ok"
     assert call.calls == 1 and no_sleep == []
+
+
+def test_giving_up_says_why_it_gave_up(no_sleep, caplog):
+    """`retry_hub` re-raises, and `state_guard.main` hands its exit code straight to `SystemExit` —
+    so without this line an exhausted ladder reaches the operator as a bare traceback, which is
+    indistinguishable from a guard that never retried at all."""
+    with caplog.at_level("ERROR"), pytest.raises(RuntimeError):
+        sf.retry_hub("listing data/lancedb/", _Flaky(99, RuntimeError("Hub down")))
+    aborts = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+    assert len(aborts) == 1, aborts
+    assert "attempts exhausted" in aborts[0]
+    assert "listing data/lancedb/" in aborts[0]
+
+
+def test_the_abort_names_the_budget_that_stopped_it(no_sleep, caplog, monkeypatch):
+    """The two early stops are not the same event as running out of attempts, and an operator has
+    to be able to tell them apart: one means the Hub is down, the other that we chose not to wait."""
+    monkeypatch.setattr(sf, "reset_after", lambda exc: sf._WAIT_BUDGET + 60)
+    with caplog.at_level("ERROR"), pytest.raises(RuntimeError):
+        sf.retry_hub("listing", _Flaky(99, RuntimeError("HTTP 429")))
+    assert "cannot cover the Hub's" in caplog.records[-1].getMessage()

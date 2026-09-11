@@ -196,3 +196,24 @@ def test_a_transient_hub_failure_does_not_kill_the_guard(tmp_path, monkeypatch):
     monkeypatch.setattr(sg, "_siblings", flaky)
     assert sg.record(tmp_path / "guard.json", REPO, "data/lancedb", None) == 0
     assert calls["n"] == 2
+
+
+def test_verify_retries_too_not_only_record(tmp_path, monkeypatch):
+    """Both guard entry points sit on the critical path; `verify` is the one immediately before
+    the upload, so a transient failure there is the more expensive of the two to be fatal."""
+    monkeypatch.setattr(sf.time, "sleep", lambda s: None)
+    _serve(monkeypatch, BASE)
+    guard = tmp_path / "guard.json"
+    sg.record(guard, REPO, "data/lancedb", None)
+
+    calls = {"n": 0}
+
+    def flaky(repo, token):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("Hub 503")
+        return _listing(BASE)
+
+    monkeypatch.setattr(sg, "_siblings", flaky)
+    assert sg.verify(guard, REPO, "data/lancedb", None) == 0
+    assert calls["n"] == 2

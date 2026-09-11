@@ -195,29 +195,51 @@ def retry_hub[T](what: str, call: Callable[[], T]) -> T:
     an exhausted ladder raises, and a failed step is already red without spending one.
     """
     spent = 0  # seconds slept so far, against _WAIT_BUDGET
+    failure: Exception | None = None
+    reason = ""
     for attempt in range(1, _ATTEMPTS + 1):
         try:
             return call()
-        except Exception as exc:
-            if attempt == _ATTEMPTS:
-                raise
+        except Exception as exc:  # noqa: BLE001 — any Hub failure is retried the same way
+            failure, reason = exc, reason_for(exc)
             advised = reset_after(exc)
-            # Budget checked on `spent`, never on the wait — an advised 0 means "the window is
-            # open now", which is a wait of 0 and not an exhausted budget. Same reading as
-            # `fetch_state`; getting it backwards there is what ADR-0033's amendment fixed.
-            if spent >= _WAIT_BUDGET:
-                raise
-            wait = retry_delay(attempt, advised, spent)
-            if advised is not None and wait < advised:
-                # Retrying before the Hub's window reopens is a request we already know will 429.
-                raise
-            _log.info(
-                f"{what}: {reason_for(exc)} — attempt {attempt} of {_ATTEMPTS}, "
-                f"waiting {wait}s ({spent + wait}s of {_WAIT_BUDGET}s budget)"
+        if attempt == _ATTEMPTS:
+            reason = f"{reason}; {_ATTEMPTS} attempts exhausted"
+            break
+        # Budget checked on `spent`, never on the wait — an advised 0 means "the window is open
+        # now", which is a wait of 0 and not an exhausted budget. Same reading as `fetch_state`;
+        # getting it backwards there is what ADR-0033's amendment fixed.
+        if spent >= _WAIT_BUDGET:
+            reason = f"{reason}; {_WAIT_BUDGET}s retry budget exhausted"
+            break
+        wait = retry_delay(attempt, advised, spent)
+        if advised is not None and wait < advised:
+            # Retrying before the Hub's window reopens is a request we already know will 429 —
+            # the habit ADR-0033 was written to stop.
+            reason = (
+                f"{reason}; {_WAIT_BUDGET}s retry budget cannot cover "
+                f"the Hub's {advised}s window"
             )
-            spent += wait
-            time.sleep(wait)
-    raise AssertionError("unreachable: the loop returns or raises")  # pragma: no cover
+            break
+        spent += wait
+        _log.info(
+            f"{what}: {reason} — attempt {attempt} of {_ATTEMPTS}, "
+            f"waiting {wait}s ({spent}s of {_WAIT_BUDGET}s budget)"
+        )
+        time.sleep(wait)
+
+    # Reported here rather than at each `break`, so it is one line per exhausted ladder instead of
+    # one per attempt, and so `test_log_levels`' looped-annotation rule holds by construction
+    # rather than by an allowlist entry. It has to exist at all because this function re-raises
+    # and `state_guard.main` hands its exit code straight to `SystemExit`: without it, giving up
+    # reaches the operator as a bare traceback with no annotation, indistinguishable from a guard
+    # that never retried — the very thing this function was added to change. Reason first, because
+    # an `::error::` is read left-to-right and truncated (ADR-0039).
+    _log.error(f"ABORT: {reason} — giving up on {what}")
+    assert (
+        failure is not None
+    )  # the loop only leaves via `return` or after `except` set this
+    raise failure
 
 
 def remote_files(repo: str, token: str | None) -> list[str]:
