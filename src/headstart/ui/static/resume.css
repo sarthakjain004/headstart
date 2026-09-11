@@ -86,8 +86,27 @@
 .rb-pop-head { display: flex; align-items: center; justify-content: space-between; gap: 8px;
   font-weight: 600; margin-bottom: 8px; }
 .rb-doclist { display: flex; flex-direction: column; gap: 4px; max-height: 40vh; overflow: auto; }
+/* The saved-job picker inside the "Tailor for a job" popover. Same row button as the Résumés
+   list — it is the same gesture in the same menu shape — and the same self-scrolling cap, since
+   an account with forty stars would otherwise push the name field off the bottom of the menu.
+   The `[hidden]` rule is not optional: the editor puts this away by setting `.hidden`, and the
+   `display: flex` above would outrank the attribute's own UA rule and leave it on screen. */
+.rb-jobpick { display: flex; flex-direction: column; gap: 4px; max-height: 32vh; overflow: auto;
+  margin-bottom: 10px; }
+/* The one popover holding a scrolling list AND a footer that has to stay reachable. Two nested
+   scrollers do not share a height on their own: measured in Chromium with 40 stars, the list took
+   its 32vh, the menu hit its own 520px cap, and "Create version" ended 28px BELOW the menu's
+   visible bottom — the button the whole menu exists for, reachable only by scrolling past the
+   list. A column that lets the list, and only the list, shrink gives the footer its space first.
+   Scoped to this popover: the other two have no list to shrink and are left exactly as they are. */
+.rb-pop-pick { display: flex; flex-direction: column; }
+.rb-pop-pick > * { flex: none; }
+.rb-pop-pick > .rb-jobpick { flex: 0 1 auto; min-height: 3.5rem; }
+.rb-jobpick[hidden] { display: none !important; }
 .rb-docrow { display: flex; gap: 6px; align-items: stretch; }
-.rb-docrow.on .rb-docopen { border-color: var(--accent); }
+/* The row that is currently chosen — the open résumé in the Résumés list, and the saved job the
+   next version will be tailored for in the picker. One declaration, because it is one idea. */
+.rb-docrow.on .rb-docopen, .rb-docopen.on { border-color: var(--accent); }
 .rb-docopen { flex: 1; text-align: left; background: var(--raise-2); border: 1px solid var(--rule);
   color: var(--ink); border-radius: var(--r-md); padding: 8px 10px; cursor: pointer; font: inherit;
   display: flex; flex-direction: column; gap: 2px; }

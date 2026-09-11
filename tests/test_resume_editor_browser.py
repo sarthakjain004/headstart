@@ -521,3 +521,82 @@ def test_a_free_canvas_drag_is_bounded_by_the_document_s_own_paper(page):
         f"the drag stopped at {landed}in — this document is A4, whose canvas ends at "
         f"{setup['a4']}in, and Letter's is {setup['letter']}in"
     )
+
+
+def test_the_saved_job_picker_scrolls_and_leaves_the_menu_usable(page):
+    """Forty stars must not push "Create version" out of the menu, and a click on a row's
+    second line must still pick that row.
+
+    Neither is answerable in `tests/js/resume_editor.test.js`. The DOM stub measures nothing, so
+    "the footer is still on screen" is not a question it can be asked; and its `closest()` answers
+    about the element it was called on and nothing above it, so a click that really lands on the
+    `<span class="note">` inside the row button — which is most of the row's height — is a climb
+    the stub never has to make.
+
+    `saved_on=False` in the stub server, so the page's own `window.savedJobs` reports no list
+    (the signed-out shape). The fixture replaces it, which is exactly the seam the editor reads.
+    """
+    page.evaluate("""() => {
+      window.savedJobs = () => Array.from({length: 40}, (_, i) => ({
+        job_id: 'greenhouse:acme:' + i, title: 'Backend Engineer ' + i, company: 'Company ' + i,
+        url: 'https://example.test/' + i, location: 'Bengaluru', salary: '₹40L–₹60L',
+        starred_at: '2026-09-' + String(40 - i).padStart(2, '0') + 'T09:00:00+00:00', open: true,
+      }));
+    }""")
+    page.evaluate("() => document.getElementById('rb-version-new').click()")
+    page.wait_for_timeout(150)
+
+    box = page.evaluate("""() => {
+      const pop = document.getElementById('rb-pop-version');
+      const pick = document.getElementById('rb-version-jobs');
+      const create = document.getElementById('rb-version-create');
+      const r = el => { const b = el.getBoundingClientRect();
+                        return {top: b.top, bottom: b.bottom, height: b.height}; };
+      return {pop: r(pop), pick: r(pick), create: r(create),
+              rows: pick.querySelectorAll('[data-saved]').length,
+              scrolls: pick.scrollHeight > pick.clientHeight + 1,
+              viewport: window.innerHeight};
+    }""")
+
+    assert box["rows"] == 40, (
+        f"the picker drew {box['rows']} rows, not the 40 it was handed"
+    )
+    assert box["scrolls"], (
+        "the picker is not scrolling its own rows, so forty stars grow the menu instead"
+    )
+    assert box["create"]["bottom"] <= box["pop"]["bottom"] + 1, (
+        f"Create version ends {box['create']['bottom']}px down and the menu ends at "
+        f"{box['pop']['bottom']}px — the button the whole menu exists for is outside it"
+    )
+    assert box["create"]["bottom"] <= box["viewport"], (
+        f"Create version is {box['create']['bottom'] - box['viewport']}px below the fold"
+    )
+
+    # And on a phone, where the menu's own cap is 60vh rather than 520px and there is far less
+    # room for the list to give back. 390x844 is the viewport the popover's max-height comment
+    # already cites as the one it fits whole on.
+    wide = page.viewport_size
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.wait_for_timeout(150)
+    phone = page.evaluate("""() => {
+      const r = id => document.getElementById(id).getBoundingClientRect();
+      return {pop: r('rb-pop-version').bottom, create: r('rb-version-create').bottom};
+    }""")
+    assert phone["create"] <= phone["pop"] + 1, (
+        f"on a 390x844 phone Create version ends {phone['create']}px down and the menu at "
+        f"{phone['pop']}px"
+    )
+    page.set_viewport_size(wide)
+    page.wait_for_timeout(150)
+
+    # The click a real pointer makes: on the row's own second line, not on the button's padding.
+    picked = page.evaluate("""() => {
+      const note = document.querySelector('#rb-version-jobs [data-saved] .note');
+      note.click();
+      return {name: document.getElementById('rb-version-name').value,
+              marked: document.querySelectorAll('#rb-version-jobs [aria-pressed="true"]').length};
+    }""")
+    assert picked["name"] == "Company 0 · Backend Engineer 0", (
+        f"clicking inside a row named the version {picked['name']!r}"
+    )
+    assert picked["marked"] == 1, "the clicked row is not the one marked as chosen"
