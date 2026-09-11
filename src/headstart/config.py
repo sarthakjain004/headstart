@@ -277,7 +277,7 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         # a credited 12 in 56,527 predicts 0.02 hits in a sample that size, so the sample bounds
         # the rate low and cannot show the 12 are gone. The 1.28 tech/min above is the argument.)
         #
-        # Parked as one Board rather than gated as a class: ADR-0134 records the gap analysis that
+        # Parked as one Board rather than gated as a class: ADR-0136 records the gap analysis that
         # rejected a volume dimension, and `docs/pipeline/2026-09-10_five-run-log-review.md` §3 has
         # the run figures. Its 100-job row in `data/validate/liveness/teamtailor.csv` is one page,
         # so every ledger-driven view of this Board is 565x too small — which is why it stayed
