@@ -24,9 +24,16 @@
   const Doc = root.ResumeDocument;
 
   /** A filename that will not surprise anyone: the résumé's own name, ASCII-folded. */
+  /* `\w` is ASCII, so stripping to it threw away every script that is not Latin: a résumé named
+     in Devanagari, Han, Cyrillic or Arabic reduced to nothing and downloaded as `resume.pdf`,
+     for every user with a name in their own alphabet. Unicode classes keep the letters, the
+     digits and the combining marks that make them — NFC rather than NFKD for the same reason,
+     since decomposing a Devanagari cluster and then dropping its marks destroys the word.
+     What is still removed is what a filename cannot carry: separators, quotes, control
+     characters, and anything else outside those classes. */
   function filename(doc, ext) {
-    const stem = String(doc.name || 'resume').normalize('NFKD')
-      .replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_').slice(0, 60) || 'resume';
+    const stem = String(doc.name || 'resume').normalize('NFC')
+      .replace(/[^\p{L}\p{N}\p{M}\s_-]/gu, '').trim().replace(/\s+/g, '_').slice(0, 60) || 'resume';
     return stem + '.' + ext;
   }
 
@@ -200,7 +207,15 @@
 
     (function walk(node) {
       node.id = safe(node.id);
-      for (const child of node.children || []) walk(child);
+      /* An imported file's `children` can be anything, and `|| []` does not save it: an object is
+         truthy and not iterable, a string iterates into characters. That reached the user as a
+         raw "object is not iterable" alert from inside the render. Normalising here — the one
+         place every node is already visited — is what makes the tree readable rather than the
+         file refused. */
+      node.children = Array.isArray(node.children)
+        ? node.children.filter(child => child && typeof child === 'object')
+        : [];
+      for (const child of node.children) walk(child);
     })(doc.root);
 
     doc.content = rekey(doc.content);
