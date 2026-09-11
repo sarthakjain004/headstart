@@ -1603,16 +1603,35 @@
      other résumé. */
   const onAccount = id => !!sync && sync.rows().some(r => r.id === id);
 
+  /* Whether the Account's copy has moved on past the one in this browser. Without this the
+     editor never compared the two revisions at all: opening a résumé on a second machine gave
+     you the stale local copy with nothing said, and you found out when the push was refused —
+     after redoing the work. A local row written before `rev` was indexed says nothing rather
+     than guessing: `|| 0` here would read every unknown revision as 0 and call every synced
+     résumé stale against a copy it is identical to. (`> undefined` is false on its own, so the
+     `typeof` is belt and braces — it is here to stop that `|| 0` being added.) */
+  const behindAccount = row => {
+    if (!sync || typeof row.rev !== 'number') return false;
+    const theirs = sync.rows().find(r => r.id === row.id);
+    return !!theirs && (theirs.rev || 0) > row.rev;
+  };
+
   function docListPaint() {
     const rows = repository.list();
     const current = doc();
     if (askDocDrop && !rows.some(r => r.id === askDocDrop)) askDocDrop = null;
-    el('rb-doclist').innerHTML = rows.length ? rows.map(r =>
-      '<div class="rb-docrow' + (current && r.id === current.id ? ' on' : '') + '">' +
+    el('rb-doclist').innerHTML = rows.length ? rows.map(r => {
+      const behind = behindAccount(r);
+      return '<div class="rb-docrow' + (current && r.id === current.id ? ' on' : '') + '">' +
       '<button class="rb-docopen" data-open="' + esc(r.id) + '">' + esc(r.name || 'Untitled') +
       '<span class="note">' + esc((Layouts.get(r.layoutId) || {}).label || r.layoutId) + ' · ' +
       esc(String(r.updatedAt || '').slice(0, 10)) +
-      (onAccount(r.id) ? ' · on your account' : '') + '</span></button>' +
+      (behind ? ' · a newer copy is on your account'
+        : onAccount(r.id) ? ' · on your account' : '') + '</span></button>' +
+      (behind
+        ? '<button class="ghost rb-mini" data-pull-newer="' + esc(r.id) +
+          '" title="Open the newer copy from your account, keeping this one">Get newer</button>'
+        : '') +
       (askDocDrop === r.id
         ? '<span class="rb-confirm rb-confirm-row"><span class="note">' +
           esc(onAccount(r.id)
@@ -1622,7 +1641,8 @@
           '<button class="ghost rb-mini" data-drop-no="' + esc(r.id) + '">Keep</button></span>'
         : '<button class="ghost rb-mini danger" data-drop="' + esc(r.id) +
           '" title="Delete" aria-label="Delete ' + esc(r.name || 'Untitled') + '">×</button>') +
-      '</div>').join('') : '<p class="note">Nothing saved yet.</p>';
+      '</div>';
+    }).join('') : '<p class="note">Nothing saved yet.</p>';
 
     /* The other half of the list, and the reason the account copy is worth having at all: a
        résumé this browser has never seen. On a new machine, or after a cleared cache, the
@@ -1685,7 +1705,11 @@
        disabled AND says why: a switch that flips and then silently stores nothing is the
        dishonest failure this whole feature has to avoid. */
     toggle.disabled = status.state === 'signed-out';
-    el('rb-sync-now').hidden = !on || status.state !== 'ready';
+    /* Still offered while the Hub is unreachable: that is the one state where trying again is
+       exactly what the user wants, and hiding the button would leave a résumé the line has just
+       admitted is unsaved with no way to save it. */
+    el('rb-sync-now').hidden =
+      !on || (status.state !== 'ready' && status.state !== 'unreachable');
     el('rb-sync-state').textContent =
       status.state === 'signed-out' ? 'Sign in to use this'
       : !on ? ''
@@ -1971,6 +1995,19 @@
     });
 
     el('rb-doclist').addEventListener('click', e => {
+      const newer = e.target.closest('[data-pull-newer]');
+      if (newer && sync) {
+        /* Both copies are kept, exactly as a refused push keeps them: the account's copy opens
+           under its own id and this device's stays beside it as "… (this device)". Replacing
+           the local one would discard whatever was typed here since it last went up, which is
+           the one thing this feature must never do. */
+        flashSaved('Opening from your account…');
+        sync.adoptAccountCopy(newer.dataset.pullNewer).then(got => {
+          if (!got) flashSaved('That résumé could not be read.', true);
+          docListPaint();
+        });
+        return;
+      }
       const open = e.target.closest('[data-open]');
       const drop = e.target.closest('[data-drop]');
       const keep = e.target.closest('[data-drop-no]');

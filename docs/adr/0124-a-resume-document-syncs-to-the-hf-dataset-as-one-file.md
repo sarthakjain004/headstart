@@ -125,3 +125,32 @@ editing the same résumé conflict at document granularity rather than merging p
 
 Nothing here is wired up yet. This ADR fixes the record and the posture so that the client model,
 which is built and tested, is not built against a shape the store cannot hold.
+
+## Amendment (2026-09-11): a stored copy that cannot be READ is refused, and the loser's way out is offered before the refusal
+
+**Status:** accepted. Extends decision 4 ("a conflict is never resolved by discarding") to the two
+cases the original decision did not name: a read that does not answer, and a device that already
+knows it is behind.
+
+Decision 4 was implemented as `stored = store.get_resume(...)`, and `get_resume` answers `None` for
+an absent record **and** for a Hub that did not answer. The push route read that `None` as "nothing
+stored, so nothing to lose" and accepted any revision on it — so one unanswered read let a stale
+push overwrite a newer copy and answered `200`, with the losing revision surviving only in the
+dataset's git history, which decision 5's squash exists to erase. That is decision 4 failing open
+through an ambiguity one level down, and it is the same conflation `Store.get` was already fixed
+for after it minted a replacement Subscription during an outage.
+
+1. **Absent and unreadable are different answers on the push path.** `Store.resume_revision` answers
+   `None` only for a document the Account does not hold, and raises for one it holds and could not
+   read — the fail-closed shape `parses_used` already has. Absence is decided by the listing, which
+   is what the delete route checks too, so the two routes agree on what "no such résumé" means.
+2. **The refusal is a 409 with no `stored` body, not a 503.** The client maps 503 to "this
+   deployment keeps no account copies at all" and turns the feature off; a bodyless 409 is already
+   its "refused, and nothing here was overwritten" path. The cost is that a Hub outage reads to the
+   user as a conflict. That is the safe direction: both sentences end in "nothing here was
+   overwritten", and only one of them is reversible if it is wrong.
+3. **Both-copies-kept is reachable deliberately, not only through a refused push.** The Résumés list
+   compares each local row's revision to the Account's and says when it is behind, offering the
+   Account's copy through the same resolution a refusal gets — this device's copy is kept beside it
+   as "… (this device)". Discovering you were behind *after* an afternoon's work, when the push is
+   refused, was decision 4 arriving too late to help.

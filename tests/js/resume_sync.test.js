@@ -52,8 +52,11 @@ function loadSync(options) {
   /* `resume_components` then `resume_document` first: the sync layer mints a document id for the
      copy it keeps aside after a conflict, and that lives in `ResumeDocument.newDocumentId` —
      which is also where the Builder mints one, so there is a single spelling of the shape
-     `store.py`'s `_RESUME_ID` guards. */
-  for (const name of ['resume_components', 'resume_document', 'resume_sync']) {
+     `store.py`'s `_RESUME_ID` guards. `resume_export` because every document arriving from the
+     wire goes through its `sanitiseIds`, the same hardening the import path has always had —
+     stubbing that here would test the stub rather than the thing that keeps a hostile or
+     malformed record from reaching the renderer. */
+  for (const name of ['resume_components', 'resume_document', 'resume_export', 'resume_sync']) {
     const file = path.join(DIR, name + '.js');
     vm.runInContext(fs.readFileSync(file, 'utf8'), ctx, { filename: file });
   }
@@ -291,6 +294,140 @@ test('an unreachable hub keeps the edit and tries again at the next event', () =
     assert.equal(repository.get('rmfk3n2abcd').rev, 0, 'an offline push claimed a revision');
     return sync.flush('save');
   }).then(() => assert.equal(repository.get('rmfk3n2abcd').rev, 1));
+});
+
+test('a push that never landed stops status() reading as a saved account copy', () => {
+  /* The lie this pins, in the shape the user saw it: the switch on, the line reading
+     "Saved 3 min ago", and every push since the switch went on having failed. `status()` kept
+     `ready` because only an ANSWERED request ever touched the state, and it kept an empty error
+     because the off/unreachable branch of `_settle` said nothing at all — so the line that
+     paints it fell through to `at`, which is the last SUCCESS and never moves. Two mechanisms,
+     one sentence on screen; fixing either alone leaves the same sentence on screen. */
+  const doc = aDoc({ sync: true, rev: 0 });
+  const wire = fakeWire([
+    { status: 200, body: { ok: true, rev: 1 } }, { reject: true }, { reject: true },
+    { status: 200, body: { ok: true, rev: 2 } },
+  ]);
+  const { sync, clock } = loadSync({ docs: [doc], live: () => doc, wire });
+  sync.note(doc);
+  return sync.flush('save').then(() => {
+    const landed = sync.status().at;
+    assert.equal(sync.status().state, 'ready');
+    assert.ok(landed, 'a successful push recorded no time');
+
+    clock.at += 180000;
+    sync.note(doc);
+    return sync.flush('save').then(() => {
+      assert.notEqual(sync.status().state, 'ready',
+        'status() still reports a working account copy after an unanswered push');
+      assert.ok(sync.status().error,
+        'nothing marks the failure, so the line falls back to the last success and says "Saved"');
+      assert.equal(sync.status().at, landed, 'a failed push moved the saved-at time');
+
+      clock.at += 180000;
+      sync.note(doc);
+      return sync.flush('save');
+    }).then(() => {
+      assert.ok(sync.status().error, 'the second failure in a row read as saved');
+      /* And it clears itself the moment one really lands — an error that sticks after the work
+         is on the account is the same dishonesty pointing the other way. */
+      clock.at += 180000;
+      sync.note(doc);
+      return sync.flush('save');
+    }).then(() => {
+      assert.equal(sync.status().state, 'ready');
+      assert.equal(sync.status().error, '');
+      assert.notEqual(sync.status().at, landed, 'a push that landed did not move the time');
+    });
+  });
+});
+
+test('a deployment that keeps no account copies says so on a PUSH, not only on a probe', () => {
+  /* Same branch, the other state. `refresh` has always reported this one; a push through it
+     said nothing, so the line kept the last success here too. */
+  const doc = aDoc({ sync: true, rev: 0 });
+  const { sync } = loadSync({
+    docs: [doc], live: () => doc,
+    answers: [{ status: 503, body: { error: 'not configured' } }],
+  });
+  sync.note(doc);
+  return sync.flush('save').then(() => {
+    assert.equal(sync.status().state, 'off');
+    assert.ok(sync.status().error, 'a push into a deployment that stores nothing read as saved');
+  });
+});
+
+/* ---- what arrives from the wire -------------------------------------------------------------
+   A document coming back from the Account is the browser's own export round-tripped through a
+   store, and it reaches `renderDocument` without a file dialog in between — so it must get the
+   hardening the import path has. `Export.sanitiseIds` was called from `importJson` and nowhere
+   else, which made the account path the LESS checked of the two. */
+
+const aHostileRecord = () => ({
+  schema: 1, id: 'rmfk3n2wxyz', name: 'From the desktop', layoutId: 'headless-headhunter',
+  updatedAt: '2026-09-09T00:00:00+00:00',
+  /* #418's shape exactly: an object is truthy and not iterable, and `|| []` does not save it.
+     It reached the renderer as "doc.root.children is not iterable" out of the middle of a paint. */
+  root: { id: '__root__', type: '__root__', children: { '0': { id: 'a', children: [] } } },
+  content: { 'x"><img src=x onerror=alert(1)>': { text: 'hi' } }, sync: true, rev: 4,
+});
+
+test('a document pulled from the account is hardened exactly like an imported file', () => {
+  const { sync } = loadSync({ docs: [], answers: [{ status: 200, body: aHostileRecord() }] });
+  return sync.pull('rmfk3n2wxyz').then(incoming => {
+    assert.ok(Array.isArray(incoming.root.children),
+      'the pull path handed the renderer a children object it cannot iterate');
+    assert.ok(Object.keys(incoming.content).every(id => /^[\w-]{1,64}$/.test(id)),
+      'an id the editor puts in a selector and in markup arrived unchecked');
+    /* And the two things `importJson` resets stay untouched: this IS the account's copy, and a
+       cleared revision would make its next push land as a first push. */
+    assert.equal(incoming.id, 'rmfk3n2wxyz');
+    assert.equal(incoming.rev, 4);
+    assert.equal(incoming.sync, true);
+  });
+});
+
+test('the copy adopted after a conflict is hardened too — same bytes, same door', () => {
+  const doc = aDoc({ sync: true, rev: 1 });
+  const { sync, repository, adopted } = loadSync({
+    docs: [doc], live: () => doc,
+    answers: [{ status: 409, body: { error: 'changed elsewhere', stored: aHostileRecord() } }],
+  });
+  sync.note(doc);
+  return sync.flush('save').then(() => {
+    assert.equal(adopted.length, 1, 'the account copy was not adopted');
+    assert.ok(Array.isArray(adopted[0].incoming.root.children),
+      'the conflict path opened a document the renderer cannot paint');
+    assert.ok(Array.isArray(repository.get('rmfk3n2wxyz').root.children),
+      'and stored it in that state, so it throws again on the next load');
+  });
+});
+
+test('the account copy can be taken deliberately, and this device keeps its own', () => {
+  /* What the Résumés list offers when a row is behind: neither copy is discarded, exactly as a
+     refused push resolves it — because the local one may hold edits that never went up. */
+  const mine = aDoc({ sync: true, rev: 1, name: 'Ada' });
+  const stored = Object.assign(aHostileRecord(), { id: 'rmfk3n2abcd' });
+  const { sync, repository, adopted } = loadSync({
+    docs: [mine], live: () => mine, answers: [{ status: 200, body: stored }],
+  });
+  return sync.adoptAccountCopy('rmfk3n2abcd').then(got => {
+    assert.equal(got, true);
+    assert.equal(adopted[0].incoming.name, 'From the desktop', 'it did not open the account copy');
+    assert.equal(repository.get('rmfk3n2abcd').name, 'From the desktop');
+    const kept = repository.all().find(d => /this device/.test(d.name || ''));
+    assert.ok(kept, "this device's copy was discarded");
+    assert.equal(kept.sync, false, 'the kept copy races the account for the same slot');
+    assert.equal(kept.rev, 0);
+  });
+});
+
+test('there is nothing to adopt for a document this browser does not have', () => {
+  const { sync, wire } = loadSync({ docs: [] });
+  return sync.adoptAccountCopy('rmfk3n2abcd').then(got => {
+    assert.equal(got, false);
+    assert.equal(wire.calls.length, 0, 'it went to the wire for a document it cannot keep beside');
+  });
 });
 
 /* ---- the opt-in itself ---------------------------------------------------------------------- */

@@ -74,6 +74,7 @@ function matches(el, sel) {
   if (sel === '[data-drop-yes]') return el.dataset.dropYes != null;
   if (sel === '[data-drop-no]') return el.dataset.dropNo != null;
   if (sel === '[data-pull]') return el.dataset.pull != null;
+  if (sel === '[data-pull-newer]') return el.dataset.pullNewer != null;
   if (sel === '[data-saved]') return el.dataset.saved != null;
   if (sel === 'input:not([type="checkbox"]), textarea, select') return !!el._caret;
   if (sel === '.rb-h') return el.dataset.handle != null;
@@ -167,8 +168,12 @@ function loadEditor(options) {
     ctx.fetch = (url, init) => {
       const method = (init && init.method) || 'GET';
       wire.push({ url, method, body: init && init.body ? JSON.parse(init.body) : null });
+      /* Looked up per call and by method alone as a fallback, so a test can change what the
+         account answers PART WAY THROUGH — which is the only way to reach the state this all
+         exists for: a session that was storing fine and then stopped. */
       const answer = (opts.account[method + ' ' + url] || opts.account[url] ||
-        { status: 200, body: { ok: true, rev: 1 } });
+        opts.account[method] || { status: 200, body: { ok: true, rev: 1 } });
+      if (answer.reject) return Promise.reject(new Error('offline'));
       return Promise.resolve({ status: answer.status, json: () => Promise.resolve(answer.body) });
     };
   }
@@ -200,7 +205,10 @@ function fakeStorage(docs) {
     setItem: (k, v) => map.set(k, String(v)),
     removeItem: k => map.delete(k),
   };
-  const index = (docs || []).map(d => ({ id: d.id, name: d.name, layoutId: d.layoutId, updatedAt: d.updatedAt }));
+  /* `rev` is in the index because the repository puts it there — it is what lets the list see
+     that a row is behind the account's copy without parsing every document. */
+  const index = (docs || []).map(d => ({ id: d.id, name: d.name, layoutId: d.layoutId,
+    updatedAt: d.updatedAt, rev: d.rev || 0 }));
   if (index.length) {
     s.setItem('headstart.resumes.index', JSON.stringify(index));
     s.setItem('headstart.resumes.last', index[0].id);
@@ -1082,6 +1090,109 @@ test('deleting a synced résumé says it leaves the account too, and takes it of
   }).then(() => {
     assert.ok(wire.some(c => c.method === 'DELETE' && c.url === '/resumes/rmfk3n2wxyz'),
       'the account copy was left behind');
+  });
+});
+
+test('the status line stops saying "Saved" once the pushes stop landing', () => {
+  /* The dishonest state this feature's own header says it must never sit in, reached through
+     the real editor: the switch on, the account unreachable, and the line still reading
+     "Saved 3 min ago" from the last push that worked. Nothing here is about the network — the
+     browser copy is fine and the edit is kept — it is about the sentence on screen. */
+  const account = {};
+  const { ctx, el } = loadEditor({ account, storage: fakeStorage() });
+  el('rb-open').fire('click');
+  el('rb-sync').checked = true;
+  el('rb-sync').fire('change', { target: el('rb-sync') });
+  return settled().then(() => {
+    assert.ok(/^Saved/.test(el('rb-sync-state').textContent), 'a push that landed said nothing');
+
+    account.PUT = { reject: true };   // the machine goes offline mid-session
+    const bullet = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current())
+      .filter(n => n.type === 'bullet')[0];
+    ctx.ResumeEditor.select(bullet.id);
+    el('rb-pane-document').fire('input', {
+      target: target({ node: bullet.id, field: 'text' }, { value: 'Written while offline' }),
+    });
+    ctx.document.visibilityState = 'hidden';
+    el('rb-paper')._docVisibility.forEach(fn => fn({}));
+    return settled();
+  }).then(() => {
+    const line = el('rb-sync-state').textContent;
+    assert.ok(!/^Saved/.test(line),
+      'the line still claims a save for work that never left this browser: ' + line);
+    assert.ok(/not saved/i.test(line), 'it says nothing at all instead: ' + line);
+    /* And "Save now" stays: an unreachable account is the one state where trying again is
+       exactly what the user wants, so the line must not admit the failure and then take away
+       the only control that answers it. */
+    assert.equal(el('rb-sync-now').hidden, false, 'told it is unsaved, with no way to save it');
+  });
+});
+
+test('a local résumé behind the account says so, and keeps both when it catches up', () => {
+  /* Nothing compared the two revisions before this: `sync.refresh()` fetched rows carrying
+     `rev`, and the list used them only to print "· on your account". Edit on the laptop, open
+     the same résumé on the desktop, and you got the stale local copy with no warning — you
+     found out when the push was refused, after redoing the work. */
+  const local = {
+    schema: 1, id: 'rmfk3n2wxyz', name: 'Ada', layoutId: 'headless-headhunter',
+    updatedAt: '2026-09-08T00:00:00+00:00', root: { id: '__root__', type: '__root__', children: [] },
+    content: {}, variants: {}, tailorings: [], activeTailoring: null, theme: {}, sync: true, rev: 1,
+  };
+  const stored = Object.assign({}, local, { name: 'Ada, from the desktop', rev: 4,
+    updatedAt: '2026-09-09T00:00:00+00:00' });
+  const { ctx, el } = loadEditor({
+    storage: fakeStorage([local]),
+    account: {
+      '/resumes': { status: 200, body: [{ id: 'rmfk3n2wxyz', name: 'Ada, from the desktop',
+        layoutId: 'headless-headhunter', updatedAt: '2026-09-09T00:00:00+00:00', rev: 4 }] },
+      '/resumes/rmfk3n2wxyz': { status: 200, body: stored },
+    },
+  });
+  return settled().then(() => {
+    el('rb-open').fire('click');
+    const list = el('rb-doclist').innerHTML;
+    assert.ok(/newer copy is on your account/.test(list), 'the stale row said nothing: ' + list);
+    assert.ok(/data-pull-newer="rmfk3n2wxyz"/.test(list), 'it warns but offers nothing');
+
+    el('rb-doclist').fire('click', { target: target({ pullNewer: 'rmfk3n2wxyz' }) });
+    return settled();
+  }).then(() => {
+    assert.equal(ctx.ResumeEditor.current().name, 'Ada, from the desktop',
+      'the account copy was not opened');
+    /* And this device's copy is still here, under its own id — it may hold edits that never
+       went up, and discarding those is the one thing ADR-0124 decision 4 forbids. */
+    const rows = ctx.ResumeEditor.current && el('rb-doclist').innerHTML;
+    assert.ok(/this device/.test(rows), "this browser's copy was discarded: " + rows);
+  });
+});
+
+test('a row indexed before revisions were recorded is not called stale', () => {
+  /* The half that would make the warning above useless the day it shipped: an index row written
+     by an older build carries no `rev`, and if an unknown revision is read as 0 then every
+     synced résumé is announced out of date against a copy it is identical to.
+
+     What turns this red is `(theirs.rev || 0) > (row.rev || 0)` — the natural way to write that
+     comparison, and the mistake this exists to catch. Deleting `behindAccount`'s explicit
+     `typeof row.rev !== 'number'` alone does NOT turn it red, because `4 > undefined` is already
+     false: the guard is belt to that braces, kept because the next person to touch the line will
+     reach for `|| 0` and the comment there is the only thing that says not to. */
+  const local = {
+    schema: 1, id: 'rmfk3n2wxyz', name: 'Ada', layoutId: 'headless-headhunter',
+    updatedAt: '2026-09-08T00:00:00+00:00', root: { id: '__root__', type: '__root__', children: [] },
+    content: {}, variants: {}, tailorings: [], activeTailoring: null, theme: {}, sync: true, rev: 4,
+  };
+  const storage = fakeStorage([local]);
+  storage.setItem('headstart.resumes.index', JSON.stringify(
+    [{ id: local.id, name: local.name, layoutId: local.layoutId, updatedAt: local.updatedAt }]));
+  const { el } = loadEditor({ storage, account: {
+    '/resumes': { status: 200, body: [{ id: 'rmfk3n2wxyz', name: 'Ada',
+      layoutId: 'headless-headhunter', updatedAt: '2026-09-08T00:00:00+00:00', rev: 4 }] },
+  } });
+  return settled().then(() => {
+    el('rb-open').fire('click');
+    const list = el('rb-doclist').innerHTML;
+    assert.ok(/· on your account/.test(list), 'the row lost its account note entirely');
+    assert.ok(!/newer copy/.test(list), 'a row with no recorded revision was called stale');
   });
 });
 
