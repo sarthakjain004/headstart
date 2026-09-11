@@ -1,6 +1,6 @@
 """The Inspection — one Résumé document read block by block, and how it reads (ADR-0136).
 
-Two halves, and the split is the whole point. :func:`inspect` gets the *facts* by running
+Two halves, and the split is the whole point. :func:`read_document` gets the *facts* by running
 `inspect_document.js` under `node`, because every rule that decides them is JavaScript and
 ADR-0136 refused to own a second copy of any of them. :func:`render` turns those facts into
 the outline a caller sees, and decides nothing — it has no opinion about which block prints or
@@ -40,7 +40,7 @@ class Unreadable(Exception):
     """
 
 
-def inspect(document: dict[str, Any], view: str = "master") -> dict[str, Any]:
+def read_document(document: dict[str, Any], view: str = "master") -> dict[str, Any]:
     """The facts about `document` as `view` reads it — ``"master"``, or a Tailoring's id or
     name. Raises :class:`Unreadable` when no reading can be produced."""
     if shutil.which("node") is None:
@@ -105,9 +105,24 @@ def _flags(block: dict[str, Any], viewing_master: bool) -> str:
         out.append("OFF for this version")
     if not block["prints"] and not out:
         out.append("not printed — it sits inside a block that is off")
-    if block["reworded_by"] and viewing_master:
-        out.append("reworded by " + ", ".join(f'"{n}"' for n in block["reworded_by"]))
+    if viewing_master:
+        # Both ways a version overrides a block, and only from the master's side. Reading a
+        # version already shows that version's own overrides — `[master says: …]` on the field
+        # and "OFF for this version" on the block — so repeating what the OTHER versions do to
+        # it here would be noise about documents the caller did not ask to read. The master is
+        # the one view where the question "what do my versions do to this block" belongs, and
+        # from there it is one call rather than one per version. Reporting only the rewording
+        # half said a bullet had been rewritten for one application while staying silent about
+        # another that drops it entirely.
+        if block["reworded_by"]:
+            out.append("reworded by " + _named(block["reworded_by"]))
+        if block["left_out_by"]:
+            out.append("left out by " + _named(block["left_out_by"]))
     return "  —  " + "; ".join(out) if out else ""
+
+
+def _named(names: list[str]) -> str:
+    return ", ".join(f'"{n}"' for n in names)
 
 
 def render(facts: dict[str, Any]) -> str:

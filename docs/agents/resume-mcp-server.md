@@ -20,9 +20,12 @@ claude mcp add headstart-resume \
   -- python -m headstart.resume_mcp
 ```
 
-Run it from a checkout where `headstart` is importable — `pip install -e .` in the repo, or
-prefix the command with the interpreter of a virtualenv that has it. Add `--scope user` to make
-it available in every project rather than this one.
+Run it from a checkout where `headstart` is importable, installed **with the `alerts` extra** —
+`pip install -e ".[alerts]"` in the repo. The extra is what carries `huggingface_hub`, which is
+how the Subscriptions dataset is read; a plain `pip install -e .` imports fine and then fails on
+the first tool call. Prefix the command with the interpreter of a virtualenv that has it if it is
+not the one on `PATH`. Add `--scope user` to make it available in every project rather than this
+one.
 
 Then `/mcp` in the client lists it, and `claude mcp get headstart-resume` shows what it was
 given.
@@ -42,7 +45,8 @@ token comes from.
 ### When the credentials are absent
 
 The server still starts, still lists its three tools, and prints the reason to stderr. Calling a
-tool then answers with a sentence naming exactly the variables that are unset — not a traceback,
+tool then answers with a sentence naming exactly the variables that are unset — or, if the
+`alerts` extra is missing, the `pip install` that fixes it — not a traceback,
 and not a client that reports "failed to connect" while telling you nothing. That is tested
 (`test_without_credentials_the_server_still_lists_its_tools_and_explains_itself`).
 
@@ -77,6 +81,10 @@ because they are fixed with three different switches:
 - `OFF for this version` — that Tailoring's hidden list.
 - `not printed — it sits inside a block that is off` — the block itself is fine; its section is not.
 
+Reading the **master** additionally says how each version overrides each block, both ways —
+`reworded by "Stripe backend"; left out by "Datadog SRE"` — so "what do my versions do to this
+bullet" is one call, not one call per version.
+
 ## Two things it cannot tell you
 
 **Only synced résumés exist here.** Account sync is per-résumé and off by default (ADR-0124,
@@ -84,6 +92,12 @@ ADR-0131). A résumé that has never had it switched on is in the person's brows
 else — this server cannot see it and cannot count it. `list_resumes` says so every time,
 including when the answer is empty, because a listing that silently shows two of four is worse
 than no listing.
+
+**A record that will not read is counted, not swallowed.** `list_resumes` compares the records it
+could parse against the ids actually filed, and says how many it could not read. `get_resume` and
+`inspect_resume` say "filed here but could not be read — it is not missing" rather than "no such
+résumé", because the store answers `None` for absent, corrupt *and* Hub-unreachable alike, and
+reporting an outage as a deletion is the worst of the three.
 
 **The account copy can be behind the browser.** It is written on three coarse events — an explicit
 save, the tab going away, and at most one push every few minutes while editing — not on every

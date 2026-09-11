@@ -64,7 +64,6 @@ test('every block is reported with its type, its declared fields and their value
   const seen = block(facts, header.id);
   assert.equal(seen.type, 'header');
   assert.equal(seen.label, 'Name & contact');
-  assert.equal(seen.shape, 'header');
   /* The fields come from the Component Type, not from what happens to be set — an empty field
      is a field the résumé HAS and has not filled in, which is the thing a caller most wants
      told. `fullName` is set, `phone` is not, and both are listed. */
@@ -142,6 +141,28 @@ test('a block off for the whole résumé is told apart from one inside it', () =
   assert.equal(block(facts, inside.id).hidden_on_master, false);
 });
 
+test('the master says which versions leave a block out, as well as which reword it', () => {
+  const ctx = load(ALL);
+  const D = ctx.ResumeDocument;
+  const store = built(ctx);
+  const bullet = byType(ctx, store, 'bullet')[1];
+  store.dispatch(D.Commands.addTailoring('Stripe backend'));
+  store.dispatch(D.Commands.addTailoring('Datadog SRE'));
+  const [stripe, datadog] = store.get().tailorings.map(t => t.id);
+  store.dispatch(D.Commands.setHidden(bullet.id, true, stripe));
+  store.dispatch(D.Commands.setContentFor(bullet.id, { text: 'Tuned p99.' }, datadog));
+
+  /* Both ways a version overrides a block, answered from the master in one read. Only the
+     rewording half was reported at first, so a bullet one version drops entirely looked
+     untouched unless every version was opened one at a time. */
+  const seen = block(reading(store.get(), 'master'), bullet.id);
+
+  assert.deepEqual(seen.left_out_by, ['Stripe backend']);
+  assert.deepEqual(seen.reworded_by, ['Datadog SRE']);
+  /* And it is a fact about the document, not about the view: the master still prints it. */
+  assert.equal(seen.prints, true);
+});
+
 test('a block off for one version still prints on the master', () => {
   const ctx = load(ALL);
   const D = ctx.ResumeDocument;
@@ -177,13 +198,11 @@ test('the document header carries what the account copy is, not just what it say
   const ctx = load(ALL);
   const store = built(ctx);
   const doc = ctx.ResumeDocument.clone(store.get());
-  doc.sync = true;
   doc.rev = 4;
 
   const facts = reading(doc);
 
   assert.equal(facts.rev, 4);
-  assert.equal(facts.sync, true);
   assert.equal(facts.layout_id, HH);
   assert.deepEqual(facts.viewing, { kind: 'master' });
   assert.deepEqual(facts.unknown_types, []);

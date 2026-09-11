@@ -25,7 +25,7 @@ import sys
 from typing import Any, TextIO
 
 from .account import Account, Unconfigured, open_account
-from .inspection import Unreadable, inspect, render
+from .inspection import Unreadable, read_document, render
 
 NAME = "headstart-resume"
 VERSION = "1.0.0"
@@ -130,16 +130,29 @@ def _document(account: Account, arguments: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(document_id, str) or not document_id:
         raise ToolFailure("document_id is required — take one from list_resumes.")
     document = account.document(document_id)
-    if document is None:
+    if document is not None:
+        return document
+    # None is three facts at once (absent, corrupt, Hub unreachable) and reporting all three
+    # as the first would tell someone their résumé is gone during an outage. The listing
+    # settles it: an id that is filed and still will not read is a record that exists.
+    if document_id in account.ids():
         raise ToolFailure(
-            f"This account keeps no synced résumé with id {document_id!r}. "
-            "list_resumes has the ids it does keep. " + SYNC_NOTE
+            f"This account has a résumé filed under {document_id!r} but it could not be "
+            "read — the record is corrupt, or the Hub did not answer. It is not missing. "
+            "Try again, and if it persists the file needs looking at directly."
         )
-    return document
+    raise ToolFailure(
+        f"This account keeps no synced résumé with id {document_id!r}. "
+        "list_resumes has the ids it does keep. " + SYNC_NOTE
+    )
 
 
-def list_resumes(account: Account) -> str:
+def list_resumes(account: Account, arguments: dict[str, Any]) -> str:
     documents = account.documents()
+    # `resumes_for` skips a record it cannot parse, silently. The id listing is the count that
+    # does not lie, so the gap between them is reported rather than absorbed — the same reason
+    # SYNC_NOTE exists, one layer in.
+    unreadable = len(account.ids()) - len(documents)
     if not documents:
         return (
             "This account has no synced Résumé documents.\n\n"
@@ -161,6 +174,14 @@ def list_resumes(account: Account) -> str:
             f"    {len(tailorings)} tailored version(s)"
             + (f": {names}" if names else "")
         )
+    if unreadable > 0:
+        lines += [
+            "",
+            (
+                f"{unreadable} further record(s) are filed under this account and could not "
+                "be read — corrupt, or the Hub did not answer. They are NOT listed above."
+            ),
+        ]
     lines += ["", SYNC_NOTE, "", FRESHNESS_NOTE]
     return "\n".join(lines)
 
@@ -178,10 +199,21 @@ def inspect_resume(account: Account, arguments: dict[str, Any]) -> str:
     if not isinstance(version, str):
         raise ToolFailure("version must be a tailoring's name or id, or 'master'.")
     try:
-        facts = inspect(document, version)
+        facts = read_document(document, version)
     except Unreadable as exc:
         raise ToolFailure(str(exc)) from exc
     return f"{render(facts)}\n\n{FRESHNESS_NOTE}"
+
+
+#: Tool name -> the function that answers it. Beside `TOOLS` rather than inside it, because
+#: `TOOLS` is serialised to the client and a function is not JSON. `test_every_tool_has_a
+#: _handler` pins the two together, since the failure of an `if`-cascade here was a tool that
+#: listed and then ran a different tool's body.
+HANDLERS = {
+    "list_resumes": list_resumes,
+    "get_resume": get_resume,
+    "inspect_resume": inspect_resume,
+}
 
 
 def call(account: Account, name: str, arguments: dict[str, Any]) -> str:
@@ -199,11 +231,7 @@ def call(account: Account, name: str, arguments: dict[str, Any]) -> str:
             "This server reads one account — the one its own configuration names — and no "
             "tool takes an account, an address or a path."
         )
-    if name == "list_resumes":
-        return list_resumes(account)
-    if name == "get_resume":
-        return get_resume(account, arguments)
-    return inspect_resume(account, arguments)
+    return HANDLERS[name](account, arguments)
 
 
 # ---- the transport --------------------------------------------------------------------

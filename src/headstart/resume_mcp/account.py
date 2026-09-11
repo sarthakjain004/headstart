@@ -14,6 +14,7 @@ which file is whose.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 from typing import Any
 
@@ -30,7 +31,8 @@ TOKEN_VAR = "SUBSCRIBERS_TOKEN"
 
 
 class Unconfigured(Exception):
-    """The server has no credentials, so it can read nobody's résumés.
+    """The server cannot read anybody's résumés yet — no credentials, or nothing to read
+    the dataset with.
 
     Carried rather than raised at startup: an MCP server that exits on a missing variable
     shows up in the client as a server that will not connect, which says nothing about what
@@ -50,16 +52,32 @@ class Account:
         self._store = store
 
     def documents(self) -> list[dict[str, Any]]:
-        """Every Account copy this Account keeps, newest edit first, exactly as stored."""
+        """Every Account copy this Account keeps, newest edit first, exactly as stored.
+
+        `Store.resumes_for` *skips* a record it cannot parse, so this list can be shorter than
+        the account's actual set and nothing in it would say so. Pair it with :meth:`ids` to
+        find out — a listing that silently shows three of four is the trap this server was
+        told not to be."""
         return self._store.resumes_for(self.id)
+
+    def ids(self) -> set[str]:
+        """The document ids this Account has files for — one listing, no reads.
+
+        The authority on *how many* documents exist, which the records themselves are not:
+        a record that will not parse has an id here and no entry in :meth:`documents`, and a
+        record that will not *read* has an id here and answers None from :meth:`document`.
+        Both are how "unreadable" is told apart from "not there" instead of being reported as
+        it."""
+        return self._store.resume_ids(self.id)
 
     def document(self, document_id: str) -> dict[str, Any] | None:
         """One Account copy by id, or None when this Account keeps no such document.
 
-        None covers three facts the store cannot tell apart — no such document, a corrupt
-        record, the Hub unreachable — which is `Store.get_resume`'s documented behaviour and
-        not something to re-decide here. The reader above says "this Account has no résumé
-        with that id", which is true of all three from where it stands.
+        None covers three facts `Store.get_resume` cannot tell apart — no such document, a
+        corrupt record, the Hub unreachable — and that is its documented behaviour, not
+        something to re-decide here. What the reader above must not do is report all three as
+        the first: :meth:`ids` separates them, because an id that is in the listing and still
+        answers None names a record that exists and could not be read.
         """
         return self._store.get_resume(self.id, document_id)
 
@@ -68,6 +86,16 @@ def open_account(env: dict[str, str] | None = None) -> Account:
     """The Account named by the environment. Raises :class:`Unconfigured` with a message
     written to be read by whoever has to fix it."""
     env = os.environ if env is None else env
+    # `huggingface_hub` is in the `alerts` extra, not in the two base dependencies, and
+    # `store` imports it lazily inside `_hf` — so a plain `pip install -e .` imports this
+    # module fine and then fails on the first tool call with a bare ModuleNotFoundError,
+    # several layers from anything that names the fix. Checked here, at the door.
+    if importlib.util.find_spec("huggingface_hub") is None:
+        raise Unconfigured(
+            "`huggingface_hub` is not installed, so the Subscriptions dataset cannot be "
+            'read. Install the extra that carries it: `pip install -e ".[alerts]"` in a '
+            "HeadStart checkout. See docs/agents/resume-mcp-server.md."
+        )
     missing = [name for name in (EMAIL_VAR, REPO_VAR, TOKEN_VAR) if not env.get(name)]
     if missing:
         raise Unconfigured(

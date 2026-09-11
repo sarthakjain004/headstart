@@ -109,7 +109,14 @@ the tests need nothing CI does not already install and none of them is an `impor
   the Python half is tested in `tests/test_resume_mcp.py`, whose one integration test skips when
   `node` is absent. Splitting them that way is what keeps the model's own rules under a test that
   always runs.
-- Two limitations are reported in every answer rather than left to be discovered: only résumés with
+- The server needs the `alerts` extra (`pip install -e ".[alerts]"`), which is what carries
+  `huggingface_hub`. `store` imports it lazily, so a base install imports this package fine and
+  then fails on the first tool call; `open_account` checks for it at the door and names the
+  install instead.
+- Three limitations are reported in every answer rather than left to be discovered: only résumés with
   account sync switched on exist in the dataset at all (ADR-0124, ADR-0131) — a listing that shows
   two of four is a trap — and the Account copy is written on coarse events, so it can be behind the
-  browser.
+  browser. And `Store` answers `None` for absent, corrupt and Hub-unreachable alike while
+  `resumes_for` skips what it cannot parse — so the id listing, which lies about neither, is
+  what separates "not there" from "there and unreadable" instead of the two being reported as
+  one.

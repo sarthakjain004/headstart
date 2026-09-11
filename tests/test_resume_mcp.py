@@ -12,9 +12,14 @@ sets. Nothing here needs a package the base install lacks.
 
 from __future__ import annotations
 
+import inspect
 import io
 import json
+import os
+import pathlib
 import shutil
+import subprocess
+import sys
 
 import pytest
 
@@ -78,7 +83,14 @@ def _document(doc_id=DOC_ID, name="Backend SWE"):
                 "jobId": "job-123",
                 "picks": {"n3": "v1"},
                 "hidden": [],
-            }
+            },
+            {
+                "id": "t2",
+                "name": "Datadog SRE",
+                "jobId": None,
+                "picks": {},
+                "hidden": ["n3"],
+            },
         ],
         "activeTailoring": None,
         "hidden": [],
@@ -164,15 +176,13 @@ def test_no_tool_takes_an_account_and_naming_one_is_refused(account):
 
 def test_the_account_object_offers_no_way_to_name_another(account):
     """The binding is the class's shape, not a check somebody has to remember to write."""
-    import inspect as py_inspect
-
-    for name in ("documents", "document"):
-        parameters = py_inspect.signature(getattr(account, name)).parameters
+    for name in ("documents", "ids", "document"):
+        signature = inspect.signature(getattr(account, name))
         assert not any(
             word in parameter.lower()
-            for parameter in parameters
+            for parameter in signature.parameters
             for word in ("account", "email")
-        ), f"Account.{name}{py_inspect.signature(getattr(account, name))}"
+        ), f"Account.{name}{signature}"
 
 
 # ---- the limitations the output has to state ----------------------------------------
@@ -187,11 +197,47 @@ def test_the_listing_says_unsynced_resumes_are_invisible(account, monkeypatch):
     assert "off by default" in empty and "cannot see it" in empty
 
 
-def test_every_answer_says_the_browser_may_be_ahead(account):
-    assert srv.FRESHNESS_NOTE in srv.call(account, "list_resumes", {})
-    assert srv.FRESHNESS_NOTE in srv.call(
-        account, "get_resume", {"document_id": DOC_ID}
-    )
+def test_every_answer_says_the_browser_may_be_ahead(account, monkeypatch):
+    """All three tools, including the one whose real path needs `node` — stubbed here so the
+    note is guarded everywhere, not only where the reading itself runs."""
+    monkeypatch.setattr(srv, "read_document", lambda document, view: {"view": view})
+    monkeypatch.setattr(srv, "render", lambda facts: "outline")
+    for name, arguments in (
+        ("list_resumes", {}),
+        ("get_resume", {"document_id": DOC_ID}),
+        ("inspect_resume", {"document_id": DOC_ID}),
+    ):
+        assert srv.FRESHNESS_NOTE in srv.call(account, name, arguments), name
+
+
+def test_a_record_that_will_not_read_is_counted_not_swallowed(account, monkeypatch):
+    """`Store.resumes_for` skips a record it cannot parse, silently. The id listing is the
+    count that does not lie, so the gap between them is reported."""
+    monkeypatch.setattr(acct.Account, "ids", lambda self: {DOC_ID, "rbrokenrecord"})
+    listed = srv.call(account, "list_resumes", {})
+    assert "1 further record(s)" in listed
+    assert "NOT listed above" in listed
+
+
+def test_a_filed_but_unreadable_document_is_not_reported_as_missing(
+    account, monkeypatch
+):
+    """Three facts wear one None. Telling someone their résumé is gone during a Hub outage is
+    the one of the three that must never be guessed."""
+    monkeypatch.setattr(acct.Account, "document", lambda self, doc_id: None)
+
+    with pytest.raises(srv.ToolFailure) as filed:
+        srv.call(account, "get_resume", {"document_id": DOC_ID})
+    assert "could not be read" in str(filed.value)
+    assert "It is not missing." in str(filed.value)
+
+    with pytest.raises(srv.ToolFailure) as absent:
+        srv.call(account, "get_resume", {"document_id": "rnosuchdoc"})
+    assert "keeps no synced résumé" in str(absent.value)
+
+
+def test_every_tool_has_a_handler_and_no_handler_lacks_a_tool():
+    assert set(srv.HANDLERS) == {t["name"] for t in srv.TOOLS}
 
 
 def test_the_listing_names_the_tailorings_and_the_revision(account):
@@ -231,6 +277,8 @@ def test_inspect_reads_the_stored_document_through_the_real_model(account):
     assert "Name & contact (header)" in answer
     assert "Full name: Lee Korelitz" in answer
     assert 'reworded by "Stripe backend"' in answer
+    # Both ways a version overrides a block, answered from the master in one call.
+    assert 'left out by "Datadog SRE"' in answer
 
     tailored = srv.call(
         account, "inspect_resume", {"document_id": DOC_ID, "version": "Stripe backend"}
@@ -251,7 +299,7 @@ def test_an_unknown_version_names_the_ones_that_exist(account):
 def test_without_node_the_reading_says_so_instead_of_guessing(account, monkeypatch):
     """No Python fallback reading: ADR-0137's decision is one implementation of the rule, and
     a second-best answer that quietly disagrees with the Résumé tab is what that refuses."""
-    monkeypatch.setattr(srv, "inspect", _raise_no_node)
+    monkeypatch.setattr(srv, "read_document", _raise_no_node)
     with pytest.raises(srv.ToolFailure) as failure:
         srv.call(account, "inspect_resume", {"document_id": DOC_ID})
     assert "get_resume" in str(failure.value)
@@ -339,6 +387,35 @@ def test_an_unexpected_crash_is_reported_rather_than_killing_the_session(
     assert "RuntimeError: hub down" in answer["result"]["content"][0]["text"]
 
 
+def test_a_real_client_handshake_over_a_real_subprocess():
+    """The transport is hand-written (ADR-0136), so it is measured rather than reasoned about:
+    a real `python -m headstart.resume_mcp`, real pipes, a real initialize/tools-list exchange.
+    Run without credentials — what is under test is the protocol and the rule that stdout
+    carries nothing but protocol, which the stderr explanation must not violate."""
+    requests = "".join(
+        json.dumps(m) + "\n"
+        for m in (
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            {"jsonrpc": "2.0", "method": "notifications/initialized"},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+        )
+    )
+    done = subprocess.run(
+        [sys.executable, "-m", "headstart.resume_mcp"],
+        input=requests,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+        cwd=pathlib.Path(__file__).resolve().parent.parent,
+        env={**os.environ, "PYTHONPATH": "src", acct.EMAIL_VAR: "", acct.TOKEN_VAR: ""},
+    )
+    replies = [json.loads(line) for line in done.stdout.splitlines()]
+    assert [r["id"] for r in replies] == [1, 2], done.stderr
+    assert replies[0]["result"]["protocolVersion"] == srv.PROTOCOL_VERSION
+    assert len(replies[1]["result"]["tools"]) == 3
+
+
 def test_serve_answers_each_line_and_ignores_blank_ones(account):
     stdin = io.StringIO(
         json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize"})
@@ -370,6 +447,20 @@ def test_missing_configuration_names_every_variable_it_needs():
     # The two that are absent, and not the one that is set — a message that lists everything
     # sends whoever reads it hunting for a variable that is already there.
     assert sorted(named.split(", ")) == sorted([acct.EMAIL_VAR, acct.TOKEN_VAR])
+
+
+def test_a_base_install_names_the_extra_rather_than_failing_on_the_first_call(
+    monkeypatch,
+):
+    """`store` imports `huggingface_hub` lazily inside `_hf`, and it is in the `alerts` extra —
+    so a plain `pip install -e .` imports this package fine and then answers every tool call
+    with a bare ModuleNotFoundError from four frames down. Checked at the door instead."""
+    monkeypatch.setattr(acct.importlib.util, "find_spec", lambda name: None)
+    with pytest.raises(acct.Unconfigured) as failure:
+        acct.open_account(
+            {acct.EMAIL_VAR: MINE, acct.REPO_VAR: "acme/subs", acct.TOKEN_VAR: "tok"}
+        )
+    assert '".[alerts]"' in str(failure.value)
 
 
 def test_without_credentials_the_server_still_lists_its_tools_and_explains_itself():

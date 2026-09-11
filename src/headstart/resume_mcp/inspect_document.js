@@ -69,15 +69,22 @@ function inspect(ctx, doc, selector) {
      turned this bullet off" and "the whole section it lives in is off". */
   const printed = new Set(Doc.flatten(Doc.resolve(doc, viewId)).map(n => n.id));
 
-  /* Which Tailorings reword each node, by name. Computed against the master regardless of
-     which version is being read, because "is this block tailored anywhere" is a fact about
-     the document, not about the view. */
+  /* How each Tailoring overrides each node, by name — the two ways it can: reword it, or
+     leave it out. Both are computed against every Tailoring regardless of which version is
+     being read, because "is this block tailored anywhere" is a fact about the document, not
+     about the view. Only the rewording half was here at first, so reading the master told you
+     a bullet had been rewritten for Stripe but not that another version drops it entirely —
+     and finding that out meant re-reading every version one at a time. */
   const rewordedBy = {};
+  const leftOutBy = {};
   for (const t of doc.tailorings || []) {
     for (const nodeId of Object.keys(t.picks || {})) {
       const variant = ((doc.variants || {})[nodeId] || {})[t.picks[nodeId]];
       if (!variant) continue;   // a pick whose variant is gone changes nothing — `resolve` skips it too
       (rewordedBy[nodeId] = rewordedBy[nodeId] || []).push(t.name || t.id);
+    }
+    for (const nodeId of t.hidden || []) {
+      (leftOutBy[nodeId] = leftOutBy[nodeId] || []).push(t.name || t.id);
     }
   }
 
@@ -124,7 +131,6 @@ function inspect(ctx, doc, selector) {
       id: node.id,
       type: node.type,
       label: spec ? spec.label : null,
-      shape: spec ? spec.shape : null,
       depth,
       slot: node.slot || null,
       geometry: Object.keys(node.geometry || {}).length ? node.geometry : null,
@@ -135,8 +141,8 @@ function inspect(ctx, doc, selector) {
       hidden_by_this_version: !!(tailoring && (tailoring.hidden || []).includes(node.id)),
       fields: declared,
       undeclared_fields: Object.keys(undeclared).length ? undeclared : null,
-      variants: Object.keys((doc.variants || {})[node.id] || {}).length,
       reworded_by: rewordedBy[node.id] || [],
+      left_out_by: leftOutBy[node.id] || [],
     });
   });
 
@@ -145,12 +151,9 @@ function inspect(ctx, doc, selector) {
     name: doc.name,
     layout_id: doc.layoutId,
     schema: doc.schema,
-    created_at: doc.createdAt || null,
     updated_at: doc.updatedAt || null,
     rev: doc.rev || 0,
-    sync: !!doc.sync,
     theme: doc.theme && Object.keys(doc.theme).length ? doc.theme : null,
-    active_tailoring: doc.activeTailoring || null,
     viewing: tailoring ? { kind: 'version', id: tailoring.id, name: tailoring.name } : { kind: 'master' },
     tailorings: (doc.tailorings || []).map(t => ({
       id: t.id,
