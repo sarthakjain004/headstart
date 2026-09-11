@@ -146,3 +146,80 @@ lets the liveness row stay true.
   host each Board resolved *to* — the destination, not the route that reached it — and the script
   re-derives every verdict live, so a reversal shows up as a changed row rather than as a Board
   that quietly never comes back.
+
+
+## Amendment (2026-09-11): Workday's adapter, built and run against the full population
+
+**Status:** accepted. Fills the gap this ADR names in its own Decision section: *"Workday's slug
+is a whole careers URL... on those every key would fall outside the live set and the whole ledger
+would come back labelled `migrated`... Those ATSes need an override in their own slug space."*
+
+**`WorkdayScraper.alias_key()` fetches the public marketing page** —
+`https://{company}.{instance}.myworkdayjobs.com/{site}`, what a person visits — instead of
+`url()`, the CXS JSON endpoint nothing ever redirects to. It returns the resolved URL in the same
+slug-shape `alias_key`'s contract requires, query string and fragment stripped (Workday's own
+outage page appends a per-request `?d=&s=&e=&o=` tail that would otherwise make every visit to the
+same tombstone compare as a different key).
+
+**Run against the full live population, not a sample — 12,844 Boards, `dedupe_boards.py --ats
+workday`:**
+
+| class | n | verdict |
+| --- | --- | --- |
+| duplicate | 1 | found, not recorded (see below) |
+| migrated | 2 | reported only |
+| tombstone | 38 | reported only |
+| resolves to itself | 12,803 | ordinary Board |
+
+One duplicate, not zero — but it is not the SuccessFactors shape (two independently discovered
+*hostnames*). `.../Gates?source=gatesfoundation.org` and `.../Gates` are the same hostname and
+path; discovery recorded one with a tracking query string attached, and `_URL_PATTERN`'s `site`
+group already stops at `?`, so `board_key()` computes the identical `workday:gatesfoundation/gates`
+for both regardless of the query. **`config._dedupe_boards` already collapses this pair today**,
+independent of this framework — confirmed by calling `load_active_companies` directly against the
+committed ledger before applying anything: three raw rows for this Board (the query-string one
+plus two casing variants) fold to one survivor.
+
+**Not written to the alias ledger, on measurement rather than by design.** The natural instinct
+is to record it anyway — pinning the election against `_dedupe_boards`'s tie-break, which is
+`if key < current[0]`: among rows whose `board_identity` is *exactly* equal as a string (as these
+are, since the query never reaches `board_key()`), nothing ever replaces whichever the ledger
+lists first, an accident of CSV row order that a future re-discovery or merge could silently flip.
+Applying it broke `tests/test_board_counts.py`'s cross-check instead: `test_both_orders_reach_the_
+same_scrapable_count` asserts that dedupe-first and exclude-first walks of the funnel land on the
+same `Scrapable Board` figure, and until this row they always had, because no alias-ledger
+duplicate had ever also been a `board_key`-fold duplicate of something else live. Here one row is
+both at once — dedupe-first's `_dedupe_boards(live)` already collapses the four raw Gates rows
+down to this exact survivor before the alias check ever runs, so removing it in that order deletes
+the board's only remaining representative, while exclude-first (production's real order,
+`load_active_companies`) simply falls back to one of the other three raw rows. The two orders
+diverge by exactly one Board for the first time, and a first attempt at reconciling the formula
+made it worse (94,957 → 94,934, not 94,956) rather than better — the four delta terms
+(`disabled`/`excluded_after_dedupe`/`aliased`/`parked`) are not as independent of each other as the
+existing formula assumes once a Board can be flagged by more than one mechanism, and untangling
+that correctly is its own piece of work, not a one-line fix.
+
+So: reported here, verified redundant with `_dedupe_boards` today (confirmed both with and without
+the row, `Scrapable Board` and `Hiring Board` are unchanged at 94,957 / 60,569), and left out of
+`data/validate/aliases/workday.csv`, which ships with a header and no rows. The tie-break fragility
+above is real but latent — nothing today depends on this specific survivor — and is not worth
+introducing a hurried fix to shared counting infrastructure to close. `_dedupe_boards`'s tie-break
+has the same exact-string-tie instability for *any* ATS, not just this one Workday Board; noted,
+not fixed, since fixing it touches every ATS's dedupe and the counting formula both, and neither
+is this amendment's scope. A follow-up should do both together: give `_dedupe_boards` a
+principled tie-break (or route it through the alias signal directly) and correct the funnel
+formula to hold when the two mechanisms overlap, then this row can be added for real.
+
+**The other signal this ADR anticipated — a pairwise, id-overlap check for an ATS whose aliases
+serve independently, the shape Eightfold needs — was tested and found not to apply here.** Before
+the full-population run, 217 same-company Workday site pairs (companies running several distinct
+site slugs — campus vs corporate, one per subsidiary or recruiting program) were compared on their
+first page of `{title, externalPath}`: 0 shared postings anywhere. A company running several
+Workday sites is running several genuinely distinct application funnels, not one Board republished
+twice. No pairwise mechanism is built for Workday; none is warranted by what was measured.
+
+**Same-company, two data centres — the other known Workday duplicate shape, `config.py`'s own
+"Accenture sits on both `wd3` and `wd103`" comment — needed no new mechanism either.** It was
+already collapsed by `board_key()` (ADR-0023), and 50 sampled instance-split pairs confirm why
+that is safe: 0 had both instances simultaneously live (49 answered on exactly one, 1 on neither),
+so a migrated tenant is never live on two data centres at once for anything to compare.

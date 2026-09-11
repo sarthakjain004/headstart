@@ -2354,6 +2354,82 @@ def test_workday_leaves_instance_when_none_serves(monkeypatch):
     assert ".wd3." in s.url()
 
 
+class _AliasResp:
+    """A settled `http.fetch` response, for `alias_key` — needs `.url` (where it landed) and
+    `.close()` (the real method streams and discards the body unread)."""
+
+    def __init__(self, url):
+        self.url = url
+
+    def close(self):
+        pass
+
+
+def test_workday_alias_key_fetches_the_public_page_not_the_cxs_api(monkeypatch):
+    """The base default's mistake for this ATS, corrected: `url()` is the JSON endpoint, which
+    nothing ever redirects a person to. `alias_key` must hit the marketing page instead."""
+    seen = {}
+
+    def fetch(method, url, **kwargs):
+        seen["url"] = url
+        return _AliasResp(url)
+
+    monkeypatch.setattr("headstart.http.fetch", fetch)
+    get_scraper(
+        "workday", "https://acme.wd3.myworkdayjobs.com/careers", "Acme"
+    ).alias_key()
+    assert (
+        seen["url"] == "https://acme.wd3.myworkdayjobs.com/careers"
+    )  # not /wday/cxs/.../jobs
+
+
+def test_workday_alias_key_resolves_to_itself_when_nothing_redirects(monkeypatch):
+    # the measured shape for 384 of 400 sampled Boards (2026-09-11): no redirect at all
+    monkeypatch.setattr(
+        "headstart.http.fetch", lambda method, url, **kw: _AliasResp(url)
+    )
+    s = get_scraper("workday", "https://acme.wd3.myworkdayjobs.com/careers", "Acme")
+    assert s.alias_key() == "https://acme.wd3.myworkdayjobs.com/careers"
+
+
+def test_workday_alias_key_follows_a_real_redirect(monkeypatch):
+    monkeypatch.setattr(
+        "headstart.http.fetch",
+        lambda method, url, **kw: _AliasResp(
+            "https://acme.wd3.myworkdayjobs.com/NewCareers"
+        ),
+    )
+    s = get_scraper("workday", "https://acme.wd3.myworkdayjobs.com/OldCareers", "Acme")
+    assert s.alias_key() == "https://acme.wd3.myworkdayjobs.com/NewCareers"
+
+
+def test_workday_alias_key_strips_the_tombstone_query_string(monkeypatch):
+    """Workday's own outage page appends a per-request `?d=&s=&e=&o=` tail (measured on 2 of 400
+    sampled Boards) that would otherwise make every tombstone visit compare as a different key —
+    and the stripped result must be the exact string `alias_vendor_hosts` names, or the tombstone
+    label silently never fires."""
+    from headstart.scrapers.workday import WorkdayScraper
+
+    tombstone = "https://community.workday.com/maintenance-page?d=3&s=1&e=1&o="
+    monkeypatch.setattr(
+        "headstart.http.fetch", lambda method, url, **kw: _AliasResp(tombstone)
+    )
+    s = get_scraper("workday", "https://gone.wd3.myworkdayjobs.com/careers", "Gone")
+    key = s.alias_key()
+    assert key == "https://community.workday.com/maintenance-page"
+    assert key in WorkdayScraper.alias_vendor_hosts
+
+
+def test_workday_alias_key_is_none_when_unreachable(monkeypatch):
+    # conservative direction (base default's own docstring): no verdict, never a false duplicate
+    def fetch(method, url, **kw):
+        raise TimeoutError("no route")
+
+    monkeypatch.setattr("headstart.http.fetch", fetch)
+    s = get_scraper("workday", "https://acme.wd3.myworkdayjobs.com/careers", "Acme")
+    assert s.alias_key() is None
+
+
 def test_workday_paginate_logs_once_on_missing_pages(monkeypatch, caplog):
     # a mid-crawl 404 (None from _post_async) skips that page but keeps the rest, and one
     # INFO line reports the gap — the tripwire for a partial board. INFO rather than WARNING

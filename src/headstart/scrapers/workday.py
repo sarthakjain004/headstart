@@ -39,6 +39,7 @@ import asyncio
 import json
 import re
 import time
+import urllib.parse
 from collections import Counter
 from collections.abc import Sequence
 from typing import Any
@@ -420,6 +421,73 @@ class WorkdayScraper(BaseScraper):
             f"https://{company}.{instance}.myworkdayjobs.com"
             f"/wday/cxs/{company}/{site}/jobs"
         )
+
+    #: Workday's own generic outage page, landed on by a tenant whose data centre migration left
+    #: the URL's `wdN` permanently stale (measured 2026-09-11: 2 of 400 sampled live Boards, both
+    #: query-string-tagged `?d=&s=&e=&o=...` that varies per hit -- stripped before comparison by
+    #: :meth:`alias_key`, so the bare path below is what actually needs to match).
+    alias_vendor_hosts = frozenset({"https://community.workday.com/maintenance-page"})
+
+    def alias_key(self) -> str | None:
+        """The public careers page's own redirect, not the default's -- and query-stripped.
+
+        The base default fetches :meth:`url` and reads the *host* it resolves to, and neither
+        half of that works here. :meth:`url` is the CXS JSON endpoint, which nothing redirects a
+        person to; and even if it did, a bare host is not comparable to a Workday `slug`, which is
+        a whole careers URL (`alias_key`'s own docstring names this ATS as the example). So this
+        fetches the PUBLIC marketing page instead --
+        `https://{company}.{instance}.myworkdayjobs.com/{site}`, what a person actually visits --
+        and returns the resolved URL in that same slug-shape, comparable to `live` directly.
+
+        **Run against the full live population, 2026-09-11: 12,844 Boards, 1 cluster found and
+        deliberately not recorded.** `dedupe_boards.py --ats workday` found 1 duplicate (2 Boards),
+        2 migrated, 38 landed on Workday's own outage page (:attr:`alias_vendor_hosts`), 12,803
+        resolved to themselves. The one duplicate is a `config._dedupe_boards` no-op today and
+        writing it broke a counting invariant elsewhere -- see ADR-0111's 2026-09-11 amendment,
+        which is why `data/validate/aliases/workday.csv` ships with a header and no rows rather
+        than that one row. A companion pass, run before
+        the full scan, tested the *deferred* signal instead -- id-set overlap between
+        same-company sites, the shape Eightfold needs -- over 217 same-company site pairs (first
+        page of `{title, externalPath}` each): 0 shared postings anywhere. A company running
+        several Workday sites is running several genuinely distinct application funnels -- campus
+        vs corporate, one per subsidiary, one per recruiting program -- not one Board republished
+        twice; Boeing alone accounts for two dozen program-specific sites (`aaeoy`, `nsbe`,
+        `TAP2`..`TAP5`, ...) with nothing shared between any pair sampled.
+
+        Shipped for the reasoning ADR-0111 already gives for building Eightfold's adapter "now,
+        with one [signal], because the second is measured and deferred, not hypothetical":
+        without this override, `dedupe_boards.py --ats workday` cannot run at all -- the default's
+        bare host never matches a Workday slug, so every live Board reads `migrated` and the
+        script's own >50% warning fires on every invocation. This turns a structurally broken scan
+        into a real one, run against the full population rather than assumed clean.
+
+        **The other half of ADR-0111's Workday duplicate, same-company-two-data-centres, needs no
+        help from this method.** `config._dedupe_boards` already collapses it, because `board_key`
+        derives `{company}/{site}` without the instance (ADR-0023) -- and a migrated tenant is
+        never simultaneously live on both: of 50 sampled same-company+site instance-split pairs,
+        49 answered on exactly one instance and 1 on neither, 0 on both, so there is nothing
+        simultaneously live for a signal to compare.
+
+        Query string and fragment are stripped before returning: Workday's outage page appends a
+        per-request `?d=&s=&e=&o=` tail that would otherwise make two visits to the very same
+        tombstone compare as different keys.
+        """
+        company, instance, site = self._parts()
+        public_url = f"https://{company}.{instance}.myworkdayjobs.com/{site}"
+        try:
+            resp = http.fetch(
+                "GET",
+                public_url,
+                headers={"User-Agent": USER_AGENT},
+                timeout=30,
+                allow_redirects=True,
+                stream=True,
+            )
+            resp.close()
+            clean = urllib.parse.urlsplit(resp.url)._replace(query="", fragment="")
+            return urllib.parse.urlunsplit(clean).rstrip("/") or None
+        except Exception:  # noqa: BLE001 - any failure to reach it is "no verdict", not a crash
+            return None
 
     def _parts(self) -> tuple[str, str, str]:
         match = _URL_PATTERN.match(self.slug.rstrip("/"))
