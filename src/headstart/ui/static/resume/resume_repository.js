@@ -41,8 +41,13 @@
   const LAST = 'headstart.resumes.last';
 
   /** A summary row from a full document — what `list` returns without parsing every résumé. */
+  /* `rev` rides along so the list can tell a row that is BEHIND the account's copy from one
+     that is level with it, without parsing every document to find out (ADR-0124). Rows written
+     before this existed carry no `rev` key at all, and a reader must treat that as "unknown"
+     rather than as 0 — the next save of that document fills it in. */
   const summarise = doc => ({
     id: doc.id, name: doc.name, layoutId: doc.layoutId, updatedAt: doc.updatedAt,
+    rev: doc.rev || 0,
   });
 
   const byNewest = (a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
