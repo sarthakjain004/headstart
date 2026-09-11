@@ -132,7 +132,13 @@ how often it actually fires.
 
 - A collision now costs one run's index write and a red run, instead of rows and silence.
 - Two Hub requests per writer per run (`record`, `verify`), each one `repo_info(files_metadata=True)`
-  — the constant-cost listing ADR-0033 already chose, ~1.2s against 569 siblings.
+  — the constant-cost listing ADR-0033 already chose, ~1.2s against 569 siblings. **Both go through
+  ADR-0033's retry ladder** (`state_fetch.retry_hub`). As first shipped they did not, which put an
+  unretried Hub call on the critical path of the job that publishes everything: a transient 429 or
+  5xx that the `state_fetch` two lines later absorbs routinely would instead have killed the merge
+  job. `fetch_state` keeps its own loop rather than sharing this one, because its retry also covers
+  the download and not all of its failure reasons are exceptions — a file that silently did not land
+  is retryable with nothing raised — so the two share the policy without sharing a shape.
 - `verify` fails closed when the record is missing: reaching an upload with no recorded base means
   `record` never ran, which is the unguarded write this replaces.
 - An empty prefix is a legitimate verdict (a genuine first run), but the Hub declining to list is
