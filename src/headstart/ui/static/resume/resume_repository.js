@@ -42,9 +42,11 @@
 
   /** A summary row from a full document — what `list` returns without parsing every résumé. */
   /* `rev` rides along so the list can tell a row that is BEHIND the account's copy from one
-     that is level with it, without parsing every document to find out (ADR-0124). Rows written
-     before this existed carry no `rev` key at all, and a reader must treat that as "unknown"
-     rather than as 0 — the next save of that document fills it in. */
+     that is level with it, without parsing every document to find out (ADR-0124). An index
+     written by an older build has no `rev` key on its rows at all — `typeof row.rev` is the
+     only thing that separates those from a real 0, and a reader that collapses the two calls
+     every synced résumé stale against a copy it is identical to. Each row heals on the next
+     save of its document. */
   const summarise = doc => ({
     id: doc.id, name: doc.name, layoutId: doc.layoutId, updatedAt: doc.updatedAt,
     rev: doc.rev || 0,

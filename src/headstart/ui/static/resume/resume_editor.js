@@ -1618,14 +1618,15 @@
     const rows = repository.list();
     const current = doc();
     if (askDocDrop && !rows.some(r => r.id === askDocDrop)) askDocDrop = null;
-    el('rb-doclist').innerHTML = rows.length ? rows.map(r =>
-      '<div class="rb-docrow' + (current && r.id === current.id ? ' on' : '') + '">' +
+    el('rb-doclist').innerHTML = rows.length ? rows.map(r => {
+      const behind = behindAccount(r);
+      return '<div class="rb-docrow' + (current && r.id === current.id ? ' on' : '') + '">' +
       '<button class="rb-docopen" data-open="' + esc(r.id) + '">' + esc(r.name || 'Untitled') +
       '<span class="note">' + esc((Layouts.get(r.layoutId) || {}).label || r.layoutId) + ' · ' +
       esc(String(r.updatedAt || '').slice(0, 10)) +
-      (behindAccount(r) ? ' · a newer copy is on your account'
+      (behind ? ' · a newer copy is on your account'
         : onAccount(r.id) ? ' · on your account' : '') + '</span></button>' +
-      (behindAccount(r)
+      (behind
         ? '<button class="ghost rb-mini" data-pull-newer="' + esc(r.id) +
           '" title="Open the newer copy from your account, keeping this one">Get newer</button>'
         : '') +
@@ -1638,7 +1639,8 @@
           '<button class="ghost rb-mini" data-drop-no="' + esc(r.id) + '">Keep</button></span>'
         : '<button class="ghost rb-mini danger" data-drop="' + esc(r.id) +
           '" title="Delete" aria-label="Delete ' + esc(r.name || 'Untitled') + '">×</button>') +
-      '</div>').join('') : '<p class="note">Nothing saved yet.</p>';
+      '</div>';
+    }).join('') : '<p class="note">Nothing saved yet.</p>';
 
     /* The other half of the list, and the reason the account copy is worth having at all: a
        résumé this browser has never seen. On a new machine, or after a cleared cache, the

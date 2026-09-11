@@ -64,6 +64,12 @@ def index():
     )
 
 
+@app.route("/me")
+def me():
+    """The header's identity probe — always signed out, so the page never waits on auth."""
+    return jsonify({"auth": False, "email": None})
+
+
 # ---- the account copy (ADR-0124), in a dict ------------------------------------------------
 # One process, one visitor, no Hub. It keeps the ONE rule the real routes exist to enforce — a
 # push is accepted only at exactly one past the stored revision — because that rule is what the
@@ -72,14 +78,15 @@ def index():
 # produce: the bodyless 409 the real route gives when the stored copy could not be READ. The
 # other failure that matters, an unreachable account, is this process being stopped.
 _RESUMES: dict[str, dict] = {}
-_UNREADABLE = {"on": False}
+_unreadable = False
 
 
 @app.route("/stub/fail/<mode>")
 def stub_fail(mode: str):
     """`/stub/fail/unreadable` to refuse every push; `/stub/fail/none` to stop."""
-    _UNREADABLE["on"] = mode == "unreadable"
-    return jsonify({"unreadable": _UNREADABLE["on"]})
+    global _unreadable
+    _unreadable = mode == "unreadable"
+    return jsonify({"unreadable": _unreadable})
 
 
 @app.route("/resumes")
@@ -109,7 +116,7 @@ def one_resume(doc_id: str):
     document = request.get_json(silent=True)
     if not isinstance(document, dict) or document.get("id") != doc_id:
         return jsonify({"error": "that is not a résumé"}), 400
-    if _UNREADABLE["on"]:
+    if _unreadable:
         return jsonify(
             {"error": "your account could not be read — nothing was changed"}
         ), 409
