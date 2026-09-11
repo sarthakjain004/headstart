@@ -931,6 +931,35 @@ class Store:
             _note_unreadable(f"Résumé document {account}/{doc_id}", exc)
             return None
 
+    def resume_revision(self, account: str, doc_id: str) -> int | None:
+        """What revision the Account's copy is at, or None when it keeps no such document.
+
+        Fail-closed, like :meth:`parses_used` and unlike :meth:`get_resume`: a document the
+        Account DOES hold and that could not be read RAISES rather than answering None. The
+        push route reads None as "nothing stored, so nothing to lose" and accepts any
+        revision on it — so collapsing an unanswered Hub read into None is how one device's
+        push silently overwrites the copy another device made. That conflation has cost this
+        project a Subscription once already (:func:`_note_unreadable`); the thing it would
+        cost here is somebody's résumé, and only the dataset's git history would still have
+        it, which the retention squash is built to erase.
+
+        Absence is decided by the listing rather than by the shape of the read's exception,
+        which is also what the delete route checks — so the two routes agree on what "no such
+        résumé" means, and neither depends on `huggingface_hub` being importable to tell an
+        absent record from an outage."""
+        if not (_ID.fullmatch(account) and is_resume_id(doc_id)):
+            return None
+        path = f"{RESUMES_PREFIX}{account}/{doc_id}.json"
+        try:
+            data = json.loads(_read(self._repo, path, self._token))
+        except Exception:
+            if doc_id in self.resume_ids(account):
+                raise
+            return None
+        if not isinstance(data, dict):
+            raise TypeError(f"{path} is not a résumé record")
+        return int(data.get("rev") or 0)
+
     def put_resume(self, account: str, doc_id: str, document: dict[str, Any]) -> None:
         """Write one Résumé document. The bytes are the caller's JSON, re-serialised but
         not reshaped — nothing here adds, renames or drops a field."""

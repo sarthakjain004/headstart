@@ -281,6 +281,62 @@ def test_no_page_break_is_drawn_through_a_block_the_layout_refuses_to_split(page
     )
 
 
+def test_every_entry_the_sweep_treats_as_atomic_really_is_atomic(page):
+    """The page-break sweep and the stylesheets must mean the same thing by "unbreakable".
+
+    The sweep finds atoms by `[data-shape="entry"]` — the shape every layout stamps — and moves a
+    cut to the top of any block that would straddle it, because `break-inside: avoid` makes the
+    printer move the whole block down. But `break-inside: avoid` was declared only on each
+    layout's own entry CLASS (`.hh-entry`, `.jr-entry`, …), and the `byShape.entry` fallback emits
+    `rb-entry`, which no layout marks. So the two sides disagreed about which blocks are atomic,
+    and the sweep moved cuts for blocks the printer splits.
+
+    Measured before the fix, with one node of each entry-shaped type added to the first section:
+    `headless-headhunter` and `two-column` had 2 of 7 marked, four layouts 5 of 7 (missing
+    `certification` and `award_entry` — both of them components ADR-0130 added), and `free-canvas`
+    0 of 7.
+
+    The sibling test below asserts the other direction — that no cut falls INSIDE an avoid box —
+    and is green whichever way this disagreement runs, which is how the mismatch survived.
+
+    Entry-shaped types are read from the registry rather than listed, so the tenth one is covered
+    the day it is defined.
+    """
+    layouts = page.evaluate("""() => {
+      const D = window.ResumeDocument, d = window.ResumeEditor.current();
+      const section = d.root.children.find(c => c.type === 'section');
+      /* One of every entry-shaped component, so the `byShape` fallback is exercised beside the
+         types each layout names itself. */
+      for (const spec of window.ResumeComponents.all()) {
+        if (spec.shape === 'entry') D.Commands.addNode(section.id, spec.type).apply(d);
+      }
+      return window.ResumeLayouts.all().map(l => l.id);
+    }""")
+    assert len(layouts) >= 9, f"only {len(layouts)} layouts are registered"
+
+    splittable = {}
+    for layout_id in layouts:
+        page.evaluate("(id) => window.ResumeEditor.changeLayout(id)", layout_id)
+        page.wait_for_timeout(150)
+        seen = page.evaluate("""() => {
+          const nodes = [...document.querySelectorAll('#rb-paper [data-shape="entry"]')];
+          return {entries: nodes.length,
+                  loose: [...new Set(nodes
+                    .filter(el => getComputedStyle(el).breakInside !== 'avoid')
+                    .map(el => el.dataset.type))]};
+        }""")
+        assert seen["entries"] >= 7, (
+            f"{layout_id} drew only {seen['entries']} entries, so this proves little"
+        )
+        if seen["loose"]:
+            splittable[layout_id] = seen["loose"]
+
+    assert splittable == {}, (
+        "the sweep treats these as unbreakable and the printer will split them: "
+        + "; ".join(f"{k}: {', '.join(v)}" for k, v in splittable.items())
+    )
+
+
 def test_check_coverage_marks_the_page_the_moment_it_is_clicked(page):
     """The keyword check's highlights must land on the click that asked for them.
 
@@ -433,15 +489,89 @@ def test_every_template_card_says_how_many_pages_it_runs_to(page):
     )
 
 
-def test_below_a_thousand_pixels_checks_is_still_near_the_top(browser, base_url):
-    """ADR-0128 says the aside is sticky so Checks stays reachable. Below 1000px it was not.
+def test_the_checks_panel_draws_its_errors_above_its_warnings_and_notes(page):
+    """The fault a résumé cannot be sent with must be the first thing the panel says.
 
-    `.rb-aside` is `position: static` under that breakpoint, where `.rb-work` is a single column
-    and the aside stacks under the form — so `sticky` has nothing to stick inside even when it is
-    left on. Measured at 820px: the Checks card landed 1,107px down an 1,855px page, which is
-    past the end of the form rather than beside it.
+    `runRules` ranked `{error: 0, warn: 1, note: 2}` and read `rank[a.level] || 3` — and 0 is
+    falsy, so every error scored the unknown-level 3 and sorted below every note. The comment two
+    lines above it said "Errors first, then warnings, then notes" and `checksPane` repeats the
+    claim, so nine PRs read the promise and none read the line.
+
+    Measured here before the fix, on a résumé with no phone, no email and no dates: "Every bullet
+    opens with a strong verb" (warn) at 881px, "What, how, and the result or the reason" (note) at
+    1,232px, and "Name and contact details" (error) at 1,524px — off the bottom of an 1,100px
+    viewport, under twelve lower-priority rows.
+
+    This asserts the RENDERED order rather than `runRules`'s return value, because the panel
+    regroups by rule between the two and nothing checked that the regrouping keeps the order.
     """
-    pg = browser.new_page(viewport={"width": 820, "height": 900})
+    drawn = page.evaluate("""() => {
+      const ed = window.ResumeEditor, d = ed.current();
+      /* A résumé nobody can answer, whose one job is undated — two baseline errors — while the
+         worked example's own bullets go on supplying the warnings and notes. */
+      const header = d.root.children.find(c => c.type === 'header');
+      Object.assign(d.content[header.id], {fullName: '', email: '', phone: ''});
+      let job = null, bullet = null;
+      window.ResumeDocument.walk(d.root, n => {
+        if (!job && n.type === 'work_entry') job = n;
+        if (!bullet && n.type === 'bullet' && !d.content[n.id].role) bullet = n;
+      });
+      Object.assign(d.content[job.id], {start: '', end: '', current: false});
+      /* One bullet that opens weakly and claims nothing — a warning and a note from one edit. */
+      d.content[bullet.id].text = 'Responsible for the running of things.';
+      /* Repainted through the segment strip, the way a user's own edit reaches the panel. */
+      document.querySelector('#rb-seg [data-seg="edit"]').click();
+      const level = el => ['error', 'warn', 'note'].find(l => el.classList.contains('rb-' + l));
+      const at = el => Math.round(el.getBoundingClientRect().top + window.scrollY);
+      const pane = document.getElementById('rb-pane-checks');
+      return {
+        groups: [...pane.querySelectorAll('.rb-fgroup')].map(el => ({
+          level: level(el), top: at(el),
+          rule: el.querySelector('.rb-fgroup-head').textContent})),
+        rows: [...pane.querySelectorAll('.rb-finding')].map(el => ({
+          level: level(el), top: at(el)})),
+      };
+    }""")
+
+    levels = [g["level"] for g in drawn["groups"]]
+    assert set(levels) == {"error", "warn", "note"}, (
+        f"this résumé did not raise all three levels, so the order proves nothing: {levels}"
+    )
+    rank = {"error": 0, "warn": 1, "note": 2}
+    by_top = [g["level"] for g in sorted(drawn["groups"], key=lambda g: g["top"])]
+    assert [rank[l] for l in by_top] == sorted(rank[l] for l in by_top), (
+        "the panel draws its findings in the order "
+        + ", ".join(
+            f"{g['rule']} ({g['level']}) at {g['top']}px" for g in drawn["groups"]
+        )
+    )
+    first = min(drawn["rows"], key=lambda r: r["top"])
+    assert first["level"] == "error", (
+        f"the first thing the panel says is a {first['level']} at {first['top']}px, and the "
+        f"errors start at {min(r['top'] for r in drawn['rows'] if r['level'] == 'error')}px"
+    )
+
+
+@pytest.mark.parametrize("width,height", [(390, 844), (820, 900)])
+def test_below_a_thousand_pixels_each_segment_opens_on_its_own_subject(
+    browser, base_url, width, height
+):
+    """Edit must open on the form and Preview on the sheet, on a single-column window too.
+
+    Under 1000px `.rb-work` is one column and the aside stacks with the pane it belongs to, so
+    exactly one of the two is first. It was the aside — `order: -1`, added so Checks would not
+    land past the end of the form — and that put the WRONG one first in both segments. Measured
+    at 390x844: tapping Preview drew the Design panel with the sheet 1,144px down (300px below
+    the fold), and tapping Edit drew the miniature and Checks with the form at 1,100px. Each
+    segment showed everything except the thing it is named after.
+
+    The test this replaces asserted only `checks_top < form_top`, which the buried form satisfies
+    and so does any arrangement that buries it deeper — it encoded the remedy rather than the
+    goal. The goal is that the subject of a segment is on screen when you switch to it, and that
+    Checks is still above the form rather than past the end of it, which is what ADR-0128 asked
+    for and what a sticky aside cannot deliver in a single column.
+    """
+    pg = browser.new_page(viewport={"width": width, "height": height})
     errors: list[str] = []
     pg.on("pageerror", lambda e: errors.append(str(e)))
     try:
@@ -453,13 +583,26 @@ def test_below_a_thousand_pixels_checks_is_still_near_the_top(browser, base_url)
         assert not errors, f"the page threw: {errors}"
         where = pg.evaluate("""() => {
           const top = el => Math.round(el.getBoundingClientRect().top + window.scrollY);
-          return {checks: top(document.getElementById('rb-pane-checks').closest('.rb-card')),
-                  form: top(document.getElementById('rb-pane-document')),
+          const seg = n => document.querySelector('#rb-seg [data-seg="' + n + '"]');
+          seg('edit').click();
+          const edit = {form: top(document.getElementById('rb-pane-document')),
+                        checks: top(document.getElementById('rb-pane-checks').closest('.rb-card'))};
+          seg('preview').click();
+          const preview = {sheet: top(document.getElementById('rb-paper-wrap'))};
+          return {edit, preview, fold: window.innerHeight,
                   page: Math.round(document.documentElement.scrollHeight)};
         }""")
-        assert where["checks"] < where["form"], (
-            f"Checks sits {where['checks']}px down a {where['page']}px page, below the "
-            f"{where['form']}px form it is supposed to be advising on"
+        assert where["edit"]["form"] < where["fold"], (
+            f"Edit opens with its form {where['edit']['form']}px down a {where['page']}px page, "
+            f"{where['edit']['form'] - where['fold']}px below the {where['fold']}px fold"
+        )
+        assert where["preview"]["sheet"] < where["fold"], (
+            f"Preview opens with the sheet {where['preview']['sheet']}px down, "
+            f"{where['preview']['sheet'] - where['fold']}px below the {where['fold']}px fold"
+        )
+        assert where["edit"]["checks"] < where["edit"]["form"], (
+            f"Checks sits at {where['edit']['checks']}px, below the "
+            f"{where['edit']['form']}px form it is advising on"
         )
     finally:
         pg.close()

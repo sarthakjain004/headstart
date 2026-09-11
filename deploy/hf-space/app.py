@@ -806,7 +806,9 @@ def put_resume(doc_id: str):
     the client increments, and a push is accepted only when it is exactly one past what is
     stored; anything else answers 409 *with the stored document in the body*, so the client can
     keep both copies. Two devices editing the same résumé is somebody's afternoon, and the one
-    thing this must never do is pick a winner quietly.
+    thing this must never do is pick a winner quietly. A stored copy that cannot be READ is
+    refused the same way: an unanswered Hub read is not evidence that the slot is empty, and
+    treating it as one is the same "pick a winner quietly" with no winner chosen at all.
 
     The check is read-then-write, not a transaction — this is a Git repo, not a database. Two
     pushes landing inside the same few hundred milliseconds can both read the same `rev` and
@@ -843,8 +845,22 @@ def put_resume(doc_id: str):
         return jsonify({"error": "that résumé is missing its revision"}), 400
 
     account = subscription_id(email)
-    stored = store.get_resume(account, doc_id)
-    if stored is None:
+    try:
+        stored_rev = store.resume_revision(account, doc_id)
+    except Exception as exc:  # noqa: BLE001 — any unreadable answer means the same thing here
+        # The Hub did not answer, so there is no way to tell a first push from one that would
+        # land on top of a newer copy. `get_resume` used to be the reader here and it answers
+        # None for both, which took the "nothing to lose" branch below and overwrote another
+        # device's work on a single blip. Refused, not accepted: 409 rather than 503 because
+        # the client reads 503 as "this deployment keeps no account copies at all", and a 409
+        # carrying no `stored` is already its "refused, and nothing here was overwritten" path.
+        app.logger.warning(
+            f"résumé {account}/{doc_id} unreadable, refusing the push: {exc}"
+        )
+        return jsonify(
+            {"error": "your account could not be read — nothing was changed"}
+        ), 409
+    if stored_rev is None:
         # Nothing stored means nothing to lose, so any revision is accepted — the counter
         # guards stored content, and there is none. This is also the path a second device
         # takes after the first deleted the record, which a strict `rev == 1` would have
@@ -852,11 +868,15 @@ def put_resume(doc_id: str):
         held = store.resume_ids(account)
         if doc_id not in held and len(held) >= MAX_RESUMES:
             return jsonify({"error": f"that's the limit — {MAX_RESUMES} résumés"}), 400
-    elif rev != int(stored.get("rev") or 0) + 1:
+    elif rev != stored_rev + 1:
         return jsonify(
             {
                 "error": "this résumé changed somewhere else",
-                "stored": stored,
+                # The refusal is only useful with the losing device's way out in it, so the
+                # document is read again here — the revision decided the verdict, this is the
+                # copy the client adopts. A read that fails now leaves `stored` null, which
+                # the client already treats as "refused, keep what you have".
+                "stored": store.get_resume(account, doc_id),
             }
         ), 409
 

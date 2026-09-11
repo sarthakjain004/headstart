@@ -31,22 +31,32 @@
   ]);
 
   /* The shape is only half the contract, and the other half is how a generic strategy finds the
-     WORDS. Some fallbacks read a node's fields by name — `text` and `bullet` want `text`,
-     `section` wants `title` — and a type wearing one of those shapes that names its fields
-     anything else renders blank in every Layout written before it. That is not hypothetical:
-     an `entry` did exactly that in the free-canvas layout until 2026-09-10, and the test meant
-     to catch it had picked, by coincidence, the one shape whose keys the fallbacks happened to
-     read. `header` and `entry` print every string field a node owns and so may name fields
-     freely, and `line` was made field-agnostic for the same reason.
+     WORDS. The render fallbacks used to read some fields by name — `text` and `bullet` wanted
+     `text`, `section` wanted `title` — and a type wearing one of those shapes that named its
+     fields anything else rendered blank in every Layout written before it. That was not
+     hypothetical: an `entry` did exactly that in the free-canvas layout until 2026-09-10, and the
+     test meant to catch it had picked, by coincidence, the one shape whose keys the fallbacks
+     happened to read.
+
+     No render fallback names a field any more. Every one of them goes through `ctx.fields()` or
+     `headAndRest()`, which read the type's DECLARED fields in order (`plainStrategies` in
+     resume_layouts.js). Measured 2026-09-11 by registering three types with keys no renderer has
+     ever seen — a `section` whose only field is `heading`, a `text` whose only field is `body`, a
+     `bullet` whose only field is `sentence`: **9 of 9** Layouts print them, and so does the
+     plain-text export, whose `content.text` / `content.title` reads each fall back to the
+     declared fields.
 
      THAT LICENCE IS ABOUT THE FALLBACKS ONLY, and it does not make adding a field to an EXISTING
      type free. A `byType` strategy is written for a type it knows and names that type's fields,
-     so a field added to one is printed by no Layout that overrides it. Counted 2026-09-10 across
-     the seven registered Layouts: `project_entry` is overridden by all seven, so a `link` added
-     to it today would be typed by the user and printed by nothing at all; `header` by six, the
-     exception being `free-canvas`, whose header is a field-agnostic `byShape` strategy. Widening
-     an existing type therefore means a pass over the Layouts that name it; adding a NEW type is
-     what the shape contract above actually makes cheap (ADR-0128).
+     so a field added to one is printed by no Layout that overrides it — and how many that is
+     depends entirely on the type. Counted 2026-09-11 across the nine registered Layouts, as the
+     number of Layouts that WOULD print a new field: `work_entry`, `education_entry` and
+     `project_entry` **0 of 9**; `header` **1**; `degree_entry` and `tech_project` **3**;
+     `certification`, `award_entry`, `language_line` and `professional_summary` **7**; `section`,
+     `bullet`, `skills_line`, `profile_line` and `summary` **9**. So widening `project_entry` is a
+     pass over every Layout, widening `certification` is nearly free, and ADR-0130 §5's flat "0 of
+     9" was the worst case read as the general one. Adding a NEW type stays what the shape
+     contract above actually makes cheap (ADR-0128).
 
      The rule for a new Component Type: name your fields for what they ARE. If a fallback cannot
      find them, the fallback is the defect. */
@@ -73,6 +83,13 @@
       return Object.freeze({
         key: f.key, label: f.label || f.key, kind: f.kind || 'text',
         placeholder: f.placeholder || '', hint: f.hint || '',
+        /* Whether this field's value is a web address. NOT a `kind`: a kind is a promise the
+           editor must keep — it costs a control — and an address is typed into the same plain
+           text box as everything else. It is a fact a RULE needs (`plain-links` in
+           resume_layouts.js), and the name of the field cannot supply it: `certification`'s
+           address field is called `credential`, and so are `degree_entry`'s and
+           `education_entry`'s, which hold the name of a qualification. */
+        holdsUrl: !!f.holdsUrl,
       });
     });
 
@@ -169,7 +186,11 @@
       { key: 'fullName', label: 'Full name', placeholder: 'Lee Korelitz' },
       { key: 'phone', label: 'Phone', placeholder: '123-456-1234' },
       { key: 'email', label: 'Email', placeholder: 'myemail@email.com' },
-      { key: 'link', label: 'LinkedIn or portfolio', placeholder: 'www.linkedin.com/in/leekorelitz' },
+      { key: 'link', label: 'LinkedIn or portfolio', placeholder: 'linkedin.com/in/leekorelitz',
+        holdsUrl: true,
+        hint: 'Plain text, no https:// and no www. This field had no hint at all while the ' +
+          'advice for the same thing sat on the Profile component below, so the one address ' +
+          'every résumé carries was the one nobody was told about.' },
       { key: 'locationLine', label: 'Status and location', placeholder: 'Citizen or work permit, then your city',
         hint: 'Whatever tells a recruiter they can hire you, then where you are — they screen on both.' },
       { key: 'languages', label: 'Languages (optional)', placeholder: 'English, Spanish' },
@@ -199,7 +220,8 @@
       'page and a bullet says more.',
     caps: { duplicate: false },
     fields: [
-      /* `text`, because that is the key every `text`-shape fallback still reads by name. */
+      /* `text`, because it is the plain name for what this field holds — and because the
+         plain-text export still prefers that key before falling back to the declared fields. */
       { key: 'text', label: 'Summary', kind: 'multiline',
         placeholder: 'Backend engineer, six years on payments systems in India and the EU. ' +
           'Looking for platform work on a team that ships to production daily.',
@@ -309,7 +331,8 @@
       { key: 'issuer', label: 'Issued by', placeholder: 'Amazon Web Services' },
       { key: 'earned', label: 'Earned', kind: 'month', placeholder: 'March 2024' },
       { key: 'credential', label: 'Credential id or link', placeholder: 'credly.com/badges/9f2c11a0',
-        hint: 'What an employer checks it against. Leave it empty rather than writing “available on request”.' },
+        holdsUrl: true,
+        hint: 'What an employer checks it against — an id, or a link in plain text with no https://. Leave it empty rather than writing “available on request”.' },
     ],
   });
 
@@ -369,7 +392,7 @@
        typed by the user and printed by exactly one layout (ADR-0130). */
     fields: [
       { key: 'network', label: 'Where', placeholder: 'GitHub' },
-      { key: 'url', label: 'Address', placeholder: 'github.com/ananyarao',
+      { key: 'url', label: 'Address', placeholder: 'github.com/ananyarao', holdsUrl: true,
         hint: 'Plain text, no https:// and no www. Every standard here asks for links that do ' +
           'not stand out — an underlined blue URL is the one thing on the page a reader’s eye ' +
           'goes to instead of your work.' },

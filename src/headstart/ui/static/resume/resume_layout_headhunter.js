@@ -479,7 +479,7 @@
       /* The section heading is bold and nothing else. No rule, no caps, no colour — the guide
          is explicit that the only bold text below the name is these headings. */
       s + ' .hh-h { font-size: ' + body + 'pt; font-weight: 700; margin: 0 0 .1em; }',
-      s + ' .hh-entry { margin: 0 0 ' + theme.entryGap + 'em; page-break-inside: avoid; break-inside: avoid; }',
+      s + ' .hh-entry { margin: 0 0 ' + theme.entryGap + 'em; }',
       s + ' .hh-entry-line { display: flex; align-items: baseline; gap: .5em; font-style: italic; }',
       s + ' .hh-role { flex: 1 1 auto; }',
       s + ' .hh-dates { flex: 0 0 auto; text-align: right; white-space: nowrap; }',

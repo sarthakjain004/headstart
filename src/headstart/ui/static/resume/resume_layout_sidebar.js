@@ -145,7 +145,7 @@
       s + ' .sb-h { font-size: ' + theme.headSize + 'pt; font-weight: 700; text-transform: uppercase;',
       '      letter-spacing: .09em; color: ' + theme.accent + '; margin: 0 0 .45em;',
       '      padding-bottom: .2em; border-bottom: 1.5px solid ' + theme.accent + '; }',
-      s + ' .sb-entry { margin: 0 0 ' + theme.entryGap + 'em; page-break-inside: avoid; break-inside: avoid; }',
+      s + ' .sb-entry { margin: 0 0 ' + theme.entryGap + 'em; }',
       s + ' .sb-role { font-weight: 700; }',
       s + ' .sb-meta { font-size: ' + theme.metaSize + 'pt; color: ' + theme.muted + ';',
       '      display: flex; gap: .6em; align-items: baseline; }',

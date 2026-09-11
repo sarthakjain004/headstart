@@ -894,6 +894,117 @@ def test_a_push_that_is_not_one_past_the_stored_revision_is_refused(
     assert _put(client, _doc(rev=9)).status_code == 409
 
 
+def _flaky_resume_read(monkeypatch, times=1):
+    """Break the next `times` reads of a résumé document the way an outage does — the file is
+    still listed, the read just does not answer. Everything else on the fake Hub keeps working,
+    so the only thing under test is what the push route does with an unreadable stored copy."""
+    import headstart.alerts.store as st
+
+    real_read = st._read
+    left = {"n": times}
+
+    def flaky(repo, path, token):
+        if "resumes/" in path and left["n"]:
+            left["n"] -= 1
+            raise OSError("the Hub did not answer")
+        return real_read(repo, path, token)
+
+    monkeypatch.setattr(st, "_read", flaky)
+
+
+def test_a_push_is_refused_when_the_stored_copy_cannot_be_READ(
+    sets_app, hub, monkeypatch
+):
+    """One unanswered Hub read must not read as "nothing stored, so nothing to lose".
+
+    `get_resume` answers None for an absent record AND for a Hub that did not answer, and this
+    route used to decide the conflict from it — so a single blip on that read sent a stale push
+    down the first-push branch and overwrote the newer copy another device had just made, with a
+    200 and "Saved to your account." The losing revision then exists only in the dataset's git
+    history, which `squash-subscribers-history.yml` is built to erase.
+
+    Refused with 409 and no `stored` body, deliberately, not 503: the client reads 503 as "this
+    deployment keeps no account copies" and turns the whole feature off, while a bodyless 409 is
+    already its "refused, and nothing here was overwritten" path."""
+    client = _signed_in(sets_app, monkeypatch)
+    assert _put(client, _doc(rev=1)).status_code == 200
+    assert _put(client, _doc(rev=2, name="written on the phone")).status_code == 200
+
+    _flaky_resume_read(monkeypatch)
+    stale = _put(client, _doc(rev=2, name="written on the laptop"))
+    assert stale.status_code == 409, (
+        "a transient read let a stale push overwrite a newer copy"
+    )
+    assert "stored" not in stale.json
+    # And the phone's revision is still the one on the account, untouched.
+    kept = client.get("/resumes/rmfk3n2abcd", base_url=_HTTPS).json
+    assert kept["name"] == "written on the phone" and kept["rev"] == 2
+    # The control: the very same push, with the read working, is a 409 too — so the refusal
+    # above is the guard holding, not the flaky read breaking something else.
+    assert _put(client, _doc(rev=2, name="written on the laptop")).status_code == 409
+
+
+def test_a_stored_record_that_is_not_a_resume_refuses_the_push(
+    sets_app, hub, monkeypatch
+):
+    """Answered garbage is still not an empty slot, and this is the deliberate half of that.
+
+    `resumes_for` skips a malformed record so one bad file cannot empty the list — a read path,
+    where skipping costs a row. This is the WRITE path, where "I cannot read it" would otherwise
+    become "so I will write over it", and the bytes underneath might be the only copy of a
+    revision. The client is told (409), and the way out is the switch: turning sync off deletes
+    the record — `delete_resume` keys on the listing, which still answers — and turning it back
+    on pushes fresh. That is a wedge with an exit, which overwriting is not."""
+    client = _signed_in(sets_app, monkeypatch)
+    assert _put(client, _doc(rev=1)).status_code == 200
+    key = next(k for k in hub if k.endswith("rmfk3n2abcd.json"))
+    hub[key] = b"<!doctype html><title>504 Gateway Timeout</title>"
+    refused = _put(client, _doc(rev=2))
+    assert refused.status_code == 409
+    assert hub[key].startswith(b"<!doctype html"), (
+        "the push overwrote a record it could not read"
+    )
+
+
+def test_a_first_push_still_goes_through_when_the_record_is_merely_ABSENT(
+    sets_app, hub, monkeypatch
+):
+    """The other half of the same line, and the one that would break the feature if the fix
+    over-reached: a document nobody has pushed yet is absent, not unreadable, and its first push
+    must still be accepted. Absence is decided by the listing, so this holds whether or not
+    `huggingface_hub` is importable — the fake Hub's own "no such key" is not one of its
+    exception types."""
+    client = _signed_in(sets_app, monkeypatch)
+    assert _put(client, _doc(rev=4)).status_code == 200
+    assert client.get("/resumes/rmfk3n2abcd", base_url=_HTTPS).json["rev"] == 4
+
+
+def test_a_conflict_that_cannot_read_the_stored_copy_still_refuses(
+    sets_app, hub, monkeypatch
+):
+    """The revision decides the verdict and a second read supplies the body. If that read
+    fails, the answer is still a refusal — never an acceptance — and the client's bodyless-409
+    path takes it from there."""
+    client = _signed_in(sets_app, monkeypatch)
+    assert _put(client, _doc(rev=1)).status_code == 200
+    # The first read (the revision) works, the second (the body) does not.
+    import headstart.alerts.store as st
+
+    real_read = st._read
+    seen = {"n": 0}
+
+    def second_read_fails(repo, path, token):
+        if "resumes/" in path:
+            seen["n"] += 1
+            if seen["n"] == 2:
+                raise OSError("the Hub did not answer")
+        return real_read(repo, path, token)
+
+    monkeypatch.setattr(st, "_read", second_read_fails)
+    refused = _put(client, _doc(rev=9))
+    assert refused.status_code == 409 and refused.json["stored"] is None
+
+
 def test_a_first_push_takes_any_revision_because_there_is_nothing_to_lose(
     sets_app, hub, monkeypatch
 ):
