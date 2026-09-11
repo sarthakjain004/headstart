@@ -140,3 +140,4 @@ supersedes it and note the supersession in both.
 | [0134](0134-the-shape-says-which-blocks-the-printer-may-not-split.md) | The shape says which blocks the printer may not split | 2026-09-11 |
 | [0135](0135-two-baseline-rules-for-the-blocks-that-shipped-without-any.md) | Two baseline Rules for the blocks that shipped without any | 2026-09-11 |
 | [0136](0136-the-value-gate-keeps-one-dimension-because-the-data-has-one.md) | The value gate keeps one dimension, because the data has one | 2026-09-11 |
+| [0137](0137-an-agent-reads-a-resume-by-running-the-resume-tabs-own-javascript.md) | An agent reads a Résumé document by running the Résumé tab's own JavaScript | 2026-09-11 |
