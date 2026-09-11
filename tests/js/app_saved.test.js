@@ -1,6 +1,12 @@
-/* The saved-jobs hand-off in the REAL src/headstart/ui/static/app.js — same harness shape as
- * app_search.test.js and app_trends.test.js: app.js is a browser script, evaluated in a vm
- * context over a stub DOM, so this exercises the shipped file rather than a copy of its logic.
+/* app.js's **Saved job** list, run against the REAL src/headstart/ui/static/app.js.
+ *
+ * Same harness shape, and the same naming, as app_search.test.js and app_trends.test.js: one
+ * file per tab's worth of app.js, named for the tab. This is the Saved one, and today it covers
+ * the part of it that has a reader outside app.js — the hand-off below. Saved-tab rendering
+ * belongs here too when it is tested; nothing else in tests/js/ claims it.
+ *
+ * app.js is a browser script, evaluated in a vm context over a stub DOM, so this exercises the
+ * shipped file rather than a copy of its logic.
  *
  * `window.savedJobs` is the only thing outside app.js that reads the stars. The Résumé tab's
  * "Tailor for a job" picker calls it to name a version after a job the visitor already saved

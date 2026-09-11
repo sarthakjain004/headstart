@@ -551,7 +551,12 @@
   function versionJobsPaint() {
     const box = el('rb-version-jobs');
     const rows = savedJobs();
-    box.hidden = !rows;
+    /* Spelled out rather than through `box`, and not for style: `resume_markup.test.js` derives
+       the list of elements this file hides by scanning for `el('…').hidden =`, and that is what
+       makes the stylesheet's matching `[hidden]` rule enforced rather than remembered. Hidden
+       through a local, the element is invisible to the scan — and `.rb-jobpick` sets `display`,
+       which outranks the attribute, so the picker would stay on screen after being put away. */
+    el('rb-version-jobs').hidden = !rows;
     if (!rows) return;
     if (!rows.length) {
       box.innerHTML = '<p class="note">No saved jobs yet — hit the ☆ on any search result and it ' +

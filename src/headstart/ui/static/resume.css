@@ -93,6 +93,15 @@
    `display: flex` above would outrank the attribute's own UA rule and leave it on screen. */
 .rb-jobpick { display: flex; flex-direction: column; gap: 4px; max-height: 32vh; overflow: auto;
   margin-bottom: 10px; }
+/* The one popover holding a scrolling list AND a footer that has to stay reachable. Two nested
+   scrollers do not share a height on their own: measured in Chromium with 40 stars, the list took
+   its 32vh, the menu hit its own 520px cap, and "Create version" ended 28px BELOW the menu's
+   visible bottom — the button the whole menu exists for, reachable only by scrolling past the
+   list. A column that lets the list, and only the list, shrink gives the footer its space first.
+   Scoped to this popover: the other two have no list to shrink and are left exactly as they are. */
+.rb-pop-pick { display: flex; flex-direction: column; }
+.rb-pop-pick > * { flex: none; }
+.rb-pop-pick > .rb-jobpick { flex: 0 1 auto; min-height: 3.5rem; }
 .rb-jobpick[hidden] { display: none !important; }
 .rb-docopen.on { border-color: var(--accent); }
 .rb-docrow { display: flex; gap: 6px; align-items: stretch; }
