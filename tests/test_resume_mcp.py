@@ -20,6 +20,7 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import types
 
 import pytest
 
@@ -124,7 +125,16 @@ def _path(email, doc_id):
 
 @pytest.fixture
 def account(monkeypatch):
-    """The bound Account, over a dataset that also holds somebody else's résumé."""
+    """The bound Account, over a dataset that also holds somebody else's résumé.
+
+    `huggingface_hub` is stood up as an empty module the way `test_state_fetch.py` and
+    `test_state_witness.py` do, because CI installs `.[dev]`, which does not carry it, and
+    `open_account` refuses without it. That refusal is right for a real run and wrong here:
+    the four Hub calls are replaced below, so nothing reaches the real package. The refusal
+    has its own test, which does not use this fixture."""
+    monkeypatch.setitem(
+        sys.modules, "huggingface_hub", types.ModuleType("huggingface_hub")
+    )
     _Hub(
         {
             _path(MINE, DOC_ID): json.dumps(_document()).encode(),
@@ -455,7 +465,9 @@ def test_a_base_install_names_the_extra_rather_than_failing_on_the_first_call(
     """`store` imports `huggingface_hub` lazily inside `_hf`, and it is in the `alerts` extra —
     so a plain `pip install -e .` imports this package fine and then answers every tool call
     with a bare ModuleNotFoundError from four frames down. Checked at the door instead."""
-    monkeypatch.setattr(acct.importlib.util, "find_spec", lambda name: None)
+    # None in `sys.modules` is how CPython spells "this module cannot be imported", and it
+    # holds whether or not the real package happens to be installed on this machine.
+    monkeypatch.setitem(sys.modules, "huggingface_hub", None)
     with pytest.raises(acct.Unconfigured) as failure:
         acct.open_account(
             {acct.EMAIL_VAR: MINE, acct.REPO_VAR: "acme/subs", acct.TOKEN_VAR: "tok"}

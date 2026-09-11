@@ -14,7 +14,6 @@ which file is whose.
 
 from __future__ import annotations
 
-import importlib.util
 import os
 from typing import Any
 
@@ -86,16 +85,6 @@ def open_account(env: dict[str, str] | None = None) -> Account:
     """The Account named by the environment. Raises :class:`Unconfigured` with a message
     written to be read by whoever has to fix it."""
     env = os.environ if env is None else env
-    # `huggingface_hub` is in the `alerts` extra, not in the two base dependencies, and
-    # `store` imports it lazily inside `_hf` — so a plain `pip install -e .` imports this
-    # module fine and then fails on the first tool call with a bare ModuleNotFoundError,
-    # several layers from anything that names the fix. Checked here, at the door.
-    if importlib.util.find_spec("huggingface_hub") is None:
-        raise Unconfigured(
-            "`huggingface_hub` is not installed, so the Subscriptions dataset cannot be "
-            'read. Install the extra that carries it: `pip install -e ".[alerts]"` in a '
-            "HeadStart checkout. See docs/agents/resume-mcp-server.md."
-        )
     missing = [name for name in (EMAIL_VAR, REPO_VAR, TOKEN_VAR) if not env.get(name)]
     if missing:
         raise Unconfigured(
@@ -105,4 +94,22 @@ def open_account(env: dict[str, str] | None = None) -> Account:
             f"{REPO_VAR} and {TOKEN_VAR} are the Subscriptions dataset and a token that "
             "can read it). See docs/agents/resume-mcp-server.md."
         )
+    # `huggingface_hub` is in the `alerts` extra, not in the two base dependencies, and
+    # `store` imports it lazily inside `_hf` — so a plain `pip install -e .` imports this
+    # module fine and then fails on the first tool call with a bare ModuleNotFoundError,
+    # several layers from anything that names the fix. Asked here, at the door.
+    #
+    # A real import rather than `importlib.util.find_spec`, which asks a subtly different
+    # question and can answer neither True nor False: given a hand-made module in
+    # `sys.modules` — which several tests in this repo install to stand in for the Hub —
+    # `find_spec` raises `ValueError: huggingface_hub.__spec__ is None`. "Can this process
+    # import it" is the thing actually in doubt, so import it.
+    try:
+        import huggingface_hub  # noqa: F401 — imported to find out whether it can be
+    except ImportError as exc:
+        raise Unconfigured(
+            "`huggingface_hub` is not installed, so the Subscriptions dataset cannot be "
+            'read. Install the extra that carries it: `pip install -e ".[alerts]"` in a '
+            "HeadStart checkout. See docs/agents/resume-mcp-server.md."
+        ) from exc
     return Account(env[EMAIL_VAR], Store(env[REPO_VAR], env[TOKEN_VAR]))
