@@ -356,6 +356,66 @@ test('geometry is clamped to the layout that has to draw it, and keys it ignores
   assert.equal(free.spaceAfter, undefined, 'the canvas does not honour flow spacing');
 });
 
+test('the free canvas is bounded by the sheet the document chose, not by US Letter', () => {
+  const ctx = load(ALL);
+  const L = ctx.ResumeLayouts;
+  const canvas = L.get('free-canvas');
+  /* The usable area is the page less its margins, and the DOCUMENT chooses the page. This was one
+     pair of US-Letter constants on the Layout, so an A4 document — 6.67 x 10.09in usable against
+     Letter's 6.9 x 9.4 — had its blocks clamped 0.23in wider than the sheet they printed on. */
+  const letter = L.boundsFor(canvas, { paper: 'letter' });
+  assert.deepEqual([letter.x[1], letter.y[1], letter.w[1], letter.h[1]], [6.9, 9.4, 6.9, 9.4]);
+  const a4 = L.boundsFor(canvas, { paper: 'a4' });
+  assert.deepEqual([a4.x[1], a4.y[1], a4.w[1], a4.h[1]], [6.67, 10.09, 6.67, 10.09]);
+  /* The minima stay the Layout's own: how small a block may be dragged is a readability call,
+     not a paper one. */
+  assert.deepEqual([a4.w[0], a4.h[0]], [0.8, 0.3]);
+  /* And the clamp reads them — this is the half a user would otherwise have printed off the
+     sheet, because nothing downstream re-checks the number geometryFor returns. */
+  const wide = { geometry: { x: 9, y: 0, w: 9, h: 1 } };
+  assert.deepEqual(L.geometryFor(canvas, wide, { paper: 'a4' }), { x: 6.67, y: 0, w: 6.67, h: 1 });
+  assert.equal(L.geometryFor(canvas, wide, { paper: 'letter' }).w, 6.9);
+  /* The area comes back to the hundredth of an inch. Measured across every layout on both
+     sheets, `mcdowell-cv` on A4 is the pair that subtracts to 7.069999999999999. */
+  assert.deepEqual(L.usable(L.pageFor(L.get('mcdowell-cv'), { paper: 'a4' })),
+    { wide: 7.07, tall: 10.49 });
+  /* A flow layout has no box geometry, so its bounds do not move with the sheet. */
+  assert.equal(L.boundsFor(L.get(HH), { paper: 'a4' }), L.get(HH).bounds);
+  /* And a block arriving from another layout is given the measure of the sheet it is arriving
+     ON — handed the Letter one, it would land already hanging over an A4 page's right margin. */
+  const arriving = ctx.ResumeDocument.clone(example(ctx));
+  arriving.layoutId = 'free-canvas';
+  arriving.paper = 'a4';
+  canvas.adopt(arriving);
+  assert.deepEqual([...new Set(arriving.root.children.map(n => n.geometry.w))], [6.67]);
+});
+
+test('a block that runs off the right-hand edge is reported, not printed off the sheet', () => {
+  const ctx = load(ALL);
+  const L = ctx.ResumeLayouts;
+  const canvas = L.get('free-canvas');
+  const placed = (geometry, paper) => {
+    const doc = ctx.ResumeDocument.builder().named('C').usingLayout('free-canvas')
+      .add('header', { fullName: 'A Name', email: 'a@example.com' }).build();
+    if (paper) doc.paper = paper;
+    doc.root.children[0].geometry = geometry;
+    return L.runRules(canvas, doc).filter(f => f.ruleId === 'overflow');
+  };
+  /* Flush with the right margin is not over it. */
+  assert.deepEqual(placed({ x: 4.7, y: 0.2, w: 2.2, h: 1 }), []);
+  /* Both numbers are inside their own bound — only x + w says this block is off the page, which
+     is why per-axis clamping cannot catch it and the rule has to. */
+  const off = placed({ x: 4.0, y: 0.2, w: 3.5, h: 1 });
+  assert.equal(off.length, 1, 'a block 0.6in past the right margin went unreported');
+  assert.match(off[0].message, /right/);
+  /* The bottom edge still reports, and the two edges are separate findings. */
+  assert.equal(placed({ x: 0, y: 9.0, w: 3, h: 1 }).length, 1);
+  assert.equal(placed({ x: 4.0, y: 9.0, w: 3.5, h: 1 }).length, 2);
+  /* The same block, flush on Letter, hangs off A4: the sheet is the document's choice, so the
+     rule's answer has to change with it. */
+  assert.equal(placed({ x: 4.7, y: 0.2, w: 2.2, h: 1 }, 'a4').length, 1);
+});
+
 test('a free-positioning layout gives arriving blocks coordinates rather than a pile', () => {
   const ctx = load(ALL);
   const doc = example(ctx);
@@ -730,6 +790,38 @@ test('dates are read in the formats people type, and a bare year is refused', ()
   assert.equal(H.parseMonth(''), null);
 });
 
+test('a token that could be two months names neither, however confidently it could be guessed', () => {
+  const { ResumeLayouts: H } = load(ALL);
+  /* The reader sliced the first three characters and asked which month STARTED with them, so a
+     one- or two-letter token always got an answer: "j" was January, "ju" was June and never
+     July, "ma" was March and never May. A guess here is worse than a refusal — the date rule
+     then validates a date the user never wrote. */
+  for (const token of ['j', 'ju', 'ma', 'o', 'de']) {
+    assert.equal(H.parseMonth(token + ' 2023'), null, token);
+  }
+  /* French "jui" really is two months (juin, juillet) and is refused for the same reason. */
+  assert.equal(H.parseMonth('jui 2023'), null);
+  /* A prefix that fits exactly one month is still enough, which is what the slice bought. */
+  assert.deepEqual(H.parseMonth('Sept. 2019'), { y: 2019, m: 9 });
+  assert.deepEqual(H.parseMonth('jun 2019'), { y: 2019, m: 6 });
+  assert.deepEqual(H.parseMonth('jul 2019'), { y: 2019, m: 7 });
+});
+
+test('a month written in the user\u2019s own language is read, not reported missing', () => {
+  const { ResumeLayouts: H } = load(ALL);
+  /* HeadStart is global (CLAUDE.md, Project Scope), and an English-only reader told a Spanish or
+     French user that a correct start date had no month at all. */
+  const cases = [['enero 2023', 1], ['f\u00e9vrier 2023', 2], ['mar\u00e7o 2023', 3],
+    ['mai 2023', 5], ['maart 2023', 3], ['gennaio 2023', 1], ['juni 2023', 6],
+    ['agosto 2023', 8], ['dezember 2023', 12], ['ao\u00fbt 2023', 8]];
+  for (const [text, month] of cases) {
+    assert.deepEqual(H.parseMonth(text), { y: 2023, m: month }, text);
+  }
+  /* Ambiguity is counted in MONTHS, not in spellings: "mai" is May in three languages, so it is
+     an answer; "ma" is March and May, so it is not. */
+  assert.equal(H.parseMonth('ma 2023'), null);
+});
+
 /* ---- exports ---- */
 
 test('the plain-text export carries every node’s words, in reading order', () => {
@@ -924,6 +1016,44 @@ test('an end date that is a word is a job still held — and only the words that
      `date`, and an end cell reading literally "date" then silenced this rule altogether. */
   for (const word of ['date', '2020', 'soon', 'TBD', '']) {
     assert.ok(ended(word).includes('dates'), `"${word}" is not a date and is not "still here"`);
+  }
+});
+
+test('a month this build cannot read is not reported as a missing month', () => {
+  const ctx = load(ALL);
+  const { ResumeDocument: D, ResumeLayouts: L } = ctx;
+  const dated = (layoutId, start, end) => {
+    const doc = D.builder().usingLayout(layoutId)
+      .add('header', { fullName: 'A', email: 'a@example.com' })
+      .section('Work', s => s.add('work_entry', { role: 'R', company: 'C', start, end }, w => {
+        w.bullet('Built the ingest path for 40 teams.');
+        w.bullet('Shipped it daily.');
+      })).build();
+    return L.runRules(L.get(layoutId), doc).filter(f => f.ruleId === 'dates');
+  };
+  /* Both the baseline rule and the one layout that states its own, because a user meets whichever
+     of the two their layout ships. */
+  for (const layoutId of ['jakes-resume', HH]) {
+    assert.deepEqual(dated(layoutId, 'enero 2023', 'diciembre 2023'), [],
+      layoutId + ': a Spanish date is a date');
+    /* A language the table does not carry. The cell names a month; we simply cannot read it, and
+       "needs a month and a year" is an error this rule cannot justify about it. */
+    const unread = dated(layoutId, 'stycze\u0144 2023', 'grudzie\u0144 2023');
+    assert.equal(unread.length, 2, layoutId);
+    assert.ok(unread.every(f => f.level === 'note'), layoutId + ': not an error it can justify');
+    /* A cell that is not a month at all is still an error. */
+    const bare = dated(layoutId, '2023', '2023');
+    assert.equal(bare.length, 2, layoutId);
+    assert.ok(bare.every(f => f.level === 'error'), layoutId + ': a bare year is still wrong');
+    /* And so is an English word the builder KNOWS is not a month. A season is the commonest
+       vague date there is, and the note is the quiet level — the editor leaves notes out of the
+       headline problem count — so demoting these would have hidden a real fault to spare a
+       hypothetical one. */
+    for (const vague of ['Summer 2023', 'Fall 2023', 'Spring 2023', 'Ongoing 2023', 'sometime 2023']) {
+      const found = dated(layoutId, vague, 'June 2023');
+      assert.equal(found.length, 1, layoutId + ': ' + vague);
+      assert.equal(found[0].level, 'error', layoutId + ': “' + vague + '” is not a month');
+    }
   }
 });
 

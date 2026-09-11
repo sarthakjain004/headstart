@@ -44,18 +44,60 @@
      while that layout was the only one checking anything; it is here now because the baseline
      and that layout both read it, and two copies of "what counts as a month" would drift. */
 
-  const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august',
-    'september', 'october', 'november', 'december'];
+  /* Month names in the languages these résumés are actually written in. Nothing scopes a résumé's
+     own language — the English-only line in CLAUDE.md §Project Scope is about the *search corpus*,
+     not about what a user may type into this builder — and an English-only reader told a Spanish
+     user that "enero 2023", a correct start date, had no month on it at all. The seven
+     Latin-script languages below are what one table can carry honestly; a language outside it is
+     handled by `dateFinding` rather than by a wrong answer. Diacritics are folded before the
+     lookup, so "février" and "março" are found under `fevrier` and `marco`. */
+  const MONTHS = new Map();
+  [
+    'january february march april may june july august september october november december',
+    'enero febrero marzo abril mayo junio julio agosto septiembre octubre noviembre diciembre',
+    'janvier fevrier mars avril mai juin juillet aout septembre octobre novembre decembre',
+    'januar februar marz april mai juni juli august september oktober november dezember',
+    'gennaio febbraio marzo aprile maggio giugno luglio agosto settembre ottobre novembre dicembre',
+    'janeiro fevereiro marco abril maio junho julho agosto setembro outubro novembro dezembro',
+    'januari februari maart april mei juni juli augustus september oktober november december',
+  ].forEach(row => row.split(' ').forEach((name, i) => MONTHS.set(name, i + 1)));
+
+  /** Lowercased, trimmed and stripped of its accents — the form the table is keyed in. */
+  const fold = text => String(text || '').trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  /** The month a word names, 1-12, or 0 when no single month fits it.
+   *
+   *  A PREFIX is enough — "sept", "jun", "fev" — but only while it fits exactly one month and is
+   *  at least as long as the three-letter abbreviation every one of these languages uses. The old
+   *  reader took the first three characters and asked which month STARTED with them, so a shorter
+   *  token always got an answer: "j" was January, "ju" was June and never July, "ma" was March and
+   *  never May. A guess there is worse than a refusal, because the `dates` rule then validates a
+   *  date the user never wrote.
+   *
+   *  Ambiguity is counted in MONTHS, never in spellings: "mai" is May in French, German and (as
+   *  the prefix of "maio") Portuguese, so it is an answer; "ma" is March and May, so it is not. */
+  function monthNamed(word) {
+    const w = fold(word);
+    if (w.length < 3) return 0;
+    let found = 0;
+    for (const [name, n] of MONTHS) {
+      if (!name.startsWith(w)) continue;
+      if (found && found !== n) return 0;
+      found = n;
+    }
+    return found;
+  }
 
   /** {y, m} from "June 2023", "Jun 2023", "06/2023" or "2023-06"; null when no month AND year
    *  can be read. Every standard here asks a job's dates for both. */
   function parseMonth(text) {
-    const s = String(text || '').trim().toLowerCase();
+    const s = fold(text);
     if (!s) return null;
     let m = s.match(/^([a-z]+)\.?\s+(\d{4})$/);
     if (m) {
-      const i = MONTHS.findIndex(name => name.startsWith(m[1].slice(0, 3)));
-      return i < 0 ? null : { y: +m[2], m: i + 1 };
+      const month = monthNamed(m[1]);
+      return month ? { y: +m[2], m: month } : null;
     }
     m = s.match(/^(\d{1,2})[/-](\d{4})$/);
     if (m && +m[1] >= 1 && +m[1] <= 12) return { y: +m[2], m: +m[1] };
@@ -64,6 +106,35 @@
     return null;
   }
   const asMonths = d => (d ? d.y * 12 + d.m : null);
+
+  const MONTH_SHAPED = /^\s*(\p{L}{3,})\.?\s+\d{4}\s*$/u;
+
+  /* The English words a date cell really does carry that are not months. Without this list the
+     note below swallowed them: measured on this change's first draft, "Summer 2023", "Fall 2023",
+     "Ongoing 2023" and "Various 2023" all dropped from error to note — and the editor leaves a
+     note out of the headline problem count, so a genuinely vague date would have gone nearly
+     invisible. These are words the builder KNOWS are not months, so the error is one it can
+     justify. A misspelling ("Junuary 2023") still reads as unreadable; telling a typo from a
+     Hungarian month needs a dictionary this does not have. */
+  const NOT_A_MONTH = new Set(('spring summer fall autumn winter sometime someday various ' +
+    'ongoing present current now recent unknown tbd').split(' '));
+
+  /** A cell shaped like a month and a year whose word `parseMonth` could not read, and which is
+   *  not one of the English non-months above — all but always a language the table does not
+   *  carry. It is NOT a missing month, and a rule that calls it one is making a claim about a
+   *  document it cannot read. */
+  function unreadableMonth(text) {
+    const m = MONTH_SHAPED.exec(String(text || ''));
+    return !!m && !parseMonth(text) && !NOT_A_MONTH.has(fold(m[1]));
+  }
+
+  /** The finding a date cell `parseMonth` could not read deserves. Shared rather than written
+   *  twice because the THIRD verdict is a fact about what this build can read, not a template's
+   *  opinion — the layout supplies only its own wording for the one verdict it does own. */
+  const dateFinding = (nodeId, value, missing) => (unreadableMonth(value)
+    ? { level: 'note', nodeId,
+      message: 'That month is not one this builder can read, so the date is unchecked. If it names a month in your language it is fine — though a recruiter’s parser may not read it either.' }
+    : { level: 'error', nodeId, message: missing });
 
   /** An end date written as a word rather than a month — a job still held. Which word is right
    *  is a Layout's argument ("Present" against "Current", see harvard's `present-not-current`);
@@ -111,6 +182,8 @@
        whose adopted blocks come out 4.25in wide — the page-wide answer said a line held 95
        characters where it held 56, so a bullet printing five lines was reported as fine. */
     if (layout.caps && layout.caps.mode === 'free') {
+      /* No `doc` here, and none needed: the sheet only matters to this clamp as an upper bound,
+         and `Math.min(geo.w, full)` below is already that bound for the page in force. */
       const geo = geometryFor(layout, topNode || {});
       return geo.w != null ? Math.min(geo.w, full) : full;
     }
@@ -246,15 +319,16 @@
       id: 'dates', label: 'Month and year on every job',
       check(doc, api) {
         const out = [];
+        /* Three verdicts per cell rather than two — `dateFinding` is what tells "no month" from
+           "a month this build cannot read", which is not an error it could justify. */
         for (const n of api.nodesOfType('work_entry')) {
           const c = api.content(n.id);
           if (!parseMonth(c.start)) {
-            out.push({ level: 'error', nodeId: n.id,
-              message: 'Start date needs a month and a year — “June 2023”. A bare year leaves an eleven-month hole, and a parser files the job on this line.' });
+            out.push(dateFinding(n.id, c.start,
+              'Start date needs a month and a year — “June 2023”. A bare year leaves an eleven-month hole, and a parser files the job on this line.'));
           }
           if (!c.current && !parseMonth(c.end) && !STILL_HERE.test(String(c.end || ''))) {
-            out.push({ level: 'error', nodeId: n.id,
-              message: 'End date needs a month and a year, or tick “Still here”.' });
+            out.push(dateFinding(n.id, c.end, 'End date needs a month and a year, or tick “Still here”.'));
           }
         }
         return out;
@@ -493,6 +567,37 @@
       : layout.page;
   }
 
+  /** The area a sheet leaves for content, in inches: the page less its two margins, to the
+   *  hundredth of an inch. The rounding is not decoration — measured across every layout on both
+   *  sheets, `mcdowell-cv` on A4 subtracts to 7.069999999999999, and a bound that reads back like
+   *  that is one nobody trusts in a range control or an assertion. */
+  const usable = page => ({
+    wide: hundredth(page.width - 2 * page.margin),
+    tall: hundredth(page.height - 2 * page.margin),
+  });
+  const hundredth = n => Math.round(n * 100) / 100;
+
+  /** The bounds in force for one document.
+   *
+   *  Box coordinates — x, y, w, h — are a fact about the SHEET, not about the Layout: the usable
+   *  area is the page less its margins, and the page is the document's choice (`pageFor`). The one
+   *  free-positioning layout stated the US-Letter answer as constants, so an A4 document, whose
+   *  usable area is 6.67 × 10.09in against Letter's 6.9 × 9.4, had its blocks clamped to 6.9in
+   *  wide and printed 0.23in past the right margin. Everything else a Layout bounds — spacing, a
+   *  gutter — is its own, and comes through untouched.
+   *
+   *  The minima stay the Layout's: how small a block may be dragged is a readability call, not a
+   *  paper one. They are floored at the sheet only so a bound can never come back inverted. */
+  function boundsFor(layout, doc) {
+    const b = layout.bounds;
+    if (!layout.caps.resize.includes('box')) return b;
+    const { wide, tall } = usable(pageFor(layout, doc));
+    return Object.assign({}, b, {
+      x: [b.x[0], wide], y: [b.y[0], tall],
+      w: [Math.min(b.w[0], wide), wide], h: [Math.min(b.h[0], tall), tall],
+    });
+  }
+
   /** Which entry in PAPERS the sheet in force corresponds to — the Layout's own when the document
    *  states nothing. The Design pane's control read `doc.paper || 'letter'`, so a fresh Europass
    *  document rendered and printed A4 while the control beside it said "US Letter": the one place
@@ -553,20 +658,23 @@
     return out;
   }
 
-  /** A node's geometry, clamped to what this layout allows and stripped of what it ignores. */
-  function geometryFor(layout, node) {
+  /** A node's geometry, clamped to what this layout allows and stripped of what it ignores.
+   *  `doc` is optional and matters only to box coordinates, whose bounds are the sheet's
+   *  (`boundsFor`); without it the Layout's own sheet is the one clamped to. */
+  function geometryFor(layout, node, doc) {
     const geo = {};
     const allowed = layout.caps.resize;
+    const bounds = boundsFor(layout, doc);
     const g = node.geometry || {};
     if (allowed.includes('spaceAfter') && g.spaceAfter != null) {
-      geo.spaceAfter = clampNum(+g.spaceAfter, layout.bounds.spaceAfter[0], layout.bounds.spaceAfter[1]);
+      geo.spaceAfter = clampNum(+g.spaceAfter, bounds.spaceAfter[0], bounds.spaceAfter[1]);
     }
     if (allowed.includes('gutter') && g.gutter != null) {
-      geo.gutter = clampNum(+g.gutter, layout.bounds.gutter[0], layout.bounds.gutter[1]);
+      geo.gutter = clampNum(+g.gutter, bounds.gutter[0], bounds.gutter[1]);
     }
     if (allowed.includes('box')) {
       for (const k of ['x', 'y', 'w', 'h']) {
-        if (g[k] != null) geo[k] = clampNum(+g[k], layout.bounds[k][0], layout.bounds[k][1]);
+        if (g[k] != null) geo[k] = clampNum(+g[k], bounds[k][0], bounds[k][1]);
       }
     }
     return geo;
@@ -587,7 +695,7 @@
     const strategy = (layout._render.byType && layout._render.byType[node.type])
       || layout._render.byShape[shape];
 
-    const geo = geometryFor(layout, node);
+    const geo = geometryFor(layout, node, doc);
     const ctx = {
       node, doc, layout, theme, spec,
       content: doc.content[node.id] || {},
@@ -834,12 +942,12 @@
   }
 
   root.ResumeLayouts = {
-    define, get, all, PAPERS, pageFor, paperIdFor, themeFor, geometryFor, renderDocument, renderNode,
-    renderStandalone, runRules, COMMON_RULES,
+    define, get, all, PAPERS, pageFor, paperIdFor, themeFor, usable, boundsFor, geometryFor,
+    renderDocument, renderNode, renderStandalone, runRules, COMMON_RULES,
     esc, escLines, dateRange, roleLine, plainStrategies, groupChildren, clampNum, headAndRest,
     marginRow,
     /* The vocabulary a Rule is written in, shared with the layouts that state their own. */
-    parseMonth, asMonths, charsPerLine, charsIn, measureOf, opener, anyStemIn, WEAK_OPENERS,
-    SUPERFLUOUS, SCALE, OUTCOME,
+    parseMonth, dateFinding, asMonths, charsPerLine, charsIn, measureOf, opener, anyStemIn,
+    WEAK_OPENERS, SUPERFLUOUS, SCALE, OUTCOME,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

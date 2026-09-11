@@ -15,6 +15,13 @@
 
   const L = root.ResumeLayouts;
   const plain = L.plainStrategies();
+  const round = n => Math.round(n * 100) / 100;
+
+  /* The sheet a new document on this layout starts on, and the area it leaves. Derived rather
+     than written out: 6.9 and 9.4 — the US Letter answer — used to be typed into the starter,
+     into `adopt` and into `bounds`, while the paper is the DOCUMENT's choice and may be A4. */
+  const PAGE = { width: 8.5, height: 11, margin: 0.8, unit: 'in' };
+  const { wide: WIDE, tall: TALL } = L.usable(PAGE);
 
   const box = (ctx, cls, inner) => ctx.el('div', { class: 'cv-box ' + cls }, inner);
 
@@ -85,34 +92,38 @@
   /* Placed rather than stacked — a free layout whose starter had no coordinates would open as a
      pile in the top-left corner and read as broken. */
   function starter(b) {
-    b.add('header', {}).placed(0, 0, 6.9, 0.9);
+    b.add('header', {}).placed(0, 0, WIDE, 0.9);
     b.section('Experience', s => s.add('work_entry')).placed(0, 1.1, 4.4, 3.4);
-    b.section('Education', s => s.add('education_entry')).placed(4.7, 1.1, 2.2, 1.6);
-    b.add('skills_line', { label: 'Skills', value: '' }).placed(4.7, 2.9, 2.2, 1.6);
+    b.section('Education', s => s.add('education_entry')).placed(WIDE - 2.2, 1.1, 2.2, 1.6);
+    b.add('skills_line', { label: 'Skills', value: '' }).placed(WIDE - 2.2, 2.9, 2.2, 1.6);
   }
 
   /** Give every top-level block a position, keeping the ones that already have one. Blocks
    *  arriving from a flow layout carry no coordinates at all, and absolute positioning without
    *  them collapses the page into a pile at the origin. */
   function adopt(doc) {
+    /* The width of the sheet THIS document chose. A block handed the Letter measure on an A4
+       page arrives already hanging over the right margin, which the overflow rule would then
+       have to report about a block the user never touched. (`starter` cannot do the same — it is
+       handed a builder and no document — so a Letter starter switched to A4 does report two.) */
+    const wide = L.boundsFor(FREE_CANVAS, doc).w[1];
     let y = 0;
     for (const node of doc.root.children) {
       const g = node.geometry || {};
       if (g.x != null && g.y != null) { y = Math.max(y, (g.y || 0) + (g.h || 1)); continue; }
-      node.geometry = Object.assign({}, g, { x: 0, y: round(y), w: 6.9, h: 1.4 });
+      node.geometry = Object.assign({}, g, { x: 0, y: round(y), w: wide, h: 1.4 });
       y += 1.6;
     }
   }
-  const round = n => Math.round(n * 100) / 100;
 
-  L.define({
+  const FREE_CANVAS = L.define({
     id: 'free-canvas',
     label: 'Free canvas',
     summary: 'Place every block by hand · drag and resize anywhere',
     blurb: 'Every block carries its own position and size — drag it anywhere, pull a corner to ' +
       'resize. Good for a portfolio one-pager. The Headless Headhunter guide would tell you not ' +
       'to send this to a recruiter, and it is right: a scan-in-fifteen-seconds read wants one column.',
-    page: { width: 8.5, height: 11, margin: 0.8, unit: 'in' },
+    page: PAGE,
     tokens: {
       bodyFont: 'Helvetica, Arial, sans-serif',
       headFont: 'Helvetica, Arial, sans-serif',
@@ -129,17 +140,30 @@
     /* The one layout that grants free positioning, and therefore the one that exercises the
        `box` resize path and the absolute-position branch in ResumeLayouts.renderNode. */
     caps: { mode: 'free', reorder: false, resize: ['box'] },
-    bounds: { x: [0, 6.9], y: [0, 9.4], w: [0.8, 6.9], h: [0.3, 9.4] },
+    /* This layout's own sheet. A document that chose another one is bounded by THAT: the render
+       and the rules clamp through `ResumeLayouts.boundsFor`, which derives the four maxima from
+       the page in force. What is stated here is still load-bearing, and not only as a default —
+       `resume_editor.js` reads `layout.bounds` directly for its drag clamps and its range
+       controls, so on an A4 document the handles still offer the Letter maximum until that file
+       calls `boundsFor` too. Both ends are numbers because a range control needs two. */
+    bounds: { x: [0, WIDE], y: [0, TALL], w: [0.8, WIDE], h: [0.3, TALL] },
     rules: [
       {
         id: 'overflow', label: 'Blocks stay on the page',
         check(doc, api) {
           const out = [];
-          const maxY = api.page.height - 2 * api.page.margin;
+          const { wide: maxX, tall: maxY } = L.usable(api.page);
           for (const n of doc.root.children) {
-            const g = n.geometry || {};
+            /* The geometry as it will be DRAWN — clamped to the sheet this document chose, not as
+               stored. Clamping is per-axis and so cannot stop a block placed far to the right from
+               running over the edge: x + w is the only thing that says that, and nothing said it
+               at all while this rule looked at the vertical axis alone. */
+            const g = L.geometryFor(api.layout, n, doc);
             if ((g.y || 0) + (g.h || 0) > maxY + 0.05) {
               out.push({ level: 'warn', nodeId: n.id, message: 'Hangs off the bottom of the page — it will be cut or pushed to a second sheet.' });
+            }
+            if ((g.x || 0) + (g.w || 0) > maxX + 0.05) {
+              out.push({ level: 'warn', nodeId: n.id, message: 'Runs off the right-hand edge — everything past the margin is outside the printable area.' });
             }
           }
           return out;
