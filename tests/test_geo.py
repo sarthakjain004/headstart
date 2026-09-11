@@ -3,6 +3,8 @@ table, including every substring trap the inventory vetting caught."""
 
 from __future__ import annotations
 
+import hashlib
+
 import pytest
 
 from headstart.geo import (
@@ -17,6 +19,7 @@ from headstart.geo import (
     SUBDIVISIONS,
     _anchored,
     _rx,
+    classify,
     where,
 )
 
@@ -93,6 +96,69 @@ def _hits(table, clause: str) -> set[str]:
 
 def test_india_clause_recall_and_traps(table):
     hits = _hits(table, where("india"))
+    assert hits == {loc for loc, in_india, _ in _ROWS if in_india}
+
+
+def test_where_india_is_unchanged_by_classify_s_addition():
+    """`classify()` (ADR-0138) is a from-scratch Python reimplementation of this rule, not a
+    refactor of `where()` — but pin the exact compiled clause anyway, as a tripwire independent
+    of `test_india_clause_recall_and_traps`'s row-matching check: a future edit could change the
+    SQL text without changing which rows it matches (e.g. a harmless-looking reordering that
+    still passes recall but breaks something reading the raw clause string, like a query-plan
+    cache keyed on it).
+
+    A hash, not the ~3KB literal itself — copying that string by hand into a test is exactly how
+    a transcription slip would go unnoticed (one did, while drafting this test: `surat`/`thane`
+    swapped, caught only because this assertion failed against the real output). The length below
+    is the same 3,068-character figure ADR-0024/ADR-0086/ADR-0138 all cite for this clause.
+    """
+    clause = where("india")
+    assert len(clause) == 3068
+    assert hashlib.sha256(clause.encode()).hexdigest() == (
+        "615709138f67f5f4806092d3be1d2ad9519b218c3bd4f96230e26b14ddf26581"
+    ), (
+        "the compiled clause moved — if this is a deliberate CITIES/STATES/etc. data change, "
+        "recompute the hash (hashlib.sha256(where('india').encode()).hexdigest()) and update "
+        "this pin alongside test_classify_agrees_with_the_country_level_rule_on_every_oracle_"
+        "row; if it's unexpected, that's exactly what this test exists to catch"
+    )
+
+
+def test_classify_agrees_with_the_country_level_rule_on_every_oracle_row():
+    """The materialized `country` column's correctness gate (ADR-0138): `classify()` must agree
+    with `where("india")` on every real location string here, traps included — this is what
+    actually keeps the two paths from drifting, not the shared-constants argument in
+    `classify`'s own docstring. Pure Python, no lancedb needed, so it runs in the base CI job
+    too."""
+    for loc, in_india, _ in _ROWS:
+        assert (classify(loc) == "IN") == in_india, loc
+
+
+def test_classify_of_no_location_is_none():
+    assert classify(None) is None
+    assert classify("") is None
+
+
+@pytest.fixture(scope="module")
+def table_with_country(tmp_path_factory):
+    lancedb = pytest.importorskip("lancedb")
+    pa = pytest.importorskip("pyarrow")
+    db = lancedb.connect(tmp_path_factory.mktemp("db_country"))
+    return db.create_table(
+        "locs",
+        pa.table(
+            {
+                "location": [loc for loc, _, _ in _ROWS],
+                "country": [classify(loc) for loc, _, _ in _ROWS],
+            }
+        ),
+    )
+
+
+def test_materialized_country_column_agrees_with_the_where_clause(table_with_country):
+    """The direct analog of `test_india_clause_recall_and_traps` for the fast path (ADR-0138):
+    confirms `country = 'IN'` and `where("india")` select identical row sets."""
+    hits = _hits(table_with_country, "country = 'IN'")
     assert hits == {loc for loc, in_india, _ in _ROWS if in_india}
 
 

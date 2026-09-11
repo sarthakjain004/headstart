@@ -61,6 +61,7 @@ from typing import Any
 
 from headstart import log
 from headstart.experience import extract, from_field, from_seniority
+from headstart.geo import classify as classify_country
 from headstart.ingest import (
     PENDING_REDERIVE_PATH,
     REPO_ROOT,
@@ -111,6 +112,11 @@ SALARY_DERIVED_FIELDS = (
     "salary_currency",
     "salary_source",
 )
+
+# `country` (ADR-0138) has no `DERIVED_FIELDS`-style tuple: it is one field, compared directly in
+# `refresh_row` rather than looped, and `derivation_delta`'s tier-bucketing doesn't apply to a
+# binary IN/null value — so unlike `DERIVED_FIELDS`/`SALARY_DERIVED_FIELDS` there is nothing here
+# that would actually read the tuple.
 
 
 def has_description_for(row: dict, detail_pass: frozenset[str]) -> bool:
@@ -305,6 +311,15 @@ def refresh_row(
             )
             row.update(derived_salary)
 
+    # `country`'s derivation (ADR-0138) — a pure function of `location` alone, so unlike
+    # experience/salary it needs no held-description branch at all: `location` is already a fact
+    # `FACT_FIELDS` resynced above, so a sweep achieves full coverage in one pass.
+    country_inputs_moved = facts_changed and row.get("location") != meta.get("location")
+    if sweep or rederive or country_inputs_moved:
+        new_country = classify_country(row.get("location"))
+        changed = changed or (new_country != row.get("country"))
+        row["country"] = new_country
+
     # `remote`'s overlay (headstart.remote, ADR-0061 v8/ADR-0118). `remote` is excluded from
     # FACT_FIELDS (see `_FACT_WITH_OVERLAY`), so unlike every fact above, nothing has already
     # refreshed `row["remote"]` to this run's raw field — that has to happen here, from `facts`,
@@ -410,6 +425,7 @@ def refresh(
     rows = fact_hits = derived_hits = backfilled = 0
     exp_delta: Counter[str] = Counter()
     sal_delta: Counter[str] = Counter()
+    country_delta: Counter[str] = Counter()
     try:
         with (
             meta_path.open(encoding="utf-8") as src,
@@ -439,6 +455,10 @@ def refresh(
                         move = derivation_delta(meta, row, source, fields)
                         if move:
                             counts[move] += 1
+                    # `country` has no tier concept (`derivation_delta` doesn't apply) — just a
+                    # direct before/after compare, since the only two values are "IN" and null.
+                    if meta.get("country") != row.get("country"):
+                        country_delta["gained" if row.get("country") else "lost"] += 1
                 # Written once, on the rows that never had it. A row that carries the flag keeps
                 # it: it is a fact about the vector, and only a re-embed may change it.
                 #
@@ -472,6 +492,11 @@ def refresh(
                 f"{counts['retiered']} retiered, {counts['moved']} moved (same tier, new "
                 f"value) (ADR-0066)"
             )
+    if country_delta:
+        _log.info(
+            f"country derivations: {country_delta['gained']} gained, "
+            f"{country_delta['lost']} lost (ADR-0138)"
+        )
     if sweep and not descriptions:
         # The merge job downloads the description store on `continue-on-error`, so an empty one
         # here means the artifact was lost, not that nothing is held. Stamping now would record a

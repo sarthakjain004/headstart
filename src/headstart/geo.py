@@ -474,3 +474,69 @@ def where(place: str) -> str | None:
     if place in REGIONS:
         return "(" + " OR ".join(_city_where(c) for c in REGIONS[place]) + ")"
     return _city_where(place)
+
+
+def _matches_like(text: str, pattern: str) -> bool:
+    """Python equivalent of the LIKE-pattern semantics :func:`_anchored` compiles to regex for
+    :data:`IND_FORMS`: a leading/trailing ``%`` means unanchored at that end, its absence means
+    the pattern must start/end the string there. Patterns here never carry an interior wildcard
+    or an underscore (``test_ind_forms_carry_no_interior_wildcard`` already asserts this on the
+    constants), so start/end/contains checks cover every case exactly."""
+    starts, ends = pattern.startswith("%"), pattern.endswith("%")
+    core = pattern.strip("%")
+    if starts and ends:
+        return core in text
+    if starts:
+        return text.endswith(core)
+    if ends:
+        return text.startswith(core)
+    return text == core
+
+
+def classify(location: str | None) -> str | None:
+    """``"IN"`` if ``location`` matches the country-level India rule :func:`where` compiles to
+    SQL for (``where("india")``), else ``None`` (ADR-0138).
+
+    A pure function of ``location`` — :func:`headstart.ingest.doc_prep.to_meta` and
+    ``update_meta``'s sweep call this once per Job to fill the served ``country`` column, so a
+    filter can test ``country = 'IN'`` (a plain equality) instead of paying the 3KB
+    ``regexp_like`` alternation :func:`where` builds fresh on every request.
+
+    Reads the exact same :data:`CITIES`/:data:`STATES`/:data:`IND_FORMS`/:data:`SUBDIVISIONS`/
+    :data:`EXCLUDE`/:data:`IND_EXCLUDE`/:data:`INDIA_EXCLUDE` constants :func:`where` does, so a
+    future edit to any of them (a new alias, a new exclusion) reaches both paths — this function
+    never needs its own edit for a data change, only :func:`where` does. The two functions can
+    still drift if the *rule's shape* itself changes (a new part added to :func:`where`'s
+    composition) rather than its data — ``test_classify_agrees_with_the_country_level_rule_on_
+    every_oracle_row`` is what actually guards against that, by checking agreement on every real
+    location string in :mod:`tests.test_geo`'s oracle, not by this docstring's promise alone.
+
+    Every alternative :func:`where` ORs in is a substring/prefix/suffix/equality test on a
+    literal (``_rx`` is ``re.escape`` plus SQL-quote-doubling — it changes nothing about *what*
+    matches, only how the literal is embedded in a regex and a SQL string), so a Python
+    ``in``/``startswith``/``endswith``/``==`` check is exactly the same test as the SQL
+    ``regexp_like`` it mirrors, with no regex compilation needed on this side.
+    """
+    if not location:
+        return None
+    text = location.lower()
+
+    def has_any(terms: Iterable[str]) -> bool:
+        return any(term in text for term in terms)
+
+    if "india" in text and not has_any(INDIA_EXCLUDE):  # _country_where
+        return "IN"
+    if not has_any(IND_EXCLUDE) and (  # _ind_where
+        text == "ind" or any(_matches_like(text, form) for form in IND_FORMS)
+    ):
+        return "IN"
+    if any(
+        text.endswith(f", {code}, in") for code in SUBDIVISIONS
+    ):  # _subdivision_where
+        return "IN"
+    if has_any(STATES):  # the flat plain-city+state alternation's STATES half
+        return "IN"
+    for city, aliases in CITIES.items():  # every city, guarded ones included
+        if has_any(aliases) and not has_any(EXCLUDE.get(city, ())):
+            return "IN"
+    return None

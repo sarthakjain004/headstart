@@ -137,6 +137,11 @@ _FIRST_SEEN_FIELD = pa.field("first_seen", pa.string())
 # like `first_seen`, never compare it against meta, or every row would read stale and be clobbered
 # to null on every run.
 _DESCRIPTION_FIELD = pa.field("description", pa.string())
+# "IN" when `location` matches the India gazetteer's country-level rule, else null (ADR-0138).
+# Materializes `geo.where("india")`'s query-time regex alternation so the India filter's
+# whole-country case can use a plain equality instead. Held as a module constant for the same
+# reason `_FIRST_SEEN_FIELD`/`_DESCRIPTION_FIELD` are: `_schema` and `sync`'s migration both need it.
+_COUNTRY_FIELD = pa.field("country", pa.string())
 
 
 class _Stale(NamedTuple):
@@ -148,9 +153,9 @@ class _Stale(NamedTuple):
 
 
 # One row per Job: canonical typed metadata (ADR-0007) + inline experience numbers (ADR-0019) +
-# inline salary numbers (ADR-0082) + the vector. min_years/max_years/min_salary_annual/
-# max_salary_annual are nullable ints — null for the Jobs no number was found for, and null is
-# never treated as exclusionary (ADR-0082).
+# inline salary numbers (ADR-0082) + a materialized country tag (ADR-0138) + the vector.
+# min_years/max_years/min_salary_annual/max_salary_annual/country are nullable — null for the
+# Jobs no number/tag was found for, and null is never treated as exclusionary (ADR-0082).
 def _schema(dim: int) -> pa.Schema:
     return pa.schema(
         [
@@ -160,6 +165,7 @@ def _schema(dim: int) -> pa.Schema:
             pa.field("title", pa.string()),
             _DESCRIPTION_FIELD,
             pa.field("location", pa.string()),
+            _COUNTRY_FIELD,
             pa.field("remote", pa.bool_()),
             pa.field("employment_type", pa.string()),
             pa.field("experience", pa.string()),  # raw string for display ("5+")
@@ -653,6 +659,15 @@ def sync(args: argparse.Namespace) -> int:
     if _DESCRIPTION_FIELD.name not in table.schema.names:
         _log.info(f"adding '{_DESCRIPTION_FIELD.name}' to the existing table")
         table.add_columns(_DESCRIPTION_FIELD)
+
+    # And for `country` (ADR-0138). Existing rows get null until `_refresh_metadata` below rewrites
+    # them from the store — no bespoke backfill command needed here, unlike description: `country`'s
+    # true value lives fully in `meta.jsonl` once `update_meta`'s DERIVATIONS_VERSION=9 sweep runs
+    # (description's raw text never did, only a `has_description` bit), so the ordinary compare-and-
+    # rewrite loop already reaches it.
+    if _COUNTRY_FIELD.name not in table.schema.names:
+        _log.info(f"adding '{_COUNTRY_FIELD.name}' to the existing table")
+        table.add_columns(_COUNTRY_FIELD)
 
     # Replace the rows of Jobs being re-embedded with a description they previously lacked
     # (ADR-0050) — before planning, not after. `plan_sync` computes add = fresh - index, so an id

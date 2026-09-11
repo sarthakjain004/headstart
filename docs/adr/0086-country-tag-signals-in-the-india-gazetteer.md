@@ -76,6 +76,15 @@ Query-time only. Nothing is re-derived, re-embedded or re-indexed; the next sear
 more rows. That is the standing advantage of ADR-0024's LIKE-expansion design over a stored
 country column, and it is why this was cheap enough to be worth doing for 0.8%.
 
+**Amended by ADR-0138:** that standing advantage is a real cost, not a reason to rule a stored
+column out permanently — it was weighed here against the price of a small, additive gazetteer
+expansion (0.8% of the India set), not against the alternation's own baseline cost, which wasn't
+measured until later and turned out to be 7–13x every other filter cost in the search path.
+ADR-0138 gives that cost up for the country-level case specifically (a materialized `country`
+column, on the same sweep-lag terms `DERIVATIONS_VERSION` already imposes on every other derived
+field), while leaving this ADR's query-time design, and its instant reach, unchanged for city and
+region filtering.
+
 `tests/test_geo.py` carries the new rows and traps in its existing table-driven form. Proven
 against the pre-fix clause: it fails **8 missed + 5 false positives**, and passes clean after.
 
