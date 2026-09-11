@@ -156,14 +156,33 @@ def test_india_expands_via_geo():
     Asserted as delegation to `geo.where` rather than by looking for a substring of the compiled
     clause: how that clause is built is `geo`'s business — it moved from 267 `LIKE`s to 10
     `regexp_like`s without changing a single matched row — and a test that reads its internals
-    fails on that kind of change while catching none of what it is here to catch.
+    fails on that kind of change while catching none of what it is here to catch. City/region
+    values are unaffected by `has_country` (ADR-0138) — only the top-level "india" value ever
+    takes the materialized-column path, see the tests below.
     """
     from headstart import geo
 
     clause = _clause(india="bengaluru")
     assert clause is not None
     assert clause == geo.where("bengaluru")
+    assert _clause(india="bengaluru", has_country=True) == geo.where("bengaluru")
     assert _clause(india="not-a-place") is None
+
+
+def test_india_country_level_uses_the_materialized_column_when_available():
+    """ADR-0138: once the table carries `country`, the whole-country case uses a plain equality
+    instead of `geo.where("india")`'s regex alternation."""
+    assert _clause(india="india", has_country=True) == "country = 'IN'"
+
+
+def test_india_country_level_falls_back_to_geo_without_the_column():
+    """Dark-until-migrated (ADR-0138): forgetting `has_country`, or a table that hasn't synced
+    it yet, falls back to the slower-but-correct `geo.where()` path — never errors, never
+    changes which rows match."""
+    from headstart import geo
+
+    assert _clause(india="india", has_country=False) == geo.where("india")
+    assert _clause(india="india") == geo.where("india")  # has_country defaults False
 
 
 # ---- the Keyword filter (ADR-0104) ----
@@ -477,6 +496,16 @@ def test_keyword_description_scope_is_learned_from_the_schema():
         names=["ats", "title"]
     )  # no description column
     assert JobSearch(_Model(), table).has_description is False
+
+
+def test_has_country_is_learned_from_the_schema():
+    """ADR-0138, the same dark-until-migrated rule `has_description` follows above."""
+    searcher, table = _searcher()
+    assert searcher.has_country == ("country" in table.schema.names)
+    table.schema = types.SimpleNamespace(names=["ats", "title"])  # no country column
+    assert JobSearch(_Model(), table).has_country is False
+    table.schema = types.SimpleNamespace(names=["ats", "title", "country"])
+    assert JobSearch(_Model(), table).has_country is True
 
 
 def test_has_salary_matches_a_description_only_derived_value():

@@ -161,6 +161,47 @@ def test_changed_experience_field_rederives_without_a_sweep():
     assert (row["min_years"], row["experience_source"]) == (2, "field")
 
 
+# --- country: a pure function of location, no held description needed (ADR-0138) -----------------
+
+
+def test_sweep_derives_country_from_location():
+    meta = _meta(location="Bengaluru", country=None)
+    row, _, derived_changed = um.refresh_row(meta, None, {}, sweep=True)
+    assert derived_changed
+    assert row["country"] == "IN"
+
+
+def test_sweep_confirms_a_non_india_location_as_null():
+    meta = _meta(location="Berlin", country=None)
+    row, _, derived_changed = um.refresh_row(meta, None, {}, sweep=True)
+    assert not derived_changed
+    assert row["country"] is None
+
+
+def test_no_sweep_leaves_country_alone_when_location_is_unchanged():
+    # A stale pre-ADR-0138 row: `location` already says Bengaluru but `country` was never
+    # derived. Only a version bump (or the location itself moving) may touch it.
+    meta = _meta(location="Bengaluru", country=None)
+    facts = {f: meta.get(f) for f in um.FACT_FIELDS}
+    row, facts_changed, derived_changed = um.refresh_row(meta, facts, {}, sweep=False)
+    assert not facts_changed
+    assert not derived_changed
+    assert row["country"] is None
+
+
+def test_changed_location_rederives_country_without_a_sweep():
+    # `location` is `country`'s one cascade input, so a Board editing it must move the tag even
+    # at an unchanged version — the same rule `experience`'s raw field already follows. Unlike
+    # experience/salary, this needs no held description at all.
+    meta = _meta(location="Berlin", country=None)
+    facts = {f: meta.get(f) for f in um.FACT_FIELDS}
+    facts["location"] = "Bengaluru"
+    row, facts_changed, derived_changed = um.refresh_row(meta, facts, {}, sweep=False)
+    assert facts_changed
+    assert derived_changed
+    assert row["country"] == "IN"
+
+
 # --- remote: JD supersedes the field, one direction only (ADR-0061 v8) ---------------------------
 
 

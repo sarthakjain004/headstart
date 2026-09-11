@@ -77,6 +77,17 @@ def test_meta_experience_unknown_is_null():
     assert meta["experience_source"] is None
 
 
+def test_meta_country_from_location():
+    # ADR-0138: materializes the India gazetteer's country-level rule at derivation time.
+    meta = ej.to_meta(_job(location="Bengaluru"))
+    assert meta["country"] == "IN"
+
+
+def test_meta_country_null_outside_india():
+    meta = ej.to_meta(_job(location="Berlin"))
+    assert meta["country"] is None
+
+
 def test_build_doc_prefix_and_markdown_stripping():
     job = _job(
         title="Backend Engineer",

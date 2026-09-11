@@ -218,6 +218,7 @@ NEVER_BLOCKING = frozenset(
         "has_first_seen",
         "has_min_salary_annual",
         "has_description",
+        "has_country",
         "posted_sortable",
         # The keyword's scope, not a filter: `filter_kwargs` already nulls it without a keyword,
         # and with one it is the `kw` entry that would be named.
