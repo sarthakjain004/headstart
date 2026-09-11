@@ -298,6 +298,10 @@ _Avoid_: original, default, main — "original" implies the Tailorings are copie
 One alternate wording of one **Component**, held against that Component's id and used by whichever **Tailoring** picked it. Partial: it carries only the fields that differ from the master's **Content**. Created by copy-on-write — editing a block while a Tailoring is active forks one on the first keystroke, so the master is never edited by accident.
 _Avoid_: override, revision — an override suggests it replaces the whole record, and it does not.
 
+**Inspection** (ADR-0137):
+The agent-facing reading of a **Résumé document**: every **Component** in document order with its **Component Type**, the fields that type declares, their current values, whether it prints, and which **Tailoring**s reword it. One Inspection reads one version — the **master résumé** unless a Tailoring is named — so it reports what that version would actually print, which is why it is produced by running `resolve()` itself rather than by re-reading the stored JSON. Served by the local MCP server (`headstart.resume_mcp`) over the **Account copy**, so it sees only the résumés syncing is switched on for.
+_Avoid_: export, dump — an export is a file a person receives and `resume_export.js` makes four of them; an Inspection is neither a file nor for a person. And don't call it the résumé: an Inspection of a Tailoring is one version's reading of the document, not the document.
+
 ### Pipeline scheduling and sharding
 
 **Published-dirs witness** (ADR-0095):
