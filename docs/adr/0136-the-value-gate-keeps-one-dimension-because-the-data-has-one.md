@@ -1,4 +1,4 @@
-# ADR-0134: The value gate keeps one dimension, because the data has one
+# ADR-0136: The value gate keeps one dimension, because the data has one
 
 **Status:** accepted · **Date:** 2026-09-11 · **Declines to extend ADR-0064.** The gate is
 unchanged; this records why, so the question is not reopened from scratch.
