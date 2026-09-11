@@ -39,6 +39,7 @@ import asyncio
 import json
 import re
 import time
+import urllib.parse
 from collections import Counter
 from collections.abc import Sequence
 from typing import Any
@@ -420,6 +421,67 @@ class WorkdayScraper(BaseScraper):
             f"https://{company}.{instance}.myworkdayjobs.com"
             f"/wday/cxs/{company}/{site}/jobs"
         )
+
+    #: Workday's own generic outage page, landed on by a tenant whose data centre migration left
+    #: the URL's `wdN` permanently stale. Query-string-tagged `?d=&s=&e=&o=...` that varies per
+    #: hit -- stripped before comparison by :meth:`alias_key`, so the bare path below is what
+    #: actually needs to match. Two measurements, same phenomenon at two sample sizes: 2 of 400
+    #: sampled live Boards in the pilot run, 38 of the full 12,844-Board population
+    #: (docs/workday/2026-09-11_alias-key-full-population-scan.md §1, §4).
+    alias_vendor_hosts = frozenset({"https://community.workday.com/maintenance-page"})
+
+    def alias_key(self) -> str | None:
+        """The public careers page's own redirect, not the default's -- and query-stripped.
+
+        The base default fetches :meth:`url` and reads the *host* it resolves to, and neither
+        half of that works here. :meth:`url` is the CXS JSON endpoint, which nothing redirects a
+        person to; and even if it did, a bare host is not comparable to a Workday `slug`, which is
+        a whole careers URL (`alias_key`'s own docstring names this ATS as the example). So this
+        fetches the PUBLIC marketing page instead --
+        `https://{company}.{instance}.myworkdayjobs.com/{site}`, what a person actually visits --
+        and returns the resolved URL in that same slug-shape, comparable to `live` directly.
+
+        Shipped for the reasoning ADR-0111 already gives for building Eightfold's adapter "now,
+        with one [signal], because the second is measured and deferred, not hypothetical":
+        without this override, `dedupe_boards.py --ats workday` cannot run at all -- the default's
+        bare host never matches a Workday slug, so every live Board reads `migrated` and the
+        script's own >50% warning fires on every invocation.
+
+        Measured against the full live population and against the deferred (id-overlap) signal
+        both -- full transcripts, not just the summary, in
+        `docs/workday/2026-09-11_alias-key-full-population-scan.md`; the single duplicate found
+        and why it is not in the alias ledger is in ADR-0111's 2026-09-11 amendment. Short form:
+        12,844 Boards, 1 duplicate (a `config._dedupe_boards` no-op today), 2 migrated, 38 landed
+        on Workday's own outage page (:attr:`alias_vendor_hosts`); 0/217 same-company site pairs
+        shared a posting (the deferred, Eightfold-shaped signal); 0/50 same-company instance-split
+        pairs were simultaneously live (the other known Workday duplicate shape, already handled
+        by `board_key`'s instance-blind fold, ADR-0023, needing no help from this method).
+
+        Query string and fragment are stripped before returning: Workday's outage page appends a
+        per-request `?d=&s=&e=&o=` tail that would otherwise make two visits to the very same
+        tombstone compare as different keys.
+        """
+        try:
+            # `_parts()` inside the guard, not before it: it raises `ValueError` on a slug that
+            # does not match `_URL_PATTERN`, and `dedupe_boards.py` reads this method's result
+            # from an unguarded `future.result()` inside a `ThreadPoolExecutor` -- one malformed
+            # slug anywhere in a 12,844-board scan would abort the whole run on whichever board
+            # happened to raise, not just mark that one unreachable.
+            company, instance, site = self._parts()
+            public_url = f"https://{company}.{instance}.myworkdayjobs.com/{site}"
+            resp = http.fetch(
+                "GET",
+                public_url,
+                headers={"User-Agent": USER_AGENT},
+                timeout=30,
+                allow_redirects=True,
+                stream=True,
+            )
+            resp.close()
+            clean = urllib.parse.urlsplit(resp.url)._replace(query="", fragment="")
+            return urllib.parse.urlunsplit(clean).rstrip("/") or None
+        except Exception:  # noqa: BLE001 - any failure to reach it is "no verdict", not a crash
+            return None
 
     def _parts(self) -> tuple[str, str, str]:
         match = _URL_PATTERN.match(self.slug.rstrip("/"))
