@@ -71,8 +71,8 @@ function matches(el, sel) {
   if (sel === '[data-fmt]') return el.dataset.fmt != null;
   if (sel === '[data-open]') return el.dataset.open != null;
   if (sel === '[data-drop]') return el.dataset.drop != null;
-  if (sel === '[data-dropyes]') return el.dataset.dropyes != null;
-  if (sel === '[data-dropno]') return el.dataset.dropno != null;
+  if (sel === '[data-drop-yes]') return el.dataset.dropYes != null;
+  if (sel === '[data-drop-no]') return el.dataset.dropNo != null;
   if (sel === '[data-pull]') return el.dataset.pull != null;
   if (sel === 'input:not([type="checkbox"]), textarea, select') return !!el._caret;
   if (sel === '.rb-h') return el.dataset.handle != null;
@@ -1067,7 +1067,7 @@ test('deleting a synced résumé says it leaves the account too, and takes it of
     assert.ok(/from your account/.test(el('rb-doclist').innerHTML),
       'the confirmation still claims browser-only');
     assert.ok(!wire.some(c => c.method === 'DELETE'), 'it deleted before anyone confirmed');
-    el('rb-doclist').fire('click', { target: target({ dropyes: 'rmfk3n2wxyz' }) });
+    el('rb-doclist').fire('click', { target: target({ dropYes: 'rmfk3n2wxyz' }) });
     return settled();
   }).then(() => {
     assert.ok(wire.some(c => c.method === 'DELETE' && c.url === '/resumes/rmfk3n2wxyz'),
@@ -1169,12 +1169,12 @@ test('deleting a version asks in the bar, and Keep really keeps it', () => {
   assert.equal(el('rb-version-del').hidden, true, 'the question and the button it replaces are both up');
   assert.equal(ctx.ResumeEditor.current().tailorings.length, 1, 'it deleted before anyone answered');
 
-  el('rb-version-keep').fire('click');
+  el('rb-version-no').fire('click');
   assert.equal(el('rb-version-confirm').hidden, true, 'Keep left the question up');
   assert.equal(ctx.ResumeEditor.current().tailorings.length, 1, 'Keep deleted it anyway');
 
   el('rb-version-del').fire('click');
-  el('rb-version-drop').fire('click');
+  el('rb-version-yes').fire('click');
   assert.equal(ctx.ResumeEditor.current().tailorings.length, 0, 'Delete did not delete it');
 });
 
@@ -1185,15 +1185,15 @@ test('a résumé is deleted only after the row itself asks', () => {
   el('rb-open').fire('click');
 
   el('rb-doclist').fire('click', { target: target({ drop: id }) });
-  assert.ok(/data-dropyes="/.test(el('rb-doclist').innerHTML), 'the row did not ask');
+  assert.ok(/data-drop-yes="/.test(el('rb-doclist').innerHTML), 'the row did not ask');
   assert.ok(storage.getItem('headstart.resume.' + id), 'it deleted before anyone answered');
 
-  el('rb-doclist').fire('click', { target: target({ dropno: id }) });
-  assert.ok(!/data-dropyes="/.test(el('rb-doclist').innerHTML), 'Keep left the question up');
+  el('rb-doclist').fire('click', { target: target({ dropNo: id }) });
+  assert.ok(!/data-drop-yes="/.test(el('rb-doclist').innerHTML), 'Keep left the question up');
   assert.ok(storage.getItem('headstart.resume.' + id), 'Keep deleted it anyway');
 
   el('rb-doclist').fire('click', { target: target({ drop: id }) });
-  el('rb-doclist').fire('click', { target: target({ dropyes: id }) });
+  el('rb-doclist').fire('click', { target: target({ dropYes: id }) });
   assert.ok(!storage.getItem('headstart.resume.' + id), 'Delete did not delete it');
 });
 
@@ -1238,4 +1238,37 @@ test('the End date is switched off while “Still here” is ticked', () => {
 
   tick(false);
   assert.ok(!/disabled/.test(endField()), 'unticking it left the field switched off');
+});
+
+/* ---- the bounds the editor offers are the DOCUMENT's sheet -------------------------------
+   #423 gave `ResumeLayouts` a `boundsFor(layout, doc)` that derives the free canvas's maxima
+   from the paper the document actually chose — 6.9 × 9.4in on Letter, 6.67 × 10.09 on A4. The
+   editor was the other half and still read the Layout's own raw constants, so on an A4 document
+   the renderer clamped a block to 6.67 while the slider beside it still offered 6.9 — the UI
+   inviting a position it then takes away, and the overflow rule warning about it afterwards. */
+
+test('the size sliders offer the maximum this document’s paper allows, not the layout’s', () => {
+  const { ctx, el } = loadEditor();
+  ctx.ResumeEditor.changeLayout('free-canvas');
+  const block = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current())
+    .find(n => n.type !== '__root__' && ctx.ResumeDocument.parentOf(ctx.ResumeEditor.current(), n.id));
+  ctx.ResumeEditor.select(block.id);
+
+  const maxOf = key => {
+    const html = el('rb-pane-document').innerHTML;
+    const at = html.indexOf('data-geo="' + key + '"');
+    assert.notEqual(at, -1, 'there is no ' + key + ' slider on the free canvas');
+    return (/max="([\d.]+)"/.exec(html.slice(at, html.indexOf('>', at))) || [])[1];
+  };
+  const letter = ctx.ResumeLayouts.boundsFor(ctx.ResumeLayouts.get('free-canvas'), null);
+  assert.equal(maxOf('x'), String(letter.x[1]), 'the Letter default is not what the slider offers');
+
+  /* Same document, A4 paper. */
+  el('rb').fire('change', { target: Object.assign(target({}), { id: 'rb-paper-size', value: 'a4' }) });
+  const a4 = ctx.ResumeLayouts.boundsFor(ctx.ResumeLayouts.get('free-canvas'),
+    ctx.ResumeEditor.current());
+  assert.notEqual(a4.x[1], letter.x[1], 'A4 and Letter bound the canvas identically — no test here');
+  assert.equal(maxOf('x'), String(a4.x[1]),
+    'the slider still offers the Letter maximum on an A4 document, which the renderer clamps away');
+  assert.equal(maxOf('y'), String(a4.y[1]), 'the same, down the page');
 });

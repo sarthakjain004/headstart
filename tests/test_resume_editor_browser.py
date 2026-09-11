@@ -463,3 +463,61 @@ def test_below_a_thousand_pixels_checks_is_still_near_the_top(browser, base_url)
         )
     finally:
         pg.close()
+
+
+def test_a_free_canvas_drag_is_bounded_by_the_document_s_own_paper(page):
+    """A block dragged off the right edge must stop where the *document's* sheet ends.
+
+    #423 gave `ResumeLayouts` a `boundsFor(layout, doc)` deriving the free canvas's maxima from
+    the paper the document chose — 6.9 x 9.4in on Letter, 6.67 x 10.09 on A4. The editor read
+    the Layout's own raw `bounds` at three sites, so on an A4 document the drag offered the
+    Letter maximum while the renderer clamped to A4: the UI invited a position it then took
+    away, and the new horizontal-overflow rule warned about it afterwards.
+
+    This is a real pointer drag against real bounds, which `node --test` has no geometry for.
+    """
+    setup = page.evaluate("""() => {
+      const ed = window.ResumeEditor;
+      ed.changeLayout('free-canvas');
+      const paper = document.getElementById('rb-paper-size');
+      paper.value = 'a4';
+      paper.dispatchEvent(new Event('change', {bubbles: true}));
+      const lay = window.ResumeLayouts.get('free-canvas');
+      return {letter: window.ResumeLayouts.boundsFor(lay, null).x[1],
+              a4: window.ResumeLayouts.boundsFor(lay, ed.current()).x[1],
+              paper: ed.current().paper,
+              block: ed.current().root.children[0].id};
+    }""")
+    assert setup["paper"] == "a4", f"the paper did not change: {setup['paper']!r}"
+    assert setup["a4"] < setup["letter"], (
+        "A4 and Letter bound the canvas identically, so this test proves nothing"
+    )
+
+    page.wait_for_timeout(200)
+    grab = page.evaluate(
+        """(id) => {
+          const paper = document.getElementById('rb-paper');
+          const block = paper.querySelector('[data-node="' + id + '"]');
+          const handle = [...block.querySelectorAll('.rb-h[data-handle="move"]')]
+            .find(h => h.closest('[data-node]') === block);
+          const h = handle.getBoundingClientRect();
+          return {fromX: h.left + h.width / 2, fromY: h.top + h.height / 2};
+        }""",
+        setup["block"],
+    )
+    page.mouse.move(grab["fromX"], grab["fromY"])
+    page.mouse.down()
+    # Far past the right edge of any sheet, so only the bound decides where it stops.
+    for step in range(1, 21):
+        page.mouse.move(grab["fromX"] + 40 * step, grab["fromY"])
+    page.mouse.up()
+    page.wait_for_timeout(250)
+
+    landed = page.evaluate(
+        "(id) => (window.ResumeDocument.find(window.ResumeEditor.current(), id).geometry || {}).x",
+        setup["block"],
+    )
+    assert landed == setup["a4"], (
+        f"the drag stopped at {landed}in — this document is A4, whose canvas ends at "
+        f"{setup['a4']}in, and Letter's is {setup['letter']}in"
+    )

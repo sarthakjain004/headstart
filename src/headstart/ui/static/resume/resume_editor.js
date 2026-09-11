@@ -5,7 +5,9 @@
  * on drags and resizes and not only on typing. The interaction rules come from the Layout's
  * capability contract rather than from anything here: which handles a node gets, whether a drag
  * reorders or repositions, and how far a resize may go are all read from `layout.caps` and
- * `layout.bounds`, so a Layout added later gets the right affordances without this file changing.
+ * `Layouts.boundsFor(layout, doc)` — so a Layout added later gets the right affordances without
+ * this file changing, and a document on A4 is bounded by A4 rather than by the Letter the Layout
+ * declares (ADR-0132).
  */
 (function (root) {
   'use strict';
@@ -298,7 +300,7 @@
     const live = el('rb-paper').querySelector('[data-node="' + id + '"]');
     if (!live) return;
 
-    const geo = Layouts.geometryFor(lay, model);
+    const geo = Layouts.geometryFor(lay, model, doc());
     const ppi = pxPerInch();
     gesture = {
       id, kind, nodeEl: live,
@@ -326,7 +328,7 @@
     const dy = e.clientY - gesture.startY;
     if (Math.abs(dx) > 2 || Math.abs(dy) > 2) gesture.moved = true;
     const lay = layout();
-    const b = lay.bounds;
+    const b = Layouts.boundsFor(lay, doc());
     const node = gesture.nodeEl;
     const clamp = Layouts.clampNum;
 
@@ -358,7 +360,7 @@
     if (!g.moved) { paint(); return; }
 
     const lay = layout();
-    const b = lay.bounds;
+    const b = Layouts.boundsFor(lay, doc());
     const clamp = Layouts.clampNum;
     const dx = e.clientX - g.startX;
     const dy = e.clientY - g.startY;
@@ -374,9 +376,10 @@
            within one column pushed two undo entries — the second a visible no-op — and labelled
            the whole move "Move to column". `UNDO_LIMIT` is 60, so a drag-heavy session spent
            half of it undoing nothing. A node arriving from inside a section carries no slot of
-           its own; `moveNode` gives it the first one, which is what it is compared against. */
+           its own, and `moveNode` writes the literal `'main'` for it (resume_document.js), so
+           that — not `lay.slots[0].id` — is what a missing slot is compared against. */
         const moving = Doc.find(doc(), g.id);
-        const was = (moving && moving.slot) || (lay.slots[0] && lay.slots[0].id) || null;
+        const was = (moving && moving.slot) || 'main';
         if (g.target.parentId == null && g.target.slot && g.target.slot !== was) {
           store.dispatch(Cmd.setSlot(g.id, g.target.slot));
         }
@@ -971,10 +974,14 @@
     const granted = lay.caps.resize.filter(k => k === 'box' || spec.caps.resize.includes(k));
     if (!granted.length) return '';
     const keys = granted.includes('box') ? ['x', 'y', 'w', 'h'] : granted;
-    const geo = Layouts.geometryFor(lay, node);
+    /* The sheet THIS document chose (#423), not the Letter the Layout declares. The renderer
+       clamps a box to the paper, so a slider offering the Layout's own maximum on an A4 document
+       invites a position that is then clamped away — and warned about by the overflow rule. */
+    const bounds = Layouts.boundsFor(lay, doc());
+    const geo = Layouts.geometryFor(lay, node, doc());
     const rows = keys.map(key => {
       const [label, unit, step] = GEOMETRY_LABELS[key] || [key, '', 1];
-      const bound = lay.bounds[key];
+      const bound = bounds[key];
       if (!bound) return '';
       const value = geo[key] != null ? geo[key] : bound[0];
       const id = 'rb-g-' + esc(node.id) + '-' + key;
@@ -1114,7 +1121,7 @@
     const node = nodeId ? Doc.find(d, nodeId) : null;
     const spec = node ? Components.get(node.type) : null;
     if (!node || !spec) return 'The résumé';
-    return rowTitle(d, spec, node).slice(0, 48);
+    return rowTitle(d, spec, node);
   }
 
   /** Every finding of one rule, as one block: the rule named once, a count, the explanation
@@ -1153,8 +1160,8 @@
     if (!found.length) {
       out.push('<p class="rb-clear">Nothing to flag. Every rule this layout states is met.</p>');
     } else {
-      /* Grouped by rule, in the order the rules ran — which is the order a reader met them on
-         the page above, not an order invented here. */
+      /* Grouped by rule, in the order `runRules` hands them over — worst level first — so the
+         group a reader must act on is the group at the top. No order is invented here. */
       const order = [];
       const byRule = new Map();
       for (const f of found) {
@@ -1390,13 +1397,14 @@
        The gallery's copy used to promise "the dashed page-break line tells you if the new one
        runs onto a second sheet" and `templatesPaint` never called the break painter: nine cards,
        zero lines. Drawing them would not have been much of an answer either — at a 190px card a
-       hairline is all but invisible — so the count is said in words, the way the miniature
-       beside the form already says it, and the promise in the template says the same thing. */
+       hairline is all but invisible, and it arrives carrying a "Page 2" label of its own — so
+       this uses `pageBreaks`, which only MEASURES, and the card states the count in words. The
+       template's copy promises that and nothing else. */
     Layouts.all().forEach((lay, i) => {
       const sheetEl = el('rb-tmini-' + i);
       const label = el('rb-tpages-' + i);
       if (!sheetEl || !label || !fitSheet(sheetEl, MINI_WIDTH)) return;
-      const breaks = paintPageBreaks(sheetEl, Layouts.pageFor(lay, d));
+      const breaks = pageBreaks(sheetEl, Layouts.pageFor(lay, d));
       label.textContent = breaks.length ? (breaks.length + 1) + ' pages' : '1 page';
     });
   }
@@ -1533,21 +1541,20 @@
   function docListPaint() {
     const rows = repository.list();
     const current = doc();
-    const accounted = new Set((sync ? sync.rows() : []).map(r => r.id));
     if (askDocDrop && !rows.some(r => r.id === askDocDrop)) askDocDrop = null;
     el('rb-doclist').innerHTML = rows.length ? rows.map(r =>
       '<div class="rb-docrow' + (current && r.id === current.id ? ' on' : '') + '">' +
       '<button class="rb-docopen" data-open="' + esc(r.id) + '">' + esc(r.name || 'Untitled') +
       '<span class="note">' + esc((Layouts.get(r.layoutId) || {}).label || r.layoutId) + ' · ' +
       esc(String(r.updatedAt || '').slice(0, 10)) +
-      (accounted.has(r.id) ? ' · on your account' : '') + '</span></button>' +
+      (onAccount(r.id) ? ' · on your account' : '') + '</span></button>' +
       (askDocDrop === r.id
         ? '<span class="rb-confirm rb-confirm-row"><span class="note">' +
-          esc(accounted.has(r.id)
+          esc(onAccount(r.id)
             ? 'Delete? It goes from this browser and from your account, and cannot be undone.'
             : 'Delete? It is only in this browser, so this cannot be undone.') + '</span>' +
-          '<button class="ghost rb-mini danger" data-dropyes="' + esc(r.id) + '">Delete</button>' +
-          '<button class="ghost rb-mini" data-dropno="' + esc(r.id) + '">Keep</button></span>'
+          '<button class="ghost rb-mini danger" data-drop-yes="' + esc(r.id) + '">Delete</button>' +
+          '<button class="ghost rb-mini" data-drop-no="' + esc(r.id) + '">Keep</button></span>'
         : '<button class="ghost rb-mini danger" data-drop="' + esc(r.id) +
           '" title="Delete" aria-label="Delete ' + esc(r.name || 'Untitled') + '">×</button>') +
       '</div>').join('') : '<p class="note">Nothing saved yet.</p>';
@@ -1770,6 +1777,11 @@
       const name = (el('rb-version-name').value || '').trim();
       selectedId = null;
       closePopovers();
+      /* `closePopovers` only hides, and the focus was inside what it hid — so without this it
+         lands on <body>, which is the reading-order complaint that took the prompt out in the
+         first place. Back to the button that opened it. */
+      const opener = el('rb-version-new');
+      if (opener.focus) opener.focus();
       store.dispatch(Cmd.addTailoring(name || 'Untitled version'));
     };
     el('rb-version-create').addEventListener('click', createVersion);
@@ -1785,11 +1797,11 @@
       if (!Doc.tailoringOf(doc())) return;
       askVersionDrop = true;
       versionPaint();
-      const yes = el('rb-version-drop');
+      const yes = el('rb-version-yes');
       if (yes.focus) yes.focus();
     });
-    el('rb-version-keep').addEventListener('click', () => { askVersionDrop = false; versionPaint(); });
-    el('rb-version-drop').addEventListener('click', () => {
+    el('rb-version-no').addEventListener('click', () => { askVersionDrop = false; versionPaint(); });
+    el('rb-version-yes').addEventListener('click', () => {
       const tailoring = Doc.tailoringOf(doc());
       askVersionDrop = false;
       if (!tailoring) { versionPaint(); return; }
@@ -1870,14 +1882,14 @@
     el('rb-doclist').addEventListener('click', e => {
       const open = e.target.closest('[data-open]');
       const drop = e.target.closest('[data-drop]');
-      const keep = e.target.closest('[data-dropno]');
-      const go = e.target.closest('[data-dropyes]');
+      const keep = e.target.closest('[data-drop-no]');
+      const go = e.target.closest('[data-drop-yes]');
       if (open) openDocument(open.dataset.open);
       /* Ask in the row, rather than in a modal box that cannot say which row it means. */
       if (drop) { askDocDrop = drop.dataset.drop; docListPaint(); }
       if (keep) { askDocDrop = null; docListPaint(); }
       if (go) {
-        const id = go.dataset.dropyes;
+        const id = go.dataset.dropYes;
         const kept = onAccount(id);
         askDocDrop = null;
         /* The local delete goes ahead either way — the user asked for it and this browser is
@@ -2153,10 +2165,14 @@
    *
    *  The floor is 0.25 rather than 0.5 because a 390px phone needs about 0.42 — clamping higher
    *  left the tab scrolling sideways. Only on the way in; after that the zoom is the user's. */
+  /* The room the sheet has, less the gutter its wrapper keeps around it. One spelling, because
+     the fit and the "does it still fit" test have to agree about where the edge is. */
+  const STAGE_GUTTER = 24;
+  const stageRoom = () => el('rb-paper').parentElement.clientWidth - STAGE_GUTTER;
+
   function fitToWidth() {
     const paper = el('rb-paper');
-    const wrap = paper.parentElement;
-    const available = wrap.clientWidth - 24;
+    const available = stageRoom();
     const natural = paper.offsetWidth;
     if (!available || !natural) return;
     zoom = Math.max(0.25, Math.min(1, Math.floor((available / natural) * 20) / 20));
@@ -2165,9 +2181,8 @@
 
   /** Does the sheet, at the zoom it is drawn at, still fit the space it has? */
   function overflowsStage() {
-    const paper = el('rb-paper');
-    const wrap = paper.parentElement;
-    return paper.offsetWidth * zoom > wrap.clientWidth - 24 && !!paper.offsetWidth;
+    const width = el('rb-paper').offsetWidth;
+    return !!width && width * zoom > stageRoom();
   }
 
   /* Whether the zoom on screen is one the user chose. A fit is the editor's guess and may be
