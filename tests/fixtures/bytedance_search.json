@@ -1,0 +1,208 @@
+{
+  "data": {
+    "job_post_list": [
+      {
+        "id": "7673941558289205509",
+        "code": "A118753B",
+        "title": "Research Scientist Graduate (DPU & AI Infra) - 2027 Start (PhD)",
+        "description": "About the Team\nThe ByteDance DPU (Data Processing Unit) team builds foundational cloud and AI computing infrastructure for ByteDance and Volcano Engine. Our mission is to advance the architecture, development, and research of next-generation software-hardware co-design technologies across compute, networking, and storage for cloud and AI computing.  Our technology stack spans\n- Cloud virtualization, hypervisors, and operating systems\n- High-performance networking, including DPDK and RDMA\n- High-speed interconnects, virtual switching, and network offload\n- Distributed storage and I/O acceleration\n- Orchestration and scheduling for AI/ML workloads \n\nWe work at the intersection of systems research, distributed infrastructure, and hardware acceleration. Our technologies operate at cloud scale and help shape the next generation of cloud and AI computing platforms.\n\nWe are looking for talented individuals to join our team. As a graduate, you will get opportunities to pursue bold ideas, tackle complex challenges, and unlock limitless growth.\nSuccessful candidates must be able to commit to an onboarding date by the end of the year. Please state your availability and graduation date clearly in your resume.\n\n\nResponsibilities\n- Design and develop DPU network software with a focus on high performance, low latency, and reliability.\n- Collaborate with hardware teams to build software-hardware co-design solutions for networking and storage acceleration.\n- Explore AI/ML infrastructure acceleration, leveraging DPUs, GPUs, and custom hardware to optimize distributed training and inference.\n- Drive end-to-end performance optimization, from OS kernels and drivers to user-space runtime systems.\n- Contribute to architecture design, technical proposals, and long-term research directions.",
+        "requirement": "Minimum Qualifications\n- Individuals who are completing or have recently completed a PhD degree in CS or a related discipline. \n- Proficiency in C/C++ development and debugging.\n- Familiar with Linux systems development experience.\n- Solid understanding of compute, network architecture, and operating systems.\n- Background in at least one of: software-hardware co-design, distributed systems, high-performance networking, or AI/ML systems.\n\nPreferred Qualifications\n- Experience with software-hardware co-design (networking, storage, or distributed compute).\n- Hands-on experience with network virtualization (OVS, SR-IOV, eBPF).\n- Familiarity with DPDK and high-performance user-space networking.\n- Bonus points for hardware acceleration experience, FPGA/ASIC/GPU/CUDA\n- Bonus points for experience with NCCL Collectives along with AI communication patterns and parallelization techniques\n- Proven experience designing and building AI/ML infrastructure related but not limited to inference kv cache system, data preprocessing system.",
+        "recruit_type": {
+          "id": "201",
+          "name": "正式",
+          "en_name": "Regular",
+          "i18n_name": "Regular"
+        },
+        "job_category": {
+          "id": "6704215862603155720",
+          "name": "研发",
+          "en_name": "R&D",
+          "i18n_name": "R&D",
+          "parent": null
+        },
+        "city_info": {
+          "code": "CT_1103355",
+          "location_type": 3,
+          "name": "圣何塞",
+          "en_name": "San Jose",
+          "i18n_name": "San Jose",
+          "parent": {
+            "code": "ST_31",
+            "location_type": 2,
+            "name": "加利福尼亚州",
+            "en_name": "California",
+            "i18n_name": "California",
+            "parent": {
+              "code": "CN_6",
+              "location_type": 1,
+              "name": "美国",
+              "en_name": "United States of America",
+              "i18n_name": "United States of America",
+              "parent": null
+            }
+          }
+        },
+        "tag_list": null,
+        "job_subject": {
+          "id": "7602165694751705397",
+          "name": "PhD Graduates - 2027 Start",
+          "en_name": "PhD Graduates - 2027 Start",
+          "i18n_name": "PhD Graduates - 2027 Start"
+        },
+        "vacancies": null,
+        "department_info": null,
+        "job_post_info": {
+          "min_salary": null,
+          "max_salary": null,
+          "currency": null,
+          "required_degree": null,
+          "experience": null,
+          "sequence": null,
+          "min_level": null,
+          "max_level": null,
+          "highlight_list": null,
+          "job_post_object_value_list": null,
+          "expiry_time": null
+        },
+        "process_type": null,
+        "channel_online_status": null
+      },
+      {
+        "id": "7670329439609850165",
+        "code": "A173705",
+        "title": "Student Researcher (AI Foundation Models Infrastructure - Seed Infra) - 2026 Start (PhD)",
+        "description": "About the team\nThe Seed Infrastructures team oversees the distributed training, reinforcement learning framework, high-performance inference, and heterogeneous hardware compilation technologies for AI foundation models.\n\nResponsibilities\n- As an Infrastructure Intern, you may work on one or more of the following areas:\n- Design and optimize large-scale distributed training systems (e.g., data/model/pipeline parallelism, memory  efficiency, fault tolerance)\n- Contribute to reinforcement learning training frameworks and large-scale post-training systems\n- Improve inference performance, latency, and throughput for foundation models\n- Develop compiler or runtime optimizations for heterogeneous hardware (GPU/accelerator)\n- Work on system-level performance analysis, profiling, and bottleneck diagnosis\n- Build tooling and automation to improve developer productivity and system reliability",
+        "requirement": "Minimum Qualifications:\n- Currently pursuing a PhD degree in Computer Science, Electrical Engineering, or related technical fields\n- Strong programming skills in Python and/or C++\n- Solid understanding of systems, distributed computing, machine learning systems, or performance optimization\n- Experience with one or more of the following:\n- Distributed training frameworks (e.g., PyTorch FSDP, Megatron-style parallelism)\n- Reinforcement learning training systems\n- GPU programming (CUDA, Triton) or compiler technologies\n\nPreferred Qualifications:\n- Experience working on large-scale ML systems or infrastructure projects\n- Contributions to open-source ML systems or performance tooling\n- Publications in ML systems, distributed systems, or related areas (a plus but not required)\n\nAs a condition of employment, all successful candidates must be able to establish authorization to work in the United States. For this position, the Company does not provide sponsorship or any immigration-related benefits.",
+        "recruit_type": {
+          "id": "202",
+          "name": "实习",
+          "en_name": "Intern",
+          "i18n_name": "Intern"
+        },
+        "job_category": {
+          "id": "6704215862603155720",
+          "name": "研发",
+          "en_name": "R&D",
+          "i18n_name": "R&D",
+          "parent": null
+        },
+        "city_info": {
+          "code": "CT_157",
+          "location_type": 3,
+          "name": "西雅图",
+          "en_name": "Seattle",
+          "i18n_name": "Seattle",
+          "parent": {
+            "code": "ST_54",
+            "location_type": 2,
+            "name": "华盛顿",
+            "en_name": "Washington",
+            "i18n_name": "Washington",
+            "parent": {
+              "code": "CN_6",
+              "location_type": 1,
+              "name": "美国",
+              "en_name": "United States of America",
+              "i18n_name": "United States of America",
+              "parent": null
+            }
+          }
+        },
+        "tag_list": null,
+        "job_subject": {
+          "id": "7623356417689323781",
+          "name": "Seed Foundation Model Campus Recruitment - Intern",
+          "en_name": "Seed Foundation Model Campus Recruitment - Intern",
+          "i18n_name": "Seed Foundation Model Campus Recruitment - Intern"
+        },
+        "vacancies": null,
+        "department_info": null,
+        "job_post_info": {
+          "min_salary": null,
+          "max_salary": null,
+          "currency": null,
+          "required_degree": null,
+          "experience": null,
+          "sequence": null,
+          "min_level": null,
+          "max_level": null,
+          "highlight_list": null,
+          "job_post_object_value_list": null,
+          "expiry_time": null
+        },
+        "process_type": null,
+        "channel_online_status": null
+      },
+      {
+        "id": "7673510574963738885",
+        "code": "A70775A",
+        "title": "Physical Design Engineer - Physical Verification - Singapore",
+        "description": "Team Introduction\nThe Silicon Platform Team acts as the core R&D middleware group for chip development within the company. The team covers the full spectrum of the chip design flow, including Logic Synthesis, Design for Testability (DFT), Backend Design, Physical and STA (Static Timing Analysis) Signoff, as well as Power Integrity, IR drop, and Electromagnetic Compatibility (Power/IR/EM). The team also oversees tape-out, mass production, packaging, testing, and board-level verification. They collaborate closely with front-end chip teams across business units to drive R&D progress and mass production deployment for chip.\n\nResponsibilities\n1. Own and drive Physical Verification (PV) signoff for advanced-node ASIC/SoC designs, including DRC/LVS/ERC/ANT, fill program, ESD PERC/Reliability checks, GDS scramble, and advanced package related verification.\n2. Own the complete PV flow from early PDK test/enablement through final tapeout, including PV methodology development, flow bring-up, debugging, and signoff closure.\n3. Drive early PDK and rule-deck bring-up and validation. For immature or early-release PDKs/verification decks: analyze PV results, identify root cause (design/PDK/rule deck/technology file/tool), develop focused test cases, and work with Foundry and EDA vendors to drive closure.\n4. Perform in-depth PV result analysis and debugging, including hierarchical/flat run monitoring, IP verification and SoC-level integration, regression analysis across rule-deck/PDK versions, and PV-PR correlation.\n5. Act as the technical interface between the company and Foundry/PDK teams/EDA vendors, including issue reporting and tracking, test case preparation, rule interpretation discussion, and rule-deck fix validation.\n6. Develop and maintain PV signoff methodology, including checklists, run strategies, waiver methodology, regression methodology, and signoff criteria.",
+        "requirement": "Minimum Qualifications\n1. BS degree in Electrical Engineering, Computer Engineering, or equivalent practical experience.\n2. 5+ years of experience in physical verification (DRC/LVS/ERC) for ASIC/SoC designs.\n3. Hands-on experience with industry-standard PV tools (e.g., Mentor Calibre, Synopsys IC Validator).\n4. Experience with PV signoff flow from PDK enablement through tapeout.\n5. Experience working with Foundry and EDA vendors on rule-deck bring-up and issue resolution.\n\nPreferred Qualifications\n1. Experience with 7nm/5nm/3nm/2nm or other advanced nodes.\n2. Experience with early PDK bring-up and immature rule-deck validation.\n3. Experience with advanced package related PV verification.\n4. Experience developing PV methodology, including waiver and regression frameworks.",
+        "recruit_type": {
+          "id": "101",
+          "name": "正式",
+          "en_name": "Regular",
+          "i18n_name": "Regular"
+        },
+        "job_category": {
+          "id": "6704215862603155720",
+          "name": "研发",
+          "en_name": "R&D",
+          "i18n_name": "R&D",
+          "parent": null
+        },
+        "city_info": {
+          "code": "CT_163",
+          "location_type": 3,
+          "name": "新加坡",
+          "en_name": "Singapore",
+          "i18n_name": "Singapore",
+          "parent": {
+            "code": "ST_100785",
+            "location_type": 2,
+            "name": "新加坡",
+            "en_name": "Singapore",
+            "i18n_name": "Singapore",
+            "parent": {
+              "code": "CN_25",
+              "location_type": 1,
+              "name": "新加坡",
+              "en_name": "Singapore",
+              "i18n_name": "Singapore",
+              "parent": null
+            }
+          }
+        },
+        "tag_list": null,
+        "job_subject": null,
+        "vacancies": null,
+        "department_info": null,
+        "job_post_info": {
+          "min_salary": null,
+          "max_salary": null,
+          "currency": null,
+          "required_degree": null,
+          "experience": null,
+          "sequence": null,
+          "min_level": null,
+          "max_level": null,
+          "highlight_list": null,
+          "job_post_object_value_list": null,
+          "expiry_time": null
+        },
+        "process_type": null,
+        "channel_online_status": null
+      }
+    ],
+    "count": 1395,
+    "BaseResp": {
+      "StatusMessage": "Success",
+      "StatusCode": 0,
+      "Extra": null
+    }
+  },
+  "code": 0,
+  "message": "ok",
+  "error": null
+}
