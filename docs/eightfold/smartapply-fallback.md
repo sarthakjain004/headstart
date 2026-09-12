@@ -133,4 +133,15 @@ inert on anything already stored"). `description` was already being recovered by
 prior sitemap fallback (its JSON-LD carries a real `description`), so this isn't a case of
 `description` moving from `None` to populated either — it's the same field, now sourced from
 `position_details` instead of a job page's JSON-LD, on the next ordinary scrape of these boards.
-No bump.
+
+`remote` is a third raw passthrough this recovers, and unlike `department` it *is* one of
+`extract_remote()`'s two arguments: the sitemap fallback only ever set it True on a JSON-LD
+`TELECOMMUTE` `jobLocationType` (else None), while SmartApply supplies a real `workLocationOption`
+value through `_remote_from`/`_REMOTE_OPTION` (True/False/None per the measured vocabulary above).
+That still doesn't need a bump, for a different reason than `department`: `DERIVATIONS_VERSION`
+only triggers `update_meta` to re-run the cascade on a row's *already-stored* raw inputs — it never
+re-scrapes. A stored row's `remote` field only changes when that Board is scraped again (which
+happens on the pipeline's own cadence, independent of this constant), at which point `to_meta()`
+runs fresh on the new raw value automatically — the same "reaches a new Job for free" path
+`department`/`description` take. Bumping the version would re-run `extract_remote()` against the
+*old*, unchanged stored `remote` value and produce the identical result. No bump.
