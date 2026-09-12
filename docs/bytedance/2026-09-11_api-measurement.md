@@ -1,9 +1,10 @@
 # ByteDance careers site: what the API actually returns
 
-Measured live 2026-09-11 against `jobs.bytedance.com` / `joinbytedance.com`, the single company
-board this scraper reads (ADR-0139 — a single-company board is its own `ats`, not a slug under
-one shared platform). Every figure below is a live measurement (`curl`, no browser), not a
-reading of the jobhive reference scraper or of ByteDance's own bundle source.
+Measured live 2026-09-11 against `jobs.bytedance.com` / `joinbytedance.com`, the Single source
+scraper board this scraper reads (ADR-0139, CONTEXT.md's glossary — a Single source scraper is
+its own `ats`, not a slug under one shared platform). Every figure below is a live measurement
+(`curl`, no browser), not a reading of the jobhive reference scraper or of ByteDance's own bundle
+source.
 
 Evidence base: following the `/en/position` redirect, downloading and reading the site's own
 minified JS bundles to find the real API client, 15 sequential search requests spanning three
@@ -165,7 +166,7 @@ an assumption.
 - `ats = "bytedance"`, `slug` fixed to `"jobs.bytedance.com"` — never discovered (ADR-0139).
 - One endpoint, paginated: `POST {base}/search/job/posts`.
 - `has_detail_pass = False` — description+requirement are already on the listing.
-- `alias_key()` overridden to return `self.slug` directly: a single-company board has no sibling
+- `alias_key()` overridden to return `self.slug` directly: a Single source scraper has no sibling
   hostname to alias against (ADR-0139's consequence section — decide this per scraper, don't
   default it).
 - `posted_at` is always `None` (§5).

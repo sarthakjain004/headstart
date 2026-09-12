@@ -39,7 +39,7 @@ def _jobs():
 
 
 def test_the_slug_is_the_fixed_host():
-    """No discovery for a single-company board (ADR-0139) — the slug is always this one host."""
+    """No discovery for a Single source scraper (ADR-0139) — the slug is always this one host."""
     scraper = _scraper()
     assert scraper.slug == SLUG
     assert scraper.board_key() == f"bytedance:{SLUG}"
@@ -51,7 +51,7 @@ def test_company_defaults_to_bytedance():
 
 
 def test_alias_key_is_its_own_slug():
-    """A single-company board has no sibling host to alias against (ADR-0139's consequence)."""
+    """A Single source scraper has no sibling host to alias against (ADR-0139's consequence)."""
     assert _scraper().alias_key() == SLUG
 
 

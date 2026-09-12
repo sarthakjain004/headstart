@@ -1,6 +1,6 @@
-"""ByteDance's own in-house careers system (jobs.bytedance.com) — a single-company board, not a
-platform other companies rent (ADR-0139). There is exactly one tenant, so ``slug`` is fixed to
-``"jobs.bytedance.com"``, never discovered.
+"""ByteDance's own in-house careers system (jobs.bytedance.com) — a Single source scraper, not a
+platform other companies rent (ADR-0139, CONTEXT.md's glossary). There is exactly one tenant, so
+``slug`` is fixed to ``"jobs.bytedance.com"``, never discovered.
 
 Adapted with reference to jobhive's ByteDance scraper (kalil0321/ats-scrapers, MIT); every fact
 below was re-measured live against the real endpoint on 2026-09-11 rather than trusted from it —
@@ -111,7 +111,7 @@ _HEADERS = {
 
 
 class ByteDanceScraper(BaseScraper):
-    """ByteDance's own careers API — a single-company board (ADR-0139). ``slug`` is fixed to
+    """ByteDance's own careers API — a Single source scraper (ADR-0139). ``slug`` is fixed to
     ``"jobs.bytedance.com"``."""
 
     ats = "bytedance"
@@ -123,7 +123,7 @@ class ByteDanceScraper(BaseScraper):
         return _SEARCH_URL
 
     def alias_key(self) -> str | None:
-        """A single-company board has no sibling host to alias against (ADR-0139's consequence:
+        """A Single source scraper has no sibling host to alias against (ADR-0139's consequence:
         decide this per scraper rather than default it), so this Board resolves to itself."""
         return self.slug
 
