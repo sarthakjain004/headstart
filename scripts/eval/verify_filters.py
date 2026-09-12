@@ -166,6 +166,11 @@ URL_SHAPES = {
     # (google.py `_JOB_URL`) — the id-only path, verified live 2026-09-11 to resolve the correct
     # posting with no slug needed. One board, one host, forever (ADR-0139).
     "google": r"https://www\.google\.com/about/careers/applications/jobs/results/\d+\?hl=en_US",
+    # scraper: f"https://jobs.bytedance.com/en/position/{id}" (bytedance.py `job_url`). A
+    # Single source scraper (ADR-0139) — one fixed host, so unlike the platform ATSes above there
+    # is nothing to leave host-agnostic. Verified live 2026-09-11: the route answers 200 for a
+    # real id pulled from the search API; ids are numeric strings (e.g. "7673941558289205509").
+    "bytedance": r"https://jobs\.bytedance\.com/en/position/\d+",
 }
 
 
