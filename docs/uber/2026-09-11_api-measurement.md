@@ -56,14 +56,34 @@ at `pagesize=1000` would fetch the whole board today, but the scraper still pagi
 `_PAGE_SIZE = 200` rather than requesting one giant page — if Uber ever does add a clamp, paging
 degrades gracefully into more requests instead of silently returning a partial list.
 
-**Pagination is clean.** A full sweep at `pagesize=100` and a second at `pagesize=200` both
-produced exactly 517 unique ids, matching `totalJobs` with **zero duplicates** either time — no
-Eightfold-style replica-ordering instability observed here.
+**Update, 2026-09-12: multi-page pagination is *not* reliable — this backend has the same
+replica-ordering instability Eightfold's PCSX API has** (`docs/eightfold/
+no-client-side-fix-for-replica-instability.md`). The two full sweeps above (2026-09-11) each
+looked clean — zero duplicates, matched `totalJobs` exactly — but that was not representative. A
+live re-check the next day caught it directly: paginating the (now 520-job) board at
+`pagesize=200` collected 519 unique ids, and independently paginating at `pagesize=100` also
+collected 519 — but **a different job missing each time** (`160242` absent from the 100-walk,
+`302210` absent from the 200-walk; the 200-walk also served `302210` twice across two different
+pages, which is how it landed on 519 rather than 518). A single one-page pull at `pagesize=1000`
+(no page boundary to disagree across) returned exactly 520 unique ids with zero duplicates,
+confirmed twice more. **The scraper now fetches one page sized to the board's own `totalJobs`,
+never walks multiple pages** — verified live immediately after the fix: two calls (a
+`pagesize=1` probe, then one `pagesize=520` pull) returned exactly 520 unique ids, matching an
+independently-fetched fresh `totalJobs=520` check made moments before. A bounded retry
+(`_MAX_ATTEMPTS=5`) re-sizes and re-fetches if the board's count moves between the probe and the
+real pull.
+
+This is the same lesson `_api_search`'s multi-sweep convergence loop encodes for Eightfold, at
+smaller scale: don't trust "zero duplicates, matched the total" from a small number of sweeps as
+proof a paginated backend is stable, and prefer the surface with no page boundary at all when one
+exists and is cheap enough (Uber's whole board fits in one HTTP response; Eightfold's routinely
+does not, which is why it needs the sweep-and-converge approach instead).
 
 **`page` past the end answers an empty batch, not a blanked envelope.** `page=999` returns
 `{"jobs": [], "totalJobs": 517, ...}` — contrast Oracle's `_OFFSET_CEILING`, which zeroes
-`TotalJobsCount` itself once the offset ceiling is crossed. Here `totalJobs` stays trustworthy
-however far past the end a page is requested, so it is a safe terminator for the walk.
+`TotalJobsCount` itself once the offset ceiling is crossed. This fact is no longer load-bearing —
+the scraper does not page past 1 — but it is why the empty-batch case was never mistaken for a
+truncation signal while the (now-replaced) paginated version was live.
 
 **No rate limit found.** 18 requests at ~13 req/s, all HTTP 200 (small sample, not a guarantee —
 CLAUDE.md's own bar for this kind of claim).

@@ -26,14 +26,21 @@ listing row. Verified 2026-09-11 on 3 of 3 sampled postings: the listing's ``Des
 byte-identical to the ``description`` in the per-job page's own JSON-LD ``JobPosting`` block, so a
 second fetch per job would buy nothing. Hence ``has_detail_pass = False``.
 
-**Pagination is clean and the API states no cap.** A full sweep found 517 open postings, paging
-through matched ``totalJobs`` exactly with zero duplicate ids (measured twice, once at
-``pagesize=100`` and once at ``pagesize=200``). ``pagesize`` was tried up to 100,000 with no
-server-side clamp (it just echoes back what was asked and returns everything there is), and a
-page past the end (``page=999``) answers ``{"jobs": [], "totalJobs": 517, ...}`` — an empty batch,
-not a zeroed envelope (contrast Oracle's `_OFFSET_CEILING`, which blanks the whole response past
-its cap) — so ``totalJobs`` is a safe, stable terminator and a fixed page size is used rather than
-one giant request that would silently break if the API ever does start clamping.
+**A multi-page walk is unreliable — the backend has the same replica-ordering instability as
+Eightfold's (see `docs/eightfold/no-client-side-fix-for-replica-instability.md`).** The first
+version of this scraper paginated at a fixed page size, and two of its own live full sweeps
+(2026-09-11, ``pagesize=100`` and ``pagesize=200``) each matched ``totalJobs`` with zero
+duplicates — clean-looking evidence that turned out not to generalise. A later live re-check
+(2026-09-12) caught it: paginating at ``pagesize=200`` collected only 519 of a stated 520, and
+paginating at ``pagesize=100`` also collected 519 of 520 — **but a different job missing each
+time** (``160242`` absent from the 100-page walk, ``302210`` absent from the 200-page walk). A
+single one-page pull at ``pagesize=1000`` (no page boundary at all) returned exactly 520 unique
+ids with zero duplicates, repeated twice. So the fetch here is **one page sized to the board's own
+``totalJobs``**, never a multi-page walk: a single page has no boundary for the backend's
+replica-ordering to disagree across. ``pagesize`` was tried up to 100,000 with no server-side
+clamp (it just echoes back what was asked and returns everything there is), and a bounded retry
+(`_MAX_ATTEMPTS`) re-fetches with the freshly-stated total if the board grew between the sizing
+call and the fetch.
 
 **No rate limit found.** 18 requests at ~13 req/s, all HTTP 200 — a small sample (CLAUDE.md's own
 bar), not a guarantee, but nothing here suggests pacing is needed.
@@ -69,13 +76,17 @@ from headstart.scrapers.base import BaseScraper
 
 _JOBS_ORIGIN = "https://jobs.uber.com"
 _API = f"{_JOBS_ORIGIN}/api/jobs/search/"
-#: Measured with no server-side clamp up to 100,000 (module docstring); kept modest and paginated
-#: rather than requested as one giant page, so a future clamp degrades to more pages instead of a
-#: silent partial read.
-_PAGE_SIZE = 200
-#: Our own ceiling. 517 measured postings need 3 pages at this size; reaching this means the board
-#: went unread, not that it ended.
-_MAX_PAGES = 100
+#: The cheapest possible first call — just enough to learn `totalJobs` before sizing the real
+#: fetch to it. Not 0: an empty board must still get one real attempt.
+_PROBE_PAGESIZE = 1
+#: A defensive ceiling on the single page's own size, matching the "far above any real board"
+#: reasoning `eightfold.py`'s `_MAX_PAGES` uses — `pagesize` was measured clean up to 100,000
+#: (module docstring) but nothing here needs to ask for that much.
+_MAX_PAGESIZE = 20_000
+#: Bounded retries for the rare case the board grows between the sizing call and the real fetch.
+#: Each attempt re-reads `totalJobs` fresh, so this is not a fixed page count — it is "how many
+#: times the target may move before giving up".
+_MAX_ATTEMPTS = 5
 
 
 class UberScraper(BaseScraper):
@@ -96,37 +107,28 @@ class UberScraper(BaseScraper):
         return self.slug
 
     def url(self) -> str:
-        return f"{_API}?page=1&pagesize={_PAGE_SIZE}"
+        return f"{_API}?page=1&pagesize={_PROBE_PAGESIZE}"
 
     def fetch_raw(self) -> Any:
-        seen: dict[str, dict] = {}
+        """One page, sized to the board's own ``totalJobs`` — never a multi-page walk (module
+        docstring: paginating measurably drops a different job at a page boundary each time)."""
         total = 0
-        page = 1
-        for _ in range(_MAX_PAGES):
-            data = json.loads(self._get(f"{_API}?page={page}&pagesize={_PAGE_SIZE}"))
+        batch: list[dict] = []
+        for _ in range(_MAX_ATTEMPTS):
+            pagesize = min(max(total, _PROBE_PAGESIZE), _MAX_PAGESIZE)
+            data = json.loads(self._get(f"{_API}?page=1&pagesize={pagesize}"))
             total = data.get("totalJobs") or total
             batch = data.get("jobs") or []
-            if not batch:
-                break
-            for item in batch:
-                native_id = item.get("Id")
-                if native_id:
-                    seen.setdefault(str(native_id), item)
-            page += 1
-            if total and len(seen) >= total:
-                break
-        else:
-            self.mark_truncated(
-                f"hit the {_MAX_PAGES}-page cap at {len(seen)} of {total or 'unknown'} "
-                "jobs — the rest unread"
-            )
-        if total and len(seen) < total:
+            if len(batch) >= total:
+                return batch
+        if total:
             self.mark_truncated_unless_negligible(
-                len(seen),
+                len(batch),
                 total,
-                f"read {len(seen)} of {total} jobs — the rest is unread, not absent",
+                f"read {len(batch)} of {total} jobs after {_MAX_ATTEMPTS} attempts — "
+                "the rest is unread, not absent",
             )
-        return list(seen.values())
+        return batch
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []

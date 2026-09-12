@@ -165,78 +165,85 @@ def test_a_job_with_no_urls_falls_back_to_the_jobs_origin():
     assert job.url == "https://jobs.uber.com"
 
 
-# -------------------------------------------------------------------------------- pagination
+# ---------------------------------------------------------------- one page, sized to the total
 
 
 class _FakeSearch:
-    """Serves pages from a canned job list, recording every `page` requested — mirrors the
-    style `test_oracle.py::_FakeListing` uses for the same purpose."""
+    """Serves whatever `pagesize` is asked for from a canned job list, recording every
+    `pagesize` requested. Mirrors the style `test_oracle.py::_FakeListing` uses for the same
+    purpose, but there is no `page` to track here — see the module docstring: pagination itself
+    is what turned out unreliable (a live re-check caught a different job missing from each of
+    two independent page-boundary walks), so the real scraper never asks for more than one page."""
 
-    def __init__(self, total, page_size, reported_total=None):
+    def __init__(self, total, reported_total=None):
         self.jobs = [{"Id": str(i), "Title": f"job {i}"} for i in range(total)]
-        self.page_size = page_size
         self.reported_total = total if reported_total is None else reported_total
-        self.pages_asked = []
+        self.pagesizes_asked = []
 
     def __call__(self, url):
-        page = int(url.split("page=")[1].split("&")[0])
-        self.pages_asked.append(page)
-        start = (page - 1) * self.page_size
-        batch = self.jobs[start : start + self.page_size]
-        return json.dumps({"jobs": batch, "totalJobs": self.reported_total})
+        pagesize = int(url.split("pagesize=")[1].split("&")[0])
+        self.pagesizes_asked.append(pagesize)
+        return json.dumps(
+            {"jobs": self.jobs[:pagesize], "totalJobs": self.reported_total}
+        )
 
 
-def _paged(monkeypatch, fake):
+def _single_page(monkeypatch, fake):
     scraper = _scraper()
     monkeypatch.setattr(scraper, "_get", fake)
     return scraper
 
 
-def test_pagination_walks_every_page_until_the_total_is_met(monkeypatch):
-    fake = _FakeSearch(total=450, page_size=200)
-    scraper = _paged(monkeypatch, fake)
+def test_a_clean_board_is_read_in_two_calls_a_probe_then_one_sized_page(monkeypatch):
+    """No page 2 ever exists here — the module docstring's whole point. A live re-check found
+    that asking for the board across several pages drops a different job at the boundary each
+    time, while one page sized to `totalJobs` was exact twice running."""
+    fake = _FakeSearch(total=450)
+    scraper = _single_page(monkeypatch, fake)
     raw = scraper.fetch_raw()
     assert len(raw) == 450
-    assert fake.pages_asked == [1, 2, 3]
+    assert fake.pagesizes_asked == [1, 450]  # the probe, then the sized fetch
     assert scraper.truncated is None
 
 
-def test_a_page_past_the_end_ends_the_walk_on_an_empty_batch(monkeypatch):
-    """Measured live: `page=999` answers `{"jobs": [], "totalJobs": 517, ...}` — an empty batch
-    with the real total still echoed, not a blanked envelope (contrast Oracle's offset ceiling)."""
-    fake = _FakeSearch(total=10, page_size=200)
-    scraper = _paged(monkeypatch, fake)
+def test_an_empty_board_returns_cleanly_on_the_probe_alone(monkeypatch):
+    fake = _FakeSearch(total=0)
+    scraper = _single_page(monkeypatch, fake)
+    raw = scraper.fetch_raw()
+    assert raw == []
+    assert fake.pagesizes_asked == [1]
+    assert scraper.truncated is None
+
+
+def test_a_board_that_grew_between_the_probe_and_the_fetch_is_retried(monkeypatch):
+    """The board's own count can move between the sizing call and the real fetch — each attempt
+    re-reads `totalJobs` fresh and re-sizes, rather than trusting a stale number. Here the canned
+    list can never actually reach the stated total, so every attempt re-asks for 12 and the retry
+    budget (`_MAX_ATTEMPTS`) is what ends the loop, not convergence."""
+    fake = _FakeSearch(
+        total=10, reported_total=12
+    )  # can serve at most 10, always claims 12
+    scraper = _single_page(monkeypatch, fake)
     raw = scraper.fetch_raw()
     assert len(raw) == 10
-    assert scraper.truncated is None
+    assert fake.pagesizes_asked == [1, 12, 12, 12, 12]  # probe, then 4 re-sized retries
+    assert scraper.truncated  # never converges — the fake can't serve more than it has
+    assert "10 of 12" in scraper.truncated
 
 
 def test_a_board_short_of_its_own_total_is_marked_truncated(monkeypatch):
-    fake = _FakeSearch(total=150, page_size=200, reported_total=900)
-    scraper = _paged(monkeypatch, fake)
+    fake = _FakeSearch(total=150, reported_total=900)
+    scraper = _single_page(monkeypatch, fake)
     scraper.fetch_raw()
     assert scraper.truncated
     assert "150 of 900" in scraper.truncated
 
 
-def test_hitting_the_page_cap_marks_truncated(monkeypatch):
-    fake = _FakeSearch(total=10**6, page_size=1)
-    scraper = _paged(monkeypatch, fake)
+def test_pagesize_never_exceeds_the_defensive_ceiling(monkeypatch):
+    fake = _FakeSearch(total=10, reported_total=10**6)
+    scraper = _single_page(monkeypatch, fake)
     scraper.fetch_raw()
-    assert scraper.truncated
-    assert "page cap" in scraper.truncated
-
-
-def test_duplicate_ids_across_pages_are_not_double_counted(monkeypatch):
-    def served(url):
-        page = int(url.split("page=")[1].split("&")[0])
-        if page == 1:
-            return json.dumps({"jobs": [{"Id": "1", "Title": "X"}], "totalJobs": 1})
-        return json.dumps({"jobs": [], "totalJobs": 1})
-
-    scraper = _paged(monkeypatch, served)
-    raw = scraper.fetch_raw()
-    assert len(raw) == 1
+    assert max(fake.pagesizes_asked) == 20_000
 
 
 # ------------------------------------------------------------------------- registry wiring
