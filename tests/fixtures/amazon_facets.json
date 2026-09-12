@@ -1,0 +1,88 @@
+{
+ "error": null,
+ "hits": 10000,
+ "facets": {
+  "business_category_facet": [
+   {
+    "aws": 8237
+   },
+   {
+    "fulfillment-ops": 1801
+   },
+   {
+    "fulfillment-and-operations": 1539
+   },
+   {
+    "alexa-and-amazon-devices": 1529
+   },
+   {
+    "transportation-and-logistics": 1142
+   },
+   {
+    "operations": 789
+   }
+  ]
+ },
+ "content": {
+  "sidebar": {},
+  "search_results": {}
+ },
+ "jobs": [
+  {
+   "basic_qualifications": "- Experience demonstrating strong analytical abilities and confidence in the use of data<br/>- Experience handling ambiguous or undefined challenges through strong problem solving abilities<br/>- 5+ years of designing global leadership and management development programs experience<br/>- 10+ years of designing global leadership and management development programs experience<br/>- Experience in stakeholder management, dealing with multiple stakeholders at varied levels of the organization",
+   "business_category": "pxt",
+   "city": "Seattle",
+   "company_name": "Amazon.com Services LLC",
+   "country_code": "USA",
+   "description": "Are you passionate about developing the next generation of leaders at scale? Do you thrive on creating transformative learning experiences that shape organizational culture? AWS is seeking an exceptional Senior Learning & Development Partner to help drive our flagship leadership development programs: Day 1 Leader and Day 1 Culture.<br/><br/>In this role, you will be a key contributor to the strategy, design, and continuous improvement of AWS's core leadership development initiatives that impact thousands of leaders globally. You will partner with program managers, learning specialists, and senior stakeholders to design and deliver world-class development experiences. This role requires a unique blend of strategic thinking, hands-on program design expertise, and deep knowledge of adult learning and leadership development.<br/><br/>The ideal candidate will have a proven track record of designing and scaling leadership development programs in fast-paced, high-growth environments. You will partner closely with AWS senior leaders, HR Business Partners, and cross-functional stakeholders to ensure our programs drive measurable impact on leader effectiveness and organizational culture.<br/><br/>Key job responsibilities<br/>Program Design & Strategy<br/><br/>Contribute to the end-to-end strategy and execution for Day 1 Leader and Day 1 Culture programs across AWS globally<br/>Help define program vision, success metrics, and multi-year roadmap aligned with AWS business priorities and culture goals<br/>Drive continuous improvement through data analysis, participant feedback, and industry best practices<br/>Identify opportunities to scale programs to meet the needs of AWS's rapid growth while maintaining quality and impact<br/>Learning Design & Delivery<br/><br/>Design and develop program content incorporating adult learning principles, leadership research, and Amazon's Leadership Principles<br/>Drive innovation in program design, incorporating new modalities (virtual, hybrid, experiential learning)<br/>Maintain high quality standards for all program materials, facilitator guides, and participant experiences<br/>Support program logistics, technology platforms, and vendor relationships<br/>Stakeholder Management & Influence<br/><br/>Partner with AWS senior leadership to align program content and delivery with business needs<br/>Collaborate with HR Business Partners, Talent Management, and other PXT teams to ensure integrated talent solutions<br/>Build strong relationships with internal facilitators and subject matter experts<br/>Present program results and recommendations to senior leadership audiences<br/>Measurement & Impact<br/><br/>Establish and track key performance indicators for program effectiveness and business impact<br/>Conduct regular program evaluations and translate insights into actionable improvements, partnering with Research Science<br/>Build business cases for program investments and demonstrate ROI to stakeholders<br/>Use data to identify trends, gaps, and opportunities in leadership development across AWS<br/><br/>About the team<br/>Diverse Experiences AWS values diverse experiences. Even if you do not meet all of the qualifications and skills listed in the job description, we encourage candidates to apply. If your career is just starting, hasn't followed a traditional path, or includes alternative experiences, don't let it stop you from applying.<br/><br/>Why AWS? Amazon Web Services (AWS) is the world's most comprehensive and broadly adopted cloud platform. We pioneered cloud computing and never stopped innovating \u2014 that's why customers from the most successful startups to Global 500 companies trust our robust suite of products and services to power their businesses.<br/><br/>Inclusive Team Culture Here at AWS, it's in our nature to learn and be curious. Our employee-led affinity groups foster a culture of inclusion that empower us to be proud of our differences. Ongoing events and learning experiences, including our Conversations on Race and Ethnicity (CORE) and AmazeCon conferences, inspire us to never stop embracing our uniqueness.<br/><br/>Mentorship & Career Growth We're continuously raising our performance bar as we strive to become Earth's Best Employer. That's why you'll find endless knowledge-sharing, mentorship and other career-advancing resources here to help you develop into a better-rounded professional.<br/><br/>Work/Life Balance We value work-life harmony. Achieving success at work should never come at the expense of sacrifices at home, which is why we strive for flexibility as part of our working culture. When we feel supported in the workplace and at home, there's nothing we can't achieve in the cloud.",
+   "department_cost_center": null,
+   "description_short": "Are you passionate about developing the next generation of leaders at scale? Do you thrive on creating transformative learning experiences that shape organizational culture? AWS is seeking an exceptional",
+   "display_distance": null,
+   "id": "8700a4b3-95fc-4b44-94cc-1d910b85b394",
+   "id_icims": "10537819",
+   "is_intern": null,
+   "is_manager": null,
+   "job_category": "Human Resources",
+   "job_family": "Human Resources",
+   "job_function_id": null,
+   "job_path": "/en/jobs/10537819/sr-learning-development-specialist-aws-senior-talent-transformation",
+   "job_schedule_type": "full-time",
+   "location": "US, WA, Seattle",
+   "locations": [
+    "{\"normalizedStateName\":\"Washington\",\"normalizedCountryCode\":\"USA\",\"city\":\"Seattle\",\"countryIso3a\":\"USA\",\"countryIso2a\":\"US\",\"locationNonStemming\":\"United States, WA, Seattle\",\"coordinates\":\"47.60357,-122.32945\",\"normalizedCountyName\":\"King\",\"type\":\"ONSITE\",\"normalizedCountryName\":\"United States\",\"normalizedLocation\":\"Seattle, Washington, USA\",\"location\":\"US, WA, Seattle\",\"region\":\"WA\",\"buildingCodeList\":[\"SEA42\"],\"normalizedCityName\":\"Seattle\"}"
+   ],
+   "normalized_location": "Seattle, Washington, USA",
+   "optional_search_labels": [],
+   "posted_date": "September 11, 2026",
+   "preferred_qualifications": "- Master's degree, or Bachelor's degree in business, operations, human resources, adult education, organizational development, instructional design or related field<br/>- AWS Professional level certification<br/>- Knowledge of concepts like system architecture, optimization, system dynamics, system analysis, statistical analysis, reliability analysis, and decision making<br/>- Experience in written and oral communication, including the ability to communicate with all levels in the organization (technical, business, executive)<br/><br/>Amazon is an equal opportunity employer and does not discriminate on the basis of protected veteran status, disability, or other legally protected status.<br/><br/>Our inclusive culture empowers Amazonians to deliver the best results for our customers. If you have a disability and need a workplace accommodation or adjustment during the application and hiring process, including support for the interview or onboarding process, please visit <a href=\"https://amazon.jobs/content/en/how-we-hire/accommodations\">https://amazon.jobs/content/en/how-we-hire/accommodations</a> for more information. If the country/region you\u2019re applying in isn\u2019t listed, please contact your Recruiting Partner.<br/><br/><p><span style=\"color: rgb(35, 47, 62)\" class=\"ProseMirror-FontColor\">The base salary range for this position is listed below. Your Amazon package will include sign-on payments and restricted stock units (RSUs). Final compensation will be determined based on factors including experience, qualifications, and location. Amazon also offers comprehensive benefits including health insurance (medical, dental, vision, prescription, Basic Life &amp; AD&amp;D insurance and option for Supplemental life plans, EAP, Mental Health Support, Medical Advice Line, Flexible Spending Accounts, Adoption and Surrogacy Reimbursement coverage), 401(k) matching, paid time off, and parental leave. Learn more about our benefits at </span><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://amazon.jobs/en/benefits\"><span style=\"color: rgb(35, 47, 62)\" class=\"ProseMirror-FontColor\">https://amazon.jobs/en/benefits</span></a><span style=\"color: rgb(35, 47, 62)\" class=\"ProseMirror-FontColor\">.</span></p><br/><br/>USA, WA, Seattle - 125,800.00 - 170,200.00 USD annually",
+   "primary_search_label": "pxt.no-sub-team-listed",
+   "source_system": "JobCreator",
+   "state": "WA",
+   "title": "Sr. Learning & Development Specialist , AWS Senior Talent & Transformation",
+   "university_job": null,
+   "updated_time": "19 minutes",
+   "url_next_step": "https://account.amazon.jobs/jobs/10537819/apply",
+   "team": {
+    "id": null,
+    "business_category_id": null,
+    "identifier": null,
+    "label": "no-sub-team-listed",
+    "created_at": null,
+    "updated_at": null,
+    "image_file_name": null,
+    "image_content_type": null,
+    "image_file_size": null,
+    "image_updated_at": null,
+    "thumbnail_file_name": null,
+    "thumbnail_content_type": null,
+    "thumbnail_file_size": null,
+    "thumbnail_updated_at": null,
+    "hide_jobs": null,
+    "title": null,
+    "headline": null,
+    "description": null
+   }
+  }
+ ],
+ "job_posting_search_request": "{\"jobPostingSearchRequest\":{\"query\":null,\"excludeFacets\":[{\"name\":\"businessCategory\",\"values\":[{\"name\":\"a-confidential-job\"}]},{\"name\":\"isPostedExternally\",\"values\":[{\"name\":\"0\"}]},{\"name\":\"isUnsearchable\",\"values\":[{\"name\":\"1\"}]}],\"filterFacets\":[],\"start\":\"0\",\"size\":\"1\",\"sort\":{\"sortOrder\":\"DESCENDING\",\"sortType\":\"CREATED_DATE\"},\"location\":null,\"accessLevel\":\"EXTERNAL\",\"includeFacets\":[],\"locationFacets\":[],\"jobTypeFacets\":[],\"contentFilterFacets\":[],\"treatment\":\"OM\"}}"
+}
