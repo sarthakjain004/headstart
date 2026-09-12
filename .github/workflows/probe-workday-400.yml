@@ -32,7 +32,7 @@ on:
         description: paired api/Chrome fetches over the walk's tail (the `browser` arm)
         default: "40"
       arms:
-        description: "comma-separated: where,control,direct,browser,warp,rotating-warp"
+        description: "comma-separated: where,control,direct,browser,warp,rotating-warp,production"
         default: "where,control,direct,browser,warp"
       suspect:
         description: the 400-heavy Board

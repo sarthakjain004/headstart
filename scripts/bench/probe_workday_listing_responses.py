@@ -2,8 +2,9 @@
 """Probe historical Workday JSON-decode Boards from a runner, one listing page each.
 
 Four workflow replicas partition the inventory. Each requested arm runs the same partition:
-direct, one fixed WARP route, or WARP with one rotation+retry only after a positively classified
-non-JSON response. Results stream to JSONL and a summary is rewritten after every completion.
+direct, one fixed WARP route, WARP with one rotation+retry only after a positively classified
+non-JSON response, or the exact production retry/429-wall route. Results stream to JSONL and a
+summary is rewritten after every completion.
 """
 
 from __future__ import annotations
@@ -79,20 +80,29 @@ def _bounded(response) -> dict:
     }
 
 
-def _request(url: str, proxy: str | None):
+def _request(url: str, proxy: str | None, *, production: bool = False):
     match = _URL.match(url)
     if not match:
         raise ValueError(f"unparseable Workday URL: {url}")
     company, pod, site = match.group("company", "pod", "site")
     endpoint = f"https://{company}.{pod}.myworkdayjobs.com/wday/cxs/{company}/{site}/jobs"
+    route = _proxy(proxy)
+    retry_on = frozenset()
+    if production:
+        retry_on = http.TRANSIENT
+        route = {
+            "egress_group": "workday",
+            "egress_on": frozenset({429}),
+            "egress_board": url,
+        }
     response = http.fetch(
         "POST",
         endpoint,
         json=_BODY,
         headers=_HEADERS,
         timeout=30,
-        retry_on=frozenset(),
-        **_proxy(proxy),
+        retry_on=retry_on,
+        **route,
     )
     return endpoint, response
 
@@ -100,8 +110,18 @@ def _request(url: str, proxy: str | None):
 def _probe(url: str, arm: str, proxy: str | None) -> dict:
     row = {"url": url, "arm": arm, "observed_at": datetime.now(UTC).isoformat()}
     try:
-        endpoint, response = _request(url, proxy)
+        endpoint, response = _request(url, proxy, production=arm == "production")
         row["endpoint"] = endpoint
+        if arm == "production":
+            try:
+                response.raise_for_status()
+            except Exception as exc:
+                row.update(
+                    status=response.status_code,
+                    content_type=response.headers.get("content-type"),
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+                return row
         try:
             payload = response.json()
         except ValueError as exc:
@@ -149,7 +169,7 @@ def main() -> int:
     parser.add_argument("--replica", type=int, required=True)
     parser.add_argument("--replicas", type=int, default=4)
     parser.add_argument("--width", type=int, default=12)
-    parser.add_argument("--arms", default="direct,warp,rotating-warp")
+    parser.add_argument("--arms", default="direct,warp,rotating-warp,production")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 
