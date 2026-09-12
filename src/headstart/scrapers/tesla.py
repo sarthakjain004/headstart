@@ -61,7 +61,7 @@ job, 200 with ``jobDescription``/``jobResponsibilities``/``jobRequirements`` HTM
 getting it costs a **full browser navigation per job**, not a cheap JSON GET: the same wall that
 blocks a second explicit request off the listing page blocks one issued from a job page too
 (measured on the same job id). At 8,105 postings that is thousands of navigations every run,
-which no other ATS in this repo pays and which would not fit a nightly nightly pipeline's time
+which no other ATS in this repo pays and which would not fit a nightly pipeline's time
 budget. ``has_detail_pass`` therefore stays ``False`` and every Tesla ``Job.description`` is
 ``None`` in this version — a deliberate scope cut, not an oversight, and a natural place to
 revisit if per-job descriptions turn out to matter enough to budget for.
@@ -222,6 +222,9 @@ def _fetch_state_json() -> dict[str, Any]:
                 raise RuntimeError(
                     f"the careers page's own state call answered {seen.get('status')}"
                 )
+            # `_execute_command` is pydoll's private command API, same as `browser_http`'s own
+            # `_install_blocking` — if it drifts, this raises here rather than silently returning
+            # nothing, which is why the surrounding `_go` isn't wrapped any looser than it is.
             body = await tab._execute_command(
                 NetworkCommands.get_response_body(seen["request_id"])
             )
