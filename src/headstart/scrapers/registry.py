@@ -25,6 +25,7 @@ from headstart.scrapers.sensehq import SenseHQScraper
 from headstart.scrapers.smartrecruiters import SmartRecruitersScraper
 from headstart.scrapers.successfactors import SuccessFactorsScraper
 from headstart.scrapers.teamtailor import TeamtailorScraper
+from headstart.scrapers.tesla import TeslaScraper
 from headstart.scrapers.trakstar import TrakstarScraper
 from headstart.scrapers.workable import WorkableScraper
 from headstart.scrapers.workday import WorkdayScraper
@@ -59,6 +60,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         ICIMSScraper,
         JazzHRScraper,
         JobviteScraper,
+        TeslaScraper,
     )
 }
 
