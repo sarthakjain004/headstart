@@ -109,6 +109,9 @@ URL_SHAPES = {
     # scraper passes through RMK sitemap URLs: /job/{slug}/{id}/ on per-tenant vanity hosts
     # (jobs.bt.com, careers.capgemini.com, jobs.turbo.co.th — no common host to anchor on)
     "successfactors": r"https://[^/]+/job/.+/\d+/?",
+    # single-source ats (ADR-0139) — one tenant, so the host is a literal, not a wildcard.
+    # scraper builds f"{_SEARCH_URL}job/{title-slug}-{id}" (tesla.py's `_job_url`).
+    "tesla": r"https://www\.tesla\.com/careers/search/job/[\w-]+-\d+",
     # scraper: f"https://{slug}/hcmUI/CandidateExperience/en/sites/CX_1/job/{id}" where the slug
     # is the tenant's own pod host (fa-etvl-saasfaprod1.fa.ocs.oraclecloud.com,
     # chevron.fa.us2.oraclecloud.com — ten regional pods, so nothing narrower to anchor on).
