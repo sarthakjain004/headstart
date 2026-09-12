@@ -1,4 +1,4 @@
-"""Google careers scraper — the first "single-company board" ATS (ADR-0139).
+"""Google careers scraper — the first Single source scraper (ADR-0139).
 
 Google runs its own in-house careers system, not a rented third-party platform, so there is
 exactly one tenant, forever: ``ats="google"``, ``slug="careers.google.com"`` (Google's own
@@ -180,7 +180,7 @@ def _description(job: list[Any]) -> str | None:
 
 
 class GoogleScraper(BaseScraper):
-    """Google careers scraper — a single-company board (ADR-0139), no discovery, no detail pass."""
+    """Google careers scraper — a Single source scraper (ADR-0139), no discovery, no detail pass."""
 
     ats = "google"
     has_detail_pass = False  # every field, description, comes off the listing page
@@ -192,7 +192,7 @@ class GoogleScraper(BaseScraper):
         return f"{_LISTING_URL}?hl=en_US&page={page}"
 
     def alias_key(self) -> str | None:
-        """No sibling host to alias against — a single-company board resolves to itself
+        """No sibling host to alias against — a Single source scraper's board resolves to itself
         (ADR-0139's per-scraper call, not the base default's redirect-following)."""
         return self.slug
 

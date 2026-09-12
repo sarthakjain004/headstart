@@ -1,6 +1,6 @@
 # Google careers: API measurement (2026-09-11)
 
-Google is the first "single-company board" ATS (ADR-0139) — one in-house careers system, one
+Google is the first Single source scraper (ADR-0139) — one in-house careers system, one
 tenant, forever. This is the live research behind `src/headstart/scrapers/google.py`: the real
 requests made, what came back, and the sample sizes each finding rests on.
 

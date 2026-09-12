@@ -40,7 +40,7 @@ def _jobs():
 
 
 def test_the_slug_is_fixed_and_never_discovered():
-    """ADR-0139: a single-company board has one tenant, forever — no `slug_from` override, the
+    """ADR-0139: a Single source scraper has one tenant, forever — no `slug_from` override, the
     ledger's one hand-entered row is the only input."""
     scraper = _scraper()
     assert scraper.slug == "careers.google.com"
@@ -69,7 +69,7 @@ def test_the_job_url_is_the_id_only_path():
 
 
 def test_alias_key_is_the_scrapers_own_slug():
-    """No sibling host to alias against for a single-company board (ADR-0139's per-scraper
+    """No sibling host to alias against for a Single source scraper (ADR-0139's per-scraper
     call) — the base default's redirect-following is skipped entirely."""
     assert _scraper().alias_key() == "careers.google.com"
 
