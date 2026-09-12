@@ -110,9 +110,11 @@ def _request(url: str, proxy: str | None, *, production: bool = False):
 def _probe(url: str, arm: str, proxy: str | None) -> dict:
     row = {"url": url, "arm": arm, "observed_at": datetime.now(UTC).isoformat()}
     try:
-        endpoint, response = _request(url, proxy, production=arm == "production")
+        endpoint, response = _request(
+            url, proxy, production=arm in {"production", "production-walled"}
+        )
         row["endpoint"] = endpoint
-        if arm == "production":
+        if arm in {"production", "production-walled"}:
             try:
                 response.raise_for_status()
             except Exception as exc:
@@ -169,7 +171,9 @@ def main() -> int:
     parser.add_argument("--replica", type=int, required=True)
     parser.add_argument("--replicas", type=int, default=4)
     parser.add_argument("--width", type=int, default=12)
-    parser.add_argument("--arms", default="direct,warp,rotating-warp,production")
+    parser.add_argument(
+        "--arms", default="direct,warp,rotating-warp,production,production-walled"
+    )
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 
@@ -194,6 +198,12 @@ def main() -> int:
             proxy = None
             if arm in {"warp", "rotating-warp"}:
                 proxy = spare_egress.proxy_url()
+            if arm == "production-walled":
+                # Recreate a shard after any earlier Workday request has returned 429: every
+                # later Workday request inherits WARP, and WARP 429s drive the ordinary rotation
+                # ladder. This is stateful at ATS scope in production, not per Board.
+                spare_egress.reset()
+                spare_egress.mark_walled("workday", 429)
             counts: Counter[str] = Counter()
             print(f"arm={arm} boards={len(urls)} proxy={proxy or 'none'}", flush=True)
             with futures.ThreadPoolExecutor(max_workers=args.width) as pool:
