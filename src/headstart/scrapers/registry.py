@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Container
 
+from headstart.scrapers.amazon import AmazonScraper
+from headstart.scrapers.apple import AppleScraper
 from headstart.scrapers.ashby import AshbyScraper
 from headstart.scrapers.base import BaseScraper
 from headstart.scrapers.bytedance import ByteDanceScraper
@@ -18,6 +20,7 @@ from headstart.scrapers.jobvite import JobviteScraper
 from headstart.scrapers.join import JoinScraper
 from headstart.scrapers.keka import KekaScraper
 from headstart.scrapers.lever import LeverScraper
+from headstart.scrapers.meta import MetaScraper
 from headstart.scrapers.oracle import OracleScraper
 from headstart.scrapers.personio import PersonioScraper
 from headstart.scrapers.recruitee import RecruiteeScraper
@@ -27,7 +30,9 @@ from headstart.scrapers.sensehq import SenseHQScraper
 from headstart.scrapers.smartrecruiters import SmartRecruitersScraper
 from headstart.scrapers.successfactors import SuccessFactorsScraper
 from headstart.scrapers.teamtailor import TeamtailorScraper
+from headstart.scrapers.tiktok import TikTokScraper
 from headstart.scrapers.trakstar import TrakstarScraper
+from headstart.scrapers.uber import UberScraper
 from headstart.scrapers.workable import WorkableScraper
 from headstart.scrapers.workday import WorkdayScraper
 from headstart.scrapers.zoho import ZohoScraper
@@ -62,7 +67,12 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         ICIMSScraper,
         JazzHRScraper,
         JobviteScraper,
+        AmazonScraper,
         ByteDanceScraper,
+        AppleScraper,
+        UberScraper,
+        MetaScraper,
+        TikTokScraper,
     )
 }
 

@@ -119,6 +119,10 @@ URL_SHAPES = {
     # underscores (MY_SCA_173_2411) and many are letter-prefixed (N122008), so `\d+` would have
     # flagged real rows the moment the first one was indexed.
     "oracle": r"https://[^/]+/hcmUI/CandidateExperience/[a-z]{2}/sites/[^/]+/job/[A-Za-z0-9_]+",
+    # scraper: f"https://{slug}{job_path}" where slug is the fixed host www.amazon.jobs (ADR-0139,
+    # one tenant) and job_path is the API's own field, e.g. "/en/jobs/10537803/data-center-...".
+    # Live-verified 2026-09-11: that exact URL 200s.
+    "amazon": r"https://www\.amazon\.jobs/en/jobs/\d+/[\w-]+",
     # from the scraper's construction (sensehq.py: {slug}.sensehq.com/careers/jobs/{id});
     # ZERO indexed rows today — source-derived only, same caveat oracle's entry used to carry.
     "sensehq": r"https://[\w-]+\.sensehq\.com/careers/jobs/\d+",
@@ -171,6 +175,30 @@ URL_SHAPES = {
     # is nothing to leave host-agnostic. Verified live 2026-09-11: the route answers 200 for a
     # real id pulled from the search API; ids are numeric strings (e.g. "7673941558289205509").
     "bytedance": r"https://jobs\.bytedance\.com/en/position/\d+",
+    # scraper: f"https://{slug}/en-us/details/{positionId}/{transformedPostingTitle}" (apple.py
+    # `job_url`) — slug is the fixed host jobs.apple.com (ADR-0139, a Single source scraper: one
+    # company, never discovered). Verified live 2026-09-11: the page 200s and its <title> carries
+    # the posting title. positionId is numeric on every sampled row; the title slug can in theory
+    # be empty (job_url falls back to "" when transformedPostingTitle is missing) so it is loose.
+    "apple": r"https://jobs\.apple\.com/en-us/details/\d+/[\w-]*",
+    # scraper: urljoin("https://jobs.uber.com", Urls[].Url) where Urls[].Url is the API's own
+    # relative path, e.g. "/en/jobs/301347/" (uber.py `_job_url`). A Single source scraper
+    # (ADR-0139) — one host, always jobs.uber.com, never a customer domain — so the host can be
+    # anchored. Verified live 2026-09-11: all 3 sampled ids 200, each rendering its own title.
+    "uber": r"https://jobs\.uber\.com/[\w-]+/jobs/\d+/?",
+    # scraper passes through the sitemap's own <loc>: the canonical
+    # https://www.metacareers.com/profile/job_details/{id}/ page. `meta` is a Single source
+    # scraper (ADR-0139), so the host is fixed rather than derived. Verified live 2026-09-11:
+    # 80/80 randomly sampled ids 200 with parseable JobPosting JSON-LD.
+    "meta": r"https://www\.metacareers\.com/profile/job_details/\d+/?",
+    # scraper: f"https://{slug}/search/{id}" (tiktok.py, the reference implementation's own
+    # convention — ADR-0139, single fixed slug "lifeattiktok.com"). Not verified end-to-end: the
+    # marketing frontend answered a bare 503 on every path tried, robots.txt included, across
+    # three curl_cffi TLS impersonations (docs/tiktok/2026-09-11_api-measurement.md), so
+    # `status_ok`/`title_on_page` are expected to read false here the way greenhouse's
+    # client-rendered embed form does above — a measured limit of the HTTP probe against this
+    # host, not evidence the link is wrong.
+    "tiktok": r"https://lifeattiktok\.com/search/\d+",
 }
 
 
