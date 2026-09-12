@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Container
 
+from headstart.scrapers.amazon import AmazonScraper
+from headstart.scrapers.apple import AppleScraper
 from headstart.scrapers.ashby import AshbyScraper
 from headstart.scrapers.base import BaseScraper
 from headstart.scrapers.bytedance import ByteDanceScraper
 from headstart.scrapers.darwinbox import DarwinboxScraper
 from headstart.scrapers.eightfold import EightfoldScraper
 from headstart.scrapers.freshteam import FreshteamScraper
+from headstart.scrapers.google import GoogleScraper
 from headstart.scrapers.greenhouse import GreenhouseScraper
 from headstart.scrapers.icims import ICIMSScraper
 from headstart.scrapers.jazzhr import JazzHRScraper
@@ -17,6 +20,7 @@ from headstart.scrapers.jobvite import JobviteScraper
 from headstart.scrapers.join import JoinScraper
 from headstart.scrapers.keka import KekaScraper
 from headstart.scrapers.lever import LeverScraper
+from headstart.scrapers.meta import MetaScraper
 from headstart.scrapers.oracle import OracleScraper
 from headstart.scrapers.personio import PersonioScraper
 from headstart.scrapers.recruitee import RecruiteeScraper
@@ -27,7 +31,9 @@ from headstart.scrapers.smartrecruiters import SmartRecruitersScraper
 from headstart.scrapers.successfactors import SuccessFactorsScraper
 from headstart.scrapers.teamtailor import TeamtailorScraper
 from headstart.scrapers.tesla import TeslaScraper
+from headstart.scrapers.tiktok import TikTokScraper
 from headstart.scrapers.trakstar import TrakstarScraper
+from headstart.scrapers.uber import UberScraper
 from headstart.scrapers.workable import WorkableScraper
 from headstart.scrapers.workday import WorkdayScraper
 from headstart.scrapers.zoho import ZohoScraper
@@ -36,6 +42,7 @@ from headstart.scrapers.zwayam import ZwayamScraper
 SCRAPERS: dict[str, type[BaseScraper]] = {
     cls.ats: cls
     for cls in (
+        GoogleScraper,
         GreenhouseScraper,
         LeverScraper,
         AshbyScraper,
@@ -62,7 +69,12 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         JazzHRScraper,
         JobviteScraper,
         TeslaScraper,
+        AmazonScraper,
         ByteDanceScraper,
+        AppleScraper,
+        UberScraper,
+        MetaScraper,
+        TikTokScraper,
     )
 }
 
