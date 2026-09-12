@@ -160,7 +160,7 @@ class RipplingScraper(BaseScraper):
     def _detail(self, uuid: str | None) -> dict:
         """GET one posting's full record (``{}`` on failure). Sync path."""
         if not uuid:
-            self.note_detail_loss("no job uuid")
+            self.note_detail_unattempted("no job uuid")
             return {}
         try:
             resp = http.fetch(
@@ -177,7 +177,7 @@ class RipplingScraper(BaseScraper):
     async def _detail_async(self, session: Any, uuid: str | None) -> dict:
         """Same as :meth:`_detail` but over the shared multiplexed ``AsyncSession``."""
         if not uuid:
-            self.note_detail_loss("no job uuid")
+            self.note_detail_unattempted("no job uuid")
             return {}
         try:
             resp = await http.fetch_async(

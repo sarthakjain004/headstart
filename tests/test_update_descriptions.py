@@ -333,3 +333,45 @@ def test_only_already_embedded_jobs_are_queued_to_rederive(tmp_path, monkeypatch
     ud.main()
 
     assert queue.read_text(encoding="utf-8").split() == ["eightfold:acme:old"]
+
+
+def test_main_summarises_descriptions_restored_and_still_unknown(tmp_path, monkeypatch):
+    jobs_dir = tmp_path / "tech"
+    store = tmp_path / "store"
+    stored_jobs = tmp_path / "stored.jsonl"
+    _corpus(stored_jobs, [_job("eightfold:acme:stored", "Stored text.")])
+    ud.reconcile(stored_jobs, store / "eightfold")
+    _corpus(
+        jobs_dir / "eightfold.jsonl",
+        [
+            _job("eightfold:acme:stored", None),
+            _job("eightfold:acme:fresh", "Fresh text."),
+            _job("eightfold:acme:unknown", None),
+        ],
+    )
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "update_descriptions",
+            "--jobs",
+            str(jobs_dir),
+            "--store",
+            str(store),
+            "--held-details",
+            str(tmp_path / "held.txt.gz"),
+            "--pending-rederive",
+            str(tmp_path / "pending.txt"),
+            "--prior-meta",
+            str(tmp_path / "absent-meta.jsonl"),
+        ],
+    )
+
+    assert ud.main() == 0
+
+    text = summary.read_text(encoding="utf-8")
+    assert "**1** description restored from the store" in text
+    assert "**1** description learned from fresh detail fetches" in text
+    assert "**1** Job still has an unknown description" in text

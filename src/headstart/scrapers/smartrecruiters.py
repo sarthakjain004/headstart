@@ -220,7 +220,7 @@ class SmartRecruitersScraper(BaseScraper):
     def _job_detail(self, posting_id: str | None) -> dict[str, Any] | None:
         """GET one posting's detail fields (None on failure). Sync path."""
         if not posting_id:
-            self.note_detail_loss("no posting id")
+            self.note_detail_unattempted("no posting id")
             return None
         try:
             response = http.fetch(
@@ -239,7 +239,7 @@ class SmartRecruitersScraper(BaseScraper):
     ) -> dict[str, Any] | None:
         """Same as :meth:`_job_detail` but over the shared multiplexed ``AsyncSession``."""
         if not posting_id:
-            self.note_detail_loss("no posting id")
+            self.note_detail_unattempted("no posting id")
             return None
         try:
             response = await http.fetch_async(

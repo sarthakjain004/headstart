@@ -233,6 +233,12 @@ class ZohoScraper(BaseScraper):
         arrived are one count otherwise (:meth:`~BaseScraper.note_detail_loss`)."""
         m = _DETAIL_JOBS.search(page)
         if not m:
+            if (
+                "This job posting is no longer available." in page
+                or "A postagem desta vaga não está mais disponível." in page
+            ):
+                self.note_detail_loss("posting explicitly unavailable")
+                return None
             self.note_detail_loss("no jobs blob on the page")
             return None
         try:
@@ -252,7 +258,7 @@ class ZohoScraper(BaseScraper):
         except http.RequestsError as exc:
             # `fan_out` turns the raise into this same None; caught here so the cause reaches
             # the Board's gap line rather than only its count.
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None
         return self._detail_record_of(page)
 
@@ -261,7 +267,7 @@ class ZohoScraper(BaseScraper):
         try:
             page = await self._get_async(session, self._detail_url(jid))
         except http.RequestsError as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None
         return self._detail_record_of(page)
 
