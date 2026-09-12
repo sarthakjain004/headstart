@@ -119,6 +119,10 @@ URL_SHAPES = {
     # underscores (MY_SCA_173_2411) and many are letter-prefixed (N122008), so `\d+` would have
     # flagged real rows the moment the first one was indexed.
     "oracle": r"https://[^/]+/hcmUI/CandidateExperience/[a-z]{2}/sites/[^/]+/job/[A-Za-z0-9_]+",
+    # scraper: f"https://{slug}{job_path}" where slug is the fixed host www.amazon.jobs (ADR-0139,
+    # one tenant) and job_path is the API's own field, e.g. "/en/jobs/10537803/data-center-...".
+    # Live-verified 2026-09-11: that exact URL 200s.
+    "amazon": r"https://www\.amazon\.jobs/en/jobs/\d+/[\w-]+",
     # from the scraper's construction (sensehq.py: {slug}.sensehq.com/careers/jobs/{id});
     # ZERO indexed rows today — source-derived only, same caveat oracle's entry used to carry.
     "sensehq": r"https://[\w-]+\.sensehq\.com/careers/jobs/\d+",
