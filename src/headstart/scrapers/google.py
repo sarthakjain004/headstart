@@ -183,9 +183,7 @@ class GoogleScraper(BaseScraper):
     """Google careers scraper — a single-company board (ADR-0139), no discovery, no detail pass."""
 
     ats = "google"
-    has_detail_pass = (
-        False  # every field, description included, comes off the listing page
-    )
+    has_detail_pass = False  # every field, description, comes off the listing page
 
     def url(self) -> str:
         return f"{_LISTING_URL}?hl=en_US"
