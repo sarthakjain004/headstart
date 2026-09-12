@@ -1,5 +1,7 @@
-"""Meta (metacareers.com) — a Single Source scraper (ADR-0139): one company, one Board, never a
-second tenant. ``slug`` is fixed to ``www.metacareers.com``, never discovered.
+"""Meta (metacareers.com) — a Single Source scraper (ADR-0139, still open as PR #438 at the time
+this module was written — cited by number per that PR's own instruction, not merged yet): one
+company, one Board, never a second tenant. ``slug`` is fixed to ``www.metacareers.com``, never
+discovered.
 
 Meta runs its public listing UI as a client-side React app whose search is fed by GraphQL queries
 requiring browser-issued tokens (``fb_dtsg`` and friends) — confirmed 2026-09-11 by inspecting the
@@ -58,9 +60,7 @@ from headstart import http
 from headstart.models import Job, host_of, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
-_DETAIL_WORKERS = (
-    16  # measured clean at conc 20 (80 reqs, zero non-200s); 16 matches icims/oracle
-)
+_DETAIL_WORKERS = 16  # measured clean at conc 20 (80 reqs); matches icims/oracle
 
 _SITEMAP_URL = re.compile(
     r"<url>\s*<loc>([^<]+)</loc>\s*(?:<lastmod>([^<]+)</lastmod>)?", re.IGNORECASE
@@ -76,9 +76,7 @@ class MetaScraper(BaseScraper):
     """metacareers.com — a Single Source scraper (ADR-0139); ``slug`` is the fixed careers host."""
 
     ats = "meta"
-    has_detail_pass = (
-        True  # every field but `id` comes from the per-Job JSON-LD (ADR-0050)
-    )
+    has_detail_pass = True  # every field but `id` comes from the JSON-LD (ADR-0050)
     detail_workers = _DETAIL_WORKERS
     detail_streams = _DETAIL_WORKERS
 
