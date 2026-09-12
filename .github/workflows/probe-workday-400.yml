@@ -25,6 +25,9 @@ on:
       n:
         description: details per walk (the laptop tripped ghr's throttle at ~430)
         default: "800"
+      probe_mode:
+        description: "detail (existing throttle probe) or listing-json"
+        default: "detail"
       browser_n:
         description: paired api/Chrome fetches over the walk's tail (the `browser` arm)
         default: "40"
@@ -136,21 +139,30 @@ jobs:
           BROWSER_N: ${{ github.event.inputs.browser_n }}
           WIDTH: ${{ matrix.width }}
           ARMS: ${{ github.event.inputs.arms }}
+          PROBE_MODE: ${{ github.event.inputs.probe_mode }}
         run: |
           # OUT first, before anything that can fail: the upload step below globs `$OUT.*`, and
           # an unset OUT would make that `.*` — every dotfile in the workspace, uploaded in place
           # of the result nobody would notice was missing.
           out="probe-workday-400_${{ github.run_id }}_replica-${{ matrix.replica }}_width-${{ matrix.width }}"
           echo "OUT=$out" >> "$GITHUB_ENV"
-          command -v xvfb-run >/dev/null || (sudo apt-get update -qq && sudo apt-get install -qq -y xvfb)
-          xvfb-run -a python -u scripts/bench/probe_workday_throttle_status.py \
-            --suspect "$SUSPECT" \
-            --control "$CONTROL" \
-            --n "$N" \
-            --browser-n "$BROWSER_N" \
-            --width "$WIDTH" \
-            --arms "$ARMS" \
-            --out "$out.json" 2>&1 | tee "$out.log"
+          if [ "$PROBE_MODE" = "listing-json" ]; then
+            python -u scripts/bench/probe_workday_listing_responses.py \
+              --boards experiment/workday-listing-response-repro/artifacts/historical-affected-boards.csv \
+              --replica "${{ matrix.replica }}" --replicas 4 \
+              --width "$([ "$WIDTH" = 0 ] && echo 25 || echo "$WIDTH")" \
+              --arms "$ARMS" --out "$out.jsonl" 2>&1 | tee "$out.log"
+          else
+            command -v xvfb-run >/dev/null || (sudo apt-get update -qq && sudo apt-get install -qq -y xvfb)
+            xvfb-run -a python -u scripts/bench/probe_workday_throttle_status.py \
+              --suspect "$SUSPECT" \
+              --control "$CONTROL" \
+              --n "$N" \
+              --browser-n "$BROWSER_N" \
+              --width "$WIDTH" \
+              --arms "$ARMS" \
+              --out "$out.json" 2>&1 | tee "$out.log"
+          fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
