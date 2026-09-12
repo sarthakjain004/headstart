@@ -111,3 +111,36 @@ deliberately — this is a discovery/design probe for one board, not a rate-limi
 across many tenants (contrast Oracle's 6,351-request sweep across 670 hosts), and it was
 timeboxed rather than run to exhaustion once the working mechanism (navigate-and-capture) was
 confirmed twice (listing + one job detail).
+
+## Completeness: is the one document actually the whole board? (2026-09-12)
+
+The single-document, no-pagination shape (above) trades away the usual completeness check a
+paginated API gets (a stated total to page towards) — so it's checked a different way, against
+the real scraper (`TeslaScraper.fetch_raw()`), live:
+
+- **No stated total anywhere in the payload.** Walked every key of a live response recursively
+  looking for anything named `total`/`count`; none exists. The frontend has nothing to check its
+  own render against either, and neither does this scraper.
+- **The frontend never fetches more.** Captured every `tesla.com` network request during and
+  after 5 `scrollTo(bottom)` actions on the loaded search page: 3 requests total, all made before
+  the first scroll, zero new ones after. If the UI paginated or lazy-loaded further listings on
+  scroll, this would show it; it doesn't, which is consistent with `apps/careers/state` being a
+  one-shot full-state dump the client filters/pages *locally* (matching its own name — a client
+  "state" object, not a search-results page).
+- **No hidden job ids elsewhere in the payload.** The response also carries `geo` (a
+  region→site→state→city location hierarchy) and top-level `departments` (a department→
+  sub-department id map) trees, either of which could in principle reference postings the
+  `listings` array omits. Cross-checked live: every id in the `geo` tree's leaf arrays is a
+  *location* id (13,034 distinct, overlapping `lookup.locations`' 13,234 — not job ids at all;
+  zero overlap with `listings`' own ids). No job id exists anywhere in the payload outside
+  `listings`.
+- **The count isn't suspiciously round.** Two live re-runs a day apart: 8,105 (2026-09-11) then
+  8,115 (2026-09-12) — a +10 (+0.12%) day-over-day change consistent with ordinary posting churn,
+  not a fixed cap (neither number is a multiple of any common page size: mod 10/20/25/50/100 all
+  nonzero).
+
+No stated ground truth exists to check against directly, so this is structural evidence, not a
+count matched against an authority — but three independent signals (no lazy-load on scroll, no
+job ids hiding in the other trees, a non-round and naturally-varying count) all point the same
+way. Confidence: high that `fetch_raw()`'s one document is the whole board, on the evidence
+available; there remains no way to *prove* it against a total Tesla itself never states.
