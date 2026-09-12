@@ -128,3 +128,13 @@ page answers `200` and its `<title>` carries the exact posting title
 nothing to resolve. `alias_key()` returns the slug itself rather than the base class's
 redirect-following default: per ADR-0139, a Single source Board has no sibling tenant to alias
 against, so the default's live probe (a GET + redirect-follow) would only ever find nothing.
+
+## 9. `verify-search-filters` could not run against the deployed Space
+
+CLAUDE.md requires running that skill before a new scraper's PR is done. The `URL_SHAPES` entry
+was added (§7 above verifies the shape live, independently of the harness), but the harness itself
+never ran end-to-end here: it 401s without a signed-in session cookie for
+`imposeidon-headstart-search.hf.space` (ADR-0042's wall), and no such cookie was available in this
+sandbox. There is also nothing yet for it to check against — Apple has zero indexed rows, since
+this scraper has not been through a pipeline run. Flagging this plainly rather than silently
+treating the shape check above as a substitute for the skill.
