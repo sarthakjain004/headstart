@@ -167,6 +167,12 @@ URL_SHAPES = {
     # is nothing to leave host-agnostic. Verified live 2026-09-11: the route answers 200 for a
     # real id pulled from the search API; ids are numeric strings (e.g. "7673941558289205509").
     "bytedance": r"https://jobs\.bytedance\.com/en/position/\d+",
+    # scraper: f"https://{slug}/en-us/details/{positionId}/{transformedPostingTitle}" (apple.py
+    # `job_url`) — slug is the fixed host jobs.apple.com (ADR-0139, a Single source scraper: one
+    # company, never discovered). Verified live 2026-09-11: the page 200s and its <title> carries
+    # the posting title. positionId is numeric on every sampled row; the title slug can in theory
+    # be empty (job_url falls back to "" when transformedPostingTitle is missing) so it is loose.
+    "apple": r"https://jobs\.apple\.com/en-us/details/\d+/[\w-]*",
 }
 
 

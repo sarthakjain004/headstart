@@ -1,0 +1,69 @@
+{
+  "res": {
+    "searchResults": [
+      {
+        "id": "PIPE-200313970",
+        "jobSummary": "Apple Retail is where the best of Apple comes together. We bring our expertise to help people do what they love, delivering an only-at-Apple experience. We believe inclusion is a shared responsibility and we work together to foster a culture where everyone belongs and is inspired to do their best work.\n\nAs a Business Expert, you’re part of a team that’s passionate about helping businesses succeed. You create owners by connecting with new and existing business customers to identify opportunities, propose solutions, forecast needs, and close sales. Your knowledge of industry trends and expertise with Apple products and services — along with third-party technologies — help you to develop business solutions tailored to the needs of customers.\n\nYou’re a top sales performer who has exceptional interpersonal and influencing skills, and you’re considered a resource to the wider Retail Store or Contact Center team. You inspire an environment where Apple Retail Business is a part of everyone’s role, no matter how the customer chooses to visit Apple.",
+        "locations": [
+          {
+            "postLocationId": "postLocation-INDC",
+            "city": "",
+            "stateProvince": "",
+            "countryName": "India",
+            "metro": "",
+            "region": "",
+            "name": "India",
+            "countryID": "iso-country-IND",
+            "level": 1
+          }
+        ],
+        "positionId": "200313970",
+        "postingDate": "Sep 11, 2026",
+        "postingTitle": "IN-Business Expert",
+        "postDateInGMT": "2026-09-11T18:18:12.228789498Z",
+        "transformedPostingTitle": "in-business-expert",
+        "reqId": "PIPE-200313970",
+        "team": {
+          "teamName": "Apple Retail",
+          "teamID": "teamsAndSubTeams-APPST",
+          "teamCode": "APPST"
+        },
+        "type": "PIPE",
+        "homeOffice": false,
+        "jobPositionId": "PIPE-200313970"
+      },
+      {
+        "id": "200681917-3715",
+        "jobSummary": "Apple is a place where extraordinary people gather to do their best work. Just be ready to dream big. The people here at Apple don’t just build products — they build the kind of wonder that’s revolutionized entire industries. It’s the diversity of those people and their ideas that encourages the innovation that runs through everything we do, from amazing technology to industry-leading environmental efforts. Join Apple, and help us leave the world better than we found it.\n\nWe are searching for self driven, hardworking electrical engineers to provide design, validation, failure analysis and manufacturing support of Vision Pro related products. You will collaborate with multiple teams in this internship, join the most complex build and take a lead role to guide Contract Manufacturer’s EEs of their daily work. The position is based in the Shanghai/Kunshan/Suzhou.",
+        "locations": [
+          {
+            "postLocationId": "postLocation-SGI",
+            "city": "",
+            "stateProvince": "",
+            "countryName": "China",
+            "metro": "",
+            "region": "",
+            "name": "Shanghai",
+            "countryID": "iso-country-CHN",
+            "level": 5
+          }
+        ],
+        "positionId": "200681917",
+        "postingDate": "Sep 11, 2026",
+        "postingTitle": "Apple Vision Pro Hardware System EE Intern",
+        "postDateInGMT": "2026-09-11T17:46:18.230Z",
+        "transformedPostingTitle": "apple-vision-pro-hardware-system-ee-intern",
+        "reqId": "200681917-3715",
+        "team": {
+          "teamName": "Hardware",
+          "teamID": "teamsAndSubTeams-HRDWR",
+          "teamCode": "HRDWR"
+        },
+        "type": "REQ",
+        "homeOffice": false,
+        "jobPositionId": "REQ-200681917"
+      }
+    ],
+    "totalRecords": 6083
+  }
+}
