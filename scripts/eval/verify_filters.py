@@ -183,6 +183,14 @@ URL_SHAPES = {
     # scraper (ADR-0139), so the host is fixed rather than derived. Verified live 2026-09-11:
     # 80/80 randomly sampled ids 200 with parseable JobPosting JSON-LD.
     "meta": r"https://www\.metacareers\.com/profile/job_details/\d+/?",
+    # scraper: f"https://{slug}/search/{id}" (tiktok.py, the reference implementation's own
+    # convention — ADR-0139, single fixed slug "lifeattiktok.com"). Not verified end-to-end: the
+    # marketing frontend answered a bare 503 on every path tried, robots.txt included, across
+    # three curl_cffi TLS impersonations (docs/tiktok/2026-09-11_api-measurement.md), so
+    # `status_ok`/`title_on_page` are expected to read false here the way greenhouse's
+    # client-rendered embed form does above — a measured limit of the HTTP probe against this
+    # host, not evidence the link is wrong.
+    "tiktok": r"https://lifeattiktok\.com/search/\d+",
 }
 
 
