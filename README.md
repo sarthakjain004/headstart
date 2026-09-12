@@ -12,7 +12,7 @@ System) career boards — earlier and more completely than relying on LinkedIn.
 **[Read the decisions](./docs/adr/)**
 
 HeadStart discovers which companies host boards on which ATS, validates those boards, scrapes
-them through **26 per-ATS scrapers**, normalizes everything into one `Job` shape, and serves it
+them through **27 per-ATS scrapers**, normalizes everything into one `Job` shape, and serves it
 three ways: a static dashboard over a curated feed; an **AI semantic-search layer** (local
 embeddings + vector search with structured filters) running live on a free-tier Hugging Face
 Space over a **320,628-row** index of the tech corpus; and **job alerts** — saved searches
@@ -88,14 +88,14 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>131,881 live rows of 206,789<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>131,882 live rows of 206,790<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
     subgraph P["② Ingest &nbsp;·&nbsp; GitHub Actions, back-to-back &nbsp;·&nbsp; ADR-0025 / ADR-0026"]
         direction LR
         P1["<b>scrape-plan</b><br/>1 VM · 10m<br/>pick 20k boards, LPT pack"]
-        P2["<b>scrape</b><br/>≤15 VMs · 60m budget<br/>23 enabled scrapers → fragments"]
+        P2["<b>scrape</b><br/>≤15 VMs · 60m budget<br/>24 enabled scrapers → fragments"]
         P3["<b>join</b><br/>1 VM · 40m<br/>union · tech-filter · descriptions<br/>priority · cost · failures · gap · plan embed"]
         P4["<b>embed</b><br/>≤15 VMs · 180m budget<br/>nomic on CPU → fragments"]
         P5["<b>merge</b><br/>1 VM · 48m · single writer<br/>concat · meta refresh · sync · prune · trends"]
@@ -159,27 +159,27 @@ their own schedules.
 ### Which boards a run picks
 
 A run does not scrape every board it could, and the ledger's headline number is not the number
-that matters. The 131,881 live *rows* reduce to 94,958 **Scrapable Boards** a run can even
+that matters. The 131,882 live *rows* reduce to 94,959 **Scrapable Boards** a run can even
 consider (measured 2026-09-11; the terms are defined in `CONTEXT.md` §Counting Boards):
 
 | | boards | |
 | --- | ---: | --- |
-| live rows in the ledger | 131,881 | a row, not a board — 6,632 of them are duplicate spellings |
+| live rows in the ledger | 131,882 | a row, not a board — 6,632 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −30,220 | **all of it `join`** — German-SMB boards at ~1 tech job in ~10k |
 | − `config.EXCLUDED_BOARDS` | −46 | vendor test/sandbox boards, confirmed by reading their postings — Oracle's 78,431-posting load-test instance is the newest |
 | − alias ledger | −23 | one company, two hostnames — `basf.jobs` and `basf-se.jobs2web.com` are one board (ADR-0111) |
 | − case-variant dedupe | −6,630 | `company/External` and `company/external` are one board (ADR-0023) |
 | − `config.PARKED_BOARDS` | −4 | real boards withheld for now — Accenture's and EY's outrun any shard budget, SmartRecruiters' `AdeebaEServicesPvtLtd` cost 24 min a run for 136 tech jobs, and Wayman Learning Trust is 56,527 teaching vacancies a run for zero tech |
-| = **Scrapable Board** | **94,958** | |
+| = **Scrapable Board** | **94,959** | |
 
 That order matters: excluding before deduping reads −46 and −6,630, deduping first reads −44 and
-−6,632, because two excluded boards were themselves duplicates. Both land on 94,958.
+−6,632, because two excluded boards were themselves duplicates. Both land on 94,959.
 
 The alias row is the one stage that is not derivable from the ledger's own text: two hostnames
 serving one board share no key to collapse on, so it takes a live probe to find them
 (`scripts/validate/dedupe_boards.py`, ADR-0111).
 
-Of those, **60,570 are currently hiring** — `load_active_companies` defaults to `min_jobs=1`, so
+Of those, **60,571 are currently hiring** — `load_active_companies` defaults to `min_jobs=1`, so
 the 34,388 live-but-empty boards are skipped as having nothing to read. `pick_boards` takes a
 slice of
 `--max-boards` (default **20,000**) and splits it **30/70**: the top 30% by board-priority score —
@@ -224,9 +224,10 @@ No always-on server: scheduled GitHub Actions and a free-tier Space.
 
 ## ATS coverage
 
-26 scrapers, selected from a registry by the `ats` key: `amazon`, `ashby`, `darwinbox`, `eightfold`,
-`freshteam`, `greenhouse`, `icims`, `jazzhr`, `join`, `jobvite`, `keka`, `lever`, `oracle`, `personio`,
-`recruitee`, `ripplehire`, `rippling`, `sensehq`, `smartrecruiters`, `successfactors`, `teamtailor`,
+27 scrapers, selected from a registry by the `ats` key: `amazon`, `ashby`, `bytedance`,
+`darwinbox`, `eightfold`, `freshteam`, `greenhouse`, `icims`, `jazzhr`, `join`, `jobvite`, `keka`,
+`lever`, `oracle`, `personio`, `recruitee`, `ripplehire`, `rippling`, `sensehq`, `smartrecruiters`,
+`successfactors`, `teamtailor`,
 `trakstar`, `workable`, `workday`, `zoho`, `zwayam`. Three are in `registry.DISABLED_ATS` and
 skipped rather than scraped, each for its own reason: `join` (German-SMB boards running ~1 tech
 job in ~10k, pure noise for a tech-only index), and `jazzhr`/`jobvite` (complete and tested, but
@@ -237,15 +238,16 @@ from that set.
 Each scraper reads a Board and normalizes its raw postings into `Job` records; all HTTP routes
 through one pooled, thread-local `curl_cffi` client that impersonates Chrome, so the same stack
 serves plain JSON APIs and the TLS-fingerprinted (Cloudflare / DataDome) boards (ADR-0002). The
-liveness pipeline has probed **206,789 ledger rows**: 131,881 live, 66,360 dead, 8,548 unknown —
-rows, not boards; they collapse to 125,249 Unique Boards (CONTEXT.md §Counting Boards). Of the
-26 scrapers, 19 have rows in the index — `sensehq` is a single-company unlock with nothing
+liveness pipeline has probed **206,790 ledger rows**: 131,882 live, 66,360 dead, 8,548 unknown —
+rows, not boards; they collapse to 125,250 Unique Boards (CONTEXT.md §Counting Boards). Of the
+27 scrapers, 19 have rows in the index — `sensehq` is a single-company unlock with nothing
 indexed yet, `zwayam` (2026-08-27), `icims` (2026-09-08), `oracle` (2026-09-08, which had a
-scraper but no ledger until then) and `amazon` (2026-09-11, a Single source scraper, ADR-0139)
-were added since the last pipeline run and have nothing indexed yet, `jazzhr`/`jobvite` are
-complete and tested but disabled on arrival on storage cost (`registry.DISABLED_ATS`) and so have
-never been scraped, and `join`'s remaining 1,093 rows are a residue of the era before it was
-disabled: no slice will scrape them again, so they leave by eviction rather than refresh.
+scraper but no ledger until then), `amazon` and `bytedance` (both 2026-09-11, Single source
+scrapers, ADR-0139) were added since the last pipeline run and have nothing indexed yet,
+`jazzhr`/`jobvite` are complete and tested but disabled on arrival on storage cost
+(`registry.DISABLED_ATS`) and so have never been scraped, and `join`'s remaining 1,093 rows are a
+residue of the era before it was disabled: no slice will scrape them again, so they leave by
+eviction rather than refresh.
 
 ## AI semantic search
 
@@ -383,7 +385,7 @@ registered; bot walls (403/429) stay advisory.
 ## Layout
 
 - `src/headstart/` — shared library, used by both the pipeline and the curated feed: `models.py`
-  (Job + normalization), `scrapers/` (23 per-ATS + `base`/`registry`), `http.py` (the pooled
+  (Job + normalization), `scrapers/` (24 per-ATS + `base`/`registry`), `http.py` (the pooled
   reliable-fetch seam), `config.py`, `harvest.py` (the scrape engine — `scrape_all`, `JobWriter`,
   feed builders), `liveness.py`, `corpus.py`, `tech_filter.py` (ADR-0017), `experience.py`,
   `geo.py`, `search.py` (shared embed/search constants + filter builder), `board_priority.py`

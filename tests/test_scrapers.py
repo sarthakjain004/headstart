@@ -5011,6 +5011,200 @@ def test_eightfold_tolerates_a_replica_short_by_one_posting():
     assert scraper.truncated is None
 
 
+def test_eightfold_pcsx_disabled_detects_the_message_in_any_locale():
+    """The discriminator between "try SmartApply" and "fall straight to the sitemap" is the 403
+    body's `message` naming PCSX — not the English phrase, since the Spanish-locale variant
+    ("PCSX no está habilitado para este usuario.") was measured live on 2 of 23 tenants
+    (coca-colafemsa, oxxo) and would be missed by an English-only match."""
+    from headstart.scrapers.eightfold import _pcsx_disabled
+
+    class _Resp:
+        def __init__(self, body):
+            self._body = body
+
+        def json(self):
+            return self._body
+
+    assert _pcsx_disabled(_Resp({"message": "PCSX is not enabled for this user."}))
+    assert _pcsx_disabled(
+        _Resp({"message": "PCSX no está habilitado para este usuario."})
+    )
+    assert not _pcsx_disabled(_Resp({"message": "Forbidden"}))
+    assert not _pcsx_disabled(_Resp({}))
+
+    class _Unparseable:
+        def json(self):
+            raise ValueError("not json")
+
+    assert not _pcsx_disabled(_Unparseable())
+
+
+def test_eightfold_generic_403_does_not_try_smartapply():
+    """A 403 whose body doesn't name PCSX (a generic WAF wall) must fall straight through to the
+    sitemap, exactly as before — SmartApply is only tried for the specific "PCSX is not enabled"
+    signal, not every 403."""
+    from headstart.scrapers.eightfold import EightfoldScraper
+
+    class _Resp:
+        status_code = 403
+
+        def json(self):
+            return {"message": "Forbidden"}
+
+    scraper = EightfoldScraper("acme.eightfold.ai")
+    # A single-response queue: a second `_get` call (i.e. SmartApply being tried) raises IndexError
+    # and fails the test.
+    pages = [_Resp()]
+    scraper._get = lambda *a, **k: pages.pop(0)
+
+    got = scraper._api_search("acme")
+
+    assert got is None
+    assert scraper._fallback_reason == "the PCSX API returned 403"
+
+
+def test_eightfold_switches_to_smartapply_on_a_pcsx_disabled_403():
+    """The core new behavior: a "PCSX is not enabled" 403 tries `/api/apply/v2/jobs` instead of
+    giving up immediately, recovering the Board instead of losing it to the weaker sitemap
+    fallback. Verified live on 23/23 such tenants 2026-09-11 (docs/eightfold/
+    smartapply-fallback.md); this pins the shape with a fixture."""
+    from headstart.scrapers.eightfold import EightfoldScraper
+
+    class _PcsxDisabled:
+        status_code = 403
+
+        def json(self):
+            return {"message": "PCSX is not enabled for this user."}
+
+    class _SmartApplyResp:
+        def __init__(self, positions, count):
+            self.status_code = 200
+            self._body = {"positions": positions, "count": count}
+
+        def json(self):
+            return self._body
+
+    positions = [
+        {
+            "id": 1,
+            "name": "Backend Engineer",
+            "locations": ["Austin, TX, USA"],
+            "department": "Engineering",
+            "work_location_option": "hybrid",
+            "t_create": 1700000000,
+            "t_update": 1700100000,
+            "job_description": "",  # always empty on this surface — detail fetch supplies it
+        }
+    ]
+    pages = [_PcsxDisabled(), _SmartApplyResp(positions, count=1)]
+    scraper = EightfoldScraper("acme.eightfold.ai")
+    scraper._get = lambda *a, **k: pages.pop(0)
+
+    got = scraper._api_search("acme")
+
+    assert got == [
+        {
+            "id": 1,
+            "name": "Backend Engineer",
+            "locations": ["Austin, TX, USA"],
+            "department": "Engineering",
+            "postedTs": 1700000000,
+            "workLocationOption": "hybrid",
+        }
+    ]
+    assert scraper.truncated is None
+
+
+def test_eightfold_smartapply_failure_falls_through_to_sitemap():
+    """SmartApply itself can fail (non-200, or an unparseable body) — that must still fall through
+    to the sitemap, the same as a PCSX API failure always has."""
+    from headstart.scrapers.eightfold import EightfoldScraper
+
+    class _PcsxDisabled:
+        status_code = 403
+
+        def json(self):
+            return {"message": "PCSX is not enabled for this user."}
+
+    class _SmartApplyDown:
+        status_code = 500
+
+    pages = [_PcsxDisabled(), _SmartApplyDown()]
+    scraper = EightfoldScraper("acme.eightfold.ai")
+    scraper._get = lambda *a, **k: pages.pop(0)
+
+    got = scraper._api_search("acme")
+
+    assert got is None
+    assert scraper._fallback_reason == "the SmartApply API returned 500"
+
+
+def test_eightfold_smartapply_paginates_and_dedupes():
+    """SmartApply pages the same way as the primary search (10/page, `start` increments), and —
+    though no replica disagreement was measured live — the dedupe stays as a cheap safety net."""
+    from headstart.scrapers.eightfold import EightfoldScraper
+
+    class _Resp:
+        def __init__(self, ids, count):
+            self.status_code = 200
+            self._body = {"positions": [{"id": n} for n in ids], "count": count}
+
+        def json(self):
+            return self._body
+
+    pages = [
+        _Resp(range(10), count=15),
+        _Resp(range(10, 15), count=15),
+    ]
+    scraper = EightfoldScraper("acme.eightfold.ai")
+    scraper._get = lambda *a, **k: pages.pop(0)
+
+    got = scraper._smartapply_search("acme")
+
+    assert sorted(int(p["id"]) for p in got) == list(range(15))
+    assert scraper.truncated is None
+
+
+def test_eightfold_smartapply_to_pcsx_shape_maps_fields():
+    """Field-shape mapping verified live 2026-09-11 (docs/eightfold/smartapply-fallback.md):
+    same-named keys pass through, `work_location_option`/`t_create` are renamed onto the primary
+    search's `workLocationOption`/`postedTs`, and a list-shaped `department` (measured on
+    fluor.eightfold.ai — every other sampled tenant returns a plain string) is joined instead of
+    crashing `_api_records`'s `.strip()`."""
+    from headstart.scrapers.eightfold import _smartapply_to_pcsx_shape
+
+    plain = _smartapply_to_pcsx_shape(
+        {
+            "id": 42,
+            "name": "Data Engineer",
+            "locations": ["Remote"],
+            "department": "Data & Analytics",
+            "work_location_option": "remote_global",
+            "t_create": 1700000000,
+            "t_update": 1700999999,
+            "canonicalPositionUrl": "https://elsewhere.example.com/careers/job/42",
+        }
+    )
+    assert plain == {
+        "id": 42,
+        "name": "Data Engineer",
+        "locations": ["Remote"],
+        "department": "Data & Analytics",
+        "postedTs": 1700000000,
+        "workLocationOption": "remote_global",
+    }
+    assert "positionUrl" not in plain, (
+        "canonicalPositionUrl is deliberately not carried through — it can point at a different "
+        "vanity host than self.slug, while the existing /careers/job/{id} fallback was confirmed "
+        "live to resolve on every tenant checked"
+    )
+
+    list_department = _smartapply_to_pcsx_shape(
+        {"id": 7, "name": "SQS Coordinator", "department": ["Quality"]}
+    )
+    assert list_department["department"] == "Quality"
+
+
 def test_eightfold_child_sitemap_cap_truncates_even_when_every_detail_reads(
     monkeypatch,
 ):
