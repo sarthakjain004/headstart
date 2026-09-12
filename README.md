@@ -224,25 +224,27 @@ No always-on server: scheduled GitHub Actions and a free-tier Space.
 
 ## ATS coverage
 
-26 scrapers, selected from a registry by the `ats` key: `apple`, `ashby`, `bytedance`, `darwinbox`,
-`eightfold`, `freshteam`, `greenhouse`, `icims`, `join`, `keka`, `lever`, `oracle`, `personio`,
-`recruitee`, `ripplehire`, `rippling`, `sensehq`, `smartrecruiters`, `successfactors`, `teamtailor`,
-`trakstar`, `uber`, `workable`, `workday`, `zoho`, `zwayam`. `join` is in `registry.DISABLED_ATS` — German-SMB
-boards running ~1 tech job in ~10k, pure noise for a tech-only index — so it is skipped rather
-than scraped. Its scraper class and tests stay intact; re-enable by removing it from that set.
-`apple`, `bytedance` and `uber` (ADR-0139) are Single source scrapers — each company's own
+27 scrapers, selected from a registry by the `ats` key: `apple`, `ashby`, `bytedance`, `darwinbox`,
+`eightfold`, `freshteam`, `greenhouse`, `icims`, `join`, `keka`, `lever`, `meta`, `oracle`,
+`personio`, `recruitee`, `ripplehire`, `rippling`, `sensehq`, `smartrecruiters`, `successfactors`,
+`teamtailor`, `trakstar`, `uber`, `workable`, `workday`, `zoho`, `zwayam`. `join` is in
+`registry.DISABLED_ATS` — German-SMB boards running ~1 tech job in ~10k, pure noise for a
+tech-only index — so it is skipped rather than scraped. Its scraper class and tests stay intact;
+re-enable by removing it from that set.
+`apple`, `bytedance`, `meta` and `uber` (ADR-0139) are Single source scrapers — each company's own
 in-house careers system, not a multi-tenant platform — with a fixed, non-discovered slug rather
-than a crawled tenant roster.
+than a crawled tenant roster, so none has a discovery step and each one's liveness ledger carries
+exactly one hand-entered row.
 
 Each scraper reads a Board and normalizes its raw postings into `Job` records; all HTTP routes
 through one pooled, thread-local `curl_cffi` client that impersonates Chrome, so the same stack
 serves plain JSON APIs and the TLS-fingerprinted (Cloudflare / DataDome) boards (ADR-0002). The
 liveness pipeline has probed **206,791 ledger rows**: 131,883 live, 66,360 dead, 8,548 unknown —
 rows, not boards; they collapse to 125,251 Unique Boards (CONTEXT.md §Counting Boards). Of the
-26 scrapers, 19 have rows in the index — `sensehq` is a single-company unlock with nothing
+27 scrapers, 19 have rows in the index — `sensehq` is a single-company unlock with nothing
 indexed yet, `zwayam` (2026-08-27), `icims` (2026-09-08), `oracle` (2026-09-08, which had a
-scraper but no ledger until then), `bytedance`, `apple` and `uber` (all 2026-09-11) were added
-since the last pipeline run and have nothing indexed yet, and
+scraper but no ledger until then), `bytedance`, `apple`, `meta` and `uber` (2026-09-11/12) were
+added since the last pipeline run and have nothing indexed yet, and
 `join`'s remaining 1,093 rows are a residue of the era before it was disabled: no slice will
 scrape them again, so they leave by eviction rather than refresh.
 

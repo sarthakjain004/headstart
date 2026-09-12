@@ -178,6 +178,11 @@ URL_SHAPES = {
     # (ADR-0139) — one host, always jobs.uber.com, never a customer domain — so the host can be
     # anchored. Verified live 2026-09-11: all 3 sampled ids 200, each rendering its own title.
     "uber": r"https://jobs\.uber\.com/[\w-]+/jobs/\d+/?",
+    # scraper passes through the sitemap's own <loc>: the canonical
+    # https://www.metacareers.com/profile/job_details/{id}/ page. A Single source scraper
+    # (ADR-0139), so the host is fixed rather than derived. Verified live 2026-09-11: 80/80
+    # randomly sampled ids 200 with parseable JobPosting JSON-LD.
+    "meta": r"https://www\.metacareers\.com/profile/job_details/\d+/?",
 }
 
 
