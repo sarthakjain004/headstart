@@ -100,7 +100,12 @@ class _Progress:
         # yet it is exactly the evidence that clears a Board's ADR-0058 gone-streak: alive and
         # empty is not gone.
         self.boards_ok: list[str] = []
+        self.observations: dict[str, dict] = {}
         self.jobs = 0
+
+    def on_observation(self, key: str, fields: dict) -> None:
+        if fields:
+            self.observations[key] = fields
 
     def on_board(
         self,
@@ -141,6 +146,57 @@ def _ats_mix(companies: list[CompanyRef], top: int = 4) -> str:
     ranked = counts.most_common()
     detail = ", ".join(f"{ats} {n}" for ats, n in ranked[:top])
     return detail + (f", +{len(ranked) - top} more" if len(ranked) > top else "")
+
+
+def _coverage_line(progress: _Progress) -> str:
+    by_ats: dict[str, Counter[str]] = {}
+    for key in progress.boards_ok:
+        by_ats.setdefault(key.split(":", 1)[0], Counter())["successful"] += 1
+    for key in progress.errors:
+        by_ats.setdefault(key.split(":", 1)[0], Counter())["failed"] += 1
+    for key in progress.truncated:
+        by_ats.setdefault(key.split(":", 1)[0], Counter())["partial"] += 1
+    return "; ".join(
+        f"{ats} attempted {counts['successful'] + counts['failed']}, "
+        f"successful {counts['successful']}, failed {counts['failed']}, "
+        f"partial {counts['partial']}"
+        for ats, counts in sorted(by_ats.items())
+    )
+
+
+def _loss_lines(observations: dict[str, dict]) -> list[str]:
+    totals: Counter[str] = Counter()
+    for fields in observations.values():
+        for field in (
+            "listing_pages",
+            "listing_page_losses",
+            "listing_fetch_calls",
+            "listing_status_failures",
+            "listing_request_failures",
+            "detail_jobs",
+            "detail_attempted",
+            "detail_losses",
+            "detail_http_failures",
+            "detail_breaker_skips",
+        ):
+            totals[field] += int(fields.get(field) or 0)
+    lines = []
+    if totals["listing_pages"] or totals["listing_page_losses"]:
+        lines.append(
+            f"listing-page loss events: {totals['listing_page_losses']}/"
+            f"{totals['listing_pages']} pages; fetch calls {totals['listing_fetch_calls']}, "
+            f"status failures {totals['listing_status_failures']}, request failures "
+            f"{totals['listing_request_failures']}"
+        )
+    if totals["detail_jobs"] or totals["detail_losses"]:
+        lines.append(
+            f"detail loss events: {totals['detail_losses']}/{totals['detail_jobs']} Jobs; "
+            f"attempted {totals['detail_attempted']}, HTTP failures "
+            f"{totals['detail_http_failures']}, circuit-breaker skips "
+            f"{totals['detail_breaker_skips']} — emitted events, not unique Jobs or "
+            "additional Board errors"
+        )
+    return lines
 
 
 def _shard_id(assignment: str | None) -> str | None:
@@ -227,11 +283,17 @@ def _report(
     # ceiling and some at 12, so this is the only place the two are comparable — and
     # `stream_width`'s own docstring says 12 has never been re-measured.
     widths = fanout_stats.report()
+    coverage = _coverage_line(progress)
+    losses = _loss_lines(progress.observations)
     # Both are routine per-run measurement, so both are info. They were warnings only to force a
     # GitHub annotation, which is a quota and not a level: 10 per step, 50 per job, and fifteen
     # shards each claiming several of them starve the errors the annotations exist for. The step
     # summary below is the surface that was actually wanted — uncapped and on the run page.
     for line in egress + widths:
+        _log.info(line)
+    if coverage:
+        _log.info("Board coverage by ATS: " + coverage)
+    for line in losses:
         _log.info(line)
     ratio = (
         f" | predicted {predicted:.1f} min, actual/predicted {actual_min / predicted:.2f}x"
@@ -260,7 +322,8 @@ def _report(
             else "- finished within the time budget",
             f"- board seconds {spread}",
         ]
-        + [f"- {line}" for line in egress + widths],
+        + ([f"- Board coverage by ATS: {coverage}"] if coverage else [])
+        + [f"- {line}" for line in losses + egress + widths],
     )
     observability.write_shard(
         outdir,
@@ -292,6 +355,7 @@ def _report(
         # that clears an ADR-0058 gone-streak, which neither the corpus (no lines) nor the
         # error map (no entry) can carry
         boards_ok=progress.boards_ok,
+        observations=progress.observations,
     )
 
 
@@ -367,6 +431,7 @@ def main() -> int:
             jobs_dir=outdir,
             progress_every=200,
             on_board=progress.on_board,
+            on_observation=progress.on_observation,
             have_details=have_details,
         )
     except SystemExit:

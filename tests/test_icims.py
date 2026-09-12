@@ -102,6 +102,38 @@ def test_wrapper_page_yields_no_fields() -> None:
     assert _ld_fields(_FIXTURE["pages"][_FIXTURE["wrapper_for_id"]]) is not None
 
 
+def test_classic_html_job_page_is_a_fallback_when_jsonld_is_absent() -> None:
+    """Live OVG/Spectra pages carry real classic iCIMS HTML but no JSON-LD. The fallback is
+    gated on the job-page header plus content blocks so the branded wrapper remains None."""
+    page = """
+      <h1 class="iCIMS_Header">Platform Engineer</h1>
+      <div class="col-xs-6 header left"><span class="sr-only field-label">Location</span>
+        <span>US-CA-Oakland</span></div>
+      <dl class="iCIMS_JobHeaderGroup">
+        <dt class="iCIMS_JobHeaderField">Category</dt>
+        <dd class="iCIMS_JobHeaderData"><span>Information Technology</span></dd>
+        <dt class="iCIMS_JobHeaderField">Type</dt>
+        <dd class="iCIMS_JobHeaderData"><span>Regular Full-Time</span></dd>
+      </dl>
+      <h2 class="iCIMS_InfoMsg iCIMS_InfoField_Job">Overview</h2>
+      <div class="iCIMS_InfoMsg iCIMS_InfoMsg_Job"><div class="iCIMS_Expandable_Container">
+        <div class="iCIMS_Expandable_Text"><p>Build distributed systems.</p></div></div></div>
+      <h2 class="iCIMS_InfoMsg iCIMS_InfoField_Job">Responsibilities</h2>
+      <div class="iCIMS_InfoMsg iCIMS_InfoMsg_Job"><div class="iCIMS_Expandable_Container">
+        <div class="iCIMS_Expandable_Text"><p>Own production services.</p></div></div></div>
+    """
+
+    fields = _ld_fields(page)
+
+    assert fields is not None
+    assert fields["title"] == "Platform Engineer"
+    assert "Build distributed systems" in fields["description"]
+    assert "Own production services" in fields["description"]
+    assert fields["location"] == "US-CA-Oakland"
+    assert fields["department"] == "Information Technology"
+    assert fields["employment_type"] == "Regular Full-Time"
+
+
 def test_parse_drops_a_job_whose_page_did_not_arrive() -> None:
     scraper = get_scraper("icims", _HOST)
     raw = [

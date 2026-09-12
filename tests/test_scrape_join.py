@@ -203,3 +203,51 @@ def test_the_join_says_nothing_about_deferred_boards_on_a_clean_run(caplog):
         1,
     )
     assert not any("deferred boards:" in r.getMessage() for r in caplog.records)
+
+
+def test_join_reports_per_ats_coverage_and_separate_loss_events(caplog):
+    import logging
+
+    caplog.set_level(logging.INFO, logger="headstart.ingest.scrape_join")
+    reports = [
+        {
+            "done": 3,
+            "boards_ok": ["workday:a", "successfactors:jobs.example.com"],
+            "errors": {"workday:b": "UnexpectedListingResponse: bad body"},
+            "truncated": {"workday:a": "one page lost"},
+            "observations": {
+                "workday:a": {
+                    "listing_pages": 5,
+                    "listing_page_losses": 1,
+                    "listing_status_failures": 1,
+                    "detail_jobs": 100,
+                    "detail_attempted": 30,
+                    "detail_losses": 80,
+                    "detail_http_failures": 10,
+                    "detail_breaker_skips": 70,
+                    "detail_loss_causes": {
+                        "HTTP 500": 10,
+                        "skipped after the 5xx break-off": 70,
+                    },
+                },
+                "successfactors:jobs.example.com": {
+                    "detail_jobs": 20,
+                    "detail_attempted": 20,
+                    "detail_losses": 7,
+                    "detail_http_failures": 7,
+                    "detail_breaker_skips": 0,
+                    "detail_loss_causes": {"HTTP 429": 7},
+                },
+            },
+        }
+    ]
+
+    js._report_shards(reports, 100, 2)
+
+    text = "\n".join(r.getMessage() for r in caplog.records)
+    assert "workday attempted 2, successful 1, failed 1, partial 1" in text
+    assert "listing-page loss events: 1/5" in text
+    assert "detail loss events: 87/120" in text
+    assert "attempted 50, HTTP failures 17, circuit-breaker skips 70" in text
+    assert "successfactors HTTP 429 x7 on 1 Board(s)" in text
+    assert "not unique Jobs or additional Board errors" in text

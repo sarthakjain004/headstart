@@ -63,6 +63,7 @@ from headstart.ingest import (
     PENDING_REDERIVE_PATH,
     REPO_ROOT,
     append_id_list,
+    observability,
 )
 
 _log = log.get(__name__, __spec__)
@@ -370,7 +371,7 @@ def main() -> int:
     embedded = _embedded_ids(Path(args.prior_meta))
     _log.info(f"prior store: {len(embedded):,} already-embedded ids")
 
-    queued = unrecorded = 0
+    filled = learned = queued = unrecorded = 0
     for path in sorted(jobs.glob("*.jsonl")):
         ats = path.stem
         done = reconcile(path, store / ats)
@@ -379,6 +380,8 @@ def main() -> int:
         # Jobs from keeping embed-time numbers forever, so a crash halfway through the corpus must
         # not lose the ids of the ATSes already reconciled.
         append_id_list(Path(args.pending_rederive), rederive)
+        filled += done.filled
+        learned += done.learned
         queued += len(rederive)
         unrecorded += done.unrecorded
         _log.info(
@@ -386,9 +389,8 @@ def main() -> int:
             f"queued {len(rederive):,} to re-derive"
             + (f", {done.unrecorded:,} still unrecorded" if done.unrecorded else "")
         )
-    _log.info(
-        f"skip-list: {write_held_details(store, Path(args.held_details)):,} Jobs held"
-    )
+    held = write_held_details(store, Path(args.held_details))
+    _log.info(f"skip-list: {held:,} Jobs held")
     _log.info(f"re-derive queue: {queued:,} newly stored -> {args.pending_rederive}")
     if unrecorded:
         _log.info(
@@ -396,6 +398,18 @@ def main() -> int:
             "learned for them this run, so they stay outside Tier-2 extraction until some later "
             "run's detail fetch supplies the text (ADR-0050)"
         )
+    observability.summary(
+        "Description reconciliation",
+        [
+            f"- **{filled:,}** description{'s' if filled != 1 else ''} restored from the store",
+            f"- **{learned:,}** description{'s' if learned != 1 else ''} learned from fresh detail fetches",
+            (
+                f"- **{unrecorded:,}** Job{'s' if unrecorded != 1 else ''} still "
+                f"{'have' if unrecorded != 1 else 'has'} an unknown description"
+            ),
+            f"- {held:,} descriptions held; {queued:,} existing Jobs queued to re-derive",
+        ],
+    )
     return 0
 
 

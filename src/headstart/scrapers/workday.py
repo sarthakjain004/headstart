@@ -36,19 +36,92 @@ and ``_DETAIL_STREAMS``.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 import time
 import urllib.parse
 from collections import Counter
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from headstart import fanout_stats, http, log, spare_egress
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper, loss_breakdown
 
 _log = log.get(__name__)
+
+
+class UnexpectedListingResponse(ValueError):
+    """A Workday listing response that did not contain the promised JSON.
+
+    Kept distinct from ``JSONDecodeError`` because the useful failure is the source observation,
+    not the JSON parser's byte offset. The bounded diagnostic in the message survives the runner
+    through the ordinary per-Board error map.
+    """
+
+
+_LISTING_PREFIX_BYTES = 320
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_SPACE = re.compile(r"\s+")
+_SENSITIVE = re.compile(
+    r"(?i)(authorization|api[_-]?key|access[_-]?token|password|secret)"
+    r"(\s*[:=]\s*)([^\s<>&;,]+)"
+)
+
+
+def _header(response: Any, name: str) -> str:
+    headers = getattr(response, "headers", {}) or {}
+    for key, value in headers.items():
+        if str(key).lower() == name.lower():
+            return str(value)
+    return ""
+
+
+def _listing_body(response: Any) -> bytes:
+    content = getattr(response, "content", None)
+    if isinstance(content, bytes):
+        return content
+    if content is not None:
+        return bytes(content)
+    return str(getattr(response, "text", "")).encode("utf-8", errors="replace")
+
+
+def _listing_class(response: Any, body: bytes) -> tuple[str, bool]:
+    """Return (classification, transient) for a positively recognisable non-JSON body."""
+    text = body[:4096].decode("utf-8", errors="replace").lower()
+    if _header(response, "cf-mitigated").lower() == "challenge" or (
+        "<title>just a moment" in text and "</html" in text
+    ):
+        return "challenge", True
+    if "<title>maintenance" in text or (
+        "temporarily unavailable" in text and "<html" in text
+    ):
+        return "maintenance", True
+    if "graphicscontainer" in text and "wdaylogo" in text:
+        return "workday-error-page", True
+    return "unexpected-body", False
+
+
+def _listing_diagnostic(response: Any, instance: str) -> tuple[str, bool]:
+    body = _listing_body(response)
+    classification, transient = _listing_class(response, body)
+    parsed = urlsplit(str(getattr(response, "url", "") or ""))
+    final_url = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+    prefix = body[:_LISTING_PREFIX_BYTES].decode("utf-8", errors="replace")
+    prefix = _SPACE.sub(" ", _CONTROL.sub("", prefix)).strip()
+    prefix = _SENSITIVE.sub(r"\1\2[redacted]", prefix)
+    observed_at = datetime.now(UTC).isoformat(timespec="seconds")
+    diagnostic = (
+        f"classification={classification} instance={instance} observed_at={observed_at} "
+        f"status={getattr(response, 'status_code', '?')} "
+        f"content_type={_header(response, 'content-type') or '?'} "
+        f"final_url={final_url or '?'} bytes={len(body)} sha256={hashlib.sha256(body).hexdigest()} "
+        f"body_prefix={prefix!r}"
+    )
+    return diagnostic, transient
 
 
 def _failure_class(exc: Exception) -> str:
@@ -582,14 +655,36 @@ class WorkdayScraper(BaseScraper):
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
-        response = http.fetch(
-            "POST",
-            self.url(),
-            json=body,
-            headers=headers,
-            timeout=30,
-            **self._egress(),
-        )
+        self.telemetry["listing_pages"] = int(
+            self.telemetry.get("listing_pages", 0)
+        ) + 1
+
+        def fetch(*, direct: bool = False) -> Any:
+            self.telemetry["listing_fetch_calls"] = int(
+                self.telemetry.get("listing_fetch_calls", 0)
+            ) + 1
+            try:
+                response = http.fetch(
+                    "POST",
+                    self.url(),
+                    json=body,
+                    headers=headers,
+                    timeout=30,
+                    **({} if direct else self._egress()),
+                )
+            except http.RequestsError as exc:
+                self._record_listing_loss(_failure_class(exc))
+                self.telemetry["listing_request_failures"] = int(
+                    self.telemetry.get("listing_request_failures", 0)
+                ) + 1
+                raise
+            if response.status_code >= 400:
+                self.telemetry["listing_status_failures"] = int(
+                    self.telemetry.get("listing_status_failures", 0)
+                ) + 1
+            return response
+
+        response = fetch()
         if response.status_code == 400:
             # The same stale session cookie the detail pass hits (ADR-0103), measured on the
             # listing POST itself, not inferred from the status: a tampered PLAY_SESSION returns
@@ -602,18 +697,46 @@ class WorkdayScraper(BaseScraper):
             # mid-crawl it raises into `_paginate`'s "page(s) failed mid-crawl (HTTP 400)" line;
             # on a slice's first page it raises out of `_exhaust` as a Board error. Both drop.
             http.session().cookies.clear()
-            response = http.fetch(
-                "POST",
-                self.url(),
-                json=body,
-                headers=headers,
-                timeout=30,
-                **self._egress(),
-            )
-        if response.status_code == 404 and not raise_gone:
-            return None  # one page of a live board — the caller reports the gap
+            response = fetch()
+        if response.status_code == 404:
+            if not raise_gone:
+                self._record_listing_loss("HTTP 404")
+                return None  # one page of a live board — the caller reports the gap
+            self._record_listing_loss("HTTP 404")
+            response.raise_for_status()
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            diagnostic, transient = _listing_diagnostic(response, self._instance)
+            if transient:
+                _log.info(
+                    f"{self.board_key()}: {diagnostic}; retrying once via direct egress"
+                )
+                response = fetch(direct=True)
+                if response.status_code == 404:
+                    self._record_listing_loss("HTTP 404")
+                    if not raise_gone:
+                        return None
+                    response.raise_for_status()
+                try:
+                    payload = response.json()
+                except ValueError as retry_exc:
+                    diagnostic, _ = _listing_diagnostic(response, self._instance)
+                    classification, _ = _listing_class(
+                        response, _listing_body(response)
+                    )
+                    self._record_listing_loss(classification)
+                    raise UnexpectedListingResponse(diagnostic) from retry_exc
+                self.telemetry["listing_transient_recovered"] = int(
+                    self.telemetry.get("listing_transient_recovered", 0)
+                ) + 1
+            else:
+                self._record_listing_loss("unexpected-body")
+                raise UnexpectedListingResponse(diagnostic) from exc
+        if response.status_code >= 400:
+            self._record_listing_loss(f"HTTP {response.status_code}")
         response.raise_for_status()
-        return response.json()
+        return payload
 
     async def _post_async(
         self, session: Any, applied_facets: dict[str, list[str]], offset: int
@@ -633,15 +756,37 @@ class WorkdayScraper(BaseScraper):
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
-        response = await http.fetch_async(
-            session,
-            "POST",
-            self.url(),
-            json=body,
-            headers=headers,
-            timeout=30,
-            **self._egress(),
-        )
+        self.telemetry["listing_pages"] = int(
+            self.telemetry.get("listing_pages", 0)
+        ) + 1
+
+        async def fetch(*, direct: bool = False) -> Any:
+            self.telemetry["listing_fetch_calls"] = int(
+                self.telemetry.get("listing_fetch_calls", 0)
+            ) + 1
+            try:
+                response = await http.fetch_async(
+                    session,
+                    "POST",
+                    self.url(),
+                    json=body,
+                    headers=headers,
+                    timeout=30,
+                    **({} if direct else self._egress()),
+                )
+            except http.RequestsError as exc:
+                self._record_listing_loss(_failure_class(exc))
+                self.telemetry["listing_request_failures"] = int(
+                    self.telemetry.get("listing_request_failures", 0)
+                ) + 1
+                raise
+            if response.status_code >= 400:
+                self.telemetry["listing_status_failures"] = int(
+                    self.telemetry.get("listing_status_failures", 0)
+                ) + 1
+            return response
+
+        response = await fetch()
         if response.status_code == 400:
             # A stale session cookie (ADR-0103), same as the sync `_post` — cleared and refetched
             # once. Safe on a shared `AsyncSession` for the reason `_job_detail_async` spells out:
@@ -649,19 +794,50 @@ class WorkdayScraper(BaseScraper):
             # concurrent 400s converge — the first clear fixes the jar, a later one only drops a
             # fresh good cookie, whose absence is itself a 200.
             session.cookies.clear()
-            response = await http.fetch_async(
-                session,
-                "POST",
-                self.url(),
-                json=body,
-                headers=headers,
-                timeout=30,
-                **self._egress(),
-            )
+            response = await fetch()
         if response.status_code == 404:
+            self._record_listing_loss("HTTP 404")
             return None  # one page of a live board — the caller reports the gap
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            diagnostic, transient = _listing_diagnostic(response, self._instance)
+            if transient:
+                _log.info(
+                    f"{self.board_key()}: {diagnostic}; retrying once via direct egress"
+                )
+                response = await fetch(direct=True)
+                if response.status_code == 404:
+                    self._record_listing_loss("HTTP 404")
+                    return None
+                try:
+                    payload = response.json()
+                except ValueError as retry_exc:
+                    diagnostic, _ = _listing_diagnostic(response, self._instance)
+                    classification, _ = _listing_class(
+                        response, _listing_body(response)
+                    )
+                    self._record_listing_loss(classification)
+                    raise UnexpectedListingResponse(diagnostic) from retry_exc
+                self.telemetry["listing_transient_recovered"] = int(
+                    self.telemetry.get("listing_transient_recovered", 0)
+                ) + 1
+            else:
+                self._record_listing_loss("unexpected-body")
+                raise UnexpectedListingResponse(diagnostic) from exc
+        if response.status_code >= 400:
+            self._record_listing_loss(f"HTTP {response.status_code}")
         response.raise_for_status()
-        return response.json()
+        return payload
+
+    def _record_listing_loss(self, cause: str) -> None:
+        """Record one logical listing page that did not produce postings."""
+        self.telemetry["listing_page_losses"] = int(
+            self.telemetry.get("listing_page_losses", 0)
+        ) + 1
+        causes = Counter(self.telemetry.get("listing_loss_causes") or {})
+        causes[cause] += 1
+        self.telemetry["listing_loss_causes"] = dict(causes)
 
     def fetch_raw(self) -> Any:
         """Crawl the tenant (paginate + recursively subdivide capped queries) and
@@ -1083,6 +1259,21 @@ class WorkdayScraper(BaseScraper):
         # `_NO_DETAIL_URL` is one of the Nones being subtracted from, and the threaded `fan_out`
         # fallback's racing increments can only *under*count, never overshoot.
         missing = sum(1 for detail in details if detail is None) - no_url
+        broken_off = int(classes.get(_BROKEN_OFF, 0))
+        self.telemetry.update(
+            {
+                "detail_jobs": len(details),
+                "detail_attempted": max(0, len(details) - broken_off - no_url),
+                "detail_losses": missing,
+                "detail_http_failures": sum(
+                    n for cause, n in classes.items() if cause.startswith("HTTP ")
+                ),
+                "detail_breaker_skips": broken_off,
+                "detail_loss_causes": dict(classes),
+                "detail_page_recovered": recovered,
+                "detail_cookie_recovered": cookie_recovered,
+            }
+        )
         if not missing:
             return
         line = (
