@@ -25,6 +25,10 @@ Five arms, each printed as it finishes:
              load-bearing.
 ``warp``     the same walk through the spare egress (ADR-0063) — the route production's traffic
              takes once a Board has walled, and the one ADR-0102 newly opens for a 400.
+``rotating-warp`` runs the real retry/rotation path with 5xx/520 experimentally treated as wall
+             statuses. It records settled statuses, retry counts, rotation outcomes, and every
+             observed WARP address. This is the arm that tests whether fresh IPs beat the server
+             failure shape; the ordinary ``warp`` arm deliberately keeps one address.
 
 Every arm keeps the first response of each distinct non-200 status **in full** — headers and body —
 because that is the evidence naming who answered. A Cloudflare HTML block page and a Workday JSON
@@ -55,8 +59,9 @@ runs both: two replicas at the scraper's own ``detail_streams`` and two at 12. `
 "whatever ``WorkdayScraper.detail_streams`` is", so neither the workflow nor this module has to
 name 25 in a second place that could go stale against the scraper.
 
-*Rotation.* Production's walled traffic rides a **rotating** WARP address; the ``warp`` arm rides
-one static tunnel. This probe cannot reproduce rotation.
+*Rotation.* The ``warp`` arm rides one static tunnel and cannot answer whether fresh IPs help.
+The separate ``rotating-warp`` arm does reproduce the production mechanism, with one deliberate
+experimental policy change: it promotes 5xx/520 to wall statuses for that arm only.
 
 *History.* The doc's own leading hypothesis — WARP exit IPs "that have been hitting these tenants
 hourly for weeks" — is **not testable here at all**, and no rerun fixes it: the workflow runs
@@ -130,6 +135,7 @@ _NO_PATHS = "no paths — see boards.suspect for why"
 #: Statuses that mean "this origin is refusing us" rather than "this posting is gone". Only these
 #: mark the trip, so a stray 404 mid-walk cannot masquerade as the throttle engaging.
 _REFUSALS = frozenset({"400", "403", "429"})
+_SERVER_FAILURES = frozenset({500, 502, 503, 504, 520})
 
 
 def _proxies(proxy: str | None) -> dict:
@@ -218,18 +224,35 @@ def collect_paths(scraper: WorkdayScraper, want: int) -> tuple[list[str], int | 
 
 
 async def _settle(
-    session, scraper: WorkdayScraper, path: str, proxy: str | None
+    session,
+    scraper: WorkdayScraper,
+    path: str,
+    proxy: str | None,
+    *,
+    rotate_server_failures: bool = False,
 ) -> tuple[str, dict, str]:
     """One detail request's settled answer as ``(status-or-exception, headers, body)``."""
     try:
+        kwargs = _proxies(proxy)
+        retry_on = frozenset()
+        if rotate_server_failures:
+            # Experimental arm: run the real production retry/rotation mechanism with server
+            # failures promoted to wall statuses. The ordinary arms deliberately keep their
+            # first-response contract and bypass retries.
+            retry_on = _SERVER_FAILURES
+            kwargs = {
+                "egress_group": "workday",
+                "egress_on": _SERVER_FAILURES,
+                "egress_board": scraper.board_key(),
+            }
         response = await http.fetch_async(
             session,
             "GET",
             scraper._detail_url(path),
             timeout=30,
-            retry_on=frozenset(),  # the origin's FIRST answer, not its third
+            retry_on=retry_on,
             headers=_HEADERS,
-            **_proxies(proxy),
+            **kwargs,
         )
     except Exception as exc:  # noqa: BLE001 - classifying the failure is the point
         return type(exc).__name__, {}, str(exc)
@@ -244,6 +267,8 @@ def walk(
     width: int,
     slot: dict,
     save: Callable[[], None],
+    *,
+    rotate_server_failures: bool = False,
 ) -> None:
     """Walk every path at ``width`` and record what the origin settled on, into ``slot``.
 
@@ -287,6 +312,13 @@ def walk(
             samples=samples,
             seconds=round(time.monotonic() - started, 1),
         )
+        if rotate_server_failures:
+            slot.update(
+                retries=http.retry_stats(),
+                rotations=dict(spare_egress.rotations()),
+                egress_ips=dict(spare_egress.egress_ips()),
+                egress_report=spare_egress.report(),
+            )
 
     async def run() -> None:
         nonlocal first_refusal, first_non_200, seq
@@ -300,7 +332,13 @@ def walk(
             async def one(path: str) -> None:
                 nonlocal first_refusal, first_non_200, seq
                 async with gate:
-                    code, headers, body = await _settle(session, scraper, path, proxy)
+                    code, headers, body = await _settle(
+                        session,
+                        scraper,
+                        path,
+                        proxy,
+                        rotate_server_failures=rotate_server_failures,
+                    )
                     async with lock:
                         seq += 1
                         index = seq
@@ -574,7 +612,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--arms",
-        default="where,control,direct,browser,warp",
+        default="where,control,direct,browser,warp,rotating-warp",
         help="comma-separated subset, run in this fixed order",
     )
     parser.add_argument("--out", type=Path, help="write the full result JSON here")
@@ -626,7 +664,7 @@ def main() -> int:
 
     scraper: WorkdayScraper | None = None
     paths: list[str] = []
-    if arms & {"direct", "warp", "browser"}:
+    if arms & {"direct", "warp", "browser", "rotating-warp"}:
         scraper, paths = resolve_and_collect(args.suspect, args.n, board("suspect"))
     ready = bool(scraper and paths)
 
@@ -669,6 +707,28 @@ def main() -> int:
             walk("warp", scraper, paths, proxy, width, slot("warp"), save)
         else:
             slot("warp").update(error=_NO_PATHS)
+        save()
+
+    if "rotating-warp" in arms:
+        print("\n== server failures trigger spare-egress rotation ==", flush=True)
+        if ready:
+            # Start clean so the first wall, retries, rotations and observed addresses all belong
+            # to this arm. The first server failure marks Workday walled; later attempts use WARP,
+            # and a server failure through WARP drives the real daemon-rotation path.
+            http.reset_retry_stats()
+            spare_egress.reset()
+            walk(
+                "rotating-warp",
+                scraper,
+                paths,
+                None,
+                width,
+                slot("rotating-warp"),
+                save,
+                rotate_server_failures=True,
+            )
+        else:
+            slot("rotating-warp").update(error=_NO_PATHS)
         save()
 
     if args.out:
