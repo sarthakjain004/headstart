@@ -1,0 +1,506 @@
+{
+  "jobs": [
+    {
+      "@search.score": 1.9923909,
+      "Description": "<h3><strong>About the Role</strong></h3><p>Uber is launching AV Labs to accelerate the autonomous technology ecosystem. We’re building out a high-velocity team of multi-disciplinary experts to turn real-world operations into high-quality data for our autonomous partners. This team will be focused on the hardest problem in AV today: unlocking real-world, long-tail driving data. Autonomy is now a data race–and Uber has an edge: We collect rare, real-world driving data at a scale and capital efficiency no one else can match (millions of Uber trips every hour across cities, conditions, and edge cases create the data autonomy has been missing).</p><p>We will build platforms that harness scale and real-world complexity to reimagine how the world moves.</p><p>You will be a software engineer in AV Labs and involved in the development and implementation of cutting edge technologies. The ideal candidate will be able to identify issues, provide solutions, and implement the fixes, as well as set a high technical excellence bar in all things we do.</p><h3><strong>What the Candidate Will Do:</strong></h3><ul><li aria-level=\"1\">Design and implement solutions for visualizing AV data.</li><li aria-level=\"1\">Align visualization requirements with stakeholders.</li></ul><h3><strong>Basic Qualifications:</strong></h3><ul><li aria-level=\"1\">Minimum 4 years of working experience.</li><li aria-level=\"1\">Bachelor’s degree in Computer Science or related fields.</li><li aria-level=\"1\">Proficient in web development such as React, Javascript, etc.</li><li aria-level=\"1\">Background with AV visualization tools such as Foxglove, Webviz.</li></ul><h3><strong>Preferred Qualifications:</strong></h3><ul><li aria-level=\"1\">Master or PhD degree in Computer Science or related fields.</li><li aria-level=\"1\">Background in other AV domains.</li></ul> <p>For Sunnyvale, CA-based roles: The base salary range for this role is USD $202,000 per year - USD $224,000 per year.</p><p>You will be eligible to participate in Uber's bonus program, and may be offered an equity award & other types of comp. All full-time employees are eligible to participate in a 401(k) plan. You will also be eligible for various benefits.</p> <p><strong>Ready to Ride?</strong></p> <p>This isn't the kind of place where you follow a playbook — it's where you help write one. If you're driven by impact, energized by challenge, and ready to shape how the world moves — we'd love to hear from you.</p> <p>You may be eligible for bonuses, equity, and other compensation, as well as a range of benefits. <a href=\"https://jobs.uber.com/en/benefits/\" target=\"_blank\" rel=\"nofollow noopener noreferrer\">Explore our benefits.</a></p> <p>Offices remain key to collaboration and Uber's culture. Unless approved for full remote work, employees must spend at least 50% of their time in-office. Some roles, like those at greenlight hubs, require full-time in-office presence. Ask your Recruiter for details about this role's requirements.</p> <p>Uber is proud to be an Equal Opportunity employer. All qualified applicants will receive consideration for employment without regard to sex, gender identity, sexual orientation, race, color, religion, national origin, disability, protected Veteran status, age, or any other characteristic protected by law. We also consider qualified applicants regardless of criminal histories, consistent with legal requirements. If you have a disability or special need that requires accommodation, please let us know by completing <a href=\"https://forms.gle/aDWTk9k6xtMU25Y5A?uclick_id=d56eb634-bfb9-455e-a50d-901b3de0490c\" target=\"_blank\" rel=\"nofollow noopener noreferrer\">this form.</a></p>",
+      "AdditionalText": "Engineer Software Engineering",
+      "QuestionsRaw": null,
+      "Summary": null,
+      "AdditionalDescription1": null,
+      "DisplayDate": "2026-09-11T16:55:11Z",
+      "Reference": "301347",
+      "Teams": [
+        "Engineer"
+      ],
+      "ContractType": "Full time",
+      "WorkPattern": "Regular",
+      "ExperienceLevel": null,
+      "Remote": false,
+      "Id": "301347",
+      "Title": "Sr Software Engineer - Web - AV Labs",
+      "Salary": {
+        "MinValue": null,
+        "MaxValue": null,
+        "Currency": null,
+        "Period": null,
+        "Description": "\n<p>For Sunnyvale, CA-based roles: The base salary range for this role is USD $202,000 per year - USD $224,000 per year.</p><p>You will be eligible to participate in Uber's bonus program, and may be offered an equity award & other types of comp. All full-time employees are eligible to participate in a 401(k) plan. You will also be eligible for various benefits.</p>"
+      },
+      "Locations": [
+        {
+          "Identifier": "",
+          "City": "Sunnyvale",
+          "Region": "California",
+          "Country": "United States",
+          "CountryCode": null,
+          "Address": "Sunnyvale, CA, USA",
+          "PostalCode": null,
+          "LocationPoint": {
+            "type": "Point",
+            "coordinates": [
+              -122.0363496,
+              37.36883
+            ],
+            "crs": {
+              "type": "name",
+              "properties": {
+                "name": "EPSG:4326"
+              }
+            }
+          }
+        }
+      ],
+      "Urls": [
+        {
+          "Culture": "en-us",
+          "Url": "/en/jobs/301347/",
+          "IsDefault": true
+        }
+      ]
+    },
+    {
+      "@search.score": 1.9624273,
+      "Description": "<p><strong>About the Role</strong></p><p>As an Account Manager at Uber Eats, you will manage a portfolio of local favourite restaurants in the Flanders region and be responsible for its long-term commercial relationships, growth and profitability. This role is key to accelerating Uber Eats’ growth across the Flanders territory, which is why fluency in Dutch is essential.</p><p>To do so, you will collaborate efficiently and closely with your portfolio of restaurant partners to optimize their operations, foster strong relationships through customized growth recommendations and identify opportunities to upsell additional Uber products.</p><p>We are also open to candidates residing in the Flanders region, Antwerp, and potentially Ghent. Offices available in Brussels and Antwerp.</p><p><strong>What you'll do</strong></p><ul><li aria-level=\"1\">Build and grow long-term partnerships by understanding what matters most to your restaurant partners - doing the right thing long term.</li><li aria-level=\"1\">Manage partner portfolios with urgency and discipline, using data-driven insights to track KPIs and identify opportunities for optimization.</li><li aria-level=\"1\">Navigate ambiguity and complexity to resolve merchant issues, unblock growth, and ensure high-levels of partner satisfaction.</li><li aria-level=\"1\">Adapt your approach based on market dynamics and partner needs to influence the adoption of new features, marketing products, and services.</li><li aria-level=\"1\">Collaborate across operations, marketing, and product teams to share local market knowledge and shape regional strategies that scale.</li></ul><p><strong>What you'll have</strong></p><ul><li aria-level=\"1\">Minimum 2- 3 years of experience in a client-facing account management, in consulting or a relevant commercial role</li><li aria-level=\"1\">Fluent in Dutch, professional proficiency in English</li><li aria-level=\"1\">Strong interpersonal and negotiation skills, with the ability to clearly frame a value proposition, demonstrate the true value of give/get in partnerships to ensure the best outcomes for both Uber Eats and our partners, probe for objections, remove obstacles, and eliminate barriers to gain commitment</li><li aria-level=\"1\">Strong motivation and passion to work with top restaurants and build a business together</li></ul><p><strong>Bonus points for</strong></p><ul><li aria-level=\"1\">Capable of running analysis and transforming data into relevant insights</li><li aria-level=\"1\">Ability to think strategically and analyze restaurant needs to both unlock opportunities and creatively problem-solve</li><li aria-level=\"1\">Demonstrate time management and organizational skills with the ability to multitask and prioritize based on impact</li><li aria-level=\"1\">Willingness to hustle, roll-up sleeves, and get in the weeds with our highest value partners in order to hit quarterly and annual revenue, retention, and adoption targets.</li></ul> <p><strong>Ready to Ride?</strong></p> <p>This isn't the kind of place where you follow a playbook — it's where you help write one. If you're driven by impact, energized by challenge, and ready to shape how the world moves — we'd love to hear from you.</p> <p>You may be eligible for bonuses, equity, and other compensation, as well as a range of benefits. <a href=\"https://jobs.uber.com/en/benefits/\" target=\"_blank\" rel=\"nofollow noopener noreferrer\">Explore our benefits.</a></p> <p>Offices remain key to collaboration and Uber's culture. Unless approved for full remote work, employees must spend at least 50% of their time in-office. Some roles, like those at greenlight hubs, require full-time in-office presence. Ask your Recruiter for details about this role's requirements.</p> <p>Uber is proud to be an Equal Opportunity employer. All qualified applicants will receive consideration for employment without regard to sex, gender identity, sexual orientation, race, color, religion, national origin, disability, protected Veteran status, age, or any other characteristic protected by law. We also consider qualified applicants regardless of criminal histories, consistent with legal requirements. If you have a disability or special need that requires accommodation, please let us know by completing <a href=\"https://forms.gle/aDWTk9k6xtMU25Y5A?uclick_id=d56eb634-bfb9-455e-a50d-901b3de0490c\" target=\"_blank\" rel=\"nofollow noopener noreferrer\">this form.</a></p>",
+      "AdditionalText": "Sales Account Management",
+      "QuestionsRaw": null,
+      "Summary": null,
+      "AdditionalDescription1": null,
+      "DisplayDate": "2026-09-11T11:53:09Z",
+      "Reference": "302269",
+      "Teams": [
+        "Sales"
+      ],
+      "ContractType": "Full time",
+      "WorkPattern": "Regular",
+      "ExperienceLevel": null,
+      "Remote": false,
+      "Id": "302269",
+      "Title": "Account Manager – Uber Eats (Dutch & English Speaking)",
+      "Salary": {
+        "MinValue": null,
+        "MaxValue": null,
+        "Currency": null,
+        "Period": null,
+        "Description": ""
+      },
+      "Locations": [
+        {
+          "Identifier": "",
+          "City": "Bruxelles",
+          "Region": "",
+          "Country": "Belgium",
+          "CountryCode": null,
+          "Address": "Brussels, Belgium",
+          "PostalCode": null,
+          "LocationPoint": {
+            "type": "Point",
+            "coordinates": [
+              4.357200100000001,
+              50.84770289999999
+            ],
+            "crs": {
+              "type": "name",
+              "properties": {
+                "name": "EPSG:4326"
+              }
+            }
+          }
+        },
+        {
+          "Identifier": "",
+          "City": "",
+          "Region": "",
+          "Country": "Belgium",
+          "CountryCode": null,
+          "Address": "Belgium",
+          "PostalCode": null,
+          "LocationPoint": {
+            "type": "Point",
+            "coordinates": [
+              4.469936,
+              50.503887
+            ],
+            "crs": {
+              "type": "name",
+              "properties": {
+                "name": "EPSG:4326"
+              }
+            }
+          }
+        }
+      ],
+      "Urls": [
+        {
+          "Culture": "en-us",
+          "Url": "/en/jobs/302269/",
+          "IsDefault": true
+        }
+      ]
+    },
+    {
+      "@search.score": 1.9607589,
+      "Description": "<p><strong>About the Role</strong></p> <p>Alongside Uber Eats, we are launching Uber Direct in Finland. Uber Direct is our white-label delivery service that enables merchants to offer fast, same-day delivery from their own websites, apps, or stores — with no need for customers to use the Uber app.&nbsp;</p> <p>You will own the initial GTM commercial strategy (pipeline creation and sales) for the market. As we launch our first merchants, you will then transition to also focus on scaling our merchants’ operations and driving long-term commercial health of our partnerships. You will be the vital link that translates high-level digital strategy into scalable, on-the-ground delivery operations.</p> <p>Success here requires intrinsic drive to solve tough problems and the ability to influence and align stakeholders with competing priorities. You must stay steady under pressure, using data to navigate ambiguity and drive results for your partners. You will build deep expertise in the local delivery ecosystem and help define the standard for how the Finish market experiences on-demand last mile delivery.</p> <p><strong>What You'll Do</strong></p> <p>As a Growth Strategy Manager, you will be responsible for:</p> <p><strong>Sales:</strong> Closing the best partnerships with the right merchants, at the right commercials, with a strong cross-functional commercial team. You will work alongside our Restaurant and Retail teams to identify the right GTM approach (pipeline and commercial strategy) and win our first accounts to go live.&nbsp;</p> <p><strong>Account Management:</strong> Driving growth, operational excellence and financial sustainability with our live merchant partners. Ensuring the end-to-end experience for our merchants is easy, and operations flow with high levels of reliability. Work closely with our scaled Operations team to escalate, resolve and improve when our experience is not at the desired level.</p> <p><strong>Financial and operational efficiency:</strong> You will build long-term relationships with your key accounts and be the main point of contact across the org, from Store Manager to HQ, focusing on improving their operations and optimizing our commercials.</p> <p><strong>Analysis:</strong> Quantify everything you do. Utilize an analytical approach to understand the performance of initiatives to ensure you are effectively prioritizing those with the highest return on investment.</p> <p><strong>Be proactive:</strong> This role will require fast thinking and moving swiftly through high-pressure environments.&nbsp;</p> <p>This is the ideal role for someone with a strategic mindset coupled with next-level sales and account management skills and an operational curiosity. You will have the rare opportunity to launch a market from scratch, pilot new features, operating models, and commercial structures, which can be playbooked and scaled across Uber.</p> <p><strong>Required Qualifications</strong></p> <ul> <li>3+ years of customer or client facing experience ideally in account management or consulting. Previous experience in setting and achieving business targets</li> <li>Critical thinking and problem solving capabilities: Experience with challenging the status quo and identifying the root cause of hard problems to solve.&nbsp;</li> <li>Analytical skills: Comfortable with data analysis, spreadsheets and presenting findings and recommendations. Data driven decision making mentality and sound business judgment through strong analytical thinking.</li> <li>Commercial acumen: Understanding of how businesses and organizations work and how to navigate a partner’s business. Ability to build sales pitches, negotiate deals and creative commercial strategies for our partners in a fast-growing market.&nbsp;</li> <li>Communication: Excellent communication skills and the ability to manage and influence diverse stakeholders across businesses and levels.</li> <li>Project management: Able to create meticulously detailed execution plans for large-scale projects (e.g. launching a new product, onboarding a major enterprise) and then deliver them to plan regardless of any surprises or ambiguity along the way</li> <li>Stakeholder management: Experience working with cross-functional stakeholders, e.g., Commercial, Operations, Product (Tech), Finance and Legal teams.&nbsp;</li> <li>Highly autonomous self-starter, comfortable with ambiguity: Able to come up with new ideas and execute them autonomously. Eager to learn with a #gogetit attitude. You should not be afraid to roll up your sleeves and get your hands dirty!&nbsp;</li> <li>Finish and English fluency a must</li> </ul> <p><strong>Preferred Qualifications</strong></p> <ul> <li>Knowledge of Last Mile Delivery space</li> <li>SQL experience</li> </ul> <p> ~~ ~~ </p><p><strong>Ready to Ride?</strong></p> <p>This isn't the kind of place where you follow a playbook — it's where you help write one. If you're driven by impact, energized by challenge, and ready to shape how the world moves — we'd love to hear from you.</p> <p>You may be eligible for bonuses, equity, and other compensation, as well as a range of benefits. <a href=\"https://jobs.uber.com/en/benefits/\" target=\"_blank\" rel=\"nofollow noopener noreferrer\">Explore our benefits.</a></p> <p>Offices remain key to collaboration and Uber's culture. Unless approved for full remote work, employees must spend at least 50% of their time in-office. Some roles, like those at greenlight hubs, require full-time in-office presence. Ask your Recruiter for details about this role's requirements.</p> <p>Uber is proud to be an Equal Opportunity employer. All qualified applicants will receive consideration for employment without regard to sex, gender identity, sexual orientation, race, color, religion, national origin, disability, protected Veteran status, age, or any other characteristic protected by law. We also consider qualified applicants regardless of criminal histories, consistent with legal requirements. If you have a disability or special need that requires accommodation, please let us know by completing <a href=\"https://forms.gle/aDWTk9k6xtMU25Y5A?uclick_id=d56eb634-bfb9-455e-a50d-901b3de0490c\" target=\"_blank\" rel=\"nofollow noopener noreferrer\">this form.</a></p>",
+      "AdditionalText": "Operations Business Operations",
+      "QuestionsRaw": null,
+      "Summary": null,
+      "AdditionalDescription1": null,
+      "DisplayDate": "2026-09-11T11:36:20Z",
+      "Reference": "158863",
+      "Teams": [
+        "Operations"
+      ],
+      "ContractType": "Full time",
+      "WorkPattern": "Regular",
+      "ExperienceLevel": null,
+      "Remote": false,
+      "Id": "158863",
+      "Title": "Growth Strategy Manager, Uber Direct - Finland",
+      "Salary": {
+        "MinValue": null,
+        "MaxValue": null,
+        "Currency": null,
+        "Period": null,
+        "Description": ""
+      },
+      "Locations": [
+        {
+          "Identifier": "",
+          "City": "Uusimaa",
+          "Region": "",
+          "Country": "Finland",
+          "CountryCode": null,
+          "Address": "Uusimaa, Finland",
+          "PostalCode": null,
+          "LocationPoint": {
+            "type": "Point",
+            "coordinates": [
+              25.2716209,
+              60.21872
+            ],
+            "crs": {
+              "type": "name",
+              "properties": {
+                "name": "EPSG:4326"
+              }
+            }
+          }
+        }
+      ],
+      "Urls": [
+        {
+          "Culture": "en-us",
+          "Url": "/en/jobs/158863/",
+          "IsDefault": true
+        }
+      ]
+    },
+    {
+      "@search.score": 1.9498082,
+      "Description": "<!DOCTYPE html> <html> <head> <title><p> Cleaned Document </p></title> </head> <body> <p> <strong> About the role and team </strong> </p> <p> Account Management at Uber means navigating ambiguity, earning trust fast, and solving problems that don’t come with a script. As a Senior Enterprise Account Manager, you will be the strategic link between Uber Eats and our most significant, fastest-growing restaurant brands. You aren't just managing a list of clients; you are conducting conversations with C-suite stakeholders and building joint business plans that ensure major brands thrive sustainably on our platform. </p> <p> The work is high-stakes and requires a grit-based mindset to handle the pressure of enterprise expectations and the complexity of coordinating across global internal teams. You’ll need to turn operational data into actionable growth strategies while moving with urgency to resolve technical blockers that impact the customer experience at scale. If you are a resourceful owner who is energised by the challenge of writing the playbook for new market spaces and can stay resilient through tough commercial negotiations, this is where you will grow. </p> <p> <strong> What you’ll do </strong> </p> <ul> <li> Build and grow long-term partnerships by acting as a trusted advisor to enterprise brands, developing joint business plans that align Uber’s platform with their long-term marketing and revenue goals. </li> <li> Navigate ambiguity and internal complexity to lead commercial discussions, building sustainable agreements that drive mutual growth through location expansion, ads adoption, and menu optimisation. </li> <li> Manage account health with urgency, diving deep into operational data to identify and resolve issues like order accuracy or delivery timeliness that affect the customer experience. </li> <li> Lead advanced growth conversations by analysing quantitative and financial performance metrics, using data-driven insights to prioritise high-impact initiatives and upsell new features. </li> <li> Collaborate across product, marketing, and operations teams to act as the voice of the partner, ensuring their feedback directly influences our product roadmap and scalable playbooks. </li> <li> Communicate clearly and stay resilient during high-pressure business reviews, translating complex data into digestible narratives for executive-level stakeholders. </li> </ul> <p> <strong> Basic Qualifications </strong> </p> <ul> <li> Minimum 6+ years of professional experience in a B2B client-facing role (Account Management, Sales, or Strategic Partnerships). </li> <li> Experience managing commercial relationships and presenting to executive-level stakeholders. </li> <li> Proven track record of meeting and exceeding metrics-based business goals and revenue targets. </li> <li> Strong systems thinking to develop tools and processes that drive forward partnership KPIs and operational excellence. </li> <li> Resilience and a \"go-getter\" mentality with a track record of navigating fast-moving, high-ambiguity environments. </li> <li> University education or equivalent practical experience. </li> </ul> <p> <strong> Preferred Qualifications </strong> </p> <ul> <li> Exceptional analytical skills with the ability to manipulate complex data sets to drive commercial recommendations (SQL proficiency is a plus). </li> <li> Proven ability to fuse business, finance, and legal concepts to lead multifaceted commercial deals. </li> <li> Experience with Salesforce or similar CRM platforms to manage complex enterprise sales cycles. </li> </ul> </body> </html> <p><strong>Ready to Ride?</strong></p> <p>This isn't the kind of place where you follow a playbook — it's where you help write one. If you're driven by impact, energized by challenge, and ready to shape how the world moves — we'd love to hear from you.</p> <p>You may be eligible for bonuses, equity, and other compensation, as well as a range of benefits. <a href=\"https://jobs.uber.com/en/benefits/\" target=\"_blank\" rel=\"nofollow noopener noreferrer\">Explore our benefits.</a></p> <p>Offices remain key to collaboration and Uber's culture. Unless approved for full remote work, employees must spend at least 50% of their time in-office. Some roles, like those at greenlight hubs, require full-time in-office presence. Ask your Recruiter for details about this role's requirements.</p> <p>Uber is proud to be an Equal Opportunity employer. All qualified applicants will receive consideration for employment without regard to sex, gender identity, sexual orientation, race, color, religion, national origin, disability, protected Veteran status, age, or any other characteristic protected by law. We also consider qualified applicants regardless of criminal histories, consistent with legal requirements. If you have a disability or special need that requires accommodation, please let us know by completing <a href=\"https://forms.gle/aDWTk9k6xtMU25Y5A?uclick_id=d56eb634-bfb9-455e-a50d-901b3de0490c\" target=\"_blank\" rel=\"nofollow noopener noreferrer\">this form.</a></p>",
+      "AdditionalText": "Sales Account Management",
+      "QuestionsRaw": null,
+      "Summary": null,
+      "AdditionalDescription1": null,
+      "DisplayDate": "2026-09-11T09:45:57Z",
+      "Reference": "300506",
+      "Teams": [
+        "Sales"
+      ],
+      "ContractType": "Full time",
+      "WorkPattern": "Regular",
+      "ExperienceLevel": null,
+      "Remote": false,
+      "Id": "300506",
+      "Title": "Senior Account Manager, Eats Enterprise",
+      "Salary": {
+        "MinValue": null,
+        "MaxValue": null,
+        "Currency": null,
+        "Period": null,
+        "Description": ""
+      },
+      "Locations": [
+        {
+          "Identifier": "",
+          "City": "London",
+          "Region": "",
+          "Country": "United Kingdom",
+          "CountryCode": null,
+          "Address": "London, UK",
+          "PostalCode": null,
+          "LocationPoint": {
+            "type": "Point",
+            "coordinates": [
+              -0.1275862,
+              51.5072178
+            ],
+            "crs": {
+              "type": "name",
+              "properties": {
+                "name": "EPSG:4326"
+              }
+            }
+          }
+        }
+      ],
+      "Urls": [
+        {
+          "Culture": "en-us",
+          "Url": "/en/jobs/300506/",
+          "IsDefault": true
+        }
+      ]
+    },
+    {
+      "@search.score": 1.9437351,
+      "Description": "<!DOCTYPE html> <html> <head> <title><p> Cleaned Document </p></title> </head> <body> <p> <strong> About the role and team </strong> </p> <p> Leading at Uber means setting direction in motion, not waiting for perfect conditions. As the Public Policy Manager, you will oversee our efforts to proactively tell the story of how Uber positively contributes to the communities we serve. This is a high-stakes leadership role where you will drive the legislative reforms necessary to ensure Uber remains a reliable platform for earners, riders, and eaters. </p> <p> The environment is fast-paced and requires you to execute on high priority initiatives amidst significant ambiguity. You will carry the weight of decisions that matter, navigating complex cross-functional relationships with Marketing, Social Impact, and Research teams. This role is for a strategic problem solver who leads with clarity and heart, thriving in the challenge of shaping the future of mobility and delivery. </p> <p> <strong> What you’ll do </strong> </p> <ul> <li> Build and execute a comprehensive campaign strategy that balances short-term legislative wins with long-term brand health. </li> <li> Navigate internal complexity to align regional policy heads and cross-functional partners around shared goals. </li> <li> Lead through influence to develop scalable playbooks and resources that empower local teams to handle sensitive community issues. </li> <li> Own the outcomes of complex projects, turning unstructured policy problems into focused plans of execution. </li> <li> Drive team excellence by coaching contributors to stay resilient through tough conversations and shifting political landscapes. </li> </ul> <p> <strong> Basic Qualifications </strong> </p> <ul> <li> 7 + years of experience in public policy, government affairs, or regulatory advocacy within a corporate or government setting. </li> <li> Bachelor’s degree </li> <li> Experience with project management methodologies to drive complex initiatives. </li> </ul> <p> <strong> Preferred Qualifications </strong> </p> <ul> <li> Demonstrated record of leading multi-team projects with high levels of ambiguity. </li> <li> Exceptional stakeholder management skills with the ability to earn trust fast across diverse internal and external groups. </li> <li> Values-aligned traits including systems thinking, grit, and the ability to thrive through constant change. </li> <li> Strong storytelling and communication skills to effectively represent the team to executives. </li> <li> Strategic mindset with the ability to anticipate market shifts and proactively adjust campaign tactics. </li> </ul> </body> </html> <p><strong>Ready to Ride?</strong></p> <p>This isn't the kind of place where you follow a playbook — it's where you help write one. If you're driven by impact, energized by challenge, and ready to shape how the world moves — we'd love to hear from you.</p> <p>You may be eligible for bonuses, equity, and other compensation, as well as a range of benefits. <a href=\"https://jobs.uber.com/en/benefits/\" target=\"_blank\" rel=\"nofollow noopener noreferrer\">Explore our benefits.</a></p> <p>Offices remain key to collaboration and Uber's culture. Unless approved for full remote work, employees must spend at least 50% of their time in-office. Some roles, like those at greenlight hubs, require full-time in-office presence. Ask your Recruiter for details about this role's requirements.</p> <p>Uber is proud to be an Equal Opportunity employer. All qualified applicants will receive consideration for employment without regard to sex, gender identity, sexual orientation, race, color, religion, national origin, disability, protected Veteran status, age, or any other characteristic protected by law. We also consider qualified applicants regardless of criminal histories, consistent with legal requirements. If you have a disability or special need that requires accommodation, please let us know by completing <a href=\"https://forms.gle/aDWTk9k6xtMU25Y5A?uclick_id=d56eb634-bfb9-455e-a50d-901b3de0490c\" target=\"_blank\" rel=\"nofollow noopener noreferrer\">this form.</a></p>",
+      "AdditionalText": "Administration Administrative Business Partner",
+      "QuestionsRaw": null,
+      "Summary": null,
+      "AdditionalDescription1": null,
+      "DisplayDate": "2026-09-11T08:44:44Z",
+      "Reference": "302219",
+      "Teams": [
+        "Administration"
+      ],
+      "ContractType": "Full time",
+      "WorkPattern": "Regular",
+      "ExperienceLevel": null,
+      "Remote": false,
+      "Id": "302219",
+      "Title": "Manager, Public Policy",
+      "Salary": {
+        "MinValue": null,
+        "MaxValue": null,
+        "Currency": null,
+        "Period": null,
+        "Description": ""
+      },
+      "Locations": [
+        {
+          "Identifier": "",
+          "City": "London",
+          "Region": "",
+          "Country": "United Kingdom",
+          "CountryCode": null,
+          "Address": "London, UK",
+          "PostalCode": null,
+          "LocationPoint": {
+            "type": "Point",
+            "coordinates": [
+              -0.1275862,
+              51.5072178
+            ],
+            "crs": {
+              "type": "name",
+              "properties": {
+                "name": "EPSG:4326"
+              }
+            }
+          }
+        }
+      ],
+      "Urls": [
+        {
+          "Culture": "en-us",
+          "Url": "/en/jobs/302219/",
+          "IsDefault": true
+        }
+      ]
+    },
+    {
+      "@search.score": 1.7072321,
+      "Description": "<p><strong>About the role and team </strong>Working at Uber means solving hard problems in a high-stakes, fast-moving environment. You’ll need to take ownership, stay adaptable, and build with both urgency and care.</p><p>As an Operations Intern, you will bridge the gap between the digital and physical worlds to enable the movement of people and things. This role is built for those who thrive in intense, high-stakes environments where the answers aren't always clear and decisions must be made quickly and with care.</p><p><strong>What you’ll do&nbsp;</strong></p><ul><li>Solve key strategic problems through analytical frameworks and insights to advise the team on critical business decisions.</li><li>Navigate the messiness of real-world operations by experimenting with new products and efficiencies across pricing, demand building, and segmentation.</li><li>Collaborate across diverse functions including finance, policy, and legal to move projects forward and unblock complex operational hurdles.</li><li>Own impactful projects from start to finish, managing the pressure of real-time results while maintaining a high bar for accuracy.</li><li>Adapt to shifting priorities and imperfect information as you help shape the marketplace for riders, drivers, and merchants.</li><li>Identify patterns in data to improve the way we support our community at scale.</li></ul><p><strong>Basic Qualifications&nbsp;</strong></p><ul><li>Enrolled in a Bachelor’s degree program for the full duration of the internship.</li><li>Expected graduation date of <strong>July or December 2027 (Only). </strong>Applications with other graduation dates will not be considered.&nbsp;</li><li>Proficiency in English with the ability to present ideas in a comprehensive and succinct manner.</li><li>Ability to work 30 hours a week for 12 months in a hybrid capacity (Tuesday, Wednesday, and Thursday in-office).</li><li>Current work authorization without the need for visa sponsorship.</li></ul><p><strong>Preferred Qualifications&nbsp;</strong></p><ul><li><strong>Skills:</strong> Knowledge of data analytics, <strong>SQL</strong> and experience with statistical packages or basic programming skills is highly regarded.</li><li>Proven ability to build meaningful relationships and earn trust across diverse stakeholder groups.</li><li>Demonstrated systems thinking and logic to resolve complex issues involving people and processes.</li><li>Resilience and a \"go-get-it\" attitude when faced with ambiguous problems or tough objections.</li></ul> <p><strong>Ready to Ride?</strong></p> <p>This isn't the kind of place where you follow a playbook — it's where you help write one. If you're driven by impact, energized by challenge, and ready to shape how the world moves — we'd love to hear from you.</p> <p>You may be eligible for bonuses, equity, and other compensation, as well as a range of benefits. <a href=\"https://jobs.uber.com/en/benefits/\" target=\"_blank\" rel=\"nofollow noopener noreferrer\">Explore our benefits.</a></p> <p>Offices remain key to collaboration and Uber's culture. Unless approved for full remote work, employees must spend at least 50% of their time in-office. Some roles, like those at greenlight hubs, require full-time in-office presence. Ask your Recruiter for details about this role's requirements.</p> <p>Uber is proud to be an Equal Opportunity employer. All qualified applicants will receive consideration for employment without regard to sex, gender identity, sexual orientation, race, color, religion, national origin, disability, protected Veteran status, age, or any other characteristic protected by law. We also consider qualified applicants regardless of criminal histories, consistent with legal requirements. If you have a disability or special need that requires accommodation, please let us know by completing <a href=\"https://forms.gle/aDWTk9k6xtMU25Y5A?uclick_id=d56eb634-bfb9-455e-a50d-901b3de0490c\" target=\"_blank\" rel=\"nofollow noopener noreferrer\">this form.</a></p>",
+      "AdditionalText": "University Operations",
+      "QuestionsRaw": null,
+      "Summary": null,
+      "AdditionalDescription1": null,
+      "DisplayDate": "2026-09-09T17:00:47Z",
+      "Reference": "300864",
+      "Teams": [
+        "University"
+      ],
+      "ContractType": "Full time",
+      "WorkPattern": "Intern",
+      "ExperienceLevel": null,
+      "Remote": false,
+      "Id": "300864",
+      "Title": "2026 Operations & Logistics Intern - Mexico",
+      "Salary": {
+        "MinValue": null,
+        "MaxValue": null,
+        "Currency": null,
+        "Period": null,
+        "Description": ""
+      },
+      "Locations": [
+        {
+          "Identifier": "",
+          "City": "Miguel Hidalgo",
+          "Region": "CMX",
+          "Country": "Mexico",
+          "CountryCode": null,
+          "Address": "Miguel Hidalgo, Mexico City, CDMX, Mexico",
+          "PostalCode": null,
+          "LocationPoint": {
+            "type": "Point",
+            "coordinates": [
+              -99.2083953,
+              19.4306575
+            ],
+            "crs": {
+              "type": "name",
+              "properties": {
+                "name": "EPSG:4326"
+              }
+            }
+          }
+        },
+        {
+          "Identifier": "",
+          "City": "",
+          "Region": "",
+          "Country": "Mexico",
+          "CountryCode": null,
+          "Address": "Mexico",
+          "PostalCode": null,
+          "LocationPoint": {
+            "type": "Point",
+            "coordinates": [
+              -102.552784,
+              23.634501
+            ],
+            "crs": {
+              "type": "name",
+              "properties": {
+                "name": "EPSG:4326"
+              }
+            }
+          }
+        }
+      ],
+      "Urls": [
+        {
+          "Culture": "en-us",
+          "Url": "/en/jobs/300864/",
+          "IsDefault": true
+        }
+      ]
+    },
+    {
+      "@search.score": 1.8656878,
+      "Description": "<p><strong>About the role and team&nbsp;</strong></p><p>Uber Advertising’s vision is to offer the most marketplace-centric advertising to connect our platform users—eaters, riders, and earners—with advertisers. As a Specialist Account Executive (Ads Enterprise), you will lead the Ad Sales strategy for a portfolio of top Enterprise Restaurants, driving the adoption of an expanding suite of ads offerings across our Mobility and Delivery platforms.</p><p>Sales at Uber means navigating ambiguity, earning trust fast, and solving problems that don’t come with a script. This role is about building long-term partnerships in a fast-changing environment where you must balance the needs of merchant partners with Uber's rapid pace of innovation. If you are a resilient, resourceful storyteller who thrives in the messy reality of doing big things, this is where you’ll grow.</p><p><strong>What you’ll do&nbsp;</strong></p><ul><li>Build and grow long-term partnerships by understanding what matters most to our customers—not just selling a product.</li><li>Lead advanced Ads and Offers pitches, including discovery, handling complex objections, and providing strategic budget recommendations.</li><li>Navigate ambiguity and internal complexity by collaborating closely with Account Managers, Product, and Revenue Operations to unlock value for clients.</li><li>Manage pipelines with urgency and discipline in Salesforce, ensuring accurate tracking of deals and contracts even when priorities shift.</li><li>Analyze merchant and platform insights to identify demand generation opportunities and create holistic narratives that quantify the impact of our solutions.</li><li>Adapt your approach based on market dynamics and imperfect information to resolve blockers and deliver solutions that scale.</li></ul><p><strong>Basic Qualifications&nbsp;</strong></p><ul><li>4 year of work experience</li><li>Experience in a client-facing, quota-carrying position.</li><li>Basic understanding of media KPIs and advertising terminology.</li><li>Experience building and implementing strategic sales plans.</li></ul><p><strong>Preferred Qualifications&nbsp;</strong></p><ul><li>5 + years of full-time experience in digital advertising sales or account management.</li><li>Experience selling complex digital marketing solutions to Mid-Market or Enterprise brands and their agency partners.</li><li>Proven ability to utilize data to quantify opportunities and influence C-level marketing executives.</li><li>Strong negotiation and deal-making skills, with a track record of creating value in challenging negotiations.</li><li>Demonstrated resilience and a go-getter mentality in a high-growth, fast-paced environment.</li></ul> <p>For Canada-based roles: The total on-target earnings (OTE) range for this position is CAD $165,000 - CAD $183,333. The OTE includes a base salary range of CAD $99,000 per year - CAD $110,000 per year and an annualized cash variable incentive target of CAD $66,000 - CAD $73,333.</p> <p>You may be offered an equity award & other types of comp. You will also be eligible for various benefits.</p> <p><strong>Ready to Ride?</strong></p> <p>This isn't the kind of place where you follow a playbook — it's where you help write one. If you're driven by impact, energized by challenge, and ready to shape how the world moves — we'd love to hear from you.</p> <p>You may be eligible for bonuses, equity, and other compensation, as well as a range of benefits. <a href=\"https://jobs.uber.com/en/benefits/\" target=\"_blank\" rel=\"nofollow noopener noreferrer\">Explore our benefits.</a></p> <p>Offices remain key to collaboration and Uber's culture. Unless approved for full remote work, employees must spend at least 50% of their time in-office. Some roles, like those at greenlight hubs, require full-time in-office presence. Ask your Recruiter for details about this role's requirements.</p> <p>Uber is proud to be an Equal Opportunity employer. All qualified applicants will receive consideration for employment without regard to sex, gender identity, sexual orientation, race, color, religion, national origin, disability, protected Veteran status, age, or any other characteristic protected by law. We also consider qualified applicants regardless of criminal histories, consistent with legal requirements. If you have a disability or special need that requires accommodation, please let us know by completing <a href=\"https://forms.gle/aDWTk9k6xtMU25Y5A?uclick_id=d56eb634-bfb9-455e-a50d-901b3de0490c\" target=\"_blank\" rel=\"nofollow noopener noreferrer\">this form.</a></p>",
+      "AdditionalText": "Sales Sales",
+      "QuestionsRaw": null,
+      "Summary": null,
+      "AdditionalDescription1": null,
+      "DisplayDate": "2026-09-10T19:38:01Z",
+      "Reference": "300286",
+      "Teams": [
+        "Sales"
+      ],
+      "ContractType": "",
+      "WorkPattern": "Regular",
+      "ExperienceLevel": null,
+      "Remote": false,
+      "Id": "300286",
+      "Title": "Specialist Account Executive, Ad Sales",
+      "Salary": {
+        "MinValue": null,
+        "MaxValue": null,
+        "Currency": null,
+        "Period": null,
+        "Description": "\n<p>For Canada-based roles: The total on-target earnings (OTE) range for this position is CAD $165,000 - CAD $183,333. The OTE includes a base salary range of CAD $99,000 per year - CAD $110,000 per year and an annualized cash variable incentive target of CAD $66,000 - CAD $73,333.</p><br><p>You may be offered an equity award & other types of comp. You will also be eligible for various benefits.</p>"
+      },
+      "Locations": [
+        {
+          "Identifier": "",
+          "City": "Toronto",
+          "Region": "Ontario",
+          "Country": "Canada",
+          "CountryCode": null,
+          "Address": "Toronto, ON, Canada",
+          "PostalCode": null,
+          "LocationPoint": {
+            "type": "Point",
+            "coordinates": [
+              -79.388447,
+              43.6548253
+            ],
+            "crs": {
+              "type": "name",
+              "properties": {
+                "name": "EPSG:4326"
+              }
+            }
+          }
+        }
+      ],
+      "Urls": [
+        {
+          "Culture": "en-us",
+          "Url": "/en/jobs/300286/",
+          "IsDefault": true
+        }
+      ]
+    },
+    {
+      "@search.score": 1.9285268,
+      "Description": "<p><strong>About the role</strong></p><p>As an Implementation Lead for the&nbsp;<strong>French</strong> region, you'll work efficiently and effectively with our Uber for Business customers and be responsible for the successful and flawless launch of new accounts within the Uber for Business platform. You'll support our Sales and Account Management teams to drive revenue growth, operational excellence, and second-to-none customer service.</p><h3><strong>About the Role</strong></h3><p>We're looking for sharp, highly motivated individuals to join our team! As an Implementation/ Onboarding Lead, you'll work effectively with our top clients and be responsible for the success of client launch and implementation. You will aim to set our clients up for maximum adoption, usage, and future growth on the platform. You'll support our Enterprise and Mid-Market sales teams to drive revenue growth, operational excellence, and second-to-none customer service.</p><h3><em><strong>This is a hybrid role - our team collaborates in-person out of our incredible offices on Tuesdays, Wednesdays, and Thursdays. We encourage our employees to work from our office on additional days if they desire to do so.</strong></em></h3><h3><strong>What You'll Do</strong></h3><ul><li aria-level=\"1\">Work with our customers and internal teams to understand the needs and goals of each customer. Use this understanding to create mutually beneficial goals and influence the customer.</li><li aria-level=\"1\">Create a strategy for a seamless launch and implementation that enhances employee adoption and usage - continuing to supervise for 2-4 months post-launch and provide data-based recommendations for improvement.</li><li aria-level=\"1\">Communicate effectively and manage internal and external stakeholders by setting and managing timelines and project plans for implementation.</li><li aria-level=\"1\">Ensure customers are properly trained - Create a video or written collateral, host office hours, and/or facilitate training with customers on how to navigate the tools and programs.</li><li aria-level=\"1\">Complete tactical and technical account set-up - including assisting with the setup of API, SFTP, or expense integrations and submitting Monthly Billing Applications to finance.</li><li aria-level=\"1\">Collaborate with cross-functional teams including product, marketing, and customer support to ensure a smooth onboarding and strong client experience. Think creatively about how we can solve problems and mitigate them from happening again</li><li aria-level=\"1\">Demonstrated experience in managing internal stakeholders, including those at a higher&nbsp; Comment start seniority level, with the ability to maintain one's position effectively.</li></ul><h3><strong>Basic Qualifications</strong></h3><ul><li aria-level=\"1\">Min 3 years of experience in B2B client implementation, onboarding, project management, customer success, or a similar client-facing role, ideally within a technology, SaaS, payments, travel, or platform business.</li><li aria-level=\"1\">Experience owning client implementations end-to-end, from kick-off and requirements gathering through configuration, launch, training, and post-launch adoption.</li><li aria-level=\"1\">Proven ability to manage multiple client implementations/projects simultaneously, including project plans, timelines, dependencies, risks, and deliverables.</li><li aria-level=\"1\">Strong external stakeholder management skills, with experience working directly with client decision-makers and influencing customers when priorities or expectations need to be challenged.</li><li aria-level=\"1\">Strong internal stakeholder management, including the ability to influence and push back effectively with Sales, Account Management, Product, Operations, and other cross-functional teams.</li><li aria-level=\"1\">Comfortable working with data and performance metrics to identify issues, measure adoption, and make recommendations to customers.</li><li aria-level=\"1\">Experience working with technical or systems-based implementations. Candidates should be comfortable discussing integrations and troubleshooting with technical teams; exposure to APIs, SFTP, expense integrations, or similar systems is preferred.</li><li aria-level=\"1\">Strong written and verbal communication skills, including experience training customers and presenting to stakeholders.</li><li aria-level=\"1\">Able to operate independently in a fast-paced environment, prioritising multiple customers and resolving implementation issues with limited supervision.</li></ul><h3><strong>Preferred Qualifications</strong></h3><ul><li aria-level=\"1\">Strong prioritization skills - able to manage your time effectively, prioritizing high-value clients, while working with multiple customers to deliver on goals and improve processes.</li><li aria-level=\"1\">Outstanding interpersonal skills, both written and verbal communication, and strong group facilitation skills.</li><li aria-level=\"1\">Outstanding organizational skills and the ability to balance your attention to detail with swift execution - we need to do things quickly and seamlessly.</li><li aria-level=\"1\">Speed, resourcefulness, and a go-getter attitude. Be agile and thrive when operating in new spaces and fast-paced environments.</li><li aria-level=\"1\">The drive to contribute to a positive team environment and collaborate by always sharing strategies with your peers.</li><li aria-level=\"1\">Tech-savviness. You'll be using multiple systems in your role, and Salesforce experience is a plus.</li><li aria-level=\"1\">Excellent communication and collaboration abilities</li></ul> <p><strong>Ready to Ride?</strong></p> <p>This isn't the kind of place where you follow a playbook — it's where you help write one. If you're driven by impact, energized by challenge, and ready to shape how the world moves — we'd love to hear from you.</p> <p>You may be eligible for bonuses, equity, and other compensation, as well as a range of benefits. <a href=\"https://jobs.uber.com/en/benefits/\" target=\"_blank\" rel=\"nofollow noopener noreferrer\">Explore our benefits.</a></p> <p>Offices remain key to collaboration and Uber's culture. Unless approved for full remote work, employees must spend at least 50% of their time in-office. Some roles, like those at greenlight hubs, require full-time in-office presence. Ask your Recruiter for details about this role's requirements.</p> <p>Uber is proud to be an Equal Opportunity employer. All qualified applicants will receive consideration for employment without regard to sex, gender identity, sexual orientation, race, color, religion, national origin, disability, protected Veteran status, age, or any other characteristic protected by law. We also consider qualified applicants regardless of criminal histories, consistent with legal requirements. If you have a disability or special need that requires accommodation, please let us know by completing <a href=\"https://forms.gle/aDWTk9k6xtMU25Y5A?uclick_id=d56eb634-bfb9-455e-a50d-901b3de0490c\" target=\"_blank\" rel=\"nofollow noopener noreferrer\">this form.</a></p>",
+      "AdditionalText": " ",
+      "QuestionsRaw": null,
+      "Summary": null,
+      "AdditionalDescription1": null,
+      "DisplayDate": "2026-09-11T06:11:26Z",
+      "Reference": "301178",
+      "Teams": [],
+      "ContractType": "Full time",
+      "WorkPattern": "",
+      "ExperienceLevel": null,
+      "Remote": false,
+      "Id": "301178",
+      "Title": "Implementation Lead, United Kingdom",
+      "Salary": {
+        "MinValue": null,
+        "MaxValue": null,
+        "Currency": null,
+        "Period": null,
+        "Description": ""
+      },
+      "Locations": [
+        {
+          "Identifier": "",
+          "City": "London",
+          "Region": "",
+          "Country": "United Kingdom",
+          "CountryCode": null,
+          "Address": "London, UK",
+          "PostalCode": null,
+          "LocationPoint": {
+            "type": "Point",
+            "coordinates": [
+              -0.1275862,
+              51.5072178
+            ],
+            "crs": {
+              "type": "name",
+              "properties": {
+                "name": "EPSG:4326"
+              }
+            }
+          }
+        }
+      ],
+      "Urls": [
+        {
+          "Culture": "en-us",
+          "Url": "/en/jobs/301178/",
+          "IsDefault": true
+        }
+      ]
+    }
+  ],
+  "totalPages": 259,
+  "totalJobs": 517,
+  "page": 1,
+  "pageSize": 8
+}
