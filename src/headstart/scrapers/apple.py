@@ -1,7 +1,8 @@
 """jobs.apple.com — Apple's own in-house careers system, a Single source scraper (ADR-0139): one
 company, one host, never discovered. ``slug`` is fixed to ``jobs.apple.com`` and never varies.
 
-Everything below is measured live 2026-09-11 (full protocol in
+Everything below is measured live 2026-09-11, with a follow-up full-board re-scrape and a
+concurrency re-check on 2026-09-12 (full protocol in
 ``docs/apple/2026-09-11_api-measurement.md``); no code or research was carried over from a third
 party for this one.
 
@@ -24,8 +25,22 @@ zero, and the total from an earlier page is what the truncation check below meas
 this is not a filter to narrow, unlike Oracle's ``siteNumber``. ``REQ`` is a specific requisition
 (``id`` already shaped ``{positionId}-{reqSuffix}``, e.g. ``200681917-3715``); ``PIPE`` is an
 evergreen "pipeline" role — mostly Retail — that keeps taking applications with no single fixed
-opening (``id`` shaped ``PIPE-{positionId}``). Measured over 15 pages (300 rows): 41% REQ, 59%
-PIPE. Both render identically on jobs.apple.com's own search page, so both are scraped.
+opening (``id`` shaped ``PIPE-{positionId}``). Both render identically on jobs.apple.com's own
+search page, so both are scraped. **The split is heavily skewed toward ``REQ``, not the near-even
+41/59 an early 15-page sample suggested** — that sample was biased by ``sort: "newest"``:
+evergreen ``PIPE`` rows appear to get their ``postDateInGMT`` touched often, so they cluster at the
+front of a newest-first listing out of proportion to their share of the board. Two independent
+full-board walks (2026-09-12, ~305 pages / 2-2.5 minutes each) read **98.7% REQ / 1.3% PIPE** across
+6,088 postings both times.
+
+**A full walk sees a handful of duplicate ids, from the board reshuffling mid-scrape** — measured
+on those same two full walks: 2 and 5 duplicate ids respectively (of 6,088), all with the *same*
+fields under both sightings. Four of the five in the second walk were evergreen ``PIPE`` rows whose
+``postDateInGMT`` advanced by ~345ms between two reads, re-sorting them past the walk's current
+page; the fifth was a ``REQ`` row seen twice with an identical timestamp. Same shape as Eightfold's
+replica-ordering problem, at a much smaller scale — ``_listing`` dedupes by ``id`` as it reads
+rather than needing Eightfold's multi-sweep reconciliation, since a duplicate here just overwrites
+itself rather than costing a row.
 
 **The listing's own text is not the description.** Every row carries a ``jobSummary`` — a
 team-level overview paragraph ("Apple Retail is where the best of Apple comes together...",
@@ -44,8 +59,9 @@ guaranteed even there — one of two fixture postings carries it, the other does
 read directly rather than guessed from the location string — the same precedent Oracle's
 ``WorkplaceTypeCode`` set.
 
-**No rate limit found.** 8 concurrent detail fetches, zero non-200s (a deliberately small sample —
-this is one host, not a multi-tenant ATS, so there is no population of boards to protect).
+**No rate limit found.** 8, then 16, concurrent detail fetches (2026-09-11 and 2026-09-12), zero
+non-200s at either width (a deliberately small sample — this is one host, not a multi-tenant ATS,
+so there is no population of boards to protect).
 
 **Job URL**: ``https://jobs.apple.com/en-us/details/{positionId}/{transformedPostingTitle}`` —
 verified live: the page 200s and its ``<title>`` carries the posting title.
@@ -70,7 +86,7 @@ _PAGE_SIZE = 20
 #: not a bound expected to be reached.
 _MAX_PAGES = 1000
 _DETAIL_WORKERS = (
-    16  # measured clean at concurrency 8; this repo's usual detail-pass width
+    16  # measured clean at this exact concurrency, live, 2026-09-12 (16/16 200s)
 )
 _SEARCH_FORMAT = {"longDate": "MMMM D, YYYY", "mediumDate": "MMM D, YYYY"}
 
@@ -126,27 +142,39 @@ class AppleScraper(BaseScraper):
     def _listing(self) -> list[dict]:
         """Page through the search endpoint until a short page ends the walk (module docstring:
         an out-of-range page's ``totalRecords`` resets to 0, so the total cannot be the
-        terminator)."""
-        items: list[dict] = []
+        terminator).
+
+        Deduped by ``id`` as it's read, not after: measured live 2026-09-12, a `"sort": "newest"`
+        walk over ~305 pages (~2-2.5 minutes) sees 2-5 duplicate ids per run out of ~6,088 — a few
+        evergreen `PIPE` postings had their `postDateInGMT` bumped mid-walk (two reads ~345ms
+        apart), which re-sorts them into a page the walk had already passed, and one `REQ` row
+        repeated with an identical timestamp. Both sightings carry the same fields, so the later
+        one simply overwrites the earlier — the same shape as Eightfold's replica-ordering fix,
+        scaled down: nothing here needs Eightfold's multi-sweep reconciliation, since the
+        shortfall this could cause is bounded by the dedup itself, not by the pages missed."""
+        seen: dict[str, dict] = {}
         total = 0
         for page in range(1, _MAX_PAGES + 1):
             res = self._search_page(page)
             batch = res.get("searchResults") or []
             total = res.get("totalRecords") or total
-            items.extend(batch)
+            for row in batch:
+                native_id = row.get("id")
+                if native_id:
+                    seen[native_id] = row
             if len(batch) < _PAGE_SIZE:
                 break
         else:
             self.mark_truncated(
-                f"hit the {_MAX_PAGES}-page cap at {len(items)} postings — the rest unread"
+                f"hit the {_MAX_PAGES}-page cap at {len(seen)} postings — the rest unread"
             )
-        if total and len(items) < total:
+        if total and len(seen) < total:
             self.mark_truncated_unless_negligible(
-                len(items),
+                len(seen),
                 total,
-                f"read {len(items)} of {total} postings — the rest is unread, not absent",
+                f"read {len(seen)} of {total} postings — the rest is unread, not absent",
             )
-        return items
+        return list(seen.values())
 
     def fetch_raw(self) -> Any:
         items = self._listing()

@@ -70,9 +70,42 @@ runaway loop, not a measured ceiling.
 
 Every row's `type` is `REQ` (a specific requisition — `id` already shaped
 `{positionId}-{reqSuffix}`, e.g. `200681917-3715`) or `PIPE` (an evergreen "pipeline" role, mostly
-Retail — `id` shaped `PIPE-{positionId}`). Tallied over 15 pages / 300 rows: 41% `REQ`, 59%
-`PIPE`. Both render identically on the real search page and both accept applications, so both are
-scraped — this is not a filter to narrow the way Oracle's `siteNumber` was.
+Retail — `id` shaped `PIPE-{positionId}`). Both render identically on the real search page and both
+accept applications, so both are scraped — this is not a filter to narrow the way Oracle's
+`siteNumber` was.
+
+**The original 15-page sample (41% `REQ` / 59% `PIPE`) was a biased read, not the board's real
+split.** Re-verified 2026-09-12 with two independent full-board walks (every page, ~305 pages
+each): **98.7% `REQ` / 1.3% `PIPE`** both times, out of 6,088 postings. The 15-page sample used
+`sort: "newest"` — the same sort the scraper always sends — and evergreen `PIPE` rows appear to
+have their `postDateInGMT` touched often enough to keep resurfacing near the front of a
+newest-first listing, so a shallow sample over-represents them by roughly 45x. A representative
+type split needs the whole board, not the first few pages.
+
+**A full walk also sees a handful of ids repeat mid-scrape.** The two full walks above took
+121s and 152s respectively (sequential, one page at a time) and found 2 and 5 duplicate ids out of
+6,088. In the second walk, 4 of the 5 were evergreen `PIPE` rows whose `postDateInGMT` had advanced
+by ~345ms between two reads — enough for a `sort: "newest"` walk to re-sort them past the page the
+walk had already read — and the fifth was a `REQ` row (`200657994-0836`, "Senior Security
+Engineer") read twice with an *identical* timestamp, a plain pagination overlap. Both sightings of
+every duplicate carried identical fields. `_listing()` now dedupes by `id` as it accumulates rows
+(the fix landed after this was found — see the module's own note on it), so a re-sorted or
+overlapping row simply overwrites its earlier copy rather than double-counting. This is the same
+underlying class of problem Eightfold's replica-ordering fix addresses, at a much smaller scale: no
+multi-sweep reconciliation was needed here, since a duplicate costs nothing once it's deduped by
+key, unlike a genuinely *missed* row.
+
+**After the fix, a live re-scrape's distinct count matches its own collected item count exactly —
+and comes within natural drift of an independent total.** A fresh full walk with the dedup fix in
+place (2026-09-12, 155s) collected 6,086 items and **6,086 distinct ids — zero leaked
+duplicates**, confirming the fix. A *separate* request — fetching page 1 alone, right after the
+walk finished — read `totalRecords: 6,088`, two more than the walk collected. That gap is not a
+code defect: it is a live board with about 6,000 open postings drifting by ~2 over a 155-second
+window, the same scale of movement the duplicate-id measurement above already found happening
+mid-walk. The number that actually gates correctness is the **within-walk** comparison
+`_listing()` makes against the `totalRecords` it captured on its own first page, not a post-hoc
+external refetch — and that comparison passed: 6,086/6,088 is 99.97%, above the 99% tolerance
+(`MIN_AUTHORITATIVE_SHARE`), so `scraper.truncated` stayed `None` on every run in this section.
 
 ## 4. The listing carries no posting-specific text — a detail pass is required
 

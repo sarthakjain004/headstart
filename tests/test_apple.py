@@ -233,6 +233,29 @@ def test_pagination_walks_every_page_until_a_short_page(monkeypatch):
     assert scraper.truncated is None
 
 
+def test_a_row_repeated_across_pages_is_deduped_by_id(monkeypatch):
+    """Measured live 2026-09-12: a `sort: newest` walk over the real board sees a handful of ids
+    repeat mid-scrape (module docstring) as the board reshuffles underneath a multi-minute walk.
+    `_listing` must not double-count them."""
+    scraper = _scraper()
+
+    def fake(page):
+        if page == 1:
+            rows = [{"id": f"REQ-{i}", "postingTitle": f"job {i}"} for i in range(20)]
+        elif page == 2:
+            # REQ-19 repeats here, shifted by the board's own reordering; nothing new after it.
+            rows = [{"id": "REQ-19", "postingTitle": "job 19"}]
+        else:
+            rows = []
+        return {"searchResults": rows, "totalRecords": 20}
+
+    monkeypatch.setattr(scraper, "_search_page", fake)
+    items = scraper._listing()
+    assert len(items) == 20
+    assert len({i["id"] for i in items}) == 20
+    assert scraper.truncated is None
+
+
 def test_the_total_going_to_zero_on_an_out_of_range_page_does_not_truncate(monkeypatch):
     """The measured quirk this scraper is built around: unlike Oracle, the terminator is a short
     page, not the total — because the total itself is unreliable past the end."""
