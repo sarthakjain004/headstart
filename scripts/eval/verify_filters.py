@@ -173,6 +173,11 @@ URL_SHAPES = {
     # the posting title. positionId is numeric on every sampled row; the title slug can in theory
     # be empty (job_url falls back to "" when transformedPostingTitle is missing) so it is loose.
     "apple": r"https://jobs\.apple\.com/en-us/details/\d+/[\w-]*",
+    # scraper: urljoin("https://jobs.uber.com", Urls[].Url) where Urls[].Url is the API's own
+    # relative path, e.g. "/en/jobs/301347/" (uber.py `_job_url`). A Single source scraper
+    # (ADR-0139) — one host, always jobs.uber.com, never a customer domain — so the host can be
+    # anchored. Verified live 2026-09-11: all 3 sampled ids 200, each rendering its own title.
+    "uber": r"https://jobs\.uber\.com/[\w-]+/jobs/\d+/?",
 }
 
 
