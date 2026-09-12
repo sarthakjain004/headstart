@@ -25,6 +25,8 @@ Five arms, each printed as it finishes:
              load-bearing.
 ``warp``     the same walk through the spare egress (ADR-0063) — the route production's traffic
              takes once a Board has walled, and the one ADR-0102 newly opens for a 400.
+``retry-warp`` retries server failures through one fixed WARP address. It is the equal-retry
+             control for ``rotating-warp``: the two differ only in whether a retry may rotate.
 ``rotating-warp`` runs the real retry/rotation path with 5xx/520 experimentally treated as wall
              statuses. It records settled statuses, retry counts, rotation outcomes, and every
              observed WARP address. This is the arm that tests whether fresh IPs beat the server
@@ -229,12 +231,13 @@ async def _settle(
     path: str,
     proxy: str | None,
     *,
+    retry_server_failures: bool = False,
     rotate_server_failures: bool = False,
 ) -> tuple[str, dict, str]:
     """One detail request's settled answer as ``(status-or-exception, headers, body)``."""
     try:
         kwargs = _proxies(proxy)
-        retry_on = frozenset()
+        retry_on = _SERVER_FAILURES if retry_server_failures else frozenset()
         if rotate_server_failures:
             # Experimental arm: run the real production retry/rotation mechanism with server
             # failures promoted to wall statuses. The ordinary arms deliberately keep their
@@ -268,6 +271,7 @@ def walk(
     slot: dict,
     save: Callable[[], None],
     *,
+    retry_server_failures: bool = False,
     rotate_server_failures: bool = False,
 ) -> None:
     """Walk every path at ``width`` and record what the origin settled on, into ``slot``.
@@ -312,7 +316,7 @@ def walk(
             samples=samples,
             seconds=round(time.monotonic() - started, 1),
         )
-        if rotate_server_failures:
+        if retry_server_failures or rotate_server_failures:
             slot.update(
                 retries=http.retry_stats(),
                 rotations=dict(spare_egress.rotations()),
@@ -337,6 +341,7 @@ def walk(
                         scraper,
                         path,
                         proxy,
+                        retry_server_failures=retry_server_failures,
                         rotate_server_failures=rotate_server_failures,
                     )
                     async with lock:
@@ -612,7 +617,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--arms",
-        default="where,control,direct,browser,warp,rotating-warp",
+        default="where,control,direct,browser,warp,retry-warp,rotating-warp",
         help="comma-separated subset, run in this fixed order",
     )
     parser.add_argument("--out", type=Path, help="write the full result JSON here")
@@ -664,7 +669,7 @@ def main() -> int:
 
     scraper: WorkdayScraper | None = None
     paths: list[str] = []
-    if arms & {"direct", "warp", "browser", "rotating-warp"}:
+    if arms & {"direct", "warp", "retry-warp", "browser", "rotating-warp"}:
         scraper, paths = resolve_and_collect(args.suspect, args.n, board("suspect"))
     ready = bool(scraper and paths)
 
@@ -712,11 +717,17 @@ def main() -> int:
     if "rotating-warp" in arms:
         print("\n== server failures trigger spare-egress rotation ==", flush=True)
         if ready:
-            # Start clean so the first wall, retries, rotations and observed addresses all belong
-            # to this arm. The first server failure marks Workday walled; later attempts use WARP,
-            # and a server failure through WARP drives the real daemon-rotation path.
+            # Start clean, connect WARP, then pre-mark the group so this and ``retry-warp`` have
+            # the same initial route. A server failure through WARP drives the real rotation path.
             http.reset_retry_stats()
             spare_egress.reset()
+            if spare_egress.proxy_url() is None:
+                slot("rotating-warp").update(error="no spare egress")
+                save()
+                return 0
+            # Put the first request on WARP too. The equal-retry control starts there, so letting
+            # this arm begin direct would change two variables (initial route and rotation).
+            spare_egress.mark_walled("workday", 500)
             walk(
                 "rotating-warp",
                 scraper,
@@ -729,6 +740,27 @@ def main() -> int:
             )
         else:
             slot("rotating-warp").update(error=_NO_PATHS)
+        save()
+
+    if "retry-warp" in arms:
+        print("\n== server failures retry through one fixed WARP address ==", flush=True)
+        proxy = spare_egress.proxy_url()
+        if proxy is None:
+            slot("retry-warp").update(error="no spare egress")
+        elif ready:
+            http.reset_retry_stats()
+            walk(
+                "retry-warp",
+                scraper,
+                paths,
+                proxy,
+                width,
+                slot("retry-warp"),
+                save,
+                retry_server_failures=True,
+            )
+        else:
+            slot("retry-warp").update(error=_NO_PATHS)
         save()
 
     if args.out:
