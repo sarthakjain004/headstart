@@ -1,7 +1,7 @@
 """Amazon (amazon.jobs) scraper.
 
 Amazon runs its own in-house careers system — no other tenant sits on it — so per ADR-0139
-("a single-company board is its own ats") this is ``ats="amazon"`` with one fixed,
+("a Single source scraper is its own ats") this is ``ats="amazon"`` with one fixed,
 undiscovered ``slug``: ``www.amazon.jobs``, the company's own primary careers host. Reuses
 ``BaseScraper``/the registry exactly as every multi-tenant ATS does.
 

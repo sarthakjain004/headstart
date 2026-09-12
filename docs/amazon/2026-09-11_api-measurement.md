@@ -1,8 +1,8 @@
 # Amazon (amazon.jobs) — API measurement
 
 Live-verified 2026-09-11 against `https://www.amazon.jobs/en/search.json`, the public JSON search
-endpoint behind the amazon.jobs careers site. Per ADR-0139 ("a single-company board is its own
-ats" — PR #438, unmerged at this branch's point but cited here by number), this is `ats="amazon"`
+endpoint behind the amazon.jobs careers site. Per ADR-0139 ("a Single source scraper is its own
+ats" — PR #438), this is `ats="amazon"`
 with one fixed, undiscovered `slug`: `www.amazon.jobs`. Implementation: `src/headstart/scrapers/amazon.py`.
 
 ## The endpoint, in one request
