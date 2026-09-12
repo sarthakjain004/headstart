@@ -370,8 +370,9 @@ def test_shard_report_keeps_listing_and_detail_observations_separate(tmp_path, c
     assert report["observations"]["workday:x"]["detail_breaker_skips"] == 6
     text = "\n".join(r.getMessage() for r in caplog.records)
     assert "workday attempted 1, successful 1, failed 0, partial 0" in text
-    assert "listing-page loss events: 1/5" in text
-    assert "detail loss events: 8/10" in text
+    assert "Fresh coverage: healthy" in text
+    assert "workday listing-page loss events: 1/5" in text
+    assert "workday detail loss events: 8/10" in text
     assert "not unique Jobs or additional Board errors" in text
 
 

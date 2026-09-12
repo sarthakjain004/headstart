@@ -148,57 +148,6 @@ def _ats_mix(companies: list[CompanyRef], top: int = 4) -> str:
     return detail + (f", +{len(ranked) - top} more" if len(ranked) > top else "")
 
 
-def _coverage_line(progress: _Progress) -> str:
-    by_ats: dict[str, Counter[str]] = {}
-    for key in progress.boards_ok:
-        by_ats.setdefault(key.split(":", 1)[0], Counter())["successful"] += 1
-    for key in progress.errors:
-        by_ats.setdefault(key.split(":", 1)[0], Counter())["failed"] += 1
-    for key in progress.truncated:
-        by_ats.setdefault(key.split(":", 1)[0], Counter())["partial"] += 1
-    return "; ".join(
-        f"{ats} attempted {counts['successful'] + counts['failed']}, "
-        f"successful {counts['successful']}, failed {counts['failed']}, "
-        f"partial {counts['partial']}"
-        for ats, counts in sorted(by_ats.items())
-    )
-
-
-def _loss_lines(observations: dict[str, dict]) -> list[str]:
-    totals: Counter[str] = Counter()
-    for fields in observations.values():
-        for field in (
-            "listing_pages",
-            "listing_page_losses",
-            "listing_fetch_calls",
-            "listing_status_failures",
-            "listing_request_failures",
-            "detail_jobs",
-            "detail_attempted",
-            "detail_losses",
-            "detail_http_failures",
-            "detail_breaker_skips",
-        ):
-            totals[field] += int(fields.get(field) or 0)
-    lines = []
-    if totals["listing_pages"] or totals["listing_page_losses"]:
-        lines.append(
-            f"listing-page loss events: {totals['listing_page_losses']}/"
-            f"{totals['listing_pages']} pages; fetch calls {totals['listing_fetch_calls']}, "
-            f"status failures {totals['listing_status_failures']}, request failures "
-            f"{totals['listing_request_failures']}"
-        )
-    if totals["detail_jobs"] or totals["detail_losses"]:
-        lines.append(
-            f"detail loss events: {totals['detail_losses']}/{totals['detail_jobs']} Jobs; "
-            f"attempted {totals['detail_attempted']}, HTTP failures "
-            f"{totals['detail_http_failures']}, circuit-breaker skips "
-            f"{totals['detail_breaker_skips']} — emitted events, not unique Jobs or "
-            "additional Board errors"
-        )
-    return lines
-
-
 def _shard_id(assignment: str | None) -> str | None:
     """The shard number from its assignment filename, so a report says which shard it is."""
     return Path(assignment).stem.rsplit("-", 1)[-1] if assignment else None
@@ -283,8 +232,18 @@ def _report(
     # ceiling and some at 12, so this is the only place the two are comparable — and
     # `stream_width`'s own docstring says 12 has never been re-measured.
     widths = fanout_stats.report()
-    coverage = _coverage_line(progress)
-    losses = _loss_lines(progress.observations)
+    health = observability.ScrapeHealth.from_reports(
+        [
+            {
+                "boards_ok": progress.boards_ok,
+                "errors": progress.errors,
+                "truncated": progress.truncated,
+                "observations": progress.observations,
+            }
+        ]
+    )
+    coverage = health.coverage_line()
+    losses = health.loss_lines()
     # Both are routine per-run measurement, so both are info. They were warnings only to force a
     # GitHub annotation, which is a quota and not a level: 10 per step, 50 per job, and fifteen
     # shards each claiming several of them starve the errors the annotations exist for. The step
@@ -293,6 +252,7 @@ def _report(
         _log.info(line)
     if coverage:
         _log.info("Board coverage by ATS: " + coverage)
+        _log.info(health.verdict_line())
     for line in losses:
         _log.info(line)
     ratio = (
@@ -322,7 +282,11 @@ def _report(
             else "- finished within the time budget",
             f"- board seconds {spread}",
         ]
-        + ([f"- Board coverage by ATS: {coverage}"] if coverage else [])
+        + (
+            [f"- **{health.verdict_line()}**", f"- Board coverage by ATS: {coverage}"]
+            if coverage
+            else []
+        )
         + [f"- {line}" for line in losses + egress + widths],
     )
     observability.write_shard(

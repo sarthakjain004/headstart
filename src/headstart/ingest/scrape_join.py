@@ -35,6 +35,7 @@ _OUT = REPO_ROOT / "data" / "jobs"
 # `index sync` — the shard fragments themselves stop at this stage (ADR-0053).
 _UNAUTHORITATIVE = REPO_ROOT / "data" / "state" / "unauthoritative_boards.json"
 _SPEEDUP = REPO_ROOT / "data" / "state" / "shard_speedup.csv"
+_HEALTH = REPO_ROOT / "data" / "state" / "scrape_health.json"
 
 
 def _fragment_dirs(root: Path) -> list[Path]:
@@ -122,6 +123,11 @@ def main() -> int:
         default=str(_SPEEDUP),
         help="shard_speedup.csv to blend this run's measured fan-out speedup into (ADR-0054)",
     )
+    ap.add_argument(
+        "--scrape-health",
+        default=str(_HEALTH),
+        help="small coverage/loss verdict carried to the publication summary",
+    )
     args = ap.parse_args()
 
     shards_root = Path(args.shards)
@@ -156,7 +162,9 @@ def main() -> int:
     # eviction signal.
     write_unauthoritative_boards(reports, Path(args.unauthoritative_boards))
     _update_speedup(reports, Path(args.speedup_ledger))
-    _report_shards(reports, total, len(per_ats))
+    health = observability.ScrapeHealth.from_reports(reports)
+    observability.write_scrape_health(Path(args.scrape_health), health)
+    _report_shards(reports, total, len(per_ats), health)
     return 0
 
 
@@ -186,7 +194,12 @@ def _update_speedup(reports: list[dict], path: Path) -> None:
         _log.warning(f"could not update the speedup ledger: {exc}")
 
 
-def _report_shards(reports: list[dict], lines: int, ats_files: int) -> None:
+def _report_shards(
+    reports: list[dict],
+    lines: int,
+    ats_files: int,
+    health: observability.ScrapeHealth | None = None,
+) -> None:
     """The whole fan-out's story in one place — the view no single shard job can give.
 
     A shard's numbers only ever existed in its own runner's log, so questions like "did any
@@ -199,6 +212,7 @@ def _report_shards(reports: list[dict], lines: int, ats_files: int) -> None:
             "no shard reports — nothing to aggregate (older shards, or a local run)"
         )
         return
+    health = health or observability.ScrapeHealth.from_reports(reports)
 
     killed = [r for r in reports if r.get("killed_by_budget")]
     deferred = sum(int(r.get("undone") or 0) for r in reports)
@@ -229,46 +243,8 @@ def _report_shards(reports: list[dict], lines: int, ats_files: int) -> None:
     ]
     ratio_span = f"{min(ratios):.2f}-{max(ratios):.2f}x" if ratios else ""
 
-    coverage: dict[str, Counter[str]] = {}
-    for r in reports:
-        for key in r.get("boards_ok") or []:
-            coverage.setdefault(str(key).split(":", 1)[0], Counter())["successful"] += 1
-        for key in (r.get("errors") or {}):
-            coverage.setdefault(str(key).split(":", 1)[0], Counter())["failed"] += 1
-        for key in (r.get("truncated") or {}):
-            coverage.setdefault(str(key).split(":", 1)[0], Counter())["partial"] += 1
-    coverage_line = "; ".join(
-        f"{ats} attempted {counts['successful'] + counts['failed']}, "
-        f"successful {counts['successful']}, failed {counts['failed']}, "
-        f"partial {counts['partial']}"
-        for ats, counts in sorted(coverage.items())
-    )
-
-    loss_totals: Counter[str] = Counter()
-    cause_totals: Counter[tuple[str, str]] = Counter()
-    cause_boards: dict[tuple[str, str], set[str]] = {}
-    for r in reports:
-        for board, observation in (r.get("observations") or {}).items():
-            if not isinstance(observation, dict):
-                continue
-            ats = str(board).split(":", 1)[0]
-            for field in (
-                "listing_pages",
-                "listing_page_losses",
-                "listing_fetch_calls",
-                "listing_status_failures",
-                "listing_request_failures",
-                "detail_jobs",
-                "detail_attempted",
-                "detail_losses",
-                "detail_http_failures",
-                "detail_breaker_skips",
-            ):
-                loss_totals[field] += int(observation.get(field) or 0)
-            for cause, count in (observation.get("detail_loss_causes") or {}).items():
-                key = (ats, str(cause))
-                cause_totals[key] += int(count)
-                cause_boards.setdefault(key, set()).add(str(board))
+    coverage_line = health.coverage_line()
+    loss_lines = health.loss_lines()
 
     if killed:
         # An annotation, not an info line: a shard that ran out of time silently deferred work,
@@ -304,28 +280,10 @@ def _report_shards(reports: list[dict], lines: int, ats_files: int) -> None:
         )
     if coverage_line:
         _log.info("Board coverage by ATS: " + coverage_line)
-    if loss_totals["listing_pages"] or loss_totals["listing_page_losses"]:
-        _log.info(
-            f"listing-page loss events: {loss_totals['listing_page_losses']}/"
-            f"{loss_totals['listing_pages']} pages; fetch calls "
-            f"{loss_totals['listing_fetch_calls']}, status failures "
-            f"{loss_totals['listing_status_failures']}, request failures "
-            f"{loss_totals['listing_request_failures']}"
-        )
-    if loss_totals["detail_jobs"] or loss_totals["detail_losses"]:
-        _log.info(
-            f"detail loss events: {loss_totals['detail_losses']}/"
-            f"{loss_totals['detail_jobs']} Jobs; attempted {loss_totals['detail_attempted']}, "
-            f"HTTP failures {loss_totals['detail_http_failures']}, circuit-breaker skips "
-            f"{loss_totals['detail_breaker_skips']} — emitted events, not unique Jobs or "
-            "additional Board errors"
-        )
-        recurring = [
-            f"{ats} {cause} x{count} on {len(cause_boards[(ats, cause)])} Board(s)"
-            for (ats, cause), count in cause_totals.most_common(8)
-        ]
-        if recurring:
-            _log.info("detail loss causes: " + "; ".join(recurring))
+        report_verdict = _log.warning if health.degraded else _log.info
+        report_verdict(health.verdict_line())
+    for loss_line in loss_lines:
+        _log.info(loss_line)
     _log.info(
         f"fan-out: {len(reports)} shards | slowest {slowest_seconds / 60:.1f} min "
         f"| worst single board {worst_board:.0f}s | retries {sum(retries.values())}"
@@ -354,28 +312,12 @@ def _report_shards(reports: list[dict], lines: int, ats_files: int) -> None:
             if killed
             else "- no shard hit its time budget",
         ]
-        + ([f"- Board coverage by ATS: {coverage_line}"] if coverage_line else [])
         + (
-            [
-                (
-                    f"- Listing-page loss events: {loss_totals['listing_page_losses']}/"
-                    f"{loss_totals['listing_pages']} pages; fetch calls "
-                    f"{loss_totals['listing_fetch_calls']}, status failures "
-                    f"{loss_totals['listing_status_failures']}, request failures "
-                    f"{loss_totals['listing_request_failures']}"
-                ),
-                (
-                    f"- Detail loss events: {loss_totals['detail_losses']}/"
-                    f"{loss_totals['detail_jobs']} Jobs; attempted "
-                    f"{loss_totals['detail_attempted']}, HTTP failures "
-                    f"{loss_totals['detail_http_failures']}, circuit-breaker skips "
-                    f"{loss_totals['detail_breaker_skips']} "
-                    "(events, not unique Jobs or Board errors)"
-                ),
-            ]
-            if loss_totals["listing_pages"] or loss_totals["detail_jobs"]
+            [f"- **{health.verdict_line()}**", f"- Board coverage by ATS: {coverage_line}"]
+            if coverage_line
             else []
         )
+        + [f"- {line}" for line in loss_lines]
         + ([f"- actual/predicted **{ratio_span}**"] if ratio_span else []),
     )
 

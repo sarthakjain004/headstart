@@ -804,10 +804,20 @@ jobs:
       # existing file untouched, so a run now uploads a fraction of the table. Measured on a
       # 20k-row 61.6 MB table: 5 appends + a delete added 5 files totalling 6.17 MB (~10%).
       - name: Upload index state
+        id: publish
         if: needs.scrape-plan.outputs.run == 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
+          publication_status="$RUNNER_TEMP/headstart-publication-status"
+          printf '%s\n' \
+            'embedding_store=not_reached' \
+            'lancedb_index=not_reached' \
+            'description_store=not_reached' \
+            'pipeline_state=not_reached' > "$publication_status"
+          publication_state() {
+            printf '%s=%s\n' "$1" "$2" >> "$publication_status"
+          }
           # Retry each upload — the HF API 504s intermittently on create/commit and a bare failure
           # sinks the whole run (e.g. 2026-07-16). Backs off 30s/60s before giving up.
           up() {
@@ -817,6 +827,16 @@ jobs:
               sleep $((attempt * 30))
             done
             return 1
+          }
+          publish() {
+            local key="$1"
+            shift
+            if up "$@"; then
+              publication_state "$key" published
+            else
+              publication_state "$key" failed
+              return 1
+            fi
           }
           # Record which state roots this run is about to publish (ADR-0095). It is what lets a
           # later fetch tell a genuine first run from an emptied dataset — the hole ADR-0030 names
@@ -828,7 +848,7 @@ jobs:
           # all four uploads instead.
           python -m headstart.ingest.state_witness publish \
             || echo "::warning::could not publish the state witness; the prior one stands"
-          up "$HF_DATASET" data/embeddings/jobs data/embeddings/jobs \
+          publish embedding_store "$HF_DATASET" data/embeddings/jobs data/embeddings/jobs \
             --repo-type dataset --commit-message "nightly: embedding store"
           # Deliberately NOT --delete: nothing compacts here any more, so no local fragment is
           # superseded and every remote one is still live data. Passing --delete would make this a
@@ -839,21 +859,70 @@ jobs:
           # that moved: this run's scrape work is already banked in the embedding store above, so
           # what is lost is one run's index write — which the next run recomputes — against a
           # silent overwrite that nothing reports.
-          python -m headstart.ingest.state_guard verify data/lancedb
-          up "$HF_DATASET" data/lancedb data/lancedb \
+          if ! python -m headstart.ingest.state_guard verify data/lancedb; then
+            publication_state lancedb_index conflict
+            exit 1
+          fi
+          publish lancedb_index "$HF_DATASET" data/lancedb data/lancedb \
             --repo-type dataset --commit-message "nightly: lancedb index"
           # Append-only (ADR-0050): each run adds small per-ATS fragments and leaves the base
           # files alone, so this uploads ~430 KB rather than re-minting the ~174 MB store.
           # `cleanup-index` folds the fragments into the bases with --delete.
-          up "$HF_DATASET" data/descriptions data/descriptions \
+          publish description_store "$HF_DATASET" data/descriptions data/descriptions \
             --repo-type dataset --commit-message "nightly: description store"
           # data/state LAST, because it carries the witness (ADR-0095). The property is that the
           # witness is never committed BEFORE the roots it vouches for: if an upload above fails,
           # `bash -e` stops here and the new witness is simply never published, leaving the prior
           # one — which names roots the dataset still holds. Uploaded first, it would name a root
           # whose upload then failed, and an over-claiming witness fails every later fetch closed.
-          up "$HF_DATASET" data/state data/state \
+          publish pipeline_state "$HF_DATASET" data/state data/state \
             --repo-type dataset --commit-message "nightly: board priority + published-dirs witness"
+      - name: Report publication and fresh coverage
+        if: always() && needs.scrape-plan.outputs.run == 'true'
+        env:
+          PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          states = {
+              "embedding_store": "not reached",
+              "lancedb_index": "not reached",
+              "description_store": "not reached",
+              "pipeline_state": "not reached",
+          }
+          status_path = Path(os.environ["RUNNER_TEMP"]) / "headstart-publication-status"
+          if status_path.exists():
+              for line in status_path.read_text(encoding="utf-8").splitlines():
+                  key, separator, value = line.partition("=")
+                  if separator and key in states:
+                      states[key] = value.replace("_", " ")
+
+          health_path = Path("data/state/scrape_health.json")
+          coverage = "Fresh coverage: unavailable — scrape health artifact did not arrive"
+          if health_path.exists():
+              try:
+                  coverage = json.loads(health_path.read_text(encoding="utf-8"))["verdict"]
+              except (OSError, json.JSONDecodeError, KeyError, TypeError):
+                  coverage = "Fresh coverage: unavailable — scrape health artifact is unreadable"
+
+          complete = os.environ.get("PUBLISH_OUTCOME") == "success"
+          lines = [
+              "### Publication and fresh coverage",
+              "",
+              f"- **{coverage}**",
+              *(f"- {key.replace('_', ' ')}: **{value}**" for key, value in states.items()),
+              f"- Complete publication: **{'yes' if complete else 'NO'}**",
+              "",
+          ]
+          summary = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          with summary.open("a", encoding="utf-8") as handle:
+              handle.write("\n".join(lines))
+          print(coverage, flush=True)
+          print(f"complete publication: {'yes' if complete else 'NO'}", flush=True)
+          PY
       # Reclaim dataset history here rather than from a separate scheduled workflow (ADR-0071).
       # A standalone squash shares this group, so it sits *pending* behind the run in flight —
       # measured at 37-55 min — and an hourly cron then displaces it. Run from inside the job

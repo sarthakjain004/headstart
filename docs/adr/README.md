@@ -144,3 +144,4 @@ supersedes it and note the supersession in both.
 | [0138](0138-a-materialized-country-column-serves-the-india-filter.md) | A materialized `country` column serves the India filter's country-level case | 2026-09-11 |
 | [0139](0139-a-single-source-board-is-its-own-ats.md) | A Single source scraper is its own `ats`, not a slug under one | 2026-09-11 |
 | [0140](0140-a-workday-html-listing-response-retries-over-direct-egress.md) | A Workday HTML listing response retries once over direct egress | 2026-09-12 |
+| [0141](0141-scrape-health-travels-to-the-publication-receipt.md) | Scrape health travels to the publication receipt | 2026-09-12 |

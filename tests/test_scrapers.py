@@ -956,6 +956,18 @@ def test_smartrecruiters_extract_detail_missing_compensation_is_none():
     assert detail["compensation"] is None
 
 
+def test_detail_without_a_native_id_is_not_counted_as_attempted():
+    scraper = get_scraper("smartrecruiters", "acme")
+
+    assert scraper._job_detail(None) is None
+    scraper.report_detail_gaps([None], "details")
+
+    assert scraper.telemetry["detail_jobs"] == 1
+    assert scraper.telemetry["detail_attempted"] == 0
+    assert scraper.telemetry["detail_losses"] == 1
+    assert scraper.telemetry["detail_loss_causes"] == {"no posting id": 1}
+
+
 def test_smartrecruiters_parse_maps_native_compensation_into_job_salary():
     """End-to-end: a posting whose detail carries the native `compensation` block gets a
     populated `Job.salary`, formatted so `headstart.salary.extract` parses it as Tier 1."""
@@ -6451,6 +6463,48 @@ def test_workday_persistent_transient_listing_body_still_raises(monkeypatch):
     with pytest.raises(UnexpectedListingResponse, match="classification=maintenance"):
         scraper._post({}, 0, raise_gone=True)
     assert len(calls) == 2
+
+
+def test_workday_structured_http_error_after_transient_retry_is_not_recovered(monkeypatch):
+    from headstart.scrapers.workday import WorkdayScraper
+
+    outcomes = [
+        _NonJsonListing("<html><title>Maintenance</title></html>"),
+        _Status(status_code=403, payload={"message": "denied"}),
+    ]
+    monkeypatch.setattr(http, "fetch", lambda *args, **kwargs: outcomes.pop(0))
+    scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+    scraper._instance = "wd1"
+
+    with pytest.raises(http.RequestsError, match="403"):
+        scraper._post({}, 0, raise_gone=True)
+
+    assert scraper.telemetry.get("listing_transient_recovered", 0) == 0
+    assert scraper.telemetry["listing_page_losses"] == 1
+
+
+def test_workday_async_structured_http_error_after_retry_is_not_recovered(monkeypatch):
+    import asyncio
+
+    from headstart.scrapers.workday import WorkdayScraper
+
+    outcomes = [
+        _NonJsonListing("<html><title>Maintenance</title></html>"),
+        _Status(status_code=403, payload={"message": "denied"}),
+    ]
+
+    async def fetch_async(*args, **kwargs):
+        return outcomes.pop(0)
+
+    monkeypatch.setattr(http, "fetch_async", fetch_async)
+    scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+    scraper._instance = "wd1"
+
+    with pytest.raises(http.RequestsError, match="403"):
+        asyncio.run(scraper._post_async(SimpleNamespace(cookies=_CookieJar()), {}, 20))
+
+    assert scraper.telemetry.get("listing_transient_recovered", 0) == 0
+    assert scraper.telemetry["listing_page_losses"] == 1
 
 
 def test_workday_async_challenge_retries_once_and_recovers(monkeypatch):

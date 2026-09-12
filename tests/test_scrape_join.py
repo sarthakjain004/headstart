@@ -32,6 +32,8 @@ def _run(shards: Path, out: Path) -> None:
         str(out),
         "--unauthoritative-boards",
         str(out.parent / "unauthoritative_boards.json"),
+        "--scrape-health",
+        str(out.parent / "scrape_health.json"),
     ]
     try:
         assert js.main() == 0
@@ -246,8 +248,10 @@ def test_join_reports_per_ats_coverage_and_separate_loss_events(caplog):
 
     text = "\n".join(r.getMessage() for r in caplog.records)
     assert "workday attempted 2, successful 1, failed 1, partial 1" in text
-    assert "listing-page loss events: 1/5" in text
-    assert "detail loss events: 87/120" in text
-    assert "attempted 50, HTTP failures 17, circuit-breaker skips 70" in text
-    assert "successfactors HTTP 429 x7 on 1 Board(s)" in text
+    assert "Fresh coverage: DEGRADED" in text
+    assert "workday listing-page loss events: 1/5" in text
+    assert "workday detail loss events: 80/100" in text
+    assert "attempted 30, HTTP failures 10, circuit-breaker skips 70" in text
+    assert "successfactors detail loss events: 7/20" in text
+    assert "successfactors detail loss causes: HTTP 429 x7 on 1 Board(s)" in text
     assert "not unique Jobs or additional Board errors" in text

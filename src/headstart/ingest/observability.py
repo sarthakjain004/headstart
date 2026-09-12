@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import os
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,148 @@ from headstart import log
 _log = log.get(__name__)
 
 _SHARD_REPORT = "_shard_report.json"
+_LOSS_FIELDS = (
+    "listing_pages",
+    "listing_page_losses",
+    "listing_fetch_calls",
+    "listing_status_failures",
+    "listing_request_failures",
+    "detail_jobs",
+    "detail_attempted",
+    "detail_losses",
+    "detail_http_failures",
+    "detail_breaker_skips",
+)
+
+
+@dataclass
+class ScrapeHealth:
+    """One reporting contract for shard and run-level Board coverage and scrape losses."""
+
+    coverage: dict[str, Counter[str]]
+    losses: dict[str, Counter[str]]
+    causes: Counter[tuple[str, str, str]]
+    cause_boards: dict[tuple[str, str, str], set[str]]
+    report_count: int
+
+    @classmethod
+    def from_reports(cls, reports: list[dict]) -> ScrapeHealth:
+        coverage: dict[str, Counter[str]] = defaultdict(Counter)
+        losses: dict[str, Counter[str]] = defaultdict(Counter)
+        causes: Counter[tuple[str, str, str]] = Counter()
+        cause_boards: dict[tuple[str, str, str], set[str]] = defaultdict(set)
+        for report in reports:
+            for key in report.get("boards_ok") or []:
+                coverage[str(key).split(":", 1)[0]]["successful"] += 1
+            for key in report.get("errors") or {}:
+                coverage[str(key).split(":", 1)[0]]["failed"] += 1
+            for key in report.get("truncated") or {}:
+                coverage[str(key).split(":", 1)[0]]["partial"] += 1
+            for board, observation in (report.get("observations") or {}).items():
+                if not isinstance(observation, dict):
+                    continue
+                ats = str(board).split(":", 1)[0]
+                for field in _LOSS_FIELDS:
+                    losses[ats][field] += int(observation.get(field) or 0)
+                for kind, field in (
+                    ("listing", "listing_loss_causes"),
+                    ("detail", "detail_loss_causes"),
+                ):
+                    for cause, count in (observation.get(field) or {}).items():
+                        key = (kind, ats, str(cause))
+                        causes[key] += int(count)
+                        cause_boards[key].add(str(board))
+        return cls(dict(coverage), dict(losses), causes, dict(cause_boards), len(reports))
+
+    @property
+    def degraded(self) -> bool:
+        return any(c["failed"] or c["partial"] for c in self.coverage.values())
+
+    def coverage_line(self) -> str:
+        return "; ".join(
+            f"{ats} attempted {counts['successful'] + counts['failed']}, "
+            f"successful {counts['successful']}, failed {counts['failed']}, "
+            f"partial {counts['partial']}"
+            for ats, counts in sorted(self.coverage.items())
+        )
+
+    def verdict_line(self) -> str:
+        if not self.report_count:
+            return "Fresh coverage: unavailable — no shard reports arrived"
+        successful = sum(c["successful"] for c in self.coverage.values())
+        failed = sum(c["failed"] for c in self.coverage.values())
+        partial = sum(c["partial"] for c in self.coverage.values())
+        attempted = successful + failed
+        verdict = "DEGRADED" if self.degraded else "healthy"
+        return (
+            f"Fresh coverage: {verdict} — {failed} failed and {partial} partial of "
+            f"{attempted} attempted Boards"
+        )
+
+    def loss_lines(self) -> list[str]:
+        lines: list[str] = []
+        for ats, totals in sorted(self.losses.items()):
+            if totals["listing_pages"] or totals["listing_page_losses"]:
+                lines.append(
+                    f"{ats} listing-page loss events: {totals['listing_page_losses']}/"
+                    f"{totals['listing_pages']} pages; fetch calls "
+                    f"{totals['listing_fetch_calls']}, status failures "
+                    f"{totals['listing_status_failures']}, request failures "
+                    f"{totals['listing_request_failures']}"
+                )
+            if totals["detail_jobs"] or totals["detail_losses"]:
+                lines.append(
+                    f"{ats} detail loss events: {totals['detail_losses']}/"
+                    f"{totals['detail_jobs']} Jobs; attempted {totals['detail_attempted']}, "
+                    f"HTTP failures {totals['detail_http_failures']}, circuit-breaker skips "
+                    f"{totals['detail_breaker_skips']} — emitted events, not unique Jobs or "
+                    "additional Board errors"
+                )
+            for kind in ("listing", "detail"):
+                ranked = sorted(
+                    (
+                        (cause, count, len(self.cause_boards[(kind, ats, cause)]))
+                        for (seen_kind, seen_ats, cause), count in self.causes.items()
+                        if seen_kind == kind and seen_ats == ats
+                    ),
+                    key=lambda item: (-item[1], item[0]),
+                )
+                if ranked:
+                    shown = "; ".join(
+                        f"{cause} x{count} on {boards} Board(s)"
+                        for cause, count, boards in ranked[:4]
+                    )
+                    if len(ranked) > 4:
+                        shown += f"; +{len(ranked) - 4} more causes"
+                    lines.append(f"{ats} {kind} loss causes: {shown}")
+        return lines
+
+    def to_dict(self) -> dict[str, Any]:
+        causes: dict[str, dict[str, dict[str, dict[str, int]]]] = defaultdict(
+            lambda: defaultdict(dict)
+        )
+        for (kind, ats, cause), events in self.causes.items():
+            causes[kind][ats][cause] = {
+                "events": events,
+                "boards": len(self.cause_boards[(kind, ats, cause)]),
+            }
+        return {
+            "available": bool(self.report_count),
+            "degraded": self.degraded,
+            "verdict": self.verdict_line(),
+            "coverage": {ats: dict(counts) for ats, counts in self.coverage.items()},
+            "losses": {ats: dict(counts) for ats, counts in self.losses.items()},
+            "causes": {kind: dict(atses) for kind, atses in causes.items()},
+        }
+
+
+def write_scrape_health(path: Path, health: ScrapeHealth) -> None:
+    """Persist the small run-level verdict so publication can report it beside its receipts."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(health.to_dict(), indent=1, sort_keys=True), encoding="utf-8")
+    except OSError as exc:
+        _log.warning(f"could not write scrape health: {exc}")
 
 
 def summary(title: str, lines: list[str]) -> None:

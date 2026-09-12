@@ -133,7 +133,7 @@ class JoinScraper(BaseScraper):
     def _job_description(self, jid) -> str | None:
         """GET one posting's detail and return its description body (None on failure). Sync path."""
         if not jid:
-            self.note_detail_loss("no job id")
+            self.note_detail_unattempted("no job id")
             return None
         try:
             resp = http.fetch(
@@ -150,7 +150,7 @@ class JoinScraper(BaseScraper):
     async def _job_description_async(self, session: Any, jid) -> str | None:
         """Same as :meth:`_job_description` but over the shared multiplexed ``AsyncSession``."""
         if not jid:
-            self.note_detail_loss("no job id")
+            self.note_detail_unattempted("no job id")
             return None
         try:
             resp = await http.fetch_async(

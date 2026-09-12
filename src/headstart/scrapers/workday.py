@@ -727,6 +727,9 @@ class WorkdayScraper(BaseScraper):
                     )
                     self._record_listing_loss(classification)
                     raise UnexpectedListingResponse(diagnostic) from retry_exc
+                if response.status_code >= 400:
+                    self._record_listing_loss(f"HTTP {response.status_code}")
+                    response.raise_for_status()
                 self.telemetry["listing_transient_recovered"] = int(
                     self.telemetry.get("listing_transient_recovered", 0)
                 ) + 1
@@ -819,6 +822,9 @@ class WorkdayScraper(BaseScraper):
                     )
                     self._record_listing_loss(classification)
                     raise UnexpectedListingResponse(diagnostic) from retry_exc
+                if response.status_code >= 400:
+                    self._record_listing_loss(f"HTTP {response.status_code}")
+                    response.raise_for_status()
                 self.telemetry["listing_transient_recovered"] = int(
                     self.telemetry.get("listing_transient_recovered", 0)
                 ) + 1

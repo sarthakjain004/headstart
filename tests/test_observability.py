@@ -7,6 +7,8 @@ matter as much as the happy ones.
 
 from __future__ import annotations
 
+import json
+
 from headstart.ingest import observability
 
 
@@ -93,3 +95,54 @@ def test_error_summary_empty_and_colonless_message():
     assert observability.error_summary({}) == ""
     # a message with no ":" groups under the whole message
     assert observability.error_summary({"x:a": "boom"}) == "1 boom (x 1)"
+
+
+def test_scrape_health_keeps_atses_and_loss_kinds_separate(tmp_path):
+    health = observability.ScrapeHealth.from_reports(
+        [
+            {
+                "boards_ok": ["workday:a", "icims:x"],
+                "errors": {"workday:b": "boom"},
+                "truncated": {"workday:a": "short"},
+                "observations": {
+                    "workday:a": {
+                        "listing_pages": 4,
+                        "listing_page_losses": 1,
+                        "detail_jobs": 10,
+                        "detail_attempted": 3,
+                        "detail_losses": 8,
+                        "detail_breaker_skips": 7,
+                        "detail_loss_causes": {"HTTP 500": 1, "breaker": 7},
+                    },
+                    "icims:x": {
+                        "detail_jobs": 5,
+                        "detail_attempted": 5,
+                        "detail_losses": 2,
+                        "detail_loss_causes": {"no JSON-LD on a 200": 2},
+                    },
+                },
+            }
+        ]
+    )
+
+    assert health.degraded
+    assert health.verdict_line() == (
+        "Fresh coverage: DEGRADED — 1 failed and 1 partial of 3 attempted Boards"
+    )
+    lines = health.loss_lines()
+    assert any("workday detail loss events: 8/10" in line for line in lines)
+    assert any("icims detail loss events: 2/5" in line for line in lines)
+    assert any("workday detail loss causes: breaker x7" in line for line in lines)
+
+    path = tmp_path / "scrape_health.json"
+    observability.write_scrape_health(path, health)
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["degraded"] is True
+    assert saved["losses"]["workday"]["detail_breaker_skips"] == 7
+
+
+def test_scrape_health_does_not_call_missing_reports_healthy():
+    health = observability.ScrapeHealth.from_reports([])
+
+    assert health.verdict_line() == "Fresh coverage: unavailable — no shard reports arrived"
+    assert health.to_dict()["available"] is False

@@ -1584,6 +1584,22 @@ _TRENDS = "headstart.ingest.role_trends"
 _EGRESS = "headstart.spare_egress"
 _PIPELINE = ".github/workflows/pipeline.yml"
 
+
+def test_pipeline_reports_fresh_coverage_beside_each_publication_receipt():
+    workflow = Path(_PIPELINE).read_text(encoding="utf-8")
+
+    assert "scrape_health.json" in workflow
+    assert "Report publication and fresh coverage" in workflow
+    assert "PUBLISH_OUTCOME: ${{ steps.publish.outcome }}" in workflow
+    for key in (
+        "embedding_store",
+        "lancedb_index",
+        "description_store",
+        "pipeline_state",
+    ):
+        assert f"'{key}=not_reached'" in workflow
+    assert "Complete publication: **{'yes' if complete else 'NO'}**" in workflow
+
 CONTRACT: tuple[Line, ...] = (
     # -- scrape shards (emitter-verified: `_report` and `_Progress.on_board` are callable) -----
     Line(
