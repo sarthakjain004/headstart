@@ -1589,6 +1589,9 @@ def test_pipeline_reports_fresh_coverage_beside_each_publication_receipt():
     workflow = Path(_PIPELINE).read_text(encoding="utf-8")
 
     assert "scrape_health.json" in workflow
+    assert (
+        '--expected-shards "${{ needs.scrape-plan.outputs.shard_count }}"' in workflow
+    )
     assert "Report publication and fresh coverage" in workflow
     assert "PUBLISH_OUTCOME: ${{ steps.publish.outcome }}" in workflow
     for key in (
@@ -1599,6 +1602,7 @@ def test_pipeline_reports_fresh_coverage_beside_each_publication_receipt():
     ):
         assert f"'{key}=not_reached'" in workflow
     assert "Complete publication: **{'yes' if complete else 'NO'}**" in workflow
+
 
 CONTRACT: tuple[Line, ...] = (
     # -- scrape shards (emitter-verified: `_report` and `_Progress.on_board` are callable) -----

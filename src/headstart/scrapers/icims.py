@@ -103,18 +103,18 @@ _CLASSIC_INFO = re.compile(
     r'<div[^>]*class=["\'][^"\']*\biCIMS_InfoMsg_Job\b[^"\']*["\'][^>]*>\s*'
     r'<div[^>]*class=["\'][^"\']*\biCIMS_Expandable_Container\b[^"\']*["\'][^>]*>\s*'
     r'<div[^>]*class=["\'][^"\']*\biCIMS_Expandable_Text\b[^"\']*["\'][^>]*>'
-    r'(.*?)</div>\s*</div>\s*</div>',
+    r"(.*?)</div>\s*</div>\s*</div>",
     re.DOTALL | re.IGNORECASE,
 )
 _CLASSIC_FIELD = re.compile(
     r'<dt[^>]*class=["\'][^"\']*\biCIMS_JobHeaderField\b[^"\']*["\'][^>]*>'
     r'(.*?)</dt>\s*<dd[^>]*class=["\'][^"\']*\biCIMS_JobHeaderData\b[^"\']*["\'][^>]*>'
-    r'(.*?)</dd>',
+    r"(.*?)</dd>",
     re.DOTALL | re.IGNORECASE,
 )
 _CLASSIC_LOCATION = re.compile(
     r'<div[^>]*class=["\'][^"\']*\bheader\s+left\b[^"\']*["\'][^>]*>.*?'
-    r'<span[^>]*>\s*Location\s*</span>\s*<span[^>]*>(.*?)</span>',
+    r"<span[^>]*>\s*Location\s*</span>\s*<span[^>]*>(.*?)</span>",
     re.DOTALL | re.IGNORECASE,
 )
 
@@ -360,7 +360,9 @@ def _classic_fields(page: str) -> dict[str, Any] | None:
     }
     location_match = _CLASSIC_LOCATION.search(page)
     location_type = (fields.get("Job Location Type") or "").strip().lower()
-    remote_field = (fields.get("Remote (Google for Jobs Only Field)") or "").strip().lower()
+    remote_field = (
+        (fields.get("Remote (Google for Jobs Only Field)") or "").strip().lower()
+    )
     remote = (
         True
         if location_type == "remote" or remote_field == "yes"

@@ -255,3 +255,29 @@ def test_join_reports_per_ats_coverage_and_separate_loss_events(caplog):
     assert "successfactors detail loss events: 7/20" in text
     assert "successfactors detail loss causes: HTTP 429 x7 on 1 Board(s)" in text
     assert "not unique Jobs or additional Board errors" in text
+
+
+def test_malformed_shard_json_cannot_sink_any_join_consumer(tmp_path, caplog):
+    from headstart.ingest import observability
+
+    root = tmp_path / "fragments"
+    observability.write_shard(
+        root / "shard-0",
+        errors={123: 42},
+        deferred=[123],
+        killed_by_budget=True,
+    )
+    bad = root / "shard-1"
+    bad.mkdir(parents=True)
+    (bad / "_shard_report.json").write_text('["not", "an", "object"]')
+
+    reports = observability.read_shards(root)
+    health = observability.ScrapeHealth.from_reports(reports, expected_reports=2)
+
+    assert js.write_unauthoritative_boards(reports, tmp_path / "untrusted.json") == {}
+    js._report_shards(reports, 0, 0, health)
+    assert health.degraded
+    assert (
+        "shard telemetry incomplete: 1/2 reports, 1 malformed" in health.verdict_line()
+    )
+    assert "valid JSON but not objects" in caplog.text

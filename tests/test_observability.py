@@ -144,5 +144,43 @@ def test_scrape_health_keeps_atses_and_loss_kinds_separate(tmp_path):
 def test_scrape_health_does_not_call_missing_reports_healthy():
     health = observability.ScrapeHealth.from_reports([])
 
-    assert health.verdict_line() == "Fresh coverage: unavailable — no shard reports arrived"
+    assert (
+        health.verdict_line()
+        == "Fresh coverage: unavailable — no shard reports arrived"
+    )
     assert health.to_dict()["available"] is False
+
+
+def test_scrape_health_marks_a_missing_shard_report_degraded():
+    health = observability.ScrapeHealth.from_reports(
+        [{"boards_ok": ["workday:a"]}], expected_reports=2
+    )
+
+    assert health.degraded
+    assert "shard telemetry incomplete: 1/2 reports" in health.verdict_line()
+    assert health.to_dict()["complete"] is False
+
+
+def test_scrape_health_keeps_valid_fields_from_a_malformed_report(caplog):
+    health = observability.ScrapeHealth.from_reports(
+        [
+            {
+                "boards_ok": ["workday:a"],
+                "observations": {
+                    "workday:a": {
+                        "detail_jobs": "unknown",
+                        "detail_losses": 2,
+                        "detail_loss_causes": ["bad"],
+                    }
+                },
+            },
+            {"observations": ["bad"]},
+        ],
+        expected_reports=2,
+    )
+
+    assert health.losses["workday"]["detail_losses"] == 2
+    assert health.malformed_report_count == 2
+    assert health.degraded
+    assert "2 malformed" in health.verdict_line()
+    assert "2 shard report(s) carried malformed" in caplog.text

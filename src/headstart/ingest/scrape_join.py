@@ -128,6 +128,12 @@ def main() -> int:
         default=str(_HEALTH),
         help="small coverage/loss verdict carried to the publication summary",
     )
+    ap.add_argument(
+        "--expected-shards",
+        type=int,
+        default=0,
+        help="planner's shard count; missing reports make coverage degraded",
+    )
     args = ap.parse_args()
 
     shards_root = Path(args.shards)
@@ -162,7 +168,9 @@ def main() -> int:
     # eviction signal.
     write_unauthoritative_boards(reports, Path(args.unauthoritative_boards))
     _update_speedup(reports, Path(args.speedup_ledger))
-    health = observability.ScrapeHealth.from_reports(reports)
+    health = observability.ScrapeHealth.from_reports(
+        reports, expected_reports=args.expected_shards or None
+    )
     observability.write_scrape_health(Path(args.scrape_health), health)
     _report_shards(reports, total, len(per_ats), health)
     return 0
@@ -313,7 +321,10 @@ def _report_shards(
             else "- no shard hit its time budget",
         ]
         + (
-            [f"- **{health.verdict_line()}**", f"- Board coverage by ATS: {coverage_line}"]
+            [
+                f"- **{health.verdict_line()}**",
+                f"- Board coverage by ATS: {coverage_line}",
+            ]
             if coverage_line
             else []
         )

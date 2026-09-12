@@ -68,7 +68,7 @@ _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _SPACE = re.compile(r"\s+")
 _SENSITIVE = re.compile(
     r"(?i)(authorization|api[_-]?key|access[_-]?token|password|secret)"
-    r"(\s*[:=]\s*)([^\s<>&;,]+)"
+    r"(\s*[:=]\s*)(?:bearer\s+)?([^\s<>&;,]+)"
 )
 
 
@@ -655,14 +655,14 @@ class WorkdayScraper(BaseScraper):
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
-        self.telemetry["listing_pages"] = int(
-            self.telemetry.get("listing_pages", 0)
-        ) + 1
+        self.telemetry["listing_pages"] = (
+            int(self.telemetry.get("listing_pages", 0)) + 1
+        )
 
         def fetch(*, direct: bool = False) -> Any:
-            self.telemetry["listing_fetch_calls"] = int(
-                self.telemetry.get("listing_fetch_calls", 0)
-            ) + 1
+            self.telemetry["listing_fetch_calls"] = (
+                int(self.telemetry.get("listing_fetch_calls", 0)) + 1
+            )
             try:
                 response = http.fetch(
                     "POST",
@@ -674,14 +674,14 @@ class WorkdayScraper(BaseScraper):
                 )
             except http.RequestsError as exc:
                 self._record_listing_loss(_failure_class(exc))
-                self.telemetry["listing_request_failures"] = int(
-                    self.telemetry.get("listing_request_failures", 0)
-                ) + 1
+                self.telemetry["listing_request_failures"] = (
+                    int(self.telemetry.get("listing_request_failures", 0)) + 1
+                )
                 raise
             if response.status_code >= 400:
-                self.telemetry["listing_status_failures"] = int(
-                    self.telemetry.get("listing_status_failures", 0)
-                ) + 1
+                self.telemetry["listing_status_failures"] = (
+                    int(self.telemetry.get("listing_status_failures", 0)) + 1
+                )
             return response
 
         response = fetch()
@@ -730,9 +730,9 @@ class WorkdayScraper(BaseScraper):
                 if response.status_code >= 400:
                     self._record_listing_loss(f"HTTP {response.status_code}")
                     response.raise_for_status()
-                self.telemetry["listing_transient_recovered"] = int(
-                    self.telemetry.get("listing_transient_recovered", 0)
-                ) + 1
+                self.telemetry["listing_transient_recovered"] = (
+                    int(self.telemetry.get("listing_transient_recovered", 0)) + 1
+                )
             else:
                 self._record_listing_loss("unexpected-body")
                 raise UnexpectedListingResponse(diagnostic) from exc
@@ -759,14 +759,14 @@ class WorkdayScraper(BaseScraper):
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
-        self.telemetry["listing_pages"] = int(
-            self.telemetry.get("listing_pages", 0)
-        ) + 1
+        self.telemetry["listing_pages"] = (
+            int(self.telemetry.get("listing_pages", 0)) + 1
+        )
 
         async def fetch(*, direct: bool = False) -> Any:
-            self.telemetry["listing_fetch_calls"] = int(
-                self.telemetry.get("listing_fetch_calls", 0)
-            ) + 1
+            self.telemetry["listing_fetch_calls"] = (
+                int(self.telemetry.get("listing_fetch_calls", 0)) + 1
+            )
             try:
                 response = await http.fetch_async(
                     session,
@@ -779,14 +779,14 @@ class WorkdayScraper(BaseScraper):
                 )
             except http.RequestsError as exc:
                 self._record_listing_loss(_failure_class(exc))
-                self.telemetry["listing_request_failures"] = int(
-                    self.telemetry.get("listing_request_failures", 0)
-                ) + 1
+                self.telemetry["listing_request_failures"] = (
+                    int(self.telemetry.get("listing_request_failures", 0)) + 1
+                )
                 raise
             if response.status_code >= 400:
-                self.telemetry["listing_status_failures"] = int(
-                    self.telemetry.get("listing_status_failures", 0)
-                ) + 1
+                self.telemetry["listing_status_failures"] = (
+                    int(self.telemetry.get("listing_status_failures", 0)) + 1
+                )
             return response
 
         response = await fetch()
@@ -825,9 +825,9 @@ class WorkdayScraper(BaseScraper):
                 if response.status_code >= 400:
                     self._record_listing_loss(f"HTTP {response.status_code}")
                     response.raise_for_status()
-                self.telemetry["listing_transient_recovered"] = int(
-                    self.telemetry.get("listing_transient_recovered", 0)
-                ) + 1
+                self.telemetry["listing_transient_recovered"] = (
+                    int(self.telemetry.get("listing_transient_recovered", 0)) + 1
+                )
             else:
                 self._record_listing_loss("unexpected-body")
                 raise UnexpectedListingResponse(diagnostic) from exc
@@ -838,9 +838,9 @@ class WorkdayScraper(BaseScraper):
 
     def _record_listing_loss(self, cause: str) -> None:
         """Record one logical listing page that did not produce postings."""
-        self.telemetry["listing_page_losses"] = int(
-            self.telemetry.get("listing_page_losses", 0)
-        ) + 1
+        self.telemetry["listing_page_losses"] = (
+            int(self.telemetry.get("listing_page_losses", 0)) + 1
+        )
         causes = Counter(self.telemetry.get("listing_loss_causes") or {})
         causes[cause] += 1
         self.telemetry["listing_loss_causes"] = dict(causes)

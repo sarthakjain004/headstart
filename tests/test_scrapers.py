@@ -6389,7 +6389,9 @@ def test_workday_unknown_listing_body_raises_with_bounded_diagnostics_without_re
     assert "instance=wd1" in message
     assert "status=200" in message
     assert "content_type=text/plain; charset=utf-8" in message
-    assert "final_url=https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/ext/jobs" in message
+    assert (
+        "final_url=https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/ext/jobs" in message
+    )
     assert "bytes=1035" in message
     assert "sha256=" in message
     assert "body_prefix='unknown payload " in message
@@ -6401,6 +6403,16 @@ def test_workday_unknown_listing_body_raises_with_bounded_diagnostics_without_re
     assert scraper.telemetry["listing_pages"] == 1
     assert scraper.telemetry["listing_fetch_calls"] == 1
     assert scraper.telemetry["listing_page_losses"] == 1
+
+
+def test_workday_listing_diagnostic_redacts_a_bearer_credential():
+    from headstart.scrapers.workday import _listing_diagnostic
+
+    response = _NonJsonListing("authorization=Bearer bearer-secret trailing-text")
+    diagnostic, _ = _listing_diagnostic(response, "wd1")
+
+    assert "authorization=[redacted] trailing-text" in diagnostic
+    assert "bearer-secret" not in diagnostic
 
 
 def test_workday_error_page_retries_once_and_recovers(monkeypatch, caplog):
@@ -6465,7 +6477,9 @@ def test_workday_persistent_transient_listing_body_still_raises(monkeypatch):
     assert len(calls) == 2
 
 
-def test_workday_structured_http_error_after_transient_retry_is_not_recovered(monkeypatch):
+def test_workday_structured_http_error_after_transient_retry_is_not_recovered(
+    monkeypatch,
+):
     from headstart.scrapers.workday import WorkdayScraper
 
     outcomes = [
@@ -6527,7 +6541,10 @@ def test_workday_async_challenge_retries_once_and_recovers(monkeypatch):
     scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
     scraper._instance = "wd1"
 
-    assert asyncio.run(scraper._post_async(SimpleNamespace(cookies=_CookieJar()), {}, 20)) == page
+    assert (
+        asyncio.run(scraper._post_async(SimpleNamespace(cookies=_CookieJar()), {}, 20))
+        == page
+    )
     assert outcomes == []
     assert calls[0][1]["egress_group"] == "workday"
     assert "egress_group" not in calls[1][1]
@@ -6577,9 +6594,10 @@ def test_workday_transient_retry_to_404_preserves_async_midcrawl_contract(monkey
     scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
     scraper._instance = "wd1"
 
-    assert asyncio.run(
-        scraper._post_async(SimpleNamespace(cookies=_CookieJar()), {}, 20)
-    ) is None
+    assert (
+        asyncio.run(scraper._post_async(SimpleNamespace(cookies=_CookieJar()), {}, 20))
+        is None
+    )
     assert scraper.telemetry["listing_page_losses"] == 1
     assert scraper.telemetry["listing_fetch_calls"] == 2
     assert scraper.telemetry["listing_status_failures"] == 1

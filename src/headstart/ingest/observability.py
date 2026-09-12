@@ -60,39 +60,102 @@ class ScrapeHealth:
     causes: Counter[tuple[str, str, str]]
     cause_boards: dict[tuple[str, str, str], set[str]]
     report_count: int
+    expected_report_count: int
+    malformed_report_count: int
 
     @classmethod
-    def from_reports(cls, reports: list[dict]) -> ScrapeHealth:
+    def from_reports(
+        cls, reports: list[dict], expected_reports: int | None = None
+    ) -> ScrapeHealth:
         coverage: dict[str, Counter[str]] = defaultdict(Counter)
         losses: dict[str, Counter[str]] = defaultdict(Counter)
         causes: Counter[tuple[str, str, str]] = Counter()
         cause_boards: dict[tuple[str, str, str], set[str]] = defaultdict(set)
+        malformed_reports = 0
         for report in reports:
-            for key in report.get("boards_ok") or []:
+            malformed = (
+                bool(report.get("_malformed")) if isinstance(report, dict) else False
+            )
+            if not isinstance(report, dict):
+                malformed_reports += 1
+                continue
+            boards_ok = report.get("boards_ok") or []
+            errors = report.get("errors") or {}
+            truncated = report.get("truncated") or {}
+            observations = report.get("observations") or {}
+            if not isinstance(boards_ok, list):
+                boards_ok = []
+                malformed = True
+            if not isinstance(errors, dict):
+                errors = {}
+                malformed = True
+            if not isinstance(truncated, dict):
+                truncated = {}
+                malformed = True
+            if not isinstance(observations, dict):
+                observations = {}
+                malformed = True
+            for key in boards_ok:
                 coverage[str(key).split(":", 1)[0]]["successful"] += 1
-            for key in report.get("errors") or {}:
+            for key in errors:
                 coverage[str(key).split(":", 1)[0]]["failed"] += 1
-            for key in report.get("truncated") or {}:
+            for key in truncated:
                 coverage[str(key).split(":", 1)[0]]["partial"] += 1
-            for board, observation in (report.get("observations") or {}).items():
+            for board, observation in observations.items():
                 if not isinstance(observation, dict):
+                    malformed = True
                     continue
                 ats = str(board).split(":", 1)[0]
                 for field in _LOSS_FIELDS:
-                    losses[ats][field] += int(observation.get(field) or 0)
+                    try:
+                        losses[ats][field] += int(observation.get(field) or 0)
+                    except (TypeError, ValueError):
+                        malformed = True
                 for kind, field in (
                     ("listing", "listing_loss_causes"),
                     ("detail", "detail_loss_causes"),
                 ):
-                    for cause, count in (observation.get(field) or {}).items():
+                    cause_map = observation.get(field) or {}
+                    if not isinstance(cause_map, dict):
+                        malformed = True
+                        continue
+                    for cause, count in cause_map.items():
                         key = (kind, ats, str(cause))
-                        causes[key] += int(count)
+                        try:
+                            causes[key] += int(count)
+                        except (TypeError, ValueError):
+                            malformed = True
+                            continue
                         cause_boards[key].add(str(board))
-        return cls(dict(coverage), dict(losses), causes, dict(cause_boards), len(reports))
+            malformed_reports += int(malformed)
+        if malformed_reports:
+            _log.warning(
+                f"{malformed_reports} shard report(s) carried malformed scrape-health fields; "
+                "valid fields were kept and fresh coverage is marked degraded"
+            )
+        expected = max(len(reports), expected_reports or len(reports))
+        return cls(
+            dict(coverage),
+            dict(losses),
+            causes,
+            dict(cause_boards),
+            len(reports),
+            expected,
+            malformed_reports,
+        )
 
     @property
     def degraded(self) -> bool:
-        return any(c["failed"] or c["partial"] for c in self.coverage.values())
+        return not self.complete or any(
+            c["failed"] or c["partial"] for c in self.coverage.values()
+        )
+
+    @property
+    def complete(self) -> bool:
+        return (
+            self.report_count == self.expected_report_count
+            and not self.malformed_report_count
+        )
 
     def coverage_line(self) -> str:
         return "; ".join(
@@ -110,10 +173,17 @@ class ScrapeHealth:
         partial = sum(c["partial"] for c in self.coverage.values())
         attempted = successful + failed
         verdict = "DEGRADED" if self.degraded else "healthy"
-        return (
+        line = (
             f"Fresh coverage: {verdict} — {failed} failed and {partial} partial of "
             f"{attempted} attempted Boards"
         )
+        if not self.complete:
+            line += (
+                f"; shard telemetry incomplete: {self.report_count}/"
+                f"{self.expected_report_count} reports, "
+                f"{self.malformed_report_count} malformed"
+            )
+        return line
 
     def loss_lines(self) -> list[str]:
         lines: list[str] = []
@@ -164,6 +234,12 @@ class ScrapeHealth:
             }
         return {
             "available": bool(self.report_count),
+            "complete": self.complete,
+            "reports": {
+                "received": self.report_count,
+                "expected": self.expected_report_count,
+                "malformed": self.malformed_report_count,
+            },
             "degraded": self.degraded,
             "verdict": self.verdict_line(),
             "coverage": {ats: dict(counts) for ats, counts in self.coverage.items()},
@@ -176,7 +252,9 @@ def write_scrape_health(path: Path, health: ScrapeHealth) -> None:
     """Persist the small run-level verdict so publication can report it beside its receipts."""
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(health.to_dict(), indent=1, sort_keys=True), encoding="utf-8")
+        path.write_text(
+            json.dumps(health.to_dict(), indent=1, sort_keys=True), encoding="utf-8"
+        )
     except OSError as exc:
         _log.warning(f"could not write scrape health: {exc}")
 
@@ -219,11 +297,18 @@ def read_shards(fragments: Path) -> list[dict]:
     is to union job data, and it must not die because a shard's telemetry did."""
     out: list[dict] = []
     unreadable: list[str] = []
+    wrong_shape: list[str] = []
     for path in sorted(fragments.glob(f"*/{_SHARD_REPORT}")):
         try:
-            out.append(json.loads(path.read_text(encoding="utf-8")))
+            raw = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             unreadable.append(f"{path.parent.name} ({type(exc).__name__})")
+            continue
+        report = _safe_shard_report(raw)
+        if report is None:
+            wrong_shape.append(path.parent.name)
+            continue
+        out.append(report)
     if unreadable:
         # One warning for the set, not one per shard. A fan-out has ~15 shards and a WARNING
         # is an annotation under Actions, capped at 10 per step — so the per-shard form could
@@ -233,7 +318,84 @@ def read_shards(fragments: Path) -> list[dict]:
             f"{len(unreadable)} shard report(s) unreadable, so their telemetry is missing "
             f"from this run's totals: {log.named_sample(unreadable)}"
         )
+    if wrong_shape:
+        _log.warning(
+            f"{len(wrong_shape)} shard report(s) were valid JSON but not objects and were "
+            f"skipped: {log.named_sample(wrong_shape)}"
+        )
     return out
+
+
+def _safe_shard_report(raw: Any) -> dict | None:
+    """Return a report safe for every join consumer, tagging recoverable schema damage."""
+    if not isinstance(raw, dict):
+        return None
+    report = dict(raw)
+    malformed = False
+    for field in ("errors", "truncated", "observations"):
+        if not isinstance(report.get(field, {}), dict):
+            report[field] = {}
+            malformed = True
+    safe_errors: dict[str, str] = {}
+    for key, value in report.get("errors", {}).items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            malformed = True
+        safe_errors[str(key)] = str(value)
+    report["errors"] = safe_errors
+    for field in ("boards_ok", "deferred"):
+        value = report.get(field, [])
+        if not isinstance(value, list):
+            report[field] = []
+            malformed = True
+        else:
+            report[field] = value
+    for field in ("boards_ok", "deferred"):
+        values = report[field]
+        if any(not isinstance(value, str) for value in values):
+            malformed = True
+        report[field] = [str(value) for value in values]
+    for field in ("retries", "egress_ips"):
+        value = report.get(field, {})
+        if not isinstance(value, dict):
+            report[field] = {}
+            malformed = True
+            continue
+        safe: dict[str, int] = {}
+        for key, count in value.items():
+            try:
+                safe[str(key)] = int(count)
+            except (TypeError, ValueError):
+                malformed = True
+        report[field] = safe
+    for field in ("assigned", "done", "undone", "jobs"):
+        try:
+            report[field] = int(report.get(field) or 0)
+        except (TypeError, ValueError):
+            report[field] = 0
+            malformed = True
+    for field in ("seconds", "predicted_minutes", "serial_minutes"):
+        value = report.get(field)
+        if value is None:
+            continue
+        try:
+            report[field] = float(value)
+        except (TypeError, ValueError):
+            report[field] = None
+            malformed = True
+    board_seconds = report.get("board_seconds") or {}
+    if not isinstance(board_seconds, dict):
+        board_seconds = {}
+        malformed = True
+    safe_seconds: dict[str, float] = {}
+    for key, value in board_seconds.items():
+        try:
+            safe_seconds[str(key)] = float(value)
+        except (TypeError, ValueError):
+            malformed = True
+    report["board_seconds"] = safe_seconds
+    if malformed:
+        report["_malformed"] = True
+    return report
 
 
 def percentiles(values: list[float]) -> dict[str, float]:

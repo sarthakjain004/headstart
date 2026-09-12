@@ -155,6 +155,7 @@ jobs:
       run: ${{ steps.gate.outputs.run }}
       count: ${{ steps.plan.outputs.count || '0' }}
       shards: ${{ steps.plan.outputs.shards || '[]' }}
+      shard_count: ${{ steps.plan.outputs.shard_count || '0' }}
     steps:
       # Actions pinned to full commit SHAs (tags are mutable — cf. tj-actions
       # CVE-2025-30066). Dependabot keeps the SHAs current via the comments.
@@ -230,6 +231,7 @@ jobs:
           plan = json.load(open("data/scrape/assignments/plan.json"))
           print("count=%d" % plan["count"])
           print("shards=%s" % json.dumps(plan["shards"]))
+          print("shard_count=%d" % len(plan["shards"]))
           PY
       - name: Upload scrape assignments (one board list per shard)
         if: steps.gate.outputs.run == 'true' && steps.plan.outputs.count != '0'
@@ -570,7 +572,9 @@ jobs:
           pattern: scrape-fragment-*
           path: data/scrape/fragments
       - name: Union the scrape fragments into one snapshot
-        run: python -m headstart.ingest.scrape_join
+        run: >-
+          python -m headstart.ingest.scrape_join
+          --expected-shards "${{ needs.scrape-plan.outputs.shard_count }}"
       - name: Tech filter
         run: python -m headstart.ingest.filter_tech
       - name: Reconcile descriptions with the store (ADR-0050)

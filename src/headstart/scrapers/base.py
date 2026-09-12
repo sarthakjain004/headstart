@@ -692,7 +692,9 @@ class BaseScraper(ABC):
                 "detail_attempted": max(0, len(results) - unattempted),
                 "detail_losses": missing,
                 "detail_http_failures": sum(
-                    n for cause, n in self.detail_losses.items() if cause.startswith("HTTP ")
+                    n
+                    for cause, n in self.detail_losses.items()
+                    if cause.startswith("HTTP ")
                 ),
                 "detail_breaker_skips": 0,
                 "detail_loss_causes": dict(self.detail_losses),

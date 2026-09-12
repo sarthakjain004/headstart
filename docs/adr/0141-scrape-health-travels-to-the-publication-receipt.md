@@ -31,6 +31,10 @@ The verdict is strict and threshold-free: any failed or partial Board makes fres
 lost observation has user impact. It avoids an arbitrary percentage that would hide a complete
 outage on a small ATS or need recalibration as the Slice changes.
 
+The planner's shard count is carried to `scrape_join`; fewer or malformed reports also make the
+verdict `DEGRADED`. No reports makes it unavailable. A partial telemetry population may retain its
+valid fields, but it can never call the run healthy.
+
 `scrape_join` writes the same aggregate to `data/state/scrape_health.json`. It is small, streams to
 the merge job inside the existing `corpus-state` artifact, and later publishes with the other
 pipeline state. The upload step records whether the embedding store, LanceDB index, description
