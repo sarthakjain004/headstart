@@ -224,9 +224,9 @@ No always-on server: scheduled GitHub Actions and a free-tier Space.
 
 ## ATS coverage
 
-23 scrapers, selected from a registry by the `ats` key: `ashby`, `darwinbox`, `eightfold`,
+24 scrapers, selected from a registry by the `ats` key: `ashby`, `darwinbox`, `eightfold`,
 `freshteam`, `greenhouse`, `icims`, `join`, `keka`, `lever`, `oracle`, `personio`, `recruitee`,
-`ripplehire`, `rippling`, `sensehq`, `smartrecruiters`, `successfactors`, `teamtailor`,
+`ripplehire`, `rippling`, `sensehq`, `smartrecruiters`, `successfactors`, `teamtailor`, `tesla`,
 `trakstar`, `workable`, `workday`, `zoho`, `zwayam`. `join` is in `registry.DISABLED_ATS` — German-SMB
 boards running ~1 tech job in ~10k, pure noise for a tech-only index — so it is skipped rather
 than scraped. Its scraper class and tests stay intact; re-enable by removing it from that set.
@@ -236,10 +236,10 @@ through one pooled, thread-local `curl_cffi` client that impersonates Chrome, so
 serves plain JSON APIs and the TLS-fingerprinted (Cloudflare / DataDome) boards (ADR-0002). The
 liveness pipeline has probed **206,789 ledger rows**: 131,881 live, 66,360 dead, 8,548 unknown —
 rows, not boards; they collapse to 125,249 Unique Boards (CONTEXT.md §Counting Boards). Of the
-23 scrapers, 19 have rows in the index — `sensehq` is a single-company unlock with nothing
-indexed yet, `zwayam` (2026-08-27), `icims` (2026-09-08) and `oracle` (2026-09-08, which had a
-scraper but no ledger until then) were added since the last pipeline run and have nothing indexed
-yet, and
+24 scrapers, 19 have rows in the index — `sensehq` is a single-company unlock with nothing
+indexed yet, `zwayam` (2026-08-27), `icims` (2026-09-08), `oracle` (2026-09-08, which had a
+scraper but no ledger until then) and `tesla` (2026-09-11) were added since the last pipeline run
+and have nothing indexed yet, and
 `join`'s remaining 1,093 rows are a residue of the era before it was disabled: no slice will
 scrape them again, so they leave by eviction rather than refresh.
 
