@@ -9,6 +9,7 @@ from headstart.scrapers.base import BaseScraper
 from headstart.scrapers.darwinbox import DarwinboxScraper
 from headstart.scrapers.eightfold import EightfoldScraper
 from headstart.scrapers.freshteam import FreshteamScraper
+from headstart.scrapers.google import GoogleScraper
 from headstart.scrapers.greenhouse import GreenhouseScraper
 from headstart.scrapers.icims import ICIMSScraper
 from headstart.scrapers.jazzhr import JazzHRScraper
@@ -34,6 +35,7 @@ from headstart.scrapers.zwayam import ZwayamScraper
 SCRAPERS: dict[str, type[BaseScraper]] = {
     cls.ats: cls
     for cls in (
+        GoogleScraper,
         GreenhouseScraper,
         LeverScraper,
         AshbyScraper,

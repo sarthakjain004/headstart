@@ -1,0 +1,147 @@
+{
+  "page_1": {
+    "jobs": [
+      [
+        "100397577702122182",
+        "Software Engineer, Chrome Networking Security",
+        "https://www.google.com/about/careers/applications/signin?jobId=CiUAL2FckY0yJIo10qUC1ZLFrAQjvPielHn6yJoF9x6X7gEkjFDtEjsA1Ny_i9_x5uEglYZzVoqTsx0QpfPjA4numT1mYMd93QWmBNPaAsNJzVmSN_3WCH24NqYjR98LBbMPEQ%3D%3D_V2&loc=US&title=Software+Engineer",
+        [
+          null,
+          "<ul>\n<li>Collaborate closely with other teams, in Chrome Security, Chrome more broadly, and other teams at Google.<br></li>\n<li>Manage and prioritize assigned tasks and projects, ensuring the timely delivery with minimal guidance.<br></li>\n<li>Identify opportunities and implement solutions to improve the safety, reliability, scalability, and efficiency of the code we own.<br></li>\n<li>Participate in security launch reviews, as well as the Chrome Security Shepherding rotation or an equivalent rotation.</li>\n<li>Design and implement features, metrics, and tools to make Chrome more secure while also participating in code reviews, design discussions, and knowledge sharing.<br></li>\n</ul>"
+        ],
+        [
+          null,
+          "<h3>Minimum qualifications:</h3><ul>\n<li>Bachelor’s degree or equivalent practical experience.<br></li>\n<li>2 years of experience with software development in the C++ programming language.</li>\n<li>2 years of experience building software for Web Privacy or Securit (e.g., identity and access management).</li>\n</ul><br><h3>Preferred qualifications:</h3><ul>\n<li>Master's degree or PhD in Computer Science or related technical field.</li>\n<li>2 years of experience with data structures and algorithms.</li>\n<li>Experience developing Network Security solutions. </li>\n<li>Experience building for the web, particularly Chromium browser development.</li>\n<li>Familiarity with transport layer security and related technologies.\n</li>\n</ul>"
+        ],
+        "projects/gweb-careers-proto/tenants/60107626-8e00-0000-0000-0071646e0806/companies/ebbbf0d1-8121-483c-8f99-ee92597591fc",
+        null,
+        "Google",
+        "en-US",
+        [
+          [
+            "Mountain View, CA, USA",
+            [
+              "NASA Ames Building N-255, 100 Bay Vw Dr, Mountain View, CA 94043, USA"
+            ],
+            "Mountain View",
+            "94043",
+            "CA",
+            "US"
+          ],
+          [
+            "Cambridge, MA, USA",
+            [
+              "Cambridge, MA, USA"
+            ],
+            "Cambridge",
+            null,
+            "MA",
+            "US"
+          ]
+        ],
+        [
+          null,
+          "<p>Google's software engineers develop the next-generation technologies that change how billions of users connect, explore, and interact with information and one another. Our products need to handle information at massive scale, and extend well beyond web search. We're looking for engineers who bring fresh ideas from all areas, including information retrieval, distributed computing, large-scale system design, networking and data storage, security, artificial intelligence, natural language processing, UI design and mobile; the list goes on and is growing every day. As a software engineer, you will work on a specific project critical to Google’s needs with opportunities to switch teams and projects as you and our fast-paced business grow and evolve. We need our engineers to be versatile, display leadership qualities and be enthusiastic to take on new problems across the full-stack as we continue to push technology forward.</p>\n<p>Chrome SWAN is responsible for making sure that the connections you use to connect to websites are secure from attackers. That means no one can eavesdrop, change your data, nor impersonate the sites you're connecting to.</p><p>We own every part of HTTPS in Chrome, from the low-level TLS protocol implementation up through through policy decisions like what organizations we trust to vouch for websites (we run the Chrome Root Program). We help transition the web to HTTPS by default. We even write new web standards, covering things like how the web will adapt to post-quantum cryptography.</p><p>SWAN is also part of Chrome's Security team, which means that we also help secure Chrome in other ways, including triaging security vulnerabilities, performing security reviews of other teams' features, and more.</p><p>Chrome is dedicated to building a better, more open web. We’re focused on making a better browser (on both desktop and mobile) to help users take advantage of all the web has to offer in a safe and secure way.Chrome is available across all major platforms — iOS, Android, Windows, Mac, Linux and Chrome OS. We also built Chrome as an open source project so the entire web ecosystem could benefit from the latest innovations in speed, simplicity and security.<b></b></p>Individual pay is determined by factors including job-related skills, experience, and relevant education or training.  <br><br>US: $147000 - $210000 (USD) + 15% bonus target + equity + benefits<br><br>Learn more about <a href=\"https://www.google.com/about/careers/applications/benefits/\" target=\"_blank\">benefits at Google</a>."
+        ],
+        [
+          2,
+          3,
+          4
+        ],
+        [
+          1787782363,
+          839000000
+        ],
+        [
+          1789139424,
+          899000000
+        ],
+        [
+          1789139425,
+          365000000
+        ],
+        [
+          null,
+          "In most instances, this position requires in-person interviews as part of the hiring process."
+        ],
+        null,
+        null,
+        [
+          null,
+          "Note: By applying to this position you will have an opportunity to share your preferred working location from the following: <b>Mountain View, CA, USA; Cambridge, MA, USA</b>."
+        ],
+        [
+          null,
+          "<ul>\n<li>Bachelor’s degree or equivalent practical experience.<br></li>\n<li>2 years of experience with software development in the C++ programming language.</li>\n<li>2 years of experience building software for Web Privacy or Securit (e.g., identity and access management).</li>\n</ul>"
+        ],
+        2
+      ],
+      [
+        "112497746115470022",
+        "Engineering Analyst, YouTube Trust and Safety",
+        "https://www.google.com/about/careers/applications/signin?jobId=CiUAL2FckUXGnpP5Luyd-A7-TnS5yuTyEQwOFjrQiz9BK6PxEmPpEjsA1Ny_i6MnWPmd__7o9R5UqyQ_0G_9_fN2TFH2pKaQnzIOjZz30ffWpKTM5VY9PQlyPkV3v65zfzupZw%3D%3D_V2&loc=IN&title=Engineering+Analyst",
+        [
+          null,
+          "<ul>\n<li>Perform fraud and spam investigations using various data sources, identify product vulnerabilities and drive anti-abuse experiments to prevent abuse. Work with engineers and interact cross-functionally with stakeholders to improve workflows via process improvements, automation and anti-abuse system creation.<br></li>\n<li>Design and refine prompts for LLMs to improve their accuracy in identifying and classifying abusive content and behavior.</li>\n<li>Apply advanced statistical methods to large complex datasets to understand the impact of abuse to the YouTube ecosystem. Contribute strategy and development of new workflows against additional known vectors of abuse.</li>\n<li>Learn complex and technical concepts and systems and deliver meaningful results using them. Communicate highly technical results and methods.</li>\n<li>Maintain, foster and promote quality by providing regular feedback metrics to the Global team. Manage technological solutions for streamlining quality assurance and produce scalable training solutions to emergent workflows.</li>\n</ul>"
+        ],
+        [
+          null,
+          "<h3>Minimum qualifications:</h3><ul>\n<li>Bachelor's degree or equivalent practical experience.</li>\n<li>2 years of experience in data analysis, including identifying trends, generating summary statistics, and drawing insights from quantitative and qualitative data.</li>\n<li>2 years of experience managing projects and defining project scope, goals, and deliverables.</li>\n</ul><br><h3>Preferred qualifications:</h3><ul>\n<li>Master's degree in a quantitative discipline.</li>\n<li>2 years of experience or familiarity with one or more of the following languages: SQL, R, Python, or C++.</li>\n<li>2 years of experience or familiarity with machine learning systems.</li>\n<li> Experience creating opportunities to innovate, conceptualize and complete while working with global teams. Experience collecting, managing and synthesizing large datasets and information from disparate sources, statistical modeling, data mining and data analysis.</li>\n<li>Excellent written and verbal communication skills.</li>\n</ul>"
+        ],
+        "projects/gweb-careers-proto/tenants/60107626-8e00-0000-0000-0071646e0806/companies/ad872500-709d-4a93-97e3-76be227f77a1",
+        null,
+        "YouTube",
+        "en-US",
+        [
+          [
+            "Hyderabad, Telangana, India",
+            [
+              "Hyderabad, Telangana, India"
+            ],
+            "Hyderabad",
+            null,
+            "TS",
+            "IN"
+          ]
+        ],
+        [
+          null,
+          "Fast-paced, dynamic, and proactive, YouTube’s Trust &amp; Safety team is dedicated to making YouTube a safe place for users, viewers, and content creators around the world to create, and express themselves. Whether understanding and solving their online content concerns, navigating within global legal frameworks, or writing and enforcing worldwide policy, the Trust &amp; Safety team is on the frontlines of enhancing the YouTube experience, building internet safety, and protecting free speech in our ever-evolving digital world. <br><br>As an Engineering Analyst on the YouTube Trust and Safety team, you will be directly responsible for ensuring that we effectively identify and remove disruptive content and users as quickly as possible, in an environment where hundreds of hours of new content is uploaded every minute, globally. You will be passionate about technologies and have experience with analyzing large scale data and scaled systems of review. You will thrive in a fast, dynamic, demanding environment where no two days are ever the same. You will be a key contributor to the strategy for reducing network badness on YouTube. You will be an independent, critical thinker with sound metrics judgment who has a passion for coaching others, solving technological tests and setting scalable standards. You will balance the short-term requirements we face while demonstrating the ability to see the big picture and make quantitatively based long-term recommendations accordingly. You may require on-call work at weekends on a rotational basis. You will also be exposed to graphic, controversial, and sometimes offensive video content during team escalations in line with YouTube’s Community Guidelines.At YouTube, we believe that everyone deserves to have a voice, and that the world is a better place when we listen, share, and build community through our stories. We work together to give everyone the power to share their story, explore what they love, and connect with one another in the process. Working at the intersection of cutting-edge technology and boundless creativity, we move at the speed of culture with a shared goal to show people the world. We explore new ideas, solve real problems, and have fun — and we do it all together."
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          1788269892,
+          31000000
+        ],
+        [
+          1788269892,
+          31000000
+        ],
+        [
+          1788269892,
+          284000000
+        ],
+        [
+          null,
+          ""
+        ],
+        null,
+        null,
+        [
+          null,
+          ""
+        ],
+        [
+          null,
+          "<ul>\n<li>Bachelor's degree or equivalent practical experience.</li>\n<li>2 years of experience in data analysis, including identifying trends, generating summary statistics, and drawing insights from quantitative and qualitative data.</li>\n<li>2 years of experience managing projects and defining project scope, goals, and deliverables.</li>\n</ul>"
+        ],
+        2
+      ]
+    ],
+    "total": 3414,
+    "page_size": 20
+  }
+}

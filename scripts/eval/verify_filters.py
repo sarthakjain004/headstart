@@ -162,6 +162,10 @@ URL_SHAPES = {
     # job title in the page `<title>`, so `title_on_page` bites here rather than reading false
     # off a client-rendered page.
     "jobvite": r"https://jobs\.jobvite\.com/[^/]+/job/[A-Za-z0-9]+",
+    # scraper: f"https://www.google.com/about/careers/applications/jobs/results/{id}?hl=en_US"
+    # (google.py `_JOB_URL`) — the id-only path, verified live 2026-09-11 to resolve the correct
+    # posting with no slug needed. One board, one host, forever (ADR-0139).
+    "google": r"https://www\.google\.com/about/careers/applications/jobs/results/\d+\?hl=en_US",
 }
 
 
