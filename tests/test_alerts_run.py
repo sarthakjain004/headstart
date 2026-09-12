@@ -19,6 +19,9 @@ class _Store:
     def put(self, sub):
         self.saved.append((sub.id, sub.watermark))
 
+    def opted_out(self, sub_id):
+        return False
+
 
 def _sub(sub_id="abc"):
     return Subscription(
@@ -126,6 +129,9 @@ class _InviteStore:
 
     def get(self, sub_id):
         return self.records.get(sub_id)
+
+    def opted_out(self, sub_id):
+        return False
 
     def put(self, sub):
         self.records[sub.id] = sub
@@ -464,6 +470,9 @@ def test_main_builds_its_config_from_transports_not_a_name_list(monkeypatch):
 
         def get(self, sub_id):
             return None
+
+        def opted_out(self, sub_id):
+            return False
 
         def put(self, sub):
             pass

@@ -33,7 +33,7 @@ from wayback_feeder import (
 )
 
 
-def sweep(ats, domain, style, workers, sink):
+def sweep(ats, domain, style, workers, sink, refresh=False):
     """Harvest every CDX page for one host, appending new slugs as pages land."""
     cdx = f"https://web.archive.org/cdx/search/cdx?url={urllib.parse.quote(domain)}&matchType=domain"
     base = cdx + "&fl=original&collapse=urlkey"  # showNumPages needs the clean url
@@ -54,11 +54,16 @@ def sweep(ats, domain, style, workers, sink):
 
     state = WB / f".{ats}_{domain}_pages_done"
     done = set()
-    if state.exists():
+    if state.exists() and not refresh:
         done = {int(x) for x in state.read_text().split() if x.strip().isdigit()}
+    if refresh:
+        # Truncated rather than left alone, so the re-walk records its own coverage: a run that
+        # dies halfway would otherwise still show the previous run's pages as complete.
+        state.write_text("", encoding="utf-8")
     todo = [p for p in range(npages) if p not in done]
     print(
-        f"{ats}/{domain}: {npages} pages, {len(done)} done, {len(todo)} to fetch",
+        f"{ats}/{domain}: {npages} pages, {len(done)} done, {len(todo)} to fetch"
+        + (" (refresh: saved progress discarded)" if refresh else ""),
         flush=True,
     )
 
@@ -115,7 +120,7 @@ def main():
     adopt_legacy_state(args.ats, "pages_done")
     with slug_sink(args.ats) as sink:
         for domain, style in targets:
-            sweep(args.ats, domain, style, args.workers, sink)
+            sweep(args.ats, domain, style, args.workers, sink, refresh=args.refresh)
 
 
 if __name__ == "__main__":

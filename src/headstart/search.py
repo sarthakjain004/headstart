@@ -654,6 +654,7 @@ def build_filter(
     currencies: Collection[str] = (),
     has_first_seen: bool,
     has_min_salary_annual: bool,
+    has_country: bool = False,
 ) -> str | None:
     """The prod-table where-clause — the reference Search-filter compiler (ADR-0031).
 
@@ -665,10 +666,13 @@ def build_filter(
     alerts Watermark cutoff into no clause at all (ADR-0035's exactness guarantee), or error
     ``has_salary`` on a table LanceDB hasn't migrated onto the new columns yet.
 
-    Two of the five carry defaults, and both defaults fail *quietly*, which is why they are called
-    out here rather than left to the signature. ``has_description`` (ADR-0104) is the safe one:
+    Three of six carry defaults, and all three defaults fail *quietly*, which is why they are
+    called out here rather than left to the signature. ``has_description`` (ADR-0104) is safe:
     forgetting it can only leave the Keyword filter's description scope dark, where forgetting
-    ``has_first_seen`` would turn ADR-0035's Watermark cutoff into no clause at all.
+    ``has_first_seen`` would turn ADR-0035's Watermark cutoff into no clause at all. ``has_country``
+    (ADR-0120) is safe the same way: forgetting it only falls back to ``geo.where()``'s slower
+    regex alternation for the top-level India filter, never errors and never widens or narrows
+    which rows match.
 
     ``currencies`` is the dangerous one. Omit it and a salary bound compiles to **nothing** —
     ``build_filter(salary_min=100_000, …)`` returns ``None`` — because the bracket resolves its
@@ -693,9 +697,18 @@ def build_filter(
     if etype in ETYPE_CLAUSES:
         filters.append(ETYPE_CLAUSES[etype])
     if india:
-        clause = geo.where(india)  # canonical-place lookup — unknown values are ignored
-        if clause:
-            filters.append(clause)
+        # "india" is the exact sentinel `geo.where()` itself uses for "whole country" (as
+        # opposed to a REGIONS/CITIES key like "bengaluru"), and it is the only case the 1,338ms
+        # regex alternation was ever measured on (ADR-0120) — city/region clauses are far
+        # smaller and stay on the unchanged path below regardless of `has_country`.
+        if india == "india" and has_country:
+            filters.append("country = 'IN'")
+        else:
+            clause = geo.where(
+                india
+            )  # canonical-place lookup — unknown values are ignored
+            if clause:
+                filters.append(clause)
     if location:
         filters.append(f"lower(location) LIKE '%{_like(location)}%'")
     if company:
@@ -801,6 +814,10 @@ class JobSearch:
         # column arrives with the first `index sync` after that ADR, and the UI disables the
         # scope until it does rather than 500ing on it.
         self.has_description = "description" in table.schema.names
+        # The materialized India-filter column (ADR-0120), same rule again: until a table has
+        # synced since, `build_filter` falls back to `geo.where("india")`'s slower-but-correct
+        # regex alternation rather than erroring on a column that isn't there yet.
+        self.has_country = "country" in table.schema.names
         #: :data:`RESULT_COLUMNS` narrowed to what this table actually has — see that constant
         #: for why the intersection is mandatory rather than defensive.
         self.projection = tuple(c for c in RESULT_COLUMNS if c in table.schema.names)
@@ -825,19 +842,23 @@ class JobSearch:
         # boot is the one moment a cold Space has a visitor waiting on it, and nobody has
         # asked for the tab yet.
         self._coverage: dict[str, Any] | None = None
-        # The three flags above are each a whole feature silently switched off: an un-migrated
+        # The four flags above are each a whole feature silently switched off: an un-migrated
         # table ignores every `seen_within`/`first_seen_after` bound, the salary bracket and
         # `has_salary`, the Keyword filter's description scope, and the `seen`/`salary` sorts
         # (`run` below quietly drops those too) — and answers each request as though no such
         # filter had been asked for. That is the shape of the incident where the derived salary
         # columns were never read by the serving path and nothing said so, so it is said here,
         # once, naming the columns rather than the features. A fully migrated table logs nothing.
+        # `country` degrades more gently than the other three: its filter (`india="india"`) still
+        # answers correctly without it, just slower (ADR-0120), so it is named here for visibility
+        # but never disables a feature the way the other three can.
         dark = [
             column
             for column, live in (
                 ("first_seen", self.has_first_seen),
                 ("min_salary_annual", self.has_min_salary_annual),
                 ("description", self.has_description),
+                ("country", self.has_country),
             )
             if not live
         ]
@@ -903,6 +924,7 @@ class JobSearch:
             "currencies": self.currencies,
             "has_first_seen": self.has_first_seen,
             "has_min_salary_annual": self.has_min_salary_annual,
+            "has_country": self.has_country,
         }
 
     def facets(self, args: Mapping[str, str]) -> dict[str, Any]:

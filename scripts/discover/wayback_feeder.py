@@ -11,6 +11,15 @@ in each of them.
 loses boards silently: Zoho spreads 8,197 known slugs over 8 TLDs, of which `zohorecruit.com`
 holds 6,101.
 
+**Saved progress finishes an interrupted sweep; it does not refresh one.** CDX orders its index by
+urlkey, not by capture date, so a board archived since the last run sorts into the middle of the
+index — into a page `pages_done` already records as complete — and the page *count* only grows when
+the total crosses a page boundary. A re-run therefore reports "N pages, N done, 0 to fetch" and
+finds nothing, which reads as "the archive has nothing new" when it means "we did not look".
+`--refresh` is the answer: it discards the saved progress and re-walks every page. Slower and
+heavier on the Archive, so it is opt-in rather than the default — and worth pointing at one ATS at
+a time rather than all of them at once.
+
 (The output column is still called `tenant`, matching every other discovery feeder's CSV.
 CONTEXT.md retires the term but parks the code/data rename as a separate change.)
 """
@@ -21,16 +30,23 @@ import errno
 import re
 import socket
 import ssl
+import sys
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from contextlib import contextmanager
+from http.client import responses as _HTTP_REASONS
 from pathlib import Path
 from typing import Literal, get_args
 
+from curl_cffi import requests as curl_requests
+
 ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+from headstart import spare_egress  # needs src on sys.path first
+
 WB = ROOT / "data" / "wayback-ats"
 socket.setdefaulttimeout(120)
 
@@ -156,6 +172,91 @@ def _wait_out_cooldown() -> None:
         time.sleep(min(remaining, 5))
 
 
+# --- the spare egress -------------------------------------------------------------------------
+# A 429 is the Archive rate-limiting *this address*, so a different address is a real answer to it.
+# Two rungs, the same pair `check_liveness._fresh_egress` climbs and `headstart.spare_egress` owns:
+# a sweep still on the direct route is moved onto the spare egress, which is already a different
+# address; one refused *there* rotates the tunnel to another. Owning them there is the point — the
+# macOS daemon recipe (`launchctl kickstart -k` under `sudo -n`), the SOCKS5 readiness handshake,
+# the rotation cooldown, and the coalescing that keeps a whole thread pool meeting one wall to a
+# single restart are all already solved.
+#
+# One measured limit, so nobody reads more into this than it gives. **The Archive publishes no
+# AAAA record at all** — `web.archive.org` and `archive.org`, checked 2026-09-08 against both
+# 1.1.1.1 and 8.8.8.8 — so WARP resolves it to an A record and egresses IPv4 however the proxy is
+# spelled. That is the shallow, recycled per-colo pool, and it is the pool this sweep is stuck
+# with: measured here the same day, four rotations moved the IPv6 address 5 times out of 5 and the
+# IPv4 one 3 times out of 5 (`.169`, `.174`, `.169`, `.169`, `.175`).
+#
+# So rotation is **additive to the backoff, never a replacement for it**: the delay is still slept
+# in full, and the retry merely goes out from whatever address the rotation landed on — which
+# roughly half the time is the address that was just refused. `_park` and the exponential curve
+# remain the load-bearing part; this only stops a spent address from being the *only* thing the
+# sweep has left. Do not shorten the backoff on the strength of a rotation having happened.
+_EGRESS_LOCK = threading.Lock()
+_proxy: str | None = None
+
+
+def _rotate_egress() -> None:
+    """Offer the next attempt a different egress address, when one can be had.
+
+    Best-effort and never raises: a machine without WARP, or without passwordless sudo, stays
+    exactly where it was and the caller's backoff carries the retry as it did before this existed.
+    """
+    global _proxy
+    with _EGRESS_LOCK:
+        on_spare = _proxy is not None
+    if on_spare:
+        spare_egress.rotate("web.archive.org")
+        return
+    # Cached for the life of the process, including the None — only the first caller waits on the
+    # dial, and a machine without WARP never re-probes for one.
+    proxy = spare_egress.proxy_url()
+    if proxy is None:
+        return
+    with _EGRESS_LOCK:
+        _proxy = proxy
+    print(f"  wayback: 429 — moved onto the spare egress ({proxy})", flush=True)
+
+
+def _get(url: str, proxy: str | None) -> str:
+    """One GET, direct or through the spare egress. Failures speak urllib's vocabulary either way.
+
+    The proxied route needs `curl_cffi`: WARP listens as SOCKS5 and `urllib` cannot speak it. A
+    non-2xx is re-raised as a real `HTTPError` so the ladder in `fetch` needs no second spelling of
+    its status handling, and `RequestsError` is already an `OSError`, so the transport arm catches
+    it unchanged.
+
+    One deliberate asymmetry: a curl failure carries a curl code, not an `errno`, so `_is_refusal`
+    reads it as an ordinary error and backs off instead of parking every worker. That is the safe
+    direction — a stand-down for the whole host on evidence we cannot actually classify would cost
+    far more than one sweep's own retries.
+    """
+    headers = {"User-Agent": UA, "Connection": "close"}
+    if proxy is None:
+        request = urllib.request.Request(url, headers=headers)
+        opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=_CTX))
+        with opener.open(request, timeout=TIMEOUT) as response:
+            return response.read().decode("utf-8", "replace")
+    response = curl_requests.get(
+        url,
+        headers=headers,
+        proxies={"http": proxy, "https": proxy},
+        timeout=TIMEOUT,
+        verify=False,  # parity with `_CTX`, which is unverified for the same host
+    )
+    if response.status_code >= 400:
+        # curl_cffi leaves `reason` empty, so the status table supplies the word `fetch` prints.
+        raise urllib.error.HTTPError(
+            url,
+            response.status_code,
+            response.reason or _HTTP_REASONS.get(response.status_code, ""),
+            response.headers,
+            None,
+        )
+    return response.text
+
+
 def fetch(url: str, attempts: int = 6) -> str:
     """GET ``url`` on a fresh connection, retrying what is worth retrying.
 
@@ -165,8 +266,10 @@ def fetch(url: str, attempts: int = 6) -> str:
 
     Three failure classes, handled differently. A **connection refusal** is the host saying "too
     many"; it parks all workers and backs off hardest. A **429/5xx** is throttling, backed off
-    exponentially and honouring ``Retry-After``. Anything else — 400, 403, 404 — is the server's
-    final answer, raised at once rather than retried five more times.
+    exponentially and honouring ``Retry-After`` — and a 429 additionally moves the sweep onto a
+    different egress address (`_rotate_egress`), since that status is about the address rather than
+    the page. Anything else — 400, 403, 404 — is the server's final answer, raised at once rather
+    than retried five more times.
 
     Never returns None. The first version swallowed every exception and returned None, which
     cost a harvest run: 18 ATSes reported "could not get page count: None" and the reason had
@@ -175,20 +278,17 @@ def fetch(url: str, attempts: int = 6) -> str:
     last = ""
     for attempt in range(1, attempts + 1):
         _wait_out_cooldown()
+        with _EGRESS_LOCK:
+            proxy = _proxy
         try:
-            request = urllib.request.Request(
-                url, headers={"User-Agent": UA, "Connection": "close"}
-            )
-            opener = urllib.request.build_opener(
-                urllib.request.HTTPSHandler(context=_CTX)
-            )
-            with opener.open(request, timeout=TIMEOUT) as response:
-                return response.read().decode("utf-8", "replace")
+            return _get(url, proxy)
         except urllib.error.HTTPError as err:
             if err.code not in _RETRYABLE:
                 raise FetchError(f"HTTP {err.code} {err.reason}") from err
             last = f"HTTP {err.code} {err.reason}"
             delay = _retry_after(err) or 2**attempt
+            if err.code == 429:
+                _rotate_egress()
         except (urllib.error.URLError, TimeoutError, OSError) as err:
             last = f"{type(err).__name__}: {err}"
             if _is_refusal(err):
@@ -503,6 +603,11 @@ def cli(doc: str) -> argparse.ArgumentParser:
         "--style",
         choices=STYLES,
         help="with --domain, sweep a host that is not in the table at all",
+    )
+    ap.add_argument(
+        "--refresh",
+        action="store_true",
+        help="ignore saved progress and re-walk every page (see the note in the module docs)",
     )
     return ap
 

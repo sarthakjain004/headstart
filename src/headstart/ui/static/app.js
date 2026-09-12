@@ -449,6 +449,7 @@ function clearAll(){
 const PAGE_SIZE = 20;
 const MAX_PAGE = 20;
 let page = 1;
+let searchRequest = 0;
 
 // go(): a fresh search or browse from page 1 — Search button, Enter, a chip, or a filter
 // change. An empty query browses the newest jobs instead of ranking by similarity
@@ -460,6 +461,7 @@ async function go(){ page = 1; await fetchPage(); }
 async function goToPage(n){ page = Math.max(1, Math.min(n, MAX_PAGE)); await fetchPage(); }
 
 async function fetchPage(){
+  const request = ++searchRequest;
   const q = el('q').value.trim();
   drawActive();
   const p = new URLSearchParams({ q, k: PAGE_SIZE, page });
@@ -474,19 +476,22 @@ async function fetchPage(){
   // Fired together, not one after the other: the counts depend only on the filters, never on
   // the query, so they neither wait for the ranking nor make the user wait for them.
   const facetsPromise = fetch('/facets?'+p).then(r => r.json()).catch(() => null);
-  facetsPromise.then(applyFacets);
+  facetsPromise.then(facets => { if (request === searchRequest) applyFacets(facets); });
   drawSortNote();
   let rows;
   try { rows = await (await fetch('/search?'+p)).json(); }
-  catch(e){ busy(false); el('results').innerHTML = '<div class="empty">That search didn\'t go through. Try again.</div>';
+  catch(e){ if (request !== searchRequest) return;
+            busy(false); el('results').innerHTML = '<div class="empty">That search didn\'t go through. Try again.</div>';
             setResultRows(1);
             el('n').textContent = ''; el('kind').textContent = ''; return; }
+  if (request !== searchRequest) return;
   busy(false);
   if(!Array.isArray(rows)){
     el('results').innerHTML = '<div class="empty">One of the filters isn\'t valid — clear it and try again.</div>';
     setResultRows(1);
     el('n').textContent = ''; el('kind').textContent = ''; return; }
   const facets = await facetsPromise;
+  if (request !== searchRequest) return;
   drawKeywordNote(facets);
   drawResultKind(q, rows.length);
   if(!rows.length){
@@ -773,6 +778,7 @@ function draw(rows, target){
    one from the controls the user is looking at. All strip actions ride ONE delegated
    listener + data attributes — never inline handlers with interpolated names. ---- */
 let mySets = null, activeSetId = null;
+let matchesRequest = 0;
 
 async function loadSets(){
   try{
@@ -837,6 +843,7 @@ function sortMatches(rows){
 }
 
 async function runSet(id){
+  const request = ++matchesRequest;
   const s = (mySets || []).find(x => x.id === id); if (!s) return;
   activeSetId = id; renderSets();
   el('matches-msg').textContent = 'searching…';
@@ -845,7 +852,8 @@ async function runSet(id){
   for (const [key, value] of Object.entries(matchesRange())) p.set(key, value);
   let rows;
   try { rows = await (await fetch('/search?'+p)).json(); }
-  catch(e){ el('matches-msg').textContent = 'That search didn\'t go through.'; return; }
+  catch(e){ if (request === matchesRequest) el('matches-msg').textContent = 'That search didn\'t go through.'; return; }
+  if (request !== matchesRequest) return;
   if (!Array.isArray(rows)){ el('matches-msg').textContent = 'A saved filter isn\'t valid — refine the set.'; return; }
   el('matches-msg').textContent = rows.length
     ? `${rows.length} match${rows.length === 1 ? '' : 'es'} for “${s.name}”`
@@ -1241,7 +1249,7 @@ let trendData = null, trendDrill = null;
 // The unit token is 'change', not 'index': CONTEXT.md's "index" is the served corpus, and this
 // same file labels the reference line "whole index" in that sense. One word, two meanings, in
 // one function was a grep hazard. The UI has always called this unit Change.
-let trendMetric = 'stock', trendUnit = 'change', trendSplit = 'bands';
+let trendMetric = 'stock', trendUnit = 'change', trendSplit = 'bands', trendCoverage = 'all';
 let trendDays = 'all';      // the date-range preset: 7 | 30 | 90 | 'all'; a custom bound beats it
 let hoveredSeries = null;   // legend/chart hover-focus name — dims every other line (§ emphasis)
 let hoverIndex = null;      // the stamp the crosshair is parked on — the keyboard walks this
@@ -1379,7 +1387,9 @@ function toggleAtsPopover(force){
   el('trends-ats-trigger').setAttribute('aria-expanded', open);
 }
 
+let trendsRequest = 0;
 async function loadTrends(family){
+  const request = ++trendsRequest;
   const q = new URLSearchParams();
   // The roles split only exists for families that HAVE watched roles. Carrying a sticky
   // 'roles' into one that doesn't returns an empty series with its toggle hidden — nothing
@@ -1388,7 +1398,10 @@ async function loadTrends(family){
   if (family) { q.set('family', family); q.set('split', trendSplit); }
   if (trendMetric !== 'stock') q.set('metric', trendMetric);
   const range = trendRange();
-  if (range.since) q.set('since', range.since);
+  if (trendCoverage !== 'all') {
+    q.set('coverage', trendCoverage);
+    if (range.since) q.set('base', range.since);
+  } else if (range.since) q.set('since', range.since);
   if (range.until) q.set('until', range.until);
   const ats = trendAtsSelected();
   if (ats) ats.forEach(a => q.append('ats', a));
@@ -1402,15 +1415,20 @@ async function loadTrends(family){
   setTrendsBusy(!trendData);
   let r;
   try { r = await fetch('/trends' + (q.size ? '?' + q : '')); }
-  catch(e){ showTrendsError('That request didn’t go through.'); return; }
+  catch(e){ if (request === trendsRequest) showTrendsError('That request didn’t go through.'); return; }
+  if (request !== trendsRequest) return;
   if (!r.ok){
     showTrendsError(r.status === 401
       ? 'Your session expired — sign in again to see trends.'
       : 'Trends didn’t load. Try again.');
     return;
   }
+  let data;
+  try { data = await r.json(); }
+  catch(e){ if (request === trendsRequest) showTrendsError('Trends didn’t load. Try again.'); return; }
+  if (request !== trendsRequest) return;
   hideTrendsError();
-  trendData = await r.json(); trendDrill = family || null;
+  trendData = data; trendDrill = family || null;
   drawTrends();
 }
 
@@ -1915,9 +1933,10 @@ function drawTrends(){
   // Every category is now represented — individually if it's one of the top CHART_MAX, folded
   // into Other otherwise — so this no longer needs a "top N of M" caveat. The drill's way out
   // is the breadcrumb above, not a sentence at the end of this line.
-  el('trends-scope').textContent = trendDrill
+  const coverageScope = d.coverage === 'comparable' ? 'comparable Board cohort · ' : '';
+  el('trends-scope').textContent = coverageScope + (trendDrill
     ? (trendSplit === 'roles' ? `tracked roles · ${measured}` : `by experience level · ${measured}`)
-    : `${d.series.length} categories · ${measured} — click any of the top ${CHART_MAX} to break it down`;
+    : `${d.series.length} categories · ${measured} — click any of the top ${CHART_MAX} to break it down`);
   // The SVG's own name for itself, written from the same facts. It was a fixed "Open roles over
   // time by category" in the template, which stayed that after every Measure, Unit, ATS and
   // drill change — right in exactly one state and stale in every other.
@@ -1930,6 +1949,7 @@ function drawTrends(){
     + ` by ${grouping}, as ${trendUnit === 'share' ? 'a share of the index'
         : trendUnit === 'change' ? 'an index against each category’s own count at the window’s start'
         : 'a count'}`
+    + `${d.coverage === 'comparable' ? ', comparable Board cohort' : ''}`
     + `${atsPick ? `, ${atsPick.length} of the ATS sources` : ''}, over ${measured}.`
     + ` ${drawn.length} line${drawn.length === 1 ? '' : 's'}.`
     + ' Arrow keys read the values; Table view lists them all.');
@@ -1937,7 +1957,9 @@ function drawTrends(){
   // only exist from the run this shipped in forward, not because the pipeline itself is new —
   // conflating the two would read as "the pipeline is broken" rather than "you narrowed it."
   el('trends-empty').textContent = runs === 0
-    ? 'No measurements inside this window — widen the dates, or clear them to see the whole history.'
+    ? (d.coverage === 'comparable'
+      ? 'Comparable coverage starts with this ledger — choose All coverage for older measurements.'
+      : 'No measurements inside this window — widen the dates, or clear them to see the whole history.')
     : runs < 2
     ? (atsPick
         ? `Only ${runs} measurement${runs === 1 ? '' : 's'} for this ATS selection — per-ATS history starts from when this filter shipped, not before. Broaden the selection to see more.`
@@ -1963,6 +1985,7 @@ function drawTrends(){
       : trendUnit === 'change'
       ? `Each line starts at 100 — its own count of live openings at ${stampLabel(d.stamps[0], true)}, or at its own first measurement if it has none there — so categories of very different size become comparable shapes. 120 means a fifth more openings than at the start, not 120 openings; the count itself is in the legend and the table. The index grows as coverage does, and a run that adds a board lifts every line without a job having been posted — so read a family against the dashed line, which is the whole index on the same base. Move the window and every line is re-based to the new start.`
       : 'Counts are live openings in the index, re-measured every pipeline run. The index itself grows as coverage does, which lifts every count.'));
+  if (d.coverage === 'comparable') parts.push(`Only Boards first observed by ${stampLabel(d.base, true)} are counted, so later Board additions cannot create a rise here.`);
   if (nt && trendMetric === 'stock') parts.push(`${nt.toLocaleString()} further rows sit in non-tech categories and are excluded here.`);
   el('trends-foot').textContent = parts.join(' ');
 
@@ -2277,6 +2300,7 @@ trendSeg('trends-metric', 'metric', v => {
   setUnit(v === 'new' && trendUnit === 'share' ? 'change' : trendUnit, v === 'new');
   loadTrends(trendDrill);
 });
+trendSeg('trends-coverage', 'coverage', v => { trendCoverage = v; loadTrends(trendDrill); });
 trendSeg('trends-unit', 'unit', v => { setUnit(v, false); drawTrends(); });
 trendSeg('trends-split', 'split', v => { trendSplit = v; loadTrends(trendDrill); });
 // A preset and a custom bound are two spellings of the same window, so setting either clears

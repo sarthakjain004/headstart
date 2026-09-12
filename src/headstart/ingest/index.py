@@ -136,6 +136,11 @@ _FIRST_SEEN_FIELD = pa.field("first_seen", pa.string())
 # like `first_seen`, never compare it against meta, or every row would read stale and be clobbered
 # to null on every run.
 _DESCRIPTION_FIELD = pa.field("description", pa.string())
+# "IN" when `location` matches the India gazetteer's country-level rule, else null (ADR-0120).
+# Materializes `geo.where("india")`'s query-time regex alternation so the India filter's
+# whole-country case can use a plain equality instead. Held as a module constant for the same
+# reason `_FIRST_SEEN_FIELD`/`_DESCRIPTION_FIELD` are: `_schema` and `sync`'s migration both need it.
+_COUNTRY_FIELD = pa.field("country", pa.string())
 
 
 class _Stale(NamedTuple):
@@ -147,9 +152,9 @@ class _Stale(NamedTuple):
 
 
 # One row per Job: canonical typed metadata (ADR-0007) + inline experience numbers (ADR-0019) +
-# inline salary numbers (ADR-0082) + the vector. min_years/max_years/min_salary_annual/
-# max_salary_annual are nullable ints — null for the Jobs no number was found for, and null is
-# never treated as exclusionary (ADR-0082).
+# inline salary numbers (ADR-0082) + a materialized country tag (ADR-0120) + the vector.
+# min_years/max_years/min_salary_annual/max_salary_annual/country are nullable — null for the
+# Jobs no number/tag was found for, and null is never treated as exclusionary (ADR-0082).
 def _schema(dim: int) -> pa.Schema:
     return pa.schema(
         [
@@ -159,6 +164,7 @@ def _schema(dim: int) -> pa.Schema:
             pa.field("title", pa.string()),
             _DESCRIPTION_FIELD,
             pa.field("location", pa.string()),
+            _COUNTRY_FIELD,
             pa.field("remote", pa.bool_()),
             pa.field("employment_type", pa.string()),
             pa.field("experience", pa.string()),  # raw string for display ("5+")
@@ -237,12 +243,18 @@ def _scraped_boards(
     This is the eviction scope: a Board here but absent from the tech corpus was scraped and simply
     has no tech jobs now, so its stale tech rows are correctly evicted. Falls back to the corpus ids'
     Boards when the scrape dir has no ``.jsonl`` (a Wellfound-CSV or unit-test sync), keeping those
-    paths working. (A Board scraped that yields *zero* jobs of any kind writes no ids and so isn't
-    covered here — that rarer case is handled by the dead/absent-Board prune, ADR-0023.)"""
+    paths working. The per-Board completion journal also supplies complete empty Boards, whose
+    closed Jobs would otherwise survive both sync and the Live-Board prune."""
+    from headstart.harvest import AUTHORITATIVE_FILENAME
+
     path = Path(scraped)
+    boards = {
+        live.get(board.lower(), board)
+        for board in read_id_list(path / AUTHORITATIVE_FILENAME)
+    }
     if path.is_dir() and any(path.glob("*.jsonl")):
-        return {resolve_board(job["id"], live) for job in iter_jobs(path)}
-    return {resolve_board(job_id, live) for job_id in corpus_ids}
+        return boards | {resolve_board(job["id"], live) for job in iter_jobs(path)}
+    return boards | {resolve_board(job_id, live) for job_id in corpus_ids}
 
 
 _IDS_PER_LINE = 100  # batched id logging: skimmable lines, any single id still greps
@@ -492,6 +504,23 @@ def sync(args: argparse.Namespace) -> int:
         table = db.create_table(PROD_TABLE, schema=_schema(dim))
         index_ids = []
     _log.info(f"index: {len(index_ids)} rows in table '{PROD_TABLE}'")
+    # Telemetry only: record the age/size of withheld freshness without changing eviction.
+    # The state directory is already fetched and published by the pipeline. Following the
+    # caller's unconfirmed path also keeps one-off/test state away from the production paths.
+    from headstart.ingest import board_freshness
+
+    try:
+        report = board_freshness.update(
+            Path(args.unconfirmed).parent, live, boards, unauthoritative,
+            index_ids, corpus_ids, datetime.now(UTC).isoformat(),
+        )
+        _log.info(
+            f"withheld freshness: {len(report['boards'])} Board(s), "
+            f"{sum(v['protected_rows'] for v in report['ats'].values())} protected rows; "
+            "not a count of confirmed closed Jobs"
+        )
+    except Exception as exc:  # noqa: BLE001 — unavailable measurements must not gate index maintenance
+        _log.warning(f"withheld freshness measurement unavailable: {exc}", exc_info=True)
     if excluded:
         # How many rows the ADR-0053 exclusion actually withholds — deliberately a second line
         # here rather than folded into the warning above, because `index_ids` is only read from
@@ -576,6 +605,15 @@ def sync(args: argparse.Namespace) -> int:
     if _DESCRIPTION_FIELD.name not in table.schema.names:
         _log.info(f"adding '{_DESCRIPTION_FIELD.name}' to the existing table")
         table.add_columns(_DESCRIPTION_FIELD)
+
+    # And for `country` (ADR-0120). Existing rows get null until `_refresh_metadata` below rewrites
+    # them from the store — no bespoke backfill command needed here, unlike description: `country`'s
+    # true value lives fully in `meta.jsonl` once `update_meta`'s DERIVATIONS_VERSION=9 sweep runs
+    # (description's raw text never did, only a `has_description` bit), so the ordinary compare-and-
+    # rewrite loop already reaches it.
+    if _COUNTRY_FIELD.name not in table.schema.names:
+        _log.info(f"adding '{_COUNTRY_FIELD.name}' to the existing table")
+        table.add_columns(_COUNTRY_FIELD)
 
     # Replace the rows of Jobs being re-embedded with a description they previously lacked
     # (ADR-0050) — before planning, not after. `plan_sync` computes add = fresh - index, so an id

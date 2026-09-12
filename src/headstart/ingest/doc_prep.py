@@ -22,6 +22,7 @@ from __future__ import annotations
 import re
 
 from headstart.experience import extract
+from headstart.geo import classify as classify_country
 from headstart.remote import extract as extract_remote
 from headstart.salary import extract as extract_salary
 from headstart.search import DOC_PREFIX
@@ -195,7 +196,19 @@ def build_doc(job: dict) -> str:
 # (fixed after measuring, pinned by `test_this_is_a_remote_position`); a sweep on real data would
 # find at least this many. A sweep is required to reach any of them, since a fix landing here
 # reaches new Jobs for free but not rows already stored before it shipped.
-DERIVATIONS_VERSION = 8
+#
+# v9: added `headstart.geo.classify` -> the `country` column ("IN" | null), materializing the
+# India filter's country-level rule instead of leaving it a query-time `regexp_like` alternation
+# (ADR-0120). Unlike `remote` (v8), `country` has no competing raw ATS field to protect from
+# silent reversion -- it is a pure function of `location`, which is already a fact resynced every
+# run -- so it follows the plain `min_years`/salary derivation shape, not `remote`'s overlay one.
+# Prompted by `experiment/lancedb-scalar-index/LOG.md` (2026-09-07): `geo.where("india")`
+# measured unindexed at 352.6ms (count_rows) / 1,338.1ms (vector page) -- 7-13x every other filter
+# in that session, and no scalar index type can serve a `regexp_like` alternation, so only a
+# materialized column can fix it. `classify()` reads the same CITIES/STATES/IND_FORMS/
+# SUBDIVISIONS/*_EXCLUDE constants `where("india")` does, so the two cannot independently drift
+# on what counts as India.
+DERIVATIONS_VERSION = 9
 
 
 def to_meta(job: dict) -> dict:
@@ -210,7 +223,11 @@ def to_meta(job: dict) -> dict:
     / ``salary`` stay raw strings — display-only (ADR-0019). ``remote`` is the scraper's own
     field UNLESS the description confidently reads as remote, in which case that wins — see
     ``headstart.remote``'s module docstring; one-directional, so this can only ever turn a
-    False/None field into True, never the reverse.
+    False/None field into True, never the reverse. ``country`` is ``"IN"`` when ``location``
+    matches the India gazetteer's country-level rule (the same rule
+    ``headstart.geo.where("india")`` compiles to SQL for), else None — materializes that rule so
+    the search API's India filter can use a plain equality instead of a query-time regex
+    alternation (ADR-0120).
 
     The derived fields are re-computable from the facts beside them, which is what lets
     ``update_meta`` repair them in place later; see :data:`DERIVATIONS_VERSION`.
@@ -222,6 +239,7 @@ def to_meta(job: dict) -> dict:
     # Planner-only: see PLANNER_ONLY_FIELDS.
     meta["has_description"] = bool((job.get("description") or "").strip())
     meta["remote"] = extract_remote(job.get("remote"), job.get("description"))
+    meta["country"] = classify_country(job.get("location"))
     span = extract(job.get("experience"), job.get("description"), job.get("title"))
     meta["min_years"] = span.min_years if span else None
     meta["max_years"] = span.max_years if span else None

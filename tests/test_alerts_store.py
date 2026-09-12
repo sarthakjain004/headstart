@@ -22,6 +22,8 @@ class _Hub:
     def install(self, monkeypatch):
         monkeypatch.setattr(st, "_list_files", lambda repo, token: list(self.files))
         monkeypatch.setattr(st, "_read", lambda repo, path, token: self.files[path])
+        # A missing dict key is this fake Hub's confirmed file-not-found response.
+        monkeypatch.setattr(st, "_is_absent", lambda exc: isinstance(exc, KeyError))
         monkeypatch.setattr(
             st,
             "_write",
@@ -30,6 +32,15 @@ class _Hub:
         monkeypatch.setattr(
             st, "_delete", lambda repo, path, token: self.files.pop(path, None)
         )
+        def commit(repo, changes, expected, token):
+            if any(self.files.get(path) != before for path, before in expected.items()):
+                raise st.StoreConflict("concurrent edit")
+            for path, data in changes.items():
+                if data is None:
+                    self.files.pop(path, None)
+                else:
+                    self.files[path] = data
+        monkeypatch.setattr(st, "_commit", commit)
         return self
 
 
@@ -120,6 +131,23 @@ def test_get_returns_one_record_or_none(monkeypatch):
     assert store.get("0" * 16) is None  # well-formed but absent
 
 
+@pytest.mark.parametrize("failure", [TimeoutError("temporary outage"), ValueError("corrupt JSON")])
+def test_seeded_invite_cannot_replace_an_unreadable_subscription(monkeypatch, failure):
+    from headstart.alerts.run import subscription_for
+
+    original = st.Subscription.create("ada@example.com", "backend", {}, when="2026-09-01T00:00:00+00:00")
+    payload = json.dumps(original.to_dict()).encode()
+    hub = _Hub({original.path(): payload}).install(monkeypatch)
+
+    def unreadable(*args):
+        raise failure
+
+    monkeypatch.setattr(st, "_read", unreadable)
+    with pytest.raises(RuntimeError, match="Subscription.*unreadable"):
+        subscription_for(st.Invite(original.email, query="backend"), st.Store(REPO, TOKEN), frozenset())
+    assert hub.files[original.path()] == payload
+
+
 @pytest.mark.parametrize(
     "sub_id", ["allowlist", "../README", "aaa", "", "0" * 15, "NOTHEX0000000000"]
 )
@@ -137,12 +165,86 @@ def test_get_refuses_ids_that_are_not_ids(monkeypatch, sub_id):
     assert reads == []
 
 
-def test_get_answers_none_for_a_file_that_is_not_a_subscription(monkeypatch):
+def test_get_refuses_to_replace_a_file_that_is_not_a_subscription(monkeypatch):
     ok = "a" * 16
     _Hub({f"subscriptions/{ok}.json": b'{"allowed": ["ada@example.com"]}'}).install(
         monkeypatch
     )
-    assert st.Store(REPO, TOKEN).get(ok) is None
+    with pytest.raises(st.StoreUnavailable):
+        st.Store(REPO, TOKEN).get(ok)
+
+
+@pytest.mark.parametrize("seed", ["query", "default_query"])
+def test_unsubscribe_survives_future_invites_until_explicit_reenable(monkeypatch, seed):
+    from headstart.alerts.run import subscription_for
+
+    _Hub().install(monkeypatch)
+    store = st.Store(REPO, TOKEN)
+    invite = st.Invite("ada@example.com", **{seed: "backend"})
+    first = subscription_for(invite, store, frozenset())
+    store.remove(first.id)
+    assert subscription_for(invite, st.Store(REPO, TOKEN), frozenset()) is None
+
+    # Only an explicit enable clears the durable opt-out, never an allowlist edit.
+    again = st.Subscription.create(invite.email, "frontend", {})
+    store.put(again, reenable=True)
+    assert subscription_for(invite, st.Store(REPO, TOKEN), frozenset()) is not None
+
+
+def test_stale_delivery_write_cannot_overwrite_a_newer_query(monkeypatch):
+    hub = _Hub().install(monkeypatch)
+    editor = st.Store(REPO, TOKEN)
+    original = st.Subscription.create("ada@example.com", "backend", {})
+    editor.put(original)
+    delivery = st.Store(REPO, TOKEN)
+    stale = delivery.get(original.id)
+    editor.put(editor.get(original.id).revised("frontend", {}))
+    expected = hub.files[original.path()]
+    stale.watermark = "2099-01-01T00:00:00+00:00"
+    with pytest.raises(st.StoreConflict):
+        delivery.put(stale)
+    assert hub.files[original.path()] == expected
+
+
+def test_conditional_commit_pins_reads_and_atomic_write_to_the_same_revision(monkeypatch):
+    from types import SimpleNamespace
+
+    pytest.importorskip("huggingface_hub")
+    calls = []
+    reads = []
+    api = SimpleNamespace(
+        repo_info=lambda *a, **kw: SimpleNamespace(sha="a" * 40),
+        create_commit=lambda **kw: calls.append(kw),
+    )
+    monkeypatch.setattr(st, "_hf", lambda token: api)
+    monkeypatch.setattr(st, "_is_absent", lambda exc: isinstance(exc, KeyError))
+
+    def read(repo, path, token, revision):
+        reads.append((path, revision))
+        return {"subscriptions/a.json": b"old"}[path]
+
+    monkeypatch.setattr(st, "_read_at_revision", read)
+    st._commit(REPO, {"subscriptions/a.json": None, "subscription_opt_outs/a.json": b"{}"},
+               {"subscriptions/a.json": b"old", "subscription_opt_outs/a.json": None}, TOKEN)
+    assert reads == [("subscriptions/a.json", "a" * 40), ("subscription_opt_outs/a.json", "a" * 40)]
+    assert len(calls) == 1
+    assert calls[0]["parent_commit"] == "a" * 40
+    assert [type(op).__name__ for op in calls[0]["operations"]] == ["CommitOperationDelete", "CommitOperationAdd"]
+
+
+def test_conditional_commit_never_writes_after_the_record_changed(monkeypatch):
+    from types import SimpleNamespace
+
+    pytest.importorskip("huggingface_hub")
+    writes = []
+    monkeypatch.setattr(st, "_hf", lambda token: SimpleNamespace(
+        repo_info=lambda *a, **kw: SimpleNamespace(sha="a" * 40),
+        create_commit=lambda **kw: writes.append(kw),
+    ))
+    monkeypatch.setattr(st, "_read_at_revision", lambda *args: b"newer intent")
+    with pytest.raises(st.StoreConflict):
+        st._commit(REPO, {"subscriptions/a.json": b"stale"}, {"subscriptions/a.json": b"old"}, TOKEN)
+    assert writes == []
 
 
 def test_resubscribing_overwrites_rather_than_duplicates(monkeypatch):

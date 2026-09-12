@@ -166,7 +166,7 @@ def _master_command(
         # Watermark to now — silently skipping everything since — and rotate the
         # unsubscribe token in messages already delivered.
         if store.get(chat_subscription_id(argument)) is None:
-            store.put(Subscription.for_chat(argument))
+            store.put(Subscription.for_chat(argument), reenable=True)
         if argument in registry.denied:
             registry.denied.remove(
                 argument

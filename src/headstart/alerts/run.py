@@ -78,6 +78,9 @@ def send_one(
     ever offer them. Taking the stamp first can only re-offer a row next run, which is the
     at-least-once direction this feature chose.
     """
+    if store.opted_out(sub.id):
+        _log.info(f"{sub.id}: opted out - skipped")
+        return 0
     transport = transport_for(sub, config)
     cutoff = now_iso()
     rows = space_query.newly_seen(space, sub, sub.watermark)
@@ -140,6 +143,9 @@ def subscription_for(
     intent, and the one `/subscribe` reads back, so letting it drift stale is its own bug.
     """
     account = subscription_id(invite.email)
+    if store.opted_out(account):
+        _log.info(f"{account}: opted out - skipped")
+        return None
     if account in accounts_with_sets:
         held = store.get(account)
         if held is None:

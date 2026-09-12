@@ -5,8 +5,8 @@ schema is worse than none, because it is trusted. So the check is mechanical: pa
 names out of the README's `### The served table` table and compare them, in order, against
 `index._schema()`.
 
-Skips where pyarrow is absent (CI's quality job installs base deps only), so treat it as a local
-guard rather than a gate. Run the suite before opening a schema PR.
+The dev extra includes the index runtime so this runs in quality CI. Minimal installs can
+still skip it; schema changes must use the dev extra locally too.
 """
 
 from __future__ import annotations

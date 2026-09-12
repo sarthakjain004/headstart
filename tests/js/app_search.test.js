@@ -16,7 +16,7 @@ function fakeEl() {
   const classes = new Set();
   const handlers = {};
   return {
-    innerHTML: '', textContent: '', hidden: false, value: '', checked: false,
+    innerHTML: '', textContent: '', hidden: false, value: '', checked: false, dataset: {},
     // `style` needs the methods the code actually calls on it. A bare `{}` let
     // `style.setProperty` throw asynchronously, and Node reports that as an
     // unhandledRejection AFTER the test ends — so 24 tests failed at once with no
@@ -71,12 +71,12 @@ function loadApp(respond, cfg = {}) {
     Event: class { constructor(type) { this.type = type; } },
     fetch: url => {
       fetches.push(String(url));
-      return Promise.resolve({ json: () => Promise.resolve(respond(String(url))) });
+      return Promise.resolve({ ok: String(url) === '/sets', json: () => Promise.resolve(respond(String(url))) });
     },
   };
   ctx.globalThis = ctx;
   const src = fs.readFileSync(APP_JS, 'utf8')
-    + '\n;globalThis.__t = { go, goToPage, page: () => page, jobCard, savedRow,'
+    + '\n;globalThis.__t = { go, goToPage, loadSets, runSet, page: () => page, jobCard, savedRow,'
     + ' salStop, SALARY_STOPS, stops: () => SALARY_STOPS, sync: syncSalarySlider, slide: salSlide,'
     + ' dismiss: dismissRow, dismissed };';
   vm.runInNewContext(src, ctx);
@@ -95,6 +95,46 @@ const set = (nodes, id, value) => { (nodes[id] ||= fakeEl()).value = value; };
 function qs(url) {
   return Object.fromEntries(new URL(url, 'http://x').searchParams);
 }
+
+for (const staleFailure of [false, true]) {
+  test(`a superseded search cannot replace newer results (${staleFailure ? 'error' : 'success'})`, async () => {
+    const pending = {};
+    const { nodes, t } = loadApp(url => {
+      if (url.startsWith('/facets?')) return { total: 1 };
+      if (!url.startsWith('/search?') || !qs(url).q) return [];
+      return new Promise((resolve, reject) => { pending[qs(url).q] = { resolve, reject }; });
+    });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    set(nodes, 'q', 'old'); const old = t.go();
+    set(nodes, 'q', 'new'); const newer = t.go();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    pending.new.resolve([job('new', { title: 'NEW_RESULT' })]);
+    await newer;
+    if (staleFailure) pending.old.reject(new Error('old request failed'));
+    else pending.old.resolve([job('old', { title: 'OLD_RESULT' })]);
+    await old;
+    assert.ok(nodes.results.innerHTML.includes('NEW_RESULT'));
+    assert.ok(!nodes.results.innerHTML.includes('OLD_RESULT'));
+    assert.strictEqual(nodes.q.value, 'new');
+  });
+}
+
+test('switching Saved sets keeps the newer matches when the old request finishes last', async () => {
+  const pending = {};
+  const { nodes, t } = loadApp(url => {
+    if (url === '/sets') return ['initial', 'old', 'new'].map(id => ({ id, name: id, query: id === 'initial' ? '' : id }));
+    if (!url.startsWith('/search?') || !qs(url).q) return [];
+    return new Promise(resolve => { pending[qs(url).q] = resolve; });
+  });
+  await t.loadSets();
+  const old = t.runSet('old'), newer = t.runSet('new');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  pending.new([job('new', { title: 'NEW_MATCH' })]); await newer;
+  pending.old([job('old', { title: 'OLD_MATCH' })]); await old;
+  assert.ok(nodes['matches-results'].innerHTML.includes('NEW_MATCH'));
+  assert.ok(!nodes['matches-results'].innerHTML.includes('OLD_MATCH'));
+  assert.ok(nodes['matches-msg'].textContent.includes('“new”'));
+});
 
 test('an empty query browses on load instead of showing a static empty state', async () => {
   // Page load also fires /me and, in this harness, /saved (CAN_STAR reads truthy against the

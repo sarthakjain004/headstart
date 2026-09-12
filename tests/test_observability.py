@@ -10,6 +10,20 @@ from __future__ import annotations
 from headstart.ingest import observability
 
 
+def test_preparation_progress_reports_completed_counts_before_scan_finishes(caplog, monkeypatch):
+    import logging
+
+    caplog.set_level(logging.INFO)
+    clock = iter([0.0, 0.0, 1.0, 5.0])
+    monkeypatch.setattr(observability.time, "monotonic", lambda: next(clock))
+    progress = observability.PreparationProgress(logging.getLogger("headstart.test"))
+    progress.report(0, 0, 0, 0)
+    progress.report(1, 1, 0, 0)
+    progress.report(3, 1, 1, 1)
+    assert len(caplog.records) == 2
+    assert "scanned 3, prepared 1, already 1, non-English 1" in caplog.records[-1].message
+
+
 def test_summary_is_a_no_op_without_the_github_env(monkeypatch, tmp_path):
     monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
     observability.summary("Anything", ["- a line"])  # must not raise off CI

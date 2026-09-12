@@ -41,6 +41,28 @@ class FakeScraper:
         return self._jobs
 
 
+def test_authoritative_journal_includes_empty_but_not_failed_or_short_boards(monkeypatch, tmp_path):
+    short = FakeScraper()
+    short.truncated = "listing incomplete"
+    scrapers = {
+        "empty": FakeScraper(),
+        "full": FakeScraper([make_job("x:full:1")]),
+        "short": short,
+        "failed": FakeScraper(error=RuntimeError("unreadable")),
+    }
+    monkeypatch.setattr(harvest, "get_scraper", lambda ats, slug, *args, **kw: scrapers[slug])
+    scrape_all([CompanyRef("x", slug) for slug in scrapers], jobs_dir=tmp_path)
+    assert set((tmp_path / "authoritative_boards.txt").read_text().splitlines()) == {
+        "x:empty", "x:full"
+    }
+
+    # A resumed run retains earlier completion evidence; a fresh run cannot inherit it.
+    scrape_all([CompanyRef("x", "full")], jobs_dir=tmp_path, resume=True)
+    assert "x:empty" in (tmp_path / "authoritative_boards.txt").read_text().splitlines()
+    scrape_all([CompanyRef("x", "full")], jobs_dir=tmp_path)
+    assert (tmp_path / "authoritative_boards.txt").read_text().splitlines() == ["x:full"]
+
+
 def test_scrape_all_dedupes_and_isolates_errors(monkeypatch, tmp_path):
     job_a, job_a_dup, job_b = make_job("x:a:1"), make_job("x:a:1"), make_job("x:b:2")
 
@@ -68,6 +90,28 @@ def test_scrape_all_dedupes_and_isolates_errors(monkeypatch, tmp_path):
     assert sorted(ids) == ["x:a:1", "x:b:2"]
     assert result.unique == 2
     assert "x:bad" in result.errors and "boom" in result.errors["x:bad"]
+
+
+def test_failed_board_still_reports_its_bounded_observation(monkeypatch, tmp_path):
+    """The Workday listing response raises, so telemetry must cross the harvest seam from the
+    worker's `finally`; a success-only callback would lose the evidence on exactly the bug."""
+    failed = FakeScraper(error=RuntimeError("unexpected listing body"))
+    failed.telemetry = {
+        "listing_pages": 1,
+        "listing_page_losses": 1,
+        "listing_loss_causes": {"challenge": 1},
+    }
+    monkeypatch.setattr(harvest, "get_scraper", lambda *args, **kwargs: failed)
+    observed = {}
+
+    result = scrape_all(
+        [CompanyRef("workday", "bad")],
+        jobs_dir=tmp_path,
+        on_observation=lambda key, fields: observed.update({key: fields}),
+    )
+
+    assert "workday:bad" in result.errors
+    assert observed == {"workday:bad": failed.telemetry}
 
 
 def test_build_and_write_feed(monkeypatch, tmp_path):

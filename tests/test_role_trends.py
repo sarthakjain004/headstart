@@ -96,6 +96,12 @@ def _run(tmp_path: Path, monkeypatch) -> Path:
             str(tmp_path / "families.json"),
             "--ledger",
             str(ledger),
+            "--board-ledger",
+            str(tmp_path / "liveness"),
+            "--board-counts",
+            str(tmp_path / "board_counts.parquet"),
+            "--board-deltas",
+            str(tmp_path / "board_deltas"),
             # Pinned into tmp_path: it defaults to the repo's real config/role_watchlist.json,
             # and these tests must control exactly which roles are watched.
             "--watchlist",

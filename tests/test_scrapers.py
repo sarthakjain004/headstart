@@ -5197,6 +5197,26 @@ class _Status:
             raise http.RequestsError(f"HTTP Error {self.status_code}: Not Found")
 
 
+class _NonJsonListing(_Status):
+    def __init__(self, text, *, status_code=200, content_type="text/html", url=""):
+        super().__init__(status_code=status_code, text=text, url=url)
+        self.content = text.encode()
+        self.headers = {"content-type": content_type}
+
+    def json(self):
+        raise json.JSONDecodeError("Expecting value", self.text, 0)
+
+
+def test_detail_exception_telemetry_keeps_a_settled_http_status():
+    scraper = _workday_scraper()
+    exc = http.RequestsError("service unavailable")
+    exc.response = SimpleNamespace(status_code=503)
+
+    scraper.note_detail_exception(exc)
+
+    assert scraper.detail_losses == {"HTTP 503": 1}
+
+
 @pytest.mark.parametrize(
     ("ats", "slug"),
     [
@@ -5631,6 +5651,194 @@ def test_workday_listing_400_clears_the_session_cookie_and_recovers(monkeypatch)
 
     assert out == page  # the page was recovered, not raised as a board error
     assert session.cookies.cleared == 1  # cleared once
+
+
+def test_workday_unknown_listing_body_raises_with_bounded_diagnostics_without_retry(
+    monkeypatch,
+):
+    """A shape we cannot classify must remain a Board failure, with enough bounded evidence to
+    diagnose it after the runner is gone. It must not be retried merely because JSON parsing
+    failed: that would blindly retry parser defects and permanent templates too."""
+    from headstart.scrapers.workday import (
+        UnexpectedListingResponse,
+        WorkdayScraper,
+    )
+
+    calls = []
+    response = _NonJsonListing(
+        "unknown payload api_key=do-not-log " + "x" * 1000,
+        content_type="text/plain; charset=utf-8",
+        url="https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/ext/jobs?secret=drop",
+    )
+
+    def fetch(*args, **kwargs):
+        calls.append((args, kwargs))
+        return response
+
+    monkeypatch.setattr(http, "fetch", fetch)
+    scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+    scraper._instance = "wd1"
+
+    with pytest.raises(UnexpectedListingResponse) as raised:
+        scraper._post({}, 0, raise_gone=True)
+
+    message = str(raised.value)
+    assert "classification=unexpected-body" in message
+    assert "instance=wd1" in message
+    assert "status=200" in message
+    assert "content_type=text/plain; charset=utf-8" in message
+    assert "final_url=https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/ext/jobs" in message
+    assert "bytes=1035" in message
+    assert "sha256=" in message
+    assert "body_prefix='unknown payload " in message
+    assert "secret=drop" not in message
+    assert "do-not-log" not in message
+    assert "api_key=[redacted]" in message
+    assert len(message) < 900
+    assert len(calls) == 1
+    assert scraper.telemetry["listing_pages"] == 1
+    assert scraper.telemetry["listing_fetch_calls"] == 1
+    assert scraper.telemetry["listing_page_losses"] == 1
+
+
+def test_workday_error_page_retries_once_and_recovers(monkeypatch, caplog):
+    """The live 2026-09-12 probe saw this Workday-branded HTML error shape settle and the exact
+    request immediately recover. This one positively identified transient class earns one retry."""
+    from headstart.scrapers.workday import WorkdayScraper
+
+    page = {"jobPostings": [{"externalPath": "/job/x/A_1"}], "total": 1}
+    outcomes = [
+        _NonJsonListing(
+            "<html><div class='graphicsContainer'><img class='wdayLogo'></div></html>",
+            status_code=520,
+            url="https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/ext/jobs",
+        ),
+        _Status(payload=page),
+    ]
+    calls = []
+
+    def fetch(*args, **kwargs):
+        calls.append((args, kwargs))
+        return outcomes.pop(0)
+
+    monkeypatch.setattr(http, "fetch", fetch)
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.workday")
+    scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+    scraper._instance = "wd1"
+
+    assert scraper._post({}, 0, raise_gone=True) == page
+    assert len(calls) == 2
+    assert calls[0][1]["egress_group"] == "workday"
+    assert "egress_group" not in calls[1][1], (
+        "a classified HTML challenge must escape the WARP route that the runner probe showed "
+        "causes it"
+    )
+    assert "classification=workday-error-page" in caplog.text
+    assert "retrying once" in caplog.text
+    assert scraper.telemetry["listing_pages"] == 1
+    assert scraper.telemetry["listing_fetch_calls"] == 2
+    assert scraper.telemetry["listing_status_failures"] == 1
+    assert scraper.telemetry.get("listing_page_losses", 0) == 0
+    assert scraper.telemetry["listing_transient_recovered"] == 1
+
+
+def test_workday_persistent_transient_listing_body_still_raises(monkeypatch):
+    """One retry is a bound, not a loop; the second bad response remains an observation failure."""
+    from headstart.scrapers.workday import UnexpectedListingResponse, WorkdayScraper
+
+    calls = []
+
+    def fetch(*args, **kwargs):
+        calls.append((args, kwargs))
+        return _NonJsonListing(
+            "<html><title>Maintenance</title><p>Temporarily unavailable</p></html>"
+        )
+
+    monkeypatch.setattr(http, "fetch", fetch)
+    scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+    scraper._instance = "wd1"
+
+    with pytest.raises(UnexpectedListingResponse, match="classification=maintenance"):
+        scraper._post({}, 0, raise_gone=True)
+    assert len(calls) == 2
+
+
+def test_workday_async_challenge_retries_once_and_recovers(monkeypatch):
+    """Concurrent pagination uses the same classification and bounded retry contract."""
+    import asyncio
+
+    from headstart.scrapers.workday import WorkdayScraper
+
+    page = {"jobPostings": [{"externalPath": "/job/x/A_1"}], "total": 20}
+    challenge = _NonJsonListing("<html><title>Just a moment...</title></html>")
+    challenge.headers["cf-mitigated"] = "challenge"
+    outcomes = [challenge, _Status(payload=page)]
+    calls = []
+
+    async def fetch_async(*args, **kwargs):
+        calls.append((args, kwargs))
+        return outcomes.pop(0)
+
+    monkeypatch.setattr(http, "fetch_async", fetch_async)
+    scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+    scraper._instance = "wd1"
+
+    assert asyncio.run(scraper._post_async(SimpleNamespace(cookies=_CookieJar()), {}, 20)) == page
+    assert outcomes == []
+    assert calls[0][1]["egress_group"] == "workday"
+    assert "egress_group" not in calls[1][1]
+
+
+def test_workday_transient_retry_to_404_preserves_sync_call_site_contract(monkeypatch):
+    """A retry does not bypass the established 404 split: mid-crawl returns None while the
+    whole Board's first page raises. Either path records one logical page loss, not two HTTP
+    responses as two lost pages."""
+    from headstart.scrapers.workday import WorkdayScraper
+
+    def drive(*, raise_gone):
+        outcomes = [
+            _NonJsonListing("<html><title>Maintenance</title></html>"),
+            _Status(status_code=404),
+        ]
+        monkeypatch.setattr(http, "fetch", lambda *a, **k: outcomes.pop(0))
+        scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+        scraper._instance = "wd1"
+        if raise_gone:
+            with pytest.raises(http.RequestsError, match="404"):
+                scraper._post({}, 0, raise_gone=True)
+        else:
+            assert scraper._post({}, 20) is None
+        assert scraper.telemetry["listing_page_losses"] == 1
+        assert scraper.telemetry["listing_fetch_calls"] == 2
+        assert scraper.telemetry["listing_status_failures"] == 1
+
+    drive(raise_gone=False)
+    drive(raise_gone=True)
+
+
+def test_workday_transient_retry_to_404_preserves_async_midcrawl_contract(monkeypatch):
+    import asyncio
+
+    from headstart.scrapers.workday import WorkdayScraper
+
+    outcomes = [
+        _NonJsonListing("<html><title>Maintenance</title></html>"),
+        _Status(status_code=404),
+    ]
+
+    async def fetch_async(*args, **kwargs):
+        return outcomes.pop(0)
+
+    monkeypatch.setattr(http, "fetch_async", fetch_async)
+    scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+    scraper._instance = "wd1"
+
+    assert asyncio.run(
+        scraper._post_async(SimpleNamespace(cookies=_CookieJar()), {}, 20)
+    ) is None
+    assert scraper.telemetry["listing_page_losses"] == 1
+    assert scraper.telemetry["listing_fetch_calls"] == 2
+    assert scraper.telemetry["listing_status_failures"] == 1
 
 
 def test_workday_listing_400_that_persists_still_raises(monkeypatch):
@@ -6693,7 +6901,8 @@ def _oracle_reqs(start: int, n: int) -> list[dict]:
     return [{"Id": str(start + i), "Title": f"Engineer {start + i}"} for i in range(n)]
 
 
-def test_oracle_pages_past_the_first_200(monkeypatch):
+@pytest.mark.parametrize("async_mode", ["0", "1"])
+def test_oracle_pages_past_the_first_200(monkeypatch, async_mode):
     """The live shape: 299 across a full page and a short one. Both must arrive."""
     pages = [
         _oracle_page(_oracle_reqs(0, 200), 299),
@@ -6701,12 +6910,19 @@ def test_oracle_pages_past_the_first_200(monkeypatch):
     ]
     seen: list[int] = []
     s = get_scraper("oracle", "acme.fa.ocs.oraclecloud.com", "Acme")
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_mode)
 
     def _get(self, url=None):
+        if url is not None:
+            return '{"items": [{}]}'
         seen.append(self._offset)
         return pages[len(seen) - 1]
 
+    async def _get_async(self, session, url):
+        return '{"items": [{}]}'
+
     monkeypatch.setattr(type(s), "_get", _get)
+    monkeypatch.setattr(type(s), "_get_async", _get_async)
     jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
 
     assert seen == [0, 200]  # the offset really advanced
@@ -6714,7 +6930,8 @@ def test_oracle_pages_past_the_first_200(monkeypatch):
     assert len({j.id for j in jobs}) == 299
 
 
-def test_oracle_stops_on_a_short_page_when_no_total_is_given(monkeypatch):
+@pytest.mark.parametrize("async_mode", ["0", "1"])
+def test_oracle_stops_on_a_short_page_when_no_total_is_given(monkeypatch, async_mode):
     """A missing TotalJobsCount must fall back to the short-page end, never to `>= 0`.
 
     Guards the exact shape a review found latent elsewhere: `len(reqs) >= total` with `total`
@@ -6726,12 +6943,19 @@ def test_oracle_stops_on_a_short_page_when_no_total_is_given(monkeypatch):
     ]
     seen: list[int] = []
     s = get_scraper("oracle", "acme.fa.ocs.oraclecloud.com", "Acme")
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_mode)
 
     def _get(self, url=None):
+        if url is not None:
+            return '{"items": [{}]}'
         seen.append(self._offset)
         return pages[len(seen) - 1]
 
+    async def _get_async(self, session, url):
+        return '{"items": [{}]}'
+
     monkeypatch.setattr(type(s), "_get", _get)
+    monkeypatch.setattr(type(s), "_get_async", _get_async)
     jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
 
     assert seen == [0, 200]  # it did NOT stop after page 1
@@ -7491,6 +7715,10 @@ def test_workday_detail_pass_breaks_off_after_consecutive_settled_5xx(
     assert len(calls) == _DETAIL_BREAK_STREAK, "fetching must stop at the streak"
     assert classes["HTTP 500"] == _DETAIL_BREAK_STREAK
     assert classes[_BROKEN_OFF] == 10
+    s._report_detail_losses([None] * (_DETAIL_BREAK_STREAK + 10), classes)
+    assert s.telemetry["detail_attempted"] == _DETAIL_BREAK_STREAK
+    assert s.telemetry["detail_http_failures"] == _DETAIL_BREAK_STREAK
+    assert s.telemetry["detail_breaker_skips"] == 10
     breaks = [r for r in caplog.records if "breaking off the detail pass" in r.message]
     assert len(breaks) == 1, "the break-off is logged exactly once"
 

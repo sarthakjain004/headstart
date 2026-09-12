@@ -33,6 +33,7 @@ _log = log.get(__name__)
 # Per-board scrape timings a shard hands to the join (ADR-0027). Undotted on purpose — see
 # JobWriter.record_cost.
 COST_FILENAME = "board_cost.csv"
+AUTHORITATIVE_FILENAME = "authoritative_boards.txt"
 
 
 def _default_workers() -> int:
@@ -98,6 +99,11 @@ class JobWriter:
             for ats in atses
         }
         self._done_handle = self._done_path.open(mode, encoding="utf-8")
+        # Unlike .done (which includes failures), this is evidence for eviction, including
+        # complete empty Boards. Non-hidden so Actions uploads it even without a shard report.
+        self._authoritative_handle = (self._dir / AUTHORITATIVE_FILENAME).open(
+            mode, encoding="utf-8"
+        )
         # Per-board scrape seconds (ADR-0027). Header only on a fresh run, so a resume appends.
         cost_path = self._dir / COST_FILENAME
         fresh_cost = mode == "w" or not cost_path.exists()
@@ -126,6 +132,11 @@ class JobWriter:
         self._done_handle.write(board_key + "\n")
         self._done_handle.flush()
 
+    def mark_authoritative(self, board_key: str) -> None:
+        """Record a complete Board after its Jobs have been flushed, even when there are none."""
+        self._authoritative_handle.write(board_key + "\n")
+        self._authoritative_handle.flush()
+
     def record_cost(
         self, board_key: str, seconds: float, jobs: int, *, unfinished: bool = False
     ) -> None:
@@ -144,6 +155,7 @@ class JobWriter:
         for handle in self._handles.values():
             handle.close()
         self._done_handle.close()
+        self._authoritative_handle.close()
         self._cost_handle.close()
 
 
@@ -166,6 +178,7 @@ def scrape_all(
     progress_every: int = 0,
     resume: bool = False,
     on_board: Callable[[str, int, str | None, float, str | None], None] | None = None,
+    on_observation: Callable[[str, dict[str, Any]], None] | None = None,
     have_details: Container[str] | None = None,
 ) -> RunResult:
     """Scrape every company concurrently, streaming Jobs to ``{jobs_dir}/{ats}.jsonl``.
@@ -190,6 +203,10 @@ def scrape_all(
     thread as each board completes (``error`` is None on success; ``seconds`` is the board's
     measured scrape time, the same number the cost ledger records; ``truncated`` is None unless
     the scraper knows its list came back short, ADR-0053) — the hook for live per-board logging.
+
+    ``on_observation(key, fields)`` carries optional bounded loss counters from the scraper after
+    that outcome. It never decides success or authority; it only lets shard/run summaries keep
+    listing-page and detail-pass losses separate without parsing prose logs.
     """
     workers = max_workers if max_workers is not None else _default_workers()
 
@@ -197,6 +214,7 @@ def scrape_all(
     # (ADR-0027). Timed in `finally` so an errored board still records the seconds it burned — a
     # board that hangs 30s before raising costs 30s, and the packer must know that.
     elapsed: dict[str, float] = {}
+    observations: dict[str, dict[str, Any]] = {}
 
     # Boards currently mid-fetch: {board: the monotonic clock it started at}. Only the ones still
     # here when the harvest goes down matter — those are the Boards a time budget killed
@@ -232,6 +250,7 @@ def scrape_all(
             # reported something worth carrying.
             if scraper.truncated:
                 truncated[key] = scraper.truncated
+            observations[key] = dict(getattr(scraper, "telemetry", {}))
 
     writer = JobWriter(jobs_dir, {c.ats for c in companies}, resume=resume)
     if writer.done:
@@ -300,6 +319,8 @@ def scrape_all(
                 fresh = [j for j in jobs if j.id not in seen_ids]
                 seen_ids.update(j.id for j in fresh)
                 writer.write(fresh)
+                if key not in truncated:
+                    writer.mark_authoritative(cost_key[key])
                 n_fresh = len(fresh)
             writer.mark_done(
                 key
@@ -308,6 +329,8 @@ def scrape_all(
             writer.record_cost(cost_key[key], seconds, n_fresh)
             if on_board is not None:
                 on_board(key, n_fresh, errors.get(key), seconds, truncated.get(key))
+            if on_observation is not None:
+                on_observation(key, observations.pop(key, {}))
             if progress_every and done % progress_every == 0:
                 _emit_progress(done, total, len(seen_ids), len(errors), start)
     finally:

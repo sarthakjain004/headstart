@@ -17,6 +17,7 @@ from headstart.geo import (
     SUBDIVISIONS,
     _anchored,
     _rx,
+    classify,
     where,
 )
 
@@ -93,6 +94,44 @@ def _hits(table, clause: str) -> set[str]:
 
 def test_india_clause_recall_and_traps(table):
     hits = _hits(table, where("india"))
+    assert hits == {loc for loc, in_india, _ in _ROWS if in_india}
+
+
+def test_classify_agrees_with_the_country_level_rule_on_every_oracle_row():
+    """The materialized `country` column's correctness gate (ADR-0120): `classify()` must agree
+    with `where("india")` on every real location string here, traps included — this is what
+    actually keeps the two paths from drifting, not the shared-constants argument in
+    `classify`'s own docstring. Pure Python, no lancedb needed, so it runs in the base CI job
+    too."""
+    for loc, in_india, _ in _ROWS:
+        assert (classify(loc) == "IN") == in_india, loc
+
+
+def test_classify_of_no_location_is_none():
+    assert classify(None) is None
+    assert classify("") is None
+
+
+@pytest.fixture(scope="module")
+def table_with_country(tmp_path_factory):
+    lancedb = pytest.importorskip("lancedb")
+    pa = pytest.importorskip("pyarrow")
+    db = lancedb.connect(tmp_path_factory.mktemp("db_country"))
+    return db.create_table(
+        "locs",
+        pa.table(
+            {
+                "location": [loc for loc, _, _ in _ROWS],
+                "country": [classify(loc) for loc, _, _ in _ROWS],
+            }
+        ),
+    )
+
+
+def test_materialized_country_column_agrees_with_the_where_clause(table_with_country):
+    """The direct analog of `test_india_clause_recall_and_traps` for the fast path (ADR-0120):
+    confirms `country = 'IN'` and `where("india")` select identical row sets."""
+    hits = _hits(table_with_country, "country = 'IN'")
     assert hits == {loc for loc, in_india, _ in _ROWS if in_india}
 
 

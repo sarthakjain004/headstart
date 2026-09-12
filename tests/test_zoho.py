@@ -276,3 +276,15 @@ def test_zoho_falls_back_to_listing_when_detail_fetch_missing():
     assert j.experience == "1-3 years"
     assert j.department == "Technology"
     assert j.salary is None  # never in the listing to begin with
+
+
+def test_zoho_classifies_a_source_declared_unavailable_detail() -> None:
+    scraper = get_scraper("zoho", "acme.zohorecruit.com")
+
+    assert (
+        scraper._detail_record_of(
+            '<div class="sorry-block"><h4>This job posting is no longer available.</h4></div>'
+        )
+        is None
+    )
+    assert scraper.detail_losses == {"posting explicitly unavailable": 1}

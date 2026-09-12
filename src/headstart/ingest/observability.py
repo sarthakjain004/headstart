@@ -31,7 +31,9 @@ errors" into a single named failure mode.
 from __future__ import annotations
 
 import json
+import logging
 import os
+import time
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
@@ -41,6 +43,26 @@ from headstart import log
 _log = log.get(__name__)
 
 _SHARD_REPORT = "_shard_report.json"
+
+
+class PreparationProgress:
+    """Bound preparation silence to five seconds or 500 completed Jobs between items."""
+
+    def __init__(self, logger: logging.Logger) -> None:
+        self.logger = logger
+        self.started = time.monotonic()
+        self.next_report = self.started
+        self.reported = 0
+
+    def report(self, scanned: int, prepared: int, already: int, non_english: int) -> None:
+        now = time.monotonic()
+        if now < self.next_report and scanned - self.reported < 500:
+            return
+        self.logger.info(
+            f"preparing corpus: scanned {scanned}, prepared {prepared}, already {already}, "
+            f"non-English {non_english} | {now - self.started:.0f}s"
+        )
+        self.next_report, self.reported = now + 5, scanned
 
 
 def context(stage: str, **extra: Any) -> None:

@@ -18,42 +18,18 @@ from __future__ import annotations
 
 import json
 import secrets
-import urllib.error
-import urllib.request
 from collections.abc import Callable
 from typing import Any
 
+from .delivery_http import post as _post
+from .delivery_http import reason as _reason
+
 API = "https://api.telegram.org"
-_TIMEOUT = 30
 FILENAME = "new-jobs.xlsx"
 
 
 class TelegramError(Exception):
     """Telegram refused or could not be reached; the Watermark must not advance."""
-
-
-def _reason(exc: Exception) -> str:
-    """Why this call failed, in a form that names a cause — and never the URL.
-
-    `HTTPError.__str__` is only "HTTP Error 429: Too Many Requests"; the `description` and
-    the `retry_after` that say what to do about it are in the *body*, which is a file-like
-    object read once and then gone with the exception. The URL is deliberately left out even
-    though `HTTPError.filename` offers it: this API puts the bot token in the path, so a URL
-    in a log is a leaked credential.
-    """
-    if isinstance(exc, urllib.error.HTTPError):
-        try:
-            body = exc.read().decode("utf-8", "replace").strip()[:200]
-        except Exception:  # noqa: BLE001 — the status is still worth reporting without it
-            body = ""
-        return f"HTTP {exc.code}" + (f": {body}" if body else "")
-    return f"{type(exc).__name__}: {exc}"
-
-
-def _post(url: str, body: bytes, headers: dict[str, str]) -> dict[str, Any]:
-    request = urllib.request.Request(url, data=body, headers=headers)
-    with urllib.request.urlopen(request, timeout=_TIMEOUT) as response:
-        return json.load(response)
 
 
 def multipart(

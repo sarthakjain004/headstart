@@ -187,7 +187,9 @@ def main() -> int:
     boards: list[str] = []
     upgrades: list[str] = []
     scanned = already = dropped = 0
+    progress = observability.PreparationProgress(_log)
     for job in iter_jobs(args.source):
+        progress.report(scanned, len(docs), already, dropped)
         scanned += 1
         jid = job.get("id") or ""
         upgrading = False

@@ -34,6 +34,7 @@ import numpy as np
 
 from headstart import log, roles
 from headstart.ingest import REPO_ROOT, observability, role_assignments
+from headstart.ingest.index_plan import boards_by_canon, live_keep_set, resolve_board
 
 _log = log.get(__name__, __spec__)
 
@@ -42,6 +43,9 @@ _CENTROIDS = REPO_ROOT / "data" / "state" / "role_centroids"
 _FAMILIES = REPO_ROOT / "config" / "role_families.json"  # curated, in git (ADR-0040)
 _WATCHLIST = REPO_ROOT / "config" / "role_watchlist.json"  # curated, in git (ADR-0051)
 _LEDGER = REPO_ROOT / "data" / "state" / "role_trends.csv"
+_BOARD_LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
+_BOARD_COUNTS = REPO_ROOT / "data" / "state" / "role_trend_board_counts.parquet"
+_BOARD_DELTAS = REPO_ROOT / "data" / "state" / "role_trend_board_deltas"
 # id -> family snapshot + the transitions between snapshots (see role_assignments)
 _ASSIGNMENTS = REPO_ROOT / "data" / "state" / "role_assignments.parquet"
 _REASSIGNMENTS = REPO_ROOT / "data" / "state" / "role_reassignments.csv"
@@ -67,6 +71,12 @@ _PRE_METRIC_COLUMNS = (
 # the measurement. A rolling week, not a per-run diff — the back-to-back cadence makes per-run deltas
 # pipeline noise, and "how many roles appeared this week" is the question a job hunter has.
 NEW_WINDOW_DAYS = 7
+
+
+def _board_keys(ids: list[str], ledger: Path) -> list[str]:
+    """Resolve each Job to the same Board identity used by index sync and prune."""
+    live = boards_by_canon(live_keep_set(ledger))
+    return [resolve_board(job_id, live) for job_id in ids]
 
 
 def count_groups(
@@ -99,8 +109,28 @@ def count_groups(
     Rows whose cluster maps to None are the tech filter's known creep (ADR-0017 is
     recall-biased on purpose) — kept out of the role groups, but returned as one number so the
     ledger carries a filter-health series (ADR-0040)."""
-    # to_numpy on the (possibly chunked) vector column yields one array per row; stacking is
-    # row-aligned with the other columns' to_pylist across chunk boundaries.
+    # Keep the original narrow helper for callers that only need the all-coverage series.
+    ids = rows["id"].to_pylist()
+    counts, non_tech, assigned, _board_counts = count_board_groups(
+        rows, centroids, families, watchlist, new_after, ids
+    )
+    return counts, non_tech, assigned
+
+
+def count_board_groups(
+    rows,
+    centroids,
+    families: dict[int, str | None],
+    watchlist: list[roles.WatchRole],
+    new_after: str,
+    boards: list[str],
+) -> tuple[
+    dict[tuple[str, str, str, str], int],
+    int,
+    dict[str, str],
+    dict[tuple[str, str, str, str, str], int],
+]:
+    """Count the normal ledger plus each Board's own groups in one assignment pass."""
     vectors = np.stack(rows["vector"].to_numpy(zero_copy_only=False))
     clusters = roles.assign(vectors, centroids)
     ids = rows["id"].to_pylist()
@@ -108,44 +138,46 @@ def count_groups(
     titles = rows["title"].to_pylist()
     employment = rows["employment_type"].to_pylist()
     atses = rows["ats"].to_pylist()
-    # Absent when the table predates ADR-0031; those rows are stock, never new.
     seen = (
         rows["first_seen"].to_pylist()
         if "first_seen" in rows.schema.names
         else [None] * len(titles)
     )
+    if len(boards) != len(ids):
+        raise ValueError("Board identities must align with served rows")
 
     counts: dict[tuple[str, str, str, str], int] = {}
+    board_counts: dict[tuple[str, str, str, str, str], int] = {}
+    non_tech = 0
     assigned: dict[str, str] = {}
 
-    def bump(family: str, band: str, ats: str, is_new: bool) -> None:
-        counts[("stock", family, band, ats)] = (
-            counts.get(("stock", family, band, ats), 0) + 1
-        )
+    def bump(board: str, family: str, band: str, ats: str, is_new: bool) -> None:
+        key = ("stock", family, band, ats)
+        counts[key] = counts.get(key, 0) + 1
+        board_key = (board, *key)
+        board_counts[board_key] = board_counts.get(board_key, 0) + 1
         if is_new:
-            counts[("new", family, band, ats)] = (
-                counts.get(("new", family, band, ats), 0) + 1
-            )
+            key = ("new", family, band, ats)
+            counts[key] = counts.get(key, 0) + 1
+            board_key = (board, *key)
+            board_counts[board_key] = board_counts.get(board_key, 0) + 1
 
-    non_tech = 0
-    for job_id, cluster, years, title, etype, first, ats in zip(
-        ids, clusters, min_years, titles, employment, seen, atses, strict=True
+    for job_id, cluster, years, title, etype, first, ats, board in zip(
+        ids, clusters, min_years, titles, employment, seen, atses, boards, strict=True
     ):
-        # ISO-8601 UTC on both sides, so string order is time order.
         is_new = bool(first) and first >= new_after
         band = roles.band(years, title, etype)
         for role in watchlist:
             if role.matches(title):
-                bump(roles.WATCH_PREFIX + role.name, band, ats, is_new)
+                bump(board, roles.WATCH_PREFIX + role.name, band, ats, is_new)
         family = families[int(cluster)]
         if family is None:
             non_tech += 1
+            bump(board, roles.NON_TECH, "all", "all", False)
             continue
-        # Watch roles are deliberately absent here: they are title matches layered over the
-        # taxonomy, so a row "moving" between them is a title edit, not a reassignment.
         assigned[job_id] = family
-        bump(family, band, ats, is_new)
-    return counts, non_tech, assigned
+        bump(board, family, band, ats, is_new)
+    return counts, non_tech, assigned, board_counts
 
 
 def _migrate_ledger(ledger: Path) -> None:
@@ -230,6 +262,110 @@ def append_ledger(
     return len(counts) + 1
 
 
+_BOARD_COUNT_COLUMNS = ("board", "metric", "family", "band", "ats", "count")
+_BOARD_DELTA_COLUMNS = ("ts", "board", "metric", "family", "band", "ats", "delta")
+
+
+def _load_board_counts(
+    path: Path, version: int
+) -> tuple[dict[tuple[str, ...], int], str]:
+    """Load the prior Board snapshot, recovering a delta written before its snapshot."""
+    import pyarrow.parquet as pq
+
+    counts: dict[tuple[str, ...], int] = {}
+    as_of = ""
+    if path.exists():
+        table = pq.read_table(path)
+        metadata = table.schema.metadata or {}
+        if metadata.get(b"centroid_version") == str(version).encode():
+            as_of = (metadata.get(b"as_of") or b"").decode()
+            if tuple(table.schema.names) != _BOARD_COUNT_COLUMNS:
+                raise ValueError(f"{path}: unexpected Board-count schema")
+            for row in table.to_pylist():
+                counts[tuple(row[k] for k in _BOARD_COUNT_COLUMNS[:-1])] = row["count"]
+    return counts, as_of
+
+
+def _recover_board_counts(
+    counts: dict[tuple[str, ...], int], as_of: str, directory: Path, version: int
+) -> dict[tuple[str, ...], int]:
+    """Apply any durable delta newer than the snapshot after an interrupted prior write."""
+    import pyarrow.parquet as pq
+
+    for path in sorted(directory.glob("*.parquet")):
+        table = pq.read_table(path)
+        metadata = table.schema.metadata or {}
+        if metadata.get(b"centroid_version") != str(version).encode():
+            continue
+        for row in table.to_pylist():
+            if row["ts"] <= as_of:
+                continue
+            key = tuple(row[k] for k in _BOARD_COUNT_COLUMNS[:-1])
+            value = counts.get(key, 0) + row["delta"]
+            if value:
+                counts[key] = value
+            else:
+                counts.pop(key, None)
+    return counts
+
+
+def _append_board_deltas(
+    directory: Path,
+    previous: dict[tuple[str, ...], int],
+    current: dict[tuple[str, ...], int],
+    version: int,
+    ts: str,
+) -> int:
+    """Append only changed Board groups; the file is the durable event before the snapshot."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    changed = [
+        (*key, current.get(key, 0) - previous.get(key, 0))
+        for key in sorted(previous.keys() | current.keys())
+        if current.get(key, 0) != previous.get(key, 0)
+    ]
+    if not changed:
+        return 0
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{ts.replace(':', '-').replace('+00:00', 'Z')}.parquet"
+    if path.exists():
+        raise ValueError(f"{path}: a Board delta already exists for this measurement")
+    table = pa.table(
+        {
+            "ts": [ts] * len(changed),
+            "board": [row[0] for row in changed],
+            "metric": [row[1] for row in changed],
+            "family": [row[2] for row in changed],
+            "band": [row[3] for row in changed],
+            "ats": [row[4] for row in changed],
+            "delta": [row[5] for row in changed],
+        },
+        metadata={b"centroid_version": str(version).encode()},
+    )
+    tmp = path.with_suffix(".parquet.tmp")
+    pq.write_table(table, tmp, compression="zstd")
+    tmp.replace(path)
+    return len(changed)
+
+
+def _save_board_counts(
+    path: Path, counts: dict[tuple[str, ...], int], version: int, ts: str
+) -> None:
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows = sorted((*key, count) for key, count in counts.items())
+    table = pa.table(
+        {name: [row[i] for row in rows] for i, name in enumerate(_BOARD_COUNT_COLUMNS)},
+        metadata={b"centroid_version": str(version).encode(), b"as_of": ts.encode()},
+    )
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    pq.write_table(table, tmp, compression="zstd")
+    tmp.replace(path)
+
+
 def main() -> int:
     log.setup()
     observability.context("role_trends")
@@ -239,6 +375,9 @@ def main() -> int:
     ap.add_argument("--families", type=Path, default=_FAMILIES)
     ap.add_argument("--watchlist", type=Path, default=_WATCHLIST)
     ap.add_argument("--ledger", type=Path, default=_LEDGER)
+    ap.add_argument("--board-ledger", type=Path, default=_BOARD_LEDGER)
+    ap.add_argument("--board-counts", type=Path, default=_BOARD_COUNTS)
+    ap.add_argument("--board-deltas", type=Path, default=_BOARD_DELTAS)
     ap.add_argument("--assignments", type=Path, default=_ASSIGNMENTS)
     ap.add_argument("--reassignments", type=Path, default=_REASSIGNMENTS)
     args = ap.parse_args()
@@ -305,9 +444,22 @@ def main() -> int:
     now = datetime.now(UTC)
     ts = now.isoformat(timespec="seconds")
     new_after = (now - timedelta(days=NEW_WINDOW_DAYS)).isoformat(timespec="seconds")
-    counts, non_tech, assigned = count_groups(
-        rows, centroids, families, watchlist, new_after
-    )
+    try:
+        boards = _board_keys(rows["id"].to_pylist(), args.board_ledger)
+        counts, non_tech, assigned, board_counts = count_board_groups(
+            rows, centroids, families, watchlist, new_after, boards
+        )
+        previous, as_of = _load_board_counts(args.board_counts, manifest["version"])
+        previous = _recover_board_counts(
+            previous, as_of, args.board_deltas, manifest["version"]
+        )
+        changed = _append_board_deltas(
+            args.board_deltas, previous, board_counts, manifest["version"], ts
+        )
+        _save_board_counts(args.board_counts, board_counts, manifest["version"], ts)
+    except (OSError, ValueError) as exc:
+        _log.error(f"comparable Trends state unusable, no trends this run: {exc}")
+        return 1
     written = append_ledger(args.ledger, counts, non_tech, manifest["version"], ts)
     stock_top = sorted(
         ((k, c) for k, c in counts.items() if k[0] == "stock"), key=lambda kv: -kv[1]
@@ -326,6 +478,7 @@ def main() -> int:
         f"non-tech: {non_tech} of {n} served rows ({100 * non_tech / n:.1f}% — the "
         "ADR-0017 filter's creep) excluded from the chart"
     )
+    _log.info(f"comparable coverage: {changed:,} Board-group delta(s) @ {ts}")
 
     # Which rows CHANGED family since the last tick. Without this, a re-embedded job that moves
     # from one family to another is indistinguishable in the stock series from a closure plus an

@@ -34,7 +34,9 @@ jobs:
       - name: Format check (ruff)
         run: ruff format --check .
       - name: Tests (pytest)
-        run: pytest
+        run: |
+          python -c "import pyarrow, lancedb"
+          pytest
       # The UI is a plain browser script with no build step, so its tests run on the built-in
       # Node runner — no package.json, no node_modules, no second package manager. The version
       # is pinned like python-version above for the same reason: the runner image's Node moves

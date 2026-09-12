@@ -14,44 +14,18 @@ from __future__ import annotations
 
 import base64
 import json
-import urllib.error
-import urllib.request
 from collections.abc import Callable
 from typing import Any
 
+from .delivery_http import post as _post
+from .delivery_http import reason as _reason
 from .digest import Digest
 
 ENDPOINT = "https://api.resend.com/emails"
-_TIMEOUT = 30
 
 
 class MailError(Exception):
     """Resend refused or could not be reached; the Watermark must not advance."""
-
-
-def _reason(exc: Exception) -> str:
-    """Why this send failed, in a form that names a cause.
-
-    `HTTPError.__str__` is only "HTTP Error 422: Unprocessable Entity" — Resend states which
-    address it rejected, or which domain is unverified, in the *body*, and the body is a
-    file-like object read once and then gone with the exception. Reading it here is the only
-    moment it exists. Truncated because it is an unbounded reply off a failed request, and
-    read defensively because a body that cannot be read must not replace the failure with a
-    second one.
-    """
-    if isinstance(exc, urllib.error.HTTPError):
-        try:
-            body = exc.read().decode("utf-8", "replace").strip()[:200]
-        except Exception:  # noqa: BLE001 — the status is still worth reporting without it
-            body = ""
-        return f"HTTP {exc.code}" + (f": {body}" if body else "")
-    return f"{type(exc).__name__}: {exc}"
-
-
-def _post(url: str, body: bytes, headers: dict[str, str]) -> dict[str, Any]:
-    request = urllib.request.Request(url, data=body, headers=headers)
-    with urllib.request.urlopen(request, timeout=_TIMEOUT) as response:
-        return json.load(response)
 
 
 FILENAME = "new-jobs.xlsx"

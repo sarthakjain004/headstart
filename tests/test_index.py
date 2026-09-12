@@ -514,6 +514,28 @@ def test_the_grace_period_round_trips_across_two_runs(tmp_path, monkeypatch):
     assert (tmp_path / "unconfirmed_ids.txt").read_text().split() == []
 
 
+def test_empty_board_completion_survives_join_and_evicts_on_second_scrape(tmp_path, monkeypatch):
+    from headstart.ingest import scrape_join
+
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:closed"])
+    fragments = tmp_path / "fragments"
+    shard = fragments / "shard-0"
+    shard.mkdir(parents=True)
+    (shard / "greenhouse.jsonl").write_text("")
+    (shard / "authoritative_boards.txt").write_text("greenhouse:a\n")
+    monkeypatch.setattr("sys.argv", [
+        "scrape_join", "--shards", str(fragments), "--out", str(tmp_path / "corpus"),
+        "--unauthoritative-boards", str(tmp_path / "unauthoritative_boards.json"),
+        "--speedup-ledger", str(tmp_path / "speedup.csv"),
+    ])
+    assert scrape_join.main() == 0
+    _sync(tmp_path, monkeypatch, [])
+    assert set(_rows(tmp_path)) == {"greenhouse:a:closed"}
+    assert (tmp_path / "unconfirmed_ids.txt").read_text().split() == ["greenhouse:a:closed"]
+    _sync(tmp_path, monkeypatch, [])
+    assert _rows(tmp_path) == {}
+
+
 def test_a_posting_that_reappears_is_never_evicted(tmp_path, monkeypatch):
     """The measured false-eviction shape: absent once, back the next scrape. Under the old
     evict-on-first-absence rule this lost a live posting every time it happened."""

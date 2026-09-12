@@ -469,7 +469,9 @@ def main() -> None:
     docs: list[str] = []
     metas: list[dict] = []
     scanned = already = dropped = 0
+    progress = observability.PreparationProgress(_log)
     for job in iter_jobs(args.source):
+        progress.report(scanned, len(docs), already, dropped)
         scanned += 1
         if (job.get("id") or "") in store.done:
             already += 1

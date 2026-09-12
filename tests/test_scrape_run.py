@@ -343,6 +343,38 @@ def test_a_clean_finish_defers_nothing(tmp_path, caplog):
     assert report["deferred"] == []
 
 
+def test_shard_report_keeps_listing_and_detail_observations_separate(tmp_path, caplog):
+    import logging
+
+    caplog.set_level(logging.INFO, logger="headstart.ingest.scrape_run")
+    progress = scrape_run._Progress(assigned=1)
+    progress.on_board("workday:x", 10, None, 1.0)
+    progress.on_observation(
+        "workday:x",
+        {
+            "listing_pages": 5,
+            "listing_page_losses": 1,
+            "detail_jobs": 10,
+            "detail_attempted": 4,
+            "detail_losses": 8,
+            "detail_breaker_skips": 6,
+        },
+    )
+
+    scrape_run._report(
+        progress, tmp_path, elapsed=1.0, predicted=None, serial=None, killed=False
+    )
+
+    report = json.loads((tmp_path / "_shard_report.json").read_text())
+    assert report["observations"]["workday:x"]["listing_page_losses"] == 1
+    assert report["observations"]["workday:x"]["detail_breaker_skips"] == 6
+    text = "\n".join(r.getMessage() for r in caplog.records)
+    assert "workday attempted 1, successful 1, failed 0, partial 0" in text
+    assert "listing-page loss events: 1/5" in text
+    assert "detail loss events: 8/10" in text
+    assert "not unique Jobs or additional Board errors" in text
+
+
 def test_main_derives_the_deferred_list_from_the_assignment(tmp_path, monkeypatch):
     """End-to-end: the names in the report come from the assignment minus what reported back,
     so the shard needs no extra bookkeeping to say what it lost."""

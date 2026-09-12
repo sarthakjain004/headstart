@@ -248,10 +248,22 @@ def hub(monkeypatch):
     files: dict[str, bytes] = {}
     monkeypatch.setattr(st, "_list_files", lambda repo, token: list(files))
     monkeypatch.setattr(st, "_read", lambda repo, path, token: files[path])
+    monkeypatch.setattr(st, "_is_absent", lambda exc: isinstance(exc, KeyError))
     monkeypatch.setattr(
         st, "_write", lambda repo, path, data, token: files.__setitem__(path, data)
     )
     monkeypatch.setattr(st, "_delete", lambda repo, path, token: files.pop(path, None))
+
+    def commit(repo, changes, expected, token):
+        if any(files.get(path) != before for path, before in expected.items()):
+            raise st.StoreConflict("concurrent edit")
+        for path, data in changes.items():
+            if data is None:
+                files.pop(path, None)
+            else:
+                files[path] = data
+
+    monkeypatch.setattr(st, "_commit", commit)
     return files
 
 
@@ -907,6 +919,80 @@ def test_trends_new_metric_distinguishes_zero_from_not_measured(trends_app):
     # T1 predates the metric: a gap, not a zero. T2 measured new but ai-ml had none: a true 0.
     assert by_name["ai-ml"]["points"] == [None, 0, 4]
     assert by_name["software-engineering"]["points"] == [None, 12, 9]
+
+
+def test_trends_comparable_coverage_keeps_only_boards_known_at_the_base(
+    trends_app, monkeypatch
+):
+    ledger = [
+        {
+            "ts": stamp,
+            "version": 2,
+            "metric": "stock",
+            "family": "software-engineering",
+            "band": "mid",
+            "ats": "greenhouse",
+            "count": 1,
+        }
+        for stamp in (_T1, _T2, _T3)
+    ]
+    deltas = [
+        {
+            "ts": _T1,
+            "version": 2,
+            "board": "early",
+            "metric": "stock",
+            "family": "software-engineering",
+            "band": "mid",
+            "ats": "greenhouse",
+            "delta": 10,
+        },
+        {
+            "ts": _T2,
+            "version": 2,
+            "board": "early",
+            "metric": "stock",
+            "family": "software-engineering",
+            "band": "mid",
+            "ats": "greenhouse",
+            "delta": 2,
+        },
+        {
+            "ts": _T2,
+            "version": 2,
+            "board": "late",
+            "metric": "stock",
+            "family": "software-engineering",
+            "band": "mid",
+            "ats": "greenhouse",
+            "delta": 100,
+        },
+        {
+            "ts": _T3,
+            "version": 2,
+            "board": "early",
+            "metric": "stock",
+            "family": "software-engineering",
+            "band": "mid",
+            "ats": "greenhouse",
+            "delta": -1,
+        },
+    ]
+    monkeypatch.setattr(trends_app, "_TRENDS", ledger)
+    monkeypatch.setattr(trends_app, "_TREND_DELTAS", deltas)
+    d = (
+        trends_app.app.test_client()
+        .get(f"/trends?coverage=comparable&base={quote(_T1)}")
+        .get_json()
+    )
+    assert d["base"] == _T1
+    assert d["series"][0]["points"] == [10, 12, 11]
+
+
+def test_trends_rejects_unknown_coverage(trends_app):
+    assert (
+        trends_app.app.test_client().get("/trends?coverage=future").status_code == 400
+    )
 
 
 def test_trends_roles_split_serves_the_watchlist(trends_app):

@@ -14,6 +14,7 @@ import csv
 import hmac
 import json
 import os
+from collections import Counter, defaultdict
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -38,6 +39,8 @@ from alerts.store import (
     SavedJob,
     SavedSet,
     Store,
+    StoreConflict,
+    StoreUnavailable,
     Subscription,
     subscription_id,
 )
@@ -54,7 +57,11 @@ snapshot_download(
     local_dir=_STATE,
     # the trends ledger is tiny (a few dozen rows per run) and matches nothing until the
     # first pipeline run writes it — an absent pattern downloads nothing rather than failing
-    allow_patterns=["data/lancedb/*", "data/state/role_trends.csv"],
+    allow_patterns=[
+        "data/lancedb/*",
+        "data/state/role_trends.csv",
+        "data/state/role_trend_board_deltas/*",
+    ],
     token=os.environ.get("HF_TOKEN"),
 )
 
@@ -99,6 +106,20 @@ def _load_trends(path: Path) -> list[dict]:
         ]
 
 
+def _load_board_deltas(path: Path) -> list[dict]:
+    """Read the append-only Board-group deltas used for dynamic comparable coverage."""
+    if not path.exists():
+        return []
+    import pyarrow.parquet as pq
+
+    rows = []
+    for file in sorted(path.glob("*.parquet")):
+        table = pq.read_table(file)
+        version = int((table.schema.metadata or {}).get(b"centroid_version", b"-1"))
+        rows.extend({**row, "version": version} for row in table.to_pylist())
+    return rows
+
+
 def _family_labels(path: Path) -> dict[str, str]:
     """Display names, from the curated map synced beside this app (ADR-0040). The ledger
     stores slugs so a label can be reworded without breaking a series; this resolves them."""
@@ -134,6 +155,9 @@ _FAMILY_LABELS = _family_labels(Path(__file__).with_name("role_families.json"))
 if _TRENDS:
     _live_version = max(r["version"] for r in _TRENDS)
     _TRENDS = [r for r in _TRENDS if r["version"] == _live_version]
+_TREND_DELTAS = _load_board_deltas(
+    _STATE / "data" / "state" / "role_trend_board_deltas"
+)
 # Email alerts (ADR-0035) — invite-only, so all three must be set before the panel appears:
 # the Google client id the sign-in button needs, and a token scoped to the Subscriptions
 # dataset alone (never the index token, which is read-only by design).
@@ -387,6 +411,18 @@ def delete_profile():
     return jsonify({"ok": True})
 
 
+@app.errorhandler(StoreUnavailable)
+def subscription_store_unavailable(exc):
+    return jsonify(
+        {"error": "saved settings are temporarily unavailable; try again"}
+    ), 503
+
+
+@app.errorhandler(StoreConflict)
+def subscription_store_conflict(exc):
+    return jsonify({"error": "settings changed; reload before trying again"}), 409
+
+
 @app.route("/subscribe", methods=["POST"])
 def subscribe():
     """Start email alerts for a Google-verified, allowlisted address (ADR-0035).
@@ -417,7 +453,7 @@ def subscribe():
 
     sent = body.get("filters")
     search_filters = sent if isinstance(sent, dict) else {}
-    _project_subscription(store, email, query, search_filters)
+    _project_subscription(store, email, query, search_filters, reenable=True)
     return jsonify({"ok": True, "email": email})
 
 
@@ -467,7 +503,12 @@ def _account_gate() -> tuple[str, Store] | None:
 
 
 def _project_subscription(
-    store: Store, email: str, query: str, search_filters: dict
+    store: Store,
+    email: str,
+    query: str,
+    search_filters: dict,
+    *,
+    reenable: bool = False,
 ) -> None:
     """Write the Subscription — the delivery projection of the emailing set (ADR-0043),
     and the same revise-or-create shape the wall-off /subscribe path uses.
@@ -481,7 +522,7 @@ def _project_subscription(
         if existing
         else Subscription.create(email, query, search_filters)
     )
-    store.put(sub)
+    store.put(sub, reenable=reenable)
 
 
 @app.route("/sets")
@@ -594,7 +635,9 @@ def set_email(set_id: str):
                 store.put_set(replace(other, emails=False))
         current = replace(current, emails=True)
         store.put_set(current)
-        _project_subscription(store, email, current.query, current.search_filters)
+        _project_subscription(
+            store, email, current.query, current.search_filters, reenable=True
+        )
     else:
         was_emailing = current.emails
         current = replace(current, emails=False)
@@ -674,6 +717,52 @@ def unstar_job(saved_id: str):
     return jsonify({"ok": True})
 
 
+def _comparable_rows(base: str) -> tuple[list[dict], str | None]:
+    """Rebuild counts for Boards first observed by ``base`` from their deltas."""
+    if not _TRENDS:
+        return [], None
+    version = _TRENDS[-1]["version"]
+    deltas = [row for row in _TREND_DELTAS if row["version"] == version]
+    if not deltas:
+        return [], None
+    stamps = sorted({row["ts"] for row in _TRENDS})
+    available = sorted({row["ts"] for row in deltas})
+    base_stamp = max((stamp for stamp in available if stamp <= base), default=None)
+    if base_stamp is None:
+        return [], None
+    first: dict[str, str] = {}
+    for row in deltas:
+        if row["metric"] == "stock":
+            first[row["board"]] = min(first.get(row["board"], row["ts"]), row["ts"])
+    eligible = {board for board, seen in first.items() if seen <= base_stamp}
+    by_stamp: dict[str, list[dict]] = defaultdict(list)
+    for row in deltas:
+        by_stamp[row["ts"]].append(row)
+    state: Counter[tuple[str, str, str, str]] = Counter()
+    rows = []
+    for stamp in stamps:
+        for row in by_stamp[stamp]:
+            if row["board"] in eligible:
+                state[(row["metric"], row["family"], row["band"], row["ats"])] += row[
+                    "delta"
+                ]
+        if stamp < base_stamp:
+            continue
+        rows.extend(
+            {
+                "ts": stamp,
+                "metric": metric,
+                "family": family,
+                "band": band,
+                "ats": ats,
+                "count": count,
+            }
+            for (metric, family, band, ats), count in state.items()
+            if count
+        )
+    return rows, base_stamp
+
+
 @app.route("/trends")
 def trends():
     """Role counts over time (ADR-0040, ADR-0051), or 503 until the ledger exists.
@@ -690,6 +779,11 @@ def trends():
     naive (timezone-less) value is read as UTC, matching the ledger. Either bound may be
     omitted; a malformed one is a 400, not a silent no-op; an out-of-data range returns a
     normal 200 with empty series rather than a 503, since the ledger itself is not empty.
+
+    ``?coverage=comparable&base=`` (ADR-0143) selects every Board first observed at or before
+    the requested base measurement, then replays only that cohort through later measurements.
+    The Board-delta ledger starts with this feature, so an earlier base returns no fabricated
+    history. Omitted coverage means full coverage.
 
     ``?ats=`` (repeatable, ADR-0075) narrows to the named ATSes; omitted entirely means every
     ATS, which is the only spelling of "no filter" — a request naming all of them explicitly
@@ -712,6 +806,9 @@ def trends():
     metric = request.args.get("metric", "stock")
     if metric not in ("stock", "new"):
         return jsonify(error="metric must be 'stock' or 'new'"), 400
+    coverage = request.args.get("coverage", "all")
+    if coverage not in ("all", "comparable"):
+        return jsonify(error="coverage must be 'all' or 'comparable'"), 400
     family = request.args.get("family")
     split = request.args.get("split", "bands")
     if split not in ("bands", "roles"):
@@ -729,14 +826,19 @@ def trends():
     try:
         since = _norm_stamp(request.args["since"]) if "since" in request.args else None
         until = _norm_stamp(request.args["until"]) if "until" in request.args else None
+        base = _norm_stamp(request.args["base"]) if "base" in request.args else None
     except ValueError:
-        return jsonify(error="since/until must be ISO-8601"), 400
+        return jsonify(error="since/until/base must be ISO-8601"), 400
     ats = request.args.getlist("ats")
 
     # ``_TRENDS`` is already pinned to the live centroid version at load time, so filtering here
     # never has to worry about a stray row from a stale refit; only the requested window changes.
-    trends_rows = _TRENDS
-    if since:
+    base_stamp = None
+    if coverage == "comparable":
+        trends_rows, base_stamp = _comparable_rows(base or since or _TRENDS[0]["ts"])
+    else:
+        trends_rows = _TRENDS
+    if since and coverage == "all":
         trends_rows = [r for r in trends_rows if r["ts"] >= since]
     if until:
         trends_rows = [r for r in trends_rows if r["ts"] <= until]
@@ -810,6 +912,8 @@ def trends():
     watch_parents = sorted({meta["parent"] for meta in _WATCH.values()})
     return jsonify(
         version=_TRENDS[-1]["version"],
+        coverage=coverage,
+        base=base_stamp,
         metric=metric,
         stamps=stamps,
         series=out,

@@ -21,8 +21,9 @@ dependencies = ["curl_cffi>=0.7", "requests>=2.32"]
 # flask/xlsxwriter/openpyxl are here, not just in their own extras, so the tests that need
 # them actually RUN in CI rather than silently importorskip-ing: the Space's filter builder
 # and the Digest spreadsheet are otherwise covered nowhere automatic (ADR-0035). All three
-# are small and pure-Python — this does not pull the ML stack into the quality job.
-dev = ["pytest", "ruff==0.16.6", "flask", "xlsxwriter", "openpyxl"]
+# are small and pure-Python. The index/schema and Subscription adapter checks also need their
+# runtime libraries; include these without pulling the transformer/torch stack into quality CI.
+dev = ["pytest", "ruff==0.16.6", "flask", "xlsxwriter", "openpyxl", "lancedb", "pyarrow", "huggingface_hub", "langdetect"]
 # The scrape fan-out's browser escalation (ADR-0056): darwinbox's Cloudflare wall admits a real
 # Chrome and nothing else, so the shards need pydoll. Imported lazily (browser_http) — only a
 # board that actually hits the wall starts a browser; the quality job never installs this.

@@ -113,6 +113,11 @@ supersedes it and note the supersession in both.
 | [0102](0102-a-400-walls-the-origin-too-not-just-a-429.md) | A 400 walls the origin too, not just a 429 | 2026-09-02 |
 | [0103](0103-workdays-400-is-an-invalid-session-cookie-clear-it.md) | Workday's 400 is an invalid session cookie — clear it, don't retry or reroute | 2026-09-02 |
 | [0104](0104-a-keyword-filter-with-a-scope-map-and-a-stored-description-column.md) | A Keyword filter with a scope map, backed by a stored `description` column | 2026-09-02 |
+| [0105](0105-applications-are-submitted-from-the-accounts-own-browser.md) | Applications are submitted from the Account's own browser | 2026-09-03 |
+| [0106](0106-the-llm-plans-content-once-per-page-the-fill-stops-rather-than-guesses.md) | The LLM plans content once per page; the fill stops rather than guesses | 2026-09-03 |
+| [0107](0107-contact-details-and-the-resume-live-only-in-the-accounts-browser.md) | Contact details and the resume live only in the Account's browser | 2026-09-03 |
+| [0108](0108-the-ats-page-is-untrusted-input-and-the-extension-operates-only-on-a-bound-origin.md) | The ATS page is untrusted input, and the extension operates only on a bound origin | 2026-09-03 |
+| [0109](0109-hot-application-state-needs-a-transactional-store-not-the-hf-repo.md) | Hot Application state needs a transactional store, not the HF repo | 2026-09-03 |
 | [0110](0110-record-fan-out-throughput-against-the-width-in-force.md) | Record fan-out throughput against the width in force | 2026-09-05 |
 | [0111](0111-duplicate-boards-resolve-the-board-surface.md) | A duplicate Board is found by resolving its Board surface, not by comparing its key | 2026-09-07 |
 | [0112](0112-the-door-earns-the-sign-in-before-it-asks.md) | The door earns the sign-in before it asks for it | 2026-09-07 |
@@ -123,3 +128,9 @@ supersedes it and note the supersession in both.
 | [0117](0117-the-salary-bracket-compares-across-currencies.md) | The salary bracket compares across currencies, at a dated rate | 2026-09-07 |
 | [0118](0118-a-fact-can-wear-a-derivations-column.md) | A fact can wear a derivation's column — but then it isn't a fact anymore | 2026-09-07 |
 | [0119](0119-the-trends-chart-plots-change-not-level.md) | The trends chart plots change, not level | 2026-09-07 |
+| [0120](0120-a-materialized-country-column-serves-the-india-filter.md) | A materialized `country` column serves the India filter's country-level case | 2026-09-11 |
+| [0139](0139-a-single-company-board-is-its-own-ats.md) | A single-company Board is its own `ats`, not a slug under one | 2026-09-11 |
+| [0140](0140-a-workday-html-listing-response-retries-over-direct-egress.md) | A Workday HTML listing response retries once over direct egress | 2026-09-12 |
+| [0141](0141-complete-empty-boards-carry-authoritative-scrape-evidence.md) | Complete empty Boards carry authoritative scrape evidence | 2026-09-12 |
+| [0142](0142-subscription-opt-outs-survive-record-replacement.md) | Subscription opt-outs survive record replacement | 2026-09-12 |
+| [0143](0143-trends-retain-board-deltas-for-arbitrary-comparable-cohorts.md) | Trends retain Board deltas for arbitrary comparable cohorts | 2026-09-12 |

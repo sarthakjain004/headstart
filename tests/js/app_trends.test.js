@@ -71,19 +71,49 @@ function loadApp() {
   };
   ctx.globalThis = ctx;
   const src = fs.readFileSync(APP_JS, 'utf8')
-    + '\n;globalThis.__t = { draw: drawTrends, click: trendClick, split: () => trendSplit,'
+    + '\n;globalThis.__t = { draw: drawTrends, load: loadTrends, click: trendClick, split: () => trendSplit,'
     + ' chartMax: CHART_MAX,'
     + ' niceAxis: niceAxis, fmtAxis: fmtAxis, deltaText: deltaText, seriesValues: seriesValues,'
     + ' hasIndexBase: hasIndexBase,'
     + ' atsSelected: trendAtsSelected, atsLabel: trendAtsLabel, atsToggle: toggleAtsPopover,'
+    + ' coverageSet: value => { trendCoverage = value; },'
     + ' colorSlot: name => seriesColorAssignment.get(name), setUnit: setUnit,'
     + ' set: (d, drill) => { trendData = d; trendDrill = drill || null; } };';
   vm.runInNewContext(src, ctx);
   // The page fetches on load (the feed, the trends chart). Those are not what any test here is
   // asserting about, so the log starts empty from the caller's point of view.
   fetches.length = 0;
-  return { t: ctx.__t, nodes, fetches };
+  return { t: ctx.__t, nodes, fetches, ctx };
 }
+
+test('a late Trends response cannot overwrite a newer chart', async () => {
+  const { t, nodes, ctx } = loadApp();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const pending = {};
+  ctx.fetch = url => Promise.resolve({ ok: true, json: () => new Promise(resolve => {
+    pending[new URL(url, 'http://test').searchParams.get('family')] = resolve;
+  }) });
+  const old = t.load('old');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const newer = t.load('new');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const fresh = fixture(); fresh.series[0].label = 'NEW_TREND';
+  pending.new(fresh); await newer;
+  pending.old(fixture()); await old;
+  assert.ok(nodes['trends-legend'].innerHTML.includes('NEW_TREND'));
+});
+
+test('the comparable-coverage control sends its explicit scope', async () => {
+  const { t, ctx } = loadApp();
+  t.coverageSet('comparable');
+  let requested = '';
+  ctx.fetch = url => {
+    requested = String(url);
+    return Promise.resolve({ ok: true, json: () => Promise.resolve(fixture()) });
+  };
+  await t.load(null);
+  assert.match(requested, /coverage=comparable/);
+});
 
 const mk = (name, label, latest) => ({ name, label, points: [latest, latest], latest });
 

@@ -313,9 +313,9 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   removing, renaming, or retyping a column — update that section **in the same change**, examples
   included. A stale schema is worse than no schema, because it gets trusted.
   `tests/test_readme_schema.py` enforces it by parsing the README table and comparing it, in order,
-  against `_schema()`. Note it `importorskip`s pyarrow, so it **skips in CI** — run the suite
-  locally (with the `[embed]` extra installed) before opening any schema PR, and don't read a green
-  CI as proof the docs are current. When you touch that section, re-check the example rows against
+  against `_schema()`. The `[dev]` extra includes the index runtime and CI checks those imports
+  before pytest, so the schema checks run in quality CI. Run them locally with `[dev]` before
+  opening a schema PR. When you touch that section, re-check the example rows against
   real data rather than editing them from memory: `curl "https://imposeidon-headstart-search.hf.space/search?q=backend+engineer&k=2"`
   returns live rows, and `data/jobs/tech/*.jsonl` has the fields the API projection omits.
 - **"How many Boards do we have" has five defensible answers — use the names, not a number.**

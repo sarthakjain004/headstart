@@ -130,6 +130,23 @@
   </section>
 
   <section class="doc-sec">
+    <h3>Saved searches and delivery limits</h3>
+    <p>Saved searches keep your role query and supported filters. Keyword filters and numeric
+       salary brackets are not saved yet, so Matches and Digests can include jobs those filters
+       removed from a one-off search.
+       <a href="{{ adr }}/0104-a-keyword-filter-with-a-scope-map-and-a-stored-description-column.md" target="_blank" rel="noopener">ADR-0104</a></p>
+    <p>A Digest checks at most 100 new matches, includes the best 30 in its message, and attaches
+       the matches returned by that check. This is not an exhaustive list of all new jobs.
+       Delivery can repeat after an interrupted run. Unsubscribe stops future delivery; a
+       message already in flight may still arrive.
+       <a href="{{ adr }}/0035-email-job-alerts.md" target="_blank" rel="noopener">ADR-0035</a></p>
+    <p>An employer can edit a job while keeping the same link. Those edits do not always refresh
+       its semantic representation immediately; the employer's page remains the source for the
+       current description.
+       <a href="{{ adr }}/0021-re-embed-on-content-change.md" target="_blank" rel="noopener">ADR-0021</a></p>
+  </section>
+
+  <section class="doc-sec">
     <h3>What is stored about you</h3>
     <ul class="doc-list">
       {# Written so the DEFAULT is to disclose. Jinja renders an undefined name as falsy, so
@@ -152,8 +169,9 @@
         runs on Hugging Face, and like any web server it writes an access log carrying the
         query string, so the operators of this service and of that platform can see a search
         even when nothing is saved.</li>{% endif %}
-      {% if saved_on or alerts_on %}<li><b>No email is ever sent</b> unless you switch it on
-        yourself, and every one of those carries an unsubscribe link.</li>{% endif %}
+      {% if saved_on or alerts_on %}<li>Email delivery is invite-only. It can be enabled through
+        your invitation or your saved set, and every Digest carries an unsubscribe link.
+        A record of opting out remains so a later run cannot silently enroll you again.</li>{% endif %}
       <li>Your searches are not sold, shared, or shown to employers. There is no employer-facing
         side of this product at all.</li>
       {% else %}

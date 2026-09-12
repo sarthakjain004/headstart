@@ -45,6 +45,7 @@ from .access import normalize
 _log = logging.getLogger(__name__)
 
 PREFIX = "subscriptions/"
+OPT_OUT_PREFIX = "subscription_opt_outs/"
 _ID = re.compile(r"[0-9a-f]{16}")  # exactly what subscription_id and saved_job_id mint
 ALLOWLIST_PATH = "subscriptions/allowlist.json"
 SETS_PREFIX = "sets/"
@@ -508,9 +509,13 @@ def _is_absent(exc: BaseException) -> bool:
 
 
 def _read(repo: str, path: str, token: str) -> bytes:
+    return _read_at_revision(repo, path, token, None)
+
+
+def _read_at_revision(repo: str, path: str, token: str, revision: str | None) -> bytes:
     from huggingface_hub import hf_hub_download
 
-    local = hf_hub_download(repo, path, repo_type="dataset", token=token)
+    local = hf_hub_download(repo, path, repo_type="dataset", token=token, revision=revision)
     with open(local, "rb") as handle:
         return handle.read()
 
@@ -530,6 +535,52 @@ def _delete(repo: str, path: str, token: str) -> None:
     _hf(token).delete_file(path_in_repo=path, repo_id=repo, repo_type="dataset")
 
 
+def _commit(
+    repo: str,
+    changes: dict[str, bytes | None],
+    expected: dict[str, bytes | None],
+    token: str,
+) -> None:
+    """Compare the records at one immutable revision, then atomically commit against it.
+
+    A repository-level race after comparison also fails closed through parent_commit. We do
+    not replay a stale edit on newer intent; callers retry by reading their current settings.
+    """
+    from huggingface_hub import CommitOperationAdd, CommitOperationDelete
+
+    try:
+        api = _hf(token)
+        revision = api.repo_info(repo, repo_type="dataset").sha
+        for path, before in expected.items():
+            try:
+                current = _read_at_revision(repo, path, token, revision)
+            except Exception as exc:
+                if not _is_absent(exc):
+                    raise
+                current = None
+            if current != before:
+                raise StoreConflict("Subscription changed since it was read")
+        operations = [
+            CommitOperationAdd(path_in_repo=path, path_or_fileobj=data)
+            if data is not None
+            else CommitOperationDelete(path_in_repo=path)
+            for path, data in changes.items()
+            if data is not None or expected.get(path) is not None
+        ]
+        if operations:
+            api.create_commit(
+                repo_id=repo,
+                repo_type="dataset",
+                operations=operations,
+                parent_commit=revision,
+                commit_message="Update Subscription intent and delivery state",
+            )
+    except StoreConflict:
+        raise
+    except Exception as exc:
+        raise StoreUnavailable("Subscription update could not be confirmed") from exc
+
+
 def read_bytes(repo: str, path: str, token: str) -> bytes:
     """One file from the Subscriptions dataset. The public door `registry` comes in by —
     it stores a record that is not a Subscription, so it needs the repo but not `Store`."""
@@ -541,12 +592,21 @@ def write_bytes(repo: str, path: str, data: bytes, token: str) -> None:
     _write(repo, path, data, token)
 
 
+class StoreUnavailable(RuntimeError):
+    """Stored intent could not be read; callers must not replace it with default state."""
+
+
+class StoreConflict(RuntimeError):
+    """A newer edit or opt-out takes precedence over this stale write."""
+
+
 class Store:
     """Subscriptions in one private dataset. Construct with the repo id and a write token."""
 
     def __init__(self, repo: str, token: str) -> None:
         self._repo = repo
         self._token = token
+        self._expected: dict[str, bytes | None] = {}
 
     def all(self) -> list[Subscription]:
         """Every stored Subscription. A record that will not parse is skipped, not fatal —
@@ -556,11 +616,9 @@ class Store:
             if not path.startswith(PREFIX) or path == ALLOWLIST_PATH:
                 continue
             try:
-                out.append(
-                    Subscription.from_dict(
-                        json.loads(_read(self._repo, path, self._token))
-                    )
-                )
+                raw = _read(self._repo, path, self._token)
+                out.append(Subscription.from_dict(json.loads(raw)))
+                self._expected[path] = raw
             except Exception as exc:  # noqa: BLE001 — a malformed record is data, not a crash
                 _log.info(f"skipping unreadable {path}: {exc}")
         return out
@@ -571,45 +629,60 @@ class Store:
         The id is checked against the shape `subscription_id` mints *before* it reaches a
         repo path: it arrives from a query string, and an unchecked value would let a caller
         name any file in the repo (`allowlist`, or a `../` traversal). Parsing is inside the
-        guard too, so a file that is not a Subscription answers None rather than raising."""
+        guard too. Only a confirmed missing record answers None; unreadable state raises
+        StoreUnavailable so a caller cannot accidentally replace its Watermark or token."""
         if not _ID.fullmatch(sub_id):
             return None
+        path = f"{PREFIX}{sub_id}.json"
         try:
-            data = json.loads(_read(self._repo, f"{PREFIX}{sub_id}.json", self._token))
-            return Subscription.from_dict(data)
-        except Exception as exc:  # noqa: BLE001 — absent, unreadable and not-a-Subscription are one answer
-            # None is three different facts — no record yet, a corrupt one, the Hub
-            # unreachable — and the caller cannot tell them apart. `subscription_for` reads
-            # the third as the first and mints a replacement, which restarts that person's
-            # Watermark and rotates the unsubscribe token in mail already delivered. The
-            # return value stays None for all three; only the log separates them.
-            #
-            # The two Hub cases must be split in *this* order: `LocalEntryNotFoundError`
-            # subclasses `EntryNotFoundError` but means the opposite thing — not "no such
-            # file" but "could not reach the Hub to ask". Catching the parent first would
-            # file every outage under "no record yet", which is precisely the misreading
-            # that costs someone their Watermark.
+            raw = _read(self._repo, path, self._token)
+            sub = Subscription.from_dict(json.loads(raw))
+            self._expected[path] = raw
+            return sub
+        except Exception as exc:
             if _is_absent(exc):
-                # The overwhelmingly common path: a signed-in Account with no record yet.
-                # `/sets` reaches here on most page loads, so anything louder than DEBUG
-                # would bury the two real failures below in routine traffic.
+                self._expected[path] = None
                 _log.debug(f"{sub_id}: no record yet")
-            else:
-                _log.error(
-                    f"{sub_id} unreadable: {type(exc).__name__}: {exc}", exc_info=True
-                )
-            return None
+                return None
+            raise StoreUnavailable(f"Subscription {sub_id} unreadable") from exc
 
-    def put(self, sub: Subscription) -> None:
-        _write(
-            self._repo,
-            sub.path(),
-            json.dumps(sub.to_dict(), indent=2).encode("utf-8"),
-            self._token,
-        )
+    def opted_out(self, sub_id: str) -> bool:
+        """Durable stop intent, separate from a Subscription another writer might retain."""
+        if not _ID.fullmatch(sub_id):
+            return False
+        path = f"{OPT_OUT_PREFIX}{sub_id}.json"
+        try:
+            self._expected[path] = _read(self._repo, path, self._token)
+        except Exception as exc:
+            if _is_absent(exc):
+                self._expected[path] = None
+                return False
+            raise StoreUnavailable(f"Subscription {sub_id} opt-out unreadable") from exc
+        return True
+
+    def put(self, sub: Subscription, *, reenable: bool = False) -> None:
+        """Create a record, or replace the version read by this Store; never overwrite unseen intent."""
+        stopped = self.opted_out(sub.id)
+        if stopped and not reenable:
+            raise StoreConflict("Subscription is opted out; explicitly enable delivery")
+        opt_out = f"{OPT_OUT_PREFIX}{sub.id}.json"
+        changes = {sub.path(): json.dumps(sub.to_dict(), indent=2).encode("utf-8")}
+        if reenable and stopped:
+            changes[opt_out] = None
+        expected = {path: self._expected.get(path) for path in (sub.path(), opt_out)}
+        _commit(self._repo, changes, expected, self._token)
+        self._expected.update(changes)
 
     def remove(self, sub_id: str) -> None:
-        _delete(self._repo, f"{PREFIX}{sub_id}.json", self._token)
+        if not _ID.fullmatch(sub_id):
+            return
+        path, opt_out = f"{PREFIX}{sub_id}.json", f"{OPT_OUT_PREFIX}{sub_id}.json"
+        if path not in self._expected:
+            self.get(sub_id)
+        self.opted_out(sub_id)
+        changes = {path: None, opt_out: b"{}"}
+        _commit(self._repo, changes, {p: self._expected[p] for p in changes}, self._token)
+        self._expected.update(changes)
 
     def sets_for(self, account: str) -> list[SavedSet]:
         """Every Saved set one Account keeps, oldest first. Unreadable records are skipped
