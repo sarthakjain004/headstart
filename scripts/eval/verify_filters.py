@@ -165,6 +165,11 @@ URL_SHAPES = {
     # job title in the page `<title>`, so `title_on_page` bites here rather than reading false
     # off a client-rendered page.
     "jobvite": r"https://jobs\.jobvite\.com/[^/]+/job/[A-Za-z0-9]+",
+    # scraper: f"https://jobs.bytedance.com/en/position/{id}" (bytedance.py `job_url`). A
+    # Single source scraper (ADR-0139) — one fixed host, so unlike the platform ATSes above there
+    # is nothing to leave host-agnostic. Verified live 2026-09-11: the route answers 200 for a
+    # real id pulled from the search API; ids are numeric strings (e.g. "7673941558289205509").
+    "bytedance": r"https://jobs\.bytedance\.com/en/position/\d+",
 }
 
 
