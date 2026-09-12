@@ -258,6 +258,30 @@ def test_a_materially_short_walk_is_reported_via_the_shared_tolerance(monkeypatc
     assert scraper.truncated and "40 of 45" in scraper.truncated
 
 
+def test_a_stale_understated_total_does_not_strand_the_tail(monkeypatch):
+    """The bug the tail walk exists to fix: page 1's total is only an estimate of the fan-out
+    width, and a total that grew mid-crawl would otherwise mean the fan-out never even
+    requests the pages past the stale estimate — silently missing real postings rather than
+    merely undercounting them. 45 real postings (3 full-shaped pages: 20, 20, 5) behind a
+    stated total of only 30 (implying just 2 pages) must still all be read."""
+    fake = _FakePages(total_ids=45, total_stated=30)
+    scraper = _paged(monkeypatch, fake)
+    raw = scraper.fetch_raw()
+    assert len(raw) == 45
+    assert sorted(fake.requested) == [1, 2, 3]
+    assert scraper.truncated is None
+
+
+def test_the_tail_walk_stops_at_the_first_short_page(monkeypatch):
+    """A full last-estimated page walks forward one page at a time; a short (or empty) page
+    is the real terminator and must not trigger a further page fetch."""
+    fake = _FakePages(total_ids=41, total_stated=20)  # pages: 20, 20, 1
+    scraper = _paged(monkeypatch, fake)
+    raw = scraper.fetch_raw()
+    assert len(raw) == 41
+    assert sorted(fake.requested) == [1, 2, 3]
+
+
 def test_a_negligible_shortfall_stays_within_the_shared_tolerance(monkeypatch):
     """The same 0.99-share mechanism tolerates a one-in-a-hundred miss — proof this scraper's
     call into it behaves like every other caller's, not a re-implementation."""

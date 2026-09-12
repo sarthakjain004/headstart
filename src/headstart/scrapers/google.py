@@ -26,17 +26,24 @@ False and the per-job field layout is genuinely fragile (positional indices into
 versioned internal array with no field names) — :func:`_field` and :func:`_pair` index
 defensively and a shape change silently drops the fields whose index moved, not the whole scrape.
 
-**Pagination is a real, stated total, not blind walk-to-empty.** ``data[2]`` on page 1 was 3,414
-on one fetch and 3,387 on a later fetch in the same minute — the board is live and churns during
-a multi-page walk, the same category of drift Oracle/Eightfold already tolerate via
-:meth:`~headstart.scrapers.base.BaseScraper.mark_truncated_unless_negligible`'s 0.99 share, reused
-here rather than inventing a page-local slack constant. The pages needed are computed from page
-1's total and fetched concurrently (:meth:`~headstart.scrapers.base.BaseScraper.fan_out`) —
-20 concurrent page requests measured clean (2026-09-11: 20/20 HTTP 200, ~3.85 req/s aggregate,
-no 429/403) — rather than a slow sequential walk, since the total is already known up front and
-there is no short-page-mid-walk trap to defend against (every page sampled — 1, 2, 50, 100, 150,
-165, 168, 170 — read exactly 20 postings; only the true last page, 171, was short at 14, and 3,414
-= 170 x 20 + 14 exactly).
+**Pagination is a real, stated total used as an estimate, not the terminator.** ``data[2]`` on
+page 1 was 3,414 on one fetch and 3,387 on a later fetch in the same minute — the board is live
+and churns during a multi-page walk. The pages implied by page 1's total are fetched concurrently
+(:meth:`~headstart.scrapers.base.BaseScraper.fan_out`) — 20 concurrent page requests measured
+clean (2026-09-11: 20/20 HTTP 200, ~3.85 req/s aggregate, no 429/403) — rather than a slow
+sequential walk, since it is a fast way to get *most* of the board. But a total that *grew*
+during the walk would otherwise strand the tail silently: the fan-out only ever requests pages up
+to the stale estimate, so postings past it are never even fetched, not merely undercounted, and
+:meth:`~headstart.scrapers.base.BaseScraper.mark_truncated_unless_negligible`'s tolerance would
+compare the count against that same stale total and see no shortfall. So the total's job ends at
+deciding the fan-out width; the actual terminator is the same one Oracle/Eightfold use — an empty
+(or here, short) page — checked by walking forward one page at a time past the fan-out's last
+page whenever it came back full, until a genuinely short page proves the true end (capped by
+``_MAX_PAGES``). Every page sampled directly (1, 2, 50, 100, 150, 165, 168, 170) read exactly 20
+postings; only the true last page, 171, was short at 14, and 3,414 = 170 x 20 + 14 exactly — so in
+the common case this tail walk costs at most one extra request. Every job is also deduped by
+native id across pages (``seen`` below), which both this tail walk and the concurrent fan-out
+share, since a page fetched twice under drift must not double-count.
 
 **No employment_type, no department.** The per-job array has two unlabelled enum fields (indices
 11 and 20 here) with no accompanying string table found anywhere on the page — guessing what they
@@ -107,14 +114,18 @@ def _ds1_data(page_html: str) -> list[Any] | None:
     return parsed if isinstance(parsed, list) else None
 
 
-def _field(job: list[Any], index: int) -> Any:
-    """One positional field of a ``ds:1`` job array, or None past its end.
+def _field(array: list[Any] | None, index: int) -> Any:
+    """One positional element of a ``ds:1`` array, or None past its end.
 
-    Every field access in this module goes through here rather than a bare ``job[i]`` — the
-    array's shape is Google's internal wire format, not a documented contract, so a shorter
-    array (a field genuinely absent on some job type) must read as None, not raise.
+    Used both on the top-level ``[jobs, null, total, page_size]`` array and on one job's own
+    array — every field access in this module goes through here rather than a bare
+    ``array[i]``, because the shape is Google's internal wire format, not a documented
+    contract, so a shorter array (a field genuinely absent, or the whole payload missing) must
+    read as None, not raise.
     """
-    return job[index] if 0 <= index < len(job) else None
+    if array is None or not (0 <= index < len(array)):
+        return None
+    return array[index]
 
 
 def _pair(value: Any) -> Any:
@@ -198,40 +209,65 @@ class GoogleScraper(BaseScraper):
 
     def _fetch_page(self, page: int) -> list[list[Any]]:
         data = _ds1_data(self._get(self._page_url(page)))
-        jobs = _field(data, 0) if data is not None else None
+        jobs = _field(data, 0)
         return jobs if isinstance(jobs, list) else []
 
     def fetch_raw(self) -> Any:
         first = _ds1_data(self._get(self._page_url(1)))
-        jobs: list[list[Any]] = (
-            list(_field(first, 0) or []) if first is not None else []
-        )
-        if first is None or not jobs:
+        first_jobs = _field(first, 0)
+        if not first_jobs:
             self.note_unreadable_board("ds:1 job data on page 1", "none found")
-            return jobs
+            return []
+        # Deduped by native id, not merely concatenated: pages below are fetched concurrently,
+        # and this scraper has no evidence either way on whether Google's backend can reorder a
+        # job across two nearly-simultaneous page fetches the way Eightfold's replica-inconsistent
+        # PCSX API is measured to (module docstring's pagination section). Oracle and Eightfold
+        # both guard the equivalent risk with an id-keyed dict rather than a bare list; this is
+        # the same defense, cheap enough to keep even absent a confirmed repro on this ATS.
+        seen: dict[str, list[Any]] = {
+            jid: job for job in first_jobs if (jid := _field(job, 0))
+        }
         total = _field(first, 2)
         total = total if isinstance(total, int) else 0
-        if total > len(jobs):
+        last_page, last_page_size = 1, len(first_jobs)
+        if total > len(seen):
             pages_needed = min(-(-total // _PAGE_SIZE), _MAX_PAGES)
             rest = list(range(2, pages_needed + 1))
             fetched = self.fan_out(rest, self._fetch_page, workers=_PAGE_WORKERS)
-            for batch in fetched:
-                if batch:
-                    jobs.extend(batch)
-            if pages_needed >= _MAX_PAGES:
-                self.mark_truncated(
-                    f"hit the {_MAX_PAGES}-page cap at {len(jobs)} of {total} postings — "
-                    "the rest unread"
-                )
+            for page, batch in zip(rest, fetched):
+                batch = batch or []
+                for job in batch:
+                    if jid := _field(job, 0):
+                        seen.setdefault(jid, job)
+                last_page, last_page_size = page, len(batch)
+        # page 1's total is only an ESTIMATE of how many pages to fan out — it is measured to
+        # drift during a walk (module docstring: 3,414 -> 3,387 within a minute), and a total
+        # that grew rather than shrank would otherwise strand the tail: the fan-out above never
+        # even requests a page past the stale estimate, so those postings are silently never
+        # fetched, not merely undercounted. A full last page is the tell (the board's own true
+        # terminator, same as Oracle/Eightfold's "an empty page is the definitive end") — walk
+        # forward from there one page at a time until a genuinely short page proves the true
+        # end, capped by _MAX_PAGES so unbounded growth can't loop forever.
+        while last_page_size >= _PAGE_SIZE and last_page < _MAX_PAGES:
+            last_page += 1
+            batch = self._fetch_page(last_page)
+            for job in batch:
+                if jid := _field(job, 0):
+                    seen.setdefault(jid, job)
+            last_page_size = len(batch)
+        if last_page_size >= _PAGE_SIZE and last_page >= _MAX_PAGES:
+            self.mark_truncated(
+                f"hit the {_MAX_PAGES}-page cap at {len(seen)} postings — the rest unread"
+            )
         if total:
             self.mark_truncated_unless_negligible(
-                len(jobs),
+                len(seen),
                 total,
-                f"read {len(jobs)} of {total} postings stated on page 1 — the board is live "
+                f"read {len(seen)} of {total} postings stated on page 1 — the board is live "
                 "and its count moves during a multi-page walk, same as any page lost to a "
                 "per-page fetch failure",
             )
-        return jobs
+        return list(seen.values())
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []

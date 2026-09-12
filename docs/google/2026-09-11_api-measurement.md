@@ -117,6 +117,36 @@ stated total and the empirical walk agree precisely at that moment. Pages sample
 range (1, 2, 50, 100, 150, 165, 168, 170) all read exactly 20 — no short page found mid-walk (the
 Oracle-class trap), only the genuine last page is short.
 
+**A total that shrinks is not the only drift direction, and a total that *grows* mid-crawl is not
+safe to ignore.** The first version of `fetch_raw` computed a fixed page count from page 1's total
+and fanned out exactly that many pages — correct for a shrinking total (the tolerance check catches
+the shortfall), but silent for a growing one: the fan-out would never even *request* a page past
+the stale estimate, so newly-added tail postings are never fetched at all, not merely undercounted,
+and the tolerance check compares the count against that same stale total and finds no shortfall to
+report. Fixed by treating the total as an estimate of fan-out width only, never the terminator: a
+full last-estimated page walks forward one page at a time until a genuinely short page proves the
+true end (the same terminator Oracle/Eightfold use), and every job is deduped by native id across
+pages so a page re-fetched under drift can't double-count (`tests/test_google.py`'s
+`test_a_stale_understated_total_does_not_strand_the_tail` pins this with a 45-real/30-stated case).
+
+**Live end-to-end re-scrape (2026-09-12), verifying the fix against the real board:** ran the
+scraper's actual `fetch_raw()` against `careers.google.com` and compared its result to a fresh,
+independent total fetched immediately after the crawl finished (a second, separate page-1 GET —
+not reused from anywhere in the crawl itself):
+
+| metric | value |
+| --- | --- |
+| elapsed | 19.3s |
+| distinct job ids returned | 3,356 |
+| duplicate ids in the raw result | 0 |
+| `scraper.truncated` | `None` |
+| fresh independent total (post-crawl page-1 refetch) | 3,356 |
+| Jobs built by `parse()` | 3,356 (0 dropped) |
+
+The live count and the fresh post-crawl total match exactly, with zero duplicates and nothing
+flagged truncated — a real confirmation on the live board, not only the unit-test fixtures above,
+that the adaptive tail walk and the id-based dedup both do what they're meant to.
+
 ## Rate limit: none found at a modest burst
 
 20 concurrent requests (`ThreadPoolExecutor(max_workers=10)`, pages 1-20): 20/20 HTTP 200, wall time
