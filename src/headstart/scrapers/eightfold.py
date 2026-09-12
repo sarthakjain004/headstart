@@ -1,12 +1,11 @@
 """Eightfold AI scraper (public PCSX career sites: careers.qualcomm.com, jobs.nvidia.com,
 paypal.eightfold.ai, ...).
 
-A tenant's ``slug`` is its board host. Two public surfaces, primary + fallback (all probed live
-2026-07-21; experiment/eightfold/artifacts/research_eightfold_phenom.md, proof_pcsx_50.json):
+A tenant's ``slug`` is its board host. Three public surfaces, primary + two fallbacks (probed live
+2026-07-21 and again 2026-09-11 — see ``docs/eightfold/smartapply-fallback.md`` for the second date):
 
-**Primary — the PCSX JSON API** (robots allows ``/api/pcsx``; the ``/api/apply/v2/jobs`` 403 is a
-different, apply-flow namespace). The board's careers page carries ``_EF_GROUP_ID = "{domain}"``, the
-API's ``domain`` param. Then:
+**Primary — the PCSX JSON API** (robots allows ``/api/pcsx``). The board's careers page carries
+``_EF_GROUP_ID = "{domain}"``, the API's ``domain`` param. Then:
   - ``GET /api/pcsx/search?domain={d}&start={n}`` — paginates 10 positions/page (``start`` += 10),
     each with ``name``/``department``/``locations``/``postedTs``/``workLocationOption``/``positionUrl``
     — every field but the description. ``data.count`` is the board total.
@@ -15,10 +14,24 @@ API's ``domain`` param. Then:
     but the job is still kept — its metadata already came from the search list.
 Proven on 40/50 live tenants; adds ``department`` (absent from the sitemap path).
 
-**Fallback — sitemap → per-job JSON-LD** for the ~20 % of tenants that 403 the API (bot-hardened or
-API-disabled — bayer, hsbc.eightfold.ai, libertymutual): ``GET {host}/careers/sitemap.xml`` lists
-every job as ``/careers/job/{positionId}-{slug}?domain={co}.com`` (a ``sitemap_index`` of children is
-followed one level); each job page embeds a schema.org ``JobPosting``. No ``department`` here.
+**Fallback 1 — SmartApply**, ``/api/apply/v2/jobs``, for the ~20% of tenants whose PCSX search
+403s with an explicit "PCSX is not enabled" body (English or localized — the check keys on the
+substring ``"pcsx"`` in the message, not the English phrase, since the observed Spanish variant is
+"PCSX no está habilitado para este usuario."). Verified live 2026-09-11 against all 23 tenants of
+this class in the then-current liveness ledger: **23/23 (100%) recovered**, same ``domain``/
+``query``/``location``/``start`` params (plus ``sort_by=timestamp``), same 10-per-page pagination,
+and — unlike the primary search — **no replica disagreement measured** (8 repeated-offset probes
+across 4 tenants, 0 ids differing; 2 tenants' full crawls matched ``count`` exactly with 0
+duplicate ids), so this path does one straight pass, no re-sweep. It also recovers ``department``
+(absent from fallback 2's JSON-LD): 191/230 sampled positions had it non-null. Its own detail
+endpoint is the *same* ``position_details`` used by the primary path — every one of the 23
+tenants' SmartApply-sourced ids resolved there with a real description. Full protocol, field-shape
+mapping, and the tenants tested: ``docs/eightfold/smartapply-fallback.md``.
+
+**Fallback 2 — sitemap → per-job JSON-LD**, for a generic (non-PCSX) 403 or a SmartApply failure:
+``GET {host}/careers/sitemap.xml`` lists every job as ``/careers/job/{positionId}-{slug}?domain=
+{co}.com`` (a ``sitemap_index`` of children is followed one level); each job page embeds a
+schema.org ``JobPosting``. No ``department`` here.
 
 Internal-mobility-only tenants (Infosys/Wipro/Walmart — ``{slug}.eightfold.ai`` behind SSO) expose
 neither surface publicly, so they yield nothing — correct, they are not public boards.
@@ -54,6 +67,13 @@ _MAX_PAGES = (
 # sweeps close a ~6% per-sweep miss almost surely; a board still short after three is reported.
 _MAX_SWEEPS = 3
 _MAX_INDEX_CHILDREN = 50  # sitemap-fallback: child sitemaps to follow from an index
+
+# The discriminator between "this tenant needs SmartApply" and a generic WAF 403: measured live
+# 2026-09-11, the 403 body's `message` always names the product, in whichever locale ("PCSX is not
+# enabled for this user." / "PCSX no está habilitado para este usuario.") — so match the substring,
+# not an English phrase, or the Spanish-locale tenants (2 of 23 measured) silently miss SmartApply
+# and fall all the way to the weaker sitemap path instead.
+_PCSX_DISABLED = re.compile(r"pcsx", re.IGNORECASE)
 
 _EF_GROUP_ID = re.compile(r'_EF_GROUP_ID\s*=\s*"([^"]+)"')
 # sitemap-fallback patterns
@@ -94,9 +114,10 @@ class EightfoldScraper(BaseScraper):
     #: (ADR-0063). Both therefore escalate to the spare egress rather than to a fourth attempt.
     egress_fallback_on = frozenset({403, 405})
 
-    #: Why this Board fell back from the PCSX API to the per-job sitemap walk, written by
-    #: whichever branch actually gave up. A class-level default only so the attribute exists
-    #: before the first assignment; every path that reaches the fallback line has replaced it.
+    #: Why this Board fell back from the PCSX API — via SmartApply, when that's tried, or
+    #: straight to the per-job sitemap walk otherwise — written by whichever branch actually gave
+    #: up. A class-level default only so the attribute exists before the first assignment; every
+    #: path that reaches the fallback line has replaced it.
     _fallback_reason = "the PCSX API did not answer"
 
     def url(self) -> str:
@@ -208,6 +229,12 @@ class EightfoldScraper(BaseScraper):
         # every remaining Board onto the far more expensive per-job sitemap path.
         first = self._get(self._search_url(group_id, 0), marks_wall=False)
         if first.status_code != 200:
+            if first.status_code == 403 and _pcsx_disabled(first):
+                positions = self._smartapply_search(group_id)
+                if positions is not None:
+                    return positions
+                # _smartapply_search already set _fallback_reason on its own failure exits.
+                return None
             self._fallback_reason = f"the PCSX API returned {first.status_code}"
             return None
         try:
@@ -293,6 +320,82 @@ class EightfoldScraper(BaseScraper):
                     ),
                 )
         return list(seen.values())
+
+    # --- fallback 1: SmartApply --------------------------------------------------------------
+
+    def _smartapply_url(self, group_id: str, start: int) -> str:
+        q = urllib.parse.urlencode(
+            {
+                "domain": group_id,
+                "query": "",
+                "location": "",
+                "start": start,
+                "sort_by": "timestamp",
+            }
+        )
+        return f"https://{self.slug}/api/apply/v2/jobs?{q}"
+
+    def _smartapply_search(self, group_id: str) -> list[dict[str, Any]] | None:
+        """Paginate ``/api/apply/v2/jobs`` (the "SmartApply" surface) for tenants whose PCSX
+        search 403s "not enabled". None signals SmartApply itself is unavailable, so the caller
+        falls through to the sitemap.
+
+        Unlike :meth:`_api_search`, one straight pass — no re-sweep. Measured live 2026-09-11
+        (``docs/eightfold/smartapply-fallback.md``): 8 same-offset probes 3-6s apart across 4
+        tenants found 0 ids disagreeing (``_api_search``'s replica-disagreement bug doesn't
+        reproduce here), and two tenants' full crawls matched ``count`` exactly with 0 duplicate
+        ids — so the dedupe below is a cheap safety net, not a load-bearing fix.
+        """
+        first = self._get(self._smartapply_url(group_id, 0), marks_wall=False)
+        if first.status_code != 200:
+            self._fallback_reason = f"the SmartApply API returned {first.status_code}"
+            return None
+        try:
+            data = first.json()
+        except ValueError:
+            self._fallback_reason = (
+                "the SmartApply API answered 200 with an unparseable body"
+            )
+            return None
+        total = int(data.get("count") or 0)
+        seen: dict[str, dict[str, Any]] = {}
+        for pos in data.get("positions") or []:
+            seen.setdefault(str(pos.get("id")), pos)
+        start = _PAGE
+        pages = 1
+        while len(seen) < total and start < total and pages < _MAX_PAGES:
+            r = self._get(self._smartapply_url(group_id, start))
+            if r.status_code != 200:
+                self.mark_truncated_unless_negligible(
+                    len(seen),
+                    total,
+                    _short_reason(
+                        f"SmartApply HTTP {r.status_code} on page {pages + 1}",
+                        len(seen),
+                        total,
+                    ),
+                )
+                return [_smartapply_to_pcsx_shape(p) for p in seen.values()]
+            batch = r.json().get("positions") or []
+            if not batch:
+                break
+            for pos in batch:
+                seen.setdefault(str(pos.get("id")), pos)
+            start += _PAGE
+            pages += 1
+        if len(seen) < total:
+            reason = (
+                f"hit the {_MAX_PAGES}-page ceiling"
+                if pages >= _MAX_PAGES
+                else "SmartApply's list ended short"
+            )
+            if pages >= _MAX_PAGES:
+                self.mark_truncated(_short_reason(reason, len(seen), total))
+            else:
+                self.mark_truncated_unless_negligible(
+                    len(seen), total, _short_reason(reason, len(seen), total)
+                )
+        return [_smartapply_to_pcsx_shape(p) for p in seen.values()]
 
     def _details_url(self, group_id: str, position_id: str) -> str:
         q = urllib.parse.urlencode(
@@ -400,7 +503,7 @@ class EightfoldScraper(BaseScraper):
             self.note_detail_loss("unparseable body on a 200")
         return text
 
-    # --- fallback: sitemap -> per-job JSON-LD -------------------------------------------------
+    # --- fallback 2: sitemap -> per-job JSON-LD -----------------------------------------------
 
     def _sitemap_records(self) -> list[dict[str, Any]]:
         listed = self._job_urls()
@@ -568,6 +671,47 @@ def sitemap_ids_for(slug: str) -> set[str]:
         pid
         for url in scraper._job_urls()
         if (pid := _sitemap_position_id(url)) is not None
+    }
+
+
+def _pcsx_disabled(response: Any) -> bool:
+    """Whether a 403's body is PCSX explicitly refusing this tenant (any locale — see
+    :data:`_PCSX_DISABLED`), the signal to try SmartApply, vs. a generic WAF 403 that should fall
+    straight through to the sitemap as before."""
+    try:
+        message = response.json().get("message")
+    except ValueError:
+        return False
+    return bool(message) and bool(_PCSX_DISABLED.search(str(message)))
+
+
+def _smartapply_to_pcsx_shape(pos: dict[str, Any]) -> dict[str, Any]:
+    """One SmartApply position (``/api/apply/v2/jobs``), normalized onto the PCSX search shape
+    ``_api_records`` already reads — verified live 2026-09-11, ``docs/eightfold/
+    smartapply-fallback.md``. ``name``/``locations``/``department`` are the same key names on both
+    surfaces. ``work_location_option`` -> ``workLocationOption``: same value vocabulary (onsite/
+    hybrid/remote_local/remote_global, all already in ``_REMOTE_OPTION``). ``t_create`` ->
+    ``postedTs``: SmartApply carries no ``postedTs`` of its own, and ``t_create`` (when the
+    posting was created) is the closer match than ``t_update`` (which moves on every edit).
+    ``standardizedLocations`` is simply absent — ``_first_location``'s dirty-location repair tier
+    is skipped, not broken, without it. ``positionUrl`` is deliberately left out too: SmartApply's
+    own ``canonicalPositionUrl`` sometimes points at a *different* vanity host than ``self.slug``
+    (e.g. bayer.eightfold.ai's is ``talent.bayer.com``), while the existing ``/careers/job/{id}``
+    fallback in ``_api_records`` was confirmed live to resolve on every one of the tenants this was
+    checked against — so that fallback is left to build the URL, not overridden. ``department``
+    came back list-shaped on one measured tenant (fluor) instead of the usual string; joined here
+    so ``_api_records``'s ``.strip()`` doesn't raise.
+    """
+    department = pos.get("department")
+    if isinstance(department, list):
+        department = ", ".join(str(d) for d in department if d)
+    return {
+        "id": pos.get("id"),
+        "name": pos.get("name"),
+        "locations": pos.get("locations"),
+        "department": department,
+        "postedTs": pos.get("t_create"),
+        "workLocationOption": pos.get("work_location_option"),
     }
 
 
