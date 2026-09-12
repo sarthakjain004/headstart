@@ -1,0 +1,82 @@
+{
+  "listings": [
+    {
+      "id": "224501",
+      "t": "AI Engineer, Manipulation, Optimus",
+      "dp": "3",
+      "f": "74",
+      "l": "401022",
+      "y": 1,
+      "sp": 1,
+      "pu": null
+    },
+    {
+      "id": "281634",
+      "t": "START Optimus Service Technician (Winter 2027)",
+      "dp": "3",
+      "f": "74",
+      "l": "31173",
+      "y": 3,
+      "sp": 54,
+      "pu": "2026-12-31T00:00:00"
+    },
+    {
+      "id": "283222",
+      "t": "Seasonal Customer Experience Specialist",
+      "dp": "2",
+      "f": "68",
+      "l": "455446",
+      "y": 4,
+      "sp": 84,
+      "pu": null
+    },
+    {
+      "id": "277989",
+      "t": "(Werkstudent) Customer Experience Specialist (m/w/d) - Karlsruhe - Teilzeit",
+      "dp": "2",
+      "f": "68",
+      "l": "3690",
+      "y": 2,
+      "sp": 107,
+      "pu": null
+    },
+    {
+      "id": "282326",
+      "t": "Delivery Operations Advisor",
+      "dp": "1",
+      "f": "76",
+      "l": "32046",
+      "y": 1,
+      "sp": 1215,
+      "pu": null
+    }
+  ],
+  "lookup": {
+    "locations": {
+      "31173": "Fremont, California",
+      "3690": "Karlsruhe, Baden-wuerttemberg",
+      "401022": "Palo Alto, California",
+      "455446": "Roanoke, Virginia"
+    },
+    "departments": {
+      "2": "Sales & Customer Support",
+      "3": "Tesla AI",
+      "1": "Vehicle Service"
+    },
+    "types": {
+      "1": "fulltime",
+      "2": "parttime",
+      "3": "intern",
+      "4": "seasonal"
+    },
+    "regions": {
+      "1": "Africa",
+      "2": "Asia Pacific",
+      "3": "Europe",
+      "4": "Middle East",
+      "5": "North America",
+      "6": "South America"
+    },
+    "sites": {}
+  }
+}
