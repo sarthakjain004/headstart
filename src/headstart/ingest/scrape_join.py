@@ -35,6 +35,7 @@ _OUT = REPO_ROOT / "data" / "jobs"
 # `index sync` — the shard fragments themselves stop at this stage (ADR-0053).
 _UNAUTHORITATIVE = REPO_ROOT / "data" / "state" / "unauthoritative_boards.json"
 _SPEEDUP = REPO_ROOT / "data" / "state" / "shard_speedup.csv"
+_HEALTH = REPO_ROOT / "data" / "state" / "scrape_health.json"
 
 
 def _fragment_dirs(root: Path) -> list[Path]:
@@ -122,6 +123,17 @@ def main() -> int:
         default=str(_SPEEDUP),
         help="shard_speedup.csv to blend this run's measured fan-out speedup into (ADR-0054)",
     )
+    ap.add_argument(
+        "--scrape-health",
+        default=str(_HEALTH),
+        help="small coverage/loss verdict carried to the publication summary",
+    )
+    ap.add_argument(
+        "--expected-shards",
+        type=int,
+        default=0,
+        help="planner's shard count; missing reports make coverage degraded",
+    )
     args = ap.parse_args()
 
     shards_root = Path(args.shards)
@@ -156,7 +168,11 @@ def main() -> int:
     # eviction signal.
     write_unauthoritative_boards(reports, Path(args.unauthoritative_boards))
     _update_speedup(reports, Path(args.speedup_ledger))
-    _report_shards(reports, total, len(per_ats))
+    health = observability.ScrapeHealth.from_reports(
+        reports, expected_reports=args.expected_shards or None
+    )
+    observability.write_scrape_health(Path(args.scrape_health), health)
+    _report_shards(reports, total, len(per_ats), health)
     return 0
 
 
@@ -186,7 +202,12 @@ def _update_speedup(reports: list[dict], path: Path) -> None:
         _log.warning(f"could not update the speedup ledger: {exc}")
 
 
-def _report_shards(reports: list[dict], lines: int, ats_files: int) -> None:
+def _report_shards(
+    reports: list[dict],
+    lines: int,
+    ats_files: int,
+    health: observability.ScrapeHealth | None = None,
+) -> None:
     """The whole fan-out's story in one place — the view no single shard job can give.
 
     A shard's numbers only ever existed in its own runner's log, so questions like "did any
@@ -199,6 +220,7 @@ def _report_shards(reports: list[dict], lines: int, ats_files: int) -> None:
             "no shard reports — nothing to aggregate (older shards, or a local run)"
         )
         return
+    health = health or observability.ScrapeHealth.from_reports(reports)
 
     killed = [r for r in reports if r.get("killed_by_budget")]
     deferred = sum(int(r.get("undone") or 0) for r in reports)
@@ -228,6 +250,9 @@ def _report_shards(reports: list[dict], lines: int, ats_files: int) -> None:
         if r.get("predicted_minutes") and r.get("seconds")
     ]
     ratio_span = f"{min(ratios):.2f}-{max(ratios):.2f}x" if ratios else ""
+
+    coverage_line = health.coverage_line()
+    loss_lines = health.loss_lines()
 
     if killed:
         # An annotation, not an info line: a shard that ran out of time silently deferred work,
@@ -261,6 +286,12 @@ def _report_shards(reports: list[dict], lines: int, ats_files: int) -> None:
                 {k: v for r in reports for k, v in (r.get("errors") or {}).items()}
             )
         )
+    if coverage_line:
+        _log.info("Board coverage by ATS: " + coverage_line)
+        report_verdict = _log.warning if health.degraded else _log.info
+        report_verdict(health.verdict_line())
+    for loss_line in loss_lines:
+        _log.info(loss_line)
     _log.info(
         f"fan-out: {len(reports)} shards | slowest {slowest_seconds / 60:.1f} min "
         f"| worst single board {worst_board:.0f}s | retries {sum(retries.values())}"
@@ -289,6 +320,15 @@ def _report_shards(reports: list[dict], lines: int, ats_files: int) -> None:
             if killed
             else "- no shard hit its time budget",
         ]
+        + (
+            [
+                f"- **{health.verdict_line()}**",
+                f"- Board coverage by ATS: {coverage_line}",
+            ]
+            if coverage_line
+            else []
+        )
+        + [f"- {line}" for line in loss_lines]
         + ([f"- actual/predicted **{ratio_span}**"] if ratio_span else []),
     )
 

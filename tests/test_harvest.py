@@ -70,6 +70,28 @@ def test_scrape_all_dedupes_and_isolates_errors(monkeypatch, tmp_path):
     assert "x:bad" in result.errors and "boom" in result.errors["x:bad"]
 
 
+def test_failed_board_still_reports_its_bounded_observation(monkeypatch, tmp_path):
+    """The Workday listing response raises, so telemetry must cross the harvest seam from the
+    worker's `finally`; a success-only callback would lose the evidence on exactly the bug."""
+    failed = FakeScraper(error=RuntimeError("unexpected listing body"))
+    failed.telemetry = {
+        "listing_pages": 1,
+        "listing_page_losses": 1,
+        "listing_loss_causes": {"challenge": 1},
+    }
+    monkeypatch.setattr(harvest, "get_scraper", lambda *args, **kwargs: failed)
+    observed = {}
+
+    result = scrape_all(
+        [CompanyRef("workday", "bad")],
+        jobs_dir=tmp_path,
+        on_observation=lambda key, fields: observed.update({key: fields}),
+    )
+
+    assert "workday:bad" in result.errors
+    assert observed == {"workday:bad": failed.telemetry}
+
+
 def test_build_and_write_feed(monkeypatch, tmp_path):
     """build_feed reads the streamed .jsonl back; errors are carried in from the run."""
 

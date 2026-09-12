@@ -100,7 +100,12 @@ class _Progress:
         # yet it is exactly the evidence that clears a Board's ADR-0058 gone-streak: alive and
         # empty is not gone.
         self.boards_ok: list[str] = []
+        self.observations: dict[str, dict] = {}
         self.jobs = 0
+
+    def on_observation(self, key: str, fields: dict) -> None:
+        if fields:
+            self.observations[key] = fields
 
     def on_board(
         self,
@@ -227,11 +232,28 @@ def _report(
     # ceiling and some at 12, so this is the only place the two are comparable — and
     # `stream_width`'s own docstring says 12 has never been re-measured.
     widths = fanout_stats.report()
+    health = observability.ScrapeHealth.from_reports(
+        [
+            {
+                "boards_ok": progress.boards_ok,
+                "errors": progress.errors,
+                "truncated": progress.truncated,
+                "observations": progress.observations,
+            }
+        ]
+    )
+    coverage = health.coverage_line()
+    losses = health.loss_lines()
     # Both are routine per-run measurement, so both are info. They were warnings only to force a
     # GitHub annotation, which is a quota and not a level: 10 per step, 50 per job, and fifteen
     # shards each claiming several of them starve the errors the annotations exist for. The step
     # summary below is the surface that was actually wanted — uncapped and on the run page.
     for line in egress + widths:
+        _log.info(line)
+    if coverage:
+        _log.info("Board coverage by ATS: " + coverage)
+        _log.info(health.verdict_line())
+    for line in losses:
         _log.info(line)
     ratio = (
         f" | predicted {predicted:.1f} min, actual/predicted {actual_min / predicted:.2f}x"
@@ -260,7 +282,12 @@ def _report(
             else "- finished within the time budget",
             f"- board seconds {spread}",
         ]
-        + [f"- {line}" for line in egress + widths],
+        + (
+            [f"- **{health.verdict_line()}**", f"- Board coverage by ATS: {coverage}"]
+            if coverage
+            else []
+        )
+        + [f"- {line}" for line in losses + egress + widths],
     )
     observability.write_shard(
         outdir,
@@ -292,6 +319,7 @@ def _report(
         # that clears an ADR-0058 gone-streak, which neither the corpus (no lines) nor the
         # error map (no entry) can carry
         boards_ok=progress.boards_ok,
+        observations=progress.observations,
     )
 
 
@@ -367,6 +395,7 @@ def main() -> int:
             jobs_dir=outdir,
             progress_every=200,
             on_board=progress.on_board,
+            on_observation=progress.on_observation,
             have_details=have_details,
         )
     except SystemExit:

@@ -217,6 +217,13 @@ class BaseScraper(ABC):
         # `note_detail_loss`, named by `report_detail_gaps`; empty for the scrapers that have
         # not opted in, whose line then reads exactly as it always did.
         self.detail_losses: Counter[str] = Counter()
+        # The subset that returned no detail because no request could be formed (for example, a
+        # listing with no native id). Kept apart so `detail_attempted` remains a count of Jobs for
+        # which the scraper actually reached its request seam, not merely a count of result slots.
+        self.detail_unattempted: Counter[str] = Counter()
+        # Small per-Board counters that survive the runner in the shard report. This is telemetry,
+        # not a second outcome channel: ``truncated`` and raised errors still decide authority.
+        self.telemetry: dict[str, Any] = {}
 
     def mark_truncated(self, why: str) -> None:
         """Record ``why`` this Board's list came back short, keeping the *first* reason.
@@ -319,6 +326,16 @@ class BaseScraper(ABC):
         count it explains. Workday keeps a richer tally of its own and does not use this.
         """
         self.detail_losses[cause] += 1
+
+    def note_detail_unattempted(self, cause: str) -> None:
+        """Record an empty detail result for which no HTTP request could be made."""
+        self.note_detail_loss(cause)
+        self.detail_unattempted[cause] += 1
+
+    def note_detail_exception(self, exc: Exception) -> None:
+        """Record a detail request exception, retaining its settled HTTP status when present."""
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        self.note_detail_loss(f"HTTP {status}" if status else type(exc).__name__)
 
     def needs_detail(self, native_id: str) -> bool:
         """Whether this Job still needs its per-job detail fetch (ADR-0048).
@@ -668,6 +685,21 @@ class BaseScraper(ABC):
         appended to this same line rather than to a second one, for that reason. The leading
         ``N/M {what} missing`` is unchanged either way — several docs and probes quote it."""
         missing = sum(1 for r in results if r is None)
+        unattempted = sum(self.detail_unattempted.values())
+        self.telemetry.update(
+            {
+                "detail_jobs": len(results),
+                "detail_attempted": max(0, len(results) - unattempted),
+                "detail_losses": missing,
+                "detail_http_failures": sum(
+                    n
+                    for cause, n in self.detail_losses.items()
+                    if cause.startswith("HTTP ")
+                ),
+                "detail_breaker_skips": 0,
+                "detail_loss_causes": dict(self.detail_losses),
+            }
+        )
         if missing:
             self._log.info(
                 f"{self.board_key()}: {missing}/{len(results)} {what} missing"

@@ -95,6 +95,28 @@ _LD_BLOCK = re.compile(
     r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
     re.DOTALL | re.IGNORECASE,
 )
+_CLASSIC_TITLE = re.compile(
+    r'<h1[^>]*class=["\'][^"\']*\biCIMS_Header\b[^"\']*["\'][^>]*>(.*?)</h1>',
+    re.DOTALL | re.IGNORECASE,
+)
+_CLASSIC_INFO = re.compile(
+    r'<div[^>]*class=["\'][^"\']*\biCIMS_InfoMsg_Job\b[^"\']*["\'][^>]*>\s*'
+    r'<div[^>]*class=["\'][^"\']*\biCIMS_Expandable_Container\b[^"\']*["\'][^>]*>\s*'
+    r'<div[^>]*class=["\'][^"\']*\biCIMS_Expandable_Text\b[^"\']*["\'][^>]*>'
+    r"(.*?)</div>\s*</div>\s*</div>",
+    re.DOTALL | re.IGNORECASE,
+)
+_CLASSIC_FIELD = re.compile(
+    r'<dt[^>]*class=["\'][^"\']*\biCIMS_JobHeaderField\b[^"\']*["\'][^>]*>'
+    r'(.*?)</dt>\s*<dd[^>]*class=["\'][^"\']*\biCIMS_JobHeaderData\b[^"\']*["\'][^>]*>'
+    r"(.*?)</dd>",
+    re.DOTALL | re.IGNORECASE,
+)
+_CLASSIC_LOCATION = re.compile(
+    r'<div[^>]*class=["\'][^"\']*\bheader\s+left\b[^"\']*["\'][^>]*>.*?'
+    r"<span[^>]*>\s*Location\s*</span>\s*<span[^>]*>(.*?)</span>",
+    re.DOTALL | re.IGNORECASE,
+)
 
 # Above this, a figure is an annual salary; at or below it, an hourly rate. iCIMS never states the
 # period (`unitText` absent on all 56 sampled `baseSalary` nodes) while the values themselves span
@@ -172,7 +194,7 @@ class ICIMSScraper(BaseScraper):
                 "GET", _detail_url(url), headers={"User-Agent": USER_AGENT}, timeout=30
             )
         except http.RequestsError as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None
         return self._fields_of(response)
 
@@ -186,7 +208,7 @@ class ICIMSScraper(BaseScraper):
                 timeout=30,
             )
         except http.RequestsError as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None
         return self._fields_of(response)
 
@@ -318,7 +340,51 @@ def _ld_fields(page: str) -> dict[str, Any] | None:
                 if kept.get("jobLocationType") == "TELECOMMUTE"
                 else None,
             }
-    return None
+    return _classic_fields(page)
+
+
+def _classic_fields(page: str) -> dict[str, Any] | None:
+    """Fields from iCIMS's classic server-rendered job template when JSON-LD is absent.
+
+    Gated on both the job header and at least one expandable content block. The branded wrapper
+    has neither combination, so losing ``in_iframe=1`` still reports a detail gap instead of
+    fabricating a Job from navigation chrome.
+    """
+    title_match = _CLASSIC_TITLE.search(page)
+    blocks = _CLASSIC_INFO.findall(page)
+    if not title_match or not blocks:
+        return None
+    fields = {
+        html_to_text(label) or "": html_to_text(value)
+        for label, value in _CLASSIC_FIELD.findall(page)
+    }
+    location_match = _CLASSIC_LOCATION.search(page)
+    location_type = (fields.get("Job Location Type") or "").strip().lower()
+    remote_field = (
+        (fields.get("Remote (Google for Jobs Only Field)") or "").strip().lower()
+    )
+    remote = (
+        True
+        if location_type == "remote" or remote_field == "yes"
+        else False
+        if location_type in {"onsite", "on-site"} or remote_field == "no"
+        else None
+    )
+    return {
+        "title": html_to_text(title_match.group(1)),
+        "description": "\n".join(blocks),
+        "location": html_to_text(location_match.group(1))
+        if location_match
+        else fields.get("Location : Location")
+        or fields.get("Location Name")
+        or fields.get("Job Locations")
+        or fields.get("Job Posting Location : Location"),
+        "department": fields.get("Category") or fields.get("Department"),
+        "employment_type": fields.get("Type") or fields.get("Position Type"),
+        "salary": None,
+        "posted_at": None,
+        "remote": remote,
+    }
 
 
 def _ld_location(node: dict[str, Any]) -> str | None:

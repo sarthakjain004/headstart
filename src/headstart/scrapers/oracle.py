@@ -276,7 +276,7 @@ class OracleScraper(BaseScraper):
         except http.RequestsError as exc:
             # `fan_out` turns the raise into this same None; caught here so the cause travels
             # with the count rather than only the count.
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None
         return self._first_item(body)
 
@@ -284,7 +284,7 @@ class OracleScraper(BaseScraper):
         try:
             body = await self._get_async(session, self._detail_url(job_id))
         except http.RequestsError as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None
         return self._first_item(body)
 

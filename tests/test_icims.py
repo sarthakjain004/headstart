@@ -102,6 +102,27 @@ def test_wrapper_page_yields_no_fields() -> None:
     assert _ld_fields(_FIXTURE["pages"][_FIXTURE["wrapper_for_id"]]) is not None
 
 
+def test_classic_html_job_page_is_a_fallback_when_jsonld_is_absent() -> None:
+    """Live OVG/Spectra pages carry real classic iCIMS HTML but no JSON-LD. The fallback is
+    gated on the job-page header plus content blocks so the branded wrapper remains None."""
+    page = (
+        pathlib.Path(__file__).parent / "fixtures" / "icims_ovg_classic.html"
+    ).read_text(encoding="utf-8")
+
+    fields = _ld_fields(page)
+
+    assert fields is not None
+    assert (
+        fields["title"]
+        == "Operations Staff | Part-Time | Ryan Center and Boss Ice Arena"
+    )
+    assert "Operations Staff Members" in fields["description"]
+    assert "Perform general labor" in fields["description"]
+    assert fields["location"] == "US-RI-Kingston"
+    assert fields["department"] == "Operations"
+    assert fields["employment_type"] == "Regular Part-Time"
+
+
 def test_parse_drops_a_job_whose_page_did_not_arrive() -> None:
     scraper = get_scraper("icims", _HOST)
     raw = [

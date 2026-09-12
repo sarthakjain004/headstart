@@ -166,6 +166,7 @@ def scrape_all(
     progress_every: int = 0,
     resume: bool = False,
     on_board: Callable[[str, int, str | None, float, str | None], None] | None = None,
+    on_observation: Callable[[str, dict[str, Any]], None] | None = None,
     have_details: Container[str] | None = None,
 ) -> RunResult:
     """Scrape every company concurrently, streaming Jobs to ``{jobs_dir}/{ats}.jsonl``.
@@ -190,6 +191,10 @@ def scrape_all(
     thread as each board completes (``error`` is None on success; ``seconds`` is the board's
     measured scrape time, the same number the cost ledger records; ``truncated`` is None unless
     the scraper knows its list came back short, ADR-0053) — the hook for live per-board logging.
+
+    ``on_observation(key, fields)`` carries optional bounded loss counters from the scraper after
+    that outcome. It never decides success or authority; it only lets shard/run summaries keep
+    listing-page and detail-pass losses separate without parsing prose logs.
     """
     workers = max_workers if max_workers is not None else _default_workers()
 
@@ -197,6 +202,7 @@ def scrape_all(
     # (ADR-0027). Timed in `finally` so an errored board still records the seconds it burned — a
     # board that hangs 30s before raising costs 30s, and the packer must know that.
     elapsed: dict[str, float] = {}
+    observations: dict[str, dict[str, Any]] = {}
 
     # Boards currently mid-fetch: {board: the monotonic clock it started at}. Only the ones still
     # here when the harvest goes down matter — those are the Boards a time budget killed
@@ -232,6 +238,7 @@ def scrape_all(
             # reported something worth carrying.
             if scraper.truncated:
                 truncated[key] = scraper.truncated
+            observations[key] = dict(getattr(scraper, "telemetry", {}))
 
     writer = JobWriter(jobs_dir, {c.ats for c in companies}, resume=resume)
     if writer.done:
@@ -299,6 +306,8 @@ def scrape_all(
             writer.record_cost(cost_key[key], seconds, n_fresh)
             if on_board is not None:
                 on_board(key, n_fresh, errors.get(key), seconds, truncated.get(key))
+            if on_observation is not None:
+                on_observation(key, observations.pop(key, {}))
             if progress_every and done % progress_every == 0:
                 _emit_progress(done, total, len(seen_ids), len(errors), start)
     finally:
