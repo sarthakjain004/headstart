@@ -150,7 +150,12 @@ class AppleScraper(BaseScraper):
 
     def fetch_raw(self) -> Any:
         items = self._listing()
-        ids = [i["id"] for i in items if i.get("id") and self.needs_detail(i["id"])]
+        # Every listed posting gets its detail payload, with no ADR-0048 `needs_detail` skip.
+        # That optimisation is only safe where the detail fetch supplies the description and
+        # nothing else — false here, the same fork Oracle hit: this payload is also the only
+        # source of `employment_type` (module docstring). Skipping it for an already-described
+        # Job would blank that field on every later run.
+        ids = [i["id"] for i in items if i.get("id")]
         if self.async_fanout_enabled():
             fetched = self.fan_out_async(ids, self._detail_async)
         else:
