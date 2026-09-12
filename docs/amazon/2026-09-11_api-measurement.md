@@ -100,13 +100,64 @@ Facet snapshot (top 10 of 60, 2026-09-11):
 | no-business-category | 675 |
 | subsidiaries | 515 |
 
-## Rate limit: none found
+## Rate limit: light bursts are clean, sustained volume is not (revised 2026-09-12)
 
-Two bursts, 60 requests total: 20 requests at 20 concurrent threads (6.0s, 3.3 req/s), 40 at 16
-concurrent (10.3s, 3.9 req/s). **0 of 60 non-200.** Latency is real, not throttling: 1.9–6.2s per
-request, median 2.8s — the scraper's concurrency (`_PAGE_WORKERS = 16`) buys wall-clock, not
-avoidance of a wall. No `User-Agent` requirement either, unlike zwayam (hangs) or SuccessFactors
-(a specific literal denylisted) — a bare request with none set still returned 200.
+**Original finding (2026-09-11), still true as far as it went:** two bursts, 60 requests total —
+20 at 20 concurrent threads (6.0s, 3.3 req/s), 40 at 16 concurrent (10.3s, 3.9 req/s). 0 of 60
+non-200. Latency is real, not throttling: 1.9–6.2s per request, median 2.8s. No `User-Agent`
+requirement either, unlike zwayam (hangs) or SuccessFactors (a specific literal denylisted) — a
+bare request with none set still returned 200.
+
+**That undersold it.** A completeness re-verification the next day ran the real scraper's own
+pagination against every `business_category` bucket twice in a row (a hand-rolled parity check,
+then `AmazonScraper.fetch_raw()` itself) — roughly 530 requests inside two minutes. The second
+walk (the real `fetch_raw()`) came back with only **9,181 of 22,577** postings. The cause was not
+a bad status code: `curl`ing the same endpoint immediately after reproduced it directly —
+
+```
+$ curl -s -o /dev/null -w "status=%{http_code} size=%{size_download}\n" \
+    "https://www.amazon.jobs/en/search.json?offset=0&result_limit=100&sort=recent"
+status=200 size=2860
+```
+
+200, but the body is HTML: Amazon's own CAPTCHA interstitial, `<title>Server Busy</title>`, a
+"Continue shopping" button posting to `/errors_page/validateCaptcha`. `json.loads()` on that body
+raises, which `fan_out`/`fan_out_async`'s blanket exception handler folds into the same "page
+lost" bucket as a genuine transport failure — so the two are indistinguishable in the current
+code, and that's fine: `mark_truncated_unless_negligible` measured the shortfall against the
+fresh facet total and correctly called the run truncated (`read 9181 of 22577 postings`) rather
+than serving the missing 59% as a complete, delistings-eligible board.
+
+It cleared on its own: a single unhurried request ~20 seconds later got a clean 200 JSON, and an
+isolated re-run of `fetch_raw()` right after — with no concurrent burst immediately preceding it
+— returned **22,576 of a fresh 22,576-job facet-sum, exactly.** Zero cross-category overlap and
+zero id/`business_category` mismatches were confirmed in the same session (a manual walk of all
+60 buckets via the sync `_page` path, tracking every job id against every bucket it was fetched
+under). So: this is a real, load-triggered wall — not the "no rate limit" the lighter sample
+suggested — but it is transient and recoverable, and the scraper's own truncation guard is the
+thing that actually matters here, not a code change made on the strength of one incident.
+
+## Completeness verification (2026-09-12)
+
+Beyond the rate-limit incident above, the same session independently re-verified the
+subdivision strategy itself, end to end, against the live board:
+
+- **Fresh facet-sum vs. a from-scratch manual walk of every bucket**: `_categories()`'s own live
+  call reported 22,577 across 60 buckets; a separate hand-rolled walk of every `(category,
+  offset)` page (263 page fetches, 16 concurrent, via the scraper's own `_page` — not `fetch_raw`)
+  found exactly 22,577 distinct `id_icims` values, with the per-category raw count summing to
+  22,577 *before* any dedup — i.e. dedup removed nothing, because there was nothing to remove.
+- **Cross-category overlap: zero.** Of 22,577 ids, 0 were seen under more than one
+  `business_category` filter.
+- **Label agreement: zero mismatches.** Every job's own `business_category` field matched the
+  bucket it was fetched under, for all 22,577.
+- **No bucket over the ceiling**: largest measured, `aws` at 8,258 (this run) — comfortably under
+  10,000, consistent with the 2026-09-11 snapshot (8,238).
+- **No silently-empty pages**: 0 of 263 page fetches came back empty where a job was expected.
+
+Net: the pagination/subdivision logic is exhaustive and non-overlapping when the API is actually
+answering with JSON. The only way this session found to make it undercount was the CAPTCHA wall
+above — a real board-reading failure mode, but not a defect in how the board is partitioned.
 
 ## Field-mapping findings
 

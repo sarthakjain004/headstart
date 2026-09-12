@@ -37,11 +37,24 @@ returned exactly 181 distinct ids, matching its own facet count with zero drift)
 slices partition the board rather than overlapping it — but results are deduped by
 ``id_icims`` anyway, defensively, the way every subdivided scraper here is.
 
-**No rate limit found.** 60 requests across two bursts (20 at 20 concurrent threads, 40 at 16)
-all returned 200 — 0 non-200s. Latency is real, not throttling: 1.9–6.2s per request, median
-2.8s, so the fan-out width matters for wall-clock even though nothing here is refusing
-traffic. No ``User-Agent`` is required either (a bare, UA-less request also returned 200), but
-this scraper still sends the repo's own ``USER_AGENT`` like every other one.
+**There IS a rate limit — it just doesn't show up as a bad status code.** A light burst (60
+requests across two bursts, 20 at 20 concurrent threads, 40 at 16) all returned plain 200 JSON —
+the finding this module first shipped with. A full-board live re-scrape the next day (~530
+requests in under 2 minutes, two consecutive full walks) instead got HTTP **200** with an HTML
+body: Amazon's own CAPTCHA interstitial (``<title>Server Busy</title>``, a "Continue shopping"
+button posting to ``/errors_page/validateCaptcha``) in place of the JSON envelope on a large
+share of pages — silently starving that run to 9,181 of 22,577 real postings. ``_page``/
+``_page_async`` don't special-case this: ``json.loads`` on the HTML raises, the exception is
+caught by ``fan_out``/``fan_out_async``'s blanket handler the same as any other transport
+failure, and the page is counted lost — which is why :meth:`~BaseScraper.mark_truncated_unless_negligible`
+correctly flagged that run truncated (``read 9181 of 22577 postings``) rather than serving a
+silent partial board as complete. The wall cleared on its own within ~20 seconds with no code
+change — a lone, unhurried request right after the walk got a clean 200 JSON, and an isolated
+re-run of ``fetch_raw()`` immediately after (no concurrent bursts preceding it) returned 22,576
+of a fresh 22,576-job facet-sum, exactly. So: transient and load-triggered, not a hard per-IP
+ban, and the existing truncation guard is what actually protects a real pipeline run from ever
+reading this as delistings — nothing further was added here on the strength of one incident, but
+a run landing short should be read against this before being called a scraper bug.
 
 **Field mapping notes, all measured on live data:**
 
@@ -86,9 +99,11 @@ _PAGE_SIZE = 100
 #: results at once", "jobs": null}`. Measured exactly at offset=10000 (blank) and
 #: offset=10050 (the error), both against an unfiltered query.
 _OFFSET_CEILING = 10_000
-#: Concurrent page fetches. No rate limit found in 60 requests at up to 16 concurrent (module
-#: docstring); this stays a little short of that measured-clean width for the same reason
-#: icims/zwayam settled on 16 rather than pushing further on an unmeasured margin.
+#: Concurrent page fetches. A light 60-request burst at up to 16 concurrent stayed clean, but a
+#: ~530-request, two-walk-in-a-row live re-scrape did trigger Amazon's CAPTCHA wall (module
+#: docstring) — the load that matters is sustained volume, not this width specifically, and
+#: `mark_truncated_unless_negligible` is what actually protects a run if it recurs. Left at 16,
+#: the same value icims/zwayam settled on, rather than guessing at a lower one on one incident.
 _PAGE_WORKERS = 16
 
 _WS = re.compile(r"\s+")
@@ -96,7 +111,15 @@ _WS = re.compile(r"\s+")
 
 class AmazonScraper(BaseScraper):
     """Amazon's own careers system — the one board on this ATS (ADR-0139). ``slug`` is fixed:
-    ``www.amazon.jobs``, Amazon's own primary careers host."""
+    ``www.amazon.jobs``, Amazon's own primary careers host.
+
+    Does not override :meth:`~BaseScraper.alias_key` — a deliberate per-scraper call, not an
+    unexamined default, per ADR-0139's own note that a Single source scraper has no sibling
+    board to alias against. Live-checked 2026-09-11: neither the careers page nor the search
+    endpoint redirects anywhere (``curl -L`` on both lands back on the request URL), so the
+    inherited "follow redirects, compare hosts" default resolves ``www.amazon.jobs`` to itself —
+    exactly the meaningful case the default is for, not the empty one.
+    """
 
     ats = "amazon"
     # The listing carries the full description; no second fetch needed.

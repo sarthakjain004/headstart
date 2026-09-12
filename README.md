@@ -12,7 +12,7 @@ System) career boards — earlier and more completely than relying on LinkedIn.
 **[Read the decisions](./docs/adr/)**
 
 HeadStart discovers which companies host boards on which ATS, validates those boards, scrapes
-them through **24 per-ATS scrapers**, normalizes everything into one `Job` shape, and serves it
+them through **26 per-ATS scrapers**, normalizes everything into one `Job` shape, and serves it
 three ways: a static dashboard over a curated feed; an **AI semantic-search layer** (local
 embeddings + vector search with structured filters) running live on a free-tier Hugging Face
 Space over a **320,628-row** index of the tech corpus; and **job alerts** — saved searches
@@ -224,24 +224,28 @@ No always-on server: scheduled GitHub Actions and a free-tier Space.
 
 ## ATS coverage
 
-24 scrapers, selected from a registry by the `ats` key: `amazon`, `ashby`, `darwinbox`, `eightfold`,
-`freshteam`, `greenhouse`, `icims`, `join`, `keka`, `lever`, `oracle`, `personio`, `recruitee`,
-`ripplehire`, `rippling`, `sensehq`, `smartrecruiters`, `successfactors`, `teamtailor`,
-`trakstar`, `workable`, `workday`, `zoho`, `zwayam`. `join` is in `registry.DISABLED_ATS` — German-SMB
-boards running ~1 tech job in ~10k, pure noise for a tech-only index — so it is skipped rather
-than scraped. Its scraper class and tests stay intact; re-enable by removing it from that set.
+26 scrapers, selected from a registry by the `ats` key: `amazon`, `ashby`, `darwinbox`, `eightfold`,
+`freshteam`, `greenhouse`, `icims`, `jazzhr`, `join`, `jobvite`, `keka`, `lever`, `oracle`, `personio`,
+`recruitee`, `ripplehire`, `rippling`, `sensehq`, `smartrecruiters`, `successfactors`, `teamtailor`,
+`trakstar`, `workable`, `workday`, `zoho`, `zwayam`. Three are in `registry.DISABLED_ATS` and
+skipped rather than scraped, each for its own reason: `join` (German-SMB boards running ~1 tech
+job in ~10k, pure noise for a tech-only index), and `jazzhr`/`jobvite` (complete and tested, but
+their storage cost — ~10.7 GB and ~1.5-2 GB respectively for a combined ~6,700 tech jobs — isn't
+justified yet). All three keep their scraper class and tests intact; re-enable any by removing it
+from that set.
 
 Each scraper reads a Board and normalizes its raw postings into `Job` records; all HTTP routes
 through one pooled, thread-local `curl_cffi` client that impersonates Chrome, so the same stack
 serves plain JSON APIs and the TLS-fingerprinted (Cloudflare / DataDome) boards (ADR-0002). The
 liveness pipeline has probed **206,789 ledger rows**: 131,881 live, 66,360 dead, 8,548 unknown —
 rows, not boards; they collapse to 125,249 Unique Boards (CONTEXT.md §Counting Boards). Of the
-23 scrapers, 19 have rows in the index — `sensehq` is a single-company unlock with nothing
-indexed yet, `zwayam` (2026-08-27), `icims` (2026-09-08) and `oracle` (2026-09-08, which had a
-scraper but no ledger until then) were added since the last pipeline run and have nothing indexed
-yet, and
-`join`'s remaining 1,093 rows are a residue of the era before it was disabled: no slice will
-scrape them again, so they leave by eviction rather than refresh.
+26 scrapers, 19 have rows in the index — `sensehq` is a single-company unlock with nothing
+indexed yet, `zwayam` (2026-08-27), `icims` (2026-09-08), `oracle` (2026-09-08, which had a
+scraper but no ledger until then) and `amazon` (2026-09-11, a Single source scraper, ADR-0139)
+were added since the last pipeline run and have nothing indexed yet, `jazzhr`/`jobvite` are
+complete and tested but disabled on arrival on storage cost (`registry.DISABLED_ATS`) and so have
+never been scraped, and `join`'s remaining 1,093 rows are a residue of the era before it was
+disabled: no slice will scrape them again, so they leave by eviction rather than refresh.
 
 ## AI semantic search
 
