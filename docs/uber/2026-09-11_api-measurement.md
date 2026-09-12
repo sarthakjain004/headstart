@@ -51,10 +51,9 @@ As of 2026-09-11: **517 open postings**, `totalPages` recomputes correctly for w
 `pagesize` is asked (`pagesize=2` -> `totalPages=259`; `pagesize=200` -> `totalPages=3`).
 
 **No server-side cap on `pagesize`.** Tried 100, 1,000, 10,000 and 100,000 — every one echoes
-back exactly what was asked and returns all 517 rows once `pagesize >= totalJobs`. A single call
-at `pagesize=1000` would fetch the whole board today, but the scraper still paginates at a fixed
-`_PAGE_SIZE = 200` rather than requesting one giant page — if Uber ever does add a clamp, paging
-degrades gracefully into more requests instead of silently returning a partial list.
+back exactly what was asked and returns all 517 rows once `pagesize >= totalJobs`. (This section
+originally used that headroom to argue for pagination as the safer default — see the
+2026-09-12 update immediately below for why that reasoning was wrong and what replaced it.)
 
 **Update, 2026-09-12: multi-page pagination is *not* reliable — this backend has the same
 replica-ordering instability Eightfold's PCSX API has** (`docs/eightfold/
