@@ -114,9 +114,10 @@ class EightfoldScraper(BaseScraper):
     #: (ADR-0063). Both therefore escalate to the spare egress rather than to a fourth attempt.
     egress_fallback_on = frozenset({403, 405})
 
-    #: Why this Board fell back from the PCSX API to the per-job sitemap walk, written by
-    #: whichever branch actually gave up. A class-level default only so the attribute exists
-    #: before the first assignment; every path that reaches the fallback line has replaced it.
+    #: Why this Board fell back from the PCSX API — via SmartApply, when that's tried, or
+    #: straight to the per-job sitemap walk otherwise — written by whichever branch actually gave
+    #: up. A class-level default only so the attribute exists before the first assignment; every
+    #: path that reaches the fallback line has replaced it.
     _fallback_reason = "the PCSX API did not answer"
 
     def url(self) -> str:
@@ -502,7 +503,7 @@ class EightfoldScraper(BaseScraper):
             self.note_detail_loss("unparseable body on a 200")
         return text
 
-    # --- fallback: sitemap -> per-job JSON-LD -------------------------------------------------
+    # --- fallback 2: sitemap -> per-job JSON-LD -----------------------------------------------
 
     def _sitemap_records(self) -> list[dict[str, Any]]:
         listed = self._job_urls()
