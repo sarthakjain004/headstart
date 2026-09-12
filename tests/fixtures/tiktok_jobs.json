@@ -1,0 +1,278 @@
+[
+  {
+    "channel_online_status": null,
+    "code": "A28333",
+    "department_info": null,
+    "id": "7669925556293601541",
+    "process_type": null,
+    "tag_list": null,
+    "vacancies": null,
+    "title": "Category Manager Intern (TikTok Shop - Operations-Beauty, Food & Beverage) - 2027 Summer (MBA)",
+    "description": "About the Team\nThe commerce industry has seen tremendous growth in recent years.",
+    "requirement": "Minimum Qualifications:\n- Currently pursuing a MBA Degree\n- Able to commit to working for 12 weeks during Summer 2027",
+    "city_info": {
+      "code": "CT_94",
+      "location_type": 3,
+      "name": null,
+      "en_name": "Los Angeles",
+      "i18n_name": "Los Angeles",
+      "parent": {
+        "code": "ST_31",
+        "location_type": 2,
+        "name": null,
+        "en_name": "California",
+        "i18n_name": "California",
+        "parent": {
+          "code": "CN_6",
+          "location_type": 1,
+          "name": null,
+          "en_name": "United States of America",
+          "i18n_name": "United States of America",
+          "parent": null
+        }
+      }
+    },
+    "job_category": {
+      "id": "6704215882479962371",
+      "name": null,
+      "en_name": "Operations",
+      "i18n_name": "Operations",
+      "parent": null
+    },
+    "job_subject": {
+      "id": "7648841736006093061",
+      "name": null,
+      "en_name": "MBA Intern - 2027 Start",
+      "i18n_name": "MBA Intern - 2027 Start"
+    },
+    "recruit_type": {
+      "id": "202",
+      "name": null,
+      "en_name": "Intern",
+      "i18n_name": "Intern"
+    },
+    "job_post_info": {
+      "min_salary": null,
+      "max_salary": null,
+      "currency": null,
+      "required_degree": null,
+      "experience": null,
+      "sequence": null,
+      "min_level": null,
+      "max_level": null,
+      "highlight_list": null,
+      "job_post_object_value_list": null,
+      "expiry_time": null
+    }
+  },
+  {
+    "id": "7665646635395188997",
+    "code": "A250914",
+    "title": "LLM & Agent Algorithm Intern (Search) - 2027 Start (PhD)",
+    "description": "Team Introduction\nTT-Search Algorithm & Applied AI is the algorithm team behind the search business built on TikTok (TikTok Search), with the goal of becoming the search engine of choice for users worldwide. Compared with recommendation systems, which passively infer user intent, search delivers content based on users' discovery motivation \u2014 making intent expression far more precise. This search data can also feed back into the recommendation engine, helping users obtain more relevant content.\nWe are at an inflection point where the search paradigm is shifting from \"retrieval-and-ranking\" toward \"Agents proactively completing tasks.\" With large language models and Agents as our two driving wheels, the team builds the search-domain LLM foundation, the Agent execution framework (Harness), multi-agent collaboration, and self-improvement closed loops. We support the implementation of business scenarios such as multimodal AIGC creation, visual search, on-device intelligence, and long-horizon task Agents \u2014 spanning POI search, Wish search, automated evaluation, infrastructure, and more.\n\nWe are looking for talented individuals to join us for an internship. PhD internships at Our Company provide students with the opportunity to actively contribute to our products and research, as well as to the organization's future plans and emerging technologies.\nOur dynamic internship experience blends hands-on learning, enriching community-building and professional development events, and collaboration with industry experts.\nApplications will be reviewed on a rolling basis, so we encourage you to apply early. Please clearly state your availability in your resume (Start date, End date).\n\nResponsibilities\n- Search LLM Foundation R&D: Build and optimize the search-domain LLM foundation, integrating search knowledge to rapidly deliver business value; develop and refine the post-training pipeline for search LLMs (ultra-long-text / colloquial-text pre-training, image-text / video multimodal representation, e-commerce product multimodal representation learning, etc.); participate in LLM inference optimization (long-context optimization, model efficiency optimization).\n- Agent Engineering & Multi-Agent Orchestration (Harness / Loop): Contribute to building the search Agent execution framework (Harness) \u2014 unified orchestration of tool calling, planning, memory, and environment interaction; multi-agent cluster scheduling and collaboration algorithms (task allocation, dynamic scheduling, inter-agent communication / alignment / conflict resolution); build the Agent Loop and the \"training\u2013inference\u2013evaluation\" closed-loop engineering.\n- Long-term Memory, Self-Improvement & Data Closed Loop (Self-Evolve / RSI): Work on long-term memory mechanisms for LLMs, cross-context knowledge integration, and related directions; engage in cutting-edge exploration of self-evolve / self-improvement and recursive self-improvement (RSI) (automated hyperparameter tuning, training pipeline automation, AI-assisted algorithm design, model iteration closed loop); data synthesis and quality control (high-quality vertical-domain data synthesis, distribution alignment, synthetic data quality evaluation / filtering / refinement).\n- Evaluation & Reward/Verifier Systems: Help build online Reward/Verifier systems and automated evaluation frameworks \u2014 annotation-free automated evaluation; Evaluation of long-cycle complex tasks and cross-domain capabilities, and multi-agent collaboration evaluation standards.\n- Business Implementation:Long-horizon task Agents (persistent intent); Multimodal AIGC creation: leveraging SOTA models for image/video generation to power the Feed's \"ask-after-viewing / create-after-viewing\" experiences and strengthen users' proactive mindset; Visual search & on-device intelligence: object detection, OCR, TinyLLM; Search content / creator ecosystem, etc.",
+    "requirement": "Minimum Qualifications:\n- Currently pursuing a PhD's degree, Computer Science or related majors preferred.\n- Solid foundation in machine learning / deep learning and familiarity with cutting-edge LLM and Agent technologies; publications at top-tier conferences such as NeurIPS / ICML / ICLR / ACL / EMNLP / CVPR / ICCV / ECCV / AAAI, or competition awards, are a plus.\n- Experience with LLM / Agent-related projects is preferred: LLM pre-training / fine-tuning / alignment, Agent development (tool calling, planning, memory, multi-agent collaboration), RAG, RLHF / RLAIF, data synthesis, automated evaluation, etc.\n- Familiarity with PyTorch / TensorFlow for model training and deployment; understanding of acceleration methods such as distributed training and mixed-precision training; knowledge of model compression and inference acceleration (quantization, pruning, distillation, TensorRT, etc.).\n- Familiarity with big data frameworks and applications (MapReduce / Spark, etc.) is a plus.\n\nPreferred Qualification:\n- LLM & Agent: pre-training / SFT / alignment, long context, Agent Harness and multi-agent orchestration, data synthesis, self-improvement (Loop / RSI), automated evaluation;\n- CV & Multimodal: image / video retrieval, classification and recognition, image segmentation, object detection, OCR, graph neural networks, multimodal learning, self-/unsupervised learning; experience with CV / multimodal large-model projects, or awards in Kaggle / COCO / ImageNet / ActivityNet, are a plus; CVPR / ICCV / ECCV publications preferred;\n- NLP: pre-training, natural language understanding, multilingual / cross-lingual learning, natural language generation, transfer / semi-supervised learning; LLM project experience, or awards in GLUE / SuperGLUE / CLUE, are a plus; ACL / EMNLP publications preferred.\n- Excellent engineering implementation and learning ability, strong collaboration and communication skills, and genuine passion for search and Agent directions.",
+    "recruit_type": {
+      "id": "202",
+      "name": null,
+      "en_name": "Intern",
+      "i18n_name": "Intern"
+    },
+    "job_category": {
+      "id": "6704219534724696331",
+      "name": null,
+      "en_name": "Machine learning",
+      "i18n_name": "Machine learning",
+      "parent": {
+        "id": "6704215862603155720",
+        "name": null,
+        "en_name": "R&D",
+        "i18n_name": "R&D",
+        "parent": null
+      }
+    },
+    "city_info": {
+      "code": "CT_163",
+      "location_type": 3,
+      "name": null,
+      "en_name": "Singapore",
+      "i18n_name": "Singapore",
+      "parent": {
+        "code": "ST_100785",
+        "location_type": 2,
+        "name": null,
+        "en_name": "Singapore",
+        "i18n_name": "Singapore",
+        "parent": {
+          "code": "CN_25",
+          "location_type": 1,
+          "name": null,
+          "en_name": "Singapore",
+          "i18n_name": "Singapore",
+          "parent": null
+        }
+      }
+    },
+    "tag_list": null,
+    "job_subject": {
+      "id": "7602166391986194741",
+      "name": null,
+      "en_name": "PhD Intern - 2027 Start",
+      "i18n_name": "PhD Intern - 2027 Start"
+    },
+    "vacancies": null,
+    "department_info": null,
+    "job_post_info": {
+      "min_salary": null,
+      "max_salary": null,
+      "currency": null,
+      "required_degree": null,
+      "experience": null,
+      "sequence": null,
+      "min_level": null,
+      "max_level": null,
+      "highlight_list": null,
+      "job_post_object_value_list": null,
+      "expiry_time": null
+    },
+    "process_type": null,
+    "channel_online_status": null
+  },
+  {
+    "id": "7663386899855231237",
+    "code": "A105516A",
+    "title": "Algorithm Engineer Graduate (Global Live - Strategy) - 2027 Start (PhD)",
+    "description": "With the enormous growth of live streaming in recent years, our mission is to inspire real-time interactions and help live streamers connect to people from all corners of the globe. \nWe are looking for passionate and talented engineers to join us to build and optimize a real-time, high-performance, large-scale distributed infrastructure for live streaming in TikTok. You will be deeply involved in the developmental lifecycle of critical product features and collaborate closely with product managers to deliver the best live streaming experience for all live streamers and audience alike.\n\nThe strategy team's mission is to use model-driven and data-driven ways to promote core indicators on LIVE revenue and user engagement, which includes:\n1. Build prediction/uplift NN model to improve LIVE feature intelligence;\n2. Mine and interfere potential crowds to gain a higher ROI operation for both LIVE streamer and watcher; \n3. Make detailed analysis on user data and system data to find out user experience optimiaztion zoom;\n4. Other work like user growth strategy, cold-start strategy, etc.\n\nWe are looking for talented individuals to join our team. As a graduate, you will get opportunities to pursue bold ideas, tackle complex challenges, and unlock limitless growth.\nSuccessful candidates must be able to commit to an onboarding date by the end of the year. Please state your availability and graduation date clearly in your resume.\n\nJob Description\n1. Participate in the optimization of TikTok LIVE monetization business and serve the LIVE experience of billions of global users;\n2. Adopt cutting-edge machine learning model to scientifically model massive user behaviour and consumption data, build high-performance/high-reliability architecture services, and bring users the ultimate experience in LIVE consumption;\n3. Deeply participate in product/business discussions, fully analyze and understand user behaviour patterns, and provide optimization directions for the overall business.",
+    "requirement": "Minimum Qualifications\n1. Currently pursuing a PhD in Computer Science or a related engineer discipline. \n2. Familiar with C/C++/ Python development, familiar with Linux multi-threaded /multi-process;\n3. Familiar with commonly used machine learning and deep learning algorithms, including but not limited to boost machine, dnn, reinforcement learning, etc.;\n4. Solid maths foundation, including probability statistics, numerical optimization, etc., sensitive to data, good at discovering, analyzing and solving problems from data;\n5. Familiar with at least one of Flink, Spark, Hive etc., with big data parallel processing experience;\n\nPreferred Qualification\n - Experience in large-scale recommend/advertising systems, risk control systems or LLM is preferred",
+    "recruit_type": {
+      "id": "201",
+      "name": null,
+      "en_name": "Regular",
+      "i18n_name": "Regular"
+    },
+    "job_category": {
+      "id": "6704219534724696331",
+      "name": null,
+      "en_name": "Machine learning",
+      "i18n_name": "Machine learning",
+      "parent": {
+        "id": "6704215862603155720",
+        "name": null,
+        "en_name": "R&D",
+        "i18n_name": "R&D",
+        "parent": null
+      }
+    },
+    "city_info": {
+      "code": "CT_163",
+      "location_type": 3,
+      "name": null,
+      "en_name": "Singapore",
+      "i18n_name": "Singapore",
+      "parent": {
+        "code": "ST_100785",
+        "location_type": 2,
+        "name": null,
+        "en_name": "Singapore",
+        "i18n_name": "Singapore",
+        "parent": {
+          "code": "CN_25",
+          "location_type": 1,
+          "name": null,
+          "en_name": "Singapore",
+          "i18n_name": "Singapore",
+          "parent": null
+        }
+      }
+    },
+    "tag_list": null,
+    "job_subject": {
+      "id": "7602165694751705397",
+      "name": null,
+      "en_name": "PhD Graduates - 2027 Start",
+      "i18n_name": "PhD Graduates - 2027 Start"
+    },
+    "vacancies": null,
+    "department_info": null,
+    "job_post_info": {
+      "min_salary": null,
+      "max_salary": null,
+      "currency": null,
+      "required_degree": null,
+      "experience": null,
+      "sequence": null,
+      "min_level": null,
+      "max_level": null,
+      "highlight_list": null,
+      "job_post_object_value_list": null,
+      "expiry_time": null
+    },
+    "process_type": null,
+    "channel_online_status": null
+  },
+  {
+    "id": "7660782103374530869",
+    "code": "A92928",
+    "title": "Multimedia Engineer Graduate (Multimedia Platform) - 2027 Start (BS/MS)",
+    "description": "Team Introduction\nMultimedia Platform department is mainly responsible for multimedia processing systems, including video transcoding systems, cloud editing systems and image processing systems. The technology stack involved includes backend services, multimedia engineering, multimedia frameworks, heterogeneous computing, etc. Our platform processes hundreds of millions of videos and tens of billions of pictures every day, strongly supporting the development of TikTok. Our vision is to build the best multimedia processing platform and become the best multimedia engineering architecture team.\n\nResponsibilities\n- Support the multimedia-related business requirements of the company's product lines, including but not limited to image processing, video transcoding, video editing, video analysis, etc.;\n- Responsible for video processing related performance analysis and optimization.\n\nWe are looking for talented individuals to join our team in 2027. As a graduate, you will get opportunities to pursue bold ideas, tackle complex challenges, and unlock limitless growth. Launch your career where inspiration is infinite at our Company.\n\nSuccessful candidates must be able to commit to an onboarding date by end of year 2027. Please state your availability and graduation date clearly in your resume.\n\nCandidates can apply to a maximum of two positions and will be considered for jobs in the order you apply. The application limit is applicable to our Company and its affiliates' jobs globally. Applications will be reviewed on a rolling basis - we encourage you to apply early.",
+    "requirement": "Minimum Qualifications \n- Individuals who are completing or have recently completed a Bachelor's/Masters' degree in Software Development, Computer Science, Computer Engineering, or a related technical discipline.\n- Proficient in at least one of the mainstream languages C/C++/Python/Go/, excellent coding skills.\n\nPreferred Qualifications\n- Experience in multimedia related technology such as video codec, detection, and enhancement.\n- Experience in media processing framework development is preferred.\n- Experience in video processing related performance optimization is preferred.\n- Experience in transcoding or computing platform development is preferred.\n- Positive and optimistic, strong sense of responsibility, careful and meticulous work, good team communication and collaboration skills.\n\nBy submitting an application for this role, you accept and agree to our global applicant privacy policy, which may be accessed here: https://careers.tiktok.com/legal/privacy.\n\nIf you have any questions, please reach out to us at apac-earlycareers@tiktok.com",
+    "recruit_type": {
+      "id": "201",
+      "name": null,
+      "en_name": "Regular",
+      "i18n_name": "Regular"
+    },
+    "job_category": {
+      "id": "6704215862603155720",
+      "name": null,
+      "en_name": "R&D",
+      "i18n_name": "R&D",
+      "parent": null
+    },
+    "city_info": {
+      "code": "CT_244",
+      "location_type": 3,
+      "name": null,
+      "en_name": "Sydney",
+      "i18n_name": "Sydney",
+      "parent": {
+        "code": "ST_69",
+        "location_type": 2,
+        "name": null,
+        "en_name": "New South Wales",
+        "i18n_name": "New South Wales",
+        "parent": {
+          "code": "CN_108",
+          "location_type": 1,
+          "name": null,
+          "en_name": "Australia",
+          "i18n_name": "Australia",
+          "parent": null
+        }
+      }
+    },
+    "tag_list": null,
+    "job_subject": {
+      "id": "7602165694713678133",
+      "name": null,
+      "en_name": "Bachelor/Master Graduate - 2027 Start",
+      "i18n_name": "Bachelor/Master Graduate - 2027 Start"
+    },
+    "vacancies": null,
+    "department_info": null,
+    "job_post_info": {
+      "min_salary": null,
+      "max_salary": null,
+      "currency": null,
+      "required_degree": null,
+      "experience": null,
+      "sequence": null,
+      "min_level": null,
+      "max_level": null,
+      "highlight_list": null,
+      "job_post_object_value_list": null,
+      "expiry_time": null
+    },
+    "process_type": null,
+    "channel_online_status": null
+  }
+]
