@@ -272,6 +272,30 @@ def test_a_stale_understated_total_does_not_strand_the_tail(monkeypatch):
     assert scraper.truncated is None
 
 
+def test_a_failed_fanout_page_does_not_look_like_the_boards_end(monkeypatch):
+    """A fan-out page fetch that raises comes back as ``fan_out``'s own ``None`` default, not a
+    genuine short page — treating it as one would let a transient per-page failure masquerade
+    as the board's true end. The frontier must track the last page that actually returned data,
+    not the last one requested, so the tail walk still starts from the real end and retries the
+    failed page as it walks forward."""
+    fake = _FakePages(total_ids=45, total_stated=45)  # pages: 20, 20, 5
+    attempts = {"page3": 0}
+
+    def flaky_get(url=None):
+        page = _page_of(url)
+        if page == 3:
+            attempts["page3"] += 1
+            if attempts["page3"] == 1:
+                raise RuntimeError("transient network error")
+        return fake.page_body(page)
+
+    scraper = _scraper()
+    monkeypatch.setattr(scraper, "_get", flaky_get)
+    raw = scraper.fetch_raw()
+    assert len(raw) == 45
+    assert scraper.truncated is None
+
+
 def test_the_tail_walk_stops_at_the_first_short_page(monkeypatch):
     """A full last-estimated page walks forward one page at a time; a short (or empty) page
     is the real terminator and must not trigger a further page fetch."""

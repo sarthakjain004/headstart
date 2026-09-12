@@ -43,7 +43,10 @@ page whenever it came back full, until a genuinely short page proves the true en
 postings; only the true last page, 171, was short at 14, and 3,414 = 170 x 20 + 14 exactly — so in
 the common case this tail walk costs at most one extra request. Every job is also deduped by
 native id across pages (``seen`` below), which both this tail walk and the concurrent fan-out
-share, since a page fetched twice under drift must not double-count.
+share, since a page fetched twice under drift must not double-count. A fan-out page that raises
+outright (:meth:`~headstart.scrapers.base.BaseScraper.fan_out`'s own ``None`` default) is not
+treated as that page's true, short content — the frontier stays at the last page that actually
+returned data, so the walk below still starts from the real end and retries the failed page too.
 
 **No employment_type, no department.** The per-job array has two unlabelled enum fields (indices
 11 and 20 here) with no accompanying string table found anywhere on the page — guessing what they
@@ -126,6 +129,15 @@ def _field(array: list[Any] | None, index: int) -> Any:
     if array is None or not (0 <= index < len(array)):
         return None
     return array[index]
+
+
+def _merge_into(seen: dict[str, list[Any]], batch: list[list[Any]]) -> None:
+    """Add one fetched page's jobs to ``seen``, keyed by native id — shared by the fan-out loop
+    and the tail walk in :meth:`GoogleScraper.fetch_raw` so a page fetched twice under drift
+    can't double-count."""
+    for job in batch:
+        if jid := _field(job, 0):
+            seen.setdefault(jid, job)
 
 
 def _pair(value: Any) -> Any:
@@ -235,10 +247,15 @@ class GoogleScraper(BaseScraper):
             rest = list(range(2, pages_needed + 1))
             fetched = self.fan_out(rest, self._fetch_page, workers=_PAGE_WORKERS)
             for page, batch in zip(rest, fetched):
-                batch = batch or []
-                for job in batch:
-                    if jid := _field(job, 0):
-                        seen.setdefault(jid, job)
+                if batch is None:
+                    # fan_out's own default on a raised exception, not a genuine short page —
+                    # counting it as one would let a transient per-page failure masquerade as
+                    # the board's true end. Leave last_page/last_page_size at the last page
+                    # that actually returned data, so the tail walk below still starts from the
+                    # real frontier and, walking forward one page at a time, naturally retries
+                    # this failed page too.
+                    continue
+                _merge_into(seen, batch)
                 last_page, last_page_size = page, len(batch)
         # page 1's total is only an ESTIMATE of how many pages to fan out — it is measured to
         # drift during a walk (module docstring: 3,414 -> 3,387 within a minute), and a total
@@ -251,9 +268,7 @@ class GoogleScraper(BaseScraper):
         while last_page_size >= _PAGE_SIZE and last_page < _MAX_PAGES:
             last_page += 1
             batch = self._fetch_page(last_page)
-            for job in batch:
-                if jid := _field(job, 0):
-                    seen.setdefault(jid, job)
+            _merge_into(seen, batch)
             last_page_size = len(batch)
         if last_page_size >= _PAGE_SIZE and last_page >= _MAX_PAGES:
             self.mark_truncated(
