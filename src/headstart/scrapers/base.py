@@ -371,8 +371,11 @@ class BaseScraper(ABC):
         every key falls outside the live set and the entire ledger comes back labelled
         ``migrated``: an empty result, not an error. Those ATSes need an override that returns
         something in their own slug space, and `dedupe_boards.py` warns when a run looks like it
-        hit this. Today only SuccessFactors uses the default, and its slug is exactly the vanity
-        host.
+        hit this. SuccessFactors uses the default because its slug is exactly the vanity host;
+        so does `amazon` (ADR-0139) — its slug is a fixed hostname with no vanity alias measured
+        against it (live-checked 2026-09-11: no redirect on either the careers page or the search
+        endpoint), so the inherited redirect-following default is the right call, not an
+        unexamined one.
 
         None when the probe failed: an unreachable Board has earned no verdict, and
         ``board_aliases.resolve`` reports it rather than grouping it. Note ``http.fetch`` settles

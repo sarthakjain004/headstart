@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Container
 
+from headstart.scrapers.amazon import AmazonScraper
 from headstart.scrapers.apple import AppleScraper
 from headstart.scrapers.ashby import AshbyScraper
 from headstart.scrapers.base import BaseScraper
@@ -64,6 +65,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         ICIMSScraper,
         JazzHRScraper,
         JobviteScraper,
+        AmazonScraper,
         ByteDanceScraper,
         AppleScraper,
         UberScraper,
