@@ -1,7 +1,5 @@
-"""Meta (metacareers.com) — a Single Source scraper (ADR-0139, still open as PR #438 at the time
-this module was written — cited by number per that PR's own instruction, not merged yet): one
-company, one Board, never a second tenant. ``slug`` is fixed to ``www.metacareers.com``, never
-discovered.
+"""Meta (metacareers.com) — a Single source scraper (ADR-0139): one company, one Board, never a
+second tenant. ``slug`` is fixed to ``www.metacareers.com``, never discovered.
 
 Meta runs its public listing UI as a client-side React app whose search is fed by GraphQL queries
 requiring browser-issued tokens (``fb_dtsg`` and friends) — confirmed 2026-09-11 by inspecting the
@@ -73,7 +71,7 @@ _LD_BLOCK = re.compile(
 
 
 class MetaScraper(BaseScraper):
-    """metacareers.com — a Single Source scraper (ADR-0139); ``slug`` is the fixed careers host."""
+    """metacareers.com — a Single source scraper (ADR-0139); ``slug`` is the fixed careers host."""
 
     ats = "meta"
     has_detail_pass = True  # every field but `id` comes from the JSON-LD (ADR-0050)
@@ -95,9 +93,9 @@ class MetaScraper(BaseScraper):
         return f"https://{self.slug}/jobsearch/sitemap.xml"
 
     def alias_key(self) -> str | None:
-        """Meta's own slug: a Single Source Board has no sibling tenant to alias against, and the
-        base class's redirect-follow default would be answering a question that cannot arise here
-        (ADR-0139). Confirmed 2026-09-11: :meth:`url` does not redirect."""
+        """Meta's own slug: a Single source scraper's Board has no sibling tenant to alias
+        against, and the base class's redirect-follow default would be answering a question that
+        cannot arise here (ADR-0139). Confirmed 2026-09-11: :meth:`url` does not redirect."""
         return self.slug
 
     def fetch_raw(self) -> Any:

@@ -102,12 +102,20 @@ project's `meta.py` reads `teams`/`sub_teams` — but from the GraphQL *listing*
 intercepts via a real browser, a surface this scraper does not reach (§0). There is no equivalent
 on the JSON-LD detail page.
 
-**No salary anywhere.** Zero of 80 sampled payloads carry `baseSalary`, unlike icims/oracle where
-it is merely inconsistently present. Every one of the 80 sampled postings, remote and onsite, US
-and non-US, carried none.
+**No salary in the JSON-LD, though pay-transparency figures do exist on some US postings — just
+not reachable here.** Zero of 80 sampled payloads carry `baseSalary`, unlike icims/oracle where
+it is merely inconsistently present. A web search for a "Product Manager" posting's own snippet
+surfaced a stated range (`$173,000/year to $241,000/year`) that is **not** in that posting's
+server-rendered HTML or JSON-LD at all — confirmed by re-fetching
+`/profile/job_details/1238249364564427/` directly and grepping for both dollar figures and
+`baseSalary`/`compensation`/`pay_range`/`salary_range` keys: zero matches. So the figure a search
+engine's own (JS-rendering) crawler saw is client-side-rendered by the same GraphQL app §0 already
+rules out, not a second gap in the detail-page fetch — this scraper's "no salary" finding is
+correct for every surface it can reach without a browser, not a claim that Meta discloses no
+salary at all.
 
-Both are real, measured gaps in what this surface can supply — not something a future patch to
-this scraper can fix without the browser-automation path §0 rules out.
+Both `department`/`team` and salary are real, measured gaps in what this surface can supply — not
+something a future patch to this scraper can fix without the browser-automation path §0 rules out.
 
 ## 7. No rate limit found
 
@@ -125,3 +133,35 @@ prefers `host_of(url)`, the same pattern oracle uses for its bare-label ledger r
 `resolve_company()`'s generic slug-shaped-name repair entirely — the host `www.metacareers.com`
 would read as slug-shaped, but the tenant name never does, so no `board_page`/`company_name`
 pattern registration was needed for this single Board.
+
+## 9. Re-verified live 2026-09-12: no sitemap index, no cache lag, no independent total to check against
+
+**The scraper, run end-to-end against the live site right now:** 948 sitemap entries, 941 Jobs
+built, 7 lost to the "no JSON-LD on a 200" stale-entry case (§3), `scraper.truncated is None` —
+i.e. the built-in tolerance (`mark_truncated_unless_negligible`, ADR-0121) measured 941/948 =
+99.26%, above the 99% bar, and did not flag a shortfall. Three independent fetches of the same
+sitemap over roughly 24 hours read 952 (§2, first capture), 948, then 947 postings — a small,
+smooth decline consistent with ordinary posting churn, not a sudden drop that would suggest a cap
+or a broken walk.
+
+**No sitemap index exists to miss a child of.** Re-confirmed on a fresh fetch: the root tag is
+`<urlset>`, not `<sitemapindex>` (`grep -c sitemapindex` on the live response is 0), so — unlike
+eightfold, which does follow a `sitemap_index`'s children — there is no second level this scraper
+could fail to walk. This was true in §2's original capture and is still true now.
+
+**The response is explicitly not cached.** `curl -I` on the sitemap: `Cache-Control: private,
+no-cache, no-store, must-revalidate`, `Pragma: no-cache`, `Expires: Sat, 01 Jan 2000 00:00:00 GMT`.
+Those headers rule out "the scraper is reading a stale cached snapshot that lags the live `/jobs`
+UI" as an explanation for any undercount — the server is telling every client, including this
+scraper, that this response is generated fresh and must not be reused.
+
+**No independent numeric signal of the board's true size exists to check the sitemap count
+against.** Checked and ruled out: the `/jobsearch/` page's `<meta name="description">` and
+`og:description` are static marketing copy ("Search open positions at Meta across AI,
+engineering, research, product, design, and more."), not a live count; there is no `totalCount`
+or similar field anywhere in that page's server HTML (§0 already established it carries no
+embedded job data at all); and a `site:metacareers.com/profile/job_details` web search returns a
+handful of individually-ranked results with no aggregate count a search engine's own text
+interface exposes. So there is no oracle to cross-check the sitemap's count against — the
+sitemap itself, read fully and without a hidden pagination level, is the only enumeration surface
+this ATS publishes without a browser session, and this scraper reads all of it.
