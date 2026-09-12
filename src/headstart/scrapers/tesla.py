@@ -267,12 +267,38 @@ class TeslaScraper(BaseScraper):
         return _fetch_state_json()
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
+        listings = raw.get("listings")
+        if listings is None and "listings" not in raw:
+            # A 200 with a body that isn't the state document's usual shape — plausibly Akamai
+            # answering behind our back with something that isn't the app's real payload. Not
+            # marked truncated: what a missing `listings` key means here hasn't been measured,
+            # and ADR-0053's exclusion has no drain, so guessing wrong would hold this Board out
+            # of eviction scope forever (same call ashby.py's own `note_unreadable_board` makes
+            # for the analogous missing-container case).
+            self.note_unreadable_board(
+                "a payload with a `listings` array", "no `listings` key"
+            )
+            return []
+        if not listings:
+            # Present but empty. This board has never measured anywhere near zero — 8,105 and
+            # 8,115 across the two live runs this scraper's docs record — so a captured state
+            # response with none of that scale's postings is a capture defect, not Tesla
+            # genuinely hiring nobody, and there is no stated total to measure a shortfall
+            # against (module docstring): the second excluded shape `mark_truncated_unless_
+            # negligible`'s own docstring names, so this goes straight to `mark_truncated`
+            # rather than being silently accepted as this Board's real, authoritative state —
+            # which would otherwise evict every already-indexed Tesla job.
+            self.mark_truncated(
+                "captured a 200 state response with zero listings — treating that as "
+                "authoritative would evict every already-indexed Tesla job"
+            )
+            return []
         lookup = raw.get("lookup") or {}
         locations = lookup.get("locations") or {}
         departments = lookup.get("departments") or {}
         types = lookup.get("types") or {}
         jobs: list[Job] = []
-        for entry in raw.get("listings") or []:
+        for entry in listings:
             job_id = entry.get("id")
             title = (entry.get("t") or "").strip()
             if not job_id or not title:

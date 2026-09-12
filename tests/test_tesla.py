@@ -138,3 +138,22 @@ def test_a_listing_missing_an_id_is_dropped():
     scraper = TeslaScraper(SLUG, "Tesla")
     raw = {"listings": [{"id": None, "t": "Some Role"}], "lookup": {}}
     assert scraper.parse(raw, SCRAPED_AT) == []
+
+
+def test_a_payload_with_no_listings_key_is_unreadable_not_empty():
+    # A 200 with a body that isn't the state document's usual shape must not read as "this
+    # board has zero jobs" — that would silently evict every already-indexed Tesla row.
+    scraper = TeslaScraper(SLUG, "Tesla")
+    assert scraper.parse({"cpr_chlge": "true"}, SCRAPED_AT) == []
+    assert (
+        scraper.truncated is None
+    )  # unreadable, not truncated — see note_unreadable_board
+
+
+def test_a_listings_key_present_but_empty_is_truncated_not_authoritative():
+    # This board has never measured anywhere near zero (8,105-8,115 across two live runs) — an
+    # empty-but-present `listings` is a capture defect, and with no stated total to measure a
+    # shortfall against, it must mark_truncated rather than be accepted as the real state.
+    scraper = TeslaScraper(SLUG, "Tesla")
+    assert scraper.parse({"listings": [], "lookup": {}}, SCRAPED_AT) == []
+    assert scraper.truncated is not None
