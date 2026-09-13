@@ -476,7 +476,7 @@ def extract(url: str, host: str, style: Style) -> tuple[str, str] | None:
         if not seen_host.endswith(".taleo.net"):
             return None
         match = re.fullmatch(
-            r"careersection/([A-Za-z0-9_-]+)/(?:jobsearch|joblist|moresearch)\.ftl",
+            r"careersection/([A-Za-z0-9_-]+)/(?:jobsearch|joblist|moresearch|jobdetail|jobapply)\.ftl",
             path,
             re.IGNORECASE,
         )

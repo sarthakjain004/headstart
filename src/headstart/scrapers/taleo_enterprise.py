@@ -29,6 +29,7 @@ _DETAIL_LIST = re.compile(
     r"api\.fillList\('requisitionDescriptionInterface', 'descRequisition', \[(.*?)\]\);",
     re.DOTALL,
 )
+_DETAIL_LABELS = re.compile(r"_hlid:\s*\[(.*?)\],", re.DOTALL)
 _JS_STRING = re.compile(r"'((?:\\.|[^'])*)'")
 _SECTION = re.compile(r"^/careersection/([^/?#]+)/?")
 _DETAIL_WORKERS = (
@@ -120,29 +121,30 @@ def _detail_text(value: str) -> str | None:
 
 
 def _detail(page: str) -> dict[str, str | None] | None:
-    match = _DETAIL_LIST.search(page)
-    if not match:
+    match, labels_match = _DETAIL_LIST.search(page), _DETAIL_LABELS.search(page)
+    if not match or not labels_match:
         return None
+    labels = _JS_STRING.findall(labels_match.group(1))
     values = [_detail_text(value) for value in _JS_STRING.findall(match.group(1))]
-    # These positions are the page's own detail-list order, confirmed on the live D.R. Horton
-    # control: title/contest then description, qualification, job field, primary/other locations,
-    # organization, schedule and posting date. Each displayed value follows its hidden twin.
-    if len(values) <= 25:
+    if len(labels) != len(values):
         return None
-    description = (
-        " ".join(dict.fromkeys(value for value in (values[11], values[13]) if value))
-        or None
-    )
-    location = (
-        "; ".join(dict.fromkeys(value for value in (values[17], values[19]) if value))
-        or None
-    )
+    fields: dict[str, list[str]] = {}
+    for label, value in zip(labels, values):
+        if value:
+            fields.setdefault(label, []).append(value)
+
+    def joined(*names: str, separator: str = " ") -> str | None:
+        field_values = [value for name in names for value in fields.get(name, [])]
+        return separator.join(dict.fromkeys(field_values)) or None
+
     return {
-        "description": description,
-        "department": values[15],
-        "location": location,
-        "employment_type": values[23],
-        "posted_at": _date(values[25]),
+        "description": joined("reqlistitem.description", "reqlistitem.qualification"),
+        "department": joined("reqlistitem.jobfield"),
+        "location": joined(
+            "reqlistitem.primarylocation", "reqlistitem.otherlocations", separator="; "
+        ),
+        "employment_type": joined("reqlistitem.jobschedule"),
+        "posted_at": _date(joined("reqlistitem.postingdate")),
     }
 
 
@@ -226,7 +228,8 @@ class TaleoEnterpriseScraper(BaseScraper):
         seen: set[str] = set()
         total: int | None = None
         pages: int | None = None
-        for page_no in range(1, 2_001):
+        page_no = 1
+        while True:
             response = http.fetch(
                 "POST",
                 api,
@@ -287,6 +290,7 @@ class TaleoEnterpriseScraper(BaseScraper):
                 )
             if pages is not None and page_no >= pages:
                 break
+            page_no += 1
         if total is not None:
             # Complete D.R. Horton and TTEC walks disagree with their totals (592/594 and
             # 110/115) while every declared page arrived and IDs did not repeat. The total is a

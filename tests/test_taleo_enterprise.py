@@ -112,13 +112,21 @@ def test_blank_header_keeps_later_columns_aligned():
 
 def test_detail_vector_supplies_authoritative_fields():
     values = ["" for _ in range(26)]
+    labels = ["reqlistitem.no" for _ in range(26)]
+    labels[11] = labels[12] = "reqlistitem.description"
+    labels[13] = labels[14] = "reqlistitem.qualification"
+    labels[15] = labels[16] = "reqlistitem.jobfield"
+    labels[17] = labels[18] = "reqlistitem.primarylocation"
+    labels[19] = labels[20] = "reqlistitem.otherlocations"
+    labels[23] = labels[24] = "reqlistitem.jobschedule"
+    labels[25] = "reqlistitem.postingdate"
     values[11] = "!*!%3Cp%3EDescription%3C%2Fp%3E"
     values[13] = "!*!%3Cp%3EQualifications%3C%2Fp%3E"
     values[15] = "Engineering"
     values[17], values[19] = "US-TX-Austin", "US-TX-Dallas"
     values[23] = "Full-time"
     values[25] = "Sep 11, 2026, 5:18:01 PM"
-    page = (
+    page = "_hlid: [" + ",".join(repr(label) for label in labels) + "]," + (
         "api.fillList('requisitionDescriptionInterface', 'descRequisition', ["
         + ",".join(repr(value) for value in values)
         + "]);"

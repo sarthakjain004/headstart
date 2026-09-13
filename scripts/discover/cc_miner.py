@@ -273,7 +273,7 @@ ATS_PATTERNS = {
         "targets": ["taleo.net"],
         "kind": "taleo_enterprise",
         "patterns": [
-            r"https?://([a-z0-9-]+\.taleo\.net/careersection/[A-Za-z0-9_-]+)/(?:jobsearch|joblist|moresearch)\.ftl",
+            r"https?://([a-z0-9-]+\.taleo\.net/careersection/[A-Za-z0-9_-]+)/(?:jobsearch|joblist|moresearch|jobdetail|jobapply)\.ftl",
         ],
     },
 }
