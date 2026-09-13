@@ -191,10 +191,10 @@ def test_every_table_host_yields_the_slug_its_own_scraper_expects():
         "workday": lambda host: (
             "acme/External_Careers"
         ),  # company/site, per board_key()
-            "workdaysite": lambda host: (
-                "acme/External_Careers"
-            ),  # same identity, reached from Workday's other domain
-            "taleo_be": lambda host: f"ACME:1@phe.{host}/phe01",
+        "workdaysite": lambda host: (
+            "acme/External_Careers"
+        ),  # same identity, reached from Workday's other domain
+        "taleo_be": lambda host: f"ACME:1@phe.{host}/phe01",
     }
     for ats, hosts in wf.ATS_HOSTS.items():
         for host, style in hosts:

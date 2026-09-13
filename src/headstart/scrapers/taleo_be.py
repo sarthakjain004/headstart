@@ -31,18 +31,23 @@ _JOB = re.compile(
     r'<h4[^>]*>\s*<a[^>]*href="(?P<href>[^"]*viewRequisition[^"]*\brid=(?P<id>\d+)[^"]*)"[^>]*>(?P<title>.*?)</a>',
     re.DOTALL | re.IGNORECASE,
 )
-_HEAD_FIELDS = re.compile(r'<h4[^>]*>.*?</h4>(?P<fields>.*?)(?=</div>\s*<!--/.accordion-head-info)', re.DOTALL)
-_DIV = re.compile(r'<div[^>]*>(.*?)</div>', re.DOTALL | re.IGNORECASE)
+_HEAD_FIELDS = re.compile(
+    r"<h4[^>]*>.*?</h4>(?P<fields>.*?)(?=</div>\s*<!--/.accordion-head-info)", re.DOTALL
+)
+_DIV = re.compile(r"<div[^>]*>(.*?)</div>", re.DOTALL | re.IGNORECASE)
 _NEXT = re.compile(r'<a\s+href="(?P<href>[^"]+)"\s+class="jscroll-next"', re.IGNORECASE)
 _COMPANY = re.compile(r"Company:\s*(?P<company>[^%<\r\n]+)", re.IGNORECASE)
-_DETAIL_BODY = re.compile(r'name="cwsJobDescription"[^>]*>(?P<body>.*?)(?=<section\b)', re.DOTALL | re.IGNORECASE)
+_DETAIL_BODY = re.compile(
+    r'name="cwsJobDescription"[^>]*>(?P<body>.*?)(?=<section\b)',
+    re.DOTALL | re.IGNORECASE,
+)
 _LABEL = re.compile(
-    r'<span[^>]*>\s*(?P<label>[^<]+?)\s*</span>\s*<strong>\s*(?P<value>.*?)\s*</strong>',
+    r"<span[^>]*>\s*(?P<label>[^<]+?)\s*</span>\s*<strong>\s*(?P<value>.*?)\s*</strong>",
     re.DOTALL | re.IGNORECASE,
 )
 _CUSTOM_LABEL = re.compile(
-    r'<div[^>]*cws-V2-reqfieldcell-right[^>]*>\s*(?P<label>.*?)\s*</div>\s*'
-    r'<div[^>]*cws-V2-reqfieldcell-left[^>]*>\s*<strong>\s*(?P<value>.*?)\s*</strong>',
+    r"<div[^>]*cws-V2-reqfieldcell-right[^>]*>\s*(?P<label>.*?)\s*</div>\s*"
+    r"<div[^>]*cws-V2-reqfieldcell-left[^>]*>\s*<strong>\s*(?P<value>.*?)\s*</strong>",
     re.DOTALL | re.IGNORECASE,
 )
 
@@ -56,7 +61,15 @@ def _canonical(url: str) -> str:
     parsed = urlsplit(url)
     query = parse_qs(parsed.query)
     kept = [(key, query[key][0]) for key in ("org", "cws") if query.get(key)]
-    return urlunsplit((parsed.scheme, parsed.netloc.lower(), parsed.path.rstrip("/"), urlencode(kept), ""))
+    return urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc.lower(),
+            parsed.path.rstrip("/"),
+            urlencode(kept),
+            "",
+        )
+    )
 
 
 def _labels(page: str) -> dict[str, str]:
@@ -77,12 +90,24 @@ def _field(labels: dict[str, str], *names: str) -> str | None:
 
 
 def _salary(labels: dict[str, str]) -> str | None:
-    low = next((value for name, value in labels.items() if "salary" in name and "low" in name), None)
-    high = next((value for name, value in labels.items() if "salary" in name and "high" in name), None)
+    low = next(
+        (value for name, value in labels.items() if "salary" in name and "low" in name),
+        None,
+    )
+    high = next(
+        (
+            value
+            for name, value in labels.items()
+            if "salary" in name and "high" in name
+        ),
+        None,
+    )
     if low and high:
         return f"{low} - {high}"
     for name, value in labels.items():
-        if any(word in name for word in ("salary", "pay range", "compensation")) and not any(
+        if any(
+            word in name for word in ("salary", "pay range", "compensation")
+        ) and not any(
             word in name for word in ("low", "high", "minimum", "maximum", "min", "max")
         ):
             return value
@@ -132,8 +157,12 @@ class TaleoBEScraper(BaseScraper):
         """
         try:
             response = http.fetch(
-                "GET", self.url(), headers={"User-Agent": USER_AGENT}, timeout=30,
-                allow_redirects=True, stream=True,
+                "GET",
+                self.url(),
+                headers={"User-Agent": USER_AGENT},
+                timeout=30,
+                allow_redirects=True,
+                stream=True,
             )
             try:
                 return _canonical(response.url)
@@ -159,16 +188,27 @@ class TaleoBEScraper(BaseScraper):
                     continue
                 seen_jobs.add(match.group("id"))
                 fields_match = _HEAD_FIELDS.search(block)
-                fields = [_text(value) for value in _DIV.findall(fields_match.group("fields"))] if fields_match else []
+                fields = (
+                    [
+                        _text(value)
+                        for value in _DIV.findall(fields_match.group("fields"))
+                    ]
+                    if fields_match
+                    else []
+                )
                 company_match = _COMPANY.search(block)
-                listed.append({
-                    "id": match.group("id"),
-                    "url": html.unescape(urljoin(page_url, match.group("href"))),
-                    "title": _text(match.group("title")),
-                    "department": fields[0] if fields else None,
-                    "location": fields[1] if len(fields) > 1 else None,
-                    "company": _text(company_match.group("company")) if company_match else None,
-                })
+                listed.append(
+                    {
+                        "id": match.group("id"),
+                        "url": html.unescape(urljoin(page_url, match.group("href"))),
+                        "title": _text(match.group("title")),
+                        "department": fields[0] if fields else None,
+                        "location": fields[1] if len(fields) > 1 else None,
+                        "company": _text(company_match.group("company"))
+                        if company_match
+                        else None,
+                    }
+                )
             next_match = _NEXT.search(page)
             if not next_match:
                 return listed
@@ -179,9 +219,14 @@ class TaleoBEScraper(BaseScraper):
 
     def fetch_raw(self) -> Any:
         listed = self._listing()
-        details = self.fan_out(listed, lambda item: self._detail(item["url"]), workers=self.detail_workers)
+        details = self.fan_out(
+            listed, lambda item: self._detail(item["url"]), workers=self.detail_workers
+        )
         self.report_detail_gaps(
-            [detail if detail and detail.get("description") else None for detail in details],
+            [
+                detail if detail and detail.get("description") else None
+                for detail in details
+            ],
             "detail pages",
         )
         return list(zip(listed, details))
@@ -211,13 +256,21 @@ class TaleoBEScraper(BaseScraper):
         for listed, detail in raw:
             detail = detail or {}
             location = detail.get("location") or listed["location"]
-            jobs.append(Job(
-                id=f"{self.board_key()}:{listed['id']}", ats=self.ats,
-                company=listed.get("company") or self.company,
-                title=listed["title"] or "", location=location, remote=is_remote(location),
-                department=detail.get("department") or listed["department"], url=listed["url"] or "",
-                posted_at=detail.get("posted_at"), scraped_at=scraped_at,
-                description=detail.get("description"), employment_type=detail.get("employment_type"),
-                salary=detail.get("salary"),
-            ))
+            jobs.append(
+                Job(
+                    id=f"{self.board_key()}:{listed['id']}",
+                    ats=self.ats,
+                    company=listed.get("company") or self.company,
+                    title=listed["title"] or "",
+                    location=location,
+                    remote=is_remote(location),
+                    department=detail.get("department") or listed["department"],
+                    url=listed["url"] or "",
+                    posted_at=detail.get("posted_at"),
+                    scraped_at=scraped_at,
+                    description=detail.get("description"),
+                    employment_type=detail.get("employment_type"),
+                    salary=detail.get("salary"),
+                )
+            )
         return jobs

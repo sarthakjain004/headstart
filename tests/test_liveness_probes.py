@@ -88,14 +88,18 @@ def test_taleo_walks_relative_next_pages(monkeypatch):
         return 200, first if len(calls) == 1 else second
 
     monkeypatch.setattr(cl, "_get", get)
-    assert cl.p_taleo_be("acme", "https://phe.tbe.taleo.net/p/ats/careers/v2/searchResults?org=A&cws=1") == (cl.LIVE, 2)
+    assert cl.p_taleo_be(
+        "acme", "https://phe.tbe.taleo.net/p/ats/careers/v2/searchResults?org=A&cws=1"
+    ) == (cl.LIVE, 2)
     assert calls[1] == "https://phe.tbe.taleo.net/p/ats/careers/v2/searchResults?next"
 
 
 def test_taleo_known_page_not_found_template_is_dead(monkeypatch):
     body = b"<title>Come Back Soon</title> You have attempted to reach a URL that no longer exists."
     monkeypatch.setattr(cl, "_get", _stub_get(200, body))
-    assert cl.p_taleo_be("acme", "https://phe.tbe.taleo.net/p/ats/careers/v2/searchResults?org=A&cws=1") == (cl.DEAD, None)
+    assert cl.p_taleo_be(
+        "acme", "https://phe.tbe.taleo.net/p/ats/careers/v2/searchResults?org=A&cws=1"
+    ) == (cl.DEAD, None)
 
 
 def _join_stub(page_props, jobs_rowcount=None):

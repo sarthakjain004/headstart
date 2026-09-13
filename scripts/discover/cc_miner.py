@@ -446,11 +446,21 @@ def tenant_from(kind, match):
         parsed = urllib.parse.urlsplit(match.group(1))
         query = urllib.parse.parse_qs(parsed.query)
         org, cws = query.get("org", [None])[0], query.get("cws", [None])[0]
-        if not org or not cws or not re.fullmatch(r"[A-Za-z0-9_-]+", org) or not cws.isdecimal():
+        if (
+            not org
+            or not cws
+            or not re.fullmatch(r"[A-Za-z0-9_-]+", org)
+            or not cws.isdecimal()
+        ):
             return None
         board = urllib.parse.urlunsplit(
-            (parsed.scheme, parsed.netloc.lower(), parsed.path.rstrip("/"),
-             urllib.parse.urlencode((("org", org), ("cws", cws))), "")
+            (
+                parsed.scheme,
+                parsed.netloc.lower(),
+                parsed.path.rstrip("/"),
+                urllib.parse.urlencode((("org", org), ("cws", cws))),
+                "",
+            )
         )
         return f"{org}:{cws}@{parsed.netloc.lower()}{parsed.path}", board
     tok = match.group(1)

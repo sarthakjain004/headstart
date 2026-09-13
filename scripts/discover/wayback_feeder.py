@@ -452,11 +452,18 @@ def extract(url: str, host: str, style: Style) -> tuple[str, str] | None:
     if style == "taleo_be":
         if not seen_host.endswith("." + host):
             return None
-        if not re.fullmatch(r"[a-z0-9-]+/ats/careers/v2/searchResults", path, re.IGNORECASE):
+        if not re.fullmatch(
+            r"[a-z0-9-]+/ats/careers/v2/searchResults", path, re.IGNORECASE
+        ):
             return None
         params = urllib.parse.parse_qs(query)
         org, cws = params.get("org", [None])[0], params.get("cws", [None])[0]
-        if not org or not cws or not re.fullmatch(r"[A-Za-z0-9_-]+", org) or not cws.isdecimal():
+        if (
+            not org
+            or not cws
+            or not re.fullmatch(r"[A-Za-z0-9_-]+", org)
+            or not cws.isdecimal()
+        ):
             return None
         query = urllib.parse.urlencode((("org", org), ("cws", cws)))
         board = f"https://{seen_host}/{path}?{query}"

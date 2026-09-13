@@ -120,7 +120,11 @@ def main() -> int:
         note = (
             "NEW file"
             if is_new
-            else ("reconciled" if ats in _LABEL | {"workday", "oracle", "taleo_be"} else "")
+            else (
+                "reconciled"
+                if ats in _LABEL | {"workday", "oracle", "taleo_be"}
+                else ""
+            )
         )
         print(f"{ats:<18}{len(rows) - added:>9}{added:>7}{len(rows):>8}  {note}")
         added_total += added
