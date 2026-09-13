@@ -11,8 +11,10 @@ column must reach a table created before it existed, because `_schema()` only ap
 from __future__ import annotations
 
 import argparse
+import csv
 import gzip
 import json
+import zlib
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -153,6 +155,53 @@ def test_sync_stamps_every_row_it_adds(tmp_path, monkeypatch):
     assert set(stamps) == {"greenhouse:a:1", "greenhouse:a:2"}
     assert all(s and s.startswith("20") for s in stamps.values())
     assert len(set(stamps.values())) == 1  # one stamp per run, not per row
+
+
+def test_freshness_receives_post_sync_ids_including_upgrades(tmp_path, monkeypatch):
+    captured = []
+    monkeypatch.setattr(
+        idx.board_freshness, "update", lambda *args: captured.append(set(args[4]))
+    )
+    original = "greenhouse:a:1"
+    added = "greenhouse:a:2"
+    assert _sync(tmp_path, monkeypatch, [original]) == 0
+    assert _sync(tmp_path, monkeypatch, [original, added], upgrades=[original]) == 0
+    assert captured[-1] == set(_rows(tmp_path)) == {original, added}
+
+
+@pytest.mark.parametrize(
+    "error", [OSError, EOFError, ValueError, KeyError, TypeError, csv.Error, zlib.error]
+)
+def test_freshness_failure_does_not_block_sync_witness(tmp_path, monkeypatch, error):
+    def fail(*args):
+        raise error("broken telemetry")
+
+    monkeypatch.setattr(idx.board_freshness, "update", fail)
+    witnesses = []
+    original_write = idx.write_base
+
+    def record(*args):
+        witnesses.append(args)
+        return original_write(*args)
+
+    monkeypatch.setattr(idx, "write_base", record)
+    assert _sync(tmp_path, monkeypatch, ["greenhouse:a:1"]) == 0
+    assert witnesses[-1][1:] == (1, "sync")
+    assert set(_rows(tmp_path)) == {"greenhouse:a:1"}
+
+
+def test_freshness_report_counts_added_and_upgraded_protected_rows(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(idx, "live_keep_set", lambda _: {"greenhouse:a"})
+    (tmp_path / "unauthoritative_boards.json").write_text(
+        json.dumps({"greenhouse:a": "short"}), encoding="utf-8"
+    )
+    original, added = "greenhouse:a:1", "greenhouse:a:2"
+    assert _sync(tmp_path, monkeypatch, [original]) == 0
+    assert _sync(tmp_path, monkeypatch, [original, added], upgrades=[original]) == 0
+    report = json.loads((tmp_path / "board_freshness_report.json").read_text())
+    assert report["ats"]["greenhouse"]["protected_rows"] == len(_rows(tmp_path)) == 2
 
 
 def test_sync_does_not_restamp_rows_it_already_holds(tmp_path, monkeypatch):

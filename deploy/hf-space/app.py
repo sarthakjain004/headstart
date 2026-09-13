@@ -929,7 +929,7 @@ def delete_resume(doc_id: str):
     return jsonify({"ok": True})
 
 
-def _comparable_rows(base: str) -> tuple[list[dict], str | None]:
+def _comparable_rows(base: str | None) -> tuple[list[dict], str | None]:
     """Rebuild counts for Boards first observed by ``base`` from their deltas."""
     if not _TRENDS:
         return [], None
@@ -939,6 +939,8 @@ def _comparable_rows(base: str) -> tuple[list[dict], str | None]:
         return [], None
     stamps = sorted({row["ts"] for row in _TRENDS})
     first_delta = min(row["ts"] for row in deltas)
+    if base is None:
+        base = next((stamp for stamp in stamps if stamp >= first_delta), first_delta)
     base_stamp = max(
         (stamp for stamp in stamps if first_delta <= stamp <= base), default=None
     )
@@ -954,13 +956,16 @@ def _comparable_rows(base: str) -> tuple[list[dict], str | None]:
         by_stamp[row["ts"]].append(row)
     state: Counter[tuple[str, str, str, str]] = Counter()
     rows = []
-    for stamp in stamps:
+    measurements = set(stamps)
+    # A delta can survive a failed aggregate append. Apply it before the next
+    # measurement even though that interrupted tick is not itself charted.
+    for stamp in sorted(measurements | by_stamp.keys()):
         for row in by_stamp[stamp]:
             if row["board"] in eligible:
                 state[(row["metric"], row["family"], row["band"], row["ats"])] += row[
                     "delta"
                 ]
-        if stamp < base_stamp:
+        if stamp < base_stamp or stamp not in measurements:
             continue
         rows.extend(
             {
@@ -972,7 +977,6 @@ def _comparable_rows(base: str) -> tuple[list[dict], str | None]:
                 "count": count,
             }
             for (metric, family, band, ats), count in state.items()
-            if count
         )
     return rows, base_stamp
 
@@ -1049,10 +1053,10 @@ def trends():
     # never has to worry about a stray row from a stale refit; only the requested window changes.
     base_stamp = None
     if coverage == "comparable":
-        trends_rows, base_stamp = _comparable_rows(base or since or _TRENDS[0]["ts"])
+        trends_rows, base_stamp = _comparable_rows(base or since)
     else:
         trends_rows = _TRENDS
-    if since and coverage == "all":
+    if since:
         trends_rows = [r for r in trends_rows if r["ts"] >= since]
     if until:
         trends_rows = [r for r in trends_rows if r["ts"] <= until]
