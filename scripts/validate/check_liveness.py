@@ -77,6 +77,7 @@ from headstart.scrapers.jobvite import (  # board url + counter parse, single so
     total_of,
 )
 from headstart.scrapers.registry import SCRAPERS  # slug_from, per ATS
+from headstart.scrapers.taleo_enterprise import TaleoEnterpriseScraper
 from headstart.scrapers.workday import (  # the DC list, single source of truth
     INSTANCES as _WD_INSTANCES,
 )
@@ -1773,6 +1774,16 @@ def p_taleo_be(t, u):
     return UNKNOWN, None
 
 
+def p_taleo_enterprise(t, u):
+    """Count a public Career Section through its measured JSON listing surface."""
+    scraper = TaleoEnterpriseScraper(u, t)
+    try:
+        return LIVE, len(scraper._listing(scraper._get()))
+    except Exception as exc:  # noqa: BLE001 - network/shape failure stays retryable
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        return (DEAD, None) if status in (404, 410) else (UNKNOWN, None)
+
+
 PROBES = {
     "greenhouse": p_greenhouse,
     "lever": p_lever,
@@ -1798,6 +1809,7 @@ PROBES = {
     "jobvite": p_jobvite,
     "oracle": p_oracle,
     "taleo_be": p_taleo_be,
+    "taleo_enterprise": p_taleo_enterprise,
 }
 
 

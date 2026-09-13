@@ -30,6 +30,7 @@ from headstart.scrapers.sensehq import SenseHQScraper
 from headstart.scrapers.smartrecruiters import SmartRecruitersScraper
 from headstart.scrapers.successfactors import SuccessFactorsScraper
 from headstart.scrapers.taleo_be import TaleoBEScraper
+from headstart.scrapers.taleo_enterprise import TaleoEnterpriseScraper
 from headstart.scrapers.teamtailor import TeamtailorScraper
 from headstart.scrapers.tesla import TeslaScraper
 from headstart.scrapers.tiktok import TikTokScraper
@@ -59,6 +60,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         RippleHireScraper,
         DarwinboxScraper,
         TeamtailorScraper,
+        TaleoEnterpriseScraper,
         PersonioScraper,
         JoinScraper,
         RipplingScraper,

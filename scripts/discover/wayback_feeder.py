@@ -47,7 +47,9 @@ socket.setdefaulttimeout(120)
 # `workday` and `workdaysite` are Workday's two career-site domains and differ in where the
 # tenant sits: `workday` reads it from the HOST (`acme.wd1.myworkdayjobs.com`), `workdaysite`
 # from the PATH (`wd1.myworkdaysite.com/recruiting/acme/Site`). Both emit the same identity.
-Style = Literal["sub", "host", "path", "workday", "workdaysite", "taleo_be"]
+Style = Literal[
+    "sub", "host", "path", "workday", "workdaysite", "taleo_be", "taleo_enterprise"
+]
 
 # An ATS that serves the same board from two hostnames. The value is the spelling the scraper
 # wants; `extract` emits it in place of the host it actually saw, which is what makes the two
@@ -359,6 +361,7 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     # TBE's public Board identity is the whole search URL (shard/instance/org/cws), not its
     # shared vendor hostname.  Preserve it from each archived capture.
     "taleo_be": _with_style("taleo_be", "tbe.taleo.net"),
+    "taleo_enterprise": _with_style("taleo_enterprise", "taleo.net"),
     # `recruiterbox.com` is the pre-rename namespace and holds 40 CDX pages against
     # `hire.trakstar.com`'s 20 — the larger half of this provider's archive. Alias, so
     # `_CANONICAL_HOST` rewrites it and the two spellings collapse.
@@ -468,6 +471,19 @@ def extract(url: str, host: str, style: Style) -> tuple[str, str] | None:
         query = urllib.parse.urlencode((("org", org), ("cws", cws)))
         board = f"https://{seen_host}/{path}?{query}"
         return f"{org}:{cws}@{seen_host}/{path.split('/', 1)[0]}", board
+
+    if style == "taleo_enterprise":
+        if not seen_host.endswith(".taleo.net"):
+            return None
+        match = re.fullmatch(
+            r"careersection/([A-Za-z0-9_-]+)/(?:jobsearch|joblist|moresearch)\.ftl",
+            path,
+            re.IGNORECASE,
+        )
+        if not match:
+            return None
+        board = f"https://{seen_host}/careersection/{match.group(1)}"
+        return board, board
 
     if style == "path":
         if seen_host != host or not path:
