@@ -173,6 +173,8 @@ def subscription_for(
 
     existing = store.get(account)
     if existing is None:
+        if store.opted_out(account):
+            return None
         seed = invite.query or invite.default_query
         if not seed:
             return None  # invited, but nothing to search for until they sign in

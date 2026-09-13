@@ -476,16 +476,20 @@ def main() -> None:
     docs: list[str] = []
     metas: list[dict] = []
     scanned = already = dropped = 0
+    progress = observability.PreparationProgress(_log)
     for job in iter_jobs(args.source):
         scanned += 1
         if (job.get("id") or "") in store.done:
             already += 1
+            progress.report(scanned, len(docs), already, dropped)
             continue
         if not is_english(job.get("title") or "", job.get("description") or ""):
             dropped += 1
+            progress.report(scanned, len(docs), already, dropped)
             continue
         docs.append(build_doc(job))
         metas.append(to_meta(job))
+        progress.report(scanned, len(docs), already, dropped)
         if args.limit and len(docs) >= args.limit:
             break
     _log.info(

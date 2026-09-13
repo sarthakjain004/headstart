@@ -39,6 +39,9 @@ the project doesn't use (reconsider) or there's a real gap (note it for `/domain
 
 ## Flag ADR conflicts
 
+When changing fields, filters, ATS registration, or cross-stage state, use
+[`source-contracts.md`](source-contracts.md) for the producer/consumer map and required checks.
+
 If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
 
 > _Contradicts ADR-0002 (pooled curl_cffi HTTP) — but worth reopening because…_

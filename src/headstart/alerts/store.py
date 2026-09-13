@@ -4,15 +4,7 @@
 `allowlist`), Saved sets (`sets_for`, `get_set`, `put_set`, `remove_set`), Saved jobs
 (`saved_for`, `saved_ids`, `get_saved`, `put_saved`, `remove_saved`) and Profiles
 (`get_profile`, `put_profile`, `remove_profile`, plus the parse-cap counter `parses_used`
-/ `put_parses`) and Résumé documents (`resume_ids`, `resumes_for`, `get_resume`,
-`put_resume`, `remove_resume`). Behind it sit the repo layout, the JSON shapes, and the HF
-client.
-
-One of those records has no shape here on purpose. A **Résumé document** is stored as the
-browser's own JSON export, byte for byte (ADR-0124), so there is no dataclass for it and no
-second schema to keep in step with the editor's model. What this module still owns for it is
-the path, the traversal guard and the size bound — everything that is about *the store*
-rather than about the document.
+/ `put_parses`). Behind it sit the repo layout, the JSON shapes, and the HF client.
 
 Two records, deliberately distinct. An **Invite** is what the owner writes by hand — an
 address, optionally the Query to run for it. A **Subscription** is the state that Invite
@@ -39,7 +31,9 @@ import json
 import logging
 import re
 import secrets
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
@@ -52,27 +46,8 @@ from .access import normalize
 # pipeline the name still resolves under the `headstart` root, so `log.setup()` reaches it.
 _log = logging.getLogger(__name__)
 
-#: `Store.get`'s Hub-failure arm, bounded to the first occurrence in this process. Not
-#: `log.FirstOnly`, for the same reason `_log` above is not `log.get`: importing the seam here
-#: would break the Space image, where this package is laid down beside `app.py` with no
-#: `headstart` to import from. The contract is the shared one — the first occurrence warns and
-#: carries its traceback, every one after it informs. Module-level because both callers build a
-#: `Store` per item (per Account in the alerts run, per request in the Space), so an instance
-#: attribute would bound nothing.
 _record_unreadable_reported = False
 
-PREFIX = "subscriptions/"
-_ID = re.compile(r"[0-9a-f]{16}")  # exactly what subscription_id and saved_job_id mint
-ALLOWLIST_PATH = "subscriptions/allowlist.json"
-SETS_PREFIX = "sets/"
-_SET_ID = re.compile(r"[0-9a-f]{8}")  # exactly what SavedSet.create mints
-MAX_SETS = 10  # per Account — an abuse bound, not a product promise (ADR-0043)
-SAVED_PREFIX = "saved/"
-MAX_SAVED = (
-    100  # starred jobs per Account — an abuse bound, not a product promise (ADR-0044)
-)
-PROFILE_PREFIX = "profiles/"
-MAX_PARSES = 3  # Résumé parses per Account, lifetime — bounds router spend (ADR-0041)
 RESUMES_PREFIX = "resumes/"
 #: Exactly what the builder mints — `'r' + Date.now().toString(36) + Math.random()…` in
 #: `resume_document.js`'s Builder, re-minted by `resume_export.importJson` on every import,
@@ -85,6 +60,21 @@ MAX_RESUMES = 10  # per Account — an abuse bound, not a product promise (ADR-0
 #: 512 KB against a worked example that serialises to ~8 KB: room for a long résumé with
 #: twenty Tailorings, and still far too small to make this a file host.
 MAX_RESUME_BYTES = 512 * 1024
+
+
+PREFIX = "subscriptions/"
+OPT_OUT_PREFIX = "subscription_opt_outs/"
+_ID = re.compile(r"[0-9a-f]{16}")  # exactly what subscription_id and saved_job_id mint
+ALLOWLIST_PATH = "subscriptions/allowlist.json"
+SETS_PREFIX = "sets/"
+_SET_ID = re.compile(r"[0-9a-f]{8}")  # exactly what SavedSet.create mints
+MAX_SETS = 10  # per Account — an abuse bound, not a product promise (ADR-0043)
+SAVED_PREFIX = "saved/"
+MAX_SAVED = (
+    100  # starred jobs per Account — an abuse bound, not a product promise (ADR-0044)
+)
+PROFILE_PREFIX = "profiles/"
+MAX_PARSES = 3  # Résumé parses per Account, lifetime — bounds router spend (ADR-0041)
 
 # The Space `/search` parameters a Subscription may carry. `seen_within` is deliberately
 # absent — it filters `first_seen`, which is exactly what the Watermark already decides, so
@@ -526,8 +516,15 @@ def _hf(token: str):
     return HfApi(token=token)
 
 
-def _list_files(repo: str, token: str) -> list[str]:
-    return _hf(token).list_repo_files(repo, repo_type="dataset")
+def _list_files(repo: str, token: str, revision: str | None = None) -> list[str]:
+    return _hf(token).list_repo_files(repo, repo_type="dataset", revision=revision)
+
+
+def _head_revision(repo: str, token: str) -> str:
+    try:
+        return _hf(token).repo_info(repo, repo_type="dataset").sha
+    except Exception as exc:
+        raise StoreUnavailable("Subscription snapshot unavailable") from exc
 
 
 def _is_absent(exc: BaseException) -> bool:
@@ -573,9 +570,15 @@ def _note_unreadable(what: str, exc: Exception) -> None:
 
 
 def _read(repo: str, path: str, token: str) -> bytes:
+    return _read_at_revision(repo, path, token, None)
+
+
+def _read_at_revision(repo: str, path: str, token: str, revision: str | None) -> bytes:
     from huggingface_hub import hf_hub_download
 
-    local = hf_hub_download(repo, path, repo_type="dataset", token=token)
+    local = hf_hub_download(
+        repo, path, repo_type="dataset", token=token, revision=revision
+    )
     with open(local, "rb") as handle:
         return handle.read()
 
@@ -595,6 +598,53 @@ def _delete(repo: str, path: str, token: str) -> None:
     _hf(token).delete_file(path_in_repo=path, repo_id=repo, repo_type="dataset")
 
 
+def _commit(
+    repo: str,
+    changes: dict[str, bytes | None],
+    expected: dict[str, bytes | None],
+    token: str,
+    revision: str | None = None,
+) -> None:
+    """Compare the records at one immutable revision, then atomically commit against it.
+
+    A repository-level race after comparison also fails closed through parent_commit. We do
+    not replay a stale edit on newer intent; callers retry by reading their current settings.
+    """
+    from huggingface_hub import CommitOperationAdd, CommitOperationDelete
+
+    try:
+        api = _hf(token)
+        revision = revision or api.repo_info(repo, repo_type="dataset").sha
+        for path, before in expected.items():
+            try:
+                current = _read_at_revision(repo, path, token, revision)
+            except Exception as exc:
+                if not _is_absent(exc):
+                    raise
+                current = None
+            if current != before:
+                raise StoreConflict("Subscription changed since it was read")
+        operations = [
+            CommitOperationAdd(path_in_repo=path, path_or_fileobj=data)
+            if data is not None
+            else CommitOperationDelete(path_in_repo=path)
+            for path, data in changes.items()
+            if data is not None or expected.get(path) is not None
+        ]
+        if operations:
+            api.create_commit(
+                repo_id=repo,
+                repo_type="dataset",
+                operations=operations,
+                parent_commit=revision,
+                commit_message="Update Subscription intent and delivery state",
+            )
+    except StoreConflict:
+        raise
+    except Exception as exc:
+        raise StoreUnavailable("Subscription update could not be confirmed") from exc
+
+
 def read_bytes(repo: str, path: str, token: str) -> bytes:
     """One file from the Subscriptions dataset. The public door `registry` comes in by —
     it stores a record that is not a Subscription, so it needs the repo but not `Store`."""
@@ -606,12 +656,69 @@ def write_bytes(repo: str, path: str, data: bytes, token: str) -> None:
     _write(repo, path, data, token)
 
 
+class StoreUnavailable(RuntimeError):
+    """Stored intent could not be read; callers must not replace it with default state."""
+
+
+class StoreConflict(RuntimeError):
+    """A newer edit or opt-out takes precedence over this stale write."""
+
+
 class Store:
     """Subscriptions in one private dataset. Construct with the repo id and a write token."""
 
     def __init__(self, repo: str, token: str) -> None:
         self._repo = repo
         self._token = token
+        self._expected: dict[str, bytes | None] = {}
+        self._pending: dict[str, bytes | None] | None = None
+        self._checks: dict[str, bytes | None] = {}
+        self._snapshot: str | None = None
+
+    def _revision(self) -> str | None:
+        if self._pending is not None and self._snapshot is None:
+            self._snapshot = _head_revision(self._repo, self._token)
+        return self._snapshot
+
+    def _read_path(self, path: str) -> bytes:
+        revision = self._revision()
+        return (
+            _read_at_revision(self._repo, path, self._token, revision)
+            if revision
+            else _read(self._repo, path, self._token)
+        )
+
+    def _save(
+        self, changes: dict[str, bytes | None], expected: dict[str, bytes | None]
+    ) -> None:
+        if self._pending is not None:
+            self._revision()
+            self._pending.update(changes)
+            for path, before in expected.items():
+                self._checks.setdefault(path, before)
+        else:
+            _commit(self._repo, changes, expected, self._token)
+            self._expected.update(changes)
+
+    @contextmanager
+    def atomic(self) -> Iterator[None]:
+        """Stage related set/Subscription writes against one snapshot, committing all or none.
+
+        Used once around a Space action. Reads see the initial snapshot, not staged writes;
+        any exception discards the batch. Snapshot acquisition is lazy, so rejected invalid
+        ids need no Hub call. A concurrent commit rejects the entire action for a fresh retry.
+        """
+        self._pending, self._checks = {}, {}
+        try:
+            yield
+            if self._pending:
+                _commit(
+                    self._repo, self._pending, self._checks, self._token, self._snapshot
+                )
+                self._expected.update(self._pending)
+        finally:
+            self._pending, self._snapshot = None, None
+            self._checks = {}
 
     def all(self) -> list[Subscription]:
         """Every stored Subscription. A record that will not parse is skipped, not fatal —
@@ -621,11 +728,9 @@ class Store:
             if not path.startswith(PREFIX) or path == ALLOWLIST_PATH:
                 continue
             try:
-                out.append(
-                    Subscription.from_dict(
-                        json.loads(_read(self._repo, path, self._token))
-                    )
-                )
+                raw = _read(self._repo, path, self._token)
+                out.append(Subscription.from_dict(json.loads(raw)))
+                self._expected[path] = raw
             except Exception as exc:  # noqa: BLE001 — a malformed record is data, not a crash
                 _log.info(f"skipping unreadable {path}: {exc}")
         return out
@@ -636,58 +741,58 @@ class Store:
         The id is checked against the shape `subscription_id` mints *before* it reaches a
         repo path: it arrives from a query string, and an unchecked value would let a caller
         name any file in the repo (`allowlist`, or a `../` traversal). Parsing is inside the
-        guard too, so a file that is not a Subscription answers None rather than raising."""
+        guard too. Only a confirmed missing record answers None; unreadable state raises
+        StoreUnavailable so a caller cannot accidentally replace its Watermark or token."""
         if not _ID.fullmatch(sub_id):
             return None
+        path = f"{PREFIX}{sub_id}.json"
         try:
-            data = json.loads(_read(self._repo, f"{PREFIX}{sub_id}.json", self._token))
-            return Subscription.from_dict(data)
-        except Exception as exc:  # noqa: BLE001 — absent, unreadable and not-a-Subscription are one answer
-            # None is three different facts — no record yet, a corrupt one, the Hub
-            # unreachable — and the caller cannot tell them apart. `subscription_for` reads
-            # the third as the first and mints a replacement, which restarts that person's
-            # Watermark and rotates the unsubscribe token in mail already delivered. The
-            # return value stays None for all three; only the log separates them.
-            #
-            # The two Hub cases must be split in *this* order: `LocalEntryNotFoundError`
-            # subclasses `EntryNotFoundError` but means the opposite thing — not "no such
-            # file" but "could not reach the Hub to ask". Catching the parent first would
-            # file every outage under "no record yet", which is precisely the misreading
-            # that costs someone their Watermark.
+            raw = self._read_path(path)
+            sub = Subscription.from_dict(json.loads(raw))
+            self._expected[path] = raw
+            return sub
+        except Exception as exc:
             if _is_absent(exc):
-                # The overwhelmingly common path: a signed-in Account with no record yet.
-                # `/sets` reaches here on most page loads, so anything louder than DEBUG
-                # would bury the two real failures below in routine traffic.
+                self._expected[path] = None
                 _log.debug(f"{sub_id}: no record yet")
-            else:
-                # One annotation for the outage, not one per Account. `get` runs once per
-                # Account, a Hub outage fails all of them at once, and ERROR renders as a
-                # GitHub annotation on the same 10-per-step budget as WARNING (ADR-0039) —
-                # 40 Accounts spent it here, forty stacks deep. The bound cannot be left to
-                # `alerts.run`'s per-Subscription catch-all, which already has one: this line
-                # fires *first* and then returns None rather than raising, so that bound never
-                # gets to speak. The later occurrences drop to INFO, which the Space's
-                # `logging.lastResort` handler (WARNING-only, no `log.setup()` there) does not
-                # print — accepted, because the first one still names the outage and every one
-                # of them still names its record.
-                global _record_unreadable_reported
-                first = not _record_unreadable_reported
-                _record_unreadable_reported = True
-                (_log.warning if first else _log.info)(
-                    f"{sub_id} unreadable: {type(exc).__name__}: {exc}", exc_info=first
-                )
-            return None
+                return None
+            raise StoreUnavailable(f"Subscription {sub_id} unreadable") from exc
 
-    def put(self, sub: Subscription) -> None:
-        _write(
-            self._repo,
-            sub.path(),
-            json.dumps(sub.to_dict(), indent=2).encode("utf-8"),
-            self._token,
-        )
+    def opted_out(self, sub_id: str) -> bool:
+        """Durable stop intent, separate from a Subscription another writer might retain."""
+        if not _ID.fullmatch(sub_id):
+            return False
+        path = f"{OPT_OUT_PREFIX}{sub_id}.json"
+        try:
+            self._expected[path] = self._read_path(path)
+        except Exception as exc:
+            if _is_absent(exc):
+                self._expected[path] = None
+                return False
+            raise StoreUnavailable(f"Subscription {sub_id} opt-out unreadable") from exc
+        return True
+
+    def put(self, sub: Subscription, *, reenable: bool = False) -> None:
+        """Create a record, or replace the version read by this Store; never overwrite unseen intent."""
+        stopped = self.opted_out(sub.id)
+        if stopped and not reenable:
+            raise StoreConflict("Subscription is opted out; explicitly enable delivery")
+        opt_out = f"{OPT_OUT_PREFIX}{sub.id}.json"
+        changes = {sub.path(): json.dumps(sub.to_dict(), indent=2).encode("utf-8")}
+        if reenable and stopped:
+            changes[opt_out] = None
+        expected = {path: self._expected.get(path) for path in (sub.path(), opt_out)}
+        self._save(changes, expected)
 
     def remove(self, sub_id: str) -> None:
-        _delete(self._repo, f"{PREFIX}{sub_id}.json", self._token)
+        if not _ID.fullmatch(sub_id):
+            return
+        path, opt_out = f"{PREFIX}{sub_id}.json", f"{OPT_OUT_PREFIX}{sub_id}.json"
+        if path not in self._expected:
+            self.get(sub_id)
+        self.opted_out(sub_id)
+        changes = {path: None, opt_out: b"{}"}
+        self._save(changes, {p: self._expected[p] for p in changes})
 
     def sets_for(self, account: str) -> list[SavedSet]:
         """Every Saved set one Account keeps, oldest first. Unreadable records are skipped
@@ -696,14 +801,17 @@ class Store:
             return []
         out: list[SavedSet] = []
         prefix = f"{SETS_PREFIX}{account}/"
-        for path in _list_files(self._repo, self._token):
+        revision = self._revision()
+        for path in _list_files(self._repo, self._token, revision):
             if not path.startswith(prefix):
                 continue
             try:
-                out.append(
-                    SavedSet.from_dict(json.loads(_read(self._repo, path, self._token)))
-                )
-            except Exception as exc:  # noqa: BLE001 — a malformed record is data, not a crash
+                raw = self._read_path(path)
+                out.append(SavedSet.from_dict(json.loads(raw)))
+                self._expected[path] = raw
+            except Exception as exc:
+                if self._pending is not None:
+                    raise StoreUnavailable("Saved sets unreadable") from exc
                 _log.info(f"skipping unreadable {path}: {exc}")
         out.sort(key=lambda s: s.created_at)
         return out
@@ -731,27 +839,32 @@ class Store:
         repo path — same traversal guard as :meth:`get`."""
         if not (_ID.fullmatch(account) and _SET_ID.fullmatch(set_id)):
             return None
+        path = f"{SETS_PREFIX}{account}/{set_id}.json"
         try:
-            data = json.loads(
-                _read(self._repo, f"{SETS_PREFIX}{account}/{set_id}.json", self._token)
-            )
-            return SavedSet.from_dict(data)
-        except Exception as exc:  # noqa: BLE001 — both answer None; only the log separates them
-            _note_unreadable(f"Saved set {account}/{set_id}", exc)
+            raw = self._read_path(path)
+            saved = SavedSet.from_dict(json.loads(raw))
+            self._expected[path] = raw
+            return saved
+        except Exception as exc:
+            if _is_absent(exc):
+                self._expected[path] = None
+            elif self._pending is not None:
+                raise StoreUnavailable("Saved set unreadable") from exc
             return None
 
     def put_set(self, saved: SavedSet) -> None:
-        _write(
-            self._repo,
-            saved.path(),
-            json.dumps(saved.to_dict(), indent=2).encode("utf-8"),
-            self._token,
+        data = json.dumps(saved.to_dict(), indent=2).encode("utf-8")
+        self._save(
+            {saved.path(): data}, {saved.path(): self._expected.get(saved.path())}
         )
 
     def remove_set(self, account: str, set_id: str) -> None:
         if not (_ID.fullmatch(account) and _SET_ID.fullmatch(set_id)):
             return
-        _delete(self._repo, f"{SETS_PREFIX}{account}/{set_id}.json", self._token)
+        path = f"{SETS_PREFIX}{account}/{set_id}.json"
+        if path not in self._expected:
+            self.get_set(account, set_id)
+        self._save({path: None}, {path: self._expected.get(path)})
 
     def saved_for(self, account: str) -> list[SavedJob]:
         """Every Saved job one Account keeps, newest star first. Unreadable records are
@@ -810,8 +923,7 @@ class Store:
                 )
             )
             return SavedJob.from_dict(data)
-        except Exception as exc:  # noqa: BLE001 — both answer None; only the log separates them
-            _note_unreadable(f"Saved job {account}/{saved_id}", exc)
+        except Exception:  # noqa: BLE001 — absent and unreadable are one answer
             return None
 
     def put_saved(self, job: SavedJob) -> None:
@@ -836,8 +948,7 @@ class Store:
                 _read(self._repo, f"{PROFILE_PREFIX}{account}.json", self._token)
             )
             return Profile.from_dict(data)
-        except Exception as exc:  # noqa: BLE001 — both answer None; only the log separates them
-            _note_unreadable(f"Profile {account}", exc)
+        except Exception:  # noqa: BLE001 — absent and unreadable are one answer
             return None
 
     def put_profile(self, profile: Profile) -> None:

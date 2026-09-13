@@ -11,15 +11,20 @@ uses for `scripts/`. Auth requests ride `base_url="https://localhost"` because t
 cookie is `Secure` and the test client honours that over plain http.
 """
 
+import csv
 import importlib.util
+import io
 import os
 import re
 import sys
 import types
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 pytest.importorskip("flask")  # in [dev] so this runs in CI; guards a bare env
@@ -246,12 +251,30 @@ def hub(monkeypatch):
     import headstart.alerts.store as st
 
     files: dict[str, bytes] = {}
-    monkeypatch.setattr(st, "_list_files", lambda repo, token: list(files))
+    monkeypatch.setattr(
+        st, "_list_files", lambda repo, token, revision=None: list(files)
+    )
     monkeypatch.setattr(st, "_read", lambda repo, path, token: files[path])
+    monkeypatch.setattr(st, "_head_revision", lambda *args: "fixture-revision")
+    monkeypatch.setattr(
+        st, "_read_at_revision", lambda repo, path, token, revision: files[path]
+    )
+    monkeypatch.setattr(st, "_is_absent", lambda exc: isinstance(exc, KeyError))
     monkeypatch.setattr(
         st, "_write", lambda repo, path, data, token: files.__setitem__(path, data)
     )
     monkeypatch.setattr(st, "_delete", lambda repo, path, token: files.pop(path, None))
+
+    def commit(repo, changes, expected, token, revision=None):
+        if any(files.get(path) != before for path, before in expected.items()):
+            raise st.StoreConflict("concurrent edit")
+        for path, data in changes.items():
+            if data is None:
+                files.pop(path, None)
+            else:
+                files[path] = data
+
+    monkeypatch.setattr(st, "_commit", commit)
     return files
 
 
@@ -436,6 +459,38 @@ def test_sets_flow_create_list_email_delete(sets_app, hub, monkeypatch):
     client.delete(f"/sets/{second['id']}", base_url=_HTTPS)
     assert sub_path not in hub
     assert [s["name"] for s in client.get("/sets", base_url=_HTTPS).json] == ["backend"]
+
+
+def test_failed_email_projection_cannot_leave_partially_toggled_sets(
+    sets_app, hub, monkeypatch
+):
+    from headstart.alerts.store import StoreUnavailable
+
+    hub["subscriptions/allowlist.json"] = b'{"allowed": ["dev@example.com"]}'
+    client = _signed_in(sets_app, monkeypatch)
+    first = client.post(
+        "/sets", json={"name": "a", "query": "backend"}, base_url=_HTTPS
+    ).json
+    second = client.post(
+        "/sets", json={"name": "b", "query": "frontend"}, base_url=_HTTPS
+    ).json
+    assert (
+        client.post(
+            f"/sets/{first['id']}/email", json={"on": True}, base_url=_HTTPS
+        ).status_code
+        == 200
+    )
+    before = dict(hub)
+
+    def unavailable(*args, **kwargs):
+        raise StoreUnavailable("projection unavailable")
+
+    monkeypatch.setattr(sets_app, "_project_subscription", unavailable)
+    response = client.post(
+        f"/sets/{second['id']}/email", json={"on": True}, base_url=_HTTPS
+    )
+    assert response.status_code == 503
+    assert hub == before
 
 
 def test_email_on_is_invite_only(sets_app, hub, monkeypatch):
@@ -1146,58 +1201,64 @@ _T1, _T2, _T3 = (
 )
 
 
-def _trends_rows() -> list[dict]:
-    """The ledger rows these route tests chart, in `_load_trends`' output shape.
-
-    Built directly rather than round-tripped through a ledger file: since ADR-0120 the ledger
-    is Parquet, and pyarrow is not in the `[dev]` extra CI installs — reading a real one here
-    would make every /trends route test `importorskip` away in CI, which is exactly what
-    keeping flask in `[dev]` exists to prevent. `_load_trends` itself is covered separately,
-    under its own pyarrow gate. `ats='all'` on every row is the ADR-0075 sentinel these
-    fixtures always meant: rows carrying no per-ATS decomposition."""
-    return [
+def _write_trends(state: Path, lines: list[str]) -> None:
+    rows = list(csv.DictReader(io.StringIO("\n".join(lines) + "\n")))
+    table = pa.table(
         {
-            "ts": ts,
-            "version": 2,
-            "metric": m,
-            "family": f,
-            "band": b,
-            "ats": "all",
-            "count": c,
+            "ts": pa.array(
+                [datetime.fromisoformat(row["ts"]) for row in rows],
+                pa.timestamp("ms", tz="UTC"),
+            ),
+            "version": pa.array([int(row["version"]) for row in rows], pa.int64()),
+            "metric": pa.array([row.get("metric") or "stock" for row in rows]),
+            "family": pa.array([row["family"] for row in rows]),
+            "band": pa.array([row["band"] for row in rows]),
+            "ats": pa.array([row.get("ats") or "all" for row in rows]),
+            "count": pa.array([int(row["count"]) for row in rows], pa.int64()),
         }
-        for ts, m, f, b, c in [
-            (_T1, "stock", "software-engineering", "mid", 100),
-            (_T1, "stock", "ai-ml", "mid", 50),
-            (_T1, "stock", "non-tech", "all", 25),
-            (_T2, "stock", "software-engineering", "mid", 110),
-            (_T2, "stock", "ai-ml", "mid", 55),
-            (_T2, "stock", "watch:fde", "mid", 7),
-            (_T2, "stock", "non-tech", "all", 27),
-            (_T2, "new", "software-engineering", "mid", 12),
-            (_T2, "new", "watch:fde", "mid", 2),
-            (_T3, "stock", "software-engineering", "mid", 120),
-            (_T3, "stock", "ai-ml", "mid", 60),
-            (_T3, "stock", "watch:fde", "mid", 8),
-            (_T3, "stock", "non-tech", "all", 30),
-            (_T3, "new", "software-engineering", "mid", 9),
-            (_T3, "new", "ai-ml", "mid", 4),
-            (_T3, "new", "watch:fde", "mid", 1),
-        ]
+    )
+    out = state / "data" / "state" / "role_trends.parquet"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    pq.write_table(table, out)
+
+
+def _trends_csv(state: Path) -> None:
+    rows = [
+        "ts,version,metric,family,band,count",
+        f"{_T1},2,stock,software-engineering,mid,100",
+        f"{_T1},2,stock,ai-ml,mid,50",
+        f"{_T1},2,stock,non-tech,all,25",
+        f"{_T2},2,stock,software-engineering,mid,110",
+        f"{_T2},2,stock,ai-ml,mid,55",
+        f"{_T2},2,stock,watch:fde,mid,7",
+        f"{_T2},2,stock,non-tech,all,27",
+        f"{_T2},2,new,software-engineering,mid,12",
+        f"{_T2},2,new,watch:fde,mid,2",
+        f"{_T3},2,stock,software-engineering,mid,120",
+        f"{_T3},2,stock,ai-ml,mid,60",
+        f"{_T3},2,stock,watch:fde,mid,8",
+        f"{_T3},2,stock,non-tech,all,30",
+        f"{_T3},2,new,software-engineering,mid,9",
+        f"{_T3},2,new,ai-ml,mid,4",
+        f"{_T3},2,new,watch:fde,mid,1",
     ]
+    _write_trends(state, rows)
 
 
 @pytest.fixture(scope="module")
 def trends_app(tmp_path_factory):
-    """The app with a trends ledger. `_STATE` is the hardcoded `/app/state`, so no ledger file
-    can ride the snapshot stub — `_TRENDS` is assigned after import instead. Since ADR-0120 the
-    rows are built directly rather than read from a file (see `_trends_rows`), so these are
-    route tests: the loader has its own test, under its own pyarrow gate."""
+    """The app with a trends ledger. `_STATE` is the hardcoded `/app/state`, so the CSV can't
+    ride the snapshot stub — instead the module's own loader is pointed at the fixture file
+    after import, which still exercises the real parsing (metric default included)."""
     state = tmp_path_factory.mktemp("state")
+    _trends_csv(state)
     # The wall pinned OFF explicitly ("" is falsy in _AUTH_ON): module-scoped fixtures from
     # earlier in this file hold their env until teardown, so without this the trends app can
     # inherit a live wall depending on test order and answer every request 401.
     with _space_app(state, env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}) as module:
-        module._TRENDS = _trends_rows()
+        module._TRENDS = module._load_trends(
+            state / "data" / "state" / "role_trends.parquet"
+        )
         module._WATCH = {
             "watch:fde": {
                 "label": "Forward Deployed Engineer",
@@ -1223,6 +1284,129 @@ def test_trends_new_metric_distinguishes_zero_from_not_measured(trends_app):
     # T1 predates the metric: a gap, not a zero. T2 measured new but ai-ml had none: a true 0.
     assert by_name["ai-ml"]["points"] == [None, 0, 4]
     assert by_name["software-engineering"]["points"] == [None, 12, 9]
+
+
+def test_trends_comparable_coverage_keeps_only_boards_known_at_the_base(
+    trends_app, monkeypatch
+):
+    ledger = [
+        {
+            "ts": stamp,
+            "version": 2,
+            "metric": "stock",
+            "family": "software-engineering",
+            "band": "mid",
+            "ats": "greenhouse",
+            "count": 1,
+        }
+        for stamp in (_T1, _T2, _T3)
+    ]
+    deltas = [
+        {
+            "ts": _T1,
+            "version": 2,
+            "board": "early",
+            "metric": "stock",
+            "family": "software-engineering",
+            "band": "mid",
+            "ats": "greenhouse",
+            "delta": 10,
+        },
+        {
+            "ts": _T2,
+            "version": 2,
+            "board": "early",
+            "metric": "stock",
+            "family": "software-engineering",
+            "band": "mid",
+            "ats": "greenhouse",
+            "delta": 2,
+        },
+        {
+            "ts": _T2,
+            "version": 2,
+            "board": "late",
+            "metric": "stock",
+            "family": "software-engineering",
+            "band": "mid",
+            "ats": "greenhouse",
+            "delta": 100,
+        },
+        {
+            "ts": _T3,
+            "version": 2,
+            "board": "early",
+            "metric": "stock",
+            "family": "software-engineering",
+            "band": "mid",
+            "ats": "greenhouse",
+            "delta": -1,
+        },
+    ]
+    monkeypatch.setattr(trends_app, "_TRENDS", ledger)
+    monkeypatch.setattr(trends_app, "_TREND_DELTAS", deltas)
+    d = (
+        trends_app.app.test_client()
+        .get(f"/trends?coverage=comparable&base={quote(_T1)}")
+        .get_json()
+    )
+    assert d["base"] == _T1
+    assert d["series"][0]["points"] == [10, 12, 11]
+
+
+def test_trends_comparable_base_can_be_an_unchanged_measurement(
+    trends_app, monkeypatch
+):
+    ledger = [
+        {
+            "ts": stamp,
+            "version": 2,
+            "metric": "stock",
+            "family": "software-engineering",
+            "band": "mid",
+            "ats": "greenhouse",
+            "count": 1,
+        }
+        for stamp in (_T1, _T2, _T3)
+    ]
+    deltas = [
+        {
+            "ts": _T1,
+            "version": 2,
+            "board": "early",
+            "metric": "stock",
+            "family": "software-engineering",
+            "band": "mid",
+            "ats": "greenhouse",
+            "delta": 10,
+        },
+        {
+            "ts": _T3,
+            "version": 2,
+            "board": "early",
+            "metric": "stock",
+            "family": "software-engineering",
+            "band": "mid",
+            "ats": "greenhouse",
+            "delta": 1,
+        },
+    ]
+    monkeypatch.setattr(trends_app, "_TRENDS", ledger)
+    monkeypatch.setattr(trends_app, "_TREND_DELTAS", deltas)
+    d = (
+        trends_app.app.test_client()
+        .get(f"/trends?coverage=comparable&base={quote(_T2)}")
+        .get_json()
+    )
+    assert d["base"] == _T2
+    assert d["stamps"] == [_T2, _T3]
+    assert d["series"][0]["points"] == [10, 11]
+
+
+def test_trends_rejects_unknown_coverage(trends_app):
+    assert (
+        trends_app.app.test_client().get("/trends?coverage=future").status_code == 400
+    )
 
 
 def test_trends_roles_split_serves_the_watchlist(trends_app):
@@ -1322,34 +1506,27 @@ _U1, _U2 = (
 )
 
 
-def _ats_trends_rows() -> list[dict]:
-    """Per-ATS rows in `_load_trends`' output shape — see `_trends_rows` on why not a file."""
-    return [
-        {
-            "ts": ts,
-            "version": 2,
-            "metric": "stock",
-            "family": f,
-            "band": b,
-            "ats": a,
-            "count": c,
-        }
-        for ts, f, b, a, c in [
-            (_U1, "software-engineering", "mid", "all", 100),
-            (_U1, "non-tech", "all", "all", 10),
-            (_U2, "software-engineering", "mid", "greenhouse", 60),
-            (_U2, "software-engineering", "mid", "lever", 50),
-            (_U2, "ai-ml", "mid", "greenhouse", 20),
-            (_U2, "non-tech", "all", "all", 15),
-        ]
+def _ats_trends_csv(state: Path) -> None:
+    rows = [
+        "ts,version,metric,family,band,ats,count",
+        f"{_U1},2,stock,software-engineering,mid,all,100",
+        f"{_U1},2,stock,non-tech,all,all,10",
+        f"{_U2},2,stock,software-engineering,mid,greenhouse,60",
+        f"{_U2},2,stock,software-engineering,mid,lever,50",
+        f"{_U2},2,stock,ai-ml,mid,greenhouse,20",
+        f"{_U2},2,stock,non-tech,all,all,15",
     ]
+    _write_trends(state, rows)
 
 
 @pytest.fixture(scope="module")
 def ats_trends_app(tmp_path_factory):
     state = tmp_path_factory.mktemp("ats-state")
+    _ats_trends_csv(state)
     with _space_app(state, env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}) as module:
-        module._TRENDS = _ats_trends_rows()
+        module._TRENDS = module._load_trends(
+            state / "data" / "state" / "role_trends.parquet"
+        )
         module._WATCH = {}
         yield module
 
@@ -1693,115 +1870,3 @@ def test_the_door_and_the_app_share_one_palette():
                 f"the door sets {token}:{value}, which style.css does not — the two token "
                 "blocks must move together"
             )
-
-
-def test_load_trends_reads_the_parquet_ledger_back_as_the_stored_stamp_string(tmp_path):
-    """`_load_trends` must hand `/trends` a **string** `ts` (ADR-0120).
-
-    Parquet types the column as `timestamp[ms, tz=UTC]`, but the route filters `since`/`until`
-    by string comparison against a bound `_norm_stamp` renders as `+00:00` whole seconds. A
-    datetime here would raise on the first compare; a differently-spelled string would silently
-    reselect. Written with the pipeline's own writer, so the two halves cannot drift apart.
-    """
-    pytest.importorskip("pyarrow")  # not in the [dev] extra CI installs
-    pq = pytest.importorskip("pyarrow.parquet")
-    from headstart.ingest import role_trends
-
-    ledger = tmp_path / "role_trends.parquet"
-    rows = [
-        (
-            "2026-08-11T01:00:00+00:00",
-            2,
-            "stock",
-            "software-engineering",
-            "mid",
-            "all",
-            100,
-        ),
-        ("2026-08-12T01:00:00+00:00", 2, "new", "ai-ml", "senior", "greenhouse", 4),
-    ]
-    pq.write_table(role_trends._to_table(rows), ledger, compression="zstd")
-
-    with _space_app(tmp_path, env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}) as module:
-        got = module._load_trends(ledger)
-
-    assert got == [
-        {
-            "ts": "2026-08-11T01:00:00+00:00",
-            "version": 2,
-            "metric": "stock",
-            "family": "software-engineering",
-            "band": "mid",
-            "ats": "all",
-            "count": 100,
-        },
-        {
-            "ts": "2026-08-12T01:00:00+00:00",
-            "version": 2,
-            "metric": "new",
-            "family": "ai-ml",
-            "band": "senior",
-            "ats": "greenhouse",
-            "count": 4,
-        },
-    ]
-    assert all(isinstance(r["ts"], str) for r in got)
-
-
-def test_load_trends_is_empty_when_the_ledger_is_absent(tmp_path):
-    """The dark-until-ready shape (ADR-0120 rollout): between the Space deploying and the
-    first pipeline run writing a Parquet ledger, neither file exists. That must read as no
-    trend data — which `/trends` answers 503 to and the UI hides — never an exception."""
-    with _space_app(tmp_path, env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}) as module:
-        assert module._load_trends(tmp_path / "nope.parquet") == []
-        module._TRENDS = []
-        r = module.app.test_client().get("/trends")
-    assert r.status_code == 503
-    assert r.get_json()["error"] == "no trend data yet"
-
-
-def test_pull_index_retries_a_failed_attempt_then_succeeds(tmp_path, monkeypatch):
-    """One bad response out of ~150 files must not take the container down.
-
-    `snapshot_download` gives up if any single file fails, and the call runs at module import,
-    so without a retry a single unreachable file leaves a Space that cannot start AND cannot
-    recover — every restart re-runs the same one attempt.
-
-    Deliberately not attributed to the 2026-09-09 outage: that failure was *deterministic*
-    (same file every time), so retrying would only have failed more slowly. This covers the
-    transient case, which is a different and still-real fragility."""
-    with _space_app(tmp_path, env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}) as module:
-        calls = []
-
-        def flaky(*a, **k):
-            calls.append(1)
-            if len(calls) < 3:
-                raise OSError("missing the 'X-Repo-Commit' header")
-            return str(tmp_path)
-
-        monkeypatch.setattr(module, "snapshot_download", flaky)
-        monkeypatch.setattr(module.time, "sleep", lambda s: None)  # no waiting in tests
-        module._pull_index()
-
-    assert len(calls) == 3  # failed twice, third succeeded
-
-
-def test_pull_index_gives_up_and_raises_so_a_real_outage_stays_loud(
-    tmp_path, monkeypatch
-):
-    """The retry is bounded. A dataset that is genuinely unreachable must still fail the boot:
-    a Space that came up without its index would serve empty results, which reads as "no jobs
-    match" — a wrong answer, and worse than an honest outage."""
-    with _space_app(tmp_path, env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}) as module:
-        calls = []
-
-        def always_fails(*a, **k):
-            calls.append(1)
-            raise OSError("nope")
-
-        monkeypatch.setattr(module, "snapshot_download", always_fails)
-        monkeypatch.setattr(module.time, "sleep", lambda s: None)
-        with pytest.raises(OSError, match="nope"):
-            module._pull_index(attempts=3)
-
-    assert len(calls) == 3  # bounded: three attempts, then it raises

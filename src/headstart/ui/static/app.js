@@ -452,6 +452,7 @@ function clearAll(){
 const PAGE_SIZE = 20;
 const MAX_PAGE = 20;
 let page = 1;
+let searchRequest = 0;
 
 // go(): a fresh search or browse from page 1 — Search button, Enter, a chip, or a filter
 // change. An empty query browses the newest jobs instead of ranking by similarity
@@ -463,6 +464,7 @@ async function go(){ page = 1; await fetchPage(); }
 async function goToPage(n){ page = Math.max(1, Math.min(n, MAX_PAGE)); await fetchPage(); }
 
 async function fetchPage(){
+  const request = ++searchRequest;
   const q = el('q').value.trim();
   drawActive();
   const p = new URLSearchParams({ q, k: PAGE_SIZE, page });
@@ -477,19 +479,22 @@ async function fetchPage(){
   // Fired together, not one after the other: the counts depend only on the filters, never on
   // the query, so they neither wait for the ranking nor make the user wait for them.
   const facetsPromise = fetch('/facets?'+p).then(r => r.json()).catch(() => null);
-  facetsPromise.then(applyFacets);
+  facetsPromise.then(facets => { if (request === searchRequest) applyFacets(facets); });
   drawSortNote();
   let rows;
   try { rows = await (await fetch('/search?'+p)).json(); }
-  catch(e){ busy(false); el('results').innerHTML = '<div class="empty">That search didn\'t go through. Try again.</div>';
+  catch(e){ if (request !== searchRequest) return;
+            busy(false); el('results').innerHTML = '<div class="empty">That search didn\'t go through. Try again.</div>';
             setResultRows(1);
             el('n').textContent = ''; el('kind').textContent = ''; return; }
+  if (request !== searchRequest) return;
   busy(false);
   if(!Array.isArray(rows)){
     el('results').innerHTML = '<div class="empty">One of the filters isn\'t valid — clear it and try again.</div>';
     setResultRows(1);
     el('n').textContent = ''; el('kind').textContent = ''; return; }
   const facets = await facetsPromise;
+  if (request !== searchRequest) return;
   drawKeywordNote(facets);
   drawResultKind(q, rows.length);
   if(!rows.length){
@@ -776,16 +781,22 @@ function draw(rows, target){
    one from the controls the user is looking at. All strip actions ride ONE delegated
    listener + data attributes — never inline handlers with interpolated names. ---- */
 let mySets = null, activeSetId = null;
+let matchesRequest = 0;
 
 async function loadSets(){
+  const request = ++matchesRequest;
+  let sets;
   try{
     const r = await fetch('/sets');
+    if (request !== matchesRequest) return;
     if (!r.ok){ el('matches-msg').textContent = 'Couldn\'t load your sets.'; return; }
-    mySets = await r.json();
-  }catch(e){ el('matches-msg').textContent = 'Couldn\'t load your sets.'; return; }
+    sets = await r.json();
+  }catch(e){ if (request === matchesRequest) el('matches-msg').textContent = 'Couldn\'t load your sets.'; return; }
+  if (request !== matchesRequest) return;
+  mySets = sets;
   if (activeSetId && !mySets.some(s => s.id === activeSetId)) activeSetId = null;
   renderSets();
-  if (!activeSetId && mySets.length) runSet(mySets[0].id);   // land on your first set
+  if (mySets.length) runSet(activeSetId || mySets[0].id);
 }
 
 function renderSets(){
@@ -840,6 +851,7 @@ function sortMatches(rows){
 }
 
 async function runSet(id){
+  const request = ++matchesRequest;
   const s = (mySets || []).find(x => x.id === id); if (!s) return;
   activeSetId = id; renderSets();
   el('matches-msg').textContent = 'searching…';
@@ -848,7 +860,8 @@ async function runSet(id){
   for (const [key, value] of Object.entries(matchesRange())) p.set(key, value);
   let rows;
   try { rows = await (await fetch('/search?'+p)).json(); }
-  catch(e){ el('matches-msg').textContent = 'That search didn\'t go through.'; return; }
+  catch(e){ if (request === matchesRequest) el('matches-msg').textContent = 'That search didn\'t go through.'; return; }
+  if (request !== matchesRequest) return;
   if (!Array.isArray(rows)){ el('matches-msg').textContent = 'A saved filter isn\'t valid — refine the set.'; return; }
   el('matches-msg').textContent = rows.length
     ? `${rows.length} match${rows.length === 1 ? '' : 'es'} for “${s.name}”`
@@ -1256,7 +1269,7 @@ let trendData = null, trendDrill = null;
 // The unit token is 'change', not 'index': CONTEXT.md's "index" is the served corpus, and this
 // same file labels the reference line "whole index" in that sense. One word, two meanings, in
 // one function was a grep hazard. The UI has always called this unit Change.
-let trendMetric = 'stock', trendUnit = 'change', trendSplit = 'bands';
+let trendMetric = 'stock', trendUnit = 'change', trendSplit = 'bands', trendCoverage = 'all';
 let trendDays = 'all';      // the date-range preset: 7 | 30 | 90 | 'all'; a custom bound beats it
 let hoveredSeries = null;   // legend/chart hover-focus name — dims every other line (§ emphasis)
 let hoverIndex = null;      // the stamp the crosshair is parked on — the keyboard walks this
@@ -1435,7 +1448,10 @@ async function loadTrends(family){
   if (family) { q.set('family', family); q.set('split', trendSplit); }
   if (trendMetric !== 'stock') q.set('metric', trendMetric);
   const range = trendRange();
-  if (range.since) q.set('since', range.since);
+  if (trendCoverage === 'comparable') {
+    q.set('coverage', trendCoverage);
+    if (range.since) q.set('base', range.since);
+  } else if (range.since) q.set('since', range.since);
   if (range.until) q.set('until', range.until);
   const ats = trendAtsSelected();
   if (ats) ats.forEach(a => q.append('ats', a));
@@ -2333,6 +2349,7 @@ trendSeg('trends-metric', 'metric', v => {
   setUnit(v === 'new' && trendUnit === 'share' ? 'change' : trendUnit, v === 'new');
   loadTrends(trendDrill);
 });
+trendSeg('trends-coverage', 'coverage', v => { trendCoverage = v; loadTrends(trendDrill); });
 trendSeg('trends-unit', 'unit', v => { setUnit(v, false); drawTrends(); });
 trendSeg('trends-split', 'split', v => { trendSplit = v; loadTrends(trendDrill); });
 // A preset and a custom bound are two spellings of the same window, so setting either clears

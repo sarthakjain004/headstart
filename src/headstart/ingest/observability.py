@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -49,6 +50,24 @@ _LOSS_FIELDS = (
     "detail_http_failures",
     "detail_breaker_skips",
 )
+
+
+class PreparationProgress:
+    """Bounded progress for corpus preparation before encoding begins."""
+
+    def __init__(self, logger) -> None:
+        self._log = logger
+        self._last = time.monotonic()
+
+    def report(self, scanned: int, prepared: int, already: int, dropped: int) -> None:
+        now = time.monotonic()
+        if not scanned or (scanned % 500 and now - self._last < 5):
+            return
+        self._last = now
+        self._log.info(
+            f"preparation: scanned {scanned}, prepared {prepared}, already {already}, "
+            f"non-English {dropped}"
+        )
 
 
 @dataclass
