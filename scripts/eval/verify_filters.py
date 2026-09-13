@@ -202,6 +202,11 @@ URL_SHAPES = {
     # client-rendered embed form does above — a measured limit of the HTTP probe against this
     # host, not evidence the link is wrong.
     "tiktok": r"https://lifeattiktok\.com/search/\d+",
+    # Taleo Business Edition emits its own canonical detail URL from every listing card. The
+    # board coordinates stay in the query string and `rid` is the native requisition id; both
+    # were verified live on ICANN on 2026-09-13. TBE is intentionally separate from Taleo
+    # Enterprise's Career Section URL family, which this scraper does not support.
+    "taleo_be": r"https://[a-z0-9-]+\.tbe\.taleo\.net/[a-z0-9-]+/ats/careers/v2/viewRequisition\?[^#]*\brid=\d+",
 }
 
 
