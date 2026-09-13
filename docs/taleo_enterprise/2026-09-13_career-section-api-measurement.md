@@ -43,9 +43,12 @@ from its `initialHistory` payload, so this is a mandatory detail pass.
 
 ## Rate limit
 
-No rate-limit conclusion is claimed yet. The live listing probes and a 16-detail concurrency probe
-did not produce a completed measurement record, so initial implementation must use a conservative
-detail width and log all settled detail outcomes for a measured follow-up.
+A controlled D.R. Horton ladder issued 16 distinct detail pages twice at each width. Widths 8 and
+16 were clean (32/32 HTTP 200 each); width 32 produced one 30-second timeout. Widths 1 and 4 also
+had isolated timeouts, so the failure is tail instability rather than a conventional 403/429/5xx
+rate wall. Median successful latency stayed about 1.05 seconds. The scraper therefore uses 16
+workers, the highest clean point; raw outcomes are in
+`experiment/taleo-enterprise-rate-limit/artifacts/detail_ladder_v2.jsonl`.
 
 ## Sources
 

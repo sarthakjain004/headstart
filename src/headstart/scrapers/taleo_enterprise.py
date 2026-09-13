@@ -8,7 +8,6 @@ job-board endpoint provides paginated listings; jobdetail pages provide bodies.
 
 from __future__ import annotations
 
-import html
 import json
 import math
 import re
@@ -26,12 +25,14 @@ _JOBS_TABLE = re.compile(
     r'<table[^>]+id="jobs"[^>]*>(.*?)</table>', re.DOTALL | re.IGNORECASE
 )
 _TH = re.compile(r"<th[^>]*>(.*?)</th>", re.DOTALL | re.IGNORECASE)
-_INITIAL_HISTORY = re.compile(
-    r'id="initialHistory"[^>]*value="(.*?)"', re.DOTALL | re.IGNORECASE
+_DETAIL_LIST = re.compile(
+    r"api\.fillList\('requisitionDescriptionInterface', 'descRequisition', \[(.*?)\]\);",
+    re.DOTALL,
 )
+_JS_STRING = re.compile(r"'((?:\\.|[^'])*)'")
 _SECTION = re.compile(r"^/careersection/([^/?#]+)/?")
 _DETAIL_WORKERS = (
-    4  # conservative until a completed Enterprise rate-limit measurement exists
+    16  # clean at 16-way; 32 had one 30-second timeout (2026-09-13 ladder)
 )
 
 
@@ -47,13 +48,21 @@ def _canonical(url: str) -> str:
     )
 
 
-def _headers(shell: str) -> list[str]:
+def _headers(shell: str) -> list[str | None]:
     table = _JOBS_TABLE.search(shell)
     if not table:
         return []
-    return [
-        text for value in _TH.findall(table.group(1)) if (text := html_to_text(value))
+    return [html_to_text(value) for value in _TH.findall(table.group(1))]
+
+
+def _aligned_headers(headers: list[str | None], values: list[Any]) -> list[str | None]:
+    """Data headers only when they exactly align with a positional row."""
+    data_headers = [
+        header
+        for header in headers
+        if (header or "").strip().lower() not in {"icons", "actions"}
     ]
+    return data_headers if len(data_headers) == len(values) else [None] * len(values)
 
 
 def _company(shell: str) -> str | None:
@@ -69,7 +78,7 @@ def _company(shell: str) -> str | None:
 def _date(value: str | None) -> str | None:
     if not value:
         return None
-    for fmt in ("%b %d, %Y", "%Y-%m-%d"):
+    for fmt in ("%b %d, %Y, %I:%M:%S %p", "%b %d, %Y", "%Y-%m-%d"):
         try:
             return datetime.strptime(value.strip(), fmt).replace(tzinfo=UTC).isoformat()
         except ValueError:
@@ -93,22 +102,48 @@ def _location(values: list[Any], indices: list[int]) -> str | None:
 
 
 def _column(
-    headers: list[str], values: list[Any], words: tuple[str, ...]
+    headers: list[str | None], values: list[Any], words: tuple[str, ...]
 ) -> str | None:
     for index, header in enumerate(headers):
-        if index < len(values) and any(word in header.lower() for word in words):
+        if (
+            header
+            and index < len(values)
+            and any(word in header.lower() for word in words)
+        ):
             value = values[index]
             return value.strip() if isinstance(value, str) and value.strip() else None
     return None
 
 
-def _description(page: str) -> str | None:
-    match = _INITIAL_HISTORY.search(page)
+def _detail_text(value: str) -> str | None:
+    return html_to_text(unquote(value).replace(r"\:", ":").removeprefix("!*!") or None)
+
+
+def _detail(page: str) -> dict[str, str | None] | None:
+    match = _DETAIL_LIST.search(page)
     if not match:
         return None
-    decoded = unquote(html.unescape(match.group(1))).replace(r"\:", ":")
-    parts = [html_to_text(part) for part in decoded.split("!*!") if "<" in part]
-    return " ".join(dict.fromkeys(part for part in parts if part)) or None
+    values = [_detail_text(value) for value in _JS_STRING.findall(match.group(1))]
+    # These positions are the page's own detail-list order, confirmed on the live D.R. Horton
+    # control: title/contest then description, qualification, job field, primary/other locations,
+    # organization, schedule and posting date. Each displayed value follows its hidden twin.
+    if len(values) <= 25:
+        return None
+    description = (
+        " ".join(dict.fromkeys(value for value in (values[11], values[13]) if value))
+        or None
+    )
+    location = (
+        "; ".join(dict.fromkeys(value for value in (values[17], values[19]) if value))
+        or None
+    )
+    return {
+        "description": description,
+        "department": values[15],
+        "location": location,
+        "employment_type": values[23],
+        "posted_at": _date(values[25]),
+    }
 
 
 class TaleoEnterpriseScraper(BaseScraper):
@@ -215,6 +250,7 @@ class TaleoEnterpriseScraper(BaseScraper):
                     continue
                 seen.add(job_id)
                 values = record.get("column") or []
+                row_headers = _aligned_headers(headers, values)
                 title_index = record.get("linkedColumn")
                 title = (
                     values[title_index]
@@ -228,12 +264,12 @@ class TaleoEnterpriseScraper(BaseScraper):
                         "title": title,
                         "location": locations,
                         "department": _column(
-                            headers,
+                            row_headers,
                             values,
                             ("department", "job field", "job category", "function"),
                         ),
                         "employment_type": _column(
-                            headers,
+                            row_headers,
                             values,
                             (
                                 "employment type",
@@ -242,22 +278,26 @@ class TaleoEnterpriseScraper(BaseScraper):
                                 "position type",
                             ),
                         ),
-                        "posted_at": _date(_column(headers, values, ("posting date",))),
+                        "posted_at": _date(
+                            _column(row_headers, values, ("posting date",))
+                        ),
                         "url": f"{_canonical(self.slug)}/jobdetail.ftl?"
                         + urlencode({"lang": "en", "job": job_id}),
                     }
                 )
             if pages is not None and page_no >= pages:
                 break
-        if total is not None and len(seen) < total:
-            self.mark_truncated_unless_negligible(
-                len(seen), total, f"read {len(seen)} of {total} requisitions"
-            )
+        if total is not None:
+            # Complete D.R. Horton and TTEC walks disagree with their totals (592/594 and
+            # 110/115) while every declared page arrived and IDs did not repeat. The total is a
+            # page-count upper bound, not authoritative evidence of missing requisitions.
+            self.telemetry["stated_total"] = total
+            self.telemetry["unique_jobs"] = len(seen)
         return listed
 
-    def _detail(self, url: str) -> str | None:
+    def _detail(self, url: str) -> dict[str, str | None] | None:
         try:
-            return _description(self._get(url))
+            return _detail(self._get(url))
         except Exception as exc:  # noqa: BLE001 - listing survives one detail failure
             self.note_detail_exception(exc)
             return None
@@ -269,24 +309,35 @@ class TaleoEnterpriseScraper(BaseScraper):
         details = self.fan_out(
             listed, lambda item: self._detail(item["url"]), workers=self.detail_workers
         )
-        self.report_detail_gaps(details, "detail pages")
+        self.report_detail_gaps(
+            [
+                detail if detail and detail.get("description") else None
+                for detail in details
+            ],
+            "detail pages",
+        )
         return list(zip(listed, details))
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
-        return [
-            Job(
-                id=f"{self.board_key()}:{item['id']}",
-                ats=self.ats,
-                company=self.company,
-                title=item["title"] or "",
-                location=item["location"],
-                remote=is_remote(item["location"]),
-                department=item["department"],
-                url=item["url"],
-                posted_at=item["posted_at"],
-                scraped_at=scraped_at,
-                description=detail,
-                employment_type=item["employment_type"],
+        jobs: list[Job] = []
+        for item, detail in raw:
+            detail = detail or {}
+            location = detail.get("location") or item["location"]
+            jobs.append(
+                Job(
+                    id=f"{self.board_key()}:{item['id']}",
+                    ats=self.ats,
+                    company=self.company,
+                    title=item["title"] or "",
+                    location=location,
+                    remote=is_remote(location),
+                    department=detail.get("department") or item["department"],
+                    url=item["url"],
+                    posted_at=detail.get("posted_at") or item["posted_at"],
+                    scraped_at=scraped_at,
+                    description=detail.get("description"),
+                    employment_type=detail.get("employment_type")
+                    or item["employment_type"],
+                )
             )
-            for item, detail in raw
-        ]
+        return jobs

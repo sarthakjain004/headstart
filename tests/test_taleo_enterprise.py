@@ -48,6 +48,7 @@ def test_listing_stops_at_stated_page_count_not_repeated_overflow(monkeypatch):
                 },
             ],
             1,
+            total=4,
         ),
         _page(
             [
@@ -64,6 +65,7 @@ def test_listing_stops_at_stated_page_count_not_repeated_overflow(monkeypatch):
                 }
             ],
             2,
+            total=4,
         ),
     ]
     calls = []
@@ -87,13 +89,45 @@ def test_listing_stops_at_stated_page_count_not_repeated_overflow(monkeypatch):
         return Response(pages.pop(0))
 
     monkeypatch.setattr(enterprise.http, "fetch", fetch)
-    jobs = TaleoEnterpriseScraper(BOARD)._listing(SHELL)
+    scraper = TaleoEnterpriseScraper(BOARD)
+    jobs = scraper._listing(SHELL)
     assert calls == [1, 2]
     assert [job["id"] for job in jobs] == ["1", "2", "3"]
     assert jobs[0]["department"] == "Platform"
     assert jobs[0]["posted_at"].startswith("2026-09-11")
+    assert scraper.truncated is None
+    assert scraper.telemetry == {"stated_total": 4, "unique_jobs": 3}
 
 
-def test_detail_description_reads_initial_history_html():
-    page = '<input id="initialHistory" value="prefix!*!%3Cp%3Eignored%3C%2Fp%3E!*!%3Cp%3EFull%20job%20description%3C%2Fp%3E">'
-    assert enterprise._description(page) == "ignored Full job description"
+def test_blank_header_keeps_later_columns_aligned():
+    headers = enterprise._aligned_headers(
+        ["Icons", "Title", None, "Department", "Actions"],
+        ["Engineer", "hidden", "Platform"],
+    )
+    assert (
+        enterprise._column(headers, ["Engineer", "hidden", "Platform"], ("department",))
+        == "Platform"
+    )
+
+
+def test_detail_vector_supplies_authoritative_fields():
+    values = ["" for _ in range(26)]
+    values[11] = "!*!%3Cp%3EDescription%3C%2Fp%3E"
+    values[13] = "!*!%3Cp%3EQualifications%3C%2Fp%3E"
+    values[15] = "Engineering"
+    values[17], values[19] = "US-TX-Austin", "US-TX-Dallas"
+    values[23] = "Full-time"
+    values[25] = "Sep 11, 2026, 5:18:01 PM"
+    page = (
+        "api.fillList('requisitionDescriptionInterface', 'descRequisition', ["
+        + ",".join(repr(value) for value in values)
+        + "]);"
+    )
+    detail = enterprise._detail(page)
+    assert detail == {
+        "description": "Description Qualifications",
+        "department": "Engineering",
+        "location": "US-TX-Austin; US-TX-Dallas",
+        "employment_type": "Full-time",
+        "posted_at": "2026-09-11T17:18:01+00:00",
+    }
