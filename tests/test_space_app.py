@@ -1403,6 +1403,87 @@ def test_trends_comparable_base_can_be_an_unchanged_measurement(
     assert d["series"][0]["points"] == [10, 11]
 
 
+@pytest.fixture
+def comparable_history(trends_app, monkeypatch):
+    def install(stamps, changes):
+        group = {
+            "version": 2,
+            "metric": "stock",
+            "family": "software-engineering",
+            "band": "mid",
+            "ats": "greenhouse",
+        }
+        monkeypatch.setattr(
+            trends_app,
+            "_TRENDS",
+            [{**group, "ts": stamp, "count": 1} for stamp in stamps],
+        )
+        monkeypatch.setattr(
+            trends_app,
+            "_TREND_DELTAS",
+            [
+                {**group, "ts": stamp, "board": "early", "delta": change}
+                for stamp, change in changes
+            ],
+        )
+        return trends_app.app.test_client()
+
+    return install
+
+
+def test_comparable_replays_delta_without_aggregate_measurement(comparable_history):
+    client = comparable_history([_T1, _T3], [(_T1, 10), (_T2, 5)])
+    data = client.get("/trends?coverage=comparable").get_json()
+    assert data["stamps"] == [_T1, _T3]
+    assert data["series"][0]["points"] == [10, 15]
+
+
+def test_comparable_default_starts_at_supported_history(comparable_history):
+    client = comparable_history([_T1, _T2, _T3], [(_T2, 10)])
+    data = client.get("/trends?coverage=comparable").get_json()
+    assert data["base"] == _T2
+    assert data["stamps"] == [_T2, _T3]
+    assert data["series"][0]["points"] == [10, 10]
+    early = client.get(f"/trends?coverage=comparable&base={quote(_T1)}").get_json()
+    assert early["base"] is None
+    assert early["stamps"] == []
+
+
+@pytest.mark.parametrize("since", [_T1, _T3])
+def test_comparable_implicit_base_is_independent_of_since(
+    comparable_history, trends_app, since
+):
+    client = comparable_history([_T1, _T2, _T3], [(_T2, 10)])
+    trends_app._TREND_DELTAS.append(
+        {**trends_app._TREND_DELTAS[0], "ts": _T3, "board": "later", "delta": 50}
+    )
+    data = client.get(f"/trends?coverage=comparable&since={quote(since)}").get_json()
+    assert data["base"] == _T2
+    assert data["stamps"] == [stamp for stamp in [_T2, _T3] if stamp >= since]
+    assert data["series"][0]["points"] == [10] * len(data["stamps"])
+
+
+@pytest.mark.parametrize("scope", ["", "&ats=greenhouse"])
+def test_comparable_keeps_zero_endpoint(comparable_history, scope):
+    client = comparable_history([_T1, _T2, _T3], [(_T1, 10), (_T2, -10)])
+    data = client.get("/trends?coverage=comparable" + scope).get_json()
+    assert data["stamps"] == [_T1, _T2, _T3]
+    assert data["totals"] == [10, 0, 0]
+    assert data["series"][0]["points"] == [10, 0, 0]
+    assert data["series"][0]["latest"] == 0
+
+
+def test_comparable_display_window_is_separate_from_base(comparable_history):
+    client = comparable_history([_T1, _T2, _T3], [(_T1, 10), (_T2, 5)])
+    data = client.get(
+        f"/trends?coverage=comparable&base={quote(_T1)}&since={quote(_T2)}"
+        f"&until={quote(_T2)}"
+    ).get_json()
+    assert data["base"] == _T1
+    assert data["stamps"] == [_T2]
+    assert data["series"][0]["points"] == [15]
+
+
 def test_trends_rejects_unknown_coverage(trends_app):
     assert (
         trends_app.app.test_client().get("/trends?coverage=future").status_code == 400

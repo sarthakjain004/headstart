@@ -64,9 +64,11 @@ Exit: 0 clean/dry-run, 1 on a safety abort.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import shutil
+import zlib
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
@@ -770,15 +772,27 @@ def sync(args: argparse.Namespace) -> int:
     )
 
     final = table.count_rows()
-    board_freshness.update(
-        Path(args.unconfirmed).parent,
-        live,
-        boards,
-        unauthoritative,
-        index_ids,
-        corpus_ids,
-        datetime.now(UTC).isoformat(timespec="seconds"),
-    )
+    # Optional telemetry must not prevent the publication witness after table mutations.
+    try:
+        board_freshness.update(
+            Path(args.unconfirmed).parent,
+            live,
+            boards,
+            unauthoritative,
+            sorted((set(index_ids) - plan.delete) | plan.add),
+            corpus_ids,
+            datetime.now(UTC).isoformat(timespec="seconds"),
+        )
+    except (
+        OSError,
+        EOFError,
+        ValueError,
+        KeyError,
+        TypeError,
+        csv.Error,
+        zlib.error,
+    ) as exc:
+        _log.warning("freshness telemetry unavailable (%s)", type(exc).__name__)
     write_base(args.db, final, "sync")
     _log.info(f"done: table '{PROD_TABLE}' now holds {final} rows at {args.db}")
     observability.summary(
