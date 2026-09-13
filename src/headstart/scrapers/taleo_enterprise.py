@@ -154,6 +154,7 @@ class TaleoEnterpriseScraper(BaseScraper):
     ats = "taleo_enterprise"
     detail_workers = _DETAIL_WORKERS
     has_detail_pass = True
+    egress_fallback_on = frozenset({429})
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -175,6 +176,7 @@ class TaleoEnterpriseScraper(BaseScraper):
                 timeout=30,
                 allow_redirects=True,
                 stream=True,
+                **self._egress(),
             )
             try:
                 return _canonical(response.url)
@@ -254,6 +256,7 @@ class TaleoEnterpriseScraper(BaseScraper):
                 json={**payload, "pageNo": page_no},
                 headers=self._request_headers(),
                 timeout=timeout,
+                **self._egress(),
             )
             response.raise_for_status()
             data = response.json()

@@ -131,6 +131,7 @@ class TaleoBEScraper(BaseScraper):
     ats = "taleo_be"
     detail_workers = _DETAIL_WORKERS
     has_detail_pass = True
+    egress_fallback_on = frozenset({429})
 
     def __init__(self, slug: str, company: str | None = None) -> None:
         super().__init__(slug, company)
@@ -163,6 +164,7 @@ class TaleoBEScraper(BaseScraper):
                 timeout=30,
                 allow_redirects=True,
                 stream=True,
+                **self._egress(),
             )
             try:
                 return _canonical(response.url)

@@ -200,9 +200,14 @@ policy — `/api/apply/v2/*` always hard-403s non-browser clients, HTML surfaces
 fetch. That was wrong, and worth recording *why* it was wrong: the 405 this project actually hit
 (commit fixing #121, "405 was what Eightfold's edge returned once its per-origin budget was
 spent") is the **same shared rate-limiter** described above, not a separate per-route tier —
-`http.fetch` already retries 403/405/429 as bot-wall blips (`headstart/http.py`, ADR-0047) and
+`http.fetch` already retries 403/405/429 as bot-wall blips (`headstart/http.py`, ADR-0047), and
 honours `Retry-After`, so production scrapers never observed a raw first-attempt block; it was
 silently absorbed. Direct, unwrapped probes on 2026-08-16 (bypassing the retry layer) found:
+
+The 2026-09-13 follow-up additionally puts HTTP 429 in Eightfold's `egress_fallback_on` set. A
+429 now marks the shared Eightfold group walled and sends subsequent attempts through the rotating
+spare egress, alongside 403/405. This is an operational mitigation, not proof that every 429 is
+IP-scoped; the pipeline's prior telemetry did not record direct-versus-proxy status per request.
 
 - `/careers/sitemap.xml` and `/careers/job/{id}` answer **200 to a single bare request** under
   *any* of: `curl_cffi` with Chrome TLS impersonation (`http.fetch`'s transport for every
