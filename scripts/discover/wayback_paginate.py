@@ -58,10 +58,14 @@ def fetch_page(domain, resume, cdx_filter):
     return [ln for ln in lines if ln], nxt
 
 
-def sweep(ats, domain, style, max_pages, cdx_filter, sink):
+def sweep(ats, domain, style, max_pages, cdx_filter, sink, refresh=False):
     """Walk one host's CDX result set from its saved cursor to the end."""
     state = WB / f".{ats}_{domain}_resume"
-    resume = state.read_text(encoding="utf-8").strip() if state.exists() else ""
+    resume = (
+        state.read_text(encoding="utf-8").strip()
+        if state.exists() and not refresh
+        else ""
+    )
     print(
         f"start: {ats}/{domain} ({style})"
         + (f" | filter={cdx_filter}" if cdx_filter else "")
@@ -129,7 +133,15 @@ def main():
     adopt_legacy_state(args.ats, "resume")
     with slug_sink(args.ats) as sink:
         for domain, style in targets:
-            sweep(args.ats, domain, style, args.max_pages, args.cdx_filter, sink)
+            sweep(
+                args.ats,
+                domain,
+                style,
+                args.max_pages,
+                args.cdx_filter,
+                sink,
+                refresh=args.refresh,
+            )
 
 
 if __name__ == "__main__":

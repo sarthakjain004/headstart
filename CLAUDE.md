@@ -298,7 +298,10 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   If you change what the pipeline runs, change it there and update `.github/workflows/pipeline.yml`
   to match. Don't add a pipeline stage to `scripts/`. Helper modules used *only* by the pipeline
   live there too (`binpack`, `board_failures`, `doc_prep`, `index_plan`, `observability`,
-  `role_assignments`, `shard_speedup`); logic
+  `role_assignments`, `shard_speedup`) — with one deliberate exception: `alerts/run.py` imports
+  `observability.named_sample` to bound its post-loop summary, which keeps one sampling contract
+  rather than two spellings of it. The stricter rule below still holds: alerts is not the feed.
+  Logic
   the curated-feed path (`python -m headstart` → `headstart.harvest`) also reaches stays in
   `headstart` proper
   (`harvest`, `board_cost`, `board_priority`, `corpus`) so the feed never imports from `ingest`.
@@ -316,9 +319,9 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   removing, renaming, or retyping a column — update that section **in the same change**, examples
   included. A stale schema is worse than no schema, because it gets trusted.
   `tests/test_readme_schema.py` enforces it by parsing the README table and comparing it, in order,
-  against `_schema()`. Note it `importorskip`s pyarrow, so it **skips in CI** — run the suite
-  locally (with the `[embed]` extra installed) before opening any schema PR, and don't read a green
-  CI as proof the docs are current. When you touch that section, re-check the example rows against
+  against `_schema()`. The `[dev]` extra includes the index runtime and CI checks those imports
+  before pytest, so the schema checks run in quality CI. Run them locally with `[dev]` before
+  opening a schema PR. When you touch that section, re-check the example rows against
   real data rather than editing them from memory: `curl "https://imposeidon-headstart-search.hf.space/search?q=backend+engineer&k=2"`
   returns live rows, and `data/jobs/tech/*.jsonl` has the fields the API projection omits.
 - **"How many Boards do we have" has five defensible answers — use the names, not a number.**

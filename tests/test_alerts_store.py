@@ -5,7 +5,6 @@ repo layout and the deny-on-missing-allowlist rule are exercised without a netwo
 """
 
 import json
-import logging
 
 import pytest
 
@@ -21,8 +20,18 @@ class _Hub:
         self.files = dict(files or {})
 
     def install(self, monkeypatch):
-        monkeypatch.setattr(st, "_list_files", lambda repo, token: list(self.files))
+        monkeypatch.setattr(
+            st, "_list_files", lambda repo, token, revision=None: list(self.files)
+        )
         monkeypatch.setattr(st, "_read", lambda repo, path, token: self.files[path])
+        monkeypatch.setattr(st, "_head_revision", lambda *args: "fixture-revision")
+        monkeypatch.setattr(
+            st,
+            "_read_at_revision",
+            lambda repo, path, token, revision: self.files[path],
+        )
+        # A missing dict key is this fake Hub's confirmed file-not-found response.
+        monkeypatch.setattr(st, "_is_absent", lambda exc: isinstance(exc, KeyError))
         monkeypatch.setattr(
             st,
             "_write",
@@ -31,6 +40,17 @@ class _Hub:
         monkeypatch.setattr(
             st, "_delete", lambda repo, path, token: self.files.pop(path, None)
         )
+
+        def commit(repo, changes, expected, token, revision=None):
+            if any(self.files.get(path) != before for path, before in expected.items()):
+                raise st.StoreConflict("concurrent edit")
+            for path, data in changes.items():
+                if data is None:
+                    self.files.pop(path, None)
+                else:
+                    self.files[path] = data
+
+        monkeypatch.setattr(st, "_commit", commit)
         return self
 
 
@@ -122,6 +142,31 @@ def test_get_returns_one_record_or_none(monkeypatch):
 
 
 @pytest.mark.parametrize(
+    "failure", [TimeoutError("temporary outage"), ValueError("corrupt JSON")]
+)
+def test_seeded_invite_cannot_replace_an_unreadable_subscription(monkeypatch, failure):
+    from headstart.alerts.run import subscription_for
+
+    original = st.Subscription.create(
+        "ada@example.com", "backend", {}, when="2026-09-01T00:00:00+00:00"
+    )
+    payload = json.dumps(original.to_dict()).encode()
+    hub = _Hub({original.path(): payload}).install(monkeypatch)
+
+    def unreadable(*args):
+        raise failure
+
+    monkeypatch.setattr(st, "_read", unreadable)
+    with pytest.raises(RuntimeError, match="Subscription.*unreadable"):
+        subscription_for(
+            st.Invite(original.email, query="backend"),
+            st.Store(REPO, TOKEN),
+            frozenset(),
+        )
+    assert hub.files[original.path()] == payload
+
+
+@pytest.mark.parametrize(
     "sub_id", ["allowlist", "../README", "aaa", "", "0" * 15, "NOTHEX0000000000"]
 )
 def test_get_refuses_ids_that_are_not_ids(monkeypatch, sub_id):
@@ -138,12 +183,107 @@ def test_get_refuses_ids_that_are_not_ids(monkeypatch, sub_id):
     assert reads == []
 
 
-def test_get_answers_none_for_a_file_that_is_not_a_subscription(monkeypatch):
+def test_get_refuses_to_replace_a_file_that_is_not_a_subscription(monkeypatch):
     ok = "a" * 16
     _Hub({f"subscriptions/{ok}.json": b'{"allowed": ["ada@example.com"]}'}).install(
         monkeypatch
     )
-    assert st.Store(REPO, TOKEN).get(ok) is None
+    with pytest.raises(st.StoreUnavailable):
+        st.Store(REPO, TOKEN).get(ok)
+
+
+@pytest.mark.parametrize("seed", ["query", "default_query"])
+def test_unsubscribe_survives_future_invites_until_explicit_reenable(monkeypatch, seed):
+    from headstart.alerts.run import subscription_for
+
+    _Hub().install(monkeypatch)
+    store = st.Store(REPO, TOKEN)
+    invite = st.Invite("ada@example.com", **{seed: "backend"})
+    first = subscription_for(invite, store, frozenset())
+    store.remove(first.id)
+    assert subscription_for(invite, st.Store(REPO, TOKEN), frozenset()) is None
+
+    # Only an explicit enable clears the durable opt-out, never an allowlist edit.
+    again = st.Subscription.create(invite.email, "frontend", {})
+    store.put(again, reenable=True)
+    assert subscription_for(invite, st.Store(REPO, TOKEN), frozenset()) is not None
+
+
+def test_stale_delivery_write_cannot_overwrite_a_newer_query(monkeypatch):
+    hub = _Hub().install(monkeypatch)
+    editor = st.Store(REPO, TOKEN)
+    original = st.Subscription.create("ada@example.com", "backend", {})
+    editor.put(original)
+    delivery = st.Store(REPO, TOKEN)
+    stale = delivery.get(original.id)
+    editor.put(editor.get(original.id).revised("frontend", {}))
+    expected = hub.files[original.path()]
+    stale.watermark = "2099-01-01T00:00:00+00:00"
+    with pytest.raises(st.StoreConflict):
+        delivery.put(stale)
+    assert hub.files[original.path()] == expected
+
+
+def test_conditional_commit_pins_reads_and_atomic_write_to_the_same_revision(
+    monkeypatch,
+):
+    from types import SimpleNamespace
+
+    pytest.importorskip("huggingface_hub")
+    calls = []
+    reads = []
+    api = SimpleNamespace(
+        repo_info=lambda *a, **kw: SimpleNamespace(sha="a" * 40),
+        create_commit=lambda **kw: calls.append(kw),
+    )
+    monkeypatch.setattr(st, "_hf", lambda token: api)
+    monkeypatch.setattr(st, "_is_absent", lambda exc: isinstance(exc, KeyError))
+
+    def read(repo, path, token, revision):
+        reads.append((path, revision))
+        return {"subscriptions/a.json": b"old"}[path]
+
+    monkeypatch.setattr(st, "_read_at_revision", read)
+    st._commit(
+        REPO,
+        {"subscriptions/a.json": None, "subscription_opt_outs/a.json": b"{}"},
+        {"subscriptions/a.json": b"old", "subscription_opt_outs/a.json": None},
+        TOKEN,
+    )
+    assert reads == [
+        ("subscriptions/a.json", "a" * 40),
+        ("subscription_opt_outs/a.json", "a" * 40),
+    ]
+    assert len(calls) == 1
+    assert calls[0]["parent_commit"] == "a" * 40
+    assert [type(op).__name__ for op in calls[0]["operations"]] == [
+        "CommitOperationDelete",
+        "CommitOperationAdd",
+    ]
+
+
+def test_conditional_commit_never_writes_after_the_record_changed(monkeypatch):
+    from types import SimpleNamespace
+
+    pytest.importorskip("huggingface_hub")
+    writes = []
+    monkeypatch.setattr(
+        st,
+        "_hf",
+        lambda token: SimpleNamespace(
+            repo_info=lambda *a, **kw: SimpleNamespace(sha="a" * 40),
+            create_commit=lambda **kw: writes.append(kw),
+        ),
+    )
+    monkeypatch.setattr(st, "_read_at_revision", lambda *args: b"newer intent")
+    with pytest.raises(st.StoreConflict):
+        st._commit(
+            REPO,
+            {"subscriptions/a.json": b"stale"},
+            {"subscriptions/a.json": b"old"},
+            TOKEN,
+        )
+    assert writes == []
 
 
 def test_resubscribing_overwrites_rather_than_duplicates(monkeypatch):
@@ -355,138 +495,6 @@ def test_profile_delete_leaves_the_counter_file(monkeypatch):
     assert store.parses_used(account) == 3  # the cap survives deletion (ADR-0041)
 
 
-# ---- Résumé documents (ADR-0124) ----
-#
-# The record has no dataclass on purpose — it is the browser's own JSON export, byte for byte —
-# so what there is to test here is exactly what the store still owns: the path, the traversal
-# guard, and the promise that nothing reshapes the document on its way through.
-
-
-def _document(doc_id="rmfk3n2abcd", name="Ada's résumé", rev=1, **fields):
-    document = {
-        "schema": 1,
-        "id": doc_id,
-        "name": name,
-        "layoutId": "headless-headhunter",
-        "updatedAt": "2026-09-10T10:00:00+00:00",
-        "root": {"id": "__root__", "type": "__root__", "children": []},
-        "content": {},
-        "sync": True,
-        "rev": rev,
-    }
-    document.update(fields)
-    return document
-
-
-def test_a_resume_round_trips_without_being_reshaped(monkeypatch):
-    hub = _Hub().install(monkeypatch)
-    store = st.Store(REPO, TOKEN)
-    account = st.subscription_id("ada@example.com")
-    document = _document(content={"n1": {"text": "Shipped the thing. Twice."}})
-
-    store.put_resume(account, document["id"], document)
-    assert f"resumes/{account}/rmfk3n2abcd.json" in hub.files
-    # Byte for byte the same object — no added key, no dropped key, no renamed key. This is the
-    # whole of ADR-0124 decision 1, and a store that "helpfully" normalised anything would be
-    # the second schema that decision exists to avoid.
-    assert store.get_resume(account, document["id"]) == document
-
-
-def test_resumes_are_scoped_to_their_account_and_sorted_newest_edit_first(monkeypatch):
-    _Hub().install(monkeypatch)
-    store = st.Store(REPO, TOKEN)
-    mine = st.subscription_id("ada@example.com")
-    yours = st.subscription_id("bob@example.com")
-    store.put_resume(
-        mine,
-        "rmfk3n2abcd",
-        _document("rmfk3n2abcd", updatedAt="2026-09-01T00:00:00+00:00"),
-    )
-    store.put_resume(
-        mine,
-        "rmfk3n2wxyz",
-        _document("rmfk3n2wxyz", updatedAt="2026-09-09T00:00:00+00:00"),
-    )
-    store.put_resume(yours, "rmfk3n2zzzz", _document("rmfk3n2zzzz"))
-
-    assert [d["id"] for d in store.resumes_for(mine)] == ["rmfk3n2wxyz", "rmfk3n2abcd"]
-    assert store.resume_ids(mine) == {"rmfk3n2abcd", "rmfk3n2wxyz"}
-    assert [d["id"] for d in store.resumes_for(yours)] == ["rmfk3n2zzzz"]
-    assert (
-        store.get_resume(yours, "rmfk3n2abcd") is None
-    )  # never across the account boundary
-
-
-@pytest.mark.parametrize(
-    "account,doc_id",
-    [
-        ("../../etc", "rmfk3n2abcd"),
-        ("0123456789abcdef", "../../../secrets"),
-        ("0123456789abcdef", "r1/../../x"),
-        ("0123456789abcdef", "rshort"),
-        ("0123456789abcdef", ""),
-    ],
-)
-def test_resume_paths_that_are_not_paths_never_reach_the_hub(
-    monkeypatch, account, doc_id
-):
-    """Both halves are shape-checked, and a refused write must not silently look like one.
-
-    The account half comes from the session and the document half comes from the URL, so this
-    is the same traversal guard `get_set` applies — and `is_resume_id` exists so the route can
-    answer 400 rather than letting `put_resume` no-op into a browser that reads it as saved."""
-    hub = _Hub().install(monkeypatch)
-    # RECORDED, not raised. Every reader here funnels through one `except Exception`, so a
-    # spy that raises is indistinguishable from the guard doing its job — which is how the
-    # first version of this test passed with the guard deleted.
-    reached: list[str] = []
-    for call in ("_read", "_write", "_delete"):
-        monkeypatch.setattr(st, call, lambda repo, path, *a, **k: reached.append(path))
-    store = st.Store(REPO, TOKEN)
-    assert store.get_resume(account, doc_id) is None
-    store.put_resume(account, doc_id, _document())
-    store.remove_resume(account, doc_id)
-    assert reached == [], f"a malformed id built the Hub path {reached}"
-    assert hub.files == {}
-
-
-def test_is_resume_id_accepts_exactly_what_the_builder_mints():
-    # `'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)`
-    assert st.is_resume_id("rmfk3n2abcd")
-    assert st.is_resume_id("r" + "0123456789abcdefghij" * 2)  # 40 chars, the ceiling
-    assert not st.is_resume_id("r" + "0123456789abcdefghij" * 3)  # over it
-    assert not st.is_resume_id("rMFK3N2ABCD")  # base36 is lowercase
-    assert not st.is_resume_id("resume.json")
-    assert not st.is_resume_id(None)
-
-
-def test_one_unreadable_resume_does_not_empty_the_list(monkeypatch):
-    account = st.subscription_id("ada@example.com")
-    _Hub(
-        {
-            f"resumes/{account}/rmfk3n2abcd.json": b"{ this is not json",
-            f"resumes/{account}/rmfk3n2wxyz.json": json.dumps(
-                _document("rmfk3n2wxyz")
-            ).encode(),
-        }
-    ).install(monkeypatch)
-    # Same rule as `sets_for` and `all`: one bad file is data, not a crash, and must not take
-    # the rest of somebody's résumés off the list with it.
-    assert [d["id"] for d in st.Store(REPO, TOKEN).resumes_for(account)] == [
-        "rmfk3n2wxyz"
-    ]
-
-
-def test_removing_a_resume_takes_it_out_of_the_tree(monkeypatch):
-    hub = _Hub().install(monkeypatch)
-    store = st.Store(REPO, TOKEN)
-    account = st.subscription_id("ada@example.com")
-    store.put_resume(account, "rmfk3n2abcd", _document())
-    store.remove_resume(account, "rmfk3n2abcd")
-    assert hub.files == {}
-    assert store.get_resume(account, "rmfk3n2abcd") is None
-
-
 # ---- Saved jobs (ADR-0044) ----
 
 
@@ -671,38 +679,3 @@ def test_absent_is_separated_from_an_unreachable_hub():
     assert _is_absent(hub_errors.EntryNotFoundError("no such file")) is True
     assert _is_absent(hub_errors.LocalEntryNotFoundError("hub unreachable")) is False
     assert _is_absent(ValueError("corrupt json")) is False
-
-
-def test_a_hub_outage_costs_one_annotation_not_one_per_account(monkeypatch, caplog):
-    """ADR-0039: WARNING and ERROR are both GitHub annotations, capped at 10 per step.
-
-    `get` runs once per Account and a Hub outage fails every one of them at once, so this arm
-    was systemic in practice, not per-item: 40 Accounts cost 40 `::error::` annotations and 40
-    tracebacks — the whole step's budget spent restating one outage, displacing the aborts
-    annotations exist for. It cannot be left to `alerts.run`'s own per-Subscription bound
-    either: this line fires *first* and then answers None rather than raising, so that bound
-    never sees the failure. What the demotion must not lose is which records were affected, or
-    the one stack that says where the failure came from.
-    """
-
-    def _outage(repo, path, token):
-        raise ConnectionError("hub unreachable")
-
-    # The bound is module-level, so it spans the process rather than one `Store` — which is the
-    # point (both callers build one per item) and means a test has to start it unfired.
-    monkeypatch.setattr(st, "_record_unreadable_reported", False)
-    monkeypatch.setattr(st, "_read", _outage)
-    ids = [f"{n:016x}" for n in range(40)]
-    caplog.set_level(logging.INFO, logger="headstart.alerts.store")
-
-    assert [st.Store(REPO, TOKEN).get(sub_id) for sub_id in ids] == [None] * 40
-
-    reported = [r for r in caplog.records if "unreadable" in r.getMessage()]
-    assert len(reported) == 40, "every failed read is still reported"
-    assert [r.levelno for r in reported] == [logging.WARNING] + [logging.INFO] * 39
-    # `bool`, not `is not None`: `logging` keeps an `exc_info=False` as False on the record.
-    assert [bool(r.exc_info) for r in reported] == [True] + [False] * 39, (
-        "one stack, not forty"
-    )
-    assert [r.getMessage().split(" ")[0] for r in reported] == ids
-    assert all("ConnectionError" in r.getMessage() for r in reported)

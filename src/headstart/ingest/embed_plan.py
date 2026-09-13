@@ -31,7 +31,7 @@ from pathlib import Path
 from headstart import log
 from headstart.board_priority import load_scores
 from headstart.corpus import board_of, iter_jobs
-from headstart.ingest import PENDING_UPGRADES_PATH, REPO_ROOT
+from headstart.ingest import PENDING_UPGRADES_PATH, REPO_ROOT, observability
 from headstart.ingest.binpack import (
     lpt_pack,
     shard_count,
@@ -198,6 +198,7 @@ def main() -> int:
     boards: list[str] = []
     upgrades: list[str] = []
     scanned = already = dropped = 0
+    progress = observability.PreparationProgress(_log)
     for job in iter_jobs(args.source):
         scanned += 1
         jid = job.get("id") or ""
@@ -209,10 +210,12 @@ def main() -> int:
             # reach these: `embed_plan` skips by id, so they would stay title-only forever.
             if not (jid in degraded and (job.get("description") or "").strip()):
                 already += 1
+                progress.report(scanned, len(docs), already, dropped)
                 continue
             upgrading = True
         if not is_english(job.get("title") or "", job.get("description") or ""):
             dropped += 1
+            progress.report(scanned, len(docs), already, dropped)
             continue
         # Listed only now that the Doc is actually planned. Listing before the English gate put
         # ids on the upgrade list that no shard would ever embed — an English title over a German
@@ -224,6 +227,7 @@ def main() -> int:
         docs.append(build_doc(job))
         metas.append(to_meta(job))
         boards.append(board_of(jid))
+        progress.report(scanned, len(docs), already, dropped)
     _log.info(
         f"new Docs: {len(docs)} (scanned {scanned}, already {already}, non-English {dropped}, "
         f"upgraded {len(upgrades)})"
