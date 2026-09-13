@@ -46,7 +46,7 @@ def norm_host(u: str) -> str:
 
 
 def pool_key(ats: str, tenant: str, url: str) -> str:
-    if ats in {"workday", "taleo_be"}:
+    if ats in {"workday", "taleo_be", "taleo_enterprise"}:
         return norm_url(url)
     if ats == "oracle":
         return norm_host(url)
@@ -56,7 +56,7 @@ def pool_key(ats: str, tenant: str, url: str) -> str:
 def new_key(ats: str, tenant: str, url: str) -> str:
     if ats in _LABEL:
         return tenant.strip().lower().split(".")[0]
-    if ats in {"workday", "taleo_be"}:
+    if ats in {"workday", "taleo_be", "taleo_enterprise"}:
         return norm_url(url)
     if ats == "oracle":
         return norm_host(tenant)
@@ -122,7 +122,7 @@ def main() -> int:
             if is_new
             else (
                 "reconciled"
-                if ats in _LABEL | {"workday", "oracle", "taleo_be"}
+                if ats in _LABEL | {"workday", "oracle", "taleo_be", "taleo_enterprise"}
                 else ""
             )
         )

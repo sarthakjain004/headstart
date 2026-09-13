@@ -155,3 +155,14 @@ def test_taleo_capture_keeps_all_board_coordinates(miner):
         one[1]
         == "https://phe.tbe.taleo.net/phe01/ats/careers/v2/searchResults?org=ACME&cws=1"
     )
+
+
+def test_taleo_enterprise_capture_keeps_the_full_career_section(miner):
+    pattern = re.compile(miner.ATS_PATTERNS["taleo_enterprise"]["patterns"][0])
+    match = pattern.search(
+        "https://drhorton.taleo.net/careersection/2/jobsearch.ftl?lang=en"
+    )
+    assert miner.tenant_from("taleo_enterprise", match) == (
+        "https://drhorton.taleo.net/careersection/2",
+        "https://drhorton.taleo.net/careersection/2",
+    )
