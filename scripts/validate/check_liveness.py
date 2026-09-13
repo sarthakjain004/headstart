@@ -929,6 +929,7 @@ _WD_URL = re.compile(r"^https://([^.]+)\.(wd\d+)\.myworkdayjobs\.com/([^/?#]+)")
 _JOBVITE_JOB = re.compile(r"/job/[A-Za-z0-9]+")
 _TALEO_JOB = re.compile(r"viewRequisition[^\"\s>]*\brid=(\d+)", re.IGNORECASE)
 _TALEO_NEXT = re.compile(r'<a\s+href="([^\"]+)"\s+class="jscroll-next"', re.IGNORECASE)
+_TALEO_GONE = "attempted to reach a url that no longer exists"
 
 
 def _is_dns(exc):
@@ -1760,6 +1761,8 @@ def p_taleo_be(t, u):
         if status != 200:
             return UNKNOWN, None
         text = body.decode("utf-8", "replace")
+        if _TALEO_GONE in text.lower():
+            return DEAD, None
         if "oracletaleocwsv2" not in text:
             return UNKNOWN, None
         ids.update(_TALEO_JOB.findall(text))

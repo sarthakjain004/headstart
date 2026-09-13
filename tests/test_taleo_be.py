@@ -11,6 +11,7 @@ def _listing(rid: int, title: str, next_href: str = "") -> str:
     return f'''<div class="oracletaleocwsv2-accordion-block"><div class="oracletaleocwsv2-accordion-head-info">
     <h4><a href="/phe03/ats/careers/v2/viewRequisition?org=ICANN&amp;cws=37&amp;rid={rid}" class="viewJobLink">{title}</a></h4>
     <div>Engineering</div><div>Remote</div><div>Anywhere</div>
+    <button data-href="mailto:?body=Company: ICANN%0D%0ATitle: {title}">Email</button>
     </div><!--/.accordion-head-info --></div><!--/.accordion-block-->{next_link}'''
 
 
@@ -59,6 +60,7 @@ def test_pages_with_session_relative_next_and_parses_detail(monkeypatch):
     assert [job.id.rsplit(":", 1)[-1] for job in jobs] == ["1", "2"]
     assert jobs[0].description == "This position is fully remote. Build & operate systems."
     assert jobs[0].department == "Platform"
+    assert jobs[0].company == "ICANN"
     assert jobs[0].location == "Los Angeles"
     assert jobs[0].remote is False
     assert jobs[0].employment_type == "Full Time"

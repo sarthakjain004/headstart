@@ -8,6 +8,17 @@ Measured 2026-09-13 against public TBE boards, before adding
 This is **Taleo Business Edition** only: its public URLs are
 `https://{shard}.tbe.taleo.net/{instance}/ats/careers/v2/searchResults?org={ORG}&cws={N}`.
 It does not claim support for Taleo Enterprise's separate Career Section URLs.
+It also does not yet support TBE's legacy `jobSearch.jsp` family; that requires live listing
+evidence before a second parser can be added.
+
+## Legacy surface decision
+
+The historical `https://tbe.taleo.net/{server}/ats/careers/jobSearch.jsp?org=&cws=` family was
+checked on 2026-09-13 before this scope was fixed. All 26 independent archived coordinates across
+NA1–NA11 returned the same HTTP 500 `Come Back Soon | Taleo Business Edition` template (1,192
+bytes; no listing, requisition link or pagination). A Chrome-TLS control on CAREUSA's legacy NA5
+URL had that result while its current V2 Board returned 200 with 80 listing links. There is no
+live legacy listing shape to parse, so adding a parser or ledger rows would be speculative.
 
 ## Listing and pagination
 

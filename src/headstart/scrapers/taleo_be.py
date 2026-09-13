@@ -34,6 +34,7 @@ _JOB = re.compile(
 _HEAD_FIELDS = re.compile(r'<h4[^>]*>.*?</h4>(?P<fields>.*?)(?=</div>\s*<!--/.accordion-head-info)', re.DOTALL)
 _DIV = re.compile(r'<div[^>]*>(.*?)</div>', re.DOTALL | re.IGNORECASE)
 _NEXT = re.compile(r'<a\s+href="(?P<href>[^"]+)"\s+class="jscroll-next"', re.IGNORECASE)
+_COMPANY = re.compile(r"Company:\s*(?P<company>[^%<\r\n]+)", re.IGNORECASE)
 _DETAIL_BODY = re.compile(r'name="cwsJobDescription"[^>]*>(?P<body>.*?)(?=<section\b)', re.DOTALL | re.IGNORECASE)
 _LABEL = re.compile(
     r'<span[^>]*>\s*(?P<label>[^<]+?)\s*</span>\s*<strong>\s*(?P<value>.*?)\s*</strong>',
@@ -159,12 +160,14 @@ class TaleoBEScraper(BaseScraper):
                 seen_jobs.add(match.group("id"))
                 fields_match = _HEAD_FIELDS.search(block)
                 fields = [_text(value) for value in _DIV.findall(fields_match.group("fields"))] if fields_match else []
+                company_match = _COMPANY.search(block)
                 listed.append({
                     "id": match.group("id"),
                     "url": html.unescape(urljoin(page_url, match.group("href"))),
                     "title": _text(match.group("title")),
                     "department": fields[0] if fields else None,
                     "location": fields[1] if len(fields) > 1 else None,
+                    "company": _text(company_match.group("company")) if company_match else None,
                 })
             next_match = _NEXT.search(page)
             if not next_match:
@@ -209,7 +212,8 @@ class TaleoBEScraper(BaseScraper):
             detail = detail or {}
             location = detail.get("location") or listed["location"]
             jobs.append(Job(
-                id=f"{self.board_key()}:{listed['id']}", ats=self.ats, company=self.company,
+                id=f"{self.board_key()}:{listed['id']}", ats=self.ats,
+                company=listed.get("company") or self.company,
                 title=listed["title"] or "", location=location, remote=is_remote(location),
                 department=detail.get("department") or listed["department"], url=listed["url"] or "",
                 posted_at=detail.get("posted_at"), scraped_at=scraped_at,
