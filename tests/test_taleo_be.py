@@ -44,8 +44,16 @@ def test_alias_key_uses_the_final_canonical_tbe_url(monkeypatch):
         def close(self):
             pass
 
-    monkeypatch.setattr(taleo_be.http, "fetch", lambda *args, **kwargs: Response())
+    seen = {}
+
+    def fetch(*args, **kwargs):
+        seen.update(kwargs)
+        return Response()
+
+    monkeypatch.setattr(taleo_be.http, "fetch", fetch)
     assert TaleoBEScraper(URL).alias_key() == target.removesuffix("&act=sort")
+    assert seen["egress_group"] == "taleo_be"
+    assert 429 in seen["egress_on"]
 
 
 def test_pages_with_session_relative_next_and_parses_detail(monkeypatch):

@@ -164,6 +164,7 @@ class TaleoBEScraper(BaseScraper):
                 timeout=30,
                 allow_redirects=True,
                 stream=True,
+                **self._egress(),
             )
             try:
                 return _canonical(response.url)
