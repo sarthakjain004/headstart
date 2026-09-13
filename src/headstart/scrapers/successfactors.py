@@ -76,6 +76,7 @@ class SuccessFactorsScraper(BaseScraper):
     ats = "successfactors"
     detail_workers = _DETAIL_WORKERS
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
+    egress_fallback_on = frozenset({429})
     # Where SAP parks a decommissioned RMK tenant (ADR-0111). Both spellings observed live.
     alias_vendor_hosts = frozenset({"www.sap.com", "sap.com"})
 
@@ -111,6 +112,7 @@ class SuccessFactorsScraper(BaseScraper):
             headers={"User-Agent": USER_AGENT},
             timeout=30,
             stream=True,
+            **self._egress(),
         )
         chunks: list[bytes] = []
         size = 0
@@ -160,6 +162,7 @@ class SuccessFactorsScraper(BaseScraper):
                 f"https://{self.slug}/search/?startrow={startrow}",
                 headers={"User-Agent": USER_AGENT},
                 timeout=30,
+                **self._egress(),
             )
             if response.status_code != 200:
                 # Unlike the empty-page exit below, this is the walk being cut short rather than
@@ -230,6 +233,7 @@ class SuccessFactorsScraper(BaseScraper):
             headers={"User-Agent": USER_AGENT},
             timeout=_RSS_TIMEOUT,
             stream=True,
+            **self._egress(),
         )
         chunks: list[bytes] = []
         size = 0
@@ -333,7 +337,11 @@ class SuccessFactorsScraper(BaseScraper):
     def _job_fields(self, url: str) -> dict[str, Any] | None:
         try:
             response = http.fetch(
-                "GET", url, headers={"User-Agent": USER_AGENT}, timeout=30
+                "GET",
+                url,
+                headers={"User-Agent": USER_AGENT},
+                timeout=30,
+                **self._egress(),
             )
         except http.RequestsError as exc:
             self.note_detail_exception(exc)
@@ -343,7 +351,12 @@ class SuccessFactorsScraper(BaseScraper):
     async def _job_fields_async(self, session: Any, url: str) -> dict[str, Any] | None:
         try:
             response = await http.fetch_async(
-                session, "GET", url, headers={"User-Agent": USER_AGENT}, timeout=30
+                session,
+                "GET",
+                url,
+                headers={"User-Agent": USER_AGENT},
+                timeout=30,
+                **self._egress(),
             )
         except http.RequestsError as exc:
             self.note_detail_exception(exc)

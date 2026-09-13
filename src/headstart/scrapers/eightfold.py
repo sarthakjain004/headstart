@@ -109,10 +109,10 @@ class EightfoldScraper(BaseScraper):
     detail_streams = _DETAIL_STREAMS
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
-    #: 403 and 405 are the two shapes this edge returns once a shard's per-origin budget is spent
-    #: — the same host answers both across runs, which is why neither is read as a tenant property
-    #: (ADR-0063). Both therefore escalate to the spare egress rather than to a fourth attempt.
-    egress_fallback_on = frozenset({403, 405})
+    #: 403/405 are the edge's per-origin wall shapes; 429 is also treated as an origin wall so a
+    #: throttled detail request gets a fresh spare-egress address before exhausting its retries.
+    #: The user-requested 429 arm is intentionally shared across API and detail surfaces.
+    egress_fallback_on = frozenset({403, 405, 429})
 
     #: Why this Board fell back from the PCSX API — via SmartApply, when that's tried, or
     #: straight to the per-job sitemap walk otherwise — written by whichever branch actually gave
@@ -489,7 +489,7 @@ class EightfoldScraper(BaseScraper):
     def _read_description(self, response: Any) -> str | None:
         """One ``position_details`` response's text, with a ``None`` labelled by what lost it.
 
-        This ATS's edge answers a spent per-origin budget with 403/405 (ADR-0063) and its API
+        This ATS's edge answers a spent per-origin budget with 403/405/429 (ADR-0063) and its API
         can answer 200 with a body that will not parse; both arrive here as ``None``, and the
         bare gap count reads them as the same fact. ``""`` is not a loss — see
         :func:`_description_of` on why an empty description means only that the request

@@ -269,11 +269,30 @@ def test_the_board_rides_along_for_attribution_only():
     assert _WalledScraper("other")._egress()["egress_board"] == "walled:other"
 
 
-def test_eightfold_opts_in_on_the_two_wall_statuses():
+def test_eightfold_opts_in_on_the_wall_statuses():
     from headstart.scrapers.eightfold import EightfoldScraper
 
-    assert EightfoldScraper.egress_fallback_on == frozenset({403, 405})
+    assert EightfoldScraper.egress_fallback_on == frozenset({403, 405, 429})
     assert EightfoldScraper("x.eightfold.ai")._egress()["egress_group"] == "eightfold"
+
+
+def test_measured_429_scrapers_opt_into_spare_egress():
+    from headstart.scrapers.oracle import OracleScraper
+    from headstart.scrapers.successfactors import SuccessFactorsScraper
+    from headstart.scrapers.taleo_be import TaleoBEScraper
+    from headstart.scrapers.taleo_enterprise import TaleoEnterpriseScraper
+    from headstart.scrapers.workable import WorkableScraper
+    from headstart.scrapers.workday import WorkdayScraper
+
+    for scraper in (
+        OracleScraper,
+        SuccessFactorsScraper,
+        TaleoBEScraper,
+        TaleoEnterpriseScraper,
+        WorkdayScraper,
+        WorkableScraper,
+    ):
+        assert 429 in scraper.egress_fallback_on, scraper.__name__
 
 
 def _zoho_board(monkeypatch):

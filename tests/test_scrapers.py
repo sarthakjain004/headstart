@@ -6142,7 +6142,7 @@ def test_eightfold_api_probe_routes_over_the_spare_egress_but_never_marks(monkey
     scraper._get("https://symetra.eightfold.ai/careers/sitemap.xml")
     wall_surface = seen[-1][1]
     assert wall_surface["egress_group"] == "eightfold"
-    assert wall_surface["egress_on"] == frozenset({403, 405})
+    assert wall_surface["egress_on"] == frozenset({403, 405, 429})
 
 
 def test_workday_opts_into_the_spare_egress_on_429(monkeypatch):
