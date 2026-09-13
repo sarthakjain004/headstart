@@ -49,3 +49,22 @@ them from #449. No excluded file was deleted or added back to fix that local-onl
 condition. After completing the telemetry exception matrix, the focused suite
 passed **172 tests**. JavaScript: **310 passed**. Ruff lint/format and diff whitespace
 checks passed.
+
+## PR #450 two-axis review
+
+Fixed point: `c8004ae5143022157627a9f4f9e6ef8583c7079e`; reviewed commit `277c2984`.
+
+### Standards
+
+No findings: no documented-standard violations or actionable judgment-call smells.
+
+### Spec
+
+One P2 finding: an omitted `base` still fell back to `since`, contradicting the
+earliest-supported baseline and independent display-window requirements. Fixed by
+passing only `base` into replay. Two regression cases cover a display start before
+supported history and after the baseline, with a newly introduced Board excluded
+in both cases. Both cases failed before the fix.
+
+Post-fix targeted verification: 174 tests passed; Ruff lint/format and diff checks
+passed. Standards: 0 findings. Spec: 1 finding, fixed; none deferred.

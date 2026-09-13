@@ -1053,7 +1053,7 @@ def trends():
     # never has to worry about a stray row from a stale refit; only the requested window changes.
     base_stamp = None
     if coverage == "comparable":
-        trends_rows, base_stamp = _comparable_rows(base or since)
+        trends_rows, base_stamp = _comparable_rows(base)
     else:
         trends_rows = _TRENDS
     if since:

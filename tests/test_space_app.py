@@ -1449,6 +1449,20 @@ def test_comparable_default_starts_at_supported_history(comparable_history):
     assert early["stamps"] == []
 
 
+@pytest.mark.parametrize("since", [_T1, _T3])
+def test_comparable_implicit_base_is_independent_of_since(
+    comparable_history, trends_app, since
+):
+    client = comparable_history([_T1, _T2, _T3], [(_T2, 10)])
+    trends_app._TREND_DELTAS.append(
+        {**trends_app._TREND_DELTAS[0], "ts": _T3, "board": "later", "delta": 50}
+    )
+    data = client.get(f"/trends?coverage=comparable&since={quote(since)}").get_json()
+    assert data["base"] == _T2
+    assert data["stamps"] == [stamp for stamp in [_T2, _T3] if stamp >= since]
+    assert data["series"][0]["points"] == [10] * len(data["stamps"])
+
+
 @pytest.mark.parametrize("scope", ["", "&ats=greenhouse"])
 def test_comparable_keeps_zero_endpoint(comparable_history, scope):
     client = comparable_history([_T1, _T2, _T3], [(_T1, 10), (_T2, -10)])
