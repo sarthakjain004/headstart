@@ -41,6 +41,11 @@ the full description and qualifications plus schedule, primary/other locations, 
 posting timestamp; the listing response lacks this body. The detail HTML initialises visible fields
 from its `initialHistory` payload, so this is a mandatory detail pass.
 
+The detail vector is not globally positional. D.R. Horton exposed 41 labelled values with job
+field, schedule and posting date; TTEC exposed 26 values whose description begins at a different
+position and has no job-field/schedule label. The scraper pairs each page's own `_hlid` labels with
+its value vector and leaves unavailable fields null rather than using a fixed offset.
+
 ## Rate limit
 
 A controlled D.R. Horton ladder issued 16 distinct detail pages twice at each width. Widths 8 and

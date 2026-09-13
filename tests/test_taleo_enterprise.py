@@ -126,10 +126,15 @@ def test_detail_vector_supplies_authoritative_fields():
     values[17], values[19] = "US-TX-Austin", "US-TX-Dallas"
     values[23] = "Full-time"
     values[25] = "Sep 11, 2026, 5:18:01 PM"
-    page = "_hlid: [" + ",".join(repr(label) for label in labels) + "]," + (
-        "api.fillList('requisitionDescriptionInterface', 'descRequisition', ["
-        + ",".join(repr(value) for value in values)
-        + "]);"
+    page = (
+        "_hlid: ["
+        + ",".join(repr(label) for label in labels)
+        + "],"
+        + (
+            "api.fillList('requisitionDescriptionInterface', 'descRequisition', ["
+            + ",".join(repr(value) for value in values)
+            + "]);"
+        )
     )
     detail = enterprise._detail(page)
     assert detail == {
@@ -139,3 +144,46 @@ def test_detail_vector_supplies_authoritative_fields():
         "employment_type": "Full-time",
         "posted_at": "2026-09-11T17:18:01+00:00",
     }
+
+
+def test_ttec_detail_layout_keeps_absent_fields_null():
+    """Live TTEC control has 26 values, with description at 10 and no job-field/schedule."""
+    values = ["" for _ in range(26)]
+    labels = ["reqlistitem.no" for _ in range(26)]
+    labels[9] = "reqlistitem.title"
+    labels[10] = "reqlistitem.description"
+    labels[11] = labels[12] = "reqlistitem.primarylocation"
+    labels[13] = labels[14] = "reqlistitem.otherlocations"
+    values[10] = "!*!%3Cp%3ETTEC%20description%3C%2Fp%3E"
+    values[11] = values[12] = "India"
+    values[13] = values[14] = "India-Gujarat-Ahmedabad"
+    page = (
+        "_hlid: ["
+        + ",".join(repr(label) for label in labels)
+        + "],"
+        + (
+            "api.fillList('requisitionDescriptionInterface', 'descRequisition', ["
+            + ",".join(repr(value) for value in values)
+            + "]);"
+        )
+    )
+    assert enterprise._detail(page) == {
+        "description": "TTEC description",
+        "department": None,
+        "location": "India; India-Gujarat-Ahmedabad",
+        "employment_type": None,
+        "posted_at": None,
+    }
+
+
+def test_alias_key_uses_full_career_section(monkeypatch):
+    class Response:
+        url = "https://acme.taleo.net/careersection/2/jobsearch.ftl?lang=en"
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(enterprise.http, "fetch", lambda *args, **kwargs: Response())
+    assert TaleoEnterpriseScraper(
+        "https://acme.taleo.net/careersection/2"
+    ).alias_key() == ("https://acme.taleo.net/careersection/2")

@@ -165,6 +165,24 @@ class TaleoEnterpriseScraper(BaseScraper):
     def url(self) -> str:
         return f"{_canonical(self.slug)}/jobsearch.ftl?lang=en"
 
+    def alias_key(self) -> str | None:
+        """The final Career Section URL, in the same identity space as this ledger."""
+        try:
+            response = http.fetch(
+                "GET",
+                self.url(),
+                headers={"User-Agent": USER_AGENT},
+                timeout=30,
+                allow_redirects=True,
+                stream=True,
+            )
+            try:
+                return _canonical(response.url)
+            finally:
+                response.close()
+        except Exception:  # noqa: BLE001 - an unreachable Board has no alias verdict
+            return None
+
     def _request_headers(self) -> dict[str, str]:
         return {
             "User-Agent": USER_AGENT,
@@ -174,7 +192,7 @@ class TaleoEnterpriseScraper(BaseScraper):
             "Referer": self.url(),
         }
 
-    def _listing(self, shell: str) -> list[dict[str, Any]]:
+    def _listing(self, shell: str, timeout: int = 30) -> list[dict[str, Any]]:
         portal = _PORTAL.search(shell)
         if not portal:
             raise ValueError("Career Section shell has no portalNo")
@@ -235,7 +253,7 @@ class TaleoEnterpriseScraper(BaseScraper):
                 api,
                 json={**payload, "pageNo": page_no},
                 headers=self._request_headers(),
-                timeout=30,
+                timeout=timeout,
             )
             response.raise_for_status()
             data = response.json()

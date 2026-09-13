@@ -1778,7 +1778,14 @@ def p_taleo_enterprise(t, u):
     """Count a public Career Section through its measured JSON listing surface."""
     scraper = TaleoEnterpriseScraper(u, t)
     try:
-        return LIVE, len(scraper._listing(scraper._get()))
+        response = http.fetch(
+            "GET",
+            scraper.url(),
+            headers={"User-Agent": UA, "Accept": "application/json, text/html"},
+            timeout=TIMEOUT,
+        )
+        response.raise_for_status()
+        return LIVE, len(scraper._listing(response.text, timeout=TIMEOUT))
     except Exception as exc:  # noqa: BLE001 - network/shape failure stays retryable
         status = getattr(getattr(exc, "response", None), "status_code", None)
         return (DEAD, None) if status in (404, 410) else (UNKNOWN, None)

@@ -107,13 +107,22 @@ def test_taleo_enterprise_liveness_counts_the_scraper_listing(monkeypatch):
         def __init__(self, url, company):
             pass
 
-        def _get(self):
-            return "shell"
+        def url(self):
+            return "https://acme.taleo.net/careersection/2/jobsearch.ftl?lang=en"
 
-        def _listing(self, shell):
+        def _listing(self, shell, timeout):
+            assert shell == "shell"
+            assert timeout == cl.TIMEOUT
             return [{"id": "1"}, {"id": "2"}]
 
+    class Response:
+        text = "shell"
+
+        def raise_for_status(self):
+            pass
+
     monkeypatch.setattr(cl, "TaleoEnterpriseScraper", Scraper)
+    monkeypatch.setattr(cl.http, "fetch", lambda *args, **kwargs: Response())
     assert cl.p_taleo_enterprise("acme", "https://acme.taleo.net/careersection/2") == (
         cl.LIVE,
         2,
