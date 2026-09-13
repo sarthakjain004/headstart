@@ -43,6 +43,7 @@ import re
 import subprocess
 import sys
 import time
+import urllib.parse
 
 CRAWL_ARG = sys.argv[1] if len(sys.argv) > 1 else None
 CSV = "data/discover/cc_ats_tenants.csv"
@@ -259,6 +260,15 @@ ATS_PATTERNS = {
             r"([a-z0-9-]+\.fa\.[a-z0-9-]+\.oraclecloud\.com)/hcm(?:UI|RestApi)",
         ],
     },
+    "taleo_be": {
+        # TBE is not addressable from a company label: the archived search URL carries the
+        # regional shard, instance, org and career-site id that TaleoBEScraper needs.
+        "targets": ["tbe.taleo.net"],
+        "kind": "taleo_be",
+        "patterns": [
+            r"(https?://[a-z0-9-]+\.tbe\.taleo\.net/[a-z0-9-]+/ats/careers/v2/searchResults\?[^\"'\s]*)",
+        ],
+    },
 }
 
 # Tokens that are never a real tenant/slug: provider infra + marketing subdomains + the path
@@ -432,6 +442,17 @@ def tenant_from(kind, match):
             return None
         board = f"https://{host}/{site}"
         return board, board  # canonical board URL (what slug_from reads)
+    if kind == "taleo_be":
+        parsed = urllib.parse.urlsplit(match.group(1))
+        query = urllib.parse.parse_qs(parsed.query)
+        org, cws = query.get("org", [None])[0], query.get("cws", [None])[0]
+        if not org or not cws or not re.fullmatch(r"[A-Za-z0-9_-]+", org) or not cws.isdecimal():
+            return None
+        board = urllib.parse.urlunsplit(
+            (parsed.scheme, parsed.netloc.lower(), parsed.path.rstrip("/"),
+             urllib.parse.urlencode((("org", org), ("cws", cws))), "")
+        )
+        return f"{org}:{cws}@{parsed.netloc.lower()}{parsed.path}", board
     tok = match.group(1)
     if kind in ("host", "oracle"):
         # Reconstruct the BOARD url rather than returning None and letting the caller store the

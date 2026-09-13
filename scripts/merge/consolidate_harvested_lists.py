@@ -95,7 +95,7 @@ HOST_PATTERNS = [
     ("icims", re.compile(r"(?:careers-)?([A-Za-z0-9_-]+)\.icims\.com", re.IGNORECASE)),
     ("jobvite", re.compile(r"jobs\.jobvite\.com/([A-Za-z0-9_.-]+)", re.IGNORECASE)),
     ("jazzhr", re.compile(r"\b([A-Za-z0-9_-]+)\.applytojob\.com", re.IGNORECASE)),
-    ("taleo", re.compile(r"\b([A-Za-z0-9_-]+)\.taleo\.net", re.IGNORECASE)),
+    ("taleo_be", re.compile(r"\b([A-Za-z0-9_-]+)\.taleo\.net", re.IGNORECASE)),
     (
         "successfactors",
         re.compile(
@@ -227,7 +227,7 @@ KNOWN = {
     "jazzhr",
     "jobvite",
     "icims",
-    "taleo",
+    "taleo_be",
     "successfactors",
     "oracle",
     "zohorecruit",

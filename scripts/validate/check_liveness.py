@@ -47,6 +47,7 @@ Run:   python scripts/validate/check_liveness.py                       # all ATS
 """
 
 import csv
+import html
 import json
 import os
 import re
@@ -926,6 +927,8 @@ _WD_URL = re.compile(r"^https://([^.]+)\.(wd\d+)\.myworkdayjobs\.com/([^/?#]+)")
 #: needs to know whether the page lists anything, and five row templates put the link in
 #: different elements (JobviteScraper's module docstring).
 _JOBVITE_JOB = re.compile(r"/job/[A-Za-z0-9]+")
+_TALEO_JOB = re.compile(r"viewRequisition[^\"\s>]*\brid=(\d+)", re.IGNORECASE)
+_TALEO_NEXT = re.compile(r'<a\s+href="([^\"]+)"\s+class="jscroll-next"', re.IGNORECASE)
 
 
 def _is_dns(exc):
@@ -1742,6 +1745,31 @@ def _oracle_total(body):
     return (items[0].get("TotalJobsCount") or 0) if items else None
 
 
+def p_taleo_be(t, u):
+    """Walk TBE's cookie-backed ten-row pages and return the actual Board count."""
+    from urllib.parse import urljoin
+
+    page_url, seen_pages, ids = u, set(), set()
+    for _ in range(1_000):
+        if page_url in seen_pages:
+            return UNKNOWN, None
+        seen_pages.add(page_url)
+        status, body = _get(page_url)
+        if status == "dns" or status in (404, 410):
+            return DEAD, None
+        if status != 200:
+            return UNKNOWN, None
+        text = body.decode("utf-8", "replace")
+        if "oracletaleocwsv2" not in text:
+            return UNKNOWN, None
+        ids.update(_TALEO_JOB.findall(text))
+        next_match = _TALEO_NEXT.search(text)
+        if not next_match:
+            return LIVE, len(ids)
+        page_url = urljoin(page_url, html.unescape(next_match.group(1)))
+    return UNKNOWN, None
+
+
 PROBES = {
     "greenhouse": p_greenhouse,
     "lever": p_lever,
@@ -1766,6 +1794,7 @@ PROBES = {
     "jazzhr": p_jazzhr,
     "jobvite": p_jobvite,
     "oracle": p_oracle,
+    "taleo_be": p_taleo_be,
 }
 
 
