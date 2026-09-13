@@ -47,7 +47,7 @@ socket.setdefaulttimeout(120)
 # `workday` and `workdaysite` are Workday's two career-site domains and differ in where the
 # tenant sits: `workday` reads it from the HOST (`acme.wd1.myworkdayjobs.com`), `workdaysite`
 # from the PATH (`wd1.myworkdaysite.com/recruiting/acme/Site`). Both emit the same identity.
-Style = Literal["sub", "host", "path", "workday", "workdaysite"]
+Style = Literal["sub", "host", "path", "workday", "workdaysite", "taleo_be"]
 
 # An ATS that serves the same board from two hostnames. The value is the spelling the scraper
 # wants; `extract` emits it in place of the host it actually saw, which is what makes the two
@@ -356,6 +356,9 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     # careers-page scan, not a wider sweep.
     "successfactors": _with_style("host", "jobs2web.com", "jobs.hr.cloud.sap"),
     "teamtailor": _with_style("sub", "teamtailor.com"),
+    # TBE's public Board identity is the whole search URL (shard/instance/org/cws), not its
+    # shared vendor hostname.  Preserve it from each archived capture.
+    "taleo_be": _with_style("taleo_be", "tbe.taleo.net"),
     # `recruiterbox.com` is the pre-rename namespace and holds 40 CDX pages against
     # `hire.trakstar.com`'s 20 — the larger half of this provider's archive. Alias, so
     # `_CANONICAL_HOST` rewrites it and the two spellings collapse.
@@ -445,6 +448,26 @@ def extract(url: str, host: str, style: Style) -> tuple[str, str] | None:
     path, _, query = path.partition("?")
     path = path.split("#")[0]
     seen_host = seen_host.split(":")[0].lower()
+
+    if style == "taleo_be":
+        if not seen_host.endswith("." + host):
+            return None
+        if not re.fullmatch(
+            r"[a-z0-9-]+/ats/careers/v2/searchResults", path, re.IGNORECASE
+        ):
+            return None
+        params = urllib.parse.parse_qs(query)
+        org, cws = params.get("org", [None])[0], params.get("cws", [None])[0]
+        if (
+            not org
+            or not cws
+            or not re.fullmatch(r"[A-Za-z0-9_-]+", org)
+            or not cws.isdecimal()
+        ):
+            return None
+        query = urllib.parse.urlencode((("org", org), ("cws", cws)))
+        board = f"https://{seen_host}/{path}?{query}"
+        return f"{org}:{cws}@{seen_host}/{path.split('/', 1)[0]}", board
 
     if style == "path":
         if seen_host != host or not path:

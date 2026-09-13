@@ -100,6 +100,15 @@ def test_a_host_style_slug_is_the_whole_host():
     )
 
 
+def test_taleo_keeps_the_full_board_url_and_rejects_incomplete_coordinates():
+    url = "https://phe.tbe.taleo.net/phe03/ats/careers/v2/searchResults?org=ICANN&cws=37&act=sort"
+    assert wf.extract(url, "tbe.taleo.net", "taleo_be") == (
+        "ICANN:37@phe.tbe.taleo.net/phe03",
+        "https://phe.tbe.taleo.net/phe03/ats/careers/v2/searchResults?org=ICANN&cws=37",
+    )
+    assert wf.extract(url.replace("&cws=37", ""), "tbe.taleo.net", "taleo_be") is None
+
+
 @pytest.mark.parametrize(
     "slug", ["adept.ai", "abstraction.games", "edged_infrastructure"]
 )
@@ -185,6 +194,7 @@ def test_every_table_host_yields_the_slug_its_own_scraper_expects():
         "workdaysite": lambda host: (
             "acme/External_Careers"
         ),  # same identity, reached from Workday's other domain
+        "taleo_be": lambda host: f"ACME:1@phe.{host}/phe01",
     }
     for ats, hosts in wf.ATS_HOSTS.items():
         for host, style in hosts:
@@ -194,6 +204,7 @@ def test_every_table_host_yields_the_slug_its_own_scraper_expects():
                 "host": f"https://acme.{host}/careers",
                 "workday": f"https://acme.wd1.{host}/en-US/External_Careers/job/1",
                 "workdaysite": f"https://wd1.{host}/en-US/recruiting/acme/External_Careers",
+                "taleo_be": f"https://phe.{host}/phe01/ats/careers/v2/searchResults?org=ACME&cws=1",
             }[style]
             got = wf.extract(probe, host, style)
             assert got, f"{ats}: {host} ({style}) reads nothing"

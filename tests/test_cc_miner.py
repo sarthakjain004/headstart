@@ -138,3 +138,20 @@ def test_the_pattern_still_matches_what_it_is_meant_to_judge(miner):
         r"https?://([a-z0-9-]+\.wd\d+\.myworkdayjobs\.com)", f"{H}/robots.txt"
     )
     assert pattern.search(f"{H}/robots.txt") is None
+
+
+def test_taleo_capture_keeps_all_board_coordinates(miner):
+    pattern = re.compile(miner.ATS_PATTERNS["taleo_be"]["patterns"][0])
+    first = "https://phe.tbe.taleo.net/phe01/ats/careers/v2/searchResults?org=ACME&cws=1&act=sort"
+    second = (
+        "https://phe.tbe.taleo.net/phe02/ats/careers/v2/searchResults?org=ACME&cws=1"
+    )
+    one, two = (
+        miner.tenant_from("taleo_be", pattern.search(first)),
+        miner.tenant_from("taleo_be", pattern.search(second)),
+    )
+    assert one[0] != two[0]
+    assert (
+        one[1]
+        == "https://phe.tbe.taleo.net/phe01/ats/careers/v2/searchResults?org=ACME&cws=1"
+    )
