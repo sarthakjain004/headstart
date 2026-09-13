@@ -195,18 +195,6 @@ _ALLOWED: dict[str, str] = {
         "but the Space is not GitHub Actions and `log._Formatter` renders an annotation only "
         "there — so that path spends no budget and this one is bounded by the run."
     ),
-    "alerts/store.py:get": (
-        "Bounded to the first occurrence per process by `_record_unreadable_reported`, which "
-        "hand-rolls `log.FirstOnly`'s contract because `store.py` cannot import that seam "
-        "without breaking the Space image. `get` runs once per Account and a Hub outage fails "
-        "every one of them, so the bound turns 40 annotations and 40 stacks into one of each. "
-        "Module-level rather than an instance attribute because both callers build a `Store` "
-        "per item — per Account in `run.main`'s walk, per request in the Space's `/sets`. It "
-        "could not be left to `run.main`'s own per-Subscription bound: this arm returns None "
-        "instead of raising, so that catch-all never sees the failure at all. The site this "
-        "widening was written to find; it was a per-Account ERROR plus traceback, and neither "
-        "check in this file could see it."
-    ),
     "spare_egress.py:<module>": (
         "`_TUNNEL_LOST` and `_WARP_OFF`, the two `log.FirstOnly` instances every broken-WARP "
         "line reports through, so the ceiling is two annotations per shard process. The "

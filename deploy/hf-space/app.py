@@ -14,6 +14,7 @@ import hmac
 import json
 import os
 import time
+from collections import Counter, defaultdict
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -40,6 +41,8 @@ from alerts.store import (
     SavedJob,
     SavedSet,
     Store,
+    StoreConflict,
+    StoreUnavailable,
     Subscription,
     is_resume_id,
     subscription_id,
@@ -91,7 +94,11 @@ def _pull_index(attempts: int = 5) -> None:
                 # 172 MB of CSV, and this download ran on every cold start), and matches nothing
                 # until the first pipeline run writes it — an absent pattern downloads nothing
                 # rather than failing
-                allow_patterns=["data/lancedb/*", "data/state/role_trends.parquet"],
+                allow_patterns=[
+                    "data/lancedb/*",
+                    "data/state/role_trends.parquet",
+                    "data/state/role_trend_board_deltas/*",
+                ],
                 token=os.environ.get("HF_TOKEN"),
             )
             return
@@ -124,16 +131,11 @@ _searcher = search.JobSearch(_model, _table)
 # Role trends (ADR-0040). Same dark-until-ready shape as the two above: the ledger only exists
 # after a pipeline run has written it, so an absent file hides the panel rather than erroring.
 # Read once at startup — the Space restarts after every run, so it is never more than one run
-# stale. ~2.5M rows as of 2026-09-09, which is why the file is Parquet (ADR-0120).
+# stale, and the file is a few dozen rows per run.
 _NON_TECH = "non-tech"  # reserved diagnostic series — mirrors headstart.roles.NON_TECH
 
 
 def _load_trends(path: Path) -> list[dict]:
-    """Every ledger row as a dict, with ``ts`` rendered back to the string the CSV ledger
-    stored (ADR-0120). Parquet types the column as ``timestamp[ms, tz=UTC]``, but `/trends`
-    compares stamps as strings against a bound that `_norm_stamp` normalises to exactly this
-    shape — so the rendering is what keeps the date filters' semantics unchanged across the
-    format switch, rather than leaving a datetime to compare against a str and raise."""
     if not path.exists():
         return []
     import pyarrow.parquet as pq
@@ -142,18 +144,11 @@ def _load_trends(path: Path) -> list[dict]:
     cols = {name: table.column(name).to_pylist() for name in table.schema.names}
     return [
         {
-            # `timespec="seconds"` mirrors `_norm_stamp`. The column is milliseconds (Parquet
-            # has no second-resolution type) but every stamp the writer emits is a whole
-            # second, so this reproduces the ledger's own `+00:00` spelling exactly — verified
-            # row-for-row over all 2,468,569 rows of the real ledger.
             "ts": ts.isoformat(timespec="seconds"),
             "version": int(version),
             "metric": metric,
             "family": family,
             "band": band,
-            # 'all' on the non-tech diagnostic row every run writes deliberately undecomposed,
-            # and on rows migrated from a pre-ADR-0075 ledger — it means "not split by ATS"
-            # either way (ADR-0075).
             "ats": ats,
             "count": int(count),
         }
@@ -167,6 +162,20 @@ def _load_trends(path: Path) -> list[dict]:
             cols["count"],
         )
     ]
+
+
+def _load_board_deltas(path: Path) -> list[dict]:
+    """Read the append-only Board-group deltas used for dynamic comparable coverage."""
+    if not path.exists():
+        return []
+    import pyarrow.parquet as pq
+
+    rows = []
+    for file in sorted(path.glob("*.parquet")):
+        table = pq.read_table(file)
+        version = int((table.schema.metadata or {}).get(b"centroid_version", b"-1"))
+        rows.extend({**row, "version": version} for row in table.to_pylist())
+    return rows
 
 
 def _family_labels(path: Path) -> dict[str, str]:
@@ -204,6 +213,9 @@ _FAMILY_LABELS = _family_labels(Path(__file__).with_name("role_families.json"))
 if _TRENDS:
     _live_version = max(r["version"] for r in _TRENDS)
     _TRENDS = [r for r in _TRENDS if r["version"] == _live_version]
+_TREND_DELTAS = _load_board_deltas(
+    _STATE / "data" / "state" / "role_trend_board_deltas"
+)
 # Email alerts (ADR-0035) — invite-only, so all three must be set before the panel appears:
 # the Google client id the sign-in button needs, and a token scoped to the Subscriptions
 # dataset alone (never the index token, which is read-only by design).
@@ -457,6 +469,18 @@ def delete_profile():
     return jsonify({"ok": True})
 
 
+@app.errorhandler(StoreUnavailable)
+def subscription_store_unavailable(exc):
+    return jsonify(
+        {"error": "saved settings are temporarily unavailable; try again"}
+    ), 503
+
+
+@app.errorhandler(StoreConflict)
+def subscription_store_conflict(exc):
+    return jsonify({"error": "settings changed; reload before trying again"}), 409
+
+
 @app.route("/subscribe", methods=["POST"])
 def subscribe():
     """Start email alerts for a Google-verified, allowlisted address (ADR-0035).
@@ -487,7 +511,7 @@ def subscribe():
 
     sent = body.get("filters")
     search_filters = sent if isinstance(sent, dict) else {}
-    _project_subscription(store, email, query, search_filters)
+    _project_subscription(store, email, query, search_filters, reenable=True)
     return jsonify({"ok": True, "email": email})
 
 
@@ -503,24 +527,25 @@ def unsubscribe():
         return "that unsubscribe link is incomplete", 400
 
     store = _store()
-    sub = store.get(sub_id)
-    if (
-        sub
-        and sub.unsubscribe_token
-        and hmac.compare_digest(sub.unsubscribe_token, token)
-    ):
-        store.remove(sub.id)
-        # The Subscription id IS the sets namespace for this address, so an unsubscribe
-        # can and must clear the emailing flag — otherwise the tab keeps showing ✉ on,
-        # and the next edit of that set would silently re-project (re-subscribe) it.
-        for saved in store.sets_for(sub.id):
-            if saved.emails:
-                store.put_set(replace(saved, emails=False))
-        return (
-            "<p style='font-family:system-ui'>Unsubscribed. No more job digests "
-            "will be sent to this address.</p>"
-        )
-    return "that unsubscribe link is not valid", 404
+    with store.atomic():
+        sub = store.get(sub_id)
+        if (
+            sub
+            and sub.unsubscribe_token
+            and hmac.compare_digest(sub.unsubscribe_token, token)
+        ):
+            store.remove(sub.id)
+            # The Subscription id IS the sets namespace for this address, so an unsubscribe
+            # can and must clear the emailing flag — otherwise the tab keeps showing ✉ on,
+            # and the next edit of that set would silently re-project (re-subscribe) it.
+            for saved in store.sets_for(sub.id):
+                if saved.emails:
+                    store.put_set(replace(saved, emails=False))
+            return (
+                "<p style='font-family:system-ui'>Unsubscribed. No more job digests "
+                "will be sent to this address.</p>"
+            )
+        return "that unsubscribe link is not valid", 404
 
 
 def _account_gate() -> tuple[str, Store] | None:
@@ -537,7 +562,12 @@ def _account_gate() -> tuple[str, Store] | None:
 
 
 def _project_subscription(
-    store: Store, email: str, query: str, search_filters: dict
+    store: Store,
+    email: str,
+    query: str,
+    search_filters: dict,
+    *,
+    reenable: bool = False,
 ) -> None:
     """Write the Subscription — the delivery projection of the emailing set (ADR-0043),
     and the same revise-or-create shape the wall-off /subscribe path uses.
@@ -551,7 +581,7 @@ def _project_subscription(
         if existing
         else Subscription.create(email, query, search_filters)
     )
-    store.put(sub)
+    store.put(sub, reenable=reenable)
 
 
 @app.route("/sets")
@@ -560,23 +590,24 @@ def list_sets():
     if not gate:
         return jsonify({"error": "saved sets are not configured"}), 503
     email, store = gate
-    account = subscription_id(email)
-    sets = store.sets_for(account)
-    # Adoption (ADR-0043): an address that subscribed before sets existed has a live
-    # Subscription but no set showing ✉ on — the split-brain the projection exists to
-    # prevent. Materialize that Subscription as their emailing set, once.
-    if not any(s.emails for s in sets) and len(sets) < MAX_SETS:
-        sub = store.get(account)
-        if sub and sub.email and sub.query:
-            adopted = replace(
-                SavedSet.create(
-                    email, sub.query[:60], sub.query, dict(sub.search_filters)
-                ),
-                emails=True,
-            )
-            store.put_set(adopted)
-            sets.append(adopted)
-    return jsonify([s.to_dict() for s in sets])
+    with store.atomic():
+        account = subscription_id(email)
+        sets = store.sets_for(account)
+        # Adoption (ADR-0043): an address that subscribed before sets existed has a live
+        # Subscription but no set showing ✉ on — the split-brain the projection exists to
+        # prevent. Materialize that Subscription as their emailing set, once.
+        if not any(s.emails for s in sets) and len(sets) < MAX_SETS:
+            sub = store.get(account)
+            if sub and sub.email and sub.query:
+                adopted = replace(
+                    SavedSet.create(
+                        email, sub.query[:60], sub.query, dict(sub.search_filters)
+                    ),
+                    emails=True,
+                )
+                store.put_set(adopted)
+                sets.append(adopted)
+        return jsonify([s.to_dict() for s in sets])
 
 
 @app.route("/sets", methods=["POST"])
@@ -589,33 +620,36 @@ def save_set():
     if not gate:
         return jsonify({"error": "saved sets are not configured"}), 503
     email, store = gate
-    body = request.get_json(silent=True) or {}
-    name = str(body.get("name") or "").strip()
-    query = str(body.get("query") or "").strip()
-    if not name:
-        return jsonify({"error": "name the set first"}), 400
-    if not query:
-        return jsonify({"error": "type the role you want first"}), 400
-    sent = body.get("filters")
-    filters = sent if isinstance(sent, dict) else {}
-    account = subscription_id(email)
+    with store.atomic():
+        body = request.get_json(silent=True) or {}
+        name = str(body.get("name") or "").strip()
+        query = str(body.get("query") or "").strip()
+        if not name:
+            return jsonify({"error": "name the set first"}), 400
+        if not query:
+            return jsonify({"error": "type the role you want first"}), 400
+        sent = body.get("filters")
+        filters = sent if isinstance(sent, dict) else {}
+        account = subscription_id(email)
 
-    set_id = str(body.get("id") or "")
-    if set_id:
-        current = store.get_set(account, set_id)
-        if not current:
-            return jsonify({"error": "no such set"}), 404
-        updated = current.revised(name, query, filters)
-        store.put_set(updated)
-        if updated.emails:
-            _project_subscription(store, email, updated.query, updated.search_filters)
-        return jsonify(updated.to_dict())
+        set_id = str(body.get("id") or "")
+        if set_id:
+            current = store.get_set(account, set_id)
+            if not current:
+                return jsonify({"error": "no such set"}), 404
+            updated = current.revised(name, query, filters)
+            store.put_set(updated)
+            if updated.emails:
+                _project_subscription(
+                    store, email, updated.query, updated.search_filters
+                )
+            return jsonify(updated.to_dict())
 
-    if len(store.sets_for(account)) >= MAX_SETS:
-        return jsonify({"error": f"that's the limit — {MAX_SETS} sets"}), 400
-    fresh = SavedSet.create(email, name, query, filters)
-    store.put_set(fresh)
-    return jsonify(fresh.to_dict())
+        if len(store.sets_for(account)) >= MAX_SETS:
+            return jsonify({"error": f"that's the limit — {MAX_SETS} sets"}), 400
+        fresh = SavedSet.create(email, name, query, filters)
+        store.put_set(fresh)
+        return jsonify(fresh.to_dict())
 
 
 @app.route("/sets/<set_id>", methods=["DELETE"])
@@ -627,14 +661,15 @@ def delete_set(set_id: str):
     if not gate:
         return jsonify({"error": "saved sets are not configured"}), 503
     email, store = gate
-    account = subscription_id(email)
-    current = store.get_set(account, set_id)
-    if not current:
-        return jsonify({"error": "no such set"}), 404
-    store.remove_set(account, set_id)
-    if current.emails:
-        store.remove(account)
-    return jsonify({"ok": True})
+    with store.atomic():
+        account = subscription_id(email)
+        current = store.get_set(account, set_id)
+        if not current:
+            return jsonify({"error": "no such set"}), 404
+        store.remove_set(account, set_id)
+        if current.emails:
+            store.remove(account)
+        return jsonify({"ok": True})
 
 
 @app.route("/sets/<set_id>/email", methods=["POST"])
@@ -647,33 +682,36 @@ def set_email(set_id: str):
     if not gate:
         return jsonify({"error": "saved sets are not configured"}), 503
     email, store = gate
-    account = subscription_id(email)
-    current = store.get_set(account, set_id)
-    if not current:
-        return jsonify({"error": "no such set"}), 404
-    body = request.get_json(silent=True) or {}
-    turn_on = bool(body.get("on"))
+    with store.atomic():
+        account = subscription_id(email)
+        current = store.get_set(account, set_id)
+        if not current:
+            return jsonify({"error": "no such set"}), 404
+        body = request.get_json(silent=True) or {}
+        turn_on = bool(body.get("on"))
 
-    if turn_on:
-        if not access.is_allowed(email, store.allowlist()):
-            return jsonify(
-                {"error": "email alerts are invite-only — ask for access"}
-            ), 403
-        for other in store.sets_for(account):
-            if other.emails and other.id != current.id:
-                store.put_set(replace(other, emails=False))
-        current = replace(current, emails=True)
-        store.put_set(current)
-        _project_subscription(store, email, current.query, current.search_filters)
-    else:
-        was_emailing = current.emails
-        current = replace(current, emails=False)
-        store.put_set(current)
-        # Only the set that actually carried email may take the Subscription with it —
-        # a stale tab toggling OFF on some other set must not stop someone's mail.
-        if was_emailing:
-            store.remove(account)
-    return jsonify(current.to_dict())
+        if turn_on:
+            if not access.is_allowed(email, store.allowlist()):
+                return jsonify(
+                    {"error": "email alerts are invite-only — ask for access"}
+                ), 403
+            for other in store.sets_for(account):
+                if other.emails and other.id != current.id:
+                    store.put_set(replace(other, emails=False))
+            current = replace(current, emails=True)
+            store.put_set(current)
+            _project_subscription(
+                store, email, current.query, current.search_filters, reenable=True
+            )
+        else:
+            was_emailing = current.emails
+            current = replace(current, emails=False)
+            store.put_set(current)
+            # Only the set that actually carried email may take the Subscription with it —
+            # a stale tab toggling OFF on some other set must not stop someone's mail.
+            if was_emailing:
+                store.remove(account)
+        return jsonify(current.to_dict())
 
 
 @app.route("/saved")
@@ -742,18 +780,6 @@ def unstar_job(saved_id: str):
         return jsonify({"error": "not starred"}), 404
     store.remove_saved(account, saved_id)
     return jsonify({"ok": True})
-
-
-# ---- Résumé documents (ADR-0124) ----------------------------------------------------------
-#
-# The stored record IS the browser's own JSON export, unchanged, so these four routes carry no
-# schema: they check the path, the size, the cap and the revision, and hand the bytes through.
-# Everything else about a Résumé document — what a Component is, how a Tailoring resolves — is
-# the client's, and the store deliberately does not learn it.
-#
-# The browser stays the working copy. Nothing here is on an edit path: the client pushes on an
-# explicit save, on tab-hide, and at most once every few minutes, because each write is a Git
-# commit on a repo head shared with every other Account.
 
 
 def _resume_summary(document: dict) -> dict:
@@ -903,6 +929,54 @@ def delete_resume(doc_id: str):
     return jsonify({"ok": True})
 
 
+def _comparable_rows(base: str) -> tuple[list[dict], str | None]:
+    """Rebuild counts for Boards first observed by ``base`` from their deltas."""
+    if not _TRENDS:
+        return [], None
+    version = _TRENDS[-1]["version"]
+    deltas = [row for row in _TREND_DELTAS if row["version"] == version]
+    if not deltas:
+        return [], None
+    stamps = sorted({row["ts"] for row in _TRENDS})
+    first_delta = min(row["ts"] for row in deltas)
+    base_stamp = max(
+        (stamp for stamp in stamps if first_delta <= stamp <= base), default=None
+    )
+    if base_stamp is None:
+        return [], None
+    first: dict[str, str] = {}
+    for row in deltas:
+        if row["metric"] == "stock":
+            first[row["board"]] = min(first.get(row["board"], row["ts"]), row["ts"])
+    eligible = {board for board, seen in first.items() if seen <= base_stamp}
+    by_stamp: dict[str, list[dict]] = defaultdict(list)
+    for row in deltas:
+        by_stamp[row["ts"]].append(row)
+    state: Counter[tuple[str, str, str, str]] = Counter()
+    rows = []
+    for stamp in stamps:
+        for row in by_stamp[stamp]:
+            if row["board"] in eligible:
+                state[(row["metric"], row["family"], row["band"], row["ats"])] += row[
+                    "delta"
+                ]
+        if stamp < base_stamp:
+            continue
+        rows.extend(
+            {
+                "ts": stamp,
+                "metric": metric,
+                "family": family,
+                "band": band,
+                "ats": ats,
+                "count": count,
+            }
+            for (metric, family, band, ats), count in state.items()
+            if count
+        )
+    return rows, base_stamp
+
+
 @app.route("/trends")
 def trends():
     """Role counts over time (ADR-0040, ADR-0051), or 503 until the ledger exists.
@@ -919,6 +993,11 @@ def trends():
     naive (timezone-less) value is read as UTC, matching the ledger. Either bound may be
     omitted; a malformed one is a 400, not a silent no-op; an out-of-data range returns a
     normal 200 with empty series rather than a 503, since the ledger itself is not empty.
+
+    ``?coverage=comparable&base=`` (ADR-0143) selects every Board first observed at or before
+    the requested base measurement, then replays only that cohort through later measurements.
+    The Board-delta ledger starts with this feature, so an earlier base returns no fabricated
+    history. Omitted coverage means full coverage.
 
     ``?ats=`` (repeatable, ADR-0075) narrows to the named ATSes; omitted entirely means every
     ATS, which is the only spelling of "no filter" — a request naming all of them explicitly
@@ -941,6 +1020,9 @@ def trends():
     metric = request.args.get("metric", "stock")
     if metric not in ("stock", "new"):
         return jsonify(error="metric must be 'stock' or 'new'"), 400
+    coverage = request.args.get("coverage", "all")
+    if coverage not in ("all", "comparable"):
+        return jsonify(error="coverage must be 'all' or 'comparable'"), 400
     family = request.args.get("family")
     split = request.args.get("split", "bands")
     if split not in ("bands", "roles"):
@@ -958,14 +1040,19 @@ def trends():
     try:
         since = _norm_stamp(request.args["since"]) if "since" in request.args else None
         until = _norm_stamp(request.args["until"]) if "until" in request.args else None
+        base = _norm_stamp(request.args["base"]) if "base" in request.args else None
     except ValueError:
-        return jsonify(error="since/until must be ISO-8601"), 400
+        return jsonify(error="since/until/base must be ISO-8601"), 400
     ats = request.args.getlist("ats")
 
     # ``_TRENDS`` is already pinned to the live centroid version at load time, so filtering here
     # never has to worry about a stray row from a stale refit; only the requested window changes.
-    trends_rows = _TRENDS
-    if since:
+    base_stamp = None
+    if coverage == "comparable":
+        trends_rows, base_stamp = _comparable_rows(base or since or _TRENDS[0]["ts"])
+    else:
+        trends_rows = _TRENDS
+    if since and coverage == "all":
         trends_rows = [r for r in trends_rows if r["ts"] >= since]
     if until:
         trends_rows = [r for r in trends_rows if r["ts"] <= until]
@@ -1034,11 +1121,16 @@ def trends():
         for name, points in series.items()
     ]
     out.sort(key=lambda s: -(s["latest"] or 0))
-    non_tech = {r["ts"]: r["count"] for r in stock if r["family"] == _NON_TECH}
+    non_tech: dict[str, int] = {}
+    for row in stock:
+        if row["family"] == _NON_TECH:
+            non_tech[row["ts"]] = non_tech.get(row["ts"], 0) + row["count"]
     # Which families have watched sub-roles, so the UI can offer the roles drill only there.
     watch_parents = sorted({meta["parent"] for meta in _WATCH.values()})
     return jsonify(
         version=_TRENDS[-1]["version"],
+        coverage=coverage,
+        base=base_stamp,
         metric=metric,
         stamps=stamps,
         series=out,
@@ -1184,16 +1276,12 @@ def index():
         # The Data tab's storage list must describe THIS deployment. With the wall off there
         # is no account, so it says so rather than listing what a different one would keep.
         auth_on=_AUTH_ON,
+        resume_sync_on=_SETS_ON,
         trends_on=bool(_TRENDS),
         alerts_on=_ALERTS_ON,
         sets_on=_SETS_ON,
         saved_on=_SETS_ON,  # same prerequisites — see the _SETS_ON comment
         profile_on=_SETS_ON,  # likewise (the parse button 503s on its own if the router is down)
-        # The Résumé tab's account-copy switch (ADR-0124). Same prerequisites again — an
-        # identity and somewhere to file per-Account records. Undefined renders falsy, so a
-        # deployment that forgets the kwarg shows no switch at all, which is the safe
-        # direction here: the control must never appear where nothing can be stored.
-        resume_sync_on=_SETS_ON,
     )
 
 

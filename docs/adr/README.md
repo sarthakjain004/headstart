@@ -145,3 +145,5 @@ supersedes it and note the supersession in both.
 | [0139](0139-a-single-source-board-is-its-own-ats.md) | A Single source scraper is its own `ats`, not a slug under one | 2026-09-11 |
 | [0140](0140-a-workday-html-listing-response-retries-over-direct-egress.md) | A Workday HTML listing response retries once over direct egress | 2026-09-12 |
 | [0141](0141-scrape-health-travels-to-the-publication-receipt.md) | Scrape health travels to the publication receipt | 2026-09-12 |
+| [0142](0142-subscription-opt-outs-survive-record-replacement.md) | Subscription opt-outs survive record replacement | 2026-09-12 |
+| [0143](0143-trends-retain-board-deltas-for-arbitrary-comparable-cohorts.md) | Trends retain Board deltas for arbitrary comparable cohorts | 2026-09-12 |

@@ -5,8 +5,8 @@ schema is worse than none, because it is trusted. So the check is mechanical: pa
 names out of the README's `### The served table` table and compare them, in order, against
 `index._schema()`.
 
-Skips where pyarrow is absent (CI's quality job installs base deps only), so treat it as a local
-guard rather than a gate. Run the suite before opening a schema PR.
+The dev extra includes the index runtime so this runs in quality CI. Minimal installs can
+still skip it; schema changes must use the dev extra locally too.
 """
 
 from __future__ import annotations
@@ -35,6 +35,12 @@ def test_readme_documents_every_column_in_order():
     from headstart.ingest.index import _schema
 
     assert _documented_columns() == _schema(768).names
+
+
+def test_documented_schema_covers_the_search_result_projection():
+    from headstart.search import RESULT_COLUMNS
+
+    assert set(RESULT_COLUMNS) <= set(_documented_columns())
 
 
 def test_readme_example_rows_use_the_documented_columns():

@@ -82,6 +82,7 @@ from headstart.ingest import (
     PENDING_UPGRADES_PATH,
     REPO_ROOT,
     UNCONFIRMED_PATH,
+    board_freshness,
     observability,
     read_id_list,
     write_id_list,
@@ -769,6 +770,15 @@ def sync(args: argparse.Namespace) -> int:
     )
 
     final = table.count_rows()
+    board_freshness.update(
+        Path(args.unconfirmed).parent,
+        live,
+        boards,
+        unauthoritative,
+        index_ids,
+        corpus_ids,
+        datetime.now(UTC).isoformat(timespec="seconds"),
+    )
     write_base(args.db, final, "sync")
     _log.info(f"done: table '{PROD_TABLE}' now holds {final} rows at {args.db}")
     observability.summary(
