@@ -207,6 +207,8 @@ URL_SHAPES = {
     # were verified live on ICANN on 2026-09-13. TBE is intentionally separate from Taleo
     # Enterprise's Career Section URL family, which this scraper does not support.
     "taleo_be": r"https://[a-z0-9-]+\.tbe\.taleo\.net/[a-z0-9-]+/ats/careers/v2/viewRequisition\?[^#]*\brid=\d+",
+    # Enterprise Career Sections use the measured `jobdetail.ftl?lang=en&job={id}` detail route.
+    "taleo_enterprise": r"https://[^/]+\.taleo\.net/careersection/[^/]+/jobdetail\.ftl\?lang=[^&]+&job=[^&]+",
 }
 
 

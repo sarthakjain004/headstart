@@ -102,6 +102,33 @@ def test_taleo_known_page_not_found_template_is_dead(monkeypatch):
     ) == (cl.DEAD, None)
 
 
+def test_taleo_enterprise_liveness_counts_the_scraper_listing(monkeypatch):
+    class Scraper:
+        def __init__(self, url, company):
+            pass
+
+        def url(self):
+            return "https://acme.taleo.net/careersection/2/jobsearch.ftl?lang=en"
+
+        def _listing(self, shell, timeout):
+            assert shell == "shell"
+            assert timeout == cl.TIMEOUT
+            return [{"id": "1"}, {"id": "2"}]
+
+    class Response:
+        text = "shell"
+
+        def raise_for_status(self):
+            pass
+
+    monkeypatch.setattr(cl, "TaleoEnterpriseScraper", Scraper)
+    monkeypatch.setattr(cl.http, "fetch", lambda *args, **kwargs: Response())
+    assert cl.p_taleo_enterprise("acme", "https://acme.taleo.net/careersection/2") == (
+        cl.LIVE,
+        2,
+    )
+
+
 def _join_stub(page_props, jobs_rowcount=None):
     """Stub _get for p_join: the company page carries __NEXT_DATA__.pageProps; the jobs API returns
     a pagination.rowCount."""

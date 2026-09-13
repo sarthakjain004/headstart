@@ -45,7 +45,7 @@ def pool_key(ats: str, tenant: str, url: str) -> str:
     Empty when a Workday row carries no URL — such a row has no identity here, and callers must
     skip it rather than let every url-less row collide on ``""``. The pool holds 398 of them.
     """
-    if ats in {"workday", "taleo_be"}:
+    if ats in {"workday", "taleo_be", "taleo_enterprise"}:
         return board_url(url)
     return tenant.strip().lower()
 
@@ -114,7 +114,11 @@ def main() -> int:
         note = (
             "NEW file"
             if is_new
-            else ("deduped on board url" if ats in {"workday", "taleo_be"} else "")
+            else (
+                "deduped on board url"
+                if ats in {"workday", "taleo_be", "taleo_enterprise"}
+                else ""
+            )
         )
         print(
             f"{ats:<18}{len(rows) - added:>9}{retagged:>10}{added:>7}{len(rows):>8}  {note}",

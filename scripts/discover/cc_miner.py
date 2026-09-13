@@ -269,6 +269,13 @@ ATS_PATTERNS = {
             r"(https?://[a-z0-9-]+\.tbe\.taleo\.net/[a-z0-9-]+/ats/careers/v2/searchResults\?[^\"'\s]*)",
         ],
     },
+    "taleo_enterprise": {
+        "targets": ["taleo.net"],
+        "kind": "taleo_enterprise",
+        "patterns": [
+            r"https?://([a-z0-9-]+\.taleo\.net/careersection/[A-Za-z0-9_-]+)/(?:jobsearch|joblist|moresearch|jobdetail|jobapply)\.ftl",
+        ],
+    },
 }
 
 # Tokens that are never a real tenant/slug: provider infra + marketing subdomains + the path
@@ -463,6 +470,9 @@ def tenant_from(kind, match):
             )
         )
         return f"{org}:{cws}@{parsed.netloc.lower()}{parsed.path}", board
+    if kind == "taleo_enterprise":
+        board = f"https://{match.group(1).lower()}"
+        return board, board
     tok = match.group(1)
     if kind in ("host", "oracle"):
         # Reconstruct the BOARD url rather than returning None and letting the caller store the
