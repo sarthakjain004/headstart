@@ -21,6 +21,8 @@ from headstart.scrapers.base import USER_AGENT, BaseScraper
 
 _PORTAL = re.compile(r"portalNo:\s*'?(\d+)")
 _TITLE = re.compile(r"<title>(.*?)</title>", re.DOTALL | re.IGNORECASE)
+_IMG = re.compile(r"<img\b[^>]*>", re.DOTALL | re.IGNORECASE)
+_ATTR = re.compile(r"\b(?:alt|title)=[\"']([^\"']+)", re.IGNORECASE)
 _JOBS_TABLE = re.compile(
     r'<table[^>]+id="jobs"[^>]*>(.*?)</table>', re.DOTALL | re.IGNORECASE
 )
@@ -70,10 +72,20 @@ def _company(shell: str) -> str | None:
     match = _TITLE.search(shell)
     if not match:
         return None
-    title = html_to_text(match.group(1))
-    if not title:
-        return None
-    return title.removeprefix("Careers | ").strip() or None
+    title = html_to_text(match.group(1)) or ""
+    title = title.removeprefix("Careers | ").strip()
+    if title and title.lower() not in {"job search", "search jobs", "careers"}:
+        return title
+    # Enterprise shells commonly use the generic title above. The first meaningful image label
+    # is the employer logo in the live controls (D.R. Horton, TTEC, Valero); ignore accessibility
+    # chrome and generic placeholder images.
+    ignored = {"access the online help", "close", "collapse this section", "image"}
+    for image in _IMG.findall(shell):
+        for value in _ATTR.findall(image):
+            value = html_to_text(value)
+            if value and value.lower() not in ignored and len(value) <= 100:
+                return re.sub(r"\s+logo$", "", value, flags=re.IGNORECASE).strip()
+    return title or None
 
 
 def _date(value: str | None) -> str | None:

@@ -20,6 +20,11 @@ def test_canonical_section_slug():
     )
 
 
+def test_company_falls_back_to_logo_when_shell_title_is_generic():
+    shell = '<title>Job Search</title><img alt="Valero Logo" src="logo.svg">'
+    assert enterprise._company(shell) == "Valero"
+
+
 def test_listing_stops_at_stated_page_count_not_repeated_overflow(monkeypatch):
     pages = [
         _page(
