@@ -208,7 +208,18 @@ def build_doc(job: dict) -> str:
 # materialized column can fix it. `classify()` reads the same CITIES/STATES/IND_FORMS/
 # SUBDIVISIONS/*_EXCLUDE constants `where("india")` does, so the two cannot independently drift
 # on what counts as India.
-DERIVATIONS_VERSION = 9
+#
+# v10: `taleo_be.py` now reads the board's own workplace-arrangement field (when a tenant states
+# one) into the `remote` fact instead of always falling straight to `is_remote(location)` (PR
+# #460, on top of the v9 bump at `8bbca863`). This
+# changes what the scraper emits as `job.get("remote")` for already-scraped TBE rows, and `remote`
+# is excluded from `update_meta.FACT_FIELDS` (`_FACT_WITH_OVERLAY` above) precisely so that a
+# rescrape alone can never resync it -- only a sweep triggered by this counter reaches rows
+# indexed before the fix. Measured live 2026-09-15 across 80 distinct tenants (~280 detail pages,
+# all 7 shard hosts): 2/80 state a discrete field, under two different label spellings each with
+# its own value vocabulary -- "Workplace Arrangement" (Hybrid/In-Office) and "Location Type"
+# (Onsite/Remote); "Hybrid" stays None, matching `workday._remote_from`'s convention.
+DERIVATIONS_VERSION = 10
 
 
 def to_meta(job: dict) -> dict:

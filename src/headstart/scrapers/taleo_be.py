@@ -88,6 +88,40 @@ def _field(labels: dict[str, str], *names: str) -> str | None:
     return None
 
 
+# TBE tenants configure their own field labels, so a workplace-arrangement field (if a tenant
+# states one at all) has no single spelling. Measured live 2026-09-15 over 80 distinct tenants
+# (~280 detail pages, all 7 shard hosts, org-deduped) sampled from the 533-row live ledger: only
+# 2/80 state a discrete field. Two different label spellings, two different value vocabularies —
+# "Workplace Arrangement:" (1199SEIU Funds, org=NBF1199: Hybrid/In-Office) and "Location Type"
+# (Covestic, org=COVESTIC2: Onsite/Remote). No other spelling appeared. "hybrid" stays None —
+# neither purely remote nor onsite — matching workday._remote_from's convention (also
+# ashby._remote, eightfold's workLocationOption map).
+_WORKPLACE_ARRANGEMENT_PATTERNS = {
+    "remote": True,
+    "hybrid": None,
+    "onsite": False,
+    "on-site": False,
+    "on site": False,
+    "in-office": False,
+    "in office": False,
+}
+
+
+def _workplace_remote(value: str | None) -> bool | None:
+    if not value:
+        return None
+    norm = value.strip().lower()
+    if norm in _WORKPLACE_ARRANGEMENT_PATTERNS:
+        return _WORKPLACE_ARRANGEMENT_PATTERNS[norm]
+    if "hybrid" in norm:
+        return None
+    if "remote" in norm:
+        return True
+    if "site" in norm or "office" in norm:
+        return False
+    return None
+
+
 def _posted_at(value: str | None) -> str | None:
     if not value:
         return None
@@ -223,6 +257,15 @@ class TaleoBEScraper(BaseScraper):
             "employment_type": _field(labels, "Employment Type", "Job Type"),
             "posted_at": _posted_at(_field(labels, "Date Posted", "Posting Date")),
             "salary": self._salary_field(labels),
+            # Both spellings are real, measured live (80-tenant sample): NBF1199 states
+            # "Workplace Arrangement:" (with the trailing colon _field matches literally —
+            # the colonless spelling was never observed and is deliberately not listed here),
+            # Covestic states "Location Type" (no colon).
+            "workplace_arrangement": _field(
+                labels,
+                "Workplace Arrangement:",
+                "Location Type",
+            ),
         }
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
@@ -230,6 +273,12 @@ class TaleoBEScraper(BaseScraper):
         for listed, detail in raw:
             detail = detail or {}
             location = detail.get("location") or listed["location"]
+            # The board's own workplace-arrangement field wins when it's decisive; "hybrid" is
+            # not decisive (see `_workplace_remote`), so it falls through to the location text
+            # like every board that states no such field at all.
+            remote = _workplace_remote(detail.get("workplace_arrangement"))
+            if remote is None:
+                remote = is_remote(location)
             jobs.append(
                 Job(
                     id=f"{self.board_key()}:{listed['id']}",
@@ -237,7 +286,7 @@ class TaleoBEScraper(BaseScraper):
                     company=listed.get("company") or self.company,
                     title=listed["title"] or "",
                     location=location,
-                    remote=is_remote(location),
+                    remote=remote,
                     department=detail.get("department") or listed["department"],
                     url=listed["url"] or "",
                     posted_at=detail.get("posted_at"),
