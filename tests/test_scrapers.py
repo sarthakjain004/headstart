@@ -1540,8 +1540,6 @@ def _darwinbox_curl_wall(monkeypatch):
     """
     from curl_cffi.requests import models
 
-    import headstart.scrapers.darwinbox as db
-
     def _response(status, reason):
         r = models.Response()
         r.status_code, r.ok, r.reason = status, False, reason
@@ -1552,7 +1550,7 @@ def _darwinbox_curl_wall(monkeypatch):
             return _response(403, "Forbidden")  # the wall, on the tenant's real host
         return _response(500, "Internal Server Error")  # wrong TLD: "Invalid subdomain"
 
-    monkeypatch.setattr(db.http, "fetch", _fetch)
+    monkeypatch.setattr(http, "fetch", _fetch)
 
 
 class _FakeDarwinboxPage:
@@ -1631,15 +1629,13 @@ def test_darwinbox_no_wall_no_browser_raises_the_last_error(monkeypatch):
     from curl_cffi.requests import models
     from curl_cffi.requests.exceptions import HTTPError
 
-    import headstart.scrapers.darwinbox as db
-
     def _response(status, reason):
         r = models.Response()
         r.status_code, r.ok, r.reason = status, False, reason
         return r
 
     monkeypatch.setattr(
-        db.http, "fetch", lambda m, u, **k: _response(500, "Internal Server Error")
+        http, "fetch", lambda m, u, **k: _response(500, "Internal Server Error")
     )
     with pytest.raises(HTTPError) as excinfo:
         get_scraper("darwinbox", "licious", "Licious").fetch_raw()

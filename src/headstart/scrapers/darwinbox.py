@@ -36,7 +36,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from headstart import http, log  # noqa: F401 — kept for db.http test monkeypatch
+from headstart import log
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 

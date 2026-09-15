@@ -1,5 +1,4 @@
 from headstart.ingest.doc_prep import to_meta
-from headstart.scrapers import taleo_be
 from headstart.scrapers.registry import SCRAPERS, get_scraper
 from headstart.scrapers.taleo_be import TaleoBEScraper
 
@@ -36,6 +35,8 @@ def test_registry_and_ledger_url_slug():
 
 
 def test_alias_key_uses_the_final_canonical_tbe_url(monkeypatch):
+    from headstart import http
+
     target = "https://lde.tbe.taleo.net/lde01/ats/careers/v2/searchResults?org=DEFEHEAL&cws=37&act=sort"
 
     class Response:
@@ -50,7 +51,7 @@ def test_alias_key_uses_the_final_canonical_tbe_url(monkeypatch):
         seen.update(kwargs)
         return Response()
 
-    monkeypatch.setattr(taleo_be.http, "fetch", fetch)
+    monkeypatch.setattr(http, "fetch", fetch)
     scraper = TaleoBEScraper(URL)
     assert scraper.alias_key() == target.removesuffix("&act=sort")
     # No production 429 evidence for this ATS (see docs/code-review/
