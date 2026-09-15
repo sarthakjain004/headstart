@@ -1,6 +1,10 @@
 # ADR-0064: A Board's hour must buy tech jobs
 
-**Status:** accepted · **Date:** 2026-08-18 · **Relates to:**
+**Status:** accepted · **Amended by:**
+[ADR-0145](0145-the-value-gate-reads-the-measurement-that-kept-up.md) (the gate's numerator and
+denominator sit on different clocks: a Board that scrapes and returns nothing is absent from the
+priority snapshot, so its score is carried forever while its cost is rewritten every run — the
+collapse this gate is for is what blinded it to one) · **Date:** 2026-08-18 · **Relates to:**
 [ADR-0022](0022-tech-priority-board-ordering.md),
 [ADR-0026](0026-parallelize-nightly-scrape.md),
 [ADR-0027](0027-measured-scrape-cost-ledger.md),
@@ -16,7 +20,10 @@
 > real yield collapsed to zero could clear the gate forever on a stale non-zero score. That is
 > exactly how the SuccessFactors User-Agent-denylist incident sat unnoticed for five runs
 > (`docs/pipeline/2026-09-07_five-run-log-review.md` §2). `BoardCost.jobs`, refreshed every run a
-> Board is scraped regardless of yield, now overrides a stale score when it reads zero.
+> Board is scraped regardless of yield, now overrides a stale score when it reads zero — **since
+> superseded by ADR-0145 below**: "regardless of yield" was itself the false premise, since an
+> errored or budget-killed run also wrote `jobs=0`, so this veto would have gated any Board that
+> merely failed once.
 
 ## Context
 
