@@ -60,17 +60,22 @@ from pathlib import Path
 from typing import Any
 
 from headstart import log
-from headstart.experience import extract, from_field, from_seniority
-from headstart.geo import classify as classify_country
+from headstart.experience import from_field, from_seniority
 from headstart.ingest import (
     PENDING_REDERIVE_PATH,
     REPO_ROOT,
     read_id_list,
 )
+from headstart.ingest.derived_meta import (
+    country_meta,
+    experience_fields,
+    experience_meta,
+    remote_meta,
+    salary_fields,
+    salary_meta,
+)
 from headstart.ingest.doc_prep import DERIVATIONS_VERSION, META_FIELDS
 from headstart.ingest.update_descriptions import read_store
-from headstart.remote import extract as extract_remote
-from headstart.salary import extract as extract_salary
 from headstart.salary import from_field as salary_from_field
 from headstart.scrapers import registry
 
@@ -278,34 +283,27 @@ def refresh_row(
         if (
             row["id"] in descriptions
         ):  # the full cascade, against the text this row was derived from
-            span = extract(
+            derived = experience_meta(
                 row.get("experience"), descriptions[row["id"]], row.get("title")
             )
         else:
             span = _rederive_without_text(row, meta)
-        if span is not _KEEP:
-            derived = {
-                "min_years": span.min_years if span else None,
-                "max_years": span.max_years if span else None,
-                "experience_source": span.source if span else None,
-            }
+            derived = None if span is _KEEP else experience_fields(span)
+        if derived is not None:
             changed = changed or any(row.get(f) != derived[f] for f in DERIVED_FIELDS)
             row.update(derived)
 
     if sweep or rederive or salary_inputs_moved:
         if row["id"] in descriptions:
-            salary_span = extract_salary(
+            derived_salary = salary_meta(
                 row.get("salary"), descriptions[row["id"]], row.get("ats")
             )
         else:
             salary_span = _rederive_salary_without_text(row, meta)
-        if salary_span is not _KEEP:
-            derived_salary = {
-                "min_salary_annual": salary_span.min_annual if salary_span else None,
-                "max_salary_annual": salary_span.max_annual if salary_span else None,
-                "salary_currency": salary_span.currency if salary_span else None,
-                "salary_source": salary_span.source if salary_span else None,
-            }
+            derived_salary = (
+                None if salary_span is _KEEP else salary_fields(salary_span)
+            )
+        if derived_salary is not None:
             changed = changed or any(
                 row.get(f) != derived_salary[f] for f in SALARY_DERIVED_FIELDS
             )
@@ -316,7 +314,7 @@ def refresh_row(
     # `FACT_FIELDS` resynced above, so a sweep achieves full coverage in one pass.
     country_inputs_moved = facts_changed and row.get("location") != meta.get("location")
     if sweep or rederive or country_inputs_moved:
-        new_country = classify_country(row.get("location"))
+        new_country = country_meta(row.get("location"))["country"]
         changed = changed or (new_country != row.get("country"))
         row["country"] = new_country
 
@@ -326,11 +324,11 @@ def refresh_row(
     # the same place `experience`/`salary`'s own raw-field re-syncs come from. Only on `sweep or
     # rederive`: an ordinary run carries no held description (`descriptions` is `{}` unless
     # sweeping or draining the ADR-0062 queue — see `main`), so running this every run would
-    # just be `extract_remote(raw_field, None)`, i.e. adopt the raw field with no chance to
+    # just be `remote_meta(raw_field, None)`, i.e. adopt the raw field with no chance to
     # reinstate a JD override — the raw field would win by default, silently discarding it.
     if sweep or rederive:
         raw_remote = facts.get("remote") if facts else row.get("remote")
-        new_remote = extract_remote(raw_remote, descriptions.get(row["id"]))
+        new_remote = remote_meta(raw_remote, descriptions.get(row["id"]))["remote"]
         if new_remote != row.get("remote"):
             changed = True
         row["remote"] = new_remote

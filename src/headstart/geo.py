@@ -497,10 +497,11 @@ def classify(location: str | None) -> str | None:
     """``"IN"`` if ``location`` matches the country-level India rule :func:`where` compiles to
     SQL for (``where("india")``), else ``None`` (ADR-0138).
 
-    A pure function of ``location`` — :func:`headstart.ingest.doc_prep.to_meta` and
-    ``update_meta``'s sweep call this once per Job to fill the served ``country`` column, so a
-    filter can test ``country = 'IN'`` (a plain equality) instead of paying the 3KB
-    ``regexp_like`` alternation :func:`where` builds fresh on every request.
+    A pure function of ``location`` — :func:`headstart.ingest.derived_meta.country_meta` calls
+    this once per Job (``doc_prep.to_meta`` at embed time, ``update_meta``'s sweep to repair a
+    stored row) to fill the served ``country`` column, so a filter can test ``country = 'IN'``
+    (a plain equality) instead of paying the 3KB ``regexp_like`` alternation :func:`where` builds
+    fresh on every request.
 
     Reads the exact same :data:`CITIES`/:data:`STATES`/:data:`IND_FORMS`/:data:`SUBDIVISIONS`/
     :data:`EXCLUDE`/:data:`IND_EXCLUDE`/:data:`INDIA_EXCLUDE` constants :func:`where` does, so a
