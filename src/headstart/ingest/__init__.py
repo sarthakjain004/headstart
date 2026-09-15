@@ -40,6 +40,8 @@ here, and ``alerts`` is not the feed::
     binpack        LPT packing + shard sizing, shared by both planners
     board_failures The consecutive-gone quarantine ledger (ADR-0058), written in the join
                    and read by scrape_plan
+    derived_meta   The four field-extractors composed into a Job's derived meta keys, shared
+                   by doc_prep.to_meta and update_meta.refresh_row (ADR-0146)
     doc_prep       Doc build / English gate / typed metadata, shared by embed_run and embed_plan
     index_plan     Pure add-evict and prune planners for the jobs table (no LanceDB import)
     observability  Step summaries, the shard-report round trip, and the error summary
