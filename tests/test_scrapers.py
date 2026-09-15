@@ -8688,6 +8688,15 @@ def test_every_wired_scraper_resolves_its_company(
     assert seen == [url]
 
 
+#: taleo_enterprise deliberately has no `board_page` override and no `_RESOLVE_ROWS` row.
+#: `resolve_company`'s generic mechanism reads one `<title>` from one dedicated request, but
+#: this ATS needs the *last* of two `<title>` tags on a shell it already fetched for its
+#: listing pass (`TaleoEnterpriseScraper._last_title`) — so `_company` reads that shell
+#: directly instead, covered by `tests/test_taleo_enterprise.py`. It still needs the same
+#: vendor-alias coverage as every other wired ATS.
+_NO_BOARD_PAGE = {"taleo_enterprise"}
+
+
 def test_every_ats_with_patterns_has_a_scraper_that_offers_a_board_page():
     """Binds `company_name.PATTERNS` to the scrapers that override `board_page`.
 
@@ -8703,11 +8712,13 @@ def test_every_ats_with_patterns_has_a_scraper_that_offers_a_board_page():
         for ats, cls in SCRAPERS.items()
         if cls.board_page is not BaseScraper.board_page
     }
-    assert overriding == set(PATTERNS), (
+    assert overriding == set(PATTERNS) - _NO_BOARD_PAGE, (
         "an ATS has a board_page but no patterns, or patterns but no board_page"
     )
     covered = {row[0] for row in _RESOLVE_ROWS}
-    assert covered == set(PATTERNS), "every wired ATS needs a row in the resolve test"
+    assert covered == set(PATTERNS) - _NO_BOARD_PAGE, (
+        "every wired ATS needs a row in the resolve test"
+    )
     assert set(_VENDOR_ALIASES) == set(PATTERNS), (
         "every wired ATS needs a vendor-alias entry, or its board page can serve the platform's "
         "own branding as the employer"
