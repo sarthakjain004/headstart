@@ -6,17 +6,7 @@ import json
 
 import pytest
 
-from headstart.corpus import board_of, iter_jobs
-
-
-def test_board_of_simple():
-    assert board_of("greenhouse:stripe:1") == "greenhouse:stripe"
-
-
-def test_board_of_preserves_colon_in_slug():
-    # Workday slugs are full URLs (colons galore); only the trailing native id is stripped
-    wd = "workday:https://acme.wd1.myworkdayjobs.com/careers:R123"
-    assert board_of(wd) == "workday:https://acme.wd1.myworkdayjobs.com/careers"
+from headstart.corpus import iter_jobs
 
 
 def _write(path, jobs):

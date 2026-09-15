@@ -29,8 +29,9 @@ from collections import Counter
 from pathlib import Path
 
 from headstart import fanout_stats, http, log, spare_egress
+from headstart.board_identity import board_identity
 from headstart.board_priority import load_scores, pick_boards
-from headstart.config import CompanyRef, board_identity, load_active_companies
+from headstart.config import CompanyRef, load_active_companies
 from headstart.harvest import scrape_all
 from headstart.ingest import HELD_DETAILS_PATH, REPO_ROOT, observability
 

@@ -39,8 +39,9 @@ import torch
 from sentence_transformers import SentenceTransformer
 
 from headstart import log
+from headstart.board_identity import board_of
 from headstart.board_priority import load_scores
-from headstart.corpus import board_of, iter_jobs
+from headstart.corpus import iter_jobs
 from headstart.ingest import REPO_ROOT, observability
 from headstart.ingest.doc_prep import (  # re-exported: doc-prep shared with the embed planner (ADR-0025)
     BUCKETS,

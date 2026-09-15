@@ -1,11 +1,10 @@
 from pathlib import Path
 
 from headstart import config
+from headstart.board_identity import board_identity
 from headstart.config import (
     EXCLUDED_BOARDS,
     PARKED_BOARDS,
-    CompanyRef,
-    board_identity,
     load_active_companies,
     load_companies,
 )
@@ -216,38 +215,3 @@ def test_load_active_companies_min_jobs(tmp_path):
     )
     assert len(load_active_companies(ledger, min_jobs=1)) == 2
     assert len(load_active_companies(ledger, min_jobs=5)) == 1
-
-
-def test_identity_failures_are_capped_not_unbounded(monkeypatch, caplog):
-    """One line per distinct Board is still `N_Boards` lines for one broken scraper.
-
-    The bound is what keeps a `board_key()` regression from costing a five-figure log again —
-    21,122 lines a run, measured 2026-09-09, when `board_cost._rekeyed` was still asking. That
-    caller is gone, but the bound is not about it: it stands for the case it was written for, a
-    scraper whose `board_key()` starts raising on its own slugs. Pinned against the cap rather
-    than a literal so the two cannot drift apart.
-    """
-    monkeypatch.setattr(config, "_IDENTITY_FAILURES_SEEN", set())
-    cap = config._IDENTITY_REPORT_CAP
-    with caplog.at_level("INFO", logger="headstart.config"):
-        for i in range(cap * 5):
-            board_identity(CompanyRef(ats="workday", slug=f"bad-{i}", name=""))
-
-    # Only this module's records: another logger's line would otherwise be counted as one of
-    # ours, which is the leakage the sibling test below documents.
-    mine = [r for r in caplog.records if r.name == "headstart.config"]
-    named = [r for r in mine if "board_key() failed" in r.message]
-    assert len(named) == cap, f"expected {cap} named, got {len(named)}"
-    assert [r for r in mine if "further board_key() failures" in r.message]
-    # Once, not once per Board past the cap — the flood this bound exists to stop.
-    assert len(mine) == cap + 1
-
-
-def test_a_genuinely_malformed_slug_is_still_reported(monkeypatch, caplog):
-    """The liveness-ledger population the report was written for, where a raise really does mean
-    a slug nothing can parse. It outlived `board_cost._rekeyed` and the `report_failure` opt-out
-    that once had to be kept from silencing it, so it is now simply what the reporter does."""
-    monkeypatch.setattr(config, "_IDENTITY_FAILURES_SEEN", set())
-    with caplog.at_level("INFO", logger="headstart.config"):
-        board_identity(CompanyRef(ats="workday", slug="not-a-url", name=""))
-    assert [r for r in caplog.records if "board_key() failed" in r.message]

@@ -21,6 +21,23 @@ _Avoid_: provider, platform.
 One company's set of openings as hosted by its ATS — what a scraper actually reads.
 _Avoid_: job board, careers board.
 
+**board_key** (ADR-0023, ADR-0155):
+The string identity a Board is keyed by everywhere downstream — `{ats}:{slug}` by default, or an
+ATS's own override where the slug isn't the id's Board segment (Workday's
+`{ats}:{company}/{site}`, Personio's `{ats}:{tenant}`). Built by a scraper's own `board_key()`.
+`headstart.board_identity` is the one module that turns a `CompanyRef` into one: `board_key()` is
+the strict form (raises on a slug its scraper can't parse), `board_identity()` the lenient one
+(falls back to the plain `ats:slug`, logged once per distinct Board) — named separately rather
+than unified, because a caller pairing against a real board_key-keyed set (the keep-set, the
+failure ledgers) cannot use a synthetic fallback, while a caller that needs to name every Board
+unconditionally (dedup, the priority/cost ledgers) cannot drop one. The reverse — guessing a
+board_key back out of a Job id — is `board_of()`, exact only where the native id carries no colon
+(ADR-0049); both index planners resolve a Job id's Board by prefix-matching a real keep-set
+instead (`index_plan.resolve_board`) and fall back to `board_of` only for an id on no known Board.
+_Avoid_: conflating with **Board** itself — a Board is the thing (one company's postings on an
+ATS); a board_key is only its string name. Before ADR-0155 five call sites each computed that
+string independently, with three different opinions about a slug that wouldn't parse.
+
 **Careers page**:
 A company's own web page that links to or embeds its Board; the input to careers-page discovery, distinct from the Board itself.
 

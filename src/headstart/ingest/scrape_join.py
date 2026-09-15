@@ -22,8 +22,8 @@ from collections import Counter
 from pathlib import Path
 
 from headstart import log
+from headstart.board_identity import board_key_of
 from headstart.ingest import REPO_ROOT, observability, shard_speedup
-from headstart.scrapers.registry import get_scraper
 
 _log = log.get(__name__, __spec__)
 
@@ -58,8 +58,9 @@ def write_unauthoritative_boards(reports: list[dict], path: Path) -> dict[str, s
     is keyed by ``board_key()`` (ADR-0049). Those differ wherever a slug is not the Board tail:
     Workday's slug is the whole careers URL, so ``workday:https://x.wd1.myworkdayjobs.com/Site``
     has to become ``workday:x/Site`` or the lookup silently never matches. Rows that will not
-    resolve are dropped with a warning rather than written through unconverted, which would look
-    like protection while providing none.
+    resolve (:func:`headstart.board_identity.board_key_of` returns ``None``) are dropped with a
+    warning rather than written through unconverted, which would look like protection while
+    providing none.
 
     Always writes, even with nothing to record: ``data/state`` round-trips through the HF dataset,
     so a run that skipped the write would leave the *previous* run's Boards in place and protect
@@ -75,17 +76,11 @@ def write_unauthoritative_boards(reports: list[dict], path: Path) -> dict[str, s
         # was never in the eviction scope to begin with.
         outcomes = {**(report.get("errors") or {}), **(report.get("truncated") or {})}
         for key, why in outcomes.items():
-            ats, sep, slug = str(key).partition(
-                ":"
-            )  # partition: a Workday slug holds colons
-            try:
-                if (
-                    not sep or not slug
-                ):  # `get_scraper(ats, "")` yields a bogus `ats:` key
-                    raise ValueError("not an ats:slug key")
-                unauthoritative[get_scraper(ats, slug).board_key()] = str(why)
-            except Exception:  # noqa: BLE001 - a malformed key must not sink the join
+            board = board_key_of(key)
+            if board is None:
                 unresolved.append(str(key))
+                continue
+            unauthoritative[board] = str(why)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(unauthoritative, indent=1, sort_keys=True), encoding="utf-8"

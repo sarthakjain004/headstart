@@ -14,7 +14,8 @@ import sys
 import pytest
 
 import headstart.ingest.scrape_plan as ps
-from headstart.config import CompanyRef, board_identity
+from headstart.board_identity import board_identity
+from headstart.config import CompanyRef
 
 
 def test_coldstart_cost_weights_detail_fetchers():

@@ -23,12 +23,12 @@ import re
 from pathlib import Path
 
 from headstart import board_aliases, liveness
+from headstart.board_identity import board_identity
 from headstart.config import (
     EXCLUDED_BOARDS,
     PARKED_BOARDS,
     CompanyRef,
     _dedupe_boards,
-    board_identity,
     load_active_companies,
 )
 from headstart.scrapers.registry import DISABLED_ATS, SCRAPERS
