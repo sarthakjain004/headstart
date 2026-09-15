@@ -233,6 +233,8 @@ class TaleoEnterpriseScraper(BaseScraper):
     """Public Oracle Taleo Enterprise Career Section scraper."""
 
     ats = "taleo_enterprise"
+    # Enterprise Career Sections use the measured `jobdetail.ftl?lang=en&job={id}` detail route.
+    url_shape = r"https://[^/]+\.taleo\.net/careersection/[^/]+/jobdetail\.ftl\?lang=[^&]+&job=[^&]+"
     detail_workers = _DETAIL_WORKERS
     has_detail_pass = True
 
@@ -245,6 +247,11 @@ class TaleoEnterpriseScraper(BaseScraper):
 
     def url(self) -> str:
         return f"{_canonical(self.slug)}/jobsearch.ftl?lang=en"
+
+    def job_url(self, job_id: str) -> str:
+        return f"{_canonical(self.slug)}/jobdetail.ftl?" + urlencode(
+            {"lang": "en", "job": job_id}
+        )
 
     def alias_key(self) -> str | None:
         """The final Career Section URL, in the same identity space as this ledger."""
@@ -384,8 +391,7 @@ class TaleoEnterpriseScraper(BaseScraper):
                         "posted_at": _date(
                             _column(row_headers, values, ("posting date",))
                         ),
-                        "url": f"{board}/jobdetail.ftl?"
-                        + urlencode({"lang": "en", "job": job_id}),
+                        "url": self.job_url(job_id),
                     }
                 )
             if pages is not None and page_no >= pages:
@@ -429,7 +435,7 @@ class TaleoEnterpriseScraper(BaseScraper):
             location = detail.get("location") or item["location"]
             jobs.append(
                 Job(
-                    id=f"{self.board_key()}:{item['id']}",
+                    id=self.job_id(item["id"]),
                     ats=self.ats,
                     company=self.company,
                     title=item["title"] or "",

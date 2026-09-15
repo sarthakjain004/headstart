@@ -91,6 +91,18 @@ def test_detail_url_adds_in_iframe_and_public_url_never_has_it() -> None:
     assert "?" not in _public_url(f"{job}?in_iframe=1&mobile=false")
 
 
+def test_job_url_delegates_to_public_url_and_matches_url_shape() -> None:
+    """:meth:`ICIMSScraper.job_url` (ADR-0153) is a thin wrapper over :func:`_public_url`;
+    this pins both that delegation and the result against the class's own ``url_shape``."""
+    from headstart.scrapers.icims import ICIMSScraper
+
+    job = f"https://{_HOST}/jobs/12165/some-role/job"
+    scraper = get_scraper("icims", _HOST)
+    built = scraper.job_url(f"{job}?in_iframe=1")
+    assert built == _public_url(f"{job}?in_iframe=1") == job
+    assert re.fullmatch(ICIMSScraper.url_shape, built)
+
+
 def test_wrapper_page_yields_no_fields() -> None:
     """A page fetched without `in_iframe=1` is HTTP 200, ~80KB, and carries no JSON-LD.
 

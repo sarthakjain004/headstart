@@ -96,6 +96,13 @@ class AppleScraper(BaseScraper):
     never discovered."""
 
     ats = "apple"
+    # scraper: f"https://{slug}/en-us/details/{positionId}/{transformedPostingTitle}" (job_url
+    # below) — slug is the fixed host jobs.apple.com (ADR-0139, a Single source scraper: one
+    # company, never discovered). Verified live 2026-09-11: the page 200s and its <title>
+    # carries the posting title. positionId is numeric on every sampled row; the title slug
+    # can in theory be empty (job_url falls back to "" when transformedPostingTitle is
+    # missing) so it is loose.
+    url_shape = r"https://jobs\.apple\.com/en-us/details/\d+/[\w-]*"
     has_detail_pass = (
         True  # per-Job fetch fills description + employment_type (ADR-0050)
     )
@@ -252,7 +259,7 @@ class AppleScraper(BaseScraper):
             detail = details.get(native_id) or {}
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{native_id}",
+                    id=self.job_id(native_id),
                     ats=self.ats,
                     company=self.company,
                     title=title,

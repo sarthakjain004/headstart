@@ -212,13 +212,21 @@ def _rows(listing: str) -> list[tuple[str, str, str | None, str | None]]:
 
 class JazzHRScraper(BaseScraper):
     ats = "jazzhr"
+    # scraper: f"https://{slug}.applytojob.com/apply/{key}" (job_url below). The board links
+    # to /apply/{key}/{Title-Slug}, but the title slug is decorative — verified live
+    # 2026-09-07 that /apply/{key} alone serves the posting (200 on 1,526 of 1,527 fetched that
+    # way, the one miss a transport timeout) and that a WRONG title slug 200s too, so the key is
+    # the whole route. A key that no longer exists answers 410, which is what makes this link
+    # checkable at all. Keys are 10 alphanumerics on most tenants and a long hex string on a few
+    # (both real: `/apply/KqDYKxUH4p/…` and `/apply/07350d2d7f03…/…`), hence the loose class.
+    url_shape = r"https://[\w-]+\.applytojob\.com/apply/[A-Za-z0-9]+"
     detail_workers = _DETAIL_WORKERS  # also the async stream width (base.fan_out_async)
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     def url(self) -> str:
         return f"https://{self.slug}.applytojob.com/apply/jobs"
 
-    def _detail_url(self, key: str) -> str:
+    def job_url(self, key: str) -> str:
         """A posting's own page. The board links to ``/apply/{key}/{Title-Slug}``, but the slug is
         decorative — ``/apply/{key}`` alone serves the same page (200 on 1,526 of 1,527 fetched,
         the one failure a transport timeout), and even a deliberately wrong title slug 200s. So
@@ -297,7 +305,7 @@ class JazzHRScraper(BaseScraper):
         (:meth:`~BaseScraper.note_detail_loss`).
         """
         try:
-            return self._get(self._detail_url(key))
+            return self._get(self.job_url(key))
         except http.RequestsError as exc:
             self.note_detail_loss(type(exc).__name__)
             return None
@@ -305,7 +313,7 @@ class JazzHRScraper(BaseScraper):
     async def _detail_page_async(self, session: Any, key: str) -> str | None:
         """Same as :meth:`_detail_page` over the shared multiplexed ``AsyncSession``."""
         try:
-            return await self._get_async(session, self._detail_url(key))
+            return await self._get_async(session, self.job_url(key))
         except http.RequestsError as exc:
             self.note_detail_loss(type(exc).__name__)
             return None
@@ -327,7 +335,7 @@ class JazzHRScraper(BaseScraper):
             posting = _ld_of(page, "JobPosting") if page else None
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{key}",
+                    id=self.job_id(key),
                     ats=self.ats,
                     company=company or self.company,
                     title=title,
@@ -336,7 +344,7 @@ class JazzHRScraper(BaseScraper):
                     # The detail page wins: it states a department on postings whose listing row
                     # leaves it blank far more often than the reverse (117 vs 8, of 1,526 paired).
                     department=attributes.get("department") or department,
-                    url=self._detail_url(key),
+                    url=self.job_url(key),
                     posted_at=(posting or {}).get("datePosted") or None,
                     scraped_at=scraped_at,
                     description=html_to_text(_description_html(page)) if page else None,

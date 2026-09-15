@@ -84,9 +84,20 @@ class TikTokScraper(BaseScraper):
     docstring)."""
 
     ats = "tiktok"
+    # scraper: f"https://{slug}/search/{id}" (job_url below, the reference implementation's own
+    # convention — ADR-0139, single fixed slug "lifeattiktok.com"). Not verified end-to-end: the
+    # marketing frontend answered a bare 503 on every path tried, robots.txt included, across
+    # three curl_cffi TLS impersonations (docs/tiktok/2026-09-11_api-measurement.md), so
+    # `status_ok`/`title_on_page` are expected to read false here the way greenhouse's
+    # client-rendered embed form does above — a measured limit of the HTTP probe against this
+    # host, not evidence the link is wrong.
+    url_shape = r"https://lifeattiktok\.com/search/\d+"
 
     def url(self) -> str:
         return f"https://{self.slug}/"
+
+    def job_url(self, job_id: str) -> str:
+        return f"https://{self.slug}/search/{job_id}"
 
     def alias_key(self) -> str | None:
         # ADR-0139: a Single source scraper has no sibling tenant to alias against, and the
@@ -182,14 +193,14 @@ class TikTokScraper(BaseScraper):
             )
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{job_id}",
+                    id=self.job_id(job_id),
                     ats=self.ats,
                     company=self.company,
                     title=title,
                     location=location,
                     remote=is_remote(location),
                     department=category.get("en_name") or subject.get("en_name"),
-                    url=f"https://{self.slug}/search/{job_id}",
+                    url=self.job_url(job_id),
                     posted_at=None,  # no date field exists anywhere in this API (module docstring)
                     scraped_at=scraped_at,
                     description=html_to_text(description) if description else None,

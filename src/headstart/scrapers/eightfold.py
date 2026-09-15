@@ -105,6 +105,11 @@ class EightfoldScraper(BaseScraper):
     """Eightfold AI scraper — ``slug`` is the board host."""
 
     ats = "eightfold"
+    # scraper: f"https://{slug}{path}" where the SLUG IS THE BOARD HOST — five live ledger rows
+    # sit on custom domains (careers.micron.com, jobs.vodafone.com, portal.careers.hsbc.com…),
+    # so anchoring on .eightfold.ai flagged real rows. Host-agnostic like recruitee/darwinbox;
+    # verified live 2026-08-02 on both host kinds (amdocs-sandbox.eightfold.ai, careers.micron.com)
+    url_shape = r"https://[^/]+/careers/job/\d+"
     detail_workers = _DETAIL_WORKERS
     detail_streams = _DETAIL_STREAMS
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
@@ -129,6 +134,14 @@ class EightfoldScraper(BaseScraper):
         Not `url`, which is the sitemap: the slug here is a hostname, so without this the served
         company reads "jobs.vodafone.com" (`headstart.company_name`)."""
         return f"https://{self.slug}/careers"
+
+    def job_url(self, position_id: str, path: str | None = None) -> str:
+        """The PCSX/SmartApply surface's job-detail URL: the API's own ``positionUrl`` when it
+        states one, else the derived ``/careers/job/{id}`` route — both resolved against this
+        Board's host (ADR-0153). The sitemap fallback surface (:meth:`_sitemap_records`) instead
+        reads the ATS's own sitemap ``<loc>`` directly; there is nothing to build there."""
+        path = path or f"/careers/job/{position_id}"
+        return f"https://{self.slug}{path}" if path.startswith("/") else path
 
     def _get(
         self,
@@ -439,13 +452,10 @@ class EightfoldScraper(BaseScraper):
         records = []
         for pos, desc in zip(positions, descs):
             position_id = str(pos.get("id"))
-            path = pos.get("positionUrl") or f"/careers/job/{position_id}"
             records.append(
                 {
                     "id": position_id,
-                    "url": f"https://{self.slug}{path}"
-                    if path.startswith("/")
-                    else path,
+                    "url": self.job_url(position_id, pos.get("positionUrl")),
                     "fields": {
                         "title": pos.get("name"),
                         "description": desc or None,
@@ -631,7 +641,7 @@ class EightfoldScraper(BaseScraper):
                 remote = is_remote(location)
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{position_id}",
+                    id=self.job_id(position_id),
                     ats=self.ats,
                     company=self.company,
                     title=title,

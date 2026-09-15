@@ -20,6 +20,9 @@ _MAX_PAGES = 100  # our own ceiling — reaching it means the board went unread
 
 class SenseHQScraper(BaseScraper):
     ats = "sensehq"
+    # from the scraper's construction (job_url below: {slug}.sensehq.com/careers/jobs/{id});
+    # ZERO indexed rows today — source-derived only, same caveat oracle's entry used to carry.
+    url_shape = r"https://[\w-]+\.sensehq\.com/careers/jobs/\d+"
 
     def __init__(self, slug: str, company: str | None = None) -> None:
         super().__init__(slug, company)
@@ -27,6 +30,9 @@ class SenseHQScraper(BaseScraper):
 
     def url(self) -> str:
         return f"https://{self.slug}.sensehq.com/careers/api/jobs?page={self._page}"
+
+    def job_url(self, native_id: str) -> str:
+        return f"https://{self.slug}.sensehq.com/careers/jobs/{native_id}"
 
     def fetch_raw(self) -> Any:
         # SenseHQ returns 10 rows/page (0-indexed ?page=N) — page through to the count.
@@ -71,14 +77,14 @@ class SenseHQScraper(BaseScraper):
             )
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{r['id']}",
+                    id=self.job_id(r["id"]),
                     ats=self.ats,
                     company=self.company,
                     title=(r.get("title") or "").strip(),
                     location=location,
                     remote="remote" in workplace.lower() or is_remote(location),
                     department=r.get("department"),
-                    url=f"https://{self.slug}.sensehq.com/careers/jobs/{r['id']}",
+                    url=self.job_url(r["id"]),
                     posted_at=posted,
                     scraped_at=scraped_at,
                     description=html_to_text(r.get("description_external")),

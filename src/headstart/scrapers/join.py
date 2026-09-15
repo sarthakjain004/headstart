@@ -51,11 +51,15 @@ _PERIOD_PHRASE = {"PER_YEAR": "", "PER_MONTH": "per month", "PER_HOUR": "per hou
 
 class JoinScraper(BaseScraper):
     ats = "join"
+    url_shape = r"https://join\.com/companies/[^/]+/.+"
     detail_workers = _DETAIL_WORKERS
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     def url(self) -> str:
         return f"https://join.com/companies/{self.slug}"
+
+    def job_url(self, id_param: str) -> str:
+        return f"https://join.com/companies/{self.slug}/{id_param}"
 
     def _company(self) -> dict:
         """The company object (incl. numeric id) from the careers page __NEXT_DATA__.
@@ -202,14 +206,14 @@ class JoinScraper(BaseScraper):
             )
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{it['id']}",
+                    id=self.job_id(it["id"]),
                     ats=self.ats,
                     company=company_name,
                     title=(it.get("title") or "").strip(),
                     location=location,
                     remote=_REMOTE.get((it.get("workplaceType") or "").upper()),
                     department=(it.get("category") or {}).get("name"),
-                    url=f"https://join.com/companies/{self.slug}/{it.get('idParam', '')}",
+                    url=self.job_url(it.get("idParam", "")),
                     posted_at=it.get("createdAt"),
                     scraped_at=scraped_at,
                     description=html_to_text(it.get("_description")),

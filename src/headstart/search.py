@@ -411,6 +411,18 @@ def _canonical_url(ats: str | None, url: str | None, job_id: str | None) -> str 
 
     ``job_id`` is required rather than defaulted: recruitee's rewrite reads the tenant out of
     it, and a caller that forgot to pass it would silently keep serving the dead link.
+
+    Stays here, hardcoding ``"darwinbox"``/``"recruitee"``, rather than becoming a
+    ``canonical_url`` hook on ``DarwinboxScraper``/``RecruiteeScraper`` (ADR-0153): this module
+    is deployed to the HF Space as a flat standalone file (``deploy-space.yml`` copies only
+    ``search.py`` and a short list of siblings, never ``headstart.scrapers``, which pulls in
+    ``curl_cffi`` and the network-fetch stack the served app has no use for) — importing the
+    scraper registry here would break the deployed app's import graph for a repair this narrow.
+    What ADR-0153 *does* close: this function's two rewrites are pinned to
+    ``DarwinboxScraper.url_shape``/``RecruiteeScraper.url_shape`` by
+    ``tests/test_search.py::test_canonical_url_rewrites_match_the_scrapers_own_url_shape`` — a
+    repair whose output stops matching its scraper's declared shape fails CI, which is the
+    structural check this repo-side test can give without shipping scraper code to the Space.
     """
     if not url:
         return url

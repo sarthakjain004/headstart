@@ -74,6 +74,9 @@ class SuccessFactorsScraper(BaseScraper):
     """SuccessFactors RMK scraper — ``slug`` is the board's vanity host."""
 
     ats = "successfactors"
+    # scraper passes through RMK sitemap URLs: /job/{slug}/{id}/ on per-tenant vanity hosts
+    # (jobs.bt.com, careers.capgemini.com, jobs.turbo.co.th — no common host to anchor on)
+    url_shape = r"https://[^/]+/job/.+/\d+/?"
     detail_workers = _DETAIL_WORKERS
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
     # Where SAP parks a decommissioned RMK tenant (ADR-0111). Both spellings observed live.
@@ -91,6 +94,16 @@ class SuccessFactorsScraper(BaseScraper):
 
     def url(self) -> str:
         return f"https://{self.slug}/sitemap.xml"
+
+    def job_url(self, path: str) -> str:
+        """This Board's vanity host plus a job path already extracted from a sitemap/RSS/search
+        link — the same ``https://{host}{path}`` formula :func:`_job_urls_from` applies inline
+        for each match it finds (ADR-0153). Not called from that function directly: it batch-
+        extracts *every* job on a page in one regex pass with no scraper instance in hand (it is
+        tested that way too), so it keeps building full URLs itself; this method exists as the
+        declared, single-job-shaped statement of the same formula for :attr:`url_shape` and
+        anything that needs one URL at a time."""
+        return f"https://{self.slug}{path}"
 
     def _fetch_sitemap(self) -> tuple[str, str, str | None]:
         """GET ``/sitemap.xml`` streamed. Returns ``(kind, text, cut_short)`` with kind "urlset" |
@@ -388,7 +401,7 @@ class SuccessFactorsScraper(BaseScraper):
                 remote = is_remote(location)
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{item['id']}",
+                    id=self.job_id(item["id"]),
                     ats=self.ats,
                     company=self.company,
                     title=title,

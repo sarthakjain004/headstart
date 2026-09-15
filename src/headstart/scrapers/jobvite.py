@@ -184,6 +184,14 @@ def _location(posting: dict) -> str | None:
 
 class JobviteScraper(BaseScraper):
     ats = "jobvite"
+    # scraper: f"https://jobs.jobvite.com/{slug}/job/{id}" (job_url below). Every tenant is on
+    # that one host — a jobvite Board is a path, never a subdomain or a customer domain — so
+    # unlike eightfold/successfactors this can anchor the host. The id is Jobvite's own opaque
+    # 8-char EId. Verified live 2026-09-07 on four boards spanning all five row templates
+    # (barracuda-networks-inc, nutanix, agscareer, samtec-sp): all 200, each with its job title
+    # in the page `<title>`, so `title_on_page` bites here rather than reading false off a
+    # client-rendered page.
+    url_shape = r"https://jobs\.jobvite\.com/[^/]+/job/[A-Za-z0-9]+"
     detail_workers = _DETAIL_WORKERS  # also the async stream width (base.fan_out_async)
     has_detail_pass = True  # per-Job fetch fills every field but the id (ADR-0050)
 
@@ -287,7 +295,7 @@ class JobviteScraper(BaseScraper):
         )
         return ids
 
-    def _detail_url(self, job_id: str) -> str:
+    def job_url(self, job_id: str) -> str:
         return f"https://jobs.jobvite.com/{self.slug}/job/{job_id}"
 
     @staticmethod
@@ -333,7 +341,7 @@ class JobviteScraper(BaseScraper):
         try:
             response = self._fetch(
                 "GET",
-                self._detail_url(job_id),
+                self.job_url(job_id),
                 headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
                 timeout=30,
             )
@@ -348,7 +356,7 @@ class JobviteScraper(BaseScraper):
             response = await self._fetch_async(
                 session,
                 "GET",
-                self._detail_url(job_id),
+                self.job_url(job_id),
                 headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
                 timeout=30,
             )
@@ -384,7 +392,7 @@ class JobviteScraper(BaseScraper):
             location = _location(posting)
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{job_id}",
+                    id=self.job_id(job_id),
                     ats=self.ats,
                     company=_organization(posting.get("hiringOrganization"))
                     or self.company,
@@ -392,7 +400,7 @@ class JobviteScraper(BaseScraper):
                     location=location,
                     remote=is_remote(location),
                     department=(posting.get("industry") or "").strip() or None,
-                    url=self._detail_url(job_id),
+                    url=self.job_url(job_id),
                     posted_at=(posting.get("datePosted") or "").strip() or None,
                     scraped_at=scraped_at,
                     description=html_to_text(posting.get("description")),

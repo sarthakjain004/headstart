@@ -39,10 +39,14 @@ def _format_num(v: float) -> str:
 
 class KekaScraper(BaseScraper):
     ats = "keka"
+    url_shape = r"https://[^.]+\.keka\.com/careers/jobdetails/\d+"
 
     def __init__(self, slug: str, company: str | None = None) -> None:
         super().__init__(slug, company)
         self._tenant: str | None = None
+
+    def job_url(self, native_id: str) -> str:
+        return f"https://{self.slug}.keka.com/careers/jobdetails/{native_id}"
 
     def board_page(self) -> str:
         """The careers page, whose ``<title>`` is "Careers at {Name}" or "{Name} Careers".
@@ -120,14 +124,14 @@ class KekaScraper(BaseScraper):
             location = ", ".join(p for p in parts if p) or None
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{j['id']}",
+                    id=self.job_id(j["id"]),
                     ats=self.ats,
                     company=self.company,
                     title=(j.get("title") or "").strip(),
                     location=location,
                     remote=is_remote(location),
                     department=j.get("departmentName"),
-                    url=f"https://{self.slug}.keka.com/careers/jobdetails/{j['id']}",
+                    url=self.job_url(j["id"]),
                     posted_at=j.get("publishedOn"),
                     scraped_at=scraped_at,
                     description=html_to_text(j.get("description") or j.get("excerpt")),

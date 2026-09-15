@@ -91,9 +91,15 @@ def _preferred_location(value: Any) -> str | None:
 
 class FreshteamScraper(BaseScraper):
     ats = "freshteam"
+    # scraper passes through the API's own url field; tenants live on {slug}.freshteam.com
+    url_shape = r"https://[\w-]+\.freshteam\.com/jobs/[\w-]+"
 
     def url(self) -> str:
         return f"https://{self.slug}.freshteam.com/hire/widgets/jobs.json"
+
+    def job_url(self, native_url: str | None, unique_id: str) -> str:
+        """The widget's own ``url`` field when present, else the derived jobs page route."""
+        return native_url or f"https://{self.slug}.freshteam.com/jobs/{unique_id}"
 
     def fetch_raw(self) -> Any:
         """The widget payload, or ``{}`` for a dead tenant. An unknown slug returns an HTML 404
@@ -152,15 +158,14 @@ class FreshteamScraper(BaseScraper):
             )
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{j['id']}",
+                    id=self.job_id(j["id"]),
                     ats=self.ats,
                     company=self.company,
                     title=(j.get("title") or "").strip(),
                     location=location,
                     remote=remote,
                     department=role_name.get(j.get("job_role_id")),
-                    url=j.get("url")
-                    or f"https://{self.slug}.freshteam.com/jobs/{j.get('unique_id', '')}",
+                    url=self.job_url(j.get("url"), j.get("unique_id", "")),
                     posted_at=j.get("created_at"),
                     scraped_at=scraped_at,
                     description=html_to_text(j.get("description")),
