@@ -64,7 +64,7 @@ class JoinScraper(BaseScraper):
         hid dead boards from the ADR-0058 quarantine as "alive with zero jobs". A 200 page
         without __NEXT_DATA__ still returns ``{}`` — that is the page's shape, not an error.
         """
-        resp = http.fetch(
+        resp = self._fetch(
             "GET", self.url(), headers={"User-Agent": USER_AGENT}, timeout=30
         )
         resp.raise_for_status()
@@ -86,7 +86,7 @@ class JoinScraper(BaseScraper):
                 f"https://join.com/api/public/companies/{cid}/jobs"
                 f"?locale=en&page={page}&pageSize={_PAGE_SIZE}"
             )
-            data = http.fetch(
+            data = self._fetch(
                 "GET",
                 api,
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
@@ -154,7 +154,7 @@ class JoinScraper(BaseScraper):
             self.note_detail_unattempted("no job id")
             return None
         try:
-            resp = http.fetch(
+            resp = self._fetch(
                 "GET",
                 self._detail_url(jid),
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
@@ -171,7 +171,7 @@ class JoinScraper(BaseScraper):
             self.note_detail_unattempted("no job id")
             return None
         try:
-            resp = await http.fetch_async(
+            resp = await self._fetch_async(
                 session,
                 "GET",
                 self._detail_url(jid),

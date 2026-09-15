@@ -38,7 +38,15 @@ from curl_cffi.requests import RequestsError  # re-exported for callers' except 
 
 from headstart import log, spare_egress
 
-__all__ = ["TRANSIENT", "RequestsError", "fetch", "fetch_async", "session"]
+__all__ = [
+    "DEFAULT_FETCHER",
+    "TRANSIENT",
+    "HTTPFetcher",
+    "RequestsError",
+    "fetch",
+    "fetch_async",
+    "session",
+]
 
 _log = log.get(__name__)
 
@@ -494,3 +502,29 @@ async def fetch_async(
             spare_egress.note_settled(egress_group, response.status_code, egress_on)
         return response
     raise AssertionError("unreachable")  # pragma: no cover
+
+
+class HTTPFetcher:
+    """The default :class:`headstart.fetcher.Fetcher` (ADR-0153): this module's pooled,
+    retrying, spare-egress-aware HTTP client, named as a seam rather than reached as a module
+    global. Adds no behaviour of its own — the thread-local session, the retry ladder and the
+    spare-egress machinery above all stay exactly as they are; this only gives
+    :class:`~headstart.scrapers.base.BaseScraper` something to inject instead of importing
+    ``headstart.http`` at module scope. Calls the module-level :func:`fetch`/:func:`fetch_async`
+    by name rather than duplicating them, so a test that monkeypatches those (most of this
+    repo's do) keeps working against the default fetcher unchanged.
+    """
+
+    def fetch(self, method: str, url: str, **kwargs: Any) -> Any:
+        return fetch(method, url, **kwargs)
+
+    async def fetch_async(
+        self, session: Any, method: str, url: str, **kwargs: Any
+    ) -> Any:
+        return await fetch_async(session, method, url, **kwargs)
+
+
+#: :class:`~headstart.scrapers.base.BaseScraper`'s default fetcher. Stateless — it only forwards
+#: to this module's own functions, which already carry the real state — so one shared instance
+#: is enough.
+DEFAULT_FETCHER = HTTPFetcher()

@@ -34,6 +34,8 @@ import atexit
 import json
 import threading
 from contextlib import contextmanager
+from typing import Any, Self
+from urllib.parse import urlsplit
 
 from headstart import log
 
@@ -324,3 +326,79 @@ def origin(page_url: str):
             # DEBUG for the reason the reap above gives: once per walled Board. A tab that
             # will not close is also how `_TAB_WIDTH` leaks, so it must leave a trace.
             _log.debug("closing a finished board's tab raised", exc_info=True)
+
+
+class _FetchResult:
+    """The slice of ``curl_cffi``'s ``Response`` surface a :class:`headstart.fetcher.Fetcher`
+    caller needs — ``.status_code``, ``.json()``, ``.raise_for_status()`` — so a scraper can
+    treat a browser answer exactly like a curl one."""
+
+    def __init__(self, status_code: int, data: Any, text: str = "") -> None:
+        self.status_code = status_code
+        self._data = data
+        self.text = text
+
+    def json(self) -> Any:
+        return self._data
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise BrowserHTTPError(self.status_code, self.text)
+
+
+class BrowserFetcher:
+    """A :class:`headstart.fetcher.Fetcher` backed by one warmed tab on one origin (ADR-0056,
+    deepened for ADR-0153). Implements ``fetch`` only — a browser tab is one session, not a
+    multiplexed pool, and nothing calls its async half (see ``headstart.fetcher``'s module
+    docstring) — and only for requests inside the origin it was opened on: every darwinbox
+    tenant is its own subdomain, so one instance never needs to cover two.
+
+    A context manager, not a bare object, because the tab :func:`origin` opens must close
+    deterministically — this wraps that contract rather than replacing it::
+
+        with BrowserFetcher(f"{host}/ms/candidate/careers") as browser:
+            response = browser.fetch("POST", f"{host}/ms/candidateapi/...", json=body)
+            response.raise_for_status()
+            data = response.json()
+
+    ``fetch``'s ``url`` must share ``page_url``'s origin — that origin is the one thing the
+    navigation on entry actually clears (ADR-0056), so a request outside it would be asking a
+    tab for a wall it was never shown, not merely a bug in the caller's bookkeeping.
+    """
+
+    def __init__(self, page_url: str) -> None:
+        self._page_url = page_url
+        parts = urlsplit(page_url)
+        self._origin = f"{parts.scheme}://{parts.netloc}"
+        self._cm: Any = None
+        self._page: _Page | None = None
+
+    def __enter__(self) -> Self:
+        self._cm = origin(self._page_url)
+        self._page = self._cm.__enter__()
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        cm, self._cm, self._page = self._cm, None, None
+        if cm is not None:
+            cm.__exit__(*exc_info)
+
+    def fetch(
+        self, method: str, url: str, *, json: dict | None = None, **_ignored: Any
+    ) -> _FetchResult:
+        if self._page is None:
+            raise RuntimeError("BrowserFetcher.fetch() called outside its `with` block")
+        if not url.startswith(self._origin):
+            raise ValueError(
+                f"{url!r} is outside this tab's cleared origin {self._origin!r}"
+            )
+        path = url[len(self._origin) :]
+        try:
+            data = (
+                self._page.get_json(path)
+                if method.upper() == "GET"
+                else self._page.post_json(path, json or {})
+            )
+        except BrowserHTTPError as exc:
+            return _FetchResult(exc.status_code, None, text=exc.body)
+        return _FetchResult(200, data)
