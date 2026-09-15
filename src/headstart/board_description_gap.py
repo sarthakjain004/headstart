@@ -2,7 +2,7 @@
 
 The fourth per-board ledger, beside :mod:`headstart.board_priority`,
 :mod:`headstart.board_cost` and :mod:`headstart.ingest.board_failures`. Keyed on the
-**board_key** shape that :func:`headstart.corpus.board_of` yields — not ``f"{ats}:{slug}"``
+**board_key** shape that :func:`headstart.board_identity.board_of` yields — not ``f"{ats}:{slug}"``
 (ADR-0059) — and then **lowercased**, which the other three ledgers are not.
 
 That lowercasing is the whole reason :func:`key_for` exists rather than each caller spelling out
@@ -39,9 +39,9 @@ FIELDS = ("board", "unsettled", "updated_at")
 
 def key_for(company: CompanyRef) -> str:
     """This Board's key in the ledger — the one form every reader and writer must agree on."""
-    from headstart.config import board_identity
+    from headstart.board_identity import board_identity, lower_key
 
-    return board_identity(company).lower()
+    return lower_key(board_identity(company))
 
 
 def load(path: str | Path) -> dict[str, int]:
@@ -50,13 +50,15 @@ def load(path: str | Path) -> dict[str, int]:
     A missing file degrades the planner to its previous behaviour — no reserved slots — which is
     what makes this safe to ship before the first run has written one.
     """
+    from headstart.board_identity import lower_key
+
     path = Path(path)
     if not path.exists():
         return {}
     rows: Counter[str] = Counter()
     with path.open(newline="", encoding="utf-8") as fh:
         for row in csv.DictReader(fh):
-            rows[row["board"].lower()] += int(row["unsettled"])
+            rows[lower_key(row["board"])] += int(row["unsettled"])
     return dict(rows)
 
 
@@ -66,11 +68,13 @@ def save(path: str | Path, rows: dict[str, int], *, today: str) -> None:
     Counts are summed per lowercased key, so two case-variants of one Board become one row rather
     than two the slice can only half-match.
     """
+    from headstart.board_identity import lower_key
+
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     folded: Counter[str] = Counter()
     for board, unsettled in rows.items():
-        folded[board.lower()] += unsettled
+        folded[lower_key(board)] += unsettled
     with path.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.writer(fh)
         writer.writerow(FIELDS)

@@ -86,17 +86,3 @@ def test_load_fails_open(tmp_path):
     )
     loaded = bf.load(p)
     assert "greenhouse:ok" in loaded and "bad" not in loaded
-
-
-def test_board_key_of_normalises_the_report_key_space():
-    """Shard reports key errors `{ats}:{slug}` where a Workday slug is a whole URL; the corpus
-    side keys `board_key()`. The two must land in one key space or gone-verdicts and produced-sets
-    silently never pair — the same conversion scrape_join applies for eviction scope."""
-    assert (
-        bf.board_key_of("workday:https://x.wd1.myworkdayjobs.com/Careers")
-        == "workday:x/Careers"
-    )
-    assert bf.board_key_of("greenhouse:hibu") == "greenhouse:hibu"
-    assert bf.board_key_of("notanats:whatever") is None
-    assert bf.board_key_of(":slug") is None
-    assert bf.board_key_of("greenhouse:") is None

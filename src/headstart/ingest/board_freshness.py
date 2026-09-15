@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from headstart import log
+from headstart.board_identity import ats_of, lower_key
 from headstart.ingest.index_plan import resolve_board
 
 _log = log.get(__name__)
@@ -48,8 +49,8 @@ def update(
                         row["excluded_since"],
                         int(row["consecutive_exclusions"]),
                     )
-    excluded = {board.lower(): why for board, why in unauthoritative.items()}
-    for board in {b.lower() for b in authoritative} - excluded.keys():
+    excluded = {lower_key(board): why for board, why in unauthoritative.items()}
+    for board in {lower_key(b) for b in authoritative} - excluded.keys():
         if board in live:
             history[board] = Freshness(last_authoritative=observed_at)
     for board in excluded:
@@ -62,7 +63,7 @@ def update(
     protected: Counter[str] = Counter()
     missing: Counter[str] = Counter()
     for job_id in index_ids:
-        board = resolve_board(job_id, live).lower()
+        board = lower_key(resolve_board(job_id, live))
         if board in unresolved:
             protected[board] += 1
             if board in excluded and job_id not in corpus_ids:
@@ -81,7 +82,7 @@ def update(
             if held.last_authoritative
             else None
         )
-        ats = board.split(":", 1)[0]
+        ats = ats_of(board)
         totals = by_ats.setdefault(
             ats,
             {

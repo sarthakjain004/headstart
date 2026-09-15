@@ -24,7 +24,8 @@ from typing import Any
 
 from headstart import http, log
 from headstart.board_cost import SHARD_HEADER, shard_row
-from headstart.config import CompanyRef, board_identity
+from headstart.board_identity import board_identity
+from headstart.config import CompanyRef
 from headstart.models import Job
 from headstart.scrapers.registry import get_scraper
 

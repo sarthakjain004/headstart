@@ -79,6 +79,7 @@ import numpy as np
 import pyarrow as pa
 
 from headstart import log
+from headstart.board_identity import ats_of, lower_key
 from headstart.corpus import iter_jobs
 from headstart.ingest import (
     PENDING_UPGRADES_PATH,
@@ -537,7 +538,7 @@ def sync(args: argparse.Namespace) -> int:
     # truncation that reports nothing at all is caught only by the second — and only while it
     # stays transient.
     unauthoritative = read_unauthoritative_boards(args.unauthoritative_boards)
-    excluded = {b for b in boards if b.lower() in unauthoritative}
+    excluded = {b for b in boards if lower_key(b) in unauthoritative}
     if excluded:
         boards -= excluded
         # One warning for the whole set, naming a sample of it, then every Board and its reason
@@ -552,7 +553,7 @@ def sync(args: argparse.Namespace) -> int:
         )
         _log_reasons(
             "scope-excluded Board",
-            {b: unauthoritative[b.lower()] for b in sorted(excluded)},
+            {b: unauthoritative[lower_key(b)] for b in sorted(excluded)},
         )
     fresh = corpus_ids & row_of.keys()
     unembedded = len(corpus_ids) - len(fresh)
@@ -840,7 +841,7 @@ def prune(args: argparse.Namespace) -> int:
     for label, ids in (("off-Board", off_board), ("duplicate", duplicate)):
         if not ids:
             continue
-        by_ats = Counter(jid.split(":", 1)[0] for jid in ids)
+        by_ats = Counter(ats_of(jid) for jid in ids)
         ranked = ", ".join(f"{ats} {n}" for ats, n in by_ats.most_common(5))
         extra = f", +{len(by_ats) - 5} more" if len(by_ats) > 5 else ""
         _log.info(
@@ -944,7 +945,7 @@ def backfill_from_store(args: argparse.Namespace) -> int:
         .limit(max(table.count_rows(filter=empty), 1))
         .to_list()
     ):
-        missing.setdefault(row["id"].split(":", 1)[0], set()).add(row["id"])
+        missing.setdefault(ats_of(row["id"]), set()).add(row["id"])
     total = sum(len(ids) for ids in missing.values())
     _log.info(
         f"{total:,} row(s) of {table.count_rows():,} carry no description, "

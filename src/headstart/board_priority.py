@@ -3,10 +3,10 @@
 A Board that yields tech jobs should be scraped — and its docs embedded — before the long
 tail of boards that never do. The signal is a sticky EWMA of each Board's tech-job count,
 persisted as ``data/state/board_priority.csv`` (``board,score,last_tech_jobs,updated_at``,
-``board`` being whatever :func:`headstart.corpus.board_of` yields — the **board_key** shape,
+``board`` being whatever :func:`headstart.board_identity.board_of` yields — the **board_key** shape,
 which is *not* ``{ats}:{slug}`` wherever a scraper overrides ``board_key()``: a Workday slug is
 a whole careers URL and a Personio slug the whole host. Every lookup therefore goes through
-:func:`headstart.config.board_identity`, never ``f"{ats}:{slug}"`` — keying it the latter way
+:func:`headstart.board_identity.board_identity`, never ``f"{ats}:{slug}"`` — keying it the latter way
 left all 13,714 Workday and Personio boards permanently unscored). Since ADR-0096 the
 **Board-cost ledger** is keyed the same way, so the two are joinable; before that they were not,
 and joining them silently produced nonsense for exactly those two ATSes. The file
@@ -124,7 +124,7 @@ def _gap_picks(
     unsettled Jobs goes first, so each slot repairs as many rows as it can.
     """
     from headstart.board_description_gap import key_for
-    from headstart.config import board_identity
+    from headstart.board_identity import board_identity
     from headstart.scrapers.registry import detail_pass_atses
 
     detail_pass = detail_pass_atses()
@@ -164,14 +164,14 @@ def pick_boards(
     pick is strictly worse than a Board we already know is worth visiting. It self-cancels: an
     empty or absent ledger reserves nothing and the slice is byte-identical to before.
     """
-    from headstart.config import board_identity
+    from headstart.board_identity import board_identity
 
     rng = rng or random.Random()
     shuffled = list(companies)
     rng.shuffle(shuffled)
 
     # `board_identity`, not `f"{ats}:{slug}"`. The ledger is written by `update_ledgers priority`
-    # from `corpus.board_of(job_id)`, which yields the **board_key** shape — and Workday and
+    # from `board_identity.board_of(job_id)`, which yields the **board_key** shape — and Workday and
     # Personio override `board_key()` (a Workday slug is a whole careers URL, a Personio slug the
     # whole host), so the old key could never match one of their rows. It even carried a comment
     # claiming it matched `corpus.board_of`.

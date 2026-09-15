@@ -43,8 +43,9 @@ from pathlib import Path
 from headstart import board_description_gap, log
 from headstart.board_cost import BoardCost, costs_for
 from headstart.board_cost import load as load_cost_ledger
+from headstart.board_identity import board_identity, lower_key
 from headstart.board_priority import load_scores, pick_boards
-from headstart.config import board_identity, load_active_companies
+from headstart.config import load_active_companies
 from headstart.ingest import (
     HELD_DETAILS_PATH,
     REPO_ROOT,
@@ -313,7 +314,7 @@ def main() -> int:
 
     companies = load_active_companies(Path(args.ledger), min_jobs=0)
     quarantine = {
-        b.lower()
+        lower_key(b)
         for b in board_failures.quarantined(board_failures.load(args.failures))
     }
     if quarantine:
@@ -324,7 +325,7 @@ def main() -> int:
         # ledger's casing and `board_key()`'s need not agree (ADR-0049).
         before = len(companies)
         companies = [
-            c for c in companies if board_identity(c).lower() not in quarantine
+            c for c in companies if lower_key(board_identity(c)) not in quarantine
         ]
         _log.info(
             f"quarantine: skipped {before - len(companies)} of {len(quarantine)} "
@@ -400,7 +401,7 @@ def main() -> int:
     # Pack on measured seconds when the ledger has them (ADR-0027); fall back to the ADR-0026
     # heuristic only until the first run has populated it.
     # One keyspace: both ledgers are keyed by `board_key` (ADR-0096). They were split until
-    # 2026-08-28 — cost written by `harvest` under `{ats}:{slug}`, priority from `corpus.board_of`
+    # 2026-08-28 — cost written by `harvest` under `{ats}:{slug}`, priority from `board_identity.board_of`
     # under `board_key()` — and conflating them is what left every Workday and Personio board
     # unscored (ADR-0049). The fix was to make them agree, not to keep pairing them up.
     keys = [board_identity(c) for c in companies]
