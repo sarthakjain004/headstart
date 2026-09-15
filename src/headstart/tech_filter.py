@@ -23,6 +23,7 @@ Precedence (first match wins):
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -200,4 +201,63 @@ def filter_jobs(src_dir: str | Path, dst_dir: str | Path) -> dict[str, tuple[int
                     kept += 1
             fout.flush()
         stats[src.stem] = (kept, total)
+    return stats
+
+
+def report(
+    stats: dict[str, tuple[int, int]], dst_dir: str | Path, logger: logging.Logger
+) -> None:
+    """Log ``filter_jobs``' per-run table plus the two zero-output warnings, through ``logger``.
+
+    Takes the caller's logger rather than opening one of its own: the pipeline-stage entry point
+    (``headstart.ingest.filter_tech``) owns the ``[filter_tech]`` tag (ADR-0039), and this module
+    is not that entry point — logging through the passed-in logger keeps every line under that
+    tag, unchanged from before this reporting logic lived here.
+    """
+    logger.info(f"{'ATS':<16}{'kept':>9}{'total':>9}{'kept%':>8}")
+    kept = total = 0
+    empty = []
+    for ats, (k, t) in sorted(stats.items()):
+        kept += k
+        total += t
+        if t:
+            logger.info(f"{ats:<16}{k:>9}{t:>9}{100 * k / t:>7.1f}%")
+        else:
+            # An ATS that scraped nothing used to be skipped here, leaving a wholly broken
+            # scraper no trace in this table at all.
+            #
+            # Every ATS reaching `stats` was in this run's slice: `filter_jobs` keys off
+            # `src_dir.glob("*.jsonl")`, and `harvest` opens one handle per ATS *in the shard's
+            # list* precisely so a zero-yield ATS still leaves an empty file. An ATS outside the
+            # slice has no file at all and never lands here — so "not in the slice" is not one of
+            # the readings, and offering it would blunt the signal this line exists to give.
+            #
+            # Deferral IS one, though: `harvest` opens those handles before the resume filter, so
+            # an ATS whose every Board was deferred by a budget kill also leaves an empty file and
+            # arrives here having been neither attempted nor empty. `scrape_join`'s own
+            # "deferred boards" line is where that is diagnosed.
+            empty.append(ats)
+    if empty:
+        logger.warning(
+            f"{len(empty)} ATS(es) were in this run's slice but contributed zero rows: "
+            f"{', '.join(empty)} — their boards failed, were deferred, or are genuinely empty"
+        )
+    if total:
+        logger.info(
+            f"{'TOTAL':<16}{kept:>9}{total:>9}{100 * kept / total:>7.1f}%"
+            f"  (dropped {total - kept} non-tech) -> {dst_dir}"
+        )
+    else:
+        # A zero-row run used to be near-silent: the table printed its header and stopped, which
+        # is a hard shape to notice in a green log. Everything downstream reads this corpus, so
+        # say it plainly. Not an abort — this stage does not own that call.
+        logger.error(f"no rows at all reached the tech filter -> {dst_dir} is empty")
+
+
+def filter_jobs_and_report(
+    src_dir: str | Path, dst_dir: str | Path, logger: logging.Logger
+) -> dict[str, tuple[int, int]]:
+    """``filter_jobs`` plus its run report (see ``report``) — what ``filter_tech.main()`` runs."""
+    stats = filter_jobs(src_dir, dst_dir)
+    report(stats, dst_dir, logger)
     return stats
