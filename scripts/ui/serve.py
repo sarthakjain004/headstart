@@ -16,6 +16,7 @@ from pathlib import Path
 import lancedb
 from flask import Flask, jsonify, render_template, request
 
+import headstart
 from headstart import facets, fx, geo
 from headstart.search import (
     KEYWORD_DEFAULT_SCOPE,
@@ -26,7 +27,10 @@ from headstart.search import (
 )
 
 _REPO = Path(__file__).resolve().parents[2]
-_UI = _REPO / "src" / "headstart" / "ui"
+# Resolved off the installed package (ADR-0153), exactly like the Space's app.py — both find
+# the same headstart/ui regardless of whether headstart is this repo's src/ or the Space
+# image's copy of it.
+_UI = Path(headstart.__file__).parent / "ui"
 
 print("loading model + index ...", flush=True)
 _model = load_encoder()
@@ -58,10 +62,16 @@ def _fx_converts(currencies: list[str]) -> bool:
 
 @app.route("/")
 def index():
+    scopes = keyword_scope_options()  # the Keyword filter's one map (ADR-0104)
     return render_template(
         "base.html",
         cfg={
             "google_client_id": "",
+            # The Keyword filter's scopes (ADR-0104) — window.CFG reads these client-side
+            # (app.js), so without them the local dev UI's scope <select> silently loses its
+            # "needs description" disabling and its default-scope comparison.
+            "keyword_scopes": {value: needs for value, _, needs in scopes},
+            "keyword_default_scope": KEYWORD_DEFAULT_SCOPE,
             # The Data tab's browse line reads this to name the ordering actually in force.
             "has_first_seen": _searcher.has_first_seen,
             # The salary bracket's rate table (ADR-0117), so the page can print what a row
@@ -79,6 +89,11 @@ def index():
         atses=_searcher.atses,
         india_opts=geo.dropdown_options(),
         has_first_seen=_searcher.has_first_seen,
+        # the "Highest salary" sort option — dark until the ADR-0082 columns exist on the
+        # served table, the same rule app.py and JobSearch.run apply to the value the control
+        # would send (this was previously missing here — the option silently vanished from
+        # local dev only, ADR-0153)
+        has_min_salary=_searcher.has_min_salary_annual,
         currencies=_searcher.currencies,
         # The salary bracket converts across currencies (ADR-0117); the rail prints the date
         # of the rates it used, so a stale table is visible rather than silent.
@@ -93,7 +108,7 @@ def index():
         # ADR-0104's scope map, as the Space passes it. Without these three the rail still
         # renders — Jinja's default Undefined yields nothing rather than raising — but the
         # Keyword scope <select> comes out with zero options, silently.
-        keyword_scopes=keyword_scope_options(),
+        keyword_scopes=scopes,
         keyword_default_scope=KEYWORD_DEFAULT_SCOPE,
         has_description=_searcher.has_description,
         trends_on=False,

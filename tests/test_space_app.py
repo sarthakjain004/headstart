@@ -4,11 +4,15 @@ The filter/search logic itself lives in `headstart.search` and is tested in
 `tests/test_search.py`; what's left here is what only the app owns — the sign-in wall and
 the wiring — which had no coverage anywhere, because `deploy/` sits outside `testpaths`
 and importing the app pulls in a model download, a SentenceTransformer and a LanceDB
-table. So the heavy imports are stubbed in `sys.modules` (the real `headstart.search`
-rides along as the flat `search` module, exactly as deploy-space.yml lays it down) and the
-module is loaded from its path — the same importlib trick `tests/test_check_liveness.py`
-uses for `scripts/`. Auth requests ride `base_url="https://localhost"` because the session
-cookie is `Secure` and the test client honours that over plain http.
+table. So the heavy ML/network deps are stubbed in `sys.modules` and the module is loaded
+from its path — the same importlib trick `tests/test_check_liveness.py` uses for
+`scripts/`. Everything else app.py imports (`headstart.search`, `.facets`, `.fx`, `.geo`,
+`.profile_extract`, `.alerts.*`) is the real package: the Space installs `headstart` rather
+than laying its modules down flat (ADR-0153), so app.py imports it exactly the way this
+test file and `scripts/ui/serve.py` already did, and there is nothing left to fake for it —
+only `llm_router.ask` is defaulted off below, so a router-less test environment doesn't
+attempt a real network call. Auth requests ride `base_url="https://localhost"` because the
+session cookie is `Secure` and the test client honours that over plain http.
 """
 
 import csv
@@ -27,6 +31,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
+from headstart.llm_router import RouterUnavailable
+
 pytest.importorskip("flask")  # in [dev] so this runs in CI; guards a bare env
 
 APP = Path(__file__).resolve().parents[1] / "deploy" / "hf-space" / "app.py"
@@ -39,11 +45,10 @@ def _module(name, **attrs):
     return mod
 
 
-_RouterUnavailable = type("RouterUnavailable", (Exception,), {})
-
-
 def _no_router(prompt):
-    raise _RouterUnavailable("no router in tests")
+    """The default ``ask`` for every app fixture — no router in the test sandbox, so this
+    stands in for the real network failure without ever attempting one."""
+    raise RouterUnavailable("no router in tests")
 
 
 class _Table:
@@ -137,46 +142,10 @@ def _space_app(state, env=None):
         "huggingface_hub": _module(
             "huggingface_hub", snapshot_download=lambda *a, **k: str(state)
         ),
-        # Governs app.py's own `import geo` (the dropdown) ONLY. The flat `search` module
-        # below is the real headstart.search, which bound the real headstart.geo at import —
-        # so /search filter behaviour here runs real geo, not this stub. Filter tests belong
-        # in tests/test_search.py, where that is explicit.
-        "geo": _module(
-            "geo",
-            where=lambda place: None,
-            DROPDOWN=["bengaluru"],
-            dropdown_options=lambda: [("bengaluru", "Bengaluru")],
-        ),
-        "llm_router": _module(
-            "llm_router",
-            RouterUnavailable=_RouterUnavailable,
-            # default: no router in tests — the parse route answers 503 unless a test
-            # monkeypatches ask with a canned JSON reply
-            ask=_no_router,
-        ),
     }
-    # The Space imports the alerts package and the flat facets/search/profile_extract modules,
-    # as deploy-space.yml lays them down — the real modules, not fakes, so the wiring under
-    # test is real (profile_extract is pure json/re, so its scrub runs for real too).
-    import headstart.alerts.access as _access
-    import headstart.alerts.identity as _identity
-    import headstart.alerts.store as _store
-    import headstart.facets as _facets
-    import headstart.fx as _fx
-    import headstart.profile_extract as _profile_extract
-    import headstart.search as _search
-
-    stubs["alerts"] = _module("alerts", access=_access, identity=_identity)
-    stubs["alerts.store"] = _store
-    stubs["facets"] = _facets
-    # The real module, not a stub: it reads a committed table off disk and the app only asks
-    # it for a date (ADR-0117). Faking it would test the fake.
-    stubs["fx"] = _fx
-    stubs["profile_extract"] = _profile_extract
-    stubs["search"] = _search
-    # Every stubbed name is restored, including the two above — leaving a fake `alerts` in
-    # sys.modules would follow this fixture into every later test in the session. Env vars
-    # are restored the same way, for the same reason.
+    # Only the ML/network deps above are faked. Everything app.py imports from `headstart`
+    # (facets, fx, geo, profile_extract, search, alerts.*) is the real package (ADR-0153), so
+    # there is nothing left to substitute for it — the wiring under test is real end to end.
     saved = {name: sys.modules.get(name) for name in stubs}
     saved_env = {key: os.environ.get(key) for key in (env or {})}
     sys.modules.update(stubs)
@@ -185,7 +154,16 @@ def _space_app(state, env=None):
         spec = importlib.util.spec_from_file_location("space_app", APP)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        yield module
+        # `module.llm_router` is the real, shared `headstart.llm_router` (every app fixture in
+        # this file imports the same singleton) — default `ask` off so a router-less test
+        # environment can't attempt a real network call, and restore it so this fixture's
+        # teardown never leaves a different default behind for a sibling fixture still in use.
+        real_ask = module.llm_router.ask
+        module.llm_router.ask = _no_router
+        try:
+            yield module
+        finally:
+            module.llm_router.ask = real_ask
     finally:
         for name, previous in saved.items():
             if previous is None:
