@@ -30,6 +30,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from statistics import median
 
+from headstart.board_identity import ats_of
+
 FIELDS = ("board", "seconds", "jobs", "updated_at")
 # The per-shard file a scrape writes (pipeline.JobWriter.record_cost) and read_shard_rows reads.
 # Schema lives here, next to its reader, so adding a column is one edit rather than two files.
@@ -247,23 +249,19 @@ def update(
     return rows
 
 
-def _ats_of(cost_key: str) -> str:
-    """The ATS half of a cost key.
-
-    Since ADR-0096 that key is ``board_identity``, the same one the priority ledger uses, so the
-    two are interchangeable. They were not before, and the cost of getting it wrong is on record:
-    ADR-0059 found a stale "matches corpus.board_of" comment of exactly this shape, and of the
-    13,402 Boards whose keys could not match, the 4,611 holding a priority row were scored 0.0.
-    The ATS half is unaffected either way — it is the part both spellings share.
-    """
-    return cost_key.split(":", 1)[0]
-
-
 def ats_medians(rows: Mapping[str, BoardCost]) -> dict[str, float]:
-    """Median measured seconds per ATS — the fallback for a Board with no history of its own."""
+    """Median measured seconds per ATS — the fallback for a Board with no history of its own.
+
+    Since ADR-0096 a cost key is ``board_identity``, the same one the priority ledger uses, so
+    :func:`~headstart.board_identity.ats_of` reads the ATS half of either interchangeably. They
+    were not before, and the cost of getting it wrong is on record: ADR-0059 found a stale
+    "matches corpus.board_of" comment of exactly this shape, and of the 13,402 Boards whose keys
+    could not match, the 4,611 holding a priority row were scored 0.0. The ATS half is unaffected
+    either way — it is the part both spellings share.
+    """
     by_ats: dict[str, list[float]] = {}
     for board, c in rows.items():
-        by_ats.setdefault(_ats_of(board), []).append(c.seconds)
+        by_ats.setdefault(ats_of(board), []).append(c.seconds)
     return {ats: median(vals) for ats, vals in by_ats.items() if vals}
 
 
@@ -288,5 +286,5 @@ def costs_for(
         if row is not None:
             out.append(row.seconds)
         else:
-            out.append(medians.get(_ats_of(key), overall) or fallback)
+            out.append(medians.get(ats_of(key), overall) or fallback)
     return out

@@ -40,9 +40,8 @@ from pathlib import Path
 from typing import Any
 
 from headstart import log
+from headstart.board_identity import board_key, board_of, lower_key
 from headstart.config import load_active_companies
-from headstart.corpus import board_of
-from headstart.scrapers.registry import get_scraper
 
 _log = log.get(__name__, __spec__)
 
@@ -133,7 +132,7 @@ def plan_sync(
     id (present in both) is left as-is (id-only change detection).
 
     ``live`` is the :func:`boards_by_canon` lookup ids resolve through; pass an empty dict when
-    there is no ledger to read, which degrades to :func:`~headstart.corpus.board_of`. Required
+    there is no ledger to read, which degrades to :func:`~headstart.board_identity.board_of`. Required
     rather than defaulted: omitting it silently restores the scoping ADR-0049 records as *worse*
     than the bug it fixes.
 
@@ -223,7 +222,7 @@ def plan_sync(
         # an intersection against the whole index.
         for job_id in previously:
             board = resolve_board(job_id, live)
-            if board not in boards and board.lower() in live:
+            if board not in boards and lower_key(board) in live:
                 unconfirmed.add(job_id)
 
     return SyncPlan(
@@ -298,7 +297,7 @@ def live_keep_set(ledger_dir: str | Path) -> set[str]:
     no_board_key = log.FirstOnly(_log)
     for company in load_active_companies(ledger_dir, min_jobs=0):
         try:
-            keep.add(get_scraper(company.ats, company.slug, company.name).board_key())
+            keep.add(board_key(company))
         except Exception:  # noqa: BLE001 - a malformed ledger row shouldn't sink the whole set
             # Not sinking the set is right; doing it silently is not. The Board drops out of the
             # keep-set, so `plan_prune` reads its rows as off-Board and `prune --apply` deletes
@@ -339,7 +338,7 @@ def _live_board_end(job_id: str, live: dict[str, str]) -> int | None:
     """
     best: int | None = None
     for pos, char in enumerate(job_id):
-        if char == ":" and job_id[:pos].lower() in live:
+        if char == ":" and lower_key(job_id[:pos]) in live:
             best = pos
     return best
 
@@ -356,7 +355,7 @@ def boards_by_canon(keep: Iterable[str]) -> dict[str, str]:
     """
     live: dict[str, str] = {}
     for board in sorted(keep):  # sorted so a caller's set order can't change the plan
-        live.setdefault(board.lower(), board)
+        live.setdefault(lower_key(board), board)
     return live
 
 
@@ -395,7 +394,7 @@ def read_unauthoritative_boards(path: str | Path) -> dict[str, str]:
             "no Board is protected from eviction this run"
         )
         return {}
-    return {str(k).lower(): str(v) for k, v in data.items()}
+    return {lower_key(str(k)): str(v) for k, v in data.items()}
 
 
 def resolve_board(job_id: str, live: dict[str, str]) -> str:
@@ -447,7 +446,7 @@ def plan_prune(index_ids: Iterable[str], keep: set[str]) -> tuple[list[str], lis
         if end is None:
             off_board.append(jid)
             continue
-        canon, native = jid[:end].lower(), jid[end + 1 :]
+        canon, native = lower_key(jid[:end]), jid[end + 1 :]
         groups[(canon, native)].append(jid)
     duplicate: list[str] = []
     for (canon, _), ids in groups.items():

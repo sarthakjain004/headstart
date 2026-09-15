@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from headstart import log
+from headstart.board_identity import ats_of
 
 _log = log.get(__name__)
 
@@ -115,16 +116,16 @@ class ScrapeHealth:
                 observations = {}
                 malformed = True
             for key in boards_ok:
-                coverage[str(key).split(":", 1)[0]]["successful"] += 1
+                coverage[ats_of(key)]["successful"] += 1
             for key in errors:
-                coverage[str(key).split(":", 1)[0]]["failed"] += 1
+                coverage[ats_of(key)]["failed"] += 1
             for key in truncated:
-                coverage[str(key).split(":", 1)[0]]["partial"] += 1
+                coverage[ats_of(key)]["partial"] += 1
             for board, observation in observations.items():
                 if not isinstance(observation, dict):
                     malformed = True
                     continue
-                ats = str(board).split(":", 1)[0]
+                ats = ats_of(board)
                 for field in _LOSS_FIELDS:
                     try:
                         losses[ats][field] += int(observation.get(field) or 0)
@@ -443,7 +444,7 @@ def error_summary(errors: dict[str, str]) -> str:
     +k more)`` (top 3 ATSes), joined by "; "."""
     by_type: dict[str, Counter] = defaultdict(Counter)
     for key, message in errors.items():
-        by_type[message.split(":", 1)[0]][key.split(":", 1)[0]] += 1
+        by_type[message.split(":", 1)[0]][ats_of(key)] += 1
     parts = []
     for exc_type, atses in sorted(
         by_type.items(), key=lambda item: (-sum(item[1].values()), item[0])

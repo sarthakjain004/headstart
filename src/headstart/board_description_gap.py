@@ -2,7 +2,7 @@
 
 The fourth per-board ledger, beside :mod:`headstart.board_priority`,
 :mod:`headstart.board_cost` and :mod:`headstart.ingest.board_failures`. Keyed on the
-**board_key** shape that :func:`headstart.corpus.board_of` yields — not ``f"{ats}:{slug}"``
+**board_key** shape that :func:`headstart.board_identity.board_of` yields — not ``f"{ats}:{slug}"``
 (ADR-0059) — and then **lowercased**, which the other three ledgers are not.
 
 That lowercasing is the whole reason :func:`key_for` exists rather than each caller spelling out
@@ -39,9 +39,9 @@ FIELDS = ("board", "unsettled", "updated_at")
 
 def key_for(company: CompanyRef) -> str:
     """This Board's key in the ledger — the one form every reader and writer must agree on."""
-    from headstart.config import board_identity
+    from headstart.board_identity import board_identity, lower_key
 
-    return board_identity(company).lower()
+    return lower_key(board_identity(company))
 
 
 def load(path: str | Path) -> dict[str, int]:

@@ -692,11 +692,15 @@ def test_only_the_first_keyless_board_carries_a_stack(monkeypatch, caplog):
 
     from headstart import config
     from headstart.ingest import index_plan
+    from headstart.scrapers import registry
 
     def explode(*_args, **_kwargs):
         raise ValueError("no key")
 
-    monkeypatch.setattr(index_plan, "get_scraper", explode)
+    # `live_keep_set` raises through `board_identity.board_key`, which resolves `get_scraper`
+    # from the registry module lazily (a fresh look-up per call) rather than holding its own
+    # module-level reference — so the registry itself is what must be patched.
+    monkeypatch.setattr(registry, "get_scraper", explode)
     companies = [config.CompanyRef(ats="keka", slug=f"acme{n}") for n in range(4)]
     monkeypatch.setattr(index_plan, "load_active_companies", lambda *a, **k: companies)
 

@@ -355,116 +355,12 @@ def load_active_companies(
     return _drop_parked(_dedupe_boards(companies))
 
 
-#: Boards whose fallback reached the reporter, so one malformed slug says so once.
-#:
-#: "Seen", not "reported": past :data:`_IDENTITY_REPORT_CAP` a Board is added but no longer
-#: named. The membership test is what keeps that cap counting *distinct* Boards.
-#:
-#: Module-level, and never cleared: a pipeline stage is one process, and the point is that every
-#: caller shares one record. `board_identity` is reached from ~15 sites (`scrape_plan` x8,
-#: `board_priority` x7, plus `_drop_parked` and `_dedupe_boards` here), each walking the whole
-#: company list, so one bad slug restated itself ~15x per run — and a scraper whose `board_key()`
-#: starts raising would emit `N_Boards x 15` lines for one bug.
-#:
-#: What reaches the fallback is decided by the *provenance* of the slug, and the two answers
-#: differ. A **liveness**-ledger slug is a raw scraper slug, so `board_key()` really parses it:
-#: measured 2026-09-09, `load_active_companies('data/validate/liveness', min_jobs=0)` yields
-#: 91,325 Scrapable Boards and reaches this path **zero** times. A **state**-ledger key is
-#: `board_key()`'s own *output*, and feeding one back in raises wherever the scraper's parser
-#: demands its input form — every one of `data/state/board_cost.csv`'s 10,561 Workday keys is the
-#: shorthand `{co}/{site}`, which Workday's parser rejects because it wants a careers URL.
-#: Until 2026-09-09 `board_cost._rekeyed` did exactly that round-trip on every row, so each of
-#: `scrape-plan` and `join` emitted 10,561 lines a run — 21,122 in total, and 99.8% of the
-#: `scrape_plan` *step*'s own output (10,561 of 10,585 lines; the surrounding job log is larger).
-#: That caller is gone. ADR-0096's migration completed — the live ledger's legacy-key count read
-#: 0 on 2026-09-09 — so the shim, and the `report_failure` opt-out added for it, were both
-#: removed. Nothing feeds a state-ledger key back through here today.
-#:
-#: `board_priority.csv` is keyed the same way (5,143 Workday keys, 5,120 of them that shorthand)
-#: but never reaches here: `board_priority.load` returns `row["board"]` verbatim, and `pick_boards`
-#: calls `board_identity` on liveness `CompanyRef`s. That is the check on this diagnosis — 1,142
-#: of its Workday keys are absent from the cost ledger, so had it fed them back too the flood
-#: would have been their 11,703-key union, not the 10,561 actually observed.
-#:
-#: So the blast radius was never nil, only mis-measured: the one population that was measured is
-#: the one that does not reach the path. The bound below stands regardless, for the case the old
-#: note was reaching for — a scraper whose `board_key()` starts raising on its *own* slugs.
-_IDENTITY_FAILURES_SEEN: set[str] = set()
-
-#: Distinct Boards named before the report goes quiet. Mirrors the compromise
-#: `log.named_sample` strikes for the stages — enough examples to name the ATS and the parse
-#: error, never a dump. Not that helper itself, though it is now importable from here: it
-#: renders a list the caller already holds, and this reports as it goes, one Board at a time,
-#: with no seam at which the whole set is in hand.
-_IDENTITY_REPORT_CAP = 10
-
-#: The annotation bound layered on that dedupe — one WARNING per process, the rest INFO. Two
-#: different bounds because they answer two different floods: the set stops one Board being
-#: restated ~15x, this stops N Boards each buying an annotation.
-_IDENTITY_FAILURE = log.FirstOnly(_log)
-
-
-def board_identity(company: CompanyRef) -> str:
-    """The Board's canonical key: ``board_key`` where the scraper can build one, the plain
-    ``ats:slug`` where a malformed slug defeats it — never dropping the Board either way.
-
-    Every caller passes a **raw scraper slug**, so a raise here is a real parse failure and is
-    worth reporting. The one caller that fed an already-canonical key back in —
-    ``board_cost._rekeyed``, for which the raise was the expected answer — is gone with ADR-0096's
-    migration, and with it the ``report_failure`` opt-out that kept it from flooding the log.
-    """
-    from headstart.scrapers.registry import SCRAPERS
-
-    try:
-        return SCRAPERS[company.ats](company.slug).board_key()
-    except Exception as exc:  # noqa: BLE001 - a malformed slug falls back to the plain key
-        key = f"{company.ats}:{company.slug}"
-        _report_identity_failure(key, exc)
-        return key
-
-
-def _report_identity_failure(key: str, exc: Exception) -> None:
-    """Name a Board that fell back, once, up to :data:`_IDENTITY_REPORT_CAP` distinct Boards.
-
-    The fallback key is a *different* identity from the one the rest of the pipeline uses for this
-    Board — `_dedupe_boards` collapses on it and `index prune` builds its keep-set from it — so a
-    Board quietly landing here can be scraped under one name and pruned under another. Worth a
-    line even though nothing is dropped.
-
-    The **first** distinct Board warns and carries its stack; every later one is INFO. Under
-    Actions a WARNING is an annotation against a run-level quota (ADR-0039's 2026-09-08
-    amendment), so N failing Boards must not buy N of them — but nor can this be INFO
-    throughout. `index_plan`'s keep-set guard warns about the same population and is *not* a
-    substitute: it runs in the **merge** job while this is reached from `scrape_plan` and
-    `board_priority` in the plan and scrape jobs, so its annotation never appears on the job
-    that hit the failure. A run whose plan stage silently re-keyed a whole ATS would show
-    nothing on its own summary until a later job noticed.
-
-    No running total accompanies the cap. A hook to flush one to does exist —
-    `ingest.observability.summary` — but it is in `ingest`, which this module may not import (the
-    curated-feed path reaches `config`), so the obstacle is the layering, not the absence of a
-    mechanism. The expected count is zero, so any line at all is the signal; the named ones
-    carry the ATS and the parse error, which is what a reader needs to find the scraper at fault.
-    """
-    if key in _IDENTITY_FAILURES_SEEN:
-        return
-    _IDENTITY_FAILURES_SEEN.add(key)
-    if len(_IDENTITY_FAILURES_SEEN) <= _IDENTITY_REPORT_CAP:
-        _IDENTITY_FAILURE.report(
-            f"{key}: board_key() failed "
-            f"({type(exc).__name__}: {exc}) — falling back to the plain ats:slug"
-        )
-    elif len(_IDENTITY_FAILURES_SEEN) == _IDENTITY_REPORT_CAP + 1:
-        _log.info(
-            f"further board_key() failures not named ({_IDENTITY_REPORT_CAP} shown) — "
-            "each still falls back to the plain ats:slug"
-        )
-
-
 def _drop_parked(companies: list[CompanyRef]) -> list[CompanyRef]:
     """Drop :data:`PARKED_BOARDS`, matched on the same identity ``_dedupe_boards`` collapses on
     so the two can never disagree about which Board an entry names."""
-    return [c for c in companies if board_identity(c).lower() not in PARKED_BOARDS]
+    from headstart.board_identity import board_identity, lower_key
+
+    return [c for c in companies if lower_key(board_identity(c)) not in PARKED_BOARDS]
 
 
 def _dedupe_boards(companies: list[CompanyRef]) -> list[CompanyRef]:
@@ -479,10 +375,12 @@ def _dedupe_boards(companies: list[CompanyRef]) -> list[CompanyRef]:
     prune instead kept the lex-min casing *present in the index*, which is a different population —
     it includes casings that left the ledger — and the two disagreed permanently: ADR-0023's
     amendment.)"""
+    from headstart.board_identity import board_identity, lower_key
+
     best: dict[str, tuple[str, CompanyRef]] = {}
     for company in companies:
         key = board_identity(company)
-        canon = key.lower()
+        canon = lower_key(key)
         current = best.get(canon)
         if current is None or key < current[0]:
             best[canon] = (key, company)

@@ -29,8 +29,9 @@ import json
 from pathlib import Path
 
 from headstart import log
+from headstart.board_identity import board_of
 from headstart.board_priority import load_scores
-from headstart.corpus import board_of, iter_jobs
+from headstart.corpus import iter_jobs
 from headstart.ingest import PENDING_UPGRADES_PATH, REPO_ROOT, observability
 from headstart.ingest.binpack import (
     lpt_pack,

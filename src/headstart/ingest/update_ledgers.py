@@ -56,10 +56,11 @@ from headstart.board_cost import ShardCost, ats_medians, read_shard_rows
 from headstart.board_cost import load as load_cost
 from headstart.board_cost import save as save_cost
 from headstart.board_cost import update as update_cost
+from headstart.board_identity import ats_of, board_key_of, board_of, lower_key
 from headstart.board_priority import load as load_priority
 from headstart.board_priority import save as save_priority
 from headstart.board_priority import update as update_priority
-from headstart.corpus import board_of, iter_jobs
+from headstart.corpus import iter_jobs
 from headstart.harvest import COST_FILENAME
 from headstart.ingest import REPO_ROOT, board_failures, observability
 from headstart.ingest.index_plan import read_unauthoritative_boards, resolve_board
@@ -142,7 +143,7 @@ def failures(args: argparse.Namespace) -> int:
     unmatched: Counter[str] = Counter()
     for report in reports:
         for key, reason in (report.get("errors") or {}).items():
-            board = board_failures.board_key_of(key)
+            board = board_key_of(key)
             if board is None:
                 continue
             examined += 1
@@ -153,12 +154,12 @@ def failures(args: argparse.Namespace) -> int:
                 # would never group. `ats` alongside it because a matcher gap is usually one
                 # scraper's phrasing, not a global one.
                 head = str(reason).split(":", 1)[0].strip()[:60] or "unknown"
-                unmatched[f"{board.split(':', 1)[0]} {head}"] += 1
+                unmatched[f"{ats_of(board)} {head}"] += 1
         # boards_ok carries the zero-job successes the corpus can't: alive-and-empty must
         # clear a streak, or a board that empties after a few 404s stays one strike from
         # quarantine forever
         for key in report.get("boards_ok") or []:
-            board = board_failures.board_key_of(key)
+            board = board_key_of(key)
             if board is not None:
                 alive.add(board)
     # `board_of` yields the board_key shape the ids were built from, so both sides of the
@@ -219,9 +220,9 @@ def _authoritative_scrape(
         # phantom Board no unauthoritative key matches (ADR-0049) — protection that silently
         # missed exactly the Workday ids it most needs to cover. Only the *test* uses it; the
         # key stays `board_of`'s so both sides of the comparison in `gap` are built alike.
-        if resolve_board(job["id"], skip).lower() in skip:
+        if lower_key(resolve_board(job["id"], skip)) in skip:
             continue
-        boards.add(board_of(job["id"]).lower())
+        boards.add(lower_key(board_of(job["id"])))
         emitted.add(job["id"])
     return boards, emitted
 
@@ -272,7 +273,7 @@ def gap(args: argparse.Namespace) -> int:
             # only case-insensitively, so keying this as-observed would strand every one of them.
             # It also folds ADR-0023's case-variant pairs (`.../External` and `.../external` are
             # one Board) into a single row instead of two half-counts.
-            board = board_of(row["id"]).lower()
+            board = lower_key(board_of(row["id"]))
             # An id its own Board's authoritative scrape did not re-emit has expired off that
             # Board, and `reconcile()` only ever acts on ids the *current* scrape returned — so
             # nothing can ever settle it, and counting it reserves gap quota no scrape can spend
