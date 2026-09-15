@@ -140,6 +140,7 @@ def _description_text(record: dict) -> str | None:
 
 class ZohoScraper(BaseScraper):
     ats = "zoho"
+    url_shape = r"https://[^/]+/jobs/Careers/\d+/.+"
     detail_workers = _DETAIL_WORKERS  # also the async stream width (base.fan_out_async)
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
@@ -154,6 +155,12 @@ class ZohoScraper(BaseScraper):
 
     def url(self) -> str:
         return f"https://{self.slug}/jobs/Careers"
+
+    def job_url(self, jid: str, title: str) -> str:
+        """The served link, with a title slug and ``source`` param :meth:`_detail_url` (the
+        fetch route for the same posting) does not carry — the two differ on purpose, so this
+        is its own formula rather than a wrapper around that one (ADR-0153)."""
+        return f"https://{self.slug}/jobs/Careers/{jid}/{_SLUG.sub('-', title)}?source=CareerSite"
 
     def fetch_raw(self) -> Any:
         # Every published, non-locked job gets a detail-page fetch — not just the ones whose
@@ -290,7 +297,7 @@ class ZohoScraper(BaseScraper):
             title = (r.get("Posting_Title") or r.get("Job_Opening_Name") or "").strip()
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{jid}",
+                    id=self.job_id(jid),
                     ats=self.ats,
                     company=company,
                     title=title,
@@ -299,7 +306,7 @@ class ZohoScraper(BaseScraper):
                     ),
                     remote=bool(d.get("Remote_Job")),
                     department=(d.get("Industry") or "").strip() or None,
-                    url=f"https://{self.slug}/jobs/Careers/{jid}/{_SLUG.sub('-', title)}?source=CareerSite",
+                    url=self.job_url(jid, title),
                     posted_at=d.get("Date_Opened") or None,
                     scraped_at=scraped_at,
                     description=html_to_text(_description_text(d)),

@@ -11,6 +11,7 @@ class _StubScraper(BaseScraper):
     """Minimal concrete scraper for exercising BaseScraper instance methods."""
 
     ats = "stub"
+    url_shape = r"https://example\.invalid/jobs/\w+"
 
     def url(self):
         return "https://example.invalid/jobs"
@@ -20,6 +21,9 @@ class _StubScraper(BaseScraper):
 
     def _salary_field(self, raw):
         return None
+
+    def job_url(self, native_id):
+        return f"https://example.invalid/jobs/{native_id}"
 
 
 def test_report_detail_gaps_logs_missing_counts(caplog):
@@ -475,3 +479,49 @@ def test_no_scraper_declares_its_own_user_agent():
     assert offenders == [], (
         f"declared their own User-Agent instead of importing it: {offenders}"
     )
+
+
+def test_every_scraper_declares_a_compilable_url_shape():
+    """Every registered scraper states :attr:`~BaseScraper.url_shape` (ADR-0157) — the
+    declaration ``scripts/eval/verify_filters.py``'s ``URL_SHAPES`` is generated from, so a
+    scraper missing one would make that generation silently drop it rather than error. Checked
+    once, here, for all of them, rather than per-ATS."""
+    import re
+
+    from headstart.scrapers.registry import SCRAPERS
+
+    for ats, cls in SCRAPERS.items():
+        shape = getattr(cls, "url_shape", None)
+        assert shape, f"{ats}: no url_shape declared"
+        re.compile(shape)  # raises re.error on a malformed pattern
+
+
+def test_job_id_composes_board_key_and_native_id_for_every_scraper():
+    """:meth:`~BaseScraper.job_id` is the one formula every scraper's ``Job.id`` uses — even the
+    four whose :meth:`~BaseScraper.board_key` itself departs from the bare ``{ats}:{slug}``
+    (workday, personio, taleo_be, taleo_enterprise). Pinned against a literal expected id per
+    ATS, not re-derived from the scraper's own ``board_key()`` — comparing ``job_id()`` to
+    ``f"{scraper.board_key()}:42"`` would be true by construction for any ``board_key()``
+    output and could never catch a regression in either method (ADR-0157)."""
+    from headstart.scrapers.registry import get_scraper
+
+    for ats, slug, expected in (
+        ("greenhouse", "acme", "greenhouse:acme:42"),
+        (
+            "workday",
+            "https://acme.wd1.myworkdayjobs.com/External",
+            "workday:acme/External:42",
+        ),
+        ("personio", "acme.jobs.personio.de", "personio:acme:42"),
+        (
+            "taleo_be",
+            "https://acme.tbe.taleo.net/acme/ats/careers/v2/searchResults",
+            "taleo_be:https://acme.tbe.taleo.net/acme/ats/careers/v2/searchResults:42",
+        ),
+        (
+            "taleo_enterprise",
+            "https://acme.taleo.net/careersection/ext/jobsearch.ftl",
+            "taleo_enterprise:https://acme.taleo.net/careersection/ext:42",
+        ),
+    ):
+        assert get_scraper(ats, slug).job_id("42") == expected

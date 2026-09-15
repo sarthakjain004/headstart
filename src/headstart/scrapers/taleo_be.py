@@ -137,6 +137,14 @@ class TaleoBEScraper(BaseScraper):
     """TBE scraper whose slug is a full canonical search-results URL."""
 
     ats = "taleo_be"
+    # Taleo Business Edition emits its own canonical detail URL from every listing card. The
+    # board coordinates stay in the query string and `rid` is the native requisition id; both
+    # were verified live on ICANN on 2026-09-13. TBE is intentionally separate from Taleo
+    # Enterprise's Career Section URL family, which this scraper does not support.
+    url_shape = (
+        r"https://[a-z0-9-]+\.tbe\.taleo\.net/[a-z0-9-]+/ats/careers/v2/"
+        r"viewRequisition\?[^#]*\brid=\d+"
+    )
     detail_workers = _DETAIL_WORKERS
     has_detail_pass = True
 
@@ -155,6 +163,11 @@ class TaleoBEScraper(BaseScraper):
 
     def url(self) -> str:
         return _canonical(self.slug)
+
+    def job_url(self, url: str) -> str:
+        """Every listing card carries its own canonical detail URL; nothing to build, so this
+        simply names that as the declared source (ADR-0153)."""
+        return url
 
     def alias_key(self) -> str | None:
         """The final canonical TBE board URL, when this Board redirects to one.
@@ -208,7 +221,9 @@ class TaleoBEScraper(BaseScraper):
                 listed.append(
                     {
                         "id": match.group("id"),
-                        "url": html.unescape(urljoin(page_url, match.group("href"))),
+                        "url": self.job_url(
+                            html.unescape(urljoin(page_url, match.group("href")))
+                        ),
                         "title": _text(match.group("title")),
                         "department": fields[0] if fields else None,
                         "location": fields[1] if len(fields) > 1 else None,
@@ -281,14 +296,14 @@ class TaleoBEScraper(BaseScraper):
                 remote = is_remote(location)
             jobs.append(
                 Job(
-                    id=f"{self.board_key()}:{listed['id']}",
+                    id=self.job_id(listed["id"]),
                     ats=self.ats,
                     company=listed.get("company") or self.company,
                     title=listed["title"] or "",
                     location=location,
                     remote=remote,
                     department=detail.get("department") or listed["department"],
-                    url=listed["url"] or "",
+                    url=self.job_url(listed["url"] or ""),
                     posted_at=detail.get("posted_at"),
                     scraped_at=scraped_at,
                     description=detail.get("description"),

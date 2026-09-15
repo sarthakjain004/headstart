@@ -156,6 +156,7 @@ def _description(pos: ET.Element) -> str | None:
 
 class PersonioScraper(BaseScraper):
     ats = "personio"
+    url_shape = r"https://.+\.jobs?\.personio\.(com|de)/job/\d+.*"
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -186,6 +187,9 @@ class PersonioScraper(BaseScraper):
         # request can carry; `fetch_raw` re-asks per language to *fill* what this leaves empty,
         # never to replace what it returned, and carries the measurement that decided it.
         return f"https://{self.slug}/xml"
+
+    def job_url(self, native_id: str) -> str:
+        return f"https://{self.slug}/job/{native_id}"
 
     def fetch_raw(self) -> Any:
         """The tenant's XML feed — following no redirect, and reading the target as the signal.
@@ -318,7 +322,6 @@ class PersonioScraper(BaseScraper):
         return root
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
-        tenant = self._tenant
         jobs: list[Job] = []
         for pos in raw.findall("position"):
             jid = _text(pos, "id")
@@ -328,7 +331,7 @@ class PersonioScraper(BaseScraper):
             etype, sched = _text(pos, "employmentType"), _text(pos, "schedule")
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{tenant}:{jid}",
+                    id=self.job_id(jid),
                     ats=self.ats,
                     company=_text(pos, "subcompany") or self.company,
                     title=_text(pos, "name") or "",
@@ -338,7 +341,7 @@ class PersonioScraper(BaseScraper):
                     # `additionalOffices` (real places) must not change that verdict either way.
                     remote=is_remote(office),
                     department=_text(pos, "department"),
-                    url=f"https://{self.slug}/job/{jid}",
+                    url=self.job_url(jid),
                     posted_at=_text(pos, "createdAt"),
                     scraped_at=scraped_at,
                     description=_description(pos),

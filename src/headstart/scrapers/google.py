@@ -206,10 +206,17 @@ class GoogleScraper(BaseScraper):
     """Google careers scraper — a Single source scraper (ADR-0139), no discovery, no detail pass."""
 
     ats = "google"
+    # scraper: f"https://www.google.com/about/careers/applications/jobs/results/{id}?hl=en_US"
+    # (job_url below) — the id-only path, verified live 2026-09-11 to resolve the correct
+    # posting with no slug needed. One board, one host, forever (ADR-0139).
+    url_shape = r"https://www\.google\.com/about/careers/applications/jobs/results/\d+\?hl=en_US"
     has_detail_pass = False  # every field, description, comes off the listing page
 
     def url(self) -> str:
         return f"{_LISTING_URL}?hl=en_US"
+
+    def job_url(self, native_id: str) -> str:
+        return _JOB_URL.format(id=native_id)
 
     def _page_url(self, page: int) -> str:
         return f"{_LISTING_URL}?hl=en_US&page={page}"
@@ -296,14 +303,14 @@ class GoogleScraper(BaseScraper):
             location = _location(_field(item, 9))
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{native_id}",
+                    id=self.job_id(native_id),
                     ats=self.ats,
                     company=_field(item, 7) or self.company,
                     title=str(title).strip(),
                     location=location,
                     remote=is_remote(location),
                     department=None,  # no team/org field found in the listing payload
-                    url=_JOB_URL.format(id=native_id),
+                    url=self.job_url(native_id),
                     posted_at=_posted_at(_field(item, 12)),
                     scraped_at=scraped_at,
                     description=_description(item),

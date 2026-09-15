@@ -74,6 +74,11 @@ class MetaScraper(BaseScraper):
     """metacareers.com — a Single source scraper (ADR-0139); ``slug`` is the fixed careers host."""
 
     ats = "meta"
+    # scraper passes through the sitemap's own <loc>: the canonical
+    # https://www.metacareers.com/profile/job_details/{id}/ page. `meta` is a Single source
+    # scraper (ADR-0139), so the host is fixed rather than derived. Verified live 2026-09-11:
+    # 80/80 randomly sampled ids 200 with parseable JobPosting JSON-LD.
+    url_shape = r"https://www\.metacareers\.com/profile/job_details/\d+/?"
     has_detail_pass = True  # every field but `id` comes from the JSON-LD (ADR-0050)
     detail_workers = _DETAIL_WORKERS
     detail_streams = _DETAIL_WORKERS
@@ -91,6 +96,11 @@ class MetaScraper(BaseScraper):
 
     def url(self) -> str:
         return f"https://{self.slug}/jobsearch/sitemap.xml"
+
+    def job_url(self, url: str) -> str:
+        """The sitemap's own ``<loc>`` is already this Job's canonical link; nothing to build,
+        so this simply names that as the declared source (ADR-0153)."""
+        return url
 
     def alias_key(self) -> str | None:
         """Meta's own slug: a Single source scraper's Board has no sibling tenant to alias
@@ -180,14 +190,14 @@ class MetaScraper(BaseScraper):
                 remote = is_remote(location)
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{item['id']}",
+                    id=self.job_id(item["id"]),
                     ats=self.ats,
                     company=self.company,
                     title=title,
                     location=location,
                     remote=remote,
                     department=None,  # not exposed by this surface (module docstring)
-                    url=item["url"],
+                    url=self.job_url(item["url"]),
                     # The board's own `datePosted` — measured stable, not fabricated — falling
                     # back to the sitemap's `<lastmod>` only if a detail page omits it.
                     posted_at=fields.get("posted_at") or item.get("lastmod"),

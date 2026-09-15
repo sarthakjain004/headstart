@@ -247,6 +247,9 @@ class TeslaScraper(BaseScraper):
     """Tesla's own in-house careers system — a single-source ats (ADR-0139)."""
 
     ats = "tesla"
+    # single-source ats (ADR-0139) — one tenant, so the host is a literal, not a wildcard.
+    # scraper builds f"{_SEARCH_URL}job/{title-slug}-{id}" (job_url below, via _job_url).
+    url_shape = r"https://www\.tesla\.com/careers/search/job/[\w-]+-\d+"
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -256,6 +259,11 @@ class TeslaScraper(BaseScraper):
 
     def url(self) -> str:
         return _SEARCH_URL
+
+    def job_url(self, job_id: str, title: str) -> str:
+        """Delegates to the module-level :func:`_job_url`, which does the real construction and
+        is exercised directly by ``tests/test_tesla.py`` with no scraper instance in hand."""
+        return _job_url(job_id, title)
 
     def alias_key(self) -> str | None:
         """This board's own slug: a single-source board has no sibling tenant to alias against
@@ -306,14 +314,14 @@ class TeslaScraper(BaseScraper):
             location = locations.get(entry.get("l"))
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{job_id}",
+                    id=self.job_id(job_id),
                     ats=self.ats,
                     company=self.company,
                     title=title,
                     location=location,
                     remote=is_remote(location),
                     department=departments.get(entry.get("dp")),
-                    url=_job_url(job_id, title),
+                    url=self.job_url(job_id, title),
                     posted_at=None,  # not exposed anywhere on this board (module docstring)
                     scraped_at=scraped_at,
                     employment_type=types.get(str(entry.get("y"))),

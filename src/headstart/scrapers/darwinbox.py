@@ -83,6 +83,7 @@ def _is_wall(exc: Exception) -> bool:
 
 class DarwinboxScraper(BaseScraper):
     ats = "darwinbox"
+    url_shape = r"https://[^/]+/ms/candidatev2/[^/]+/careers/jobDetails/[0-9a-f]+$"
 
     def __init__(
         self,
@@ -102,6 +103,19 @@ class DarwinboxScraper(BaseScraper):
     def url(self) -> str:
         host = getattr(self, "_host", None) or f"https://{self.slug}.darwinbox.in"
         return f"{host}/ms/candidate/careers"
+
+    def job_url(self, native_id: str) -> str:
+        # v2 portal (the norm): browser-verified jobDetails route. On v2 tenants the old
+        # /ms/candidate/ app is a 2.4KB stub that redirects to the v2 careers HOME, dropping
+        # the job — hence the branch. The legacy fallback is the old app's careers/:id router
+        # entry. `_host`/`_new_careers` are set by `fetch_raw` before `parse` ever runs.
+        host = getattr(self, "_host", None) or f"https://{self.slug}.darwinbox.in"
+        new_careers = getattr(self, "_new_careers", True)
+        return (
+            f"{host}/ms/candidatev2/main/careers/jobDetails/{native_id}"
+            if new_careers
+            else f"{host}/ms/candidate/careers/{native_id}"
+        )
 
     def _alljobs(self, host: str, page: int) -> list[dict]:
         """POST one page of the board (retry — incl. the Cloudflare 403 blip — lives in fetch)."""
@@ -222,8 +236,6 @@ class DarwinboxScraper(BaseScraper):
         return jobs
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
-        host = getattr(self, "_host", None) or f"https://{self.slug}.darwinbox.in"
-        new_careers = getattr(self, "_new_careers", True)
         jobs: list[Job] = []
         for j in raw:
             # `locations` is the board's display string, but it collapses to a generic
@@ -255,22 +267,14 @@ class DarwinboxScraper(BaseScraper):
                 )
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{j['id']}",
+                    id=self.job_id(j["id"]),
                     ats=self.ats,
                     company=self.company,
                     title=(j.get("title") or j.get("designation_name") or "").strip(),
                     location=location,
                     remote=bool(j.get("is_remote")) or is_remote(location),
                     department=j.get("department_name"),
-                    # v2 portal (the norm): browser-verified jobDetails route. On v2
-                    # tenants the old /ms/candidate/ app is a 2.4KB stub that redirects
-                    # to the v2 careers HOME, dropping the job — hence the branch. The
-                    # legacy fallback is the old app's careers/:id router entry.
-                    url=(
-                        f"{host}/ms/candidatev2/main/careers/jobDetails/{j['id']}"
-                        if new_careers
-                        else f"{host}/ms/candidate/careers/{j['id']}"
-                    ),
+                    url=self.job_url(j["id"]),
                     posted_at=_iso_date(j.get("posted_on")),
                     scraped_at=scraped_at,
                     description=html_to_text(j.get("jd")),

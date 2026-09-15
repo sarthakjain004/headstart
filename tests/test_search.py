@@ -485,6 +485,37 @@ def test_run_moves_recruitee_links_onto_the_tenant_host():
     )
 
 
+def test_canonical_url_rewrites_match_the_scrapers_own_url_shape():
+    """Ties ``_canonical_url``'s two hardcoded rewrites to the scrapers they repair for (ADR-0157).
+
+    ``search.py`` is deployed to the HF Space as a flat standalone file with no
+    ``headstart.scrapers`` alongside it (see ``_canonical_url``'s own docstring), so the
+    rewrites can't call through to ``DarwinboxScraper``/``RecruiteeScraper`` at runtime — this
+    test is the structural check instead: it runs here, in the repo, where both modules are
+    importable, and fails if either scraper's declared shape and this function's repaired
+    output ever disagree.
+    """
+    import re
+
+    from headstart.scrapers.darwinbox import DarwinboxScraper
+    from headstart.scrapers.recruitee import RecruiteeScraper
+    from headstart.search import _canonical_url
+
+    darwinbox_repaired = _canonical_url(
+        "darwinbox",
+        "https://x.darwinbox.in/ms/candidate/careers/jobs/5ebea18409d3e",
+        "darwinbox:x:5ebea18409d3e",
+    )
+    assert re.fullmatch(DarwinboxScraper.url_shape, darwinbox_repaired)
+
+    recruitee_repaired = _canonical_url(
+        "recruitee",
+        "https://transperfect.com/o/software-engineer-net-c-1",
+        "recruitee:transperfect:2141029",
+    )
+    assert re.fullmatch(RecruiteeScraper.url_shape, recruitee_repaired)
+
+
 def test_recruitee_rewrite_leaves_alone_what_it_cannot_rebuild():
     from headstart.search import _rehost_recruitee
 

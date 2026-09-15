@@ -60,11 +60,19 @@ def _location(j: dict) -> str | None:
 
 class RippleHireScraper(BaseScraper):
     ats = "ripplehire"
+    url_shape = (
+        r"https://[^.]+\.ripplehire\.com/candidate/careers/?$"  # board-level: known gap
+    )
     detail_workers = _DETAIL_WORKERS  # also the async stream width (base.fan_out_async)
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     def url(self) -> str:
         return f"https://{self.slug}.ripplehire.com/candidate/careers"
+
+    def job_url(self) -> str:
+        """No per-job route exists on this ATS's public site (known gap, tracked in
+        ``url_shape``'s own comment) — every Job serves the board-level careers page."""
+        return self.url()
 
     def board_page(self) -> str:
         """The careers URL again — its ``<title>`` opens with ``"{Name} Careers |"``.
@@ -228,7 +236,7 @@ class RippleHireScraper(BaseScraper):
             detail = j.get("_detail") or {}
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{j['jobSeq']}",
+                    id=self.job_id(j["jobSeq"]),
                     ats=self.ats,
                     company=self.company,
                     title=(j.get("jobTitle") or "").strip(),
@@ -237,7 +245,7 @@ class RippleHireScraper(BaseScraper):
                     department=detail.get("bussinessUnit")
                     or j.get("bussinessUnit")
                     or None,
-                    url=f"https://{self.slug}.ripplehire.com/candidate/careers",
+                    url=self.job_url(),
                     # `publishDetails.CAREER_SITE` is a real ISO-8601 timestamp for the same
                     # posting `jobPostingDate` gives non-ISO ("23-Jun-2020") — prefer it per
                     # Job.posted_at's own contract ("ISO-8601 if the source provides it").

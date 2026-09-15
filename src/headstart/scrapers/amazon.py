@@ -122,11 +122,18 @@ class AmazonScraper(BaseScraper):
     """
 
     ats = "amazon"
+    # scraper: f"https://{slug}{job_path}" where the SLUG IS THE BOARD HOST (ADR-0139, one
+    # tenant) and job_path is the API's own field, e.g. "/en/jobs/10537803/data-center-...".
+    # Live-verified 2026-09-11: that exact URL 200s.
+    url_shape = r"https://www\.amazon\.jobs/en/jobs/\d+/[\w-]+"
     # The listing carries the full description; no second fetch needed.
     has_detail_pass = False
 
     def url(self) -> str:
         return self._search_url(offset=0)
+
+    def job_url(self, job_path: str) -> str:
+        return f"https://{self.slug}{job_path}"
 
     def _search_url(
         self, *, offset: int, category: str | None = None, want_facets: bool = False
@@ -241,14 +248,14 @@ class AmazonScraper(BaseScraper):
             location = r.get("normalized_location") or r.get("location")
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{native_id}",
+                    id=self.job_id(native_id),
                     ats=self.ats,
                     company=self.company,
                     title=title,
                     location=location,
                     remote=_remote(r, location),
                     department=r.get("job_category"),
-                    url=f"https://{self.slug}{r.get('job_path') or ''}",
+                    url=self.job_url(r.get("job_path") or ""),
                     posted_at=_posted_at(r.get("posted_date")),
                     scraped_at=scraped_at,
                     description=html_to_text(_full_description(r)),

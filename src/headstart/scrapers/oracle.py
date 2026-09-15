@@ -107,6 +107,14 @@ class OracleScraper(BaseScraper):
     """Oracle Recruiting Cloud scraper — ``slug`` is the tenant's pod host."""
 
     ats = "oracle"
+    # scraper: f"https://{slug}/hcmUI/CandidateExperience/en/sites/CX_1/job/{id}" where the
+    # slug is the tenant's own pod host (fa-etvl-saasfaprod1.fa.ocs.oraclecloud.com,
+    # chevron.fa.us2.oraclecloud.com — ten regional pods, so nothing narrower to anchor on).
+    # The site segment stays loose because it is cosmetic: browser-verified 2026-09-08, the app
+    # redirects any site — including a nonexistent one — to CX_1 and resolves the job by id.
+    # The id is NOT numeric: of 10,115 sampled live 2026-09-08, 47 carry underscores
+    # (MY_SCA_173_2411) and many are letter-prefixed (N122008), so `\d+` would flag real rows.
+    url_shape = r"https://[^/]+/hcmUI/CandidateExperience/[a-z]{2}/sites/[^/]+/job/[A-Za-z0-9_]+"
     detail_workers = _DETAIL_WORKERS
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
     egress_fallback_on = frozenset({429})
@@ -324,7 +332,7 @@ class OracleScraper(BaseScraper):
             location = r.get("PrimaryLocation") or r.get("PrimaryLocationCountry")
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{job_id}",
+                    id=self.job_id(job_id),
                     ats=self.ats,
                     company=d.get("LegalEmployer")
                     or r.get("LegalEmployer")

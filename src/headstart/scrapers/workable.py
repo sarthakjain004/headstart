@@ -15,6 +15,7 @@ from headstart.scrapers.base import BaseScraper
 
 class WorkableScraper(BaseScraper):
     ats = "workable"
+    url_shape = r"https://apply\.workable\.com/(j/[A-Z0-9]+|[^/]+/j/[A-Z0-9]+)"
 
     #: A 429 here is Cloudflare's Managed Challenge standing in for a spent per-IP request
     #: budget, so a second egress address is a second budget (ADR-0063). Traced to its origin
@@ -32,6 +33,11 @@ class WorkableScraper(BaseScraper):
 
     def url(self) -> str:
         return f"https://apply.workable.com/api/v1/widget/accounts/{self.slug}?details=true"
+
+    def job_url(self, application_url: str | None, fallback_url: str) -> str:
+        """The widget's own ``application_url`` when present, else its ``url``; nothing to
+        build, so this simply names the ATS's own fields as the declared source (ADR-0153)."""
+        return application_url or fallback_url
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         listed = raw.get("jobs")
@@ -59,14 +65,14 @@ class WorkableScraper(BaseScraper):
             )
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{j['shortcode']}",
+                    id=self.job_id(j["shortcode"]),
                     ats=self.ats,
                     company=raw.get("name") or self.company,
                     title=(j.get("title") or "").strip(),
                     location=location,
                     remote=bool(j.get("telecommuting")) or is_remote(location),
                     department=j.get("department"),
-                    url=j.get("application_url") or j.get("url", ""),
+                    url=self.job_url(j.get("application_url"), j.get("url", "")),
                     posted_at=j.get("published_on") or j.get("created_at"),
                     scraped_at=scraped_at,
                     description=html_to_text(j.get("description")),

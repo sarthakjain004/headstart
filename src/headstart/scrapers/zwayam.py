@@ -332,6 +332,19 @@ def _posted_at(source: dict) -> str | None:
 
 class ZwayamScraper(BaseScraper):
     ats = "zwayam"
+    # scraper: f"{link_base}{quote(jobUrl)}" where the SLUG IS THE BOARD HOST — the API keys on
+    # the hostname, and Boards sit on customer domains (careers.persistent.com) as well as the
+    # vendor namespace ({slug}.openings.co), so there is no host to anchor on. `link_base` is one
+    # of the three frontend generations' own job routes (module docstring, classified live
+    # across all 224 hiring Boards 2026-08-27): Angular's `{base href}jobview/` (the optional
+    # path segments), Next.js's root `/job-view/`, or the old Angular 1 shell's hash route
+    # `/#!/job-view/`. The trailing `jobUrl` is the vendor's own slug, percent-encoded. NOTE the
+    # Angular generation answers 200 for ANY path and the hash route never reaches the server, so
+    # `status_ok` is not evidence of a good link for this ATS — only the shape is (Next.js is the
+    # one generation where a bad route would actually 404).
+    url_shape = (
+        r"https://[^/]+(?:(?:/[\w.-]+)*/jobview/|/job-view/|/#!/job-view/)[\w.%~-]+$"
+    )
     #: The detail POST supplies every Job's description (the listing's own text can be silently
     #: truncated — module docstring); the ADR-0050 skip-list prunes it to new postings. True so
     #: the embed planner knows a zwayam vector can have been built before its text arrived.
@@ -356,6 +369,13 @@ class ZwayamScraper(BaseScraper):
         """The Board's human careers page. This is also what :meth:`_link_base` reads to tell
         the frontend generations apart; the JSON lives at the shared :data:`_API` instead."""
         return f"https://{self.slug}/"
+
+    def job_url(self, link_base: str, native_job_url: str) -> str:
+        """``link_base`` is resolved once per Board by :meth:`_link_base` (a network fetch, so
+        it is passed in rather than re-derived here); ``native_job_url`` is the listing's own
+        vendor slug. Percent-encoded with ``safe=""`` — see the call site's own comment for why
+        (ADR-0153)."""
+        return f"{link_base}{quote(native_job_url, safe='')}"
 
     def _page(self, start: int) -> dict[str, Any]:
         url, headers, body = search_request(self.slug, start)
@@ -593,7 +613,7 @@ class ZwayamScraper(BaseScraper):
                 continue
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{native_id}",
+                    id=self.job_id(native_id),
                     ats=self.ats,
                     company=self.company,
                     title=title,
@@ -616,7 +636,7 @@ class ZwayamScraper(BaseScraper):
                     # %2F within the one [slug] segment but hard-404s a raw slash (verified
                     # live). `link_base` already ends at the generation's own job route — see
                     # `_link_base` for how the three frontend shapes are told apart.
-                    url=f"{link_base}{quote(job_url, safe='')}",
+                    url=self.job_url(link_base, job_url),
                     posted_at=_posted_at(source),
                     scraped_at=scraped_at,
                     description=source.get(_TEXT),

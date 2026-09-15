@@ -69,11 +69,24 @@ def _compensation_range(value_type: str, value: Any) -> tuple[float, float] | No
 
 class GreenhouseScraper(BaseScraper):
     ats = "greenhouse"
+    # Two legitimate shapes. The second is the EMBED form: a tenant may configure its own
+    # board page, and then the API's `absolute_url` — and greenhouse's own canonical link —
+    # both point there with the job in `?gh_jid=`. Verified live 2026-08-12:
+    # job-boards.greenhouse.io/codeblack/jobs/4012421004 302s to
+    # codeblack.netlify.app/?gh_jid=4012421004, and the embed's job endpoint returns that
+    # posting. The page renders client-side, so `title_on_page` reads false on it — a limit
+    # of an HTTP probe, not a broken link.
+    url_shape = r"https://(?:(?:job-boards|boards)\.greenhouse\.io/.+/jobs/\d+|.+[?&]gh_jid=\d+)"
 
     def url(self) -> str:
         return (
             f"https://boards-api.greenhouse.io/v1/boards/{self.slug}/jobs?content=true"
         )
+
+    def job_url(self, url: str) -> str:
+        """Greenhouse's API states the job's own link directly (``absolute_url``); nothing to
+        build, so this simply names that as the declared source (ADR-0153)."""
+        return url
 
     def fetch_raw(self) -> Any:
         """The default JSON fetch, plus one **observation-only** check on the response envelope.
@@ -116,14 +129,14 @@ class GreenhouseScraper(BaseScraper):
             department = (j.get("departments") or [{}])[0].get("name") or None
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{j['id']}",
+                    id=self.job_id(j["id"]),
                     ats=self.ats,
                     company=j.get("company_name") or self.company,
                     title=(j.get("title") or "").strip(),
                     location=location,
                     remote=is_remote(location),
                     department=department,
-                    url=j.get("absolute_url", ""),
+                    url=self.job_url(j.get("absolute_url", "")),
                     posted_at=j.get("first_published") or j.get("updated_at"),
                     scraped_at=scraped_at,
                     description=html_to_text(j.get("content")),
