@@ -157,25 +157,54 @@ def test_report_states_actual_against_the_planners_prediction(tmp_path, caplog):
     assert any("actual/predicted 0.50x" in r.getMessage() for r in caplog.records)
 
 
-def test_plan_minutes_reads_the_shards_own_entry(tmp_path):
-    (tmp_path / "plan.json").write_text(
+def test_main_reads_the_shards_own_prediction_from_the_plan_beside_it(
+    tmp_path, monkeypatch
+):
+    """End-to-end: `main` finds `plan.json` beside its own assignment file and reports this
+    shard's own entry in the shard report (the wiring `ScrapePlan`/`shard_index` now carry —
+    see tests/test_shard_plan.py for the unit-level coverage of that record itself)."""
+
+    def finished(companies, jobs_dir, progress_every=200, on_board=None, **_):
+        for c in companies:
+            on_board(f"{c.ats}:{c.slug}", 1, None, 0.5)
+        return _Result(len(companies))
+
+    monkeypatch.setattr(scrape_run, "scrape_all", finished)
+    out = tmp_path / "assignments"
+    out.mkdir()
+    assignment = out / "shard-1.jsonl"
+    assignment.write_text(
+        json.dumps({"ats": "lever", "slug": "acme", "name": "Acme"}) + "\n",
+        encoding="utf-8",
+    )
+    (out / "plan.json").write_text(
         json.dumps(
             {
-                "per_shard_minutes": [10.0, 20.5, 30.0],
-                "per_shard_serial_minutes": [40.0, 60.5, 90.0],
+                "shards": [0, 1],
+                "count": 2,
+                "per_shard_boards": [1, 1],
+                "per_shard_minutes": [10.0, 20.5],
+                "per_shard_serial_minutes": [40.0, 60.5],
             }
         ),
         encoding="utf-8",
     )
-    shard = str(tmp_path / "shard-1.jsonl")
-    assert scrape_run._plan_minutes(shard, "per_shard_minutes") == 20.5
-    # the serial sum is read from its own field: the join measures the fan-out's speedup against
-    # it, and against the prediction the estimate would chase its own tail (ADR-0054)
-    assert scrape_run._plan_minutes(shard, "per_shard_serial_minutes") == 60.5
-    # an older plan without the field is absence, not an error — the shard just can't compare
-    (tmp_path / "plan.json").write_text(json.dumps({"count": 3}), encoding="utf-8")
-    assert scrape_run._plan_minutes(shard, "per_shard_minutes") is None
-    assert scrape_run._plan_minutes(None, "per_shard_minutes") is None
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "scrape_run",
+            "--assignment",
+            str(assignment),
+            "--outdir",
+            str(tmp_path / "frag"),
+        ],
+    )
+
+    assert scrape_run.main() == 0
+
+    report = json.loads((tmp_path / "frag" / "_shard_report.json").read_text())
+    assert (report["predicted_minutes"], report["serial_minutes"]) == (20.5, 60.5)
 
 
 def test_read_have_details_returns_none_when_the_planner_shipped_nothing(tmp_path):

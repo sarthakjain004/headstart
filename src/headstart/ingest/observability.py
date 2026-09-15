@@ -11,9 +11,10 @@ markdown that GitHub renders on the run page; every job's contribution lands the
 It no-ops off CI, so local runs are unaffected.
 
 **Shard report.** A fan-out stage's numbers die with its runner unless they ride the
-fragment artifact the stage already uploads. :func:`write_shard` drops one JSON beside the
-fragment; the joining stage reads them back with :func:`read_shards` and can then state
-per-shard facts — predicted vs actual, retries, error classes — that no single job can see.
+fragment artifact the stage already uploads. :class:`ShardReport` (ADR-0154) is the typed
+shape of that JSON; :func:`write_shard` drops one beside the fragment, and the joining stage
+reads them back with :func:`read_shards` and can then state per-shard facts — predicted vs
+actual, retries, error classes — that no single job can see.
 
 **Error summary.** A count of failures names no cause. :func:`error_summary` groups
 ``{board: "ExcType: message"}`` by exception type x ATS, so one line separates throttling from
@@ -25,6 +26,7 @@ errors" into a single named failure mode.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import time
@@ -71,6 +73,163 @@ class PreparationProgress:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class ShardReport:
+    """Everything one scrape shard learned about its own run (ADR-0045, ADR-0154).
+
+    Written once, in ``scrape_run``'s shutdown path, beside the shard's fragment
+    (:func:`write_shard`); read back by ``scrape_join``, ``shard_speedup`` and
+    ``update_ledgers`` (via :func:`read_shards`) and by :meth:`ScrapeHealth.from_reports`. Every
+    field has a default so a caller that only has a handful of numbers — the synthetic
+    single-shard report `scrape_run` builds for its own mid-run health check, or a test — can
+    construct one without restating the rest.
+
+    ``malformed`` is not part of the writer's contract: a shard always writes a clean report, so
+    it is never set at construction time. :meth:`from_json` sets it when a *read* had to coerce
+    a field into its declared shape, and :meth:`to_json` never emits it — the on-disk shape is
+    unchanged from before this type existed.
+    """
+
+    shard: str | None = None
+    assigned: int = 0
+    done: int = 0
+    undone: int = 0
+    jobs: int = 0
+    seconds: float = 0.0
+    predicted_minutes: float | None = None
+    serial_minutes: float | None = None
+    killed_by_budget: bool = False
+    deferred: list[str] = dataclasses.field(default_factory=list)
+    board_seconds: dict[str, float] = dataclasses.field(default_factory=dict)
+    retries: dict[str, int] = dataclasses.field(default_factory=dict)
+    egress_ips: dict[str, int] = dataclasses.field(default_factory=dict)
+    errors: dict[str, str] = dataclasses.field(default_factory=dict)
+    truncated: dict[str, str] = dataclasses.field(default_factory=dict)
+    boards_ok: list[str] = dataclasses.field(default_factory=list)
+    observations: dict[str, dict] = dataclasses.field(default_factory=dict)
+    malformed: bool = False
+
+    def to_json(self) -> str:
+        # `asdict`, not a hand-listed dict: a field added to the dataclass later must not be
+        # able to go silently missing from its own on-disk report. `malformed` is the one field
+        # that never belongs here — it is a read-time signal `from_json` sets, not part of what
+        # a shard itself ever reports.
+        fields = dataclasses.asdict(self)
+        del fields["malformed"]
+        return json.dumps(fields, indent=1, sort_keys=True)
+
+    @classmethod
+    def from_json(cls, raw: Any) -> ShardReport | None:
+        """Coerce a shard's on-disk report into a typed, safe-to-aggregate record.
+
+        ``None`` only when ``raw`` isn't even a JSON object. Anything else is always returned,
+        with every field coerced to its declared shape and ``malformed`` set when that coercion
+        had to change something — the join's real job is unioning job data, and it must not die
+        because a shard's telemetry did.
+        """
+        if not isinstance(raw, dict):
+            return None
+        malformed = False
+
+        def dict_field(name: str) -> dict:
+            nonlocal malformed
+            value = raw.get(name, {})
+            if not isinstance(value, dict):
+                malformed = True
+                return {}
+            return value
+
+        truncated = dict_field("truncated")
+        observations = dict_field("observations")
+
+        safe_errors: dict[str, str] = {}
+        for key, value in dict_field("errors").items():
+            if not isinstance(key, str) or not isinstance(value, str):
+                malformed = True
+            safe_errors[str(key)] = str(value)
+
+        def str_list(name: str) -> list[str]:
+            nonlocal malformed
+            value = raw.get(name, [])
+            if not isinstance(value, list):
+                malformed = True
+                value = []
+            if any(not isinstance(v, str) for v in value):
+                malformed = True
+            return [str(v) for v in value]
+
+        boards_ok = str_list("boards_ok")
+        deferred = str_list("deferred")
+
+        def int_dict(name: str) -> dict[str, int]:
+            nonlocal malformed
+            value = raw.get(name, {})
+            if not isinstance(value, dict):
+                malformed = True
+                return {}
+            safe: dict[str, int] = {}
+            for key, count in value.items():
+                try:
+                    safe[str(key)] = int(count)
+                except (TypeError, ValueError):
+                    malformed = True
+            return safe
+
+        retries = int_dict("retries")
+        egress_ips = int_dict("egress_ips")
+
+        def as_int(name: str) -> int:
+            nonlocal malformed
+            try:
+                return int(raw.get(name) or 0)
+            except (TypeError, ValueError):
+                malformed = True
+                return 0
+
+        def optional_float(name: str) -> float | None:
+            nonlocal malformed
+            value = raw.get(name)
+            if value is None:
+                return None
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                malformed = True
+                return None
+
+        board_seconds_raw = raw.get("board_seconds") or {}
+        if not isinstance(board_seconds_raw, dict):
+            board_seconds_raw = {}
+            malformed = True
+        board_seconds: dict[str, float] = {}
+        for key, value in board_seconds_raw.items():
+            try:
+                board_seconds[str(key)] = float(value)
+            except (TypeError, ValueError):
+                malformed = True
+
+        return cls(
+            shard=raw.get("shard"),
+            assigned=as_int("assigned"),
+            done=as_int("done"),
+            undone=as_int("undone"),
+            jobs=as_int("jobs"),
+            seconds=optional_float("seconds") or 0.0,
+            predicted_minutes=optional_float("predicted_minutes"),
+            serial_minutes=optional_float("serial_minutes"),
+            killed_by_budget=bool(raw.get("killed_by_budget")),
+            deferred=deferred,
+            board_seconds=board_seconds,
+            retries=retries,
+            egress_ips=egress_ips,
+            errors=safe_errors,
+            truncated=truncated,
+            boards_ok=boards_ok,
+            observations=observations,
+            malformed=malformed,
+        )
+
+
 @dataclass
 class ScrapeHealth:
     """One reporting contract for shard and run-level Board coverage and scrape losses."""
@@ -85,7 +244,7 @@ class ScrapeHealth:
 
     @classmethod
     def from_reports(
-        cls, reports: list[dict], expected_reports: int | None = None
+        cls, reports: list[ShardReport], expected_reports: int | None = None
     ) -> ScrapeHealth:
         coverage: dict[str, Counter[str]] = defaultdict(Counter)
         losses: dict[str, Counter[str]] = defaultdict(Counter)
@@ -93,35 +252,14 @@ class ScrapeHealth:
         cause_boards: dict[tuple[str, str, str], set[str]] = defaultdict(set)
         malformed_reports = 0
         for report in reports:
-            malformed = (
-                bool(report.get("_malformed")) if isinstance(report, dict) else False
-            )
-            if not isinstance(report, dict):
-                malformed_reports += 1
-                continue
-            boards_ok = report.get("boards_ok") or []
-            errors = report.get("errors") or {}
-            truncated = report.get("truncated") or {}
-            observations = report.get("observations") or {}
-            if not isinstance(boards_ok, list):
-                boards_ok = []
-                malformed = True
-            if not isinstance(errors, dict):
-                errors = {}
-                malformed = True
-            if not isinstance(truncated, dict):
-                truncated = {}
-                malformed = True
-            if not isinstance(observations, dict):
-                observations = {}
-                malformed = True
-            for key in boards_ok:
+            malformed = report.malformed
+            for key in report.boards_ok:
                 coverage[ats_of(key)]["successful"] += 1
-            for key in errors:
+            for key in report.errors:
                 coverage[ats_of(key)]["failed"] += 1
-            for key in truncated:
+            for key in report.truncated:
                 coverage[ats_of(key)]["partial"] += 1
-            for board, observation in observations.items():
+            for board, observation in report.observations.items():
                 if not isinstance(observation, dict):
                     malformed = True
                     continue
@@ -295,7 +433,7 @@ def summary(title: str, lines: list[str]) -> None:
         _log.warning(f"could not write the step summary: {exc}")
 
 
-def write_shard(outdir: Path, **fields: Any) -> None:
+def write_shard(outdir: Path, report: ShardReport) -> None:
     """Record this shard's own numbers beside its fragment, so the join can aggregate them.
 
     Same swallow-on-failure reasoning as :func:`summary`, and for a stronger reason here: this
@@ -303,19 +441,17 @@ def write_shard(outdir: Path, **fields: Any) -> None:
     """
     try:
         outdir.mkdir(parents=True, exist_ok=True)
-        (outdir / _SHARD_REPORT).write_text(
-            json.dumps(fields, indent=1, sort_keys=True), encoding="utf-8"
-        )
+        (outdir / _SHARD_REPORT).write_text(report.to_json(), encoding="utf-8")
     except OSError as exc:
         _log.warning(f"could not write the shard report: {exc}")
 
 
-def read_shards(fragments: Path) -> list[dict]:
+def read_shards(fragments: Path) -> list[ShardReport]:
     """Every shard report under ``fragments``, newest-run-first order not guaranteed.
 
     A missing or corrupt report is skipped with a warning rather than raising: the join's job
     is to union job data, and it must not die because a shard's telemetry did."""
-    out: list[dict] = []
+    out: list[ShardReport] = []
     unreadable: list[str] = []
     wrong_shape: list[str] = []
     for path in sorted(fragments.glob(f"*/{_SHARD_REPORT}")):
@@ -324,7 +460,7 @@ def read_shards(fragments: Path) -> list[dict]:
         except (OSError, json.JSONDecodeError) as exc:
             unreadable.append(f"{path.parent.name} ({type(exc).__name__})")
             continue
-        report = _safe_shard_report(raw)
+        report = ShardReport.from_json(raw)
         if report is None:
             wrong_shape.append(path.parent.name)
             continue
@@ -344,78 +480,6 @@ def read_shards(fragments: Path) -> list[dict]:
             f"skipped: {log.named_sample(wrong_shape)}"
         )
     return out
-
-
-def _safe_shard_report(raw: Any) -> dict | None:
-    """Return a report safe for every join consumer, tagging recoverable schema damage."""
-    if not isinstance(raw, dict):
-        return None
-    report = dict(raw)
-    malformed = False
-    for field in ("errors", "truncated", "observations"):
-        if not isinstance(report.get(field, {}), dict):
-            report[field] = {}
-            malformed = True
-    safe_errors: dict[str, str] = {}
-    for key, value in report.get("errors", {}).items():
-        if not isinstance(key, str) or not isinstance(value, str):
-            malformed = True
-        safe_errors[str(key)] = str(value)
-    report["errors"] = safe_errors
-    for field in ("boards_ok", "deferred"):
-        value = report.get(field, [])
-        if not isinstance(value, list):
-            report[field] = []
-            malformed = True
-        else:
-            report[field] = value
-    for field in ("boards_ok", "deferred"):
-        values = report[field]
-        if any(not isinstance(value, str) for value in values):
-            malformed = True
-        report[field] = [str(value) for value in values]
-    for field in ("retries", "egress_ips"):
-        value = report.get(field, {})
-        if not isinstance(value, dict):
-            report[field] = {}
-            malformed = True
-            continue
-        safe: dict[str, int] = {}
-        for key, count in value.items():
-            try:
-                safe[str(key)] = int(count)
-            except (TypeError, ValueError):
-                malformed = True
-        report[field] = safe
-    for field in ("assigned", "done", "undone", "jobs"):
-        try:
-            report[field] = int(report.get(field) or 0)
-        except (TypeError, ValueError):
-            report[field] = 0
-            malformed = True
-    for field in ("seconds", "predicted_minutes", "serial_minutes"):
-        value = report.get(field)
-        if value is None:
-            continue
-        try:
-            report[field] = float(value)
-        except (TypeError, ValueError):
-            report[field] = None
-            malformed = True
-    board_seconds = report.get("board_seconds") or {}
-    if not isinstance(board_seconds, dict):
-        board_seconds = {}
-        malformed = True
-    safe_seconds: dict[str, float] = {}
-    for key, value in board_seconds.items():
-        try:
-            safe_seconds[str(key)] = float(value)
-        except (TypeError, ValueError):
-            malformed = True
-    report["board_seconds"] = safe_seconds
-    if malformed:
-        report["_malformed"] = True
-    return report
 
 
 def percentiles(values: list[float]) -> dict[str, float]:

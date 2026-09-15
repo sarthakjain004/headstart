@@ -44,6 +44,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from headstart.ingest.observability import ShardReport
+
 FIELDS = ("speedup", "shards", "updated_at")
 CURRENT_WEIGHT = 0.5  # EWMA weight on this run (the rest on history)
 # Used until the ledger has a measurement. 1.0 reproduces the old serial prediction exactly, so a
@@ -89,19 +91,21 @@ def load(path: str | Path) -> Speedup:
         return cold
 
 
-def ratios_from_reports(reports: list[dict]) -> list[float]:
+def ratios_from_reports(reports: list[ShardReport]) -> list[float]:
     """Per-shard ``serial / wall_clock`` from the run's shard reports.
 
     Skips a shard that has no serial figure (an older plan), that reports no time, and — the one
     that matters — any shard ``killed_by_budget``, whose wall clock measures the budget rather
-    than the work. ``.get(...)`` throughout: a truncated report must not raise here.
+    than the work. Trusts ``report.seconds``/``report.serial_minutes`` outright: a truncated or
+    malformed report is coerced into a safe zero/``None`` once, by ``ShardReport.from_json``
+    (ADR-0154), not re-guarded at every reader.
     """
     ratios = []
     for report in reports:
-        if report.get("killed_by_budget"):
+        if report.killed_by_budget:
             continue
-        serial = float(report.get("serial_minutes") or 0)
-        actual = float(report.get("seconds") or 0) / 60
+        serial = report.serial_minutes or 0.0
+        actual = report.seconds / 60
         if serial > 0 and actual > 0:
             ratios.append(serial / actual)
     return ratios

@@ -33,7 +33,7 @@ from headstart.board_identity import board_identity
 from headstart.board_priority import load_scores, pick_boards
 from headstart.config import CompanyRef, load_active_companies
 from headstart.harvest import scrape_all
-from headstart.ingest import HELD_DETAILS_PATH, REPO_ROOT, observability
+from headstart.ingest import HELD_DETAILS_PATH, REPO_ROOT, observability, shard_plan
 
 _LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
 _JOBS_DIR = REPO_ROOT / "data" / "jobs"
@@ -149,35 +149,6 @@ def _ats_mix(companies: list[CompanyRef], top: int = 4) -> str:
     return detail + (f", +{len(ranked) - top} more" if len(ranked) > top else "")
 
 
-def _shard_id(assignment: str | None) -> str | None:
-    """The shard number from its assignment filename, so a report says which shard it is."""
-    return Path(assignment).stem.rsplit("-", 1)[-1] if assignment else None
-
-
-def _plan_minutes(assignment: str | None, field: str) -> float | None:
-    """This shard's entry in one of the plan's per-shard minute lists.
-
-    The plan ships two, and they answer different questions: ``per_shard_minutes`` is the
-    predicted wall clock (what the shard should take) and ``per_shard_serial_minutes`` is the
-    packed sum (what its Boards cost run end to end). Reporting both is what lets the join
-    measure the fan-out's speedup against the *serial* figure rather than against the
-    prediction, which is derived from that speedup and would chase its own tail (ADR-0054).
-
-    Without any of this nothing ever compares prediction to outcome, and a cost model can drift
-    by a factor of three in plain sight (it has: ~109 min predicted vs ~40 actual).
-    """
-    if not assignment:
-        return None
-    path = Path(assignment)
-    shard = path.stem.rsplit("-", 1)[-1]
-    plan = path.parent / "plan.json"
-    try:
-        minutes = json.loads(plan.read_text(encoding="utf-8"))[field]
-        return float(minutes[int(shard)])
-    except (OSError, json.JSONDecodeError, KeyError, IndexError, ValueError):
-        return None  # an older plan, or a non-shard run: absence is not an error
-
-
 def _raise_on_term(signum: int, frame: object) -> None:
     """SIGTERM as an exception, so the shutdown path is ordinary Python and `finally` runs."""
     raise SystemExit(f"signal {signum}")
@@ -235,12 +206,12 @@ def _report(
     widths = fanout_stats.report()
     health = observability.ScrapeHealth.from_reports(
         [
-            {
-                "boards_ok": progress.boards_ok,
-                "errors": progress.errors,
-                "truncated": progress.truncated,
-                "observations": progress.observations,
-            }
+            observability.ShardReport(
+                boards_ok=progress.boards_ok,
+                errors=progress.errors,
+                truncated=progress.truncated,
+                observations=progress.observations,
+            )
         ]
     )
     coverage = health.coverage_line()
@@ -292,35 +263,37 @@ def _report(
     )
     observability.write_shard(
         outdir,
-        shard=shard,
-        assigned=progress.assigned,
-        done=progress.done,
-        undone=progress.undone,
-        jobs=progress.jobs,
-        seconds=round(elapsed, 1),
-        predicted_minutes=predicted,
-        serial_minutes=serial,
-        killed_by_budget=killed,
-        # The Boards this shard never finished, named. `undone` counts them; the join can only
-        # say *which* Board a run keeps losing if the names survive the runner.
-        deferred=deferred,
-        board_seconds=spread,
-        retries=dict(retries),
-        # The addresses this shard actually egressed from, not just how often it rotated. Only a
-        # comparison of addresses can answer whether rotation works — ADR-0067 first measured a
-        # genuinely different IP ~11 times in 30; ADR-0081 corrected that on 150 real shard-runs
-        # to 11,007 distinct IPs across 12,702 rotations — and only the join can see the
-        # cross-shard picture that mattered for either measurement.
-        egress_ips=dict(spare_egress.egress_ips()),
-        # the full map, not the top-3 digest the log line carries: the join can only
-        # aggregate error classes across shards if the classes survive the runner
-        errors=progress.errors,
-        truncated=progress.truncated,
-        # every Board that completed without raising, zero-job ones included — the evidence
-        # that clears an ADR-0058 gone-streak, which neither the corpus (no lines) nor the
-        # error map (no entry) can carry
-        boards_ok=progress.boards_ok,
-        observations=progress.observations,
+        observability.ShardReport(
+            shard=shard,
+            assigned=progress.assigned,
+            done=progress.done,
+            undone=progress.undone,
+            jobs=progress.jobs,
+            seconds=round(elapsed, 1),
+            predicted_minutes=predicted,
+            serial_minutes=serial,
+            killed_by_budget=killed,
+            # The Boards this shard never finished, named. `undone` counts them; the join can
+            # only say *which* Board a run keeps losing if the names survive the runner.
+            deferred=deferred,
+            board_seconds=spread,
+            retries=dict(retries),
+            # The addresses this shard actually egressed from, not just how often it rotated.
+            # Only a comparison of addresses can answer whether rotation works — ADR-0067 first
+            # measured a genuinely different IP ~11 times in 30; ADR-0081 corrected that on 150
+            # real shard-runs to 11,007 distinct IPs across 12,702 rotations — and only the join
+            # can see the cross-shard picture that mattered for either measurement.
+            egress_ips=dict(spare_egress.egress_ips()),
+            # the full map, not the top-3 digest the log line carries: the join can only
+            # aggregate error classes across shards if the classes survive the runner
+            errors=progress.errors,
+            truncated=progress.truncated,
+            # every Board that completed without raising, zero-job ones included — the evidence
+            # that clears an ADR-0058 gone-streak, which neither the corpus (no lines) nor the
+            # error map (no entry) can carry
+            boards_ok=progress.boards_ok,
+            observations=progress.observations,
+        ),
     )
 
 
@@ -346,7 +319,7 @@ def main() -> int:
     args = ap.parse_args()
     # After parsing, not before it: the shard is the only key that tells fifteen concurrent
     # producers apart once their logs are merged, and it is only knowable from the assignment.
-    shard = _shard_id(args.assignment)
+    shard = shard_plan.shard_index(args.assignment)
     log.context("scrape_run", shard=shard)
 
     have_details: set[str] | None = None
@@ -374,8 +347,13 @@ def main() -> int:
         )
 
     outdir = Path(args.outdir)
-    predicted = _plan_minutes(args.assignment, "per_shard_minutes")
-    serial = _plan_minutes(args.assignment, "per_shard_serial_minutes")
+    plan = (
+        shard_plan.ScrapePlan.from_json(Path(args.assignment).parent / "plan.json")
+        if args.assignment
+        else None
+    )
+    predicted = plan.predicted_minutes(shard) if plan else None
+    serial = plan.serial_minutes(shard) if plan else None
     _log.info(f"shard mix: {_ats_mix(companies)}")
     if predicted is not None:
         _log.info(f"planner predicted ~{predicted:.1f} min for this shard")

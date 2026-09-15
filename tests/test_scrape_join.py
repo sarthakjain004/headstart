@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 import headstart.ingest.scrape_join as js
+from headstart.ingest.observability import ShardReport
 
 
 def _shard(frags: Path, k: int, files: dict[str, list[str]]) -> None:
@@ -80,13 +81,13 @@ def test_unauthoritative_boards_are_keyed_the_way_the_index_keys_boards(tmp_path
     slug is the whole careers URL — so writing the raw key through would look like protection
     while never matching anything."""
     reports = [
-        {"errors": {"greenhouse:acme": "HTTP 429"}},
-        {
-            "errors": {
+        ShardReport(errors={"greenhouse:acme": "HTTP 429"}),
+        ShardReport(
+            errors={
                 "workday:https://x.wd1.myworkdayjobs.com/Careers": "RequestsError: 429",
                 "eightfold:nvidia.eightfold.ai": "HTTP 500",
             }
-        },
+        ),
     ]
     out = tmp_path / "unauthoritative_boards.json"
     written = js.write_unauthoritative_boards(reports, out)
@@ -105,7 +106,7 @@ def test_the_file_is_rewritten_even_when_every_list_was_authoritative(tmp_path):
     out = tmp_path / "unauthoritative_boards.json"
     out.write_text('{"greenhouse:stale": "from a previous run"}', encoding="utf-8")
 
-    assert js.write_unauthoritative_boards([{"errors": {}}], out) == {}
+    assert js.write_unauthoritative_boards([ShardReport()], out) == {}
     assert json.loads(out.read_text(encoding="utf-8")) == {}
 
 
@@ -114,7 +115,12 @@ def test_an_unresolvable_key_is_dropped_not_written_through(tmp_path):
     unconverted would sit in the file looking effective while matching no Board."""
     out = tmp_path / "unauthoritative_boards.json"
     written = js.write_unauthoritative_boards(
-        [{"errors": {"notanats:whatever": "boom", "greenhouse:real": "HTTP 500"}}], out
+        [
+            ShardReport(
+                errors={"notanats:whatever": "boom", "greenhouse:real": "HTTP 500"}
+            )
+        ],
+        out,
     )
     assert written == {"greenhouse:real": "HTTP 500"}
 
@@ -128,7 +134,12 @@ def test_the_written_keys_are_what_the_index_actually_looks_up(tmp_path):
 
     out = tmp_path / "unauthoritative_boards.json"
     js.write_unauthoritative_boards(
-        [{"errors": {"workday:https://x.wd1.myworkdayjobs.com/Careers": "429"}}], out
+        [
+            ShardReport(
+                errors={"workday:https://x.wd1.myworkdayjobs.com/Careers": "429"}
+            )
+        ],
+        out,
     )
     unauthoritative = read_unauthoritative_boards(out)
 
@@ -146,12 +157,11 @@ def test_a_scraper_that_truncates_without_raising_still_reaches_the_file(tmp_pat
     the Board emits job lines — it looks fully scraped. Before ADR-0053 that made its missing
     postings indistinguishable from delistings. `truncated` is the channel that carries it, and
     the join folds both into the one question sync asks: is this Board's list authoritative?"""
-    report = {
-        "errors": {},
-        "truncated": {
+    report = ShardReport(
+        truncated={
             "eightfold:nvidia.eightfold.ai": "HTTP 429 on page 4 — got 300 of 850"
         },
-    }
+    )
     written = js.write_unauthoritative_boards([report], tmp_path / "e.json")
     assert "eightfold:nvidia.eightfold.ai" in written
 
@@ -159,10 +169,10 @@ def test_a_scraper_that_truncates_without_raising_still_reaches_the_file(tmp_pat
 def test_a_raise_and_a_truncation_both_land(tmp_path):
     """Both mean 'do not evict against this list'. A Board that raised writes no lines and was
     already out of scope; the truncated one is the case that actually flapped."""
-    report = {
-        "errors": {"workday:https://x.wd1.myworkdayjobs.com/Careers": "429"},
-        "truncated": {"eightfold:nvidia.eightfold.ai": "cut short"},
-    }
+    report = ShardReport(
+        errors={"workday:https://x.wd1.myworkdayjobs.com/Careers": "429"},
+        truncated={"eightfold:nvidia.eightfold.ai": "cut short"},
+    )
     written = js.write_unauthoritative_boards([report], tmp_path / "e.json")
     assert set(written) == {"workday:x/Careers", "eightfold:nvidia.eightfold.ai"}
 
@@ -177,16 +187,14 @@ def test_the_join_names_the_boards_the_run_deferred(caplog):
 
     caplog.set_level(logging.INFO, logger="headstart.ingest.scrape_join")
     reports = [
-        {
-            "shard": "13",
-            "killed_by_budget": True,
-            "undone": 1,
-            "seconds": 3599.0,
-            "deferred": [
-                "workday:https://dollartree.wd5.myworkdayjobs.com/dollartreeus"
-            ],
-        },
-        {"shard": "1", "killed_by_budget": False, "undone": 0, "seconds": 600.0},
+        ShardReport(
+            shard="13",
+            killed_by_budget=True,
+            undone=1,
+            seconds=3599.0,
+            deferred=["workday:https://dollartree.wd5.myworkdayjobs.com/dollartreeus"],
+        ),
+        ShardReport(shard="1", killed_by_budget=False, undone=0, seconds=600.0),
     ]
 
     js._report_shards(reports, 1000, 5)
@@ -200,7 +208,7 @@ def test_the_join_says_nothing_about_deferred_boards_on_a_clean_run(caplog):
 
     caplog.set_level(logging.INFO, logger="headstart.ingest.scrape_join")
     js._report_shards(
-        [{"shard": "0", "killed_by_budget": False, "undone": 0, "seconds": 100.0}],
+        [ShardReport(shard="0", killed_by_budget=False, undone=0, seconds=100.0)],
         10,
         1,
     )
@@ -212,12 +220,12 @@ def test_join_reports_per_ats_coverage_and_separate_loss_events(caplog):
 
     caplog.set_level(logging.INFO, logger="headstart.ingest.scrape_join")
     reports = [
-        {
-            "done": 3,
-            "boards_ok": ["workday:a", "successfactors:jobs.example.com"],
-            "errors": {"workday:b": "UnexpectedListingResponse: bad body"},
-            "truncated": {"workday:a": "one page lost"},
-            "observations": {
+        ShardReport(
+            done=3,
+            boards_ok=["workday:a", "successfactors:jobs.example.com"],
+            errors={"workday:b": "UnexpectedListingResponse: bad body"},
+            truncated={"workday:a": "one page lost"},
+            observations={
                 "workday:a": {
                     "listing_pages": 5,
                     "listing_page_losses": 1,
@@ -241,7 +249,7 @@ def test_join_reports_per_ats_coverage_and_separate_loss_events(caplog):
                     "detail_loss_causes": {"HTTP 429": 7},
                 },
             },
-        }
+        )
     ]
 
     js._report_shards(reports, 100, 2)
@@ -263,9 +271,7 @@ def test_malformed_shard_json_cannot_sink_any_join_consumer(tmp_path, caplog):
     root = tmp_path / "fragments"
     observability.write_shard(
         root / "shard-0",
-        errors={123: 42},
-        deferred=[123],
-        killed_by_budget=True,
+        ShardReport(errors={123: 42}, deferred=[123], killed_by_budget=True),
     )
     bad = root / "shard-1"
     bad.mkdir(parents=True)

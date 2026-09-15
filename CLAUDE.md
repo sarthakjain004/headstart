@@ -314,9 +314,9 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   If you change what the pipeline runs, change it there and update `.github/workflows/pipeline.yml`
   to match. Don't add a pipeline stage to `scripts/`. Helper modules used *only* by the pipeline
   live there too (`binpack`, `board_failures`, `derived_meta`, `doc_prep`, `index_plan`,
-  `observability`, `role_assignments`, `shard_speedup`) — with one deliberate exception:
-  `alerts/run.py` imports
-  `observability.named_sample` to bound its post-loop summary, which keeps one sampling contract
+  `observability`, `role_assignments`, `shard_plan`, `shard_speedup`) — with one deliberate
+  exception: `alerts/run.py` imports `observability.named_sample` to bound its post-loop
+  summary, which keeps one sampling contract
   rather than two spellings of it. The stricter rule below still holds: alerts is not the feed.
   Logic
   the curated-feed path (`python -m headstart` → `headstart.harvest`) also reaches stays in

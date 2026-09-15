@@ -42,7 +42,7 @@ from headstart import log
 from headstart.board_identity import board_of
 from headstart.board_priority import load_scores
 from headstart.corpus import iter_jobs
-from headstart.ingest import REPO_ROOT, observability
+from headstart.ingest import REPO_ROOT, observability, shard_plan
 from headstart.ingest.doc_prep import (  # re-exported: doc-prep shared with the embed planner (ADR-0025)
     BUCKETS,
     MAX_SEQ_TOKENS,
@@ -453,12 +453,7 @@ def main() -> None:
     args = ap.parse_args()
     # After parsing, not before it: the shard number lives in the assignment's filename, and it
     # is the only key that tells fifteen concurrent embedders apart in a merged log.
-    log.context(
-        "embed_run",
-        shard=Path(args.assignment).stem.rsplit("-", 1)[-1]
-        if args.assignment
-        else None,
-    )
+    log.context("embed_run", shard=shard_plan.shard_index(args.assignment))
 
     model, device, dim, budget = _load_model()
     outdir = Path(args.outdir)
