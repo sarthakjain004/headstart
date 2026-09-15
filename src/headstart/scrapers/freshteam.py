@@ -168,3 +168,8 @@ class FreshteamScraper(BaseScraper):
                 )
             )
         return jobs
+
+    def _salary_field(self, raw: Any) -> str | None:
+        # `ctc_details` was null on every one of the 2,591 scanned jobs (module docstring) — no
+        # shape to parse.
+        return None

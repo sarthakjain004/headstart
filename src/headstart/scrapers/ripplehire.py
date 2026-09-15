@@ -261,12 +261,20 @@ class RippleHireScraper(BaseScraper):
                     # that unit mismatch can't leak into `experience`.
                     experience=j.get("jobReqExp"),
                     employment_type=detail.get("jobTypeCustom3") or None,
-                    salary=(
-                        detail.get("compensationRange")
-                        or detail.get("compensationInfo")
-                        or j.get("compensationRange")
-                        or j.get("compensationInfo")
-                    ),
+                    salary=self._salary_field(j),
                 )
             )
         return jobs
+
+    def _salary_field(self, raw: dict) -> str | None:
+        """`compensationRange`/`compensationInfo`, from the `jobVO` detail record
+        (`fetch_raw`'s attached `_detail`) when it landed, else the list's own copy of the same
+        two keys — the same detail-falls-back-to-list treatment `parse()` gives
+        `department`/`posted_at`/`employment_type`."""
+        detail = raw.get("_detail") or {}
+        return (
+            detail.get("compensationRange")
+            or detail.get("compensationInfo")
+            or raw.get("compensationRange")
+            or raw.get("compensationInfo")
+        )

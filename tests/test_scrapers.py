@@ -429,7 +429,7 @@ def test_ashby_parse_skips_unlisted():
     assert j.employment_type == "FullTime"
     assert j.description and "</" not in j.description  # populated, HTML-stripped
     # this fixture predates compensationTiers (only compensationTierSummary is present) — real,
-    # current ashby responses always carry the key (empty or populated); _salary() correctly
+    # current ashby responses always carry the key (empty or populated); _salary_field() correctly
     # returns None rather than falling back to the unstructured summary string (code review,
     # PR #240 — see test_ashby_salary_from_structured_compensation_tier below for the real shape).
     assert j.salary is None
@@ -562,9 +562,7 @@ def test_ashby_salary_from_structured_compensation_tier(compensation, expected):
     reconfirmed Standards-review catch (Ramp's own board): a truthy check on ``lo``/``hi`` drops a
     genuine 0 and silently corrupts the disclosure, so both must format the 0 rather than treat it
     as absent."""
-    from headstart.scrapers.ashby import _salary
-
-    assert _salary(compensation) == expected
+    assert get_scraper("ashby", "ramp")._salary_field(compensation) == expected
 
 
 def test_darwinbox_parse():
@@ -638,7 +636,7 @@ def test_keka_salary_no_scientific_notation_for_large_amounts():
     # figure at or above ₹1,000,000 was silently discarded. 27% of a 300-job sample of rejected
     # Job.salary values showed this shape, across 19 distinct companies. Fixing it recovered
     # ~1,550 jobs on re-measurement (Tier 1 coverage 15.8% -> 27.8% of the full sampled corpus).
-    from headstart.scrapers.keka import _salary
+    _salary = get_scraper("keka", "acme")._salary_field
 
     assert _salary({"minimum": 500000.0, "maximum": 1000000.0, "currency": "INR"}) == (
         "500000-1000000 INR"
@@ -903,9 +901,9 @@ def test_smartrecruiters_salary_from_native_compensation_block(compensation, exp
     mapped to the singular bare word ("1 YEAR", "1 MONTH", ...) salary.py's
     `_field_range_currency_interval` recognizes — the raw adverb does not match its bare-word
     regex and would silently default to the annual multiplier instead of annualizing."""
-    from headstart.scrapers.smartrecruiters import _salary
-
-    assert _salary(compensation) == expected
+    assert (
+        get_scraper("smartrecruiters", "acme")._salary_field(compensation) == expected
+    )
 
 
 def test_smartrecruiters_extract_detail_reads_description_and_compensation_from_one_response():
@@ -3257,7 +3255,7 @@ def test_recruitee_location_falls_back_to_city_country_when_absent():
 
 
 def test_recruitee_salary_formatting():
-    from headstart.scrapers.recruitee import _salary
+    _salary = get_scraper("recruitee", "acme")._salary_field
 
     assert _salary(None) is None
     assert _salary({"min": None, "max": None}) is None  # blank -> None, job still kept
@@ -3423,10 +3421,8 @@ def test_personio_salary_from_structured_salary_information(position_xml, expect
     function's word-boundary check — code review found this was speculative (3 of 5 map entries
     provably redundant, since _period_multiplier's own hardcoded checks and annual default
     already handle every real value correctly) and it was removed."""
-    from headstart.scrapers.personio import _salary
-
     pos = ET.fromstring(position_xml)
-    assert _salary(pos) == expected
+    assert get_scraper("personio", "acme")._salary_field(pos) == expected
 
 
 def test_personio_slug_from_keeps_only_the_host():
@@ -3863,7 +3859,7 @@ def test_rippling_pay_range_unions_all_entries():
     cat5-resources-llc serves '25-27 USD HOUR' from entry [0] while the real span
     across all entries (Level 1-4) is 25-40 (live measurement,
     docs/salary-extraction/rippling.md)."""
-    from headstart.scrapers.rippling import _pay_range
+    _pay_range = get_scraper("rippling", "acme")._salary_field
 
     ranges = [
         {
@@ -3899,7 +3895,7 @@ def test_rippling_pay_range_does_not_blend_mismatched_currency():
     alongside one CAD/YEAR entry. Pooling raw numbers across all entries regardless of unit
     mislabeled the CAD figure as USD — '155000-200000 USD YEAR' instead of the true USD-only
     span. Entries outside the majority (currency, frequency) must be excluded, not blended."""
-    from headstart.scrapers.rippling import _pay_range
+    _pay_range = get_scraper("rippling", "acme")._salary_field
 
     ranges = [
         {
@@ -3932,8 +3928,8 @@ def test_rippling_pay_range_does_not_blend_mismatched_currency():
 
 def test_rippling_pay_range_keeps_a_zero_floor():
     """rangeStart/rangeEnd must be checked with `is not None`, not truthiness — the same class
-    of bug ashby's `_salary` docstring documents (a real Ramp job with minValue=0)."""
-    from headstart.scrapers.rippling import _pay_range
+    of bug ashby's `_salary_field` docstring documents (a real Ramp job with minValue=0)."""
+    _pay_range = get_scraper("rippling", "acme")._salary_field
 
     ranges = [
         {"rangeStart": 0, "rangeEnd": 50000, "currency": "USD", "frequency": "HOUR"}
@@ -3947,7 +3943,7 @@ def test_rippling_pay_range_majority_unit_wins_regardless_of_position():
     can't narrow the reported range to just that outlier. Same journaltech-shaped mix as
     test_rippling_pay_range_does_not_blend_mismatched_currency, but with the lone CAD entry
     moved to position 0: entry-[0]-anchored code would report "155000-190000 CAD YEAR"."""
-    from headstart.scrapers.rippling import _pay_range
+    _pay_range = get_scraper("rippling", "acme")._salary_field
 
     ranges = [
         {
@@ -3980,7 +3976,7 @@ def test_rippling_pay_range_majority_unit_wins_regardless_of_position():
 
 def test_rippling_employment_type_empty_label_does_not_fall_back():
     """`.label` is checked with `is not None`, not truthiness — the same class of bug
-    `_pay_range` fixes for rangeStart/rangeEnd. A present-but-empty label (never observed
+    `_salary_field` fixes for rangeStart/rangeEnd. A present-but-empty label (never observed
     live, but not ruled out by the API) must be kept, not silently replaced by `.id`."""
     raw = [
         {
@@ -8010,7 +8006,8 @@ def test_zwayam_bare_amounts_default_to_rupees():
     $1.7M and is dropped, while small placeholder ranges survive. Defaulting to INR is what makes
     the large, genuine figures reach the index."""
     from headstart.salary import extract
-    from headstart.scrapers.zwayam import _salary
+
+    _salary = get_scraper("zwayam", "acme")._salary_field
 
     assert (
         _salary({"minJobSalary": "1700000", "maxJobSalary": "2000000"})
@@ -8043,7 +8040,8 @@ def test_zwayam_a_zero_bound_is_an_unfilled_form_half():
     """`1000000-0` makes `salary.extract` reject the whole row, losing a real floor that parses
     fine alone — 17 of 5,079 amount rows carried a floor with a zero ceiling."""
     from headstart.salary import extract
-    from headstart.scrapers.zwayam import _salary
+
+    _salary = get_scraper("zwayam", "acme")._salary_field
 
     assert _salary({"minJobSalary": "1000000", "maxJobSalary": "0"}) == "1000000 INR"
     assert extract("1000000 INR", None, "zwayam").min_annual == 1000000
@@ -8056,7 +8054,8 @@ def test_zwayam_a_ceiling_without_a_floor_is_shown_but_never_read_as_a_floor():
     `Job.salary` is "raw, for display" — while parsing to nothing, so no derived column inverts.
     """
     from headstart.salary import extract
-    from headstart.scrapers.zwayam import _salary
+
+    _salary = get_scraper("zwayam", "acme")._salary_field
 
     # the premise, asserted not assumed
     assert (

@@ -272,6 +272,16 @@ class ICIMSScraper(BaseScraper):
             )
         return jobs
 
+    def _salary_field(self, raw: Any) -> str | None:
+        """Delegates to the module-level :func:`_salary`, which does the real formatting.
+
+        The JSON-LD walk (:func:`_ld_fields`) that finds the ``baseSalary`` node runs ahead of
+        any per-job ``self`` — it is a free function every test in this module calls directly,
+        with no scraper instance in hand — so the formatting logic lives at module scope too,
+        and this method exists only to satisfy :meth:`~BaseScraper._salary_field`'s contract.
+        """
+        return _salary(raw)
+
 
 def _sitemap_rows(xml: str) -> list[tuple[str, str, str | None]]:
     """``(job_id, public_url, lastmod)`` per posting, deduped, in sitemap order.

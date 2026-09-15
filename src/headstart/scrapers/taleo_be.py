@@ -89,31 +89,6 @@ def _field(labels: dict[str, str], *names: str) -> str | None:
     return None
 
 
-def _salary(labels: dict[str, str]) -> str | None:
-    low = next(
-        (value for name, value in labels.items() if "salary" in name and "low" in name),
-        None,
-    )
-    high = next(
-        (
-            value
-            for name, value in labels.items()
-            if "salary" in name and "high" in name
-        ),
-        None,
-    )
-    if low and high:
-        return f"{low} - {high}"
-    for name, value in labels.items():
-        if any(
-            word in name for word in ("salary", "pay range", "compensation")
-        ) and not any(
-            word in name for word in ("low", "high", "minimum", "maximum", "min", "max")
-        ):
-            return value
-    return None
-
-
 def _posted_at(value: str | None) -> str | None:
     if not value:
         return None
@@ -249,7 +224,7 @@ class TaleoBEScraper(BaseScraper):
             "department": _field(labels, "Department"),
             "employment_type": _field(labels, "Employment Type", "Job Type"),
             "posted_at": _posted_at(_field(labels, "Date Posted", "Posting Date")),
-            "salary": _salary(labels),
+            "salary": self._salary_field(labels),
         }
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
@@ -275,3 +250,32 @@ class TaleoBEScraper(BaseScraper):
                 )
             )
         return jobs
+
+    def _salary_field(self, raw: dict[str, str]) -> str | None:
+        low = next(
+            (
+                value
+                for name, value in raw.items()
+                if "salary" in name and "low" in name
+            ),
+            None,
+        )
+        high = next(
+            (
+                value
+                for name, value in raw.items()
+                if "salary" in name and "high" in name
+            ),
+            None,
+        )
+        if low and high:
+            return f"{low} - {high}"
+        for name, value in raw.items():
+            if any(
+                word in name for word in ("salary", "pay range", "compensation")
+            ) and not any(
+                word in name
+                for word in ("low", "high", "minimum", "maximum", "min", "max")
+            ):
+                return value
+        return None

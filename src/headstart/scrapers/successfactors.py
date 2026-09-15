@@ -409,6 +409,12 @@ class SuccessFactorsScraper(BaseScraper):
             )
         return jobs
 
+    def _salary_field(self, raw: Any) -> str | None:
+        # Not yet measured: no structured compensation field has been looked for across either
+        # the classic JSON-LD or the CSB-rendered microdata detail pages. Needs its own
+        # measurement pass before this can claim more.
+        return None
+
 
 def _cap_reason(what: str) -> str:
     """Why a stream that ran into ``_SITEMAP_CAP`` left the board short (ADR-0053)."""

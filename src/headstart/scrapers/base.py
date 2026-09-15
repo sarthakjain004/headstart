@@ -450,6 +450,30 @@ class BaseScraper(ABC):
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         """Turn a raw API/page response into normalized Jobs."""
 
+    @abstractmethod
+    def _salary_field(self, raw: Any) -> str | None:
+        """Format this ATS's native structured compensation field into ``Job.salary``, or
+        ``None`` if this ATS has no such field.
+
+        ``headstart.salary``'s Tier 1 (``from_field``) is what actually reads ``Job.salary`` back
+        out at index time — this method is the other half of that contract, the one place each
+        scraper states what it found. The expected shape is a bare string carrying whatever the
+        native field states — a number or range, a currency code, and a period — space-separated,
+        e.g. Lever's ``_salary_field`` returns ``"50000-70000 USD per-year-salary"`` from
+        ``salaryRange``. An ATS with no calibrated ``salary.py`` parser still reaches
+        ``_field_generic``, so any reasonable "AMOUNT[-AMOUNT] [CURRENCY] [PERIOD]" spelling is
+        safe to emit even without adding a dedicated Tier-1 parser for it.
+
+        ``raw`` is deliberately loose: every ATS's raw per-job record shape differs, so each
+        scraper interprets it however its own :meth:`parse` already does (the whole record, or
+        just the sub-field that carries compensation).
+
+        ``@abstractmethod`` rather than a shared default — every concrete scraper must either
+        return a real formatted string from a native field, or ``return None`` with a comment
+        citing the measured evidence that this ATS's raw record carries no such field. This is
+        what stops a future scraper from silently never addressing the salary question at all.
+        """
+
     def _egress(self, *, marks_wall: bool = True) -> dict[str, Any]:
         """``http.fetch`` kwargs opting this scraper into the spare-egress fallback, plus board
         attribution for the retry log even when it doesn't.

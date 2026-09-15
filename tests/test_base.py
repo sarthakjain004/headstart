@@ -16,6 +16,9 @@ class _StubScraper(BaseScraper):
     def parse(self, raw, scraped_at):
         return []
 
+    def _salary_field(self, raw):
+        return None
+
 
 def test_report_detail_gaps_logs_missing_counts(caplog):
     caplog.set_level(logging.INFO, logger="headstart.scrapers.stub")

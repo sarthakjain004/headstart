@@ -257,6 +257,11 @@ class AmazonScraper(BaseScraper):
             )
         return jobs
 
+    def _salary_field(self, raw: Any) -> str | None:
+        # Not yet measured: no structured compensation field has been looked for in this
+        # scraper's raw record shape. Needs its own measurement pass before this can claim more.
+        return None
+
 
 def _remote(r: dict, location: str | None) -> bool | None:
     """Whether this posting is remote: any ``VIRTUAL``-typed entry in its own ``locations``
