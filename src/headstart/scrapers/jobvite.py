@@ -253,13 +253,12 @@ class JobviteScraper(BaseScraper):
         Board would read as emptied rather than gone. Raising instead surfaces it as the
         per-company failure it is.
         """
-        response = http.fetch(
+        response = self._fetch(
             "GET",
             url,
             headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
             timeout=30,
             allow_redirects=False,
-            **self._egress(),
         )
         if response.status_code != 200:
             raise http.RequestsError(
@@ -356,12 +355,11 @@ class JobviteScraper(BaseScraper):
     def _fetch_posting(self, job_id: str) -> dict | None:
         """GET one detail page and return its posting (None on failure). Sync path."""
         try:
-            response = http.fetch(
+            response = self._fetch(
                 "GET",
                 self._detail_url(job_id),
                 headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
                 timeout=30,
-                **self._egress(),
             )
         except http.RequestsError as exc:
             self.note_detail_loss(type(exc).__name__)
@@ -371,13 +369,12 @@ class JobviteScraper(BaseScraper):
     async def _posting_async(self, session: Any, job_id: str) -> dict | None:
         """Same as :meth:`_fetch_posting` over the shared multiplexed ``AsyncSession``."""
         try:
-            response = await http.fetch_async(
+            response = await self._fetch_async(
                 session,
                 "GET",
                 self._detail_url(job_id),
                 headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
                 timeout=30,
-                **self._egress(),
             )
         except http.RequestsError as exc:
             self.note_detail_loss(type(exc).__name__)

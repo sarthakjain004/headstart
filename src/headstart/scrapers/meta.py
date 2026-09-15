@@ -131,12 +131,11 @@ class MetaScraper(BaseScraper):
 
     def _job_fields(self, url: str) -> dict[str, Any] | None:
         try:
-            response = http.fetch(
+            response = self._fetch(
                 "GET",
                 url,
                 headers={"User-Agent": USER_AGENT},
                 timeout=30,
-                **self._egress(),
             )
         except http.RequestsError as exc:
             self.note_detail_loss(type(exc).__name__)
@@ -145,13 +144,12 @@ class MetaScraper(BaseScraper):
 
     async def _job_fields_async(self, session: Any, url: str) -> dict[str, Any] | None:
         try:
-            response = await http.fetch_async(
+            response = await self._fetch_async(
                 session,
                 "GET",
                 url,
                 headers={"User-Agent": USER_AGENT},
                 timeout=30,
-                **self._egress(),
             )
         except http.RequestsError as exc:
             self.note_detail_loss(type(exc).__name__)

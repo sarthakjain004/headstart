@@ -105,13 +105,12 @@ class SuccessFactorsScraper(BaseScraper):
         # Through the retry seam, not the raw session: a 429/5xx here used to settle on the
         # first try, and `_fetch_sitemap` maps a non-200 to ("other", "", None) — so a throttled
         # fetch read as an empty Board and `index sync` evicted its rows (ADR-0047, ADR-0053).
-        response = http.fetch(
+        response = self._fetch(
             "GET",
             self.url(),
             headers={"User-Agent": USER_AGENT},
             timeout=30,
             stream=True,
-            **self._egress(),
         )
         chunks: list[bytes] = []
         size = 0
@@ -156,12 +155,11 @@ class SuccessFactorsScraper(BaseScraper):
         )
         startrow = 0
         for page_index in range(_MAX_SEARCH_PAGES):
-            response = http.fetch(
+            response = self._fetch(
                 "GET",
                 f"https://{self.slug}/search/?startrow={startrow}",
                 headers={"User-Agent": USER_AGENT},
                 timeout=30,
-                **self._egress(),
             )
             if response.status_code != 200:
                 # Unlike the empty-page exit below, this is the walk being cut short rather than
@@ -226,13 +224,12 @@ class SuccessFactorsScraper(BaseScraper):
         an aborted feed and a feed cut at ``_SITEMAP_CAP`` both list a knowingly short board.
         Reported rather than recorded for the same reason :meth:`_search_job_urls` reports
         (ADR-0053)."""
-        response = http.fetch(  # retry seam, as in `_fetch_sitemap`
+        response = self._fetch(  # retry seam, as in `_fetch_sitemap`
             "GET",
             self.url(),
             headers={"User-Agent": USER_AGENT},
             timeout=_RSS_TIMEOUT,
             stream=True,
-            **self._egress(),
         )
         chunks: list[bytes] = []
         size = 0
@@ -335,12 +332,11 @@ class SuccessFactorsScraper(BaseScraper):
 
     def _job_fields(self, url: str) -> dict[str, Any] | None:
         try:
-            response = http.fetch(
+            response = self._fetch(
                 "GET",
                 url,
                 headers={"User-Agent": USER_AGENT},
                 timeout=30,
-                **self._egress(),
             )
         except http.RequestsError as exc:
             self.note_detail_exception(exc)
@@ -349,13 +345,12 @@ class SuccessFactorsScraper(BaseScraper):
 
     async def _job_fields_async(self, session: Any, url: str) -> dict[str, Any] | None:
         try:
-            response = await http.fetch_async(
+            response = await self._fetch_async(
                 session,
                 "GET",
                 url,
                 headers={"User-Agent": USER_AGENT},
                 timeout=30,
-                **self._egress(),
             )
         except http.RequestsError as exc:
             self.note_detail_exception(exc)
