@@ -28,20 +28,35 @@ counts — see ADR-0024's 2026-09-06 amendment, which cut that clause from 267 `
 :class:`ThreadPoolExecutor` because LanceDB's counting happens in Rust with the GIL released, so
 the wall cost is roughly the slowest count rather than their sum.
 
-Exposed as one function, :func:`counts`, which takes the parsed filters and returns every number
-the UI needs. It takes no query — see above; there is deliberately nowhere to pass one.
+Exposed as one function, :func:`counts`, which takes the parsed :class:`headstart.search.
+SearchFilters` and the table's :class:`headstart.search.IndexCapabilities` (ADR-0149) and returns
+every number the UI needs. Splitting the two is what keeps the per-option rebuild below cheap to
+reason about: every one of the ~46 counts varies only ``filters``, through
+:func:`dataclasses.replace`, while ``capabilities`` — the ATS/currency whitelists and which
+migration-only columns exist — passes through unchanged. It takes no query — see above; there is
+deliberately nowhere to pass one.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from typing import Any
 
 try:  # in the repo, a package member; in the Space image, a flat sibling module
-    from headstart.search import ETYPE_CLAUSES, build_filter
+    from headstart.search import (
+        ETYPE_CLAUSES,
+        IndexCapabilities,
+        SearchFilters,
+        build_filter,
+    )
 except ImportError:  # pragma: no cover - exercised only in the deployed Space
-    from search import ETYPE_CLAUSES, build_filter  # type: ignore[no-redef]
+    from search import (  # type: ignore[no-redef]
+        ETYPE_CLAUSES,
+        IndexCapabilities,
+        SearchFilters,
+        build_filter,
+    )
 
 # How long "first seen by HeadStart" can look back, in hours. The short end matters more than
 # the long: the pipeline cycles roughly hourly (ADR-0071), so 2h is "since about the last run"
@@ -82,13 +97,16 @@ SEEN_OPTIONS = tuple((h, _hours(h)) for h in SEEN_HOURS)
 POSTED_OPTIONS = tuple((d, _days(d)) for d in POSTED_DAYS)
 
 
-def counts(table: Any, filter_kwargs: Mapping[str, Any]) -> dict[str, Any]:
+def counts(
+    table: Any, filters: SearchFilters, capabilities: IndexCapabilities
+) -> dict[str, Any]:
     """Every facet's per-option count, plus the total, for one request's filters.
 
-    ``filter_kwargs`` is :meth:`headstart.search.JobSearch.filter_kwargs` output — the parsed
-    filters, shared with the ranked search precisely so the count and the list it counts can
-    never describe different queries. It is the only input: the request's query never reaches
-    here, because a count is decided by the where-clause alone.
+    ``filters`` is :meth:`headstart.search.JobSearch.parse_filters` output and ``capabilities``
+    is :attr:`headstart.search.JobSearch.capabilities` (ADR-0149) — shared with the ranked search
+    precisely so the count and the list it counts can never describe different queries. Together
+    they are the only input: the request's query never reaches here, because a count is decided
+    by the where-clause alone.
 
     Returns ``{"total": int, "facets": {dimension: [{value,label,count}, ...]}, "blocking":
     str|None}``. ``blocking`` names the single filter whose removal recovers the most results
@@ -97,10 +115,9 @@ def counts(table: Any, filter_kwargs: Mapping[str, Any]) -> dict[str, Any]:
     filter's disclaimer (ADR-0104): ``{"covered": int, "total": int}`` counted with the keyword
     lifted, or ``None`` while the served table has no ``description`` column.
     """
-    base = dict(filter_kwargs)
 
     def where_for(**overrides: Any) -> str | None:
-        return build_filter(**{**base, **overrides})
+        return build_filter(replace(filters, **overrides), capabilities)
 
     # (dimension, option value, label, the kwargs that option overrides). Built in full first
     # and counted second, so every count can go out at once.
@@ -117,7 +134,7 @@ def counts(table: Any, filter_kwargs: Mapping[str, Any]) -> dict[str, Any]:
     # total, nine numbers saying the window costs nothing. `posted_within` needs no such guard:
     # `posted_at` is in the table's base schema rather than added by a migration, so it is always
     # there to filter on.
-    if base.get("has_first_seen"):
+    if capabilities.has_first_seen:
         for h, label in SEEN_OPTIONS:
             add("seen_within", h, label, seen_within=h)
     for d, label in POSTED_OPTIONS:
@@ -138,9 +155,9 @@ def counts(table: Any, filter_kwargs: Mapping[str, Any]) -> dict[str, Any]:
         if value in ETYPE_CLAUSES:
             add("etype", value, label, etype=value)
     add("remote", True, "Remote only", remote=True)
-    if base.get("has_min_salary_annual"):
+    if capabilities.has_min_salary_annual:
         add("has_salary", True, "Shows salary", has_salary=True)
-    for a in base.get("atses") or ():
+    for a in capabilities.atses:
         add("ats", a, a, ats=a)
 
     # The "Any" row of each dimension, counted with that dimension LIFTED — the same rule every
@@ -172,7 +189,7 @@ def counts(table: Any, filter_kwargs: Mapping[str, Any]) -> dict[str, Any]:
                 pool.submit(_count, table, _with_description(unkeyed)),
                 pool.submit(_count, table, unkeyed),
             )
-            if base.get("has_description")
+            if capabilities.has_description
             else None
         )
         results = list(pool.map(lambda c: _count(table, c[3]), counted))
@@ -187,7 +204,7 @@ def counts(table: Any, filter_kwargs: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "total": total,
         "facets": facets,
-        "blocking": _blocking(table, base, total),
+        "blocking": _blocking(table, filters, capabilities, total),
         "description_coverage": (
             {"covered": coverage[0].result(), "total": coverage[1].result()}
             if coverage
@@ -207,20 +224,17 @@ def _count(table: Any, where: str | None) -> int:
     return table.count_rows(filter=where) if where else table.count_rows()
 
 
-# Keys :func:`_blocking` may never name. Neither the runtime facts of the index nor the sort are
-# user filters, so none of them can be "dropped"; `posted_sortable` in particular is the sort
-# control's shape guard. Naming any of them would render a raw key in the empty state beside a
-# button that removes nothing, since the UI has neither a label nor a control for it.
+# Keys :func:`_blocking` may never name. The runtime facts of the index — `atses`, `currencies`,
+# `has_first_seen`, `has_min_salary_annual`, `has_description`, `has_country` — are not even
+# candidates any more (ADR-0149): `_blocking` walks `SearchFilters`'s own fields, a different,
+# narrower object than `IndexCapabilities`, so this set only has to name real filters the UI has
+# no way to drop. `posted_sortable` is one: it is the sort control's shape guard, not a user
+# filter. Naming any of these would render a raw key in the empty state beside a button that
+# removes nothing, since the UI has neither a label nor a control for it.
 NEVER_BLOCKING = frozenset(
     {
-        "atses",
-        "currencies",
-        "has_first_seen",
-        "has_min_salary_annual",
-        "has_description",
-        "has_country",
         "posted_sortable",
-        # The keyword's scope, not a filter: `filter_kwargs` already nulls it without a keyword,
+        # The keyword's scope, not a filter: `parse_filters` already nulls it without a keyword,
         # and with one it is the `kw` entry that would be named.
         "kw_in",
         # The salary bracket's scope, for the same reason and with a sharper consequence. Unsetting
@@ -248,7 +262,9 @@ NEVER_BLOCKING = frozenset(
 )
 
 
-def _blocking(table: Any, base: Mapping[str, Any], total: int) -> str | None:
+def _blocking(
+    table: Any, filters: SearchFilters, capabilities: IndexCapabilities, total: int
+) -> str | None:
     """Which single active filter is costing the user everything, when nothing matched.
 
     Only computed on a zero total, where it is the whole answer and the request is otherwise
@@ -260,7 +276,7 @@ def _blocking(table: Any, base: Mapping[str, Any], total: int) -> str | None:
         return None
     active = [
         key
-        for key, value in base.items()
+        for key, value in vars(filters).items()
         if key not in NEVER_BLOCKING
         # `is`, not `in (None, False, "")`: `max_years=0` is the Entry-level filter and a real
         # constraint, but `0 == False` in Python, so a membership test silently calls it unset
@@ -273,8 +289,8 @@ def _blocking(table: Any, base: Mapping[str, Any], total: int) -> str | None:
     for key in active:
         # "Unset" is False for the two switches and None for everything else — build_filter
         # reads both as absent, but a bool kwarg given None would be a lie about its type.
-        unset = False if isinstance(base[key], bool) else None
-        n = _count(table, build_filter(**{**base, key: unset}))
+        unset = False if isinstance(getattr(filters, key), bool) else None
+        n = _count(table, build_filter(replace(filters, **{key: unset}), capabilities))
         if n > best_n:
             best, best_n = key, n
     return best
