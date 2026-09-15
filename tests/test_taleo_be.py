@@ -51,9 +51,13 @@ def test_alias_key_uses_the_final_canonical_tbe_url(monkeypatch):
         return Response()
 
     monkeypatch.setattr(taleo_be.http, "fetch", fetch)
-    assert TaleoBEScraper(URL).alias_key() == target.removesuffix("&act=sort")
-    assert seen["egress_group"] == "taleo_be"
-    assert 429 in seen["egress_on"]
+    scraper = TaleoBEScraper(URL)
+    assert scraper.alias_key() == target.removesuffix("&act=sort")
+    # No production 429 evidence for this ATS (see docs/code-review/
+    # 2026-09-15_last-5-prs-retrospective-critique.md, finding 6) — the alias fetch must not
+    # route or wall, but it must still name its board in the retry log.
+    assert seen["egress_board"] == scraper.board_key()
+    assert "egress_group" not in seen and "egress_on" not in seen
 
 
 def test_pages_with_session_relative_next_and_parses_detail(monkeypatch):

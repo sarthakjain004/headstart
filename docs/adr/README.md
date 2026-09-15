@@ -147,3 +147,4 @@ supersedes it and note the supersession in both.
 | [0141](0141-scrape-health-travels-to-the-publication-receipt.md) | Scrape health travels to the publication receipt | 2026-09-12 |
 | [0142](0142-subscription-opt-outs-survive-record-replacement.md) | Subscription opt-outs survive record replacement | 2026-09-12 |
 | [0143](0143-trends-retain-board-deltas-for-arbitrary-comparable-cohorts.md) | Trends retain Board deltas for arbitrary comparable cohorts | 2026-09-12 |
+| [0144](0144-oracle-taleo-was-a-dead-end-only-for-india.md) | Oracle Taleo was a dead-end only for India | 2026-09-15 |

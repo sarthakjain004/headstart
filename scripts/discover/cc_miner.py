@@ -471,7 +471,12 @@ def tenant_from(kind, match):
         )
         return f"{org}:{cws}@{parsed.netloc.lower()}{parsed.path}", board
     if kind == "taleo_enterprise":
-        board = f"https://{match.group(1).lower()}"
+        # Lowercase only the host, matching TaleoEnterpriseScraper._canonical() and
+        # wayback_feeder.extract(): the Career Section slug is case-sensitive, and
+        # lowercasing it here produced board_key() mismatches against slugs discovered
+        # with their original casing preserved (e.g. "NHC_FG_CS" vs "nhc_fg_cs").
+        host, _, path = match.group(1).partition("/")
+        board = f"https://{host.lower()}/{path}"
         return board, board
     tok = match.group(1)
     if kind in ("host", "oracle"):

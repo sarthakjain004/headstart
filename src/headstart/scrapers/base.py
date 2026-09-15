@@ -427,14 +427,20 @@ class BaseScraper(ABC):
         """Turn a raw API/page response into normalized Jobs."""
 
     def _egress(self, *, marks_wall: bool = True) -> dict[str, Any]:
-        """``http.fetch`` kwargs opting this scraper into the spare-egress fallback, or ``{}``.
+        """``http.fetch`` kwargs opting this scraper into the spare-egress fallback, plus board
+        attribution for the retry log even when it doesn't.
 
-        Empty for every scraper that leaves :attr:`egress_fallback_on` unset, so the call it feeds
-        is identical to the one made before this existed. Keyed on :attr:`ats` rather than the
-        Board, because the metering that motivates it is per origin across all of an ATS's tenants.
+        Routing (``egress_group``/``egress_on``) is empty for every scraper that leaves
+        :attr:`egress_fallback_on` unset, so the *request* it feeds is identical to the one made
+        before this existed — no scraper is routed or walled without opting in. Keyed on
+        :attr:`ats` rather than the Board, because the metering that motivates it is per origin
+        across all of an ATS's tenants.
 
-        The Board rides along anyway as ``egress_board``: it steers nothing, and exists only so the
-        shard report can name *which* Boards spent the IP supply. Grouping is still per ATS.
+        ``egress_board`` rides along unconditionally: it steers nothing, costs nothing, and exists
+        only so the retry log (``http._note_retry``, DEBUG) and the shard report can name *which*
+        Board spent a retry or the IP supply — a scraper with no wall configured used to retry in
+        total silence, indistinguishable in the log from one that never needed to. Grouping is
+        still per ATS.
 
         ``marks_wall=False`` keeps the **routing** and drops only the **marking**: the request still
         rides the spare egress once the ATS is walled, but its own failures can never be what walls
@@ -443,7 +449,7 @@ class BaseScraper(ABC):
         over the spent IP on exactly the shard the fallback exists to rescue.
         """
         if not self.egress_fallback_on:
-            return {}
+            return {"egress_board": self.board_key()}
         return {
             "egress_group": self.ats,
             "egress_on": self.egress_fallback_on if marks_wall else frozenset(),

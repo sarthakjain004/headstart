@@ -76,7 +76,6 @@ class SuccessFactorsScraper(BaseScraper):
     ats = "successfactors"
     detail_workers = _DETAIL_WORKERS
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
-    egress_fallback_on = frozenset({429})
     # Where SAP parks a decommissioned RMK tenant (ADR-0111). Both spellings observed live.
     alias_vendor_hosts = frozenset({"www.sap.com", "sap.com"})
 

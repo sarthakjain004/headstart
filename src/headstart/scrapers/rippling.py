@@ -115,6 +115,7 @@ class RipplingScraper(BaseScraper):
             self.url(),
             headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
             timeout=30,
+            **self._egress(),
         )
         # Raise, don't return [] — a swallowed listing error reads as an empty board and
         # hides a dead one from the ADR-0058 quarantine forever.
@@ -168,6 +169,7 @@ class RipplingScraper(BaseScraper):
                 self._detail_url(uuid),
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 timeout=30,
+                **self._egress(),
             )
         except http.RequestsError as exc:
             self.note_detail_loss(type(exc).__name__)
@@ -186,6 +188,7 @@ class RipplingScraper(BaseScraper):
                 self._detail_url(uuid),
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 timeout=30,
+                **self._egress(),
             )
         except http.RequestsError as exc:
             self.note_detail_loss(type(exc).__name__)

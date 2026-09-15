@@ -150,7 +150,11 @@ class ICIMSScraper(BaseScraper):
 
     def fetch_raw(self) -> Any:
         response = http.fetch(
-            "GET", self.url(), headers={"User-Agent": USER_AGENT}, timeout=60
+            "GET",
+            self.url(),
+            headers={"User-Agent": USER_AGENT},
+            timeout=60,
+            **self._egress(),
         )
         # 403 is iCIMS enforcing the tenant's own `Disallow: /`, measured identical on 47/47
         # opt-out boards. It is a settled answer, not a transient one, so it raises like any other
@@ -191,7 +195,11 @@ class ICIMSScraper(BaseScraper):
     def _job_fields(self, url: str) -> dict[str, Any] | None:
         try:
             response = http.fetch(
-                "GET", _detail_url(url), headers={"User-Agent": USER_AGENT}, timeout=30
+                "GET",
+                _detail_url(url),
+                headers={"User-Agent": USER_AGENT},
+                timeout=30,
+                **self._egress(),
             )
         except http.RequestsError as exc:
             self.note_detail_exception(exc)
@@ -206,6 +214,7 @@ class ICIMSScraper(BaseScraper):
                 _detail_url(url),
                 headers={"User-Agent": USER_AGENT},
                 timeout=30,
+                **self._egress(),
             )
         except http.RequestsError as exc:
             self.note_detail_exception(exc)

@@ -1,0 +1,868 @@
+{
+  "summary": {
+    "served_table_total_rows": 459291,
+    "served_table_version": 136,
+    "taleo_enterprise_total_rows": 23502,
+    "taleo_be_total_rows": 1296,
+    "taleo_enterprise_india_rows": 127,
+    "taleo_be_india_rows": 41,
+    "taleo_enterprise_india_by_company": {
+      "TTEC": 30,
+      "Mercedes-Benz": 92,
+      "UFlex": 5
+    },
+    "taleo_be_india_by_company": {
+      "COVESTIC2:40@phf.tbe.taleo.net/phf01": 22,
+      "Milestone Technologies, Inc.": 12,
+      "Milestone": 1,
+      "MTI Integration Solutions Private Limited": 2,
+      "The Bridgespan Group": 1,
+      "Talent Table LLC": 2,
+      "Vital Strategies, Inc": 1
+    }
+  },
+  "taleo_enterprise": [
+    {
+      "id": "taleo_enterprise:https://percepta.taleo.net/careersection/2:2338993",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://percepta.taleo.net/careersection/2:2397793",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://percepta.taleo.net/careersection/2:2442314",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://percepta.taleo.net/careersection/2:2442378",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://percepta.taleo.net/careersection/2:2444867",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://percepta.taleo.net/careersection/2:2445708",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://percepta.taleo.net/careersection/2:2446065",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://percepta.taleo.net/careersection/2:2446066",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://percepta.taleo.net/careersection/2:2446067",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://percepta.taleo.net/careersection/2:2446068",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://percepta.taleo.net/careersection/2:2446084",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://percepta.taleo.net/careersection/2:2446085",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://percepta.taleo.net/careersection/2:2446086",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://percepta.taleo.net/careersection/2:2446103",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://percepta.taleo.net/careersection/2:2446104",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ex:873280",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ex:873755",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ex:876015",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ex:876343",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ex:886124",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ex:887676",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ex:888213",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ex:888215",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ex:888216",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ex:890130",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ex:890172",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ex:890173",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ex:890175",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ex:890177",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ex:892697",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ex:892698",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ex:893298",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ex:898579",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ex:909443",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ex:909484",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ex:910015",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ex:910425",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ex:912349",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://ttec.taleo.net/careersection/2:2338993",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://ttec.taleo.net/careersection/2:2397793",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://ttec.taleo.net/careersection/2:2442314",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://ttec.taleo.net/careersection/2:2442378",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://ttec.taleo.net/careersection/2:2444867",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://ttec.taleo.net/careersection/2:2445708",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://ttec.taleo.net/careersection/2:2446065",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://ttec.taleo.net/careersection/2:2446066",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://ttec.taleo.net/careersection/2:2446067",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://ttec.taleo.net/careersection/2:2446068",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://ttec.taleo.net/careersection/2:2446084",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://ttec.taleo.net/careersection/2:2446085",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://ttec.taleo.net/careersection/2:2446086",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://ttec.taleo.net/careersection/2:2446103",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://ttec.taleo.net/careersection/2:2446104",
+      "company": "TTEC",
+      "location": "India-Telangana-Hyderabad"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/dnac:873280",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/dnac:873755",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/dnac:876015",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/dnac:876343",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/dnac:886124",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/dnac:887676",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/dnac:888213",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/dnac:888215",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/dnac:888216",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/dnac:890130",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/dnac:890172",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/dnac:890173",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/dnac:890175",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/dnac:890177",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/dnac:892697",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/dnac:892698",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/dnac:893298",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/dnac:898579",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/dnac:909443",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/dnac:909484",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/dnac:910015",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/dnac:910425",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/dnac:912349",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/fusojp:873280",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/fusojp:873755",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/fusojp:876015",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/fusojp:876343",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/fusojp:886124",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/fusojp:887676",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/fusojp:888213",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/fusojp:888215",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/fusojp:888216",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/fusojp:890130",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/fusojp:890172",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/fusojp:890173",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/fusojp:890175",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/fusojp:890177",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/fusojp:892697",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/fusojp:892698",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/fusojp:893298",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/fusojp:909484",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/fusojp:912349",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ukexternal:873280",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ukexternal:873755",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ukexternal:876015",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ukexternal:876343",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ukexternal:886124",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ukexternal:887676",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ukexternal:888213",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ukexternal:888215",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ukexternal:888216",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ukexternal:890130",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ukexternal:890172",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ukexternal:890173",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ukexternal:890175",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ukexternal:890177",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ukexternal:892697",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ukexternal:892698",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ukexternal:893298",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ukexternal:898579",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ukexternal:909484",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ukexternal:912349",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/fusojp:898579",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/fusojp:909443",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/fusojp:910015",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/fusojp:910425",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ukexternal:909443",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ukexternal:910015",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://daimler.taleo.net/careersection/ukexternal:910425",
+      "company": "Mercedes-Benz",
+      "location": "India-Karnataka-Bangalore"
+    },
+    {
+      "id": "taleo_enterprise:https://aa193.taleo.net/careersection/ex:51280",
+      "company": "UFlex",
+      "location": "India"
+    },
+    {
+      "id": "taleo_enterprise:https://aa193.taleo.net/careersection/ex:43678",
+      "company": "UFlex",
+      "location": "India"
+    },
+    {
+      "id": "taleo_enterprise:https://aa193.taleo.net/careersection/ex:51860",
+      "company": "UFlex",
+      "location": "India"
+    },
+    {
+      "id": "taleo_enterprise:https://aa193.taleo.net/careersection/ex:47322",
+      "company": "UFlex",
+      "location": "India"
+    },
+    {
+      "id": "taleo_enterprise:https://aa193.taleo.net/careersection/ex:46358",
+      "company": "UFlex",
+      "location": "India"
+    }
+  ],
+  "taleo_be": [
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=40:13151",
+      "company": "COVESTIC2:40@phf.tbe.taleo.net/phf01",
+      "location": "Remote, India"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=40:13416",
+      "company": "COVESTIC2:40@phf.tbe.taleo.net/phf01",
+      "location": "Remote, India"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=40:13540",
+      "company": "COVESTIC2:40@phf.tbe.taleo.net/phf01",
+      "location": "Hyderabad, India-Corporate"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=40:13569",
+      "company": "COVESTIC2:40@phf.tbe.taleo.net/phf01",
+      "location": "Hyderabad, India"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=40:13570",
+      "company": "COVESTIC2:40@phf.tbe.taleo.net/phf01",
+      "location": "Hyderabad, India"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=40:13571",
+      "company": "COVESTIC2:40@phf.tbe.taleo.net/phf01",
+      "location": "Hyderabad, India"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=40:13696",
+      "company": "COVESTIC2:40@phf.tbe.taleo.net/phf01",
+      "location": "Bengaluru, India-Corporate"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=40:13697",
+      "company": "COVESTIC2:40@phf.tbe.taleo.net/phf01",
+      "location": "Bengaluru, India-Corporate"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=40:13703",
+      "company": "COVESTIC2:40@phf.tbe.taleo.net/phf01",
+      "location": "Hyderabad-India"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=40:13709",
+      "company": "COVESTIC2:40@phf.tbe.taleo.net/phf01",
+      "location": "Remote - Kochi, India"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=40:13710",
+      "company": "COVESTIC2:40@phf.tbe.taleo.net/phf01",
+      "location": "Kochi, India-Corporate"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=40:13711",
+      "company": "COVESTIC2:40@phf.tbe.taleo.net/phf01",
+      "location": "Kochi, India-Corporate"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=40:13713",
+      "company": "COVESTIC2:40@phf.tbe.taleo.net/phf01",
+      "location": "Kochi, India-Corporate"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=40:13732",
+      "company": "COVESTIC2:40@phf.tbe.taleo.net/phf01",
+      "location": "Bengaluru, India-Corporate"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=40:13733",
+      "company": "COVESTIC2:40@phf.tbe.taleo.net/phf01",
+      "location": "Bengaluru, India-Corporate"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=40:13734",
+      "company": "COVESTIC2:40@phf.tbe.taleo.net/phf01",
+      "location": "Bengaluru, India-Corporate"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=40:13765",
+      "company": "COVESTIC2:40@phf.tbe.taleo.net/phf01",
+      "location": "Hyderabad, India-Corporate"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=40:13789",
+      "company": "COVESTIC2:40@phf.tbe.taleo.net/phf01",
+      "location": "Hyderabad, India-Corporate"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=40:13802",
+      "company": "COVESTIC2:40@phf.tbe.taleo.net/phf01",
+      "location": "Kochi, India-Corporate"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=40:13804",
+      "company": "COVESTIC2:40@phf.tbe.taleo.net/phf01",
+      "location": "Kochi, India-Corporate"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=37:13151",
+      "company": "Milestone Technologies, Inc.",
+      "location": "Remote, India"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=37:13571",
+      "company": "Milestone Technologies, Inc.",
+      "location": "Hyderabad, India"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=37:13696",
+      "company": "Milestone Technologies, Inc.",
+      "location": "Bengaluru, India-Corporate"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=37:13697",
+      "company": "Milestone Technologies, Inc.",
+      "location": "Bengaluru, India-Corporate"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=37:13703",
+      "company": "Milestone Technologies, Inc.",
+      "location": "Hyderabad-India"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=37:13709",
+      "company": "Milestone",
+      "location": "Remote - Kochi, India"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=37:13711",
+      "company": "Milestone Technologies, Inc.",
+      "location": "Kochi, India-Corporate"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=37:13732",
+      "company": "Milestone Technologies, Inc.",
+      "location": "Bengaluru, India-Corporate"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=37:13733",
+      "company": "Milestone Technologies, Inc.",
+      "location": "Bengaluru, India-Corporate"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=37:13734",
+      "company": "Milestone Technologies, Inc.",
+      "location": "Bengaluru, India-Corporate"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=37:13789",
+      "company": "MTI Integration Solutions Private Limited",
+      "location": "Hyderabad, India-Corporate"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=37:13802",
+      "company": "Milestone Technologies, Inc.",
+      "location": "Kochi, India-Corporate"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=37:13804",
+      "company": "Milestone Technologies, Inc.",
+      "location": "Kochi, India-Corporate"
+    },
+    {
+      "id": "taleo_be:https://phh.tbe.taleo.net/phh01/ats/careers/v2/searchResults?org=THEBRIDG12&cws=40:525",
+      "company": "The Bridgespan Group",
+      "location": "India- remote"
+    },
+    {
+      "id": "taleo_be:https://phh.tbe.taleo.net/phh03/ats/careers/v2/searchResults?org=TWENTYONETECH&cws=49:4581",
+      "company": "Talent Table LLC",
+      "location": "India"
+    },
+    {
+      "id": "taleo_be:https://phh.tbe.taleo.net/phh03/ats/careers/v2/searchResults?org=TWENTYONETECH&cws=49:4599",
+      "company": "Talent Table LLC",
+      "location": "India"
+    },
+    {
+      "id": "taleo_be:https://phg.tbe.taleo.net/phg01/ats/careers/v2/searchResults?org=VITASTRA&cws=37:903",
+      "company": "Vital Strategies, Inc",
+      "location": "India, Delhi"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=40:13764",
+      "company": "COVESTIC2:40@phf.tbe.taleo.net/phf01",
+      "location": "Kochi-India"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=37:13764",
+      "company": "MTI Integration Solutions Private Limited",
+      "location": "Kochi-India"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=37:13735",
+      "company": "Milestone Technologies, Inc.",
+      "location": "Bengaluru, India-Corporate"
+    },
+    {
+      "id": "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=40:13735",
+      "company": "COVESTIC2:40@phf.tbe.taleo.net/phf01",
+      "location": "Bengaluru, India-Corporate"
+    }
+  ]
+}
