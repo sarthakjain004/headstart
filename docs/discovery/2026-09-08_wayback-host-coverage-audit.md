@@ -319,6 +319,44 @@ the hosts the scrapers fetch from.
    `--refresh` flag so this is not a manual step that gets forgotten.
 6. **Reword the `ATS_HOSTS` docstring** (§8), add cc_miner's 4 missing Zoho TLDs (§7.6), and drop `cc_miner`'s NXDOMAIN target (§6).
 
+## 9b. The sweep, run to completion — and the concurrency cliff that nearly stopped it
+
+**2026-09-09.** All 20 ATSes swept with every resume marker cleared, zero failed pages, and
+**+2,171 new tenants** (141,009 -> 143,153, +1.5%). Oracle +1,130 (38.5%, its 16 pods getting a
+full sweep rather than two pages each), workday +495, ashby +125, greenhouse +96.
+
+Getting there needed a correction worth recording, because the intuition is backwards and
+`wayback_pages.py`'s own default (`--workers 10`) points the wrong way.
+
+The first attempt ran `--workers 6` and fell into sustained `HTTP 429 ... gave up after 6
+attempts`. It was not merely lossy — it was *catastrophically slow*: keka spent **six hours on 23
+pages**, and 83 pages were dropped across eightfold, greenhouse and icims. Measured against
+`jobs.lever.co`, six pages per setting, after stopping the sweep so the numbers were not
+contaminated:
+
+| workers | 6 pages | per page | errors |
+|---|---|---|---|
+| 1 | 17.8 s | 3.0 s | none |
+| 2 | 17.3 s | 2.9 s | none |
+| **4** | **8,419 s** | **1,403 s** | 2 timeouts |
+
+**Four workers is ~470x slower than two, and two is no faster than one.** The endpoint is
+effectively serial per client: it appears to *queue* excess concurrency rather than reject it, so
+every worker above ~2 buys nothing and pushes the whole sweep into backoff. Re-running the
+identical remaining work at `--workers 2` finished **3 h 21 m**, against a trajectory that had
+keka alone at six hours.
+
+Two operational consequences:
+
+- **Sweep with `--workers 2`.** The default of 10 is not safe for a full sweep, and the failure it
+  produces looks like a slow archive rather than self-inflicted throttling.
+- **A restart is free and doubles as the retry pass.** `wayback_pages` leaves a failed page out of
+  `pages_done` deliberately, so re-running skips completed pages instantly (`153 done, 0 to fetch`)
+  while retrying exactly the failures (`254 done, 32 to fetch`). Nothing already harvested is lost.
+
+This also explains §10's throttling entirely: the research agents were not competing with a busy
+archive, they were competing with a sweep that had put itself into backoff.
+
 ## 10. A measurement caveat that shaped this audit
 
 Wayback's CDX endpoint throttles hard. The 6-worker sweep running during this audit produced
