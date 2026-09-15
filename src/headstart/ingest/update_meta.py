@@ -55,9 +55,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from collections import Counter
+from collections.abc import Iterator
+from concurrent.futures import ProcessPoolExecutor
+from contextlib import nullcontext
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from headstart import log
 from headstart.experience import from_field, from_seniority
@@ -85,6 +89,10 @@ _STORE = REPO_ROOT / "data" / "embeddings" / "jobs"
 _JOBS = REPO_ROOT / "data" / "jobs" / "tech"
 _DESCRIPTIONS = REPO_ROOT / "data" / "descriptions"
 _WATERMARK = REPO_ROOT / "data" / "state" / "derivations.json"
+
+#: Row batch size for `refresh`'s fan-out — also the progress-log cadence, unchanged from before
+#: parallelism so a sweep's log still reads "50000 rows refreshed" at the same milestones.
+_SWEEP_CHUNK_ROWS = 50_000
 
 #: Identity: what a row *is*, never re-observed, so it can never be rewritten onto another Job.
 _IDENTITY = ("id", "ats")
@@ -379,6 +387,140 @@ def _rederive_salary_without_text(row: dict, meta: dict) -> Any:
     return None
 
 
+class _ChunkArgs(NamedTuple):
+    """One chunk's worth of `_refresh_chunk` inputs.
+
+    Carries only the slice of `facts`/`descriptions` that chunk's own rows need, never the whole
+    corpus — `descriptions` alone is ~1 GB during a sweep (`held_descriptions`), already this
+    pipeline's memory ceiling on one process; handing the full dict to every worker would multiply
+    that by the worker count instead of dividing the work across them.
+    """
+
+    rows: list[dict]
+    facts: dict[str, dict]
+    descriptions: dict[str, str]
+    sweep: bool
+    pending: set[str]
+    detail_pass: frozenset[str]
+
+
+def _row_batches(meta_path: Path, size: int) -> Iterator[list[dict]]:
+    """`meta.jsonl`, parsed and grouped into fixed-size batches.
+
+    Read lazily so the whole store is never resident as a single list — `refresh` fans these
+    batches out across a process pool during a sweep, or runs them in-process otherwise.
+    """
+    batch: list[dict] = []
+    with meta_path.open(encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            batch.append(json.loads(line))
+            if len(batch) >= size:
+                yield batch
+                batch = []
+    if batch:
+        yield batch
+
+
+def _chunk_args(
+    batches: Iterator[list[dict]],
+    facts: dict[str, dict],
+    descriptions: dict[str, str],
+    sweep: bool,
+    pending: set[str],
+    detail_pass: frozenset[str],
+) -> Iterator[_ChunkArgs]:
+    """Pair each row batch with only the `facts`/`descriptions`/`pending` entries it needs."""
+    for batch in batches:
+        ids = {row["id"] for row in batch}
+        yield _ChunkArgs(
+            rows=batch,
+            facts={i: facts[i] for i in ids if i in facts},
+            descriptions=(
+                {i: descriptions[i] for i in ids if i in descriptions}
+                if descriptions
+                else {}
+            ),
+            sweep=sweep,
+            pending=pending & ids if pending else set(),
+            detail_pass=detail_pass,
+        )
+
+
+class _ChunkResult(NamedTuple):
+    """One chunk's worth of `_refresh_chunk` output — the counterpart to `_ChunkArgs`, so
+    `refresh`'s accumulation loop unpacks named fields instead of a positional tuple that a
+    future reorder could silently mismap.
+    """
+
+    rows: list[dict]
+    fact_hits: int
+    derived_hits: int
+    backfilled: int
+    exp_delta: Counter[str]
+    sal_delta: Counter[str]
+    country_delta: Counter[str]
+
+
+def _refresh_chunk(args: _ChunkArgs) -> _ChunkResult:
+    """One chunk's worth of `refresh_row` calls, plus the delta/backfill bookkeeping `refresh`
+    used to do inline for every row — factored out so it runs identically whether dispatched to a
+    process-pool worker (sweeping) or called directly in-process (everything else). Top-level and
+    built from a picklable `_ChunkArgs` so it works under `spawn`, not just `fork`.
+    """
+    out_rows: list[dict] = []
+    fact_hits = derived_hits = backfilled = 0
+    exp_delta: Counter[str] = Counter()
+    sal_delta: Counter[str] = Counter()
+    country_delta: Counter[str] = Counter()
+    for meta in args.rows:
+        row, fact_changed, derived_changed = refresh_row(
+            meta,
+            args.facts.get(meta["id"]),
+            args.descriptions,
+            args.sweep,
+            rederive=meta["id"] in args.pending,
+        )
+        fact_hits += fact_changed
+        derived_hits += derived_changed
+        # `meta` is untouched (refresh_row copies), so it is the genuine "before".
+        if derived_changed:
+            for counts, source, fields in (
+                (exp_delta, "experience_source", DERIVED_FIELDS),
+                (sal_delta, "salary_source", SALARY_DERIVED_FIELDS),
+            ):
+                move = derivation_delta(meta, row, source, fields)
+                if move:
+                    counts[move] += 1
+            # `country` has no tier concept (`derivation_delta` doesn't apply) — just a direct
+            # before/after compare, since the only two values are "IN" and null.
+            if meta.get("country") != row.get("country"):
+                country_delta["gained" if row.get("country") else "lost"] += 1
+        # Written once, on the rows that never had it. A row that carries the flag keeps it: it
+        # is a fact about the vector, and only a re-embed may change it.
+        #
+        # Read from `meta`, the row as it was BEFORE this refresh — never from `row`. The cascade
+        # above may have just set `experience_source = "regex"` from a description that arrived
+        # *this run*, which the vector was never built from. Reading that back as proof would mark
+        # a genuinely title-only vector `has_description: True` and hide it from the upgrade path
+        # forever — the exact failure ADR-0061 froze this field against.
+        if row.get("has_description") is None:
+            row["has_description"] = has_description_for(meta, args.detail_pass)
+            backfilled += 1
+        out_rows.append(row)
+    return _ChunkResult(
+        out_rows,
+        fact_hits,
+        derived_hits,
+        backfilled,
+        exp_delta,
+        sal_delta,
+        country_delta,
+    )
+
+
 def refresh(
     store: Path,
     jobs_dir: Path,
@@ -424,53 +566,39 @@ def refresh(
     exp_delta: Counter[str] = Counter()
     sal_delta: Counter[str] = Counter()
     country_delta: Counter[str] = Counter()
+    # A sweep runs the full cascade on every row instead of a cheap fact-sync — measured ~230x
+    # slower per row on the 2026-09-15 nightly (805,160 rows: ~15s fact-only vs. a sweep still not
+    # done at 800,000 rows after 59 minutes). `refresh_row` is pure, so a sweep fans the store out
+    # across a process pool; an ordinary run is fast enough already that pool start-up would cost
+    # more than it saves, so it stays sequential.
+    workers = os.cpu_count() or 1
+    pool_cm = (
+        ProcessPoolExecutor(max_workers=workers)
+        if (sweep and workers > 1)
+        else nullcontext()
+    )
     try:
-        with (
-            meta_path.open(encoding="utf-8") as src,
-            tmp.open("w", encoding="utf-8") as out,
-        ):
-            for line in src:
-                line = line.strip()
-                if not line:
-                    continue
-                meta = json.loads(line)
-                row, fact_changed, derived_changed = refresh_row(
-                    meta,
-                    facts.get(meta["id"]),
-                    descriptions,
-                    sweep,
-                    rederive=meta["id"] in pending,
-                )
-                rows += 1
-                fact_hits += fact_changed
-                derived_hits += derived_changed
-                # `meta` is untouched (refresh_row copies), so it is the genuine "before".
-                if derived_changed:
-                    for counts, source, fields in (
-                        (exp_delta, "experience_source", DERIVED_FIELDS),
-                        (sal_delta, "salary_source", SALARY_DERIVED_FIELDS),
-                    ):
-                        move = derivation_delta(meta, row, source, fields)
-                        if move:
-                            counts[move] += 1
-                    # `country` has no tier concept (`derivation_delta` doesn't apply) — just a
-                    # direct before/after compare, since the only two values are "IN" and null.
-                    if meta.get("country") != row.get("country"):
-                        country_delta["gained" if row.get("country") else "lost"] += 1
-                # Written once, on the rows that never had it. A row that carries the flag keeps
-                # it: it is a fact about the vector, and only a re-embed may change it.
-                #
-                # Read from `meta`, the row as it was BEFORE this refresh — never from `row`. The
-                # cascade above may have just set `experience_source = "regex"` from a description
-                # that arrived *this run*, which the vector was never built from. Reading that back
-                # as proof would mark a genuinely title-only vector `has_description: True` and hide
-                # it from the upgrade path forever — the exact failure ADR-0061 froze this field
-                # against.
-                if row.get("has_description") is None:
-                    row["has_description"] = has_description_for(meta, detail_pass)
-                    backfilled += 1
-                out.write(json.dumps(row, ensure_ascii=False) + "\n")
-                if rows % 50_000 == 0:
+        with tmp.open("w", encoding="utf-8") as out, pool_cm as pool:
+            batches = _row_batches(meta_path, _SWEEP_CHUNK_ROWS)
+            args_iter = _chunk_args(
+                batches, facts, descriptions, sweep, pending, detail_pass
+            )
+            chunk_results = (
+                pool.map(_refresh_chunk, args_iter)
+                if pool
+                else map(_refresh_chunk, args_iter)
+            )
+            for chunk in chunk_results:
+                for row in chunk.rows:
+                    out.write(json.dumps(row, ensure_ascii=False) + "\n")
+                rows += len(chunk.rows)
+                fact_hits += chunk.fact_hits
+                derived_hits += chunk.derived_hits
+                backfilled += chunk.backfilled
+                exp_delta.update(chunk.exp_delta)
+                sal_delta.update(chunk.sal_delta)
+                country_delta.update(chunk.country_delta)
+                if rows % _SWEEP_CHUNK_ROWS == 0:
                     _log.info(f"  {rows} rows refreshed")
         tmp.replace(meta_path)
     except BaseException:
