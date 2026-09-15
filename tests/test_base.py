@@ -499,20 +499,29 @@ def test_every_scraper_declares_a_compilable_url_shape():
 def test_job_id_composes_board_key_and_native_id_for_every_scraper():
     """:meth:`~BaseScraper.job_id` is the one formula every scraper's ``Job.id`` uses — even the
     four whose :meth:`~BaseScraper.board_key` itself departs from the bare ``{ats}:{slug}``
-    (workday, personio, taleo_be, taleo_enterprise). Checked generically off each scraper's own
-    ``board_key()`` rather than re-deriving what it should be, since that derivation is the
-    scraper's own business (ADR-0157)."""
+    (workday, personio, taleo_be, taleo_enterprise). Pinned against a literal expected id per
+    ATS, not re-derived from the scraper's own ``board_key()`` — comparing ``job_id()`` to
+    ``f"{scraper.board_key()}:42"`` would be true by construction for any ``board_key()``
+    output and could never catch a regression in either method (ADR-0157)."""
     from headstart.scrapers.registry import get_scraper
 
-    for ats, slug in (
-        ("greenhouse", "acme"),
-        ("workday", "https://acme.wd1.myworkdayjobs.com/External"),
-        ("personio", "acme.jobs.personio.de"),
-        ("taleo_be", "https://acme.tbe.taleo.net/acme/ats/careers/v2/searchResults"),
+    for ats, slug, expected in (
+        ("greenhouse", "acme", "greenhouse:acme:42"),
+        (
+            "workday",
+            "https://acme.wd1.myworkdayjobs.com/External",
+            "workday:acme/External:42",
+        ),
+        ("personio", "acme.jobs.personio.de", "personio:acme:42"),
+        (
+            "taleo_be",
+            "https://acme.tbe.taleo.net/acme/ats/careers/v2/searchResults",
+            "taleo_be:https://acme.tbe.taleo.net/acme/ats/careers/v2/searchResults:42",
+        ),
         (
             "taleo_enterprise",
             "https://acme.taleo.net/careersection/ext/jobsearch.ftl",
+            "taleo_enterprise:https://acme.taleo.net/careersection/ext:42",
         ),
     ):
-        scraper = get_scraper(ats, slug)
-        assert scraper.job_id("42") == f"{scraper.board_key()}:42"
+        assert get_scraper(ats, slug).job_id("42") == expected

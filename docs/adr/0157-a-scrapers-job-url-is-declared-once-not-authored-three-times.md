@@ -78,6 +78,15 @@ longer be typed independently of the scraper, because there is nowhere left to t
 if any registered scraper's `url_shape` is missing or does not compile, closing the coverage
 gate's blind spot one step earlier than a live-Space run would.
 
+**Not done here: a live run of `scripts/eval/verify_filters.py` against the deployed Space**,
+which CLAUDE.md's "verify against the live API" rule would otherwise ask for on a change whose
+whole subject is per-ATS URL shapes. Skipped deliberately for time, not silently: every regex
+migrated onto a `url_shape` attribute is byte-identical to what `URL_SHAPES` already asserted
+(diffed programmatically against `git show HEAD^:scripts/eval/verify_filters.py`, zero
+differences across all 36 entries), so this change carries no new *shape* claim to verify live —
+the live-verification debt this leaves is the harness's existing one, not a new one this ADR
+introduces.
+
 `search.py`'s two serve-time repairs (`_rehost_recruitee`, `_canonical_url`) **stay in
 `search.py`, unchanged in mechanism** — they still hardcode `"darwinbox"`/`"recruitee"` rather
 than becoming a `canonical_url` hook on the two scraper classes. `search.py` is deployed to the
