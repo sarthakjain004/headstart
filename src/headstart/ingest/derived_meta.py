@@ -1,4 +1,4 @@
-"""The Job derivation cascade (ADR-0061, ADR-0145): the four field-extractors —
+"""The Job derivation cascade (ADR-0061, ADR-0146): the four field-extractors —
 ``headstart.experience``, ``headstart.salary``, ``headstart.geo``, ``headstart.remote`` — composed
 into the *derived* subset of a Job's served meta columns: ``remote``, ``country``,
 ``min_years``/``max_years``/``experience_source``, and
@@ -7,7 +7,7 @@ into the *derived* subset of a Job's served meta columns: ``remote``, ``country`
 Two callers must agree on this composition byte-for-byte: ``doc_prep.to_meta`` (cold-start, at
 embed time — the Job's current facts, including a ``description`` that may genuinely be ``None``)
 and ``update_meta.refresh_row`` (repair, at sweep/rederive time — a held description substituted
-for the row's own, the rest read off the stored row). Before ADR-0145 each wrote this composition
+for the row's own, the rest read off the stored row). Before ADR-0146 each wrote this composition
 out independently, so a change to what an extractor's result maps to could silently update one
 without the other. This module is the one place it is written.
 

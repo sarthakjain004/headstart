@@ -1,4 +1,4 @@
-# ADR-0145: The derivation cascade is composed once, in `derived_meta`
+# ADR-0146: The derivation cascade is composed once, in `derived_meta`
 
 **Status:** accepted · **Date:** 2026-09-15 · **Relates to:**
 [ADR-0061](0061-refreshable-metadata.md) (facts vs. derivations, `DERIVATIONS_VERSION`),

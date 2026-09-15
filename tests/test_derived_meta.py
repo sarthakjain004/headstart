@@ -1,7 +1,7 @@
 """Tests for headstart.ingest.derived_meta — the one composition of the four field-extractors
-(experience/salary/geo/remote) into a Job's derived meta keys (ADR-0145).
+(experience/salary/geo/remote) into a Job's derived meta keys (ADR-0146).
 
-Before ADR-0145, ``doc_prep.to_meta`` (the cold-start embed path) and
+Before ADR-0146, ``doc_prep.to_meta`` (the cold-start embed path) and
 ``update_meta.refresh_row`` (the repair path) each wrote this composition out independently, with
 no test crossing them. This file's regression is exactly that gap: ``to_meta(job)`` and
 ``refresh_row``'s cold-start sweep (no prior stored values, the held description substituted for

@@ -226,7 +226,7 @@ def build_doc(job: dict) -> str:
 # return None outright, which is exactly the "unchanged input starts parsing differently" case
 # this counter exists for.
 #
-# ADR-0145 moved the composition below (the four extractors into these nine keys) into
+# ADR-0146 moved the composition below (the four extractors into these nine keys) into
 # `headstart.ingest.derived_meta`, shared verbatim with `update_meta.refresh_row`'s held-text
 # branches — no version bump, because the two assemblies were compared line-for-line against
 # each other before the move and were already identical; `tests/test_derived_meta.py` now pins
@@ -240,7 +240,7 @@ def to_meta(job: dict) -> dict:
     The nine derived keys (``remote``, ``country``, ``min_years``/``max_years``/
     ``experience_source``, ``min_salary_annual``/``max_salary_annual``/``salary_currency``/
     ``salary_source``) come from :func:`headstart.ingest.derived_meta.derive` — the one
-    composition of the four extractors (ADR-0145) also used by ``update_meta.refresh_row`` to
+    composition of the four extractors (ADR-0146) also used by ``update_meta.refresh_row`` to
     repair an already-stored row, so the two cannot independently drift on what an extractor's
     result means. See that module's docstring for what each family reads and how ``None``
     behaves; ``employment_type`` / ``salary`` stay raw strings here — display-only (ADR-0019).
