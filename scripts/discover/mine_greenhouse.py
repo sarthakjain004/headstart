@@ -26,7 +26,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 WB = ROOT / "data" / "wayback-ats"
 PAGES = ROOT / "scripts" / "discover" / "wayback_pages.py"
-WORKERS = "4"
+WORKERS = "2"
 
 # Fail loudly if the helper moves again. This exact path went stale in the scripts/ reorg and
 # `check=False` below swallowed the exit-2, so all three wayback miners reported success while
@@ -54,7 +54,18 @@ def main():
     for label, host in HOSTS:
         print(f"=== mining {host} ===", flush=True)
         subprocess.run(
-            [sys.executable, str(PAGES), label, host, "path", WORKERS], check=False
+            [
+                sys.executable,
+                str(PAGES),
+                label,
+                "--domain",
+                host,
+                "--style",
+                "path",
+                "--workers",
+                WORKERS,
+            ],
+            check=True,
         )
 
     # 2. fold all tokens into data/wayback-ats/greenhouse.csv (dedupe by token)

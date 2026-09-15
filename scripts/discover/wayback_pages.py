@@ -18,9 +18,12 @@ were all complete) and greenhouse +96. Resume state is right for finishing an in
 wrong for repeating a finished one, and deleting the files by hand was a step that got forgotten.
 
 Usage:  python scripts/discover/wayback_pages.py zoho
-        python scripts/discover/wayback_pages.py zoho --workers 20
         python scripts/discover/wayback_pages.py zoho --domain zohorecruit.in   # one host only
         python scripts/discover/wayback_pages.py turbohire --domain turbohire.co --style sub
+
+CDX queues excess concurrency rather than rejecting it: measured 2026-09-09
+(docs/discovery/2026-09-08_wayback-host-coverage-audit.md §9b), 4 workers ran ~470x slower than 2,
+and 2 was no faster than 1. Default stays at the safe floor; do not raise it for a full sweep.
 """
 
 import threading
@@ -113,7 +116,7 @@ def sweep(ats, domain, style, workers, sink, refresh=False):
 
 def main():
     ap = cli(__doc__)
-    ap.add_argument("--workers", type=int, default=10)
+    ap.add_argument("--workers", type=int, default=2)
     ap.add_argument(
         "--refresh",
         action="store_true",
