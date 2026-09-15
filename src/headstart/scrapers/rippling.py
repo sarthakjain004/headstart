@@ -110,12 +110,11 @@ class RipplingScraper(BaseScraper):
         return f"{_API}/{self.slug}/jobs"
 
     def fetch_raw(self) -> Any:
-        resp = http.fetch(
+        resp = self._fetch(
             "GET",
             self.url(),
             headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
             timeout=30,
-            **self._egress(),
         )
         # Raise, don't return [] — a swallowed listing error reads as an empty board and
         # hides a dead one from the ADR-0058 quarantine forever.
@@ -164,12 +163,11 @@ class RipplingScraper(BaseScraper):
             self.note_detail_unattempted("no job uuid")
             return {}
         try:
-            resp = http.fetch(
+            resp = self._fetch(
                 "GET",
                 self._detail_url(uuid),
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 timeout=30,
-                **self._egress(),
             )
         except http.RequestsError as exc:
             self.note_detail_loss(type(exc).__name__)
@@ -182,13 +180,12 @@ class RipplingScraper(BaseScraper):
             self.note_detail_unattempted("no job uuid")
             return {}
         try:
-            resp = await http.fetch_async(
+            resp = await self._fetch_async(
                 session,
                 "GET",
                 self._detail_url(uuid),
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 timeout=30,
-                **self._egress(),
             )
         except http.RequestsError as exc:
             self.note_detail_loss(type(exc).__name__)

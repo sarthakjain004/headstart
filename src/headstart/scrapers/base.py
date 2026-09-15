@@ -496,6 +496,30 @@ class BaseScraper(ABC):
         response.raise_for_status()
         return response.text
 
+    def _fetch(
+        self, method: str, url: str, *, marks_wall: bool = True, **kwargs: Any
+    ) -> Any:
+        """Raw request via the reliable-fetch seam, with this scraper's egress opt-in and board
+        attribution always applied — the counterpart to :meth:`_get` for a caller that needs a
+        non-GET method, custom headers/timeout, or the raw ``Response`` rather than parsed text.
+        ``marks_wall`` passes straight through to :meth:`_egress`.
+        """
+        return http.fetch(method, url, **self._egress(marks_wall=marks_wall), **kwargs)
+
+    async def _fetch_async(
+        self,
+        session: Any,
+        method: str,
+        url: str,
+        *,
+        marks_wall: bool = True,
+        **kwargs: Any,
+    ) -> Any:
+        """Async counterpart to :meth:`_fetch`, over the shared multiplexed ``AsyncSession``."""
+        return await http.fetch_async(
+            session, method, url, **self._egress(marks_wall=marks_wall), **kwargs
+        )
+
     def fetch_raw(self) -> Any:
         return json.loads(self._get())
 
@@ -526,12 +550,12 @@ class BaseScraper(ABC):
         if not page:
             return
         try:
-            # `http.fetch` directly, not `self._get`: that method's return type is not the same
+            # `self._fetch` directly, not `self._get`: that method's return type is not the same
             # across subclasses — eightfold's override hands back the `Response` where the base
             # returns `.text` — and going through it fed a `Response` to the title parser and
             # broke every eightfold Board. Caught end to end against live boards, not by the
             # suite, which passed throughout.
-            response = http.fetch(
+            response = self._fetch(
                 "GET",
                 page,
                 headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
@@ -542,7 +566,7 @@ class BaseScraper(ABC):
                 # non-200 must not be what routes every other Board of that ATS onto the spare
                 # egress — the reason eightfold's own probe already passes `marks_wall=False`.
                 attempts=1,
-                **self._egress(marks_wall=False),
+                marks_wall=False,
             )
             html_text = response.text if response.status_code == 200 else None
         except Exception:  # noqa: BLE001 - a display name is never worth failing a Board for

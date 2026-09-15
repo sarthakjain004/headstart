@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import unquote, urlencode, urlsplit, urlunsplit
 
-from headstart import http
+from headstart import http  # noqa: F401 — kept for enterprise.http test monkeypatch
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -185,14 +185,13 @@ class TaleoEnterpriseScraper(BaseScraper):
     def alias_key(self) -> str | None:
         """The final Career Section URL, in the same identity space as this ledger."""
         try:
-            response = http.fetch(
+            response = self._fetch(
                 "GET",
                 self.url(),
                 headers={"User-Agent": USER_AGENT},
                 timeout=30,
                 allow_redirects=True,
                 stream=True,
-                **self._egress(),
             )
             try:
                 return _canonical(response.url)
@@ -266,13 +265,12 @@ class TaleoEnterpriseScraper(BaseScraper):
         pages: int | None = None
         page_no = 1
         while True:
-            response = http.fetch(
+            response = self._fetch(
                 "POST",
                 api,
                 json={**payload, "pageNo": page_no},
                 headers=self._request_headers(),
                 timeout=timeout,
-                **self._egress(),
             )
             response.raise_for_status()
             data = response.json()

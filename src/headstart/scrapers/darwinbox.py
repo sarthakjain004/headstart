@@ -36,7 +36,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from headstart import http, log
+from headstart import http, log  # noqa: F401 — kept for db.http test monkeypatch
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -94,13 +94,12 @@ class DarwinboxScraper(BaseScraper):
             "sort_option": "new",
             "limit": _PAGE_SIZE,
         }
-        response = http.fetch(
+        response = self._fetch(
             "POST",
             api,
             json=body,
             timeout=30,
             headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-            **self._egress(),
         )
         response.raise_for_status()
         return response.json().get("data") or []
@@ -111,12 +110,11 @@ class DarwinboxScraper(BaseScraper):
         Every tenant surveyed (60/60 across the corpus, 2026-07-06) is on v2, so failures
         default to True; the flag exists so a legacy tenant still gets working links."""
         try:
-            response = http.fetch(
+            response = self._fetch(
                 "GET",
                 f"{host}/ms/candidateapi/companyinfo?companyId=main",
                 timeout=20,
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-                **self._egress(),
             )
             company = (response.json().get("message") or {}).get("company") or {}
             return bool(company.get("new_careers", True))

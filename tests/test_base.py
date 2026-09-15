@@ -1,7 +1,9 @@
+import asyncio
 import logging
 
 import pytest
 
+from headstart import http
 from headstart.scrapers.base import BaseScraper
 
 
@@ -268,6 +270,72 @@ def test_the_board_rides_along_for_attribution_only():
     change the grouping: two Boards of one ATS still share a budget and a wall."""
     assert _WalledScraper("acme")._egress()["egress_board"] == "walled:acme"
     assert _WalledScraper("other")._egress()["egress_board"] == "walled:other"
+
+
+def test_fetch_threads_egress_kwargs_into_http_fetch(monkeypatch):
+    """`_fetch` is `_get`'s counterpart for a caller that needs a non-GET method, custom
+    headers/timeout, or the raw ``Response`` — it must apply this scraper's `_egress()` kwargs
+    exactly as `_get` does, not leave the caller to spell `**self._egress()` itself."""
+    captured = {}
+
+    def fake_fetch(method, url, **kwargs):
+        captured["method"] = method
+        captured["url"] = url
+        captured["kwargs"] = kwargs
+        return "response"
+
+    monkeypatch.setattr(http, "fetch", fake_fetch)
+    result = _WalledScraper("acme")._fetch("POST", "https://example.invalid", timeout=5)
+    assert result == "response"
+    assert captured["method"] == "POST"
+    assert captured["url"] == "https://example.invalid"
+    assert captured["kwargs"]["timeout"] == 5
+    assert captured["kwargs"]["egress_group"] == "walled"
+    assert captured["kwargs"]["egress_on"] == frozenset({403, 405})
+    assert captured["kwargs"]["egress_board"] == "walled:acme"
+
+
+def test_fetch_marks_wall_false_drops_only_the_marking(monkeypatch):
+    """`marks_wall=False` passes straight through to `_egress`: the request still carries
+    `egress_group`/`egress_board` (still routed once walled) but `egress_on` is emptied, so this
+    call's own failures can never be what walls the ATS."""
+    captured = {}
+    monkeypatch.setattr(
+        http, "fetch", lambda method, url, **kw: captured.update(kw) or "response"
+    )
+    _WalledScraper("acme")._fetch("GET", "https://example.invalid", marks_wall=False)
+    assert captured["egress_group"] == "walled"
+    assert captured["egress_on"] == frozenset()
+    assert captured["egress_board"] == "walled:acme"
+
+
+def test_fetch_async_threads_egress_kwargs_into_http_fetch_async(monkeypatch):
+    """Async counterpart: `_fetch_async` must thread the same `_egress()` kwargs into
+    `http.fetch_async`, with `session` and `method` passed through positionally."""
+    captured = {}
+
+    async def fake_fetch_async(session, method, url, **kwargs):
+        captured["session"] = session
+        captured["method"] = method
+        captured["url"] = url
+        captured["kwargs"] = kwargs
+        return "response"
+
+    monkeypatch.setattr(http, "fetch_async", fake_fetch_async)
+    sentinel_session = object()
+    result = asyncio.run(
+        _WalledScraper("acme")._fetch_async(
+            sentinel_session, "POST", "https://example.invalid", timeout=5
+        )
+    )
+    assert result == "response"
+    assert captured["session"] is sentinel_session
+    assert captured["method"] == "POST"
+    assert captured["url"] == "https://example.invalid"
+    assert captured["kwargs"]["timeout"] == 5
+    assert captured["kwargs"]["egress_group"] == "walled"
+    assert captured["kwargs"]["egress_on"] == frozenset({403, 405})
+    assert captured["kwargs"]["egress_board"] == "walled:acme"
 
 
 def test_eightfold_opts_in_on_the_wall_statuses():

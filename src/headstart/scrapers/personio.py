@@ -306,13 +306,12 @@ class PersonioScraper(BaseScraper):
         Board's own position list always comes from the bare feed, so this can never truncate one
         (ADR-0053) or cause an eviction.
         """
-        response = http.fetch(
+        response = self._fetch(
             "GET",
             self.url(),
             headers={"User-Agent": USER_AGENT, "Accept": "application/json, text/html"},
             timeout=30,
             allow_redirects=False,
-            **self._egress(),
         )
         if response.status_code in _REDIRECTS:
             target = _redirect_host(response.headers.get("location"))

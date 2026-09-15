@@ -225,12 +225,11 @@ class TrakstarScraper(BaseScraper):
     def _job_posting(self, code: str) -> dict | None:
         """GET one job page and return its JSON-LD JobPosting (None on failure). Sync path."""
         try:
-            response = http.fetch(
+            response = self._fetch(
                 "GET",
                 self._detail_url(code),
                 timeout=30,
                 headers={"User-Agent": USER_AGENT},
-                **self._egress(),
             )
         except http.RequestsError as exc:
             self.note_detail_loss(type(exc).__name__)
@@ -240,13 +239,12 @@ class TrakstarScraper(BaseScraper):
     async def _job_posting_async(self, session: Any, code: str) -> dict | None:
         """Same as :meth:`_job_posting` but over the shared multiplexed ``AsyncSession``."""
         try:
-            response = await http.fetch_async(
+            response = await self._fetch_async(
                 session,
                 "GET",
                 self._detail_url(code),
                 timeout=30,
                 headers={"User-Agent": USER_AGENT},
-                **self._egress(),
             )
         except http.RequestsError as exc:
             self.note_detail_loss(type(exc).__name__)

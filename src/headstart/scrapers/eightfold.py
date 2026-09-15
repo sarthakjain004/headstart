@@ -138,7 +138,7 @@ class EightfoldScraper(BaseScraper):
     ) -> Any:
         """GET one Eightfold URL. ``marks_wall=False`` still routes over the spare egress once this
         ATS is walled, but stops *this* request's failures from being what walls it."""
-        return http.fetch(
+        return self._fetch(
             "GET",
             url or self.url(),
             headers={
@@ -147,7 +147,7 @@ class EightfoldScraper(BaseScraper):
                 "Referer": f"https://{self.slug}/careers",
             },
             timeout=30,
-            **self._egress(marks_wall=marks_wall),
+            marks_wall=marks_wall,
         )
 
     # --- shared entry -------------------------------------------------------------------------
@@ -473,13 +473,12 @@ class EightfoldScraper(BaseScraper):
         self, session: Any, group_id: str, position_id: str
     ) -> str | None:
         try:
-            r = await http.fetch_async(
+            r = await self._fetch_async(
                 session,
                 "GET",
                 self._details_url(group_id, position_id),
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 timeout=30,
-                **self._egress(),
             )
         except http.RequestsError as exc:
             self.note_detail_loss(type(exc).__name__)
@@ -589,13 +588,12 @@ class EightfoldScraper(BaseScraper):
 
     async def _jsonld_async(self, session: Any, job_url: str) -> dict[str, Any] | None:
         try:
-            r = await http.fetch_async(
+            r = await self._fetch_async(
                 session,
                 "GET",
                 job_url,
                 headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
                 timeout=30,
-                **self._egress(),
             )
         except http.RequestsError as exc:
             self.note_detail_loss(type(exc).__name__)
