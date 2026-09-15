@@ -15,11 +15,12 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import unquote, urlencode, urlsplit, urlunsplit
 
+from headstart import company_name
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
 _PORTAL = re.compile(r"portalNo:\s*'?(\d+)")
-_TITLE = re.compile(r"<title>(.*?)</title>", re.DOTALL | re.IGNORECASE)
+_TITLE_TAG = re.compile(r"<title[^>]*>(.*?)</title>", re.DOTALL | re.IGNORECASE)
 _IMG = re.compile(r"<img\b[^>]*>", re.DOTALL | re.IGNORECASE)
 _ATTR = re.compile(r"\b(?:alt|title)=[\"']([^\"']+)", re.IGNORECASE)
 _JOBS_TABLE = re.compile(
@@ -67,20 +68,33 @@ def _aligned_headers(headers: list[str | None], values: list[Any]) -> list[str |
     return data_headers if len(data_headers) == len(values) else [None] * len(values)
 
 
-def _company(shell: str) -> str | None:
-    match = _TITLE.search(shell)
-    if not match:
+def _last_title(shell: str) -> str | None:
+    """The shell's last ``<title>`` tag, tags stripped — mirrors `company_name.title_of`.
+
+    Enterprise shells serve *two* ``<title>`` tags: a fixed chrome placeholder first ("Job
+    Search", literally, on all 150 of 150 sampled Boards) and, only when the tenant has
+    themed the Career Section, its real title second. `title_of` reads the first ``<title>``
+    it finds, so it can never reach the real one here — this is why `_company` cannot just
+    call it directly. See `headstart.company_name`'s module docstring for the full measurement.
+    """
+    matches = _TITLE_TAG.findall(shell)
+    if not matches:
         return None
-    title = html_to_text(match.group(1)) or ""
-    title = title.removeprefix("Careers | ").strip()
-    if title and title.lower() not in {"job search", "search jobs", "careers"}:
-        return title
-    # Enterprise shells commonly use the generic title above. Restrict to <img> tags that
-    # name themselves as a logo (D.R. Horton, TTEC, Valero all do) rather than scanning every
-    # image on the page — unscoped, chrome icons like the RSS/help/social buttons (none of
-    # which mention "logo") get mistaken for the company name on shells with no real logo
-    # image at all (e.g. easyjet, hyundaicapital both returned "Create an RSS feed" and the
-    # bare placeholder title before this fix).
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", matches[-1])).strip()
+    return text or None
+
+
+def _company(shell: str, slug: str) -> str | None:
+    name = company_name.from_title("taleo_enterprise", _last_title(shell), slug)
+    if name:
+        return name
+    # Enterprise shells commonly serve only the generic placeholder title, or a shape this
+    # module's patterns don't cover. Restrict to <img> tags that name themselves as a logo
+    # (D.R. Horton, TTEC, Valero all do) rather than scanning every image on the page —
+    # unscoped, chrome icons like the RSS/help/social buttons (none of which mention "logo")
+    # get mistaken for the company name on shells with no real logo image at all (e.g.
+    # easyjet, hyundaicapital both returned "Create an RSS feed" and the bare placeholder
+    # title before this fix).
     ignored = {"access the online help", "close", "collapse this section", "image"}
     for image in _IMG.findall(shell):
         if "logo" not in image.lower():
@@ -213,7 +227,8 @@ class TaleoEnterpriseScraper(BaseScraper):
         if not portal:
             raise ValueError("Career Section shell has no portalNo")
         headers = _headers(shell)
-        parsed = urlsplit(_canonical(self.slug))
+        board = _canonical(self.slug)
+        parsed = urlsplit(board)
         api = (
             f"{parsed.scheme}://{parsed.netloc}/careersection/rest/jobboard/searchjobs?"
             + urlencode({"lang": "en", "portal": portal.group(1)})
@@ -318,7 +333,7 @@ class TaleoEnterpriseScraper(BaseScraper):
                         "posted_at": _date(
                             _column(row_headers, values, ("posting date",))
                         ),
-                        "url": f"{_canonical(self.slug)}/jobdetail.ftl?"
+                        "url": f"{board}/jobdetail.ftl?"
                         + urlencode({"lang": "en", "job": job_id}),
                     }
                 )
@@ -342,7 +357,7 @@ class TaleoEnterpriseScraper(BaseScraper):
 
     def fetch_raw(self) -> Any:
         shell = self._get()
-        self.company = _company(shell) or self.company
+        self.company = _company(shell, self.slug) or self.company
         listed = self._listing(shell)
         details = self.fan_out(
             listed, lambda item: self._detail(item["url"]), workers=self.detail_workers

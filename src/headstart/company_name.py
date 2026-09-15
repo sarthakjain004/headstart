@@ -7,29 +7,47 @@ once the Boards whose ledger "name" is itself an identifier are counted — the 
 and "gamuda", Workday's holds "citi" and "dick-s-sporting-goods". Users see "1password",
 "jobs.vodafone.com", "nttltd" where a company name belongs. The wider figure is the honest one.
 
-Five ATSes put the real name in their board page's ``<title>``, each wrapped differently, and one
-request per Board recovers it. Which five is a measurement, not a guess: live Boards were sampled
+Six ATSes put the real name in their board page's ``<title>``, each wrapped differently, and one
+request per Board recovers it. Which six is a measurement, not a guess: live Boards were sampled
 per ATS (`experiment/company-display-name/`, gitignored), and only those whose wrapper is uniform
 enough to strip safely are here. Sample sizes differ on purpose: the first pass was 30 Boards per
 ATS, and each row was re-measured larger wherever 30 proved too few to trust. Lever needed it most
 — two 30-Board samples disagreed (25 and 21) before 400 settled it near 88% — and keka's row is a
 full census rather than a sample.
 
-===============  ==========================================  =====================
-ATS              title shape                                 yields a name
-===============  ==========================================  =====================
-ashby            ``{Name} Jobs``                             ~92% (n=120)
-eightfold        ``Careers at {Name}`` / ``{Name} Careers``  ~93% (n=100)
-ripplehire       ``{Name} Careers | Latest jobs at …``       ~96% (all 51)
-lever            ``{Name}`` — no wrapper at all              ~88% (352/400)
-keka             ``Careers at {Name}`` / ``{Name} Careers``  ~11% (92 of 819)
-===============  ==========================================  =====================
+================  =================================================  =================
+ATS               title shape                                        yields a name
+================  =================================================  =================
+ashby             ``{Name} Jobs``                                    ~92% (n=120)
+eightfold         ``Careers at {Name}`` / ``{Name} Careers``         ~93% (n=100)
+ripplehire        ``{Name} Careers | Latest jobs at …``              ~96% (all 51)
+lever             ``{Name}`` — no wrapper at all                     ~88% (352/400)
+keka              ``Careers at {Name}`` / ``{Name} Careers``         ~11% (92 of 819)
+taleo_enterprise  four ``Careers``-wrappers (see below)              20% (30/150)
+================  =================================================  =================
 
 Keka is the odd row and worth reading twice: only about one Board in eight serves a ``<title>`` at
 all (the rest render it client-side), but where one exists the wrapper is as uniform as
 eightfold's, and *every* keka Board serves a slug today — so that ~11% is pure upside for one
 cheap request. The first draft excluded keka on a stated **0/30**, which was simply wrong; the
 figure here is a full 819-Board census, not a sample.
+
+**taleo_enterprise is a different mechanism, not just a different wrapper.** Its shell serves
+*two* ``<title>`` tags — a fixed chrome placeholder first ("Job Search", literally, on all 150 of
+150 sampled Boards), then, only when the tenant has themed the Career Section, a second tag with
+the real content. `title_of` reads the first ``<title>`` it finds, so this ATS cannot go through
+the shared `resolve_company` path at all — `TaleoEnterpriseScraper._company` reads the *last* tag
+itself before calling `from_title`. That second tag is far less uniform than the other five ATSes:
+alongside the four wrappers below it, the same 150-Board sample also served vendor branding
+("Oracle Taleo", four unrelated tenants), a staging label ("PHP Staging Mobile Taleo"), and
+marketing copy ("I work for NSW", "Prosegur Ofertas Empleo") with no shared shape — so, unlike
+lever, an unwrapped bare title is *not* trustworthy here and gets no pattern. Only four wrappers
+are: ``Careers | {Name}`` (D.R. Horton — note the observed double space around the pipe, which
+``\\s*`` absorbs), ``{Name} - Careers`` (Valero, IEEE), and eightfold/keka's own
+``Careers at {Name}`` / ``{Name} Careers`` (Hospital Authority, Burns & McDonnell, City of Hope,
+Wichita Public Schools USD 259, …). 30 of the 150 sampled Boards' second title tag matched one of
+these four and passed the safety checks below, with zero observed false positives; the rest —
+generic, vendor, unwrapped, or a shape none of the four models — correctly resolve to `None`.
 
 **Absent, and why.** darwinbox and freshteam render their boards client-side and serve nothing to
 read. successfactors is the interesting exclusion: it does serve titles, but they are marketing
@@ -87,6 +105,16 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     "keka": _CAREERS_WRAPPER,
     "ripplehire": (re.compile(r"^(?P<name>.+?)\s+Careers\s*\|", re.IGNORECASE),),
     "lever": (re.compile(r"^(?P<name>.+)$"),),
+    # taleo_enterprise: no catch-all here, unlike lever — a bare, unwrapped second title is
+    # frequently vendor branding or marketing copy on this ATS (see the module docstring), so
+    # only the four wrappers actually observed to carry a name are matched. The first two are
+    # this ATS's own (D.R. Horton's title has a double space around the pipe, which `\s*`
+    # absorbs; Valero/IEEE end "{Name} - Careers"); the last two are `_CAREERS_WRAPPER`.
+    "taleo_enterprise": (
+        re.compile(r"^Careers?\s*\|\s*(?P<name>.+?)$", re.IGNORECASE),
+        re.compile(r"^(?P<name>.+?)\s*-\s*Careers$", re.IGNORECASE),
+        *_CAREERS_WRAPPER,
+    ),
 }
 
 #: A separator still present after the wrapper came off means the title had a shape this does not
@@ -155,6 +183,11 @@ _VENDOR_ALIASES: dict[str, frozenset[str]] = {
     "keka": frozenset({"keka"}),
     "lever": frozenset({"lever"}),
     "ripplehire": frozenset({"ripplehire"}),
+    # No matched-wrapper case reached this in the 150-Board sample — "Oracle Taleo" and
+    # "Taleo | Mercedes-Benz Group AG" are both already refused for being unwrapped or not
+    # matching any of the four shapes. Kept as a precaution: a themed board could plausibly
+    # still leave the vendor's own name in a wrapper this ATS *does* match.
+    "taleo_enterprise": frozenset({"taleo", "oracle", "oracletaleo"}),
 }
 
 

@@ -39,6 +39,16 @@ from headstart.company_name import from_title, looks_like_slug, title_of
         ("lever", "Pickle Robot Company", "picklerobot", "Pickle Robot Company"),
         # entities decoded: the title really is served as "Canopy A&amp;D"
         ("lever", "Canopy A&amp;D", "canopy-ad", "Canopy A&D"),
+        # taleo_enterprise's own two wrappers, both live: a double space around the pipe
+        # (D.R. Horton) and a dash before "Careers" (Valero) — `_CAREERS_WRAPPER`'s two
+        # shapes are already covered by the eightfold/keka cases above.
+        (
+            "taleo_enterprise",
+            "Careers  |  D.R. Horton",
+            "https://drhorton.taleo.net/careersection/2",
+            "D.R. Horton",
+        ),
+        ("taleo_enterprise", "Valero - Careers", "https://valero.taleo.net", "Valero"),
     ],
 )
 def test_a_board_title_yields_the_company_name(ats, title, slug, expected):
@@ -77,10 +87,24 @@ def test_a_board_title_yields_the_company_name(ats, title, slug, expected):
         # nothing to read
         ("lever", None, "acme"),
         ("lever", "", "acme"),
+        # exactly the slug once the wrapper is stripped: nothing gained
+        ("taleo_enterprise", "Careers | acme", "acme"),
     ],
 )
 def test_an_unreadable_title_leaves_the_board_on_its_slug(ats, title, slug):
     assert from_title(ats, title, slug) is None
+
+
+def test_taleo_enterprise_has_no_catch_all_unlike_lever():
+    """A bare, unwrapped title is not trustworthy on this ATS (see the module docstring):
+    both a real employer's own name and the vendor's default branding show up unwrapped,
+    and nothing here can tell them apart — so, unlike lever, neither gets a pattern."""
+    assert from_title("taleo_enterprise", "TTEC", "ttec") is None
+    assert from_title("taleo_enterprise", "Oracle Taleo", "cfopitt") is None
+    assert (
+        from_title("taleo_enterprise", "Careers at Hospital Authority", "ha")
+        == "Hospital Authority"
+    )
 
 
 def test_keka_reads_the_wrapper_it_shares_with_eightfold():

@@ -23,7 +23,7 @@ def test_canonical_section_slug():
 
 def test_company_falls_back_to_logo_when_shell_title_is_generic():
     shell = '<title>Job Search</title><img alt="Valero Logo" src="logo.svg">'
-    assert enterprise._company(shell) == "Valero"
+    assert enterprise._company(shell, "valero") == "Valero"
 
 
 def test_company_ignores_chrome_icons_without_a_logo_src():
@@ -37,11 +37,27 @@ def test_company_ignores_chrome_icons_without_a_logo_src():
         '<img alt="Create an RSS feed" src="ico-rss.png">'
         '<img alt="Access the online help" src="ico-help.png">'
     )
-    assert enterprise._company(shell) is None
+    assert enterprise._company(shell, "hyundaicapital") is None
 
 
 def test_company_returns_none_when_title_is_generic_and_no_images_present():
-    assert enterprise._company("<title>Job Search</title>") is None
+    assert enterprise._company("<title>Job Search</title>", "acme") is None
+
+
+def test_company_reads_the_second_title_tag_via_company_name_patterns():
+    """Enterprise shells serve the chrome placeholder first and the tenant's real title
+    second (see `company_name`'s module docstring) — `_company` must read the *last*
+    ``<title>`` tag, not the first, and run it through the shared pattern registry."""
+    shell = "<title>Job Search</title><title>Careers  |  D.R. Horton</title>"
+    assert enterprise._company(shell, "drhorton") == "D.R. Horton"
+
+
+def test_company_prefers_the_title_over_the_logo_when_both_are_present():
+    shell = (
+        "<title>Job Search</title><title>Valero - Careers</title>"
+        '<img alt="Something Else Logo" src="logo.svg">'
+    )
+    assert enterprise._company(shell, "valero") == "Valero"
 
 
 def test_listing_stops_at_stated_page_count_not_repeated_overflow(monkeypatch):
