@@ -1,3 +1,5 @@
+import re
+
 from headstart.ingest.doc_prep import to_meta
 from headstart.scrapers.registry import SCRAPERS, get_scraper
 from headstart.scrapers.taleo_be import TaleoBEScraper, _workplace_remote
@@ -95,6 +97,11 @@ def test_pages_with_session_relative_next_and_parses_detail(monkeypatch):
     monkeypatch.setattr(scraper, "_get", get)
     jobs = scraper.fetch()
     assert [job.id.rsplit(":", 1)[-1] for job in jobs] == ["1", "2"]
+    assert jobs[0].url == (
+        "https://phe.tbe.taleo.net/phe03/ats/careers/v2/"
+        "viewRequisition?org=ICANN&cws=37&rid=1"
+    )
+    assert re.fullmatch(TaleoBEScraper.url_shape, jobs[0].url)
     assert (
         jobs[0].description == "This position is fully remote. Build & operate systems."
     )

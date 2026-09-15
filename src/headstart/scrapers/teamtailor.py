@@ -45,9 +45,15 @@ def _location(jobposting: dict) -> str | None:
 
 class TeamtailorScraper(BaseScraper):
     ats = "teamtailor"
+    url_shape = r"https://.+/jobs/\d+.*"
 
     def url(self) -> str:
         return f"https://{self.slug}.teamtailor.com/jobs.json"
+
+    def job_url(self, url: str) -> str:
+        """The feed states the job's own link directly (``url``); nothing to build, so this
+        simply names that as the declared source (ADR-0153)."""
+        return url
 
     def fetch_raw(self) -> Any:
         """Walk every page of the Board — no page-count ceiling.
@@ -92,7 +98,7 @@ class TeamtailorScraper(BaseScraper):
             location = _location(jp)
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{it['id']}",
+                    id=self.job_id(it["id"]),
                     ats=self.ats,
                     company=(jp.get("hiringOrganization") or {}).get("name")
                     or feed_company,
@@ -100,7 +106,7 @@ class TeamtailorScraper(BaseScraper):
                     location=location,
                     remote=is_remote(location),
                     department=None,  # not exposed in the public feed
-                    url=it.get("url", ""),
+                    url=self.job_url(it.get("url", "")),
                     posted_at=it.get("date_published") or jp.get("datePosted"),
                     scraped_at=scraped_at,
                     description=html_to_text(it.get("content_html")),

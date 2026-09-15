@@ -39,6 +39,7 @@ _REPORT_DIR = _ROOT / "data" / "eval" / "filter_checks"
 
 sys.path.insert(0, str(_ROOT / "src"))
 from headstart import geo
+from headstart.scrapers.registry import DISABLED_ATS, SCRAPERS
 
 # Deliberately OUTSIDE the repo: this is a live credential for a real account, and a file
 # in the tree is one `git add` away from being published.
@@ -66,149 +67,24 @@ QUERIES = (
     "qa automation engineer",
 )
 
-# What each ATS's job-detail URL must look like. A link that matches the ATS but not the
-# shape is the darwinbox failure class: it resolves somewhere, just not at the job.
-URL_SHAPES = {
-    # Two legitimate shapes. The second is the EMBED form: a tenant may configure its own
-    # board page, and then the API's `absolute_url` — and greenhouse's own canonical link —
-    # both point there with the job in `?gh_jid=`. Verified live 2026-08-12:
-    # job-boards.greenhouse.io/codeblack/jobs/4012421004 302s to
-    # codeblack.netlify.app/?gh_jid=4012421004, and the embed's job endpoint returns that
-    # posting. The page renders client-side, so `title_on_page` reads false on it — a limit
-    # of an HTTP probe, not a broken link.
-    "greenhouse": r"https://(?:(?:job-boards|boards)\.greenhouse\.io/.+/jobs/\d+|.+[?&]gh_jid=\d+)",
-    "lever": r"https://jobs(\.eu)?\.lever\.co/[^/]+/[0-9a-f-]{36}",
-    "ashby": r"https://jobs\.ashbyhq\.com/[^/]+/[0-9a-f-]{36}",
-    # Was host-agnostic (`https://.+/o/[^/]+`) because tenants serve on custom careers
-    # domains — which is exactly how it passed 458 rows whose custom host was dead. Both the
-    # scraper and the serve-time rewrite now put every link on the tenant's own host, so the
-    # shape can assert that host and this check finally bites. Both of them keep a fallback
-    # for an offer with no slug to build from, and a row that took it would fail here — which
-    # is the point: it has never happened (0 of 772 served rows, 0 of 612 offers inspected),
-    # so if it ever does, that is news and not something to wave through.
-    "recruitee": r"https://[\w-]+\.recruitee\.com/o/[^/]+",
-    "workable": r"https://apply\.workable\.com/(j/[A-Z0-9]+|[^/]+/j/[A-Z0-9]+)",
-    "smartrecruiters": r"https://jobs\.smartrecruiters\.com/[^/]+/\d+",
-    "zoho": r"https://[^/]+/jobs/Careers/\d+/.+",
-    "darwinbox": r"https://[^/]+/ms/candidatev2/[^/]+/careers/jobDetails/[0-9a-f]+$",
-    "keka": r"https://[^.]+\.keka\.com/careers/jobdetails/\d+",
-    "teamtailor": r"https://.+/jobs/\d+.*",
-    "personio": r"https://.+\.jobs?\.personio\.(com|de)/job/\d+.*",
-    "ripplehire": r"https://[^.]+\.ripplehire\.com/candidate/careers/?$",  # board-level: known gap
-    "join": r"https://join\.com/companies/[^/]+/.+",
-    "rippling": r"https://ats\.rippling\.com/[^/]+/jobs/[0-9a-f-]+",
-    "trakstar": r"https://[^.]+\.hire\.trakstar\.com/jobs/[0-9a-z]+/?",
-    "workday": r"https://[^.]+\.wd\d+\.myworkdayjobs\.com/.+/job/.+",
-    # scraper: f"https://{slug}{path}" where the SLUG IS THE BOARD HOST — five live ledger rows
-    # sit on custom domains (careers.micron.com, jobs.vodafone.com, portal.careers.hsbc.com…),
-    # so anchoring on .eightfold.ai flagged real rows. Host-agnostic like recruitee/darwinbox;
-    # verified live 2026-08-02 on both host kinds (amdocs-sandbox.eightfold.ai, careers.micron.com)
-    "eightfold": r"https://[^/]+/careers/job/\d+",
-    # scraper passes through the API's own url field; tenants live on {slug}.freshteam.com
-    "freshteam": r"https://[\w-]+\.freshteam\.com/jobs/[\w-]+",
-    # scraper passes through RMK sitemap URLs: /job/{slug}/{id}/ on per-tenant vanity hosts
-    # (jobs.bt.com, careers.capgemini.com, jobs.turbo.co.th — no common host to anchor on)
-    "successfactors": r"https://[^/]+/job/.+/\d+/?",
-    # single-source ats (ADR-0139) — one tenant, so the host is a literal, not a wildcard.
-    # scraper builds f"{_SEARCH_URL}job/{title-slug}-{id}" (tesla.py's `_job_url`).
-    "tesla": r"https://www\.tesla\.com/careers/search/job/[\w-]+-\d+",
-    # scraper: f"https://{slug}/hcmUI/CandidateExperience/en/sites/CX_1/job/{id}" where the slug
-    # is the tenant's own pod host (fa-etvl-saasfaprod1.fa.ocs.oraclecloud.com,
-    # chevron.fa.us2.oraclecloud.com — ten regional pods, so nothing narrower to anchor on).
-    # The site segment stays loose because it is cosmetic: browser-verified 2026-09-08, the app
-    # redirects any site — including a nonexistent one — to CX_1 and resolves the job by id.
-    # Was `.+/job/\d+`, written from the scraper's source when oracle had no indexed rows to
-    # check against. The id is NOT numeric: of 10,115 sampled live 2026-09-08, 47 carry
-    # underscores (MY_SCA_173_2411) and many are letter-prefixed (N122008), so `\d+` would have
-    # flagged real rows the moment the first one was indexed.
-    "oracle": r"https://[^/]+/hcmUI/CandidateExperience/[a-z]{2}/sites/[^/]+/job/[A-Za-z0-9_]+",
-    # scraper: f"https://{slug}{job_path}" where slug is the fixed host www.amazon.jobs (ADR-0139,
-    # one tenant) and job_path is the API's own field, e.g. "/en/jobs/10537803/data-center-...".
-    # Live-verified 2026-09-11: that exact URL 200s.
-    "amazon": r"https://www\.amazon\.jobs/en/jobs/\d+/[\w-]+",
-    # from the scraper's construction (sensehq.py: {slug}.sensehq.com/careers/jobs/{id});
-    # ZERO indexed rows today — source-derived only, same caveat oracle's entry used to carry.
-    "sensehq": r"https://[\w-]+\.sensehq\.com/careers/jobs/\d+",
-    # icims.py ships the sitemap's own <loc>, query stripped: /jobs/{id}/{title-slug}/job.
-    # Host-agnostic on purpose. All 35 sampled boards keep job URLs on their own *.icims.com
-    # host (0 exceptions, 2026-09-07), but that sample cannot settle the question: the tenant
-    # roster was enumerated by a Wayback CDX sweep OF icims.com, so a vanity-hosted tenant is
-    # invisible to it by construction. Anchoring on the vendor domain is what flagged real
-    # eightfold rows, so the path — which is fixed by iCIMS' own routing — carries the check.
-    # The trailing anchor matters: an `in_iframe=1` link would be a serving bug, not a variant.
-    "icims": r"https://[^/]+/jobs/\d+/[^/]+/job$",
-    # run_wellfound*.py build f"https://wellfound.com/jobs/{id}-{slug}".rstrip("-"), so the
-    # slug is optional when a listing has none. Verified against all 6,462 rows of
-    # data/jobs/wellfound.csv (zero non-matching). Wellfound was served with NO shape entry
-    # until 2026-08-05 — the same class of gap the coverage gate above was added to catch.
-    "wellfound": r"https://wellfound\.com/jobs/\d+(-[\w-]+)?",
-    # scraper: f"{link_base}{quote(jobUrl)}" where the SLUG IS THE BOARD HOST — the API keys on
-    # the hostname, and Boards sit on customer domains (careers.persistent.com) as well as the
-    # vendor namespace ({slug}.openings.co), so there is no host to anchor on. `link_base` is one
-    # of the three frontend generations' own job routes (zwayam.py module docstring, classified
-    # live across all 224 hiring Boards 2026-08-27): Angular's `{base href}jobview/` (the optional
-    # path segments), Next.js's root `/job-view/`, or the old Angular 1 shell's hash route
-    # `/#!/job-view/`. The trailing `jobUrl` is the vendor's own slug, percent-encoded. NOTE the
-    # Angular generation answers 200 for ANY path and the hash route never reaches the server, so
-    # `status_ok` is not evidence of a good link for this ATS — only the shape is (Next.js is the
-    # one generation where a bad route would actually 404).
-    "zwayam": r"https://[^/]+(?:(?:/[\w.-]+)*/jobview/|/job-view/|/#!/job-view/)[\w.%~-]+$",
-    # scraper: f"https://{slug}.applytojob.com/apply/{key}" (jazzhr.py `_detail_url`). The board
-    # links to /apply/{key}/{Title-Slug}, but the title slug is decorative — verified live
-    # 2026-09-07 that /apply/{key} alone serves the posting (200 on 1,526 of 1,527 fetched that
-    # way, the one miss a transport timeout) and that a WRONG title slug 200s too, so the key is
-    # the whole route. A key that no longer exists answers 410, which is what makes this link
-    # checkable at all. Keys are 10 alphanumerics on most tenants and a long hex string on a few
-    # (both real: `/apply/KqDYKxUH4p/…` and `/apply/07350d2d7f03…/…`), hence the loose class.
-    "jazzhr": r"https://[\w-]+\.applytojob\.com/apply/[A-Za-z0-9]+",
-    # scraper: f"https://jobs.jobvite.com/{slug}/job/{id}" (jobvite.py `_detail_url`). Every
-    # tenant is on that one host — a jobvite Board is a path, never a subdomain or a customer
-    # domain — so unlike eightfold/successfactors this can anchor the host. The id is Jobvite's
-    # own opaque 8-char EId. Verified live 2026-09-07 on four boards spanning all five row
-    # templates (barracuda-networks-inc, nutanix, agscareer, samtec-sp): all 200, each with its
-    # job title in the page `<title>`, so `title_on_page` bites here rather than reading false
-    # off a client-rendered page.
-    "jobvite": r"https://jobs\.jobvite\.com/[^/]+/job/[A-Za-z0-9]+",
-    # scraper: f"https://www.google.com/about/careers/applications/jobs/results/{id}?hl=en_US"
-    # (google.py `_JOB_URL`) — the id-only path, verified live 2026-09-11 to resolve the correct
-    # posting with no slug needed. One board, one host, forever (ADR-0139).
-    "google": r"https://www\.google\.com/about/careers/applications/jobs/results/\d+\?hl=en_US",
-    # scraper: f"https://jobs.bytedance.com/en/position/{id}" (bytedance.py `job_url`). A
-    # Single source scraper (ADR-0139) — one fixed host, so unlike the platform ATSes above there
-    # is nothing to leave host-agnostic. Verified live 2026-09-11: the route answers 200 for a
-    # real id pulled from the search API; ids are numeric strings (e.g. "7673941558289205509").
-    "bytedance": r"https://jobs\.bytedance\.com/en/position/\d+",
-    # scraper: f"https://{slug}/en-us/details/{positionId}/{transformedPostingTitle}" (apple.py
-    # `job_url`) — slug is the fixed host jobs.apple.com (ADR-0139, a Single source scraper: one
-    # company, never discovered). Verified live 2026-09-11: the page 200s and its <title> carries
-    # the posting title. positionId is numeric on every sampled row; the title slug can in theory
-    # be empty (job_url falls back to "" when transformedPostingTitle is missing) so it is loose.
-    "apple": r"https://jobs\.apple\.com/en-us/details/\d+/[\w-]*",
-    # scraper: urljoin("https://jobs.uber.com", Urls[].Url) where Urls[].Url is the API's own
-    # relative path, e.g. "/en/jobs/301347/" (uber.py `_job_url`). A Single source scraper
-    # (ADR-0139) — one host, always jobs.uber.com, never a customer domain — so the host can be
-    # anchored. Verified live 2026-09-11: all 3 sampled ids 200, each rendering its own title.
-    "uber": r"https://jobs\.uber\.com/[\w-]+/jobs/\d+/?",
-    # scraper passes through the sitemap's own <loc>: the canonical
-    # https://www.metacareers.com/profile/job_details/{id}/ page. `meta` is a Single source
-    # scraper (ADR-0139), so the host is fixed rather than derived. Verified live 2026-09-11:
-    # 80/80 randomly sampled ids 200 with parseable JobPosting JSON-LD.
-    "meta": r"https://www\.metacareers\.com/profile/job_details/\d+/?",
-    # scraper: f"https://{slug}/search/{id}" (tiktok.py, the reference implementation's own
-    # convention — ADR-0139, single fixed slug "lifeattiktok.com"). Not verified end-to-end: the
-    # marketing frontend answered a bare 503 on every path tried, robots.txt included, across
-    # three curl_cffi TLS impersonations (docs/tiktok/2026-09-11_api-measurement.md), so
-    # `status_ok`/`title_on_page` are expected to read false here the way greenhouse's
-    # client-rendered embed form does above — a measured limit of the HTTP probe against this
-    # host, not evidence the link is wrong.
-    "tiktok": r"https://lifeattiktok\.com/search/\d+",
-    # Taleo Business Edition emits its own canonical detail URL from every listing card. The
-    # board coordinates stay in the query string and `rid` is the native requisition id; both
-    # were verified live on ICANN on 2026-09-13. TBE is intentionally separate from Taleo
-    # Enterprise's Career Section URL family, which this scraper does not support.
-    "taleo_be": r"https://[a-z0-9-]+\.tbe\.taleo\.net/[a-z0-9-]+/ats/careers/v2/viewRequisition\?[^#]*\brid=\d+",
-    # Enterprise Career Sections use the measured `jobdetail.ftl?lang=en&job={id}` detail route.
-    "taleo_enterprise": r"https://[^/]+\.taleo\.net/careersection/[^/]+/jobdetail\.ftl\?lang=[^&]+&job=[^&]+",
+# What each ATS's job-detail URL must look like, keyed by `ats`. A link that matches the ATS
+# but not the shape is the darwinbox failure class: it resolves somewhere, just not at the job.
+#
+# Generated from each scraper's own `url_shape` class attribute (ADR-0157) rather than
+# hand-maintained here - the drift this coverage gate used to let through silently (a WRONG
+# entry, as opposed to a missing one) is now structurally impossible: there is exactly one
+# place per ATS that declares its job-URL shape, and this dict just reads it. The scraper
+# module itself carries the reasoning/measurement comment for its own shape; this file no
+# longer duplicates it.
+#
+# `wellfound` is the one manual entry: it is not a `headstart.scrapers` ATS (the wellfound
+# corpus is built by the standalone `run_wellfound*.py` scripts, never through the scraper
+# registry), so it has no `BaseScraper` subclass to declare a shape on. Verified against all
+# 6,462 rows of `data/jobs/wellfound.csv` (zero non-matching); wellfound was served with NO
+# shape entry until 2026-08-05 - the same class of gap the coverage gate below was added to
+# catch.
+URL_SHAPES: dict[str, str] = {ats: cls.url_shape for ats, cls in SCRAPERS.items()} | {
+    "wellfound": r"https://wellfound\.com/jobs/\d+(-[\w-]+)?"
 }
 
 
@@ -839,8 +715,6 @@ def main() -> int:
     # measured absent from the 4-query sweep) must not evade the shape requirement by ranking
     # low. Per-ATS check/url cases still run only over the sampled set: an ATS with zero indexed
     # rows would produce meaningless cases (app.py's whitelist silently ignores unknown ats).
-    from headstart.scrapers.registry import DISABLED_ATS, SCRAPERS
-
     gate_atses = sorted(set(atses) | (set(SCRAPERS) - DISABLED_ATS))
 
     checks = run_checks(args.base, atses) + run_input_checks(args.base)

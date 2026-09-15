@@ -54,11 +54,16 @@ def _description(detail: dict) -> str | None:
 
 class RipplingScraper(BaseScraper):
     ats = "rippling"
+    url_shape = r"https://ats\.rippling\.com/[^/]+/jobs/[0-9a-f-]+"
     detail_workers = _DETAIL_WORKERS
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     def url(self) -> str:
         return f"{_API}/{self.slug}/jobs"
+
+    def job_url(self, uuid: str, native_url: str | None = None) -> str:
+        """The listing's own ``url`` field when present, else the derived ATS route."""
+        return native_url or f"https://ats.rippling.com/{self.slug}/jobs/{uuid}"
 
     def fetch_raw(self) -> Any:
         resp = self._fetch(
@@ -153,15 +158,14 @@ class RipplingScraper(BaseScraper):
                 dept = dept.get("name")
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{it['uuid']}",
+                    id=self.job_id(it["uuid"]),
                     ats=self.ats,
                     company=detail.get("companyName") or self.company,
                     title=(it.get("name") or "").strip(),
                     location=location,
                     remote=is_remote(location),
                     department=dept,
-                    url=it.get("url")
-                    or f"https://ats.rippling.com/{self.slug}/jobs/{it['uuid']}",
+                    url=self.job_url(it["uuid"], it.get("url")),
                     posted_at=detail.get("createdOn"),
                     scraped_at=scraped_at,
                     description=html_to_text(_description(detail)),

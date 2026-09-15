@@ -104,10 +104,16 @@ def _location(job: dict) -> str | None:
 
 class AshbyScraper(BaseScraper):
     ats = "ashby"
+    url_shape = r"https://jobs\.ashbyhq\.com/[^/]+/[0-9a-f-]{36}"
 
     def url(self) -> str:
         # includeCompensation adds the structured compensation block to each posting
         return f"https://api.ashbyhq.com/posting-api/job-board/{self.slug}?includeCompensation=true"
+
+    def job_url(self, url: str) -> str:
+        """Ashby's posting API states the job's own link directly (``jobUrl``); nothing to
+        build, so this simply names that as the declared source (ADR-0153)."""
+        return url
 
     def board_page(self) -> str:
         """The public board, whose ``<title>`` is ``"{Name} Jobs"``.
@@ -138,14 +144,14 @@ class AshbyScraper(BaseScraper):
                 continue  # skip postings the company has unlisted
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{j['id']}",
+                    id=self.job_id(j["id"]),
                     ats=self.ats,
                     company=self.company,
                     title=(j.get("title") or "").strip(),
                     location=_location(j),
                     remote=_remote(j),
                     department=j.get("department"),
-                    url=j.get("jobUrl", ""),
+                    url=self.job_url(j.get("jobUrl", "")),
                     posted_at=j.get("publishedAt"),
                     scraped_at=scraped_at,
                     description=html_to_text(

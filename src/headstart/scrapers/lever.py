@@ -351,9 +351,15 @@ def _description(j: dict) -> str | None:
 
 class LeverScraper(BaseScraper):
     ats = "lever"
+    url_shape = r"https://jobs(\.eu)?\.lever\.co/[^/]+/[0-9a-f-]{36}"
 
     def url(self) -> str:
         return f"https://api.lever.co/v0/postings/{self.slug}?mode=json"
+
+    def job_url(self, url: str) -> str:
+        """Lever's postings API states the job's own link directly (``hostedUrl``); nothing to
+        build, so this simply names that as the declared source (ADR-0153)."""
+        return url
 
     def board_page(self) -> str:
         """The public board, whose ``<title>`` is the company name with no wrapper at all.
@@ -388,14 +394,14 @@ class LeverScraper(BaseScraper):
             remote = workplace == "remote" or bool(is_remote(location))
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{j['id']}",
+                    id=self.job_id(j["id"]),
                     ats=self.ats,
                     company=self.company,
                     title=(j.get("text") or "").strip(),
                     location=location,
                     remote=remote,
                     department=categories.get("department") or categories.get("team"),
-                    url=j.get("hostedUrl", ""),
+                    url=self.job_url(j.get("hostedUrl", "")),
                     posted_at=epoch_ms_to_iso(j.get("createdAt")),
                     scraped_at=scraped_at,
                     description=_description(j),

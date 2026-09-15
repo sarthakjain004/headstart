@@ -432,6 +432,7 @@ class WorkdayScraper(BaseScraper):
     """Workday scraper — `slug` must be the full careers URL."""
 
     ats = "workday"
+    url_shape = r"https://[^.]+\.wd\d+\.myworkdayjobs\.com/.+/job/.+"
     detail_workers = _DETAIL_WORKERS
     detail_streams = _DETAIL_STREAMS
 
@@ -903,11 +904,19 @@ class WorkdayScraper(BaseScraper):
             f"/wday/cxs/{company}/{site}{external_path}"
         )
 
+    def job_url(self, external_path: str) -> str:
+        """This Job's served link, built on the slug's OWN instance — not
+        :meth:`_page_url`'s *resolved* one (ADR-0153). That is the one deliberate difference
+        :meth:`_page_url` documents: it fetches from wherever the tenant actually answers today,
+        while this keeps serving the host the slug names, migrated or not."""
+        base = self.slug.rstrip("/")
+        return f"{base}{external_path}" if external_path else base
+
     def _page_url(self, external_path: str) -> str:
         """The posting's public job page, server-rendered with a JSON-LD ``JobPosting`` even on
-        sub-sites the CXS API won't serve. The page :meth:`parse`'s ``Job.url`` names, with one
-        deliberate difference: this builds on the *resolved* instance (``_resolve_instance``),
-        where ``Job.url`` keeps the slug's own — for a migrated tenant the slug's stale ``wdN``
+        sub-sites the CXS API won't serve. The page :meth:`job_url` names, with one deliberate
+        difference: this builds on the *resolved* instance (``_resolve_instance``), where
+        :meth:`job_url` keeps the slug's own — for a migrated tenant the slug's stale ``wdN``
         host 500s, and the resolved one is the host that answers."""
         company, instance, site = self._parts()
         return f"https://{company}.{instance}.myworkdayjobs.com/{site}{external_path}"
@@ -1504,11 +1513,10 @@ class WorkdayScraper(BaseScraper):
         return missing, error
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
-        company, _instance, site = self._parts()
+        company, _instance, _site = self._parts()
         display = (
             self.company if self.company and self.company != self.slug else company
         )
-        base = self.slug.rstrip("/")
 
         jobs: list[Job] = []
         for item in raw:
@@ -1530,14 +1538,14 @@ class WorkdayScraper(BaseScraper):
                 remote = is_remote(location)
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{company}/{site}:{ats_id}",
+                    id=self.job_id(ats_id),
                     ats=self.ats,
                     company=display,
                     title=(item.get("title") or "Untitled").strip(),
                     location=location,
                     remote=remote,
                     department=(item.get("jobFamilyGroup") or "").strip() or None,
-                    url=f"{base}{external_path}" if external_path else base,
+                    url=self.job_url(external_path),
                     # the list only gives relative strings ("30+ Days Ago"); the detail
                     # JSON carries the absolute date
                     posted_at=detail.get("startDate"),

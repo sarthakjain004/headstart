@@ -93,6 +93,11 @@ class UberScraper(BaseScraper):
     """Uber careers scraper — ``slug`` is the board's own host, fixed by ADR-0139, never derived."""
 
     ats = "uber"
+    # scraper: urljoin("https://jobs.uber.com", Urls[].Url) where Urls[].Url is the API's own
+    # relative path, e.g. "/en/jobs/301347/" (job_url below). A Single source scraper
+    # (ADR-0139) — one host, always jobs.uber.com, never a customer domain — so the host can be
+    # anchored. Verified live 2026-09-11: all 3 sampled ids 200, each rendering its own title.
+    url_shape = r"https://jobs\.uber\.com/[\w-]+/jobs/\d+/?"
 
     def __init__(self, slug: str, company: str | None = None) -> None:
         # `company` is ignored on purpose: there is exactly one board and its name is always
@@ -108,6 +113,11 @@ class UberScraper(BaseScraper):
 
     def url(self) -> str:
         return f"{_API}?page=1&pagesize={_PROBE_PAGESIZE}"
+
+    def job_url(self, urls: Any) -> str:
+        """Delegates to the module-level :func:`_job_url`, which does the real construction and
+        is exercised directly by ``tests/test_uber.py`` with no scraper instance in hand."""
+        return _job_url(urls)
 
     def fetch_raw(self) -> Any:
         """One page, sized to the board's own ``totalJobs`` — never a multi-page walk (module
@@ -139,7 +149,7 @@ class UberScraper(BaseScraper):
                 continue
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{native_id}",
+                    id=self.job_id(native_id),
                     ats=self.ats,
                     company=self.company,
                     title=title,
@@ -148,7 +158,7 @@ class UberScraper(BaseScraper):
                     # than guessed from location text.
                     remote=bool(item.get("Remote")),
                     department=_department(item.get("Teams")),
-                    url=_job_url(item.get("Urls")),
+                    url=self.job_url(item.get("Urls")),
                     posted_at=item.get("DisplayDate"),
                     scraped_at=scraped_at,
                     description=html_to_text(item.get("Description")),

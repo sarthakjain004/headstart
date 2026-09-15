@@ -120,6 +120,7 @@ _FEED_POSITION_TYPE = {
 
 class TrakstarScraper(BaseScraper):
     ats = "trakstar"
+    url_shape = r"https://[^.]+\.hire\.trakstar\.com/jobs/[0-9a-z]+/?"
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     def url(self) -> str:
@@ -198,8 +199,11 @@ class TrakstarScraper(BaseScraper):
             return None
         return _jobs_from_feed(self.ats, self.slug, self.company, items, scraped_at)
 
-    def _detail_url(self, code: str) -> str:
-        return f"https://{self.slug}.hire.trakstar.com/jobs/{code}/"
+    def job_url(self, code: str) -> str:
+        """Delegates to the module-level :func:`_job_url` — the same formula
+        :func:`_jobs_from_feed` uses, kept a free function there since it is tested against a
+        plain items list with no live scraper instance needed (ADR-0153)."""
+        return _job_url(self.slug, code)
 
     def _extract_posting(self, response: Any) -> dict | None:
         """Pull the JobPosting JSON-LD block from a detail page (None on non-200), falling
@@ -227,7 +231,7 @@ class TrakstarScraper(BaseScraper):
         try:
             response = self._fetch(
                 "GET",
-                self._detail_url(code),
+                self.job_url(code),
                 timeout=30,
                 headers={"User-Agent": USER_AGENT},
             )
@@ -242,7 +246,7 @@ class TrakstarScraper(BaseScraper):
             response = await self._fetch_async(
                 session,
                 "GET",
-                self._detail_url(code),
+                self.job_url(code),
                 timeout=30,
                 headers={"User-Agent": USER_AGENT},
             )
@@ -274,14 +278,14 @@ class TrakstarScraper(BaseScraper):
             posting = postings.get(code.group(1)) or {}
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{code.group(1)}",
+                    id=self.job_id(code.group(1)),
                     ats=self.ats,
                     company=self.company,
                     title=_html.unescape(title.group(1)).strip() if title else "",
                     location=location,
                     remote=is_remote(location),
                     department=_html.unescape(dept.group(1)).strip() if dept else None,
-                    url=f"https://{self.slug}.hire.trakstar.com/jobs/{code.group(1)}/",
+                    url=self.job_url(code.group(1)),
                     # the listing card has no date; the detail JSON-LD does
                     posted_at=posting.get("datePosted"),
                     scraped_at=scraped_at,
@@ -480,6 +484,14 @@ def _feed_items(xml_text: str) -> list[dict] | None:
     return items
 
 
+def _job_url(slug: str, code: str) -> str:
+    """The one formula every job link on this ATS is built from (ADR-0153) — the HTML-card
+    path's fetch and serving URL (:meth:`TrakstarScraper.job_url`), the RSS-feed path's serving
+    URL (:func:`_jobs_from_feed` below), a free function so both can call it with no live
+    scraper instance required."""
+    return f"https://{slug}.hire.trakstar.com/jobs/{code}/"
+
+
 def _jobs_from_feed(
     ats: str, slug: str, company: str | None, items: list[dict], scraped_at: str
 ) -> list[Job]:
@@ -495,7 +507,7 @@ def _jobs_from_feed(
             location=item["location"],
             remote=is_remote(item["location"]),
             department=item["department"],
-            url=f"https://{slug}.hire.trakstar.com/jobs/{item['code']}/",
+            url=_job_url(slug, item["code"]),
             posted_at=item["posted_at"],
             scraped_at=scraped_at,
             employment_type=item["employment_type"],

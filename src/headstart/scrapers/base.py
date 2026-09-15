@@ -165,6 +165,14 @@ class BaseScraper(ABC):
 
     ats: str  # set by each subclass
 
+    #: Regex the URL :meth:`job_url` produces must always match for this ATS — the single
+    #: declared shape of a job-detail link, so ``scripts/eval/verify_filters.py``'s
+    #: coverage-gated ``URL_SHAPES`` is *generated from* this rather than a second,
+    #: hand-maintained copy that can silently disagree with what the scraper actually emits
+    #: (ADR-0157). No shared default: every concrete scraper states its own, the same
+    #: no-default-here contract :attr:`ats` already uses.
+    url_shape: str
+
     #: This scraper's politeness bound for its detail pass, as **thread-pool workers** — what
     #: :meth:`fan_out` is called with. Declared on the class rather than kept as a module constant
     #: so :meth:`fan_out_async` can fall back to it: a scraper that bounds its sync path to 6
@@ -408,6 +416,37 @@ class BaseScraper(ABC):
         from its careers-URL slug). Lets index maintenance (eviction / dead-Board prune, ADR-0023)
         map a ledger entry to the exact key its rows use."""
         return f"{self.ats}:{self.slug}"
+
+    def job_id(self, native_id: str) -> str:
+        """This Job's composite id: ``{board_key()}:{native_id}`` (ADR-0157).
+
+        Not overridden by any scraper, including the four whose :meth:`board_key` itself
+        departs from the bare ``{ats}:{slug}`` (workday's ``{company}/{site}``, personio's
+        ``{tenant}``, taleo_be's and taleo_enterprise's own canonicalized key) — each of
+        those composes correctly through here because the deviation lives in
+        :meth:`board_key` alone, and this method only ever appends ``:{native_id}`` to
+        whatever that returns.
+        """
+        return f"{self.board_key()}:{native_id}"
+
+    @abstractmethod
+    def job_url(self, native_id: str) -> str:
+        """This Job's public detail URL (ADR-0157) — the one place this scraper states how a
+        posting's link is built, read by both :meth:`parse` and this ATS's :attr:`url_shape`.
+
+        ``@abstractmethod`` rather than a shared default, the same shape as
+        :meth:`_salary_field`: every concrete scraper must either return a URL built from a
+        formula (most — usually just ``native_id``), or read the link straight off the ATS's
+        own listing record when it supplies one directly (ashby, greenhouse, lever, workable,
+        teamtailor all do — there ``job_url`` is a documented pass-through, not a formula).
+
+        The parameter is deliberately not always a bare id: a handful of ATSes need more to
+        build or recognize their own link (a title slug, a relative path the API already
+        gives, the whole raw record) — those scrapers override with whatever signature they
+        actually need, the same default-here-override-there latitude ``_detail_url`` already
+        had informally per scraper. Each scraper's own :meth:`parse` is the only caller of its
+        own ``job_url``, so there is no shared call site that requires one shared signature.
+        """
 
     def alias_key(self) -> str | None:
         """What this Board resolves to, for finding two Boards that are the same one (ADR-0111).

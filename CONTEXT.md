@@ -49,6 +49,16 @@ _Avoid_: handle, id, key, **token** — Greenhouse's own API spells it `boards-a
 The module for one ATS that reads a Board and normalizes its raw postings into Jobs; one per ATS, selected from the registry by `ats`.
 _Avoid_: adapter, parser, client.
 
+**Job URL** (ADR-0157):
+A Job's served apply link, built by exactly one method: the owning Scraper's `job_url()` — an
+id-based formula for most ATSes, a stated pass-through of the ATS's own listing field for a few
+(Ashby, Greenhouse, Lever, …). Its declared **shape** — a regex, the Scraper's `url_shape` class
+attribute — is the one place that link's form is asserted; `scripts/eval/verify_filters.py`'s
+`URL_SHAPES` is generated from every Scraper's `url_shape` rather than re-typed from reading the
+scraper's source, which is what let a wrong shape go undetected before.
+_Avoid_: re-deriving a shape by reading a scraper's f-string — read `url_shape` instead, the one
+place it's declared.
+
 **Company**:
 The employer listed on an ATS, behind a Board; a `CompanyRef` (`ats`, `slug`, `name`) is the reference that tells the scrape step which Board to read.
 

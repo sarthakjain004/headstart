@@ -88,11 +88,15 @@ _STRUCTURED_PERIOD = {
 
 class SmartRecruitersScraper(BaseScraper):
     ats = "smartrecruiters"
+    url_shape = r"https://jobs\.smartrecruiters\.com/[^/]+/\d+"
     detail_workers = _DETAIL_WORKERS
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     def url(self) -> str:
         return f"https://api.smartrecruiters.com/v1/companies/{self.slug}/postings?limit={_PAGE_SIZE}"
+
+    def job_url(self, posting_id: str) -> str:
+        return f"https://jobs.smartrecruiters.com/{self.slug}/{posting_id}"
 
     def fetch_raw(self) -> Any:
         # First pass: page the listing by `offset` until a short page or the cap. Second pass: fill
@@ -250,14 +254,14 @@ class SmartRecruitersScraper(BaseScraper):
                 description = f"{description or ''} {comp_fields}".strip()
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{p['id']}",
+                    id=self.job_id(p["id"]),
                     ats=self.ats,
                     company=(p.get("company") or {}).get("name") or self.company,
                     title=(p.get("name") or "").strip(),
                     location=location,
                     remote=bool(loc.get("remote")) or is_remote(location),
                     department=(p.get("department") or {}).get("label"),
-                    url=f"https://jobs.smartrecruiters.com/{self.slug}/{p['id']}",
+                    url=self.job_url(p["id"]),
                     posted_at=p.get("releasedDate"),
                     scraped_at=scraped_at,
                     description=description,

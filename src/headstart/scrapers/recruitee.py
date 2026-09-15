@@ -60,9 +60,23 @@ def _is_remote_sentinel(location: str | None, city: str | None) -> bool:
 
 class RecruiteeScraper(BaseScraper):
     ats = "recruitee"
+    # Was host-agnostic (`https://.+/o/[^/]+`) because tenants serve on custom careers
+    # domains — which is exactly how it passed 458 rows whose custom host was dead. Both the
+    # scraper and the serve-time rewrite now put every link on the tenant's own host, so the
+    # shape can assert that host and this check finally bites. Both of them keep a fallback
+    # for an offer with no slug to build from, and a row that took it would fail here — which
+    # is the point: it has never happened (0 of 772 served rows, 0 of 612 offers inspected),
+    # so if it ever does, that is news and not something to wave through.
+    url_shape = r"https://[\w-]+\.recruitee\.com/o/[^/]+"
 
     def url(self) -> str:
         return f"https://{self.slug}.recruitee.com/api/offers/"
+
+    def job_url(self, offer: dict) -> str:
+        """Delegates to the module-level :func:`_offer_url`, which does the real construction
+        (ADR-0153) — kept a free function since ``tests/test_scrapers.py`` exercises it
+        directly against a bare tenant string with no scraper instance in hand."""
+        return _offer_url(self.slug, offer)
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         offers = raw.get("offers")
@@ -93,7 +107,7 @@ class RecruiteeScraper(BaseScraper):
             )
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{o['id']}",
+                    id=self.job_id(o["id"]),
                     ats=self.ats,
                     company=o.get("company_name") or self.company,
                     title=(o.get("title") or "").strip(),
@@ -105,7 +119,7 @@ class RecruiteeScraper(BaseScraper):
                     # letting a mis-detected city silently mark an on-site Job remote.
                     remote=bool(o.get("remote")) or is_remote(location),
                     department=o.get("department"),
-                    url=_offer_url(self.slug, o),
+                    url=self.job_url(o),
                     posted_at=o.get("published_at") or o.get("created_at"),
                     scraped_at=scraped_at,
                     # requirements is a separate field — dropping it starves experience

@@ -130,6 +130,14 @@ class ICIMSScraper(BaseScraper):
     """One iCIMS tenant's board, keyed by its host (e.g. ``career-celanese.icims.com``)."""
 
     ats = "icims"
+    # icims.py ships the sitemap's own <loc>, query stripped: /jobs/{id}/{title-slug}/job.
+    # Host-agnostic on purpose. All 35 sampled boards keep job URLs on their own *.icims.com
+    # host (0 exceptions, 2026-09-07), but that sample cannot settle the question: the tenant
+    # roster was enumerated by a Wayback CDX sweep OF icims.com, so a vanity-hosted tenant is
+    # invisible to it by construction. Anchoring on the vendor domain is what flagged real
+    # eightfold rows, so the path — which is fixed by iCIMS' own routing — carries the check.
+    # The trailing anchor matters: an `in_iframe=1` link would be a serving bug, not a variant.
+    url_shape = r"https://[^/]+/jobs/\d+/[^/]+/job$"
     has_detail_pass = True  # every indexable field lives on the job page (ADR-0050)
     detail_workers = _DETAIL_WORKERS
     detail_streams = _DETAIL_WORKERS
@@ -248,14 +256,14 @@ class ICIMSScraper(BaseScraper):
                 remote = is_remote(location)
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{item['id']}",
+                    id=self.job_id(item["id"]),
                     ats=self.ats,
                     company=self.company,
                     title=title,
                     location=location,
                     remote=remote,
                     department=fields.get("department"),
-                    url=item["url"],
+                    url=self.job_url(item["url"]),
                     # The board's own `datePosted` when it states a real one, else the
                     # sitemap's `<lastmod>`. Neither alone is right: 22% of boards fabricate
                     # the JSON-LD date, and `lastmod` is a last-*modified* stamp that ran up
@@ -268,6 +276,12 @@ class ICIMSScraper(BaseScraper):
                 )
             )
         return jobs
+
+    def job_url(self, job_url: str) -> str:
+        """Delegates to the module-level :func:`_public_url` — the sitemap parsing that builds
+        each row (:func:`_sitemap_rows`) runs ahead of any per-job ``self``, the same reason
+        :meth:`_salary_field` below delegates to a free function."""
+        return _public_url(job_url)
 
     def _salary_field(self, raw: Any) -> str | None:
         """Delegates to the module-level :func:`_salary`, which does the real formatting.
