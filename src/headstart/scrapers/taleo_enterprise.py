@@ -15,11 +15,11 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import unquote, urlencode, urlsplit, urlunsplit
 
+from headstart import company_name
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
 _PORTAL = re.compile(r"portalNo:\s*'?(\d+)")
-_TITLE = re.compile(r"<title>(.*?)</title>", re.DOTALL | re.IGNORECASE)
 _IMG = re.compile(r"<img\b[^>]*>", re.DOTALL | re.IGNORECASE)
 _ATTR = re.compile(r"\b(?:alt|title)=[\"']([^\"']+)", re.IGNORECASE)
 _JOBS_TABLE = re.compile(
@@ -68,10 +68,7 @@ def _aligned_headers(headers: list[str | None], values: list[Any]) -> list[str |
 
 
 def _company(shell: str) -> str | None:
-    match = _TITLE.search(shell)
-    if not match:
-        return None
-    title = html_to_text(match.group(1)) or ""
+    title = html_to_text(company_name.title_of(shell)) or ""
     title = title.removeprefix("Careers | ").strip()
     if title and title.lower() not in {"job search", "search jobs", "careers"}:
         return title
@@ -213,7 +210,8 @@ class TaleoEnterpriseScraper(BaseScraper):
         if not portal:
             raise ValueError("Career Section shell has no portalNo")
         headers = _headers(shell)
-        parsed = urlsplit(_canonical(self.slug))
+        board = _canonical(self.slug)
+        parsed = urlsplit(board)
         api = (
             f"{parsed.scheme}://{parsed.netloc}/careersection/rest/jobboard/searchjobs?"
             + urlencode({"lang": "en", "portal": portal.group(1)})
@@ -318,7 +316,7 @@ class TaleoEnterpriseScraper(BaseScraper):
                         "posted_at": _date(
                             _column(row_headers, values, ("posting date",))
                         ),
-                        "url": f"{_canonical(self.slug)}/jobdetail.ftl?"
+                        "url": f"{board}/jobdetail.ftl?"
                         + urlencode({"lang": "en", "job": job_id}),
                     }
                 )
