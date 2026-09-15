@@ -142,7 +142,7 @@ def failures(args: argparse.Namespace) -> int:
     examined = 0
     unmatched: Counter[str] = Counter()
     for report in reports:
-        for key, reason in (report.get("errors") or {}).items():
+        for key, reason in report.errors.items():
             board = board_key_of(key)
             if board is None:
                 continue
@@ -158,7 +158,7 @@ def failures(args: argparse.Namespace) -> int:
         # boards_ok carries the zero-job successes the corpus can't: alive-and-empty must
         # clear a streak, or a board that empties after a few 404s stays one strike from
         # quarantine forever
-        for key in report.get("boards_ok") or []:
+        for key in report.boards_ok:
             board = board_key_of(key)
             if board is not None:
                 alive.add(board)

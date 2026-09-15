@@ -153,5 +153,6 @@ supersedes it and note the supersession in both.
 | [0149](0149-search-filters-and-index-capabilities-are-two-objects.md) | `build_filter` takes `SearchFilters` + `IndexCapabilities`, not 27 kwargs | 2026-09-15 |
 | [0152](0152-tech-filter-owns-its-own-run-report.md) | `tech_filter` owns its own run report | 2026-09-15 |
 | [0153](0153-a-fetcher-seam-replaces-the-module-global-http-import.md) | A `Fetcher` seam replaces the module-global `http` import | 2026-09-15 |
+| [0154](0154-typed-shard-report-and-plan-records.md) | Typed `ShardReport` and `plan.json` records | 2026-09-15 |
 | [0155](0155-one-module-for-board-identity-two-failure-policies-by-name.md) | One module for Board identity, two failure policies by name | 2026-09-15 |
 | [0157](0157-a-scrapers-job-url-is-declared-once-not-authored-three-times.md) | A scraper's job URL is declared once, not authored three times | 2026-09-15 |

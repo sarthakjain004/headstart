@@ -44,10 +44,12 @@ here, and ``alerts`` is not the feed::
                    by doc_prep.to_meta and update_meta.refresh_row (ADR-0146)
     doc_prep       Doc build / English gate / typed metadata, shared by embed_run and embed_plan
     index_plan     Pure add-evict and prune planners for the jobs table (no LanceDB import)
-    observability  Step summaries, the shard-report round trip, and the error summary
+    observability  Step summaries, the typed ``ShardReport`` round trip, and the error summary
                    (the run-context line moved to ``headstart.log.context``, which
                    ``alerts/`` needs too and cannot reach from here)
     role_assignments  The id->family snapshot and the transitions between them (ADR-0057)
+    shard_plan     The typed ``plan.json`` shapes (``ScrapePlan``, ``EmbedPlan``) and
+                   ``shard_index``, shared by each half's plan/run pair (ADR-0154)
     shard_speedup  The measured fan-out speedup the makespan divides by (ADR-0054)
 
 Genuinely shared logic stays in ``headstart`` proper — ``harvest`` (the scrape engine),

@@ -24,6 +24,7 @@ from pathlib import Path
 from headstart import log
 from headstart.board_identity import board_key_of
 from headstart.ingest import REPO_ROOT, observability, shard_speedup
+from headstart.ingest.observability import ShardReport
 
 _log = log.get(__name__, __spec__)
 
@@ -43,7 +44,9 @@ def _fragment_dirs(root: Path) -> list[Path]:
     return sorted(d for d in root.iterdir() if d.is_dir() and any(d.glob("*.jsonl")))
 
 
-def write_unauthoritative_boards(reports: list[dict], path: Path) -> dict[str, str]:
+def write_unauthoritative_boards(
+    reports: list[ShardReport], path: Path
+) -> dict[str, str]:
     """Persist the Boards whose scraped list is not authoritative, keyed the way the index keys
     Boards.
 
@@ -74,7 +77,7 @@ def write_unauthoritative_boards(reports: list[dict], path: Path) -> dict[str, s
         # here: this Board's list is not authoritative, so sync must not evict against it. The
         # truncations are the ones that actually flap; a raising Board writes no lines at all and
         # was never in the eviction scope to begin with.
-        outcomes = {**(report.get("errors") or {}), **(report.get("truncated") or {})}
+        outcomes = {**report.errors, **report.truncated}
         for key, why in outcomes.items():
             board = board_key_of(key)
             if board is None:
@@ -171,13 +174,14 @@ def main() -> int:
     return 0
 
 
-def _update_speedup(reports: list[dict], path: Path) -> None:
+def _update_speedup(reports: list[ShardReport], path: Path) -> None:
     """Blend this run's measured fan-out speedup into the ledger the next plan divides by.
 
     Written here rather than in ``update_ledgers`` because the shard reports are read here and
     nowhere else. Never fatal: a missing speedup costs one run of prediction accuracy, and the
     join is un-bankable — losing the run's scrape to a telemetry write would be a far worse
-    trade (the same reasoning as the ``.get(...)`` discipline in :func:`_report_shards`).
+    trade (the same reasoning that keeps a malformed shard report tolerated rather than fatal
+    throughout this module — see ``ShardReport.from_json``, ADR-0154).
     """
     try:
         ratios = shard_speedup.ratios_from_reports(reports)
@@ -198,7 +202,7 @@ def _update_speedup(reports: list[dict], path: Path) -> None:
 
 
 def _report_shards(
-    reports: list[dict],
+    reports: list[ShardReport],
     lines: int,
     ats_files: int,
     health: observability.ScrapeHealth | None = None,
@@ -217,32 +221,32 @@ def _report_shards(
         return
     health = health or observability.ScrapeHealth.from_reports(reports)
 
-    killed = [r for r in reports if r.get("killed_by_budget")]
-    deferred = sum(int(r.get("undone") or 0) for r in reports)
-    errors = sum(len(r.get("errors") or {}) for r in reports)
+    killed = [r for r in reports if r.killed_by_budget]
+    deferred = sum(r.undone for r in reports)
+    errors = sum(len(r.errors) for r in reports)
     retries: Counter[str] = Counter()
     for r in reports:
-        retries.update(r.get("retries") or {})
+        retries.update(r.retries)
     # The cross-shard view a single shard cannot have: pool depth (ADR-0067 first measured 30 jobs
     # sharing just 11 WARP IPs; ADR-0081 corrected that to 11,007 distinct IPs across 150
     # shard-runs of real traffic) is a fact no shard's own count of its rotations can show.
     egress_ips: Counter[str] = Counter()
     for r in reports:
-        egress_ips.update(r.get("egress_ips") or {})
+        egress_ips.update(r.egress_ips)
     distinct_ips = sorted(k[3:] for k in egress_ips if k.startswith("ip:"))
     distinct_colos = sorted(k[5:] for k in egress_ips if k.startswith("colo:"))
-    # `.get(... ) or 0` throughout, never direct indexing: a truncated report must not raise
-    # here. The join's real job is unioning the run's job data, and losing that to a broken
-    # telemetry file would be a far worse trade than losing one shard's numbers.
-    slowest_seconds = max(float(r.get("seconds") or 0) for r in reports)
+    # Every field below is typed and defaulted on `ShardReport` itself (ADR-0154), so a
+    # truncated report reads as zero/empty rather than raising — the coercion this used to do
+    # with `.get(...) or 0` now happens once, in `ShardReport.from_json`.
+    slowest_seconds = max((r.seconds for r in reports), default=0.0)
     worst_board = max(
-        (float((r.get("board_seconds") or {}).get("max") or 0) for r in reports),
+        (r.board_seconds.get("max", 0.0) for r in reports),
         default=0.0,
     )
     ratios = [
-        float(r["seconds"]) / 60 / float(r["predicted_minutes"])
+        r.seconds / 60 / r.predicted_minutes
         for r in reports
-        if r.get("predicted_minutes") and r.get("seconds")
+        if r.predicted_minutes and r.seconds
     ]
     ratio_span = f"{min(ratios):.2f}-{max(ratios):.2f}x" if ratios else ""
 
@@ -254,12 +258,12 @@ def _report_shards(
         # and that is the single fact most worth seeing on the run page.
         _log.warning(
             f"{len(killed)} shard(s) hit the time budget, deferring {deferred} boards: "
-            + ", ".join(str(r.get("shard", "?")) for r in killed)
+            + ", ".join(str(r.shard or "?") for r in killed)
         )
         # Which Boards, across the whole fan-out. The shard names its own, but the run page is
         # where a Board that keeps being deferred becomes visible as a pattern rather than as
         # one shard's bad luck — and a name is what turns "a shard was killed" into a fix.
-        lost = [b for r in killed for b in (r.get("deferred") or [])]
+        lost = [b for r in killed for b in r.deferred]
         if lost:
             _log.warning("deferred boards: " + log.named_sample(lost))
     if errors:
@@ -271,14 +275,14 @@ def _report_shards(
         # `done` counts every Board a shard finished an *attempt* on: Progress.on_board appends
         # to `seconds` before it branches on error, so errored Boards are already inside it.
         # Adding `errors` on top would double-count them and understate the rate.
-        attempted = sum(int(r.get("done") or 0) for r in reports)
+        attempted = sum(r.done for r in reports)
         rate = (
             f" ({errors / attempted:.1%} of {attempted} attempted)" if attempted else ""
         )
         _log.warning(
             f"{errors} board errors across {len(reports)} shards{rate}: "
             + observability.error_summary(
-                {k: v for r in reports for k, v in (r.get("errors") or {}).items()}
+                {k: v for r in reports for k, v in r.errors.items()}
             )
         )
     if coverage_line:
