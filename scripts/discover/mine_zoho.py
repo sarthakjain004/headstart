@@ -33,7 +33,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 WB = ROOT / "data" / "wayback-ats"
 PAGES = ROOT / "scripts" / "discover" / "wayback_pages.py"
-WORKERS = "4"
+WORKERS = "2"
 
 CANON = ("zoho", "zohorecruit.com")  # writes zoho.csv directly (resumes prior state)
 REGIONAL = [
@@ -52,7 +52,18 @@ REGIONAL = [
 def mine(label, host):
     print(f"=== mining {host} ===", flush=True)
     subprocess.run(
-        [sys.executable, str(PAGES), label, host, "sub", WORKERS], check=False
+        [
+            sys.executable,
+            str(PAGES),
+            label,
+            "--domain",
+            host,
+            "--style",
+            "sub",
+            "--workers",
+            WORKERS,
+        ],
+        check=True,
     )
 
 

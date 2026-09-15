@@ -25,7 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 WB = ROOT / "data" / "wayback-ats"
 PAGES = ROOT / "scripts" / "discover" / "wayback_pages.py"
-WORKERS = "4"
+WORKERS = "2"
 
 CANON = ("lever", "jobs.lever.co")  # writes lever.csv directly, resumes prior state
 REGIONAL = [
@@ -37,7 +37,18 @@ REGIONAL = [
 def mine(label, host):
     print(f"=== mining {host} ===", flush=True)
     subprocess.run(
-        [sys.executable, str(PAGES), label, host, "path", WORKERS], check=False
+        [
+            sys.executable,
+            str(PAGES),
+            label,
+            "--domain",
+            host,
+            "--style",
+            "path",
+            "--workers",
+            WORKERS,
+        ],
+        check=True,
     )
 
 
