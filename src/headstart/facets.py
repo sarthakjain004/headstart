@@ -102,7 +102,7 @@ def counts(
 ) -> dict[str, Any]:
     """Every facet's per-option count, plus the total, for one request's filters.
 
-    ``filters`` is :meth:`headstart.search.JobSearch.filter_kwargs` output and ``capabilities``
+    ``filters`` is :meth:`headstart.search.JobSearch.parse_filters` output and ``capabilities``
     is :attr:`headstart.search.JobSearch.capabilities` (ADR-0149) — shared with the ranked search
     precisely so the count and the list it counts can never describe different queries. Together
     they are the only input: the request's query never reaches here, because a count is decided
@@ -234,7 +234,7 @@ def _count(table: Any, where: str | None) -> int:
 NEVER_BLOCKING = frozenset(
     {
         "posted_sortable",
-        # The keyword's scope, not a filter: `filter_kwargs` already nulls it without a keyword,
+        # The keyword's scope, not a filter: `parse_filters` already nulls it without a keyword,
         # and with one it is the `kw` entry that would be named.
         "kw_in",
         # The salary bracket's scope, for the same reason and with a sharper consequence. Unsetting

@@ -211,7 +211,7 @@ class KeywordScope(NamedTuple):
 
 
 # The Keyword filter's scopes (ADR-0104): which served text columns a keyword is matched in.
-# The map is the extension point: `build_filter` compiles whatever it says, `filter_kwargs`
+# The map is the extension point: `build_filter` compiles whatever it says, `parse_filters`
 # whitelists `kw_in` against its keys, and the rail's <select>, its disabled-until-migrated rule
 # and the disclaimer all derive from `keyword_scope_options()` below — so a new scope (company,
 # location, department…) is one entry here, its columns and its label, and nothing in the
@@ -236,7 +236,7 @@ _KEYWORD_MAX_TERMS = 5
 @dataclass(frozen=True)
 class SearchFilters:
     """The full Search-filter vocabulary (ADR-0149) — every structured constraint a user (or a
-    Subscription) can set, parsed once by :meth:`JobSearch.filter_kwargs` and compiled by
+    Subscription) can set, parsed once by :meth:`JobSearch.parse_filters` and compiled by
     :func:`build_filter`. Every field defaults to "unset", exactly as an absent query-string
     parameter compiles to no clause.
 
@@ -507,7 +507,7 @@ def _salary_clauses(
     # salary at all (measured 2026-08-25), which is what filtering on it alone would do. So it
     # only bites once the user has actually named a bound.
     #
-    # The default is applied HERE and not in `filter_kwargs` for two reasons. It used to live
+    # The default is applied HERE and not in `parse_filters` for two reasons. It used to live
     # only in the browser's <select> (`ui/static/app.js`, control `salcur`), so a bound with no
     # currency compiled to no filter at all and the numeric constraint was silently discarded for
     # every caller that is not that <select> — a hand-built `/search?salary_min=…`, or
@@ -521,9 +521,9 @@ def _salary_clauses(
     # parameter contradict `kw_in`, the other "modifier with a default".
     #
     # It resolves the fallback in a different *layer* from `kw_in`, though, and deliberately.
-    # `kw_in`'s lands in `filter_kwargs` and this builder compiles nothing for a scope it does not
+    # `kw_in`'s lands in `parse_filters` and this builder compiles nothing for a scope it does not
     # know; that is enough for `kw_in` because every path into the builder — `/search`, and
-    # `facets` via `filter_kwargs` output — has already normalised it. It is not enough here: the
+    # `facets` via `parse_filters` output — has already normalised it. It is not enough here: the
     # bug this fixes was reported against `scripts/eval/verify_filters.py` and hand-built requests,
     # which call the reference compiler (ADR-0031) directly and never see the parse step.
     #
@@ -702,7 +702,7 @@ def build_filter(filters: SearchFilters, capabilities: IndexCapabilities) -> str
     six fields fail loudly (no default) and which fail quietly (default, but only by narrowing a
     feature to "not offered here").
 
-    Every in-repo caller reaches this through :meth:`JobSearch.filter_kwargs` (``filters``) and
+    Every in-repo caller reaches this through :meth:`JobSearch.parse_filters` (``filters``) and
     :attr:`JobSearch.capabilities` (``capabilities``), which are always supplied together.
     """
     clauses: list[str] = []
@@ -711,7 +711,7 @@ def build_filter(filters: SearchFilters, capabilities: IndexCapabilities) -> str
     if filters.max_years is not None:
         clauses.append(f"(min_years <= {int(filters.max_years)} OR min_years IS NULL)")
     # A value that misses either whitelist drops the filter silently *here* and is reported
-    # once, by `JobSearch.filter_kwargs`, before this compiler is ever entered. It cannot be
+    # once, by `JobSearch.parse_filters`, before this compiler is ever entered. It cannot be
     # reported here: `facets.counts` recompiles the same filters once per facet option, so a
     # warning on this line is emitted ~29 times for one bad query-string parameter — see
     # `_warn_unknown_filters`.
@@ -783,7 +783,7 @@ def _warn_unknown_filters(
     re-entered once per facet option: :func:`headstart.facets.counts` recompiles one request's
     kwargs 32 times, so a line on the drop itself came out **58 times** for a single
     ``?ats=bogus&etype=bogus`` — unauthenticated, user-controlled amplification, ~29 lines per
-    bad parameter from any crawler with a stale link. :meth:`JobSearch.filter_kwargs` parses a
+    bad parameter from any crawler with a stale link. :meth:`JobSearch.parse_filters` parses a
     request exactly once, so this is said exactly once.
 
     Rendered through ``%r`` and clipped: the value comes from the query string, so it is never
@@ -918,7 +918,7 @@ class JobSearch:
             has_country=self.has_country,
         )
 
-    def filter_kwargs(self, args: Mapping[str, str]) -> SearchFilters:
+    def parse_filters(self, args: Mapping[str, str]) -> SearchFilters:
         """The :class:`SearchFilters` one request asks for, parsed exactly once.
 
         Split out of :meth:`run` so the ranked search and the facet counts (:mod:`headstart.
@@ -978,7 +978,7 @@ class JobSearch:
 
         Here rather than in the route so the table and the runtime schema facts stay behind
         this object; a caller reaching for ``_table`` to count would be the same class of leak
-        that ``filter_kwargs`` exists to prevent on the filter side. Imported inside the method
+        that ``parse_filters`` exists to prevent on the filter side. Imported inside the method
         because :mod:`headstart.facets` imports back from this one — and both ways, because the
         Space image has no ``headstart`` package at all: it lays every module down flat beside
         ``app.py`` (deploy-space.yml). A package-only import here raised ``ModuleNotFoundError``,
@@ -990,12 +990,12 @@ class JobSearch:
         except ImportError:  # pragma: no cover - exercised only in the deployed Space
             import facets  # type: ignore[no-redef]
 
-        return facets.counts(self._table, self.filter_kwargs(args), self.capabilities)
+        return facets.counts(self._table, self.parse_filters(args), self.capabilities)
 
     def run(self, args: Mapping[str, str]) -> list[dict]:
         query = (args.get("q") or "").strip()
         _int = _int_arg(args)
-        where = build_filter(self.filter_kwargs(args), self.capabilities)
+        where = build_filter(self.parse_filters(args), self.capabilities)
         # Whitelisted to a column name, never taken from the query string — this reaches an
         # ORDER BY. An unknown value is no sort at all, which is the existing behaviour.
         sort = SORT_COLUMNS.get((args.get("sort") or "").strip())

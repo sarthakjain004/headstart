@@ -246,7 +246,7 @@ def test_keyword_metacharacters_are_escaped_like_every_other_term():
 def test_keyword_unknown_scope_compiles_to_nothing_at_the_builder():
     # Two layers, on purpose. The builder never interpolates a scope: an unknown one names no
     # columns and so compiles to no clause at all. The fall-back to `title` is the *parser's* job
-    # (filter_kwargs whitelists `kw_in` against KEYWORD_SCOPES), pinned in the JobSearch tests
+    # (parse_filters whitelists `kw_in` against KEYWORD_SCOPES), pinned in the JobSearch tests
     # below — so garbage that somehow bypassed the parser still cannot reach the where-clause.
     assert _clause(kw="go", kw_in="'; DROP TABLE jobs; --") is None
 
@@ -374,12 +374,35 @@ def test_an_unknown_filter_value_is_warned_about_once_per_request(caplog):
     searcher, _ = _searcher()
     with caplog.at_level(logging.WARNING, logger="headstart.search"):
         caplog.clear()  # the constructor's own dark-column line is not what is counted here
-        filters = searcher.filter_kwargs({"ats": "bogus", "etype": "bogus"})
+        filters = searcher.parse_filters({"ats": "bogus", "etype": "bogus"})
         for _ in range(30):
             build_filter(filters, searcher.capabilities)
     assert len(caplog.records) == 2
     assert filters.ats == "bogus"  # still dropped by the compiler, unchanged
     assert build_filter(filters, searcher.capabilities) is None
+
+
+def test_facets_import_stays_deferred_to_the_method_body():
+    """The `search.py` <-> `facets.py` cycle this split does NOT touch, pinned so it can't
+    regress silently.
+
+    `facets.py` imports `SearchFilters`/`IndexCapabilities`/`build_filter` from `search.py` at
+    module level; `search.py` cannot import `facets.py` the same way without a circular import
+    — and, in the deployed Space (`facets.py` and `search.py` are flat sibling modules with no
+    `headstart` package to import through), a `ModuleNotFoundError` a route's `except ValueError`
+    does not catch. `JobSearch.facets()` defers its import into the method body for exactly that
+    reason (ADR-0149 leaves this alone as a pre-existing, unrelated defect). A "simplify this"
+    edit that hoists the import to module level would break the Space silently; this pins the
+    deferral so that edit fails a test instead.
+    """
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(JobSearch.facets).lstrip())
+    body_imports = [node for node in tree.body[0].body if isinstance(node, ast.Try)]
+    assert body_imports, (
+        "JobSearch.facets must import headstart.facets inside its own body"
+    )
 
 
 def test_startup_scan_learns_atses_and_first_seen():
@@ -499,7 +522,7 @@ def test_keyword_filter_reaches_the_where_clause_and_its_scope_is_whitelisted():
 
 def test_keyword_scope_alone_is_nulled_so_it_can_never_be_the_blocking_filter():
     searcher, _ = _searcher()
-    parsed = searcher.filter_kwargs({"kw_in": "description"})
+    parsed = searcher.parse_filters({"kw_in": "description"})
     assert parsed.kw is None and parsed.kw_in is None
 
 

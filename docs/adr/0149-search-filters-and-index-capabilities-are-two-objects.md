@@ -18,7 +18,7 @@ that compiles to `None` with no error.
 
 Three call sites paid for that shape:
 
-1. `JobSearch.filter_kwargs()` existed solely to rebuild the flat 27-key dict from `self`'s
+1. `JobSearch.parse_filters()` existed solely to rebuild the flat 27-key dict from `self`'s
    learned state every request, mixing the two kinds of value back together.
 2. `facets.counts()` calls back into `build_filter` up to 46 times per request (ADR-0084) — once
    per facet option being counted — each time re-merging the same 27-key dict with one override,
@@ -67,7 +67,7 @@ person adding a filter still has to know, by convention alone, not to add it nex
   narrows a feature to "not offered on this table."
 
 `build_filter(filters: SearchFilters, capabilities: IndexCapabilities) -> str | None` replaces
-the 27-keyword signature. `JobSearch.filter_kwargs()` now returns a `SearchFilters` (parsed once
+the 27-keyword signature. `JobSearch.parse_filters()` now returns a `SearchFilters` (parsed once
 per request, same as before — the name is kept because the deliverable list treats it as a fixed
 call site, even though it no longer literally returns kwargs). A new `JobSearch.capabilities`
 **property** repacks the six already-computed attributes (`atses`, `has_first_seen`, …) into an
@@ -78,7 +78,7 @@ because the UI templates (`deploy/hf-space/app.py`, `scripts/ui/serve.py`) and t
 "has_first_seen", False)` in the suite. The six attributes stay exactly as they were; only a
 lightweight view over them is new.
 
-`facets.counts(table, filters, capabilities)` replaces `facets.counts(table, filter_kwargs)`.
+`facets.counts(table, filters, capabilities)` replaces `facets.counts(table, parse_filters)`.
 Its per-option rebuild becomes `build_filter(dataclasses.replace(filters, **overrides),
 capabilities)` — `capabilities` is never touched by the 46-times-a-request loop at all, which is
 the direct payoff of the split: varying "what the user asked for" no longer has to drag "what
