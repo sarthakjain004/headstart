@@ -68,7 +68,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from headstart import http
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -107,7 +106,7 @@ class TikTokScraper(BaseScraper):
         }
 
     def _page(self, offset: int) -> dict[str, Any]:
-        response = http.fetch(
+        response = self._fetch(
             "POST",
             _API,
             json={
@@ -121,7 +120,6 @@ class TikTokScraper(BaseScraper):
             },
             headers=self._headers(),
             timeout=30,
-            **self._egress(),
         )
         response.raise_for_status()
         return response.json() or {}

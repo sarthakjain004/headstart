@@ -1,3 +1,4 @@
+from headstart import http
 from headstart.scrapers import taleo_enterprise as enterprise
 from headstart.scrapers.taleo_enterprise import TaleoEnterpriseScraper
 
@@ -111,7 +112,7 @@ def test_listing_stops_at_stated_page_count_not_repeated_overflow(monkeypatch):
         calls.append(kwargs["json"]["pageNo"])
         return Response(pages.pop(0))
 
-    monkeypatch.setattr(enterprise.http, "fetch", fetch)
+    monkeypatch.setattr(http, "fetch", fetch)
     scraper = TaleoEnterpriseScraper(BOARD)
     jobs = scraper._listing(SHELL)
     assert calls == [1, 2]
@@ -206,7 +207,7 @@ def test_alias_key_uses_full_career_section(monkeypatch):
         def close(self):
             pass
 
-    monkeypatch.setattr(enterprise.http, "fetch", lambda *args, **kwargs: Response())
+    monkeypatch.setattr(http, "fetch", lambda *args, **kwargs: Response())
     assert TaleoEnterpriseScraper(
         "https://acme.taleo.net/careersection/2"
     ).alias_key() == ("https://acme.taleo.net/careersection/2")

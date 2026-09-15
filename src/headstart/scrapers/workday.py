@@ -538,14 +538,13 @@ class WorkdayScraper(BaseScraper):
             # happened to raise, not just mark that one unreachable.
             company, instance, site = self._parts()
             public_url = f"https://{company}.{instance}.myworkdayjobs.com/{site}"
-            resp = http.fetch(
+            resp = self._fetch(
                 "GET",
                 public_url,
                 headers={"User-Agent": USER_AGENT},
                 timeout=30,
                 allow_redirects=True,
                 stream=True,
-                **self._egress(),
             )
             resp.close()
             clean = urllib.parse.urlsplit(resp.url)._replace(query="", fragment="")
@@ -588,10 +587,9 @@ class WorkdayScraper(BaseScraper):
                 f"/wday/cxs/{company}/{site}/jobs"
             )
             try:
-                response = http.fetch(
+                response = self._fetch(
                     "POST",
                     probe_url,
-                    **self._egress(),
                     json={
                         "appliedFacets": {},
                         "limit": 1,
@@ -950,12 +948,11 @@ class WorkdayScraper(BaseScraper):
             self._note_detail(classes, _NO_DETAIL_URL)
             return None
         try:
-            response = http.fetch(
+            response = self._fetch(
                 "GET",
                 self._detail_url(external_path),
                 timeout=30,
                 headers=_DETAIL_HEADERS,
-                **self._egress(),
             )
         except http.RequestsError as exc:
             self._note_detail(classes, classify_exception(exc))
@@ -973,12 +970,11 @@ class WorkdayScraper(BaseScraper):
         ):  # a stale session cookie — see _COOKIE_RECOVERED
             http.session().cookies.clear()
             try:
-                response = http.fetch(
+                response = self._fetch(
                     "GET",
                     self._detail_url(external_path),
                     timeout=30,
                     headers=_DETAIL_HEADERS,
-                    **self._egress(),
                 )
             except http.RequestsError as exc:
                 self._note_detail(classes, classify_exception(exc))
@@ -992,12 +988,11 @@ class WorkdayScraper(BaseScraper):
         Fires only after a settled CXS 404, so its own failure adds no class — the 404 that
         triggered it is the loss that gets counted."""
         try:
-            response = http.fetch(
+            response = self._fetch(
                 "GET",
                 self._page_url(external_path),
                 timeout=30,
                 headers={"User-Agent": USER_AGENT},
-                **self._egress(),
             )
         except http.RequestsError:
             return None
@@ -1019,13 +1014,12 @@ class WorkdayScraper(BaseScraper):
             self._note_detail(classes, _NO_DETAIL_URL)
             return None
         try:
-            response = await http.fetch_async(
+            response = await self._fetch_async(
                 session,
                 "GET",
                 self._detail_url(external_path),
                 timeout=30,
                 headers=_DETAIL_HEADERS,
-                **self._egress(),
             )
         except http.RequestsError as exc:
             self._note_detail(classes, classify_exception(exc))
@@ -1047,13 +1041,12 @@ class WorkdayScraper(BaseScraper):
             # whose absence is itself a 200.
             session.cookies.clear()
             try:
-                response = await http.fetch_async(
+                response = await self._fetch_async(
                     session,
                     "GET",
                     self._detail_url(external_path),
                     timeout=30,
                     headers=_DETAIL_HEADERS,
-                    **self._egress(),
                 )
             except http.RequestsError as exc:
                 self._note_detail(classes, classify_exception(exc))
@@ -1117,13 +1110,12 @@ class WorkdayScraper(BaseScraper):
     ) -> dict[str, Any] | None:
         """Same as :meth:`_page_detail` but over the shared multiplexed ``AsyncSession``."""
         try:
-            response = await http.fetch_async(
+            response = await self._fetch_async(
                 session,
                 "GET",
                 self._page_url(external_path),
                 timeout=30,
                 headers={"User-Agent": USER_AGENT},
-                **self._egress(),
             )
         except http.RequestsError:
             return None

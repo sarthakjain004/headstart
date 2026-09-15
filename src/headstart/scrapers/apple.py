@@ -117,7 +117,7 @@ class AppleScraper(BaseScraper):
         return self.slug
 
     def _search_page(self, page: int) -> dict[str, Any]:
-        response = http.fetch(
+        response = self._fetch(
             "POST",
             _SEARCH_URL,
             json={
@@ -134,7 +134,6 @@ class AppleScraper(BaseScraper):
                 "Content-Type": "application/json",
             },
             timeout=30,
-            **self._egress(),
         )
         response.raise_for_status()
         return response.json().get("res") or {}

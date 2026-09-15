@@ -223,12 +223,11 @@ class SmartRecruitersScraper(BaseScraper):
             self.note_detail_unattempted("no posting id")
             return None
         try:
-            response = http.fetch(
+            response = self._fetch(
                 "GET",
                 self._detail_url(posting_id),
                 timeout=30,
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-                **self._egress(),
             )
         except http.RequestsError as exc:
             self.note_detail_loss(type(exc).__name__)
@@ -243,13 +242,12 @@ class SmartRecruitersScraper(BaseScraper):
             self.note_detail_unattempted("no posting id")
             return None
         try:
-            response = await http.fetch_async(
+            response = await self._fetch_async(
                 session,
                 "GET",
                 self._detail_url(posting_id),
                 timeout=30,
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-                **self._egress(),
             )
         except http.RequestsError as exc:
             self.note_detail_loss(type(exc).__name__)

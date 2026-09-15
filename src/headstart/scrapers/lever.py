@@ -379,10 +379,9 @@ class LeverScraper(BaseScraper):
         # which must RAISE, not read as an empty board: swallowing it left dead boards
         # "alive with zero jobs" forever, invisible to the ADR-0058 quarantine.
         for host in ("api.lever.co", "api.eu.lever.co"):
-            response = http.fetch(
+            response = self._fetch(
                 "GET",
                 f"https://{host}/v0/postings/{self.slug}?mode=json",
-                **self._egress(),
             )
             if response.status_code == 404:
                 continue

@@ -399,13 +399,12 @@ class ZwayamScraper(BaseScraper):
 
     def _page(self, start: int) -> dict[str, Any]:
         url, headers, body = search_request(self.slug, start)
-        response = http.fetch(
+        response = self._fetch(
             "POST",
             url,
             data=body,
             headers=headers,
             timeout=45,
-            **self._egress(),
         )
         response.raise_for_status()
         payload = response.json() or {}
@@ -444,12 +443,11 @@ class ZwayamScraper(BaseScraper):
         sinking the Board.
         """
         try:
-            response = http.fetch(
+            response = self._fetch(
                 "GET",
                 self.url(),
                 headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
                 timeout=30,
-                **self._egress(),
             )
             html = response.text or ""
         except Exception as exc:  # noqa: BLE001 - a link prefix must not fail the Board
@@ -484,7 +482,7 @@ class ZwayamScraper(BaseScraper):
         else (measured: base64 400s, a wrong numeric id 404s). ``None`` on any failure: a Board
         whose config call breaks loses this run's detail fetches, never its Jobs."""
         try:
-            response = http.fetch(
+            response = self._fetch(
                 "POST",
                 _CONFIG_API,
                 data=_multipart({"companyUrl": self.slug}),
@@ -494,7 +492,6 @@ class ZwayamScraper(BaseScraper):
                     "Content-Type": f"multipart/form-data; boundary={_BOUNDARY}",
                 },
                 timeout=30,
-                **self._egress(),
             )
             response.raise_for_status()
             payload = response.json() or {}
@@ -513,7 +510,7 @@ class ZwayamScraper(BaseScraper):
         also says what it was lost to (:meth:`~BaseScraper.note_detail_loss`).
         """
         try:
-            response = http.fetch(
+            response = self._fetch(
                 "POST",
                 _DETAIL_API,
                 json={"jobUrl": job_url, "companyId": company_id},
@@ -523,7 +520,6 @@ class ZwayamScraper(BaseScraper):
                     "Content-Type": "application/json",
                 },
                 timeout=30,
-                **self._egress(),
             )
             response.raise_for_status()
         except http.RequestsError as exc:

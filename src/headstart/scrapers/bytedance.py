@@ -86,7 +86,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from headstart import http
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -128,7 +127,7 @@ class ByteDanceScraper(BaseScraper):
         return self.slug
 
     def _search(self, offset: int) -> dict[str, Any]:
-        response = http.fetch(
+        response = self._fetch(
             "POST",
             _SEARCH_URL,
             headers={**_HEADERS, "User-Agent": USER_AGENT},
@@ -143,7 +142,6 @@ class ByteDanceScraper(BaseScraper):
                 "tag_id_list": [],
             },
             timeout=30,
-            **self._egress(),
         )
         response.raise_for_status()
         payload = response.json()

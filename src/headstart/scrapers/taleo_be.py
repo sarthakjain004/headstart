@@ -17,7 +17,6 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
 
-from headstart import http
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -156,14 +155,13 @@ class TaleoBEScraper(BaseScraper):
         generic alias resolver bury only a Board whose redirect target is itself live.
         """
         try:
-            response = http.fetch(
+            response = self._fetch(
                 "GET",
                 self.url(),
                 headers={"User-Agent": USER_AGENT},
                 timeout=30,
                 allow_redirects=True,
                 stream=True,
-                **self._egress(),
             )
             try:
                 return _canonical(response.url)
