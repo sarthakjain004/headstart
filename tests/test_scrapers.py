@@ -54,6 +54,95 @@ def test_greenhouse_location_missing_name_stays_none():
     assert jobs[0].location is None
 
 
+def test_greenhouse_salary_prefers_currency_range_over_currency_band():
+    # Real live sample (doordashusa, "Account Manager, CPG", 2026-09-15): a currency_range "Pay
+    # Transparency Range" entry beats two single-point currency "Band Midpoint"/"Minimum" entries
+    # on the same job.
+    metadata = [
+        {
+            "name": "US1 - Base Salary Band Midpoint",
+            "value": {"unit": "USD", "amount": "168500.0"},
+            "value_type": "currency",
+        },
+        {
+            "name": "US4 - Base Salary Band Minimum",
+            "value": {"unit": "USD", "amount": "114600.0"},
+            "value_type": "currency",
+        },
+        {
+            "name": "USA: Pay Transparency Range",
+            "value": {"unit": "USD", "min_value": "114600.0", "max_value": "168500.0"},
+            "value_type": "currency_range",
+        },
+    ]
+    raw = {"jobs": [{"id": 1, "title": "T", "metadata": metadata}]}
+    jobs = get_scraper("greenhouse", "x", "X").parse(raw, SCRAPED_AT)
+    assert jobs[0].salary == "114600-168500 USD"
+
+
+def test_greenhouse_salary_ties_keep_first_array_order():
+    # Real live shape (doordashusa, 2026-09-15): two equally-scored currency_range entries for
+    # different countries on the same job — the first in metadata order wins, deterministically.
+    metadata = [
+        {
+            "name": "USA: Pay Transparency Range",
+            "value": {"unit": "USD", "min_value": "114600.0", "max_value": "168500.0"},
+            "value_type": "currency_range",
+        },
+        {
+            "name": "Canada: Pay Transparency Range",
+            "value": {"unit": "CAD", "min_value": "99000.0", "max_value": "124000.0"},
+            "value_type": "currency_range",
+        },
+    ]
+    raw = {"jobs": [{"id": 1, "title": "T", "metadata": metadata}]}
+    jobs = get_scraper("greenhouse", "x", "X").parse(raw, SCRAPED_AT)
+    assert jobs[0].salary == "114600-168500 USD"
+
+
+def test_greenhouse_salary_ignores_placeholder_zero_values():
+    # Real live shape (mongodb, "Job Post Range (United States/Canada)", 2026-09-15): an
+    # inapplicable market's field is populated with a 0.0/no-unit placeholder instead of omitted.
+    metadata = [
+        {
+            "name": "Job Post Range (United States)",
+            "value": {"unit": "USD", "min_value": "0.0", "max_value": "0.0"},
+            "value_type": "currency_range",
+        },
+        {
+            "name": "Job Post Range (Canada)",
+            "value": {"unit": None, "min_value": "0.0", "max_value": "0.0"},
+            "value_type": "currency_range",
+        },
+    ]
+    raw = {"jobs": [{"id": 1, "title": "T", "metadata": metadata}]}
+    jobs = get_scraper("greenhouse", "x", "X").parse(raw, SCRAPED_AT)
+    assert jobs[0].salary is None
+
+
+def test_greenhouse_salary_never_reports_equity_as_salary():
+    # Real risk, not hypothetical: doordashusa's "US1 - Equity Band Midpoint" is
+    # value_type="currency" exactly like a real salary field, and non-zero (a real RSU grant
+    # value) on 146/455 sampled jobs — must never be picked even when it's the only populated
+    # compensation-shaped field on the job.
+    metadata = [
+        {
+            "name": "US1 - Equity Band Midpoint",
+            "value": {"unit": "USD", "amount": "100000.0"},
+            "value_type": "currency",
+        },
+    ]
+    raw = {"jobs": [{"id": 1, "title": "T", "metadata": metadata}]}
+    jobs = get_scraper("greenhouse", "x", "X").parse(raw, SCRAPED_AT)
+    assert jobs[0].salary is None
+
+
+def test_greenhouse_salary_absent_when_no_metadata():
+    raw = {"jobs": [{"id": 1, "title": "T"}]}
+    jobs = get_scraper("greenhouse", "x", "X").parse(raw, SCRAPED_AT)
+    assert jobs[0].salary is None
+
+
 @pytest.mark.parametrize(
     ("envelope", "should_warn"),
     [
@@ -590,6 +679,60 @@ def test_darwinbox_parse():
     assert j.experience == "2 - 4 Years"
     assert j.employment_type == "Onroll"
     assert j.description and "</" not in j.description  # populated, HTML-stripped
+
+
+def test_darwinbox_salary_field_prefers_structured_over_salary_range():
+    # Real live sample (advikhris, 2026-09-15): structured fields build a clean string even
+    # though salary_range is also populated with the identical (locale-formatted) figure.
+    salary_field = get_scraper("darwinbox", "acme")._salary_field
+
+    j = {
+        "salary_range": "INR 5,46,000 - 6,82,000 (Annual)",
+        "salary_min": "546000",
+        "salary_max": "682000",
+        "salary_currency": "INR",
+        "salary_timeframe": "Annual",
+    }
+    assert salary_field(j) == "INR 546000-682000 (Annual)"
+
+
+def test_darwinbox_salary_field_recovers_non_inr_currency():
+    # The real gap this pass fixes: salary_range never carried anything but "INR" text for a
+    # non-INR tenant to matter, but the structured fields state the real currency directly —
+    # real, live (transcarent, 2026-09-15).
+    salary_field = get_scraper("darwinbox", "acme")._salary_field
+
+    j = {
+        "salary_range": "USD 20.00 - 20 (Hourly)",
+        "salary_min": "20.00",
+        "salary_max": "20",
+        "salary_currency": "USD",
+        "salary_timeframe": "Hourly",
+    }
+    assert salary_field(j) == "USD 20.00-20 (Hourly)"
+
+
+def test_darwinbox_salary_field_falls_back_when_structured_fields_are_empty():
+    # Real live placeholder shape (airtel, 2026-09-15): salary_min/salary_max are empty strings
+    # even though salary_range/salary_currency are populated ("INR 0+ (Annual)") — falls back to
+    # salary_range, which _field_darwinbox already declines as implausible.
+    salary_field = get_scraper("darwinbox", "acme")._salary_field
+
+    j = {
+        "salary_range": "INR 0+ (Annual)",
+        "salary_min": "",
+        "salary_max": "",
+        "salary_currency": "INR",
+        "salary_timeframe": "Annual",
+    }
+    assert salary_field(j) == "INR 0+ (Annual)"
+
+
+def test_darwinbox_salary_field_no_data_anywhere_is_none():
+    salary_field = get_scraper("darwinbox", "acme")._salary_field
+
+    assert salary_field({}) is None
+    assert salary_field({"salary_range": ""}) is None
 
 
 def test_keka_parse():
@@ -3796,6 +3939,55 @@ def test_join_parse():
     assert (
         sum(1 for x in jobs if x.description) == 12
     )  # the bounded detail-fetch filled all 12
+    # salaryAmountFrom/salaryAmountTo/salaryFrequency are on the LISTING item itself (real fixture
+    # job 16244456: 7,500,000/9,000,000 minor-unit EUR, PER_YEAR) — divided by 100 into major units.
+    assert j.salary == "75000-90000 EUR"
+
+
+def test_join_salary_field_present_and_populated():
+    salary_field = get_scraper("join", "acme")._salary_field
+
+    it = {
+        "salaryAmountFrom": {"amount": 9000000, "currency": "EUR"},
+        "salaryAmountTo": {"amount": 14000000, "currency": "EUR"},
+        "salaryFrequency": "PER_YEAR",
+    }
+    assert salary_field(it) == "90000-140000 EUR"
+
+
+def test_join_salary_field_hourly_rate():
+    salary_field = get_scraper("join", "acme")._salary_field
+
+    it = {
+        "salaryAmountFrom": {"amount": 1600, "currency": "EUR"},
+        "salaryAmountTo": {"amount": 2200, "currency": "EUR"},
+        "salaryFrequency": "PER_HOUR",
+    }
+    assert salary_field(it) == "16-22 EUR per hour"
+
+
+def test_join_salary_field_absent_not_zero():
+    # Real live shape (24hassistance, 2026-09-15): amounts are absent as keys entirely on a
+    # posting where the employer never entered a number — salaryFrequency still defaults to
+    # "PER_YEAR" even then, so its presence alone must not be read as a signal.
+    salary_field = get_scraper("join", "acme")._salary_field
+
+    it = {"salaryFrequency": "PER_YEAR"}
+    assert salary_field(it) is None
+
+
+def test_join_salary_field_unrecognized_frequency_declines():
+    # PER_WEEK/PER_DAY are documented platform values (headstart.scrapers.join's own module
+    # docstring) but salary.py's _field_generic has no phrase to annualize them correctly, so
+    # the field is declined rather than guessed.
+    salary_field = get_scraper("join", "acme")._salary_field
+
+    it = {
+        "salaryAmountFrom": {"amount": 50000, "currency": "EUR"},
+        "salaryAmountTo": {"amount": 70000, "currency": "EUR"},
+        "salaryFrequency": "PER_WEEK",
+    }
+    assert salary_field(it) is None
 
 
 def test_rippling_parse():
