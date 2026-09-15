@@ -174,6 +174,11 @@ class HardBlocked(RuntimeError):
     page, and each one re-signals while the restriction is live. Aborts the whole run."""
 
 
+#: Seconds `go_to` waits for the load event, against pydoll's 300s default. Sized above a slow
+#: page and far below "a tab is now useless for five minutes".
+_LOAD_TIMEOUT = 30
+
+
 async def _load_page(tab, url: str, browser=None, blocked=None) -> str:
     """Navigate to one URL, waiting out / solving the DataDome challenge.
 
@@ -187,7 +192,12 @@ async def _load_page(tab, url: str, browser=None, blocked=None) -> str:
     41s/page vs 0.2s with the right predicate).
     """
     blocked = blocked or _is_blocked
-    await tab.go_to(url)
+    # pydoll's `go_to` waits up to **300s** for LOAD_EVENT_FIRED by default. On a page that never
+    # fires it, one job then occupies a tab for five minutes and its row is thrown away — the
+    # 2026-08-28 run lost most of a stage to exactly that. Nothing here is worth 300s: the
+    # challenge budget below is 40s, so a load that has not happened in 30s is not
+    # coming, and failing fast lets the caller retry it on the next pass instead.
+    await tab.go_to(url, timeout=_LOAD_TIMEOUT)
     html = await _safe_source(tab)
     if not blocked(html):  # SSR page resolves at once when not challenged
         return html
@@ -379,6 +389,7 @@ async def scrape_url(
     warmup: bool,
     human_pause: bool = True,
     start_page: int = 1,
+    on_progress=None,
 ) -> tuple[int, bool]:
     """Scrape `?page=N` of one board from `start_page` onward into `writer`, deduping via `seen`.
 
@@ -417,6 +428,8 @@ async def scrape_url(
     # First page (start_page): clears the challenge and tells us how many pages exist.
     html = await _load_page(tab, f"{base_url}?page={start_page}", browser)
     DEBUG_HTML.write_text(html, encoding="utf-8")
+    if on_progress:
+        on_progress()  # a page arrived: progress, even when it yields no new rows
     if _is_blocked(html) and is_hard_block(await _captcha_frame_html(tab, browser)):
         raise HardBlocked(f"hard block on page {start_page} of {base_url}")
     if _is_blocked(html):
@@ -445,6 +458,8 @@ async def scrape_url(
         # the interval band and makes the cadence more machine-regular.
         await asyncio.sleep(delay + random.random() * jitter)
         html = await _load_page(tab, f"{base_url}?page={page}", browser)
+        if on_progress:
+            on_progress()  # a page arrived: progress, even when it yields no new rows
         if _is_blocked(html) and is_hard_block(await _captcha_frame_html(tab, browser)):
             raise HardBlocked(f"hard block on page {page} of {base_url}")
         if _is_blocked(html):
