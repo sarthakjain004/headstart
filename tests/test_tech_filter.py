@@ -8,10 +8,18 @@ is a sanity check (some non-tech creep is *allowed*, so it holds only clearly no
 from __future__ import annotations
 
 import json
+import logging
 
 import pytest
 
-from headstart.tech_filter import _STRONG, classify, filter_jobs, is_tech
+from headstart.tech_filter import (
+    _STRONG,
+    classify,
+    filter_jobs,
+    filter_jobs_and_report,
+    is_tech,
+    report,
+)
 
 # Real software/tech roles — recall gate: ALL of these must be kept.
 _TECH = [
@@ -170,6 +178,91 @@ def test_filter_jobs_writes_tech_only_and_leaves_source(tmp_path):
     assert {j["id"] for j in out} == {"greenhouse:a:1", "greenhouse:a:3"}
     # source file untouched
     assert len((src / "greenhouse.jsonl").read_text().splitlines()) == 3
+
+
+def test_report_logs_per_ats_table_and_grand_total(caplog):
+    logger = logging.getLogger("test_tech_filter.report")
+    stats = {"greenhouse": (2, 3), "lever": (5, 5)}
+    with caplog.at_level(logging.INFO):
+        report(stats, "data/jobs/tech", logger)
+    infos = [r.getMessage() for r in caplog.records if r.levelno == logging.INFO]
+    assert any(m.startswith("greenhouse") for m in infos)
+    assert any(m.startswith("lever") for m in infos)
+    total_lines = [m for m in infos if m.startswith("TOTAL")]
+    assert len(total_lines) == 1
+    assert "dropped 1 non-tech" in total_lines[0]
+    assert total_lines[0].endswith("-> data/jobs/tech")
+    assert not any(r.levelno >= logging.WARNING for r in caplog.records)
+
+
+def test_report_warns_on_an_ats_that_contributed_zero_rows(caplog):
+    """An ATS present in `stats` with zero rows is named in a WARNING regardless of *why* it
+    contributed nothing — a failed Board, a budget-deferred one, or a genuinely empty one all
+    reach `report` as the same `(0, 0)`, which is exactly why the warning cannot and does not
+    distinguish them (see the comment in `report`). An ATS absent from `stats` altogether — not
+    in this run's slice at all — is a different case and must not be named.
+    """
+    logger = logging.getLogger("test_tech_filter.report")
+    stats = {"greenhouse": (2, 3), "jazzhr": (0, 0)}
+    with caplog.at_level(logging.INFO):
+        report(stats, "data/jobs/tech", logger)
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    message = warnings[0].getMessage()
+    assert "jazzhr" in message
+    assert "greenhouse" not in message  # scraped rows this run, not one of the zeros
+    assert (
+        "jobvite" not in message
+    )  # never in this run's slice at all — no file, no mention
+
+
+def test_report_errors_when_the_whole_corpus_is_zero(caplog):
+    """Every ATS in the slice scraped nothing: the corpus-wide zero gets its own ERROR line, on
+    top of (not instead of) the per-ATS zero WARNING — the two questions ("is this ATS broken"
+    and "is the whole run broken") are answered separately, and no TOTAL line fires."""
+    logger = logging.getLogger("test_tech_filter.report")
+    stats = {"jazzhr": (0, 0), "jobvite": (0, 0)}
+    with caplog.at_level(logging.INFO):
+        report(stats, "data/jobs/tech", logger)
+    errors = [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR]
+    assert errors == [
+        "no rows at all reached the tech filter -> data/jobs/tech is empty"
+    ]
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "jazzhr" in warnings[0] and "jobvite" in warnings[0]
+    infos = [r.getMessage() for r in caplog.records if r.levelno == logging.INFO]
+    assert not any(m.startswith("TOTAL") for m in infos)
+
+
+def test_report_logs_through_the_callers_logger_so_the_tag_is_preserved(caplog):
+    """`report` must not open a logger of its own: the `[filter_tech]` tag (ADR-0039) belongs to
+    the pipeline-stage entry point, and this module keeps it only by logging through whatever
+    logger that entry point hands it."""
+    logger = logging.getLogger("headstart.ingest.filter_tech")
+    with caplog.at_level(logging.INFO):
+        report({"greenhouse": (1, 1)}, "data/jobs/tech", logger)
+    assert caplog.records
+    assert all(r.name == "headstart.ingest.filter_tech" for r in caplog.records)
+
+
+def test_filter_jobs_and_report_filters_then_reports(tmp_path, caplog):
+    src = tmp_path / "jobs"
+    src.mkdir()
+    rows = [
+        {"id": "greenhouse:a:1", "title": "Backend Engineer"},
+        {"id": "greenhouse:a:2", "title": "Registered Nurse"},
+    ]
+    (src / "greenhouse.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
+    )
+    logger = logging.getLogger("test_tech_filter.combined")
+    with caplog.at_level(logging.INFO):
+        stats = filter_jobs_and_report(src, tmp_path / "tech", logger)
+    assert stats["greenhouse"] == (1, 2)
+    assert (tmp_path / "tech" / "greenhouse.jsonl").exists()
+    infos = [r.getMessage() for r in caplog.records if r.levelno == logging.INFO]
+    assert any(m.startswith("TOTAL") for m in infos)
 
 
 def test_hiring_department_is_not_a_tech_department():
