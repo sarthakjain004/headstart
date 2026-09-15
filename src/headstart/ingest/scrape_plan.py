@@ -51,6 +51,7 @@ from headstart.ingest import (
     REPO_ROOT,
     board_failures,
     observability,
+    shard_plan,
     shard_speedup,
 )
 from headstart.ingest.binpack import lpt_pack_capped, shard_count
@@ -211,32 +212,9 @@ def _coldstart_cost(ats: str, score: float) -> float:
     )
 
 
-def _write_plan(
-    out_dir: Path,
-    *,
-    shards: list[int],
-    count: int,
-    per_shard: list[int],
-    per_shard_minutes: list[float] | None = None,
-    per_shard_serial_minutes: list[float] | None = None,
-) -> None:
-    plan: dict[str, object] = {
-        "shards": shards,
-        "count": count,
-        "per_shard_boards": per_shard,
-    }
-    if per_shard_minutes is not None:
-        plan["per_shard_minutes"] = [round(m, 2) for m in per_shard_minutes]
-    if per_shard_serial_minutes is not None:
-        # The packed sum, shipped *beside* the prediction rather than instead of it. The join
-        # measures the fan-out's speedup against this; measuring against per_shard_minutes —
-        # which is derived from the speedup — would make the estimate chase its own tail
-        # (ADR-0054).
-        plan["per_shard_serial_minutes"] = [
-            round(m, 2) for m in per_shard_serial_minutes
-        ]
-    (out_dir / "plan.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
-    print(json.dumps({"shards": shards, "count": count}), flush=True)
+def _write_plan(out_dir: Path, plan: shard_plan.ScrapePlan) -> None:
+    (out_dir / "plan.json").write_text(plan.to_json(), encoding="utf-8")
+    print(json.dumps({"shards": plan.shards, "count": plan.count}), flush=True)
 
 
 def main() -> int:
@@ -394,7 +372,9 @@ def main() -> int:
     (out_dir / HELD_DETAILS_PATH.name).unlink(missing_ok=True)
 
     if n == 0:
-        _write_plan(out_dir, shards=[], count=0, per_shard=[])
+        _write_plan(
+            out_dir, shard_plan.ScrapePlan(shards=[], count=0, per_shard_boards=[])
+        )
         _log.info("no active boards — emitted empty plan")
         return 0
 
@@ -498,11 +478,13 @@ def main() -> int:
 
     _write_plan(
         out_dir,
-        shards=list(range(m)),
-        count=n,
-        per_shard=per_shard,
-        per_shard_minutes=per_shard_minutes,
-        per_shard_serial_minutes=per_shard_serial_minutes,
+        shard_plan.ScrapePlan(
+            shards=list(range(m)),
+            count=n,
+            per_shard_boards=per_shard,
+            per_shard_minutes=per_shard_minutes,
+            per_shard_serial_minutes=per_shard_serial_minutes,
+        ),
     )
     makespan = max(per_shard_minutes) if per_shard_minutes else 0.0
     tail = (

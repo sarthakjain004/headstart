@@ -32,7 +32,7 @@ from headstart import log
 from headstart.board_identity import board_of
 from headstart.board_priority import load_scores
 from headstart.corpus import iter_jobs
-from headstart.ingest import PENDING_UPGRADES_PATH, REPO_ROOT, observability
+from headstart.ingest import PENDING_UPGRADES_PATH, REPO_ROOT, observability, shard_plan
 from headstart.ingest.binpack import (
     lpt_pack,
     shard_count,
@@ -124,18 +124,10 @@ def _token_lengths(tok, docs: list[str]) -> list[int]:
     return lengths
 
 
-def _write_plan(
-    out_dir: Path, *, shards: list[int], count: int, makespan: float, loads: list[float]
-) -> None:
+def _write_plan(out_dir: Path, plan: shard_plan.EmbedPlan) -> None:
     """Persist plan.json (the workflow reads ``shards`` + ``count``) and echo the matrix to stdout."""
-    plan = {
-        "shards": shards,
-        "count": count,
-        "makespan_s": round(makespan, 1),
-        "per_shard_s": [round(x, 1) for x in loads],
-    }
-    (out_dir / "plan.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
-    print(json.dumps({"shards": shards, "count": count}), flush=True)
+    (out_dir / "plan.json").write_text(plan.to_json(), encoding="utf-8")
+    print(json.dumps({"shards": plan.shards, "count": plan.count}), flush=True)
 
 
 def main() -> int:
@@ -245,7 +237,10 @@ def main() -> int:
         stale.unlink()  # a shorter plan must not leave a prior run's extra shards behind
 
     if not docs:
-        _write_plan(out_dir, shards=[], count=0, makespan=0.0, loads=[])
+        _write_plan(
+            out_dir,
+            shard_plan.EmbedPlan(shards=[], count=0, makespan_s=0.0, per_shard_s=[]),
+        )
         _log.info("nothing new to embed — emitted empty plan")
         return 0
 
@@ -297,7 +292,13 @@ def main() -> int:
 
     makespan = max(loads) if loads else 0.0
     _write_plan(
-        out_dir, shards=list(range(m)), count=len(keep), makespan=makespan, loads=loads
+        out_dir,
+        shard_plan.EmbedPlan(
+            shards=list(range(m)),
+            count=len(keep),
+            makespan_s=makespan,
+            per_shard_s=loads,
+        ),
     )
     _log.info(
         f"{len(keep)} Docs across {m} shards; predicted makespan ~{makespan / 60:.1f} min "

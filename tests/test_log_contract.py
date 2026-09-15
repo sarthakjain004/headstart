@@ -289,15 +289,18 @@ def _shard_no_boards(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _scrape_shard(tmp_path, monkeypatch, boards=False, predicted=None, killed=False)
 
 
-def _shard_report(**over: object) -> dict:
-    """One shard's telemetry as `observability.write_shard` records it.
+def _shard_report(**over: object):
+    """One shard's telemetry as `observability.write_shard` records it (a `ShardReport`,
+    ADR-0153).
 
     Four figures of Boards attempted and errors raised, for the reason `_scrape_shard` gives: the
     run-level digest built from this counts both, and neither count can be checked for thousands
     separators from a fixture that stays under 999.
     """
-    return {
-        "shard": 0,
+    from headstart.ingest.observability import ShardReport
+
+    fields: dict[str, object] = {
+        "shard": "0",
         "seconds": 903,
         "done": 18422,
         "undone": 3,
@@ -317,6 +320,7 @@ def _shard_report(**over: object) -> dict:
         "egress_ips": {"ip:1.2.3.4": 3, "colo:AMS": 3},
         **over,
     }
+    return ShardReport(**fields)
 
 
 def _join_fanout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1688,7 +1692,7 @@ CONTRACT: tuple[Line, ...] = (
         why="`([^(]+)` stops at the `(total N)` tail, so the class list must not contain a paren",
         emit=_shard_full,
     ),
-    # -- the join (emitter-verified: `_report_shards` takes plain dicts) -----------------------
+    # -- the join (emitter-verified: `_report_shards` takes `ShardReport`s) --------------------
     Line(
         consumer="fanout_errors.JOIN_ERR_DIGEST",
         emitter=_SCRAPE_JOIN,

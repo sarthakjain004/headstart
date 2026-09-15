@@ -1,6 +1,7 @@
 import pytest
 
 from headstart.ingest import shard_speedup
+from headstart.ingest.observability import ShardReport
 
 
 def test_load_missing_file_is_the_serial_default(tmp_path):
@@ -40,24 +41,34 @@ def test_blend_ignores_sub_serial_samples():
 
 def test_ratios_are_measured_against_serial_not_the_shards_own_prediction():
     # predicted_minutes IS this model's output; feeding it back settles on sqrt(true speedup)
-    reports = [{"serial_minutes": 120.0, "seconds": 42 * 60, "predicted_minutes": 62.0}]
+    reports = [
+        ShardReport(serial_minutes=120.0, seconds=42 * 60, predicted_minutes=62.0)
+    ]
     assert shard_speedup.ratios_from_reports(reports) == [120.0 / 42.0]
 
 
 def test_a_budget_killed_shard_is_never_blended():
     # its wall clock measures the budget, not the work: 120 packed, killed at 60, half done ->
     # reports 2.0x against a real ~1.0x, which would inflate the estimate and mute the warning
-    reports = [{"serial_minutes": 120.0, "seconds": 60 * 60, "killed_by_budget": True}]
+    reports = [
+        ShardReport(serial_minutes=120.0, seconds=60 * 60, killed_by_budget=True)
+    ]
     assert shard_speedup.ratios_from_reports(reports) == []
 
 
 def test_reports_without_a_serial_figure_are_skipped():
     # an older plan shipped no serial sum; absence is not an error
-    assert shard_speedup.ratios_from_reports([{"seconds": 600}]) == []
+    assert shard_speedup.ratios_from_reports([ShardReport(seconds=600)]) == []
 
 
 def test_truncated_report_does_not_raise():
-    assert shard_speedup.ratios_from_reports([{}, {"seconds": None}]) == []
+    # a `ShardReport` at its bare defaults is what a truncated/corrupt report degrades to once
+    # `ShardReport.from_json` has coerced it (ADR-0153) — this reader no longer re-guards a
+    # raw dict itself, it trusts the type
+    assert (
+        shard_speedup.ratios_from_reports([ShardReport(), ShardReport(seconds=0.0)])
+        == []
+    )
 
 
 def test_blend_with_no_usable_samples_keeps_history():
@@ -93,7 +104,7 @@ def test_repeated_blending_converges_on_the_true_speedup(tmp_path):
         stored = shard_speedup.load(path)
         # a real run: the shard takes serial/true_ratio no matter what we predicted
         reports = [
-            {"serial_minutes": serial, "seconds": (serial / true_ratio) * 60}
+            ShardReport(serial_minutes=serial, seconds=(serial / true_ratio) * 60)
             for _ in range(15)
         ]
         blended = shard_speedup.blend(
