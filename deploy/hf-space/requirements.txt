@@ -18,6 +18,19 @@ lancedb==0.36.0
 # which moved to httpx in 1.0 — and every state fetch died on ModuleNotFoundError.
 pyarrow==25.0.0
 sentence-transformers==5.7.0
+# transformers is capped for the same reason pyproject.toml's `embed` extra caps it: nomic's
+# *remote* modeling code (fetched via trust_remote_code, not from here) calls
+# get_extended_attention_mask, which newer transformers stops NomicBertModel inheriting —
+# AttributeError on every encode() call, the model loads fine so the container boots healthy
+# and only 500s on the first real search. This file was unpinned and resolved transformers
+# 5.17.0 (issue #469) despite pyproject.toml's own <5.13 cap, because this is a *separate*
+# requirements file the extra's cap never reaches. Verified 2026-09-15 against this file's own
+# sentence-transformers==5.7.0 (not assumed from the extra's unpinned one): unpinned resolves
+# 5.17.0 and throws that AttributeError on a real .encode() call; `<5.13` resolves 5.12.1 and
+# encodes correctly. The break between 5.12 and 5.17 was not bisected here either, so `<5.13`
+# is the last version this pin has evidence for, not the last that works — re-verify the same
+# way (a real .encode() call, not just import) before widening it.
+transformers<5.13
 einops==0.8.2
 huggingface_hub==1.26.1
 google-auth[requests]==2.56.3

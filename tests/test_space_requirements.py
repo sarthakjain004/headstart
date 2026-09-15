@@ -39,3 +39,32 @@ def test_requirements_ask_for_the_google_auth_requests_extra():
     assert line.startswith("google-auth[requests]"), (
         f"{line!r} leaves the Space without `requests`; use google-auth[requests]"
     )
+
+
+def test_transformers_is_pinned_not_left_to_float():
+    """`transformers` unpinned resolves whatever PyPI serves at build time, and that has
+    already broken the Space once (#469): nomic's *remote* modeling code calls
+    `get_extended_attention_mask`, which newer `transformers` stops `NomicBertModel`
+    inheriting — every `.encode()` call throws `AttributeError`, after the model has already
+    loaded successfully, so the container boots looking healthy and only fails on the first
+    real search. `pyproject.toml`'s `embed` extra caps this same break with `transformers<5.13`
+    (measured 2026-09-10), but that cap never reaches this file — a separate,
+    `sentence-transformers==5.7.0`-pinned requirements file for a different install path.
+
+    Not asserting the exact bound here, only that one exists: the bound is a measured fact
+    that belongs beside the pin it protects, not duplicated into a docstring that could drift
+    from it silently.
+    """
+    line = next(
+        (
+            entry.strip()
+            for entry in _SPACE_REQUIREMENTS.read_text().splitlines()
+            if entry.strip().startswith("transformers")
+        ),
+        None,
+    )
+    assert line is not None, "the Space needs transformers pinned, not left to float"
+    assert any(op in line for op in ("==", "<")), (
+        f"{line!r} does not bound the resolved version — an unbounded or >=-only spec "
+        "still floats onto a future break"
+    )
