@@ -33,10 +33,13 @@ recruitment_enabled:false) return an empty list.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
 from headstart import log
+from headstart.browser_http import BrowserFetcher
+from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -81,6 +84,21 @@ def _is_wall(exc: Exception) -> bool:
 class DarwinboxScraper(BaseScraper):
     ats = "darwinbox"
 
+    def __init__(
+        self,
+        slug: str,
+        company: str | None = None,
+        fetcher: Fetcher | None = None,
+        browser_fetcher: Callable[[str], BrowserFetcher] = BrowserFetcher,
+    ) -> None:
+        """``browser_fetcher`` is the factory this scraper opens once it hits the Cloudflare
+        wall — one :class:`~headstart.browser_http.BrowserFetcher` per Board, since clearance is
+        per-origin (module docstring, ADR-0056). Defaults to the real adapter (ADR-0153); a test
+        can inject a fake with the same ``(page_url) -> context manager`` shape without
+        monkeypatching ``headstart.browser_http`` at all."""
+        super().__init__(slug, company, fetcher=fetcher)
+        self._browser_fetcher = browser_fetcher
+
     def url(self) -> str:
         host = getattr(self, "_host", None) or f"https://{self.slug}.darwinbox.in"
         return f"{host}/ms/candidate/careers"
@@ -122,35 +140,38 @@ class DarwinboxScraper(BaseScraper):
             return True
 
     def _fetch_raw_browser(self, host: str) -> list[dict]:
-        """The walled board through a real Chrome: navigate once, then in-page fetches.
+        """The walled board through a real browser fetcher: navigate once, then in-page
+        requests on the same warmed tab (ADR-0056, via the :attr:`_browser_fetcher` seam,
+        ADR-0153).
 
         The wall admits a genuine browser and nothing else, and clearance is per-origin —
         every tenant is its own subdomain — so each board pays exactly one navigation, then
         pages the same JSON API the curl path uses. `parse` never knows the difference.
         """
-        from headstart import (
-            browser_http,
-        )  # lazy: pydoll is only needed when a wall is hit
-
-        api = "/ms/candidateapi/job/alljobs?companyId=main"
+        api = f"{host}/ms/candidateapi/job/alljobs?companyId=main"
         body = {"companyId": "main", "sort_option": "new", "limit": _PAGE_SIZE}
-        with browser_http.origin(f"{host}/ms/candidate/careers") as page_ctx:
-            batch = page_ctx.post_json(api, {**body, "page": 1}).get("data") or []
+        with self._browser_fetcher(f"{host}/ms/candidate/careers") as browser:
+            response = browser.fetch("POST", api, json={**body, "page": 1})
+            response.raise_for_status()
+            batch = response.json().get("data") or []
             jobs = list(batch)
             page = 1
             while len(batch) == _PAGE_SIZE and page < _MAX_PAGES:
                 page += 1
-                batch = (
-                    page_ctx.post_json(api, {**body, "page": page}).get("data") or []
-                )
+                response = browser.fetch("POST", api, json={**body, "page": page})
+                response.raise_for_status()
+                batch = response.json().get("data") or []
                 jobs.extend(batch)
             if len(batch) == _PAGE_SIZE:
                 self.mark_truncated(  # same cap as `fetch_raw`'s curl loop below (ADR-0053)
                     f"hit the {_MAX_PAGES}-page cap at {len(jobs)} jobs — the rest unread"
                 )
             try:
-                info = page_ctx.get_json("/ms/candidateapi/companyinfo?companyId=main")
-                company = (info.get("message") or {}).get("company") or {}
+                info = browser.fetch(
+                    "GET", f"{host}/ms/candidateapi/companyinfo?companyId=main"
+                )
+                info.raise_for_status()
+                company = (info.json().get("message") or {}).get("company") or {}
                 self._new_careers = bool(company.get("new_careers", True))
             except Exception:  # noqa: BLE001 - portal detection must never sink the board
                 self._new_careers = True

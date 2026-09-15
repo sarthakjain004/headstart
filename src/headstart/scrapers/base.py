@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from typing import Any, TypeVar
 
 from headstart import company_name, fanout_stats, http, log, spare_egress
+from headstart.fetcher import Fetcher
 from headstart.models import Job
 
 #: The one User-Agent every scraper sends. Public because nine of them re-declared
@@ -222,9 +223,25 @@ class BaseScraper(ABC):
     #: every other caller leaves it alone.
     have_details: Container[str] | None = None
 
-    def __init__(self, slug: str, company: str | None = None) -> None:
+    def __init__(
+        self,
+        slug: str,
+        company: str | None = None,
+        fetcher: Fetcher | None = None,
+    ) -> None:
         self.slug = slug
         self.company = company or slug
+        # The Fetcher seam (ADR-0153): every method below that used to reach `headstart.http`
+        # as a module global now goes through this instead. Defaulting to `http.DEFAULT_FETCHER`
+        # — resolved here, not as the parameter's own default value — means a caller that never
+        # passes `fetcher` gets exactly today's global-http behaviour, unchanged, while a test
+        # (or a future second HTTP-shaped adapter) can inject a fake without monkeypatching
+        # `headstart.http` itself. None of the nine scrapers that override `__init__` need any
+        # change for this: they all call `super().__init__(slug, company)` positionally, which
+        # still resolves to the same default.
+        self._fetcher: Fetcher = (
+            fetcher if fetcher is not None else http.DEFAULT_FETCHER
+        )
         # Why this Board's list is incomplete, or None when it is whole (ADR-0053).
         #
         # A scraper that gives up mid-pagination and returns what it has is the flap's root cause:
@@ -419,8 +436,9 @@ class BaseScraper(ABC):
         unexamined one.
 
         None when the probe failed: an unreachable Board has earned no verdict, and
-        ``board_aliases.resolve`` reports it rather than grouping it. Note ``http.fetch`` settles
-        4xx/5xx rather than raising, so a Board whose own host answers 503 records itself, not
+        ``board_aliases.resolve`` reports it rather than grouping it. Note that ``fetch`` settles
+        4xx/5xx rather than raising (:class:`~headstart.fetcher.Fetcher`'s contract, kept from
+        ``http.fetch``), so a Board whose own host answers 503 records itself, not
         None — which reads as "nothing points away from it" and leaves it unburied. That is the
         conservative direction: it can miss a duplicate, never invent one.
 
@@ -429,7 +447,7 @@ class BaseScraper(ABC):
         it, which is why the ledger records a destination rather than a route.
         """
         try:
-            resp = http.fetch(
+            resp = self._fetcher.fetch(
                 "GET",
                 self.url(),
                 headers={"User-Agent": USER_AGENT},
@@ -509,7 +527,7 @@ class BaseScraper(ABC):
         ``self.url()``; pass an explicit ``url`` to fetch a secondary endpoint (e.g. Keka's careers
         page for the tenant id). Raises on a definitive HTTP error so a dead board surfaces as a
         per-company failure."""
-        response = http.fetch(
+        response = self._fetcher.fetch(
             "GET",
             url or self.url(),
             headers={
@@ -530,7 +548,7 @@ class BaseScraper(ABC):
         overrides `_get` must override this too** — eightfold's adds a Referer and marks the
         wall, so it cannot ride this one.
         """
-        response = await http.fetch_async(
+        response = await self._fetcher.fetch_async(
             session,
             "GET",
             url or self.url(),
@@ -552,7 +570,9 @@ class BaseScraper(ABC):
         non-GET method, custom headers/timeout, or the raw ``Response`` rather than parsed text.
         ``marks_wall`` passes straight through to :meth:`_egress`.
         """
-        return http.fetch(method, url, **self._egress(marks_wall=marks_wall), **kwargs)
+        return self._fetcher.fetch(
+            method, url, **self._egress(marks_wall=marks_wall), **kwargs
+        )
 
     async def _fetch_async(
         self,
@@ -564,7 +584,7 @@ class BaseScraper(ABC):
         **kwargs: Any,
     ) -> Any:
         """Async counterpart to :meth:`_fetch`, over the shared multiplexed ``AsyncSession``."""
-        return await http.fetch_async(
+        return await self._fetcher.fetch_async(
             session, method, url, **self._egress(marks_wall=marks_wall), **kwargs
         )
 
