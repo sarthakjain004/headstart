@@ -149,3 +149,4 @@ supersedes it and note the supersession in both.
 | [0143](0143-trends-retain-board-deltas-for-arbitrary-comparable-cohorts.md) | Trends retain Board deltas for arbitrary comparable cohorts | 2026-09-12 |
 | [0144](0144-oracle-taleo-was-a-dead-end-only-for-india.md) | Oracle Taleo was a dead-end only for India | 2026-09-15 |
 | [0145](0145-the-value-gate-reads-the-measurement-that-kept-up.md) | The value gate reads the measurement that kept up, not the one that froze | 2026-09-07 |
+| [0145](0145-the-derivation-cascade-is-composed-once-in-derived-meta.md) | The derivation cascade is composed once, in `derived_meta` | 2026-09-15 |
