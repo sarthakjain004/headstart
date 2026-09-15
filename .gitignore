@@ -87,15 +87,9 @@ docs/LLM_API.md
 # Discovery-technique ranking — local working notes on where to spend discovery effort next.
 docs/discovery/technique-ranking.md
 
-# deploy-space.yml sync artifacts — CI copies these beside the Space app; a stale local
-# copy would shadow the src/ originals via app.py's synced-first path check
-deploy/hf-space/geo.py
-deploy/hf-space/llm_router.py
-deploy/hf-space/profile_extract.py
-deploy/hf-space/search.py
-deploy/hf-space/role_families.json
-deploy/hf-space/role_watchlist.json
-deploy/hf-space/alerts/
-deploy/hf-space/templates/
-deploy/hf-space/static/
+# deploy-space.yml sync artifacts (ADR-0153) — CI stages the whole headstart package and
+# config/ here before pushing to the Space; a stale local copy from a manual staging run
+# would otherwise show up as untracked cruft.
+deploy/hf-space/headstart/
+deploy/hf-space/config/
 .DS_Store

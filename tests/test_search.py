@@ -387,19 +387,24 @@ def test_facets_import_stays_deferred_to_the_method_body():
     regress silently.
 
     `facets.py` imports `SearchFilters`/`IndexCapabilities`/`build_filter` from `search.py` at
-    module level; `search.py` cannot import `facets.py` the same way without a circular import
-    — and, in the deployed Space (`facets.py` and `search.py` are flat sibling modules with no
-    `headstart` package to import through), a `ModuleNotFoundError` a route's `except ValueError`
-    does not catch. `JobSearch.facets()` defers its import into the method body for exactly that
-    reason (ADR-0149 leaves this alone as a pre-existing, unrelated defect). A "simplify this"
-    edit that hoists the import to module level would break the Space silently; this pins the
-    deferral so that edit fails a test instead.
+    module level; `search.py` cannot import `facets.py` the same way without a circular import,
+    so `JobSearch.facets()` defers its import into the method body (ADR-0149 leaves this alone
+    as a pre-existing, unrelated defect). Since ADR-0156, `headstart` is installed as a real
+    package everywhere the Space runs it, so the import no longer needs the `try`/`except
+    ImportError` fallback a flat-sibling-module layout once required — only the deferral into
+    the method body still matters, to break the cycle. A "simplify this" edit that hoists the
+    import to module level would reintroduce the circular import; this pins the deferral so
+    that edit fails a test instead.
     """
     import ast
     import inspect
 
     tree = ast.parse(inspect.getsource(JobSearch.facets).lstrip())
-    body_imports = [node for node in tree.body[0].body if isinstance(node, ast.Try)]
+    body_imports = [
+        node
+        for node in tree.body[0].body
+        if isinstance(node, (ast.Import, ast.ImportFrom))
+    ]
     assert body_imports, (
         "JobSearch.facets must import headstart.facets inside its own body"
     )

@@ -113,9 +113,15 @@ lists, or the six shims, to agree).
   behavior that merging them risks the wall/trends logic more than the packaging change
   justifies; the new test is the guard against future drift, not a refactor that removes the
   possibility of writing one. Left as a candidate for a future, narrower PR.
-- **Verification without a Docker registry push:** the exact `/app` layout (a `headstart/`
-  package dir + `config/` dir + `app.py`/`start.sh`, staged the same way the workflow would stage
-  them) was built locally and `import headstart; from headstart import fx; fx.table()` confirmed
-  the ancestor-walk finds `config/fx_rates.json` unmodified, before a full `docker build` was run
-  against the identical context to confirm the image itself builds and the tagged image runs
-  `python -c "import app"`-equivalent checks. See the PR description for the exact build log.
+- **`start.sh` is untouched and unaffected.** It boots the llm-router tunnel and then always
+  `exec python app.py` (ADR-0032's degrade-don't-die contract) — nothing about how `headstart`
+  gets into the image changes what it execs or when, so the tunnel/secrets logic needed no
+  review beyond confirming this diff carries no changes to it (it doesn't).
+- **Verified two ways, without a Docker registry push.** First, the exact `/app` layout (a
+  `headstart/` package dir + `config/` dir + `app.py`/`start.sh`, staged the same way the
+  workflow would stage them) was built locally and `import headstart; from headstart import fx;
+  fx.table()` confirmed the ancestor-walk finds `config/fx_rates.json` unmodified. Second, a full
+  `docker build` was run against that identical context end to end (Dockerfile, requirements
+  install, encoder bake, the two whole-directory `COPY`s) and completed successfully; the built
+  image was also used to confirm `import headstart` and the UI/config paths resolve exactly as
+  this ADR describes.

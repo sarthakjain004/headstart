@@ -28,7 +28,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN python -c "from sentence_transformers import SentenceTransformer; \
     SentenceTransformer('nomic-ai/nomic-embed-text-v1.5', trust_remote_code=True)"
 
-# `headstart` (ADR-0148) is a real Python package here, not a hand-curated file list: this
+# `headstart` (ADR-0153) is a real Python package here, not a hand-curated file list: this
 # COPY brings in the WHOLE src/headstart tree (deploy-space.yml stages it beside this
 # Dockerfile first, since the Space's own repo — not the monorepo — is the build context).
 # app.py imports it exactly like `scripts/ui/serve.py` does (`from headstart import search,
