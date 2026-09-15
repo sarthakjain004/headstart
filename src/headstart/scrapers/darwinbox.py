@@ -255,16 +255,44 @@ class DarwinboxScraper(BaseScraper):
                     description=html_to_text(j.get("jd")),
                     experience=j.get("experience"),
                     employment_type=j.get("emp_type_name"),
-                    salary=self._salary_field(j.get("salary_range")),
+                    salary=self._salary_field(j),
                 )
             )
         return jobs
 
-    def _salary_field(self, raw: str | None) -> str | None:
-        """`salary_range` already carries its own "(Annual)"/"(Monthly)" suffix whenever one
-        exists — confirmed against every job in a 290-board sample (salary-extraction pass,
-        2026-08-22): 1,874/1,874 suffixed values showed the identical suffix twice when
-        `salary_timeframe` was also appended, and `salary_timeframe` was null in every case
-        where `salary_range` had no suffix. Appending it was pure duplication ("INR 3 - 5
-        (Annual) (Annual)", ADR-0019's own documented example), never a source of new info."""
-        return (raw or "").strip() or None
+    def _salary_field(self, raw: dict) -> str | None:
+        """``Job.salary`` from Darwinbox's structured ``salary_min``/``salary_max``/
+        ``salary_currency``/``salary_timeframe`` siblings, when populated, falling back to the
+        pre-formatted ``salary_range`` otherwise.
+
+        The structured fields are strictly more robust than re-parsing ``salary_range``: they are
+        already-absolute numbers with no locale formatting to strip and no lakhs-vs-absolute
+        magnitude ambiguity to resolve (unlike ``salary_range``'s free text, which is why
+        ``salary.py``'s ``_field_darwinbox`` has to guess from magnitude at all) — and
+        ``salary_currency`` names the tenant's real currency directly, where ``salary_range`` only
+        ever carries "INR" (the field this scraper already reads is silently dropped for every
+        other currency by ``_field_darwinbox``'s currency gate, a real gap this pairs with a
+        ``salary.py`` fix for). Live sample, 75 tenants, 2026-09-15: 14 distinct currencies beyond
+        INR (USD, EUR, GBP, CAD... down to CNY, MAD, KRW), and a real non-INR case
+        (``transcarent``, "USD 20.00 - 20 (Hourly)") that the INR-only gate was dropping outright.
+
+        ``salary_min``/``salary_max`` are sometimes both empty strings even when ``salary_range``
+        and ``salary_currency`` are populated (e.g. an "INR 0+ (Annual)" placeholder on ``airtel``)
+        — treated as no signal, matching how ``_field_darwinbox`` already declines that shape via
+        ``salary_range``. A currency with no min/max at all falls back to ``salary_range`` too, in
+        case that pre-formatted string still carries something (rare on live data, but the field
+        this scraper already read is not switched off) — used as-is, without re-appending
+        ``salary_timeframe``: ``salary_range`` already carries its own "(Annual)"/"(Monthly)" suffix
+        whenever one exists (confirmed against every job in a 290-board sample, salary-extraction
+        pass 2026-08-22: 1,874/1,874 suffixed values showed the identical suffix twice when
+        ``salary_timeframe`` was also appended, and ``salary_timeframe`` was null in every case
+        where ``salary_range`` had no suffix — "INR 3 - 5 (Annual) (Annual)", ADR-0019's own
+        documented example)."""
+        smin = (raw.get("salary_min") or "").strip()
+        smax = (raw.get("salary_max") or "").strip()
+        currency = (raw.get("salary_currency") or "").strip()
+        if currency and (smin or smax):
+            span = f"{smin}-{smax}" if smin and smax else (smin or smax)
+            timeframe = (raw.get("salary_timeframe") or "").strip()
+            return f"{currency} {span}" + (f" ({timeframe})" if timeframe else "")
+        return (raw.get("salary_range") or "").strip() or None

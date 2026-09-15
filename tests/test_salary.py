@@ -93,9 +93,28 @@ def test_field_darwinbox_lakhs():
     )
 
 
-def test_field_darwinbox_non_inr_rejected():
-    # the lakhs multiplier is INR-specific; a non-INR darwinbox string has no known shape.
+def test_field_darwinbox_non_inr_low_magnitude_still_rejected():
+    # The lakhs multiplier stays INR-only (see _field_darwinbox's docstring): a low-magnitude
+    # non-INR figure is read as already-absolute rather than multiplied, and still correctly
+    # declines the plausibility floor — same outcome as before this pass widened the currency
+    # gate, now for a different reason (implausible, not "currency not recognized").
     assert from_field("USD 3 - 5 (Annual)", "darwinbox") is None
+
+
+def test_field_darwinbox_non_inr_currency_now_extracted():
+    # Real gap this pass fixes: the currency gate used to be hardcoded to "INR", silently
+    # dropping every other currency darwinbox's own salary_currency field can state. Real, live
+    # example (transcarent, 2026-09-15): "USD 20.00 - 20 (Hourly)" -> $41,600/yr.
+    assert from_field("USD 20.00-20 (Hourly)", "darwinbox") == SalarySpan(
+        41_600, 41_600, "USD", "field"
+    )
+
+
+def test_field_darwinbox_unrecognized_currency_still_declines():
+    # Not every currency darwinbox states is in salary.py's _CURRENCY_CODES yet (real, live:
+    # MAD/CNY/MXN/KRW/THB/SGD/MYR/IDR/BRL/CZK) — this fix widens the gate to codes salary.py
+    # already recognizes, not to every code darwinbox's own salary_currency field can state.
+    assert from_field("MYR 5000-7000 (Monthly)", "darwinbox") is None
 
 
 def test_field_darwinbox_monthly_timeframe_honored():
