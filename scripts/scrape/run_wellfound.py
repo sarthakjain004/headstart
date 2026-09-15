@@ -458,6 +458,8 @@ async def scrape_url(
         # the interval band and makes the cadence more machine-regular.
         await asyncio.sleep(delay + random.random() * jitter)
         html = await _load_page(tab, f"{base_url}?page={page}", browser)
+        if on_progress:
+            on_progress()  # a page arrived: progress, even when it yields no new rows
         if _is_blocked(html) and is_hard_block(await _captcha_frame_html(tab, browser)):
             raise HardBlocked(f"hard block on page {page} of {base_url}")
         if _is_blocked(html):

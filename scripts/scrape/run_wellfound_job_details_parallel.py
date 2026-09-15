@@ -75,6 +75,7 @@ from wellfound_block_recovery import (
     BrowserFleet,
     Watchdog,
     kill_orphan_browsers,
+    new_ready_tab,
     recycle_tab,
     run_fleet,
     run_until_stalled,
@@ -83,16 +84,6 @@ from wellfound_block_recovery import (
 
 #: See ``run_wellfound_company_jobs_parallel.DEFAULT_WORKERS`` — same trade, same starting point.
 DEFAULT_WORKERS = 6
-
-
-async def _new_ready_tab(browser, first: bool = False):
-    """A tab with Cloudflare auto-solve armed, or the initial one when ``first``."""
-    tab = await (browser.start() if first else browser.new_tab())
-    try:
-        await tab.enable_auto_solve_cloudflare_captcha()
-    except Exception:  # noqa: BLE001, S110 - auto-solve is a bonus, the slider is the fallback
-        pass
-    return tab
 
 
 async def _one_pass(append_override: bool | None) -> str:
@@ -284,7 +275,7 @@ async def _one_pass(append_override: bool | None) -> str:
         Fanning out first would put N cold tabs against the challenge at once from one IP.
         """
         browser_ref["b"] = browser
-        first = await _new_ready_tab(browser, first=True)
+        first = await new_ready_tab(browser, first=True)
         print("warm-up hop on a single tab...", flush=True)
         try:
             await _load_page(first, WARMUP_URL, browser)
@@ -293,7 +284,7 @@ async def _one_pass(append_override: bool | None) -> str:
         built = [first]
         try:
             for _ in range(count - 1):
-                built.append(await _new_ready_tab(browser))
+                built.append(await new_ready_tab(browser))
         except Exception as exc:  # noqa: BLE001 - fewer tabs is still a run
             print(
                 f"  only {len(built)} tabs available ({type(exc).__name__})", flush=True

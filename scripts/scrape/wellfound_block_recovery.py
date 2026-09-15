@@ -573,3 +573,17 @@ async def recycle_tab(browser, old_tab, wid: int):
     with contextlib.suppress(Exception):
         await tab.enable_auto_solve_cloudflare_captcha()
     return tab
+
+
+async def new_ready_tab(browser, first: bool = False):
+    """A tab with Cloudflare auto-solve armed, or the initial one when ``first``.
+
+    Identical across all three drivers' :meth:`BrowserFleet` ``build_tabs`` callbacks, so it
+    lives here rather than being copied a third time.
+    """
+    tab = await (browser.start() if first else browser.new_tab())
+    try:
+        await tab.enable_auto_solve_cloudflare_captcha()
+    except Exception:  # noqa: BLE001, S110 - auto-solve is a bonus, the slider is the fallback
+        pass
+    return tab
