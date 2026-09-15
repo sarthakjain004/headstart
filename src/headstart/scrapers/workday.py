@@ -49,7 +49,12 @@ from urllib.parse import urlsplit, urlunsplit
 
 from headstart import fanout_stats, http, log, spare_egress
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import USER_AGENT, BaseScraper, loss_breakdown
+from headstart.scrapers.base import (
+    USER_AGENT,
+    BaseScraper,
+    classify_exception,
+    loss_breakdown,
+)
 
 _log = log.get(__name__)
 
@@ -122,15 +127,6 @@ def _listing_diagnostic(response: Any, instance: str) -> tuple[str, bool]:
         f"body_prefix={prefix!r}"
     )
     return diagnostic, transient
-
-
-def _failure_class(exc: Exception) -> str:
-    """A groupable label for one failed page — the status where the origin gave one, else the
-    exception type. Deliberately coarse: the message carries per-request detail (offsets, hosts)
-    that would never group, and what a short crawl needs is the *shape* of its failures, not 108
-    distinct strings."""
-    status = getattr(getattr(exc, "response", None), "status_code", None)
-    return f"HTTP {status}" if status else type(exc).__name__
 
 
 # schema.org's closed ``employmentType`` vocabulary, in the wording Workday's own ``timeType``
@@ -674,7 +670,7 @@ class WorkdayScraper(BaseScraper):
                     **({} if direct else self._egress()),
                 )
             except http.RequestsError as exc:
-                self._record_listing_loss(_failure_class(exc))
+                self._record_listing_loss(classify_exception(exc))
                 self.telemetry["listing_request_failures"] = (
                     int(self.telemetry.get("listing_request_failures", 0)) + 1
                 )
@@ -779,7 +775,7 @@ class WorkdayScraper(BaseScraper):
                     **({} if direct else self._egress()),
                 )
             except http.RequestsError as exc:
-                self._record_listing_loss(_failure_class(exc))
+                self._record_listing_loss(classify_exception(exc))
                 self.telemetry["listing_request_failures"] = (
                     int(self.telemetry.get("listing_request_failures", 0)) + 1
                 )
@@ -962,7 +958,7 @@ class WorkdayScraper(BaseScraper):
                 **self._egress(),
             )
         except http.RequestsError as exc:
-            self._note_detail(classes, _failure_class(exc))
+            self._note_detail(classes, classify_exception(exc))
             return None  # a missing detail must not drop the job
         if (
             response.status_code == 404
@@ -985,7 +981,7 @@ class WorkdayScraper(BaseScraper):
                     **self._egress(),
                 )
             except http.RequestsError as exc:
-                self._note_detail(classes, _failure_class(exc))
+                self._note_detail(classes, classify_exception(exc))
                 return None
             return self._detail_from_cookie_retry(response, classes)
         return self._settled_detail(response, classes)
@@ -1032,7 +1028,7 @@ class WorkdayScraper(BaseScraper):
                 **self._egress(),
             )
         except http.RequestsError as exc:
-            self._note_detail(classes, _failure_class(exc))
+            self._note_detail(classes, classify_exception(exc))
             return None
         if (
             response.status_code == 404
@@ -1060,7 +1056,7 @@ class WorkdayScraper(BaseScraper):
                     **self._egress(),
                 )
             except http.RequestsError as exc:
-                self._note_detail(classes, _failure_class(exc))
+                self._note_detail(classes, classify_exception(exc))
                 return None
             return self._detail_from_cookie_retry(response, classes)
         return self._settled_detail(response, classes)
@@ -1398,9 +1394,9 @@ class WorkdayScraper(BaseScraper):
         # nvidia's fifteen slices — as 100% lost the moment its single page 429s, which is the
         # whole of what #194 asked this not to do.
         page_count = len(offsets) + 1
-        why = ", ".join(f"{cls} x{n}" for cls, n in classes.most_common(4))
-        shortfall = f"{missing} of {page_count} page(s) failed mid-crawl" + (
-            f" ({why})" if why else ""
+        shortfall = (
+            f"{missing} of {page_count} page(s) failed mid-crawl"
+            + loss_breakdown(classes, missing)
         )
         if missing / page_count > _MAX_LOST_PAGE_SHARE:
             _log.info(
@@ -1474,7 +1470,7 @@ class WorkdayScraper(BaseScraper):
                             payload = await self._post_async(session, applied, offset)
                         except http.RequestsError as exc:
                             missing += 1
-                            classes[_failure_class(exc)] += 1
+                            classes[classify_exception(exc)] += 1
                             error = error or exc
                             return
                         finally:
@@ -1506,7 +1502,7 @@ class WorkdayScraper(BaseScraper):
                 payload = self._post(applied, offset=offset)
             except http.RequestsError as exc:
                 missing += 1
-                classes[_failure_class(exc)] += 1
+                classes[classify_exception(exc)] += 1
                 error = error or exc
                 continue
             if payload is None:

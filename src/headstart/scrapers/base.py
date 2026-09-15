@@ -92,6 +92,25 @@ MIN_AUTHORITATIVE_SHARE = 0.99
 _DEFAULT_H2_STREAMS = 100
 
 
+def classify_exception(exc: Exception) -> str:
+    """A groupable label for one failed request — the status where the origin gave one, else
+    the exception type. Deliberately coarse: a message carries per-request detail (offsets,
+    hosts) that would never group, and what a loss tally needs is the *shape* of a failure, not
+    one distinct string per request.
+
+    Shared for the same reason `loss_breakdown` is: workday kept its own copy of this exact
+    computation (`_failure_class`) purely because it needed a bare label to feed its own richer
+    `classes: Counter[str]` rather than `note_detail_exception`'s side effect of recording
+    straight into `self.detail_losses`. Two copies of one computation is the near-synonym
+    failure CLAUDE.md §3 names, and this module already paid for that once — `loss_breakdown`
+    itself was unified from two independently-drifted formatters (ADR-0088). Pulling this one
+    level lower, to a bare `Exception -> str` function neither side owns, lets both keep their
+    own recording behaviour without re-deriving the same classification.
+    """
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    return f"HTTP {status}" if status else type(exc).__name__
+
+
 def loss_breakdown(losses: Counter[str], missing: int) -> str:
     """`` (HTTP 403 x2114, no JSON-LD on a 200 x13)`` — one detail pass's losses, tallied.
 
@@ -101,14 +120,24 @@ def loss_breakdown(losses: Counter[str], missing: int) -> str:
     ``unclassified``, one stated the tail's size and the other printed a bare ``…`` — which is
     two spellings of one fact, the near-synonym failure CLAUDE.md §3 names.
 
-    Only the four largest are named, because what the line is for is the *shape* of the failure,
-    and whatever reached no label is counted into ``unlabelled`` rather than dropped, so a
-    partial tally cannot read as a full account of ``missing``.
+    Every named cause is shown, largest first. A cap used to keep only the top 4 behind a sized
+    ``…N more cause(s)`` tail, but it never bound in practice: 4 runs / ~2M detail attempts /
+    747 loss lines measured only 9 distinct causes fleet-wide and ~1.2 per Board per run
+    (``docs/workday/2026-09-09_parser-shaped-detail-losses.md``). The cause vocabulary is
+    closed — status codes plus a handful of exception/parse-shape labels — so there is no
+    board whose line would grow unreadable; the cap was complexity with nothing to show for it.
 
-    The tail names how much the four leave out, not merely *that* they leave something out: a
-    bare ``…`` says a fifth cause exists and nothing about its size, so a long tail that
-    outweighs everything shown reads as a footnote. With the residual stated, the four shown
-    plus the tail always sum to ``missing``.
+    Whatever reached no label is counted into ``unlabelled`` rather than dropped, so a partial
+    tally cannot read as a full account of ``missing`` — this is not a coverage gap to close by
+    naming more causes. Both callers classify deliberately narrowly (workday's
+    ``_failure_class``, base's ``note_detail_loss``) and lean on the outer
+    ``fan_out``/``fan_out_async`` catch-all as backstop for whatever they didn't anticipate — a
+    malformed body an existing branch doesn't parse, a race in a non-atomic Counter update,
+    anything new. ``unlabelled`` is that backstop's readout, and it stays near zero (measured
+    ~1-in-40,000) precisely because the classification above it is doing its job; a spike in it
+    is the signal to add a new named cause, not evidence this function should hide the gap.
+    ``test_workday_detail_classes_always_account_for_every_loss`` pins the invariant directly:
+    an uncaught path must surface as ``unlabelled``, never vanish.
 
     Accounts for the whole of ``missing`` even from an empty ``losses``. Whether a pass that
     labelled *nothing* deserves a breakdown at all is the caller's question, not this one's, and
@@ -120,11 +149,7 @@ def loss_breakdown(losses: Counter[str], missing: int) -> str:
         tally["unlabelled"] = unlabelled
     if not tally:
         return ""
-    shown = tally.most_common(4)
-    why = ", ".join(f"{cause} x{n}" for cause, n in shown)
-    if len(tally) > len(shown):
-        rest = sum(tally.values()) - sum(n for _, n in shown)
-        why += f", …{len(tally) - len(shown)} more cause(s) x{rest}"
+    why = ", ".join(f"{cause} x{n}" for cause, n in tally.most_common())
     return f" ({why})"
 
 
@@ -334,8 +359,7 @@ class BaseScraper(ABC):
 
     def note_detail_exception(self, exc: Exception) -> None:
         """Record a detail request exception, retaining its settled HTTP status when present."""
-        status = getattr(getattr(exc, "response", None), "status_code", None)
-        self.note_detail_loss(f"HTTP {status}" if status else type(exc).__name__)
+        self.note_detail_loss(classify_exception(exc))
 
     def needs_detail(self, native_id: str) -> bool:
         """Whether this Job still needs its per-job detail fetch (ADR-0048).

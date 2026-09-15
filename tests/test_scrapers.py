@@ -2041,7 +2041,7 @@ def test_workday_detail_gap_records_a_raised_request(monkeypatch):
     assert asyncio.run(scraper._job_detail_async(None, "/job/a", classes)) is None
     assert asyncio.run(scraper._job_detail_async(None, None, classes)) is None
     # curl_cffi's `RequestsError` is an alias of `RequestException`, which is the name
-    # `_failure_class` reports for a request the origin never gave a status to
+    # `classify_exception` reports for a request the origin never gave a status to
     assert classes == Counter({"RequestException": 1, "no externalPath": 1})
 
 
@@ -2597,6 +2597,49 @@ def test_workday_paginate_absorbs_a_retry_exhausted_page_mid_crawl(monkeypatch, 
     assert "1 of 5 page(s) failed" in reported[0].getMessage()
     # and the gap travels with the Jobs, or `index sync` reads it as delistings (ADR-0053)
     assert s.truncated is not None
+
+
+def test_workday_paginate_shows_every_cause_with_no_cap(monkeypatch, caplog):
+    """`_paginate`'s own mid-crawl summary used to hand-roll a `most_common(4)` cap with no
+    residual accounting at all — an independent copy of `loss_breakdown`'s old shape, and worse:
+    a 5th+ cause just vanished, with not even a sized tail to say so. It now formats through
+    `loss_breakdown` directly, so every cause shows and the two formatters can't drift apart
+    again the way `_failure_class` already had to be unified out of existence once."""
+    from headstart import http
+    from headstart.scrapers import workday as workday_mod
+    from headstart.scrapers.workday import WorkdayScraper
+
+    def _err(status):
+        exc = http.RequestsError(f"HTTP Error {status}")
+        exc.response = type("FakeResponse", (), {"status_code": status})()
+        return exc
+
+    failing = {20: 429, 40: 500, 60: 403, 80: 400}
+
+    async def fake_post_async(session, applied, offset):
+        if offset in failing:
+            raise _err(failing[offset])
+        if offset == 100:
+            return None  # 404ed mid-crawl
+        return {"jobPostings": []}
+
+    s = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+    monkeypatch.setattr(s, "_post_async", fake_post_async)
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.workday")
+    s._paginate({}, workday_mod._PAGE_LIMIT * 20, lambda batch: None)
+
+    reported = [r for r in caplog.records if r.levelno == logging.INFO]
+    assert len(reported) == 1
+    message = reported[0].getMessage()
+    assert "5 of 20 page(s) failed mid-crawl" in message
+    for label in (
+        "HTTP 429 x1",
+        "HTTP 500 x1",
+        "HTTP 403 x1",
+        "HTTP 400 x1",
+        "404 mid-crawl x1",
+    ):
+        assert label in message
 
 
 def test_workday_paginate_raises_when_most_pages_fail_mid_crawl(monkeypatch):
