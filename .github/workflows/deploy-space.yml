@@ -5,23 +5,10 @@ name: deploy-space
 on:
   push:
     branches: [main]
-    # src/headstart modules deployed into the Space are copied in below
-    paths:
-      [
-        "deploy/hf-space/**",
-        "src/headstart/facets.py",
-        "src/headstart/fx.py",
-        "src/headstart/geo.py",
-        "src/headstart/llm_router.py",
-        "src/headstart/profile_extract.py",
-        "src/headstart/search.py",
-        "src/headstart/alerts/**",
-        "src/headstart/ui/**",
-        # shipped into the image too — a reworded label must reach the Space
-        "config/fx_rates.json",
-        "config/role_families.json",
-        "config/role_watchlist.json",
-      ]
+    # ADR-0156: the Space installs the whole src/headstart package (below), so this list is
+    # the tree that ships, not a curated subset of it — a change anywhere under src/headstart/
+    # or config/ can change what the Space serves.
+    paths: ["deploy/hf-space/**", "src/headstart/**", "config/**"]
   workflow_dispatch: {}
 
 permissions:
@@ -46,31 +33,16 @@ jobs:
             exit 0
           fi
           pip install huggingface_hub
-          # these live in src/headstart (single source of truth, unit-tested there); the
-          # standalone Space app imports them as sibling modules
-          cp src/headstart/facets.py deploy/hf-space/facets.py
-          cp src/headstart/fx.py deploy/hf-space/fx.py
-          cp src/headstart/geo.py deploy/hf-space/geo.py
-          cp src/headstart/llm_router.py deploy/hf-space/llm_router.py
-          cp src/headstart/profile_extract.py deploy/hf-space/profile_extract.py
-          cp src/headstart/search.py deploy/hf-space/search.py
-          # Curated role taxonomy (ADR-0040): the ledger stores family slugs, the chart shows
-          # these labels. Same single-source-of-truth reason as the modules above.
-          # The salary bracket's dated rate table (ADR-0117). Without it the bracket
-          # degrades to one currency, so it ships beside the module that reads it.
-          cp config/fx_rates.json deploy/hf-space/fx_rates.json
-          cp config/role_families.json deploy/hf-space/role_families.json
-          cp config/role_watchlist.json deploy/hf-space/role_watchlist.json
-          # A package, not a flat file: its members import each other relatively, so the same
-          # directory works as `headstart.alerts` in the repo and as top-level `alerts` here.
-          rm -rf deploy/hf-space/alerts
-          cp -r src/headstart/alerts deploy/hf-space/alerts
-          find deploy/hf-space/alerts -name '__pycache__' -type d -exec rm -rf {} +
-          # The UI (templates + static) — single source in src/headstart/ui, synced like
-          # the modules above.
-          rm -rf deploy/hf-space/templates deploy/hf-space/static
-          cp -r src/headstart/ui/templates deploy/hf-space/templates
-          cp -r src/headstart/ui/static deploy/hf-space/static
+          # ADR-0156: the Space installs `headstart` as a real package rather than a
+          # hand-picked file list — one directory copy each, so nothing can be forgotten from
+          # one side of a two-list sync the way role_families.json (#115) and
+          # role_watchlist.json (#128) were. src/headstart is the single source of truth
+          # (unit-tested there); the Dockerfile COPYs both dirs into the image unchanged.
+          rm -rf deploy/hf-space/headstart
+          cp -r src/headstart deploy/hf-space/headstart
+          find deploy/hf-space/headstart -name '__pycache__' -type d -exec rm -rf {} +
+          rm -rf deploy/hf-space/config
+          cp -r config deploy/hf-space/config
           # upload_folder, not `hf upload`: the CLI pre-creates the repo, and HF now answers
           # Docker-Space creates with a 402 paywall (new free Docker Spaces are PRO-only).
           # Ours exists and keeps running — targeting it directly needs no create call.

@@ -28,22 +28,22 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN python -c "from sentence_transformers import SentenceTransformer; \
     SentenceTransformer('nomic-ai/nomic-embed-text-v1.5', trust_remote_code=True)"
 
-# geo.py, llm_router.py, profile_extract.py, the two role JSONs and the alerts/ package are
-# not in the repo's deploy/hf-space/ — deploy-space.yml copies them in from src/headstart/ and
-# config/ (single source of truth, where their tests live) before pushing to the Space.
-# `fx_rates.json` is here for the same reason as the role JSONs: `fx.py` reads it from beside
-# itself in this image (ADR-0117), and without it the salary bracket quietly stops comparing
-# across currencies instead of failing loudly.
-# Both role JSONs must be COPYed, not merely synced: app.py reads them from beside itself
-# inside the image. Without role_families.json every trend series renders as its slug
+# `headstart` (ADR-0153) is a real Python package here, not a hand-curated file list: this
+# COPY brings in the WHOLE src/headstart tree (deploy-space.yml stages it beside this
+# Dockerfile first, since the Space's own repo — not the monorepo — is the build context).
+# app.py imports it exactly like `scripts/ui/serve.py` does (`from headstart import search,
+# facets, ...`), and the UI's templates/static, previously synced as their own COPY lines,
+# ride inside it at headstart/ui/ — app.py locates them via `Path(headstart.__file__)`.
+# `config/` (fx_rates.json, role_families.json, role_watchlist.json) is the same story: one
+# directory copy instead of three individually-named files that had to be kept in step with
+# the workflow's sync list. Without role_families.json every trend series renders as its slug
 # (ADR-0040); without role_watchlist.json `_watch_meta` returns {} and `watch_parents` is
 # empty, so the by-role drill stays hidden on every family (ADR-0051) — the same bug as #115,
-# one file later.
-COPY app.py facets.py fx.py fx_rates.json geo.py llm_router.py profile_extract.py role_families.json role_watchlist.json search.py start.sh .
-COPY alerts ./alerts
-# Synced from src/headstart/ui/ by deploy-space.yml, like the modules above.
-COPY templates ./templates
-COPY static ./static
+# one file later. `fx.py` finds fx_rates.json the same way (ADR-0117): both are now structural
+# (the file must exist under config/), not enumerated.
+COPY app.py start.sh ./
+COPY headstart ./headstart
+COPY config ./config
 RUN chmod +x start.sh
 EXPOSE 7860
 CMD ["./start.sh"]
