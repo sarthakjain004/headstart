@@ -58,16 +58,6 @@ def _is_remote_sentinel(location: str | None, city: str | None) -> bool:
     return bool(location) and bool(city) and city.lower() not in location.lower()
 
 
-def _salary(sal: dict | None) -> str | None:
-    """Format Recruitee's structured salary, e.g. '50000-70000 EUR per year'. None if blank."""
-    sal = sal or {}
-    lo, hi = sal.get("min"), sal.get("max")
-    if not lo and not hi:
-        return None
-    rng = f"{lo}-{hi}" if lo and hi else str(lo or hi)
-    return " ".join(str(x) for x in (rng, sal.get("currency"), sal.get("period")) if x)
-
-
 class RecruiteeScraper(BaseScraper):
     ats = "recruitee"
 
@@ -129,7 +119,18 @@ class RecruiteeScraper(BaseScraper):
                     ),
                     experience=o.get("experience_code"),
                     employment_type=o.get("employment_type_code"),
-                    salary=_salary(o.get("salary")),
+                    salary=self._salary_field(o.get("salary")),
                 )
             )
         return jobs
+
+    def _salary_field(self, raw: dict | None) -> str | None:
+        """Format Recruitee's structured salary, e.g. '50000-70000 EUR per year'. None if blank."""
+        raw = raw or {}
+        lo, hi = raw.get("min"), raw.get("max")
+        if not lo and not hi:
+            return None
+        rng = f"{lo}-{hi}" if lo and hi else str(lo or hi)
+        return " ".join(
+            str(x) for x in (rng, raw.get("currency"), raw.get("period")) if x
+        )

@@ -17,7 +17,7 @@ its truncation message) to re-enable the 50-page cap.
 The postings list has no description; a second pass fetches each posting's detail
 (GET .../postings/{id} -> jobAd.sections.jobDescription.text) in a bounded thread pool to
 fill it in. That same detail response also carries a native `compensation.{min,max,currency,
-period}` block (10.48% of postings, previously unread — see `_salary()`), so one fetch now
+period}` block (10.48% of postings, previously unread — see `_salary_field()`), so one fetch now
 feeds both `description` and `salary`. A failed detail fetch leaves both None — the job is
 still kept.
 
@@ -86,45 +86,6 @@ _STRUCTURED_PERIOD = {
 }
 
 
-def _salary(compensation: dict | None) -> str | None:
-    """Format the posting-detail's native ``compensation`` block, e.g. "70000-85000 EUR 1 YEAR"
-    — the same RANGE + CODE + interval shape lever/recruitee/teamtailor/ashby/personio/rippling
-    already produce (``_field_range_currency_interval`` in salary.py, registered for this ATS
-    alongside this helper). Found via direct API inspection (2026-08-25,
-    experiment/location-audit-2026-08-25/smartrecruiters.md): populated on 10.48% of postings,
-    and description-mining independently misses 81.7% of those (134/164 in a 1,500-posting
-    comparison) — reading this field roughly doubles smartrecruiters' salary coverage at zero
-    extra request cost, since the detail fetch already happens for the description.
-
-    ``lo``/``hi`` are checked with ``is not None``, not truthiness: real junk values observed in
-    the same pass include ``{"max": 0, "currency": "GBP"}`` and ``{"min": 1, "max": 1, "currency":
-    "GTQ"}`` — a truthy check on a 0 floor would misread a stated "$0-$85,000" as a bare ceiling
-    figure (the same trap ashby's own ``_salary()`` docstring records from the Ramp
-    ``minValue=0`` code-review catch). Passed through honestly instead, both reach ``_bounded``
-    and are correctly declined there (0 sits below every currency's plausible floor).
-
-    A ``max``-only block (``min`` absent) is declined outright rather than passed through as a
-    bare single value. ``_field_range_currency_interval``'s single-value path always reads a lone
-    figure as a floor with no ceiling (see ashby.py's own ``_salary()`` docstring: it checked its
-    mirror shape directly against live data, found 0/820 real occurrences, and left it on that
-    path deliberately since it never happens in practice there). SmartRecruiters' native block
-    does send max-only in practice — live-verified 2026-08-26, 1/19 populated ``compensation``
-    blocks across 60 boards/348 postings, e.g. ``{"max": 12150, "currency": "MXN", "period":
-    "MONTHLY"}`` — and reading that through the single-value path would silently misreport a
-    stated ceiling ("up to 12,150 MXN/month") as an unbounded floor ("145,800/year, no ceiling",
-    annualized). Unlike the ``max: 0`` junk case above, this one is not caught by ``_bounded``
-    either — 145,800 clears the USD-fallback plausibility bounds cleanly, so it would ship as a
-    confident, wrong number rather than a safe decline."""
-    if not compensation:
-        return None
-    lo, hi = compensation.get("min"), compensation.get("max")
-    if lo is None:
-        return None
-    span = f"{lo}-{hi}" if hi is not None else str(lo)
-    period = _STRUCTURED_PERIOD.get((compensation.get("period") or "").upper())
-    return " ".join(str(x) for x in (span, compensation.get("currency"), period) if x)
-
-
 class SmartRecruitersScraper(BaseScraper):
     ats = "smartrecruiters"
     detail_workers = _DETAIL_WORKERS
@@ -190,9 +151,9 @@ class SmartRecruitersScraper(BaseScraper):
     def _extract_detail(self, response: Any) -> dict[str, Any] | None:
         """The posting-detail fields ``parse()`` needs (None on non-200): the jobAd sections
         concatenated into raw HTML, and the native ``compensation`` block (min/max/currency/
-        period — populated on 10.48% of postings, unread until this pass; see the module-level
-        ``_salary()`` docstring). One fetch for both — this response is already the one the
-        scraper makes for the description alone.
+        period — populated on 10.48% of postings, unread until this pass; see
+        :meth:`SmartRecruitersScraper._salary_field`'s docstring). One fetch for both — this
+        response is already the one the scraper makes for the description alone.
 
         qualifications and additionalInformation carry the requirements (years of
         experience etc.); companyDescription is deliberately skipped — it's the same
@@ -302,7 +263,48 @@ class SmartRecruitersScraper(BaseScraper):
                     description=description,
                     experience=(p.get("experienceLevel") or {}).get("label"),
                     employment_type=(p.get("typeOfEmployment") or {}).get("label"),
-                    salary=_salary(detail.get("compensation")),
+                    salary=self._salary_field(detail.get("compensation")),
                 )
             )
         return jobs
+
+    def _salary_field(self, raw: dict | None) -> str | None:
+        """Format the posting-detail's native ``compensation`` block, e.g. "70000-85000 EUR 1
+        YEAR" — the same RANGE + CODE + interval shape lever/recruitee/teamtailor/ashby/
+        personio/rippling already produce (``_field_range_currency_interval`` in salary.py,
+        registered for this ATS alongside this helper). Found via direct API inspection
+        (2026-08-25, experiment/location-audit-2026-08-25/smartrecruiters.md): populated on
+        10.48% of postings, and description-mining independently misses 81.7% of those (134/164
+        in a 1,500-posting comparison) — reading this field roughly doubles smartrecruiters'
+        salary coverage at zero extra request cost, since the detail fetch already happens for
+        the description.
+
+        ``lo``/``hi`` are checked with ``is not None``, not truthiness: real junk values observed
+        in the same pass include ``{"max": 0, "currency": "GBP"}`` and ``{"min": 1, "max": 1,
+        "currency": "GTQ"}`` — a truthy check on a 0 floor would misread a stated "$0-$85,000" as
+        a bare ceiling figure (the same trap ashby's own ``_salary_field()`` docstring records
+        from the Ramp ``minValue=0`` code-review catch). Passed through honestly instead, both
+        reach ``_bounded`` and are correctly declined there (0 sits below every currency's
+        plausible floor).
+
+        A ``max``-only block (``min`` absent) is declined outright rather than passed through as
+        a bare single value. ``_field_range_currency_interval``'s single-value path always reads
+        a lone figure as a floor with no ceiling (see ashby.py's own ``_salary_field()``
+        docstring: it checked its mirror shape directly against live data, found 0/820 real
+        occurrences, and left it on that path deliberately since it never happens in practice
+        there). SmartRecruiters' native block does send max-only in practice — live-verified
+        2026-08-26, 1/19 populated ``compensation`` blocks across 60 boards/348 postings, e.g.
+        ``{"max": 12150, "currency": "MXN", "period": "MONTHLY"}`` — and reading that through the
+        single-value path would silently misreport a stated ceiling ("up to 12,150 MXN/month") as
+        an unbounded floor ("145,800/year, no ceiling", annualized). Unlike the ``max: 0`` junk
+        case above, this one is not caught by ``_bounded`` either — 145,800 clears the
+        USD-fallback plausibility bounds cleanly, so it would ship as a confident, wrong number
+        rather than a safe decline."""
+        if not raw:
+            return None
+        lo, hi = raw.get("min"), raw.get("max")
+        if lo is None:
+            return None
+        span = f"{lo}-{hi}" if hi is not None else str(lo)
+        period = _STRUCTURED_PERIOD.get((raw.get("period") or "").upper())
+        return " ".join(str(x) for x in (span, raw.get("currency"), period) if x)

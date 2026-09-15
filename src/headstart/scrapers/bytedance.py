@@ -218,6 +218,11 @@ class ByteDanceScraper(BaseScraper):
             )
         return jobs
 
+    def _salary_field(self, raw: Any) -> str | None:
+        # `job_post_info` (salary/experience/degree) was null in every one of the 100 sampled
+        # postings (module docstring) — no structured compensation field to read.
+        return None
+
 
 def _location(city_info: Any) -> str | None:
     """ "City, Region, Country" from ``city_info``'s nested ``parent`` chain, skipping a level

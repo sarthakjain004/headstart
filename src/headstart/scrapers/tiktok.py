@@ -198,6 +198,11 @@ class TikTokScraper(BaseScraper):
             )
         return jobs
 
+    def _salary_field(self, raw: Any) -> str | None:
+        # `job_post_info` (salary, level, expiry) was null on every one of the 100 sampled
+        # rows (module docstring) — this tenant simply doesn't populate it, not a truncation.
+        return None
+
 
 def _location_of(city_info: Any) -> str | None:
     """ "City, Region, Country" from the nested ``city_info -> parent -> parent`` chain, dropping

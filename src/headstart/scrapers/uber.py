@@ -157,6 +157,12 @@ class UberScraper(BaseScraper):
             )
         return jobs
 
+    def _salary_field(self, raw: Any) -> str | None:
+        # `Salary.MinValue`/`MaxValue`/`Currency`/`Period` are null on all 517 sampled rows
+        # (module docstring); `Salary.Description` duplicates text already in `Description`, so
+        # there is no structured field to read here — `salary.extract()` mines the description.
+        return None
+
 
 def _location(locations: Any) -> str | None:
     """ "City, Region, Country" of the first entry — a job with several offices lists them all,

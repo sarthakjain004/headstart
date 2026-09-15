@@ -198,6 +198,11 @@ class MetaScraper(BaseScraper):
             )
         return jobs
 
+    def _salary_field(self, raw: Any) -> str | None:
+        # Zero of 80 sampled JSON-LD payloads carry `baseSalary` (module docstring) — unlike
+        # icims/oracle where it is merely inconsistently present, this is genuinely absent here.
+        return None
+
 
 def _sitemap_rows(xml: str) -> list[tuple[str, str, str | None]]:
     """``(job_id, public_url, lastmod)`` per posting, deduped, in sitemap order."""

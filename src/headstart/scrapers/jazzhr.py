@@ -185,31 +185,6 @@ def _attributes(page: str) -> dict[str, str]:
     return found
 
 
-def _salary_field(base: Any) -> str | None:
-    """``Job.salary`` as ``"MIN-MAX CUR UNIT"`` from the JSON-LD ``baseSalary`` MonetaryAmount.
-
-    That exact shape is what :func:`headstart.salary._field_range_currency_interval` reads (and
-    why jazzhr is registered on it): the bare unit word is how an hourly figure gets annualized
-    at all. A single-valued amount — a fixed rate with no range, 33 of the 393 in the sample —
-    keeps the same shape minus the range, which that parser also handles.
-    """
-    if not isinstance(base, dict):
-        return None
-    value = base.get("value")
-    if not isinstance(value, dict):
-        return None
-    unit = str(value.get("unitText") or "").strip()
-    currency = str(base.get("currency") or "").strip()
-    low, high = value.get("minValue"), value.get("maxValue")
-    if low is None and high is None:
-        low = high = value.get("value")
-    if low is None and high is None:
-        return None
-    one = low if low is not None else high
-    amount = f"{low}-{high}" if low is not None and high is not None else f"{one}"
-    return " ".join(part for part in (amount, currency, unit) if part) or None
-
-
 def _rows(listing: str) -> list[tuple[str, str, str | None, str | None]]:
     """``(key, title, location, department)`` per posting on the ``/apply/jobs`` table.
 
@@ -367,7 +342,31 @@ class JazzHRScraper(BaseScraper):
                     description=html_to_text(_description_html(page)) if page else None,
                     experience=attributes.get("experience"),
                     employment_type=attributes.get("employment"),
-                    salary=_salary_field((posting or {}).get("baseSalary")),
+                    salary=self._salary_field((posting or {}).get("baseSalary")),
                 )
             )
         return jobs
+
+    def _salary_field(self, raw: Any) -> str | None:
+        """``Job.salary`` as ``"MIN-MAX CUR UNIT"`` from the JSON-LD ``baseSalary`` MonetaryAmount.
+
+        That exact shape is what :func:`headstart.salary._field_range_currency_interval` reads
+        (and why jazzhr is registered on it): the bare unit word is how an hourly figure gets
+        annualized at all. A single-valued amount — a fixed rate with no range, 33 of the 393 in
+        the sample — keeps the same shape minus the range, which that parser also handles.
+        """
+        if not isinstance(raw, dict):
+            return None
+        value = raw.get("value")
+        if not isinstance(value, dict):
+            return None
+        unit = str(value.get("unitText") or "").strip()
+        currency = str(raw.get("currency") or "").strip()
+        low, high = value.get("minValue"), value.get("maxValue")
+        if low is None and high is None:
+            low = high = value.get("value")
+        if low is None and high is None:
+            return None
+        one = low if low is not None else high
+        amount = f"{low}-{high}" if low is not None and high is not None else f"{one}"
+        return " ".join(part for part in (amount, currency, unit) if part) or None

@@ -119,21 +119,6 @@ def _merge_detail(record: dict, detail: dict | None) -> dict:
     return merged
 
 
-def _salary_field(salary: Any, currency: Any) -> str | None:
-    """``Job.salary`` from the detail record's ``Salary`` (plus ``Currency`` when present) — e.g.
-    "250,000 - 300,000 USD" — so ``salary.extract``'s field tier and the served ``salary`` display
-    column (ADR-0019) stop being permanently empty for zoho. Previously ``Salary``/``Currency``
-    were only ever spliced into the description text; the value itself never reached ``Job.salary``
-    (audit: experiment/location-audit-2026-08-25/zoho.md). This is strictly additive — the splice
-    into the description (``_description_text``) stays, as a fallback for `salary.extract`'s
-    description-mining tier on any tenant's phrasing the field tier's parser doesn't handle."""
-    salary_text = (salary or "").strip()
-    if not salary_text:
-        return None
-    currency_text = (currency or "").strip()
-    return f"{salary_text} {currency_text}" if currency_text else salary_text
-
-
 def _description_text(record: dict) -> str | None:
     """Job_Description with Salary/Currency appended when present (unchanged from PR #238's
     behaviour) — Salary/Currency are free-text, per-tenant strings ("5-10 Lakhs", "DOE"), not a
@@ -320,10 +305,25 @@ class ZohoScraper(BaseScraper):
                     description=html_to_text(_description_text(d)),
                     experience=d.get("Work_Experience"),
                     employment_type=d.get("Job_Type"),
-                    salary=_salary_field(d.get("Salary"), d.get("Currency")),
+                    salary=self._salary_field(d),
                 )
             )
         return jobs
+
+    def _salary_field(self, raw: dict) -> str | None:
+        """``Job.salary`` from the merged detail record's ``Salary`` (plus ``Currency`` when
+        present) — e.g. "250,000 - 300,000 USD" — so ``salary.extract``'s field tier and the
+        served ``salary`` display column (ADR-0019) stop being permanently empty for zoho.
+        Previously ``Salary``/``Currency`` were only ever spliced into the description text; the
+        value itself never reached ``Job.salary`` (audit:
+        experiment/location-audit-2026-08-25/zoho.md). This is strictly additive — the splice
+        into the description (``_description_text``) stays, as a fallback for `salary.extract`'s
+        description-mining tier on any tenant's phrasing the field tier's parser doesn't handle."""
+        salary_text = (raw.get("Salary") or "").strip()
+        if not salary_text:
+            return None
+        currency_text = (raw.get("Currency") or "").strip()
+        return f"{salary_text} {currency_text}" if currency_text else salary_text
 
     @staticmethod
     def _company_name(raw: str) -> str | None:

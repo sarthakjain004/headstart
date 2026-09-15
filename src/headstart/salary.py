@@ -87,7 +87,7 @@ def extract(
 
 
 # --- Tier 1: parse Job.salary, a string we already formatted per-scraper -----------------------
-# Mostly OUR OWN output shapes (each scraper's private `_salary()`-style helper: lever, recruitee,
+# Mostly OUR OWN output shapes (each scraper's own `_salary_field()` method: lever, recruitee,
 # teamtailor, ashby, personio, keka, darwinbox each get a calibrated `_field_*` parser below) — but
 # not always: an ATS with no dedicated parser falls through to `_field_generic`, and any such ATS
 # may pass an HR system's own raw free-text field straight into `Job.salary` with zero scraper-side
@@ -221,7 +221,7 @@ def _period_multiplier_structured(text: str) -> int:
     """:func:`_period_multiplier`, plus BARE unit-word recognition ("HOUR", "DAY", "MONTH" with
     no "per"/slash) for a field value KNOWN to be a short, machine-assembled
     "NUMBER-NUMBER CURRENCY UNIT" string with no other prose — real teamtailor field, confirmed
-    on live data: the schema.org unitText this scraper's own _salary() passes through is exactly
+    on live data: the schema.org unitText this scraper's own _salary_field() passes through is exactly
     that shape ("15-17.5 GBP HOUR", "1500-1800 EUR MONTH", "120-130 GBP DAY"), and none of
     `_period_multiplier`'s phrase-shaped checks match a bare "HOUR", so every hourly/monthly/daily
     teamtailor figure was silently defaulting to the annual multiplier and then
@@ -279,16 +279,18 @@ def _bounded(
 def _field_range_currency_interval(value: str) -> SalarySpan | None:
     """lever: "50000-70000 USD per-year-salary" | recruitee: "50000-70000 EUR per year" |
     teamtailor: "40000-60000 EUR YEAR" | ashby: "80000-100000 USD 1 YEAR" (assembled by
-    ashby.py's own `_salary()` from the structured Salary-typed `compensationTiers[].components[]`
-    entry) | personio: "48000.00 EUR yearly" (assembled by personio.py's own `_salary()` from the
-    structured `<salaryInformation><min>/<max>/<currencyCode>/<type>` element — `_text()`'s prior
+    ashby.py's own `_salary_field()` from the structured Salary-typed
+    `compensationTiers[].components[]` entry) | personio: "48000.00 EUR yearly" (assembled by
+    personio.py's own `_salary_field()` from the structured
+    `<salaryInformation><min>/<max>/<currencyCode>/<type>` element — `_text()`'s prior
     read of the element's own direct text was always empty for this shape, a real Tier-1 dead end
     fixed the same way ashby's own was) — the "fix ambiguity at the source" latitude the
     salary-extraction plan already grants, not organic text, for both. | rippling:
-    "62000-70000 USD YEAR" / "25-25 USD HOUR" (assembled by rippling.py's own `_pay_range()` from
-    the structured `payRangeDetails[0]` entry; no fix needed here — the raw format already matched
-    this parser's shape end-to-end, confirmed by testing before registering, not assumed) |
-    smartrecruiters: "70000-85000 EUR 1 YEAR" (assembled by smartrecruiters.py's own `_salary()`
+    "62000-70000 USD YEAR" / "25-25 USD HOUR" (assembled by rippling.py's own
+    `_salary_field()` from the structured `payRangeDetails[0]` entry; no fix needed here — the
+    raw format already matched this parser's shape end-to-end, confirmed by testing before
+    registering, not assumed) |
+    smartrecruiters: "70000-85000 EUR 1 YEAR" (assembled by smartrecruiters.py's own `_salary_field()`
     from the native posting-detail `compensation.{min,max,currency,period}` block — the adverb
     period ("YEARLY") is mapped to the singular bare word this parser's structured-interval
     matching recognizes, same latitude as ashby/personio above). All
