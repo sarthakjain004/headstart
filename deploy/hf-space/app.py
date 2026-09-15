@@ -2,10 +2,11 @@
 
 Pulls the LanceDB ``jobs`` table from the private HF dataset at startup (HF_TOKEN Space
 secret), loads the nomic encoder (baked into the image), and serves the shared UI — the
-templates and static files synced from ``src/headstart/ui`` — over the shared search path,
-``search.JobSearch``, synced from ``src/headstart/search.py`` (ADR-0042). The local dev
-server (``scripts/ui/serve.py``) is a thin adapter over the same two modules, so nothing
-here is duplicated there any more.
+templates and static files under ``headstart.ui`` — over the shared search path,
+``search.JobSearch`` (ADR-0042). The local dev server (``scripts/ui/serve.py``) is a thin
+adapter over the same two modules, so nothing here is duplicated there any more. Both import
+``headstart`` the same way: the Space installs it as a real package rather than laying its
+modules down flat (ADR-0153), so there is exactly one import path to keep in sync.
 """
 
 from __future__ import annotations
@@ -19,19 +20,17 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-import facets  # facet counts — synced from src/headstart/facets.py (ADR-0084)
-import fx  # synced from src/headstart/fx.py by deploy-space.yml (ADR-0117)
-import geo  # India gazetteer — synced from src/headstart/geo.py by deploy-space.yml
 import lancedb
-import llm_router  # synced from src/headstart/llm_router.py by deploy-space.yml (ADR-0032)
-import profile_extract  # synced from src/headstart/profile_extract.py by deploy-space.yml
-import search  # the shared search path — synced from src/headstart/search.py (ADR-0042)
+from flask import Flask, jsonify, render_template, request, session
+from huggingface_hub import snapshot_download
 
-# alerts/ is a package, synced from src/headstart/alerts/ by deploy-space.yml (ADR-0035).
-# Only these members are imported here: alerts/__init__.py is empty on purpose, so the
-# Space never loads the Digest or Resend modules, whose dependencies it does not install.
-from alerts import access, identity
-from alerts.store import (
+import headstart  # only for headstart.__file__, to locate ui/ beside this package (ADR-0153)
+from headstart import facets, fx, geo, llm_router, profile_extract, search
+
+# alerts/__init__.py is empty on purpose, so importing it never pulls in the Digest or Resend
+# modules, whose dependencies (xlsxwriter, Resend) this image does not install.
+from headstart.alerts import access, identity
+from headstart.alerts.store import (
     MAX_PARSES,
     MAX_RESUME_BYTES,
     MAX_RESUMES,
@@ -47,8 +46,6 @@ from alerts.store import (
     is_resume_id,
     subscription_id,
 )
-from flask import Flask, jsonify, render_template, request, session
-from huggingface_hub import snapshot_download
 
 DATASET = os.environ.get("HF_DATASET", "imPoseidon/headstart-index")
 _STATE = Path("/app/state")
@@ -179,8 +176,8 @@ def _load_board_deltas(path: Path) -> list[dict]:
 
 
 def _family_labels(path: Path) -> dict[str, str]:
-    """Display names, from the curated map synced beside this app (ADR-0040). The ledger
-    stores slugs so a label can be reworded without breaking a series; this resolves them."""
+    """Display names, from the curated map under config/ (ADR-0040). The ledger stores slugs
+    so a label can be reworded without breaking a series; this resolves them."""
     if not path.exists():
         return {}
     spec = json.loads(path.read_text(encoding="utf-8"))
@@ -191,8 +188,8 @@ _WATCH_PREFIX = "watch:"  # mirrors headstart.roles.WATCH_PREFIX (ADR-0051)
 
 
 def _watch_meta(path: Path) -> dict[str, dict[str, str]]:
-    """``{watch:name: {label, parent}}`` from the curated watchlist (ADR-0051), synced beside
-    this app like the family map. Missing file means no watch roles — older deploys."""
+    """``{watch:name: {label, parent}}`` from the curated watchlist under config/ (ADR-0051),
+    like the family map. Missing file means no watch roles — older deploys."""
     if not path.exists():
         return {}
     spec = json.loads(path.read_text(encoding="utf-8"))
@@ -206,8 +203,9 @@ def _watch_meta(path: Path) -> dict[str, dict[str, str]]:
 
 
 _TRENDS = _load_trends(_STATE / "data" / "state" / "role_trends.parquet")
-_WATCH = _watch_meta(Path(__file__).with_name("role_watchlist.json"))
-_FAMILY_LABELS = _family_labels(Path(__file__).with_name("role_families.json"))
+_CONFIG = Path(__file__).parent / "config"  # copied in beside this app (ADR-0153)
+_WATCH = _watch_meta(_CONFIG / "role_watchlist.json")
+_FAMILY_LABELS = _family_labels(_CONFIG / "role_families.json")
 # A refit re-bases every series (ADR-0040), so never plot two versions on one axis: keep the
 # newest only. Older rows stay in the ledger, they just aren't charted.
 if _TRENDS:
@@ -252,12 +250,10 @@ def _store() -> Store:
     return Store(_SUBSCRIBERS_REPO, _SUBSCRIBERS_TOKEN)
 
 
-# The UI's single source is src/headstart/ui (templates + static); deploy-space.yml syncs
-# both next to this app. In a repo checkout (tests, local runs) the synced copies don't
-# exist, so fall back to the source location.
-_UI = Path(__file__).parent
-if not (_UI / "templates").exists():
-    _UI = Path(__file__).parents[2] / "src" / "headstart" / "ui"
+# The UI's single source is headstart/ui (templates + static), resolved off the installed
+# package (ADR-0153) exactly like scripts/ui/serve.py does — in the Space image, in a repo
+# checkout, or under test, `headstart.__file__` always points at the same src/headstart tree.
+_UI = Path(headstart.__file__).parent / "ui"
 app = Flask(
     __name__,
     template_folder=str(_UI / "templates"),

@@ -30,27 +30,25 @@ The UI says so beside the control; this module only makes the arithmetic availab
 from __future__ import annotations
 
 import json
-import logging
 from pathlib import Path
 from typing import Any
 
-# `logging.getLogger` rather than `headstart.log.get`, which is the same call: `deploy-space.yml`
-# copies this module into the Space image as a flat `fx.py` with no `headstart` package beside it,
-# so the seam cannot be imported there (the same constraint `_candidates` documents for paths, and
-# the one `search.py` and `alerts/store.py` document for this). In the repo the name still resolves
-# under the `headstart` root, so a stage's `log.setup()` reaches it.
-_log = logging.getLogger(__name__)
+from headstart import log
+
+_log = log.get(__name__)
 
 
 def _candidates() -> tuple[Path, ...]:
     """Where the rate table might be, nearest first.
 
-    Two layouts, one module: a flat `fx_rates.json` beside `app.py` in the Space image, and
-    `config/fx_rates.json` in the repo. Walked rather than indexed, and computed lazily rather
-    than at import: this module lives at `/app/fx.py` in the Space, whose path has only two
-    ancestors, so a hardcoded `parents[2]` raised `IndexError` **at import time** — before the
-    guarded read below could fall back — and took the whole Space down with it. Nothing here
-    may raise on a path shallower than it expects.
+    Two layouts, one module: `config/fx_rates.json` in the repo, and `/app/config/fx_rates.json`
+    in the Space image (ADR-0153 installs `headstart` as a package at `/app/headstart`, so this
+    module resolves to `/app/headstart/fx.py`, and `/app/config` is still two levels up). Walked
+    rather than indexed, and computed lazily rather than at import: an earlier flat-file layout
+    put this module directly at `/app/fx.py`, whose path had only two ancestors, so a hardcoded
+    `parents[2]` raised `IndexError` **at import time** — before the guarded read below could
+    fall back — and took the whole Space down with it. Nothing here may raise on a path
+    shallower than it expects.
     """
     here = Path(__file__).resolve()
     return (

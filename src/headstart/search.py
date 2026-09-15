@@ -16,8 +16,8 @@ wellfound's ``cofounder``, which the product deliberately doesn't).
 :class:`JobSearch` is the serving path behind one method: built once with the loaded
 encoder and the open ``jobs`` table, ``run(args)`` takes a request's query-string mapping
 and returns projected result rows. Both the HF Space app and the local dev server are thin
-adapters over it — this module is synced into the Space image beside ``geo.py``
-(deploy-space.yml), which is why it imports ``geo`` both ways below.
+adapters over it — the Space image installs ``headstart`` as a real package (ADR-0153), so
+this module imports ``fx``/``geo`` the same way everywhere.
 
 Only the encoder helpers need torch/sentence-transformers; they import lazily so the
 constants and both filter builders stay importable (and unit-testable) without the ML stack.
@@ -25,27 +25,19 @@ constants and both filter builders stay importable (and unit-testable) without t
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, NamedTuple
 from urllib.parse import urlsplit
 
-try:  # in the repo, a package member; in the Space image, a flat sibling module
-    from headstart import fx, geo
-except ImportError:  # pragma: no cover - exercised only in the deployed Space
-    import fx  # type: ignore[no-redef]
-    import geo  # type: ignore[no-redef]
+from headstart import fx, geo, log
 
-# `logging.getLogger` rather than `headstart.log.get`, which is the same call: `log.py` is not
-# among the modules `deploy-space.yml` copies into the Space image, and there is no `headstart`
-# package there to import the seam from (the same constraint the fx/geo import above documents).
-# In the repo the name resolves under the `headstart` root, so a stage's `log.setup()` reaches
-# it; in the Space nothing calls `setup`, which is why the one boot line below is a WARNING —
-# `logging.lastResort` carries WARNING and above to stderr with no handler configured, and a
-# served table quietly ignoring whole filters is an anomaly by ADR-0039's own definition.
-_log = logging.getLogger(__name__)
+# In the Space nothing calls `setup()` (ADR-0153's app.py boots straight into serving), which
+# is why the one boot line below is a WARNING — `logging.lastResort` carries WARNING and above
+# to stderr with no handler configured, and a served table quietly ignoring whole filters is an
+# anomaly by ADR-0039's own definition.
+_log = log.get(__name__)
 
 MODEL = "nomic-ai/nomic-embed-text-v1.5"
 DOC_PREFIX = "search_document: "  # index time (ADR-0005)
@@ -991,16 +983,10 @@ class JobSearch:
         Here rather than in the route so the table and the runtime schema facts stay behind
         this object; a caller reaching for ``_table`` to count would be the same class of leak
         that ``parse_filters`` exists to prevent on the filter side. Imported inside the method
-        because :mod:`headstart.facets` imports back from this one — and both ways, because the
-        Space image has no ``headstart`` package at all: it lays every module down flat beside
-        ``app.py`` (deploy-space.yml). A package-only import here raised ``ModuleNotFoundError``,
-        which the route's ``except ValueError`` does not catch, so ``/facets`` 500'd and the
-        browser's own ``.catch`` degraded it to silence — no counts, no total, in production only.
+        because :mod:`headstart.facets` imports back from this one — a module-level import
+        here would be circular.
         """
-        try:  # in the repo, a package member; in the Space image, a flat sibling module
-            from headstart import facets
-        except ImportError:  # pragma: no cover - exercised only in the deployed Space
-            import facets  # type: ignore[no-redef]
+        from headstart import facets
 
         return facets.counts(self._table, self.parse_filters(args), self.capabilities)
 

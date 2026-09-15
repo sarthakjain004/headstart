@@ -43,20 +43,12 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from typing import Any
 
-try:  # in the repo, a package member; in the Space image, a flat sibling module
-    from headstart.search import (
-        ETYPE_CLAUSES,
-        IndexCapabilities,
-        SearchFilters,
-        build_filter,
-    )
-except ImportError:  # pragma: no cover - exercised only in the deployed Space
-    from search import (  # type: ignore[no-redef]
-        ETYPE_CLAUSES,
-        IndexCapabilities,
-        SearchFilters,
-        build_filter,
-    )
+from headstart.search import (
+    ETYPE_CLAUSES,
+    IndexCapabilities,
+    SearchFilters,
+    build_filter,
+)
 
 # How long "first seen by HeadStart" can look back, in hours. The short end matters more than
 # the long: the pipeline cycles roughly hourly (ADR-0071), so 2h is "since about the last run"

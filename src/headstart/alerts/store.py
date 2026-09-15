@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import logging
 import re
 import secrets
 from collections.abc import Iterator
@@ -38,13 +37,11 @@ from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
 
+from headstart import log
+
 from .access import normalize
 
-# `logging.getLogger` rather than `headstart.log.get`, which is the same call: this module is
-# copied into the Space image, where every module is laid down flat and there is no
-# `headstart` package to import the seam from (the constraint `search.py` documents). In the
-# pipeline the name still resolves under the `headstart` root, so `log.setup()` reaches it.
-_log = logging.getLogger(__name__)
+_log = log.get(__name__)
 
 _record_unreadable_reported = False
 
@@ -375,8 +372,8 @@ class SavedJob:
 
 
 def _profile_line(value: Any) -> str:
-    """A Profile field as one bounded line — mirrors profile_extract's bound (which this
-    module cannot import: in the Space image, alerts/ can't see the flat modules)."""
+    """A Profile field as one bounded line — mirrors profile_extract's ``_MAX_FACT_CHARS``
+    bound without importing it, to avoid a cross-module dependency for one constant."""
     return str(value or "").strip()[:200]
 
 
