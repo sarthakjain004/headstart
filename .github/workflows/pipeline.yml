@@ -715,8 +715,13 @@ jobs:
     # moved in: the header rule is that the JOB margin covers setup + EVERY step + upload, and a
     # job kill lands after the uploads but before `Restart the Space`, banking the data while the
     # Space keeps serving the stale index. Raised 58 -> 63 for the `_deletions` check below
-    # (ADR-0094), whose own cap is 5 min — the same rule, applied again.
-    timeout-minutes: 63
+    # (ADR-0094), whose own cap is 5 min — the same rule, applied again. Raised 63 -> 98 for
+    # `Refresh stored metadata` below, whose own cap is 35 min: a DERIVATIONS_VERSION sweep had no
+    # budget here at all before 2026-09-15, when one ran the *job* out of its 63-minute ceiling at
+    # 59m35s into the step, taking `sync`/`prune`/`role_trends`/the HF upload down with it even
+    # though the step is `continue-on-error` — the step just never got its own timeout to make
+    # that matter. See that step's comment for where 35 min comes from.
+    timeout-minutes: 98
     outputs:
       compact_due: ${{ steps.compaction.outputs.due }}
     steps:
@@ -785,8 +790,20 @@ jobs:
         # sync is what carries the corrected values into the served table. Never fatal: a skipped
         # refresh costs one run of staleness, which is the status quo it is fixing, whereas
         # failing here would drop the run's scrape and evictions too.
+        #
+        # timeout-minutes: a version bump makes `update_meta` re-derive every row instead of just
+        # resyncing facts — measured 2026-09-15 at ~224 rows/s (a 805,160-row store still 800,000
+        # rows in at 59m35s), against ~53,000 rows/s on an ordinary run. That sweep now fans out
+        # across a process pool, but ubuntu-latest's real, imperfect parallelism and the corpus's
+        # continued growth both cut into any measured speedup — 35 min assumes only a ~2x win
+        # over the observed single-core hour, not the ~4 vCPUs nominally available. Re-measure
+        # against the next real sweep rather than trusting this projection indefinitely. Without
+        # its own cap this step can consume the whole job's `timeout-minutes` and take
+        # `sync`/`prune`/`role_trends`/the upload down with it — `continue-on-error` only helps
+        # once *this* step can time out on its own first.
         if: needs.scrape-plan.outputs.run == 'true'
         continue-on-error: true
+        timeout-minutes: 35
         run: python -m headstart.ingest.update_meta
       - name: Sync the jobs table
         if: needs.scrape-plan.outputs.run == 'true'
