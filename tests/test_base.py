@@ -52,12 +52,11 @@ def test_note_detail_loss_appends_causes_without_changing_the_leading_count(capl
     )
 
 
-def test_a_long_tail_of_causes_states_its_residual(caplog):
-    """Only the four largest causes are named, and the tail says how much they leave out.
-
-    A bare "…" said a fifth cause existed and nothing about its size, so a long tail that
-    outweighed everything shown read as a footnote. With the residual stated, the four shown
-    plus the tail always sum to the missing count — 10+9+8+7+11 == 45 here."""
+def test_every_cause_is_named_with_no_cap(caplog):
+    """A cap used to keep only the top 4 causes behind a sized "…N more" tail, but measured
+    production cardinality never approached it (9 distinct causes fleet-wide, ~1.2 per Board
+    per run — see loss_breakdown's docstring), so it was dropped: all six causes here show,
+    largest first, summing to the missing count — 10+9+8+7+6+5 == 45."""
     caplog.set_level(logging.INFO, logger="headstart.scrapers.stub")
     scraper = _StubScraper("acme")
     for cause, n in (("a", 10), ("b", 9), ("c", 8), ("d", 7), ("e", 6), ("f", 5)):
@@ -65,7 +64,7 @@ def test_a_long_tail_of_causes_states_its_residual(caplog):
             scraper.note_detail_loss(cause)
     scraper.report_detail_gaps([None] * 45, what="details")
     assert (
-        "45/45 details missing (a x10, b x9, c x8, d x7, …2 more cause(s) x11)"
+        "45/45 details missing (a x10, b x9, c x8, d x7, e x6, f x5)"
         in caplog.records[0].getMessage()
     )
 

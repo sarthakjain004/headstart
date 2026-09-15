@@ -2041,7 +2041,7 @@ def test_workday_detail_gap_records_a_raised_request(monkeypatch):
     assert asyncio.run(scraper._job_detail_async(None, "/job/a", classes)) is None
     assert asyncio.run(scraper._job_detail_async(None, None, classes)) is None
     # curl_cffi's `RequestsError` is an alias of `RequestException`, which is the name
-    # `_failure_class` reports for a request the origin never gave a status to
+    # `classify_exception` reports for a request the origin never gave a status to
     assert classes == Counter({"RequestException": 1, "no externalPath": 1})
 
 
