@@ -219,7 +219,16 @@ def build_doc(job: dict) -> str:
 # all 7 shard hosts): 2/80 state a discrete field, under two different label spellings each with
 # its own value vocabulary -- "Workplace Arrangement" (Hybrid/In-Office) and "Location Type"
 # (Onsite/Remote); "Hybrid" stays None, matching `workday._remote_from`'s convention.
-DERIVATIONS_VERSION = 10
+#
+# v11: `salary.py`'s `_field_darwinbox` currency gate widened from a hardcoded "INR" check to
+# any code `_CURRENCY_CODE` already recognizes (USD/EUR/GBP/CAD/...). Needed here, unlike
+# darwinbox.py's own structured-field change (which changes the raw `Job.salary` text itself,
+# so `refresh_row`'s `salary_inputs_moved` already reaches it for free — see smartrecruiters.py's
+# docstring for that mechanism): a darwinbox tenant already scraped with a non-INR
+# `salary_range` string in `Job.salary` — unchanged raw input — now parses where it used to
+# return None outright, which is exactly the "unchanged input starts parsing differently" case
+# this counter exists for.
+DERIVATIONS_VERSION = 11
 
 
 def to_meta(job: dict) -> dict:

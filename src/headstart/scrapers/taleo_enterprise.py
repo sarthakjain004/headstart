@@ -3,7 +3,15 @@
 Enterprise Career Sections are distinct from Taleo Business Edition.  A board is
 the full ``https://{zone}.taleo.net/careersection/{section}`` address.  Its HTML
 shell provides a portal id and the configured result headers; the public JSON
-job-board endpoint provides paginated listings; jobdetail pages provide bodies.
+job-board endpoint provides paginated listings; jobdetail pages provide bodies
+and, on some tenants, compensation (see ``_salary_field``).
+
+Reading compensation into ``salary`` does NOT need a `doc_prep.DERIVATIONS_VERSION` bump: like
+smartrecruiters' own native-compensation field (see that scraper's docstring), ``salary`` is a
+re-observed FACT_FIELD, so once a Board is rescraped its now-populated raw ``Job.salary`` differs
+from the stored one and `refresh_row`'s `salary_inputs_moved` reprocesses it — no version sweep
+required. A bump is for when unchanged input starts parsing differently; here the input itself
+changes from ``None`` to a real string.
 """
 
 from __future__ import annotations
@@ -150,6 +158,43 @@ def _detail_text(value: str) -> str | None:
     return html_to_text(unquote(value).replace(r"\:", ":").removeprefix("!*!") or None)
 
 
+def _salary_field(
+    payvalue: str | None,
+    maximumsalary: str | None,
+    currency: str | None,
+    frequency: str | None,
+) -> str | None:
+    """``Job.salary`` from the detail page's ``reqlistitem.payvalue``/``maximumsalary``/
+    ``currency``/``payfrequencybasis`` labels — real on a minority of tenants; most state none
+    of them. Live samples, 2026-09-15: careerglobalhc job 121008 states payvalue="45,000.00" +
+    maximumsalary="65,000.00" with no currency/frequency; tas-tgh job 684681 states only
+    payvalue="19.00" (an hourly rate, but nothing in the data says so — see below); hyatt job
+    3128720 states currency="Australian Dollar (AUD)" + payfrequencybasis="Yearly" with no
+    payvalue/maximumsalary at all (a Sydney posting that discloses the currency and cadence but
+    not a figure).
+
+    ``currency`` is a full name with its ISO code already in parentheses ("Australian Dollar
+    (AUD)", "US Dollar (USD)", "Indian Rupee (INR)") — passed through as-is rather than mapped,
+    since `salary.py`'s `_CURRENCY_CODE` finds the parenthesized code inline regardless of the
+    surrounding words.
+
+    ``maximumsalary`` with no ``payvalue`` is refused rather than reported as a lone figure — the
+    same ceiling-vs-floor risk iCIMS's own JSON-LD parser refuses for the identical reason
+    (CLAUDE.md): `salary.py`'s `_field_generic` (taleo_enterprise has no dedicated Tier-1 parser)
+    has no way to tell a bare number is a stated ceiling rather the whole truth, and misreading
+    one as a floor overstates every job below it. A `payvalue` with no `maximumsalary` (tas-tgh's
+    hourly case above) is reported as a single figure instead — `_field_generic` already reads a
+    lone number as a floor with no ceiling, the correct shape for "at least this much" data,
+    which is what a floor-only figure is. That tas-tgh figure still won't reach a Job: with no
+    ``payfrequencybasis`` stated, `_field_generic` defaults to annual, and $19/year fails the
+    plausibility floor — declined rather than guessed at hourly, since nothing in the data says
+    it is."""
+    if not payvalue:
+        return None
+    span = f"{payvalue}-{maximumsalary}" if maximumsalary else payvalue
+    return " ".join(p for p in (span, currency, frequency) if p)
+
+
 def _parse_detail_page(page: str) -> dict[str, str | None] | None:
     match, labels_match = _DETAIL_LIST.search(page), _DETAIL_LABELS.search(page)
     if not match or not labels_match:
@@ -175,6 +220,12 @@ def _parse_detail_page(page: str) -> dict[str, str | None] | None:
         ),
         "employment_type": joined("reqlistitem.jobschedule"),
         "posted_at": _date(joined("reqlistitem.postingdate")),
+        "salary": _salary_field(
+            joined("reqlistitem.payvalue"),
+            joined("reqlistitem.maximumsalary"),
+            joined("reqlistitem.currency"),
+            joined("reqlistitem.payfrequencybasis"),
+        ),
     }
 
 
@@ -391,12 +442,15 @@ class TaleoEnterpriseScraper(BaseScraper):
                     description=detail.get("description"),
                     employment_type=detail.get("employment_type")
                     or item["employment_type"],
+                    salary=detail.get("salary"),
                 )
             )
         return jobs
 
     def _salary_field(self, raw: Any) -> str | None:
-        # Not yet measured: no structured compensation field has been looked for on either the
-        # listing or the jobdetail page. Needs its own measurement pass before this can claim
-        # more.
+        """Never actually called: the real computation runs inside module-level
+        `_parse_detail_page()` (no `self` available there), and `parse()` reads its
+        already-computed result off `detail.get("salary")`. This method exists only to satisfy
+        `BaseScraper`'s abstract-method contract — the same structural exception icims.py's own
+        `_salary_field` delegate documents."""
         return None

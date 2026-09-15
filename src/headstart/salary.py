@@ -354,9 +354,22 @@ def _field_darwinbox(value: str) -> SalarySpan | None:
     tenants, e.g. "INR 20000 - 25000 (Monthly)"), so `_period_multiplier` applies on top of
     whichever magnitude multiplier is chosen. Missing that would have let a monthly figure read as
     annual-and-in-bounds, quietly 12x too low (code-review finding, PR #234, predates this fix but
-    still applies to it)."""
-    if "INR" not in value.upper():
+    still applies to it).
+
+    The currency gate was hardcoded to "INR" until darwinbox's structured ``salary_currency``
+    field (darwinbox.py's own ``_salary_field``) showed real non-INR tenants going through this
+    exact parser and being silently dropped whole — e.g. ``transcarent``'s "USD 20.00 - 20
+    (Hourly)" (live, 2026-09-15). Widened to any code `_CURRENCY_CODE` already recognizes, which
+    costs nothing new: an unrecognized code (darwinbox tenants also state MAD/CNY/MXN/KRW/THB/
+    SGD/MYR/IDR/BRL/CZK, none of them in `_CURRENCY_CODES` yet) still declines exactly as before,
+    since no new currency bounds were added here. The lakhs-shorthand magnitude heuristic stays
+    INR-only — it's an India-specific notation, and applying it to e.g. a genuine low-magnitude
+    USD hourly rate (real: transcarent's $20-33/hr) would 100,000x it into a bogus but
+    plausible-looking annual figure instead of correctly reading it as already-absolute."""
+    code_m = _CURRENCY_CODE.search(value)
+    if not code_m:
         return None
+    currency = code_m.group(1).upper()
     period_mult = _period_multiplier(value)
     m = _RANGE.search(value)
     if m:
@@ -366,10 +379,14 @@ def _field_darwinbox(value: str) -> SalarySpan | None:
         if not single:
             return None
         raw_lo = raw_hi = _num(single.group(1))
-    magnitude_mult = 1 if max(raw_lo, raw_hi) >= _DARWINBOX_LAKHS_THRESHOLD else 100_000
+    magnitude_mult = (
+        1
+        if currency != "INR" or max(raw_lo, raw_hi) >= _DARWINBOX_LAKHS_THRESHOLD
+        else 100_000
+    )
     lo = raw_lo * magnitude_mult * period_mult
     hi = raw_hi * magnitude_mult * period_mult
-    return _bounded(min(lo, hi), max(lo, hi), "INR")
+    return _bounded(min(lo, hi), max(lo, hi), currency)
 
 
 #: ATS -> its Tier-1 parser. An ATS not listed here (including one not yet given its own research

@@ -183,6 +183,7 @@ def test_detail_vector_supplies_authoritative_fields():
         "location": "US-TX-Austin; US-TX-Dallas",
         "employment_type": "Full-time",
         "posted_at": "2026-09-11T17:18:01+00:00",
+        "salary": None,
     }
 
 
@@ -213,7 +214,52 @@ def test_ttec_detail_layout_keeps_absent_fields_null():
         "location": "India; India-Gujarat-Ahmedabad",
         "employment_type": None,
         "posted_at": None,
+        "salary": None,
     }
+
+
+def test_salary_field_range_with_both_bounds():
+    # Real live sample (careerglobalhc job 121008, 2026-09-15): payvalue + maximumsalary, no
+    # currency/payfrequencybasis stated for this tenant.
+    assert (
+        enterprise._salary_field("45,000.00", "65,000.00", None, None)
+        == "45,000.00-65,000.00"
+    )
+
+
+def test_salary_field_single_value_no_ceiling():
+    # Real live sample (tas-tgh job 684681, 2026-09-15): payvalue only, an hourly rate with no
+    # payfrequencybasis stated — reported as a floor-only figure, not an exact point.
+    assert enterprise._salary_field("19.00", None, None, None) == "19.00"
+
+
+def test_salary_field_currency_full_name_and_frequency_passed_through():
+    # Real live sample (hyatt job 3134015, 2026-09-15): currency states the ISO code inline in
+    # parentheses ("US Dollar (USD)") rather than a bare code — passed through as-is since
+    # salary.py's _CURRENCY_CODE finds it regardless of the surrounding words.
+    assert (
+        enterprise._salary_field("18.00", None, "US Dollar (USD)", "Hourly")
+        == "18.00 US Dollar (USD) Hourly"
+    )
+    from headstart.salary import SalarySpan, extract
+
+    assert extract(
+        "18.00 US Dollar (USD) Hourly", None, "taleo_enterprise"
+    ) == SalarySpan(37_440, None, "USD", "field")
+
+
+def test_salary_field_ceiling_without_floor_is_refused():
+    # A maximumsalary with no payvalue must never be reported as a lone figure — the same
+    # ceiling-vs-floor risk iCIMS's own JSON-LD parser refuses, since salary.py's _field_generic
+    # (taleo_enterprise has no dedicated Tier-1 parser) has no way to tell a bare number is a
+    # stated ceiling rather than the whole truth.
+    assert (
+        enterprise._salary_field(None, "65,000.00", "US Dollar (USD)", "Yearly") is None
+    )
+
+
+def test_salary_field_absent_entirely():
+    assert enterprise._salary_field(None, None, None, None) is None
 
 
 def test_alias_key_uses_full_career_section(monkeypatch):
