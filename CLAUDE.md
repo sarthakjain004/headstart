@@ -137,7 +137,23 @@ sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` 
   `docs/discovery/shared-cert-tenant-rosters.md`.
 - **Phenom** — M, but poor discoverability (no enumerable pattern, curated seed needed). Mastercard/Adobe India GCCs. After Eightfold.
 - **PeopleStrong** (201 hosts, still no scraper — Angular SPA XHR), **Jobsoid** (`{slug}.jobsoid.com/api/v1/jobs`, S, low yield) — opportunistic.
-- Verified **dead-ends** (do not build): **Oracle Taleo** (declining, ~1 live India tenant — GCCs migrated to Oracle Cloud HCM which we support), greythr/qandle/beehive (login-only HRMS), HirePro, iSmartRecruit, Recruit CRM/Ceipal.
+- **Taleo Business Edition** ✅ DONE (2026-09-13, #452) — `scrapers/taleo_be.py`, wired through
+  liveness (533 live / 1,760 rows in `data/validate/liveness/taleo_be.csv`, plus 55
+  redirect-backed rows in `data/validate/aliases/taleo_be.csv`). Session-backed pagination: page 2's
+  URL carries no `org`/`cws` of its own, so the page-1 session cookie is required to resolve it — see
+  `docs/taleo_be/2026-09-13_tbe-surface-measurement.md`.
+- **Taleo Enterprise** ✅ DONE (2026-09-13, #453) — `scrapers/taleo_enterprise.py`, wired through
+  liveness (556 live / 7,442 rows in `data/validate/liveness/taleo_enterprise.csv`). A different
+  platform from Taleo Business Edition (`{tenant}.taleo.net/careersection/...` vs.
+  `{tenant}.tbe.taleo.net/.../ats/careers/v2/searchResults`). Listing pagination reads
+  `totalCount` once from page 1 as a page-count upper bound, not authoritative evidence of missing
+  requisitions — a complete D.R. Horton walk (every declared page, no repeated ids) still landed 2
+  short of Oracle's own stale total. See `docs/taleo_enterprise/2026-09-13_career-section-api-measurement.md`
+  and `experiment/taleo-enterprise-rate-limit/LOG.md` for the pagination and rate-limit measurements.
+  Both scrapers reverse a prior "do not build" verdict that was India-scoped, not global — see
+  [ADR-0144](adr/0144-oracle-taleo-was-a-dead-end-only-for-india.md).
+- Verified **dead-ends** (do not build): greythr/qandle/beehive (login-only HRMS), HirePro,
+  iSmartRecruit, Recruit CRM/Ceipal.
 
 Single-company unlocks (web research; a manual slug, not worth a scraper each):
 - **Trakstar Hire** (`{slug}.hire.trakstar.com`) — ShareChat, MediBuddy, Exotel, Drip Capital (4).

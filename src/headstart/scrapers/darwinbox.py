@@ -100,6 +100,7 @@ class DarwinboxScraper(BaseScraper):
             json=body,
             timeout=30,
             headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+            **self._egress(),
         )
         response.raise_for_status()
         return response.json().get("data") or []
@@ -115,6 +116,7 @@ class DarwinboxScraper(BaseScraper):
                 f"{host}/ms/candidateapi/companyinfo?companyId=main",
                 timeout=20,
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+                **self._egress(),
             )
             company = (response.json().get("message") or {}).get("company") or {}
             return bool(company.get("new_careers", True))

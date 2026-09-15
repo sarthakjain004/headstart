@@ -549,6 +549,7 @@ class WorkdayScraper(BaseScraper):
                 timeout=30,
                 allow_redirects=True,
                 stream=True,
+                **self._egress(),
             )
             resp.close()
             clean = urllib.parse.urlsplit(resp.url)._replace(query="", fragment="")

@@ -247,10 +247,11 @@ class _WalledScraper(_StubScraper):
     egress_fallback_on = frozenset({403, 405})
 
 
-def test_egress_is_empty_unless_the_scraper_opts_in():
-    """The default has to be inert: every ATS that has never walled us must keep making exactly
-    the call it made before this existed."""
-    assert _StubScraper("acme")._egress() == {}
+def test_egress_is_inert_unless_the_scraper_opts_in():
+    """Routing has to stay inert: every ATS that has never walled us must keep making exactly the
+    request it made before this existed. Only ``egress_board`` — pure log attribution, no routing
+    effect — rides along regardless."""
+    assert _StubScraper("acme")._egress() == {"egress_board": "stub:acme"}
 
 
 def test_egress_opt_in_keys_on_the_ats_not_the_board():
@@ -277,22 +278,28 @@ def test_eightfold_opts_in_on_the_wall_statuses():
 
 
 def test_measured_429_scrapers_opt_into_spare_egress():
+    """Only ATSes with a real production 429 signal opt in. Run `34767229592` (2026-09-13,
+    `experiment/pipeline-detail-loss/2026-09-13_run-34767229592/spare-egress-analysis.md`) is
+    the sole evidence behind this change and names only Eightfold (5,497 events / 34 Boards) and
+    Oracle (1,357 events / 2 pods) — Workday/Workable predate it on their own evidence. SuccessFactors,
+    Taleo BE, and Taleo Enterprise were wired the same day on zero production 429s and a
+    same-day controlled probe of 1-9 requests each (`docs/pipeline/2026-09-13_429-egress-live-measurement.md`)
+    that reproduced none — see docs/code-review/2026-09-15_last-5-prs-retrospective-critique.md."""
     from headstart.scrapers.oracle import OracleScraper
-    from headstart.scrapers.successfactors import SuccessFactorsScraper
-    from headstart.scrapers.taleo_be import TaleoBEScraper
-    from headstart.scrapers.taleo_enterprise import TaleoEnterpriseScraper
     from headstart.scrapers.workable import WorkableScraper
     from headstart.scrapers.workday import WorkdayScraper
 
-    for scraper in (
-        OracleScraper,
-        SuccessFactorsScraper,
-        TaleoBEScraper,
-        TaleoEnterpriseScraper,
-        WorkdayScraper,
-        WorkableScraper,
-    ):
+    for scraper in (OracleScraper, WorkdayScraper, WorkableScraper):
         assert 429 in scraper.egress_fallback_on, scraper.__name__
+
+
+def test_unevidenced_scrapers_do_not_opt_into_429_egress_yet():
+    from headstart.scrapers.successfactors import SuccessFactorsScraper
+    from headstart.scrapers.taleo_be import TaleoBEScraper
+    from headstart.scrapers.taleo_enterprise import TaleoEnterpriseScraper
+
+    for scraper in (SuccessFactorsScraper, TaleoBEScraper, TaleoEnterpriseScraper):
+        assert 429 not in scraper.egress_fallback_on, scraper.__name__
 
 
 def _zoho_board(monkeypatch):

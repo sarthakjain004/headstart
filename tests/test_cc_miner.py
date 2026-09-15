@@ -166,3 +166,17 @@ def test_taleo_enterprise_capture_keeps_the_full_career_section(miner):
         "https://drhorton.taleo.net/careersection/2",
         "https://drhorton.taleo.net/careersection/2",
     )
+
+
+def test_taleo_enterprise_preserves_section_slug_casing(miner):
+    """A mixed-case Career Section slug must survive tenant_from() unchanged, matching
+    TaleoEnterpriseScraper._canonical() and wayback_feeder.extract() — lowercasing the
+    whole match here previously produced a second board_key() for the same tenant."""
+    pattern = re.compile(miner.ATS_PATTERNS["taleo_enterprise"]["patterns"][0])
+    match = pattern.search(
+        "https://acme.taleo.net/careersection/NHC_FG_CS/jobsearch.ftl?lang=en"
+    )
+    assert miner.tenant_from("taleo_enterprise", match) == (
+        "https://acme.taleo.net/careersection/NHC_FG_CS",
+        "https://acme.taleo.net/careersection/NHC_FG_CS",
+    )
