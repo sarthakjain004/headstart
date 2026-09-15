@@ -1394,9 +1394,9 @@ class WorkdayScraper(BaseScraper):
         # nvidia's fifteen slices — as 100% lost the moment its single page 429s, which is the
         # whole of what #194 asked this not to do.
         page_count = len(offsets) + 1
-        why = ", ".join(f"{cls} x{n}" for cls, n in classes.most_common(4))
-        shortfall = f"{missing} of {page_count} page(s) failed mid-crawl" + (
-            f" ({why})" if why else ""
+        shortfall = (
+            f"{missing} of {page_count} page(s) failed mid-crawl"
+            + loss_breakdown(classes, missing)
         )
         if missing / page_count > _MAX_LOST_PAGE_SHARE:
             _log.info(
