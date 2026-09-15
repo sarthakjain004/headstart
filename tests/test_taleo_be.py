@@ -1,6 +1,6 @@
 from headstart.ingest.doc_prep import to_meta
 from headstart.scrapers.registry import SCRAPERS, get_scraper
-from headstart.scrapers.taleo_be import TaleoBEScraper
+from headstart.scrapers.taleo_be import TaleoBEScraper, _workplace_remote
 
 URL = "https://phe.tbe.taleo.net/phe03/ats/careers/v2/searchResults?org=ICANN&cws=37"
 
@@ -22,6 +22,19 @@ DETAIL = """<div class="well oracletaleocwsv2-job-description">
 <div class="cws-V2-reqfieldcell-right">Targeted Base Salary Low:</div><div class="cws-V2-reqfieldcell-left"><strong>142,000</strong></div>
 <div class="cws-V2-reqfieldcell-right">Targeted Base Salary High:</div><div class="cws-V2-reqfieldcell-left"><strong>197,400</strong></div>
 <div name="cwsJobDescription"><div><p>This position is fully remote. Build &amp; operate systems.</p></div></div><section>"""
+
+# Live-measured spellings (2026-09-15, docs/taleo_be/2026-09-15_workplace-arrangement-field.md):
+# NBF1199 states "Workplace Arrangement:" (colon and all) with values Hybrid/In-Office; Covestic
+# states "Location Type" (no colon) with values Onsite/Remote.
+DETAIL_HYBRID = """<div class="well oracletaleocwsv2-job-description">
+<span>Primary Location</span><strong>Denver, CO</strong><span>Department</span><strong>Platform</strong>
+<span>Workplace Arrangement:</span><strong>Hybrid</strong></div>
+<div name="cwsJobDescription"><div><p>Build things.</p></div></div><section>"""
+
+DETAIL_REMOTE = """<div class="well oracletaleocwsv2-job-description">
+<span>Primary Location</span><strong>Austin, TX</strong><span>Department</span><strong>Platform</strong>
+<span>Location Type</span><strong>Remote</strong></div>
+<div name="cwsJobDescription"><div><p>Build things.</p></div></div><section>"""
 
 
 def test_registry_and_ledger_url_slug():
@@ -102,3 +115,58 @@ def test_repeated_next_link_marks_truncated(monkeypatch):
     monkeypatch.setattr(scraper, "_get", lambda url=None: _listing(1, "Engineer", URL))
     assert len(scraper.fetch()) == 1
     assert scraper.truncated == "listing next link looped before the Board ended"
+
+
+def test_workplace_remote_mapping():
+    """Both live-measured label spellings feed the same value vocabulary and cascade."""
+    assert _workplace_remote("Remote") is True
+    assert _workplace_remote("Onsite") is False
+    assert _workplace_remote("In-Office") is False
+    assert _workplace_remote("Hybrid") is None  # neither purely remote nor onsite
+    assert _workplace_remote(None) is None
+    assert _workplace_remote("") is None
+    assert _workplace_remote("Some Unrecognized Value") is None
+
+
+def test_native_field_decides_when_location_gives_no_signal(monkeypatch):
+    """A decisive native field wins even though the location string says nothing on its own."""
+    scraper = TaleoBEScraper(URL, "ICANN")
+
+    def get(url=None):
+        if url == URL:
+            return _listing(1, "Platform Engineer")
+        return DETAIL_REMOTE
+
+    monkeypatch.setattr(scraper, "_get", get)
+    jobs = scraper.fetch()
+    assert jobs[0].location == "Austin, TX"
+    assert jobs[0].remote is True
+
+
+def test_hybrid_native_field_falls_through_to_location_text(monkeypatch):
+    """Hybrid is not decisive on its own (matches workday._remote_from's convention), so the
+    cascade falls through to the location string — same as a board stating no field at all."""
+    scraper = TaleoBEScraper(URL, "ICANN")
+
+    def get(url=None):
+        if url == URL:
+            return _listing(1, "Platform Engineer")
+        return DETAIL_HYBRID
+
+    monkeypatch.setattr(scraper, "_get", get)
+    jobs = scraper.fetch()
+    assert jobs[0].location == "Denver, CO"
+    assert jobs[0].remote is False  # "Denver, CO" carries no remote signal of its own
+
+
+def test_no_native_field_falls_back_to_is_remote(monkeypatch):
+    """A board that states no workplace field at all keeps the pre-existing behavior."""
+    scraper = TaleoBEScraper(URL, "ICANN")
+    monkeypatch.setattr(
+        scraper,
+        "_get",
+        lambda url=None: _listing(1, "Platform Engineer") if url == URL else DETAIL,
+    )
+    jobs = scraper.fetch()
+    assert jobs[0].location == "Los Angeles"
+    assert jobs[0].remote is False  # unchanged from before this field existed
