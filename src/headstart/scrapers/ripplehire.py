@@ -77,7 +77,11 @@ class RippleHireScraper(BaseScraper):
         # step 1: the careers URL redirects to /candidate/?token=… — grab the token (the pooled
         # session follows the redirect and keeps the session cookie for the search call)
         response = http.fetch(
-            "GET", self.url(), headers={"User-Agent": USER_AGENT}, timeout=30
+            "GET",
+            self.url(),
+            headers={"User-Agent": USER_AGENT},
+            timeout=30,
+            **self._egress(),
         )
         # An HTTP error here must raise, not read as an empty board (ADR-0058 needs the 404).
         # A 200 that redirects somewhere without a token still returns [] — that is the
@@ -108,7 +112,12 @@ class RippleHireScraper(BaseScraper):
             )
             body = urllib.parse.urlencode({"careerSiteUrlParams": params, "lang": "en"})
             data = http.fetch(
-                "POST", api, data=body, headers=headers, timeout=30
+                "POST",
+                api,
+                data=body,
+                headers=headers,
+                timeout=30,
+                **self._egress(),
             ).json()
             batch = data.get("jobVoList") or []
             jobs.extend(batch)
@@ -176,6 +185,7 @@ class RippleHireScraper(BaseScraper):
                 self._detail_url(token, job_seq),
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 timeout=30,
+                **self._egress(),
             ).json()
         except (http.RequestsError, json.JSONDecodeError) as exc:
             self.note_detail_loss(type(exc).__name__)
@@ -193,6 +203,7 @@ class RippleHireScraper(BaseScraper):
                 self._detail_url(token, job_seq),
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 timeout=30,
+                **self._egress(),
             )
             data = response.json()
         except (http.RequestsError, json.JSONDecodeError) as exc:

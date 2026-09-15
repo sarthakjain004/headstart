@@ -228,6 +228,7 @@ class SmartRecruitersScraper(BaseScraper):
                 self._detail_url(posting_id),
                 timeout=30,
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+                **self._egress(),
             )
         except http.RequestsError as exc:
             self.note_detail_loss(type(exc).__name__)
@@ -248,6 +249,7 @@ class SmartRecruitersScraper(BaseScraper):
                 self._detail_url(posting_id),
                 timeout=30,
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+                **self._egress(),
             )
         except http.RequestsError as exc:
             self.note_detail_loss(type(exc).__name__)

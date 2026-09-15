@@ -76,16 +76,21 @@ def _company(shell: str) -> str | None:
     title = title.removeprefix("Careers | ").strip()
     if title and title.lower() not in {"job search", "search jobs", "careers"}:
         return title
-    # Enterprise shells commonly use the generic title above. The first meaningful image label
-    # is the employer logo in the live controls (D.R. Horton, TTEC, Valero); ignore accessibility
-    # chrome and generic placeholder images.
+    # Enterprise shells commonly use the generic title above. Restrict to <img> tags that
+    # name themselves as a logo (D.R. Horton, TTEC, Valero all do) rather than scanning every
+    # image on the page — unscoped, chrome icons like the RSS/help/social buttons (none of
+    # which mention "logo") get mistaken for the company name on shells with no real logo
+    # image at all (e.g. easyjet, hyundaicapital both returned "Create an RSS feed" and the
+    # bare placeholder title before this fix).
     ignored = {"access the online help", "close", "collapse this section", "image"}
     for image in _IMG.findall(shell):
+        if "logo" not in image.lower():
+            continue
         for value in _ATTR.findall(image):
             value = html_to_text(value)
             if value and value.lower() not in ignored and len(value) <= 100:
                 return re.sub(r"\s+logo$", "", value, flags=re.IGNORECASE).strip()
-    return title or None
+    return None
 
 
 def _date(value: str | None) -> str | None:
@@ -132,7 +137,7 @@ def _detail_text(value: str) -> str | None:
     return html_to_text(unquote(value).replace(r"\:", ":").removeprefix("!*!") or None)
 
 
-def _detail(page: str) -> dict[str, str | None] | None:
+def _parse_detail_page(page: str) -> dict[str, str | None] | None:
     match, labels_match = _DETAIL_LIST.search(page), _DETAIL_LABELS.search(page)
     if not match or not labels_match:
         return None
@@ -166,7 +171,6 @@ class TaleoEnterpriseScraper(BaseScraper):
     ats = "taleo_enterprise"
     detail_workers = _DETAIL_WORKERS
     has_detail_pass = True
-    egress_fallback_on = frozenset({429})
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -334,7 +338,7 @@ class TaleoEnterpriseScraper(BaseScraper):
 
     def _detail(self, url: str) -> dict[str, str | None] | None:
         try:
-            return _detail(self._get(url))
+            return _parse_detail_page(self._get(url))
         except Exception as exc:  # noqa: BLE001 - listing survives one detail failure
             self.note_detail_exception(exc)
             return None

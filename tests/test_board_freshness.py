@@ -1,3 +1,8 @@
+import csv
+import gzip
+
+import pytest
+
 from headstart.ingest import board_freshness
 
 
@@ -96,3 +101,56 @@ def test_unselected_board_retains_history_without_counting_another_failed_attemp
         )["boards"]
         == []
     )
+
+
+def test_corrupt_gzip_state_file_raises_oserror(tmp_path):
+    """A genuinely corrupt state file, not a mocked exception — this is what
+    docs/code-review/2026-09-13_pr-449-post-merge-critique.md claims (finding 6) is caught by
+    index.py's ``except (OSError, ...)`` boundary; confirm the real failure actually lands in
+    that tuple rather than raising something uncaught."""
+    (tmp_path / "board_freshness.csv.gz").write_bytes(b"not a gzip file")
+    with pytest.raises(OSError):
+        board_freshness.update(
+            tmp_path,
+            {"lever:a": "lever:a"},
+            {"lever:a"},
+            {},
+            [],
+            set(),
+            "2026-09-01T00:00:00+00:00",
+        )
+
+
+def test_incompatible_persisted_timestamp_raises_valueerror(tmp_path):
+    """A genuinely malformed persisted timestamp, not a mocked exception — same purpose as
+    the corrupt-gzip test above, for the ``ValueError`` branch of the same claim."""
+    path = tmp_path / "board_freshness.csv.gz"
+    with gzip.open(path, "wt", encoding="utf-8", newline="") as target:
+        writer = csv.DictWriter(
+            target,
+            fieldnames=[
+                "board",
+                "last_authoritative",
+                "excluded_since",
+                "consecutive_exclusions",
+            ],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "board": "lever:a",
+                "last_authoritative": "not-a-real-date",
+                "excluded_since": "2026-09-01T00:00:00+00:00",
+                "consecutive_exclusions": "1",
+            }
+        )
+    with pytest.raises(ValueError):
+        board_freshness.update(
+            tmp_path,
+            {"lever:a": "lever:a"},
+            set(),
+            {},
+            [],
+            set(),
+            "2026-09-02T00:00:00+00:00",
+        )

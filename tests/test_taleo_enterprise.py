@@ -25,6 +25,24 @@ def test_company_falls_back_to_logo_when_shell_title_is_generic():
     assert enterprise._company(shell) == "Valero"
 
 
+def test_company_ignores_chrome_icons_without_a_logo_src():
+    """Live hyundaicapital/easyjet regression: a generic-title shell with no logo <img>
+    used to fall through to chrome icon alt text ("Create an RSS feed") or the generic
+    title itself ("Job Search"); both must now come back None so the caller's existing
+    self.company survives instead of being overwritten with garbage."""
+    shell = (
+        "<title>Job Search</title>"
+        '<img alt="Close" src="icon_help_close.png">'
+        '<img alt="Create an RSS feed" src="ico-rss.png">'
+        '<img alt="Access the online help" src="ico-help.png">'
+    )
+    assert enterprise._company(shell) is None
+
+
+def test_company_returns_none_when_title_is_generic_and_no_images_present():
+    assert enterprise._company("<title>Job Search</title>") is None
+
+
 def test_listing_stops_at_stated_page_count_not_repeated_overflow(monkeypatch):
     pages = [
         _page(
@@ -141,7 +159,7 @@ def test_detail_vector_supplies_authoritative_fields():
             + "]);"
         )
     )
-    detail = enterprise._detail(page)
+    detail = enterprise._parse_detail_page(page)
     assert detail == {
         "description": "Description Qualifications",
         "department": "Engineering",
@@ -172,7 +190,7 @@ def test_ttec_detail_layout_keeps_absent_fields_null():
             + "]);"
         )
     )
-    assert enterprise._detail(page) == {
+    assert enterprise._parse_detail_page(page) == {
         "description": "TTEC description",
         "department": None,
         "location": "India; India-Gujarat-Ahmedabad",

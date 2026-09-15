@@ -2896,7 +2896,7 @@ def test_trakstar_jobs_from_feed_builds_job_objects():
 def test_trakstar_fetch_via_feed_returns_none_when_feed_unavailable(monkeypatch):
     import headstart.scrapers.trakstar as trakstar_module
 
-    monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug: None)
+    monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug, egress_board: None)
     s = get_scraper("trakstar", "acme", "Acme")
     assert s.fetch_via_feed(SCRAPED_AT) is None
 
@@ -2909,7 +2909,9 @@ def test_trakstar_fetch_via_feed_returns_empty_list_when_feed_has_zero_jobs(
     import headstart.scrapers.trakstar as trakstar_module
 
     empty_feed = '<?xml version="1.0"?><rss version="2.0"><channel></channel></rss>'
-    monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug: empty_feed)
+    monkeypatch.setattr(
+        trakstar_module, "_fetch_feed", lambda slug, egress_board: empty_feed
+    )
     s = get_scraper("trakstar", "acme", "Acme")
     result = s.fetch_via_feed(SCRAPED_AT)
     assert result == []
@@ -2919,7 +2921,9 @@ def test_trakstar_fetch_via_feed_returns_empty_list_when_feed_has_zero_jobs(
 def test_trakstar_fetch_via_feed_returns_jobs_when_available(monkeypatch):
     import headstart.scrapers.trakstar as trakstar_module
 
-    monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug: _TRAKSTAR_FEED)
+    monkeypatch.setattr(
+        trakstar_module, "_fetch_feed", lambda slug, egress_board: _TRAKSTAR_FEED
+    )
     s = get_scraper("trakstar", "acme", "Acme")
     jobs = s.fetch_via_feed(SCRAPED_AT)
     assert len(jobs) == 2
@@ -2982,7 +2986,9 @@ def test_trakstar_fetch_raw_uses_feed_when_capped_and_skips_the_detail_pass(
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
     s = get_scraper("trakstar", "acme", "Acme")
     monkeypatch.setattr(s, "_get", lambda url=None: _trakstar_cards_page(25, total=40))
-    monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug: _TRAKSTAR_FEED)
+    monkeypatch.setattr(
+        trakstar_module, "_fetch_feed", lambda slug, egress_board: _TRAKSTAR_FEED
+    )
     detail_calls = []
     monkeypatch.setattr(s, "_job_posting", lambda code: detail_calls.append(code))
 
@@ -3005,7 +3011,7 @@ def test_trakstar_fetch_raw_skips_feed_when_not_capped(monkeypatch):
     s = get_scraper("trakstar", "acme", "Acme")
     monkeypatch.setattr(s, "_get", lambda url=None: _trakstar_cards_page(3, total=3))
 
-    def boom_feed(slug):
+    def boom_feed(slug, egress_board):
         raise AssertionError("must not fetch the RSS feed when the Board isn't capped")
 
     monkeypatch.setattr(trakstar_module, "_fetch_feed", boom_feed)
@@ -3027,7 +3033,7 @@ def test_trakstar_fetch_raw_keeps_html_when_feed_unreachable(monkeypatch):
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
     s = get_scraper("trakstar", "acme", "Acme")
     monkeypatch.setattr(s, "_get", lambda url=None: _trakstar_cards_page(25, total=77))
-    monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug: None)
+    monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug, egress_board: None)
     monkeypatch.setattr(s, "_job_posting", lambda code: None)
 
     raw = s.fetch_raw()
@@ -3055,7 +3061,7 @@ def test_trakstar_fetch_raw_does_not_mark_truncated_for_card_count_heuristic_alo
     monkeypatch.setattr(
         s, "_get", lambda url=None: _trakstar_cards_page(25)
     )  # no total button
-    monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug: None)
+    monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug, egress_board: None)
     monkeypatch.setattr(s, "_job_posting", lambda code: None)
 
     raw = s.fetch_raw()
@@ -6670,11 +6676,12 @@ def test_workday_listing_400_reset_leaves_raise_gone_intact(monkeypatch):
 
 
 def test_workday_429_does_not_leak_the_opt_in_to_other_scrapers():
-    """The opt-in is per scraper; an ATS that never walled us must stay on its direct route."""
+    """The opt-in is per scraper; an ATS that never walled us must stay on its direct route.
+    Only board attribution (no routing effect) rides along regardless."""
     from headstart.scrapers.greenhouse import GreenhouseScraper
 
     assert GreenhouseScraper.egress_fallback_on == frozenset()
-    assert GreenhouseScraper("acme")._egress() == {}
+    assert GreenhouseScraper("acme")._egress() == {"egress_board": "greenhouse:acme"}
 
 
 def test_personio_stays_on_its_direct_route_on_429(monkeypatch):
