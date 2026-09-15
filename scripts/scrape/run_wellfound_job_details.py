@@ -382,6 +382,7 @@ async def main() -> int:
         "gone": 0,  # listing closed/404 — no posting to fetch
         "challenged": 0,  # unwritten, retried by the next --append
         "mismatch": 0,  # unwritten, retried by the next --append
+        "fetch_error": 0,  # unwritten, retried by the next --append
     }
     async with Chrome(options=_options(headless, proxy)) as browser:
         tab = await browser.start()

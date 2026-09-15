@@ -196,6 +196,7 @@ async def _one_pass(append_override: bool | None) -> str:
         "gone": 0,  # listing closed/404 — no posting to fetch
         "challenged": 0,  # unwritten, retried by the next --append
         "mismatch": 0,  # unwritten, retried by the next --append
+        "fetch_error": 0,  # unwritten, retried by the next --append
     }
     written = 0
     t0 = time.monotonic()
