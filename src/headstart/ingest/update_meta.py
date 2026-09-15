@@ -449,9 +449,22 @@ def _chunk_args(
         )
 
 
-def _refresh_chunk(
-    args: _ChunkArgs,
-) -> tuple[list[dict], int, int, int, Counter[str], Counter[str], Counter[str]]:
+class _ChunkResult(NamedTuple):
+    """One chunk's worth of `_refresh_chunk` output — the counterpart to `_ChunkArgs`, so
+    `refresh`'s accumulation loop unpacks named fields instead of a positional tuple that a
+    future reorder could silently mismap.
+    """
+
+    rows: list[dict]
+    fact_hits: int
+    derived_hits: int
+    backfilled: int
+    exp_delta: Counter[str]
+    sal_delta: Counter[str]
+    country_delta: Counter[str]
+
+
+def _refresh_chunk(args: _ChunkArgs) -> _ChunkResult:
     """One chunk's worth of `refresh_row` calls, plus the delta/backfill bookkeeping `refresh`
     used to do inline for every row — factored out so it runs identically whether dispatched to a
     process-pool worker (sweeping) or called directly in-process (everything else). Top-level and
@@ -497,7 +510,7 @@ def _refresh_chunk(
             row["has_description"] = has_description_for(meta, args.detail_pass)
             backfilled += 1
         out_rows.append(row)
-    return (
+    return _ChunkResult(
         out_rows,
         fact_hits,
         derived_hits,
@@ -575,24 +588,16 @@ def refresh(
                 if pool
                 else map(_refresh_chunk, args_iter)
             )
-            for (
-                out_rows,
-                fact_hits_c,
-                derived_hits_c,
-                backfilled_c,
-                exp_c,
-                sal_c,
-                ctry_c,
-            ) in chunk_results:
-                for row in out_rows:
+            for chunk in chunk_results:
+                for row in chunk.rows:
                     out.write(json.dumps(row, ensure_ascii=False) + "\n")
-                rows += len(out_rows)
-                fact_hits += fact_hits_c
-                derived_hits += derived_hits_c
-                backfilled += backfilled_c
-                exp_delta.update(exp_c)
-                sal_delta.update(sal_c)
-                country_delta.update(ctry_c)
+                rows += len(chunk.rows)
+                fact_hits += chunk.fact_hits
+                derived_hits += chunk.derived_hits
+                backfilled += chunk.backfilled
+                exp_delta.update(chunk.exp_delta)
+                sal_delta.update(chunk.sal_delta)
+                country_delta.update(chunk.country_delta)
                 if rows % _SWEEP_CHUNK_ROWS == 0:
                     _log.info(f"  {rows} rows refreshed")
         tmp.replace(meta_path)
