@@ -1548,6 +1548,13 @@ class WorkdayScraper(BaseScraper):
             )
         return jobs
 
+    def _salary_field(self, raw: Any) -> str | None:
+        # Not yet measured: `_extract_page_detail`'s JSON-LD fallback (ADR-0099) deliberately
+        # reads only description/datePosted/jobLocationType/employmentType, and no pass has
+        # checked whether the CXS detail or the JSON-LD carry a structured compensation field.
+        # Needs its own measurement before this can claim more.
+        return None
+
 
 # A requisition id's shape, live-validated against 1,029 real listing items across 129 tenants
 # (docs/pipeline/2026-08-23_false-board-eviction-root-cause.md §6, option A1): a short

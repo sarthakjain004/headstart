@@ -394,3 +394,9 @@ class TaleoEnterpriseScraper(BaseScraper):
                 )
             )
         return jobs
+
+    def _salary_field(self, raw: Any) -> str | None:
+        # Not yet measured: no structured compensation field has been looked for on either the
+        # listing or the jobdetail page. Needs its own measurement pass before this can claim
+        # more.
+        return None

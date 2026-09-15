@@ -647,6 +647,12 @@ class EightfoldScraper(BaseScraper):
             )
         return jobs
 
+    def _salary_field(self, raw: Any) -> str | None:
+        # Not yet measured: no structured compensation field has been looked for across any of
+        # the three listing/detail surfaces this scraper reads. Needs its own measurement pass
+        # before this can claim more.
+        return None
+
 
 # --- public helpers for callers outside a scrape (e.g. alias detection, #154) ------------------
 # Thin wrappers over the scraper's own machinery, so a second caller reuses the real sitemap-index

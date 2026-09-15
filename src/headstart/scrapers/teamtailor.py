@@ -29,19 +29,6 @@ from headstart.scrapers.base import BaseScraper
 _PAGE_SIZE = 100
 
 
-def _salary(jobposting: dict) -> str | None:
-    """Format the schema.org baseSalary MonetaryAmount, e.g. '40000-60000 EUR YEAR'."""
-    base = jobposting.get("baseSalary") or {}
-    val = base.get("value") or {}
-    lo, hi = val.get("minValue"), val.get("maxValue")
-    if not lo and not hi:
-        return None
-    span = f"{lo}-{hi}" if lo and hi else str(lo or hi)
-    return " ".join(
-        str(x) for x in (span, base.get("currency"), val.get("unitText")) if x
-    )
-
-
 def _location(jobposting: dict) -> str | None:
     """Join the first jobLocation's city/region/country from the schema.org block."""
     locs = jobposting.get("jobLocation") or []
@@ -118,7 +105,19 @@ class TeamtailorScraper(BaseScraper):
                     scraped_at=scraped_at,
                     description=html_to_text(it.get("content_html")),
                     employment_type=jp.get("employmentType"),
-                    salary=_salary(jp),
+                    salary=self._salary_field(jp),
                 )
             )
         return jobs
+
+    def _salary_field(self, raw: dict) -> str | None:
+        """Format the schema.org baseSalary MonetaryAmount, e.g. '40000-60000 EUR YEAR'."""
+        base = raw.get("baseSalary") or {}
+        val = base.get("value") or {}
+        lo, hi = val.get("minValue"), val.get("maxValue")
+        if not lo and not hi:
+            return None
+        span = f"{lo}-{hi}" if lo and hi else str(lo or hi)
+        return " ".join(
+            str(x) for x in (span, base.get("currency"), val.get("unitText")) if x
+        )

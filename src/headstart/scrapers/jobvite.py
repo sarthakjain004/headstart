@@ -182,30 +182,6 @@ def _location(posting: dict) -> str | None:
     return ", ".join(segments) or None
 
 
-def _salary(posting: dict) -> str | None:
-    """``baseSalary`` as a display string, or None when the block is present but empty.
-
-    Jobvite emits the ``MonetaryAmount`` skeleton on essentially every posting and leaves every
-    field of it blank on most, so an amount is what makes it worth keeping — a bare currency or a
-    bare "Annually" says nothing.
-    """
-    salary = posting.get("baseSalary")
-    if not isinstance(salary, dict):
-        return None
-    value = salary.get("value") or {}
-    low = str(value.get("minValue") or "").strip()
-    high = str(value.get("maxValue") or "").strip()
-    if not (low or high):
-        return None
-    amount = f"{low} - {high}" if low and high else (low or high)
-    parts = [
-        amount,
-        str(salary.get("currency") or "").strip(),
-        str(value.get("unitText") or "").strip(),
-    ]
-    return " ".join(p for p in parts if p)
-
-
 class JobviteScraper(BaseScraper):
     ats = "jobvite"
     detail_workers = _DETAIL_WORKERS  # also the async stream width (base.fan_out_async)
@@ -422,7 +398,30 @@ class JobviteScraper(BaseScraper):
                     description=html_to_text(posting.get("description")),
                     employment_type=(posting.get("employmentType") or "").strip()
                     or None,
-                    salary=_salary(posting),
+                    salary=self._salary_field(posting),
                 )
             )
         return jobs
+
+    def _salary_field(self, raw: dict) -> str | None:
+        """``baseSalary`` as a display string, or None when the block is present but empty.
+
+        Jobvite emits the ``MonetaryAmount`` skeleton on essentially every posting and leaves
+        every field of it blank on most, so an amount is what makes it worth keeping — a bare
+        currency or a bare "Annually" says nothing.
+        """
+        salary = raw.get("baseSalary")
+        if not isinstance(salary, dict):
+            return None
+        value = salary.get("value") or {}
+        low = str(value.get("minValue") or "").strip()
+        high = str(value.get("maxValue") or "").strip()
+        if not (low or high):
+            return None
+        amount = f"{low} - {high}" if low and high else (low or high)
+        parts = [
+            amount,
+            str(salary.get("currency") or "").strip(),
+            str(value.get("unitText") or "").strip(),
+        ]
+        return " ".join(p for p in parts if p)

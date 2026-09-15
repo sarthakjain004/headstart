@@ -297,46 +297,6 @@ def _amount(value: object) -> str:
         return text
 
 
-def _salary(source: dict) -> str | None:
-    """Every posted range, whether or not the tenant flipped its display toggle.
-
-    ``showSal`` is the tenant's own careers-page toggle, and it is off on most rows that
-    nonetheless carry amounts (19 of 23 across four Boards). An earlier version honoured it, on
-    the reasoning that publishing a withheld figure asserts something the employer chose not to.
-    **That was overruled deliberately: a figure beats an empty column here.**
-
-    What makes the trade different on this ATS than it looks: salary has no second path. The
-    Tier-2 description mine that supplies most of the index's parsed salaries — 84% of rows with
-    a figure have no raw field string — recovers **0 of 52** on Zwayam, because Indian postings
-    do not state compensation in prose. So this field is the only source there will ever be, and
-    the toggle was not one filter among several but the whole gate.
-
-    The cost is accepted knowingly: some tenants leave a form default in place (one Board posts an
-    identical ``100000-200000`` with no currency across ten unrelated roles), so a minority of
-    published figures are placeholders rather than offers.
-    """
-    # A zero bound is an unfilled half of the form, not a stated floor or ceiling — the same
-    # reading `_experience` gives an all-zero pair. Each side is blanked on its own rather than
-    # the pair dropped: emitting "1000000-0" makes `salary.extract` reject the whole row, losing
-    # a real 1,000,000 floor that parses fine alone (17 of 5,079 amount rows, 2026-08-27).
-    lo = _amount(source.get("minJobSalary"))
-    hi = _amount(source.get("maxJobSalary"))
-    currency = (source.get("currencyType") or "").strip() or _DEFAULT_CURRENCY
-    if lo and hi:
-        return f"{lo}-{hi} {currency}"
-    if lo:
-        return f"{lo} {currency}"
-    if hi:
-        # Ceiling-only (10 of 5,079 rows) must not be emitted *bare*: `salary.extract` reads a
-        # lone figure as a floor (measured: "200000 INR" -> min_annual=200000), so a job capped
-        # at 200k would be served as one paying at least that. "Upto" is the honest rendering —
-        # `Job.salary` is a display column (README §"The served table": "raw, for display"), so
-        # the reader sees the real bound, while `extract` measurably parses it to None and the
-        # derived columns stay empty rather than inverted.
-        return f"Upto {hi} {currency}"
-    return None
-
-
 def _listing_description(source: dict) -> str | None:
     """The best text the *listing row itself* carries, or None.
 
@@ -665,7 +625,47 @@ class ZwayamScraper(BaseScraper):
                     # `jobTypeFieldDisplayName` are null, so the listing states no employment
                     # type. Left None rather than mapped from a constant that means nothing.
                     employment_type=None,
-                    salary=_salary(source),
+                    salary=self._salary_field(source),
                 )
             )
         return jobs
+
+    def _salary_field(self, raw: dict) -> str | None:
+        """Every posted range, whether or not the tenant flipped its display toggle.
+
+        ``showSal`` is the tenant's own careers-page toggle, and it is off on most rows that
+        nonetheless carry amounts (19 of 23 across four Boards). An earlier version honoured it,
+        on the reasoning that publishing a withheld figure asserts something the employer chose
+        not to. **That was overruled deliberately: a figure beats an empty column here.**
+
+        What makes the trade different on this ATS than it looks: salary has no second path. The
+        Tier-2 description mine that supplies most of the index's parsed salaries — 84% of rows
+        with a figure have no raw field string — recovers **0 of 52** on Zwayam, because Indian
+        postings do not state compensation in prose. So this field is the only source there will
+        ever be, and the toggle was not one filter among several but the whole gate.
+
+        The cost is accepted knowingly: some tenants leave a form default in place (one Board
+        posts an identical ``100000-200000`` with no currency across ten unrelated roles), so a
+        minority of published figures are placeholders rather than offers.
+        """
+        # A zero bound is an unfilled half of the form, not a stated floor or ceiling — the same
+        # reading `_experience` gives an all-zero pair. Each side is blanked on its own rather
+        # than the pair dropped: emitting "1000000-0" makes `salary.extract` reject the whole
+        # row, losing a real 1,000,000 floor that parses fine alone (17 of 5,079 amount rows,
+        # 2026-08-27).
+        lo = _amount(raw.get("minJobSalary"))
+        hi = _amount(raw.get("maxJobSalary"))
+        currency = (raw.get("currencyType") or "").strip() or _DEFAULT_CURRENCY
+        if lo and hi:
+            return f"{lo}-{hi} {currency}"
+        if lo:
+            return f"{lo} {currency}"
+        if hi:
+            # Ceiling-only (10 of 5,079 rows) must not be emitted *bare*: `salary.extract` reads
+            # a lone figure as a floor (measured: "200000 INR" -> min_annual=200000), so a job
+            # capped at 200k would be served as one paying at least that. "Upto" is the honest
+            # rendering — `Job.salary` is a display column (README §"The served table": "raw,
+            # for display"), so the reader sees the real bound, while `extract` measurably parses
+            # it to None and the derived columns stay empty rather than inverted.
+            return f"Upto {hi} {currency}"
+        return None

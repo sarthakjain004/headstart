@@ -333,18 +333,6 @@ def _location(categories: dict, country: str | None) -> str | None:
     return composed or None
 
 
-def _salary(rng: dict | None) -> str | None:
-    """Format Lever's structured salaryRange, e.g. '50000-70000 USD per-year-salary'."""
-    rng = rng or {}
-    lo, hi = rng.get("min"), rng.get("max")
-    if not lo and not hi:
-        return None
-    span = f"{lo}-{hi}" if lo and hi else str(lo or hi)
-    return " ".join(
-        str(x) for x in (span, rng.get("currency"), rng.get("interval")) if x
-    )
-
-
 def _description(j: dict) -> str | None:
     """The full posting text: intro + the lists sections (Requirements etc.) + closing.
 
@@ -412,7 +400,18 @@ class LeverScraper(BaseScraper):
                     scraped_at=scraped_at,
                     description=_description(j),
                     employment_type=categories.get("commitment"),
-                    salary=_salary(j.get("salaryRange")),
+                    salary=self._salary_field(j.get("salaryRange")),
                 )
             )
         return jobs
+
+    def _salary_field(self, raw: dict | None) -> str | None:
+        """Format Lever's structured salaryRange, e.g. '50000-70000 USD per-year-salary'."""
+        raw = raw or {}
+        lo, hi = raw.get("min"), raw.get("max")
+        if not lo and not hi:
+            return None
+        span = f"{lo}-{hi}" if lo and hi else str(lo or hi)
+        return " ".join(
+            str(x) for x in (span, raw.get("currency"), raw.get("interval")) if x
+        )
