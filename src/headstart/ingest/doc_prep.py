@@ -21,10 +21,7 @@ from __future__ import annotations
 
 import re
 
-from headstart.experience import extract
-from headstart.geo import classify as classify_country
-from headstart.remote import extract as extract_remote
-from headstart.salary import extract as extract_salary
+from headstart.ingest.derived_meta import derive
 from headstart.search import DOC_PREFIX
 
 _MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]+\)")  # [text](url) -> text
@@ -228,26 +225,25 @@ def build_doc(job: dict) -> str:
 # `salary_range` string in `Job.salary` — unchanged raw input — now parses where it used to
 # return None outright, which is exactly the "unchanged input starts parsing differently" case
 # this counter exists for.
+#
+# ADR-0145 moved the composition below (the four extractors into these nine keys) into
+# `headstart.ingest.derived_meta`, shared verbatim with `update_meta.refresh_row`'s held-text
+# branches — no version bump, because the two assemblies were compared line-for-line against
+# each other before the move and were already identical; `tests/test_derived_meta.py` now pins
+# that agreement so a future edit to one path cannot silently diverge from the other again.
 DERIVATIONS_VERSION = 11
 
 
 def to_meta(job: dict) -> dict:
     """Canonical typed metadata (ADR-0007) + the inline experience numbers (ADR-0019).
 
-    ``min_years`` / ``max_years`` come from the extraction cascade (field, then description,
-    then seniority floor — ADR-0018) with the ``experience_source`` tier tag carried alongside;
-    all three are None when nothing matched. ``min_salary_annual`` / ``max_salary_annual`` /
-    ``salary_currency`` come from the salary cascade (field, then description — no seniority
-    tier, see ``headstart.salary``'s module docstring) with ``salary_source`` alongside; all four
-    are None when nothing matched, and None is never treated as exclusionary. ``employment_type``
-    / ``salary`` stay raw strings — display-only (ADR-0019). ``remote`` is the scraper's own
-    field UNLESS the description confidently reads as remote, in which case that wins — see
-    ``headstart.remote``'s module docstring; one-directional, so this can only ever turn a
-    False/None field into True, never the reverse. ``country`` is ``"IN"`` when ``location``
-    matches the India gazetteer's country-level rule (the same rule
-    ``headstart.geo.where("india")`` compiles to SQL for), else None — materializes that rule so
-    the search API's India filter can use a plain equality instead of a query-time regex
-    alternation (ADR-0138).
+    The nine derived keys (``remote``, ``country``, ``min_years``/``max_years``/
+    ``experience_source``, ``min_salary_annual``/``max_salary_annual``/``salary_currency``/
+    ``salary_source``) come from :func:`headstart.ingest.derived_meta.derive` — the one
+    composition of the four extractors (ADR-0145) also used by ``update_meta.refresh_row`` to
+    repair an already-stored row, so the two cannot independently drift on what an extractor's
+    result means. See that module's docstring for what each family reads and how ``None``
+    behaves; ``employment_type`` / ``salary`` stay raw strings here — display-only (ADR-0019).
 
     The derived fields are re-computable from the facts beside them, which is what lets
     ``update_meta`` repair them in place later; see :data:`DERIVATIONS_VERSION`.
@@ -258,17 +254,5 @@ def to_meta(job: dict) -> dict:
     # and `embed_plan` skips by id — so without this the degradation is permanent and invisible.
     # Planner-only: see PLANNER_ONLY_FIELDS.
     meta["has_description"] = bool((job.get("description") or "").strip())
-    meta["remote"] = extract_remote(job.get("remote"), job.get("description"))
-    meta["country"] = classify_country(job.get("location"))
-    span = extract(job.get("experience"), job.get("description"), job.get("title"))
-    meta["min_years"] = span.min_years if span else None
-    meta["max_years"] = span.max_years if span else None
-    meta["experience_source"] = span.source if span else None
-    salary_span = extract_salary(
-        job.get("salary"), job.get("description"), job.get("ats")
-    )
-    meta["min_salary_annual"] = salary_span.min_annual if salary_span else None
-    meta["max_salary_annual"] = salary_span.max_annual if salary_span else None
-    meta["salary_currency"] = salary_span.currency if salary_span else None
-    meta["salary_source"] = salary_span.source if salary_span else None
+    meta.update(derive(job))
     return meta
