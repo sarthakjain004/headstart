@@ -104,7 +104,7 @@ def test_pick_boards_short_known_list_still_fills_cap():
 
 
 def test_pick_boards_scores_workday_and_personio_by_their_board_key():
-    """The ledger is written from `corpus.board_of(job_id)`, which is the **board_key** shape —
+    """The ledger is written from `board_identity.board_of(job_id)`, which is the **board_key** shape —
     and Workday and Personio override `board_key()` (a Workday slug is a whole careers URL, a
     Personio slug the whole host). Keying the lookup `f"{ats}:{slug}"` therefore never matched
     their rows. 13,402 boards (20.1% of the scrape list) are keyed that way; against a local

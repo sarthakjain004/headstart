@@ -50,13 +50,15 @@ def load(path: str | Path) -> dict[str, int]:
     A missing file degrades the planner to its previous behaviour — no reserved slots — which is
     what makes this safe to ship before the first run has written one.
     """
+    from headstart.board_identity import lower_key
+
     path = Path(path)
     if not path.exists():
         return {}
     rows: Counter[str] = Counter()
     with path.open(newline="", encoding="utf-8") as fh:
         for row in csv.DictReader(fh):
-            rows[row["board"].lower()] += int(row["unsettled"])
+            rows[lower_key(row["board"])] += int(row["unsettled"])
     return dict(rows)
 
 
@@ -66,11 +68,13 @@ def save(path: str | Path, rows: dict[str, int], *, today: str) -> None:
     Counts are summed per lowercased key, so two case-variants of one Board become one row rather
     than two the slice can only half-match.
     """
+    from headstart.board_identity import lower_key
+
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     folded: Counter[str] = Counter()
     for board, unsettled in rows.items():
-        folded[board.lower()] += unsettled
+        folded[lower_key(board)] += unsettled
     with path.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.writer(fh)
         writer.writerow(FIELDS)
