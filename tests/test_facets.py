@@ -9,14 +9,13 @@ filter actually responsible instead of leaving the user to guess.
 
 from __future__ import annotations
 
-import inspect
 import re
 from pathlib import Path
 
 import pytest
 
 from headstart import facets
-from headstart.search import build_filter
+from headstart.search import IndexCapabilities, SearchFilters, build_filter
 
 
 class _CountingTable:
@@ -39,37 +38,27 @@ class _CountingTable:
         return self._rule(filter)
 
 
-def _kwargs(**overrides):
-    base = {
-        "remote": False,
-        "max_years": None,
-        "ats": None,
-        "etype": None,
-        "india": None,
-        "location": None,
-        "company": None,
-        "has_salary": False,
-        "salary_min": None,
-        "salary_max": None,
-        "salary_currency": None,
-        "posted_within": None,
-        "posted_sortable": False,
-        "seen_within": None,
-        "posted_after": None,
-        "posted_before": None,
-        "seen_after": None,
-        "seen_before": None,
-        "first_seen_after": None,
-        "kw": None,
-        "kw_in": None,
-        "has_description": True,
+_CAPABILITY_FIELDS = set(IndexCapabilities.__dataclass_fields__)
+
+
+def _kwargs(**overrides) -> tuple[SearchFilters, IndexCapabilities]:
+    """A ``(SearchFilters, IndexCapabilities)`` pair from one flat kwargs blob (ADR-0149).
+
+    Every call site below splats this straight into :func:`facets.counts` — ``facets.counts(table,
+    *_kwargs(...))`` — so an override routes to whichever of the two objects actually owns that
+    field, and the bulk of this file's tests need no other change.
+    """
+    caps_base = {
         "atses": ["greenhouse", "lever"],
         "currencies": ["USD"],
         "has_first_seen": True,
         "has_min_salary_annual": True,
+        "has_description": True,
         "has_country": True,
     }
-    return {**base, **overrides}
+    caps = {k: v for k, v in overrides.items() if k in _CAPABILITY_FIELDS}
+    filters = {k: v for k, v in overrides.items() if k not in _CAPABILITY_FIELDS}
+    return SearchFilters(**filters), IndexCapabilities(**{**caps_base, **caps})
 
 
 def test_every_option_issue_275_asked_for_is_offered():
@@ -87,7 +76,7 @@ def test_a_facet_lifts_its_own_constraint_before_counting_its_options():
     look useless.
     """
     table = _CountingTable()
-    out = facets.counts(table, _kwargs(seen_within=2))
+    out = facets.counts(table, *_kwargs(seen_within=2))
     day = next(o for o in out["facets"]["seen_within"] if o["value"] == 24)
     assert day["count"] == 42  # counted on its own terms, not intersected away
     # exactly one first_seen clause per option: the current 2h window was replaced, not ANDed
@@ -97,7 +86,7 @@ def test_a_facet_lifts_its_own_constraint_before_counting_its_options():
 
 def test_other_filters_stay_applied_while_one_dimension_varies():
     table = _CountingTable()
-    facets.counts(table, _kwargs(remote=True, seen_within=2))
+    facets.counts(table, *_kwargs(remote=True, seen_within=2))
     ats_clauses = [c for c in table.seen if c and "ats = " in c]
     assert ats_clauses  # the ATS strip was counted
     assert all("remote = true" in c for c in ats_clauses)  # ...with `remote` still on
@@ -111,11 +100,12 @@ def test_counts_never_need_the_query_or_the_encoder():
 
     assert list(inspect.signature(facets.counts).parameters) == [
         "table",
-        "filter_kwargs",
+        "filters",
+        "capabilities",
     ]
     a, b = _CountingTable(), _CountingTable()
-    without = facets.counts(a, _kwargs())
-    withq = facets.counts(b, _kwargs())
+    without = facets.counts(a, *_kwargs())
+    withq = facets.counts(b, *_kwargs())
     assert without == withq
 
     # Same clauses, compared as a set: the counts go out on a thread pool, so the order they
@@ -130,12 +120,12 @@ def test_counts_never_need_the_query_or_the_encoder():
 
 def test_the_total_is_the_current_filters_unchanged():
     table = _CountingTable(lambda where: 7 if where == "remote = true" else 0)
-    out = facets.counts(table, _kwargs(remote=True))
+    out = facets.counts(table, *_kwargs(remote=True))
     assert out["total"] == 7
 
 
 def test_blocking_is_none_while_anything_matched():
-    out = facets.counts(_CountingTable(), _kwargs(remote=True))
+    out = facets.counts(_CountingTable(), *_kwargs(remote=True))
     assert out["total"] == 42  # something matched...
     assert out["blocking"] is None  # ...so there is nothing to blame
 
@@ -152,14 +142,14 @@ def test_blocking_names_the_filter_that_recovers_the_most():
             return 0
         return 900 if "remote" in where else 5000
 
-    out = facets.counts(_CountingTable(rule), _kwargs(remote=True, company="nope"))
+    out = facets.counts(_CountingTable(rule), *_kwargs(remote=True, company="nope"))
     assert out["total"] == 0
     assert out["blocking"] == "company"
 
 
 def test_blocking_stays_silent_when_no_single_filter_is_to_blame():
     # Nothing matched even with every filter dropped, so naming one would be a lie.
-    out = facets.counts(_CountingTable(lambda where: 0), _kwargs(remote=True))
+    out = facets.counts(_CountingTable(lambda where: 0), *_kwargs(remote=True))
     assert out["total"] == 0
     assert out["blocking"] is None
 
@@ -172,23 +162,23 @@ def test_entry_level_can_be_named_as_the_blocker():
     def rule(where):
         return 0 if where and "min_years <= 0" in where else 4000
 
-    out = facets.counts(_CountingTable(rule), _kwargs(max_years=0))
+    out = facets.counts(_CountingTable(rule), *_kwargs(max_years=0))
     assert out["total"] == 0
     assert out["blocking"] == "max_years"
 
 
 def test_the_runtime_facts_of_the_index_are_never_offered_as_droppable():
+    """Structural now, not denylist-based (ADR-0149): these are `IndexCapabilities` fields, and
+    `_blocking` only ever walks `SearchFilters`'s — so none of them can even be considered, let
+    alone named as the blocker."""
+    capability_names = set(IndexCapabilities.__dataclass_fields__)
+    assert not capability_names & set(SearchFilters.__dataclass_fields__)
+
     def rule(where):
         return 0 if where else 10
 
-    out = facets.counts(_CountingTable(rule), _kwargs(remote=True))
-    assert out["blocking"] not in (
-        "atses",
-        "currencies",
-        "has_first_seen",
-        "has_min_salary_annual",
-        "has_country",
-    )
+    out = facets.counts(_CountingTable(rule), *_kwargs(remote=True))
+    assert out["blocking"] not in capability_names
 
 
 def test_a_date_range_is_never_offered_as_droppable():
@@ -200,13 +190,13 @@ def test_a_date_range_is_never_offered_as_droppable():
     def rule(where):
         return 0 if where and "posted_at >=" in where else 10
 
-    out = facets.counts(_CountingTable(rule), _kwargs(posted_after="2026-08-01"))
+    out = facets.counts(_CountingTable(rule), *_kwargs(posted_after="2026-08-01"))
     assert out["total"] == 0
     assert out["blocking"] is None
 
 
 def test_the_salary_facet_stays_dark_without_the_salary_columns():
-    out = facets.counts(_CountingTable(), _kwargs(has_min_salary_annual=False))
+    out = facets.counts(_CountingTable(), *_kwargs(has_min_salary_annual=False))
     assert "has_salary" not in out["facets"]
 
 
@@ -218,7 +208,7 @@ def test_the_recency_facet_stays_dark_without_the_first_seen_column():
     a dropdown whose every entry claims to cost nothing, and eight counts nobody can use.
     """
     table = _CountingTable()
-    out = facets.counts(table, _kwargs(has_first_seen=False))
+    out = facets.counts(table, *_kwargs(has_first_seen=False))
     assert "seen_within" not in out["facets"]  # not even a lone "Any" row
     assert not any(w and "first_seen" in w for w in table.seen)
 
@@ -228,11 +218,11 @@ def test_the_recency_facet_stays_dark_without_the_first_seen_column():
 
 def test_description_coverage_is_counted_with_the_keyword_lifted():
     table = _CountingTable()
-    out = facets.counts(table, _kwargs(remote=True, kw="rust", kw_in="description"))
+    out = facets.counts(table, *_kwargs(remote=True, kw="rust", kw_in="description"))
     # Both numbers come from the other filters alone — the keyword lifted, as a dimension's "Any"
     # row lifts its own. Counted with it intact, a description-scoped keyword makes the covered
     # set and the total the same clause, and the disclaimer reads "N of N".
-    unkeyed = build_filter(**_kwargs(remote=True))
+    unkeyed = build_filter(*_kwargs(remote=True))
     assert unkeyed in table.seen
     assert f"({unkeyed}) AND description IS NOT NULL" in table.seen
     # ...and no coverage count carries the keyword. Only `description IS NOT NULL`: the salary
@@ -245,14 +235,14 @@ def test_description_coverage_is_counted_with_the_keyword_lifted():
 
 def test_description_coverage_is_null_not_zero_without_the_column():
     table = _CountingTable()
-    out = facets.counts(table, _kwargs(has_description=False))
+    out = facets.counts(table, *_kwargs(has_description=False))
     assert out["description_coverage"] is None
     assert not any(w and "description IS NOT NULL" in w for w in table.seen)
 
 
 def test_description_coverage_with_no_filters_is_a_bare_not_null_count():
     table = _CountingTable()
-    facets.counts(table, _kwargs())
+    facets.counts(table, *_kwargs())
     assert "description IS NOT NULL" in table.seen
 
 
@@ -261,13 +251,13 @@ def test_a_keyword_can_be_named_as_the_blocker_but_its_scope_never_can():
     def rule(where):
         return 0 if where and "LIKE '%rust%'" in where else 100
 
-    out = facets.counts(_CountingTable(rule), _kwargs(kw="rust", kw_in="title"))
+    out = facets.counts(_CountingTable(rule), *_kwargs(kw="rust", kw_in="title"))
     assert out["total"] == 0
     assert out["blocking"] == "kw"
 
 
 def test_every_option_carries_what_the_ui_needs_to_draw_it():
-    out = facets.counts(_CountingTable(), _kwargs())
+    out = facets.counts(_CountingTable(), *_kwargs())
     for options in out["facets"].values():
         for option in options:
             assert set(option) == {"value", "label", "count"}
@@ -285,7 +275,7 @@ def test_every_option_carries_what_the_ui_needs_to_draw_it():
     ],
 )
 def test_windows_read_in_the_unit_a_person_thinks_in(hours, label):
-    out = facets.counts(_CountingTable(), _kwargs())
+    out = facets.counts(_CountingTable(), *_kwargs())
     assert (
         next(o for o in out["facets"]["seen_within"] if o["value"] == hours)["label"]
         == label
@@ -294,11 +284,11 @@ def test_windows_read_in_the_unit_a_person_thinks_in(hours, label):
 
 def test_counts_compile_the_same_clauses_the_search_would():
     """The count and the list it counts must never describe different queries — which is why
-    both go through `build_filter` on the same parsed kwargs."""
+    both go through `build_filter` on the same parsed filters."""
     table = _CountingTable()
-    kwargs = _kwargs(remote=True, ats="lever")
-    facets.counts(table, kwargs)
-    assert build_filter(**kwargs) in table.seen  # the total was counted with exactly it
+    parsed = _kwargs(remote=True, ats="lever")
+    facets.counts(table, *parsed)
+    assert build_filter(*parsed) in table.seen  # the total was counted with exactly it
 
 
 def test_the_any_row_is_counted_with_its_own_dimension_lifted():
@@ -309,7 +299,7 @@ def test_the_any_row_is_counted_with_its_own_dimension_lifted():
     inside it. It has to be counted with its dimension removed, exactly like every other option.
     """
     table = _CountingTable(lambda where: 5 if where and "first_seen" in where else 5000)
-    out = facets.counts(table, _kwargs(seen_within=2))
+    out = facets.counts(table, *_kwargs(seen_within=2))
     any_row = next(o for o in out["facets"]["seen_within"] if o["value"] is None)
     assert any_row["label"] == "Any"
     assert any_row["count"] == 5000  # the dimension lifted, not the current 5
@@ -320,7 +310,7 @@ def test_the_any_row_is_counted_with_its_own_dimension_lifted():
 
 def test_the_switches_get_no_any_row():
     # A checkbox's "off" is the absence of the row, not another row to draw.
-    out = facets.counts(_CountingTable(), _kwargs())
+    out = facets.counts(_CountingTable(), *_kwargs())
     for dimension in ("remote", "has_salary"):
         assert all(o["value"] is not None for o in out["facets"][dimension])
 
@@ -329,7 +319,7 @@ def test_sorting_by_posted_narrows_the_counts_the_same_way_it_narrows_the_list()
     """`run` sorts only rows with a readable posting date, so the count must exclude them too —
     otherwise the header overstates the result set by the 8.4% carrying no such date."""
     table = _CountingTable()
-    facets.counts(table, _kwargs(posted_sortable=True))
+    facets.counts(table, *_kwargs(posted_sortable=True))
     assert all("posted_at LIKE" in (c or "") for c in table.seen if c)
 
 
@@ -363,9 +353,9 @@ def test_every_nameable_filter_is_labelled_and_clearable_in_the_ui():
     # dropFilter() clears the salary bracket through its two bounds, so its members need no
     # control of their own.
     bracket = set(re.findall(r"'([^']+)'", _js_decl("BRACKET")))
-    nameable = set(inspect.signature(build_filter).parameters) - set(
-        facets.NEVER_BLOCKING
-    )
+    # `SearchFilters`'s own fields (ADR-0149) — not `build_filter`'s signature, which is now
+    # just `(filters, capabilities)` and would tell this test nothing about individual names.
+    nameable = set(SearchFilters.__dataclass_fields__) - set(facets.NEVER_BLOCKING)
     for key in sorted(nameable):
         assert key in labels, (
             f"{key} can be the Blocking filter but has no LABELS entry"

@@ -19,10 +19,24 @@ from headstart.search import (
     EMPLOYMENT_TYPES,
     RESULT_COLUMNS,
     SORT_COLUMNS,
+    IndexCapabilities,
     JobSearch,
+    SearchFilters,
     build_filter,
     eval_filter,
 )
+
+# `IndexCapabilities`'s field names — used below to route a `_clause`/`_bracket` override into
+# the right one of the two objects `build_filter` now takes (ADR-0149), so the bulk of this
+# file's tests can keep calling those helpers with one flat kwargs blob, unchanged.
+_CAPABILITY_FIELDS = set(IndexCapabilities.__dataclass_fields__)
+
+
+def _split(kwargs: dict) -> tuple[SearchFilters, IndexCapabilities]:
+    caps = {k: v for k, v in kwargs.items() if k in _CAPABILITY_FIELDS}
+    filters = {k: v for k, v in kwargs.items() if k not in _CAPABILITY_FIELDS}
+    return SearchFilters(**filters), IndexCapabilities(**caps)
+
 
 # ---- eval_filter: the frozen benchmark builder (was named build_filter) ----
 
@@ -64,7 +78,7 @@ def _clause(**kw):
     kw.setdefault("atses", ("greenhouse", "lever"))
     kw.setdefault("has_first_seen", True)
     kw.setdefault("has_min_salary_annual", True)
-    return build_filter(**kw)
+    return build_filter(*_split(kw))
 
 
 def test_no_filters_is_no_clause():
@@ -353,19 +367,19 @@ def _searcher():
 
 def test_an_unknown_filter_value_is_warned_about_once_per_request(caplog):
     # The regression this pins is amplification, not wording: `facets.counts` recompiles one
-    # request's kwargs once per facet option, so warning at the drop site in `build_filter`
+    # request's filters once per facet option, so warning at the drop site in `build_filter`
     # turned a single `?ats=bogus&etype=bogus` into 58 WARNING records on the deployed Space —
     # user-controlled, unauthenticated log volume from any crawler holding a stale link. The
     # parse happens once; the compile happens ~30 times, and only the parse may speak.
     searcher, _ = _searcher()
     with caplog.at_level(logging.WARNING, logger="headstart.search"):
         caplog.clear()  # the constructor's own dark-column line is not what is counted here
-        kwargs = searcher.filter_kwargs({"ats": "bogus", "etype": "bogus"})
+        filters = searcher.filter_kwargs({"ats": "bogus", "etype": "bogus"})
         for _ in range(30):
-            build_filter(**kwargs)
+            build_filter(filters, searcher.capabilities)
     assert len(caplog.records) == 2
-    assert kwargs["ats"] == "bogus"  # still dropped by the compiler, unchanged
-    assert build_filter(**kwargs) is None
+    assert filters.ats == "bogus"  # still dropped by the compiler, unchanged
+    assert build_filter(filters, searcher.capabilities) is None
 
 
 def test_startup_scan_learns_atses_and_first_seen():
@@ -486,7 +500,7 @@ def test_keyword_filter_reaches_the_where_clause_and_its_scope_is_whitelisted():
 def test_keyword_scope_alone_is_nulled_so_it_can_never_be_the_blocking_filter():
     searcher, _ = _searcher()
     parsed = searcher.filter_kwargs({"kw_in": "description"})
-    assert parsed["kw"] is None and parsed["kw_in"] is None
+    assert parsed.kw is None and parsed.kw_in is None
 
 
 def test_keyword_description_scope_is_learned_from_the_schema():
@@ -703,13 +717,11 @@ def test_recency_windows_still_compile_inside_the_calendar():
 
 
 def _bracket(**kwargs):
-    base = {
-        "atses": ["darwinbox"],
-        "currencies": ["USD", "INR"],
-        "has_first_seen": True,
-        "has_min_salary_annual": True,
-    }
-    return build_filter(**{**base, **kwargs})
+    kwargs.setdefault("atses", ["darwinbox"])
+    kwargs.setdefault("currencies", ["USD", "INR"])
+    kwargs.setdefault("has_first_seen", True)
+    kwargs.setdefault("has_min_salary_annual", True)
+    return build_filter(*_split(kwargs))
 
 
 def test_salary_bracket_is_an_overlap_test_not_containment():
@@ -793,12 +805,10 @@ def test_the_bracket_stays_dark_where_even_the_default_is_unavailable():
     # nothing: the same silent wrong answer the default exists to remove, just relocated.
     assert (
         build_filter(
-            salary_currency="INR",
-            salary_min=1,
-            atses=[],
-            currencies=[],
-            has_first_seen=True,
-            has_min_salary_annual=True,
+            SearchFilters(salary_currency="INR", salary_min=1),
+            IndexCapabilities(
+                atses=[], currencies=[], has_first_seen=True, has_min_salary_annual=True
+            ),
         )
         is None
     )
@@ -810,12 +820,13 @@ def test_bracket_stays_dark_until_the_salary_columns_exist():
     # offering the feature.
     assert (
         build_filter(
-            salary_currency="USD",
-            salary_min=1,
-            atses=[],
-            currencies=["USD"],
-            has_first_seen=True,
-            has_min_salary_annual=False,
+            SearchFilters(salary_currency="USD", salary_min=1),
+            IndexCapabilities(
+                atses=[],
+                currencies=["USD"],
+                has_first_seen=True,
+                has_min_salary_annual=False,
+            ),
         )
         is None
     )
@@ -1122,13 +1133,14 @@ def test_a_converted_bound_rounds_outward_so_a_boundary_job_is_never_dropped():
 
 def test_a_currency_with_no_rate_is_left_out_rather_than_compared_at_one_to_one():
     where = build_filter(
-        salary_currency="USD",
-        salary_min=100_000,
-        currencies=["USD", "INR", "XTS"],  # XTS is not in config/fx_rates.json
-        atses=["greenhouse"],
-        has_first_seen=True,
-        has_description=True,
-        has_min_salary_annual=True,
+        SearchFilters(salary_currency="USD", salary_min=100_000),
+        IndexCapabilities(
+            currencies=["USD", "INR", "XTS"],  # XTS is not in config/fx_rates.json
+            atses=["greenhouse"],
+            has_first_seen=True,
+            has_description=True,
+            has_min_salary_annual=True,
+        ),
     )
     assert "XTS" not in where
     assert "salary_currency = 'INR'" in where
