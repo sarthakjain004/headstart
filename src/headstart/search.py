@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Collection, Mapping
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, NamedTuple
 from urllib.parse import urlsplit
@@ -210,7 +211,7 @@ class KeywordScope(NamedTuple):
 
 
 # The Keyword filter's scopes (ADR-0104): which served text columns a keyword is matched in.
-# The map is the extension point: `build_filter` compiles whatever it says, `filter_kwargs`
+# The map is the extension point: `build_filter` compiles whatever it says, `parse_filters`
 # whitelists `kw_in` against its keys, and the rail's <select>, its disabled-until-migrated rule
 # and the disclaimer all derive from `keyword_scope_options()` below — so a new scope (company,
 # location, department…) is one entry here, its columns and its label, and nothing in the
@@ -230,6 +231,65 @@ _OPTIONAL_KEYWORD_COLUMN = "description"
 # Enough for "senior backend kubernetes aws remote"; a bound because every term is one more LIKE
 # per scoped column on every count the facet strip issues.
 _KEYWORD_MAX_TERMS = 5
+
+
+@dataclass(frozen=True)
+class SearchFilters:
+    """The full Search-filter vocabulary (ADR-0149) — every structured constraint a user (or a
+    Subscription) can set, parsed once by :meth:`JobSearch.parse_filters` and compiled by
+    :func:`build_filter`. Every field defaults to "unset", exactly as an absent query-string
+    parameter compiles to no clause.
+
+    Deliberately carries nothing about the *table* being queried — no ATS whitelist, no column
+    migration state. That is :class:`IndexCapabilities`, a separate object, so that a facet count
+    can vary one field here through :func:`dataclasses.replace` without touching the other, and
+    so ``alerts.store.ALLOWED_SEARCH_FILTERS`` has one flat, real vocabulary of filter names to be
+    checked against — no runtime facts mixed in that a subset check would have to know to exclude.
+    """
+
+    remote: bool = False
+    max_years: int | None = None
+    ats: str | None = None
+    etype: str | None = None
+    india: str | None = None
+    location: str | None = None
+    company: str | None = None
+    has_salary: bool = False
+    salary_min: int | None = None
+    salary_max: int | None = None
+    salary_currency: str | None = None
+    posted_within: int | None = None
+    posted_sortable: bool = False
+    seen_within: int | None = None
+    posted_after: str | None = None
+    posted_before: str | None = None
+    seen_after: str | None = None
+    seen_before: str | None = None
+    first_seen_after: str | None = None
+    kw: str | None = None
+    kw_in: str | None = None
+
+
+@dataclass(frozen=True)
+class IndexCapabilities:
+    """Runtime facts about the currently-open Search index (ADR-0149) — never a user choice.
+
+    Learned once per process in :meth:`JobSearch.__init__` (two full-table scans plus a schema
+    check) and handed to :func:`build_filter` and :func:`headstart.facets.counts` as one object,
+    in place of the six loose keyword arguments both used to take. ``atses``, ``has_first_seen``
+    and ``has_min_salary_annual`` carry no default: forgetting one used to silently drop the ATS
+    whitelist, or turn ADR-0035's exact Watermark cutoff into no clause at all, so a caller that
+    builds this by hand must state them. ``currencies``, ``has_description`` and ``has_country``
+    default because forgetting them only ever narrows a feature to "not offered on this table" —
+    never widens what matches or corrupts a result.
+    """
+
+    atses: Collection[str]
+    has_first_seen: bool
+    has_min_salary_annual: bool
+    currencies: Collection[str] = ()
+    has_description: bool = False
+    has_country: bool = False
 
 
 def _int_arg(args: Mapping[str, str]) -> Callable[[str], int | None]:
@@ -447,7 +507,7 @@ def _salary_clauses(
     # salary at all (measured 2026-08-25), which is what filtering on it alone would do. So it
     # only bites once the user has actually named a bound.
     #
-    # The default is applied HERE and not in `filter_kwargs` for two reasons. It used to live
+    # The default is applied HERE and not in `parse_filters` for two reasons. It used to live
     # only in the browser's <select> (`ui/static/app.js`, control `salcur`), so a bound with no
     # currency compiled to no filter at all and the numeric constraint was silently discarded for
     # every caller that is not that <select> — a hand-built `/search?salary_min=…`, or
@@ -461,9 +521,9 @@ def _salary_clauses(
     # parameter contradict `kw_in`, the other "modifier with a default".
     #
     # It resolves the fallback in a different *layer* from `kw_in`, though, and deliberately.
-    # `kw_in`'s lands in `filter_kwargs` and this builder compiles nothing for a scope it does not
+    # `kw_in`'s lands in `parse_filters` and this builder compiles nothing for a scope it does not
     # know; that is enough for `kw_in` because every path into the builder — `/search`, and
-    # `facets` via `filter_kwargs` output — has already normalised it. It is not enough here: the
+    # `facets` via `parse_filters` output — has already normalised it. It is not enough here: the
     # bug this fixes was reported against `scripts/eval/verify_filters.py` and hand-built requests,
     # which call the reference compiler (ADR-0031) directly and never see the parse step.
     #
@@ -626,120 +686,87 @@ def _first_seen_clauses(
     return filters
 
 
-def build_filter(
-    *,
-    remote: bool = False,
-    max_years: int | None = None,
-    ats: str | None = None,
-    etype: str | None = None,
-    india: str | None = None,
-    location: str | None = None,
-    company: str | None = None,
-    has_salary: bool = False,
-    salary_min: int | None = None,
-    salary_max: int | None = None,
-    salary_currency: str | None = None,
-    posted_within: int | None = None,
-    posted_sortable: bool = False,
-    seen_within: int | None = None,
-    posted_after: str | None = None,
-    posted_before: str | None = None,
-    seen_after: str | None = None,
-    seen_before: str | None = None,
-    first_seen_after: str | None = None,
-    kw: str | None = None,
-    kw_in: str | None = None,
-    has_description: bool = False,
-    atses: Collection[str],
-    currencies: Collection[str] = (),
-    has_first_seen: bool,
-    has_min_salary_annual: bool,
-    has_country: bool = False,
-) -> str | None:
-    """The prod-table where-clause — the reference Search-filter compiler (ADR-0031).
+def build_filter(filters: SearchFilters, capabilities: IndexCapabilities) -> str | None:
+    """The prod-table where-clause — the reference Search-filter compiler (ADR-0031, ADR-0149).
 
-    ``atses`` is the whitelist of ATSes actually present in the served table,
-    ``has_first_seen`` whether the table carries that column, and ``has_min_salary_annual``
-    likewise for the ADR-0082 salary columns — all runtime facts of the index a
-    :class:`JobSearch` learns once at startup and passes through. Deliberately required, not
-    defaulted: a caller that forgot them would silently drop the ATS whitelist and turn the
-    alerts Watermark cutoff into no clause at all (ADR-0035's exactness guarantee), or error
-    ``has_salary`` on a table LanceDB hasn't migrated onto the new columns yet.
+    Two objects rather than one flat parameter list. ``filters`` is every value a user (or a
+    Subscription) actually set — :class:`SearchFilters`. ``capabilities`` is what this
+    particular Search index happens to support right now — :class:`IndexCapabilities`: the ATS
+    and currency whitelists the ``ats``/``salary_currency`` clauses may name, and which
+    migration-only columns (``first_seen``, the ADR-0082 salary columns, ``description``,
+    ``country``) it carries. Both are required, and deliberately so, for the reason the six loose
+    facts used to be: a caller that reaches this directly (``scripts/bench/scalar_index_bench_v2
+    .py``, a hand-built request) that skimps on ``capabilities`` can silently drop the ATS
+    whitelist, turn ADR-0035's exact Watermark cutoff into no clause at all, or make a salary
+    bound compile to **nothing** — see :class:`IndexCapabilities`'s docstring for which of its
+    six fields fail loudly (no default) and which fail quietly (default, but only by narrowing a
+    feature to "not offered here").
 
-    Three of six carry defaults, and all three defaults fail *quietly*, which is why they are
-    called out here rather than left to the signature. ``has_description`` (ADR-0104) is safe:
-    forgetting it can only leave the Keyword filter's description scope dark, where forgetting
-    ``has_first_seen`` would turn ADR-0035's Watermark cutoff into no clause at all. ``has_country``
-    (ADR-0138) is safe the same way: forgetting it only falls back to ``geo.where()``'s slower
-    regex alternation for the top-level India filter, never errors and never widens or narrows
-    which rows match.
-
-    ``currencies`` is the dangerous one. Omit it and a salary bound compiles to **nothing** —
-    ``build_filter(salary_min=100_000, …)`` returns ``None`` — because the bracket resolves its
-    currency against that whitelist and finds an empty one. That is the exact failure
-    :func:`_salary_clauses` moved :data:`SALARY_DEFAULT_CURRENCY` into this compiler to prevent,
-    for the exact callers it names, so a caller that reaches this function directly
-    (``scripts/eval/verify_filters.py``, a hand-built request) must pass it. Every in-repo caller
-    goes through :meth:`JobSearch.filter_kwargs`, which always does.
+    Every in-repo caller reaches this through :meth:`JobSearch.parse_filters` (``filters``) and
+    :attr:`JobSearch.capabilities` (``capabilities``), which are always supplied together.
     """
-    filters: list[str] = []
-    if remote:
-        filters.append("remote = true")
-    if max_years is not None:
-        filters.append(f"(min_years <= {int(max_years)} OR min_years IS NULL)")
+    clauses: list[str] = []
+    if filters.remote:
+        clauses.append("remote = true")
+    if filters.max_years is not None:
+        clauses.append(f"(min_years <= {int(filters.max_years)} OR min_years IS NULL)")
     # A value that misses either whitelist drops the filter silently *here* and is reported
-    # once, by `JobSearch.filter_kwargs`, before this compiler is ever entered. It cannot be
-    # reported here: `facets.counts` recompiles the same kwargs once per facet option, so a
+    # once, by `JobSearch.parse_filters`, before this compiler is ever entered. It cannot be
+    # reported here: `facets.counts` recompiles the same filters once per facet option, so a
     # warning on this line is emitted ~29 times for one bad query-string parameter — see
     # `_warn_unknown_filters`.
-    if ats in atses:  # whitelist — never interpolated from free text
-        filters.append(f"ats = '{ats}'")
-    if etype in ETYPE_CLAUSES:
-        filters.append(ETYPE_CLAUSES[etype])
-    if india:
+    if (
+        filters.ats in capabilities.atses
+    ):  # whitelist — never interpolated from free text
+        clauses.append(f"ats = '{filters.ats}'")
+    if filters.etype in ETYPE_CLAUSES:
+        clauses.append(ETYPE_CLAUSES[filters.etype])
+    if filters.india:
         # "india" is the exact sentinel `geo.where()` itself uses for "whole country" (as
         # opposed to a REGIONS/CITIES key like "bengaluru"), and it is the only case the 1,338ms
         # regex alternation was ever measured on (ADR-0138) — city/region clauses are far
         # smaller and stay on the unchanged path below regardless of `has_country`.
-        if india == "india" and has_country:
-            filters.append("country = 'IN'")
+        if filters.india == "india" and capabilities.has_country:
+            clauses.append("country = 'IN'")
         else:
             clause = geo.where(
-                india
+                filters.india
             )  # canonical-place lookup — unknown values are ignored
             if clause:
-                filters.append(clause)
-    if location:
-        filters.append(f"lower(location) LIKE '%{_like(location)}%'")
-    if company:
-        filters.append(f"lower(company) LIKE '%{_like(company)}%'")
+                clauses.append(clause)
+    if filters.location:
+        clauses.append(f"lower(location) LIKE '%{_like(filters.location)}%'")
+    if filters.company:
+        clauses.append(f"lower(company) LIKE '%{_like(filters.company)}%'")
     # These four append in order, and that order is part of the string this returns —
     # `" AND ".join` below is not a set. SQL's AND commutes, so reordering reads as harmless and
     # is not: every test asserting a whole where-clause would fail, and so would any caller
     # comparing two compiled filters for equality.
-    filters += _keyword_clauses(kw=kw, kw_in=kw_in, has_description=has_description)
-    filters += _salary_clauses(
-        has_salary=has_salary,
-        salary_min=salary_min,
-        salary_max=salary_max,
-        salary_currency=salary_currency,
-        currencies=currencies,
-        has_min_salary_annual=has_min_salary_annual,
+    clauses += _keyword_clauses(
+        kw=filters.kw, kw_in=filters.kw_in, has_description=capabilities.has_description
     )
-    filters += _posted_clauses(
-        posted_sortable=posted_sortable,
-        posted_within=posted_within,
-        posted_after=posted_after,
-        posted_before=posted_before,
+    clauses += _salary_clauses(
+        has_salary=filters.has_salary,
+        salary_min=filters.salary_min,
+        salary_max=filters.salary_max,
+        salary_currency=filters.salary_currency,
+        currencies=capabilities.currencies,
+        has_min_salary_annual=capabilities.has_min_salary_annual,
     )
-    filters += _first_seen_clauses(
-        seen_after=seen_after,
-        seen_before=seen_before,
-        seen_within=seen_within,
-        first_seen_after=first_seen_after,
-        has_first_seen=has_first_seen,
+    clauses += _posted_clauses(
+        posted_sortable=filters.posted_sortable,
+        posted_within=filters.posted_within,
+        posted_after=filters.posted_after,
+        posted_before=filters.posted_before,
     )
-    return " AND ".join(filters) if filters else None
+    clauses += _first_seen_clauses(
+        seen_after=filters.seen_after,
+        seen_before=filters.seen_before,
+        seen_within=filters.seen_within,
+        first_seen_after=filters.first_seen_after,
+        has_first_seen=capabilities.has_first_seen,
+    )
+    return " AND ".join(clauses) if clauses else None
 
 
 def _warn_unknown_filters(
@@ -756,7 +783,7 @@ def _warn_unknown_filters(
     re-entered once per facet option: :func:`headstart.facets.counts` recompiles one request's
     kwargs 32 times, so a line on the drop itself came out **58 times** for a single
     ``?ats=bogus&etype=bogus`` — unauthenticated, user-controlled amplification, ~29 lines per
-    bad parameter from any crawler with a stale link. :meth:`JobSearch.filter_kwargs` parses a
+    bad parameter from any crawler with a stale link. :meth:`JobSearch.parse_filters` parses a
     request exactly once, so this is said exactly once.
 
     Rendered through ``%r`` and clipped: the value comes from the query string, so it is never
@@ -788,7 +815,10 @@ class JobSearch:
 
     The two facts the UI templates need — :attr:`atses` for the Board dropdown and
     :attr:`has_first_seen` for the "first seen" control — are attributes, not methods, so a
-    template context can carry them straight through.
+    template context can carry them straight through. :attr:`capabilities` (ADR-0149) bundles
+    those and the other four runtime facts into one :class:`IndexCapabilities` for
+    :func:`build_filter` and :func:`headstart.facets.counts`; the six individual attributes stay
+    directly settable, since templates and tests both read and monkeypatch them one at a time.
     """
 
     def __init__(self, model: Any, table: Any, *, max_k: int = 100, max_page: int = 20):
@@ -869,14 +899,37 @@ class JobSearch:
                 ", ".join(dark),
             )
 
-    def filter_kwargs(self, args: Mapping[str, str]) -> dict[str, Any]:
-        """The :func:`build_filter` keywords one request asks for, parsed exactly once.
+    @property
+    def capabilities(self) -> IndexCapabilities:
+        """This table's :class:`IndexCapabilities` (ADR-0149) — the six attributes above,
+        bundled for :func:`build_filter` and :func:`headstart.facets.counts`.
+
+        A property, not a field set once and cached: the six individual attributes stay
+        directly settable (the UI templates read them one at a time, and the test suite
+        monkeypatches them the same way), and this just re-packs whatever they currently hold
+        on every access — free, since it costs six attribute reads and no table I/O.
+        """
+        return IndexCapabilities(
+            atses=self.atses,
+            has_first_seen=self.has_first_seen,
+            has_min_salary_annual=self.has_min_salary_annual,
+            currencies=self.currencies,
+            has_description=self.has_description,
+            has_country=self.has_country,
+        )
+
+    def parse_filters(self, args: Mapping[str, str]) -> SearchFilters:
+        """The :class:`SearchFilters` one request asks for, parsed exactly once.
 
         Split out of :meth:`run` so the ranked search and the facet counts (:mod:`headstart.
         facets`) compile the *same* description of the user's filters. Two call sites parsing
         the same query string independently is how a count comes to disagree with the list it
         is counting — the one defect that would make the whole facet feature worse than no
         counts at all, because a wrong number is trusted where a missing one is not.
+
+        Returns only the user-settable vocabulary (ADR-0149) — :attr:`capabilities` carries
+        this table's own runtime facts separately, so a caller (:mod:`headstart.facets`, most
+        of all) can vary one without rebuilding the other.
         """
 
         _int = _int_arg(args)
@@ -887,52 +940,45 @@ class JobSearch:
         # The one place a request is parsed, and so the one place a dropped filter can be
         # reported without `facets.counts` repeating it once per option — see the helper.
         _warn_unknown_filters(ats, etype, self.atses)
-        return {
-            "remote": args.get("remote") == "true",
-            "max_years": _int("max_years"),
-            "ats": ats,
-            "etype": etype,
-            "india": (args.get("india") or "").strip().lower() or None,
-            "location": (args.get("location") or "").strip() or None,
-            "company": (args.get("company") or "").strip() or None,
-            "has_salary": args.get("has_salary") == "true",
-            "salary_min": _int("salary_min"),
-            "salary_max": _int("salary_max"),
-            "salary_currency": (args.get("salary_currency") or "").strip().upper()
-            or None,
-            "posted_within": _int("posted_within"),
+        return SearchFilters(
+            remote=args.get("remote") == "true",
+            max_years=_int("max_years"),
+            ats=ats,
+            etype=etype,
+            india=(args.get("india") or "").strip().lower() or None,
+            location=(args.get("location") or "").strip() or None,
+            company=(args.get("company") or "").strip() or None,
+            has_salary=args.get("has_salary") == "true",
+            salary_min=_int("salary_min"),
+            salary_max=_int("salary_max"),
+            salary_currency=(args.get("salary_currency") or "").strip().upper() or None,
+            posted_within=_int("posted_within"),
             # A sort by posting date can only place rows whose date is readable, so the
             # window it sorts is part of the filter, not of the ordering — see build_filter.
-            "posted_sortable": SORT_COLUMNS.get((args.get("sort") or "").strip())
+            posted_sortable=SORT_COLUMNS.get((args.get("sort") or "").strip())
             == "posted_at",
-            "seen_within": _int("seen_within"),
-            "posted_after": (args.get("posted_after") or "").strip() or None,
-            "posted_before": (args.get("posted_before") or "").strip() or None,
-            "seen_after": (args.get("seen_after") or "").strip() or None,
-            "seen_before": (args.get("seen_before") or "").strip() or None,
-            "first_seen_after": (args.get("first_seen_after") or "").strip() or None,
-            "kw": kw,
+            seen_within=_int("seen_within"),
+            posted_after=(args.get("posted_after") or "").strip() or None,
+            posted_before=(args.get("posted_before") or "").strip() or None,
+            seen_after=(args.get("seen_after") or "").strip() or None,
+            seen_before=(args.get("seen_before") or "").strip() or None,
+            first_seen_after=(args.get("first_seen_after") or "").strip() or None,
+            kw=kw,
             # A scope is a modifier of the keyword, not a filter of its own (the salary
             # currency's rule): without a keyword it is None, so it can never be named as the
             # Blocking filter, and an unknown value falls back to the default rather than being
             # interpolated.
-            "kw_in": (kw_in if kw_in in KEYWORD_SCOPES else KEYWORD_DEFAULT_SCOPE)
+            kw_in=(kw_in if kw_in in KEYWORD_SCOPES else KEYWORD_DEFAULT_SCOPE)
             if kw
             else None,
-            "has_description": self.has_description,
-            "atses": self.atses,
-            "currencies": self.currencies,
-            "has_first_seen": self.has_first_seen,
-            "has_min_salary_annual": self.has_min_salary_annual,
-            "has_country": self.has_country,
-        }
+        )
 
     def facets(self, args: Mapping[str, str]) -> dict[str, Any]:
         """Per-option result counts for these filters — see :mod:`headstart.facets`.
 
         Here rather than in the route so the table and the runtime schema facts stay behind
         this object; a caller reaching for ``_table`` to count would be the same class of leak
-        that ``filter_kwargs`` exists to prevent on the filter side. Imported inside the method
+        that ``parse_filters`` exists to prevent on the filter side. Imported inside the method
         because :mod:`headstart.facets` imports back from this one — and both ways, because the
         Space image has no ``headstart`` package at all: it lays every module down flat beside
         ``app.py`` (deploy-space.yml). A package-only import here raised ``ModuleNotFoundError``,
@@ -944,12 +990,12 @@ class JobSearch:
         except ImportError:  # pragma: no cover - exercised only in the deployed Space
             import facets  # type: ignore[no-redef]
 
-        return facets.counts(self._table, self.filter_kwargs(args))
+        return facets.counts(self._table, self.parse_filters(args), self.capabilities)
 
     def run(self, args: Mapping[str, str]) -> list[dict]:
         query = (args.get("q") or "").strip()
         _int = _int_arg(args)
-        where = build_filter(**self.filter_kwargs(args))
+        where = build_filter(self.parse_filters(args), self.capabilities)
         # Whitelisted to a column name, never taken from the query string — this reaches an
         # ORDER BY. An unknown value is no sort at all, which is the existing behaviour.
         sort = SORT_COLUMNS.get((args.get("sort") or "").strip())
@@ -1117,14 +1163,7 @@ class JobSearch:
         if not self.has_first_seen:
             return None
         return self._table.count_rows(
-            filter=build_filter(
-                seen_within=hours,
-                has_first_seen=True,
-                atses=self.atses,
-                currencies=self.currencies,
-                has_description=self.has_description,
-                has_min_salary_annual=self.has_min_salary_annual,
-            )
+            filter=build_filter(SearchFilters(seen_within=hours), self.capabilities)
         )
 
     def coverage(self) -> dict[str, Any]:

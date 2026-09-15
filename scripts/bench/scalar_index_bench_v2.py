@@ -30,9 +30,14 @@ from pathlib import Path
 import lancedb
 import numpy as np
 
-from headstart.search import RESULT_COLUMNS, build_filter
+from headstart.search import (
+    RESULT_COLUMNS,
+    IndexCapabilities,
+    SearchFilters,
+    build_filter,
+)
 
-# name -> build_filter() kwargs, chosen to mirror real UI filter combinations
+# name -> SearchFilters kwargs, chosen to mirror real UI filter combinations
 FILTER_CASES: list[tuple[str, dict]] = [
     ("none", {}),
     ("remote", {"remote": True}),
@@ -107,16 +112,16 @@ def measure_pass(
     reps,
     tag,
 ):
+    capabilities = IndexCapabilities(
+        atses=atses,
+        currencies=currencies,
+        has_first_seen=has_fs,
+        has_min_salary_annual=has_msa,
+        has_country=has_country,
+    )
     rows = []
     for label, kwargs in FILTER_CASES:
-        where = build_filter(
-            atses=atses,
-            currencies=currencies,
-            has_first_seen=has_fs,
-            has_min_salary_annual=has_msa,
-            has_country=has_country,
-            **kwargs,
-        )
+        where = build_filter(SearchFilters(**kwargs), capabilities)
         n = table.count_rows(filter=where) if where else table.count_rows()
         ms = _median_ms(make_query_fn(table, projection, vector, where), reps)
         rows.append(

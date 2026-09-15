@@ -123,7 +123,7 @@ _ALLOWED: dict[str, str] = {
         "`logging.lastResort` as bare stderr lines and no `::warning::` is ever produced. The "
         "budget that binds here is request volume, and this is the site that once cost 58 "
         "records a request: `facets.counts` re-entered `build_filter` once per facet option, "
-        "driven by a URL parameter, unauthenticated. Hoisting the check to `filter_kwargs` — "
+        "driven by a URL parameter, unauthenticated. Hoisting the check to `parse_filters` — "
         "the single parse point — made it 2. WARNING rather than INFO is deliberate for the "
         "same reason: `lastResort` carries WARNING and above only, so INFO here is invisible "
         "in the one deployment that serves users."

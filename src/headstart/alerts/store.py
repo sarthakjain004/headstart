@@ -80,6 +80,15 @@ MAX_PARSES = 3  # Résumé parses per Account, lifetime — bounds router spend 
 # absent — it filters `first_seen`, which is exactly what the Watermark already decides, so
 # honouring both would fight. `posted_within` is kept: it filters `posted_at` (when the
 # employer posted), an independent constraint the user set and expects to survive.
+#
+# A hand-curated subset of `headstart.search.SearchFilters`'s field names (ADR-0149), not
+# imported from it: this module ships flat into the Space (deploy-space.yml) beside `search.py`,
+# but the alerts run also calls it standalone over HTTP against a *deployed* Space that may be a
+# different commit — so a shared Python object couldn't guarantee the two agree at request time
+# either way, and importing `search.py` here for a curated allowlist would buy nothing but a
+# heavier import graph. `tests/test_alerts_store.py` keeps this set honest instead: it asserts
+# every name here is a real `SearchFilters` field, so a rename or typo in `search.py` fails CI
+# rather than silently dropping a filter from every Digest.
 ALLOWED_SEARCH_FILTERS = frozenset(
     {
         "remote",

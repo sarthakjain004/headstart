@@ -248,7 +248,7 @@ function currentFilters(){
   if (el('location').value.trim()) f.location = el('location').value.trim();
   if (el('company').value.trim()) f.company = el('company').value.trim();
   // The Keyword filter (ADR-0104). Its scope is a modifier, sent only beside a keyword — on its
-  // own it filters nothing, and the server nulls it anyway (matches filter_kwargs) — and only
+  // own it filters nothing, and the server nulls it anyway (matches parse_filters) — and only
   // when it is not the default, which the server already assumes: that keeps a "Look in: Title"
   // pill off every plain keyword search.
   if (el('kw').value.trim()){
