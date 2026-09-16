@@ -88,7 +88,7 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>132,977 live rows of 215,998<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>132,994 live rows of 216,015<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
@@ -159,27 +159,27 @@ their own schedules.
 ### Which boards a run picks
 
 A run does not scrape every board it could, and the ledger's headline number is not the number
-that matters. The 132,977 live *rows* reduce to 95,999 **Scrapable Boards** a run can even
-consider (measured 2026-09-13; the terms are defined in `CONTEXT.md` §Counting Boards):
+that matters. The 132,994 live *rows* reduce to 96,016 **Scrapable Boards** a run can even
+consider (measured 2026-09-16; the terms are defined in `CONTEXT.md` §Counting Boards):
 
 | | boards | |
 | --- | ---: | --- |
-| live rows in the ledger | 132,977 | a row, not a board — 6,632 of them are duplicate spellings |
+| live rows in the ledger | 132,994 | a row, not a board — 6,632 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −30,220 | **all of it `join`** — German-SMB boards at ~1 tech job in ~10k |
 | − `config.EXCLUDED_BOARDS` | −46 | vendor test/sandbox boards, confirmed by reading their postings — Oracle's 78,431-posting load-test instance is the newest |
 | − alias ledger | −78 | one company, two hostnames — `basf.jobs` and `basf-se.jobs2web.com` are one board (ADR-0111) |
 | − case-variant dedupe | −6,630 | `company/External` and `company/external` are one board (ADR-0023) |
 | − `config.PARKED_BOARDS` | −4 | real boards withheld for now — Accenture's and EY's outrun any shard budget, SmartRecruiters' `AdeebaEServicesPvtLtd` cost 24 min a run for 136 tech jobs, and Wayman Learning Trust is 56,527 teaching vacancies a run for zero tech |
-| = **Scrapable Board** | **95,999** | |
+| = **Scrapable Board** | **96,016** | |
 
 That order matters: excluding before deduping reads −46 and −6,630, deduping first reads −44 and
-−6,632, because two excluded boards were themselves duplicates. Both land on 95,999.
+−6,632, because two excluded boards were themselves duplicates. Both land on 96,016.
 
 The alias row is the one stage that is not derivable from the ledger's own text: two hostnames
 serving one board share no key to collapse on, so it takes a live probe to find them
 (`scripts/validate/dedupe_boards.py`, ADR-0111).
 
-Of those, **61,425 are currently hiring** — `load_active_companies` defaults to `min_jobs=1`, so
+Of those, **61,442 are currently hiring** — `load_active_companies` defaults to `min_jobs=1`, so
 the 34,574 live-but-empty boards are skipped as having nothing to read. `pick_boards` takes a
 slice of
 `--max-boards` (default **20,000**) and splits it **30/70**: the top 30% by board-priority score —
@@ -224,11 +224,11 @@ No always-on server: scheduled GitHub Actions and a free-tier Space.
 
 ## ATS coverage
 
-35 scrapers, selected from a registry by the `ats` key: `amazon`, `apple`, `ashby`, `bytedance`,
+36 scrapers, selected from a registry by the `ats` key: `amazon`, `apple`, `ashby`, `bytedance`,
 `darwinbox`, `eightfold`, `freshteam`, `google`, `greenhouse`, `icims`, `join`, `keka`, `lever`,
 `meta`, `oracle`, `personio`, `recruitee`, `ripplehire`, `rippling`, `sensehq`, `smartrecruiters`,
 `successfactors`, `taleo_be`, `taleo_enterprise`, `teamtailor`, `tesla`, `tiktok`, `trakstar`,
-`uber`, `workable`, `workday`, `zoho`, `zwayam`, `jazzhr`, `jobvite`. `join` is in `registry.DISABLED_ATS` — German-SMB boards running ~1 tech job in
+`uber`, `workable`, `workday`, `zoho`, `zwayam`, `jazzhr`, `jobvite`, `phenom`. `join` is in `registry.DISABLED_ATS` — German-SMB boards running ~1 tech job in
 ~10k, pure noise for a tech-only index — so it is skipped rather than scraped. Its scraper class
 and tests stay intact; re-enable by removing it from that set.
 `amazon`, `apple`, `bytedance`, `google`, `meta`, `tesla`, `tiktok` and `uber` (ADR-0139) are
@@ -239,9 +239,9 @@ step and each one's liveness ledger carries exactly one hand-entered row.
 Each scraper reads a Board and normalizes its raw postings into `Job` records; all HTTP routes
 through one pooled, thread-local `curl_cffi` client that impersonates Chrome, so the same stack
 serves plain JSON APIs and the TLS-fingerprinted (Cloudflare / DataDome) boards (ADR-0002). The
-liveness pipeline has probed **215,998 ledger rows**: 132,977 live, 66,943 dead, 16,078 unknown —
-rows, not boards; they collapse to 126,345 Unique Boards (CONTEXT.md §Counting Boards). Of the
-35 scrapers, 19 have rows in the index — `sensehq` is a single-company unlock with nothing
+liveness pipeline has probed **216,015 ledger rows**: 132,994 live, 66,943 dead, 16,078 unknown —
+rows, not boards; they collapse to 126,362 Unique Boards (CONTEXT.md §Counting Boards). Of the
+36 scrapers, 19 have rows in the index — `sensehq` is a single-company unlock with nothing
 indexed yet, `zwayam` (2026-08-27), `icims` (2026-09-08), `oracle` (2026-09-08, which had a
 scraper but no ledger until then), `bytedance`, `apple`, `meta`, `tiktok`, `uber`, `amazon`,
 `tesla` and
