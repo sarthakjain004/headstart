@@ -9,6 +9,8 @@ alive.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 from headstart.ingest import board_failures as bf
 
 
@@ -86,3 +88,57 @@ def test_load_fails_open(tmp_path):
     )
     loaded = bf.load(p)
     assert "greenhouse:ok" in loaded and "bad" not in loaded
+
+
+def test_a_gone_verdict_expires_into_parole():
+    """The verdict is evidence with an age, not a fact. Past PAROLE_DAYS a quarantined Board is
+    re-admitted for one run so the verdict can be re-earned — measured 2026-09-16, 23 of the 757
+    Boards then quarantined answered 200 again, 16 of them with live postings."""
+    fresh = "2026-09-16T00:00:00+00:00"
+    stale = "2026-09-01T00:00:00+00:00"
+    rows = {
+        "greenhouse:fresh": bf.Failure(bf.QUARANTINE_AT, "404", fresh),
+        "greenhouse:stale": bf.Failure(bf.QUARANTINE_AT, "404", stale),
+        "greenhouse:striking": bf.Failure(bf.QUARANTINE_AT - 1, "404", stale),
+    }
+    now = "2026-09-16T12:00:00+00:00"
+    # only a *quarantined* Board is on parole: one still accruing strikes is in the slice anyway
+    assert bf.paroled(rows, now) == {"greenhouse:stale"}
+
+
+def test_parole_starts_at_exactly_parole_days():
+    old = datetime(2026, 9, 1, tzinfo=UTC)
+    row = {"greenhouse:b": bf.Failure(bf.QUARANTINE_AT, "404", old.isoformat())}
+    day_before = (old + timedelta(days=bf.PAROLE_DAYS, seconds=-1)).isoformat()
+    on_time = (old + timedelta(days=bf.PAROLE_DAYS)).isoformat()
+    assert bf.paroled(row, day_before) == set()
+    assert bf.paroled(row, on_time) == {"greenhouse:b"}
+
+
+def test_an_unreadable_stamp_paroles():
+    """Same direction as every other guard here: a bad date must never be grounds for keeping a
+    Board out of the slice forever."""
+    rows = {"greenhouse:b": bf.Failure(bf.QUARANTINE_AT, "404", "")}
+    assert bf.paroled(rows, "2026-09-16T00:00:00+00:00") == {"greenhouse:b"}
+
+
+def test_a_re_probe_that_404s_again_restarts_the_parole_clock():
+    """The drain must not become a revolving door: a Board that re-earns its verdict goes back
+    to serving the full PAROLE_DAYS, because `update` restamps `last_seen_gone`."""
+    stale = "2026-09-01T00:00:00+00:00"
+    now = "2026-09-16T00:00:00+00:00"
+    rows = {"greenhouse:b": bf.Failure(bf.QUARANTINE_AT, "404", stale)}
+    assert bf.paroled(rows, now) == {"greenhouse:b"}
+    rows = bf.update(rows, {"greenhouse:b": "HTTPError: HTTP Error 404: "}, set(), now)
+    assert rows["greenhouse:b"].strikes == bf.QUARANTINE_AT + 1
+    assert bf.paroled(rows, now) == set()
+
+
+def test_a_re_probe_that_answers_clears_the_quarantine():
+    """The loop finding 2 of the 2026-09-16 review says is unreachable: `rows.pop` can only fire
+    once a quarantined Board is back in the slice."""
+    rows = {
+        "greenhouse:b": bf.Failure(bf.QUARANTINE_AT, "404", "2026-09-01T00:00:00+00:00")
+    }
+    rows = bf.update(rows, {}, {"greenhouse:b"}, "2026-09-16T00:00:00+00:00")
+    assert rows == {}

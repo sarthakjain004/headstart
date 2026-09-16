@@ -10,12 +10,14 @@ from __future__ import annotations
 import json
 import re
 import sys
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 import headstart.ingest.scrape_plan as ps
 from headstart.board_identity import board_identity
 from headstart.config import CompanyRef
+from headstart.ingest import board_failures as bf
 
 
 def test_coldstart_cost_weights_detail_fetchers():
@@ -461,3 +463,68 @@ def test_a_board_with_no_known_yield_is_judged_on_its_ratio_not_vetoed():
     assert ps._gated_boards(
         ["workday:new"], unknown, {"workday:new": 1.0}, today="2026-09-07"
     )
+
+
+def test_a_stale_quarantine_is_re_admitted_for_one_run(tmp_path, monkeypatch, caplog):
+    """Quarantine is evidence with an age, not a one-way door (ADR-0161).
+
+    Before parole existed, `scrape_plan` dropped every Board at/over QUARANTINE_AT strikes
+    unconditionally — so it never scraped, never entered `produced`, and `board_failures.update`'s
+    clearing branch was unreachable. Both Boards below would have been skipped; only the one whose
+    verdict is still fresh may be.
+    """
+    boards = [
+        CompanyRef("greenhouse", "stale", "Stale"),
+        CompanyRef("greenhouse", "fresh", "Fresh"),
+        CompanyRef("greenhouse", "alive", "Alive"),
+    ]
+    monkeypatch.setattr(
+        ps, "load_active_companies", lambda ledger, min_jobs=0: list(boards)
+    )
+    now = datetime.now(UTC)
+    stale = (now - timedelta(days=bf.PAROLE_DAYS + 1)).isoformat(timespec="seconds")
+    fresh = (now - timedelta(days=1)).isoformat(timespec="seconds")
+    failures = tmp_path / "board_failures.csv"
+    bf.save(
+        failures,
+        {
+            "greenhouse:stale": bf.Failure(bf.QUARANTINE_AT, "404", stale),
+            "greenhouse:fresh": bf.Failure(bf.QUARANTINE_AT, "404", fresh),
+        },
+    )
+
+    out = tmp_path / "assignments"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "scrape_plan",
+            "--priority",
+            str(tmp_path / "none.csv"),
+            "--cost",
+            str(tmp_path / "nocost.csv"),
+            "--failures",
+            str(failures),
+            "--out-dir",
+            str(out),
+            "--max-boards",
+            "0",
+            "--max-shards",
+            "2",
+            "--target-boards",
+            "2",
+        ],
+    )
+    with caplog.at_level("INFO"):
+        assert ps.main() == 0
+
+    planned = {
+        f"{json.loads(line)['ats']}:{json.loads(line)['slug']}"
+        for k in json.loads((out / "plan.json").read_text())["shards"]
+        for line in (out / f"shard-{k}.jsonl").read_text().splitlines()
+    }
+    assert planned == {"greenhouse:alive", "greenhouse:stale"}
+    line = next(
+        r.message for r in caplog.records if r.message.startswith("quarantine:")
+    )
+    assert "1 on parole" in line

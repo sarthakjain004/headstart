@@ -61,7 +61,8 @@ import re
 from run_logs import Run, common_args, runs_from, skip_if_stood_down
 
 QUARANTINE_SKIP = re.compile(
-    r"\[scrape_plan\] quarantine: skipped (\d+) of (\d+) confirmed-gone board\(s\)"
+    r"\[scrape_plan\] quarantine: skipped (\d+) of (\d+) confirmed-gone board\(s\); "
+    r"(\d+) on parole for a re-probe"
 )
 VALUE_GATE = re.compile(
     r"value gate: skipped (\d+) Board\(s\) costing over (\d+) min for under (\d+) "
@@ -126,7 +127,8 @@ def scrape_plan_report(run: Run) -> None:
     q = QUARANTINE_SKIP.search(text)
     if q:
         print(
-            f"  quarantine: skipped {q.group(1)} of {q.group(2)} confirmed-gone board(s)",
+            f"  quarantine: skipped {q.group(1)} of {q.group(2)} confirmed-gone board(s); "
+            f"{q.group(3)} on parole for a re-probe (ADR-0161)",
             flush=True,
         )
 

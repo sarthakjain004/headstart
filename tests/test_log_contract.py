@@ -1722,8 +1722,8 @@ CONTRACT: tuple[Line, ...] = (
         emitter=_LEDGERS,
         body=(
             "failures: 1204 of 2215 board error(s) read as gone (404/410) across 1 shard(s) | "
-            "1204 ledger rows (1150 cleared by a successful scrape) | 1204 at/over 5 strikes -> "
-            "board_failures.csv"
+            "1204 ledger rows (1150 cleared by a successful scrape) | 1204 at/over 5 strikes "
+            "(+1204 new, -0 released) -> board_failures.csv"
         ),
         why=(
             "the authoritative quarantine total. This pattern once read `N board(s) reported "
@@ -2387,8 +2387,14 @@ CONTRACT: tuple[Line, ...] = (
     Line(
         consumer="fanout_plan.QUARANTINE_SKIP",
         emitter=_SCRAPE_PLAN,
-        body="quarantine: skipped 1104 of 1104 confirmed-gone board(s)",
-        why="ADR-0058 quarantine acting on the plan; the ledger itself is untouched",
+        body=(
+            "quarantine: skipped 1104 of 1104 confirmed-gone board(s); "
+            "0 on parole for a re-probe"
+        ),
+        why=(
+            "ADR-0058 quarantine acting on the plan; the ledger itself is untouched. The parole "
+            "clause (ADR-0161) is stated even at zero, so the pattern can require it"
+        ),
         emit=_plan_measured,
     ),
     Line(

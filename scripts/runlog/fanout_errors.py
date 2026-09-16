@@ -29,8 +29,8 @@ of the run rather than of the boards.
 **That count is a stock, not a flow.** `failures:` reports `len(quarantined(rows))` over the entire
 ledger — every board currently at or over the strike threshold, most of them struck out on earlier
 runs. It is not "boards quarantined this run", and reading it as inflow is the same mistake the
-trends ledger already cost this repo. Compare it against the previous run's figure to get a
-delta; the number alone is a level.
+trends ledger already cost this repo. The flow is the `(+N new, -M released)` clause beside it
+(ADR-0161); the leading number alone is a level.
 
 **Count it from the `failures:` line, never by counting `quarantined` lines.** `update_ledgers`
 emits `for board in sorted(quarantined)[:20]` — a capped, *alphabetically sorted* sample. Counting
@@ -91,6 +91,7 @@ FAILURES = re.compile(
     r"\[update_ledgers\] failures: (\d+) of (\d+) board error\(s\) read as gone \(404/410\)"
     r" across (\d+) shard\(s\)"
     r" \| (\d+) ledger rows \((\d+) cleared by a successful scrape\) \| (\d+) at/over (\d+) strikes"
+    r" \(\+(\d+) new, -(\d+) released\)"
 )
 FAILED = re.compile(r"\[scrape_run\] (\S+?) failed after (\d+)s: (\w+)")
 # `failures`'s own second line: how much of the run's error volume did NOT read as a gone-board
@@ -171,12 +172,14 @@ def quarantines(run: Run) -> None:
             flush=True,
         )
     if totals:
-        gone, examined, shards, ledger, cleared, quarantined, at = totals.groups()
+        gone, examined, shards, ledger, cleared, quarantined, at, new, released = (
+            totals.groups()
+        )
         print(
             f"\n  failures: {gone} of {examined} board error(s) read as gone across {shards} "
             f"shard(s) | {ledger} ledger rows ({cleared} cleared) | "
             f"**{quarantined}** at/over {at} strikes — a STANDING TOTAL over the whole ledger, "
-            f"not this run's inflow",
+            f"not this run's inflow; this run moved it +{new} / -{released} (ADR-0161)",
             flush=True,
         )
     else:

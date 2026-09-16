@@ -291,11 +291,17 @@ def main() -> int:
     args = ap.parse_args()
 
     companies = load_active_companies(Path(args.ledger), min_jobs=0)
+    failure_rows = board_failures.load(args.failures)
+    # Boards whose gone-verdict has expired come back for one run to re-earn it (ADR-0161).
+    # Without this, quarantine is a one-way door: a Board removed from the slice never scrapes,
+    # so it never enters `produced`, so `board_failures.update` can never clear it.
+    on_parole = board_failures.paroled(
+        failure_rows, datetime.now(UTC).isoformat(timespec="seconds")
+    )
     quarantine = {
-        lower_key(b)
-        for b in board_failures.quarantined(board_failures.load(args.failures))
+        lower_key(b) for b in board_failures.quarantined(failure_rows) - on_parole
     }
-    if quarantine:
+    if quarantine or on_parole:
         # Boards confirmed gone (404/410) on QUARANTINE_AT consecutive scrapes — skip them here,
         # and only here: the liveness ledger stays the probe-owned truth, and `live_keep_set`
         # (which feeds `index prune`) must not shrink, or a scraping decision would evict rows.
@@ -305,9 +311,11 @@ def main() -> int:
         companies = [
             c for c in companies if lower_key(board_identity(c)) not in quarantine
         ]
+        # The parole count is stated even when it is zero. An omitted-when-zero clause is how a
+        # consumer regex silently drops the whole line instead of erroring (`fanout_plan`).
         _log.info(
             f"quarantine: skipped {before - len(companies)} of {len(quarantine)} "
-            "confirmed-gone board(s)"
+            f"confirmed-gone board(s); {len(on_parole)} on parole for a re-probe"
         )
     scores = load_scores(Path(args.priority))
     # Loaded before the slice is picked, not after: the value gate (ADR-0064) needs measured

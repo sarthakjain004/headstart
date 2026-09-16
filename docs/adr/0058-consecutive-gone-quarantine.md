@@ -1,6 +1,15 @@
 # ADR-0058: Confirmed-dead boards quarantine via a consecutive-gone ledger in `data/state/`
 
-**Status:** accepted · **Date:** 2026-08-18 · **Relates to:**
+**Status:** accepted · **Date:** 2026-08-18
+
+- **Amended by:** [ADR-0161](0161-a-gone-verdict-expires-quarantine-parole.md) — the
+  Consequences below claim "a board that dies and later revives is re-admitted automatically:
+  its first successful scrape clears the streak". That branch is unreachable for a quarantined
+  Board, which never scrapes again; measured, `0 cleared by a successful scrape` in 5 of 5 runs
+  while the total climbed 749 → 755. A gone-verdict now expires after 7 days and the Board comes
+  back for one run to re-earn it.
+
+**Relates to:**
 [ADR-0012](0012-liveness-ledger.md) (the liveness ledger stays probe-owned),
 [ADR-0022](0022-tech-priority-board-ordering.md) (whose partial-harvest rule is why this gap existed)
 
