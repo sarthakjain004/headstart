@@ -133,4 +133,6 @@ def test_derives_back_rejects_a_url_that_reads_back_as_another_slug(mod):
 
 
 def test_derives_back_rejects_an_ats_with_no_scraper(mod):
-    assert not mod.derives_back("bamboohr", "acme", "https://acme.bamboohr.com")
+    assert not mod.derives_back(
+        "not-a-real-ats", "acme", "https://acme.not-a-real-ats.com"
+    )
