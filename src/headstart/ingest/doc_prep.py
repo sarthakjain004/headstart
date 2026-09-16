@@ -243,7 +243,16 @@ def build_doc(job: dict) -> str:
 # 9d6a840b..a9b71af5 -- src/headstart/geo.py` — one behavioral commit; the other commit in that
 # range, c9f9484f, only reworded `classify`'s docstring for ADR-0146's move, already covered by
 # the paragraph above.)
-DERIVATIONS_VERSION = 12
+#
+# v13: `experience.py`'s `_GAP`/`_WORDS` character classes widened to include `#` (alongside the
+# `+` `_GAP` already had, for "C++"), so "C#" sitting between a stated number and the work word or
+# literal "experience" that anchors it no longer strands the match — "3+ years with C# .Net
+# Software Development" read None before this. On top of the v12 bump at `919cc3c9`. A description
+# already stored for an already-scraped Job is unchanged raw input that now parses differently, the
+# textbook case this counter exists for; live-confirmed on a Zoho posting, and measured full-corpus
+# old vs new (not just coverage, per ADR-0066): zero regressions, 39 new answers, 60 corrected ones
+# — see docs/experience-extraction/2026-09-16_symbol-gap-full-corpus-measurement.md.
+DERIVATIONS_VERSION = 13
 
 
 def to_meta(job: dict) -> dict:

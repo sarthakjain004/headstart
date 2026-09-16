@@ -165,7 +165,7 @@ _FOLD = str.maketrans(
 # any of this runs; `·` and `•` are the bullet characters boards actually emit. The curly forms
 # themselves are deliberately absent — folding means they can never reach a Tier-2 pattern.
 _GAP = (
-    r"[\w\s.'\":/()&,·•+-]{0,45}?"  # what may sit between the number and "experience"
+    r"[\w\s.'\":/()&,·•+#-]{0,45}?"  # what may sit between the number and "experience"
 )
 _YEARS = (
     r"(?:years?|yrs?)"  # "yrs" is common enough in the corpus to be worth accepting
@@ -226,7 +226,17 @@ _WORK = (
 # are as common as "5+ years of engineering". Making it optional is what `_NARRATIVE_*` then has to
 # pay for — the connector used to be the only thing keeping corporate history out.
 _CONN = r"\s+(?:of|in|as)?\s*"
-_WORDS = r"(?:[\w'/&.-]+[\s,]+){0,4}?"  # filler between the connector and the work word
+# `#`/`+` (not just `+`, already needed for "C++") so "C#" doesn't break a filler word it sits
+# inside of — "3+ years with C# .Net Software Development" read as None because "C#" couldn't
+# match `[\w'/&.-]+` as one skippable token, stranding "Software" out of reach. Live-confirmed on
+# a Zoho posting stating exactly that. Measured full-corpus, old vs new, per ADR-0066's own
+# discipline (bucket every record old-tier/value -> new-tier/value, not just coverage): zero
+# regressions, 39 new answers, 60 corrected ones (the same bug was silently pushing them to a
+# generic seniority-tier guess) — see docs/experience-extraction/
+# 2026-09-16_symbol-gap-full-corpus-measurement.md.
+_WORDS = (
+    r"(?:[\w'/&.#+-]+[\s,]+){0,4}?"  # filler between the connector and the work word
+)
 
 
 class _Tier2Pattern(NamedTuple):
