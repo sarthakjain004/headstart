@@ -88,8 +88,8 @@ Board's `company` name is read off the board page itself where the ATS makes tha
 (`ashby`, `eightfold`, `jobvite`, `keka`, `lever`, `ripplehire`, `taleo_enterprise` — ADR-0114);
 every other ATS serves the **ATS slug** in that field instead, so a row's `company` may be either.
 
-The liveness pipeline has probed **229,557 ledger rows**: 135,501 live, 77,976 dead, 16,080 unknown
-— rows, not boards; they collapse to 128,869 Unique Boards once duplicate spellings of the same
+The liveness pipeline has probed **255,397 ledger rows**: 151,756 live, 87,550 dead, 16,091 unknown
+— rows, not boards; they collapse to 145,124 Unique Boards once duplicate spellings of the same
 board are folded together (`CONTEXT.md` §Counting Boards).
 
 ## What this optimises for
@@ -141,7 +141,7 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>135,501 live rows of 229,557<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>151,756 live rows of 255,397<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
@@ -238,18 +238,18 @@ their tech yield. `CONTEXT.md`'s §Counting Boards names each of these stages pr
 
 | | boards | |
 | --- | ---: | --- |
-| live rows in the ledger | 135,501 | a row, not a board — 6,632 of them are duplicate spellings |
+| live rows in the ledger | 151,756 | a row, not a board — 6,632 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −25,488 | all of it `join` |
 | − `config.EXCLUDED_BOARDS` | −47 | vendor test/sandbox boards, confirmed by reading their postings |
 | − alias ledger | −78 | one company, two hostnames sharing one board (ADR-0111) |
 | − case-variant dedupe | −6,630 | `company/External` and `company/external` are one board (ADR-0023) |
 | − `config.PARKED_BOARDS` | −4 | real boards withheld for now — their scrape cost dwarfs their tech yield |
-| = **Scrapable Board** | **103,254** | |
+| = **Scrapable Board** | **119,509** | |
 
 That order matters: excluding before deduping reads −47 and −6,630, deduping first reads −45,
-because two excluded boards were themselves duplicates. Both land on 103,254.
+because two excluded boards were themselves duplicates. Both land on 119,509.
 
-Of those, **67,044 are currently hiring** — the 36,210 live-but-empty boards are skipped as having
+Of those, **77,469 are currently hiring** — the 42,040 live-but-empty boards are skipped as having
 nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
 sticky measure of tech-job yield) and a random exploration tail drawn from everything else, so
 newly-productive boards can never starve and eviction keeps working on boards outside the head.

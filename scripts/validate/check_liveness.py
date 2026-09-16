@@ -1119,6 +1119,24 @@ def p_zoho(t, u):
     return (LIVE, count) if count is not None else (UNKNOWN, None)
 
 
+def p_bamboohr(t, u):
+    # Verified live 2026-09-16 (5 fabricated slugs + 3 confirmed-live-but-jobless tenants): a
+    # dead tenant's widget answers 200 with an EMPTY body, while a live tenant — jobs or not —
+    # always serves the BambooHR-ATS-board wrapper (a "no open positions" blank state when
+    # empty). DNS/404 never happen here (the *.bamboohr.com wildcard resolves for anything), so
+    # the wrapper's presence, not the status code, is the real signal. See bamboohr.py's module
+    # docstring for the full measurement.
+    status, body = _get(f"https://{t}.bamboohr.com/jobs/embed2.php")
+    if status == "dns" or status in (404, 410):
+        return DEAD, None
+    if status != 200:
+        return UNKNOWN, None
+    text = body.decode("utf-8", "replace")
+    if "BambooHR-ATS-board" not in text:
+        return DEAD, None
+    return LIVE, len(set(re.findall(r"bhrPositionID_(\d+)", text)))
+
+
 def p_keka(t, u):
     # The careers SPA's own job call (read off cdn.keka.com/careers/v/2026/scripts/app/app.min.js:
     # `$.ajax('/api/jobs/${apiPortalName}/active')`, apiPortalName defaulting to "default"). It
@@ -1815,6 +1833,7 @@ PROBES = {
     "greenhouse": p_greenhouse,
     "lever": p_lever,
     "ashby": p_ashby,
+    "bamboohr": p_bamboohr,
     "recruitee": p_recruitee,
     "workable": p_workable,
     "zoho": p_zoho,

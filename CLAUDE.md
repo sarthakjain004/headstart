@@ -136,6 +136,32 @@ sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` 
   endpoint carry it) plus the generalisable
   `docs/discovery/shared-cert-tenant-rosters.md`.
 - **Phenom** — M, but poor discoverability (no enumerable pattern, curated seed needed). Mastercard/Adobe India GCCs. After Eightfold.
+- **BambooHR** ✅ DONE (2026-09-16) — `scrapers/bamboohr.py`, wired through liveness (16,255 live
+  / 10,425 hiring boards, 68,819 jobs reachable, in `data/validate/liveness/bamboohr.csv`; pool of
+  25,840 candidate tenants from a third-party seed list (kalil0321/ats-scrapers,
+  `ats-companies/bamboohr.csv`, 5,632 rows) unioned with a fresh Common Crawl sweep (+992) and a
+  full Wayback CDX sweep (+19,216 net new — the dominant source once run to completion). Picked
+  from a 20-ATS evaluation (`experiment/ats-scraper-candidates/LOG.md`): best
+  volume×tech-purity of the candidates measured (19,365 jobs sampled, 13.8% tech, 2,745
+  companies). Slug = the board subdomain label, one host only (`{slug}.bamboohr.com`, verified
+  against Wayback CDX — no regional pod). Two surfaces: `GET /jobs/embed2.php` (static
+  server-rendered HTML listing, **no pagination parameter and none needed** — the highest-volume
+  tenant found, 158 jobs, came back whole in one response) and `GET /careers/{id}/detail` (a
+  clean JSON XHR, no auth) for description/compensation/date/experience/canonical location. A
+  dead tenant's widget is a 200 with an **empty body**; a live one (jobs or not) always serves the
+  `BambooHR-ATS-board` wrapper — the liveness prober and the scraper both key on that, not the
+  status code. Two things measured false against the third-party implementation this was adapted
+  from (kalil0321/ats-scrapers, same attribution convention as Phenom): `locationType == "2"` is
+  **Hybrid, not remote** (9.3% of 1,508 sampled jobs — upstream reads it as `remote=True`;
+  `Job.remote` resolves Hybrid to `None`, matching `ashby.py`/`workday.py`'s existing convention),
+  and its 25,000-char description cap is the **upstream's own choice**, not BambooHR's (2.1% of
+  sampled descriptions exceed it, up to 41,214 chars) — not reproduced here. `minimumExperience`
+  is a real, 97.9%-populated native seniority-tier field upstream never reads at all, now mapped
+  to `Job.experience`. `compensation` is free-text prose (`_field_generic` handles it; no
+  dedicated Tier-1 parser). No rate limit found (up to 128 concurrent detail fetches, 122 req/s,
+  zero non-200s). No company-name page title (`/careers` is a client-rendered SPA shell, like
+  darwinbox/freshteam) — `self.company` stays the slug. Full measurement:
+  `docs/bamboohr/2026-09-16_widget-and-detail-api-measurement.md`.
 - **PeopleStrong** (201 hosts, still no scraper — Angular SPA XHR), **Jobsoid** (`{slug}.jobsoid.com/api/v1/jobs`, S, low yield) — opportunistic.
 - **Taleo Business Edition** ✅ DONE (2026-09-13, #452) — `scrapers/taleo_be.py`, wired through
   liveness (533 live / 1,760 rows in `data/validate/liveness/taleo_be.csv`, plus 55
