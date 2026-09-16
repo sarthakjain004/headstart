@@ -307,7 +307,7 @@ class JazzHRScraper(BaseScraper):
         try:
             return self._get(self.job_url(key))
         except http.RequestsError as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None
 
     async def _detail_page_async(self, session: Any, key: str) -> str | None:
@@ -315,7 +315,7 @@ class JazzHRScraper(BaseScraper):
         try:
             return await self._get_async(session, self.job_url(key))
         except http.RequestsError as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
