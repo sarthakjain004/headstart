@@ -35,10 +35,17 @@ Board unchanged.
 rather than this run's: it counts, per Board, the embedded Jobs whose description the ADR-0050
 store has never settled. Those Jobs' derived columns cannot be repaired without the text, so the
 next run's ``scrape_plan`` reserves part of its exploration tail for the Boards holding them
-(ADR-0062). Recomputed from scratch every run, so it empties itself as the gap closes. Two classes
-are counted *unreachable* rather than unsettled: rows on a disabled ATS, and rows whose Board this
-run scraped authoritatively without re-emitting them — those postings have expired off the Board,
-so no future scrape can settle them (#185).
+(ADR-0062). Recomputed from scratch every run, so it empties itself as the gap closes. Three
+classes are counted *unreachable* rather than unsettled: rows on a disabled ATS, rows on a Board
+that is not **Scrapable** (CONTEXT.md §Counting Boards — no slice can contain it, ADR-0163), and
+rows whose Board this run scraped authoritatively without re-emitting them — those postings have
+expired off the Board, so no future scrape can settle them (#185).
+
+Because it is recomputed, its total is a **level**, and a level cannot say whether the quota it
+reserves is buying anything: a backlog that lost 500 rows and gained 500 prints the same number as
+one nothing touched. So it also reports the movement since the ledger it read — ``N left the gap,
+M joined it, net ±X``, plus each top Board's own delta — and sizes the Jobs sitting on Boards this
+run could not read authoritatively (ADR-0163).
 
 Seed the priority ledger from a full local corpus with::
 
@@ -80,6 +87,7 @@ _GAP_LEDGER = REPO_ROOT / "data" / "state" / "board_description_gap.csv"
 _UNAUTHORITATIVE = REPO_ROOT / "data" / "state" / "unauthoritative_boards.json"
 _META = REPO_ROOT / "data" / "embeddings" / "jobs" / "meta.jsonl"
 _DESCRIPTIONS = REPO_ROOT / "data" / "descriptions"
+_LIVENESS = REPO_ROOT / "data" / "validate" / "liveness"
 
 
 def priority(args: argparse.Namespace) -> int:
@@ -203,8 +211,19 @@ def failures(args: argparse.Namespace) -> int:
     return 0
 
 
+def _on_unauthoritative_board(job_id: str, unauthoritative: dict[str, str]) -> bool:
+    """Is this id's Board one whose scrape this run was not authoritative (ADR-0053)?
+
+    Resolved by prefix against the real ``board_key``, never through ``board_of``: ``board_of``'s
+    answer for an id carrying a colon in its *native* part is a phantom Board no unauthoritative
+    key matches (ADR-0049) — the gap that silently missed exactly the Workday ids it most needs to
+    cover. Both callers ask this question about the same map, so they ask it the same way.
+    """
+    return lower_key(resolve_board(job_id, unauthoritative)) in unauthoritative
+
+
 def _authoritative_scrape(
-    jobs: Path, unauthoritative: Path
+    jobs: Path, unauthoritative: dict[str, str]
 ) -> tuple[set[str], set[str]]:
     """The Boards whose scraped list this run can be read as their complete set of openings, and
     every id those Boards emitted.
@@ -214,21 +233,21 @@ def _authoritative_scrape(
     set answers "did this Board re-emit it" exactly as a per-Board set would.
 
     A Board that wrote no lines is simply absent, whether it went unscraped this run or was
-    truncated to nothing, and absence is what leaves an id counted. The ADR-0053 half is only as
-    good as its file: ``read_unauthoritative_boards`` fails **open**, so an unreadable
-    ``unauthoritative_boards.json`` protects no Board here — the same bet ``index sync`` already
-    makes on that file, taken for a strictly smaller action (a count, not an eviction).
+    truncated to nothing, and absence is what leaves an id counted.
+
+    ``unauthoritative`` arrives already read rather than as a path because :func:`gap` needs the
+    same map for a second test — sizing the unsettled Jobs sitting behind it (ADR-0163) — and one
+    read is what keeps the two answers about the same Board from disagreeing. That read fails
+    **open**, so an unreadable ``unauthoritative_boards.json`` protects no Board here — the same
+    bet ``index sync`` already makes on that file, taken for a strictly smaller action (a count,
+    not an eviction).
     """
-    skip = read_unauthoritative_boards(unauthoritative)
     boards: set[str] = set()
     emitted: set[str] = set()
     for job in iter_jobs(jobs):
-        # `skip` is keyed by the real `board_key()`, so the membership test resolves by prefix
-        # rather than through `board_of`, whose answer for a native id carrying a colon is a
-        # phantom Board no unauthoritative key matches (ADR-0049) — protection that silently
-        # missed exactly the Workday ids it most needs to cover. Only the *test* uses it; the
-        # key stays `board_of`'s so both sides of the comparison in `gap` are built alike.
-        if lower_key(resolve_board(job["id"], skip)) in skip:
+        # Only the *test* resolves by prefix; the key stays `board_of`'s, so both sides of the
+        # comparison in `gap` are built alike.
+        if _on_unauthoritative_board(job["id"], unauthoritative):
             continue
         boards.add(lower_key(board_of(job["id"])))
         emitted.add(job["id"])
@@ -236,6 +255,7 @@ def _authoritative_scrape(
 
 
 def gap(args: argparse.Namespace) -> int:
+    from headstart.config import load_active_companies
     from headstart.scrapers.registry import DISABLED_ATS
 
     if not args.meta.exists():
@@ -254,10 +274,38 @@ def gap(args: argparse.Namespace) -> int:
         )
         return 0
 
-    scraped, emitted = _authoritative_scrape(args.jobs, args.unauthoritative_boards)
+    # CONTEXT.md's **Scrapable Board** — `load_active_companies(min_jobs=0)`, the same call and
+    # the same `min_jobs` `scrape_plan` makes, keyed the way the gap quota keys them.
+    #
+    # It is a *superset* of what the plan finally offers: `scrape_plan` then drops quarantined
+    # Boards and ADR-0064's gated ones, so a handful of Boards counted reachable here would still
+    # be refused (measured: 123 Boards, 908 Jobs, 2.0% of the backlog, all quarantine). That is
+    # the safe direction — it never calls a Board unreachable that a run could pick — and the
+    # converse is all the classification rests on: a Board absent from this set is on no slice.
+    #
+    # `read_unauthoritative_boards` fails open and so does this: an empty answer means the
+    # liveness dir is missing, not that no Board is live, so it reclassifies nothing rather than
+    # emptying the ledger. A *partially* lost dir is not caught — one absent `{ats}.csv` would
+    # silently take that ATS's whole backlog with it (ADR-0163).
+    scrapable = {
+        board_description_gap.key_for(c)
+        for c in load_active_companies(args.liveness, min_jobs=0)
+    }
+    if not scrapable:
+        _log.warning(
+            f"gap: {args.liveness} lists no Scrapable Board — counting every row as reachable"
+        )
+
+    unauthoritative = read_unauthoritative_boards(args.unauthoritative_boards)
+    scraped, emitted = _authoritative_scrape(args.jobs, unauthoritative)
 
     counts: Counter[str] = Counter()
-    rows = unreachable = expired = 0
+    # The unsettled Jobs whose Board this run did attempt and could not read authoritatively.
+    # They stay in the count and keep their ADR-0062 quota — a truncated read is no evidence about
+    # any particular id — but they are the population ADR-0163 declines to reclassify, and an
+    # unmeasured population is exactly how this went five runs without being noticed.
+    blocked_boards: set[str] = set()
+    rows = disabled_ats = off_slice = expired = blocked = 0
     with args.meta.open(encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
@@ -272,7 +320,7 @@ def gap(args: argparse.Namespace) -> int:
             # A disabled ATS is never in any scrape slice, so its rows can only leave the index by
             # eviction — counting them would reserve slots no Board selection can ever spend.
             if row.get("ats") in DISABLED_ATS:
-                unreachable += 1
+                disabled_ats += 1
                 continue
             # Lowercased, like every other Board-key comparison in the plan path (ADR-0049): the
             # liveness ledger's casing and the one baked into a Job id need not agree, and the
@@ -282,6 +330,15 @@ def gap(args: argparse.Namespace) -> int:
             # It also folds ADR-0023's case-variant pairs (`.../External` and `.../external` are
             # one Board) into a single row instead of two half-counts.
             board = lower_key(board_of(row["id"]))
+            # Not a Scrapable Board — dead, parked, aliased away or a vendor test tenant — so it
+            # is never scraped, its rows can never settle, and reserving gap quota against them
+            # buys nothing. ADR-0062 named this class and left it in the count; measured on the
+            # live ledger it is 134 Boards holding 13,592 Jobs, 30% of the backlog (ADR-0163).
+            # Unlike quarantine it drains on its own: the ledger is rebuilt from scratch, so the
+            # moment a liveness probe calls the Board live again its rows come straight back.
+            if scrapable and board not in scrapable:
+                off_slice += 1
+                continue
             # An id its own Board's authoritative scrape did not re-emit has expired off that
             # Board, and `reconcile()` only ever acts on ids the *current* scrape returned — so
             # nothing can ever settle it, and counting it reserves gap quota no scrape can spend
@@ -291,17 +348,53 @@ def gap(args: argparse.Namespace) -> int:
                 expired += 1
                 continue
             counts[board] += 1
+            if _on_unauthoritative_board(row["id"], unauthoritative):
+                blocked += 1
+                blocked_boards.add(board)
 
     today = datetime.now(UTC).strftime("%Y-%m-%d")
+    # Read before the write. `prior` is the generation `scrape_plan` built *this* run's slice
+    # from, so the movement below prices exactly the quota this run spent. An absent *or empty*
+    # ledger is not a prior of zero — subtracting one would print the whole backlog as inflow,
+    # a spike that never happened — so both take the no-comparison branch.
+    prior = board_description_gap.load(args.ledger)
     board_description_gap.save(args.ledger, dict(counts), today=today)
     jobs = sum(counts.values())
     _log.info(
         f"gap: {rows:,} stored rows | {len(held):,} held | {jobs:,} unsettled across "
-        f"{len(counts):,} boards ({unreachable:,} on a disabled ATS, {expired:,} gone from a "
-        f"Board this run scraped in full — both unreachable) -> {args.ledger}"
+        f"{len(counts):,} boards ({disabled_ats:,} on a disabled ATS, {off_slice:,} not on a "
+        f"Scrapable Board, {expired:,} gone from a Board this run scraped in full — all "
+        f"unreachable) -> {args.ledger}"
     )
+    if not prior:
+        _log.info("  gap: no prior ledger to compare against — this is the first count")
+    else:
+        # **Left**, not *settled*. A row also leaves this count when it is reclassified
+        # unreachable (a disabled ATS, an off-slice Board, #185's expiry) or when its row leaves
+        # the store — none of which fetched a description, and the expiry arm alone moved by
+        # ±1,700 across the five runs that opened this. The settle rate is `update_descriptions`'
+        # own `learned` count; this is movement, and its job is to tell draining from frozen.
+        #
+        # Per Board, not per Job: the ledger stores counts, so a Board that lost five and gained
+        # five nets to zero on both sides. It is a floor on the churn, which is enough for that.
+        left = sum(max(0, n - counts.get(b, 0)) for b, n in prior.items())
+        joined = sum(max(0, n - prior.get(b, 0)) for b, n in counts.items())
+        was = sum(prior.values())
+        _log.info(
+            f"  gap: drain vs the {was:,} unsettled across {len(prior):,} boards this run read: "
+            f"{left:,} left the gap, {joined:,} joined it, net {jobs - was:+,}"
+        )
+    if blocked:
+        _log.info(
+            f"  gap: {blocked:,} unsettled Job(s) sit on {len(blocked_boards):,} Board(s) whose "
+            "scrape this run was not authoritative (ADR-0053), so this run is no evidence about "
+            "them either way"
+        )
     for board, n in counts.most_common(10):
-        _log.info(f"  {n:6,} unsettled  {board}")
+        # The per-Board delta is the sharpest half: eight of the top ten were byte-identical
+        # across five runs, and seeing that took a hand diff of five logs (ADR-0163).
+        moved = "" if not prior else f" ({n - prior.get(board, 0):+,})"
+        _log.info(f"  {n:6,} unsettled{moved}  {board}")
     return 0
 
 
@@ -387,6 +480,13 @@ def main() -> int:
         default=_UNAUTHORITATIVE,
         help="Boards whose scrape came back truncated or raised this run (ADR-0053); their "
         "missing Jobs stay unsettled (default: data/state/unauthoritative_boards.json)",
+    )
+    p_gap.add_argument(
+        "--liveness",
+        type=Path,
+        default=_LIVENESS,
+        help="liveness ledger dir; a Board absent from it is not Scrapable, so its Jobs are "
+        "unreachable rather than unsettled (default: data/validate/liveness)",
     )
     p_gap.add_argument(
         "--ledger",
