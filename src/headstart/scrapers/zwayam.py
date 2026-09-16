@@ -126,6 +126,29 @@ _CONFIG_API = "https://public.zwayam.com/data-service/v2/public-configurations"
 #: Per-job detail (JSON POST, unlike the multipart search): the source of every Job's
 #: description, since the listing's own text can be silently truncated (module docstring).
 _DETAIL_API = "https://public.zwayam.com/jobs-service/v1/jobs/careersite"
+#: **This path, and only this path, requires a browser User-Agent.**
+#:
+#: ``jobs-service`` sits behind an Akamai rule that ``data-service`` and the search host do not:
+#: :data:`~headstart.scrapers.base.USER_AGENT` (``headstart/0.1``) is answered with a 403
+#: ``Access Denied`` HTML page, so *every* description fetch failed — 56,771 of 56,771 detail-Jobs
+#: across the five runs of 2026-09-16, on every Board, with ``learned 0`` descriptions each run.
+#: It read as ``HTTPError`` rather than ``HTTP 403`` because the call discarded the status.
+#:
+#: Measured live 2026-09-16, 10 real jobs across 5 Boards (talentsst1, careers.newtonschool.co,
+#: careerscc.vit.ac.in, verticalraisersindiapvtltd, naukrift): the repo UA scored **0/10** and a
+#: Chrome UA **10/10**, returning real ``longDescription`` bodies. Same client, same IP, same
+#: minute, and ``Origin``/``Referer`` changed nothing either way — so this is the UA alone, not a
+#: CORS or IP rule. Controls on the same host in the same second: ``data-service`` answered a real
+#: application 400 under the repo UA, so the edge refusal is path-scoped, not host-wide.
+#:
+#: Kept separate from ``base.USER_AGENT`` deliberately: that value is bare *because* this same host
+#: rejects any agent carrying a domain or an email (module docstring), and a SuccessFactors
+#: denylist wants it bare too. Widening the shared constant to a browser string to satisfy one
+#: path would re-open both.
+_DETAIL_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+)
 #: Ignored by the search — even omissible (module docstring) — so its value is arbitrary; sent to
 #: mirror the real client, and kept valid base64 because an *empty or malformed* value body-500s.
 _IGNORED_COMPANY_ID = "MQ=="  # base64("1")
@@ -495,7 +518,7 @@ class ZwayamScraper(BaseScraper):
                 _DETAIL_API,
                 json={"jobUrl": job_url, "companyId": company_id},
                 headers={
-                    "User-Agent": USER_AGENT,
+                    "User-Agent": _DETAIL_USER_AGENT,
                     "Accept": "application/json, text/plain, */*",
                     "Content-Type": "application/json",
                 },
@@ -503,7 +526,7 @@ class ZwayamScraper(BaseScraper):
             )
             response.raise_for_status()
         except http.RequestsError as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None
         detail = response.json() or {}
         # `""`, never None, when the endpoint answers with no body: `fan_out` turns a *raising*

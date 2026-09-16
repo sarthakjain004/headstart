@@ -286,9 +286,22 @@ class BaseScraper(ABC):
         This is the **unconditional** verdict, for a shortfall that is unreachable (a hard cap) or
         unmeasurable (no stated total). A shortfall you can measure against the Board's own total
         goes to :meth:`mark_truncated_unless_negligible`, which tolerates a negligible one (ADR-0121).
+
+        **Logged, because this is the branch that costs something.** The observability was
+        inverted until 2026-09-16: the sibling logged the shortfall it *tolerated* while this one
+        — where the Board leaves ADR-0053's eviction scope and goes on serving postings that may
+        already be closed — said nothing. 74-98 Boards a run took it unnamed.
+
+        INFO for the same reason the sibling is (ADR-0039's annotation quota; ``index sync``
+        already emits one aggregate warning). Only the first call logs, matching which reason is
+        kept.
         """
         if self.truncated is None:
             self.truncated = why
+            self._log.info(
+                f"{self.board_key()}: {why} — Board unauthoritative this run, so its missing "
+                f"ids are unscraped rather than closed (ADR-0053)"
+            )
 
     def mark_truncated_unless_negligible(
         self, read: int, expected: int, why: str

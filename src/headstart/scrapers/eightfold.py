@@ -475,7 +475,7 @@ class EightfoldScraper(BaseScraper):
         try:
             r = self._get(self._details_url(group_id, position_id))
         except http.RequestsError as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None
         return self._read_description(r)
 
@@ -491,7 +491,7 @@ class EightfoldScraper(BaseScraper):
                 timeout=30,
             )
         except http.RequestsError as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None
         return self._read_description(r)
 
@@ -592,7 +592,7 @@ class EightfoldScraper(BaseScraper):
         try:
             r = self._get(job_url, accept="text/html")
         except http.RequestsError as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None
         return self._read_jsonld(r)
 
@@ -606,7 +606,7 @@ class EightfoldScraper(BaseScraper):
                 timeout=30,
             )
         except http.RequestsError as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None
         return self._read_jsonld(r)
 

@@ -148,7 +148,7 @@ class MetaScraper(BaseScraper):
                 timeout=30,
             )
         except http.RequestsError as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None
         return self._fields_of(response)
 
@@ -162,7 +162,7 @@ class MetaScraper(BaseScraper):
                 timeout=30,
             )
         except http.RequestsError as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None
         return self._fields_of(response)
 

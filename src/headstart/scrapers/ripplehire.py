@@ -193,7 +193,7 @@ class RippleHireScraper(BaseScraper):
                 timeout=30,
             ).json()
         except (http.RequestsError, json.JSONDecodeError) as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None  # a missing detail record must not drop the job
         return self._job_vo(data)
 
@@ -211,7 +211,7 @@ class RippleHireScraper(BaseScraper):
             )
             data = response.json()
         except (http.RequestsError, json.JSONDecodeError) as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None  # a missing detail record must not drop the job
         return self._job_vo(data)
 
