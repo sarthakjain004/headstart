@@ -258,13 +258,29 @@ then cut it back to one:
 | collision | verdict | evidence |
 |---|---|---|
 | `jobs.kuehne-nagel.com` vs `successfactors:careers.kuehne-nagel.com` | **duplicate — dropped** | SF board re-probed live: **1,141 jobs now**, against phenom's 1,136. Same set. |
-| `careers.ucb.com` vs `successfactors:careers.ucb.com` | **kept** | Identical host, but the SF board re-probed live returns **0 jobs** — its ledger row (366, 2026-08-14) is stale. UCB has migrated *onto* Phenom, so this row is the live board, not a copy of one. |
+| `careers.ucb.com` vs `successfactors:careers.ucb.com` | **kept** | Identical host. The SuccessFactors **scraper** reads **0 jobs** there; the Phenom one reads 311. UCB has migrated *onto* Phenom, so this row is the live board, not a copy of one — see below. |
 | `careers.allianz.com` vs `successfactors:internal-careers.allianz.com` | **kept** | An *internal mobility* board. 4 of 120 sampled titles overlap (~3%) — a different posting set. |
 | `jobs.baesystems.com` vs `successfactors:cybercareers.baesystems.com` | **kept** | A niche cyber sub-board (88 jobs vs 1,855). **0 of 115** sampled titles overlap. |
 
 The UCB case is the one worth remembering: a name collision is not evidence of duplication, and
 here the *older* ledger was the stale one. Dropping the phenom row on the collision alone would
 have deleted 311 live postings and left an empty SuccessFactors row as their only record.
+
+**It also surfaced a SuccessFactors defect that is not this scraper's to fix.** Re-probed
+2026-09-16, `successfactors:careers.ucb.com` reports **live, 311** — the same count Phenom reads —
+while the SuccessFactors *scraper* run against that host yields **0 jobs**. The board is
+Phenom-shaped now, and SF's prober counts sitemap entries that its own `_JOB_PATH` regex cannot
+parse, so the ledger records a healthy board the scraper reads as empty. That is exactly the
+personio failure `models.host_of` was written for ("the prober, splitting the same wrong way,
+recorded all 312 such boards live with zero jobs"), and it means the row costs a scrape slot every
+run while contributing nothing. No duplicate rows reach the served table — the SF side indexes
+none — so this is a wasted-work bug, not a correctness one, and it is left for a SuccessFactors
+change rather than edited from a Phenom PR. **Any SF tenant that migrated to Phenom will look the
+same**, so the count is likely more than one.
+
+The gate is reproducible rather than prose-only: `scripts/validate/cross_ats_duplicates.py`
+performs this join over every committed ledger (`… phenom` to scope it), and prints the three
+surviving collisions above.
 
 `index_plan.evict_duplicate` groups by `(lowercased Board, native id)` — *within* a Board — so a
 posting served under both `phenom:careers.mastercard.com` and `workday:mastercard.wd1…` is two

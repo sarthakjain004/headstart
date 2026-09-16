@@ -242,6 +242,34 @@ def test_the_page_walk_stops_at_the_result_window(monkeypatch):
     assert all(start + size < _RESULT_WINDOW for start, size in calls)
 
 
+def test_a_board_only_just_over_the_window_is_still_truncated(monkeypatch):
+    """The hard cap is unconditional, and this is the case that proves it is.
+
+    At `totalHits` just over the window the crawl reads 9,999 of 10,050 — **99.5%**, above
+    `MIN_AUTHORITATIVE_SHARE` — so the tolerant ADR-0121 verdict would wave it through. It must
+    not: those 51 postings are unreachable, not merely unread, and letting the Board stay
+    authoritative feeds them to eviction. (The 10,339 case above cannot pin this: 96.7% is under
+    the threshold, so both verdicts agree there and swapping them leaves the suite green.)
+    """
+    scraper = _scraper()
+
+    def fake(payload):
+        start, size = payload["from"], payload["size"]
+        if start + size >= _RESULT_WINDOW:
+            return {"refineSearch": {"totalHits": 0, "data": {"jobs": []}}}
+        rows = [{"jobId": f"J{start + i}"} for i in range(size)]
+        return {"refineSearch": {"totalHits": 10_050, "data": {"jobs": rows}}}
+
+    monkeypatch.setattr(scraper, "_widgets", fake)
+    jobs = scraper._listing()
+    assert len(jobs) == _RESULT_WINDOW - 1
+    assert (
+        len(jobs) / 10_050 > 0.99
+    )  # the tolerant verdict would NOT have truncated this
+    assert scraper.truncated is not None
+    assert "result window" in scraper.truncated
+
+
 def test_a_board_inside_the_window_is_not_called_truncated(monkeypatch):
     scraper = _scraper()
 
