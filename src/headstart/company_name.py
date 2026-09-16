@@ -7,8 +7,8 @@ once the Boards whose ledger "name" is itself an identifier are counted — the 
 and "gamuda", Workday's holds "citi" and "dick-s-sporting-goods". Users see "1password",
 "jobs.vodafone.com", "nttltd" where a company name belongs. The wider figure is the honest one.
 
-Seven ATSes put the real name in their board page's ``<title>``, each wrapped differently, and one
-request per Board recovers it. Which seven is a measurement, not a guess: live Boards were sampled
+Eight ATSes put the real name in their board page's ``<title>``, each wrapped differently, and one
+request per Board recovers it. Which eight is a measurement, not a guess: live Boards were sampled
 per ATS (`experiment/company-display-name/`, gitignored), and only those whose wrapper is uniform
 enough to strip safely are here. Sample sizes differ on purpose: the first pass was 30 Boards per
 ATS, and each row was re-measured larger wherever 30 proved too few to trust. Lever needed it most
@@ -24,7 +24,8 @@ ripplehire        ``{Name} Careers | Latest jobs at …``              ~96% (all
 lever             ``{Name}`` — no wrapper at all                     ~88% (352/400)
 keka              ``Careers at {Name}`` / ``{Name} Careers``         ~11% (92 of 819)
 taleo_enterprise  four ``Careers``-wrappers (see below)              20% (30/150)
-phenom            ``Careers``-wrappers ending at ``|`` or ``:``       11 of 12 sampled
+jobvite           ``{Name} Careers``                                 424 of 434
+phenom            ``Careers``-wrappers ending at ``|`` or ``:``       11 of 16 boards
 ================  =================================================  =================
 
 Keka is the odd row and worth reading twice: only about one Board in eight serves a ``<title>`` at
