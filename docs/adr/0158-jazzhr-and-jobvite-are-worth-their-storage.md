@@ -26,22 +26,24 @@ standing as though it were a measurement.
 Run the sweep to completion first, then decide. The full sweep found **13,950 jazzhr and 4,109
 jobvite** tenants against the partial pass's 782 + 178, leaving **13,567 tenants never probed**. A
 liveness pass over all of them — unioned with the Common-Crawl candidates from #463, which found
-96 tenants Wayback did not — settled jazzhr at 6,177 live / 4,871 hiring and jobvite at 1,079 / 749.
+96 tenants Wayback did not — settled jazzhr at 6,177 live / 4,871 hiring and jobvite at 1,078 / 748 —
+the latter after excluding `jvauto`, Jobvite's own 10,000-posting automation tenant, which would
+otherwise have been 20.2% of the postings this decision is priced on.
 
 Re-derived from those ledgers rather than carried forward:
 
 | ATS | Hiring Boards | postings | storage | tech Jobs |
 | --- | ---: | ---: | ---: | ---: |
 | jazzhr | 4,871 (was 3,684) | 99,963 | ~10.7 GB | ~5,098 |
-| jobvite | 749 | **49,573** (assumed 23,461) | ~3–4 GB (was 1.5–2) | **~3,470** (was ~1,640) |
+| jobvite | 748 | **39,573** (assumed 23,461) | ~2.5–3.5 GB (was 1.5–2) | **~2,770** (was ~1,640) |
 
-**Both ATSes leave `DISABLED_ATS`; `join` stays.** The accepted cost is ~13.7–14.7 GB for ~8,568
-tech Jobs — more storage *and* more yield than #379 priced, at a similar ratio (~1.7 MB per tech
+**Both ATSes leave `DISABLED_ATS`; `join` stays.** The accepted cost is ~13.2–14.2 GB for ~7,868
+tech Jobs — more storage *and* more yield than #379 priced, at a similar ratio (~1.8 MB per tech
 Job against #379's ~1.9 MB).
 
 ## Consequences
 
-**The estimate moved for one ATS and not the other, and the reason matters.** jobvite is **2.1x**
+**The estimate moved for one ATS and not the other, and the reason matters.** jobvite is **1.69x**
 the postings assumed — it had simply never been measured at full pool. jazzhr lands on its old
 ~10.7 GB by *coincidence*: it gained Boards (3,684 → 4,871) and lost jobs-per-Board (27.5 → 20.5),
 and the two cancelled. Reading jazzhr's unchanged total as "the old estimate held up" would be

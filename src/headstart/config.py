@@ -39,6 +39,16 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # but serve 0 postings, so there is no content to confirm and nothing to remove —
         # `company_name._PLACEHOLDER` refuses their names instead.
         "ashby:krakensandbox",
+        # Jobvite's own automation tenant, found by reading its board rather than its slug:
+        # `jobs.jobvite.com/jvauto` titles itself "Jobvite Automation Careers" and serves exactly
+        # 10,000 postings whose titles are generated ids ("0000AAABBB_0Ja700iin3"). The round
+        # number is the tell — it is the same shape as Oracle's 78,431-posting load-test instance
+        # below. Left in, it would have been **20.2% of the postings** the ADR-0158 re-enable
+        # decision was priced on (49,573 -> 39,573, and jobvite's "2.1x the assumed 23,461" is
+        # really 1.69x), plus 10,000 synthetic detail fetches a run. It also sits exactly on
+        # `jobvite._MAX_PAGES` (10,000 at 50 a page = 200), whose comment calls the cap "not
+        # a cap anyone is expected to reach".
+        "jobvite:jvauto",
         # Zwayam's own demo/QA tenants, confirmed by reading their board content on 2026-08-27
         # rather than inferred from the slug — the same bar the darwinbox entries below were held
         # to. `testcompany.cluster3` is the worst of them and the reason this entry exists: it is

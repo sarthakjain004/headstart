@@ -89,17 +89,18 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
 # intact (get_scraper("join", ...) still works); re-enable by removing it from this set.
 #
 # jazzhr and jobvite were disabled on arrival (2026-09-07) on cost rather than correctness, and are
-# re-enabled here (2026-09-16) now that a full Wayback sweep has measured what that cost actually
-# is. The 2026-09-07 figures were taken on a pool built from a partial sweep, and both moved:
+# re-enabled here (2026-09-16) now that a full sweep — Wayback run to completion, unioned with the
+# Common-Crawl candidates that found 96 tenants it missed — has measured what that cost actually is. The 2026-09-07 figures were taken on a pool built from a partial sweep, and both moved:
 #
 #   jazzhr  4,871 Hiring Boards (was 3,684) x 20.5 jobs/board (was 27.5) = 99,963 detail fetches
 #           at a measured 112 KB a page = ~10.7 GB, for 5.1% tech = ~5,098 tech Jobs.
-#   jobvite   749 Hiring Boards, 49,573 postings — **2.1x the 23,461 assumed** — so ~3-4 GB
-#           (was ~1.5-2) for 7.0% tech = ~3,470 tech Jobs (was ~1,640).
+#   jobvite   748 Hiring Boards, 39,573 postings — **1.69x the 23,461 assumed** — so ~2.5-3.5 GB
+#           (was ~1.5-2) for 7.0% tech = ~2,770 tech Jobs (was ~1,640). Excludes jvauto, the
+#           vendor's own 10,000-posting automation tenant (config.EXCLUDED_BOARDS).
 #
 # jazzhr lands on its old storage number by coincidence, not by being unchanged: it gained Boards
 # and lost jobs-per-Board, and the two cancelled. jobvite simply was not measured at full pool.
-# Total accepted: ~13.7-14.7 GB for ~8,568 tech Jobs. Neither shows a measurable India presence.
+# Total accepted: ~13.2-14.2 GB for ~7,868 tech Jobs. Neither shows a measurable India presence.
 # Decided in ADR-0158; the sweep, the liveness pass, the storage arithmetic, the gate A/B and the
 # per-field audit are all in docs/jazzhr/2026-09-16_full-pool-measurement.md. The older
 # docs/jazzhr/ and docs/jobvite/ notes keep the page-size and tech-share method but carry

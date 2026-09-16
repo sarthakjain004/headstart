@@ -5,7 +5,7 @@ per item is never WARNING.** Under GitHub Actions the formatter renders WARNING 
 ``::warning::`` / ``::error::`` workflow annotations, and GitHub keeps only **10 per step, 50 per
 job and 50 per run** — everything past that is dropped from the run page silently. So WARNING is
 not a severity here, it is a quota, and the scrape path is where it is easiest to spend: a shard
-scrapes ~1,300 Boards, and the committed liveness ledgers carry 3,033 workday, 614 jazzhr and 423
+scrapes ~1,300 Boards, and the committed liveness ledgers carry 3,042 workday, 1,306 jazzhr and 423
 freshteam rows that are live at ``jobs=0`` — so one routine per-Board line exhausts the whole
 run's budget and displaces the aborts the annotations exist for.
 

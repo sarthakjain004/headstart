@@ -32,23 +32,40 @@ they have different blind spots"); it is worth re-reading before trusting any si
 
 ## 2. Liveness
 
-18,395 boards probed. Settled:
+18,395 boards probed — 18,299 in the main pass plus the 96 unioned above. The ledgers hold 18,827
+rows; the other 432 are `dead` from 2026-09-07 and still inside `DEAD_TTL_DAYS` (90), so they were
+not due for a re-probe. Settled:
 
 | ATS | rows | live | dead | unknown | hiring | postings | jobs/hiring board |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | jazzhr | 14,703 | 6,177 | 8,525 | 1 | 4,871 | 99,963 | 20.5 |
-| jobvite | 4,124 | 1,079 | 3,044 | 1 | 749 | 49,573 | 66.2 |
+| jobvite | 4,020 | 1,078 | 2,941 | 1 | 748 | 39,573 | 52.9 |
 
 ## 3. The storage decision
 
 | ATS | postings | page size | storage | tech share | tech Jobs |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | jazzhr | 99,963 | 112 KB (measured, 2026-09-07) | ~10.7 GB | 5.1% | ~5,098 |
-| jobvite | 49,573 | — | ~3–4 GB | 7.0% | ~3,470 |
+| jobvite | 39,573 | — | ~2.5–3.5 GB | 7.0% | ~2,770 |
 
-**jobvite is 2.1x the 23,461 postings assumed** — never measured at full pool. **jazzhr lands on
+**jobvite is 1.69x the 23,461 postings assumed** — never measured at full pool. **jazzhr lands on
 its old ~10.7 GB by coincidence**: more Boards (3,684 → 4,871), fewer jobs each (27.5 → 20.5), and
 the two cancel. Reading its unchanged total as "the estimate held" is wrong on both inputs.
+
+**One tenant was 20.2% of jobvite's postings and is not a Board.** `jobs.jobvite.com/jvauto` titles
+itself "Jobvite Automation Careers" and serves exactly 10,000 postings whose titles are generated
+ids (`0000AAABBB_0Ja700iin3`). The round number is the tell. It is now in
+`config.EXCLUDED_BOARDS` — the mechanism that already holds Oracle's 78,431-posting load-test
+instance — and every figure above excludes it. Left in, jobvite would have read 49,573 postings and
+**2.1x** the assumption rather than 39,573 and 1.69x, and the run would have spent 10,000 synthetic
+detail fetches. It also sits exactly on `jobvite._MAX_PAGES` (10,000 at 50 a page = 200), whose
+comment calls that cap "not a cap anyone is expected to reach" — so the one Board that reached it
+was the vendor's own.
+
+A related clean-up: the jobvite sweep used `--style path`, which reads a URL path segment as the
+tenant, so it also harvested 104 non-tenants — JS identifiers (`ui.accordion`, `easing.back`),
+file paths (`robots`, `sitemap`), and bare domains. All 104 probed **dead**, so none reached the
+scrape, but they are removed from the ledger rather than left as noise in a row count.
 
 ## 4. The gate: `applytojob.com` refuses under whole-pool load
 
@@ -107,11 +124,19 @@ on any of 66 postings across 6 boards**, so the absent `experience` and the loca
 `board_page()`/`PATTERNS` entry.
 
 One caveat worth recording because the first pass got it wrong: jobvite is **not** in `salary.py`'s
-`_FIELD_PARSERS` (jazzhr is). A 120-posting probe across 15 large boards found 8 populated
-`baseSalary` blocks, all with `unitText` of `"Annually"`/`"Hourly"` — phrase-shaped, which
-`_field_generic`'s `_period_multiplier` reads correctly. So no parser is needed, but the original
-evidence for that conclusion was 6 postings with **zero** populated salaries: the right answer,
-unmeasured.
+`_FIELD_PARSERS` (jazzhr is). Two independent 120-posting probes found 8 and 23 populated
+`baseSalary` blocks respectively — so prevalence is roughly 7-19% and the lower figure understates
+it — all with `unitText` of `"Annually"`/`"Hourly"`, phrase-shaped, which `_field_generic`'s
+`_period_multiplier` reads correctly. No parser is needed. The original evidence for that
+conclusion was 6 postings with **zero** populated salaries: the right answer, unmeasured.
+
+**Some of those labels are junk, and `extract()` correctly refuses them.** The second probe found
+`"60000 - 80000 USD Hourly"`, `"110000 - 153000 USD Hourly"` and `"25.49 - 0 USD Hourly"`
+(`maxValue` 0) — annual figures labelled hourly, and a zero ceiling. `salary.extract`'s `_bounded`
+returns `None` on all of them, so they are dropped rather than served as an hourly rate of
+$110,000. That is the right failure direction, but it means ~22% of jobvite's populated salary
+blocks yield nothing: a recall gap in the *source*, not a parser bug, and not worth a tenant-
+specific parser on this evidence.
 
 ## 6. Reproduction
 
