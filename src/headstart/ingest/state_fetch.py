@@ -36,6 +36,20 @@ fallback for failures that advise nothing. When the budget cannot cover the wind
 the fetch stops rather than retry early, because an early retry spends another request inside the
 window it is waiting on — which is how all 10 retries across the two runs lost on 2026-08-11 failed.
 
+Say which generation of state this is, too. The listing already carries the dataset's revision and
+when it was published, so :func:`generation_note` costs no extra Hub request — and it is the one
+thing no stage reported. Run 35063022985's merge died on three HF 500s and published nothing, so
+run 35067130555 re-planned from run 35058831217's state and *nothing in its logs said so*; it had
+to be reconstructed afterwards from four independent signals. The pipeline chains its own
+successor roughly hourly (ADR-0093), so a generation an hour older than the run reading it is the
+tell, readable in one run's log instead of a diff of two.
+
+Deliberately the revision and not the *run that wrote it*: nothing under ``data/state/`` carries a
+run id, and the one file that does — ``data/lancedb/_index_base.json`` (``index.write_base``) —
+describes the **table**. ADR-0095 uploads ``data/state`` last, so "lancedb landed, ``data/state``
+did not" is the live partial-upload failure, and quoting that run id as the ledgers' provenance
+would name a newer run than they came from, in exactly the case this line is for.
+
 Exit: 0 once every expected file is on disk, 1 when the state could not be fetched (ADR-0030).
 """
 
@@ -47,6 +61,7 @@ import re
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import UTC, datetime
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
@@ -147,6 +162,35 @@ def reason_for(exc: Exception) -> str:
     detail = " ".join(str(exc).split())
     prefix = f"HTTP {status} " if status else ""
     return f"{type(exc).__name__}: {prefix}{detail}{limiter_note(exc)}"
+
+
+def _age(seconds: float) -> str:
+    """``14m`` / ``1h52m``. Minutes, because the run cadence is ~50-60 min (ADR-0093) and the
+    difference worth seeing is one cycle; hours once that would read as an unscannable
+    four-figure minute count."""
+    minutes = max(0, int(seconds)) // 60
+    return f"{minutes // 60}h{minutes % 60:02d}m" if minutes >= 60 else f"{minutes}m"
+
+
+def generation_note(sha: str | None, published: datetime | None, now: datetime) -> str:
+    """Which generation of state this is: the dataset revision, and how old it is.
+
+    The revision is the identity — two runs quoting the same one read the same state, which is
+    the fact run 35067130555 could not state about itself. The age is what makes that a
+    *single-run* read: the run reading state published 1h52m ago is being told, in its own log,
+    that a cycle published nothing, without anyone diffing it against the run before.
+
+    Both fields are optional on ``DatasetInfo`` and a fresh fork's repo has never been written
+    (ADR-0095), so neither is assumed. A line reporting what a run read must not be the thing
+    that fails it closed.
+    """
+    revision = f"revision {sha[:12]}" if sha else "revision unknown"
+    if published is None:
+        return f"{revision}, never published"
+    stamp = published.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return (
+        f"{revision}, published {stamp} ({_age((now - published).total_seconds())} old)"
+    )
 
 
 def reset_after(exc: Exception) -> int | None:
@@ -269,26 +313,36 @@ def remote_files(repo: str, token: str | None) -> list[str]:
     return [s.rfilename for s in _siblings(repo, token)]
 
 
+def _dataset_info(repo: str, token: str | None) -> Any:
+    """The Hub's whole answer about this dataset — the siblings *and* the revision they came
+    from — from the one request :func:`remote_files` describes, with its fail-closed guard.
+
+    Separate from :func:`_siblings` only because that answers a narrower question and two
+    callers (``remote_files``, ``state_guard``) ask exactly it. :func:`fetch_state` wants the
+    ``sha``/``last_modified`` beside the siblings, and they arrive in the same response, so
+    reading them here is free where a second ``repo_info`` would be another request.
+    """
+    from huggingface_hub import repo_info
+
+    info = repo_info(repo, repo_type="dataset", files_metadata=True, token=token)
+    if info.siblings is None:
+        raise RuntimeError(
+            f"Hub returned no `siblings` listing for {repo} — refusing to read that as an empty repo"
+        )
+    return info
+
+
 def _siblings(repo: str, token: str | None) -> list[Any]:
     """The listing behind :func:`remote_files`, with sizes — same one request, same fail-closed
     guard. Kept private and separate so callers that only need names (``remote_files``, tested and
-    used standalone) don't carry the size-bearing shape, while :func:`fetch_state` can read sizes
-    off this directly without a second Hub request for the same listing.
+    used standalone) don't carry the size-bearing shape, while ``state_guard`` can read sizes off
+    this directly without a second Hub request for the same listing.
 
     ``files_metadata=True`` is what carries size: ``expand=["siblings"]`` alone reports every
     sibling's ``size`` as ``None`` (verified live against this dataset, 2026-09-07) and the two
     are mutually exclusive on ``repo_info``, so this replaces rather than adds to that call.
     """
-    from huggingface_hub import repo_info
-
-    siblings = repo_info(
-        repo, repo_type="dataset", files_metadata=True, token=token
-    ).siblings
-    if siblings is None:
-        raise RuntimeError(
-            f"Hub returned no `siblings` listing for {repo} — refusing to read that as an empty repo"
-        )
-    return siblings
+    return _dataset_info(repo, token).siblings
 
 
 def remote_matches(repo_files: list[str], patterns: list[str]) -> set[str]:
@@ -475,8 +529,18 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
         started = time.monotonic()
         advised: int | None = None  # what the Hub says to wait, when it says anything
         try:
-            siblings = _siblings(repo, token)
+            info = _dataset_info(repo, token)
+            siblings = info.siblings
             listing = [s.rfilename for s in siblings]
+            # Before the download, not after it: the listing is where the generation is known,
+            # so a fetch that then dies still reports what it was building on. Inside the retry
+            # loop for the same reason — a re-listing may see a revision the first did not, and
+            # on the happy path it runs exactly once. INFO, not an annotation: this fires on
+            # every healthy fetch and ADR-0039 spends WARNING on the ones that are not.
+            _log.info(
+                f"state generation: {repo} at "
+                f"{generation_note(info.sha, info.last_modified, datetime.now(UTC))}"
+            )
             wanted = remote_matches(listing, patterns)
             # A pattern that matches nothing is the one case the listing cannot rule on: a genuine
             # first run and an emptied or mistyped `HF_DATASET` look identical to it. ADR-0030 says

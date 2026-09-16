@@ -11,6 +11,10 @@ are tested directly. The download step itself (ADR-0085's chunked/ranged fetch, 
 The rest is what the Hub tells us and how we answer it (ADR-0033's amendment): the one-line failure
 `reason_for` publishes to an annotation, the window `reset_after` reads out of a 429, and
 `remote_files` refusing to read a missing `siblings` list as an empty repo.
+
+And what the fetch tells *us*: `generation_note` names the state generation a stage read — the
+revision and its age — because no stage reported it, and a run that silently re-planned from a
+dead cycle's state looked identical to a healthy one.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ from __future__ import annotations
 import json
 import sys
 import types
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -79,6 +84,22 @@ _REMOTE = [
     "data/lancedb/jobs.lance/data/abc.lance",
     "data/state/board_priority.csv",
 ]
+
+
+#: What the Hub answers a `repo_info` with: the siblings, plus the revision they were listed at
+#: and when that revision was published. The last two are what `generation_note` reads.
+_REVISION = "e9f28b3441c51809b78f730dab3336df7554133b"
+_PUBLISHED = datetime(2026, 9, 16, 12, 3, 28, tzinfo=UTC)
+
+
+def _info(
+    siblings: list,
+    sha: str | None = _REVISION,
+    published: datetime | None = _PUBLISHED,
+):
+    return type(
+        "I", (), {"siblings": siblings, "sha": sha, "last_modified": published}
+    )()
 
 
 def test_backoff_schedule_is_exponential_and_capped() -> None:
@@ -261,9 +282,7 @@ def _fake_hub(
             exc = _hub_error(_HF_429, 429)
             exc.response.headers = headers  # type: ignore[attr-defined]
             raise exc
-        return type(
-            "I", (), {"siblings": [type("S", (), {"rfilename": listing[0]})()]}
-        )()
+        return _info([type("S", (), {"rfilename": listing[0]})()])
 
     def fake_download(repo, siblings, wanted, token, root) -> None:
         (root / listing[0]).parent.mkdir(parents=True, exist_ok=True)
@@ -411,7 +430,7 @@ def _empty_hub(hub, monkeypatch, tmp_path):
     Sleep is stubbed here rather than per-test: any path that reaches the retry ladder unstubbed
     waits the real 450s budget, which reads as a hung suite rather than a failing test.
     """
-    hub.repo_info = lambda *a, **k: type("I", (), {"siblings": []})()
+    hub.repo_info = lambda *a, **k: _info([])
     monkeypatch.setattr(sf, "_download", lambda *a, **k: None)
     monkeypatch.setattr(sf, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(sf.time, "sleep", lambda _s: None)
@@ -492,9 +511,7 @@ def test_one_surviving_root_does_not_hide_a_wiped_sibling(
     the table that vanished — the exact publish-over-an-empty-index failure ADR-0030 exists to
     stop. So the question is asked per pattern."""
     listing = ["data/embeddings/jobs/meta.jsonl"]  # the store survives; lancedb is gone
-    hub.repo_info = lambda *a, **k: type(
-        "I", (), {"siblings": [type("S", (), {"rfilename": listing[0]})()]}
-    )()
+    hub.repo_info = lambda *a, **k: _info([type("S", (), {"rfilename": listing[0]})()])
 
     def fake_download(repo, siblings, wanted, token, root) -> None:
         (root / listing[0]).parent.mkdir(parents=True, exist_ok=True)
@@ -536,7 +553,7 @@ def test_fetch_omits_the_rate_when_nothing_landed_to_divide(
     render a `0.0 MB/s` that reads as a stalled fetch."""
 
     def repo_info(*a, **k):
-        return type("I", (), {"siblings": []})()
+        return _info([])
 
     hub.repo_info = repo_info
     monkeypatch.setattr(sf, "REPO_ROOT", tmp_path)
@@ -900,3 +917,67 @@ def test_the_abort_names_the_budget_that_stopped_it(no_sleep, caplog, monkeypatc
     with caplog.at_level("ERROR"), pytest.raises(RuntimeError):
         sf.retry_hub("listing", _Flaky(99, RuntimeError("HTTP 429")))
     assert "cannot cover the Hub's" in caplog.records[-1].getMessage()
+
+
+def test_generation_note_names_the_revision_and_how_old_it_is() -> None:
+    """The identity of the state a stage read, in the form a human can check in one run's log.
+
+    Run 35067130555 re-planned from the state run 35058831217 had written, because the run
+    between them (35063022985) died on three HF 500s and published nothing — and no stage said
+    so. It took four independent signals to reconstruct afterwards. The age is what makes it a
+    single-run read rather than a two-run diff: the pipeline chains its own successor roughly
+    hourly (ADR-0093), so a generation an hour older than the run reading it is the whole tell.
+    """
+    note = sf.generation_note(_REVISION, _PUBLISHED, _PUBLISHED + timedelta(minutes=14))
+    assert "revision e9f28b3441c5" in note
+    assert "2026-09-16T12:03:28Z" in note
+    assert "14m old" in note
+
+
+def test_generation_note_reports_a_stale_generation_in_hours() -> None:
+    """Two cycles of staleness reads as `1h52m`, not `112m` — the shape the incident had."""
+    note = sf.generation_note(
+        _REVISION, _PUBLISHED, _PUBLISHED + timedelta(hours=1, minutes=52)
+    )
+    assert "1h52m old" in note
+
+
+def test_generation_note_survives_a_dataset_that_has_never_been_written() -> None:
+    """A fresh fork bootstraps against an empty repo (ADR-0095), and `DatasetInfo` types both
+    fields optional. An observability line must never be what fails that run closed."""
+    note = sf.generation_note(None, None, _PUBLISHED)
+    assert "unknown" in note
+
+
+def test_fetch_says_which_state_generation_it_read(
+    hub, monkeypatch, tmp_path, caplog
+) -> None:
+    """The regression: the fetch reports the generation it listed, naming the dataset.
+
+    It is logged off the listing the fetch already makes — `repo_info` carries `sha` and
+    `last_modified` beside the siblings — so this costs no extra Hub request.
+    """
+    _fake_hub(hub, monkeypatch, tmp_path, fail_first=0, headers={})
+    with caplog.at_level("INFO"):
+        assert sf.fetch_state("repo", ["data/state/*"], token=None) == 0
+
+    line = next(
+        r.message for r in caplog.records if r.message.startswith("state generation: ")
+    )
+    assert "repo" in line
+    assert "revision e9f28b3441c5" in line
+    assert "2026-09-16T12:03:28Z" in line
+
+
+def test_fetch_says_which_generation_it_read_even_when_it_then_fails(
+    hub, monkeypatch, tmp_path, caplog
+) -> None:
+    """The listing is where the generation is known, so a fetch that dies downloading still
+    reports what it was building on — the run whose merge died is exactly the case that matters."""
+    _fake_hub(hub, monkeypatch, tmp_path, fail_first=0, headers={})
+    monkeypatch.setattr(
+        sf, "_download", lambda *a, **k: None
+    )  # lists files, lands nothing
+    with caplog.at_level("INFO"):
+        assert sf.fetch_state("repo", ["data/state/*"], token=None) == 1
+    assert any(r.message.startswith("state generation: ") for r in caplog.records)
