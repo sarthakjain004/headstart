@@ -60,8 +60,13 @@ import re
 
 from run_logs import Run, common_args, runs_from, skip_if_stood_down
 
+# The parole clause is OPTIONAL on purpose, though the emitter always writes it: this tool reads
+# ranges of historical runs, and every log written before ADR-0162 carries the bare line. Requiring
+# it would have silently dropped the whole line for those runs rather than erroring — the same
+# `search() -> None` behind an `if` that cost `fanout_errors.FAILURES` its output once already.
 QUARANTINE_SKIP = re.compile(
     r"\[scrape_plan\] quarantine: skipped (\d+) of (\d+) confirmed-gone board\(s\)"
+    r"(?:; (\d+) re-admitted on parole, of (\d+) quarantined)?"
 )
 VALUE_GATE = re.compile(
     r"value gate: skipped (\d+) Board\(s\) costing over (\d+) min for under (\d+) "
@@ -126,7 +131,12 @@ def scrape_plan_report(run: Run) -> None:
     q = QUARANTINE_SKIP.search(text)
     if q:
         print(
-            f"  quarantine: skipped {q.group(1)} of {q.group(2)} confirmed-gone board(s)",
+            f"  quarantine: skipped {q.group(1)} of {q.group(2)} confirmed-gone board(s)"
+            + (
+                f"; {q.group(3)} re-admitted on parole, of {q.group(4)} quarantined (ADR-0162)"
+                if q.group(3)
+                else "  [pre-ADR-0162 run: quarantine had no drain, and `of N` is the full total]"
+            ),
             flush=True,
         )
 
