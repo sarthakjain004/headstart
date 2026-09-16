@@ -2,7 +2,9 @@
 
 **Status:** accepted · **Date:** 2026-08-13 · **Amends:** ADR-0021 · **Amended by:** [ADR-0050](0050-persist-descriptions-across-runs.md) — the skip-list is re-keyed
 onto the description store, so it means *we hold this detail* rather than *we embedded this Job*;
-and by the 2026-09-16 amendment below, which adds a second skip the list can never express
+by the 2026-09-16 eightfold amendment below, which adds a second skip the list can never express;
+and by the 2026-09-16 successfactors amendment below, which adds that same second skip on a
+different, measured signal rather than an exact one
 
 ## Context
 
@@ -158,16 +160,18 @@ Three things this deliberately does **not** change:
   the per-job page supplies `title`, and `parse` drops a Job without one, so skipping the fetch
   would delete Jobs rather than save work. The gate is on the PCSX/SmartApply path, whose listing
   already carries every field the gate reads.
-- **No other ATS.** The skip needs two things at once: the listing must already carry `title`
-  *and* `department`, and the detail must supply nothing but `description`. Eightfold's PCSX
-  surface is the only one here where both hold, and the three other detail-pass scrapers fail a
-  different half each — which is why their own `fetch_raw` comments already refuse the ADR-0048
-  skip, and none of them is touched. **oracle** fails the first: `Category`/`JobFunction` are
-  0.0% on the listing, so the gate would be classifying on a bare title and would drop real tech
-  Jobs. **jazzhr** and **zoho** fail the second: their detail page is the only source of
-  `employment_type`/`experience`/`posted_at`/`salary` (jazzhr) and Salary/Currency (zoho), none of
-  which the description store holds. Whether a *tech* gate — as opposed to ADR-0048's held-detail
-  gate — could be made to pay on those two is a separate question this does not open.
+- **No other ATS gets *this* gate.** The skip needs two things at once: the listing must already
+  carry `title` *and* `department`, and the detail must supply nothing but `description`.
+  Eightfold's PCSX surface is the only one here where both hold, and the three other detail-pass
+  scrapers fail a different half each — which is why their own `fetch_raw` comments already refuse
+  the ADR-0048 skip, and none of them is touched. **oracle** fails the first: `Category`/
+  `JobFunction` are 0.0% on the listing, so the gate would be classifying on a bare title and
+  would drop real tech Jobs. **jazzhr** and **zoho** fail the second: their detail page is the
+  only source of `employment_type`/`experience`/`posted_at`/`salary` (jazzhr) and Salary/Currency
+  (zoho), none of which the description store holds. Whether a *tech* gate — as opposed to
+  ADR-0048's held-detail gate — could be made to pay on those two is a separate question this does
+  not open. **successfactors does get a tech gate**, on a different signal than this section's —
+  see the second amendment below.
 
 The two verdicts cannot drift: `department` goes through one expression (`_department_of`) that
 `parse` also emits, and `classify` strips the title itself, so it reads `p["name"]` exactly as it
@@ -200,3 +204,47 @@ chasing a fake regression is worse than a branch.
 
 (`scripts/eval/location_field_health.py` also builds scrapers but never reads `description`, and
 `scripts/eval/measure_content_drift.py` is not on `main` — neither is affected.)
+
+## Amendment, 2026-09-16 (later the same day): a second scraper, gated on a different signal
+
+The held-detail skip above needs `have_details`, which needs the description store, which needs a
+Job id the store already knows — none of which fires the first time a Board is ever scraped.
+There is a second, cheaper reason to skip a detail fetch that doesn't: the posting a Board lists
+will never be indexed at all, because the **Tech filter** (ADR-0017) will drop it downstream. A
+non-tech posting is never in `data/jobs/tech`, so fetching its detail — real cost, real
+per-origin budget — buys nothing that survives the run.
+
+For a scraper whose listing already carries `title`/`department`, that gate is exact and free —
+the mechanism the eightfold amendment above describes. SuccessFactors' three listing surfaces
+carry neither: every field, including
+`title` itself, comes from the job page (this file's own scraper module docstring), so there is
+no in-listing signal to gate on at all.
+
+There is an out-of-band one: SuccessFactors builds job URLs from the slug of the posting's own
+title (`_title_from_slug`, `successfactors.py`) — `{title}/{id}/` on some tenants,
+`{location}-{title}[-{state}-{zip}]/{id}/` on others. That slug is a proxy, not the real title, so
+this is a measured tolerance rather than an exact gate: 403/403 verdict agreement against a
+500-posting sample of careers.hcltech.com (title-only slugs) and 400/400 against a 400-posting
+sample of jobs.sap.com (location-prefixed, largely German slugs), both live-verified 2026-09-16.
+Neither sample produced a single disagreement between the slug-derived verdict and the real
+page's — extra location/state/zip tokens landed as noise `classify`'s word-bounded signals didn't
+trip on, not as a source of false negatives, in either sample.
+
+Two things this changes, matching the eventual-consistency shape the eightfold skip already has:
+
+- **The truncation denominator moves with it.** `mark_truncated_unless_negligible` now compares
+  against the tech-gated subset actually attempted, not the full listing — a non-tech posting was
+  never going to be indexed regardless of whether its detail was fetched, so it must not count as
+  "lost" against how authoritative the Board's *tech* read is. Getting this backwards — counting
+  every gated-out posting as a loss — would mark nearly every SuccessFactors Board Unauthoritative
+  on every run, since most such boards are not majority-tech (21.3%–28.7% in the two samples
+  above).
+- **A non-tech posting is never scraped at all here**, not scraped-with-a-null-description as the
+  PCSX gate leaves it. There is nothing to leave null: without a detail fetch, SuccessFactors has
+  no title either, and `parse` already drops any Job it cannot title. If the tech filter ever
+  widens to keep a slug-shape it currently misses, that posting simply starts arriving next run,
+  the same self-healing path a brand-new Job takes.
+
+This is a measured tolerance on a proxy signal, not a guarantee for every tenant's slug shape —
+unlike the exact, listing-derived gate, it should be re-checked before leaning on it for a
+tenant whose URLs weren't part of either sample.

@@ -38,10 +38,12 @@ import re
 from datetime import datetime
 from html import unescape
 from typing import Any
+from urllib.parse import unquote
 
 from headstart import http, log
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.tech_filter import is_tech
 
 _log = log.get(__name__)
 
@@ -309,16 +311,29 @@ class SuccessFactorsScraper(BaseScraper):
             f"{self.slug}: {surface or 'nothing'} via sitemap {kind or 'unknown'} "
             f"-> {len(listed)} job pages to fetch"
         )
+        # The tech gate (ADR-0017), read off the URL's own slug rather than the listing: unlike
+        # eightfold's PCSX surface, nothing here carries title or department pre-fetch — every
+        # field otherwise comes from the job page. A non-tech posting is never indexed, so
+        # skipping its detail costs nothing (ADR-0048's 2026-09-16 amendment established that for
+        # eightfold's exact, listing-derived signal); this is the same trade on an approximate,
+        # measured one instead — see :func:`_title_from_slug`.
+        tech_listed = [pair for pair in listed if is_tech(_title_from_slug(pair[0]))]
+        non_tech = len(listed) - len(tech_listed)
+        if non_tech:
+            _log.info(
+                f"{self.slug}: skipping {non_tech}/{len(listed)} non-tech detail "
+                "fetches (ADR-0048 slug gate)"
+            )
         # Detail pass: every field comes from the job page, so fetch each one (bounded); a
         # failed fetch leaves fields None and parse drops just that job.
         if self.async_fanout_enabled():
             fields = self.fan_out_async(
-                listed,
+                tech_listed,
                 lambda session, pair: self._job_fields_async(session, pair[0]),
             )
         else:
             fields = self.fan_out(
-                listed,
+                tech_listed,
                 lambda pair: self._job_fields(pair[0]),
                 workers=_DETAIL_WORKERS,
             )
@@ -329,18 +344,19 @@ class SuccessFactorsScraper(BaseScraper):
             # is exactly what `index sync` reads as a delisting — it would evict Jobs that are
             # still posted, purely because their detail fetch failed (ADR-0053).
             #
-            # Measured against the listing, which this surface has: `listed` is what the sitemap
-            # (or the search walk, or the RSS stream) said the Board holds, so the share is real
-            # rather than inferred. A negligible one is left to ADR-0083 — this is the shape that
+            # Measured against `tech_listed`, not `listed`: a non-tech posting was never going to
+            # be indexed regardless of whether its detail was fetched, so it must not count
+            # against how authoritative this Board's *tech* read is. This is the shape that
             # excluded whole 2,130-page Boards over a single unreadable page (ADR-0121).
             self.mark_truncated_unless_negligible(
-                len(listed) - lost,
-                len(listed),
-                f"{lost}/{len(listed)} job pages unreadable — those Jobs are listed but unbuilt",
+                len(tech_listed) - lost,
+                len(tech_listed),
+                f"{lost}/{len(tech_listed)} job pages unreadable — those Jobs are listed but "
+                "unbuilt",
             )
         return [
             {"url": url, "id": job_id, "fields": page_fields}
-            for (url, job_id), page_fields in zip(listed, fields)
+            for (url, job_id), page_fields in zip(tech_listed, fields)
         ]
 
     def _job_fields(self, url: str) -> dict[str, Any] | None:
@@ -496,6 +512,23 @@ def _job_urls_from(text: str, host: str) -> list[tuple[str, str]]:
         if job_id not in pairs:
             pairs[job_id] = f"https://{host}{unescape(match.group(1))}"
     return [(url, job_id) for job_id, url in pairs.items()]
+
+
+def _title_from_slug(url: str) -> str:
+    """The title implied by a job URL's slug, for the pre-detail tech gate in :meth:`fetch_raw`.
+
+    SuccessFactors builds job URLs as ``{title}/{id}/`` on some tenants and
+    ``{location}-{title}[-{state}-{zip}]/{id}/`` on others (see :func:`_location_from_slug`), so
+    this is noisier than a clean title on tenants using the second shape — measured against real
+    pages rather than assumed clean: 403/403 verdict agreement against careers.hcltech.com's
+    title-only slugs and 400/400 against jobs.sap.com's location-prefixed, largely German ones,
+    both 2026-09-16. The extra tokens never flipped a verdict in either sample —
+    :func:`~headstart.tech_filter.classify`'s signals are word-bounded substrings, so noise
+    around a real title rarely removes what was already there — but this is a measured
+    tolerance, not a guarantee for every tenant's slug shape.
+    """
+    slug = url.rstrip("/").rsplit("/", 2)[-2]
+    return unescape(unquote(slug).replace("-", " ")).strip()
 
 
 def _page_fields(page: str, url: str | None = None) -> dict[str, Any]:
@@ -739,7 +772,7 @@ def _location_from_slug(title: str, url: str) -> str | None:
     match. Punctuation the encoder dropped mid-title is NO LONGER a None case: that is exactly
     what the concatenated match below exists to span.
     """
-    from urllib.parse import unquote, urlparse
+    from urllib.parse import urlparse
 
     path = unquote(urlparse(url).path)
     segments = [s for s in path.split("/") if s]
