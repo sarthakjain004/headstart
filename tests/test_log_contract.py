@@ -2389,7 +2389,7 @@ CONTRACT: tuple[Line, ...] = (
         emitter=_SCRAPE_PLAN,
         body=(
             "quarantine: skipped 1104 of 1104 confirmed-gone board(s); "
-            "0 on parole for a re-probe"
+            "0 re-admitted on parole, of 1104 quarantined"
         ),
         why=(
             "ADR-0058 quarantine acting on the plan; the ledger itself is untouched. The parole "
@@ -3121,3 +3121,27 @@ def test_the_docstring_census_is_recomputed_not_remembered():
     assert (
         total - emit == 12 or f"The {total - emit} that stay source-verified" in doc
     ), f"the docstring names a source-verified count that is not {total - emit}"
+
+
+def test_the_two_adr_0161_clauses_stay_optional_for_older_runs():
+    """`fanout_plan` and `fanout_errors` read *ranges* of runs, most of them older than the clause.
+
+    Both emitters write their new clause unconditionally, which is why the `Line` bodies above
+    carry it — but every log written before ADR-0161 does not, and a pattern that required it
+    would `search() -> None` behind an `if` and drop the whole line rather than erroring. That is
+    the exact failure `fanout_errors.FAILURES`' own comment records having shipped once.
+    """
+    before = (
+        "2026-09-16T05:16:41 [scrape_plan] quarantine: skipped 747 of 749 "
+        "confirmed-gone board(s)"
+    )
+    match = _pattern("fanout_plan.QUARANTINE_SKIP").search(before)
+    assert match is not None and match.group(3) is None
+
+    before = (
+        "2026-09-16T05:20:00 [update_ledgers] failures: 12 of 40 board error(s) read as gone "
+        "(404/410) across 15 shard(s) | 781 ledger rows (0 cleared by a successful scrape) | "
+        "749 at/over 5 strikes -> data/state/board_failures.csv"
+    )
+    match = _pattern("fanout_errors.FAILURES").search(before)
+    assert match is not None and match.group(8) is None

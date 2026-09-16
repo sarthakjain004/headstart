@@ -117,9 +117,12 @@ def test_parole_starts_at_exactly_parole_days():
 
 def test_an_unreadable_stamp_paroles():
     """Same direction as every other guard here: a bad date must never be grounds for keeping a
-    Board out of the slice forever."""
-    rows = {"greenhouse:b": bf.Failure(bf.QUARANTINE_AT, "404", "")}
-    assert bf.paroled(rows, "2026-09-16T00:00:00+00:00") == {"greenhouse:b"}
+    Board out of the slice forever. The naive stamp is the realistic one: every row this module
+    writes is tz-aware, so a naive one is a hand-edited or torn file, and subtracting it raises
+    TypeError rather than ValueError."""
+    for stamp in ("", "not-a-date", "2026-09-16T00:00:00"):
+        rows = {"greenhouse:b": bf.Failure(bf.QUARANTINE_AT, "404", stamp)}
+        assert bf.paroled(rows, "2026-09-16T00:00:00+00:00") == {"greenhouse:b"}, stamp
 
 
 def test_a_re_probe_that_404s_again_restarts_the_parole_clock():

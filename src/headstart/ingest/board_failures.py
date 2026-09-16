@@ -51,13 +51,15 @@ QUARANTINE_AT = 5
 #
 # Seven, not the value gate's fortnight (``scrape_plan._GATE_RECHECK_DAYS``), because the two
 # re-checks cost three orders of magnitude apart. That gate re-admits a Board measured at 15+ min
-# of shard time; a quarantined Board's own measured cost is p50 **0.10 s** (p90 0.94 s, 354 s for
-# all 757 of them — ``data/state/board_cost.csv``, 2026-09-16), so the fortnight there buys
-# something real and would only be cargo-culted here. Seven days puts ~36 Boards back in a
-# 20,000-Board slice — 0.18% — against a measured 23 of 757 quarantined Boards that answer 200
-# today, 16 of them serving 5,593 live postings. Not one day: recovery runs at roughly 0.8
-# Boards/day, so probing 757 Boards ~21 times a week to catch it is ~99% waste aimed at origins
-# that have already said 404.
+# of shard time; a quarantined Board's last measured scrape is p50 **0.10 s** (p90 0.94 s, 354 s
+# for all 757 together — ``data/state/board_cost.csv``, 2026-09-16), because it dies on the
+# listing request. So the fortnight there buys something real and would only be cargo-culted here.
+#
+# At 7 days and ~24 runs/day the re-admitted pool is ~31 Boards — 0.16% of a 20,000-Board slice —
+# against a measured 23 of 757 quarantined Boards that answer 200 today, 16 of them serving 5,593
+# live postings. Not one day: that is 5,299 requests a week instead of 757, at origins that have
+# already said 404 five times, to catch the same ~5.6 recoveries. ADR-0161 has the full arithmetic
+# and the alternatives it rules out.
 PAROLE_DAYS = 7
 
 # "Gone" as the origin reports it. Matched against the recorded reason, which the shard reports
@@ -157,7 +159,7 @@ def quarantined(rows: dict[str, Failure]) -> set[str]:
 
 
 def paroled(rows: dict[str, Failure], now: str) -> set[str]:
-    """The quarantined Boards whose gone-verdict has expired — back in the slice for one run.
+    """The quarantined Boards whose gone-verdict has expired — back in the *candidate* pool.
 
     A verdict is evidence with an age, not a fact. Nothing re-probes a quarantined Board, so
     without this the ledger records forever what one afternoon found: re-probed live on
@@ -169,6 +171,11 @@ def paroled(rows: dict[str, Failure], now: str) -> set[str]:
     caller re-admits these and :func:`update` judges what comes back, so a Board that 404s again
     simply restamps its row and serves another :data:`PAROLE_DAYS`.
 
+    Re-admitted is not scraped. ``pick_boards`` still has to choose the Board, and an unscored one
+    goes into the random exploration tail, which selected at p = 0.144 when this was measured
+    (14,000 explore slots over a 97,254-Board tail pool). So a parole cohort drains over several
+    runs rather than being probed in one — expect roughly one in seven of it per run.
+
     A Board whose re-probe fails some *other* way (timeout, TLS, 429) is neither gone nor
     produced, so its row is untouched and it stays paroled until a verdict arrives. That is the
     right direction: the premise of quarantine is *confirmed* gone, and a Board we can no longer
@@ -177,17 +184,25 @@ def paroled(rows: dict[str, Failure], now: str) -> set[str]:
     return {
         board
         for board, row in rows.items()
-        if row.quarantined and _days_between(row.last_seen_gone, now) >= PAROLE_DAYS
+        if row.quarantined and _verdict_age_days(row, now) >= PAROLE_DAYS
     }
 
 
-def _days_between(then: str, now: str) -> float:
-    """Days between two ISO-8601 stamps; ``inf`` when either is unreadable.
+def _verdict_age_days(row: Failure, now: str) -> float:
+    """How long ago this row's gone-verdict was earned; ``inf`` when either stamp is unreadable.
 
-    Unreadable reads as ancient, matching ``scrape_plan._days_since``: this module fails open
-    everywhere, and a bad date must re-admit a Board, never strand it.
+    Named for the thing rather than for the subtraction, deliberately: ``scrape_plan._days_since``
+    already does date arithmetic one import away, and two near-identical names in one traceback is
+    the hazard CLAUDE.md names. The ``inf``-on-unreadable contract is the same as that one's, and
+    for the same reason — this module fails open everywhere, so a bad date must re-admit a Board,
+    never strand it. A naive stamp is the realistic bad case (every row written here is tz-aware),
+    and subtracting one raises ``TypeError`` rather than ``ValueError``.
     """
     try:
-        return (datetime.fromisoformat(now) - datetime.fromisoformat(then)).days
+        return float(
+            (
+                datetime.fromisoformat(now) - datetime.fromisoformat(row.last_seen_gone)
+            ).days
+        )
     except (TypeError, ValueError):
         return float("inf")

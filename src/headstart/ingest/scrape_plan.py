@@ -311,11 +311,15 @@ def main() -> int:
         companies = [
             c for c in companies if lower_key(board_identity(c)) not in quarantine
         ]
-        # The parole count is stated even when it is zero. An omitted-when-zero clause is how a
-        # consumer regex silently drops the whole line instead of erroring (`fanout_plan`).
+        # Two things make this line honest. The parole count is stated even when it is zero, so
+        # a consumer never has to treat the clause as optional going forward. And the ledger's
+        # own quarantined total is named, because the `of N` denominator no longer *is* that
+        # total — it is the total minus parole, and a figure that quietly changed population is
+        # how a number misleads (CLAUDE.md, §Counting Boards).
         _log.info(
             f"quarantine: skipped {before - len(companies)} of {len(quarantine)} "
-            f"confirmed-gone board(s); {len(on_parole)} on parole for a re-probe"
+            f"confirmed-gone board(s); {len(on_parole)} re-admitted on parole, of "
+            f"{len(quarantine) + len(on_parole)} quarantined"
         )
     scores = load_scores(Path(args.priority))
     # Loaded before the slice is picked, not after: the value gate (ADR-0064) needs measured

@@ -57,25 +57,37 @@ consumer regex silently drops a whole line instead of erroring.
 
 Not taste — a ratio. ADR-0064's value gate makes the identical move (`_GATE_RECHECK_DAYS = 14`,
 "evidence that cannot change makes the gate a one-way door") and rations it at a fortnight
-because each re-check there costs **15+ minutes of shard time**. A quarantine re-probe costs one
-listing request, and every one of the 757 quarantined Boards has a measured cost row:
-**p50 0.10 s, p90 0.94 s, max 16.75 s, 354 s for all 757 together**
-(`data/state/board_cost.csv`, 2026-09-16). Inheriting the fortnight would be copying the number
-without the reasoning behind it.
+because each re-check there costs **15+ minutes of shard time**. Here every one of the 757
+quarantined Boards has a measured cost row: **p50 0.10 s, p90 0.94 s, max 16.75 s, 354 s for all
+757 together** (`data/state/board_cost.csv`, 2026-09-16). Inheriting the fortnight would be
+copying the number without the reasoning behind it.
+
+*Read that number for what it is.* Those seconds are each Board's last real scrape **while it was
+404ing** — the cost of a dead round-trip, which is what ~97% of any parole cohort will do again.
+The ~3% that recover get a full scrape at the price of a live Board (`greenhouse:svetness` is
+4,980 postings), and that is the outcome this change exists to buy, not a cost to avoid. The
+aggregate holds either way: 23 recoveries per sweep against 734 dead round-trips.
 
 The cost that actually binds is **slice slots**, not seconds: the run's slice is capped at 20,000
-Boards, and the quarantine is 757 of them (3.8%) if re-admitted every run. At a 7-day interval
-and ≈21 runs/day (five runs in the review's 4h30m window), the steady-state re-admitted cohort is
-`rows / (7 × 21) ÷ p(selected)`. The exploration tail selects a Board with p = 0.144 (14,000
-explore slots over a 97,254-Board tail pool, measured against the live ledgers), so ~36 Boards
-sit re-admitted at any time — **0.18% of the slice** — and ~5 are actually scraped per run. A
-recovered Board is back in the product within a week, median 3.5 days plus ~5 hours of
-selection lag.
+Boards, and the quarantine is 757 of them (**3.8%**) if re-admitted every run.
 
-Not one day: at 0.8 recoveries/day, probing all 757 Boards ~21 times a week to catch them is
-~99% wasted requests, aimed at origins that have already answered 404 five times. Seven days is
-one probe per Board per week — 757 requests/week, against 5,593 postings recovered on the first
-sweep.
+Working, so the arithmetic can be checked rather than taken:
+
+- **Runs/day = 24.2.** The review's five `scrape_plan` lines run 05:16:41 → 09:15:08 — 238.4 min
+  over *four* intervals, 59.6 min/run. (Dividing 5 runs by the 4h30m window instead gives 26.7
+  and counts a gap that is not there.)
+- **p(selected) = 0.144.** A quarantined Board scores 0 (`board_priority.update` carries an
+  unscraped Board's row unchanged, so its score neither decays nor grows), so re-admission puts it
+  in the random exploration tail: 14,000 explore slots over a 97,254-Board tail pool, computed
+  against the live liveness and priority ledgers on 2026-09-16.
+- **Steady state.** `757 / (7 × 24.2)` = 4.5 Boards become eligible per run; they queue until
+  selected, so the standing re-admitted pool is `4.5 / 0.144` ≈ **31 Boards — 0.16% of the
+  slice** — of which ~4.5 are actually scraped per run. A recovered Board is back within a week,
+  median 3.5 days plus ~7 runs (~7 h) of selection lag.
+
+Not one day: at ≈0.8 recoveries/day, daily parole spends **5,299 requests/week instead of 757**
+to catch the same ≈5.6 recoveries, at origins that have already answered 404 five times. Seven
+days is one probe per Board per week, against 5,593 postings recovered on the first sweep.
 
 ## Options considered
 
@@ -84,8 +96,8 @@ sweep.
    Nine lines of new code.
 2. **Re-admit every quarantined Board every run.** The measured cost permits it — 354 s of shard
    time spread over 15 shards is 24 s each against a 3,600 s budget. Rejected because it makes
-   ADR-0058 a no-op, spends 3.8% of the slice cap on Boards confirmed gone, and puts 15,900
-   404s/day at ATS origins (6,489/day at `boards-api.greenhouse.io` alone), which is how a
+   ADR-0058 a no-op, spends 3.8% of the slice cap on Boards confirmed gone, and puts ~18,300
+   404s/day at ATS origins (~7,500/day at `boards-api.greenhouse.io` alone), which is how a
    provider-wide block gets earned.
 3. **A fixed quota — parole the N least-recently-probed Boards each run.** Bounds the per-run cost
    exactly regardless of ledger size, where an interval grows linearly with it. Rejected as
@@ -94,13 +106,25 @@ sweep.
 4. **Exponential backoff on strikes** (7d, 14d, 28d …). Rejected on the measurement: recovery is
    flat across every age bucket the ledger covers, so backoff would delay real recoveries to buy
    savings on a cost already measured at 0.10 s.
+5. **A separate cheap probe outside the slice** — what the review's own wording suggested ("a
+   single cheap probe, not a full scrape"). Rejected because for this population the full scrape
+   *is* the cheap probe: a quarantined Board dies on its listing request, which is the same one
+   request a bespoke prober would send, and the measurement above is exactly that request's cost.
+   A second path would need its own per-ATS URL construction (this ADR's own probe script got
+   Personio wrong for precisely that reason), would not know how to read a 200, and would then
+   have to hand the Board back to the scraper anyway — so a recovery would land a run later than
+   it does now. Machinery for a saving already measured at a tenth of a second.
 
 ## Consequences
 
-- The first run after this ships paroles ~640 Boards at once — every row older than 7 days, p50
-  age 24 days. They drain through the exploration tail over ~7 runs at ~0.14 selection
-  probability, ~92 scrapes in the first run, and the 23 recoverable Boards return within a day
-  or two.
+- The first run after this ships paroles **652** Boards at once — every row older than 7 days,
+  p50 age 24 days. Re-admitted is not scraped: they drain through the exploration tail at p =
+  0.144, ~94 scrapes in the first run and the rest over the following few, so the 23 recoverable
+  Boards return within a day or two.
+- The cadence is stated in **days**, not runs, where the review suggested "once every N runs".
+  Days is what the ledger already records (`last_seen_gone`), and it keeps the re-probe rate
+  stable when the chain's cadence moves — at the cost of making the cohort size depend on runs/day,
+  which is the one input above that is not directly measured.
 - **A quarantined Board whose re-probe fails some other way (timeout, TLS, 429) stays paroled**
   until a verdict arrives, because `update` leaves its row untouched and the parole clock never
   restarts. That is deliberate and it is the recall-safe direction: quarantine's premise is

@@ -91,7 +91,9 @@ FAILURES = re.compile(
     r"\[update_ledgers\] failures: (\d+) of (\d+) board error\(s\) read as gone \(404/410\)"
     r" across (\d+) shard\(s\)"
     r" \| (\d+) ledger rows \((\d+) cleared by a successful scrape\) \| (\d+) at/over (\d+) strikes"
-    r" \(\+(\d+) new, -(\d+) released\)"
+    # Optional for the same reason as `fanout_plan.QUARANTINE_SKIP`: the emitter always writes the
+    # delta, but runs predating ADR-0161 do not carry it, and requiring it would drop their line.
+    r"(?: \(\+(\d+) new, -(\d+) released\))?"
 )
 FAILED = re.compile(r"\[scrape_run\] (\S+?) failed after (\d+)s: (\w+)")
 # `failures`'s own second line: how much of the run's error volume did NOT read as a gone-board
@@ -175,11 +177,16 @@ def quarantines(run: Run) -> None:
         gone, examined, shards, ledger, cleared, quarantined, at, new, released = (
             totals.groups()
         )
+        moved = (
+            f"; this run moved it +{new} / -{released} (ADR-0161)"
+            if new is not None
+            else "; pre-ADR-0161 run — no delta logged, and the total could only grow"
+        )
         print(
             f"\n  failures: {gone} of {examined} board error(s) read as gone across {shards} "
             f"shard(s) | {ledger} ledger rows ({cleared} cleared) | "
             f"**{quarantined}** at/over {at} strikes — a STANDING TOTAL over the whole ledger, "
-            f"not this run's inflow; this run moved it +{new} / -{released} (ADR-0161)",
+            f"not this run's inflow{moved}",
             flush=True,
         )
     else:

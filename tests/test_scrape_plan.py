@@ -527,4 +527,4 @@ def test_a_stale_quarantine_is_re_admitted_for_one_run(tmp_path, monkeypatch, ca
     line = next(
         r.message for r in caplog.records if r.message.startswith("quarantine:")
     )
-    assert "1 on parole" in line
+    assert "1 re-admitted on parole, of 2 quarantined" in line
