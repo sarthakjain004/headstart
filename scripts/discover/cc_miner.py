@@ -126,6 +126,16 @@ ATS_PATTERNS = {
             r"api\.rippling\.com/platform/api/ats/v1/board/([a-z0-9][a-z0-9-]+)",
         ],
     },
+    "gem": {
+        # One fixed host, slug is the path segment (`jobs.gem.com/{slug}`) — same shape as
+        # ashby/rippling above. No separate api. host: the GraphQL batch endpoint carries no slug
+        # in its URL (the board id travels in the POST body), so it isn't a mineable target.
+        "targets": ["jobs.gem.com"],
+        "kind": "slug",
+        "patterns": [
+            r"jobs\.gem\.com/([a-z0-9][a-z0-9-]+)",
+        ],
+    },
     "join": {
         "targets": ["join.com"],
         "kind": "slug",

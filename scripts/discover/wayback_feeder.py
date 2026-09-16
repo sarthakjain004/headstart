@@ -271,6 +271,12 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     # and kin), which has no host namespace to enumerate.
     "eightfold": _with_style("host", "eightfold.ai"),
     "freshteam": _with_style("sub", "freshteam.com"),
+    # `path` style, the same shape as ashby and rippling above: one fixed host
+    # (`jobs.gem.com/{slug}`), the tenant is the path segment. Checked for a second/alias host
+    # before committing to just the one: every one of the 3,542 sampled real postings
+    # (`experiment/ats-scraper-candidates/artifacts/parquet/gem.parquet`) and all 496 rows of the
+    # upstream seed list resolve to `jobs.gem.com` — no counter-example found.
+    "gem": _with_style("path", "jobs.gem.com"),
     # `*.us.greenhouse.io` resolves but 301/302s to the unprefixed host and holds no ledger rows
     # of its own — an alias, so sweeping it would only re-find what `boards` already has. The EU
     # pods are a real split: 824 rows, 497 live.

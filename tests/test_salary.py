@@ -154,6 +154,119 @@ def test_field_darwinbox_magnitude_threshold_boundary():
     assert from_field("INR 1000 (Annual)", "darwinbox") is None
 
 
+def test_field_gem_templated_range():
+    # Real gem tenant text (html_to_text-stripped, as gem.py's own _salary_field() emits it),
+    # 97% of the 136-posting sample gem's own pass measured (docs/gem/…-graphql-api-measurement.md).
+    assert from_field(
+        "Compensation The base pay range for this role is $80,000 – $120,000 per year.",
+        "gem",
+    ) == SalarySpan(80_000, 120_000, "USD", "field")
+
+
+def test_field_gem_range_cannot_be_read_by_field_generic():
+    # The exact reason gem gets its own Tier-1 parser rather than falling through to
+    # _field_generic: _RANGE requires the second number to start immediately after the
+    # separator, and gem states a currency symbol before EACH side ("$80,000 – $120,000"), so
+    # _field_generic's _RANGE.search never matches and it silently keeps only the floor via
+    # _SINGLE_NUM instead of declining or reading the real range.
+    from headstart.salary import _field_generic
+
+    assert _field_generic(
+        "The base pay range for this role is $80,000 – $120,000 per year."
+    ) == SalarySpan(80_000, None, None, "field")
+
+
+def test_field_gem_hourly_period():
+    assert from_field(
+        "Compensation The base pay range for this role is $18 – $22 per hour.", "gem"
+    ) == SalarySpan(18 * 2080, 22 * 2080, "USD", "field")
+
+
+def test_field_gem_monthly_period_eur():
+    assert from_field(
+        "Compensation The base pay range for this role is €3,200 – €3,500 per month.",
+        "gem",
+    ) == SalarySpan(3200 * 12, 3500 * 12, "EUR", "field")
+
+
+def test_field_gem_canadian_dollar_symbol():
+    # "CA$"/"C$" is not the bare "$" a bare currency guess would read as USD.
+    assert from_field(
+        "Compensation The base pay range for this role is CA$130,000 – CA$200,000 per year.",
+        "gem",
+    ) == SalarySpan(130_000, 200_000, "CAD", "field")
+
+
+def test_field_gem_australian_dollar_symbol_not_read_as_cad():
+    # Real gap this parser closes deliberately: the shared Tier-2 _guess_currency reads ANY
+    # multi-char "$"-ending symbol as CAD, which would misreport this AUD figure. "A$" is mapped
+    # explicitly rather than falling through to that heuristic.
+    assert from_field(
+        "Compensation The base pay range for this role is A$125,000 – A$175,000 per year.",
+        "gem",
+    ) == SalarySpan(125_000, 175_000, "AUD", "field")
+
+
+def test_field_gem_inr_symbol():
+    assert from_field(
+        "Compensation The base pay range for this role is ₹2,400,000 – ₹2,800,000 per year.",
+        "gem",
+    ) == SalarySpan(2_400_000, 2_800_000, "INR", "field")
+
+
+def test_field_gem_trailing_currency_code_confirms_bare_dollar():
+    assert from_field(
+        "Compensation The annual base salary range for this role is $200,000 – $350,000 USD. "
+        "Final compensation is determined based on experience.",
+        "gem",
+    ) == SalarySpan(200_000, 350_000, "USD", "field")
+
+
+def test_field_gem_word_to_separator_keeps_both_bounds():
+    # Real gem tenant phrasing ("Thunder"): "to" as the range separator, not a dash. Missing this
+    # silently dropped the ceiling via the single-value fallback (found during validation, before
+    # the separator was widened past [-–—]).
+    assert from_field(
+        "The annual salary range for this position is $180,000 to $210,000 and represents the "
+        "national base pay targets for this role.",
+        "gem",
+    ) == SalarySpan(180_000, 210_000, "USD", "field")
+
+
+def test_field_gem_range_embedded_in_prose_not_a_benefit_figure():
+    # Real gem tenant text (magnetic): an EARLIER, unrelated dollar range in the same paragraph
+    # ("Series A+ ($10M - $20M raised)") must not be picked up as the salary — the "M" suffix
+    # breaks the range regex at that position, so the real, later range is what resolves.
+    assert from_field(
+        "we benchmark against data from companies that are Series A+ ($10M - $20M raised) "
+        "located in the SF Bay area. The base pay range for this role is $180,000 – $220,000 "
+        "per year.",
+        "gem",
+    ) == SalarySpan(180_000, 220_000, "USD", "field")
+
+
+def test_field_gem_implausible_as_annual_declines_rather_than_mis_annualizing():
+    # Real gem tenant text: a range that reads as absurd if taken literally as annual (almost
+    # certainly a mislabeled hourly rate on the tenant's own side) — the shared plausibility
+    # bounds correctly decline rather than serve a fabricated-looking figure.
+    assert (
+        from_field(
+            "Compensation The base pay range for this role is $100 – $200 per year.",
+            "gem",
+        )
+        is None
+    )
+
+
+def test_field_gem_up_to_single_value_not_read_as_a_floor():
+    assert (
+        from_field(
+            "The base pay range for this role is up to $150,000 per year.", "gem"
+        )
+        is None
+    )
+
+
 def test_field_teamtailor_bare_unit_word_period_markers():
     # Real, teamtailor pass (PR #239): the schema.org unitText this scraper's own _salary() passes
     # through is a BARE word ("15-17.5 GBP HOUR", "1500-1800 EUR MONTH", "120-130 GBP DAY"), not a

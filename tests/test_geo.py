@@ -63,12 +63,33 @@ _ROWS = [
     ("Governador Valadares, Brazil", False, set()),  # 'verna' trap
     ("Whitefield, Manchester", False, set()),
     ("Berlin, Germany", False, set()),
+    # 'goa' inside Brazilian "lagoa" (lagoon)
+    ("Maceió, Alagoas, Brasil", False, set()),
+    ("Sete Lagoas, Minas Gerais, Brasil", False, set()),
+    ("Arapiraca, Alagoas, Brasil", False, set()),
+    ("Três Lagoas, Mato Grosso do Sul, Brasil", False, set()),
+    ("Lagoa Santa, Minas Gerais, Brasil", False, set()),
+    ("Lagoa da Prata, Minas Gerais, Brasil", False, set()),
+    ("Murici, Alagoas, Brasil", False, set()),
+    ("Pilar, Alagoas, Brasil", False, set()),
+    ("Rio Largo, Alagoas, Brasil", False, set()),
+    # 'anand' inside unrelated Brazilian/US place names
+    ("Sananduva, Rio Grande do Sul, Brasil", False, set()),
+    ("Canandaigua, NY, United States", False, set()),
+    # true positives that must survive the 'goa'/'anand' guards above
+    ("Panaji, Goa, India", True, {"goa"}),
+    ("Goa, India", True, {"goa"}),
+    ("Anand, Gujarat, India", True, {"anand"}),
     # 'india' as a substring of a US place name
     ("Indian Head, MD", False, set()),
     ("Indialantic, FL", False, set()),
     ("Indianola, PA, United States", False, set()),
     ("Indian Springs, NV", False, set()),
     ("Diego Garcia, British Indian Ocean Territory", False, set()),
+    ("Indian Creek Correctional Center", False, set()),
+    ("2200 N Indianwood Ave, Broken Arrow, OK, USA", False, set()),
+    ("630 Indian Street, Savannah, GA, USA", False, set()),
+    ("Indiantown, FL, United States", False, set()),
     # IND is also Indianapolis's IATA code
     ("IND U; CVG SD; United States, PA, Philadelphia - Remote; MKE W", False, set()),
     (
@@ -109,13 +130,14 @@ def test_where_india_is_unchanged_by_classify_s_addition():
 
     A hash, not the ~3KB literal itself — copying that string by hand into a test is exactly how
     a transcription slip would go unnoticed (one did, while drafting this test: `surat`/`thane`
-    swapped, caught only because this assertion failed against the real output). The length below
-    is the same 3,068-character figure ADR-0024/ADR-0086/ADR-0138 all cite for this clause.
+    swapped, caught only because this assertion failed against the real output). ADR-0024/
+    ADR-0086/ADR-0138 cite 3,068 chars; the `goa`/`anand`/`INDIA_EXCLUDE` guards below moved it
+    to 3,301.
     """
     clause = where("india")
-    assert len(clause) == 3068
+    assert len(clause) == 3301
     assert hashlib.sha256(clause.encode()).hexdigest() == (
-        "615709138f67f5f4806092d3be1d2ad9519b218c3bd4f96230e26b14ddf26581"
+        "67b08afaa17f1288cb57aed9375659496d3ed27e73ccf0911c734cddeb5d8808"
     ), (
         "the compiled clause moved — if this is a deliberate CITIES/STATES/etc. data change, "
         "recompute the hash (hashlib.sha256(where('india').encode()).hexdigest()) and update "

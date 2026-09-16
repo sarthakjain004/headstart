@@ -389,6 +389,72 @@ def _field_darwinbox(value: str) -> SalarySpan | None:
     return _bounded(min(lo, hi), max(lo, hi), currency)
 
 
+#: gem pass (2026-09-16): `compensationHtml` is machine-templated on 132/136 (97%) of the real
+#: sampled postings that state one at all — "The base pay range for this role is $X – $Y per
+#: year." (or "per hour"/"per month"), even when it sits inside a longer prose paragraph the
+#: employer wrote around it. `_field_generic`'s own `_RANGE` cannot read it: that pattern requires
+#: the second number to start immediately after the separator, and Gem's own template puts a
+#: currency symbol in front of EACH number ("$80,000 – $120,000"), so `_RANGE.search` fails to
+#: match at all and `_field_generic` falls through to `_SINGLE_NUM` — silently keeping the floor
+#: and discarding a ceiling that was right there in the text. `_GEM_RANGE` reads the symbol on
+#: each side instead, exactly like Gem states it.
+#:
+#: Symbols measured across the real sample: `$`, `CA$`/`C$`, `A$`, `€`, `£`, `₹` — each mapped
+#: explicitly rather than guessed. `_guess_currency`'s Tier-2 rule (any multi-char `$`-ending
+#: symbol is CAD) is right for what it was built against but would be wrong here: `A$125,000` is a
+#: real, repeated AUD figure in this corpus, not a CAD one. A bare `$` still needs the fallback: an
+#: explicit trailing ISO code overrides it when the sentence states one ("$200,000 – $350,000
+#: USD"), else it defaults USD, matching every other bare-`$` reading in this module.
+#:
+#: The separator also accepts the word "to", not just a dash: "$180,000 to $210,000" is real,
+#: observed phrasing (not a dash variant), and without it `_GEM_RANGE` would silently degrade to
+#: the same floor-only failure `_field_generic` has on this shape.
+#:
+#: The 4 real declines in the 136-sample validation are not a parser gap: each states a range that
+#: reads as implausible if annualized ("$100 – $200 per year") — a tenant labelling error (almost
+#: certainly meant hourly), correctly caught by the shared plausibility bounds below rather than
+#: mis-annualized. See `docs/gem/2026-09-16_graphql-api-measurement.md`.
+_GEM_SYM_RE = r"(?:CA\$|C\$|A\$|\$|€|£|₹)"
+_GEM_RANGE = re.compile(
+    rf"(?P<sym>{_GEM_SYM_RE})\s*(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)"
+    rf"\s*(?:[-–—]|\bto\b)\s*(?:{_GEM_SYM_RE})?\s*(?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)",
+    re.IGNORECASE,
+)
+_GEM_SINGLE = re.compile(rf"(?P<sym>{_GEM_SYM_RE})\s*(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)")
+
+
+def _gem_currency(sym: str, value: str) -> str | None:
+    if sym in ("CA$", "C$"):
+        return "CAD"
+    if sym == "A$":
+        return "AUD"
+    if sym == "€":
+        return "EUR"
+    if sym == "£":
+        return "GBP"
+    if sym == "₹":
+        return "INR"
+    code_m = _CURRENCY_CODE.search(value)
+    return code_m.group(1).upper() if code_m else "USD"
+
+
+def _field_gem(value: str) -> SalarySpan | None:
+    mult = _period_multiplier(value)
+    m = _GEM_RANGE.search(value)
+    if m:
+        currency = _gem_currency(m.group("sym"), value)
+        lo, hi = _num(m.group("lo")) * mult, _num(m.group("hi")) * mult
+        return _bounded(min(lo, hi), max(lo, hi), currency)
+    single = _GEM_SINGLE.search(value)
+    if single:
+        if _states_a_ceiling_only(value, single.start("lo")):
+            return None
+        currency = _gem_currency(single.group("sym"), value)
+        v = _num(single.group("lo")) * mult
+        return _bounded(v, None, currency)
+    return None
+
+
 #: ATS -> its Tier-1 parser. An ATS not listed here (including one not yet given its own research
 #: pass) falls through to `_field_generic`.
 _FIELD_PARSERS = {
@@ -411,6 +477,7 @@ _FIELD_PARSERS = {
     "jazzhr": _field_range_currency_interval,
     "keka": _field_keka,
     "darwinbox": _field_darwinbox,
+    "gem": _field_gem,
 }
 
 

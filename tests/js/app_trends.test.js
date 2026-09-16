@@ -570,6 +570,34 @@ test('a short history with no ATS filter keeps the generic pipeline-is-new messa
   assert.match(nodes['trends-empty'].textContent, /pipeline has run a few more times/);
 });
 
+// ---- methodology epochs (ADR-0164) -------------------------------------------------------
+
+test('a methodology epoch draws a marker at its matching stamp', () => {
+  const { t, nodes } = loadApp();
+  const f = fixture();
+  f.epochs = [{ ts: f.stamps[1], changed: ['tech filter changed'] }];
+  t.set(f, null);
+  t.draw();
+  const svg = nodes['trends-chart'].innerHTML;
+  assert.match(svg, /class="epoch-marker"/);
+  assert.match(svg, /Counting changed here: tech filter changed/);
+});
+
+test('an epoch with no matching stamp draws nothing, and does not crash the chart', () => {
+  const { t, nodes } = loadApp();
+  const f = fixture();
+  f.epochs = [{ ts: '1999-01-01T00:00:00+00:00', changed: ['tech filter changed'] }];
+  t.set(f, null);
+  assert.doesNotThrow(() => t.draw());
+  assert.doesNotMatch(nodes['trends-chart'].innerHTML, /class="epoch-marker"/);
+});
+
+test('a fixture with no epochs field at all still draws (older /trends payload shape)', () => {
+  const { t } = loadApp();
+  t.set(fixture(), null);  // fixture() carries no `epochs` key
+  assert.doesNotThrow(() => t.draw());
+});
+
 // ---- the y axis --------------------------------------------------------------------------
 
 test('the y axis rounds up to a whole nice step, so the top tick is never the data max', () => {

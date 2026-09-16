@@ -13,6 +13,7 @@ from headstart.scrapers.bytedance import ByteDanceScraper
 from headstart.scrapers.darwinbox import DarwinboxScraper
 from headstart.scrapers.eightfold import EightfoldScraper
 from headstart.scrapers.freshteam import FreshteamScraper
+from headstart.scrapers.gem import GemScraper
 from headstart.scrapers.google import GoogleScraper
 from headstart.scrapers.greenhouse import GreenhouseScraper
 from headstart.scrapers.icims import ICIMSScraper
@@ -24,6 +25,7 @@ from headstart.scrapers.lever import LeverScraper
 from headstart.scrapers.meta import MetaScraper
 from headstart.scrapers.oracle import OracleScraper
 from headstart.scrapers.personio import PersonioScraper
+from headstart.scrapers.phenom import PhenomScraper
 from headstart.scrapers.recruitee import RecruiteeScraper
 from headstart.scrapers.ripplehire import RippleHireScraper
 from headstart.scrapers.rippling import RipplingScraper
@@ -72,6 +74,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         ZwayamScraper,
         ICIMSScraper,
         BambooHRScraper,
+        PhenomScraper,
         JazzHRScraper,
         JobviteScraper,
         TeslaScraper,
@@ -81,6 +84,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         UberScraper,
         MetaScraper,
         TikTokScraper,
+        GemScraper,
     )
 }
 

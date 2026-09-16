@@ -135,7 +135,6 @@ sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` 
   `docs/discovery/zwayam-tenant-discovery.md` (the shared-TLS-cert roster and the tenant-directory
   endpoint carry it) plus the generalisable
   `docs/discovery/shared-cert-tenant-rosters.md`.
-- **Phenom** — M, but poor discoverability (no enumerable pattern, curated seed needed). Mastercard/Adobe India GCCs. After Eightfold.
 - **BambooHR** ✅ DONE (2026-09-16) — `scrapers/bamboohr.py`, wired through liveness (16,255 live
   / 10,425 hiring boards, 68,819 jobs reachable, in `data/validate/liveness/bamboohr.csv`; pool of
   25,840 candidate tenants from a third-party seed list (kalil0321/ats-scrapers,
@@ -162,6 +161,65 @@ sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` 
   zero non-200s). No company-name page title (`/careers` is a client-rendered SPA shell, like
   darwinbox/freshteam) — `self.company` stays the slug. Full measurement:
   `docs/bamboohr/2026-09-16_widget-and-detail-api-measurement.md`.
+- **Gem** ✅ DONE (2026-09-16) — `scrapers/gem.py`, wired through liveness (1,019 live / 601 hiring
+  boards in `data/validate/liveness/gem.csv`). Not India-sourced: found by reading a third-party
+  scraper library's own full-dataset snapshot and measuring tech share (38.9% of a 3,542-job
+  sample, the highest of ~20 candidate ATSes evaluated that way — Gem is mostly startup/scale-up
+  recruiting CRM). Slug = the board's path segment on one fixed host (`jobs.gem.com/{slug}`, same
+  shape as `ashby`/`rippling`). One GraphQL batch endpoint, `POST
+  /api/public/graphql/batch`: `JobBoardList` lists a board (**no pagination in the schema at
+  all** — verified against the largest live board, 300 postings, with no truncation and no
+  separate total field to detect one against), `ExternalJobPostingQuery` reads one posting's
+  detail, batched. Upstream's `DETAIL_BATCH_SIZE = 20` is **not a measured limit** — batches up to
+  1,000 ops succeed (8.0s), 2,000 fails with HTTP 500, so this ships at 100. No rate limit found to
+  conc 128 (159 req/s, zero non-200s). **A live board and a nonexistent one both answer 200 with an
+  empty job list** — the board page (200 vs 404) is what actually tells them apart, which is why
+  the liveness probe checks it first. `posted_at` uses `firstPublishedTsSec` only:
+  `startDateTs` (upstream's fallback) is a future-publish timestamp that is structurally
+  unreachable through the public listing and was 0/159 populated in the measured sample.
+  `remote` reads the native `job.locationType` (100% populated), which disagreed with the
+  per-location `isRemote` flag on 9.0% of a 3,533-posting sample — titles confirm `locationType`
+  is the one telling the truth. `compensationHtml` is machine-templated on 132/136 (97%) of the
+  postings that state one, even wrapped in prose — a dedicated Tier-1 `salary._field_gem` parser
+  was built because the existing generic Tier-1 parser cannot read Gem's own "$X – $Y" shape (a
+  currency symbol precedes *both* numbers) and silently drops the ceiling. Full measurement:
+  `docs/gem/2026-09-16_graphql-api-measurement.md`.
+- **Phenom** ✅ DONE (2026-09-16) — `scrapers/phenom.py`, wired through liveness (16 live boards,
+  19,078 jobs, `data/validate/liveness/phenom.csv`). Slug = the board host. One endpoint,
+  `POST /widgets`, discriminated by `ddoKey`: `refineSearch` lists, `jobDetail` reads one posting
+  (34 KB of JSON against the job page's 652 KB — 19x cheaper, and both carry the full body).
+  **The ledger is deliberately 17 of the 91 reachable tenants, not all of them.** Phenom is a
+  career-site *skin*: `jobDetail.ats` says Workday on 68 tenants, SuccessFactors on 10, Taleo on 3,
+  and resolving each tenant's backing board from its `applyUrl` puts **75 of 91 — 136,660 of
+  155,738 postings — on Boards we already hold**. `index_plan.evict_duplicate` groups within a
+  Board, so those would serve twice under two ATS labels with nothing to catch them; the pool
+  (`data/ats-tenants-merged/phenom.csv`) therefore carries only the 16 whose backing board we do
+  not have. Widen it only if cross-ATS dedup is ever built. **Resolve that gate on the tenant's
+  registrable domain, not its `applyUrl`** — the first pass used `applyUrl`, which SuccessFactors
+  mostly does not state, and four SF-backed collisions reached the ledger before a domain-join
+  caught them. Then *measure* each collision rather than acting on the name: of those four only
+  `kuehne-nagel` was a real duplicate, and `careers.ucb.com` was the opposite case — its
+  SuccessFactors row is stale (re-probed live: 0 jobs) and the Phenom board is the live one. **The India rationale this entry used
+  to carry is void** — Mastercard and Adobe are both Workday-backed and already covered.
+  Four measured traps are wired into the code rather than documented: **no CSRF/session/Referer is
+  needed** (a bare client gets 200 — the upstream `kalil0321/ats-scrapers` implementation spends a
+  request per Board proving otherwise); **`size` clamps to 500** silently above it; **the listing
+  has no `description` key at all**, only a ~350-char `descriptionTeaser` against the detail's
+  5,121, so upstream's `item["description"] or teaser` would serve blurbs *and* mark the Job
+  described; and reading **stops at `from + size >= 10000`** where `totalHits` itself comes back
+  **0**, so a walk re-reading the total calls a 19,649-posting Board finished at 9,500 (5 seed
+  tenants are over that wall; none of them ship in this ledger, so that arm is exercised by tests
+  rather than in production — the largest Board here is `careers.dhl.com` at ~9.4k). A shortfall
+  *inside* the window goes to `mark_truncated_unless_negligible` instead (ADR-0121). The job URL is `/{cc}/{lang}/job/{id}` and
+  **`cc` is not always `us`** — 30 of 91 are `global`/`ca`/`amer`/`gb`/`na`, and a wrong one does
+  not 404, it 200s and redirects to the landing page, so the prefix is derived per Board from that
+  redirect rather than hardcoded. No rate limit found in 360 requests; conc 16 is the knee.
+  Company name comes from the landing-page `<title>` via new `company_name.PATTERNS["phenom"]`,
+  **not** from `jobDetail.companyName`: that field is per-posting and names a subsidiary
+  (`careers.dhl.com` returns "Blue Dart Express Limited" on a DHL board), and ADR-0048's detail
+  skip means a steady-state Board fetches none at all, so the name silently reverted to the slug
+  on every run after the first.
+  Measurements: `docs/phenom/2026-09-16_widgets-api-measurement.md`.
 - **PeopleStrong** (201 hosts, still no scraper — Angular SPA XHR), **Jobsoid** (`{slug}.jobsoid.com/api/v1/jobs`, S, low yield) — opportunistic.
 - **Taleo Business Edition** ✅ DONE (2026-09-13, #452) — `scrapers/taleo_be.py`, wired through
   liveness (533 live / 1,760 rows in `data/validate/liveness/taleo_be.csv`, plus 55
@@ -340,9 +398,9 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   If you change what the pipeline runs, change it there and update `.github/workflows/pipeline.yml`
   to match. Don't add a pipeline stage to `scripts/`. Helper modules used *only* by the pipeline
   live there too (`binpack`, `board_failures`, `derived_meta`, `doc_prep`, `index_plan`,
-  `observability`, `role_assignments`, `shard_plan`, `shard_speedup`) — with one deliberate
-  exception: `alerts/run.py` imports `observability.named_sample` to bound its post-loop
-  summary, which keeps one sampling contract
+  `observability`, `role_assignments`, `shard_plan`, `shard_speedup`, `trends_epochs`) — with
+  one deliberate exception: `alerts/run.py` imports `observability.named_sample` to bound its
+  post-loop summary, which keeps one sampling contract
   rather than two spellings of it. The stricter rule below still holds: alerts is not the feed.
   Logic
   the curated-feed path (`python -m headstart` → `headstart.harvest`) also reaches stays in

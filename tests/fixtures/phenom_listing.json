@@ -1,0 +1,158 @@
+{
+ "refineSearch": {
+  "status": 200,
+  "totalHits": 1313,
+  "data": {
+   "jobs": [
+    {
+     "ml_skills": [
+      "risk management",
+      "communication skills",
+      "data-driven decision making",
+      "statistical analysis",
+      "root cause analysis",
+      "product quality engineering",
+      "data analytics",
+      "leadership skills",
+      "electronics engineering",
+      "quality engineering",
+      "cross-functional leadership",
+      "innovative solutions",
+      "six sigma"
+     ],
+     "type": "Full time",
+     "descriptionTeaser": "Become part of our team as a Quality Engineer, driving cross-functional quality initiatives and leading early design engagements for Cisco hardware products. Take ownership of complex quality issues and ensure robust root cause analysis. Ideal for experienced senior professionals with deep expertise in electronics engineering and product quality.",
+     "state": "",
+     "siteType": "external",
+     "RemoteType": "Hybrid",
+     "multi_category": [
+      "Supply Chain and Manufacturing Ops"
+     ],
+     "reqId": "2011157",
+     "city": "Bangalore",
+     "latitude": "12.97194",
+     "multi_location": [
+      "Bangalore, India"
+     ],
+     "address": "., Bangalore- 560103, India",
+     "applyUrl": "https://cisco.wd5.myworkdayjobs.com/Cisco_Careers/job/Bangalore-India/Quality-Engineer---NPI-New-Product-Introduction--exp_2011157-1/apply",
+     "ml_job_parser": {
+      "descriptionTeaser": "Become part of our team as a Quality Engineer, driving cross-functional quality initiatives and leading early design engagements for Cisco hardware products. Take ownership of complex quality issues and ensure robust root cause analysis. Ideal for experienced senior professionals with deep expertise in electronics engineering and product quality.",
+      "descriptionTeaser_ats": "Meet the team As Quality Engineering team, we bridge the gap between innovation and reliability by managing the entire product lifecycle from NPI through to mass production and field deployment. We de",
+      "descriptionTeaser_keyword": "Your Impact. As a Product Quality Engineer (PQE), you are a recognised expert within Cisco, performing complex quality engineering tasks using specialised domain knowledge. You will drive cross-functi...",
+      "descriptionTeaser_first200": "Your Impact. As a Product Quality Engineer (PQE), you are a recognised expert within Cisco, performing complex quality engineering tasks using specialised domain knowledge. You will drive cross-fun..."
+     },
+     "externalApply": false,
+     "cityState": "Bangalore",
+     "country": "India",
+     "visibilityType": "External",
+     "longitude": "77.59369",
+     "jobId": "2011157",
+     "locale": "en_GLOBAL",
+     "title": "Quality Engineer | NPI(New Product Introduction) exp",
+     "jobSeqNo": "CISCISGLOBAL2011157EXTERNALENGLOBAL",
+     "postedDate": "2026-07-29T00:00:00.000+0000",
+     "dateCreated": "2026-03-24T16:58:17.673+0000",
+     "cityStateCountry": "Bangalore, India",
+     "department": "Supervisory Organization 0006292 (Leslie Averbeck (Inherited))",
+     "jobVisibility": [
+      "external",
+      "internal"
+     ],
+     "location": "Bangalore, India",
+     "category": "Supply Chain and Manufacturing Ops",
+     "isMultiLocation": true,
+     "multi_location_array": [
+      {
+       "latlong": {
+        "lon": 77.59369,
+        "lat": 12.97194
+       },
+       "location": "Bangalore, India"
+      }
+     ],
+     "isMultiCategory": true,
+     "multi_category_array": [
+      {
+       "category": "Supply Chain and Manufacturing Ops"
+      }
+     ],
+     "badge": ""
+    },
+    {
+     "ml_skills": [
+      "asic design",
+      "high-performance design",
+      "debugging",
+      "reusable code development",
+      "architecture definition",
+      "emulation tools",
+      "formal verification",
+      "technical communication",
+      "problem solving",
+      "project management",
+      "team leadership"
+     ],
+     "type": "Full time",
+     "descriptionTeaser": "Become part of our team as a ASIC Design Engineer, where you will define, design, and verify ASIC and subsystems for Cisco platforms. Lead complex design projects, develop high-performance solutions, and collaborate within a multidisciplinary team. Ideal for experienced engineers with strong expertise in ASIC design and problem-solving.",
+     "state": "",
+     "siteType": "external",
+     "RemoteType": "Onsite Only",
+     "multi_category": [
+      "Product and Engineering"
+     ],
+     "reqId": "2006930",
+     "city": "Bangalore",
+     "latitude": "12.97194",
+     "multi_location": [
+      "Bangalore, India"
+     ],
+     "address": "., Bangalore- 560103, India",
+     "applyUrl": "https://cisco.wd5.myworkdayjobs.com/Cisco_Careers/job/Bangalore-India/ASIC-Design-Engineer---Exp-8--Years_2006930/apply",
+     "ml_job_parser": {
+      "descriptionTeaser": "Become part of our team as a ASIC Design Engineer, where you will define, design, and verify ASIC and subsystems for Cisco platforms. Lead complex design projects, develop high-performance solutions, and collaborate within a multidisciplinary team. Ideal for experienced engineers with strong expertise in ASIC design and problem-solving.",
+      "descriptionTeaser_ats": "Meet the TeamCome join us and be part of the Cisco SiliconOne team and take part in crafting Cisco's groundbreaking Enterprise and Service Provider solutions by crafting some of the most complex chips",
+      "descriptionTeaser_keyword": "Define, design and verify ASIC and ASIC subsystems to be deployed in a range of Cisco platforms. Contribute to a multi-disciplined engineering team to meet the power, performance, and area goals for p...",
+      "descriptionTeaser_first200": "Define, design and verify ASIC and ASIC subsystems to be deployed in a range of Cisco platforms. Contribute to a multi-disciplined engineering team to meet the power, performance, and area goals fo..."
+     },
+     "externalApply": false,
+     "cityState": "Bangalore",
+     "country": "India",
+     "visibilityType": "External",
+     "longitude": "77.59369",
+     "jobId": "2006930",
+     "locale": "en_GLOBAL",
+     "title": "ASIC Design Engineer | Exp 8+ Years",
+     "jobSeqNo": "CISCISGLOBAL2006930EXTERNALENGLOBAL",
+     "postedDate": "2026-04-21T00:00:00.000+0000",
+     "dateCreated": "2026-01-29T04:51:06.839+0000",
+     "cityStateCountry": "Bangalore, India",
+     "department": "SP-Silicon-BGL (Manoj Ariyamparambath)",
+     "jobVisibility": [
+      "external",
+      "internal"
+     ],
+     "location": "Bangalore, India",
+     "category": "Product and Engineering",
+     "isMultiLocation": true,
+     "multi_location_array": [
+      {
+       "latlong": {
+        "lon": 77.59369,
+        "lat": 12.97194
+       },
+       "location": "Bangalore, India"
+      }
+     ],
+     "isMultiCategory": true,
+     "multi_category_array": [
+      {
+       "category": "Product and Engineering"
+      }
+     ],
+     "badge": ""
+    }
+   ]
+  }
+ }
+}

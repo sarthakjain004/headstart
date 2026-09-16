@@ -196,6 +196,14 @@ def _salary_field(
 
 
 def _parse_detail_page(page: str) -> dict[str, str | None] | None:
+    """``reqlistitem.jobtype`` (tenant-optional — live-confirmed populated on Burns & McDonnell as
+    "New Grad", absent on Hyatt) feeds `Job.experience`, the same raw-label slot recruitee's
+    "entry_level" already uses: not itself a number `experience.from_field` can parse, but text
+    `from_seniority` reads via its "grad" pattern once `from_field`/`from_description` fall
+    through. Reading this does NOT need a `doc_prep.DERIVATIONS_VERSION` bump: like the salary
+    field below, it changes the raw `Job.experience` text itself, from ``None`` to a real string,
+    so `update_meta.refresh_row`'s `inputs_moved` check already reaches an already-scraped Job for
+    free on its next rescrape."""
     match, labels_match = _DETAIL_LIST.search(page), _DETAIL_LABELS.search(page)
     if not match or not labels_match:
         return None
@@ -215,6 +223,7 @@ def _parse_detail_page(page: str) -> dict[str, str | None] | None:
     return {
         "description": joined("reqlistitem.description", "reqlistitem.qualification"),
         "department": joined("reqlistitem.jobfield"),
+        "experience": joined("reqlistitem.jobtype"),
         "location": joined(
             "reqlistitem.primarylocation", "reqlistitem.otherlocations", separator="; "
         ),
@@ -449,6 +458,7 @@ class TaleoEnterpriseScraper(BaseScraper):
                     employment_type=detail.get("employment_type")
                     or item["employment_type"],
                     salary=detail.get("salary"),
+                    experience=detail.get("experience"),
                 )
             )
         return jobs

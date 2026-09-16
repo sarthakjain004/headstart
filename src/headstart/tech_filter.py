@@ -31,6 +31,13 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
+# Bumped whenever a pattern change below moves the tech/not-tech line for input that's already
+# been scraped and filtered — the same discipline as `doc_prep.DERIVATIONS_VERSION`, and for the
+# same reason: this gate's output feeds `role_trends`, whose per-tick counts silently absorb a
+# widened or narrowed regex as if the market moved. Reading this value once per tick lets a
+# reader tell "we changed who counts" from "conditions changed" instead of conflating the two.
+TECH_FILTER_VERSION = 1
+
 # 1. Strong, software-specific signals. A match here means tech regardless of any disqualifier.
 _STRONG_TERMS = [
     r"software (engineer|developer|dev|architect)",

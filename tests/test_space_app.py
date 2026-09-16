@@ -1223,6 +1223,25 @@ def _trends_csv(state: Path) -> None:
     _write_trends(state, rows)
 
 
+def _write_epochs(state: Path, rows: list[dict]) -> Path:
+    path = state / "data" / "state" / "trends_epochs.csv"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(
+            fh,
+            fieldnames=[
+                "ts",
+                "centroid_version",
+                "family_map_fingerprint",
+                "tech_filter_version",
+                "derivations_version",
+            ],
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+    return path
+
+
 @pytest.fixture(scope="module")
 def trends_app(tmp_path_factory):
     """The app with a trends ledger. `_STATE` is the hardcoded `/app/state`, so the CSV can't
@@ -1630,6 +1649,85 @@ def test_trends_multiple_ats_params_union(ats_trends_app):
     assert d["stamps"] == [_U2]
     by_name = {s["name"]: s for s in d["series"]}
     assert by_name["software-engineering"]["points"] == [110]  # 60 + 50, U2 only
+
+
+@pytest.fixture(scope="module")
+def epochs_trends_app(tmp_path_factory):
+    """The trends app plus a methodology-epoch ledger (ADR-0164): a baseline at T1, the tech
+    filter moving at T2, and both the family map and derivations moving together at T3."""
+    state = tmp_path_factory.mktemp("epochs-state")
+    _trends_csv(state)
+    _write_epochs(
+        state,
+        [
+            {
+                "ts": _T1,
+                "centroid_version": "2",
+                "family_map_fingerprint": "aaa",
+                "tech_filter_version": "1",
+                "derivations_version": "12",
+            },
+            {
+                "ts": _T2,
+                "centroid_version": "2",
+                "family_map_fingerprint": "aaa",
+                "tech_filter_version": "2",
+                "derivations_version": "12",
+            },
+            {
+                "ts": _T3,
+                "centroid_version": "2",
+                "family_map_fingerprint": "bbb",
+                "tech_filter_version": "2",
+                "derivations_version": "13",
+            },
+        ],
+    )
+    with _space_app(state, env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}) as module:
+        module._TRENDS = module._load_trends(
+            state / "data" / "state" / "role_trends.parquet"
+        )
+        module._EPOCHS = module._load_epochs(
+            state / "data" / "state" / "trends_epochs.csv"
+        )
+        yield module
+
+
+def test_trends_epochs_drops_the_baseline_and_names_what_moved(epochs_trends_app):
+    d = epochs_trends_app.app.test_client().get("/trends").get_json()
+    assert d["epochs"] == [
+        {"ts": _T2, "changed": ["tech filter changed"]},
+        {
+            "ts": _T3,
+            "changed": [
+                "role family map edited",
+                "experience/salary extraction changed",
+            ],
+        },
+    ]
+
+
+def test_trends_epochs_are_narrowed_by_since_and_until(epochs_trends_app):
+    client = epochs_trends_app.app.test_client()
+    d = client.get(f"/trends?since={quote(_T3)}").get_json()
+    assert d["epochs"] == [
+        {
+            "ts": _T3,
+            "changed": [
+                "role family map edited",
+                "experience/salary extraction changed",
+            ],
+        }
+    ]
+    d = client.get(f"/trends?until={quote(_T2)}").get_json()
+    assert d["epochs"] == [{"ts": _T2, "changed": ["tech filter changed"]}]
+
+
+def test_trends_epochs_are_not_narrowed_by_ats(epochs_trends_app):
+    """Unlike every other field in the response, epochs is a methodology timeline, not scoped
+    to an ATS selection — a tech-filter or family-map change did not happen "for" one ATS."""
+    d = epochs_trends_app.app.test_client().get("/trends?ats=greenhouse").get_json()
+    assert len(d["epochs"]) == 2
 
 
 # ── The trust surfaces (ADR-0112, ADR-0113) ────────────────────────────────────────────

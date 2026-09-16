@@ -190,6 +190,8 @@ CITIES: dict[str, tuple[str, ...]] = {
 EXCLUDE: dict[str, tuple[str, ...]] = {
     "surat": ("surat thani",),  # Thailand
     "thane": ("kalyani",),  # 'kalyan' is inside Pune's Kalyani Nagar
+    "goa": ("lagoa",),  # Brazil: "lagoa" (lagoon) is inside Alagoas, Lagoa Santa
+    "anand": ("sananduva", "canandaigua"),  # Brazil / New York, US
 }
 
 # Unambiguous state/UT names — country-level match only (catches "Karnataka, IN" residue).
@@ -308,6 +310,10 @@ INDIA_EXCLUDE: tuple[str, ...] = (
     "indian land",
     "indian river",
     "indian wells",
+    "indian creek",  # Indian Creek Correctional Center, VA
+    "indianwood",  # Indianwood Ave, Broken Arrow, OK
+    "indian street",  # Indian Street, Savannah, GA
+    "indiantown",  # Indiantown, FL
 )
 
 # Regions a job seeker treats as one market: virtual entries expanding to member cities.
