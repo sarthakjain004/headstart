@@ -7,8 +7,8 @@ once the Boards whose ledger "name" is itself an identifier are counted — the 
 and "gamuda", Workday's holds "citi" and "dick-s-sporting-goods". Users see "1password",
 "jobs.vodafone.com", "nttltd" where a company name belongs. The wider figure is the honest one.
 
-Six ATSes put the real name in their board page's ``<title>``, each wrapped differently, and one
-request per Board recovers it. Which six is a measurement, not a guess: live Boards were sampled
+Eight ATSes put the real name in their board page's ``<title>``, each wrapped differently, and one
+request per Board recovers it. Which eight is a measurement, not a guess: live Boards were sampled
 per ATS (`experiment/company-display-name/`, gitignored), and only those whose wrapper is uniform
 enough to strip safely are here. Sample sizes differ on purpose: the first pass was 30 Boards per
 ATS, and each row was re-measured larger wherever 30 proved too few to trust. Lever needed it most
@@ -24,6 +24,8 @@ ripplehire        ``{Name} Careers | Latest jobs at …``              ~96% (all
 lever             ``{Name}`` — no wrapper at all                     ~88% (352/400)
 keka              ``Careers at {Name}`` / ``{Name} Careers``         ~11% (92 of 819)
 taleo_enterprise  four ``Careers``-wrappers (see below)              20% (30/150)
+jobvite           ``{Name} Careers``                                 424 of 434
+phenom            ``Careers``-wrappers ending at ``|`` or ``:``       11 of 16 boards
 ================  =================================================  =================
 
 Keka is the odd row and worth reading twice: only about one Board in eight serves a ``<title>`` at
@@ -105,6 +107,18 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     "keka": _CAREERS_WRAPPER,
     "ripplehire": (re.compile(r"^(?P<name>.+?)\s+Careers\s*\|", re.IGNORECASE),),
     "lever": (re.compile(r"^(?P<name>.+)$"),),
+    # phenom: `_CAREERS_WRAPPER` cannot be reused, because these titles carry a second clause
+    # after a pipe or a colon ("Careers at Zelis | Zelis Jobs", "OmniCable Careers: Play to
+    # Win") and its `$`-anchored non-greedy group would swallow the whole tail as the name.
+    # Each wrapper therefore ends at `|`, `:` or end-of-string. Measured over 12 live boards
+    # 2026-09-16: 11 resolve, and the one that does not (`Home | BAE Systems`) is an unwrapped
+    # title this deliberately refuses rather than guess at — it keeps its slug, which is the
+    # floor this module promises. No bare catch-all, for taleo_enterprise's reason.
+    "phenom": (
+        re.compile(r"^Careers?\s+at\s+(?P<name>.+?)\s*(?:[|:]|$)", re.IGNORECASE),
+        re.compile(r"^Careers?\s*\|\s*(?P<name>.+?)\s*(?:\||$)", re.IGNORECASE),
+        re.compile(r"^(?P<name>.+?)\s+Careers\s*(?:[|:]|$)", re.IGNORECASE),
+    ),
     # taleo_enterprise: no catch-all here, unlike lever — a bare, unwrapped second title is
     # frequently vendor branding or marketing copy on this ATS (see the module docstring), so
     # only the four wrappers actually observed to carry a name are matched. The first two are
@@ -183,6 +197,11 @@ _VENDOR_ALIASES: dict[str, frozenset[str]] = {
     "keka": frozenset({"keka"}),
     "lever": frozenset({"lever"}),
     "ripplehire": frozenset({"ripplehire"}),
+    # The vendor runs its own board on this platform (`careers.phenom.com`, title "Careers at
+    # Phenom"), which is a wrapper this ATS *does* match — so unlike taleo_enterprise's, this
+    # entry is not merely precautionary. `phenompeople` is the legacy brand the CDN and the dead
+    # `*.phenompeople.com` host namespace still carry.
+    "phenom": frozenset({"phenom", "phenompeople"}),
     # No matched-wrapper case reached this in the 150-Board sample — "Oracle Taleo" and
     # "Taleo | Mercedes-Benz Group AG" are both already refused for being unwrapped or not
     # matching any of the four shapes. Kept as a precaution: a themed board could plausibly
