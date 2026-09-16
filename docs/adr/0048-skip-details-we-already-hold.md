@@ -1,7 +1,8 @@
 # ADR-0048: Don't re-fetch a detail we already hold
 
 **Status:** accepted · **Date:** 2026-08-13 · **Amends:** ADR-0021 · **Amended by:** [ADR-0050](0050-persist-descriptions-across-runs.md) — the skip-list is re-keyed
-onto the description store, so it means *we hold this detail* rather than *we embedded this Job*
+onto the description store, so it means *we hold this detail* rather than *we embedded this Job*;
+and by the 2026-09-16 amendment below, which adds a second skip the list can never express
 
 ## Context
 
@@ -120,3 +121,64 @@ planner having to group ids by Board. Not worth it until the artifact is actuall
 Only Eightfold consults `needs_detail` today. SuccessFactors is the obvious second caller — 115,372
 detail fetches across the same five runs, at a 2.1% loss rate — but it is not currently failing, so
 wiring it is left until there is a reason. **Revisit when a second ATS starts losing details.**
+
+## Amendment, 2026-09-16: the skip-list cannot cover a Job it never sees
+
+The skip-list is built from the description store, and the store is reconciled against
+`data/jobs/tech` — the corpus **after** `filter_tech`. A **non-tech** posting therefore never
+enters the store, never reaches the list, and `needs_detail` says yes for it on every run,
+forever. That is not a stale list; it is a population the list is structurally incapable of
+naming.
+
+It is most of the traffic. Across the five runs of 2026-09-16, eightfold's detail `attempted`
+was 34,736 / 35,131 / 36,045 / 34,646 / 34,970 while its own non-tech count was 34,806 / 35,213 /
+36,090 / 34,729 / 35,054 — tracking to within 0.3% every run, with `filled from store` tracking
+the ~24,240 tech count instead. The cost lands on the provider that runs out of **Origin budget**
+first: one run logged `HTTP 429 x234 on 26 Board(s)` for eightfold, and one shard spent 1,821
+spare-egress rescues on it.
+
+So `_api_records` now asks a second question before fetching: **will the tech gate keep this
+posting at all?** `tech_filter.classify` reads `title` + `department`, both of which the PCSX
+search already returns — probed live 2026-09-16 across 6 boards / 2,929 positions, `name` present
+2,929/2,929 and `department` 2,843/2,929 — so the detail body was never an input to that
+decision. Per-board skippable share ranged 16.0% (`careers.qualcomm.com`, unusually tech-heavy)
+to 95.5% (`vale.eightfold.ai`); six boards is evidence, not proof, and the run-log figure above is
+the population number.
+
+The 2.9% of positions the listing gives no `department` are not a gap in the gate: `parse` emits
+that same `None`, so `filter_tech` classifies them on the title alone too, and the two verdicts
+stay identical.
+
+Three things this deliberately does **not** change:
+
+- **The non-tech Job is still scraped and still emitted**, with `description: null`. The scrape
+  writes the full set to `data/jobs/{ats}.jsonl` and `filter_tech` is what drops it (ADR-0017);
+  nothing about the Board's totals, truncation verdict or eviction scope moves.
+- **The sitemap fallback** (`_sitemap_records`) is untouched, as in the original decision: there
+  the per-job page supplies `title`, and `parse` drops a Job without one, so skipping the fetch
+  would delete Jobs rather than save work. The gate is on the PCSX/SmartApply path, whose listing
+  already carries every field the gate reads.
+- **No other ATS.** The skip needs two things at once: the listing must already carry `title`
+  *and* `department`, and the detail must supply nothing but `description`. Eightfold's PCSX
+  surface is the only one here where both hold, and the three other detail-pass scrapers fail a
+  different half each — which is why their own `fetch_raw` comments already refuse the ADR-0048
+  skip, and none of them is touched. **oracle** fails the first: `Category`/`JobFunction` are
+  0.0% on the listing, so the gate would be classifying on a bare title and would drop real tech
+  Jobs. **jazzhr** and **zoho** fail the second: their detail page is the only source of
+  `employment_type`/`experience`/`posted_at`/`salary` (jazzhr) and Salary/Currency (zoho), none of
+  which the description store holds. Whether a *tech* gate — as opposed to ADR-0048's held-detail
+  gate — could be made to pay on those two is a separate question this does not open.
+
+The two verdicts cannot drift: `department` goes through one expression (`_department_of`) that
+`parse` also emits, and `classify` strips the title itself, so it reads `p["name"]` exactly as it
+will later read `parse`'s stripped copy. If `tech_filter` widens and a previously non-tech posting
+becomes tech, it is simply absent from the store and gets its detail on the next run — the same
+self-healing path a brand-new Job takes.
+
+**Unlike the held-detail skip, this one is not conditional on `have_details`.** That default —
+`None` means fetch everything, for every caller outside the pipeline — exists because only the
+pipeline knows what has been embedded. The tech gate needs no such knowledge: nothing anywhere
+reads a non-tech description, on CI or on a laptop. So a local `verify_scraper.py` run against an
+eightfold Board now shows `description: null` on its non-tech rows, which is the new truth about
+that Board's scrape rather than a defect of the run. A caller that wants every description back
+should drop the gate, not pass a skip-list.
