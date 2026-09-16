@@ -113,8 +113,33 @@ def test_a_board_reaches_quarantine_only_after_five_consecutive_runs(tmp_path):
 # would mark every Board gap-ful from a failed download.
 
 
+def _liveness(tmp_path: Path, boards: dict[str, list[str]]) -> Path:
+    """A liveness ledger dir holding exactly `boards` — `{ats: [tenant, ...]}`, all `live`.
+
+    `gap` reads it through the very `load_active_companies` call `scrape_plan` makes, so a Board
+    absent here is one no slice can contain.
+    """
+    d = tmp_path / "liveness"
+    d.mkdir(exist_ok=True)
+    for ats, tenants in boards.items():
+        rows = "".join(
+            f"{ats},{t},https://{t}.example/,live,5,2026-09-16\n" for t in tenants
+        )
+        (d / f"{ats}.csv").write_text(
+            "ats,tenant,url,status,jobs,checked_at\n" + rows, encoding="utf-8"
+        )
+    return d
+
+
 def _gap_run(
-    tmp_path, *, meta_rows, settled, scraped=None, unauthoritative=None, ledger=None
+    tmp_path,
+    *,
+    meta_rows,
+    settled,
+    scraped=None,
+    unauthoritative=None,
+    ledger=None,
+    liveness=None,
 ):
     meta = tmp_path / "meta.jsonl"
     meta.write_text("".join(json.dumps(r) + "\n" for r in meta_rows), encoding="utf-8")
@@ -140,6 +165,9 @@ def _gap_run(
             descriptions=store,
             jobs=jobs_dir,
             unauthoritative_boards=boards,
+            # Absent by default, so every pre-existing case keeps the behaviour it pinned: an
+            # empty selectable set reclassifies nothing.
+            liveness=liveness or tmp_path / "no-liveness-dir",
             ledger=path,
         )
     )
@@ -263,9 +291,12 @@ def test_gap_protects_an_unauthoritative_board_whose_ids_carry_a_colon(tmp_path)
 
 
 def test_gap_reports_the_drain_and_not_only_the_level(tmp_path, caplog):
-    """The level alone cannot tell progress from stasis. Here two Jobs settle and two arrive, so
-    the total is unchanged at 2 — identical to a run in which the gap was never touched. The line
-    has to name both sides, which is the whole of ADR-0162."""
+    """The level alone cannot tell progress from stasis. Here two Jobs leave the gap and two join
+    it, so the total is unchanged at 3 — identical to a run in which nothing was touched. The line
+    has to name both sides, which is the whole of ADR-0162.
+
+    `left`, not `settled`: a row also leaves this count when it is reclassified unreachable or its
+    row leaves the store, and the line must not claim a description arrived for it."""
     ledger = tmp_path / "board_description_gap.csv"
     board_description_gap.save(
         ledger, {"greenhouse:drains": 2, "greenhouse:frozen": 1}, today="2026-09-15"
@@ -283,10 +314,10 @@ def test_gap_reports_the_drain_and_not_only_the_level(tmp_path, caplog):
         )
     # Matched on the numbers, not the word "drain": the ledger path this test writes to carries
     # the test's own name, so every line mentioning it would match that.
-    drain = [m for m in caplog.messages if "newly unsettled" in m]
+    drain = [m for m in caplog.messages if "joined it" in m]
     assert drain, caplog.messages
-    assert "2 settled" in drain[0]
-    assert "2 newly unsettled" in drain[0]
+    assert "2 left the gap" in drain[0]
+    assert "2 joined it" in drain[0]
     assert "net +0" in drain[0]
 
 
@@ -320,7 +351,7 @@ def test_gap_says_nothing_about_drain_without_a_prior_ledger(tmp_path, caplog):
             meta_rows=[{"id": "greenhouse:acme:1", "ats": "greenhouse"}],
             settled={"greenhouse": ["unrelated"]},
         )
-    assert not [m for m in caplog.messages if "newly unsettled" in m], caplog.messages
+    assert not [m for m in caplog.messages if "joined it" in m], caplog.messages
     assert any("no prior ledger" in m for m in caplog.messages), caplog.messages
 
 
@@ -343,6 +374,53 @@ def test_gap_sizes_the_jobs_it_could_not_read_authoritatively(tmp_path, caplog):
     assert any("2 unsettled Job(s) sit on 1 Board(s)" in m for m in caplog.messages), (
         caplog.messages
     )
+
+
+def test_gap_drops_a_board_no_scrape_slice_can_contain(tmp_path):
+    """The reliably-derivable half of the stuck backlog (ADR-0162). `dead` is a verdict the
+    liveness ledger already carries, so a Board absent from `load_active_companies` can never be
+    picked, never scraped and never settled — measured at 134 Boards / 13,592 Jobs, 30% of the
+    live backlog. Counting it reserves quota nothing can spend."""
+    path = _gap_run(
+        tmp_path,
+        meta_rows=[
+            {"id": "greenhouse:live-one:1", "ats": "greenhouse"},
+            {"id": "greenhouse:dead-one:1", "ats": "greenhouse"},
+        ],
+        settled={"greenhouse": ["unrelated"]},
+        liveness=_liveness(tmp_path, {"greenhouse": ["live-one"]}),
+    )
+    assert board_description_gap.load(path) == {"greenhouse:live-one": 1}
+
+
+def test_gap_reclassifies_nothing_when_the_liveness_dir_is_missing(tmp_path, caplog):
+    """The guard that stops a lost ledger emptying the gap. `load_active_companies` answers `[]`
+    for a dir that is not there, which is indistinguishable from `no Board is live` — and acting
+    on it would mark the entire backlog unreachable and hand the next run a quota of nothing."""
+    with caplog.at_level(logging.INFO):
+        path = _gap_run(
+            tmp_path,
+            meta_rows=[{"id": "greenhouse:acme:1", "ats": "greenhouse"}],
+            settled={"greenhouse": ["unrelated"]},
+        )
+    assert board_description_gap.load(path) == {"greenhouse:acme": 1}
+    assert any("no selectable Board" in m for m in caplog.messages), caplog.messages
+
+
+def test_an_empty_prior_ledger_is_not_a_prior_of_zero(tmp_path, caplog):
+    """A header-only ledger reaches `load` as `{}`, which subtracts to "the whole backlog arrived
+    this run" — a spike that never happened. It takes the same branch as an absent file."""
+    ledger = tmp_path / "board_description_gap.csv"
+    board_description_gap.save(ledger, {}, today="2026-09-15")
+    with caplog.at_level(logging.INFO):
+        _gap_run(
+            tmp_path,
+            meta_rows=[{"id": "greenhouse:acme:1", "ats": "greenhouse"}],
+            settled={"greenhouse": ["unrelated"]},
+            ledger=ledger,
+        )
+    assert not [m for m in caplog.messages if "joined it" in m], caplog.messages
+    assert any("no prior ledger" in m for m in caplog.messages), caplog.messages
 
 
 def test_a_missing_store_leaves_the_ledger_alone(tmp_path):

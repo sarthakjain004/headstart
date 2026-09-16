@@ -660,19 +660,36 @@ def _gap_args(**over: object) -> argparse.Namespace:
         descriptions=Path("data/descriptions"),
         jobs=Path("data/jobs"),
         unauthoritative_boards=Path("data/state/unauthoritative_boards.json"),
+        liveness=Path("data/validate/liveness"),
         ledger=Path("data/state/board_description_gap.csv"),
         **over,
     )
 
 
+def _liveness_ledger(boards: dict[str, list[tuple[str, str]]]) -> None:
+    """Write `data/validate/liveness/{ats}.csv` holding exactly `boards`, all `live`.
+
+    The dir is committed to git in production, so the join always has it; a fixture that omitted
+    it would exercise `gap`'s missing-ledger guard instead of the class it means to.
+    """
+    d = Path("data/validate/liveness")
+    d.mkdir(parents=True, exist_ok=True)
+    for ats, rows in boards.items():
+        body = "".join(f"{ats},{t},{u},live,5,2026-09-16\n" for t, u in rows)
+        (d / f"{ats}.csv").write_text(
+            "ats,tenant,url,status,jobs,checked_at\n" + body, encoding="utf-8"
+        )
+
+
 def _ledger_gap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """`update_ledgers gap` over a stored corpus holding all four classes of row at once.
 
-    The header's six counts are the whole point of the line, and only one input moves each:
+    The header's seven counts are the whole point of the line, and only one input moves each:
     `held` needs the description store to hold the Job, `on a disabled ATS` needs its `ats` to be
-    one the registry has switched off, `gone from a Board this run scraped in full` needs a Board
-    that emitted lines this run without re-emitting that id (#185), and `unsettled` is what is
-    left. All six are formatted `{n:,}`, so all six clear 999.
+    one the registry has switched off, `on a Board no scrape can select` needs a Board the
+    liveness ledger does not list (ADR-0162), `gone from a Board this run scraped in full` needs a
+    Board that emitted lines this run without re-emitting that id (#185), and `unsettled` is what
+    is left. All seven are formatted `{n:,}`, so all seven clear 999.
     """
     import gzip
 
@@ -695,10 +712,23 @@ def _ledger_gap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _jsonl(Path("data/jobs/greenhouse.jsonl"), [{"id": "greenhouse:full:kept"}])
     Path("data/state").mkdir(parents=True)
     Path("data/state/unauthoritative_boards.json").write_text("{}", encoding="utf-8")
+    # Every Board that must stay *reachable*. The 1,006 `lever:unlisted-*` ids below are on no
+    # row here, so they are the off-slice class; `gap` reads this through the same
+    # `load_active_companies` call `scrape_plan` makes, so the keys pair by construction.
+    _liveness_ledger(
+        {
+            "lever": [
+                (f"gap-{n}", f"https://jobs.lever.co/gap-{n}") for n in range(1204)
+            ],
+            "greenhouse": [("full", "https://boards.greenhouse.io/full")],
+            "workday": [("acme", "https://acme.wd1.myworkdayjobs.com/External")],
+        }
+    )
     _jsonl(
         Path("data/embeddings/jobs/meta.jsonl"),
         [{"id": i, "ats": "lever"} for i in held]
         + [{"id": f"{disabled}:off-{n}:1", "ats": disabled} for n in range(1010)]
+        + [{"id": f"lever:unlisted-{n}:1", "ats": "lever"} for n in range(1006)]
         + [{"id": f"greenhouse:full:{n}", "ats": "greenhouse"} for n in range(1005)]
         + [{"id": f"lever:gap-{n}:1", "ats": "lever"} for n in range(1204)]
         + [{"id": f"workday:acme/External:{n}", "ats": "workday"} for n in range(1204)],
@@ -730,6 +760,14 @@ def _ledger_gap_drain(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     Path("data/state/unauthoritative_boards.json").write_text(
         json.dumps({"lever:capped": "read to the 10,000 offset ceiling"}),
         encoding="utf-8",
+    )
+    _liveness_ledger(
+        {
+            "lever": [
+                (t, f"https://jobs.lever.co/{t}")
+                for t in ("drains", "frozen", "grows", "capped")
+            ]
+        }
     )
     board_description_gap.save(
         Path("data/state/board_description_gap.csv"),
@@ -2594,9 +2632,10 @@ CONTRACT: tuple[Line, ...] = (
         consumer="fanout_ledgers.GAP_HEADER",
         emitter=_LEDGERS,
         body=(
-            "gap: 5,627 stored rows | 1,204 held | 2,408 unsettled across 1,205 boards "
-            "(1,010 on a disabled ATS, 1,005 gone from a Board this run scraped in full — both "
-            "unreachable) -> data/state/board_description_gap.csv"
+            "gap: 6,633 stored rows | 1,204 held | 2,408 unsettled across 1,205 boards "
+            "(1,010 on a disabled ATS, 1,006 on a Board no scrape can select, 1,005 gone from a "
+            "Board this run scraped in full — all unreachable) "
+            "-> data/state/board_description_gap.csv"
         ),
         why=(
             "`held`, not `settled`: the emitter's wording moved and this pattern did not, so every "
@@ -2618,14 +2657,15 @@ CONTRACT: tuple[Line, ...] = (
         consumer="fanout_ledgers.GAP_DRAIN",
         emitter=_LEDGERS,
         body=(
-            "  gap: drain vs the 4,600 unsettled across 3 boards this run read: 2,000 settled, "
-            "1,200 newly unsettled, net -800"
+            "  gap: drain vs the 4,600 unsettled across 3 boards this run read: "
+            "2,000 left the gap, 1,200 joined it, net -800"
         ),
         why=(
             "the ledger's total is a *level*, so this is the only line that can tell progress "
-            "from stasis (ADR-0162). It is **absent** on a run with no prior ledger to subtract, "
-            "which is why the consumer's else-branch says so rather than reporting a parse "
-            "failure. `net` always carries its sign; `settled`/`newly unsettled` never do"
+            "from stasis (ADR-0162). It says **left**, not *settled*: a row also leaves the count "
+            "by being reclassified unreachable. **Absent** on a run with no prior ledger (or an "
+            "empty one) to subtract, which is why the consumer's else-branch says so rather than "
+            "reporting a parse failure. `net` always carries its sign; the two gross terms never do"
         ),
         emit=_ledger_gap_drain,
     ),

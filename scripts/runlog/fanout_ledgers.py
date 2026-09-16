@@ -17,19 +17,23 @@ falls back to for any board it hasn't measured yet (ADR-0026) — an ATS whose m
 every unmeasured board of that ATS's predicted cost on the next plan, not just the boards actually
 re-timed this run.
 
-**`gap`** — `R stored rows | H held | U unsettled across B boards (D on a disabled ATS, X gone
-from a Board this run scraped in full — both unreachable)`, then the drain line, then the top-10
-boards by backlog with each one's own delta. This is the ADR-0050 description-store backlog:
-`unreachable` ids can never settle (wrong ATS, or the Board's own authoritative scrape already
-re-emitted a shorter list that dropped them, #185) and are excluded from the count on purpose — a
+**`gap`** — `R stored rows | H held | U unsettled across B boards (D on a disabled ATS, O
+on no scrape slice, X gone from a Board this run scraped in full — all unreachable)`, then the
+drain line, then the top-10 boards by backlog with each one's own delta. This is the ADR-0050
+description-store backlog: `unreachable` ids can never settle (wrong ATS, a Board no slice can
+contain per ADR-0162, or the Board's own authoritative scrape already re-emitted a shorter list
+that dropped them, #185) and are excluded from the count on purpose — a
 `gap` total that includes them would overstate the ledger's useful backlog and never shrink no
 matter how many descriptions actually get filled.
 
-`U` is a **level**, so read the drain line and not it: `S settled, A newly unsettled, net ±X`
+`U` is a **level**, so read the drain line and not it: `L left the gap, J joined it, net ±X`
 (ADR-0162). A frozen backlog and a fast-churning one print the same `U`, which is how five
-consecutive runs of net growth went unnoticed. Both the drain line and the per-board deltas are
-**absent on a run with no prior ledger**, and the `blocked` line is absent when the count is zero —
-optional by design, so their absence is not a parse failure.
+consecutive runs of net growth went unnoticed. `L` is **movement, not settlements** — a row also
+leaves the count by being reclassified unreachable (the three figures in the header), so read it
+against `update_descriptions`' own `learned` count before calling it progress. Both the drain line
+and the per-board deltas are **absent on a run with no prior ledger** (or an empty one), and the
+blocked line is absent when the count is zero — optional by design, so their absence is not a
+parse failure.
 
 All three top-N samples are capped by the emitter itself (priority 10, cost-median 8, gap 10) — see
 `fanout_errors.py`'s caution about the same shape on `failures`' quarantine sample: a cap makes the
@@ -61,6 +65,7 @@ COST_MEDIAN = re.compile(r"\[update_ledgers\]\s+([\d.]+)s median\s+(\S+)")
 GAP_HEADER = re.compile(
     r"\[update_ledgers\] gap: ([\d,]+) stored rows \| ([\d,]+) held \| "
     r"([\d,]+) unsettled across ([\d,]+) boards \(([\d,]+) on a disabled ATS, "
+    r"([\d,]+) on a Board no scrape can select, "
     r"([\d,]+) gone from a Board this run scraped in full"
 )
 # The `(±N)` is optional: it is printed only when this run had a prior ledger to subtract, and a
@@ -70,7 +75,7 @@ GAP_TOP = re.compile(
 )
 GAP_DRAIN = re.compile(
     r"\[update_ledgers\]\s+gap: drain vs the ([\d,]+) unsettled across ([\d,]+) boards "
-    r"this run read: ([\d,]+) settled, ([\d,]+) newly unsettled, net ([+-][\d,]+)"
+    r"this run read: ([\d,]+) left the gap, ([\d,]+) joined it, net ([+-][\d,]+)"
 )
 GAP_BLOCKED = re.compile(
     r"\[update_ledgers\]\s+gap: ([\d,]+) unsettled Job\(s\) sit on ([\d,]+) Board\(s\) whose "
@@ -117,19 +122,20 @@ def report(run: Run) -> None:
     print("-- gap (description-store backlog, ADR-0050) --", flush=True)
     gh = GAP_HEADER.search(text)
     if gh:
-        stored, held, unsettled, boards, disabled, expired = gh.groups()
+        stored, held, unsettled, boards, disabled, off_slice, expired = gh.groups()
         print(
             f"  {stored} stored | {held} held | {unsettled} unsettled across "
-            f"{boards} boards ({disabled} on a disabled ATS, {expired} expired-unreachable "
-            "— both excluded from the unsettled count)",
+            f"{boards} boards ({disabled} on a disabled ATS, {off_slice} on no scrape slice, "
+            f"{expired} expired-unreachable — all excluded from the unsettled count)",
             flush=True,
         )
         gd = GAP_DRAIN.search(text)
         if gd:
-            was, was_boards, settled, arrived, net = gd.groups()
+            was, was_boards, left, joined, net = gd.groups()
             print(
-                f"  drain: {settled} settled, {arrived} newly unsettled, net {net} "
-                f"(was {was} across {was_boards} boards)",
+                f"  drain: {left} left the gap, {joined} joined it, net {net} "
+                f"(was {was} across {was_boards} boards). `left` is movement, not settlements — "
+                "a row also leaves by being reclassified unreachable",
                 flush=True,
             )
         else:
