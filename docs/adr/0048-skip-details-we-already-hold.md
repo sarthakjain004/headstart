@@ -175,10 +175,28 @@ will later read `parse`'s stripped copy. If `tech_filter` widens and a previousl
 becomes tech, it is simply absent from the store and gets its detail on the next run — the same
 self-healing path a brand-new Job takes.
 
-**Unlike the held-detail skip, this one is not conditional on `have_details`.** That default —
-`None` means fetch everything, for every caller outside the pipeline — exists because only the
-pipeline knows what has been embedded. The tech gate needs no such knowledge: nothing anywhere
-reads a non-tech description, on CI or on a laptop. So a local `verify_scraper.py` run against an
-eightfold Board now shows `description: null` on its non-tech rows, which is the new truth about
-that Board's scrape rather than a defect of the run. A caller that wants every description back
-should drop the gate, not pass a skip-list.
+**Both skips ride `have_details`, so the original default is honoured rather than overridden.**
+`None` still means fetch everything, for every caller outside the pipeline. The tech gate does not
+*need* that signal on its own terms — no pipeline reader opens a non-tech description — and the
+first version of this change left it unconditional for exactly that reason. Two measurements
+settled it the other way.
+
+**Production loses nothing by gating.** `scrape_run` loads the list whenever `--assignment` is
+set, which is every sharded run, and the five runs above logged `detail skip-list: 671,630 /
+671,833 / 672,468 Job details already held`. There is no real run in which `have_details` is
+`None`, so the gated version keeps 100% of the measured reduction.
+
+**Not gating costs more than a confusing `description: null`.** Eight callers construct scrapers
+directly, and three of them would read the hole as a defect. `scripts/validate/verify_scraper.py`
+reports "jobs-with-description" as its health metric (`verify_scraper.py:46`);
+`scripts/eval/audit_remote.py` live-scrapes a board (`get_scraper(...).fetch()`, line 100) and
+triangulates the `remote` flag against the description text; `scripts/enrich/salary_sample.py`
+drives the real scraper's own endpoint methods to measure `salary.extract` recall, and both fields
+are derived *from that text*. An unconditional gate hands all three `description=None` on ~59% of
+eightfold's postings, and each would report a quality collapse for eightfold specifically that is
+not real. That is the same shape of cost this review was convened to remove: zwayam's 100% detail
+loss hid for five runs behind a `HTTPError` label where the real answer was `HTTP 403`. A day spent
+chasing a fake regression is worse than a branch.
+
+(`scripts/eval/location_field_health.py` also builds scrapers but never reads `description`, and
+`scripts/eval/measure_content_drift.py` is not on `main` — neither is affected.)

@@ -444,11 +444,23 @@ class EightfoldScraper(BaseScraper):
         through the one expression both read (:func:`_department_of`) and `classify` strips the
         title itself, so the two verdicts cannot drift.
 
-        The gate is deliberately **not** conditional on ``have_details``: that default exists
-        because only the pipeline knows what has been embedded, while nothing anywhere reads a
-        non-tech description. A one-off local scrape therefore also leaves `description: None` on
-        its non-tech rows (ADR-0048's 2026-09-16 amendment)."""
-        tech = [p for p in positions if is_tech(p.get("name"), _department_of(p))]
+        Both skips are conditional on ``have_details``, the pipeline's signal, which is ``None``
+        for every caller outside it (ADR-0048). The tech gate does not *need* that knowledge —
+        no pipeline reader opens a non-tech description either way — but eight scripts construct
+        scrapers directly and three would read the hole as a defect:
+        ``scripts/validate/verify_scraper.py`` reports "jobs-with-description" as its health
+        metric, ``scripts/eval/audit_remote.py`` live-scrapes a Board and triangulates `remote`
+        against the description text, and ``scripts/enrich/salary_sample.py`` measures
+        `salary.extract` recall off it. Skipping unconditionally would hand all three
+        ``description=None`` on ~59% of this ATS's postings and have them report a quality
+        collapse that is not real. Honouring the documented default is not an extra branch, it is
+        respecting one — and it costs nothing: every sharded run ships the list (`scrape_run`
+        reads it whenever ``--assignment`` is set; the five runs of 2026-09-16 logged
+        `detail skip-list: 671,630 / 671,833 / 672,468 Job details already held`)."""
+        if self.have_details is None:
+            tech = positions
+        else:
+            tech = [p for p in positions if is_tech(p.get("name"), _department_of(p))]
         wanted = [str(p.get("id")) for p in tech if self.needs_detail(str(p.get("id")))]
         if self.async_fanout_enabled():
             fetched = self.fan_out_async(
