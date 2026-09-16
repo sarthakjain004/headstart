@@ -14,10 +14,11 @@ whole-table rewrite the per-run storage budget cannot afford, so it runs from ``
 **sync** reconciles the table against the embedding store incrementally: fresh ids are the corpus
 ids that have a vector, and the scraped-Board set is taken from the *full* scrape, not the tech
 subset — so a Board that was scraped but dropped to zero *tech* jobs still has its closed postings
-evicted (a Board only in the tech snapshot would leave those rows stranded). In the pipeline that
-set arrives pre-derived from ``scrape_join`` (``data/state/scraped_boards.json``, ADR-0161); a run
-holding ``data/jobs/`` itself derives it from there instead, and ``index_plan.scraped_boards`` is
-where the two meet. A posting absent from a scraped Board is evicted once a *second* scrape of that
+evicted (a Board only in the tech snapshot would leave those rows stranded). A run holding
+``data/jobs/`` derives that set from it; in the pipeline, which no longer ships those records to
+the merge job, it arrives pre-derived from ``scrape_join`` and is asked for by
+``--scraped-boards`` (ADR-0161). ``index_plan.scraped_boards`` is where the two meet.
+A posting absent from a scraped Board is evicted once a *second* scrape of that
 Board misses it too (ADR-0083); Boards absent from the scrape are never touched (partial-harvest
 safety). On the first run the table is created empty and the plan is all-add; the identical path
 does true incremental add/evict on every later run — no overwrite-rebuild (ADR-0019). Corpus ids
@@ -126,9 +127,6 @@ _UNCONFIRMED = UNCONFIRMED_PATH
 # Written by scrape_join from the shard reports: the Boards whose scraped list is not authoritative
 # this run, which must not be evicted from just because they emitted a partial list (ADR-0053).
 _UNAUTHORITATIVE = REPO_ROOT / "data" / "state" / "unauthoritative_boards.json"
-# Written by scrape_join from the full scrape it has just unioned: the eviction scope itself, so
-# the merge job need not carry ~9 GB of pre-tech-filter job records to re-derive it (ADR-0161).
-_SCRAPED_BOARDS = REPO_ROOT / "data" / "state" / "scraped_boards.json"
 
 _ADD_CHUNK = 2048  # rows per add batch — bounds peak memory and streams progress
 _TOP_UNCONFIRMED_BOARDS = (
@@ -1023,13 +1021,16 @@ def main() -> int:
         "--scraped",
         default=str(_SCRAPED),
         help="full-scrape {ats}.jsonl dir defining the scraped-Board eviction scope "
-        "(default: data/jobs); used when present, else --scraped-boards, else --source's Boards",
+        "(default: data/jobs); used when present, else --scraped-boards if given, else "
+        "--source's Boards",
     )
     p_sync.add_argument(
         "--scraped-boards",
-        default=str(_SCRAPED_BOARDS),
-        help="JSON list of the Boards the full scrape covered, written by scrape_join — the same "
-        "eviction scope --scraped defines, derived where the records already were (ADR-0161)",
+        help="JSON list of the Boards the full scrape covered, written by scrape_join to "
+        "data/state/scraped_boards.json — the same eviction scope --scraped defines, derived "
+        "where the records already were (ADR-0161). Deliberately NOT defaulted: that file rides "
+        "data/state through the HF dataset, so defaulting it would let a local sync be scoped by "
+        "the last pipeline run's Boards. The merge job passes it explicitly",
     )
     p_sync.add_argument(
         "--unauthoritative-boards",

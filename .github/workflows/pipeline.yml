@@ -814,8 +814,15 @@ jobs:
         timeout-minutes: 35
         run: python -m headstart.ingest.update_meta
       - name: Sync the jobs table
+        # `--scraped-boards` explicitly, because it has no default (ADR-0161): the file rides
+        # `data/state` through the HF dataset, so a default would let any checkout holding a
+        # pulled `data/state` be scoped by whichever run wrote it. Passing it here is what says
+        # "this job's `data/state` came from *this* run's join". Missing, it warns and falls back
+        # to the corpus's own Boards — narrower, so it under-evicts rather than over-evicts.
         if: needs.scrape-plan.outputs.run == 'true'
-        run: python -m headstart.ingest.index sync
+        run: >-
+          python -m headstart.ingest.index sync
+          --scraped-boards data/state/scraped_boards.json
       - name: Prune dead-Board and duplicate rows
         if: needs.scrape-plan.outputs.run == 'true'
         run: python -m headstart.ingest.index prune --apply

@@ -1,6 +1,6 @@
 # ADR-0161: The eviction scope travels between stages as Board keys, not as the corpus it was derived from
 
-**Status:** accepted · **Date:** 2026-09-16 · **Relates to:** [ADR-0014](0014-search-index-ingestion-and-freshness.md) (the board-scoped sync), [ADR-0023](0023-prune-stale-and-duplicate-index-rows.md) (why the scope must come from the *full* scrape), [ADR-0049](0049-match-boards-by-prefix-not-by-parsing.md) (the key space it lands in), [ADR-0053](0053-scope-eviction-on-scrape-outcome.md) (what is subtracted from it), [ADR-0026](0026-shard-the-scrape.md) (the join this is written in)
+**Status:** accepted · **Date:** 2026-09-16 · **Relates to:** [ADR-0014](0014-search-index-ingestion-and-freshness.md) (the board-scoped sync), [ADR-0023](0023-prune-stale-and-duplicate-index-rows.md) (why the scope must come from the *full* scrape), [ADR-0049](0049-match-boards-by-prefix-not-by-parsing.md) (the key space it lands in), [ADR-0053](0053-scope-eviction-on-scrape-outcome.md) (what is subtracted from it), [ADR-0026](0026-parallelize-nightly-scrape.md) (the join this is written in) · **Amends:** [ADR-0025](0025-parallelize-nightly-pipeline.md), which named this artifact "a standing simplification target" and described it as carrying the whole scrape snapshot
 
 ## Context
 
@@ -58,19 +58,30 @@ together, which is why they do here.
   the join covered nothing — `data/state` round-trips through the HF dataset, so a skipped write
   would scope this run's eviction on the previous run's Boards, the same hazard
   `write_unauthoritative_boards` is written unconditionally for.
-- **`index_plan.scraped_boards(recorded, scraped, corpus_ids, live)`** answers from the cheapest
-  source that can: the full scrape on disk if it is there, else the recorded keys, else the corpus
-  ids' Boards. It moved out of `index.py` into `index_plan` on the way, because that module exists
-  to keep "the scoping invariants unit-testable on CI's base-deps-only install" and `index.py`
-  imports LanceDB — the equivalence test below is the safety argument for this ADR and it has to
-  actually run in CI, not skip.
-- **`pipeline.yml`** ships `data/jobs/tech` in place of `data/jobs`. The other two paths keep `data/`
-  as the artifact root, so `tech/` still extracts to `data/jobs/tech` and `--source` is unchanged.
+- **`index_plan.scraped_boards(recorded, scraped, corpus_ids, live)`** tries the full scrape on
+  disk, then the recorded keys, then the corpus ids' Boards. It moved out of `index.py` into
+  `index_plan` on the way, because that module exists to keep "the scoping invariants unit-testable
+  on CI's base-deps-only install" and `index.py` imports LanceDB — the equivalence test below is
+  the safety argument for this ADR and it has to actually run in CI, not skip.
+- **`pipeline.yml`** ships `data/jobs/tech` in place of `data/jobs`, and the merge job's `index
+  sync` passes `--scraped-boards data/state/scraped_boards.json`. The artifact's other two paths
+  keep `data/` as its root, so `tech/` still extracts to `data/jobs/tech` and `--source` is
+  unchanged.
 
-The scrape-on-disk arm deliberately **outranks** the recorded file. The records are the definition
-and the file is a summary of them, so a local run that just scraped must never be scoped by a
-summary that round-tripped through HF. In the pipeline that arm is inert: `data/jobs/` arrives
-holding only `tech/`, and the glob is non-recursive.
+Two things about that order are deliberate, and both are about a *stale* summary.
+
+The scrape-on-disk arm **outranks** the recorded file. The records are the definition and the file
+is a summary of them, so a run that just scraped must never be scoped by a summary of some other
+scrape. In the pipeline that arm is inert: `data/jobs/` arrives holding only `tech/`, and the glob
+is non-recursive.
+
+And `--scraped-boards` has **no default**, so the recorded arm only runs for a caller that asked
+for it. `data/state/scraped_boards.json` rides the HF dataset and CLAUDE.md tells you to pull
+`data/state/*`, so a defaulted path would mean a local `index sync` against the Wellfound CSV —
+no `data/jobs/*.jsonl`, so arm 1 misses — silently scoping eviction on the *last pipeline run's*
+14,700 Boards instead of on the corpus it was handed, marking every indexed row on them
+Unconfirmed. Passing the flag is what asserts "this checkout's `data/state` came from this run's
+join". A caller that passes it and finds nothing gets a warning and the old fallback.
 
 ### What makes the two derivations the same answer
 
@@ -90,8 +101,9 @@ merely re-derived. Both failure modes were confirmed red before the change was k
 ## Consequences
 
 - The artifact drops from 2,596,032,826 to ~1,030,600,000 compressed bytes, **−60.3%**, and the
-  scope file adds ~452 KB (~114 KB compressed at the artifact's `compression-level: 6`). Upload and
-  download both shrink with it; on the 2026-09-16 means that is ~189 s of the 314 s.
+  scope file adds ~452 KB (~114 KB compressed at the artifact's `compression-level: 6`). The
+  *input* is measured; the post-change total and the ~189 s of the 314 s it should return are
+  arithmetic on it, and stay projections until a real run reports its own `Final size is`.
 - `scrape_join` now parses every line it copies. A malformed line raises there rather than in
   `filter_tech` one step later — the same run dies either way, on the same data, in the same job,
   and `data/jobs` is ephemeral, so nothing is banked differently.
@@ -99,7 +111,8 @@ merely re-derived. Both failure modes were confirmed red before the change was k
   pulled by the next run's `scrape-plan` and `join`. Every arm is built so a stale copy cannot be
   believed: `join` rewrites it unconditionally, `merge` gets it from the artifact rather than from
   HF, and a run with real records prefers them.
-- Reading the file fails **open**. An unreadable or wrong-shaped file logs a warning and falls
+- Reading the file fails **open**. A missing, unreadable or wrong-shaped file logs a warning —
+  every one of the three, because only a caller that asked for the path gets here — and falls
   through to deriving the scope — which, without the records, is the tech corpus's Boards: narrower
   than the truth, so it under-evicts rather than over-evicts. That direction is deliberate; the
   opposite one deletes live postings.

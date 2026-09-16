@@ -11,7 +11,12 @@ import sys
 from pathlib import Path
 
 import headstart.ingest.scrape_join as js
-from headstart.ingest.index_plan import resolve_board
+from headstart.ingest.index_plan import (
+    boards_by_canon,
+    live_keep_set,
+    resolve_board,
+    scraped_boards,
+)
 from headstart.ingest.observability import ShardReport
 
 
@@ -155,7 +160,7 @@ def test_the_written_keys_are_what_the_index_actually_looks_up(tmp_path):
     )
     unauthoritative = read_unauthoritative_boards(out)
 
-    # What `_scraped_boards` would produce for a Job id on that Board, via `board_key()`.
+    # What `scraped_boards` would produce for a Job id on that Board, via `board_key()`.
     scope_entry = "workday:x/Careers"
     assert scope_entry.lower() in unauthoritative, (
         f"{scope_entry} would NOT be protected: file holds {sorted(unauthoritative)}"
@@ -369,19 +374,13 @@ def test_the_recorded_scope_is_the_one_the_full_scrape_defines(tmp_path):
     the corpus-ids fallback would silently drop it — which is exactly the stale-rows-forever bug
     the full-scrape scope exists to prevent.
     """
-    from headstart.ingest.index_plan import (
-        boards_by_canon,
-        live_keep_set,
-        scraped_boards,
-    )
-
     frags, out, ledger = _scope_fixture(tmp_path)
     recorded = tmp_path / "scraped_boards.json"
     _run(frags, out, ledger=ledger, scraped_boards_path=recorded)
 
     live = boards_by_canon(live_keep_set(ledger))
     # 1. From the full scrape on disk — the derivation `index sync` ran before this change.
-    from_records = scraped_boards(tmp_path / "absent.json", out, set(), live)
+    from_records = scraped_boards(None, out, set(), live)
     assert from_records == {
         "workday:acme/Careers",
         "greenhouse:dunder",

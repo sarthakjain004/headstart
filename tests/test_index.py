@@ -126,10 +126,9 @@ def _sync(
         argparse.Namespace(
             source=str(source),
             scraped=str(source),
-            # Absent on purpose, like `unauthoritative_boards` below: with the scrape itself on
-            # disk the records outrank any recorded scope anyway (ADR-0161), so these tests keep
-            # deriving it from `source` exactly as they always have.
-            scraped_boards=str(tmp_path / "scraped_boards.json"),
+            # Not passed, which is what a sync outside the pipeline does (ADR-0161): these
+            # tests keep deriving the scope from `source` exactly as they always have.
+            scraped_boards=None,
             db=str(db),
             ledger=str(ledger),
             # Pinned into tmp_path like every other output: it defaults to the repo's real

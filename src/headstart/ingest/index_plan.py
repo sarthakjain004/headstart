@@ -418,21 +418,26 @@ def resolve_board(job_id: str, live: dict[str, str]) -> str:
     return job_id[:end] if end is not None else board_of(job_id)
 
 
-def _read_scraped_boards(path: Path) -> set[str] | None:
-    """The Board set ``scrape_join.write_scraped_boards`` recorded, or ``None`` if there is none
-    to read.
+def read_scraped_boards(path: str | Path) -> set[str] | None:
+    """The Board set ``scrape_join.write_scraped_boards`` recorded, or ``None`` if it cannot be
+    read — the reader half of that writer, as :func:`read_unauthoritative_boards` is of its own.
 
     ``None`` and an empty set are different answers and the caller acts on both: ``None`` means
-    "nothing recorded, derive it yourself", while ``[]`` is a run whose join covered no Board at
-    all and is the honest scope for it.
+    "nothing usable here, derive the scope instead", while ``[]`` is a run whose join covered no
+    Board at all and is the honest scope for it.
 
-    Fails **open** — an unreadable or wrong-shaped file reads as ``None``, so the caller falls
-    back to deriving the scope and the run keeps its old behaviour. The shape check matters for
-    the same reason it does in :func:`read_unauthoritative_boards`: JSON's top level may legally
-    be a string, and iterating ``"abc"`` would scope eviction to the Boards ``a``, ``b`` and
-    ``c`` — every other Board's rows silently out of scope, reported as a normal run.
+    Fails **open** — a missing, unreadable or wrong-shaped file reads as ``None``, so the caller
+    falls back to deriving the scope and the run keeps its old behaviour. Every one of those warns,
+    because a caller only passes a path when it expects this file to be there. The shape check
+    matters for the same reason it does in :func:`read_unauthoritative_boards`: JSON's top level
+    may legally be a string, and iterating ``"abc"`` would scope eviction to the Boards ``a``,
+    ``b`` and ``c`` — every other Board's rows silently out of scope, reported as a normal run.
     """
+    path = Path(path)
     if not path.exists():
+        _log.warning(
+            f"no recorded scope at {path} — deriving the eviction scope instead"
+        )
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -449,13 +454,12 @@ def _read_scraped_boards(path: Path) -> set[str] | None:
 
 
 def scraped_boards(
-    recorded: str | Path,
+    recorded: str | Path | None,
     scraped: str | Path,
     corpus_ids: AbstractSet[str],
     live: dict[str, str],
 ) -> set[str]:
-    """The Boards this run actually scraped — the eviction scope, from the cheapest source that
-    can answer.
+    """The Boards this run actually scraped — the eviction scope.
 
     ``live`` is the :func:`boards_by_canon` lookup each id resolves through, so this scope lands in
     the same key space :func:`plan_sync` classifies indexed rows into (ADR-0049).
@@ -465,14 +469,16 @@ def scraped_boards(
     scrape and not the tech subset — and it is the whole reason ``data/jobs/{ats}.jsonl`` used to
     ride the corpus-state artifact into the merge job, ~9 GB of job text read for a set of a few
     thousand strings. ``scrape_join`` now derives that set where the records already are and
-    records it (ADR-0161), so three sources answer the same question, cheapest first:
+    records it (ADR-0161), so three sources can answer the same question, tried in this order:
 
-    1. ``recorded`` — the Board keys ``scrape_join`` wrote from the same full scrape. What the
-       pipeline uses.
-    2. ``scraped`` — the full-scrape ``{ats}.jsonl`` dir itself (a non-recursive glob, so the
-       ``tech/`` subdir is not double-counted). Still the definition, and it wins over a recorded
-       file: a local run with a real scrape on disk must never be scoped by a stale summary that
-       round-tripped through the HF dataset.
+    1. ``scraped`` — the full-scrape ``{ats}.jsonl`` dir itself (a non-recursive glob, so the
+       ``tech/`` subdir is not double-counted). The definition, so it goes first: a run with a
+       real scrape on disk must never be scoped by a summary of some *other* scrape.
+    2. ``recorded`` — the Board keys ``scrape_join`` wrote from the same full scrape. What the
+       pipeline uses, and **only when the caller passes a path**. It is not defaulted, because
+       this file rides ``data/state`` through the HF dataset: a local ``index sync`` against the
+       Wellfound CSV would otherwise find the last pipeline run's ~14,700 Boards sitting on disk
+       and scope eviction on them instead of on the corpus it was handed.
     3. the corpus ids' Boards, when neither is available (a Wellfound-CSV or unit-test sync).
 
     (A Board scraped that yields *zero* jobs of any kind writes no ids and so isn't covered by any
@@ -481,9 +487,10 @@ def scraped_boards(
     path = Path(scraped)
     if path.is_dir() and any(path.glob("*.jsonl")):
         return {resolve_board(job["id"], live) for job in iter_jobs(path)}
-    from_join = _read_scraped_boards(Path(recorded))
-    if from_join is not None:
-        return from_join
+    if recorded is not None:
+        from_join = read_scraped_boards(recorded)
+        if from_join is not None:
+            return from_join
     return {resolve_board(job_id, live) for job_id in corpus_ids}
 
 

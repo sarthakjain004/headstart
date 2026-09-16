@@ -1112,10 +1112,9 @@ def _index_paths(**over: object) -> argparse.Namespace:
     return argparse.Namespace(
         source="data/jobs/tech",
         scraped="data/jobs",
-        # Absent under the tmp dir, so the scope keeps coming from the records `_index_sync`
-        # writes into `data/jobs` — which is what a run holding the full scrape does anyway, the
-        # recorded file being the merge job's arm (ADR-0161).
-        scraped_boards="data/state/scraped_boards.json",
+        # Not passed, so the scope keeps coming from the records `_index_sync` writes into
+        # `data/jobs` — the arm a run holding the full scrape takes anyway (ADR-0161).
+        scraped_boards=None,
         db="data/lancedb",
         ledger="data/validate/liveness",
         upgrades="data/state/pending_upgrades.txt",
