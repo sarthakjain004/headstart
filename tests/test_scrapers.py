@@ -5251,7 +5251,10 @@ def test_successfactors_tolerates_one_unreadable_page_but_still_drops_its_job(
         scraper,
         "_search_job_urls",
         lambda: (
-            [(f"https://jobs.example.com/job/x/{i}/", str(i)) for i in range(200)],
+            [
+                (f"https://jobs.example.com/job/Engineer/{i}/", str(i))
+                for i in range(200)
+            ],
             None,
         ),
     )
@@ -5926,7 +5929,7 @@ def test_successfactors_keeps_a_whole_rss_board_off_the_truncated_list(monkeypat
     scraper = _successfactors_board(
         monkeypatch,
         search=([], "HTTP 503 at startrow 0 — 0 postings read before the walk stopped"),
-        rss=([("https://careers.voith.com/job/x/1/", "1")], None),
+        rss=([("https://careers.voith.com/job/Engineer/1/", "1")], None),
     )
 
     raw = scraper.fetch_raw()
@@ -5964,7 +5967,7 @@ def test_successfactors_reports_an_rss_stream_that_ended_early(monkeypatch):
         monkeypatch,
         search=([], None),
         rss=(
-            [("https://careers.voith.com/job/x/1/", "1")],
+            [("https://careers.voith.com/job/Engineer/1/", "1")],
             (
                 "the tenant's RSS feed aborted 2,097,152 bytes in — postings past that point "
                 "were not listed"
@@ -5991,7 +5994,7 @@ def test_successfactors_reports_a_sitemap_cut_at_the_read_cap(monkeypatch):
         rss=([], None),
         sitemap=(
             "urlset",
-            "<loc>https://careers.voith.com/job/x/1/</loc>",
+            "<loc>https://careers.voith.com/job/Engineer/1/</loc>",
             "the sitemap hit the 30 MB read cap — postings past it were not listed",
         ),
     )
@@ -6012,7 +6015,7 @@ def test_successfactors_keeps_a_capped_sitemap_that_listed_nothing_off_the_board
     which must not inherit the sitemap's truncation."""
     scraper = _successfactors_board(
         monkeypatch,
-        search=([("https://careers.voith.com/job/x/9/", "9")], None),
+        search=([("https://careers.voith.com/job/Engineer/9/", "9")], None),
         rss=([], None),
         sitemap=(
             "urlset",
@@ -6025,6 +6028,83 @@ def test_successfactors_keeps_a_capped_sitemap_that_listed_nothing_off_the_board
 
     assert [item["id"] for item in raw] == ["9"]  # the search walk answered, and whole
     assert scraper.truncated is None
+
+
+def test_successfactors_title_from_slug_recovers_a_clean_title():
+    """The pre-detail tech gate's only signal. Covers both slug shapes this scraper's tenants
+    use — bare ``{title}/{id}/`` and ``{location}-{title}-{state}-{zip}/{id}/`` — plus the
+    URL-encoding and HTML-entity noise real slugs carry (measured live on careers.hcltech.com
+    and jobs.sap.com, 2026-09-16)."""
+    from headstart.scrapers.successfactors import _title_from_slug
+
+    assert (
+        _title_from_slug(
+            "https://careers.hcltech.com/job/Technical-Specialist/1357856755/"
+        )
+        == "Technical Specialist"
+    )
+    assert (
+        _title_from_slug(
+            "https://careers.hcltech.com/job/SME-Red-Hat-Enterprise-Linux%2C-Red-Hat-Satellite/1/"
+        )
+        == "SME Red Hat Enterprise Linux, Red Hat Satellite"
+    )
+    assert (
+        _title_from_slug(
+            "https://jobs.sap.com/job/Burlington-Account-Executive-MA-01803/1420009533/"
+        )
+        == "Burlington Account Executive MA 01803"
+    )
+    assert (
+        _title_from_slug(
+            "https://x.example.com/job/Track-Manager-%28Tools-%26-Automation%29/1/"
+        )
+        == "Track Manager (Tools & Automation)"
+    )
+
+
+def test_successfactors_skips_the_detail_fetch_for_a_non_tech_slug(monkeypatch):
+    """The gate itself: a non-tech slug never reaches `_job_fields` at all, and its skip does
+    not count against the Board's truncation ratio — only genuine fetch failures among the
+    postings actually attempted should ever do that (ADR-0053/ADR-0121). Getting this wrong
+    the other way — counting every gated-out posting as "lost" — would mark nearly every
+    SuccessFactors Board's listing Unauthoritative on every run, since most SuccessFactors
+    Boards are not majority-tech (measured: 21.3% on careers.hcltech.com, 28.7% on
+    jobs.sap.com, both 2026-09-16 samples)."""
+    from headstart.scrapers import successfactors as sf
+
+    scraper = sf.SuccessFactorsScraper("jobs.example.com")
+    monkeypatch.setattr(scraper, "_fetch_sitemap", lambda: ("urlset", "", None))
+    monkeypatch.setattr(
+        scraper,
+        "_search_job_urls",
+        lambda: (
+            [
+                ("https://jobs.example.com/job/Software-Engineer/1/", "1"),
+                ("https://jobs.example.com/job/Housekeeper/2/", "2"),
+                ("https://jobs.example.com/job/Data-Engineer/3/", "3"),
+            ],
+            None,
+        ),
+    )
+    fetched: list[str] = []
+
+    def fake_job_fields(url):
+        fetched.append(url)
+        return {"title": "whatever the real page says"}
+
+    monkeypatch.setattr(scraper, "_job_fields", fake_job_fields)
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+
+    raw = scraper.fetch_raw()
+
+    assert [j for j in fetched if "/2/" in j] == [], (
+        "the non-tech slug's detail page was never requested"
+    )
+    assert {item["id"] for item in raw} == {"1", "3"}
+    assert scraper.truncated is None, (
+        "skipping a non-tech posting is not a loss against the tech-only denominator"
+    )
 
 
 def _workday_scraper():
@@ -7857,7 +7937,10 @@ def test_successfactors_marks_truncation_when_detail_pages_are_lost(monkeypatch)
         scraper,
         "_search_job_urls",
         lambda: (
-            [(f"https://jobs.example.com/job/x/{i}/", str(i)) for i in (1, 2, 3)],
+            [
+                (f"https://jobs.example.com/job/Engineer/{i}/", str(i))
+                for i in (1, 2, 3)
+            ],
             None,
         ),
     )
@@ -7900,7 +7983,10 @@ def test_successfactors_marks_truncation_when_a_page_loads_but_has_no_title(
         scraper,
         "_search_job_urls",
         lambda: (
-            [(f"https://jobs.example.com/job/x/{i}/", str(i)) for i in (1, 2, 3)],
+            [
+                (f"https://jobs.example.com/job/Engineer/{i}/", str(i))
+                for i in (1, 2, 3)
+            ],
             None,
         ),
     )
