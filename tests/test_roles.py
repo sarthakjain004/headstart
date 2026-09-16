@@ -135,3 +135,110 @@ def test_load_families_rejects_the_reserved_non_tech_name(tmp_path):
     )
     with pytest.raises(ValueError, match=r"reserved"):
         roles.load_families(path, _manifest())
+
+
+def _spec_at(dirpath, spec):
+    """Like :func:`_spec`, but under a caller-chosen subdirectory, so two specs can coexist."""
+    import json
+
+    dirpath.mkdir()
+    path = dirpath / "families.json"
+    path.write_text(json.dumps(spec), encoding="utf-8")
+    return path
+
+
+def test_family_map_fingerprint_is_stable_across_equivalent_orderings(tmp_path):
+    # cluster/family list order is not meaningful; two files that map the same
+    # clusters to the same families must fingerprint identically
+    a = _spec_at(
+        tmp_path / "a",
+        {
+            "centroid_version": 1,
+            "families": [
+                {"name": "x", "clusters": [0, 1]},
+                {"name": "y", "clusters": [2]},
+            ],
+            "non_tech": {"clusters": [3]},
+        },
+    )
+    b = _spec_at(
+        tmp_path / "b",
+        {
+            "centroid_version": 1,
+            "families": [
+                {"name": "y", "clusters": [2]},
+                {"name": "x", "clusters": [1, 0]},
+            ],
+            "non_tech": {"clusters": [3]},
+        },
+    )
+    assert roles.family_map_fingerprint(a) == roles.family_map_fingerprint(b)
+
+
+def test_family_map_fingerprint_ignores_free_text(tmp_path):
+    # rewording a label/note is not a change to what the map counts
+    a = _spec_at(
+        tmp_path / "a",
+        {
+            "centroid_version": 1,
+            "families": [
+                {"name": "x", "label": "Old label", "clusters": [0], "note": "old"}
+            ],
+            "non_tech": {"clusters": []},
+        },
+    )
+    b = _spec_at(
+        tmp_path / "b",
+        {
+            "centroid_version": 1,
+            "families": [
+                {"name": "x", "label": "New label", "clusters": [0], "note": "new"}
+            ],
+            "non_tech": {"clusters": []},
+        },
+    )
+    assert roles.family_map_fingerprint(a) == roles.family_map_fingerprint(b)
+
+
+def test_family_map_fingerprint_changes_when_a_cluster_moves_family(tmp_path):
+    a = _spec_at(
+        tmp_path / "a",
+        {
+            "centroid_version": 1,
+            "families": [{"name": "x", "clusters": [0, 1]}],
+            "non_tech": {"clusters": []},
+        },
+    )
+    b = _spec_at(
+        tmp_path / "b",
+        {
+            "centroid_version": 1,
+            "families": [{"name": "x", "clusters": [0]}],
+            "non_tech": {"clusters": [1]},
+        },
+    )
+    assert roles.family_map_fingerprint(a) != roles.family_map_fingerprint(b)
+
+
+def test_family_map_fingerprint_ignores_centroid_version(tmp_path):
+    # centroid_version is already its own separate signal in the caller's epoch tuple
+    # (ADR-0164) — folding it into this hash too would make every refit ALSO register as a
+    # "family map edited" event even when the curated content never changed, coupling two
+    # things the tuple exists to keep independently detectable.
+    a = _spec_at(
+        tmp_path / "a",
+        {
+            "centroid_version": 1,
+            "families": [{"name": "x", "clusters": [0]}],
+            "non_tech": {"clusters": []},
+        },
+    )
+    b = _spec_at(
+        tmp_path / "b",
+        {
+            "centroid_version": 2,
+            "families": [{"name": "x", "clusters": [0]}],
+            "non_tech": {"clusters": []},
+        },
+    )
+    assert roles.family_map_fingerprint(a) == roles.family_map_fingerprint(b)

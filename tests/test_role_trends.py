@@ -11,6 +11,7 @@ embedded, nor silently look healthy while accruing nothing.
 
 from __future__ import annotations
 
+import csv
 import json
 import sys
 from pathlib import Path
@@ -26,8 +27,9 @@ from datetime import UTC
 
 import lancedb
 
-from headstart import roles
+from headstart import roles, tech_filter
 from headstart.ingest import role_trends
+from headstart.ingest.doc_prep import DERIVATIONS_VERSION
 from headstart.search import PROD_TABLE
 
 _DIM = 4
@@ -123,6 +125,9 @@ def _run(tmp_path: Path, monkeypatch) -> Path:
             str(tmp_path / "role_assignments.parquet"),
             "--reassignments",
             str(tmp_path / "role_reassignments.csv"),
+            # Pinned too (ADR-0164): defaults to the repo's real data/state/trends_epochs.csv.
+            "--epochs",
+            str(tmp_path / "trends_epochs.csv"),
         ],
     )
     assert role_trends.main() == 0
@@ -175,6 +180,40 @@ def test_counts_rows_by_family_and_band_and_isolates_non_tech(tmp_path, monkeypa
     # the non-tech row is the diagnostic: one unbanded number, never a chart series
     assert rows[("non-tech", "all")] == 1
     assert ("data-science", "mid") not in rows  # only non-empty groups
+
+
+def test_a_tick_records_one_epoch_row_then_stays_quiet_while_unchanged(
+    tmp_path, monkeypatch
+):
+    """End-to-end (ADR-0164): the real centroid version, family-map fingerprint, tech-filter
+    version and derivations version all reach the epoch file through main() unchanged, and a
+    second tick with nothing different writes no second row."""
+    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    _table(
+        tmp_path / "db",
+        [
+            {
+                "id": "a",
+                "title": "Backend Dev",
+                "employment_type": None,
+                "min_years": 5,
+                "vector": [1.0, 0.0, 0.0, 0.0],
+            }
+        ],
+    )
+    epochs = tmp_path / "trends_epochs.csv"
+    _run(tmp_path, monkeypatch)
+    rows = list(csv.reader(epochs.open(encoding="utf-8", newline="")))
+    assert len(rows) == 2  # header + exactly one boundary
+    _, centroid_version, fingerprint, tech_filter_version, derivations_version = rows[1]
+    assert centroid_version == "1"
+    assert fingerprint  # a real hash, not asserting its exact value
+    assert tech_filter_version == str(tech_filter.TECH_FILTER_VERSION)
+    assert derivations_version == str(DERIVATIONS_VERSION)
+
+    _run(tmp_path, monkeypatch)  # nothing about the taxonomy or the code changed
+    rows_again = list(csv.reader(epochs.open(encoding="utf-8", newline="")))
+    assert rows_again == rows
 
 
 def test_ats_becomes_its_own_column_and_splits_same_family_band_rows(
