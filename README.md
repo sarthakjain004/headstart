@@ -2,79 +2,132 @@
 
 [![CI](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml)
 [![pipeline](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml)
-[![ADRs](https://img.shields.io/badge/ADRs-92-blue)](./docs/adr/)
+[![ADRs](https://img.shields.io/badge/ADRs-154-blue)](./docs/adr/)
 [![Python](https://img.shields.io/badge/python-3.12+-blue)](./pyproject.toml)
 
-Find software-engineering openings straight from companies' ATS (Applicant Tracking
-System) career boards — earlier and more completely than relying on LinkedIn.
+Find software-engineering openings straight from companies' ATS (Applicant Tracking System)
+career boards — earlier and more completely than relying on LinkedIn.
 
 **[Search the index](https://imposeidon-headstart-search.hf.space)** ·
 **[Read the decisions](./docs/adr/)**
 
-HeadStart discovers which companies host boards on which ATS, validates those boards, scrapes
-them through **35 per-ATS scrapers**, normalizes everything into one `Job` shape, and serves it
-three ways: a static dashboard over a curated feed; an **AI semantic-search layer** (local
-embeddings + vector search with structured filters) running live on a free-tier Hugging Face
-Space over a **320,628-row** index of the tech corpus; and **job alerts** — saved searches
-delivered by email or Telegram to signed-in accounts (ADR-0035, ADR-0038).
+## What it is
 
-All of it runs on free tiers (see *Cost is a design constraint*, below). The dashboard is built
-into `docs/` and served locally — GitHub Pages publishing is currently off.
+HeadStart discovers which companies host job boards on which ATS platform, validates those
+boards, scrapes them through **35 per-ATS scrapers**, and normalizes every posting into one `Job`
+shape. From there it serves three ways:
 
-- **Design decisions:** [`docs/adr/`](./docs/adr/) — 92 numbered ADRs (the option picked, the
-  ones rejected, and why).
-- **Domain glossary:** [`CONTEXT.md`](./CONTEXT.md) — the ubiquitous language (ATS, Board, Slug,
-  Job, Discovery, Liveness, Feed, Doc, Bucket, GitHub VM…).
-- **AI layer design + results:** [`docs/AI_Integration/`](./docs/AI_Integration/).
-- **Deployment runbook:** [`docs/agents/deployment.md`](./docs/agents/deployment.md).
-- **Dashboard:** [`docs/index.html`](./docs/index.html) over generated `jobs.json`; run it locally (see Development). Not currently published.
+- An **AI semantic-search layer** — type a natural-language query, apply structured filters,
+  get ranked results — running live on a free-tier Hugging Face Space over a **468,376-row**
+  index of the tech corpus.
+- A static **dashboard** built from a curated feed.
+- **Job alerts** — saved searches delivered by email or Telegram to signed-in accounts.
+
+Everything runs on free tiers (see *What this optimises for*, below).
+
+## Why
+
+LinkedIn is not a comprehensive mirror of the job market. Employers have to *opt in* to push
+roles there (via ATS integrations / "job wrapping"), and that path is gated and often skipped. So
+two kinds of roles slip through: ones LinkedIn never gets because the employer never syndicated
+them, and ones it gets late or buries below paid listings. Reading the ATS directly catches both.
+The target is companies **worldwide**, focused on **software-engineering / tech roles**; the long
+tail of smaller employers (India among them) is just where the LinkedIn gap is widest.
+
+## Search the index
+
+The search design is a **hybrid split made explicit at the UI**: you apply structured filters
+yourself, *and separately* type a natural-language query describing only the role. Filters drive
+a deterministic where-clause; the query drives the embedding. `/search` takes `remote`,
+`has_salary`, `max_years`, `ats`, `etype`, `india`, `location`, `company`, `posted_within`,
+`seen_within`, and explicit date bounds — all compiled by `search.build_filter`, which rejects
+unparseable input with a 400 rather than silently ignoring it.
+
+- **Embeddings:** `nomic-embed-text-v1.5`, 768-dim, L2-normalized, over `title + cleaned
+  description` — structured fields ride alongside as filterable metadata, never inside the vector
+  (ADR-0006).
+- **Store + retrieval:** LanceDB, embedded and local, does filter-then-rank in one query —
+  pre-filter on typed metadata, rank the survivors by cosine (ADR-0007, ADR-0008). Required
+  years-of-experience is extracted to a numeric range by a deterministic cascade, so `min_years`
+  is a real filter rather than a guess (ADR-0009, ADR-0018).
+- **Freshness:** the index is reconciled incrementally, never rebuilt. New postings are added,
+  closed ones are evicted, and metadata already in the table gets corrected as fresher scrapes
+  arrive — so a fix reaches rows indexed long ago, not only new ones (ADR-0014, ADR-0061, ADR-0062).
+- **Ranking quality is measured, not asserted** (ADR-0011): a five-stage harness pools the
+  search's top hits per query, grades each `(query, job)` pair with an LLM judge validated against
+  hand labels (quadratic-weighted Cohen's **κ ≈ 0.64**, "substantial"), then scores with `ranx` →
+  **nDCG@10 = 0.90** on a held-out benchmark corpus. Two honest limits ship with the score: it's a
+  single-system pool, so it measures how well the search orders its own picks rather than
+  corpus-wide recall; and the benchmark is kept deliberately distinct from the production corpus.
+- **Signed in:** the full UI sits behind Google sign-in (`SECRET_KEY` + `GOOGLE_CLIENT_ID`,
+  ADR-0042). Signing in unlocks three per-account tabs: **Matches** (saved searches, one of which
+  can become an email Subscription), **Saved** (starred jobs), and **Profile** (paste a résumé;
+  one LLM call extracts a career record and a role-describing query, editable before it runs — the
+  query stays role-only, since years/salary belong to filters).
+
+## ATS coverage
+
+**35 scrapers**, selected from a registry by the `ats` key: `amazon`, `apple`, `ashby`,
+`bytedance`, `darwinbox`, `eightfold`, `freshteam`, `google`, `greenhouse`, `icims`, `jazzhr`,
+`jobvite`, `join`, `keka`, `lever`, `meta`, `oracle`, `personio`, `recruitee`, `ripplehire`,
+`rippling`, `sensehq`, `smartrecruiters`, `successfactors`, `taleo_be`, `taleo_enterprise`,
+`teamtailor`, `tesla`, `tiktok`, `trakstar`, `uber`, `workable`, `workday`, `zoho`, `zwayam`. All
+but `join` are active: `join`'s boards run ~1 tech job in ~10k (German-SMB listings, almost
+entirely non-tech), pure noise for a tech-only index, so `registry.DISABLED_ATS` skips it — the
+scraper class and tests stay intact, and re-enabling it is a one-line change.
+
+Eight of the 35 — `amazon`, `apple`, `bytedance`, `google`, `meta`, `tesla`, `tiktok`, `uber`
+(ADR-0139) — are **Single source scrapers**: each company's own in-house careers system, not a
+multi-tenant platform, so there's no discovery step and each carries a fixed, hand-entered slug
+rather than a crawled tenant roster.
+
+Each scraper reads a Board and normalizes its raw postings into `Job` records; all HTTP routes
+through one pooled, thread-local `curl_cffi` client that impersonates Chrome, so the same stack
+serves plain JSON APIs and TLS-fingerprinted (Cloudflare / DataDome) boards alike (ADR-0002). A
+Board's `company` name is read off the board page itself where the ATS makes that possible
+(`ashby`, `eightfold`, `jobvite`, `keka`, `lever`, `ripplehire`, `taleo_enterprise` — ADR-0114);
+every other ATS serves the **ATS slug** in that field instead, so a row's `company` may be either.
+
+The liveness pipeline has probed **229,557 ledger rows**: 135,501 live, 77,976 dead, 16,080 unknown
+— rows, not boards; they collapse to 128,869 Unique Boards once duplicate spellings of the same
+board are folded together (`CONTEXT.md` §Counting Boards).
 
 ## What this optimises for
 
-Six commitments show up in almost every design decision here, and they are worth stating because
-they explain choices that would otherwise look strange.
+Six commitments show up in almost every design decision here, and they explain choices that would
+otherwise look strange.
 
 **Measure it; don't reason about it.** Claims about how a remote host behaves are settled by
 hitting the host, not by reading code. This is a rule with a scar behind it: a "probe the host root
 to tell dead from empty" guard looked obviously correct and died on contact, because 9 of 12 boards
 the ledger already called dead answered `GET /` with 200. Findings carry their sample size.
 
-**Record the rejected options, not just the chosen one.** 92 ADRs, **63** carrying a heading that
-weighs alternatives (`grep -lEi '^#{2,3} .*(alternativ|options? (considered|rejected)|rejected)'`).
-When a later measurement contradicts an earlier one the ADR is amended or superseded in place
-rather than quietly edited — **34** name an `Amends:` / `Supersedes:` relationship in their header —
-so the reasoning stays auditable even when it turns out to be wrong.
+**Record the rejected options, not just the chosen one.** 154 ADRs, **100** carrying a heading that
+weighs alternatives (`grep -lEi '^#{2,3} .*(alternativ|options? (considered|rejected)|rejected)'
+docs/adr/`). When a later measurement contradicts an earlier one the ADR is amended or superseded
+in place rather than quietly edited — **44** name an `Amends:` / `Supersedes:` relationship in
+their header — so the reasoning stays auditable even when it turns out to be wrong.
 
 **Publish the limits next to the result.** The retrieval score ships with the two reasons not to
-over-trust it. Coverage tables say what is excluded and why. A number without its caveat is treated
-as a defect.
+over-trust it. Coverage tables say what is excluded and why. A number without its caveat is
+treated as a defect.
 
 **Degrade where degrading is possible.** A missing binary, an unregistered client, a walled
 origin: the spare egress returns "not available" and leaves the caller on the path it already had,
-because a fallback is worth having only if its absence costs nothing. Not universal — `llm_router`
-and `browser_http` raise, and `state_fetch` aborts the run, because a stage that silently proceeds
-without its inputs would publish a wrong answer rather than no answer.
+because a fallback is worth having only if its absence costs nothing. Not universal — the LLM
+router and browser-automation seam raise instead, because a stage that silently proceeds without
+its inputs would publish a wrong answer rather than no answer.
 
 **Recall over precision, where the two conflict.** The tech filter tolerates non-tech creep and
-refuses to drop a real tech job. `scripts/filter/verify_tech.py` exists to audit the *discarded*
-pile with an independent LLM gate — but it is run by hand, not wired into the pipeline, so treat it
-as a tool that has been used rather than a check that runs.
+refuses to drop a real tech job. An independent LLM gate exists to audit the *discarded* pile —
+run by hand, not wired into the pipeline, so treat it as a tool that has been used rather than a
+check that runs.
 
 **Cost is a design constraint, not an afterthought.** The whole system runs on free tiers, so
-storage and minutes bound the architecture directly — that is why compaction moved out of the
-back-to-back run into its own daily one, why embedding shards across 15 VMs, and why a run takes a
-20,000-board slice rather than scraping exhaustively (30% by measured yield, 70% random
-exploration, so a newly-productive board can never starve).
-
-## Why
-
-LinkedIn is not a comprehensive mirror of the job market. Employers have to *opt in* to push
-roles there (via ATS integrations / "job wrapping"), and that path is gated and often skipped.
-So two kinds of roles slip through: ones LinkedIn never gets because the employer never
-syndicated them, and ones it gets late or buries below paid listings. Reading the ATS directly
-catches both. The target is companies **worldwide**, focused on **software-engineering / tech
-roles**; the long tail of smaller employers (India among them) is just where the LinkedIn gap is
-widest.
+storage and minutes bound the architecture directly — why compaction runs on its own schedule
+instead of inside every ingest cycle, why embedding shards across many VMs, and why a run takes a
+bounded slice of boards rather than scraping exhaustively (weighted toward high-yield boards, with
+a random tail so a newly-productive board can never starve).
 
 ## How it works
 
@@ -94,11 +147,11 @@ flowchart TB
 
     subgraph P["② Ingest &nbsp;·&nbsp; GitHub Actions, back-to-back &nbsp;·&nbsp; ADR-0025 / ADR-0026"]
         direction LR
-        P1["<b>scrape-plan</b><br/>1 VM · 10m<br/>pick 20k boards, LPT pack"]
-        P2["<b>scrape</b><br/>≤15 VMs · 60m budget<br/>24 enabled scrapers → fragments"]
-        P3["<b>join</b><br/>1 VM · 40m<br/>union · tech-filter · descriptions<br/>priority · cost · failures · gap · plan embed"]
+        P1["<b>scrape-plan</b><br/>1 VM<br/>pick a board slice, LPT pack"]
+        P2["<b>scrape</b><br/>≤15 VMs · 60m budget<br/>34 enabled scrapers → fragments"]
+        P3["<b>join</b><br/>1 VM<br/>union · tech-filter · descriptions<br/>ledgers · plan embed"]
         P4["<b>embed</b><br/>≤15 VMs · 180m budget<br/>nomic on CPU → fragments"]
-        P5["<b>merge</b><br/>1 VM · 48m · single writer<br/>concat · meta refresh · sync · prune · trends"]
+        P5["<b>merge</b><br/>1 VM · single writer<br/>concat · meta refresh · sync · prune · trends"]
         P1 --> P2 --> P3 --> P4 --> P5
     end
 
@@ -140,159 +193,70 @@ flowchart TB
 
 Green stages are matrix fan-outs across many **GitHub VMs**; blue are single-VM serial stages;
 purple are stored state. Thick `==>` edges are the main path. Dotted edges are the two things
-that are easy to miss: state each stage *reads* back from the HF dataset, and the partial-work
-guarantee — a shard that hits its budget still forwards what it finished.
+easy to miss: state each stage *reads back* from the HF dataset, and the partial-work guarantee —
+a shard that hits its time budget still forwards whatever it finished.
 
 **Discovery** runs occasionally and by hand; its output, the liveness ledger under
 `data/validate/liveness/`, is committed to git and is what the ingest pipeline reads.
 
-**Ingest** (`.github/workflows/pipeline.yml`) runs back-to-back (ADR-0071) as five stages, two of them
-matrix fan-outs capped at 15 concurrent **GitHub VMs** (ADR-0025 sharded embed, ADR-0026 sharded
-scrape). A run-level `concurrency` group serializes whole runs so two never race on the dataset.
+**Ingest** (`.github/workflows/pipeline.yml`) runs back-to-back as five stages, two of them matrix
+fan-outs capped at 15 concurrent GitHub VMs. A run-level `concurrency` group serializes whole
+runs so two never race on the dataset.
 
 **Serving** has two independent paths. The search index is the single-writer end: `merge` uploads
 to the private HF dataset `imPoseidon/headstart-index` and restarts the Space
 `imPoseidon/headstart-search`. Separately, `python -m headstart` scrapes the same ledger and writes
-`docs/jobs.json`; the static dashboard reads *that* file, not the index. The two paths share the `Job` model and the tech filter but run on
-their own schedules.
+`docs/jobs.json`, which the static dashboard reads. The two paths share the `Job` model and the
+tech filter but run on their own schedules.
+
+Both fan-out stages (`scrape`, `embed`) are time-budgeted and bank partial work by design: a
+killed shard's fragment still uploads, and whatever it finished moves on to the next stage — the
+unfinished boards or Docs simply reappear in the next run's plan.
+
+### Tech-only, English-only
+
+Every job is scraped, but only tech roles are embedded, indexed, and shown. A recall-biased regex
+filter derives the tech subset from the full scrape — roughly a fifth of all scraped postings pass,
+though the rate swings hard by ATS (tech-focused platforms like Ashby or Eightfold run 40%+; large
+general-purpose enterprise ATSes like Workday or SuccessFactors run closer to 15%). A non-tech job
+creeping in is acceptable; dropping a tech job is not, so a two-part verification gate guards
+recall: a deterministic self-consistency check plus an independent LLM reasoning gate that judges a
+sample of the *dropped* pile and flags anything the regex missed (ADR-0017). A language-detection
+gate then holds non-English descriptions out of the index before embedding — the scrape and the
+curated feed keep them; only retrieval is English-only.
+
+No always-on server: scheduled GitHub Actions and a free-tier Space.
 
 ### Which boards a run picks
 
-A run does not scrape every board it could, and the ledger's headline number is not the number
-that matters. The 135,501 live *rows* reduce to 103,254 **Scrapable Boards** a run can even
-consider (measured 2026-09-16; the terms are defined in `CONTEXT.md` §Counting Boards):
+A run does not scrape every board it could. The liveness ledger's headline number reduces through
+several filters before it reaches what a run can even consider — `registry.DISABLED_ATS`,
+vendor test/sandbox boards, hostname aliases (one board serving two hostnames), case-variant
+duplicate spellings, and a handful of real boards deliberately parked because their cost dwarfs
+their tech yield. `CONTEXT.md`'s §Counting Boards names each of these stages precisely, and
+`tests/test_board_counts.py` keeps this table in lockstep with the committed ledger:
 
 | | boards | |
 | --- | ---: | --- |
 | live rows in the ledger | 135,501 | a row, not a board — 6,632 of them are duplicate spellings |
-| − `registry.DISABLED_ATS` | −25,488 | **all of it `join`** — German-SMB boards at ~1 tech job in ~10k. jazzhr and jobvite left this set 2026-09-16 |
-| − `config.EXCLUDED_BOARDS` | −47 | vendor test/sandbox boards, confirmed by reading their postings — Oracle's 78,431-posting load-test instance is the newest |
-| − alias ledger | −78 | one company, two hostnames — `basf.jobs` and `basf-se.jobs2web.com` are one board (ADR-0111) |
+| − `registry.DISABLED_ATS` | −25,488 | all of it `join` |
+| − `config.EXCLUDED_BOARDS` | −47 | vendor test/sandbox boards, confirmed by reading their postings |
+| − alias ledger | −78 | one company, two hostnames sharing one board (ADR-0111) |
 | − case-variant dedupe | −6,630 | `company/External` and `company/external` are one board (ADR-0023) |
-| − `config.PARKED_BOARDS` | −4 | real boards withheld for now — Accenture's and EY's outrun any shard budget, SmartRecruiters' `AdeebaEServicesPvtLtd` cost 24 min a run for 136 tech jobs, and Wayman Learning Trust is 56,527 teaching vacancies a run for zero tech |
+| − `config.PARKED_BOARDS` | −4 | real boards withheld for now — their scrape cost dwarfs their tech yield |
 | = **Scrapable Board** | **103,254** | |
 
-That order matters: excluding before deduping reads −47 and −6,630, deduping first reads −45 and
-−6,632, because two excluded boards were themselves duplicates. Both land on 103,254.
+That order matters: excluding before deduping reads −47 and −6,630, deduping first reads −45,
+because two excluded boards were themselves duplicates. Both land on 103,254.
 
-The alias row is the one stage that is not derivable from the ledger's own text: two hostnames
-serving one board share no key to collapse on, so it takes a live probe to find them
-(`scripts/validate/dedupe_boards.py`, ADR-0111).
-
-Of those, **67,044 are currently hiring** — `load_active_companies` defaults to `min_jobs=1`, so
-the 36,210 live-but-empty boards are skipped as having nothing to read. `pick_boards` takes a
-slice of
-`--max-boards` (default **20,000**) and splits it **30/70**: the top 30% by board-priority score —
-a sticky EWMA of each board's tech-job yield, kept in `data/state/board_priority.csv` (ADR-0022) —
-and a random 70% exploration tail drawn from everything else, so newly-productive boards can never
-starve. The tail is random over *everything* not in the head, not over unscraped boards alone, so
-it re-samples known boards too; that is what keeps eviction working on boards outside the head.
-
-A slice of that exploration tail — `GAP_FRAC`, 5%, so ~700 boards — is reserved for boards holding
-**unsettled descriptions** (ADR-0062): jobs already in the store whose text we have never held, and
-whose experience numbers therefore cannot be repaired without scraping the board again. There are
-6,153 such boards holding 41,353 jobs, and the priority ordering would otherwise never reach
-them. `data/state/board_description_gap.csv` is recomputed every run, so a board leaves it as soon
-as its descriptions settle and the reservation cancels itself once the backlog drains.
-Boards a run skips are simply left alone — eviction is scoped to boards actually present in the
-scrape (ADR-0014), so a partial harvest never damages what it didn't look at.
-
-### Nothing scraped is ever wasted
-
-Both fan-out stages are time-budgeted, and both bank partial work by design. The inner
-`timeout 60m` (scrape) and `timeout 180m` (embed) fire well before the step and job timeouts, and
-`|| echo` absorbs the non-zero exit so the fragment still uploads. `JobWriter` flushes after every
-board and `EmbeddingStore` flushes vectors then metadata after every batch, so a killed shard loses
-at most the item in flight; `embed_merge` truncates any half-written tail. Whatever finished moves
-to the next stage, and the unfinished boards and Docs simply reappear in the next run's plan.
-
-### Tech-only, English-only
-
-Every job is scraped, but only tech roles are embedded, indexed, and shown. The scrape writes the
-full set to `data/jobs/{ats}.jsonl`; a recall-biased regex filter (`headstart.tech_filter`) derives
-the tech subset in `data/jobs/tech/{ats}.jsonl` — **241,602 of 1,261,562 scraped rows, 19.2%**, in
-run 32114156695 (2026-08-18 — a stale figure by construction: `data/jobs/` is ephemeral stage
-output with no durable source, so it cannot be refreshed without a re-run), though the rate swings hard by ATS (Freshteam 56.4%, Ashby 42.4%,
-Eightfold 40.8%, SuccessFactors 11.8%, Workday 11.8%). A non-tech job
-creeping in is fine; dropping a tech job is not, so a two-part verification gate guards recall: a
-deterministic self-consistency check plus an independent LLM reasoning gate
-(`scripts/filter/verify_tech.py`) that judges a sample of the *dropped* pile and flags any real
-tech job the regex missed (ADR-0017). A `langdetect` gate then holds non-English descriptions out
-of the index before embedding — the scrape and the feed keep them, only retrieval is English-only.
-
-No always-on server: scheduled GitHub Actions and a free-tier Space.
-
-## ATS coverage
-
-35 scrapers, selected from a registry by the `ats` key: `amazon`, `apple`, `ashby`, `bytedance`,
-`darwinbox`, `eightfold`, `freshteam`, `google`, `greenhouse`, `icims`, `join`, `keka`, `lever`,
-`meta`, `oracle`, `personio`, `recruitee`, `ripplehire`, `rippling`, `sensehq`, `smartrecruiters`,
-`successfactors`, `taleo_be`, `taleo_enterprise`, `teamtailor`, `tesla`, `tiktok`, `trakstar`,
-`uber`, `workable`, `workday`, `zoho`, `zwayam`, `jazzhr`, `jobvite`. `join` is in `registry.DISABLED_ATS` — German-SMB boards running ~1 tech job in
-~10k, pure noise for a tech-only index — so it is skipped rather than scraped. Its scraper class
-and tests stay intact; re-enable by removing it from that set.
-`amazon`, `apple`, `bytedance`, `google`, `meta`, `tesla`, `tiktok` and `uber` (ADR-0139) are
-Single source scrapers — each company's own in-house careers system, not a multi-tenant platform —
-with a fixed, non-discovered slug rather than a crawled tenant roster, so none has a discovery
-step and each one's liveness ledger carries exactly one hand-entered row.
-
-Each scraper reads a Board and normalizes its raw postings into `Job` records; all HTTP routes
-through one pooled, thread-local `curl_cffi` client that impersonates Chrome, so the same stack
-serves plain JSON APIs and the TLS-fingerprinted (Cloudflare / DataDome) boards (ADR-0002). The
-liveness pipeline has probed **229,557 ledger rows**: 135,501 live, 77,976 dead, 16,080 unknown —
-rows, not boards; they collapse to 128,869 Unique Boards (CONTEXT.md §Counting Boards). Of the
-35 scrapers, 19 have rows in the index — `sensehq` is a single-company unlock with nothing
-indexed yet, `zwayam` (2026-08-27), `icims` (2026-09-08), `oracle` (2026-09-08, which had a
-scraper but no ledger until then), `bytedance`, `apple`, `meta`, `tiktok`, `uber`, `amazon`,
-`tesla` and
-`google` (2026-09-11/12) were added since the last pipeline run and have nothing indexed yet,
-`jazzhr` and `jobvite` left `DISABLED_ATS` on 2026-09-16 (ADR-0158) and have not been scraped since, and
-`join`'s remaining 1,093 rows are a residue of the era before it was disabled: no slice will
-scrape them again, so they leave by eviction rather than refresh.
-
-## AI semantic search
-
-The search design is a **hybrid split made explicit at the UI**: the user applies structured
-filters themselves *and separately* types a natural-language query describing only the role.
-Filters drive a deterministic where-clause; the query drives the embedding. `/search` takes
-`remote`, `has_salary`, `max_years`, `ats`, `etype`, `india`, `location`, `company`,
-`posted_within`, `seen_within`, the four custom bounds `posted_after` / `posted_before` /
-`seen_after` / `seen_before`, and the alerts-only `first_seen_after` — all compiled by
-`search.build_filter`, which rejects unparseable input with a 400 rather than ignoring it.
-
-- **Embeddings:** `nomic-embed-text-v1.5`, 768-dim, L2-normalized. Task prefixes
-  (`search_document:` / `search_query:`) are load-bearing (ADR-0005). Only `title + cleaned
-  description` is embedded — structured fields ride alongside as filterable metadata, never inside
-  the vector (ADR-0006). The model's context is 8192 tokens but Docs are **capped at 4096**: a
-  full-context Doc transiently needs ~50 GB on the MPS stack, and only ~0.01% of the corpus is
-  longer. Local runs use the Apple GPU (MPS, fp16); CI runs CPU/fp32, which is 10-40× slower and
-  is why the pipeline shards embedding across 15 VMs.
-- **Store + retrieval:** LanceDB, embedded and local, does filter-then-rank in one query —
-  pre-filter on the typed metadata, rank the survivors by cosine (ADR-0007, ADR-0008). Required
-  years-of-experience is extracted to a numeric range by a deterministic cascade so `min_years`
-  is a real filter (ADR-0009, ADR-0018).
-- **Freshness:** the index is reconciled incrementally, never rebuilt — `index sync` adds new
-  vectors, evicts postings that vanished from a scraped board, and carries corrected metadata into
-  rows it already holds; `index prune` sweeps rows on dead boards and case-variant duplicates
-  (ADR-0014, ADR-0019, ADR-0023, ADR-0061). `index compact` rewrites the whole table to reclaim
-  orphan fragments and so runs in `cleanup-index`, **not** in the ingest run — rewriting ~1.9 GB
-  once per run is what the storage budget cannot afford.
-- **Correctness over time:** stored metadata is not frozen at embed time. Facts (salary, location,
-  remote…) are re-observed from each scrape, and the derived experience numbers are recomputed when
-  the extractor changes or when a description arrives after the fact (ADR-0061, ADR-0062) — so a
-  fix reaches rows already embedded instead of new jobs only.
-- **Signed in:** the whole UI sits behind Google sign-in once `SECRET_KEY` and `GOOGLE_CLIENT_ID`
-  are set (ADR-0042) — a signed cookie, `SameSite=Lax` instead of CSRF tokens, which is also why
-  the app only works at its own URL and not inside the huggingface.co Spaces iframe. Signing in
-  unlocks three per-account tabs: **Matches** (Saved sets, one of which projects into the email
-  Subscription, ADR-0043), **Saved** (starred jobs kept as display copies so a closed posting
-  still renders, ADR-0044), and **Profile** (ADR-0041).
-- **Profile:** paste a résumé and one LLM call extracts the stored career record and the single
-  role-describing query it implies, editable before it runs — the query stays role-only
-  (years/salary are scrubbed in code; those belong to filters). Capped at three parses per account
-  for its lifetime, counted in its own single-writer file so a racing save cannot refill it. The
-  pasted text is used for that one call and never stored. LLM calls go through the private
-  llm-router; if it is unreachable that endpoint 503s on its own rather than taking the app down.
+Of those, **67,044 are currently hiring** — the 36,210 live-but-empty boards are skipped as having
+nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
+sticky measure of tech-job yield) and a random exploration tail drawn from everything else, so
+newly-productive boards can never starve and eviction keeps working on boards outside the head.
+A small reserved slice specifically targets boards holding jobs whose descriptions were never
+successfully captured, so the years-of-experience extraction on those can eventually be repaired.
+Boards a run skips are simply left alone — eviction is scoped to boards actually present in a
+given scrape, so a partial harvest never damages what it didn't look at.
 
 ### The served table
 
@@ -304,120 +268,104 @@ fails if this table drifts from it.
 | --- | --- | --- |
 | `id` | string | `{ats}:{slug}:{native_id}` — the Board key is everything before the last `:` |
 | `ats` | string | `greenhouse`, `workday`, `ashby`, `darwinbox`, … |
-| `company` | string | the company's name where its Board states one — ashby, eightfold, keka, lever and ripplehire read it from the board page title (`headstart.company_name`, ADR-0114). Every other ATS still serves the **ATS slug**, so a row's company may be either, and a slug is what a Board that never named itself looks like |
+| `company` | string | the company's name where its Board states one (see *ATS coverage*, above); otherwise the ATS slug |
 | `title` | string | embedded, with the description |
-| `description` | string | the Job's description text, so the Keyword filter can match inside it (ADR-0104). **Nullable** — null on rows indexed before the column existed and on Jobs whose detail pass found nothing, so the Keyword filter's description scope reaches only part of the table, and the UI reports the share. Stored, not served: the API omits it |
+| `description` | string | the Job's description text, so the Keyword filter can match inside it (ADR-0104). **Nullable** — null on rows indexed before the column existed and on Jobs whose detail pass found nothing. Stored, not served: the API omits it |
 | `location` | string | raw ATS text; the India filter maps it via a gazetteer (ADR-0024) |
-| `country` | string | `"IN"` when `location` matches the India gazetteer's country-level rule (`headstart.geo.classify`, the same rule `geo.where("india")` compiles to SQL for), else null. Materialized so the India filter's whole-country case can use a plain equality instead of a ~3KB `regexp_like` alternation (ADR-0138). **Nullable** — null on rows indexed before the column existed and on any non-India location |
-| `remote` | bool | the scraper's own ATS-native field, **unless** the description confidently reads as remote — then `true` wins regardless of what the field said (`headstart.remote`, ADR-0061 v8). One-directional: a description read as onsite or hybrid never changes this field, even when it's unset |
+| `country` | string | `"IN"` when `location` matches the India gazetteer's country-level rule, else null. Materialized so the India filter's whole-country case is a plain equality instead of a large regex alternation (ADR-0138) |
+| `remote` | bool | the scraper's own ATS-native field, **unless** the description confidently reads as remote — then `true` wins regardless of what the field said (ADR-0061). One-directional: a description read as onsite or hybrid never overrides the field |
 | `employment_type` | string | raw per-ATS text (`FullTime`, `Full Time`, `Contract`, …), normalised at query time |
-| `experience` | string | raw, for display (`"2 - 5 Years"`) |
+| `experience` | string | raw ATS text — not served to the API, but read on every merge to detect whether a posting's stated experience changed, which is what triggers re-deriving `min_years`/`max_years` for that row |
 | `min_years` | int32 | parsed from `experience`; **nullable** — null means unknown, not zero (ADR-0009) |
-| `max_years` | int32 | nullable |
-| `experience_source` | string | `field` \| `regex` \| `seniority` \| null — how the years were derived (ADR-0018) |
+| `max_years` | int32 | parsed alongside `min_years`, but not currently read by any filter, sort, or the API — the `max_years` *query parameter* filters on `min_years` instead. Kept in the schema; see the note below |
+| `experience_source` | string | `field` \| `regex` \| `seniority` \| null — how the years were derived. Not served to the API, but read during re-derivation: it's what lets the pipeline tell a description-sourced value apart from a title-only guess when deciding whether to trust or re-guess a row (ADR-0018) |
 | `salary` | string | raw, for display (`"INR 3 - 5 (Annual)"`) |
 | `min_salary_annual` | int32 | parsed from `salary` or the description; period-normalized to an annual figure in the job's native currency; **nullable** — null means unknown, not zero (ADR-0082) |
 | `max_salary_annual` | int32 | nullable — open-ended when only a floor is stated |
 | `salary_currency` | string | ISO 4217 code where determinable (`"USD"`, `"INR"`, `"EUR"`, …); null if a number was found but the currency wasn't |
 | `salary_source` | string | `field` \| `regex` \| null — how it was derived; no seniority-style tier exists for salary (ADR-0082) |
-| `department` | string | raw ATS text |
+| `department` | string | raw ATS text. Not served to the API and not currently read from this table by any filter, sort, or downstream logic — its one real consumer is the tech filter, which reads it off the *raw scrape record*, before a row ever reaches this table. See the note below |
 | `url` | string | the job-detail link |
-| `posted_at` | string | **the company's** posting date, straight from the ATS — inconsistent (`2026-01-09T00:46:44.672+00:00`, `03-Jul-2026`) and **null on 13.4%** of rows (measured over 481,396 rows of the embedding *store* — not the served index — on 2026-08-18, when the store held that many; it holds **572,871** today; an earlier 1,000-row sample read 29%, which the full count corrects) |
-| `first_seen` | string | **ours** — ISO-8601 UTC, stamped when `index sync` adds the row. Write-once, and null on rows added before the column existed (ADR-0031). Measured **null on 77%** of a 1,000-row sample (2026-08-18), so the "new since" filter reached under a quarter of the table then |
+| `posted_at` | string | **the company's** posting date, straight from the ATS — inconsistent in shape across ATSes (`2026-01-09T00:46:44.672+00:00`, `03-Jul-2026`) and null on a meaningful share of rows |
+| `first_seen` | string | **ours** — ISO-8601 UTC, stamped when `index sync` first adds the row. Write-once, and null on rows added before the column existed (ADR-0031) |
 | `vector` | list\<float32\>[768] | `title + cleaned description`, L2-normalized |
 
-Two example rows, fetched from the live index on 2026-08-12 (signed in — `/search` 401s an
-anonymous caller) — exactly as `/search` projects them, which is why `experience`, `max_years`,
-`experience_source`, `department` and the vector do not appear: the API omits those, though the
-table stores them. They predate `min_salary_annual`/`max_salary_annual`/`salary_currency`/
-`salary_source` (ADR-0082) and this session has no signed-in credential to re-fetch a live row —
-they're left as-is rather than fabricated; a future update should replace them with a row that
-actually carries salary data once the pipeline has run against it.
+**Two columns look like candidates for removal, on a careful read of every consumer** —
+filters, sorts, the API projection (`search.RESULT_COLUMNS`), and the internal re-derivation
+logic in `update_meta.py` — none of which read `max_years` or `department` off this table today.
+Both are still written and stored on every row. This is a finding, not a change: dropping either
+is a live schema change against a deployed table and API, worth its own ADR and a deliberate
+decision rather than a docs-cleanup side effect. Flagged here so the option is visible.
+
+Two rows, fetched live from the index:
 
 ```jsonc
 {
-  "id": "ashby:level:538c0fe2-504d-45e9-8ae6-2b44de217418",
-  "ats": "ashby", "company": "Level",               // read from the board title (ADR-0114)
-  "title": "Backend Engineer (senior or above)",
-  "description": null,                               // indexed before ADR-0104 added the column
-  "location": "Austin", "remote": false, "employment_type": "FullTime",
-  "min_years": 5, "salary": null,
-  "url": "https://jobs.ashbyhq.com/level/538c0fe2-504d-45e9-8ae6-2b44de217418",
-  "posted_at": "2026-01-09T00:46:44.672+00:00",     // ISO — this ATS is well-behaved
-  "first_seen": null                                 // indexed before ADR-0031 added the column
+  "id": "ashby:character:b063d44b-e1fd-4777-8079-573706a589a0",
+  "ats": "ashby", "company": "Character.AI",
+  "title": "Software Engineer, Backend",
+  "location": "Redwood City, CA, California, United States",
+  "remote": null, "employment_type": "FullTime",
+  "min_years": 5,
+  "salary": "180000-300000 USD 1 YEAR",
+  "min_salary_annual": 180000, "max_salary_annual": 300000, "salary_currency": "USD",
+  "url": "https://jobs.ashbyhq.com/character/b063d44b-e1fd-4777-8079-573706a589a0",
+  "posted_at": "2025-12-08T19:38:59.867+00:00",
+  "first_seen": null
 }
 {
-  "id": "darwinbox:jslhrms:a65a11b3d9c70e",
-  "ats": "darwinbox", "company": "jslhrms",
-  "title": "Junior Engineer (Central QA)",
-  "description": null,                               // likewise
-  "location": "Jajpur, Odisha , India",              // raw ATS text, stray spacing and all
-  "remote": false, "employment_type": "Full Time",
-  "min_years": 1, "salary": null,
-  "url": "https://jslhrms.darwinbox.in/ms/candidatev2/main/careers/jobDetails/a65a11b3d9c70e",
-  "posted_at": "03-Jul-2026",                        // NOT ISO — why the recency filter
-  "first_seen": null                                 // needs a shape guard on posted_at
+  "id": "smartrecruiters:xplor:744000140844907",
+  "ats": "smartrecruiters", "company": "Xplor",
+  "title": "Backend Engineer",
+  "location": "Kuala Lumpur, Federal Territory of Kuala Lumpur, Malaysia",
+  "remote": false, "employment_type": "Full-time",
+  "min_years": 5,
+  "salary": "108000-125000 MYR 1 YEAR",
+  "min_salary_annual": 108000, "max_salary_annual": 125000, "salary_currency": null,
+  "url": "https://jobs.smartrecruiters.com/xplor/744000140844907",
+  "posted_at": "2026-07-31T07:57:53.720Z",                 // not every ATS's date is ISO
+  "first_seen": "2026-08-20T16:19:41+00:00"
 }
 ```
 
-The second row is the reason `posted_at` and `first_seen` are separate columns rather than one
-"date". `23-Jun-2026` sorts lexicographically *above* any ISO cutoff, so a naive
-`posted_at >= '2026-07-01'` would let it into every window — hence the `LIKE '____-__-__%'` shape
-guard on that filter, and none on `first_seen`, which we write ourselves.
+`posted_at`'s inconsistent shape (some ATSes emit a bare `DD-Mon-YYYY`, not ISO) is why
+`posted_at` and `first_seen` are separate columns rather than one "date": a non-ISO string can sort
+lexicographically above a real ISO cutoff, so the recency filter guards `posted_at`'s shape before
+comparing it, and needs no such guard on `first_seen`, which the pipeline writes itself.
 
-Note the corpus files under `data/jobs/` carry a few fields the table does not, e.g. `scraped_at`.
-The description is embedded into the vector **and**, since ADR-0104, stored in its own column so the
-Keyword filter can match inside it — but it is not served: the API projection omits it.
-
-### Retrieval eval
-
-Ranking quality is measured, not asserted (ADR-0011). A five-stage harness in `scripts/eval/`:
-pool the search's top hits per query, grade each `(query, job)` pair `0–3` with an LLM judge,
-validate that judge against hand labels (quadratic-weighted Cohen's **κ ≈ 0.64**, "substantial"),
-then score with `ranx` → **nDCG@10 = 0.90** on the Sidecorpus benchmark corpus. Two honest limits,
-printed with the score: it is a single-system pool, so nDCG measures how well the search orders its
-own picks, not corpus-wide recall (pooling a second system, e.g. BM25, is the named next step); and
-the benchmark is kept deliberately distinct from the production tech corpus (ADR-0014, ADR-0019).
-`scripts/eval/verify_filters.py` separately checks every filter's semantics and every ATS's job-link
-correctness against the live Space — signed in, since the wall 401s an anonymous caller. It fails
-the run on a dead link (404/410), a wrong-shaped or wrong-job link, or an ATS with no shape
-registered; bot walls (403/429) stay advisory.
+Note the raw corpus files under `data/jobs/` carry a few fields the served table does not, e.g.
+`scraped_at`.
 
 ## Layout
 
 - `src/headstart/` — shared library, used by both the pipeline and the curated feed: `models.py`
   (Job + normalization), `scrapers/` (35 per-ATS + `base`/`registry`), `http.py` (the pooled
-  reliable-fetch seam), `config.py`, `harvest.py` (the scrape engine — `scrape_all`, `JobWriter`,
-  feed builders), `liveness.py`, `corpus.py`, `tech_filter.py` (ADR-0017), `experience.py`,
-  `geo.py`, `search.py` (shared embed/search constants + filter builder), `board_priority.py`
-  (ADR-0022), `board_cost.py` (measured scrape seconds, ADR-0027); `salary.py` (the two-tier
-  extraction cascade, ADR-0082), `facets.py` (filter-shaped facet counts, ADR-0084), `roles.py`
-  and `profile_extract.py`; plus `telegram_bot_api.py`, the polling client the enrolment bot uses.
-- **Getting past walls**, the part with the most measurement behind it: `spare_egress.py` — a
-  second network origin for a shard whose ATS budget is spent, dialling Cloudflare WARP in proxy
-  mode and rotating the egress address when a host refuses it (ADR-0063, ADR-0067, ADR-0081,
-  ADR-0090, ADR-0092); `browser_http.py`, its browser twin, for the hosts that admit a genuine
-  Chrome and nothing else (ADR-0056); and `llm_router.py`, the one seam every LLM call goes
-  through (ADR-0032).
-- `src/headstart/ui/` — the templates and static assets the Space serves (ADR-0042).
-- `src/headstart/alerts/` — job alerts (ADR-0035, ADR-0038) plus the signed-in per-account
-  records: `store` (Subscriptions, Saved sets, Saved jobs and Profiles — the name now undersells
-  it), `registry`, `access` (the invite allowlist), `identity` (Google token verification),
-  `transports` (which channel delivers a Digest), `mail` and `telegram` (the senders), `bot`
+  reliable-fetch seam), `config.py`, `harvest.py` (the scrape engine), `liveness.py`, `corpus.py`,
+  `tech_filter.py` (ADR-0017), `experience.py`, `salary.py` (ADR-0082), `geo.py`, `remote.py`,
+  `company_name.py` (ADR-0114), `search.py` (shared embed/search constants + filter builder),
+  `facets.py` (ADR-0084), `board_priority.py` (ADR-0022), `board_cost.py` (measured scrape
+  seconds, ADR-0027), `board_aliases.py`, `board_identity.py`, `board_description_gap.py`,
+  `roles.py`, `profile_extract.py`, `fx.py`, `fetcher.py`, `fanout_stats.py`; plus
+  `telegram_bot_api.py`, the polling client the enrolment bot uses.
+- **Getting past walls**: `spare_egress.py` — a second network origin for a shard whose ATS
+  budget is spent, dialling Cloudflare WARP in proxy mode and rotating the egress address when a
+  host refuses it; `browser_http.py`, its browser twin, for hosts that admit a genuine Chrome and
+  nothing else; and `llm_router.py`, the one seam every LLM call goes through.
+- `src/headstart/ui/` — the templates and static assets the Space serves.
+- `src/headstart/alerts/` — job alerts plus the signed-in per-account records: `store`
+  (Subscriptions, Saved sets, Saved jobs, Profiles), `registry`, `access` (invite allowlist),
+  `identity` (Google token verification), `transports`, `mail` and `telegram` (senders), `bot`
   (Telegram enrolment), `digest`, `shortlist`, `space_query`, `run`.
-- `src/headstart/ingest/` — **the back-to-back pipeline run**, one module per stage step, invoked as
-  `python -m headstart.ingest.<module>` (ADR-0028): `scrape_plan`, `scrape_run`, `scrape_join`,
+- `src/headstart/ingest/` — **the back-to-back pipeline run**, one module per stage step, invoked
+  as `python -m headstart.ingest.<module>` (ADR-0028): `scrape_plan`, `scrape_run`, `scrape_join`,
   `filter_tech`, `update_descriptions` (ADR-0050), `update_ledgers`
   (`priority`/`cost`/`failures`/`gap`), `embed_plan`, `embed_run`, `embed_merge`, `update_meta`
   (ADR-0061), `index` (`sync` then `prune`), `role_trends` (ADR-0040).
   `.github/workflows/pipeline.yml` runs exactly these — `index compact` is a subcommand of the same
   module but belongs to `cleanup-index`, not this run. Its pipeline-only helpers live here too:
-  `binpack.py` (LPT packing shared by both planners), `doc_prep.py` (doc prep shared by embedder and
-  planner), `index_plan.py` (the pure add/evict and prune planners), `shard_speedup.py` (the
-  measured fan-out speedup the makespan divides by, ADR-0054), the per-board ledgers
-  `board_failures.py` (ADR-0058) and `board_description_gap.py` (ADR-0062), `role_assignments.py`
-  (ADR-0057), `observability.py` (run context, step summaries and the per-shard reports the join
-  aggregates), `state_fetch.py` (ADR-0030).
+  `binpack.py` (LPT packing), `doc_prep.py`, `index_plan.py`, `shard_plan.py`, `shard_speedup.py`,
+  `derived_meta.py`, `board_failures.py` (ADR-0058), `board_freshness.py`, `role_assignments.py`
+  (ADR-0057), `observability.py`, `state_fetch.py`, `state_guard.py`, `state_witness.py`.
 - `scripts/` — tooling *outside* the run: `discover/`, `merge/`, `validate/`, `resolve/`,
   `scrape/` (one-off pulls), `filter/` (recall verification), `fetch/` (pull HF data down),
   `runlog/` (post-hoc analysis of a fan-out run's logs), plus `alerts/`, `bench/` (performance
@@ -431,8 +379,9 @@ registered; bot walls (403/429) stay advisory.
   `AI_Integration/`, `agents/` (issue tracker, triage, domain, deployment runbooks).
 - `.github/workflows/` — `pipeline.yml` (the 5-stage ingest), `pipeline-smoke.yml`, `ci.yml`
   (lint + format + tests), `alerts.yml` and `bot.yml` (email/Telegram alerts), `deploy-space.yml`,
-  `cleanup-index.yml`, `cluster-roles.yml`, `squash-dataset-history.yml`, and the two embed
-  benchmarks `embed-bench.yml` / `embed-threads.yml`.
+  `cleanup-index.yml`, `cluster-roles.yml`, `squash-dataset-history.yml` and
+  `squash-subscribers-history.yml`, two embed benchmarks (`embed-bench.yml` / `embed-threads.yml`),
+  and a handful of one-off diagnostic probes.
 
 ## Development
 
@@ -467,3 +416,16 @@ scale (ADR-0025):
 python -m headstart.ingest.embed_run --resume   # embed the English tech corpus
 python -m headstart.ingest.index sync            # incremental add/evict into the LanceDB `jobs` table
 ```
+
+## More
+
+- **Design decisions:** [`docs/adr/`](./docs/adr/) — 154 numbered ADRs (the option picked, the
+  ones rejected, and why).
+- **Domain glossary:** [`CONTEXT.md`](./CONTEXT.md) — the ubiquitous language (ATS, Board, Slug,
+  Job, Discovery, Liveness, Feed, Doc, Bucket, GitHub VM…).
+- **AI layer design + results:** [`docs/AI_Integration/`](./docs/AI_Integration/).
+- **Deployment runbook:** [`docs/agents/deployment.md`](./docs/agents/deployment.md).
+- **Filter/link correctness eval:** `scripts/eval/verify_filters.py` checks every filter's
+  semantics and every ATS's job-link correctness against the live Space. It fails the run on a
+  dead link, a wrong-shaped or wrong-job link, or an ATS with no shape registered; bot walls stay
+  advisory.
