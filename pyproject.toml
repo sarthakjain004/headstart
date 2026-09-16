@@ -23,7 +23,7 @@ dependencies = ["curl_cffi>=0.7", "requests>=2.32"]
 # and the Digest spreadsheet are otherwise covered nowhere automatic (ADR-0035). All three
 # are small and pure-Python. The index/schema and Subscription adapter checks also need their
 # runtime libraries; include these without pulling the transformer/torch stack into quality CI.
-dev = ["pytest", "ruff==0.16.6", "flask", "xlsxwriter", "openpyxl", "lancedb", "pyarrow", "huggingface_hub", "langdetect", "playwright"]
+dev = ["pytest", "ruff==0.16.7", "flask", "xlsxwriter", "openpyxl", "lancedb", "pyarrow", "huggingface_hub", "langdetect", "playwright"]
 # The scrape fan-out's browser escalation (ADR-0056): darwinbox's Cloudflare wall admits a real
 # Chrome and nothing else, so the shards need pydoll. Imported lazily (browser_http) — only a
 # board that actually hits the wall starts a browser; the quality job never installs this.
@@ -49,7 +49,7 @@ scrape = ["pydoll-python"]
 # the cap lifts when nomic publishes modeling that runs on current transformers.
 embed = [
     "sentence-transformers>=3.0",
-    "transformers<5.13",
+    "transformers<5.18",
     "einops",
     "langdetect",
     "lancedb",
