@@ -11,6 +11,12 @@ import sys
 from pathlib import Path
 
 import headstart.ingest.scrape_join as js
+from headstart.ingest.index_plan import (
+    boards_by_canon,
+    live_keep_set,
+    resolve_board,
+    scraped_boards,
+)
 from headstart.ingest.observability import ShardReport
 
 
@@ -21,10 +27,17 @@ def _shard(frags: Path, k: int, files: dict[str, list[str]]) -> None:
         (d / name).write_text("".join(line + "\n" for line in lines), encoding="utf-8")
 
 
-def _run(shards: Path, out: Path) -> None:
+def _run(
+    shards: Path,
+    out: Path,
+    ledger: Path | None = None,
+    scraped_boards_path: Path | None = None,
+) -> None:
     old = sys.argv
-    # `--unauthoritative-boards` pinned under the test's dir: it defaults to the repo's real
-    # data/state/, and a test must never write there.
+    # Every written path pinned under the test's dir: they default to the repo's real data/state/,
+    # and a test must never write there. `--ledger` defaults to a dir that does not exist, which
+    # `live_keep_set` reads as an empty keep-set — ids then resolve through `board_of`, the
+    # no-ledger rule `index sync` already degrades to.
     sys.argv = [
         "scrape_join",
         "--shards",
@@ -33,6 +46,10 @@ def _run(shards: Path, out: Path) -> None:
         str(out),
         "--unauthoritative-boards",
         str(out.parent / "unauthoritative_boards.json"),
+        "--scraped-boards",
+        str(scraped_boards_path or out.parent / "scraped_boards.json"),
+        "--ledger",
+        str(ledger or out.parent / "no-such-ledger"),
         "--scrape-health",
         str(out.parent / "scrape_health.json"),
     ]
@@ -143,7 +160,7 @@ def test_the_written_keys_are_what_the_index_actually_looks_up(tmp_path):
     )
     unauthoritative = read_unauthoritative_boards(out)
 
-    # What `_scraped_boards` would produce for a Job id on that Board, via `board_key()`.
+    # What `scraped_boards` would produce for a Job id on that Board, via `board_key()`.
     scope_entry = "workday:x/Careers"
     assert scope_entry.lower() in unauthoritative, (
         f"{scope_entry} would NOT be protected: file holds {sorted(unauthoritative)}"
@@ -288,3 +305,116 @@ def test_malformed_shard_json_cannot_sink_any_join_consumer(tmp_path, caplog):
         "shard telemetry incomplete: 1/2 reports, 1 malformed" in health.verdict_line()
     )
     assert "valid JSON but not objects" in caplog.text
+
+
+def _ledger(root: Path) -> Path:
+    """A liveness ledger holding the three Boards the scope test's ids sit on."""
+    ledger = root / "liveness"
+    ledger.mkdir()
+    header = "ats,tenant,url,status,jobs,checked_at"
+    (ledger / "workday.csv").write_text(
+        f"{header}\nworkday,acme,https://acme.wd1.myworkdayjobs.com/Careers,live,5,2026-09-16\n",
+        encoding="utf-8",
+    )
+    (ledger / "greenhouse.csv").write_text(
+        f"{header}\ngreenhouse,stripe,,live,5,2026-09-16\n"
+        f"greenhouse,dunder,,live,5,2026-09-16\n",
+        encoding="utf-8",
+    )
+    return ledger
+
+
+def _scope_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """One run's scrape: fragments on four Boards, only two of which yield a tech job.
+
+    `greenhouse:dunder` is the case the whole scope exists for — it was scraped and emitted
+    postings, none of them tech, so it is in the eviction scope while being absent from the tech
+    corpus. `workday:acme/Careers:REQ: 228` is ADR-0049's colon-bearing native id, where
+    `board_of` and `resolve_board` disagree. `zoho:nobody` is on no ledger Board, so it takes
+    `resolve_board`'s `board_of` fallback.
+    """
+    frags = tmp_path / "frags"
+    _shard(
+        frags,
+        0,
+        {
+            "workday.jsonl": [
+                '{"id":"workday:acme/Careers:REQ: 228","title":"Backend Engineer"}',
+                '{"id":"workday:acme/Careers:R2","title":"Backend Engineer"}',
+            ],
+            "greenhouse.jsonl": [
+                '{"id":"greenhouse:dunder:1","title":"Paper Salesperson"}'
+            ],
+        },
+    )
+    _shard(
+        frags,
+        1,
+        {
+            "greenhouse.jsonl": [
+                '{"id":"greenhouse:stripe:9","title":"Software Engineer"}'
+            ],
+            "zoho.jsonl": ['{"id":"zoho:nobody:7","title":"Software Engineer"}'],
+        },
+    )
+    return frags, tmp_path / "jobs", _ledger(tmp_path)
+
+
+def test_the_recorded_scope_is_the_one_the_full_scrape_defines(tmp_path):
+    """The safety argument for ADR-0161, stated as an equality.
+
+    `index sync` used to derive the eviction scope by re-reading every pre-tech-filter record the
+    join wrote — ~9 GB of job text, carried between two serial jobs to produce a few thousand
+    Board keys. It now reads the keys the join derived from those same records. That is only
+    sound if the two agree exactly, so this derives the scope both ways from one fixture and
+    compares the sets.
+
+    The tech corpus is passed as `corpus_ids` on the recorded side, so the test fails if the
+    recorded file is ignored: `greenhouse:dunder` scraped real postings but no *tech* ones, and
+    the corpus-ids fallback would silently drop it — which is exactly the stale-rows-forever bug
+    the full-scrape scope exists to prevent.
+    """
+    frags, out, ledger = _scope_fixture(tmp_path)
+    recorded = tmp_path / "scraped_boards.json"
+    _run(frags, out, ledger=ledger, scraped_boards_path=recorded)
+
+    live = boards_by_canon(live_keep_set(ledger))
+    # 1. From the full scrape on disk — the derivation `index sync` ran before this change.
+    from_records = scraped_boards(None, out, set(), live)
+    assert from_records == {
+        "workday:acme/Careers",
+        "greenhouse:dunder",
+        "greenhouse:stripe",
+        "zoho:nobody",
+    }
+
+    # 2. From the artifact the merge job now receives: `data/jobs/` holding only `tech/`, plus the
+    #    Board keys the join recorded.
+    artifact = tmp_path / "artifact" / "jobs"
+    (artifact / "tech").mkdir(parents=True)
+    tech = [
+        json.loads(line)
+        for f in sorted(out.glob("*.jsonl"))
+        for line in f.read_text(encoding="utf-8").splitlines()
+        if "Engineer" in line
+    ]
+    (artifact / "tech" / "all.jsonl").write_text(
+        "".join(json.dumps(j) + "\n" for j in tech), encoding="utf-8"
+    )
+    corpus_ids = {j["id"] for j in tech}
+    from_record = scraped_boards(recorded, artifact, corpus_ids, live)
+
+    assert from_record == from_records
+    # ...and the tech corpus alone could not have produced it.
+    assert {resolve_board(i, live) for i in corpus_ids} != from_records
+
+
+def test_the_scope_file_is_rewritten_even_when_the_join_covered_nothing(tmp_path):
+    """Same reason the unauthoritative file is: `data/state` round-trips through the HF dataset,
+    so skipping the write would scope this run's eviction on the previous run's Boards."""
+    recorded = tmp_path / "scraped_boards.json"
+    recorded.write_text('["greenhouse:stale"]', encoding="utf-8")
+
+    _run(tmp_path / "absent", tmp_path / "jobs", scraped_boards_path=recorded)
+
+    assert json.loads(recorded.read_text(encoding="utf-8")) == []
