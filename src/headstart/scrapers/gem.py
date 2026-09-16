@@ -39,6 +39,14 @@ comment calls "conservative" rather than a measured limit. Packing 20/25/50/100/
 times upstream's batch size, and enough that even the largest observed board needs three detail
 requests total, not per-job ones.
 
+**Batch response order was checked, not assumed** — `_apply_detail_results` matches each result
+back to its request by position (``zip(batch, results)``), which only holds if the endpoint
+preserves request order. Verified live: natural, reversed, and two independently-shuffled id
+orders (30/50/200 ops), a repeat of the same shuffle, and a batch with the same id repeated three
+times interspersed with others (the sharpest test — a reordering or internal dedup would show up
+immediately) all came back with each result's own ``extId`` matching the requested id at that same
+position, 7/7 runs.
+
 **No rate limit found.** 500+ listing requests and 2,500+ detail requests across this measurement
 pass, at concurrency 8/16/32/64/128, drew zero non-200s and zero ``Retry-After`` headers; p50 latency
 stayed 0.3-0.5s across the whole range. `_DETAIL_WORKERS` is set to a modest 16 anyway: batching

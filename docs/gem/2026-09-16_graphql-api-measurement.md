@@ -68,6 +68,29 @@ measured limit. Packing N `ExternalJobPostingQuery` operations into one POST aga
 wall, and enough that even the largest observed board (300 postings) needs only three detail
 requests total rather than one per job.
 
+### Batch response order
+
+The scraper matches each response item back to its requested id **by position**
+(`_apply_detail_results` zips the request batch against the response array), which is only correct
+if the endpoint preserves request order — a positional-match code-review finding that was checked
+live rather than assumed. Against `coupa-software-inc-ats-1`, using each result's own `extId` field
+(which the query already selects) to verify what came back at each index:
+
+| test | n | positional match |
+|---|---|---|
+| natural listing order | 30 | yes |
+| reversed order | 30 | yes |
+| shuffled (seed A) | 30 | yes |
+| shuffled (seed B) | 50 | yes |
+| same shuffle repeated | 30 | yes |
+| same id repeated 3x, interspersed with others | 6 | yes |
+| shuffled | 200 | yes |
+
+7/7. The duplicate-id case is the sharpest of these: if the endpoint deduplicated, batched, or
+parallelized operations internally, a repeated id would be the first thing to reveal it, and it
+didn't. Response order is reliable; the positional zip in `_apply_detail_results` is correct as
+written.
+
 ## Rate limit: none found up to concurrency 128
 
 500+ listing requests and 2,500+ detail requests were sent across this pass at concurrency
