@@ -188,6 +188,33 @@ def test_scrape_all_dedupes_duplicate_boards_in_jsonl(monkeypatch, tmp_path):
     assert len((tmp_path / "workday.jsonl").read_text("utf-8").splitlines()) == 2
 
 
+def test_scrape_all_dedupes_duplicates_within_one_boards_own_list(
+    monkeypatch, tmp_path
+):
+    """A Board that returns the same id twice must not write it twice.
+
+    The cross-board case above worked; this one did not. `fresh` filtered against `seen_ids` but
+    only updated it *afterwards*, so two copies inside a single `jobs` list both passed. Measured
+    over the five runs of 2026-09-16: 4,135-4,347 duplicate lines a run, 0.98-1.02% of the tech
+    corpus, dropped later and silently by `corpus.iter_jobs` — whose comment blames "a resumed
+    scrape re-emits a board's lines", which had not happened in any of those runs.
+    """
+    doubled = [
+        make_job("greenhouse:acme:1", ats="greenhouse"),
+        make_job("greenhouse:acme:2", ats="greenhouse"),
+        make_job(
+            "greenhouse:acme:1", ats="greenhouse"
+        ),  # the same posting, returned twice
+    ]
+    monkeypatch.setattr(harvest, "get_scraper", lambda *a, **k: FakeScraper(doubled))
+
+    result = scrape_all([CompanyRef("greenhouse", "acme")], jobs_dir=tmp_path)
+
+    written = (tmp_path / "greenhouse.jsonl").read_text("utf-8").splitlines()
+    assert result.unique == 2, "two distinct ids, not three"
+    assert len(written) == 2, "the duplicate reached the .jsonl"
+
+
 def test_scrape_all_resume_skips_completed_boards(monkeypatch, tmp_path):
     """A resume run skips boards already in .done and appends rather than re-scraping."""
     calls: list[str] = []

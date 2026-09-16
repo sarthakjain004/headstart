@@ -302,8 +302,19 @@ def scrape_all(
                     # digest groups it.
                     unexpected.report(f"{key}: unexpected {type(exc).__name__}")
             else:
-                fresh = [j for j in jobs if j.id not in seen_ids]
-                seen_ids.update(j.id for j in fresh)
+                # Built in one pass, adding to `seen_ids` as it goes, so a Board that returns
+                # the same id twice *within its own list* contributes it once. The two-statement
+                # form this replaced filtered against `seen_ids` before updating it, so both
+                # copies passed: 4,135-4,347 duplicate lines a run over the five runs of
+                # 2026-09-16 (0.98-1.02% of the tech corpus), written, filtered and uploaded
+                # before `corpus.iter_jobs` dropped them silently at the far end. That dedupe
+                # blames "a resumed scrape re-emits a board's lines" — no shard resumed in any of
+                # those runs, and cross-board duplicates were already handled here correctly.
+                fresh = []
+                for job in jobs:
+                    if job.id not in seen_ids:
+                        seen_ids.add(job.id)
+                        fresh.append(job)
                 writer.write(fresh)
                 n_fresh = len(fresh)
             writer.mark_done(
