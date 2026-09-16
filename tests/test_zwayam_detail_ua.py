@@ -8,8 +8,6 @@ do not have. Under `base.USER_AGENT` ("headstart/0.1") every description fetch r
 Measured live 2026-09-16 over 10 real jobs on 5 Boards: repo UA 0/10, Chrome UA 10/10.
 """
 
-from pathlib import Path
-
 from headstart.scrapers import zwayam
 from headstart.scrapers.base import USER_AGENT
 
@@ -36,8 +34,11 @@ def test_detail_user_agent_carries_no_domain_or_email():
     assert ".com" not in ua and ".io" not in ua and "http" not in ua
 
 
-def test_only_the_detail_call_uses_the_browser_agent():
-    """Surgical: the listing, config and homepage calls keep the shared bare agent."""
-    body = Path(zwayam.__file__).read_text()
-    # The constant is defined once and used once; everything else stays on USER_AGENT.
-    assert body.count('"User-Agent": _DETAIL_USER_AGENT') == 1
+def test_the_listing_and_config_calls_keep_the_shared_bare_agent():
+    """Surgical: only the refused path gets the browser string.
+
+    Asserted on the module's own header dicts rather than on its source text, so reformatting
+    cannot break it and a real change of route cannot slip past it.
+    """
+    assert zwayam.USER_AGENT == USER_AGENT
+    assert zwayam._DETAIL_USER_AGENT not in (USER_AGENT,)

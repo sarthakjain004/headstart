@@ -138,10 +138,9 @@ class FreshteamScraper(BaseScraper):
             # on the cap — and a posting past it, absent from every snapshot, went Unconfirmed and
             # was evicted on the guaranteed second miss. The pipeline was deleting live jobs.
             #
-            # Not the same call as zoho's superficially identical ceiling, which stays unmarked on
-            # purpose: ~750 there is approximate, so landing on it is evidence rather than proof,
-            # and ADR-0053 exclusion has no drain. This 1,000 is exact. `mark_truncated` logs the
-            # Board and the reason itself, so there is no separate line here.
+            # Not the same call as zoho's superficially identical ceiling, which stays unmarked
+            # on purpose — the split is ADR-0159: exact cap marks, approximate ceiling does not.
+            # `mark_truncated` logs the Board and the reason itself, so no separate line here.
             self.mark_truncated(
                 f"{len(listed)} jobs, at or over the {_WIDGET_CAP}-job widget cap — "
                 "the rest is unreachable, not absent"

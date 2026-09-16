@@ -40,9 +40,14 @@ def test_a_board_under_the_cap_is_not_marked():
     assert scraper.truncated is None
 
 
-def test_the_cap_is_a_hard_cap_not_a_measured_shortfall():
-    """It must not route through the ADR-0121 tolerance: there is no true total to measure."""
+def test_the_cap_does_not_route_through_the_adr_0121_tolerance():
+    """A hard cap marks unconditionally; the tolerance would let a near-complete read off.
+
+    Asserting `truncated is not None` alone cannot tell the two paths apart, so this pins the
+    *reason*: `mark_truncated_unless_negligible` rewrites nothing but would have left this None at
+    1000/1000, whereas the hard-cap call always records the widget-cap wording.
+    """
     scraper = FreshteamScraper("abnhire")
     scraper.parse(_raw(_WIDGET_CAP), "2026-09-16T00:00:00Z")
-    # A tolerated shortfall leaves `truncated` None; a hard cap never does, however complete it looks.
-    assert scraper.truncated is not None
+    assert "widget cap" in (scraper.truncated or "")
+    assert "within tolerance" not in (scraper.truncated or "")

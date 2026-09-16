@@ -39,8 +39,8 @@ _log = log.get(__name__)
 
 def _read_jsonl_dir(path: Path) -> Iterator[dict]:
     seen: set[str] = set()
-    duplicates = 0
     for file in sorted(path.glob("*.jsonl")):
+        duplicates = 0
         with file.open(encoding="utf-8") as fh:
             for line in fh:
                 line = line.strip()
@@ -58,11 +58,12 @@ def _read_jsonl_dir(path: Path) -> Iterator[dict]:
                     continue
                 seen.add(job["id"])
                 yield job
-    if duplicates:
-        _log.info(
-            f"corpus: dropped {duplicates} duplicate id(s) of {len(seen) + duplicates} line(s) "
-            f"in {path}"
-        )
+        if duplicates:
+            # Per file, as each one finishes, rather than a total at the end: the end of a
+            # generator only runs for a caller that exhausts it, and `iter_jobs` has callers that
+            # could stop early. CLAUDE.md's "output must stream incrementally" asks for this shape
+            # anyway.
+            _log.info(f"corpus: {file.name} dropped {duplicates} duplicate id(s)")
 
 
 def _read_wellfound_csv(path: Path) -> Iterator[dict]:

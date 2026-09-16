@@ -287,21 +287,14 @@ class BaseScraper(ABC):
         unmeasurable (no stated total). A shortfall you can measure against the Board's own total
         goes to :meth:`mark_truncated_unless_negligible`, which tolerates a negligible one (ADR-0121).
 
-        **Logged, because this is the branch that costs something.** The observability here was
-        inverted until 2026-09-16: the sibling above logged the shortfall it *tolerated*, while
-        this one — where the Board leaves ADR-0053's eviction scope entirely and goes on serving
-        postings that may already be closed — said nothing at all. Over the five runs of that day
-        74-98 Boards a run took this branch and only Workday's were named anywhere;
-        ``amazon:www.amazon.jobs`` fell 22,475 -> 18,466 postings across them and logged a line
-        only in the two runs where it was *fine*.
+        **Logged, because this is the branch that costs something.** The observability was
+        inverted until 2026-09-16: the sibling logged the shortfall it *tolerated* while this one
+        — where the Board leaves ADR-0053's eviction scope and goes on serving postings that may
+        already be closed — said nothing. 74-98 Boards a run took it unnamed.
 
-        INFO for the same reason the sibling is: a WARNING is an Actions annotation against
-        ADR-0039's hard 50-per-run quota, and ``index sync`` already emits one aggregate warning
-        naming every scope-excluded Board. 74-98 annotations a run would spend that budget here.
-
-        Only the first call logs, matching which reason is kept — a crawl that has given up once
-        tends to give up again, and logging the later consequences would contradict the line
-        already written.
+        INFO for the same reason the sibling is (ADR-0039's annotation quota; ``index sync``
+        already emits one aggregate warning). Only the first call logs, matching which reason is
+        kept.
         """
         if self.truncated is None:
             self.truncated = why
