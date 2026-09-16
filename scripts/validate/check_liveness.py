@@ -1767,6 +1767,41 @@ def _oracle_total(body):
     return (items[0].get("TotalJobsCount") or 0) if items else None
 
 
+def p_phenom(t, u):
+    """One POST to the tenant's own `/widgets`, the same surface `PhenomScraper._listing` reads.
+
+    The payload comes from the scraper's own `_search_payload`, not a copy of it here, for the
+    reason `p_zwayam` gives: a re-declared request drifts, and this one has a discriminator
+    (`ddoKey`) and fourteen other keys to drift on.
+
+    `totalHits` is the count rather than `len(jobs)`: the page size is asked for as 1, so the list
+    length would record every live Board as exactly 1.
+
+    **The locale prefix is not probed.** It decides which *links* resolve, not which postings
+    come back — measured on all seven tenants the seed marks `global`, whose totals are identical
+    read as `us` or as `global` — so the probe asks with the default and the scraper learns the
+    real prefix at scrape time from the redirect.
+
+    **Nothing but DNS and 404/410 settles as DEAD.** A non-tenant host usually fails DNS outright;
+    what a 403 or a timeout means here is "ask again" (the seed carries one host behind a bot wall
+    that answered 403 to every probe while serving a real board in a browser), so those stay
+    UNKNOWN and are re-probed rather than buried.
+    """
+    from headstart.scrapers.phenom import PhenomScraper
+
+    status, body = _post(
+        f"https://{t}/widgets",
+        PhenomScraper(t)._search_payload(0, 1),
+        {"User-Agent": UA, "Accept": "*/*", "Content-Type": "application/json"},
+    )
+    total = None
+    if status == 200 and isinstance(body, dict):
+        refine = body.get("refineSearch")
+        if isinstance(refine, dict):
+            total = refine.get("totalHits")
+    return _verdict(status, total if isinstance(total, int) else None)
+
+
 def p_taleo_be(t, u):
     """Walk TBE's cookie-backed ten-row pages and return the actual Board count."""
     from urllib.parse import urljoin
@@ -1835,6 +1870,7 @@ PROBES = {
     "jazzhr": p_jazzhr,
     "jobvite": p_jobvite,
     "oracle": p_oracle,
+    "phenom": p_phenom,
     "taleo_be": p_taleo_be,
     "taleo_enterprise": p_taleo_enterprise,
 }

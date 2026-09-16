@@ -1,0 +1,495 @@
+{
+ "2011157": {
+  "jobDetail": {
+   "status": 200,
+   "data": {
+    "job": {
+     "SupeOrg_Level2": "Supervisory Organization EXEC (Chuck Robbins)",
+     "SupeOrg_Level3": "Operations (Thimaya Subaiya)",
+     "SupeOrg_Level4": "Supervisory Organization 1864467 (Chuck Graham)",
+     "metadata": {
+      "runDate": "2026-07-29T18:00:01.000+0000",
+      "runId": "CISCISGLOBAL.1785348001973"
+     },
+     "SupeOrg_Level5": "Supervisory Organization 0002561 (David Ashley)",
+     "hasSecondaryInternalQuestionnaire": "no",
+     "SupeOrg_Level6": "Supervisory Organization 77244 (Helen Jie Luo)",
+     "SupeOrg_Level7": "Supervisory Organization 0015997 (Leslie Averbeck)",
+     "SupeOrg_Level8": "Supervisory Organization 0006292 (Leslie Averbeck (Inherited))",
+     "companyName": "Cisco",
+     "category_raw": "Supply Chain Engineering",
+     "standardisedCountry": "India",
+     "type": "Full time",
+     "structureData": {
+      "identifier": {
+       "@type": "PropertyValue",
+       "name": "Cisco",
+       "value": "2011157"
+      },
+      "hiringOrganization": {
+       "@type": "Organization",
+       "name": "Cisco"
+      },
+      "jobLocation": {
+       "address": {
+        "addressCountry": "India",
+        "@type": "PostalAddress",
+        "postalCode": "560103",
+        "addressLocality": "Bangalore",
+        "addressRegion": ""
+       },
+       "@type": "Place"
+      },
+      "employmentType": "Full time",
+      "@type": "JobPosting",
+      "workHours": "40 hours per week",
+      "description": "<p><b>Meet the team </b></p><p>As Quality Engineering team, we bridge the gap between innovation and reliability by managing the entire product lifecycle from NPI through to mass production and field deployment. We define rigorous quality standards, establish Six Sigma goals, and perform deep-dive failure analyses to mitigate risks before they reach the customer. Our team actively monitors factory yields and investigates RMAs to drive continuous improvement across all production lines. By serving as the steadfast &#34;Voice of the Customer,&#34; we resolve complex escalations and utilize data-driven insights to predict and prevent future issues. Ultimately, we ensure every product we deliver consistently meets the highest benchmarks for quality, reliability, and customer satisfaction. </p><p></p><p><b>Your Impact</b></p><p>As a Product Quality Engineer (PQE), you are a recognized expert within Cisco, performing complex quality engineering tasks using specialized domain knowledge. You will drive cross-functional engagement across Business Units (BU), Manufacturing (MFG), Product Operations, and Customer Experience (CX) to ensure our customers receive products of the highest quality, consistent with Cisco’s brand. This role requires a senior quality engineer who can operate with minimal supervision, lead early design engagements and own the end-to-end investigation and resolution of complex quality issues.</p><ul><li><p><b>NPI &amp; Design Engagement:</b> Lead or co-lead early design engagement for Cisco Hardware products, ensuring quality and reliability requirements are integrated from the start of the New Product Introduction (NPI) process.</p></li><li><p><b>End-to-End Issue Management:</b> Own the investigation, containment, and corrective action of quality issues from inception to resolution, ensuring robust root cause analysis.</p></li><li><p><b>Strategic Thinking &amp; Innovation:</b> Proactively identify and resolve complex problems impacting a single or set of products’ quality. Develop and deliver innovative approaches and lead major projects that contribute to the Quality Organisations objectives.</p></li><li><p><b>Cross-Functional Leadership:</b> Drive engagement across multiple teams (BU, MFG, Prod Ops, CX, etc.) and lead complex, cross-functional quality projects that will impact the business and scope beyond of assigned products.</p></li><li><p><b>Data-Driven Decision Making:</b> Use sophisticated analytical thought and advanced statistical analysis to design process, product, and service improvements.</p></li><li><p><b>QMS &amp; Standards Proficiency:</b> Apply expert knowledge of industrial quality standards and the Quality Management System (QMS) to solve problems impacting the organisation and assigned products.</p></li><li><p><b>Communication &amp; Storytelling:</b> Communicate complex ideas and strategies persuasively to senior-level stakeholders, anticipating objections and using data-driven storytelling to influence outcomes.</p></li></ul><p><b>Minimum Qualifications</b></p><p>You are a strategic problem-solver with a proven track record of leading high-impact quality initiatives in a complex, diverse environment.</p><ul><li><p>Bachelor’s Degree or Master’s Degree in Electronics Engineering with Minimum of 10 years of experience in quality/Electronics Hardware product design</p></li><li><p>Extensive experience in Product Quality Engineering, recognised as an expert within the field.</p></li><li><p><b>Expert Domain Knowledge:</b> Deep understanding of product architecture and product-level failure mechanisms.</p></li><li><p><b>Advanced Analytics:</b> Ability to apply statistics and other advanced analytics to identify innovative solutions based on industry trends and business needs.</p></li><li><p><b>Risk Management:</b> Ability to develop and lead cross-functional risk mitigation projects.</p></li></ul><p></p><p><b>Preferred Qualifications :</b></p><ul><li><h2>Proven experience leading multiple projects and acting as a team leader in cross-functional environments.</h2></li><li><h2><b>Strategic Acumen:</b> Ability to understand the upstream and downstream impact of changes and recommend improvements for quality issues.</h2></li><li><h2><b>Certification (Optional):</b> Six Sigma Green Belt/Black Belt certification or equivalent knowledge is preferred.</h2></li><li><h2><b>Leadership &amp; Influence:</b> Strong influencing and collaboration skills; able to lead large teams and drive change management activities.</h2></li></ul><p></p><h1>Why Cisco? </h1><p>At Cisco, we’re revolutionizing how data and infrastructure connect and protect organizations in the AI era – and beyond. We’ve been innovating fearlessly for 40 years to create solutions that power how humans and technology work together across the physical and digital worlds. These solutions provide customers with unparalleled security, visibility, and insights across the entire digital footprint.</p><p>Fueled by the depth and breadth of our technology, we experiment and create meaningful solutions. Add to that our worldwide network of doers and experts, and you’ll see that the opportunities to grow and build are limitless. We work as a team, collaborating with empathy to make really big things happen on a global scale. Because our solutions are everywhere, our impact is everywhere. </p><p>We are Cisco, and our power starts with you. </p><p></p>",
+      "title": "Quality Engineer | NPI(New Product Introduction) exp",
+      "datePosted": "2026-07-29T00:00:00.000+0000",
+      "@context": "http://schema.org",
+      "occupationalCategory": "Supply Chain and Manufacturing Ops"
+     },
+     "descriptionTeaser": "Meet the team As Quality Engineering team, we bridge the gap between innovation and reliability by managing the entire product lifecycle from NPI through to mass production and field deployment. We de",
+     "state": "",
+     "jobUpdatedDate": "2026-07-29T18:10:38.063+0000",
+     "confidential": {
+      "isConfidential": false
+     },
+     "siteType": "external",
+     "standardised_multi_location": [
+      {
+       "standardisedMapQueryLocation": "Bangalore,Karnataka,India",
+       "standardisedStateCode": "KA",
+       "standardisedCity": "Bangalore",
+       "latitude": "12.97194",
+       "latlong": {
+        "lon": 77.59369,
+        "lat": 12.97194
+       },
+       "isLocationStandardized": true,
+       "standardisedCountry": "India",
+       "standardisedTimezone": "+05:30 UTC",
+       "standardisedState": "Karnataka",
+       "longitude": "77.59369"
+      }
+     ],
+     "secondaryQuestionnaireId": "",
+     "standardisedMapQueryLocation": "Bangalore,Karnataka,India",
+     "RemoteType": "Hybrid",
+     "jobProfile": "Quality Engineer (010)",
+     "uniqueValue": {
+      "jobId": "2011157",
+      "refNum": "CISCISGLOBAL",
+      "locale": "en_GLOBAL",
+      "siteType": "external"
+     },
+     "uniqueKey": "CISCISGLOBAL2011157externalen_GLOBAL",
+     "internalCategoryId": "CISCISGLOBAL_Supply_Chain_and_Manufacturing_Ops",
+     "jobUniqueIdentifier": "refNum,jobId,siteType,locale",
+     "primaryInternalQuestionnaireId": "QUESTIONNAIRE-3-1736",
+     "multi_category": [
+      {
+       "primaryLocaleCategory": "Supply Chain and Manufacturing Ops",
+       "internalCategoryId": "CISCISGLOBAL_Supply_Chain_and_Manufacturing_Ops",
+       "category_raw": "Supply Chain Engineering",
+       "category": "Supply Chain and Manufacturing Ops"
+      }
+     ],
+     "reqId": "2011157",
+     "raasJobRequisitionType": "Professional",
+     "reqTagging": "",
+     "ai_summary": "The Product Quality Engineer at Cisco will be responsible for leading quality initiatives and ensuring product reliability across various teams. The ideal candidate will have a Bachelor’s or Master’s degree in Electronics Engineering and at least 10 years of experience in quality engineering. Strong skills in quality management, statistical analysis, and cross-functional leadership are essential. The role requires effective communication with stakeholders and the ability to drive innovative solutions to complex quality issues.",
+     "displayCareerSite": true,
+     "raasJobFamily": "Supply Chain Engineering",
+     "recruitingCoordinatoremail": "[\"santhykr@cisco.com\"]",
+     "standardisedTimezone": "+05:30 UTC",
+     "SupeOrg_Level1": "Supervisory Organization CEO (Chuck Robbins)",
+     "confidentialJobReq": "0",
+     "skipJob": false,
+     "city": "Bangalore",
+     "visibilityLocale": [
+      "en_GLOBAL"
+     ],
+     "latitude": "12.97194",
+     "hasSecondaryQuestionnaire": "no",
+     "targetHireDate": "",
+     "isPrivate": false,
+     "multi_location": [
+      {
+       "country": "India",
+       "cityState": "Bangalore",
+       "address": "., Bangalore- 560103, India",
+       "locationName": "Bangalore, India",
+       "city": "Bangalore",
+       "postalCode": "560103",
+       "latlong": {
+        "lon": 77.59369,
+        "lat": 12.97194
+       },
+       "latitude": "12.97194",
+       "cityStateZipCode": "Bangalore, 560103",
+       "stateCountry": "India",
+       "externalLocation": "",
+       "locationId": "JPL_BANGALORE_INDIA",
+       "location": "Bangalore, India",
+       "state": "",
+       "cityCountry": "Bangalore, India",
+       "cityStateCountry": "Bangalore, India",
+       "mapQueryLocation": "Bangalore, India",
+       "longitude": "77.59369"
+      }
+     ],
+     "privateJobIdentifier": "No",
+     "jobReopenedOnDate": "2026-07-29T07:33:22.309+0000",
+     "jobPostingStartDate": "2026-07-29",
+     "IsEvergreenJob": "No",
+     "locationId": "JPL_BANGALORE_INDIA",
+     "spotLightJob": "No",
+     "deltaPostingStatus": "Open",
+     "address": "., Bangalore- 560103, India",
+     "locationName": "Bangalore, India",
+     "jobPostingSiteId": "Cisco Careers",
+     "jobDeletedOnDate": "2026-06-25T09:01:41.728+0000",
+     "isTranslated": false,
+     "jobIdentifier": "NeverPosted - Job Sync",
+     "retainJobFields": true,
+     "hasPrimaryInternalQuestionnaire": "yes",
+     "AssessmentName": "",
+     "HireType": "External and Internal",
+     "cmsJobId": "JOB_POSTING-3-30376",
+     "applyUrl": "https://cisco.wd5.myworkdayjobs.com/Cisco_Careers/job/Bangalore-India/Quality-Engineer---NPI-New-Product-Introduction--exp_2011157-1/apply",
+     "jobReqTagging": [],
+     "jobDeletedOn": "2026-06-25T08:33:57.152Z",
+     "externalApply": false,
+     "cityState": "Bangalore",
+     "country": "India",
+     "postalCode": "560103",
+     "hasPrimaryQuestionnaire": "yes",
+     "isEverGreenReq": "0",
+     "source": "WORKDAY",
+     "jobRequisitionId": "2011157",
+     "compensationRange": "₹2,726,400.00 INR - ₹3,612,600.00 INR",
+     "standardisedCity": "Bangalore",
+     "locationAccuracyLevel": "city",
+     "AssessmentVendor": "",
+     "jobFamily": "Supply Chain Engineering",
+     "externalTracking": false,
+     "visibilityType": "External",
+     "longitude": "77.59369",
+     "ats": "WORKDAY",
+     "isDerived": false,
+     "latlong": {
+      "lon": 77.59369,
+      "lat": 12.97194
+     },
+     "postingSiteName": [
+      "external",
+      "internal"
+     ],
+     "secondaryInternalQuestionnaireId": "",
+     "stateCountry": "India",
+     "CiscoBrands": "",
+     "jobId": "2011157",
+     "updatedByOfflineProcessing": true,
+     "refNum": "CISCISGLOBAL",
+     "requisitionScope": "General",
+     "jobReopenedOn": "2026-07-29T07:33:22.309Z",
+     "profileId": "211911",
+     "jobUpdated": "2026-07-29T18:10:38.063Z",
+     "topic": "Intg.JobPull.GeoLocation",
+     "userType": "external",
+     "primaryLocaleCategory": "Supply Chain and Manufacturing Ops",
+     "description": "<p><b>Meet the team </b></p><p>As Quality Engineering team, we bridge the gap between innovation and reliability by managing the entire product lifecycle from NPI through to mass production and field deployment. We define rigorous quality standards, establish Six Sigma goals, and perform deep-dive failure analyses to mitigate risks before they reach the customer. Our team actively monitors factory yields and investigates RMAs to drive continuous improvement across all production lines. By serving as the steadfast &#34;Voice of the Customer,&#34; we resolve complex escalations and utilize data-driven insights to predict and prevent future issues. Ultimately, we ensure every product we deliver consistently meets the highest benchmarks for quality, reliability, and customer satisfaction. </p><p></p><p><b>Your Impact</b></p><p>As a Product Quality Engineer (PQE), you are a recognized expert within Cisco, performing complex quality engineering tasks using specialized domain knowledge. You will drive cross-functional engagement across Business Units (BU), Manufacturing (MFG), Product Operations, and Customer Experience (CX) to ensure our customers receive products of the highest quality, consistent with Cisco’s brand. This role requires a senior quality engineer who can operate with minimal supervision, lead early design engagements and own the end-to-end investigation and resolution of complex quality issues.</p><ul><li><p><b>NPI &amp; Design Engagement:</b> Lead or co-lead early design engagement for Cisco Hardware products, ensuring quality and reliability requirements are integrated from the start of the New Product Introduction (NPI) process.</p></li><li><p><b>End-to-End Issue Management:</b> Own the investigation, containment, and corrective action of quality issues from inception to resolution, ensuring robust root cause analysis.</p></li><li><p><b>Strategic Thinking &amp; Innovation:</b> Proactively identify and resolve complex problems impacting a single or set of products’ quality. Develop and deliver innovative approaches and lead major projects that contribute to the Quality Organisations objectives.</p></li><li><p><b>Cross-Functional Leadership:</b> Drive engagement across multiple teams (BU, MFG, Prod Ops, CX, etc.) and lead complex, cross-functional quality projects that will impact the business and scope beyond of assigned products.</p></li><li><p><b>Data-Driven Decision Making:</b> Use sophisticated analytical thought and advanced statistical analysis to design process, product, and service improvements.</p></li><li><p><b>QMS &amp; Standards Proficiency:</b> Apply expert knowledge of industrial quality standards and the Quality Management System (QMS) to solve problems impacting the organisation and assigned products.</p></li><li><p><b>Communication &amp; Storytelling:</b> Communicate complex ideas and strategies persuasively to senior-level stakeholders, anticipating objections and using data-driven storytelling to influence outcomes.</p></li></ul><p><b>Minimum Qualifications</b></p><p>You are a strategic problem-solver with a proven track record of leading high-impact quality initiatives in a complex, diverse environment.</p><ul><li><p>Bachelor’s Degree or Master’s Degree in Electronics Engineering with Minimum of 10 years of experience in quality/Electronics Hardware product design</p></li><li><p>Extensive experience in Product Quality Engineering, recognised as an expert within the field.</p></li><li><p><b>Expert Domain Knowledge:</b> Deep understanding of product architecture and product-level failure mechanisms.</p></li><li><p><b>Advanced Analytics:</b> Ability to apply statistics and other advanced analytics to identify innovative solutions based on industry trends and business needs.</p></li><li><p><b>Risk Management:</b> Ability to develop and lead cross-functional risk mitigation projects.</p></li></ul><p></p><p><b>Preferred Qualifications :</b></p><ul><li><h2>Proven experience leading multiple projects and acting as a team leader in cross-functional environments.</h2></li><li><h2><b>Strategic Acumen:</b> Ability to understand the upstream and downstream impact of changes and recommend improvements for quality issues.</h2></li><li><h2><b>Certification (Optional):</b> Six Sigma Green Belt/Black Belt certification or equivalent knowledge is preferred.</h2></li><li><h2><b>Leadership &amp; Influence:</b> Strong influencing and collaboration skills; able to lead large teams and drive change management activities.</h2></li></ul><p></p><h1>Why Cisco? </h1><p>At Cisco, we’re revolutionizing how data and infrastructure connect and protect organizations in the AI era – and beyond. We’ve been innovating fearlessly for 40 years to create solutions that power how humans and technology work together across the physical and digital worlds. These solutions provide customers with unparalleled security, visibility, and insights across the entire digital footprint.</p><p>Fueled by the depth and breadth of our technology, we experiment and create meaningful solutions. Add to that our worldwide network of doers and experts, and you’ll see that the opportunities to grow and build are limitless. We work as a team, collaborating with empathy to make really big things happen on a global scale. Because our solutions are everywhere, our impact is everywhere. </p><p>We are Cisco, and our power starts with you. </p><p></p>",
+     "cityStateZipCode": "Bangalore, 560103",
+     "locale": "en_GLOBAL",
+     "title": "Quality Engineer | NPI(New Product Introduction) exp",
+     "jobSeqNo": "CISCISGLOBAL2011157EXTERNALENGLOBAL",
+     "postedDate": "2026-07-29T00:00:00.000+0000",
+     "postingStatus": "OPEN",
+     "postedDateTrack": [
+      "2026-07-29T00:00:00.000Z"
+     ],
+     "dateCreated": "2026-03-24T16:58:17.673+0000",
+     "raasJobFamilyGroup": "Supply Chain",
+     "isLocationStandardized": true,
+     "company": "123 Cisco Systems (India) Private Limited",
+     "cityStateCountry": "Bangalore, India",
+     "GradeLevel": "010.Supply Chain Engineering",
+     "department": "Supervisory Organization 0006292 (Leslie Averbeck (Inherited))",
+     "visibilitySiteType": [
+      "external"
+     ],
+     "hashKey": "1e02b4b79c063a75838f22a658a38f388b161e711d71e4988c8af2fb03baebc7a02681e0048aef2ec60c4f4226cbb4197c877368e73e9d133879a2e92fcce78d",
+     "parentRefNum": "CISCISGLOBAL",
+     "integrationLocale": [
+      "en_GLOBAL",
+      "en_GLOBAL"
+     ],
+     "actionType": "Refer",
+     "jobVisibility": [
+      "external",
+      "internal"
+     ],
+     "primaryQuestionnaireId": "QUESTIONNAIRE_PROFESSIONAL_PRE_QUALIFICATION_GLOBAL_EXTERNAL",
+     "recruitingCoordinatorname": "[\"Santhya Krishnamoorthy\"]",
+     "standardisedStateCode": "KA",
+     "isCritical": true,
+     "jobFamilyId": "Supply Chain Engineering",
+     "location": "Bangalore, India",
+     "cityCountry": "Bangalore, India",
+     "category": "Supply Chain and Manufacturing Ops",
+     "mapQueryLocation": "Bangalore, India",
+     "standardisedState": "Karnataka"
+    }
+   }
+  }
+ },
+ "2006930": {
+  "jobDetail": {
+   "status": 200,
+   "data": {
+    "job": {
+     "SupeOrg_Level2": "Supervisory Organization EXEC (Chuck Robbins)",
+     "SupeOrg_Level3": "Product (Jeetu Patel)",
+     "SupeOrg_Level4": "Data Center Silicon (Mohammad Issa)",
+     "metadata": {
+      "runDate": "2026-07-27T06:00:00.000+0000",
+      "runId": "CISCISGLOBAL.1785132000088"
+     },
+     "SupeOrg_Level5": "UCS & MDS Silicon 1 (Deepak Mayya)",
+     "hasSecondaryInternalQuestionnaire": "no",
+     "SupeOrg_Level6": "SP-Silicon-BGL (Manoj Ariyamparambath)",
+     "SupeOrg_Level7": "",
+     "SupeOrg_Level8": "",
+     "companyName": "Cisco",
+     "category_raw": "Hardware Development",
+     "standardisedCountry": "India",
+     "type": "Full time",
+     "structureData": {
+      "identifier": {
+       "@type": "PropertyValue",
+       "name": "Cisco",
+       "value": "2006930"
+      },
+      "hiringOrganization": {
+       "@type": "Organization",
+       "name": "Cisco"
+      },
+      "jobLocation": {
+       "address": {
+        "addressCountry": "India",
+        "@type": "PostalAddress",
+        "postalCode": "560103",
+        "addressLocality": "Bangalore",
+        "addressRegion": ""
+       },
+       "@type": "Place"
+      },
+      "employmentType": "Full time",
+      "@type": "JobPosting",
+      "workHours": "40 hours per week",
+      "description": "<div><b>Meet the Team</b></div><div>Come join us and be part of the Cisco SiliconOne team and take part in crafting Cisco&#39;s groundbreaking Enterprise and Service Provider solutions by crafting some of the most complex chips being developed in the industry with the opportunity to get full exposure to all aspects of the systems and applications we build (Silicon, Hardware, Software, telemetry, security, etc). Our group offers a rare combination of a startup culture with the benefits of working for the top tier networking company in the world!</div><div><b> </b></div><div><b>Your Impact</b></div><div>Cisco SiliconOne team is looking for an expert and talented ASIC Engineer. You will have an ASIC design background with hands-on experience in RTL design with in-depth knowledge of ASIC/SoC development cycle, the best industry practices, from specification through tape-out and lab validation, and a proven track record of success in high-performance/high-volume products.</div><ul><li>Architectural work: in-depth understanding of the architecture, and identification of problems and solutions.</li><li>All aspects of implementation: specification, design, timing-analysis, power-optimization, flow automation, optimization of the logic for low power and area; highlighting issues and standard methodologies for power and area optimization.</li><li>Document and improve standard methodologies to make product successful.</li></ul><div><b> </b></div><div><b>Minimum Qualifications</b></div><ul><li>BS/MS and 7&#43;/5&#43; years respectively of hands-on experience in large-scale, high-performance ASIC.</li><li>Implementation specification creation.</li><li>RTL development (Verilog, SystemVerilog, VCS, Spyglass, CDC, Formal verification)</li><li>Experienced in system debug and SW/HW bring-up, system validation of silicon towards FCS.</li><li>Gate-level understanding of RTL and Synthesis</li><li>Programming/scripting skills (C, C&#43;&#43;, Perl)</li><li>Hardware Emulation Platforms and tools (such as EVE, Veloce)</li><li>Good written/verbal interpersonal skills and leadership skills.</li></ul><div></div><div><b>Preferred Qualification</b></div><ul><li>Worked in block design of high-scale, high-performance ASICs.</li><li>Planning overall block design strategy from the requirements.</li><li>Exposure to complex debugs and system level integration aspects</li><li>Valid experience in implementation: specification, RTL design, lint, cdc, timing analysis, formal verification, system testing.</li><li>Valid experience in flow automation (scripting, Makefiles, etc).</li><li>Working with senior resources in the team on architectural and design strategies.</li><li>Good interpersonal skills, and ability to accurately describe issues/improvements.</li><li>Excellent communication skills both verbal and written</li></ul><p></p><h1>Why Cisco? </h1><p>At Cisco, we’re revolutionizing how data and infrastructure connect and protect organizations in the AI era – and beyond. We’ve been innovating fearlessly for 40 years to create solutions that power how humans and technology work together across the physical and digital worlds. These solutions provide customers with unparalleled security, visibility, and insights across the entire digital footprint.</p><p>Fueled by the depth and breadth of our technology, we experiment and create meaningful solutions. Add to that our worldwide network of doers and experts, and you’ll see that the opportunities to grow and build are limitless. We work as a team, collaborating with empathy to make really big things happen on a global scale. Because our solutions are everywhere, our impact is everywhere. </p><p>We are Cisco, and our power starts with you. </p><p></p>",
+      "title": "ASIC Design Engineer | Exp 8+ Years",
+      "datePosted": "2026-04-21T00:00:00.000+0000",
+      "@context": "http://schema.org",
+      "occupationalCategory": "Product and Engineering"
+     },
+     "descriptionTeaser": "Meet the TeamCome join us and be part of the Cisco SiliconOne team and take part in crafting Cisco's groundbreaking Enterprise and Service Provider solutions by crafting some of the most complex chips",
+     "state": "",
+     "jobUpdatedDate": "2026-07-27T06:38:42.867+0000",
+     "siteType": "external",
+     "standardised_multi_location": [
+      {
+       "standardisedMapQueryLocation": "Bangalore,Karnataka,India",
+       "standardisedStateCode": "KA",
+       "standardisedCity": "Bangalore",
+       "latitude": "12.97194",
+       "latlong": {
+        "lon": 77.59369,
+        "lat": 12.97194
+       },
+       "isLocationStandardized": true,
+       "standardisedCountry": "India",
+       "standardisedTimezone": "+05:30 UTC",
+       "standardisedState": "Karnataka",
+       "longitude": "77.59369"
+      }
+     ],
+     "confidential": {
+      "isConfidential": false
+     },
+     "secondaryQuestionnaireId": "",
+     "standardisedMapQueryLocation": "Bangalore,Karnataka,India",
+     "jobProfile": "ASIC Engineer (010)",
+     "RemoteType": "Onsite Only",
+     "uniqueValue": {
+      "jobId": "2006930",
+      "refNum": "CISCISGLOBAL",
+      "locale": "en_GLOBAL",
+      "siteType": "external"
+     },
+     "uniqueKey": "CISCISGLOBAL2006930externalen_GLOBAL",
+     "internalCategoryId": "CISCISGLOBAL_Product_and_Engineering",
+     "uniqueKeys": [
+      "CISCISGLOBAL2006930externalen_GLOBAL"
+     ],
+     "jobUniqueIdentifier": "refNum,jobId,siteType,locale",
+     "primaryInternalQuestionnaireId": "QUESTIONNAIRE_PROFESSIONAL_PRE_QUALIFICATION_GLOBAL_INTERNAL",
+     "multi_category": [
+      {
+       "primaryLocaleCategory": "Product and Engineering",
+       "internalCategoryId": "CISCISGLOBAL_Product_and_Engineering",
+       "category_raw": "Hardware Development",
+       "category": "Product and Engineering"
+      }
+     ],
+     "reqId": "2006930",
+     "raasJobRequisitionType": "Professional",
+     "reqTagging": "",
+     "ai_summary": "The ASIC Design Engineer role at Cisco involves defining, designing, and verifying ASIC subsystems for various platforms. Candidates should have a strong background in ASIC design, debugging, and networking technologies. A Bachelor's degree in Engineering is required, with a preference for a Master's degree. The position requires a minimum of 5 years of experience, with opportunities for growth in a collaborative environment.",
+     "displayCareerSite": true,
+     "raasJobFamily": "Hardware Development",
+     "recruitingCoordinatoremail": "[\"vadhimoo@cisco.com\"]",
+     "standardisedTimezone": "+05:30 UTC",
+     "SupeOrg_Level1": "Supervisory Organization CEO (Chuck Robbins)",
+     "confidentialJobReq": "0",
+     "skipJob": false,
+     "pt_dlc_topic": "Intg.JobPull.GeoLocation",
+     "city": "Bangalore",
+     "latitude": "12.97194",
+     "visibilityLocale": [
+      "en_GLOBAL"
+     ],
+     "hasSecondaryQuestionnaire": "no",
+     "targetHireDate": "",
+     "isPrivate": false,
+     "multi_location": [
+      {
+       "country": "India",
+       "cityState": "Bangalore",
+       "address": "., Bangalore- 560103, India",
+       "locationName": "Bangalore, India",
+       "city": "Bangalore",
+       "postalCode": "560103",
+       "latlong": {
+        "lon": 77.59369,
+        "lat": 12.97194
+       },
+       "latitude": "12.97194",
+       "cityStateZipCode": "Bangalore, 560103",
+       "stateCountry": "India",
+       "externalLocation": "",
+       "locationId": "JPL_BANGALORE_INDIA",
+       "location": "Bangalore, India",
+       "state": "",
+       "cityCountry": "Bangalore, India",
+       "cityStateCountry": "Bangalore, India",
+       "mapQueryLocation": "Bangalore, India",
+       "longitude": "77.59369"
+      }
+     ],
+     "privateJobIdentifier": "No",
+     "jobPostingStartDate": "2026-04-21",
+     "IsEvergreenJob": "No",
+     "locationId": "JPL_BANGALORE_INDIA",
+     "spotLightJob": "Yes",
+     "deltaPostingStatus": "Open",
+     "timestamp": "07/27/26 09:55:15 AM",
+     "address": "., Bangalore- 560103, India",
+     "locationName": "Bangalore, India",
+     "ls_timestamp": "07/27/26 09:55:15 AM",
+     "jobPostingSiteId": "Cisco Careers",
+     "isTranslated": false,
+     "jobIdentifier": "NeverPosted - Job Sync",
+     "hasPrimaryInternalQuestionnaire": "yes",
+     "AssessmentName": "",
+     "HireType": "External and Internal",
+     "cmsJobId": "JOB_POSTING-3-19557",
+     "applyUrl": "https://cisco.wd5.myworkdayjobs.com/Cisco_Careers/job/Bangalore-India/ASIC-Design-Engineer---Exp-8--Years_2006930/apply",
+     "jobReqTagging": [],
+     "externalApply": false,
+     "cityState": "Bangalore",
+     "country": "India",
+     "postalCode": "560103",
+     "hasPrimaryQuestionnaire": "yes",
+     "isEverGreenReq": "0",
+     "source": "WORKDAY",
+     "jobRequisitionId": "2006930",
+     "compensationRange": "₹3,213,500.00 INR - ₹5,035,000.00 INR",
+     "standardisedCity": "Bangalore",
+     "locationAccuracyLevel": "city",
+     "ls_batch": true,
+     "AssessmentVendor": "",
+     "jobFamily": "Hardware Development",
+     "externalTracking": false,
+     "visibilityType": "External",
+     "longitude": "77.59369",
+     "ats": "WORKDAY",
+     "isDerived": false,
+     "latlong": {
+      "lon": 77.59369,
+      "lat": 12.97194
+     },
+     "postingSiteName": [
+      "external",
+      "internal"
+     ],
+     "secondaryInternalQuestionnaireId": "",
+     "stateCountry": "India",
+     "CiscoBrands": "",
+     "jobId": "2006930",
+     "updatedByOfflineProcessing": true,
+     "refNum": "CISCISGLOBAL",
+     "requisitionScope": "General",
+     "profileId": "210111",
+     "jobUpdated": "2026-07-27T06:38:42.867Z",
+     "topic": "Intg.JobPull.GeoLocation",
+     "userType": "external",
+     "primaryLocaleCategory": "Product and Engineering",
+     "description": "<div><b>Meet the Team</b></div><div>Come join us and be part of the Cisco SiliconOne team and take part in crafting Cisco&#39;s groundbreaking Enterprise and Service Provider solutions by crafting some of the most complex chips being developed in the industry with the opportunity to get full exposure to all aspects of the systems and applications we build (Silicon, Hardware, Software, telemetry, security, etc). Our group offers a rare combination of a startup culture with the benefits of working for the top tier networking company in the world!</div><div><b> </b></div><div><b>Your Impact</b></div><div>Cisco SiliconOne team is looking for an expert and talented ASIC Engineer. You will have an ASIC design background with hands-on experience in RTL design with in-depth knowledge of ASIC/SoC development cycle, the best industry practices, from specification through tape-out and lab validation, and a proven track record of success in high-performance/high-volume products.</div><ul><li>Architectural work: in-depth understanding of the architecture, and identification of problems and solutions.</li><li>All aspects of implementation: specification, design, timing-analysis, power-optimization, flow automation, optimization of the logic for low power and area; highlighting issues and standard methodologies for power and area optimization.</li><li>Document and improve standard methodologies to make product successful.</li></ul><div><b> </b></div><div><b>Minimum Qualifications</b></div><ul><li>BS/MS and 7&#43;/5&#43; years respectively of hands-on experience in large-scale, high-performance ASIC.</li><li>Implementation specification creation.</li><li>RTL development (Verilog, SystemVerilog, VCS, Spyglass, CDC, Formal verification)</li><li>Experienced in system debug and SW/HW bring-up, system validation of silicon towards FCS.</li><li>Gate-level understanding of RTL and Synthesis</li><li>Programming/scripting skills (C, C&#43;&#43;, Perl)</li><li>Hardware Emulation Platforms and tools (such as EVE, Veloce)</li><li>Good written/verbal interpersonal skills and leadership skills.</li></ul><div></div><div><b>Preferred Qualification</b></div><ul><li>Worked in block design of high-scale, high-performance ASICs.</li><li>Planning overall block design strategy from the requirements.</li><li>Exposure to complex debugs and system level integration aspects</li><li>Valid experience in implementation: specification, RTL design, lint, cdc, timing analysis, formal verification, system testing.</li><li>Valid experience in flow automation (scripting, Makefiles, etc).</li><li>Working with senior resources in the team on architectural and design strategies.</li><li>Good interpersonal skills, and ability to accurately describe issues/improvements.</li><li>Excellent communication skills both verbal and written</li></ul><p></p><h1>Why Cisco? </h1><p>At Cisco, we’re revolutionizing how data and infrastructure connect and protect organizations in the AI era – and beyond. We’ve been innovating fearlessly for 40 years to create solutions that power how humans and technology work together across the physical and digital worlds. These solutions provide customers with unparalleled security, visibility, and insights across the entire digital footprint.</p><p>Fueled by the depth and breadth of our technology, we experiment and create meaningful solutions. Add to that our worldwide network of doers and experts, and you’ll see that the opportunities to grow and build are limitless. We work as a team, collaborating with empathy to make really big things happen on a global scale. Because our solutions are everywhere, our impact is everywhere. </p><p>We are Cisco, and our power starts with you. </p><p></p>",
+     "cityStateZipCode": "Bangalore, 560103",
+     "locale": "en_GLOBAL",
+     "title": "ASIC Design Engineer | Exp 8+ Years",
+     "jobSeqNo": "CISCISGLOBAL2006930EXTERNALENGLOBAL",
+     "postedDate": "2026-04-21T00:00:00.000+0000",
+     "postingStatus": "OPEN",
+     "postedDateTrack": [
+      "2026-02-10T00:00:00.000Z",
+      "2026-04-21T00:00:00.000Z"
+     ],
+     "dateCreated": "2026-01-29T04:51:06.839+0000",
+     "raasJobFamilyGroup": "Engineering",
+     "isLocationStandardized": true,
+     "company": "123 Cisco Systems (India) Private Limited",
+     "cityStateCountry": "Bangalore, India",
+     "GradeLevel": "010.Development Engineering C",
+     "department": "SP-Silicon-BGL (Manoj Ariyamparambath)",
+     "visibilitySiteType": [
+      "external"
+     ],
+     "hashKey": "05fec49187af66a9426d2759033d988febfbf12504dd23343046a9e5dcb27282214335f045161800dd1a3241d73feb555bf671665c4ac7d40c89f865d4cb1994",
+     "parentRefNum": "CISCISGLOBAL",
+     "integrationLocale": [
+      "en_GLOBAL",
+      "en_GLOBAL"
+     ],
+     "actionType": "Refer",
+     "jobVisibility": [
+      "external",
+      "internal"
+     ],
+     "primaryQuestionnaireId": "QUESTIONNAIRE_PROFESSIONAL_PRE_QUALIFICATION_GLOBAL_EXTERNAL",
+     "recruitingCoordinatorname": "[\"Vetrivel Murugan Adhimoolam\"]",
+     "standardisedStateCode": "KA",
+     "isCritical": true,
+     "jobFamilyId": "Hardware Development",
+     "location": "Bangalore, India",
+     "cityCountry": "Bangalore, India",
+     "category": "Product and Engineering",
+     "mapQueryLocation": "Bangalore, India",
+     "standardisedState": "Karnataka"
+    }
+   }
+  }
+ }
+}

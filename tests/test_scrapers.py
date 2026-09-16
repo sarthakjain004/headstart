@@ -9031,6 +9031,15 @@ _RESOLVE_ROWS = [
         "https://skylarkdrones.keka.com/careers",
     ),
     (
+        # The `| Zelis Jobs` tail is the point: `_CAREERS_WRAPPER` would take the whole thing.
+        # The URL carries the probe prefix, which is what a scraper built but never fetched holds.
+        "phenom",
+        "careers.zelis.com",
+        "Careers at Zelis | Zelis Jobs",
+        "Zelis",
+        "https://careers.zelis.com/us/en",
+    ),
+    (
         "lever",
         "picklerobot",
         "Pickle Robot Company",
