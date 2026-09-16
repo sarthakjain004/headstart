@@ -1,4 +1,4 @@
-# ADR-0162: Report the description gap as a drain, and reclassify the Boards no scrape can select
+# ADR-0162: Report the description gap as a drain, and reclassify the Boards that are not Scrapable
 
 **Status:** accepted · **Date:** 2026-09-16 · **Amends:**
 [ADR-0062](0062-drain-the-description-gap.md) (adds the drain report its level could not give, and
@@ -45,13 +45,40 @@ Measured against the committed liveness ledger instead, every one of `micron`, `
 `nvidia-sandbox` is recorded **`dead`**. They are not being scraped badly; they are not being
 scraped *at all*, and nothing can ever settle them.
 
-Joining the live gap ledger to `load_active_companies(min_jobs=0)` — the exact call `scrape_plan`
-makes — gives the size of that class:
+Joining the live gap ledger to `load_active_companies(min_jobs=0)` — CONTEXT.md's **Scrapable
+Board**, the exact call `scrape_plan` makes — gives the size of that class:
 
 | | Boards | Jobs | share of the 45,423 backlog |
 |---|---:|---:|---:|
-| on a Board `scrape_plan` may select | 7,284 | 31,831 | 70.1% |
-| **on a Board no slice can contain** | **134** | **13,592** | **29.9%** |
+| on a Scrapable Board | 7,284 | 31,831 | 70.1% |
+| **not on a Scrapable Board** | **134** | **13,592** | **29.9%** |
+
+The five-run table above is read from run logs, which do not outlive their retention, and from
+`experiment/pipeline-review-2026-09-16/` — which is **gitignored**, so neither is reproducible from
+this repo. The join below is, from the committed liveness ledger plus one ~1 MB HF file, and it is
+what every figure in this ADR that is not from those logs was computed with:
+
+```python
+import csv
+from huggingface_hub import hf_hub_download
+from headstart import board_description_gap
+from headstart.board_identity import lower_key
+from headstart.config import load_active_companies
+from headstart.ingest import board_failures
+
+g = hf_hub_download("imPoseidon/headstart-index",
+                    "data/state/board_description_gap.csv", repo_type="dataset")
+f = hf_hub_download("imPoseidon/headstart-index",
+                    "data/state/board_failures.csv", repo_type="dataset")
+rows = {r["board"]: int(r["unsettled"]) for r in csv.DictReader(open(g))}
+scrapable = {board_description_gap.key_for(c)
+             for c in load_active_companies("data/validate/liveness", min_jobs=0)}
+quarantined = {lower_key(b) for b in board_failures.quarantined(board_failures.load(f))}
+off = {b: n for b, n in rows.items() if b not in scrapable}
+quar = {b: n for b, n in rows.items() if b in scrapable and b in quarantined}
+print(len(off), sum(off.values()), len(quar), sum(quar.values()), sum(rows.values()))
+# 134 13592 123 908 45423   — the ledger of 2026-09-16
+```
 
 ADR-0062 already named this class — "the 166 off-slice Boards holding 15,177 Jobs — dead, excluded
 or parked — are counted in the ledger but can never be picked, so the reported backlog is slightly
@@ -90,14 +117,24 @@ a spike that never happened.
 
 ### 2. A Board no scrape slice can contain is `unreachable`, not unsettled
 
-`gap` now builds the set of selectable Boards from `load_active_companies(min_jobs=0)` — the same
-call and the same `min_jobs` as `scrape_plan`, keyed through `board_description_gap.key_for`, so
-nothing it calls reachable is a Board the plan would refuse — and counts a row whose Board is
-absent from it alongside the disabled-ATS and expired classes rather than in the backlog.
+`gap` now builds the Scrapable Board set from `load_active_companies(min_jobs=0)` — the same call
+and the same `min_jobs` as `scrape_plan`, keyed through `board_description_gap.key_for` — and
+counts a row whose Board is absent from it alongside the disabled-ATS and expired classes rather
+than in the backlog.
+
+That set is a **superset** of what a run finally offers. `scrape_plan` filters twice more after
+this call: quarantined Boards (`board_failures.quarantined`) and ADR-0064's value gate. So a
+handful of Boards this counts reachable would still be refused — measured, 123 Boards holding 908
+Jobs, **2.0%** of the backlog, all of it quarantine. The error is deliberately in that direction:
+it never calls a Board unreachable that a run could pick, and the converse is all the
+classification needs. The quarantine arm is left out on its own evidence: it buys 2% from a
+mechanism with **no drain at all** (755 Boards, zero clears in five runs — finding 2 of the same
+review), so reclassifying on it would hide those rows permanently, which is exactly what this
+decision rejects elsewhere. The value gate is per-run and not a property of the Board at all.
 
 This is reliably derivable in a way no scrape-outcome heuristic is: `dead`, `parked`, aliased-away
 and vendor-test are verdicts the liveness ledger already carries, and a Board absent from that list
-is not merely unlikely to be scraped, it is *unselectable*. **And it drains.** The gap ledger is
+is not merely unlikely to be scraped, it is outside the Scrapable set entirely. **And it drains.** The gap ledger is
 rebuilt from scratch every run, so the moment a liveness probe calls a Board live again its rows
 come straight back — unlike quarantine, which is the one-way door finding 2 of the same review
 measured at 755 Boards with zero clears.
@@ -105,7 +142,7 @@ measured at 755 Boards with zero clears.
 **Fail-open guard.** `load_active_companies` answers `[]` for a missing directory, which is
 indistinguishable from "no Board is live". An empty answer therefore reclassifies nothing and
 warns, because acting on it would mark the entire backlog unreachable and hand the next run a
-quota of nothing.
+quota of nothing. A *partial* loss is not caught — see Consequences.
 
 ### 3. The rest of the stuck class is measured, not reclassified
 
@@ -180,6 +217,12 @@ and no classification keyed on scrape authority would ever touch it.
   reason, and the ledger's `updated_at` column is where the generation is recoverable.
 * `gap` now reads `data/validate/liveness/`, which is committed to git and so is always present in
   the join. It is the same read `scrape_plan` already does each run.
+* The fail-open guard catches a **total** loss of that directory, not a partial one. A single
+  absent or unparseable `{ats}.csv` — `config.load_active_companies` warns and skips a file whose
+  stem is not a registered ATS — would leave the set non-empty and silently take that ATS's whole
+  backlog with it. Accepted rather than fixed here: `scrape_plan` reads the same directory and
+  would equally refuse those Boards, so the gap ledger would still be describing the slice it
+  actually gets. Named because nothing counts it.
 
 ## Alternatives considered
 

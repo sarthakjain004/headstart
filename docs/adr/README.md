@@ -160,4 +160,4 @@ supersedes it and note the supersession in both.
 | [0157](0157-a-scrapers-job-url-is-declared-once-not-authored-three-times.md) | A scraper's job URL is declared once, not authored three times | 2026-09-15 |
 | [0158](0158-jazzhr-and-jobvite-are-worth-their-storage.md) | JazzHR and Jobvite are worth their storage, measured at full pool | 2026-09-16 |
 | [0159](0159-a-hard-cap-marks-truncated-an-approximate-ceiling-does-not.md) | A hard cap marks the Board truncated; an approximate ceiling does not | 2026-09-16 |
-| [0162](0162-report-the-description-gap-as-a-drain.md) | Report the description gap as a drain, and reclassify the Boards no scrape can select | 2026-09-16 |
+| [0162](0162-report-the-description-gap-as-a-drain.md) | Report the description gap as a drain, and reclassify the Boards that are not Scrapable | 2026-09-16 |

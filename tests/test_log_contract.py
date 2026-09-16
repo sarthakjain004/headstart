@@ -686,8 +686,8 @@ def _ledger_gap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
     The header's seven counts are the whole point of the line, and only one input moves each:
     `held` needs the description store to hold the Job, `on a disabled ATS` needs its `ats` to be
-    one the registry has switched off, `on a Board no scrape can select` needs a Board the
-    liveness ledger does not list (ADR-0162), `gone from a Board this run scraped in full` needs a
+    one the registry has switched off, `not on a Scrapable Board` needs a Board the liveness
+    ledger does not list (ADR-0162), `gone from a Board this run scraped in full` needs a
     Board that emitted lines this run without re-emitting that id (#185), and `unsettled` is what
     is left. All seven are formatted `{n:,}`, so all seven clear 999.
     """
@@ -2633,7 +2633,7 @@ CONTRACT: tuple[Line, ...] = (
         emitter=_LEDGERS,
         body=(
             "gap: 6,633 stored rows | 1,204 held | 2,408 unsettled across 1,205 boards "
-            "(1,010 on a disabled ATS, 1,006 on a Board no scrape can select, 1,005 gone from a "
+            "(1,010 on a disabled ATS, 1,006 not on a Scrapable Board, 1,005 gone from a "
             "Board this run scraped in full — all unreachable) "
             "-> data/state/board_description_gap.csv"
         ),

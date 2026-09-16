@@ -376,11 +376,11 @@ def test_gap_sizes_the_jobs_it_could_not_read_authoritatively(tmp_path, caplog):
     )
 
 
-def test_gap_drops_a_board_no_scrape_slice_can_contain(tmp_path):
+def test_gap_drops_a_board_that_is_not_scrapable(tmp_path):
     """The reliably-derivable half of the stuck backlog (ADR-0162). `dead` is a verdict the
-    liveness ledger already carries, so a Board absent from `load_active_companies` can never be
-    picked, never scraped and never settled — measured at 134 Boards / 13,592 Jobs, 30% of the
-    live backlog. Counting it reserves quota nothing can spend."""
+    liveness ledger already carries, so a Board outside CONTEXT.md's **Scrapable Board** set can
+    never be picked, never scraped and never settled — measured at 134 Boards / 13,592 Jobs, 30%
+    of the live backlog. Counting it reserves quota nothing can spend."""
     path = _gap_run(
         tmp_path,
         meta_rows=[
@@ -404,7 +404,9 @@ def test_gap_reclassifies_nothing_when_the_liveness_dir_is_missing(tmp_path, cap
             settled={"greenhouse": ["unrelated"]},
         )
     assert board_description_gap.load(path) == {"greenhouse:acme": 1}
-    assert any("no selectable Board" in m for m in caplog.messages), caplog.messages
+    assert any("lists no Scrapable Board" in m for m in caplog.messages), (
+        caplog.messages
+    )
 
 
 def test_an_empty_prior_ledger_is_not_a_prior_of_zero(tmp_path, caplog):
