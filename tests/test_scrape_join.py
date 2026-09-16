@@ -256,7 +256,8 @@ def test_join_reports_per_ats_coverage_and_separate_loss_events(caplog):
 
     text = "\n".join(r.getMessage() for r in caplog.records)
     assert "workday attempted 2, successful 1, failed 1, partial 1" in text
-    assert "Fresh coverage: DEGRADED" in text
+    # Graded on the unusable share since 2026-09-16; this fixture is far past the band.
+    assert "Fresh coverage: CRITICAL" in text
     assert "workday listing-page loss events: 1/5" in text
     assert "workday detail loss events: 80/100" in text
     assert "attempted 30, HTTP failures 10, circuit-breaker skips 70" in text

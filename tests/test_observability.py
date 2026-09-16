@@ -167,7 +167,10 @@ def test_scrape_health_keeps_atses_and_loss_kinds_separate(tmp_path):
 
     assert health.degraded
     assert health.verdict_line() == (
-        "Fresh coverage: DEGRADED — 1 failed and 1 partial of 3 attempted Boards"
+        # 2 unusable of 3 attempted is 66.67%, past `_CRITICAL_SHARE` — the verdict is graded on
+        # the share now, not on `any(failed or partial)`, so this tiny fixture reads CRITICAL.
+        "Fresh coverage: CRITICAL — 1 failed and 1 partial of 3 attempted Boards "
+        "(66.67% unusable)"
     )
     lines = health.loss_lines()
     assert any("workday detail loss events: 8/10" in line for line in lines)
