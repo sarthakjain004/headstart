@@ -1,6 +1,9 @@
 # ADR-0025: Parallelize the nightly pipeline across GitHub Actions runners — plan → fan-out → merge
 
 - Status: Accepted — Phase 1 shipped; Phase 2 followed as [ADR-0026](0026-parallelize-nightly-scrape.md)
+- Amended by [ADR-0161](0161-the-eviction-scope-travels-as-board-keys.md) — the `corpus-state`
+  simplification target named below is taken: `data/jobs` no longer rides the artifact, so the
+  sentence saying it "carries the whole scrape snapshot" describes the shape before that change
 - Date: 2026-07-24 (measured outcome appended 2026-07-25)
 - Builds on [ADR-0020](0020-free-tier-deployment.md) (the single-job nightly + the HF-state
   download→mutate→upload round-trip), [ADR-0022](0022-tech-priority-board-ordering.md) (the

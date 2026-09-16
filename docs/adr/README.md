@@ -161,3 +161,4 @@ supersedes it and note the supersession in both.
 | [0158](0158-jazzhr-and-jobvite-are-worth-their-storage.md) | JazzHR and Jobvite are worth their storage, measured at full pool | 2026-09-16 |
 | [0159](0159-a-hard-cap-marks-truncated-an-approximate-ceiling-does-not.md) | A hard cap marks the Board truncated; an approximate ceiling does not | 2026-09-16 |
 | [0160](0160-the-coverage-verdict-is-graded-on-a-share.md) | The coverage verdict is graded on a share, not on any failure at all | 2026-09-16 |
+| [0161](0161-the-eviction-scope-travels-as-board-keys.md) | The eviction scope travels between stages as Board keys, not as the corpus it was derived from | 2026-09-16 |

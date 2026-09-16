@@ -19,6 +19,7 @@ from headstart.ingest.index_plan import (
     plan_sync,
     read_unauthoritative_boards,
     resolve_board,
+    scraped_boards,
 )
 from headstart.scrapers.greenhouse import GreenhouseScraper
 from headstart.scrapers.personio import PersonioScraper
@@ -714,3 +715,81 @@ def test_only_the_first_keyless_board_carries_a_stack(monkeypatch, caplog):
     )
     assert keyless[0].levelno == logging.WARNING
     assert all(r.levelno == logging.INFO for r in keyless[1:])
+
+
+def _full_scrape(root, ids):
+    """A pre-tech-filter `data/jobs/` snapshot holding `ids`."""
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "ats.jsonl").write_text(
+        "".join(f'{{"id":"{i}"}}\n' for i in ids), encoding="utf-8"
+    )
+    return root
+
+
+def test_the_scrape_on_disk_outranks_a_recorded_scope(tmp_path):
+    """A recorded scope round-trips through the HF dataset, so a local run can hold one from a
+    previous run beside a scrape it just took. The records are the definition; the file is a
+    summary of them, so it must never override the thing it summarises."""
+    scraped = _full_scrape(tmp_path / "jobs", ["ats:fresh:1"])
+    recorded = tmp_path / "scraped_boards.json"
+    recorded.write_text('["ats:stale"]', encoding="utf-8")
+
+    assert scraped_boards(recorded, scraped, set(), {}) == {"ats:fresh"}
+
+
+def test_a_recorded_scope_answers_when_the_records_did_not_travel(tmp_path):
+    """The pipeline's own arm: the merge job gets `data/jobs/` holding only `tech/`, so the
+    non-recursive glob finds nothing and the recorded keys are what scope eviction (ADR-0161)."""
+    jobs = tmp_path / "jobs"
+    (jobs / "tech").mkdir(parents=True)
+    (jobs / "tech" / "ats.jsonl").write_text('{"id":"ats:tech:1"}\n', encoding="utf-8")
+    recorded = tmp_path / "scraped_boards.json"
+    recorded.write_text('["ats:tech", "ats:nontech"]', encoding="utf-8")
+
+    assert scraped_boards(recorded, jobs, {"ats:tech:1"}, {}) == {
+        "ats:tech",
+        "ats:nontech",
+    }
+
+
+def test_an_empty_recorded_scope_is_an_answer_not_a_missing_file(tmp_path):
+    """A join that unioned nothing records `[]`, and evicting nothing is the right scope for it.
+    Reading that as "no file" would fall through to the corpus ids and invent a scope."""
+    recorded = tmp_path / "scraped_boards.json"
+    recorded.write_text("[]", encoding="utf-8")
+
+    assert scraped_boards(recorded, tmp_path / "jobs", {"ats:a:1"}, {}) == set()
+
+
+def test_a_corrupt_recorded_scope_falls_back_instead_of_scoping_on_garbage(tmp_path):
+    """Fails open, like `read_unauthoritative_boards`. JSON's top level may legally be a string,
+    and iterating `"abc"` would scope eviction to Boards `a`, `b` and `c` — every real Board's
+    rows silently out of scope, on a run that reports nothing wrong."""
+    recorded = tmp_path / "scraped_boards.json"
+    recorded.write_text('"abc"', encoding="utf-8")
+
+    assert scraped_boards(recorded, tmp_path / "jobs", {"ats:a:1"}, {}) == {"ats:a"}
+
+    recorded.write_text("{not json", encoding="utf-8")
+    assert scraped_boards(recorded, tmp_path / "jobs", {"ats:a:1"}, {}) == {"ats:a"}
+
+
+def test_no_recorded_scope_and_no_records_keeps_the_corpus_id_fallback(tmp_path):
+    """The Sidecorpus-CSV and unit-test path: neither source exists, so the corpus's own Boards
+    are the scope — unchanged by ADR-0161."""
+    assert scraped_boards(None, tmp_path / "absent", {"ats:a:1"}, {}) == {"ats:a"}
+    assert scraped_boards(
+        tmp_path / "absent.json", tmp_path / "absent", {"ats:a:1"}, {}
+    ) == {"ats:a"}
+
+
+def test_a_recorded_scope_nobody_asked_for_cannot_pre_empt_the_fallback(tmp_path):
+    """Why `recorded` has no default. `data/state/scraped_boards.json` round-trips through the HF
+    dataset, and CLAUDE.md tells you to pull `data/state/*` — so a local `index sync` against the
+    Sidecorpus CSV would find the last pipeline run's ~14,700 Boards on disk and scope eviction on
+    them instead of on the corpus it was handed, marking every indexed row on them Unconfirmed.
+    Only a caller that passes the path gets that arm."""
+    recorded = tmp_path / "scraped_boards.json"
+    recorded.write_text('["ats:from-some-other-run"]', encoding="utf-8")
+
+    assert scraped_boards(None, tmp_path / "absent", {"ats:a:1"}, {}) == {"ats:a"}
