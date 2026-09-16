@@ -25,9 +25,11 @@ did flush; only a torn final line is skipped.
 **failures** reads the shard reports' per-Board errors, keeps only the *gone* class (404/410 —
 see :mod:`headstart.ingest.board_failures` for why a 429 or a timeout must not count), and tracks
 consecutive gone-runs per Board. At :data:`~headstart.ingest.board_failures.QUARANTINE_AT` strikes
-the Board leaves the next run's scrape slice; any successful scrape clears it. This is the loop
-nothing else closes: the liveness ledger is only written by manual probes, and the priority ledger
-carries an unscraped-looking Board unchanged.
+the Board leaves the next run's scrape slice; any successful scrape clears it, and
+:data:`~headstart.ingest.board_failures.PAROLE_DAYS` later the verdict expires and the Board comes
+back for one run to re-earn it (ADR-0161). This is the loop nothing else closes: the liveness
+ledger is only written by manual probes, and the priority ledger carries an unscraped-looking
+Board unchanged.
 
 **gap** runs after ``update_descriptions``, and is the one ledger read from the *stored* corpus
 rather than this run's: it counts, per Board, the embedded Jobs whose description the ADR-0050
@@ -183,10 +185,16 @@ def failures(args: argparse.Namespace) -> int:
 
     quarantined = board_failures.quarantined(rows)
     cleared = sum(1 for b in prev if b not in rows)
+    # The total alone is a stock, and a stock that only ever grew read as steady: 749/749/751/752/
+    # 755 across the five runs of 2026-09-16, which says "+6" only to someone diffing two logs.
+    # Both directions are stated, always — `-0 released` is printed rather than omitted, because a
+    # clause that disappears at zero is a clause a consumer regex drops the whole line over.
+    was = board_failures.quarantined(prev)
     _log.info(
         f"failures: {len(gone)} of {examined} board error(s) read as gone (404/410) across "
         f"{len(reports)} shard(s) | {len(rows)} ledger rows ({cleared} cleared by a successful "
-        f"scrape) | {len(quarantined)} at/over {board_failures.QUARANTINE_AT} strikes -> "
+        f"scrape) | {len(quarantined)} at/over {board_failures.QUARANTINE_AT} strikes "
+        f"(+{len(quarantined - was)} new, -{len(was - quarantined)} released) -> "
         f"{args.ledger}"
     )
     if unmatched:

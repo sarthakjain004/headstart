@@ -449,3 +449,27 @@ def test_no_meta_yet_writes_nothing(tmp_path):
         )
     )
     assert not ledger.exists()
+
+
+def test_the_quarantine_total_is_reported_as_a_delta(tmp_path, caplog):
+    """An absolute alone hid the growth: the five runs of 2026-09-16 read 749/749/751/752/755 and
+    only a cross-run diff said "+6". The line now states the movement in both directions, so a
+    parole that releases a Board is as visible as a Board that earns quarantine."""
+    ledger = tmp_path / "board_failures.csv"
+    bf.save(
+        ledger,
+        {
+            "greenhouse:held": bf.Failure(bf.QUARANTINE_AT, "404", "t"),
+            "greenhouse:freed": bf.Failure(bf.QUARANTINE_AT, "404", "t"),
+            "greenhouse:last-strike": bf.Failure(bf.QUARANTINE_AT - 1, "404", "t"),
+        },
+    )
+    with caplog.at_level("INFO"):
+        _run(
+            tmp_path,
+            errors={"greenhouse:last-strike": "HTTPError: HTTP Error 404: "},
+            boards_ok=["greenhouse:freed"],
+            ledger=ledger,
+        )
+    line = next(r.message for r in caplog.records if r.message.startswith("failures:"))
+    assert "+1 new" in line and "-1 released" in line

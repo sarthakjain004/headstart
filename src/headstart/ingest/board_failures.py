@@ -25,12 +25,20 @@ Quarantine only removes a Board from the *scrape slice* (``scrape_plan``). It de
 touch ``data/validate/liveness/``, which stays the probe-owned truth, and it deliberately does not
 reach ``live_keep_set`` — that feeds ``index prune``, so filtering there would evict the Board's
 rows from the served table as a side effect of a scraping decision.
+
+And the verdict **expires**: see :func:`paroled` and ADR-0162. A quarantined Board is never
+scraped, so it can never re-enter ``produced``, so the clearing branch in :func:`update` is
+unreachable and the ledger only grows — measured over the five runs of 2026-09-16, ``0 cleared by
+a successful scrape`` in 5 of 5 while the total climbed 749 → 755. Parole re-admits it for one
+run every :data:`PAROLE_DAYS`, and the answer decides: a fresh 404 restamps the row, anything
+alive deletes it.
 """
 
 from __future__ import annotations
 
 import csv
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
 
@@ -38,6 +46,21 @@ from typing import NamedTuple
 # Board only ages when it is actually scraped, and the exploration tail re-selects a given Board
 # roughly one run in four — so five strikes is weeks of agreement, not an afternoon's blip.
 QUARANTINE_AT = 5
+
+# Days a gone-verdict stands before the Board is re-admitted for one run to re-earn it (ADR-0162).
+#
+# Seven, not the value gate's fortnight (``scrape_plan._GATE_RECHECK_DAYS``), because the two
+# re-checks cost three orders of magnitude apart. That gate re-admits a Board measured at 15+ min
+# of shard time; a quarantined Board's last measured scrape is p50 **0.10 s** (p90 0.94 s, 354 s
+# for all 757 together — ``data/state/board_cost.csv``, 2026-09-16), because it dies on the
+# listing request. So the fortnight there buys something real and would only be cargo-culted here.
+#
+# At 7 days and ~24 runs/day the re-admitted pool is ~31 Boards — 0.16% of a 20,000-Board slice —
+# against a measured 23 of 757 quarantined Boards that answer 200 today, **12 of them serving 264
+# tech postings** (5,593 raw, but ADR-0017's gate is what decides what reaches users). Not one day:
+# that is 5,299 requests a week instead of 757, at origins that have already said 404 five times,
+# to catch the same ~5.6 recoveries. ADR-0162 has the full arithmetic and the alternatives.
+PAROLE_DAYS = 7
 
 # "Gone" as the origin reports it. Matched against the recorded reason, which the shard reports
 # carry as "{ExcType}: {message}" (e.g. "HTTPError: HTTP Error 404: ").
@@ -133,3 +156,54 @@ def update(
 def quarantined(rows: dict[str, Failure]) -> set[str]:
     """The Boards that have earned their way out of the scrape slice."""
     return {board for board, row in rows.items() if row.quarantined}
+
+
+def paroled(rows: dict[str, Failure], now: str) -> set[str]:
+    """The quarantined Boards whose gone-verdict has expired — back in the *candidate* pool.
+
+    A verdict is evidence with an age, not a fact. Nothing re-probes a quarantined Board, so
+    without this the ledger records forever what one afternoon found: re-probed live on
+    2026-09-16, **23 of the 757** Boards then quarantined answered 200 again, and **12 of those
+    served 264 tech postings** — coverage the product had lost with no metric reporting the loss.
+    Count the tech subset, not the raw 5,593: one non-tech Board (`greenhouse:svetness`, a
+    personal-training franchise) is 4,980 of that total and contributes nothing to the index.
+
+    Only a *quarantined* row is eligible; one still accruing strikes is in the slice anyway. The
+    caller re-admits these and :func:`update` judges what comes back, so a Board that 404s again
+    simply restamps its row and serves another :data:`PAROLE_DAYS`.
+
+    Re-admitted is not scraped. ``pick_boards`` still has to choose the Board, and an unscored one
+    goes into the random exploration tail, which selected at p = 0.144 when this was measured
+    (14,000 explore slots over a 97,254-Board tail pool). So a parole cohort drains over several
+    runs rather than being probed in one — expect roughly one in seven of it per run.
+
+    A Board whose re-probe fails some *other* way (timeout, TLS, 429) is neither gone nor
+    produced, so its row is untouched and it stays paroled until a verdict arrives. That is the
+    right direction: the premise of quarantine is *confirmed* gone, and a Board we can no longer
+    confirm is not one we have grounds to keep excluding.
+    """
+    return {
+        board
+        for board, row in rows.items()
+        if row.quarantined and _verdict_age_days(row, now) >= PAROLE_DAYS
+    }
+
+
+def _verdict_age_days(row: Failure, now: str) -> float:
+    """How long ago this row's gone-verdict was earned; ``inf`` when either stamp is unreadable.
+
+    Named for the thing rather than for the subtraction, deliberately: ``scrape_plan._days_since``
+    already does date arithmetic one import away, and two near-identical names in one traceback is
+    the hazard CLAUDE.md names. The ``inf``-on-unreadable contract is the same as that one's, and
+    for the same reason — this module fails open everywhere, so a bad date must re-admit a Board,
+    never strand it. A naive stamp is the realistic bad case (every row written here is tz-aware),
+    and subtracting one raises ``TypeError`` rather than ``ValueError``.
+    """
+    try:
+        return float(
+            (
+                datetime.fromisoformat(now) - datetime.fromisoformat(row.last_seen_gone)
+            ).days
+        )
+    except (TypeError, ValueError):
+        return float("inf")
