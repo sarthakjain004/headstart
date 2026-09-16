@@ -24,7 +24,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -174,33 +176,76 @@ def is_tech(title: str | None, department: str | None = None) -> bool:
     return classify(title, department).is_tech
 
 
-def filter_jobs(src_dir: str | Path, dst_dir: str | Path) -> dict[str, tuple[int, int]]:
+def _filter_file(pair: tuple[Path, Path]) -> tuple[str, int, int]:
+    """Filter one ``{ats}.jsonl`` into its tech subset, returning ``(ats, kept, total)``.
+
+    Module-level and single-argument so :func:`filter_jobs` can hand it to a process pool; the
+    body is what that loop always did, lifted unchanged.
+    """
+    src, dst = pair
+    kept = total = 0
+    with (
+        src.open(encoding="utf-8") as fin,
+        dst.open("w", encoding="utf-8") as fout,
+    ):
+        for line in fin:
+            line = line.strip()
+            if not line:
+                continue
+            total += 1
+            job = json.loads(line)
+            if is_tech(job.get("title"), job.get("department")):
+                fout.write(json.dumps(job, ensure_ascii=False) + "\n")
+                kept += 1
+        fout.flush()
+    return src.stem, kept, total
+
+
+def filter_jobs(
+    src_dir: str | Path, dst_dir: str | Path, *, workers: int | None = None
+) -> dict[str, tuple[int, int]]:
     """Filter every ``{src_dir}/{ats}.jsonl`` down to its tech rows in ``{dst_dir}/{ats}.jsonl``.
 
     Streams line-by-line (never buffering a whole file) and flushes per file, per the repo's
     incremental-output rule. Returns ``{ats: (kept, total)}``. Non-tech rows are dropped; the source
     files (the full scrape output) are left untouched.
+
+    One ATS file is one independent unit of work, so the files fan out across a process pool —
+    the same shape ``update_meta``'s sweep uses, and for the same reason: this stage sits on
+    ``join``'s serial critical path, where it measured 185 s of a 930 s job on the 2026-09-16
+    nightly (2,095,569 rows at 11,327 rows/s).
+
+    **Submitted largest-file-first**, which is the whole of the speed-up. The work is heavily
+    skewed — ``workday`` alone was 500,679 of those rows — and at 4 workers that file is just
+    *under* an even share, so an LPT schedule lands on the even share (a projected 46 s) while
+    alphabetical submission would start the largest file last and straggle on it.
+
+    ``workers`` defaults to the machine's CPU count; 1 (or a single input file) runs inline, with
+    no pool, since pool start-up would then cost more than it saves.
     """
     src_dir, dst_dir = Path(src_dir), Path(dst_dir)
     dst_dir.mkdir(parents=True, exist_ok=True)
+    # Largest first: an LPT schedule. `report` sorts, so completion order never reaches the log.
+    pairs = sorted(
+        ((src, dst_dir / src.name) for src in src_dir.glob("*.jsonl")),
+        key=lambda pair: pair[0].stat().st_size,
+        reverse=True,
+    )
+    if workers is None:
+        workers = os.cpu_count() or 1
     stats: dict[str, tuple[int, int]] = {}
-    for src in sorted(src_dir.glob("*.jsonl")):
-        kept = total = 0
-        with (
-            src.open(encoding="utf-8") as fin,
-            (dst_dir / src.name).open("w", encoding="utf-8") as fout,
-        ):
-            for line in fin:
-                line = line.strip()
-                if not line:
-                    continue
-                total += 1
-                job = json.loads(line)
-                if is_tech(job.get("title"), job.get("department")):
-                    fout.write(json.dumps(job, ensure_ascii=False) + "\n")
-                    kept += 1
-            fout.flush()
-        stats[src.stem] = (kept, total)
+    if workers <= 1 or len(pairs) <= 1:
+        for pair in pairs:
+            ats, kept, total = _filter_file(pair)
+            stats[ats] = (kept, total)
+        return stats
+    with ProcessPoolExecutor(max_workers=min(workers, len(pairs))) as pool:
+        futures = [pool.submit(_filter_file, pair) for pair in pairs]
+        for future in as_completed(
+            futures
+        ):  # collect as they land, never a blocking map
+            ats, kept, total = future.result()
+            stats[ats] = (kept, total)
     return stats
 
 

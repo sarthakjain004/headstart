@@ -12,6 +12,7 @@ import logging
 
 import pytest
 
+from headstart import tech_filter
 from headstart.tech_filter import (
     _STRONG,
     classify,
@@ -178,6 +179,66 @@ def test_filter_jobs_writes_tech_only_and_leaves_source(tmp_path):
     assert {j["id"] for j in out} == {"greenhouse:a:1", "greenhouse:a:3"}
     # source file untouched
     assert len((src / "greenhouse.jsonl").read_text().splitlines()) == 3
+
+
+def _write_corpus(src, sizes):
+    """One {ats}.jsonl per entry, `n` rows each — half tech, half not."""
+    src.mkdir(parents=True, exist_ok=True)
+    for ats, n in sizes.items():
+        rows = [
+            {
+                "id": f"{ats}:a:{i}",
+                "title": "Backend Engineer" if i % 2 else "Chef de Partie",
+            }
+            for i in range(n)
+        ]
+        (src / f"{ats}.jsonl").write_text(
+            "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
+        )
+
+
+def test_filter_jobs_is_identical_pooled_and_inline(tmp_path):
+    """The process pool must not change a single byte of the answer — same stats, same rows.
+
+    The pre-existing single-file test only ever exercised the inline path (one input file skips
+    the pool), so without this the parallel branch ships untested.
+    """
+    sizes = {"workday": 40, "greenhouse": 25, "lever": 10, "apple": 5}
+    src = tmp_path / "jobs"
+    _write_corpus(src, sizes)
+
+    inline = filter_jobs(src, tmp_path / "inline", workers=1)
+    pooled = filter_jobs(src, tmp_path / "pooled", workers=4)
+
+    assert inline == pooled
+    assert pooled == {ats: (n // 2, n) for ats, n in sizes.items()}
+    for ats in sizes:
+        name = f"{ats}.jsonl"
+        assert (tmp_path / "pooled" / name).read_text() == (
+            tmp_path / "inline" / name
+        ).read_text()
+
+
+def test_filter_jobs_submits_largest_file_first(tmp_path, monkeypatch):
+    """LPT ordering is the whole of the speed-up, and it is invisible in the output.
+
+    The files are deliberately named so that alphabetical order is the *reverse* of size order:
+    a regression to `sorted(glob(...))` would start the largest file last and straggle on it,
+    while every assertion about stats and rows still passed.
+    """
+    src = tmp_path / "jobs"
+    _write_corpus(src, {"aaa": 4, "mmm": 20, "zzz": 60})
+
+    seen = []
+    real = tech_filter._filter_file
+    monkeypatch.setattr(
+        tech_filter,
+        "_filter_file",
+        lambda pair: (seen.append(pair[0].stem), real(pair))[1],
+    )
+    # workers=1 keeps it inline, so the recorded order is the submission order.
+    filter_jobs(src, tmp_path / "tech", workers=1)
+    assert seen == ["zzz", "mmm", "aaa"]
 
 
 def test_report_logs_per_ats_table_and_grand_total(caplog):
