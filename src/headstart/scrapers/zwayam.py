@@ -503,7 +503,7 @@ class ZwayamScraper(BaseScraper):
             )
             response.raise_for_status()
         except http.RequestsError as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None
         detail = response.json() or {}
         # `""`, never None, when the endpoint answers with no body: `fan_out` turns a *raising*

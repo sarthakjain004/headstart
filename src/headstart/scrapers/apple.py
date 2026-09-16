@@ -210,7 +210,7 @@ class AppleScraper(BaseScraper):
         try:
             body = self._get(self._detail_url(native_id))
         except http.RequestsError as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None
         return json.loads(body).get("res")
 
@@ -218,7 +218,7 @@ class AppleScraper(BaseScraper):
         try:
             body = await self._get_async(session, self._detail_url(native_id))
         except http.RequestsError as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None
         return json.loads(body).get("res")
 

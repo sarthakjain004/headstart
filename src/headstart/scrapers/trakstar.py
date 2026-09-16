@@ -236,7 +236,7 @@ class TrakstarScraper(BaseScraper):
                 headers={"User-Agent": USER_AGENT},
             )
         except http.RequestsError as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None  # a missing posting must not drop the job
         return self._extract_posting(response)
 
@@ -251,7 +251,7 @@ class TrakstarScraper(BaseScraper):
                 headers={"User-Agent": USER_AGENT},
             )
         except http.RequestsError as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None
         return self._extract_posting(response)
 
