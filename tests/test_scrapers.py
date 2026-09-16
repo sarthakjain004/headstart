@@ -4900,6 +4900,45 @@ def test_eightfold_skips_details_it_already_holds(monkeypatch):
     )  # and the held one carries no description, not someone else's
 
 
+def test_eightfold_skips_details_for_postings_the_tech_filter_will_drop(monkeypatch):
+    """A posting the tech gate discards never gets a detail fetch — no store entry can save it.
+
+    The ADR-0048 skip-list is built from `data/jobs/tech`, so a non-tech posting is never in it
+    and was re-fetched every run, forever: ~34,700 of eightfold's ~34,900 detail fetches per run
+    (five runs of 2026-09-16), spent on text no reader downstream ever opens.
+
+    `tech_filter.classify` reads `title` + `department`, and the PCSX listing carries both
+    (verified live: 142/142 and 157/157 positions on twilio/vialto), so the detail body is never
+    needed to make the call.
+    """
+    from headstart.scrapers.registry import get_scraper
+
+    scraper = get_scraper("eightfold", "acme.eightfold.ai", "Acme")
+    positions = [
+        {"id": "1", "name": "Backend Engineer", "department": "Engineering"},
+        {"id": "2", "name": "Warehouse Associate", "department": "Logistics"},
+        # Rule 4: a vague title under a technical department is tech, so its detail is still
+        # fetched — a gate reading the title alone would wrongly drop this one.
+        {"id": "3", "name": "Analyst", "department": "Data Platform"},
+    ]
+    fetched: list[str] = []
+
+    def fake_fan_out_async(items, fn, **kwargs):
+        fetched.extend(items)
+        return [f"desc-{i}" for i in items]
+
+    monkeypatch.setattr(scraper, "fan_out_async", fake_fan_out_async)
+    records = scraper._api_records("acme.com", positions)
+
+    assert fetched == ["1", "3"]
+    by_id = {r["id"]: r["fields"]["description"] for r in records}
+    assert by_id["1"] == "desc-1"
+    assert by_id["3"] == "desc-3"
+    # The non-tech posting is still emitted — the scrape writes the full set to
+    # `data/jobs/{ats}.jsonl` and `filter_tech` is what drops it, not this.
+    assert by_id["2"] is None
+
+
 def test_every_detail_is_needed_without_a_skip_list():
     """The default for every caller outside the pipeline: no list means fetch everything, even
     for a Job whose composite key another run would have covered."""
