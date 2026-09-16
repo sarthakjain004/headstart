@@ -1112,6 +1112,9 @@ def _index_paths(**over: object) -> argparse.Namespace:
     return argparse.Namespace(
         source="data/jobs/tech",
         scraped="data/jobs",
+        # Not passed, so the scope keeps coming from the records `_index_sync` writes into
+        # `data/jobs` — the arm a run holding the full scrape takes anyway (ADR-0162).
+        scraped_boards=None,
         db="data/lancedb",
         ledger="data/validate/liveness",
         upgrades="data/state/pending_upgrades.txt",
@@ -2393,7 +2396,7 @@ CONTRACT: tuple[Line, ...] = (
         ),
         why=(
             "ADR-0058 quarantine acting on the plan; the ledger itself is untouched. The parole "
-            "clause (ADR-0161) is stated even at zero, so the pattern can require it"
+            "clause (ADR-0162) is stated even at zero, so the pattern can require it"
         ),
         emit=_plan_measured,
     ),
@@ -3123,11 +3126,11 @@ def test_the_docstring_census_is_recomputed_not_remembered():
     ), f"the docstring names a source-verified count that is not {total - emit}"
 
 
-def test_the_two_adr_0161_clauses_stay_optional_for_older_runs():
+def test_the_two_adr_0162_clauses_stay_optional_for_older_runs():
     """`fanout_plan` and `fanout_errors` read *ranges* of runs, most of them older than the clause.
 
     Both emitters write their new clause unconditionally, which is why the `Line` bodies above
-    carry it — but every log written before ADR-0161 does not, and a pattern that required it
+    carry it — but every log written before ADR-0162 does not, and a pattern that required it
     would `search() -> None` behind an `if` and drop the whole line rather than erroring. That is
     the exact failure `fanout_errors.FAILURES`' own comment records having shipped once.
     """

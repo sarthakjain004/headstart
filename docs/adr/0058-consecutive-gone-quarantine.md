@@ -2,7 +2,7 @@
 
 **Status:** accepted · **Date:** 2026-08-18
 
-- **Amended by:** [ADR-0161](0161-a-gone-verdict-expires-quarantine-parole.md) — the
+- **Amended by:** [ADR-0162](0162-a-gone-verdict-expires-quarantine-parole.md) — the
   Consequences below claim "a board that dies and later revives is re-admitted automatically:
   its first successful scrape clears the streak". That branch is unreachable for a quarantined
   Board, which never scrapes again; measured, `0 cleared by a successful scrape` in 5 of 5 runs

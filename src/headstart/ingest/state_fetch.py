@@ -17,9 +17,9 @@ from replacing the served one. Nothing in the chain was wrong on its own; no ste
 the state it was building on had actually been fetched.
 
 So ask, independent of whether the download itself would have told the truth. The remote listing is
-the missing fact, and it fails closed where a silent download would not: :func:`_siblings` raises on
-a 429 rather than falling back, and raises again if the Hub answers without a ``siblings`` list at
-all. Requiring exactly what the Hub reports also needs no bootstrap opt-out — a first run matches
+the missing fact, and it fails closed where a silent download would not: :func:`_dataset_info`
+raises on a 429 rather than falling back, and raises again if the Hub answers without a
+``siblings`` list at all. Requiring exactly what the Hub reports also needs no bootstrap opt-out — a first run matches
 nothing, requires nothing, and proceeds. ``snapshot_download`` itself is gone from the download path
 as of 2026-09-07 (:func:`_download`, ADR-0085) — a single HTTP stream per file stalled hard on
 whichever file in a pattern set was largest, 68-84% of ``merge``'s wall time in three measured runs
@@ -36,6 +36,28 @@ fallback for failures that advise nothing. When the budget cannot cover the wind
 the fetch stops rather than retry early, because an early retry spends another request inside the
 window it is waiting on — which is how all 10 retries across the two runs lost on 2026-08-11 failed.
 
+Say which commit of the dataset the listing came from, too. It arrives in the same response, so
+:func:`commit_note` costs no extra Hub request — and it is the one thing no stage reported. Run
+35063022985's merge died on three HF 500s and published nothing, so run 35067130555 re-planned
+from run 35058831217's state and *nothing in its logs said so*; it had to be reconstructed
+afterwards from four independent signals.
+
+**Read it in one direction only**, because CONTEXT.md §Write guard is right that a commit id
+identifies no state here (ADR-0129): merge publishes four commits per run and the reclaim step
+squashes the whole history about every 20 runs — the live dataset is one ``Super-squash`` commit
+as of 2026-09-16. So a commit that *moved*, or a fresh publish time, proves nothing: a squash is a
+commit, and a run that lands three of its four uploads and dies before ``data/state`` leaves a
+minutes-old head over generation-old ledgers. A commit that has **not** moved, or a publish time a
+cycle or more behind the run reading it, does prove nothing was committed in between — and that is
+the originating incident's own shape, since a merge that published nothing stalls both. The
+pipeline chains its own successor roughly hourly (ADR-0093), so that reading is available in one
+run's log instead of a diff of two.
+
+Deliberately not the *run that wrote it*: nothing under ``data/state/`` carries a run id, and the
+one file that does — ``data/lancedb/_index_base.json`` (``index.write_base``) — describes the
+**table**, not the ledgers. That is the whole reason, stated narrowly: the commit reported here is
+no better against a partial publish, it is only cheaper and repo-wide.
+
 Exit: 0 once every expected file is on disk, 1 when the state could not be fetched (ADR-0030).
 """
 
@@ -47,6 +69,7 @@ import re
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import UTC, datetime
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
@@ -147,6 +170,36 @@ def reason_for(exc: Exception) -> str:
     detail = " ".join(str(exc).split())
     prefix = f"HTTP {status} " if status else ""
     return f"{type(exc).__name__}: {prefix}{detail}{limiter_note(exc)}"
+
+
+def _age_label(seconds: float) -> str:
+    """``14m`` / ``1h52m``. Minutes, because the run cadence is ~50-60 min (ADR-0093) and the
+    difference worth seeing is one cycle; hours once that would read as an unscannable
+    four-figure minute count."""
+    minutes = max(0, int(seconds)) // 60
+    return f"{minutes // 60}h{minutes % 60:02d}m" if minutes >= 60 else f"{minutes}m"
+
+
+def commit_note(sha: str | None, published: datetime | None, now: datetime) -> str:
+    """The dataset commit this listing came from, and how old it is.
+
+    Sound in one direction only — the module docstring says which, and why a commit id is not a
+    state identity here. The reading that holds is the incident's own: a commit that has not
+    moved, or a publish time a cycle behind the run reading it, means nothing was committed in
+    between.
+
+    Both fields are optional on ``DatasetInfo`` and a fresh fork's repo has never been written
+    (ADR-0095); ``last_modified`` is tz-aware on every live response but is normalised anyway,
+    because this line reports what a run read and must never be what fails that run closed.
+    """
+    commit = f"at {sha[:12]}" if sha else "at an unnamed commit"
+    if published is None:
+        return f"{commit}, never published"
+    if published.tzinfo is None:
+        published = published.replace(tzinfo=UTC)
+    stamp = published.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    age = _age_label((now - published).total_seconds())
+    return f"{commit}, published {stamp} ({age} old)"
 
 
 def reset_after(exc: Exception) -> int | None:
@@ -269,26 +322,36 @@ def remote_files(repo: str, token: str | None) -> list[str]:
     return [s.rfilename for s in _siblings(repo, token)]
 
 
+def _dataset_info(repo: str, token: str | None) -> Any:
+    """The Hub's whole answer about this dataset — the siblings *and* the revision they came
+    from — from the one request :func:`remote_files` describes, with its fail-closed guard.
+
+    Separate from :func:`_siblings` only because that answers a narrower question and two
+    callers (``remote_files``, ``state_guard``) ask exactly it. :func:`fetch_state` wants the
+    ``sha``/``last_modified`` beside the siblings, and they arrive in the same response, so
+    reading them here is free where a second ``repo_info`` would be another request.
+    """
+    from huggingface_hub import repo_info
+
+    info = repo_info(repo, repo_type="dataset", files_metadata=True, token=token)
+    if info.siblings is None:
+        raise RuntimeError(
+            f"Hub returned no `siblings` listing for {repo} — refusing to read that as an empty repo"
+        )
+    return info
+
+
 def _siblings(repo: str, token: str | None) -> list[Any]:
     """The listing behind :func:`remote_files`, with sizes — same one request, same fail-closed
     guard. Kept private and separate so callers that only need names (``remote_files``, tested and
-    used standalone) don't carry the size-bearing shape, while :func:`fetch_state` can read sizes
-    off this directly without a second Hub request for the same listing.
+    used standalone) don't carry the size-bearing shape, while ``state_guard`` can read sizes off
+    this directly without a second Hub request for the same listing.
 
     ``files_metadata=True`` is what carries size: ``expand=["siblings"]`` alone reports every
     sibling's ``size`` as ``None`` (verified live against this dataset, 2026-09-07) and the two
     are mutually exclusive on ``repo_info``, so this replaces rather than adds to that call.
     """
-    from huggingface_hub import repo_info
-
-    siblings = repo_info(
-        repo, repo_type="dataset", files_metadata=True, token=token
-    ).siblings
-    if siblings is None:
-        raise RuntimeError(
-            f"Hub returned no `siblings` listing for {repo} — refusing to read that as an empty repo"
-        )
-    return siblings
+    return _dataset_info(repo, token).siblings
 
 
 def remote_matches(repo_files: list[str], patterns: list[str]) -> set[str]:
@@ -475,8 +538,18 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
         started = time.monotonic()
         advised: int | None = None  # what the Hub says to wait, when it says anything
         try:
-            siblings = _siblings(repo, token)
+            info = _dataset_info(repo, token)
+            siblings = info.siblings
             listing = [s.rfilename for s in siblings]
+            # Before the download, not after it: the listing is where the commit is known, so a
+            # fetch that then dies still reports what it was building on. Inside the retry loop
+            # for the same reason — a re-listing may see a commit the first did not, and on the
+            # happy path it runs exactly once. INFO, not an annotation: this fires on every
+            # healthy fetch and ADR-0039 spends WARNING on the ones that are not.
+            _log.info(
+                f"dataset commit: {repo} "
+                f"{commit_note(info.sha, info.last_modified, datetime.now(UTC))}"
+            )
             wanted = remote_matches(listing, patterns)
             # A pattern that matches nothing is the one case the listing cannot rule on: a genuine
             # first run and an emptied or mistyped `HF_DATASET` look identical to it. ADR-0030 says

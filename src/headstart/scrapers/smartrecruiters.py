@@ -195,7 +195,7 @@ class SmartRecruitersScraper(BaseScraper):
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
             )
         except http.RequestsError as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None  # a missing detail must not drop the job
         return self._extract_detail(response)
 
@@ -215,7 +215,7 @@ class SmartRecruitersScraper(BaseScraper):
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
             )
         except http.RequestsError as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None
         return self._extract_detail(response)
 

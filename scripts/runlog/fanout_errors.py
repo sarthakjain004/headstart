@@ -30,7 +30,7 @@ of the run rather than of the boards.
 ledger — every board currently at or over the strike threshold, most of them struck out on earlier
 runs. It is not "boards quarantined this run", and reading it as inflow is the same mistake the
 trends ledger already cost this repo. The flow is the `(+N new, -M released)` clause beside it
-(ADR-0161); the leading number alone is a level.
+(ADR-0162); the leading number alone is a level.
 
 **Count it from the `failures:` line, never by counting `quarantined` lines.** `update_ledgers`
 emits `for board in sorted(quarantined)[:20]` — a capped, *alphabetically sorted* sample. Counting
@@ -92,7 +92,7 @@ FAILURES = re.compile(
     r" across (\d+) shard\(s\)"
     r" \| (\d+) ledger rows \((\d+) cleared by a successful scrape\) \| (\d+) at/over (\d+) strikes"
     # Optional for the same reason as `fanout_plan.QUARANTINE_SKIP`: the emitter always writes the
-    # delta, but runs predating ADR-0161 do not carry it, and requiring it would drop their line.
+    # delta, but runs predating ADR-0162 do not carry it, and requiring it would drop their line.
     r"(?: \(\+(\d+) new, -(\d+) released\))?"
 )
 FAILED = re.compile(r"\[scrape_run\] (\S+?) failed after (\d+)s: (\w+)")
@@ -178,9 +178,9 @@ def quarantines(run: Run) -> None:
             totals.groups()
         )
         moved = (
-            f"; this run moved it +{new} / -{released} (ADR-0161)"
+            f"; this run moved it +{new} / -{released} (ADR-0162)"
             if new is not None
-            else "; pre-ADR-0161 run — no delta logged, and the total could only grow"
+            else "; pre-ADR-0162 run — no delta logged, and the total could only grow"
         )
         print(
             f"\n  failures: {gone} of {examined} board error(s) read as gone across {shards} "

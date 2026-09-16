@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
+from headstart import tech_filter
 from headstart.tech_filter import (
     _STRONG,
     classify,
@@ -178,6 +180,116 @@ def test_filter_jobs_writes_tech_only_and_leaves_source(tmp_path):
     assert {j["id"] for j in out} == {"greenhouse:a:1", "greenhouse:a:3"}
     # source file untouched
     assert len((src / "greenhouse.jsonl").read_text().splitlines()) == 3
+
+
+def _write_corpus(src, sizes):
+    """One {ats}.jsonl per entry, `n` rows each — half tech, half not."""
+    src.mkdir(parents=True, exist_ok=True)
+    for ats, n in sizes.items():
+        rows = [
+            {
+                "id": f"{ats}:a:{i}",
+                "title": "Backend Engineer" if i % 2 else "Chef de Partie",
+            }
+            for i in range(n)
+        ]
+        (src / f"{ats}.jsonl").write_text(
+            "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
+        )
+
+
+def test_filter_jobs_is_identical_pooled_and_inline(tmp_path):
+    """The process pool must not change a single byte of the answer — same stats, same rows.
+
+    The pre-existing single-file test only ever exercised the inline path (one input file skips
+    the pool), so without this the parallel branch ships untested.
+    """
+    sizes = {"workday": 40, "greenhouse": 25, "lever": 10, "apple": 5}
+    src = tmp_path / "jobs"
+    _write_corpus(src, sizes)
+
+    inline = filter_jobs(src, tmp_path / "inline", workers=1)
+    pooled = filter_jobs(src, tmp_path / "pooled", workers=4)
+
+    assert inline == pooled
+    assert pooled == {ats: (n // 2, n) for ats, n in sizes.items()}
+    for ats in sizes:
+        name = f"{ats}.jsonl"
+        assert (tmp_path / "pooled" / name).read_text() == (
+            tmp_path / "inline" / name
+        ).read_text()
+
+
+def test_filter_jobs_submits_largest_file_first(tmp_path, monkeypatch):
+    """LPT ordering contributes to the speed-up (not the whole of it — parallelism across the
+    other files does most of the work; see `filter_jobs`'s docstring), and it is invisible in
+    the output, so it needs its own guard.
+
+    The files are deliberately named so that alphabetical order is the *reverse* of size order:
+    a regression to `sorted(glob(...))` would start the largest file last and straggle on it,
+    while every assertion about stats and rows still passed.
+    """
+    src = tmp_path / "jobs"
+    _write_corpus(src, {"aaa": 4, "mmm": 20, "zzz": 60})
+    seen: list[str] = []
+
+    def recording(pair):
+        seen.append(pair[0].stem)
+        return real(pair)
+
+    real = tech_filter._filter_file
+    monkeypatch.setattr(tech_filter, "_filter_file", recording)
+    # workers=1 keeps it inline, so the recorded order is the submission order.
+    filter_jobs(src, tmp_path / "tech", workers=1)
+    assert seen == ["zzz", "mmm", "aaa"]
+
+
+class _RecordingPool:
+    """Stands in for `ProcessPoolExecutor` in `test_filter_jobs_submits_largest_file_first_to_the_pool`.
+
+    Records the order `filter_jobs` calls `pool.submit(...)` in, then actually runs the work on a
+    thread pool — a real subprocess isn't needed to prove *what order submission happened in*, and
+    threads keep the test fast. `mp_context` is accepted and ignored, matching the kwarg
+    `filter_jobs` always passes.
+    """
+
+    def __init__(self, max_workers=None, mp_context=None):
+        del mp_context
+        self._inner = ThreadPoolExecutor(max_workers=max_workers)
+        self.submitted: list[str] = []
+
+    def submit(self, fn, pair):
+        self.submitted.append(pair[0].stem)
+        return self._inner.submit(fn, pair)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self._inner.shutdown(wait=True)
+        return False
+
+
+def test_filter_jobs_submits_largest_file_first_to_the_pool(tmp_path, monkeypatch):
+    """The order test above only proves the *inline* (workers=1) path, which computes the same
+    `pairs` list the pooled path does but never calls `pool.submit` — a regression that re-sorted
+    only inside the pool branch would still pass it. This drives the real `workers=4` branch and
+    inspects what actually reached `pool.submit`.
+    """
+    src = tmp_path / "jobs"
+    _write_corpus(src, {"aaa": 4, "mmm": 20, "zzz": 60})
+
+    pools: list[_RecordingPool] = []
+
+    def factory(max_workers=None, mp_context=None):
+        pool = _RecordingPool(max_workers=max_workers, mp_context=mp_context)
+        pools.append(pool)
+        return pool
+
+    monkeypatch.setattr(tech_filter, "ProcessPoolExecutor", factory)
+    filter_jobs(src, tmp_path / "tech", workers=4)
+    assert len(pools) == 1
+    assert pools[0].submitted == ["zzz", "mmm", "aaa"]
 
 
 def test_report_logs_per_ats_table_and_grand_total(caplog):

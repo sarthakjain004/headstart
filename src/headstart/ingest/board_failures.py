@@ -26,7 +26,7 @@ touch ``data/validate/liveness/``, which stays the probe-owned truth, and it del
 reach ``live_keep_set`` — that feeds ``index prune``, so filtering there would evict the Board's
 rows from the served table as a side effect of a scraping decision.
 
-And the verdict **expires**: see :func:`paroled` and ADR-0161. A quarantined Board is never
+And the verdict **expires**: see :func:`paroled` and ADR-0162. A quarantined Board is never
 scraped, so it can never re-enter ``produced``, so the clearing branch in :func:`update` is
 unreachable and the ledger only grows — measured over the five runs of 2026-09-16, ``0 cleared by
 a successful scrape`` in 5 of 5 while the total climbed 749 → 755. Parole re-admits it for one
@@ -47,7 +47,7 @@ from typing import NamedTuple
 # roughly one run in four — so five strikes is weeks of agreement, not an afternoon's blip.
 QUARANTINE_AT = 5
 
-# Days a gone-verdict stands before the Board is re-admitted for one run to re-earn it (ADR-0161).
+# Days a gone-verdict stands before the Board is re-admitted for one run to re-earn it (ADR-0162).
 #
 # Seven, not the value gate's fortnight (``scrape_plan._GATE_RECHECK_DAYS``), because the two
 # re-checks cost three orders of magnitude apart. That gate re-admits a Board measured at 15+ min
@@ -59,7 +59,7 @@ QUARANTINE_AT = 5
 # against a measured 23 of 757 quarantined Boards that answer 200 today, **12 of them serving 264
 # tech postings** (5,593 raw, but ADR-0017's gate is what decides what reaches users). Not one day:
 # that is 5,299 requests a week instead of 757, at origins that have already said 404 five times,
-# to catch the same ~5.6 recoveries. ADR-0161 has the full arithmetic and the alternatives.
+# to catch the same ~5.6 recoveries. ADR-0162 has the full arithmetic and the alternatives.
 PAROLE_DAYS = 7
 
 # "Gone" as the origin reports it. Matched against the recorded reason, which the shard reports

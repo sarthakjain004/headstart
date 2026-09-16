@@ -1,4 +1,4 @@
-# ADR-0161: A gone-verdict expires — quarantined Boards go on parole, not away
+# ADR-0162: A gone-verdict expires — quarantined Boards go on parole, not away
 
 **Status:** accepted · **Date:** 2026-09-16 · **Amends:**
 [ADR-0058](0058-consecutive-gone-quarantine.md) (the consecutive-gone ledger this drains) ·
