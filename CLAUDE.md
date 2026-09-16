@@ -135,7 +135,31 @@ sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` 
   `docs/discovery/zwayam-tenant-discovery.md` (the shared-TLS-cert roster and the tenant-directory
   endpoint carry it) plus the generalisable
   `docs/discovery/shared-cert-tenant-rosters.md`.
-- **Phenom** — M, but poor discoverability (no enumerable pattern, curated seed needed). Mastercard/Adobe India GCCs. After Eightfold.
+- **Phenom** ✅ DONE (2026-09-16) — `scrapers/phenom.py`, wired through liveness (17 live boards,
+  20,214 jobs, `data/validate/liveness/phenom.csv`). Slug = the board host. One endpoint,
+  `POST /widgets`, discriminated by `ddoKey`: `refineSearch` lists, `jobDetail` reads one posting
+  (34 KB of JSON against the job page's 652 KB — 19x cheaper, and both carry the full body).
+  **The ledger is deliberately 17 of the 91 reachable tenants, not all of them.** Phenom is a
+  career-site *skin*: `jobDetail.ats` says Workday on 68 tenants, SuccessFactors on 10, Taleo on 3,
+  and resolving each tenant's backing board from its `applyUrl` puts **74 of 91 — 135,534 of
+  155,738 postings — on Boards we already hold**. `index_plan.evict_duplicate` groups within a
+  Board, so those would serve twice under two ATS labels with nothing to catch them; the pool
+  (`data/ats-tenants-merged/phenom.csv`) therefore carries only the 17 whose backing board we do
+  not have. Widen it only if cross-ATS dedup is ever built. **The India rationale this entry used
+  to carry is void** — Mastercard and Adobe are both Workday-backed and already covered.
+  Four measured traps are wired into the code rather than documented: **no CSRF/session/Referer is
+  needed** (a bare client gets 200 — the upstream `kalil0321/ats-scrapers` implementation spends a
+  request per Board proving otherwise); **`size` clamps to 500** silently above it; **the listing
+  has no `description` key at all**, only a ~350-char `descriptionTeaser` against the detail's
+  5,121, so upstream's `item["description"] or teaser` would serve blurbs *and* mark the Job
+  described; and reading **stops at `from + size >= 10000`** where `totalHits` itself comes back
+  **0**, so a walk re-reading the total calls a 19,649-posting Board finished at 9,500 (5 seed
+  tenants are over that wall and are `mark_truncated`). The job URL is `/{cc}/{lang}/job/{id}` and
+  **`cc` is not always `us`** — 30 of 91 are `global`/`ca`/`amer`/`gb`/`na`, and a wrong one does
+  not 404, it 200s and redirects to the landing page, so the prefix is derived per Board from that
+  redirect rather than hardcoded. No rate limit found in 360 requests; conc 16 is the knee.
+  `jobDetail.companyName` gives the real name, so `resolve_company` needs no page-title pass.
+  Measurements: `docs/phenom/2026-09-16_widgets-api-measurement.md`.
 - **PeopleStrong** (201 hosts, still no scraper — Angular SPA XHR), **Jobsoid** (`{slug}.jobsoid.com/api/v1/jobs`, S, low yield) — opportunistic.
 - **Taleo Business Edition** ✅ DONE (2026-09-13, #452) — `scrapers/taleo_be.py`, wired through
   liveness (533 live / 1,760 rows in `data/validate/liveness/taleo_be.csv`, plus 55
