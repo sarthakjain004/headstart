@@ -232,13 +232,18 @@ class ShardReport:
 
 #: Share of attempted Boards that may come back unusable before the run is called degraded.
 #:
-#: Measured, not chosen: the unusable share (failed + partial over attempted) ran 0.55-0.79% across
-#: the five runs of 2026-09-16 and 0.655% on the live `data/state/scrape_health.json`. 2% leaves
+#: Measured, not chosen: the unusable share (failed + partial over attempted) ran **0.56-0.735%**
+#: across the five runs of 2026-09-16 — 119/130/135/112/147 unusable of 20,000 attempted, from
+#: those runs' own join logs — and 0.655% on the live `data/state/scrape_health.json`. 2% leaves
 #: roughly 3x headroom over that baseline, which is what stops the ordinary run tripping it.
 _DEGRADED_SHARE = 0.02
 #: Where a run stops being noisy and starts being an incident. 2026-09-12's Workday collapse ran at
-#: 80.8% of that provider's own attempts; with Workday at ~13% of a slice, an outage of that shape
-#: lands the overall share well above this while an ordinary run is two orders of magnitude below.
+#: 80.8% of that provider's own attempts, which at Workday's measured 12.7% of a slice computes to
+#: **10.8% overall** — only ~1.2pp above this band, so an outage of the same severity on a slightly
+#: smaller provider would read DEGRADED rather than CRITICAL. The margin here is thin, unlike
+#: `_DEGRADED_SHARE`'s ~3x; this band separates an incident from noise, not one incident from
+#: another. It is a label on the line for whoever reads it — `scrape_join` logs DEGRADED and
+#: CRITICAL at the same level, so nothing is paged differently.
 _CRITICAL_SHARE = 0.10
 #: Fewest attempted Boards an ATS needs before it can be named as driving the verdict. `amazon` is
 #: one Board and reads 100% unusable the moment it comes back short.
@@ -321,14 +326,22 @@ class ScrapeHealth:
     def unusable_share(self) -> float:
         """Fraction of attempted Boards whose list this run could not use — failed or partial.
 
-        The number the verdict is graded on. Attempted is ``successful + failed``; a partial Board
-        was attempted *and* counted successful, so it is a numerator term only.
+        The number the verdict is graded on. Attempted is ``successful + failed``.
+
+        **The numerator is an upper bound, and is clamped.** ``failed`` and ``partial`` are counted
+        from two sets in the same report and a Board can be in both: ``harvest`` records truncation
+        in a ``finally`` on purpose ("a scraper that truncated and *then* raised still reported
+        something worth carrying"), and ``on_board`` then routes that Board into ``errors`` as well.
+        The counters are per-ATS totals, not sets, so the overlap cannot be subtracted here — and
+        without the clamp one such Board on a one-Board ATS reported ``200.00% unusable``. Overlap
+        only ever *shrinks* the true count, so ``min(...)`` is the conservative reading and keeps
+        this a fraction.
         """
         attempted = sum(c["successful"] + c["failed"] for c in self.coverage.values())
         if not attempted:
             return 0.0
         unusable = sum(c["failed"] + c["partial"] for c in self.coverage.values())
-        return unusable / attempted
+        return min(unusable, attempted) / attempted
 
     def worst_atses(self, limit: int = 3) -> list[tuple[str, float, int]]:
         """The ATSes driving the share, largest first, as ``(ats, share, attempted)``.
@@ -386,10 +399,13 @@ class ScrapeHealth:
         partial = sum(c["partial"] for c in self.coverage.values())
         attempted = successful + failed
         share = self.unusable_share
-        if not self.complete or share > _CRITICAL_SHARE:
-            verdict = "CRITICAL" if share > _CRITICAL_SHARE else "DEGRADED"
+        # One spelling of the threshold rule: `degraded` owns it, and this only adds the top band.
+        if share > _CRITICAL_SHARE:
+            verdict = "CRITICAL"
+        elif self.degraded:
+            verdict = "DEGRADED"
         else:
-            verdict = "DEGRADED" if share > _DEGRADED_SHARE else "healthy"
+            verdict = "healthy"
         line = (
             f"Fresh coverage: {verdict} — {failed} failed and {partial} partial of "
             f"{attempted} attempted Boards ({share:.2%} unusable)"
@@ -436,12 +452,18 @@ class ScrapeHealth:
                     key=lambda item: (-item[1], item[0]),
                 )
                 if ranked:
+                    # Every cause, largest first — no cap. `base.loss_breakdown` dropped the
+                    # identical `[:4]` + `+N more causes` shape in #457 on the grounds that the
+                    # cause vocabulary is closed (status codes plus a handful of parse-shape
+                    # labels), so no line grows unreadable. This run-level copy survived that
+                    # change, and it is the one that hurts most: it aggregates across every Board,
+                    # so the tail it hid was the long tail. Measured over the five runs of
+                    # 2026-09-16, 12 lines hit the cap and the widest had 8 distinct causes —
+                    # the cap was discarding counts to save four entries.
                     shown = "; ".join(
                         f"{cause} x{count} on {boards} Board(s)"
-                        for cause, count, boards in ranked[:4]
+                        for cause, count, boards in ranked
                     )
-                    if len(ranked) > 4:
-                        shown += f"; +{len(ranked) - 4} more causes"
                     lines.append(f"{ats} {kind} loss causes: {shown}")
         return lines
 
