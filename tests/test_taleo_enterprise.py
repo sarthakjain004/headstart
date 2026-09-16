@@ -190,8 +190,9 @@ def test_detail_vector_supplies_authoritative_fields():
 
 def test_detail_reads_jobtype_into_experience():
     """Live Burns & McDonnell sample (job 649588, 2026-09-16): `reqlistitem.jobtype` states
-    "New Grad" where the tenant populates it (Hyatt's own shells never carry this label at all,
-    so the field stays None there — see `test_ttec_detail_layout_keeps_absent_fields_null`)."""
+    "New Grad" where the tenant populates it. Hyatt's own shells never carry this label at all
+    (checked live against three Hyatt jobdetail pages the same day) — tenant-optional, not
+    universal — so the field stays None there, same as any other unpopulated label."""
     values = ["" for _ in range(12)]
     labels = ["reqlistitem.no" for _ in range(12)]
     labels[9] = "reqlistitem.description"

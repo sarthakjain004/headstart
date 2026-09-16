@@ -229,8 +229,11 @@ _CONN = r"\s+(?:of|in|as)?\s*"
 # `#`/`+` (not just `+`, already needed for "C++") so "C#" doesn't break a filler word it sits
 # inside of — "3+ years with C# .Net Software Development" read as None because "C#" couldn't
 # match `[\w'/&.-]+` as one skippable token, stranding "Software" out of reach. Live-confirmed on
-# a Zoho posting stating exactly that; a corpus scan for the same "years" + C#/C++ shape found 51
-# more rows across 9 ATSes still missing under the old class (2026-09-16).
+# a Zoho posting stating exactly that. Measured full-corpus, old vs new, per ADR-0066's own
+# discipline (bucket every record old-tier/value -> new-tier/value, not just coverage): zero
+# regressions, 39 new answers, 60 corrected ones (the same bug was silently pushing them to a
+# generic seniority-tier guess) — see docs/experience-extraction/
+# 2026-09-16_symbol-gap-full-corpus-measurement.md.
 _WORDS = (
     r"(?:[\w'/&.#+-]+[\s,]+){0,4}?"  # filler between the connector and the work word
 )
