@@ -4910,10 +4910,14 @@ def test_eightfold_skips_details_for_postings_the_tech_filter_will_drop(monkeypa
     `tech_filter.classify` reads `title` + `department`, and the PCSX listing carries both
     (verified live: 142/142 and 157/157 positions on twilio/vialto), so the detail body is never
     needed to make the call.
+
+    An empty `have_details` — not the `None` default — because the gate rides ADR-0048's
+    pipeline signal; `test_every_detail_is_fetched_outside_the_pipeline` pins the other arm.
     """
     from headstart.scrapers.registry import get_scraper
 
     scraper = get_scraper("eightfold", "acme.eightfold.ai", "Acme")
+    scraper.have_details = set()
     positions = [
         {"id": "1", "name": "Backend Engineer", "department": "Engineering"},
         {"id": "2", "name": "Warehouse Associate", "department": "Logistics"},
@@ -4937,6 +4941,41 @@ def test_eightfold_skips_details_for_postings_the_tech_filter_will_drop(monkeypa
     # The non-tech posting is still emitted — the scrape writes the full set to
     # `data/jobs/{ats}.jsonl` and `filter_tech` is what drops it, not this.
     assert by_id["2"] is None
+
+
+def test_every_detail_is_fetched_outside_the_pipeline(monkeypatch):
+    """No skip-list means fetch everything — including the postings the tech gate would drop.
+
+    ADR-0048's documented default, and the tech gate honours it rather than overriding it. Eight
+    scripts build scrapers directly, and three read the hole as a defect — `verify_scraper.py`
+    reports "jobs-with-description" as its health metric, `audit_remote.py` triangulates `remote`
+    against the description text, `salary_sample.py` measures `salary.extract` recall off it — so
+    skipping unconditionally would hand all three `description=None` on ~59% of eightfold's
+    postings and have them report a quality collapse that is not real. Production loses nothing:
+    every sharded run ships a list.
+    """
+    from headstart.scrapers.registry import get_scraper
+
+    scraper = get_scraper("eightfold", "acme.eightfold.ai", "Acme")
+    assert scraper.have_details is None
+    positions = [
+        {"id": "1", "name": "Backend Engineer", "department": "Engineering"},
+        {"id": "2", "name": "Warehouse Associate", "department": "Logistics"},
+    ]
+    fetched: list[str] = []
+
+    def fake_fan_out_async(items, fn, **kwargs):
+        fetched.extend(items)
+        return [f"desc-{i}" for i in items]
+
+    monkeypatch.setattr(scraper, "fan_out_async", fake_fan_out_async)
+    records = scraper._api_records("acme.com", positions)
+
+    assert fetched == ["1", "2"]
+    assert {r["id"]: r["fields"]["description"] for r in records} == {
+        "1": "desc-1",
+        "2": "desc-2",
+    }
 
 
 def test_every_detail_is_needed_without_a_skip_list():
