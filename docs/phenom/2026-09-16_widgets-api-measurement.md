@@ -183,12 +183,29 @@ returns `None` with this measurement cited, which is the contract base.py's abst
 for. The prose cases are not lost — they sit inside the description the scraper does fetch, where
 `salary.extract`'s Tier-2 regex reads them.
 
-## 6. Company name comes free
+## 6. Company name: the page title, not the field that looks better
 
-`jobDetail.companyName` is the real display name (`Mastercard`, `Cisco`, `Zelis`) rather than the
-host. So unlike the six scrapers that scrape a page `<title>`, `resolve_company` needs no extra
-request and no title patterns — it reads a field already fetched, under the base class's own slug
-guard (ADR-0114: a slug is only ever replaced, never the reverse).
+`jobDetail.companyName` states a real display name (`Mastercard`, `Cisco`) and looks like the
+obvious source. It is the wrong one, for two measured reasons.
+
+It is **per posting, not per Board**, and it disagrees with itself. `careers.dhl.com` returns
+`Blue Dart Express Limited` — an Indian subsidiary — on all 12 sampled postings of a 9,376-job DHL
+board. `careers.honda.com` splits 7/5 across two legal entities. `jobs.kuehne-nagel.com` and
+`careers.merckgroup.com` return `""`/absent. Taking the first to arrive names a Board after
+whichever posting happened to sort first.
+
+And it **does not survive a second run**. ADR-0048 skips the detail fetch for a Job whose
+description the store already holds, so a steady-state Board fetches no details at all and has
+nothing to read the name from: measured, `careers.zelis.com` resolved to `Zelis` on a cold scrape
+and to `careers.zelis.com` on every one after.
+
+So `board_page()` reads the landing page `<title>`, the seam `resolve_company` already uses, with
+phenom's own patterns in `company_name.PATTERNS`. These titles carry a second clause after a pipe
+or colon (`Careers at Zelis | Zelis Jobs`, `OmniCable Careers: Play to Win`), which the shared
+`_CAREERS_WRAPPER` would swallow whole, so each wrapper ends at `|`, `:` or end-of-string. Over 12
+live boards, 11 resolve; `Home | BAE Systems` states no wrapper and keeps its slug, which is
+ADR-0114's floor. Verified after the change: DHL now resolves to `DHL`, and `Zelis`/`UCB` hold on a
+steady-state run that fetches zero details.
 
 ## 7. Rate limiting: none found
 
@@ -227,23 +244,42 @@ from its `applyUrl` (both Workday URL shapes: `{tenant}.wdN.myworkdayjobs.com` a
 `wdN.myworkdaysite.com/recruiting/{tenant}/`) and testing it against the committed liveness
 ledgers:
 
-- **74 of 91 tenants — 135,534 postings — already resolve to a Board we hold.**
-- **17 tenants / 20,204 postings do not.**
+- **75 of 91 tenants — 136,660 postings — already resolve to a Board we hold.**
+- **16 tenants / 19,078 postings do not.**
+
+**How that gate was got wrong once, and what fixed it.** The first pass resolved each tenant's
+backing board from its `applyUrl` only. That works for Workday, whose apply links name the tenant,
+and fails for SuccessFactors, which mostly states no `applyUrl` at all — so the 10 SF-backed
+tenants went unchecked and four collisions survived into the ledger. Re-running the gate on the
+tenant's own **registrable domain** (`jobs.kuehne-nagel.com` and `careers.kuehne-nagel.com` share
+`kuehne-nagel.com`; an `applyUrl` does not) surfaced all four. Measuring each rather than assuming
+then cut it back to one:
+
+| collision | verdict | evidence |
+|---|---|---|
+| `jobs.kuehne-nagel.com` vs `successfactors:careers.kuehne-nagel.com` | **duplicate — dropped** | SF board re-probed live: **1,141 jobs now**, against phenom's 1,136. Same set. |
+| `careers.ucb.com` vs `successfactors:careers.ucb.com` | **kept** | Identical host, but the SF board re-probed live returns **0 jobs** — its ledger row (366, 2026-08-14) is stale. UCB has migrated *onto* Phenom, so this row is the live board, not a copy of one. |
+| `careers.allianz.com` vs `successfactors:internal-careers.allianz.com` | **kept** | An *internal mobility* board. 4 of 120 sampled titles overlap (~3%) — a different posting set. |
+| `jobs.baesystems.com` vs `successfactors:cybercareers.baesystems.com` | **kept** | A niche cyber sub-board (88 jobs vs 1,855). **0 of 115** sampled titles overlap. |
+
+The UCB case is the one worth remembering: a name collision is not evidence of duplication, and
+here the *older* ledger was the stale one. Dropping the phenom row on the collision alone would
+have deleted 311 live postings and left an empty SuccessFactors row as their only record.
 
 `index_plan.evict_duplicate` groups by `(lowercased Board, native id)` — *within* a Board — so a
 posting served under both `phenom:careers.mastercard.com` and `workday:mastercard.wd1…` is two
 Boards with two native ids and would be served twice, with nothing to catch it. Onboarding all 91
 would put ~135k duplicate rows into the served table.
 
-The ledger therefore carries **only the 17 tenants whose backing board we do not already hold**.
-All 17 probe live, 20,214 postings.
+The ledger therefore carries **only the 16 tenants whose backing board we do not already hold**.
+All 16 probe live, 19,078 postings.
 
 Where that list lives matters, because the two files have different durability. The candidate pool
 (`data/ats-tenants-merged/phenom.csv`, source `curated2026`) is **gitignored**, like every other
 ATS's pool — candidate-grade input, not a record. The committed
 `data/validate/liveness/phenom.csv` is the durable one and the only thing
 `load_active_companies` reads, so the 17-Board gate survives in the ledger whether or not the pool
-is ever regenerated. Widening this provider means adding the other 74 hosts back to the pool and
+is ever regenerated. Widening this provider means adding the other 75 hosts back to the pool and
 re-probing — a deliberate act, and one that should not happen until cross-ATS deduplication exists.
 
 Two consequences worth recording:
