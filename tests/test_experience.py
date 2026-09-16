@@ -392,6 +392,26 @@ def test_description_reads_a_bare_gerund():
     )
 
 
+def test_description_reaches_a_work_word_past_a_symboled_language_name():
+    # `#`/`+` sat outside `_WORDS`' filler class, so "C#"/"C++" stranded a real work word just
+    # past them ("... Software Development") — live-confirmed on a Zoho posting reading None for
+    # exactly this shape.
+    assert from_description(
+        "3+ years with C# .Net Software Development"
+    ) == ExperienceSpan(3, None, "regex")
+    assert from_description("3+ years with C++ Software Development") == ExperienceSpan(
+        3, None, "regex"
+    )
+
+
+def test_description_gap_reaches_experience_past_a_symboled_language_name():
+    # Same class of gap, in `_GAP` rather than `_WORDS`: `+` was already covered ("C++"), `#` was
+    # not, so "C#" sitting between the number and the literal "experience" read as None.
+    assert from_description(
+        "3+ years of production-grade C# and/or Rust experience"
+    ) == ExperienceSpan(3, None, "regex")
+
+
 def test_description_reads_a_trailing_parenthetical():
     assert from_description("In-depth knowledge of PHP (3+ years).") == ExperienceSpan(
         3, None, "regex"

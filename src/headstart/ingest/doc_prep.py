@@ -231,7 +231,28 @@ def build_doc(job: dict) -> str:
 # branches — no version bump, because the two assemblies were compared line-for-line against
 # each other before the move and were already identical; `tests/test_derived_meta.py` now pins
 # that agreement so a future edit to one path cannot silently diverge from the other again.
-DERIVATIONS_VERSION = 11
+#
+# v12: `geo.py` gained two `EXCLUDE` guards and four `INDIA_EXCLUDE` terms after an external
+# 230k-posting sweep found live false "IN" classifications: `CITIES["goa"]` matched Brazilian
+# "lagoa" (lagoon) inside Alagoas/Lagoa Santa/etc., `CITIES["anand"]` matched "Sananduva"
+# (Brazil) and "Canandaigua" (NY, US), and `INDIA_EXCLUDE` was missing "indian creek"/
+# "indianwood"/"indian street"/"indiantown" (US place names). All four were unguarded
+# substring collisions, not new aliases — an already-scraped Job whose `location` is one of
+# these strings currently serves `country = "IN"` and needs this sweep to correct it; `location`
+# itself is unchanged, so `refresh_row`'s unconditional fact resync never reaches it. (`git log
+# 9d6a840b..a9b71af5 -- src/headstart/geo.py` — one behavioral commit; the other commit in that
+# range, c9f9484f, only reworded `classify`'s docstring for ADR-0146's move, already covered by
+# the paragraph above.)
+#
+# v13: `experience.py`'s `_GAP`/`_WORDS` character classes widened to include `#` (alongside the
+# `+` `_GAP` already had, for "C++"), so "C#" sitting between a stated number and the work word or
+# literal "experience" that anchors it no longer strands the match — "3+ years with C# .Net
+# Software Development" read None before this. On top of the v12 bump at `919cc3c9`. A description
+# already stored for an already-scraped Job is unchanged raw input that now parses differently, the
+# textbook case this counter exists for; live-confirmed on a Zoho posting, and measured full-corpus
+# old vs new (not just coverage, per ADR-0066): zero regressions, 39 new answers, 60 corrected ones
+# — see docs/experience-extraction/2026-09-16_symbol-gap-full-corpus-measurement.md.
+DERIVATIONS_VERSION = 13
 
 
 def to_meta(job: dict) -> dict:

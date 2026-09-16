@@ -38,8 +38,9 @@ from pathlib import Path
 
 import numpy as np
 
-from headstart import log, roles
-from headstart.ingest import REPO_ROOT, role_assignments
+from headstart import log, roles, tech_filter
+from headstart.ingest import REPO_ROOT, role_assignments, trends_epochs
+from headstart.ingest.doc_prep import DERIVATIONS_VERSION
 from headstart.ingest.index_plan import boards_by_canon, live_keep_set, resolve_board
 
 _log = log.get(__name__, __spec__)
@@ -55,6 +56,8 @@ _BOARD_DELTAS = REPO_ROOT / "data" / "state" / "role_trend_board_deltas"
 # id -> family snapshot + the transitions between snapshots (see role_assignments)
 _ASSIGNMENTS = REPO_ROOT / "data" / "state" / "role_assignments.parquet"
 _REASSIGNMENTS = REPO_ROOT / "data" / "state" / "role_reassignments.csv"
+# methodology boundaries: a row only when the definition changed, not every tick (trends_epochs)
+_EPOCHS = REPO_ROOT / "data" / "state" / "trends_epochs.csv"
 
 _COLUMNS = ("ts", "version", "metric", "family", "band", "ats", "count")
 _PRE_ATS_COLUMNS = (
@@ -486,6 +489,7 @@ def main() -> int:
     ap.add_argument("--board-deltas", type=Path, default=_BOARD_DELTAS)
     ap.add_argument("--assignments", type=Path, default=_ASSIGNMENTS)
     ap.add_argument("--reassignments", type=Path, default=_REASSIGNMENTS)
+    ap.add_argument("--epochs", type=Path, default=_EPOCHS)
     args = ap.parse_args()
 
     # Both inputs are checked, not just the centroids: the map ships in git while the
@@ -627,6 +631,24 @@ def main() -> int:
             )
     except Exception as exc:  # noqa: BLE001 - a diagnostic must never sink a good run
         _log.warning(f"assignment diff skipped: {type(exc).__name__}: {exc}")
+
+    # Which methodology moved since the last tick, if any (ADR-0164) — a re-curated family map,
+    # a tech-filter version bump, or a derivations-version bump each change what a count means
+    # without a centroid refit, and none of them leave any other mark on this ledger. Diagnostic
+    # only: never fails the run.
+    try:
+        wrote_epoch = trends_epochs.append_if_changed(
+            args.epochs,
+            ts,
+            centroid_version=manifest["version"],
+            family_map_fingerprint=roles.family_map_fingerprint(args.families),
+            tech_filter_version=tech_filter.TECH_FILTER_VERSION,
+            derivations_version=DERIVATIONS_VERSION,
+        )
+        if wrote_epoch:
+            _log.info(f"epochs: methodology boundary recorded @ {ts} -> {args.epochs}")
+    except Exception as exc:  # noqa: BLE001 - a diagnostic must never sink a good run
+        _log.warning(f"epoch stamp skipped: {type(exc).__name__}: {exc}")
     return 0
 
 
