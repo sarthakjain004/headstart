@@ -854,14 +854,38 @@ jobs:
           publication_state() {
             printf '%s=%s\n' "$1" "$2" >> "$publication_status"
           }
-          # Retry each upload — the HF API 504s intermittently on create/commit and a bare failure
-          # sinks the whole run (e.g. 2026-07-16). Backs off 30s/60s before giving up.
+          # Retry each upload — the HF API fails intermittently on create/commit and a bare failure
+          # sinks the whole run. Observed both 504 (2026-07-16) and, on 2026-09-16, three
+          # consecutive **500**s on `/api/datasets/.../commit/main` that cost run 35063022985 its
+          # entire publication: the embedding store is the first of four uploads, so under `set -e`
+          # the index, descriptions and ledgers were never attempted and the next run silently
+          # re-planned from the run-before-last's state.
+          #
+          # Sized against the job, not against a guess. That run's merge used 13m59s of a 98-minute
+          # `timeout-minutes` and `up()` gave up after **94 seconds** — a retry budget three orders
+          # of magnitude smaller than the slack it was protecting. 30/60/120/240/480 is ~15.5 min,
+          # still under 20% of the budget, and rides out an outage of the length actually seen.
+          #
+          # The sleep is guarded: the old loop slept after its *final* failed attempt and then
+          # returned anyway, so every terminal failure burned one last backoff for nothing
+          # (measured: 07:08:00 fail -> "retrying in 90s" -> 07:09:30 exit, with no fourth attempt).
           up() {
-            for attempt in 1 2 3; do
+            local delays="30 60 120 240 480"
+            local attempt=1
+            local total
+            total=$(( $(echo "$delays" | wc -w) + 1 ))
+            for delay in $delays; do
               hf upload "$@" && return 0
-              echo "::warning::hf upload attempt $attempt failed; retrying in $((attempt * 30))s"
-              sleep $((attempt * 30))
+              # Plain stdout, not `::warning::`. ADR-0039's budget is 10 annotations per *step*,
+              # and this function runs once per store, four stores to a step: at six attempts each
+              # a retrying warning would emit up to 24 and GitHub would drop the overflow —
+              # including the `giving up` line, which is last and is the one worth keeping.
+              echo "hf upload attempt ${attempt}/${total} failed; retrying in ${delay}s"
+              sleep "$delay"
+              attempt=$(( attempt + 1 ))
             done
+            hf upload "$@" && return 0
+            echo "::warning::hf upload gave up after ${total} attempts"
             return 1
           }
           publish() {
@@ -957,6 +981,12 @@ jobs:
           with summary.open("a", encoding="utf-8") as handle:
               handle.write("\n".join(lines))
           print(coverage, flush=True)
+          # Per store, on stdout — not only in the step summary. Until 2026-09-16 a failed
+          # publication printed `complete publication: NO` and nothing else, so which of the four
+          # stores died had to be reconstructed from the *position* of the retry warnings in the
+          # log. Four lines make the next failure self-describing.
+          for key, value in states.items():
+              print(f"publication {key.replace('_', ' ')}: {value}", flush=True)
           print(f"complete publication: {'yes' if complete else 'NO'}", flush=True)
           PY
       # Reclaim dataset history here rather than from a separate scheduled workflow (ADR-0071).
