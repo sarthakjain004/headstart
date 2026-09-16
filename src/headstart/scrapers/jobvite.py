@@ -346,7 +346,7 @@ class JobviteScraper(BaseScraper):
                 timeout=30,
             )
         except http.RequestsError as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None
         return self._read_posting(response)
 
@@ -361,7 +361,7 @@ class JobviteScraper(BaseScraper):
                 timeout=30,
             )
         except http.RequestsError as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return None
         return self._read_posting(response)
 
