@@ -1,0 +1,134 @@
+{
+  "am9icG9zdDrr7FZuqmRcmF9aI406HpQ4": {
+    "id": "T2F0c0pvYlBvc3Q6NDgyODA0",
+    "title": "Personal Chef",
+    "descriptionHtml": "<div><strong style=\"color: rgba(0, 0, 0, 0.9); background-color: rgba(0, 0, 0, 0);\">About Us</strong></div><div><span style=\"color: rgba(0, 0, 0, 0.9);\">Shef is a modern-day shared personal chef service where we connect busy individuals &amp; families who are seeking high quality, homemade food with local, talented chefs in their area. Shef handles delivery, customer service, platform logistics, &amp; more, so you can focus on what you love to do.</span></div><div><br></div><div><span style=\"color: rgba(0, 0, 0, 0.9);\">Our subscription service is currently offered in the New York and San Francisco Bay Area regions.</span></div><div><br></div><div><strong style=\"color: rgba(0, 0, 0, 0.9); background-color: rgba(0, 0, 0, 0);\">Job Description</strong></div><div><span style=\"color: rgba(0, 0, 0, 0.9);\">If selected, you’ll be brought on to cook for our Weekly Shef Service where customers subscribe to meals delivered to their door each week offering a more steady &amp; consistent income. The service is available for 4 days of the week, but there is flexibility to pick the days you’d like to participate.</span></div><div><br></div><div><span style=\"color: rgba(0, 0, 0, 0.9);\">Compensation is based on number of dishes/orders sold. Shef’s culinary specialist works closely with you to strategize on menu planning &amp; pricing in order to be successful in front of customers viewing the service.</span></div><div><br></div><div><strong style=\"color: rgba(0, 0, 0, 0.9); background-color: rgba(0, 0, 0, 0);\">You have</strong></div><ul><li class=\"\"><span style=\"color: rgba(0, 0, 0, 0.9);\">1+ years of catering, private chef, or professional kitchen experience</span></li><li class=\"\"><span style=\"color: rgba(0, 0, 0, 0.9);\">Culinary School degree and/or experience in restaurant kitchens</span></li><li class=\"\"><span style=\"color: rgba(0, 0, 0, 0.9);\">Your food handler's or food manager's certificate (or are willing to obtain one)</span></li></ul><div><br></div><div><strong style=\"color: rgba(0, 0, 0, 0.9); background-color: rgba(0, 0, 0, 0);\">You are</strong></div><ul><li class=\"\"><span style=\"color: rgba(0, 0, 0, 0.9);\">A talented &amp; skilled chef</span></li><li class=\"\"><span style=\"color: rgba(0, 0, 0, 0.9);\">Passionate about your craft &amp; creating high quality meals</span></li><li class=\"\"><span style=\"color: rgba(0, 0, 0, 0.9);\">Precise with food safety measures &amp; cleanliness</span></li><li class=\"\"><span style=\"color: rgba(0, 0, 0, 0.9);\">Reliable</span></li><li class=\"\"><span style=\"color: rgba(0, 0, 0, 0.9);\">Interested in running your own business (or already do)</span></li></ul><div><br></div><div><strong style=\"color: rgba(0, 0, 0, 0.9); background-color: rgba(0, 0, 0, 0);\">To Apply</strong></div><div><span style=\"color: rgba(0, 0, 0, 0.9);\">If you’re interested in applying, please directly fill out our application here for an expedited process: https://o.shef.com/apply-today. We’ll reach out if we think it’s a good fit!</span></div><div><br></div><div><span style=\"color: rgba(0, 0, 0, 0.9); background-color: rgba(0, 0, 0, 0);\">Note</span><span style=\"color: rgba(0, 0, 0, 0.9);\">: if you’re searching for a traditional restaurant job, this isn’t the right role for you. If interested in our role, but have questions, please add your questions to the the form above in the last question “Is there anything we should know about you?”</span></div><div><br></div>",
+    "extId": "am9icG9zdDrr7FZuqmRcmF9aI406HpQ4",
+    "firstPublishedTsSec": 1747242477,
+    "locations": [
+      {
+        "id": "30370",
+        "extId": "bG9jOo78PMNQZog8m35q-aSWJKw",
+        "name": "San Francisco",
+        "city": "San Francisco",
+        "isoCountry": "USA",
+        "isRemote": false,
+        "__typename": "PublicOatsLocation"
+      }
+    ],
+    "job": {
+      "id": "T2F0c0pvYjozMDA0NTY=",
+      "locationType": "REMOTE",
+      "employmentType": "CONTRACT",
+      "department": null,
+      "__typename": "PublicOatsJob"
+    },
+    "compensationHtml": null,
+    "__typename": "PublicOatsJobPost"
+  },
+  "am9icG9zdDpfHfomMwhgi_z8_5e1eD4l": {
+    "id": "T2F0c0pvYlBvc3Q6NTA0MzgwMQ==",
+    "title": "Director, Customer Acquisition",
+    "descriptionHtml": "<div><strong style=\"background-color: transparent; color: rgb(0, 0, 0);\">Location:</strong><span style=\"background-color: transparent; color: rgb(0, 0, 0);\"> New York City (Hybrid - 3 days in office)</span></div><div><strong style=\"background-color: transparent; color: rgb(0, 0, 0);\">Department:</strong><span style=\"background-color: transparent; color: rgb(0, 0, 0);\"> Marketing</span></div><div><strong style=\"background-color: transparent; color: rgb(0, 0, 0);\">Reports to:</strong><span style=\"background-color: transparent; color: rgb(0, 0, 0);\"> Head of Marketing</span></div><h2><br></h2><h2><strong style=\"background-color: transparent; color: rgb(0, 0, 0);\">About Shef</strong></h2><div><br></div><div><span style=\"background-color: transparent; color: rgb(0, 0, 0);\">At Shef, we're bringing humanity back to mealtime by connecting consumers with talented chefs in their community. By introducing the sharing economy to the dinner table, we create meaningful economic opportunities for chefs while making homemade meals more accessible and affordable. Shefs on the platform craft menus inspired by their passion and expertise, preparing meals in small batches and delivering them to your door—so you can enjoy the warmth of a homemade meal without the hassle.</span></div><div><br></div><div><span style=\"background-color: transparent; color: rgb(0, 0, 0);\">We have raised over $100M from investors including Andreessen Horowitz, Y Combinator, Craft Ventures, and M13, as well as founders and executives from Instacart, TaskRabbit, StubHub, AngelList, Lyft, Airbnb, and Yelp. We have a ton of exciting work ahead of us and are excited to have you join us!</span></div><div><br></div><h2><strong style=\"background-color: transparent; color: rgb(0, 0, 0);\">About the Role</strong></h2><div><br></div><div><span style=\"background-color: transparent; color: rgb(0, 0, 0);\">Your role at Shef will be to drive scalable growth across our chef-to-consumer marketplace through data-driven channel development and strategic experimentation. You'll own acquisition strategy and execution from Meta and Google to emerging channels like TikTok and OOH, building sustainable systems that maximize customer lifetime value while hitting aggressive CAC targets.</span></div><div><br></div><div><span style=\"background-color: transparent; color: rgb(0, 0, 0);\">This role demands someone who can seamlessly blend analytical rigor with creative problem-solving. You'll be responsible for scaling our digital advertising to $500K+ monthly spend, building a high-velocity performance creative engine, and building the measurement frameworks that guide strategic decisions across the growth function.</span></div><div><br></div><div><span style=\"background-color: transparent; color: rgb(0, 0, 0);\">The ideal candidate has deep expertise in performance marketing fundamentals but thinks beyond traditional tactics. You're equally comfortable hands on keyboard inside an ad platform, diving into complex attribution reporting, and presenting growth strategy to leadership. You've probably built custom dashboards to track cohort performance, tested unconventional acquisition channels just to see what works, and have strong opinions about creative testing methodologies.</span></div><div><br></div><div><span style=\"background-color: transparent; color: rgb(0, 0, 0);\">You'll be joining an energetic, scrappy team in our NYC office, working hybrid with 3 days in-office collaboration. This role reports to the Head of Marketing and is perfect for someone who wants to blend analytical rigor with creative testing to drive real business impact.</span></div><div><br></div><div><br></div><h2><strong style=\"background-color: transparent; color: rgb(0, 0, 0);\">Responsibilities</strong></h2><div><br></div><ul><li class=\"\"><strong style=\"background-color: transparent;\">Channel Ownership &amp; Execution:</strong><span style=\"background-color: transparent;\"> Scale Meta Ads and Google Ads as core acquisition engines, from strategy to execution. Expand our playbook across other high-leverage channels including TikTok, Direct Mail, OOH, and influencer partnerships.</span></li><li class=\"\"><strong style=\"background-color: transparent;\">Hands-On Campaign Management: </strong><span style=\"background-color: transparent;\">Design and manage end-to-end growth campaigns—from audience targeting and creative testing to landing page optimization and budget pacing.</span></li><li class=\"\"><strong style=\"background-color: transparent;\">Creative Production &amp; Testing:</strong><span style=\"background-color: transparent;\"> Build and manage a high-velocity performance creative engine that produces 15+ new concepts monthly. Develop systematic creative testing frameworks, optimize asset performance across formats and platforms, and establish scalable workflows for creative ideation, production, and iteration.</span></li><li class=\"\"><strong style=\"background-color: transparent;\">AI-First Approach:</strong><span style=\"background-color: transparent;\"> Build the new playbook for modern growth marketing. Develop AI-native systems, tools, and processes that reflect what best-in-class will look like in 2030, not 2020.</span></li><li class=\"\"><strong style=\"background-color: transparent;\">Big Swings:</strong><span style=\"background-color: transparent;\"> Identify, design, and execute high-impact growth bets that can deliver step-function improvements to customer acquisition efficiency and scale.</span></li><li class=\"\"><strong style=\"background-color: transparent;\">Attribution &amp; Analytics:</strong><span style=\"background-color: transparent;\"> Collaborate with Marketing Analyst to drive reporting and attribution across all growth channels. Build dashboards that connect acquisition spend to subscriber cohorts, retention rates, and LTV.</span></li><li class=\"\"><strong style=\"background-color: transparent;\">Experimentation &amp; Optimization:</strong><span style=\"background-color: transparent;\"> Lead constant test-and-learn cadence across messaging, offers, creative, and channels. Bring a growth mindset to every campaign, from acquisition through retention.</span></li><li class=\"\"><strong style=\"background-color: transparent; color: rgb(0, 0, 0);\">Collaboration &amp; Alignment:</strong><span style=\"background-color: transparent; color: rgb(0, 0, 0);\"> Work cross-functionally with product, brand, and operations teams to align on growth priorities, share learnings, and inform strategy.</span></li></ul><div><br></div><h2><strong style=\"background-color: transparent; color: rgb(0, 0, 0);\">Qualifications</strong></h2><div><br></div><ul><li class=\"\"><span style=\"background-color: transparent;\">5+ years of experience in growth, performance marketing, or retention roles—ideally in B2C subscription, marketplace, or consumer tech startups</span></li><li class=\"\"><span style=\"background-color: transparent;\">Hands-on expertise managing and optimizing campaigns in Google Ads, Meta Ads, and emerging social platforms</span></li><li class=\"\"><span style=\"background-color: transparent;\">Proven track record running experiments and driving measurable impact across the full customer lifecycle</span></li><li class=\"\"><span style=\"background-color: transparent;\">Experience with subscription metrics (CAC, LTV, churn, cohort analysis) and consumer analytics tools</span></li><li class=\"\"><span style=\"background-color: transparent;\">Strong analytical mindset and comfort with data storytelling to cross-functional stakeholders</span></li><li class=\"\"><span style=\"background-color: transparent;\">Experience building retention programs and optimizing subscription funnels</span></li><li class=\"\"><span style=\"background-color: transparent;\">Excellent project management and collaboration skills</span></li><li class=\"\"><span style=\"background-color: transparent;\">Resourceful, scrappy, and excited to build and scale new systems in a fast-paced, dynamic environment</span></li></ul><div><br></div>",
+    "extId": "am9icG9zdDpfHfomMwhgi_z8_5e1eD4l",
+    "firstPublishedTsSec": 1775066658,
+    "locations": [
+      {
+        "id": "30371",
+        "extId": "bG9jOh6H4JpXIkw_u-9lMgym_9s",
+        "name": "New York",
+        "city": "New York",
+        "isoCountry": "USA",
+        "isRemote": false,
+        "__typename": "PublicOatsLocation"
+      }
+    ],
+    "job": {
+      "id": "T2F0c0pvYjo0MTQwMDUy",
+      "locationType": "HYBRID",
+      "employmentType": "FULL_TIME",
+      "department": {
+        "id": "42891",
+        "extId": "ZGVwdDptQ4lJdW_t0AXVzdPIBJhx",
+        "name": "Marketing",
+        "__typename": "PublicOatsDepartment"
+      },
+      "__typename": "PublicOatsJob"
+    },
+    "compensationHtml": null,
+    "__typename": "PublicOatsJobPost"
+  },
+  "am9icG9zdDpu4lUutmIsb6ynrBBgrclm": {
+    "id": "T2F0c0pvYlBvc3Q6NjQ2MjQzMQ==",
+    "title": "Senior Full-Stack Software Engineer",
+    "descriptionHtml": "<h3>WHAT WE DO</h3><div>At Shef, we’re building a homemade food marketplace. We believe in providing the shefs in our community (refugees, immigrants, stay-at-home parents, retirees, and out-of-work restaurant chefs) the opportunity to make a meaningful income by doing what they love. We also believe that everyone should have access to a wholesome, home-cooked meal at an affordable price.</div><div>We’re building a community devoted to economic empowerment and cultural inclusivity — that’s why we started Shef. We have raised over $100m from investors including Andreessen Horowitz, Y Combinator, Craft Ventures, and M13, as well as founders and executives from Instacart, TaskRabbit, StubHub, AngelList, Lyft, Airbnb, and Yelp.</div><div><br></div><h3>THE ROLE</h3><div>As a Senior Software Engineer, you’ll lead the development of delightful, high-impact experiences for both consumers and Shefs across the country. You’ll help optimize the shopping experience for customers, and you’ll build micro-entrepreneurship tools that enable Shefs to run and grow their own businesses.</div><div>If we succeed, we’ll fundamentally change how people purchase food — expanding access to healthy, affordable, authentic meals while empowering thousands of entrepreneurs.</div><div>This role reports directly to the company’s engineering leader. This is a <strong>hybrid</strong> position located in the <strong>San Francisco Bay Area or New York (local candidates only)</strong>.</div><div><br></div><h3>RESPONSIBILITIES</h3><ul><li class=\"\"><strong>Own</strong> the design, implementation, and rollout of key product features end-to-end — from discovery through launch and iteration</li><li class=\"\">Build new experiences that delight consumers and help Shefs grow their businesses</li><li class=\"\">Partner closely with Product, Design, Data, and Ops to define requirements, validate assumptions, and ship measurable improvements</li><li class=\"\">Bring a strong bias for execution while making good technical tradeoffs between time, quality, and long-term maintainability</li><li class=\"\">Use analytics and customer insights to identify opportunities, measure outcomes, and iterate quickly</li><li class=\"\">Raise the bar on engineering excellence: code quality, testing, observability, performance, and reliability</li><li class=\"\">Mentor other engineers through thoughtful code reviews, pairing, and sharing best practices; help improve team processes and technical decision-making</li><li class=\"\">Contribute to architecture and technical strategy in a pragmatic, startup-appropriate way</li></ul><h3>QUALIFICATIONS</h3><div><strong>Significant professional software engineering experience</strong> building and shipping production web applications (typically <strong>5+ years</strong>, but we care most about scope and impact)</div><ul><li class=\"\">Strong experience with modern web development — <strong>React, TypeScript, and Node</strong> (or equivalent expertise with the ability to ramp quickly)</li><li class=\"\">Proven ability to lead projects with ambiguous requirements and drive them to a high-quality outcome</li><li class=\"\">Product-minded: you think in terms of customer needs, business outcomes, and measurable impact — not just tickets</li><li class=\"\">Comfortable operating in a high-growth environment where priorities evolve; you make smart tradeoffs and keep momentum</li><li class=\"\">High ownership and accountability: you proactively find problems, propose solutions, and follow through</li></ul><h3>NICE TO HAVE</h3><ul><li class=\"\">Experience at high-growth startups (pre-seed through Series C)</li><li class=\"\">Experience with experimentation, analytics, or growth/product iteration loops</li><li class=\"\">Experience building tools for entrepreneurs, marketplaces, logistics, or consumer checkout/search experiences</li><li class=\"\">Familiarity with scaling systems, performance tuning, or improving reliability/observability</li></ul><h3>DIVERSITY, EQUITY &amp; INCLUSION</h3><div>At Shef, we are building a platform that celebrates difference and cultural inclusivity by providing equitable opportunities for economic empowerment and by reimagining food making and sharing in our 21st century world. Our employee, shef, and customer communities represent a wide, beautiful cross-section of individuals from diverse cultures, ethnicities, races, and walks of life.</div><div>Shef is an equal opportunity employer. We strive to build a team that reflects the communities we serve, and a workplace that nurtures and empowers unique identities and experiences. We strongly encourage applications from BIPOC (Black; Indigenous; People of Color), women, LGBTQ+, and other individuals who are underrepresented in the industry, across color, religion, race, ethnic and national origin, physical ability, gender and sexual identity. For individuals who require an accommodation during the interview process, please advise your company contact.</div><div><br></div><h3>NOTE: PROTECT YOURSELF FROM JOB SCAMS</h3><div>Please protect yourself from job scams. Shef will never ask for money or fees at any point during the interview process. Shef does not ask applicants to communicate through Telegram, Skype, or WhatsApp. If you are being asked to download a third-party app to communicate for a job interview, do not download. Shef posts all legitimate job openings on our jobs page. Any legitimate role on a third-party site will also be posted on our careers page.</div><div><br></div>",
+    "extId": "am9icG9zdDpu4lUutmIsb6ynrBBgrclm",
+    "firstPublishedTsSec": 1780943787,
+    "locations": [
+      {
+        "id": "30370",
+        "extId": "bG9jOo78PMNQZog8m35q-aSWJKw",
+        "name": "San Francisco",
+        "city": "San Francisco",
+        "isoCountry": "USA",
+        "isRemote": false,
+        "__typename": "PublicOatsLocation"
+      },
+      {
+        "id": "30371",
+        "extId": "bG9jOh6H4JpXIkw_u-9lMgym_9s",
+        "name": "New York",
+        "city": "New York",
+        "isoCountry": "USA",
+        "isRemote": false,
+        "__typename": "PublicOatsLocation"
+      }
+    ],
+    "job": {
+      "id": "T2F0c0pvYjo1NTI3ODI5",
+      "locationType": "HYBRID",
+      "employmentType": "FULL_TIME",
+      "department": {
+        "id": "41647",
+        "extId": "ZGVwdDoagPIhrHC5-jj7eu5c0MW3",
+        "name": "Product",
+        "__typename": "PublicOatsDepartment"
+      },
+      "__typename": "PublicOatsJob"
+    },
+    "compensationHtml": "<h2>Compensation</h2><div>The base pay range for this role is $150,000 – $170,000 per year.</div>",
+    "__typename": "PublicOatsJobPost"
+  },
+  "am9icG9zdDq3Tt17SHpzYWdSYen2UONp": {
+    "id": "T2F0c0pvYlBvc3Q6NzUxMjU1Mw==",
+    "title": "Brand Ambassador (NYC Metro Area)",
+    "descriptionHtml": "<div><strong>About Shef</strong></div><div><br></div><div>At Shef, we're bringing humanity back to mealtime by connecting people with the most talented chefs in their city. We give independent chefs—many of them award-winning, classically trained, or veterans of acclaimed kitchens—a platform to build their own following and a meaningful livelihood doing what they love.</div><div><br></div><div>We have raised over $100M from investors including Andreessen Horowitz, Y Combinator, Craft Ventures, and M13, as well as founders and executives from Instacart, TaskRabbit, StubHub, AngelList, Lyft, Airbnb, and Yelp. We have a ton of exciting work ahead of us and are excited to have you join us!</div><div><br></div><div>We're building our very first in-person events program, and we're looking for outgoing, people-loving personalities to help bring it to life at some of the best food events, markets, and festivals in the city.</div><div><br></div><div><strong>What you'll be doing</strong></div><div><br></div><div>You'll be the face of Shef at farmers markets, food festivals, and community events around the city — striking up conversations, sharing what makes Shef special, and helping curious people discover their new favorite way to eat. If you love people, love food, and light up a room (or a booth), this is your kind of gig.</div><div><br></div><ul><li class=\"\">Represent Shef at a fun, high-energy table or booth for a shift (typically 4–8 hours)</li><li class=\"\">Chat up passersby, answer questions, and get people excited about the brand</li><li class=\"\">Help interested folks get started right there on the spot</li><li class=\"\">Bring good energy — you set the tone for how people experience Shef that day</li><li class=\"\">Quick, easy training before your first event so you feel confident and prepared</li></ul><div><br></div><div><strong>Who we're looking for</strong></div><div><br></div><div>We care way more about your personality than your resume. You're a great fit if you're:</div><div><br></div><ul><li class=\"\">Genuinely enjoy talking to strangers — you make people feel comfortable and welcome</li><li class=\"\">Outgoing and confident — you don't wait for people to come to you, you go say hi</li><li class=\"\">Adaptable — busy events move fast and you roll with it, reading the room as you go</li><li class=\"\">Dependable — when you commit to a shift, you show up ready to go</li></ul><div><br></div><div>No marketing experience or degree required. This is a great fit for people with a background in retail, hospitality, serving/bartending, brand ambassador work, or anyone who's naturally the friend who talks to everyone at the party — including students with flexible schedules.</div><div><br></div><div><strong>What you get</strong></div><div><br></div><ul><li class=\"\">Competitive hourly pay plus bonus opportunities for top performers</li><li class=\"\">Paid training</li><li class=\"\">Flexible, pick-your-shifts scheduling once you're onboarded</li><li class=\"\">A fun, social way to spend a weekend — great food, good energy, and a team that has your back</li></ul><div><br></div><div><strong>How to apply</strong></div><div><br></div><div>Send us a quick note on:</div><div><br></div><ul><li class=\"\">Your availability (days/times you can typically work)</li><li class=\"\">Any experience with retail, hospitality, events, or anything people-facing</li><li class=\"\">What city/neighborhood you're based in</li></ul>",
+    "extId": "am9icG9zdDq3Tt17SHpzYWdSYen2UONp",
+    "firstPublishedTsSec": 1786456392,
+    "locations": [
+      {
+        "id": "30371",
+        "extId": "bG9jOh6H4JpXIkw_u-9lMgym_9s",
+        "name": "New York",
+        "city": "New York",
+        "isoCountry": "USA",
+        "isRemote": false,
+        "__typename": "PublicOatsLocation"
+      }
+    ],
+    "job": {
+      "id": "T2F0c0pvYjo2NTYyMjU2",
+      "locationType": "IN_OFFICE",
+      "employmentType": "CONTRACT",
+      "department": {
+        "id": "42891",
+        "extId": "ZGVwdDptQ4lJdW_t0AXVzdPIBJhx",
+        "name": "Marketing",
+        "__typename": "PublicOatsDepartment"
+      },
+      "__typename": "PublicOatsJob"
+    },
+    "compensationHtml": null,
+    "__typename": "PublicOatsJobPost"
+  }
+}

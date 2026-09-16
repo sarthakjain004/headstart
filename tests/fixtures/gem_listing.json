@@ -1,0 +1,124 @@
+{
+  "jobPostings": [
+    {
+      "id": "T2F0c0pvYlBvc3Q6NDgyODA0",
+      "extId": "am9icG9zdDrr7FZuqmRcmF9aI406HpQ4",
+      "title": "Personal Chef",
+      "locations": [
+        {
+          "id": "30370",
+          "name": "San Francisco",
+          "city": "San Francisco",
+          "isoCountry": "USA",
+          "isRemote": false,
+          "extId": "bG9jOo78PMNQZog8m35q-aSWJKw",
+          "__typename": "PublicOatsLocation"
+        }
+      ],
+      "job": {
+        "id": "T2F0c0pvYjozMDA0NTY=",
+        "department": null,
+        "locationType": "REMOTE",
+        "employmentType": "CONTRACT",
+        "__typename": "PublicOatsJob"
+      },
+      "__typename": "PublicOatsJobPost"
+    },
+    {
+      "id": "T2F0c0pvYlBvc3Q6NTA0MzgwMQ==",
+      "extId": "am9icG9zdDpfHfomMwhgi_z8_5e1eD4l",
+      "title": "Director, Customer Acquisition",
+      "locations": [
+        {
+          "id": "30371",
+          "name": "New York",
+          "city": "New York",
+          "isoCountry": "USA",
+          "isRemote": false,
+          "extId": "bG9jOh6H4JpXIkw_u-9lMgym_9s",
+          "__typename": "PublicOatsLocation"
+        }
+      ],
+      "job": {
+        "id": "T2F0c0pvYjo0MTQwMDUy",
+        "department": {
+          "id": "42891",
+          "name": "Marketing",
+          "extId": "ZGVwdDptQ4lJdW_t0AXVzdPIBJhx",
+          "__typename": "PublicOatsDepartment"
+        },
+        "locationType": "HYBRID",
+        "employmentType": "FULL_TIME",
+        "__typename": "PublicOatsJob"
+      },
+      "__typename": "PublicOatsJobPost"
+    },
+    {
+      "id": "T2F0c0pvYlBvc3Q6NjQ2MjQzMQ==",
+      "extId": "am9icG9zdDpu4lUutmIsb6ynrBBgrclm",
+      "title": "Senior Full-Stack Software Engineer",
+      "locations": [
+        {
+          "id": "30370",
+          "name": "San Francisco",
+          "city": "San Francisco",
+          "isoCountry": "USA",
+          "isRemote": false,
+          "extId": "bG9jOo78PMNQZog8m35q-aSWJKw",
+          "__typename": "PublicOatsLocation"
+        },
+        {
+          "id": "30371",
+          "name": "New York",
+          "city": "New York",
+          "isoCountry": "USA",
+          "isRemote": false,
+          "extId": "bG9jOh6H4JpXIkw_u-9lMgym_9s",
+          "__typename": "PublicOatsLocation"
+        }
+      ],
+      "job": {
+        "id": "T2F0c0pvYjo1NTI3ODI5",
+        "department": {
+          "id": "41647",
+          "name": "Product",
+          "extId": "ZGVwdDoagPIhrHC5-jj7eu5c0MW3",
+          "__typename": "PublicOatsDepartment"
+        },
+        "locationType": "HYBRID",
+        "employmentType": "FULL_TIME",
+        "__typename": "PublicOatsJob"
+      },
+      "__typename": "PublicOatsJobPost"
+    },
+    {
+      "id": "T2F0c0pvYlBvc3Q6NzUxMjU1Mw==",
+      "extId": "am9icG9zdDq3Tt17SHpzYWdSYen2UONp",
+      "title": "Brand Ambassador (NYC Metro Area)",
+      "locations": [
+        {
+          "id": "30371",
+          "name": "New York",
+          "city": "New York",
+          "isoCountry": "USA",
+          "isRemote": false,
+          "extId": "bG9jOh6H4JpXIkw_u-9lMgym_9s",
+          "__typename": "PublicOatsLocation"
+        }
+      ],
+      "job": {
+        "id": "T2F0c0pvYjo2NTYyMjU2",
+        "department": {
+          "id": "42891",
+          "name": "Marketing",
+          "extId": "ZGVwdDptQ4lJdW_t0AXVzdPIBJhx",
+          "__typename": "PublicOatsDepartment"
+        },
+        "locationType": "IN_OFFICE",
+        "employmentType": "CONTRACT",
+        "__typename": "PublicOatsJob"
+      },
+      "__typename": "PublicOatsJobPost"
+    }
+  ]
+}

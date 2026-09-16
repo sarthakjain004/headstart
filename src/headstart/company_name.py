@@ -24,9 +24,16 @@ ripplehire        ``{Name} Careers | Latest jobs at …``              ~96% (all
 lever             ``{Name}`` — no wrapper at all                     ~88% (352/400)
 keka              ``Careers at {Name}`` / ``{Name} Careers``         ~11% (92 of 819)
 taleo_enterprise  four ``Careers``-wrappers (see below)              20% (30/150)
+gem               ``Careers at {Name}`` / ``{Name} Careers``         63% (36/57)
 jobvite           ``{Name} Careers``                                 424 of 434
 phenom            ``Careers``-wrappers ending at ``|`` or ``:``       11 of 16 boards
 ================  =================================================  =================
+
+**gem** is the lowest-yield row of the wrapper-matching ATSes, and the gap between "matches the
+wrapper" (~95%) and "yields a name" (63%) is almost entirely the hostname guard, not a bad pattern:
+many Gem tenants are early-stage startups whose brand IS their domain (``agenta.ai Careers``,
+``11x.ai Careers``, ``basalt.health Careers``), and `from_title`'s existing rule correctly declines
+those rather than serving a bare domain as a company name.
 
 Keka is the odd row and worth reading twice: only about one Board in eight serves a ``<title>`` at
 all (the rest render it client-side), but where one exists the wrapper is as uniform as
@@ -101,6 +108,10 @@ _CAREERS_WRAPPER = (
 PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     "ashby": (re.compile(r"^(?P<name>.+?)\s+Jobs$", re.IGNORECASE),),
     "eightfold": _CAREERS_WRAPPER,
+    # gem: sampled 60 live board pages (2026-09-16) — no JS wall, real server-rendered HTML on a
+    # bare GET. ~95% follow "{Name} Careers" (case varies: "a16z speedrun careers"), the exact
+    # wrapper eightfold/jobvite/keka already use.
+    "gem": _CAREERS_WRAPPER,
     # jobvite: every board titles itself "{Name} Careers"; 424 of 434 live boards resolve
     # (2026-09-07). See JobviteScraper.board_page.
     "jobvite": _CAREERS_WRAPPER,
@@ -197,6 +208,9 @@ _VENDOR_ALIASES: dict[str, frozenset[str]] = {
     "keka": frozenset({"keka"}),
     "lever": frozenset({"lever"}),
     "ripplehire": frozenset({"ripplehire"}),
+    # No vendor-branded gem board was observed in the 60-board sample — kept as the same
+    # precaution taleo_enterprise's own entry below is.
+    "gem": frozenset({"gem"}),
     # The vendor runs its own board on this platform (`careers.phenom.com`, title "Careers at
     # Phenom"), which is a wrapper this ATS *does* match — so unlike taleo_enterprise's, this
     # entry is not merely precautionary. `phenompeople` is the legacy brand the CDN and the dead
