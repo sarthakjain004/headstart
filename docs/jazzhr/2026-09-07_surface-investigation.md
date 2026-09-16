@@ -1,5 +1,11 @@
 # JazzHR: what the boards actually serve
 
+> **Superseded counts (2026-09-16).** The pool this was measured on was a *partial*
+> Wayback sweep, so every count below is a lower bound of unknown tightness. The method
+> stands; the numbers are re-measured at full pool in
+> [`docs/jazzhr/2026-09-16_full-pool-measurement.md`](./2026-09-16_full-pool-measurement.md)
+> and decided in [ADR-0158](../adr/0158-jazzhr-and-jobvite-are-worth-their-storage.md).
+
 Investigation behind `src/headstart/scrapers/jazzhr.py`, `check_liveness.p_jazzhr` and the
 `jazzhr` entry in `verify_filters.URL_SHAPES`. Everything below was measured on **2026-09-07**
 against live `*.applytojob.com` hosts. Sample sizes are stated on every number; where a claim

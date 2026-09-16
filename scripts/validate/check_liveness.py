@@ -302,10 +302,15 @@ _SPANNING = (
     "jobs.personio.com",
     # applytojob.com: every jazzhr tenant is `{slug}.applytojob.com` on one Cloudflare zone, and
     # the refusals really do span it — an ungated 18,299-board pass at 432 workers drew 12
-    # refusals across **6 distinct tenants**, which is the shared meter this list is for and the
-    # opposite of Workday's per-datacenter case above. That pass wrote 2,740 `dead` rows; a
-    # 10-tenant spot-check of live->dead flips in the same situation found 6 of 10 still live
-    # (#463), so the cost of leaving it ungated is false DEAD verdicts on real boards.
+    # refusals across **6 distinct tenants** under one-probe-per-tenant load. That is the shared
+    # meter this list is for, and the opposite of Workday's per-datacenter case above. Leaving it
+    # ungated writes false DEAD verdicts on real boards: that pass wrote 2,740 `dead` rows, and a
+    # 10-tenant spot-check of live->dead flips found 6 of 10 still live (#463).
+    #
+    # The span is also the cost: one tenant's Cloudflare challenge now trips the gate for all
+    # ~14.7k jazzhr rows, short-circuiting them to UNKNOWN. Accepted deliberately — UNKNOWN is
+    # re-probed next run, whereas `dead` settles for DEAD_TTL_DAYS, so the failure this prevents
+    # is the durable one. Full measurement: docs/jazzhr/2026-09-16_full-pool-measurement.md.
     "applytojob.com",
 )
 _GATES = {
@@ -323,16 +328,14 @@ _GATES = {
     # window, not about throughput — the wall is not a request-rate limit we can simply out-wait.
     "jobs.personio.de": _HostGate(16, 0.05, "jobs.personio.de"),
     "jobs.personio.com": _HostGate(16, 0.05, "jobs.personio.com"),
-    # 16 is measured from both directions: a full 18,299-board pass at this width drew **zero**
-    # refusals, while 432 drew 12 across 6 tenants. A separate burst — 350 distinct tenants at
-    # concurrency 200, plus 60 hits concentrated on a single one — also came back 410/410 clean,
-    # so the wall is well above this and the cap is not the throughput ceiling; it is the width at
-    # which a whole-pool re-probe is known to settle. No spacing: the clean pass used none.
-    #
-    # `jobs.jobvite.com` is deliberately **absent**. It is one fixed host rather than a subdomain
-    # per tenant, and it drew zero refusals even in the 432-worker pass, so a gate for it would be
-    # configuration with no measurement behind it.
+    # 16 is the width at which a whole-pool re-probe is known to settle: a full 18,299-board pass
+    # at it drew zero refusals (see `_SPANNING` above for what 432 drew). It is not the throughput
+    # ceiling — 350 distinct tenants at concurrency 200 came back clean — so this is sized for the
+    # sustained whole-pool case, not for the wall. No spacing: the clean pass used none.
     "applytojob.com": _HostGate(16, 0.0, "applytojob.com"),
+    # `jobs.jobvite.com` has no entry on purpose: one fixed host rather than a subdomain per
+    # tenant, so the auto-gate below already keys it exactly, and it drew zero refusals even at
+    # 432. A seeded gate for it would be configuration with no measurement behind it.
 }
 _gates_lock = threading.Lock()
 # Auto-gate defaults for a host that starts refusing without a seeded entry, and the bounds

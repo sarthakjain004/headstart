@@ -92,16 +92,18 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
 # re-enabled here (2026-09-16) now that a full Wayback sweep has measured what that cost actually
 # is. The 2026-09-07 figures were taken on a pool built from a partial sweep, and both moved:
 #
-#   jazzhr  4,852 Hiring Boards (was 3,684) x 20.6 jobs/board (was 27.5) = 99,791 detail fetches
-#           at a measured 112 KB a page = ~10.7 GB, for 5.1% tech = ~5,089 tech Jobs.
-#   jobvite   746 Hiring Boards, 49,515 postings — **2.1x the 23,461 assumed** — so ~3-4 GB
-#           (was ~1.5-2) for 7.0% tech = ~3,466 tech Jobs (was ~1,640).
+#   jazzhr  4,871 Hiring Boards (was 3,684) x 20.5 jobs/board (was 27.5) = 99,963 detail fetches
+#           at a measured 112 KB a page = ~10.7 GB, for 5.1% tech = ~5,098 tech Jobs.
+#   jobvite   749 Hiring Boards, 49,573 postings — **2.1x the 23,461 assumed** — so ~3-4 GB
+#           (was ~1.5-2) for 7.0% tech = ~3,470 tech Jobs (was ~1,640).
 #
 # jazzhr lands on its old storage number by coincidence, not by being unchanged: it gained Boards
 # and lost jobs-per-Board, and the two cancelled. jobvite simply was not measured at full pool.
-# Total accepted: ~13.7-14.7 GB for ~8,555 tech Jobs. Neither shows a measurable India presence.
-# The per-ATS inputs (jobs/board, tech share, page size) are in docs/jazzhr/ and docs/jobvite/;
-# the pool and liveness numbers behind the counts above are in the PR that re-enabled them.
+# Total accepted: ~13.7-14.7 GB for ~8,568 tech Jobs. Neither shows a measurable India presence.
+# Decided in ADR-0158; the sweep, the liveness pass, the storage arithmetic, the gate A/B and the
+# per-field audit are all in docs/jazzhr/2026-09-16_full-pool-measurement.md. The older
+# docs/jazzhr/ and docs/jobvite/ notes keep the page-size and tech-share method but carry
+# partial-pool counts, and say so at the top.
 #
 # join stays disabled: ~99.99% non-tech (German-SMB boards, ~1 tech job in ~10k).
 DISABLED_ATS: frozenset[str] = frozenset({"join"})
