@@ -67,16 +67,16 @@ unparseable input with a 400 rather than silently ignoring it.
 
 ## ATS coverage
 
-**35 scrapers**, selected from a registry by the `ats` key: `amazon`, `apple`, `ashby`,
-`bytedance`, `darwinbox`, `eightfold`, `freshteam`, `google`, `greenhouse`, `icims`, `jazzhr`,
-`jobvite`, `join`, `keka`, `lever`, `meta`, `oracle`, `personio`, `recruitee`, `ripplehire`,
-`rippling`, `sensehq`, `smartrecruiters`, `successfactors`, `taleo_be`, `taleo_enterprise`,
-`teamtailor`, `tesla`, `tiktok`, `trakstar`, `uber`, `workable`, `workday`, `zoho`, `zwayam`. All
-but `join` are active: `join`'s boards run ~1 tech job in ~10k (German-SMB listings, almost
-entirely non-tech), pure noise for a tech-only index, so `registry.DISABLED_ATS` skips it — the
-scraper class and tests stay intact, and re-enabling it is a one-line change.
+**36 scrapers**, selected from a registry by the `ats` key: `amazon`, `apple`, `ashby`,
+`bytedance`, `darwinbox`, `eightfold`, `freshteam`, `gem`, `google`, `greenhouse`, `icims`,
+`jazzhr`, `jobvite`, `join`, `keka`, `lever`, `meta`, `oracle`, `personio`, `recruitee`,
+`ripplehire`, `rippling`, `sensehq`, `smartrecruiters`, `successfactors`, `taleo_be`,
+`taleo_enterprise`, `teamtailor`, `tesla`, `tiktok`, `trakstar`, `uber`, `workable`, `workday`,
+`zoho`, `zwayam`. All but `join` are active: `join`'s boards run ~1 tech job in ~10k (German-SMB
+listings, almost entirely non-tech), pure noise for a tech-only index, so `registry.DISABLED_ATS`
+skips it — the scraper class and tests stay intact, and re-enabling it is a one-line change.
 
-Eight of the 35 — `amazon`, `apple`, `bytedance`, `google`, `meta`, `tesla`, `tiktok`, `uber`
+Eight of the 36 — `amazon`, `apple`, `bytedance`, `google`, `meta`, `tesla`, `tiktok`, `uber`
 (ADR-0139) — are **Single source scrapers**: each company's own in-house careers system, not a
 multi-tenant platform, so there's no discovery step and each carries a fixed, hand-entered slug
 rather than a crawled tenant roster.
@@ -85,11 +85,12 @@ Each scraper reads a Board and normalizes its raw postings into `Job` records; a
 through one pooled, thread-local `curl_cffi` client that impersonates Chrome, so the same stack
 serves plain JSON APIs and TLS-fingerprinted (Cloudflare / DataDome) boards alike (ADR-0002). A
 Board's `company` name is read off the board page itself where the ATS makes that possible
-(`ashby`, `eightfold`, `jobvite`, `keka`, `lever`, `ripplehire`, `taleo_enterprise` — ADR-0114);
-every other ATS serves the **ATS slug** in that field instead, so a row's `company` may be either.
+(`ashby`, `eightfold`, `gem`, `jobvite`, `keka`, `lever`, `ripplehire`, `taleo_enterprise` —
+ADR-0114); every other ATS serves the **ATS slug** in that field instead, so a row's `company` may
+be either.
 
-The liveness pipeline has probed **229,557 ledger rows**: 135,501 live, 77,976 dead, 16,080 unknown
-— rows, not boards; they collapse to 128,869 Unique Boards once duplicate spellings of the same
+The liveness pipeline has probed **231,137 ledger rows**: 136,520 live, 78,537 dead, 16,080 unknown
+— rows, not boards; they collapse to 129,888 Unique Boards once duplicate spellings of the same
 board are folded together (`CONTEXT.md` §Counting Boards).
 
 ## What this optimises for
@@ -141,7 +142,7 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>135,501 live rows of 229,557<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>136,520 live rows of 231,137<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
@@ -238,18 +239,18 @@ their tech yield. `CONTEXT.md`'s §Counting Boards names each of these stages pr
 
 | | boards | |
 | --- | ---: | --- |
-| live rows in the ledger | 135,501 | a row, not a board — 6,632 of them are duplicate spellings |
+| live rows in the ledger | 136,520 | a row, not a board — 6,632 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −25,488 | all of it `join` |
 | − `config.EXCLUDED_BOARDS` | −47 | vendor test/sandbox boards, confirmed by reading their postings |
 | − alias ledger | −78 | one company, two hostnames sharing one board (ADR-0111) |
 | − case-variant dedupe | −6,630 | `company/External` and `company/external` are one board (ADR-0023) |
 | − `config.PARKED_BOARDS` | −4 | real boards withheld for now — their scrape cost dwarfs their tech yield |
-| = **Scrapable Board** | **103,254** | |
+| = **Scrapable Board** | **104,273** | |
 
 That order matters: excluding before deduping reads −47 and −6,630, deduping first reads −45,
-because two excluded boards were themselves duplicates. Both land on 103,254.
+because two excluded boards were themselves duplicates. Both land on 104,273.
 
-Of those, **67,044 are currently hiring** — the 36,210 live-but-empty boards are skipped as having
+Of those, **67,645 are currently hiring** — the 36,628 live-but-empty boards are skipped as having
 nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
 sticky measure of tech-job yield) and a random exploration tail drawn from everything else, so
 newly-productive boards can never starve and eviction keeps working on boards outside the head.

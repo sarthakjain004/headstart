@@ -135,6 +135,29 @@ sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` 
   `docs/discovery/zwayam-tenant-discovery.md` (the shared-TLS-cert roster and the tenant-directory
   endpoint carry it) plus the generalisable
   `docs/discovery/shared-cert-tenant-rosters.md`.
+- **Gem** ✅ DONE (2026-09-16) — `scrapers/gem.py`, wired through liveness (1,019 live / 601 hiring
+  boards in `data/validate/liveness/gem.csv`). Not India-sourced: found by reading a third-party
+  scraper library's own full-dataset snapshot and measuring tech share (38.9% of a 3,542-job
+  sample, the highest of ~20 candidate ATSes evaluated that way — Gem is mostly startup/scale-up
+  recruiting CRM). Slug = the board's path segment on one fixed host (`jobs.gem.com/{slug}`, same
+  shape as `ashby`/`rippling`). One GraphQL batch endpoint, `POST
+  /api/public/graphql/batch`: `JobBoardList` lists a board (**no pagination in the schema at
+  all** — verified against the largest live board, 300 postings, with no truncation and no
+  separate total field to detect one against), `ExternalJobPostingQuery` reads one posting's
+  detail, batched. Upstream's `DETAIL_BATCH_SIZE = 20` is **not a measured limit** — batches up to
+  1,000 ops succeed (8.0s), 2,000 fails with HTTP 500, so this ships at 100. No rate limit found to
+  conc 128 (159 req/s, zero non-200s). **A live board and a nonexistent one both answer 200 with an
+  empty job list** — the board page (200 vs 404) is what actually tells them apart, which is why
+  the liveness probe checks it first. `posted_at` uses `firstPublishedTsSec` only:
+  `startDateTs` (upstream's fallback) is a future-publish timestamp that is structurally
+  unreachable through the public listing and was 0/159 populated in the measured sample.
+  `remote` reads the native `job.locationType` (100% populated), which disagreed with the
+  per-location `isRemote` flag on 9.0% of a 3,533-posting sample — titles confirm `locationType`
+  is the one telling the truth. `compensationHtml` is machine-templated on 132/136 (97%) of the
+  postings that state one, even wrapped in prose — a dedicated Tier-1 `salary._field_gem` parser
+  was built because the existing generic Tier-1 parser cannot read Gem's own "$X – $Y" shape (a
+  currency symbol precedes *both* numbers) and silently drops the ceiling. Full measurement:
+  `docs/gem/2026-09-16_graphql-api-measurement.md`.
 - **Phenom** — M, but poor discoverability (no enumerable pattern, curated seed needed). Mastercard/Adobe India GCCs. After Eightfold.
 - **PeopleStrong** (201 hosts, still no scraper — Angular SPA XHR), **Jobsoid** (`{slug}.jobsoid.com/api/v1/jobs`, S, low yield) — opportunistic.
 - **Taleo Business Edition** ✅ DONE (2026-09-13, #452) — `scrapers/taleo_be.py`, wired through

@@ -8928,6 +8928,13 @@ _RESOLVE_ROWS = [
         "Tata Steel Ltd",
         "https://tatasteel.ripplehire.com/candidate/careers",
     ),
+    (
+        "gem",
+        "accel",
+        "Accel Careers",
+        "Accel",
+        "https://jobs.gem.com/accel",
+    ),
 ]
 
 
