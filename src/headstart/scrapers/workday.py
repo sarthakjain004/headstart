@@ -1775,22 +1775,42 @@ def _pick_subdivision_facet(
 ) -> tuple[str, list[tuple[str, int]]] | None:
     """Pick the best facet to subdivide on: ``(param, [(value_id, count), ...])``,
     or None if nothing useful remains. Skips already-applied facets (re-applying
-    one just hits the cap again) and facets with fewer than two values."""
+    one just hits the cap again) and facets with fewer than two values.
+
+    A facet's ``values`` are sometimes a *group* of nested sub-facets rather than leaf
+    values themselves — Workday's ``locationMainGroup`` wraps ``primaryLocation`` and
+    ``locationCountry``, each with its own real, filterable id/count leaves, while the
+    group's own entries carry neither and are not a valid ``appliedFacets`` key
+    (applying ``locationMainGroup`` itself answers HTTP 400 — live-verified on
+    bridgestone/external, 2026-09-16). Such a group is expanded into its children,
+    each considered under its own ``facetParameter``, rather than read as empty.
+    """
     by_param: dict[str, list[tuple[str, int]]] = {}
     for facet in facets:
         if not isinstance(facet, dict):
             continue
         param = facet.get("facetParameter")
         values = facet.get("values") or []
-        if not param or param in already_applied or len(values) < 2:
+        if not param or len(values) < 2:
             continue
-        items = [
-            (v.get("id"), int(v.get("count") or 0))
-            for v in values
-            if isinstance(v, dict) and v.get("id") and v.get("count", 0) > 0
-        ]
-        if items:
-            by_param[param] = items
+        nested = all(
+            isinstance(v, dict) and not v.get("id") and v.get("values") for v in values
+        )
+        groups = (
+            [(v.get("facetParameter"), v.get("values") or []) for v in values]
+            if nested
+            else [(param, values)]
+        )
+        for sub_param, sub_values in groups:
+            if not sub_param or sub_param in already_applied or len(sub_values) < 2:
+                continue
+            items = [
+                (v.get("id"), int(v.get("count") or 0))
+                for v in sub_values
+                if isinstance(v, dict) and v.get("id") and v.get("count", 0) > 0
+            ]
+            if items:
+                by_param[sub_param] = items
 
     for preferred in _SUBDIVISION_FACETS:
         if preferred in by_param:
