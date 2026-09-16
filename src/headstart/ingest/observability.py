@@ -230,6 +230,26 @@ class ShardReport:
         )
 
 
+#: Share of attempted Boards that may come back unusable before the run is called degraded.
+#:
+#: Measured, not chosen: the unusable share (failed + partial over attempted) ran **0.56-0.735%**
+#: across the five runs of 2026-09-16 — 119/130/135/112/147 unusable of 20,000 attempted, from
+#: those runs' own join logs — and 0.655% on the live `data/state/scrape_health.json`. 2% leaves
+#: roughly 3x headroom over that baseline, which is what stops the ordinary run tripping it.
+_DEGRADED_SHARE = 0.02
+#: Where a run stops being noisy and starts being an incident. 2026-09-12's Workday collapse ran at
+#: 80.8% of that provider's own attempts, which at Workday's measured 12.7% of a slice computes to
+#: **10.8% overall** — only ~1.2pp above this band, so an outage of the same severity on a slightly
+#: smaller provider would read DEGRADED rather than CRITICAL. The margin here is thin, unlike
+#: `_DEGRADED_SHARE`'s ~3x; this band separates an incident from noise, not one incident from
+#: another. It is a label on the line for whoever reads it — `scrape_join` logs DEGRADED and
+#: CRITICAL at the same level, so nothing is paged differently.
+_CRITICAL_SHARE = 0.10
+#: Fewest attempted Boards an ATS needs before it can be named as driving the verdict. `amazon` is
+#: one Board and reads 100% unusable the moment it comes back short.
+_MIN_GRADED_BOARDS = 25
+
+
 @dataclass
 class ScrapeHealth:
     """One reporting contract for shard and run-level Board coverage and scrape losses."""
@@ -303,10 +323,58 @@ class ScrapeHealth:
         )
 
     @property
+    def unusable_share(self) -> float:
+        """Fraction of attempted Boards whose list this run could not use — failed or partial.
+
+        The number the verdict is graded on. Attempted is ``successful + failed``.
+
+        **The numerator is an upper bound, and is clamped.** ``failed`` and ``partial`` are counted
+        from two sets in the same report and a Board can be in both: ``harvest`` records truncation
+        in a ``finally`` on purpose ("a scraper that truncated and *then* raised still reported
+        something worth carrying"), and ``on_board`` then routes that Board into ``errors`` as well.
+        The counters are per-ATS totals, not sets, so the overlap cannot be subtracted here — and
+        without the clamp one such Board on a one-Board ATS reported ``200.00% unusable``. Overlap
+        only ever *shrinks* the true count, so ``min(...)`` is the conservative reading and keeps
+        this a fraction.
+        """
+        attempted = sum(c["successful"] + c["failed"] for c in self.coverage.values())
+        if not attempted:
+            return 0.0
+        unusable = sum(c["failed"] + c["partial"] for c in self.coverage.values())
+        return min(unusable, attempted) / attempted
+
+    def worst_atses(self, limit: int = 3) -> list[tuple[str, float, int]]:
+        """The ATSes driving the share, largest first, as ``(ats, share, attempted)``.
+
+        Only ATSes with at least :data:`_MIN_GRADED_BOARDS` attempted Boards. Per-ATS baselines are
+        far noisier than the overall one — measured on the live ledger, keka sits at 9.95% and
+        oracle at 4.90% while the run as a whole is at 0.655%, and ``amazon`` is a single Board that
+        reads 100% the moment it comes back short. Ranking without a floor would name the noise.
+        """
+        ranked = []
+        for ats, counts in self.coverage.items():
+            attempted = counts["successful"] + counts["failed"]
+            if attempted < _MIN_GRADED_BOARDS:
+                continue
+            unusable = counts["failed"] + counts["partial"]
+            if unusable:
+                ranked.append((ats, unusable / attempted, attempted))
+        return sorted(ranked, key=lambda row: -row[1])[:limit]
+
+    @property
     def degraded(self) -> bool:
-        return not self.complete or any(
-            c["failed"] or c["partial"] for c in self.coverage.values()
-        )
+        """Whether this run's coverage is bad enough to be worth saying so.
+
+        **Graded, not a zero threshold.** This was ``any(failed or partial)`` until 2026-09-16,
+        which over ~20,000 Boards and 31 ATSes is always true: it read DEGRADED on 7 of 7 runs
+        sampled across four days, and would have printed the identical word on 2026-09-12 when
+        Workday failed 80.8% of its Board attempts and tech output fell ~87.7%. An alarm that is
+        always on cannot raise one, and this is the pipeline's only run-level coverage verdict.
+
+        Incomplete or malformed shard telemetry still degrades unconditionally — that is a
+        different failure from a noisy scrape, and it has no share to grade.
+        """
+        return not self.complete or self.unusable_share > _DEGRADED_SHARE
 
     @property
     def complete(self) -> bool:
@@ -330,11 +398,23 @@ class ScrapeHealth:
         failed = sum(c["failed"] for c in self.coverage.values())
         partial = sum(c["partial"] for c in self.coverage.values())
         attempted = successful + failed
-        verdict = "DEGRADED" if self.degraded else "healthy"
+        share = self.unusable_share
+        # One spelling of the threshold rule: `degraded` owns it, and this only adds the top band.
+        if share > _CRITICAL_SHARE:
+            verdict = "CRITICAL"
+        elif self.degraded:
+            verdict = "DEGRADED"
+        else:
+            verdict = "healthy"
         line = (
             f"Fresh coverage: {verdict} — {failed} failed and {partial} partial of "
-            f"{attempted} attempted Boards"
+            f"{attempted} attempted Boards ({share:.2%} unusable)"
         )
+        if verdict != "healthy":
+            worst = self.worst_atses()
+            if worst:
+                named = ", ".join(f"{ats} {rate:.1%} of {n}" for ats, rate, n in worst)
+                line += f"; worst: {named}"
         if not self.complete:
             line += (
                 f"; shard telemetry incomplete: {self.report_count}/"
