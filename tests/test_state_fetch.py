@@ -12,9 +12,9 @@ The rest is what the Hub tells us and how we answer it (ADR-0033's amendment): t
 `reason_for` publishes to an annotation, the window `reset_after` reads out of a 429, and
 `remote_files` refusing to read a missing `siblings` list as an empty repo.
 
-And what the fetch tells *us*: `generation_note` names the state generation a stage read — the
-revision and its age — because no stage reported it, and a run that silently re-planned from a
-dead cycle's state looked identical to a healthy one.
+And what the fetch tells *us*: `commit_note` names the dataset commit a stage listed against and
+how old it is, because no stage reported it and a run that silently re-planned from a dead cycle's
+state looked identical to a healthy one. Read in one direction — see the module under test.
 """
 
 from __future__ import annotations
@@ -86,15 +86,15 @@ _REMOTE = [
 ]
 
 
-#: What the Hub answers a `repo_info` with: the siblings, plus the revision they were listed at
-#: and when that revision was published. The last two are what `generation_note` reads.
-_REVISION = "e9f28b3441c51809b78f730dab3336df7554133b"
+#: What the Hub answers a `repo_info` with: the siblings, plus the commit they were listed at and
+#: when it was published. The last two are what `commit_note` reads.
+_COMMIT = "e9f28b3441c51809b78f730dab3336df7554133b"
 _PUBLISHED = datetime(2026, 9, 16, 12, 3, 28, tzinfo=UTC)
 
 
 def _info(
     siblings: list,
-    sha: str | None = _REVISION,
+    sha: str | None = _COMMIT,
     published: datetime | None = _PUBLISHED,
 ):
     return type(
@@ -919,40 +919,49 @@ def test_the_abort_names_the_budget_that_stopped_it(no_sleep, caplog, monkeypatc
     assert "cannot cover the Hub's" in caplog.records[-1].getMessage()
 
 
-def test_generation_note_names_the_revision_and_how_old_it_is() -> None:
-    """The identity of the state a stage read, in the form a human can check in one run's log.
+def test_commit_note_names_the_commit_and_how_old_it_is() -> None:
+    """What a stage listed against, in the form a human can check in one run's log.
 
     Run 35067130555 re-planned from the state run 35058831217 had written, because the run
     between them (35063022985) died on three HF 500s and published nothing — and no stage said
     so. It took four independent signals to reconstruct afterwards. The age is what makes it a
     single-run read rather than a two-run diff: the pipeline chains its own successor roughly
-    hourly (ADR-0093), so a generation an hour older than the run reading it is the whole tell.
+    hourly (ADR-0093), so a publish time an hour behind the run reading it is the tell.
     """
-    note = sf.generation_note(_REVISION, _PUBLISHED, _PUBLISHED + timedelta(minutes=14))
-    assert "revision e9f28b3441c5" in note
+    note = sf.commit_note(_COMMIT, _PUBLISHED, _PUBLISHED + timedelta(minutes=14))
+    assert "at e9f28b3441c5" in note
     assert "2026-09-16T12:03:28Z" in note
     assert "14m old" in note
 
 
-def test_generation_note_reports_a_stale_generation_in_hours() -> None:
+def test_commit_note_reports_a_stale_generation_in_hours() -> None:
     """Two cycles of staleness reads as `1h52m`, not `112m` — the shape the incident had."""
-    note = sf.generation_note(
-        _REVISION, _PUBLISHED, _PUBLISHED + timedelta(hours=1, minutes=52)
+    note = sf.commit_note(
+        _COMMIT, _PUBLISHED, _PUBLISHED + timedelta(hours=1, minutes=52)
     )
     assert "1h52m old" in note
 
 
-def test_generation_note_survives_a_dataset_that_has_never_been_written() -> None:
+def test_commit_note_survives_a_dataset_that_has_never_been_written() -> None:
     """A fresh fork bootstraps against an empty repo (ADR-0095), and `DatasetInfo` types both
     fields optional. An observability line must never be what fails that run closed."""
-    note = sf.generation_note(None, None, _PUBLISHED)
-    assert "unknown" in note
+    note = sf.commit_note(None, None, _PUBLISHED)
+    assert "never published" in note
 
 
-def test_fetch_says_which_state_generation_it_read(
+def test_commit_note_does_not_raise_on_a_naive_timestamp() -> None:
+    """Same promise, the other way it could break: `last_modified` is tz-aware on every live
+    response, and subtracting a naive one would raise *inside* the log call."""
+    naive = _PUBLISHED.replace(tzinfo=None)
+    assert "14m old" in sf.commit_note(
+        _COMMIT, naive, _PUBLISHED + timedelta(minutes=14)
+    )
+
+
+def test_fetch_says_which_dataset_commit_it_listed(
     hub, monkeypatch, tmp_path, caplog
 ) -> None:
-    """The regression: the fetch reports the generation it listed, naming the dataset.
+    """The regression: the fetch reports the commit it listed, naming the dataset.
 
     It is logged off the listing the fetch already makes — `repo_info` carries `sha` and
     `last_modified` beside the siblings — so this costs no extra Hub request.
@@ -962,22 +971,22 @@ def test_fetch_says_which_state_generation_it_read(
         assert sf.fetch_state("repo", ["data/state/*"], token=None) == 0
 
     line = next(
-        r.message for r in caplog.records if r.message.startswith("state generation: ")
+        r.message for r in caplog.records if r.message.startswith("dataset commit: ")
     )
     assert "repo" in line
-    assert "revision e9f28b3441c5" in line
+    assert "at e9f28b3441c5" in line
     assert "2026-09-16T12:03:28Z" in line
 
 
-def test_fetch_says_which_generation_it_read_even_when_it_then_fails(
+def test_fetch_says_which_commit_it_listed_even_when_it_then_fails(
     hub, monkeypatch, tmp_path, caplog
 ) -> None:
-    """The listing is where the generation is known, so a fetch that dies downloading still
-    reports what it was building on — the run whose merge died is exactly the case that matters."""
+    """The listing is where the commit is known, so a fetch that dies downloading still reports
+    what it was building on — the run whose merge died is exactly the case that matters."""
     _fake_hub(hub, monkeypatch, tmp_path, fail_first=0, headers={})
     monkeypatch.setattr(
         sf, "_download", lambda *a, **k: None
     )  # lists files, lands nothing
     with caplog.at_level("INFO"):
         assert sf.fetch_state("repo", ["data/state/*"], token=None) == 1
-    assert any(r.message.startswith("state generation: ") for r in caplog.records)
+    assert any(r.message.startswith("dataset commit: ") for r in caplog.records)
