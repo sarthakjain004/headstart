@@ -231,7 +231,19 @@ def build_doc(job: dict) -> str:
 # branches — no version bump, because the two assemblies were compared line-for-line against
 # each other before the move and were already identical; `tests/test_derived_meta.py` now pins
 # that agreement so a future edit to one path cannot silently diverge from the other again.
-DERIVATIONS_VERSION = 11
+#
+# v12: `geo.py` gained two `EXCLUDE` guards and four `INDIA_EXCLUDE` terms after an external
+# 230k-posting sweep found live false "IN" classifications: `CITIES["goa"]` matched Brazilian
+# "lagoa" (lagoon) inside Alagoas/Lagoa Santa/etc., `CITIES["anand"]` matched "Sananduva"
+# (Brazil) and "Canandaigua" (NY, US), and `INDIA_EXCLUDE` was missing "indian creek"/
+# "indianwood"/"indian street"/"indiantown" (US place names). All four were unguarded
+# substring collisions, not new aliases — an already-scraped Job whose `location` is one of
+# these strings currently serves `country = "IN"` and needs this sweep to correct it; `location`
+# itself is unchanged, so `refresh_row`'s unconditional fact resync never reaches it. (`git log
+# 9d6a840b..a9b71af5 -- src/headstart/geo.py` — one behavioral commit; the other commit in that
+# range, c9f9484f, only reworded `classify`'s docstring for ADR-0146's move, already covered by
+# the paragraph above.)
+DERIVATIONS_VERSION = 12
 
 
 def to_meta(job: dict) -> dict:
