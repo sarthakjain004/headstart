@@ -1,7 +1,7 @@
 # The `#`/`+` gap fix — full-corpus old-vs-new measurement
 
 **Date:** 2026-09-16. The `_GAP`/`_WORDS` change (see `_WORDS`'s comment in `experience.py` and
-`DERIVATIONS_VERSION` v12) was found via a live-API investigation into a handful of ATSes, which
+`DERIVATIONS_VERSION` v13) was found via a live-API investigation into a handful of ATSes, which
 only measured *new coverage* on a bounded, missing-`min_years` sample (51 rows across 9 ATSes).
 CLAUDE.md's own rule for any `experience.py` pattern change is stricter than that: measure changed
 *values*, not only coverage, and bucket every record old-tier → new-tier — exactly the discipline
