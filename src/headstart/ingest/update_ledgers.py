@@ -288,7 +288,7 @@ def gap(args: argparse.Namespace) -> int:
     # any particular id — but they are the population ADR-0162 declines to reclassify, and an
     # unmeasured population is exactly how this went five runs without being noticed.
     blocked_boards: set[str] = set()
-    rows = unreachable = off_slice = expired = blocked = 0
+    rows = disabled_ats = off_slice = expired = blocked = 0
     with args.meta.open(encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
@@ -303,7 +303,7 @@ def gap(args: argparse.Namespace) -> int:
             # A disabled ATS is never in any scrape slice, so its rows can only leave the index by
             # eviction — counting them would reserve slots no Board selection can ever spend.
             if row.get("ats") in DISABLED_ATS:
-                unreachable += 1
+                disabled_ats += 1
                 continue
             # Lowercased, like every other Board-key comparison in the plan path (ADR-0049): the
             # liveness ledger's casing and the one baked into a Job id need not agree, and the
@@ -345,7 +345,7 @@ def gap(args: argparse.Namespace) -> int:
     jobs = sum(counts.values())
     _log.info(
         f"gap: {rows:,} stored rows | {len(held):,} held | {jobs:,} unsettled across "
-        f"{len(counts):,} boards ({unreachable:,} on a disabled ATS, {off_slice:,} on a Board no "
+        f"{len(counts):,} boards ({disabled_ats:,} on a disabled ATS, {off_slice:,} on a Board no "
         f"scrape can select, {expired:,} gone from a Board this run scraped in full — all "
         f"unreachable) -> {args.ledger}"
     )

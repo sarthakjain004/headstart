@@ -17,14 +17,14 @@ falls back to for any board it hasn't measured yet (ADR-0026) — an ATS whose m
 every unmeasured board of that ATS's predicted cost on the next plan, not just the boards actually
 re-timed this run.
 
-**`gap`** — `R stored rows | H held | U unsettled across B boards (D on a disabled ATS, O
-on no scrape slice, X gone from a Board this run scraped in full — all unreachable)`, then the
-drain line, then the top-10 boards by backlog with each one's own delta. This is the ADR-0050
+**`gap`** — `R stored rows | H held | U unsettled across B boards (D on a disabled ATS, O on no
+scrape slice, X gone from a Board this run scraped in full — all unreachable)`, then the drain
+line, then the top-10 boards by backlog with each one's own delta. This is the ADR-0050
 description-store backlog: `unreachable` ids can never settle (wrong ATS, a Board no slice can
 contain per ADR-0162, or the Board's own authoritative scrape already re-emitted a shorter list
-that dropped them, #185) and are excluded from the count on purpose — a
-`gap` total that includes them would overstate the ledger's useful backlog and never shrink no
-matter how many descriptions actually get filled.
+that dropped them, #185) and are excluded from the count on purpose — a `gap` total that includes
+them would overstate the ledger's useful backlog and never shrink no matter how many descriptions
+actually get filled.
 
 `U` is a **level**, so read the drain line and not it: `L left the gap, J joined it, net ±X`
 (ADR-0162). A frozen backlog and a fast-churning one print the same `U`, which is how five
