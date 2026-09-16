@@ -48,8 +48,10 @@ _COMPANY = re.compile(r"Company:\s*(?P<company>[^%<\r\n]+)", re.IGNORECASE)
 #:
 #: The fetch *succeeds* on these pages, so nothing raised and no cause was ever recorded —
 #: taleo_be was the only ATS with a five-figure loss and no ``detail loss causes:`` line at all.
-#: The 14th tenant (Caidya) is a second layout carrying no anchor; it is now reported rather than
-#: being indistinguishable from a posting that genuinely has no description.
+#: The 14th tenant (Caidya) is a second layout carrying no anchor. Its body is still lost — only
+#: the *reporting* changes: the caller now records a cause, so it is distinguishable from a posting
+#: that genuinely has no description, though not from one whose container we simply could not
+#: parse. A selector for that layout is follow-up work.
 _DETAIL_OPEN = re.compile(r'<div[^>]*\bname="cwsJobDescription"[^>]*>', re.IGNORECASE)
 _DIV_TAG = re.compile(r"<(?P<close>/?)div\b", re.IGNORECASE)
 _LABEL = re.compile(

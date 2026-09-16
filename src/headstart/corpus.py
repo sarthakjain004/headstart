@@ -3,7 +3,10 @@
 One reader over the two source shapes the search index ingests:
 
 - a directory of ``{ats}.jsonl`` — the pipeline's own output, each line a canonical ``Job.to_dict``
-  (the production corpus). Deduped by ``id`` because a resumed scrape can re-emit a board's lines.
+  (the production corpus). Deduped by ``id``: a resumed scrape can re-emit a board's lines, and a
+  Board can return the same id twice within one list. The second source was silently ~1% of the
+  tech corpus until it was fixed in ``harvest.scrape_all`` (2026-09-16); the drop is now counted
+  rather than invisible, so the next source announces itself instead of hiding.
 - the one-off Wellfound CSV — non-canonical column names, kept only as the frozen eval benchmark.
   Its columns are adapted to the canonical shape here (the mapping the temporary ``to_meta`` did).
 
@@ -19,6 +22,8 @@ import sys
 from collections.abc import Iterator
 from pathlib import Path
 
+from headstart import log
+
 csv.field_size_limit(min(sys.maxsize, 2**31 - 1))  # descriptions can be long
 
 # Wellfound CSV column -> canonical Job field (the only three that differ).
@@ -29,8 +34,12 @@ _WELLFOUND_RENAME = {
 }
 
 
+_log = log.get(__name__)
+
+
 def _read_jsonl_dir(path: Path) -> Iterator[dict]:
     seen: set[str] = set()
+    duplicates = 0
     for file in sorted(path.glob("*.jsonl")):
         with file.open(encoding="utf-8") as fh:
             for line in fh:
@@ -38,10 +47,22 @@ def _read_jsonl_dir(path: Path) -> Iterator[dict]:
                 if not line:
                     continue
                 job = json.loads(line)
-                if job["id"] in seen:  # a resumed scrape re-emits a board's lines
+                if job["id"] in seen:
+                    # A resumed scrape re-emitting a board's lines is one source. It was not the
+                    # one actually firing: across the five runs of 2026-09-16 this dropped
+                    # 4,135-4,347 lines a run with no shard resuming in any of them — the real
+                    # source was `harvest.scrape_all` letting a Board's own list contain the same
+                    # id twice, fixed there. This stays as the backstop it was always meant to be,
+                    # and the count says so rather than the drop being silent.
+                    duplicates += 1
                     continue
                 seen.add(job["id"])
                 yield job
+    if duplicates:
+        _log.info(
+            f"corpus: dropped {duplicates} duplicate id(s) of {len(seen) + duplicates} line(s) "
+            f"in {path}"
+        )
 
 
 def _read_wellfound_csv(path: Path) -> Iterator[dict]:

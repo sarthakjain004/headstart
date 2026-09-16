@@ -34,8 +34,11 @@ Not mapped, on purpose:
   - ``experience``: no native field; the post-hoc extractor (ADR-0018) reads it from the description.
   - ``salary``: ``ctc_details`` was null on every one of the 2,591 scanned jobs — no shape to parse.
 
-Known limits: the widget caps a tenant at 1000 jobs with no pagination parameter (an SMB, now-EOL
-ATS — a real tech employer won't hit this). An unknown/dead slug soft-errors at HTTP 200 with an
+Known limits: the widget caps a tenant at 1000 jobs with no pagination parameter. Boards *do*
+hit it — `abnhire`, `simera-talent` and `kalam` sat on it across the five runs of 2026-09-16 — so
+the cap calls `mark_truncated`, per `base.mark_truncated`'s contract for a hard cap. Until then it
+only logged, and a posting past the cap was absent from every snapshot, went Unconfirmed and was
+evicted on the guaranteed second miss (ADR-0083). An unknown/dead slug soft-errors at HTTP 200 with an
 HTML 404 page (not JSON), which ``fetch_raw`` treats as an empty board.
 """
 
