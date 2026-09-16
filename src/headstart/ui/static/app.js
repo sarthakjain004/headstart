@@ -1908,6 +1908,20 @@ function drawTrends(){
     });
   }
 
+  // Methodology boundaries (ADR-0164): the taxonomy, tech filter or extraction changed at this
+  // stamp, not the market. Drawn as a vertical note behind the series, same as the reference
+  // line and the gridlines — an epoch's `ts` is written by the same tick as a trends row, so it
+  // is normally an exact stamp match; one that predates this feature or fell outside the window
+  // simply finds no index and is skipped rather than guessed at.
+  (d.epochs || []).forEach(ep => {
+    const idx = d.stamps.indexOf(ep.ts);
+    if (idx < 0) return;
+    const ex = x(idx);
+    const title = `Counting changed here: ${ep.changed.join(', ')}`;
+    svg += `<line class="epoch-marker" x1="${ex.toFixed(1)}" y1="${PAD_T}"
+             x2="${ex.toFixed(1)}" y2="${H - PAD_B}"><title>${esc(title)}</title></line>`;
+  });
+
   // Drawn before the series: context to read them against, not one of them. Dashed because
   // dashing should mean exactly this — a reference, not a measurement — which is also why the
   // gridlines stay solid.
