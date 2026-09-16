@@ -1087,6 +1087,42 @@ def p_workable(t, u):
     )
 
 
+_GEM_LIST_QUERY = """query JobBoardList($boardId: String!) {
+  oatsExternalJobPostings(boardId: $boardId) { jobPostings { id } }
+}"""
+
+
+def p_gem(t, u):
+    # gem's GraphQL listing answers 200 with an empty jobPostings list for a board that never
+    # existed at all, indistinguishable from a live board with zero current openings (measured
+    # 2026-09-16 — see gem.py's module docstring). The board page IS a real 404 for a nonexistent
+    # tenant, so it settles DEAD; only once it says the tenant exists does the API's job count mean
+    # anything.
+    status, _ = _get(f"https://jobs.gem.com/{t}")
+    if status == "dns" or status in (404, 410):
+        return DEAD, None
+    if status != 200:
+        return UNKNOWN, None
+    status, body = _post(
+        "https://jobs.gem.com/api/public/graphql/batch",
+        [
+            {
+                "operationName": "JobBoardList",
+                "variables": {"boardId": t},
+                "query": _GEM_LIST_QUERY,
+            }
+        ],
+        {"User-Agent": UA, "Content-Type": "application/json", "Accept": "*/*"},
+    )
+    if status != 200 or not body:
+        return UNKNOWN, None
+    try:
+        jobs = body[0]["data"]["oatsExternalJobPostings"]["jobPostings"]
+    except (KeyError, IndexError, TypeError):
+        return UNKNOWN, None
+    return LIVE, len(jobs)
+
+
 def _zoho_count(text):
     import html as _html
 
@@ -1873,6 +1909,7 @@ PROBES = {
     "phenom": p_phenom,
     "taleo_be": p_taleo_be,
     "taleo_enterprise": p_taleo_enterprise,
+    "gem": p_gem,
 }
 
 
