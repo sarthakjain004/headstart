@@ -372,12 +372,18 @@ class ScrapeHealth:
                     key=lambda item: (-item[1], item[0]),
                 )
                 if ranked:
+                    # Every cause, largest first — no cap. `base.loss_breakdown` dropped the
+                    # identical `[:4]` + `+N more causes` shape in #457 on the grounds that the
+                    # cause vocabulary is closed (status codes plus a handful of parse-shape
+                    # labels), so no line grows unreadable. This run-level copy survived that
+                    # change, and it is the one that hurts most: it aggregates across every Board,
+                    # so the tail it hid was the long tail. Measured over the five runs of
+                    # 2026-09-16, 12 lines hit the cap and the widest had 8 distinct causes —
+                    # the cap was discarding counts to save four entries.
                     shown = "; ".join(
                         f"{cause} x{count} on {boards} Board(s)"
-                        for cause, count, boards in ranked[:4]
+                        for cause, count, boards in ranked
                     )
-                    if len(ranked) > 4:
-                        shown += f"; +{len(ranked) - 4} more causes"
                     lines.append(f"{ats} {kind} loss causes: {shown}")
         return lines
 
