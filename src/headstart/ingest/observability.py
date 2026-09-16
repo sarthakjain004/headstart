@@ -458,7 +458,8 @@ class ScrapeHealth:
                     # labels), so no line grows unreadable. This run-level copy survived that
                     # change, and it is the one that hurts most: it aggregates across every Board,
                     # so the tail it hid was the long tail. Measured over the five runs of
-                    # 2026-09-16, 12 lines hit the cap and the widest had 8 distinct causes —
+                    # 2026-09-16, **27** lines hit the cap — 12 in the join roll-up and 15 more in the
+                    # shard logs, which the first count missed — and the widest had 8 distinct causes —
                     # the cap was discarding counts to save four entries.
                     shown = "; ".join(
                         f"{cause} x{count} on {boards} Board(s)"
