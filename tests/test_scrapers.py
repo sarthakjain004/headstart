@@ -6336,41 +6336,6 @@ def test_workday_subdivides_through_a_nested_location_group_when_flat_facets_are
     assert scraper.truncated is None  # fully read via the nested facet, not given up on
 
 
-# --- listing-level errors must raise, never read as an empty board (ADR-0058) -----------------
-#
-# A scraper that maps a dead listing endpoint to `[]` presents a gone board as alive-and-empty:
-# it writes no lines, so `index sync` never reaches it, no error reaches the shard report, and the
-# consecutive-gone quarantine — which counts only a *raised* 404/410 — can never fire. Each case
-# below reverts to that shape if the guard is removed.
-
-
-class _Status:
-    """A minimal response whose raise_for_status behaves like curl_cffi's."""
-
-    def __init__(self, status_code=200, text="", payload=None, url=""):
-        self.status_code = status_code
-        self.text = text
-        self._payload = payload
-        self.url = url
-
-    def json(self):
-        return self._payload
-
-    def raise_for_status(self):
-        if not (200 <= self.status_code < 400):
-            raise http.RequestsError(f"HTTP Error {self.status_code}: Not Found")
-
-
-class _NonJsonListing(_Status):
-    def __init__(self, text, *, status_code=200, content_type="text/html", url=""):
-        super().__init__(status_code=status_code, text=text, url=url)
-        self.content = text.encode()
-        self.headers = {"content-type": content_type}
-
-    def json(self):
-        raise json.JSONDecodeError("Expecting value", self.text, 0)
-
-
 def test_detail_exception_telemetry_keeps_a_settled_http_status():
     scraper = _workday_scraper()
     exc = http.RequestsError("service unavailable")
