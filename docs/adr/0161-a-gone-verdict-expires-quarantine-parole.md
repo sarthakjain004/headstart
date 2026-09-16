@@ -30,16 +30,37 @@ re-probed once at the same listing URL its own scraper builds.
 | **200** | **23** |
 | connection error (56) / read timeout (6) / unbuildable probe URL (6) | 68 |
 
-Of the 23 that answer 200, **16 serve live postings — 5,593 in total**, the largest
-(`greenhouse:svetness`) 4,980 and `ashby:airapps` 498. `greenhouse:lookout`/`lookoutinc` and
-`greenhouse:goprojobs`/`goprocareers` are slug renames that came back under a second spelling.
+Of the 23 that answer 200, 16 serve postings — 5,593 raw. **Count the tech subset, not that
+number.** Only tech roles are embedded, indexed or shown (ADR-0017), so the figure that reaches
+users is what survives `tech_filter.is_tech(title, department)` — the same two arguments
+`filter_jobs` passes:
+
+| | Boards | postings |
+|---|---|---|
+| answered 200 | 23 | — |
+| ≥1 posting | 16 | 5,593 |
+| **≥1 tech posting** | **12** | **264 (4.7%)** |
+
+The two diverge almost entirely on one Board. `greenhouse:svetness` is **4,980 of the 5,593
+(89%)** and is a personal-training franchise — *Circuit Training Instructor*, *In-home Personal
+Trainer* — **0 of 4,980 tech**. Reading the raw count as recovered coverage overstates this
+change's benefit by 21x. The Board actually worth recovering is `ashby:airapps`: 216 tech of 498
+(43.4%) — Data Engineer, AI/ML Engineer — which alone is 82% of the tech recovered. (Title-only
+scores airapps at 206; `filter_jobs` passes department too, which recovers 10 more `Data Analyst`
+rows under a `Platform` department. 216 is the production-accurate figure.) Two more caveats
+against over-reading even 264: `greenhouse:lookout`/`lookoutinc` are one employer under two
+slugs, so 2 of the 264 are the same postings twice, and the recall-biased gate counts two
+"Forward Deployed Recruiter - SWE" rows on `ashby:sxaler` — tolerated creep, per ADR-0017, not
+software jobs.
+
 Recovery is not an artefact of one age bucket: by days-since-quarantine it runs 2/98 (0–6d),
 9/94 (7–13d), 3/144 (14–20d), 8/381 (21–27d) — roughly flat, ≈0.8 Boards/day becoming reachable
 again. (The 56 connection errors are mostly the probe's own fault: a Personio slug is a whole
 host and the ledger carries bare tenants, so the probe built an unresolvable URL. They are not
 counted as recoveries.)
 
-So the coverage lost to a one-way door is not hypothetical, and it accrues indefinitely.
+So the coverage lost to a one-way door is not hypothetical, and it accrues indefinitely — but it
+is 264 tech postings and 12 Boards per month of accrual, not 5,593.
 
 ## Decision
 
@@ -64,9 +85,13 @@ copying the number without the reasoning behind it.
 
 *Read that number for what it is.* Those seconds are each Board's last real scrape **while it was
 404ing** — the cost of a dead round-trip, which is what ~97% of any parole cohort will do again.
-The ~3% that recover get a full scrape at the price of a live Board (`greenhouse:svetness` is
-4,980 postings), and that is the outcome this change exists to buy, not a cost to avoid. The
-aggregate holds either way: 23 recoveries per sweep against 734 dead round-trips.
+The ~3% that recover get a full scrape at the price of a live Board, and that is the outcome this
+change exists to buy, not a cost to avoid. The aggregate holds either way: 23 recoveries per sweep
+against 734 dead round-trips. Note the asymmetry the tech gate creates — `greenhouse:svetness`
+costs the most to re-scrape of anything in the cohort (4,980 postings) and returns 0 tech rows, so
+the benefit is concentrated in Boards that are cheap, while the cost is concentrated in one that
+is not. At 4,980 postings on a list-only ATS this is still seconds, so it does not move the
+cadence; it would if a future cohort held a detail-fetching Board of that size.
 
 The cost that actually binds is **slice slots**, not seconds: the run's slice is capped at 20,000
 Boards, and the quarantine is 757 of them (**3.8%**) if re-admitted every run.
@@ -87,7 +112,8 @@ Working, so the arithmetic can be checked rather than taken:
 
 Not one day: at ≈0.8 recoveries/day, daily parole spends **5,299 requests/week instead of 757**
 to catch the same ≈5.6 recoveries, at origins that have already answered 404 five times. Seven
-days is one probe per Board per week, against 5,593 postings recovered on the first sweep.
+days is one probe per Board per week, against 264 tech postings on 12 Boards recovered by the
+first sweep.
 
 ## Options considered
 
@@ -120,7 +146,11 @@ days is one probe per Board per week, against 5,593 postings recovered on the fi
 - The first run after this ships paroles **652** Boards at once — every row older than 7 days,
   p50 age 24 days. Re-admitted is not scraped: they drain through the exploration tail at p =
   0.144, ~94 scrapes in the first run and the rest over the following few, so the 23 recoverable
-  Boards return within a day or two.
+  Boards return within a day or two, and with them 264 tech postings on 12 of them.
+- **Report any future measurement of this in tech postings, not raw ones.** The two differ by 21x
+  here on one Board. Nothing in the quarantine path is tech-aware — `board_failures` counts
+  Boards, and a Board is quarantined or not regardless of what it serves — so the raw count is the
+  one that falls out of the ledger, and it is the misleading one.
 - The cadence is stated in **days**, not runs, where the review suggested "once every N runs".
   Days is what the ledger already records (`last_seen_gone`), and it keeps the re-probe rate
   stable when the chain's cadence moves — at the cost of making the cohort size depend on runs/day,

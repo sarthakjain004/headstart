@@ -6,8 +6,9 @@
   Consequences below claim "a board that dies and later revives is re-admitted automatically:
   its first successful scrape clears the streak". That branch is unreachable for a quarantined
   Board, which never scrapes again; measured, `0 cleared by a successful scrape` in 5 of 5 runs
-  while the total climbed 749 → 755. A gone-verdict now expires after 7 days and the Board comes
-  back for one run to re-earn it.
+  while the total climbed 749 → 755, and a live re-probe of all 757 found 12 Boards serving 264
+  tech postings. A gone-verdict now expires after 7 days and the Board comes back for one run to
+  re-earn it.
 
 **Relates to:**
 [ADR-0012](0012-liveness-ledger.md) (the liveness ledger stays probe-owned),

@@ -24,8 +24,9 @@ Raw results: `artifacts/2026-09-16_quarantined-reprobe.jsonl` (one JSON row per 
 | ReadTimeout | 6 |
 | probe could not build a URL | 6 |
 
-**23 of 757 (3.0%) answer 200 today.** Re-fetching each and counting the listing: **16 carry at
-least one live posting, 5,593 postings in total.**
+**23 of 757 (3.0%) answer 200 today.** Re-fetching each and counting the listing: 16 carry at
+least one live posting, 5,593 in total — but see "That raw count is the wrong number" below. The
+figure that matters is **12 Boards serving 264 tech postings**.
 
 ```
 greenhouse:svetness      4980      ashby:airapps        498      greenhouse:solarisbank   29
@@ -40,6 +41,49 @@ ashby:furiosa-ai / ashby:panacea / greenhouse:capellaspace / goprocareers / govt
 
 `lookout`/`lookoutinc` and `goprojobs`/`goprocareers` are the same employer under two slugs: the
 Board did not die, it moved, and the old spelling's 404 struck out the tenant.
+
+## That raw count is the wrong number
+
+Only tech roles are embedded, indexed or shown (ADR-0017), so a recovered Board contributes what
+survives `tech_filter.is_tech(title, department)` — the same two arguments `filter_jobs` passes.
+Re-run with `tech_share_of_recovered.py`; per-Board results in
+`artifacts/2026-09-16_recovered-tech-share.json`.
+
+| | Boards | postings |
+|---|---|---|
+| answered 200 | 23 | — |
+| ≥1 posting | 16 | 5,593 |
+| **≥1 tech posting** | **12** | **264 (4.7%)** |
+
+```
+ashby:airapps          216 / 498  (43.4%)   greenhouse:evolver      11 /  18
+greenhouse:solarisbank   8 /  29            greenhouse:summlinkbv    8 /   8  (100%)
+ashby:todyl              6 /   7            greenhouse:coverai       4 /   5
+ashby:sxaler             2 /   9            ashby:tolken             2 /   4
+greenhouse:lookout       2 /   4            greenhouse:lookoutinc    2 /   4
+greenhouse:vectara       2 /   5            greenhouse:goprojobs     1 /   1
+answered 200 with postings but 0 tech:
+greenhouse:svetness      0 / 4980           greenhouse:binance       0 /  10
+greenhouse:highground    0 /   6            greenhouse:axial         0 /   5
+```
+
+**One Board is 89% of the raw total and contributes nothing.** `greenhouse:svetness` is 4,980 of
+the 5,593 and is a personal-training franchise — *Circuit Training Instructor*, *In-home Personal
+Trainer*, *CIRCUIT TRAINING INSTRUCTOR* — **0 of 4,980 tech**. Quoting 5,593 as recovered coverage
+overstates the benefit by **21x**. The Board genuinely worth recovering is `ashby:airapps`, whose
+216 tech rows are 82% of everything recovered.
+
+Two things to know before re-running this:
+
+- **Pass department, not just the title.** airapps scores 206 title-only and **216** with
+  department — 10 `Data Analyst` rows sit under a `Platform` department. `filter_jobs` passes
+  both, so 216 is the production-accurate number.
+- **`classify()` returns a `Verdict` dataclass, which is always truthy.** Calling it in a boolean
+  context reads every posting as tech (it scores svetness at 100%). `is_tech()` is the bool.
+
+Even 264 is a ceiling: `lookout`/`lookoutinc` are one employer under two slugs, so 2 of them are
+the same postings twice, and the recall-biased gate counts two "Forward Deployed Recruiter - SWE"
+rows on `sxaler` — tolerated creep per ADR-0017, not software jobs.
 
 **Caveat on the 56 ConnectionErrors — they are the probe's fault, not findings.** Most are
 Personio, whose ledger key is a bare tenant while `PersonioScraper.url()` expects a whole host, so
@@ -68,4 +112,10 @@ Every one of the 757 has a row in `data/state/board_cost.csv` from its last real
 not CI seconds — it is the 20,000-Board slice cap (757 is 3.8% of it) and the request volume
 aimed at origins that have already said 404.
 
-**Conclusion → ADR-0161:** expire the verdict at 7 days rather than re-probe every run.
+Note the asymmetry the tech gate creates: `svetness` is simultaneously the most expensive Board
+in the cohort to re-scrape and worth zero. At 4,980 postings on a list-only ATS that is still
+seconds, so it does not move the cadence — it would if a future cohort held a detail-fetching
+Board of that size.
+
+**Conclusion → ADR-0161:** expire the verdict at 7 days rather than re-probe every run, and state
+the benefit in tech postings (264 on 12 Boards), never the raw count.

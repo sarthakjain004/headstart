@@ -56,10 +56,10 @@ QUARANTINE_AT = 5
 # listing request. So the fortnight there buys something real and would only be cargo-culted here.
 #
 # At 7 days and ~24 runs/day the re-admitted pool is ~31 Boards — 0.16% of a 20,000-Board slice —
-# against a measured 23 of 757 quarantined Boards that answer 200 today, 16 of them serving 5,593
-# live postings. Not one day: that is 5,299 requests a week instead of 757, at origins that have
-# already said 404 five times, to catch the same ~5.6 recoveries. ADR-0161 has the full arithmetic
-# and the alternatives it rules out.
+# against a measured 23 of 757 quarantined Boards that answer 200 today, **12 of them serving 264
+# tech postings** (5,593 raw, but ADR-0017's gate is what decides what reaches users). Not one day:
+# that is 5,299 requests a week instead of 757, at origins that have already said 404 five times,
+# to catch the same ~5.6 recoveries. ADR-0161 has the full arithmetic and the alternatives.
 PAROLE_DAYS = 7
 
 # "Gone" as the origin reports it. Matched against the recorded reason, which the shard reports
@@ -163,9 +163,10 @@ def paroled(rows: dict[str, Failure], now: str) -> set[str]:
 
     A verdict is evidence with an age, not a fact. Nothing re-probes a quarantined Board, so
     without this the ledger records forever what one afternoon found: re-probed live on
-    2026-09-16, **23 of the 757** Boards then quarantined answered 200 again and 16 of those
-    served postings (5,593 in total, the largest Board 4,980) — coverage the product had lost
-    with no metric reporting the loss.
+    2026-09-16, **23 of the 757** Boards then quarantined answered 200 again, and **12 of those
+    served 264 tech postings** — coverage the product had lost with no metric reporting the loss.
+    Count the tech subset, not the raw 5,593: one non-tech Board (`greenhouse:svetness`, a
+    personal-training franchise) is 4,980 of that total and contributes nothing to the index.
 
     Only a *quarantined* row is eligible; one still accruing strikes is in the slice anyway. The
     caller re-admits these and :func:`update` judges what comes back, so a Board that 404s again

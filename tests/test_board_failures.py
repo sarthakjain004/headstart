@@ -93,7 +93,7 @@ def test_load_fails_open(tmp_path):
 def test_a_gone_verdict_expires_into_parole():
     """The verdict is evidence with an age, not a fact. Past PAROLE_DAYS a quarantined Board is
     re-admitted for one run so the verdict can be re-earned — measured 2026-09-16, 23 of the 757
-    Boards then quarantined answered 200 again, 16 of them with live postings."""
+    Boards then quarantined answered 200 again, 12 of them serving tech postings."""
     fresh = "2026-09-16T00:00:00+00:00"
     stale = "2026-09-01T00:00:00+00:00"
     rows = {
