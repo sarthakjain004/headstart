@@ -300,6 +300,13 @@ _SPANNING = (
     "recruitee.com",  # 44 429s in one measured pass, ungated
     "jobs.personio.de",
     "jobs.personio.com",
+    # applytojob.com: every jazzhr tenant is `{slug}.applytojob.com` on one Cloudflare zone, and
+    # the refusals really do span it — an ungated 18,299-board pass at 432 workers drew 12
+    # refusals across **6 distinct tenants**, which is the shared meter this list is for and the
+    # opposite of Workday's per-datacenter case above. That pass wrote 2,740 `dead` rows; a
+    # 10-tenant spot-check of live->dead flips in the same situation found 6 of 10 still live
+    # (#463), so the cost of leaving it ungated is false DEAD verdicts on real boards.
+    "applytojob.com",
 )
 _GATES = {
     # host: (max in-flight, seconds between request starts)
@@ -316,6 +323,16 @@ _GATES = {
     # window, not about throughput — the wall is not a request-rate limit we can simply out-wait.
     "jobs.personio.de": _HostGate(16, 0.05, "jobs.personio.de"),
     "jobs.personio.com": _HostGate(16, 0.05, "jobs.personio.com"),
+    # 16 is measured from both directions: a full 18,299-board pass at this width drew **zero**
+    # refusals, while 432 drew 12 across 6 tenants. A separate burst — 350 distinct tenants at
+    # concurrency 200, plus 60 hits concentrated on a single one — also came back 410/410 clean,
+    # so the wall is well above this and the cap is not the throughput ceiling; it is the width at
+    # which a whole-pool re-probe is known to settle. No spacing: the clean pass used none.
+    #
+    # `jobs.jobvite.com` is deliberately **absent**. It is one fixed host rather than a subdomain
+    # per tenant, and it drew zero refusals even in the 432-worker pass, so a gate for it would be
+    # configuration with no measurement behind it.
+    "applytojob.com": _HostGate(16, 0.0, "applytojob.com"),
 }
 _gates_lock = threading.Lock()
 # Auto-gate defaults for a host that starts refusing without a seeded entry, and the bounds
