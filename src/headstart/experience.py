@@ -165,7 +165,7 @@ _FOLD = str.maketrans(
 # any of this runs; `·` and `•` are the bullet characters boards actually emit. The curly forms
 # themselves are deliberately absent — folding means they can never reach a Tier-2 pattern.
 _GAP = (
-    r"[\w\s.'\":/()&,·•+-]{0,45}?"  # what may sit between the number and "experience"
+    r"[\w\s.'\":/()&,·•+#-]{0,45}?"  # what may sit between the number and "experience"
 )
 _YEARS = (
     r"(?:years?|yrs?)"  # "yrs" is common enough in the corpus to be worth accepting
@@ -226,7 +226,14 @@ _WORK = (
 # are as common as "5+ years of engineering". Making it optional is what `_NARRATIVE_*` then has to
 # pay for — the connector used to be the only thing keeping corporate history out.
 _CONN = r"\s+(?:of|in|as)?\s*"
-_WORDS = r"(?:[\w'/&.-]+[\s,]+){0,4}?"  # filler between the connector and the work word
+# `#`/`+` (not just `+`, already needed for "C++") so "C#" doesn't break a filler word it sits
+# inside of — "3+ years with C# .Net Software Development" read as None because "C#" couldn't
+# match `[\w'/&.-]+` as one skippable token, stranding "Software" out of reach. Live-confirmed on
+# a Zoho posting stating exactly that; a corpus scan for the same "years" + C#/C++ shape found 51
+# more rows across 9 ATSes still missing under the old class (2026-09-16).
+_WORDS = (
+    r"(?:[\w'/&.#+-]+[\s,]+){0,4}?"  # filler between the connector and the work word
+)
 
 
 class _Tier2Pattern(NamedTuple):

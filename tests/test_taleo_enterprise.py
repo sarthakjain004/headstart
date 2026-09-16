@@ -180,11 +180,38 @@ def test_detail_vector_supplies_authoritative_fields():
     assert detail == {
         "description": "Description Qualifications",
         "department": "Engineering",
+        "experience": None,
         "location": "US-TX-Austin; US-TX-Dallas",
         "employment_type": "Full-time",
         "posted_at": "2026-09-11T17:18:01+00:00",
         "salary": None,
     }
+
+
+def test_detail_reads_jobtype_into_experience():
+    """Live Burns & McDonnell sample (job 649588, 2026-09-16): `reqlistitem.jobtype` states
+    "New Grad" where the tenant populates it (Hyatt's own shells never carry this label at all,
+    so the field stays None there — see `test_ttec_detail_layout_keeps_absent_fields_null`)."""
+    values = ["" for _ in range(12)]
+    labels = ["reqlistitem.no" for _ in range(12)]
+    labels[9] = "reqlistitem.description"
+    labels[10] = "reqlistitem.jobtype"
+    labels[11] = "reqlistitem.jobfield"
+    values[9] = "!*!%3Cp%3EDescription%3C%2Fp%3E"
+    values[10] = "New Grad"
+    values[11] = "Telecommunications"
+    page = (
+        "_hlid: ["
+        + ",".join(repr(label) for label in labels)
+        + "],"
+        + (
+            "api.fillList('requisitionDescriptionInterface', 'descRequisition', ["
+            + ",".join(repr(value) for value in values)
+            + "]);"
+        )
+    )
+    detail = enterprise._parse_detail_page(page)
+    assert detail["experience"] == "New Grad"
 
 
 def test_ttec_detail_layout_keeps_absent_fields_null():
@@ -211,6 +238,7 @@ def test_ttec_detail_layout_keeps_absent_fields_null():
     assert enterprise._parse_detail_page(page) == {
         "description": "TTEC description",
         "department": None,
+        "experience": None,
         "location": "India; India-Gujarat-Ahmedabad",
         "employment_type": None,
         "posted_at": None,
