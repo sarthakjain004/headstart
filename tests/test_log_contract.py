@@ -42,9 +42,9 @@ and the message body as it really appears. Five checks run over it:
    either in this table or in :data:`EXEMPT` with a reason. Adding an analyser regex without a
    contract entry is what fails, so no human has to remember.
 
-**Emitter-verified vs source-verified, and why the mix.** 76 of the 100 entries carry `emit=`,
+**Emitter-verified vs source-verified, and why the mix.** 78 of the 102 entries carry `emit=`,
 so their `body` is a line the emitter was watched producing rather than a line someone believed
-it produced. 27 of those 76 are marked `heavy`: they need a dependency CI does not install
+it produced. 27 of those 78 are marked `heavy`: they need a dependency CI does not install
 (`.[dev]` and nothing else — no numpy, torch, pyarrow, lancedb or langdetect), so they run for
 anyone editing `index`, `role_trends` or `embed_*` locally and skip in CI. That is weaker than a
 check that always runs, and it is the same trade `tests/test_readme_schema.py` already makes here.
@@ -702,6 +702,45 @@ def _ledger_gap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         + [{"id": f"greenhouse:full:{n}", "ats": "greenhouse"} for n in range(1005)]
         + [{"id": f"lever:gap-{n}:1", "ats": "lever"} for n in range(1204)]
         + [{"id": f"workday:acme/External:{n}", "ats": "workday"} for n in range(1204)],
+    )
+    update_ledgers.gap(_gap_args())
+
+
+def _ledger_gap_drain(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The same emitter with a *prior* ledger on disk, which is what a real run after the first
+    always has — the two lines below exist only on that branch (ADR-0162).
+
+    `_ledger_gap` above deliberately has none, so it pins the first-run shape of `GAP_TOP` (no
+    `(±N)`); this pins the shape every other run prints. One Board drains away entirely, one is
+    frozen, one is new, and one is unauthoritative this run — so `settled`, `newly unsettled`,
+    a negative `net` and the blocked count all move independently.
+    """
+    import gzip
+
+    from headstart import board_description_gap
+    from headstart.ingest import update_ledgers
+
+    monkeypatch.chdir(tmp_path)
+    ats_dir = Path("data/descriptions/lever")
+    ats_dir.mkdir(parents=True)
+    with gzip.open(ats_dir / "0001.jsonl.gz", "wt", encoding="utf-8") as fh:
+        fh.write(json.dumps({"id": "lever:held:1", "description": "held text"}) + "\n")
+    Path("data/jobs").mkdir(parents=True)
+    Path("data/state").mkdir(parents=True)
+    Path("data/state/unauthoritative_boards.json").write_text(
+        json.dumps({"lever:capped": "read to the 10,000 offset ceiling"}),
+        encoding="utf-8",
+    )
+    board_description_gap.save(
+        Path("data/state/board_description_gap.csv"),
+        {"lever:drains": 2000, "lever:frozen": 1500, "lever:capped": 1100},
+        today="2026-09-15",
+    )
+    _jsonl(
+        Path("data/embeddings/jobs/meta.jsonl"),
+        [{"id": f"lever:frozen:{n}", "ats": "lever"} for n in range(1500)]
+        + [{"id": f"lever:grows:{n}", "ats": "lever"} for n in range(1200)]
+        + [{"id": f"lever:capped:{n}", "ats": "lever"} for n in range(1100)],
     )
     update_ledgers.gap(_gap_args())
 
@@ -2574,6 +2613,35 @@ CONTRACT: tuple[Line, ...] = (
             "**lowercased** (ADR-0049), which the documented body had as `.../External`"
         ),
         emit=_ledger_gap,
+    ),
+    Line(
+        consumer="fanout_ledgers.GAP_DRAIN",
+        emitter=_LEDGERS,
+        body=(
+            "  gap: drain vs the 4,600 unsettled across 3 boards this run read: 2,000 settled, "
+            "1,200 newly unsettled, net -800"
+        ),
+        why=(
+            "the ledger's total is a *level*, so this is the only line that can tell progress "
+            "from stasis (ADR-0162). It is **absent** on a run with no prior ledger to subtract, "
+            "which is why the consumer's else-branch says so rather than reporting a parse "
+            "failure. `net` always carries its sign; `settled`/`newly unsettled` never do"
+        ),
+        emit=_ledger_gap_drain,
+    ),
+    Line(
+        consumer="fanout_ledgers.GAP_BLOCKED",
+        emitter=_LEDGERS,
+        body=(
+            "  gap: 1,100 unsettled Job(s) sit on 1 Board(s) whose scrape this run was not "
+            "authoritative (ADR-0053), so this run is no evidence about them either way"
+        ),
+        why=(
+            "the upper bound on the structurally-stuck share of the backlog, which ADR-0162 "
+            "measures rather than reclassifies. **Absent at zero**, and the literal `Job(s)` / "
+            "`Board(s)` parens are regex metacharacters the pattern has to escape"
+        ),
+        emit=_ledger_gap_drain,
     ),
     Line(
         consumer="fanout_ledgers.GAP_NO_STORE",

@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
+import logging
 from pathlib import Path
 
 from headstart import board_description_gap
@@ -259,6 +260,89 @@ def test_gap_protects_an_unauthoritative_board_whose_ids_carry_a_colon(tmp_path)
         unauthoritative={_WORKDAY_BOARD: "truncated: HTTP Error 429: "},
     )
     assert board_description_gap.load(path) == {f"{_WORKDAY_BOARD}:req".lower(): 2}
+
+
+def test_gap_reports_the_drain_and_not_only_the_level(tmp_path, caplog):
+    """The level alone cannot tell progress from stasis. Here two Jobs settle and two arrive, so
+    the total is unchanged at 2 — identical to a run in which the gap was never touched. The line
+    has to name both sides, which is the whole of ADR-0162."""
+    ledger = tmp_path / "board_description_gap.csv"
+    board_description_gap.save(
+        ledger, {"greenhouse:drains": 2, "greenhouse:frozen": 1}, today="2026-09-15"
+    )
+    with caplog.at_level(logging.INFO):
+        _gap_run(
+            tmp_path,
+            meta_rows=[
+                {"id": "greenhouse:frozen:1", "ats": "greenhouse"},
+                {"id": "greenhouse:grows:1", "ats": "greenhouse"},
+                {"id": "greenhouse:grows:2", "ats": "greenhouse"},
+            ],
+            settled={"greenhouse": ["greenhouse:drains:1", "greenhouse:drains:2"]},
+            ledger=ledger,
+        )
+    # Matched on the numbers, not the word "drain": the ledger path this test writes to carries
+    # the test's own name, so every line mentioning it would match that.
+    drain = [m for m in caplog.messages if "newly unsettled" in m]
+    assert drain, caplog.messages
+    assert "2 settled" in drain[0]
+    assert "2 newly unsettled" in drain[0]
+    assert "net +0" in drain[0]
+
+
+def test_gap_top_boards_carry_their_own_movement(tmp_path, caplog):
+    """The five-run evidence that opened this: eight of the top ten gap Boards were byte-identical
+    across every run, which took a hand diff of five logs to see. A Board that settled nothing
+    says `(+0)` on its own line."""
+    ledger = tmp_path / "board_description_gap.csv"
+    board_description_gap.save(ledger, {"greenhouse:frozen": 2}, today="2026-09-15")
+    with caplog.at_level(logging.INFO):
+        _gap_run(
+            tmp_path,
+            meta_rows=[
+                {"id": "greenhouse:frozen:1", "ats": "greenhouse"},
+                {"id": "greenhouse:frozen:2", "ats": "greenhouse"},
+            ],
+            settled={"greenhouse": ["unrelated"]},
+            ledger=ledger,
+        )
+    assert any("2 unsettled (+0)  greenhouse:frozen" in m for m in caplog.messages), (
+        caplog.messages
+    )
+
+
+def test_gap_says_nothing_about_drain_without_a_prior_ledger(tmp_path, caplog):
+    """A first run has nothing to subtract from, and printing the whole backlog as `newly
+    unsettled` would read as a spike that never happened."""
+    with caplog.at_level(logging.INFO):
+        _gap_run(
+            tmp_path,
+            meta_rows=[{"id": "greenhouse:acme:1", "ats": "greenhouse"}],
+            settled={"greenhouse": ["unrelated"]},
+        )
+    assert not [m for m in caplog.messages if "newly unsettled" in m], caplog.messages
+    assert any("no prior ledger" in m for m in caplog.messages), caplog.messages
+
+
+def test_gap_sizes_the_jobs_it_could_not_read_authoritatively(tmp_path, caplog):
+    """The class ADR-0162 declines to reclassify but insists on measuring: unsettled Jobs on a
+    Board whose scrape this run was not authoritative. They keep their gap quota; they are now
+    counted, so a backlog that is mostly this is visible in one run rather than five."""
+    with caplog.at_level(logging.INFO):
+        _gap_run(
+            tmp_path,
+            meta_rows=[
+                {"id": "lever:capped:1", "ats": "lever"},
+                {"id": "lever:capped:2", "ats": "lever"},
+                {"id": "lever:clean:1", "ats": "lever"},
+            ],
+            settled={"greenhouse": ["unrelated"]},
+            scraped={"lever": ["lever:capped:1"]},
+            unauthoritative={"lever:capped": "hit the 10,000 offset ceiling"},
+        )
+    assert any("2 unsettled Job(s) sit on 1 Board(s)" in m for m in caplog.messages), (
+        caplog.messages
+    )
 
 
 def test_a_missing_store_leaves_the_ledger_alone(tmp_path):
