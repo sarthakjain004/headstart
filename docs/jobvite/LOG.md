@@ -1,5 +1,11 @@
 # Jobvite: surface investigation and scraper
 
+> **Superseded counts (2026-09-16).** The pool this was measured on was a *partial*
+> Wayback sweep, so every count below is a lower bound of unknown tightness. The method
+> stands; the numbers are re-measured at full pool in
+> [`docs/jazzhr/2026-09-16_full-pool-measurement.md`](../jazzhr/2026-09-16_full-pool-measurement.md)
+> and decided in [ADR-0158](../adr/0158-jazzhr-and-jobvite-are-worth-their-storage.md).
+
 Captured 2026-09-07 against the live pool — 517 tenants (`data/ats-tenants-merged/jobvite.csv`,
 gitignored), 7,582 requests, everything at 6 concurrent workers with `User-Agent: headstart/0.1`.
 Zero non-200s that were not a redirect: no rate limit, no bot wall, no `Retry-After` was ever seen.

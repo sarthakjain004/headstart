@@ -88,14 +88,26 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
 # disabled 2026-07-07 pending non-English/non-tech expansion. The scraper class and its tests stay
 # intact (get_scraper("join", ...) still works); re-enable by removing it from this set.
 #
-# jazzhr and jobvite are disabled on arrival (2026-09-07), on cost rather than correctness. Both
-# are complete, tested, and ship a liveness ledger, so removing them here really is all it takes:
-# 3,684 jazzhr and 401 jobvite Hiring Boards are waiting. They stay off on storage, this
-# pipeline's binding constraint: jazzhr is 3,684 Boards x 27.5 jobs = ~100k detail fetches at a
-# measured 112 KB a page = ~10.7 GB, for 5.1% tech = ~5,100 tech Jobs; jobvite is 23,461 postings
-# = ~1.5-2 GB for 7.0% = ~1,640. Neither showed a measurable India presence. The inputs to both
-# sums (jobs/board, tech share, page size) are in docs/jazzhr/ and docs/jobvite/.
-DISABLED_ATS: frozenset[str] = frozenset({"join", "jazzhr", "jobvite"})
+# jazzhr and jobvite were disabled on arrival (2026-09-07) on cost rather than correctness, and are
+# re-enabled here (2026-09-16) now that a full sweep — Wayback run to completion, unioned with the
+# Common-Crawl candidates that found 96 tenants it missed — has measured what that cost actually is. The 2026-09-07 figures were taken on a pool built from a partial sweep, and both moved:
+#
+#   jazzhr  4,871 Hiring Boards (was 3,684) x 20.5 jobs/board (was 27.5) = 99,963 detail fetches
+#           at a measured 112 KB a page = ~10.7 GB, for 5.1% tech = ~5,098 tech Jobs.
+#   jobvite   748 Hiring Boards, 39,573 postings — **1.69x the 23,461 assumed** — so ~2.5-3.5 GB
+#           (was ~1.5-2) for 7.0% tech = ~2,770 tech Jobs (was ~1,640). Excludes jvauto, the
+#           vendor's own 10,000-posting automation tenant (config.EXCLUDED_BOARDS).
+#
+# jazzhr lands on its old storage number by coincidence, not by being unchanged: it gained Boards
+# and lost jobs-per-Board, and the two cancelled. jobvite simply was not measured at full pool.
+# Total accepted: ~13.2-14.2 GB for ~7,868 tech Jobs. Neither shows a measurable India presence.
+# Decided in ADR-0158; the sweep, the liveness pass, the storage arithmetic, the gate A/B and the
+# per-field audit are all in docs/jazzhr/2026-09-16_full-pool-measurement.md. The older
+# docs/jazzhr/ and docs/jobvite/ notes keep the page-size and tech-share method but carry
+# partial-pool counts, and say so at the top.
+#
+# join stays disabled: ~99.99% non-tech (German-SMB boards, ~1 tech job in ~10k).
+DISABLED_ATS: frozenset[str] = frozenset({"join"})
 
 
 def detail_pass_atses() -> frozenset[str]:
