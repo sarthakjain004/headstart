@@ -11,6 +11,7 @@ modules down flat (ADR-0153), so there is exactly one import path to keep in syn
 
 from __future__ import annotations
 
+import csv
 import hmac
 import json
 import os
@@ -202,10 +203,39 @@ def _watch_meta(path: Path) -> dict[str, dict[str, str]]:
     }
 
 
+_EPOCH_LABELS = (
+    ("centroid_version", "role taxonomy refit"),
+    ("family_map_fingerprint", "role family map edited"),
+    ("tech_filter_version", "tech filter changed"),
+    ("derivations_version", "experience/salary extraction changed"),
+)
+
+
+def _load_epochs(path: Path) -> list[dict]:
+    """Methodology boundaries (ADR-0164): every row after the first names what changed since
+    the row before it, so a chart can mark the point and a reader isn't left decoding raw
+    version integers. The first recorded row is a baseline, not a boundary — there is nothing
+    before it to contrast against, so it names nothing and is dropped rather than emitted empty.
+    """
+    if not path.exists():
+        return []
+    with path.open(encoding="utf-8", newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    out = []
+    for previous, row in zip([None, *rows], rows):
+        if previous is None:
+            continue
+        changed = [label for key, label in _EPOCH_LABELS if row[key] != previous[key]]
+        if changed:
+            out.append({"ts": row["ts"], "changed": changed})
+    return out
+
+
 _TRENDS = _load_trends(_STATE / "data" / "state" / "role_trends.parquet")
 _CONFIG = Path(__file__).parent / "config"  # copied in beside this app (ADR-0153)
 _WATCH = _watch_meta(_CONFIG / "role_watchlist.json")
 _FAMILY_LABELS = _family_labels(_CONFIG / "role_families.json")
+_EPOCHS = _load_epochs(_STATE / "data" / "state" / "trends_epochs.csv")
 # A refit re-bases every series (ADR-0040), so never plot two versions on one axis: keep the
 # newest only. Older rows stay in the ledger, they just aren't charted.
 if _TRENDS:
@@ -1014,7 +1044,15 @@ def trends():
     the roles split only where it leads somewhere.
 
     The reserved ``non-tech`` family is never a chart series — it rides along as ``non_tech``,
-    the tech-filter health number, so the page can show it as a caveat rather than a role."""
+    the tech-filter health number, so the page can show it as a caveat rather than a role.
+
+    ``epochs`` (ADR-0164) lists methodology boundaries within the requested window —
+    ``{ts, changed}``, ``changed`` naming which of the role taxonomy, the family map, the tech
+    filter or the experience/salary extraction moved at that stamp. Unlike every other field
+    above, it is **not** narrowed by ``ats`` or scoped to the live centroid version: a refit is
+    itself one of the four things that can produce a boundary, so hiding it there would hide the
+    exact event most worth marking. A chart can draw a marker at each stamp so a level shift
+    reads as "we changed how we count" rather than being mistaken for a hiring trend."""
     if not _TRENDS:
         return jsonify(error="no trend data yet"), 503
     metric = request.args.get("metric", "stock")
@@ -1058,6 +1096,15 @@ def trends():
         trends_rows = [r for r in trends_rows if r["ts"] <= until]
     if ats:
         trends_rows = [r for r in trends_rows if r["ats"] in ats]
+
+    # Epochs (ADR-0164) are their own timeline, independent of centroid version — a refit is
+    # itself one of the four things that can produce a boundary row, so filtering by the live
+    # version would hide the exact event most worth marking. Only the requested window narrows it.
+    epochs = _EPOCHS
+    if since:
+        epochs = [e for e in epochs if e["ts"] >= since]
+    if until:
+        epochs = [e for e in epochs if e["ts"] <= until]
 
     # Stamps and the share denominator come from `trends_rows` (since/until/ats-narrowed, but
     # not the family/metric drill): total(ts) is every family + non-tech IN THAT SCOPE, since
@@ -1138,6 +1185,7 @@ def trends():
         non_tech=[non_tech.get(ts) for ts in stamps],
         split_by=key,
         watch_parents=watch_parents,
+        epochs=epochs,
     )
 
 

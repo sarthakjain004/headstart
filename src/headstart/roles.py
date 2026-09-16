@@ -20,6 +20,7 @@ explainable per Job and survives a refit that re-bases every centroid.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -98,6 +99,36 @@ def load_families(path: Path, manifest: dict[str, Any]) -> dict[int, str | None]
             "family or in non_tech, or its rows vanish from the chart"
         )
     return mapping
+
+
+def family_map_fingerprint(path: Path) -> str:
+    """A short digest over what the family map *means* — which cluster lands in which family,
+    and the non-tech set — not over its bytes.
+
+    A curation edit (splitting a family, moving a cluster) changes what a trends chart's numbers
+    mean without requiring a centroid refit, and today nothing records when that happened; this
+    lets a caller detect it by comparing fingerprints tick over tick, rather than depending on
+    someone remembering to bump a counter by hand (the exact failure CLAUDE.md's
+    ``DERIVATIONS_VERSION`` rule already documents happening twice for a hand-maintained one).
+    ``label``/``note`` are deliberately excluded: rewording a family's description is not a
+    change to what it counts, and would otherwise churn the fingerprint on every doc polish.
+
+    ``centroid_version`` is deliberately NOT part of the hash, even though it's right there in
+    the spec: a caller already tracks that value as its own, separate signal (ADR-0164's epoch
+    tuple carries both), and folding it in here would make a refit *always* also register as a
+    "family map edited" event even when the curated content is untouched — coupling two things
+    the tuple exists to keep independently detectable.
+    """
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    meaning = {
+        "families": sorted(
+            (family["name"], sorted(family["clusters"])) for family in spec["families"]
+        ),
+        "non_tech": sorted(spec["non_tech"]["clusters"]),
+    }
+    return hashlib.sha256(
+        json.dumps(meaning, sort_keys=True).encode("utf-8")
+    ).hexdigest()[:12]
 
 
 def band(min_years: int | None, title: str | None, employment_type: str | None) -> str:

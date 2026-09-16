@@ -749,6 +749,12 @@ textarea:focus{ border-color:var(--accent); }
 /* 12px floor + tabular-nums (Datawrapper's legibility rule) — was 10px with no numeric
    alignment, both flagged by the design research doc §6. */
 .trends-grid .axis-label{ fill:var(--ink-3); font-size:12px; font-variant-numeric:tabular-nums; }
+/* A methodology boundary (ADR-0164): the taxonomy, tech filter or extraction changed here, not
+   the market. Same ink token as .ref-line (an annotation, not a series, wears ink not a hue) but
+   a finer dash and lower opacity so the two are never mistaken for each other — one is a
+   comparison series, this is a note about what the OTHER lines mean. */
+.trends-grid .epoch-marker{ stroke:var(--ink-3); stroke-width:1; stroke-dasharray:2 3;
+  opacity:.5; }
 
 
 /* min-width:0 because the panel is a flex column below 760px (the chart sits above the
