@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml)
 [![pipeline](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml)
-[![ADRs](https://img.shields.io/badge/ADRs-155-blue)](./docs/adr/)
+[![ADRs](https://img.shields.io/badge/ADRs-154-blue)](./docs/adr/)
 [![Python](https://img.shields.io/badge/python-3.12+-blue)](./pyproject.toml)
 
 Find software-engineering openings straight from companies' ATS (Applicant Tracking System)
@@ -102,10 +102,10 @@ hitting the host, not by reading code. This is a rule with a scar behind it: a "
 to tell dead from empty" guard looked obviously correct and died on contact, because 9 of 12 boards
 the ledger already called dead answered `GET /` with 200. Findings carry their sample size.
 
-**Record the rejected options, not just the chosen one.** 155 ADRs, **100** carrying a heading that
+**Record the rejected options, not just the chosen one.** 154 ADRs, **100** carrying a heading that
 weighs alternatives (`grep -lEi '^#{2,3} .*(alternativ|options? (considered|rejected)|rejected)'
 docs/adr/`). When a later measurement contradicts an earlier one the ADR is amended or superseded
-in place rather than quietly edited — **45** name an `Amends:` / `Supersedes:` relationship in
+in place rather than quietly edited — **44** name an `Amends:` / `Supersedes:` relationship in
 their header — so the reasoning stays auditable even when it turns out to be wrong.
 
 **Publish the limits next to the result.** The retrieval score ships with the two reasons not to
@@ -419,7 +419,7 @@ python -m headstart.ingest.index sync            # incremental add/evict into th
 
 ## More
 
-- **Design decisions:** [`docs/adr/`](./docs/adr/) — 155 numbered ADRs (the option picked, the
+- **Design decisions:** [`docs/adr/`](./docs/adr/) — 154 numbered ADRs (the option picked, the
   ones rejected, and why).
 - **Domain glossary:** [`CONTEXT.md`](./CONTEXT.md) — the ubiquitous language (ATS, Board, Slug,
   Job, Discovery, Liveness, Feed, Doc, Bucket, GitHub VM…).
