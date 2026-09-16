@@ -36,10 +36,22 @@ _HEAD_FIELDS = re.compile(
 _DIV = re.compile(r"<div[^>]*>(.*?)</div>", re.DOTALL | re.IGNORECASE)
 _NEXT = re.compile(r'<a\s+href="(?P<href>[^"]+)"\s+class="jscroll-next"', re.IGNORECASE)
 _COMPANY = re.compile(r"Company:\s*(?P<company>[^%<\r\n]+)", re.IGNORECASE)
-_DETAIL_BODY = re.compile(
-    r'name="cwsJobDescription"[^>]*>(?P<body>.*?)(?=<section\b)',
-    re.DOTALL | re.IGNORECASE,
-)
+#: The description container's *opening* tag. Its extent is found by depth-counting
+#: :data:`_DIV_TAG` rather than by a forward-looking terminator.
+#:
+#: What this replaced was ``(?=<section\b)``, which fires only on the minority of pages that
+#: happen to carry a ``<section>`` *after* the anchor. Measured live 2026-09-16 over 14 random
+#: hiring tenants: the old terminator matched 5 and silently dropped the description on the other
+#: 9, whose ``<section>`` tags all precede the anchor. Depth-counting parses 13 of the same 14 and
+#: loses none of the 5 the old one handled. That matches the logs, where taleo_be lost 737-795 of
+#: every 1,000 detail-Jobs across five runs (23,954 of 31,215).
+#:
+#: The fetch *succeeds* on these pages, so nothing raised and no cause was ever recorded —
+#: taleo_be was the only ATS with a five-figure loss and no ``detail loss causes:`` line at all.
+#: The 14th tenant (Caidya) is a second layout carrying no anchor; it is now reported rather than
+#: being indistinguishable from a posting that genuinely has no description.
+_DETAIL_OPEN = re.compile(r'<div[^>]*\bname="cwsJobDescription"[^>]*>', re.IGNORECASE)
+_DIV_TAG = re.compile(r"<(?P<close>/?)div\b", re.IGNORECASE)
 _LABEL = re.compile(
     r"<span[^>]*>\s*(?P<label>[^<]+?)\s*</span>\s*<strong>\s*(?P<value>.*?)\s*</strong>",
     re.DOTALL | re.IGNORECASE,
@@ -53,6 +65,28 @@ _CUSTOM_LABEL = re.compile(
 
 def _text(value: str | None) -> str | None:
     return html_to_text(value) if value else None
+
+
+def _description_html(page: str) -> str | None:
+    """The raw HTML inside the ``name="cwsJobDescription"`` container, or None if absent.
+
+    Depth-counts ``<div>``/``</div>`` from the anchor so the body ends at its *own* closing tag.
+    Returns None for the second live layout, which carries no anchor at all (YKHC, INVXIS) —
+    the caller records that as a cause rather than reporting an empty description.
+    """
+    opening = _DETAIL_OPEN.search(page)
+    if not opening:
+        return None
+    start = opening.end()
+    depth = 1
+    for tag in _DIV_TAG.finditer(page, start):
+        depth += -1 if tag.group("close") else 1
+        if depth == 0:
+            return page[start : tag.start()]
+    # Unbalanced markup: refuse rather than pollute. Running to the end of the page would put the
+    # site footer and navigation into the job's description, and a description that is wrong is
+    # worse for the embedding than one that is absent — the caller records a cause either way.
+    return None
 
 
 def _canonical(url: str) -> str:
@@ -264,9 +298,14 @@ class TaleoBEScraper(BaseScraper):
             self.note_detail_exception(exc)
             return None
         labels = _labels(page)
-        body = _DETAIL_BODY.search(page)
+        body = _description_html(page)
+        if not body:
+            # A 200 whose body we cannot read is a loss like any other, and until this existed it
+            # was the only kind that recorded nothing: the fetch succeeded, so no exception
+            # reached `note_detail_exception` and the cause map stayed empty.
+            self.note_detail_loss("200 without a parseable description body")
         return {
-            "description": _text(body.group("body")) if body else None,
+            "description": _text(body) if body else None,
             "location": _field(labels, "Primary Location", "Location"),
             "department": _field(labels, "Department"),
             "employment_type": _field(labels, "Employment Type", "Job Type"),
