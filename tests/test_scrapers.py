@@ -6220,6 +6220,122 @@ class _NonJsonListing(_Status):
         raise json.JSONDecodeError("Expecting value", self.text, 0)
 
 
+def test_workday_pick_subdivision_facet_descends_into_a_nested_location_group():
+    """``locationMainGroup`` wraps ``primaryLocation``/``locationCountry`` rather than
+    holding leaf values itself — live-verified on bridgestone/external, 2026-09-16:
+    applying ``locationMainGroup`` directly answers HTTP 400, and its own entries carry
+    no id/count. The real, filterable values are one level deeper, under each child's
+    own ``facetParameter``. A flat reading treats the wrapper as an empty facet and
+    reports the board unsplittable when a genuine, usable dimension is sitting right
+    there.
+    """
+    from headstart.scrapers import workday as workday_mod
+
+    facets = [
+        {"facetParameter": "jobFamily", "values": [{"id": "PSR", "count": 2386}]},
+        {
+            "facetParameter": "locationMainGroup",
+            "values": [
+                {
+                    "facetParameter": "primaryLocation",
+                    "descriptor": "Primary Location",
+                    "values": [
+                        {"descriptor": "Manchester", "id": "loc-1", "count": 2},
+                        {"descriptor": "Talleyville", "id": "loc-2", "count": 3},
+                    ],
+                },
+                {
+                    "facetParameter": "locationCountry",
+                    "descriptor": "Location Country",
+                    "values": [{"descriptor": "US", "id": "US", "count": 5}],
+                },
+            ],
+        },
+    ]
+
+    picked = workday_mod._pick_subdivision_facet(facets, already_applied={"jobFamily"})
+
+    assert picked is not None
+    param, items = picked
+    assert param == "primaryLocation"  # the child's own key, not the wrapper's
+    assert set(items) == {("loc-1", 2), ("loc-2", 3)}
+    # locationCountry has only one value here, so it never becomes a candidate.
+
+
+def test_workday_subdivides_through_a_nested_location_group_when_flat_facets_are_exhausted(
+    monkeypatch,
+):
+    """The residual case ADR-0053 named — a query still capped after every flat facet is
+    applied — is not a dead end when the API's location facet is nested, the way
+    bridgestone/external's is (live-verified 2026-09-16): the real leaves sit one level
+    inside ``locationMainGroup``, and the crawl must descend into them instead of
+    reporting nothing left to split.
+    """
+    scraper = _workday_scraper()
+
+    def post(applied, offset, *, raise_gone=False):
+        if not applied:
+            return {
+                "total": 2000,
+                "jobPostings": [{"bulletFields": ["root"]}],
+                "facets": [
+                    {
+                        "facetParameter": "jobFamily",
+                        "values": [
+                            {"id": "PSR", "count": 2000},
+                            {"id": "Other", "count": 5},
+                        ],
+                    }
+                ],
+            }
+        if applied == {"jobFamily": ["Other"]}:
+            return {
+                "total": 5,
+                "jobPostings": [{"bulletFields": ["other"]}],
+                "facets": [],
+            }
+        if applied == {"jobFamily": ["PSR"]}:
+            return {
+                "total": 2000,
+                "jobPostings": [{"bulletFields": ["psr"]}],
+                "facets": [
+                    {
+                        "facetParameter": "locationMainGroup",
+                        "values": [
+                            {
+                                "facetParameter": "primaryLocation",
+                                "values": [
+                                    {"id": "store-1", "count": 1000},
+                                    {"id": "store-2", "count": 1000},
+                                ],
+                            },
+                            {
+                                "facetParameter": "locationCountry",
+                                "values": [{"id": "US", "count": 2000}],
+                            },
+                        ],
+                    }
+                ],
+            }
+        store = applied["primaryLocation"][
+            0
+        ]  # a resolved store-level slice: small, final
+        return {"total": 1, "jobPostings": [{"bulletFields": [store]}], "facets": []}
+
+    monkeypatch.setattr(scraper, "_post", post)
+    absorbed: list[dict] = []
+    scraper._exhaust({}, absorbed.extend, depth=0)
+
+    assert {p["bulletFields"][0] for p in absorbed} == {
+        "root",
+        "psr",
+        "other",
+        "store-1",
+        "store-2",
+    }
+    assert scraper.truncated is None  # fully read via the nested facet, not given up on
+
+
 def test_detail_exception_telemetry_keeps_a_settled_http_status():
     scraper = _workday_scraper()
     exc = http.RequestsError("service unavailable")
