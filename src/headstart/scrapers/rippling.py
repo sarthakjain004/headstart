@@ -126,7 +126,7 @@ class RipplingScraper(BaseScraper):
                 timeout=30,
             )
         except http.RequestsError as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return {}
         return self._extract_detail(resp)
 
@@ -144,7 +144,7 @@ class RipplingScraper(BaseScraper):
                 timeout=30,
             )
         except http.RequestsError as exc:
-            self.note_detail_loss(type(exc).__name__)
+            self.note_detail_exception(exc)
             return {}
         return self._extract_detail(resp)
 

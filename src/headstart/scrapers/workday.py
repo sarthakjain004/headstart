@@ -1410,12 +1410,10 @@ class WorkdayScraper(BaseScraper):
             raise error or RuntimeError(
                 f"{shortfall} — too little of {total} listed postings was read"
             )
-        _log.info(
-            f"{self.board_key()}: {shortfall} — Board unauthoritative this run "
-            f"({total} listed)"
-        )
         # The warning was the whole record until ADR-0053: `index sync` could not see it, so
         # the pages this dropped were evicted as delistings. Now it travels with the Jobs.
+        # `mark_truncated` logs this Board and `why` itself (2026-09-16), so the near-identical
+        # line that used to sit here has gone rather than being printed twice per Board.
         self.mark_truncated(f"{shortfall} of {total} listed postings")
 
     async def _paginate_async(

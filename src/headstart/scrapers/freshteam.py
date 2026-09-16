@@ -34,8 +34,11 @@ Not mapped, on purpose:
   - ``experience``: no native field; the post-hoc extractor (ADR-0018) reads it from the description.
   - ``salary``: ``ctc_details`` was null on every one of the 2,591 scanned jobs — no shape to parse.
 
-Known limits: the widget caps a tenant at 1000 jobs with no pagination parameter (an SMB, now-EOL
-ATS — a real tech employer won't hit this). An unknown/dead slug soft-errors at HTTP 200 with an
+Known limits: the widget caps a tenant at 1000 jobs with no pagination parameter. Boards *do*
+hit it — `abnhire`, `simera-talent` and `kalam` sat on it across the five runs of 2026-09-16 — so
+the cap calls `mark_truncated`, per `base.mark_truncated`'s contract for a hard cap. Until then it
+only logged, and a posting past the cap was absent from every snapshot, went Unconfirmed and was
+evicted on the guaranteed second miss (ADR-0083). An unknown/dead slug soft-errors at HTTP 200 with an
 HTML 404 page (not JSON), which ``fetch_raw`` treats as an empty board.
 """
 
@@ -44,11 +47,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from headstart import log
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
-
-_log = log.get(__name__)
 
 #: The widget caps a tenant at this many jobs and takes no pagination parameter,
 #: per the module docstring above.
@@ -131,11 +131,19 @@ class FreshteamScraper(BaseScraper):
 
         listed = raw.get("jobs") or []
         if len(listed) >= _WIDGET_CAP:
-            # Same shape as zoho's and trakstar's ceilings: documented, silent until now. No
-            # pagination parameter exists, so the excess is simply unreachable this run.
-            _log.info(
-                f"{self.board_key()}: {len(listed)} jobs, at or over the {_WIDGET_CAP}-job "
-                "widget cap — the rest is unread, not absent"
+            # A **hard** cap, which `base.mark_truncated`'s contract says to mark "however close
+            # to complete the read looks": no pagination parameter exists, so the excess is
+            # unreachable, and unreachable identically on every run. Until 2026-09-16 this branch
+            # only logged, so `freshteam partial` read 0 across five runs while three Boards sat
+            # on the cap — and a posting past it, absent from every snapshot, went Unconfirmed and
+            # was evicted on the guaranteed second miss. The pipeline was deleting live jobs.
+            #
+            # Not the same call as zoho's superficially identical ceiling, which stays unmarked
+            # on purpose — the split is ADR-0159: exact cap marks, approximate ceiling does not.
+            # `mark_truncated` logs the Board and the reason itself, so no separate line here.
+            self.mark_truncated(
+                f"{len(listed)} jobs, at or over the {_WIDGET_CAP}-job widget cap — "
+                "the rest is unreachable, not absent"
             )
 
         jobs: list[Job] = []
