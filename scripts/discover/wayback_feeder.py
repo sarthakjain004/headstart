@@ -260,6 +260,10 @@ def _with_style(style: Style, *hosts: str) -> tuple[tuple[str, Style], ...]:
 # for why the label alone is the wrong identity outside `path` styles.
 ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     "ashby": _with_style("path", "jobs.ashbyhq.com"),
+    # One host, no regional pods — checked live against Wayback CDX (2026-09-16): a
+    # `matchType=domain` sweep filtered to `/careers` paths found 307 distinct
+    # `*.bamboohr.com` hosts and nothing on a second domain.
+    "bamboohr": _with_style("sub", "bamboohr.com"),
     "darwinbox": _with_style("sub", "darwinbox.in", "darwinbox.com"),
     # `host` style: this ATS's slug is the whole board host, not the label — `eightfold.py`
     # builds `https://{slug}/careers`, and every one of the ledger's 109 live boards is stored

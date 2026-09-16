@@ -141,6 +141,13 @@ ATS_PATTERNS = {
         "kind": "slug",
         "patterns": [r"join\.com/companies/([a-z0-9][a-z0-9-]+)"],
     },
+    "bamboohr": {
+        # One host, no regional pods — checked live against Wayback CDX (2026-09-16): 307
+        # distinct `*.bamboohr.com` hosts serving a `/careers` path, all on the bare domain.
+        "targets": ["bamboohr.com"],
+        "kind": "label",
+        "patterns": [r"([a-z0-9][a-z0-9-]*)\.bamboohr\.com"],
+    },
     "darwinbox": {
         "targets": ["darwinbox.in", "darwinbox.com"],
         "kind": "label",
