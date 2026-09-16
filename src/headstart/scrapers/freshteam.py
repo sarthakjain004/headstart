@@ -44,11 +44,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from headstart import log
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
-
-_log = log.get(__name__)
 
 #: The widget caps a tenant at this many jobs and takes no pagination parameter,
 #: per the module docstring above.
@@ -131,11 +128,20 @@ class FreshteamScraper(BaseScraper):
 
         listed = raw.get("jobs") or []
         if len(listed) >= _WIDGET_CAP:
-            # Same shape as zoho's and trakstar's ceilings: documented, silent until now. No
-            # pagination parameter exists, so the excess is simply unreachable this run.
-            _log.info(
-                f"{self.board_key()}: {len(listed)} jobs, at or over the {_WIDGET_CAP}-job "
-                "widget cap — the rest is unread, not absent"
+            # A **hard** cap, which `base.mark_truncated`'s contract says to mark "however close
+            # to complete the read looks": no pagination parameter exists, so the excess is
+            # unreachable, and unreachable identically on every run. Until 2026-09-16 this branch
+            # only logged, so `freshteam partial` read 0 across five runs while three Boards sat
+            # on the cap — and a posting past it, absent from every snapshot, went Unconfirmed and
+            # was evicted on the guaranteed second miss. The pipeline was deleting live jobs.
+            #
+            # Not the same call as zoho's superficially identical ceiling, which stays unmarked on
+            # purpose: ~750 there is approximate, so landing on it is evidence rather than proof,
+            # and ADR-0053 exclusion has no drain. This 1,000 is exact. `mark_truncated` logs the
+            # Board and the reason itself, so there is no separate line here.
+            self.mark_truncated(
+                f"{len(listed)} jobs, at or over the {_WIDGET_CAP}-job widget cap — "
+                "the rest is unreachable, not absent"
             )
 
         jobs: list[Job] = []
