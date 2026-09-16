@@ -861,12 +861,16 @@ jobs:
             total=$(( $(echo "$delays" | wc -w) + 1 ))
             for delay in $delays; do
               hf upload "$@" && return 0
-              echo "::warning::hf upload attempt ${attempt}/${total} failed; retrying in ${delay}s"
+              # Plain stdout, not `::warning::`. ADR-0039's budget is 10 annotations per *step*,
+              # and this function runs once per store, four stores to a step: at six attempts each
+              # a retrying warning would emit up to 24 and GitHub would drop the overflow —
+              # including the `giving up` line, which is last and is the one worth keeping.
+              echo "hf upload attempt ${attempt}/${total} failed; retrying in ${delay}s"
               sleep "$delay"
               attempt=$(( attempt + 1 ))
             done
             hf upload "$@" && return 0
-            echo "::warning::hf upload attempt ${attempt}/${total} failed; giving up"
+            echo "::warning::hf upload gave up after ${total} attempts"
             return 1
           }
           publish() {

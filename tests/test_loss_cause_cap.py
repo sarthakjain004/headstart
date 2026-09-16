@@ -5,8 +5,9 @@ vocabulary is closed (status codes plus a handful of parse-shape labels) so no l
 unreadable. The run-level copy in `observability` survived that change, and it is the one that
 hurts most: it aggregates across every Board, so the tail it hid was the long tail.
 
-Measured over the five runs of 2026-09-16: 12 lines hit the cap, and the widest carried 8 distinct
-causes — the cap was discarding counts to save four entries.
+Measured over the five runs of 2026-09-16: **27** lines hit the cap — 12 in the join roll-up and
+15 more in the shard logs — and the widest carried 8 distinct causes. The cap was discarding counts
+to save four entries.
 """
 
 from collections import Counter
