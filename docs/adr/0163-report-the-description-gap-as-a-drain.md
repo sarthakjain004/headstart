@@ -1,4 +1,4 @@
-# ADR-0162: Report the description gap as a drain, and reclassify the Boards that are not Scrapable
+# ADR-0163: Report the description gap as a drain, and reclassify the Boards that are not Scrapable
 
 **Status:** accepted · **Date:** 2026-09-16 · **Amends:**
 [ADR-0062](0062-drain-the-description-gap.md) (adds the drain report its level could not give, and

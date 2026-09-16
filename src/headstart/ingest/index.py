@@ -12,10 +12,13 @@ The first three are the merge stage's; **backfill-from-store** is not — like `
 whole-table rewrite the per-run storage budget cannot afford, so it runs from ``cleanup-index``.
 
 **sync** reconciles the table against the embedding store incrementally: fresh ids are the corpus
-ids that have a vector, and the scraped-Board set is taken from the *full* scrape
-(``data/jobs/``), not the tech subset — so a Board that was scraped but dropped to zero *tech*
-jobs still has its closed postings evicted (a Board only in the tech snapshot would leave those
-rows stranded). A posting absent from a scraped Board is evicted once a *second* scrape of that
+ids that have a vector, and the scraped-Board set is taken from the *full* scrape, not the tech
+subset — so a Board that was scraped but dropped to zero *tech* jobs still has its closed postings
+evicted (a Board only in the tech snapshot would leave those rows stranded). A run holding
+``data/jobs/`` derives that set from it; in the pipeline, which no longer ships those records to
+the merge job, it arrives pre-derived from ``scrape_join`` and is asked for by
+``--scraped-boards`` (ADR-0161). ``index_plan.scraped_boards`` is where the two meet.
+A posting absent from a scraped Board is evicted once a *second* scrape of that
 Board misses it too (ADR-0083); Boards absent from the scrape are never touched (partial-harvest
 safety). On the first run the table is created empty and the plan is all-add; the identical path
 does true incremental add/evict on every later run — no overwrite-rebuild (ADR-0019). Corpus ids
@@ -101,6 +104,7 @@ from headstart.ingest.index_plan import (
     plan_sync,
     read_unauthoritative_boards,
     resolve_board,
+    scraped_boards,
 )
 from headstart.ingest.update_descriptions import read_store
 from headstart.search import PROD_TABLE
@@ -111,7 +115,7 @@ _STORE = REPO_ROOT / "data" / "embeddings" / "jobs"
 _SOURCE = REPO_ROOT / "data" / "jobs" / "tech"
 _SCRAPED = (
     REPO_ROOT / "data" / "jobs"
-)  # full (pre-tech-filter) scrape — the true scraped-Board set
+)  # full (pre-tech-filter) scrape — the true scraped-Board set, where a run has it on disk
 _DB = REPO_ROOT / "data" / "lancedb"
 # The ADR-0050 description store: the only source that holds text for Jobs outside a single run's
 # corpus slice, and so the only one a whole-table backfill can read (ADR-0104).
@@ -234,26 +238,6 @@ def _scan(table: Any, columns: list[str]) -> list[dict]:
 def _all_ids(table: Any) -> list[str]:
     """Every id in the table."""
     return [r["id"] for r in _scan(table, ["id"])]
-
-
-def _scraped_boards(
-    scraped: str | Path, corpus_ids: set[str], live: dict[str, str]
-) -> set[str]:
-    """The Boards this run actually scraped, read from the *full* scrape (``data/jobs/{ats}.jsonl``
-    — a non-recursive glob, so the ``tech/`` subdir is not double-counted).
-
-    ``live`` is the :func:`boards_by_canon` lookup each id resolves through, so this scope lands in
-    the same key space ``plan_sync`` classifies indexed rows into (ADR-0049).
-
-    This is the eviction scope: a Board here but absent from the tech corpus was scraped and simply
-    has no tech jobs now, so its stale tech rows are correctly evicted. Falls back to the corpus ids'
-    Boards when the scrape dir has no ``.jsonl`` (a Wellfound-CSV or unit-test sync), keeping those
-    paths working. (A Board scraped that yields *zero* jobs of any kind writes no ids and so isn't
-    covered here — that rarer case is handled by the dead/absent-Board prune, ADR-0023.)"""
-    path = Path(scraped)
-    if path.is_dir() and any(path.glob("*.jsonl")):
-        return {resolve_board(job["id"], live) for job in iter_jobs(path)}
-    return {resolve_board(job_id, live) for job_id in corpus_ids}
 
 
 _IDS_PER_LINE = 100  # batched id logging: skimmable lines, any single id still greps
@@ -530,7 +514,7 @@ def sync(args: argparse.Namespace) -> int:
     # reachable by neither planner (ADR-0049). Empty ledger degrades to board_of, the prior rule.
     live = boards_by_canon(live_keep_set(args.ledger))
     corpus_ids = {job["id"] for job in iter_jobs(args.source)}
-    boards = _scraped_boards(args.scraped, corpus_ids, live)
+    boards = scraped_boards(args.scraped_boards, args.scraped, corpus_ids, live)
     # A Board whose scrape came back short emitted the pages it did get, so it looks scraped and
     # its missing rows look delisted. Drop it from the scope entirely: eviction should follow a
     # Board's scrape *outcome*, not the presence of a line (ADR-0053). Since ADR-0101 removed the
@@ -1037,7 +1021,16 @@ def main() -> int:
         "--scraped",
         default=str(_SCRAPED),
         help="full-scrape {ats}.jsonl dir defining the scraped-Board eviction scope "
-        "(default: data/jobs); falls back to --source's Boards when it has no .jsonl files",
+        "(default: data/jobs); used when present, else --scraped-boards if given, else "
+        "--source's Boards",
+    )
+    p_sync.add_argument(
+        "--scraped-boards",
+        help="JSON list of the Boards the full scrape covered, written by scrape_join to "
+        "data/state/scraped_boards.json — the same eviction scope --scraped defines, derived "
+        "where the records already were (ADR-0161). Deliberately NOT defaulted: that file rides "
+        "data/state through the HF dataset, so defaulting it would let a local sync be scoped by "
+        "the last pipeline run's Boards. The merge job passes it explicitly",
     )
     p_sync.add_argument(
         "--unauthoritative-boards",

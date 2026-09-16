@@ -48,6 +48,7 @@ from typing import Any
 from headstart import http, log
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.tech_filter import is_tech
 
 _log = log.get(__name__)
 
@@ -422,12 +423,45 @@ class EightfoldScraper(BaseScraper):
         """Merge search metadata with a per-job description from position_details (fanned out).
         A failed detail only drops the description — the metadata already came from the search.
 
-        Jobs whose details we already hold are skipped entirely (ADR-0048): their description was
-        read once, at embed time, and is never read again, so re-fetching it spends this
-        provider's per-origin rate budget for nothing."""
-        wanted = [
-            str(p.get("id")) for p in positions if self.needs_detail(str(p.get("id")))
-        ]
+        Two populations are skipped entirely, because nothing downstream will ever read what the
+        fetch would return. Both spend this provider's per-origin rate budget, which is the one
+        it runs out of (ADR-0047/ADR-0063).
+
+        **Jobs whose detail we already hold** (ADR-0048): the description was read once, at embed
+        time, and is never read again.
+
+        **Jobs the tech gate will discard** (ADR-0017): only `data/jobs/tech` is embedded,
+        indexed and shown, and `update_descriptions` stores only what is in it — so a non-tech
+        posting never enters the store, never appears on the skip-list above, and was re-fetched
+        on every run forever. Measured across five runs of 2026-09-16, eightfold's non-tech count
+        tracked its detail `attempted` to within 0.3% every run (34,806 vs 34,736 on the first).
+
+        :func:`~headstart.tech_filter.is_tech` reads `title` + `department` and nothing else, and
+        the PCSX search already carries both — probed live 2026-09-16 over 6 boards / 2,929
+        positions: `name` 2,929/2,929, `department` 2,843/2,929 — so the detail body was never an
+        input to that decision. The 2.9% with no `department` are classified on the title alone
+        here *and* by `filter_tech`, which sees the same `None` from `parse`; `department` goes
+        through the one expression both read (:func:`_department_of`) and `classify` strips the
+        title itself, so the two verdicts cannot drift.
+
+        Both skips are conditional on ``have_details``, the pipeline's signal, which is ``None``
+        for every caller outside it (ADR-0048). The tech gate does not *need* that knowledge —
+        no pipeline reader opens a non-tech description either way — but eight scripts construct
+        scrapers directly and three would read the hole as a defect:
+        ``scripts/validate/verify_scraper.py`` reports "jobs-with-description" as its health
+        metric, ``scripts/eval/audit_remote.py`` live-scrapes a Board and triangulates `remote`
+        against the description text, and ``scripts/enrich/salary_sample.py`` measures
+        `salary.extract` recall off it. Skipping unconditionally would hand all three
+        ``description=None`` on ~59% of this ATS's postings and have them report a quality
+        collapse that is not real. Honouring the documented default is not an extra branch, it is
+        respecting one — and it costs nothing: every sharded run ships the list (`scrape_run`
+        reads it whenever ``--assignment`` is set; the five runs of 2026-09-16 logged
+        `detail skip-list: 671,630 / 671,833 / 672,468 Job details already held`)."""
+        if self.have_details is None:
+            tech = positions
+        else:
+            tech = [p for p in positions if is_tech(p.get("name"), _department_of(p))]
+        wanted = [str(p.get("id")) for p in tech if self.needs_detail(str(p.get("id")))]
         if self.async_fanout_enabled():
             fetched = self.fan_out_async(
                 wanted,
@@ -443,7 +477,7 @@ class EightfoldScraper(BaseScraper):
         if len(wanted) < len(positions):
             _log.info(
                 f"{self.board_key()}: fetched {len(wanted)}/{len(positions)} descriptions "
-                f"({len(positions) - len(wanted)} already held)"
+                f"({len(positions) - len(tech)} non-tech, {len(tech) - len(wanted)} already held)"
             )
         # Re-align to `positions`: the fan-out covered only the subset still needing a detail, so
         # zipping it against the full list would pair descriptions with the wrong Jobs.
@@ -464,7 +498,7 @@ class EightfoldScraper(BaseScraper):
                         ),
                         "posted_at": _ts_to_iso(pos.get("postedTs")),
                         "employment_type": None,  # not exposed by the PCSX API
-                        "department": (pos.get("department") or "").strip() or None,
+                        "department": _department_of(pos),
                         "remote": _remote_from(pos.get("workLocationOption")),
                     },
                 }
@@ -727,6 +761,18 @@ def _smartapply_to_pcsx_shape(pos: dict[str, Any]) -> dict[str, Any]:
         "postedTs": pos.get("t_create"),
         "workLocationOption": pos.get("work_location_option"),
     }
+
+
+def _department_of(pos: dict[str, Any]) -> str | None:
+    """One search position's ``department``, in the shape ``parse`` puts on the Job.
+
+    One expression because two readers must agree on it: the tech gate in ``_api_records``
+    decides whether to fetch a detail at all, and ``filter_tech`` re-runs that same gate later on
+    the field emitted here. A drift between them would either fetch details for postings that are
+    then dropped, or — the expensive direction — skip a posting the filter goes on to keep.
+    ``title`` needs no such helper: ``classify`` strips it exactly as ``parse`` does.
+    """
+    return (pos.get("department") or "").strip() or None
 
 
 def _short_reason(cause: str, got: int, total: int) -> str:

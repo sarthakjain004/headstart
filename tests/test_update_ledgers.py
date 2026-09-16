@@ -293,7 +293,7 @@ def test_gap_protects_an_unauthoritative_board_whose_ids_carry_a_colon(tmp_path)
 def test_gap_reports_the_drain_and_not_only_the_level(tmp_path, caplog):
     """The level alone cannot tell progress from stasis. Here two Jobs leave the gap and two join
     it, so the total is unchanged at 3 — identical to a run in which nothing was touched. The line
-    has to name both sides, which is the whole of ADR-0162.
+    has to name both sides, which is the whole of ADR-0163.
 
     `left`, not `settled`: a row also leaves this count when it is reclassified unreachable or its
     row leaves the store, and the line must not claim a description arrived for it."""
@@ -356,7 +356,7 @@ def test_gap_says_nothing_about_drain_without_a_prior_ledger(tmp_path, caplog):
 
 
 def test_gap_sizes_the_jobs_it_could_not_read_authoritatively(tmp_path, caplog):
-    """The class ADR-0162 declines to reclassify but insists on measuring: unsettled Jobs on a
+    """The class ADR-0163 declines to reclassify but insists on measuring: unsettled Jobs on a
     Board whose scrape this run was not authoritative. They keep their gap quota; they are now
     counted, so a backlog that is mostly this is visible in one run rather than five."""
     with caplog.at_level(logging.INFO):
@@ -377,7 +377,7 @@ def test_gap_sizes_the_jobs_it_could_not_read_authoritatively(tmp_path, caplog):
 
 
 def test_gap_drops_a_board_that_is_not_scrapable(tmp_path):
-    """The reliably-derivable half of the stuck backlog (ADR-0162). `dead` is a verdict the
+    """The reliably-derivable half of the stuck backlog (ADR-0163). `dead` is a verdict the
     liveness ledger already carries, so a Board outside CONTEXT.md's **Scrapable Board** set can
     never be picked, never scraped and never settled — measured at 134 Boards / 13,592 Jobs, 30%
     of the live backlog. Counting it reserves quota nothing can spend."""

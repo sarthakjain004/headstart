@@ -687,7 +687,7 @@ def _ledger_gap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     The header's seven counts are the whole point of the line, and only one input moves each:
     `held` needs the description store to hold the Job, `on a disabled ATS` needs its `ats` to be
     one the registry has switched off, `not on a Scrapable Board` needs a Board the liveness
-    ledger does not list (ADR-0162), `gone from a Board this run scraped in full` needs a
+    ledger does not list (ADR-0163), `gone from a Board this run scraped in full` needs a
     Board that emitted lines this run without re-emitting that id (#185), and `unsettled` is what
     is left. All seven are formatted `{n:,}`, so all seven clear 999.
     """
@@ -738,7 +738,7 @@ def _ledger_gap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _ledger_gap_drain(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The same emitter with a *prior* ledger on disk, which is what a real run after the first
-    always has — the two lines below exist only on that branch (ADR-0162).
+    always has — the two lines below exist only on that branch (ADR-0163).
 
     `_ledger_gap` above deliberately has none, so it pins the first-run shape of `GAP_TOP` (no
     `(±N)`); this pins the shape every other run prints. One Board drains away entirely, one is
@@ -1189,6 +1189,9 @@ def _index_paths(**over: object) -> argparse.Namespace:
     return argparse.Namespace(
         source="data/jobs/tech",
         scraped="data/jobs",
+        # Not passed, so the scope keeps coming from the records `_index_sync` writes into
+        # `data/jobs` — the arm a run holding the full scrape takes anyway (ADR-0161).
+        scraped_boards=None,
         db="data/lancedb",
         ledger="data/validate/liveness",
         upgrades="data/state/pending_upgrades.txt",
@@ -2662,7 +2665,7 @@ CONTRACT: tuple[Line, ...] = (
         ),
         why=(
             "the ledger's total is a *level*, so this is the only line that can tell progress "
-            "from stasis (ADR-0162). It says **left**, not *settled*: a row also leaves the count "
+            "from stasis (ADR-0163). It says **left**, not *settled*: a row also leaves the count "
             "by being reclassified unreachable. **Absent** on a run with no prior ledger (or an "
             "empty one) to subtract, which is why the consumer's else-branch says so rather than "
             "reporting a parse failure. `net` always carries its sign; the two gross terms never do"
@@ -2677,7 +2680,7 @@ CONTRACT: tuple[Line, ...] = (
             "authoritative (ADR-0053), so this run is no evidence about them either way"
         ),
         why=(
-            "the upper bound on the structurally-stuck share of the backlog, which ADR-0162 "
+            "the upper bound on the structurally-stuck share of the backlog, which ADR-0163 "
             "measures rather than reclassifies. **Absent at zero**, and the literal `Job(s)` / "
             "`Board(s)` parens are regex metacharacters the pattern has to escape"
         ),

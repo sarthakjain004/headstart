@@ -11,6 +11,11 @@ per-ATS concatenation; a duplicate line from an intra-board resume is deduped do
 Streams line-by-line (never buffering a whole ATS), and a shard that timed out mid-scrape simply
 contributes the boards it did finish — partial-harvest safety survives per shard.
 
+The union is also the last stage that *needs* the full records, so it records the scope it defines:
+``data/state/scraped_boards.json`` (ADR-0161). The merge job reads that set of Board keys instead
+of re-deriving it from the whole pre-tech-filter snapshot, which is what kept ~9 GB of job text on
+the critical path between the two jobs.
+
 Run: python -m headstart.ingest.scrape_join [--shards DIR] [--out DIR]
 """
 
@@ -24,6 +29,7 @@ from pathlib import Path
 from headstart import log
 from headstart.board_identity import board_key_of
 from headstart.ingest import REPO_ROOT, observability, shard_speedup
+from headstart.ingest.index_plan import boards_by_canon, live_keep_set, resolve_board
 from headstart.ingest.observability import ShardReport
 
 _log = log.get(__name__, __spec__)
@@ -35,6 +41,8 @@ _OUT = REPO_ROOT / "data" / "jobs"
 # Under data/state because that is what rides the corpus-state artifact to the job running
 # `index sync` — the shard fragments themselves stop at this stage (ADR-0053).
 _UNAUTHORITATIVE = REPO_ROOT / "data" / "state" / "unauthoritative_boards.json"
+_SCRAPED_BOARDS = REPO_ROOT / "data" / "state" / "scraped_boards.json"
+_LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
 _SPEEDUP = REPO_ROOT / "data" / "state" / "shard_speedup.csv"
 _HEALTH = REPO_ROOT / "data" / "state" / "scrape_health.json"
 
@@ -97,6 +105,29 @@ def write_unauthoritative_boards(
     return unauthoritative
 
 
+def write_scraped_boards(boards: set[str], path: Path) -> None:
+    """Persist the Boards this run's union covered — the eviction scope itself (ADR-0161).
+
+    ``index sync`` needs a *set of Board keys*, and the only place that set is defined is the full
+    pre-tech-filter scrape: a Board that emitted jobs but no *tech* jobs is in scope, and a scope
+    read off the tech corpus would leave its closed postings serving forever. Until this, the merge
+    job answered that by re-reading the whole of ``data/jobs/`` — which is why ~9 GB of job records
+    rode the corpus-state artifact for a question worth a few hundred KB. The join already has
+    every record in hand, so it derives the answer once, here, and ships that instead.
+
+    Keys are :func:`~headstart.ingest.index_plan.resolve_board`'s, in the id's own casing, because
+    that is exactly what the scope is compared against (ADR-0049) — the ledger both halves resolve
+    against is committed to git, so the join and the merge read the same one.
+
+    Always writes, even when the union covered nothing: ``data/state`` round-trips through the HF
+    dataset, so a run that skipped the write would leave the *previous* run's Boards in place and
+    scope this run's eviction on a scrape that never happened.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(sorted(boards), indent=1), encoding="utf-8")
+    _log.info(f"recorded {len(boards)} scraped Board(s) -> {path}")
+
+
 def main() -> int:
     log.setup()
     log.context("scrape_join")
@@ -115,6 +146,19 @@ def main() -> int:
         help="where to record the Boards whose scraped list is not authoritative, for `index "
         "sync` to exclude from the eviction scope "
         "(default: data/state/unauthoritative_boards.json)",
+    )
+    ap.add_argument(
+        "--scraped-boards",
+        default=str(_SCRAPED_BOARDS),
+        help="where to record the Boards this union covered — the eviction scope `index sync` "
+        "would otherwise re-derive from the whole full scrape "
+        "(default: data/state/scraped_boards.json)",
+    )
+    ap.add_argument(
+        "--ledger",
+        default=str(_LEDGER),
+        help="liveness ledger dir, for resolving ids to live Boards the way `index sync` does "
+        "(default: data/validate/liveness)",
     )
     ap.add_argument(
         "--speedup-ledger",
@@ -146,6 +190,12 @@ def main() -> int:
             per_ats.setdefault(f.name, []).append(f)
     _log.info(f"{len(frags)} shard(s), {len(per_ats)} ATS file(s)")
 
+    # Resolved against the live ledger as the union streams, because this is the one stage that
+    # holds every scraped record. `index sync` reads the set instead of the records (ADR-0161);
+    # the ledger is committed, so both halves resolve ids through the same lookup.
+    live = boards_by_canon(live_keep_set(args.ledger))
+    boards: set[str] = set()
+
     total = 0
     for ats_file, sources in sorted(per_ats.items()):
         n = 0
@@ -155,11 +205,15 @@ def main() -> int:
                     for line in s:
                         if line.strip():
                             dst.write(line if line.endswith("\n") else line + "\n")
+                            boards.add(resolve_board(json.loads(line)["id"], live))
                             n += 1
         total += n
         _log.info(f"{ats_file}: {n} lines from {len(sources)} shard(s)")
 
     _log.info(f"wrote {total} lines across {len(per_ats)} ATS files -> {out}")
+    # Before the telemetry below, like the unauthoritative-Board write: this is the eviction
+    # signal, and an empty file is the honest record of a run that joined nothing.
+    write_scraped_boards(boards, Path(args.scraped_boards))
     reports = observability.read_shards(shards_root)
     # Written unconditionally, before the summary: an empty file is the honest record of "every
     # Board's list is authoritative", and the summary below is telemetry that must never gate the

@@ -24,7 +24,10 @@ from __future__ import annotations
 
 import json
 import logging
+import multiprocessing
+import os
 import re
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -174,33 +177,104 @@ def is_tech(title: str | None, department: str | None = None) -> bool:
     return classify(title, department).is_tech
 
 
-def filter_jobs(src_dir: str | Path, dst_dir: str | Path) -> dict[str, tuple[int, int]]:
+def _filter_file(pair: tuple[Path, Path]) -> tuple[str, int, int]:
+    """Filter one ``{ats}.jsonl`` into its tech subset, returning ``(ats, kept, total)``.
+
+    Module-level and single-argument so :func:`filter_jobs` can hand it to a process pool; the
+    body is what that loop always did, lifted unchanged.
+    """
+    src, dst = pair
+    kept = total = 0
+    with (
+        src.open(encoding="utf-8") as fin,
+        dst.open("w", encoding="utf-8") as fout,
+    ):
+        for line in fin:
+            line = line.strip()
+            if not line:
+                continue
+            total += 1
+            job = json.loads(line)
+            if is_tech(job.get("title"), job.get("department")):
+                fout.write(json.dumps(job, ensure_ascii=False) + "\n")
+                kept += 1
+        fout.flush()
+    return src.stem, kept, total
+
+
+def filter_jobs(
+    src_dir: str | Path, dst_dir: str | Path, *, workers: int | None = None
+) -> dict[str, tuple[int, int]]:
     """Filter every ``{src_dir}/{ats}.jsonl`` down to its tech rows in ``{dst_dir}/{ats}.jsonl``.
 
     Streams line-by-line (never buffering a whole file) and flushes per file, per the repo's
     incremental-output rule. Returns ``{ats: (kept, total)}``. Non-tech rows are dropped; the source
     files (the full scrape output) are left untouched.
+
+    **On a mid-file failure (a malformed line), one difference from the prior single-threaded
+    version**: pooled, sibling files already in flight still finish and get written before the
+    exception propagates; inline, the loop stops at the failing file and nothing after it (in
+    submission order) is written. Verified: a forced-largest bad file raises in both, but the
+    pooled run leaves 3 good ``dst`` files on disk where the inline run leaves 0. Benign either
+    way — the stage aborts on the exception regardless (``filter_tech.main`` has no partial-output
+    contract) — but it is a real behaviour difference, not "no behaviour change".
+
+    One ATS file is one independent unit of work, so the files fan out across a process pool —
+    the same shape ``update_meta``'s sweep uses, and for the same reason: this stage sits on
+    ``join``'s serial critical path, where it measured 185 s of a 930 s job on the 2026-09-16
+    nightly (2,095,569 rows at 11,327 rows/s).
+
+    **Submitted largest-file-first** (an LPT schedule, by byte size as the cost proxy — cheaper
+    to read than counting rows and the two track closely). This is a real but partial share of the
+    speed-up, not "the whole of it" as an earlier version of this docstring claimed: the work is
+    heavily skewed — ``workday`` alone was 500,679 of the corpus's ~2.1M rows — and at 4 workers
+    that file is just *under* an even share, so an LPT schedule lands close to the even share.
+    Alphabetical submission still parallelises the other files; it only straggles on the last one
+    started, worth roughly the file's own runtime minus what the other workers absorbed while it
+    waited its turn — a real cost, but well short of the full serial 185 s.
+
+    ``workers`` defaults to the machine's CPU count; 1 (or a single input file) runs inline, with
+    no pool, since pool start-up would then cost more than it saves. Also the seam the
+    pooled-vs-inline equivalence test uses — ``filter_jobs_and_report`` never threads it, so
+    production always gets the default.
+
+    Uses an explicit **spawn** context for the pool, not the platform default. `__main__.main()`
+    calls this right after ``scrape_all``, whose ``ThreadPoolExecutor`` is torn down with
+    ``shutdown(wait=False, ...)`` (harvest.py) — the worker threads are signalled to stop but not
+    guaranteed to have exited before this function runs. On Linux (`ubuntu-latest`, every CI
+    caller) the default start method is *fork*, which duplicates the whole process including any
+    still-live thread and whatever lock it might hold mid-teardown — the exact deadlock hazard
+    Python's own multiprocessing docs warn about for a multi-threaded parent. Forcing spawn avoids
+    it unconditionally, for every caller, rather than relying on a caller-specific safety argument
+    that a future caller could quietly invalidate.
     """
     src_dir, dst_dir = Path(src_dir), Path(dst_dir)
     dst_dir.mkdir(parents=True, exist_ok=True)
+    # Largest first: an LPT schedule. `report` sorts, so completion order never reaches the log.
+    pairs = sorted(
+        ((src, dst_dir / src.name) for src in src_dir.glob("*.jsonl")),
+        key=lambda pair: pair[0].stat().st_size,
+        reverse=True,
+    )
+    if workers is None:
+        workers = os.cpu_count() or 1
     stats: dict[str, tuple[int, int]] = {}
-    for src in sorted(src_dir.glob("*.jsonl")):
-        kept = total = 0
-        with (
-            src.open(encoding="utf-8") as fin,
-            (dst_dir / src.name).open("w", encoding="utf-8") as fout,
-        ):
-            for line in fin:
-                line = line.strip()
-                if not line:
-                    continue
-                total += 1
-                job = json.loads(line)
-                if is_tech(job.get("title"), job.get("department")):
-                    fout.write(json.dumps(job, ensure_ascii=False) + "\n")
-                    kept += 1
-            fout.flush()
-        stats[src.stem] = (kept, total)
+    if workers <= 1 or len(pairs) <= 1:
+        for pair in pairs:
+            ats, kept, total = _filter_file(pair)
+            stats[ats] = (kept, total)
+        return stats
+    ctx = multiprocessing.get_context("spawn")
+    with ProcessPoolExecutor(
+        max_workers=min(workers, len(pairs)), mp_context=ctx
+    ) as pool:
+        futures = [pool.submit(_filter_file, pair) for pair in pairs]
+        # Results collected as each file lands, not blocking on the slowest submitted first
+        # (a plain `pool.map` would preserve submission order and wait on shard 0 even if shard 3
+        # finishes first). `report` still logs only once, at the end, same as before this change.
+        for future in as_completed(futures):
+            ats, kept, total = future.result()
+            stats[ats] = (kept, total)
     return stats
 
 

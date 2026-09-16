@@ -35,7 +35,7 @@ store has never settled. Those Jobs' derived columns cannot be repaired without 
 next run's ``scrape_plan`` reserves part of its exploration tail for the Boards holding them
 (ADR-0062). Recomputed from scratch every run, so it empties itself as the gap closes. Three
 classes are counted *unreachable* rather than unsettled: rows on a disabled ATS, rows on a Board
-that is not **Scrapable** (CONTEXT.md §Counting Boards — no slice can contain it, ADR-0162), and
+that is not **Scrapable** (CONTEXT.md §Counting Boards — no slice can contain it, ADR-0163), and
 rows whose Board this run scraped authoritatively without re-emitting them — those postings have
 expired off the Board, so no future scrape can settle them (#185).
 
@@ -43,7 +43,7 @@ Because it is recomputed, its total is a **level**, and a level cannot say wheth
 reserves is buying anything: a backlog that lost 500 rows and gained 500 prints the same number as
 one nothing touched. So it also reports the movement since the ledger it read — ``N left the gap,
 M joined it, net ±X``, plus each top Board's own delta — and sizes the Jobs sitting on Boards this
-run could not read authoritatively (ADR-0162).
+run could not read authoritatively (ADR-0163).
 
 Seed the priority ledger from a full local corpus with::
 
@@ -228,7 +228,7 @@ def _authoritative_scrape(
     truncated to nothing, and absence is what leaves an id counted.
 
     ``unauthoritative`` arrives already read rather than as a path because :func:`gap` needs the
-    same map for a second test — sizing the unsettled Jobs sitting behind it (ADR-0162) — and one
+    same map for a second test — sizing the unsettled Jobs sitting behind it (ADR-0163) — and one
     read is what keeps the two answers about the same Board from disagreeing. That read fails
     **open**, so an unreadable ``unauthoritative_boards.json`` protects no Board here — the same
     bet ``index sync`` already makes on that file, taken for a strictly smaller action (a count,
@@ -278,7 +278,7 @@ def gap(args: argparse.Namespace) -> int:
     # `read_unauthoritative_boards` fails open and so does this: an empty answer means the
     # liveness dir is missing, not that no Board is live, so it reclassifies nothing rather than
     # emptying the ledger. A *partially* lost dir is not caught — one absent `{ats}.csv` would
-    # silently take that ATS's whole backlog with it (ADR-0162).
+    # silently take that ATS's whole backlog with it (ADR-0163).
     scrapable = {
         board_description_gap.key_for(c)
         for c in load_active_companies(args.liveness, min_jobs=0)
@@ -294,7 +294,7 @@ def gap(args: argparse.Namespace) -> int:
     counts: Counter[str] = Counter()
     # The unsettled Jobs whose Board this run did attempt and could not read authoritatively.
     # They stay in the count and keep their ADR-0062 quota — a truncated read is no evidence about
-    # any particular id — but they are the population ADR-0162 declines to reclassify, and an
+    # any particular id — but they are the population ADR-0163 declines to reclassify, and an
     # unmeasured population is exactly how this went five runs without being noticed.
     blocked_boards: set[str] = set()
     rows = disabled_ats = off_slice = expired = blocked = 0
@@ -325,7 +325,7 @@ def gap(args: argparse.Namespace) -> int:
             # Not a Scrapable Board — dead, parked, aliased away or a vendor test tenant — so it
             # is never scraped, its rows can never settle, and reserving gap quota against them
             # buys nothing. ADR-0062 named this class and left it in the count; measured on the
-            # live ledger it is 134 Boards holding 13,592 Jobs, 30% of the backlog (ADR-0162).
+            # live ledger it is 134 Boards holding 13,592 Jobs, 30% of the backlog (ADR-0163).
             # Unlike quarantine it drains on its own: the ledger is rebuilt from scratch, so the
             # moment a liveness probe calls the Board live again its rows come straight back.
             if scrapable and board not in scrapable:
@@ -384,7 +384,7 @@ def gap(args: argparse.Namespace) -> int:
         )
     for board, n in counts.most_common(10):
         # The per-Board delta is the sharpest half: eight of the top ten were byte-identical
-        # across five runs, and seeing that took a hand diff of five logs (ADR-0162).
+        # across five runs, and seeing that took a hand diff of five logs (ADR-0163).
         moved = "" if not prior else f" ({n - prior.get(board, 0):+,})"
         _log.info(f"  {n:6,} unsettled{moved}  {board}")
     return 0
