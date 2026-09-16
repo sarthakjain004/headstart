@@ -42,6 +42,7 @@ from typing import Any
 from headstart import log
 from headstart.board_identity import board_key, board_of, lower_key
 from headstart.config import load_active_companies
+from headstart.corpus import iter_jobs
 
 _log = log.get(__name__, __spec__)
 
@@ -95,7 +96,7 @@ def grace_period_counts(
       (``docs/pipeline/2026-09-01_twelve-run-log-review.md``), so it is not a rounding error — and
       unlike the first cause it has no drain, which is what makes the total worth watching.
     - The Board was scraped and emitted *zero jobs of any kind*, so it wrote no ids and
-      ``_scraped_boards`` never saw it (its own docstring says so; those rows are ADR-0023
+      :func:`scraped_boards` never saw it (its own docstring says so; those rows are ADR-0023
       prune's, not sync's). Rarer than the other two and pre-existing, but it is a Board that was
       read — so reading this number as "Boards we did not get to" overstates that case.
 
@@ -415,6 +416,75 @@ def resolve_board(job_id: str, live: dict[str, str]) -> str:
     """
     end = _live_board_end(job_id, live)
     return job_id[:end] if end is not None else board_of(job_id)
+
+
+def _read_scraped_boards(path: Path) -> set[str] | None:
+    """The Board set ``scrape_join.write_scraped_boards`` recorded, or ``None`` if there is none
+    to read.
+
+    ``None`` and an empty set are different answers and the caller acts on both: ``None`` means
+    "nothing recorded, derive it yourself", while ``[]`` is a run whose join covered no Board at
+    all and is the honest scope for it.
+
+    Fails **open** — an unreadable or wrong-shaped file reads as ``None``, so the caller falls
+    back to deriving the scope and the run keeps its old behaviour. The shape check matters for
+    the same reason it does in :func:`read_unauthoritative_boards`: JSON's top level may legally
+    be a string, and iterating ``"abc"`` would scope eviction to the Boards ``a``, ``b`` and
+    ``c`` — every other Board's rows silently out of scope, reported as a normal run.
+    """
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001 - a bad file must not stop the index updating
+        _log.warning(f"unreadable {path}: {exc} — deriving the eviction scope instead")
+        return None
+    if not isinstance(data, list) or not all(isinstance(b, str) for b in data):
+        _log.warning(
+            f"{path} holds {type(data).__name__}, expected a list of Board keys — "
+            "deriving the eviction scope instead"
+        )
+        return None
+    return set(data)
+
+
+def scraped_boards(
+    recorded: str | Path,
+    scraped: str | Path,
+    corpus_ids: AbstractSet[str],
+    live: dict[str, str],
+) -> set[str]:
+    """The Boards this run actually scraped — the eviction scope, from the cheapest source that
+    can answer.
+
+    ``live`` is the :func:`boards_by_canon` lookup each id resolves through, so this scope lands in
+    the same key space :func:`plan_sync` classifies indexed rows into (ADR-0049).
+
+    A Board here but absent from the tech corpus was scraped and simply has no tech jobs now, so
+    its stale tech rows are correctly evicted. That is why the scope has to come from the *full*
+    scrape and not the tech subset — and it is the whole reason ``data/jobs/{ats}.jsonl`` used to
+    ride the corpus-state artifact into the merge job, ~9 GB of job text read for a set of a few
+    thousand strings. ``scrape_join`` now derives that set where the records already are and
+    records it (ADR-0161), so three sources answer the same question, cheapest first:
+
+    1. ``recorded`` — the Board keys ``scrape_join`` wrote from the same full scrape. What the
+       pipeline uses.
+    2. ``scraped`` — the full-scrape ``{ats}.jsonl`` dir itself (a non-recursive glob, so the
+       ``tech/`` subdir is not double-counted). Still the definition, and it wins over a recorded
+       file: a local run with a real scrape on disk must never be scoped by a stale summary that
+       round-tripped through the HF dataset.
+    3. the corpus ids' Boards, when neither is available (a Wellfound-CSV or unit-test sync).
+
+    (A Board scraped that yields *zero* jobs of any kind writes no ids and so isn't covered by any
+    of them — that rarer case is handled by the dead/absent-Board prune, ADR-0023.)
+    """
+    path = Path(scraped)
+    if path.is_dir() and any(path.glob("*.jsonl")):
+        return {resolve_board(job["id"], live) for job in iter_jobs(path)}
+    from_join = _read_scraped_boards(Path(recorded))
+    if from_join is not None:
+        return from_join
+    return {resolve_board(job_id, live) for job_id in corpus_ids}
 
 
 def plan_prune(index_ids: Iterable[str], keep: set[str]) -> tuple[list[str], list[str]]:
