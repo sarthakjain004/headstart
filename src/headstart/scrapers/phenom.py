@@ -30,17 +30,18 @@ sharpest edge here. Past it the response is not an error and not empty-with-a-to
 itself comes back **0**, so a loop that re-reads the total each page is told the Board is finished.
 Measured on ``jobs.cvshealth.com`` (19,649 postings): ``from=9000&size=500`` reads 500 rows and
 reports 19,649; ``from=9500&size=500`` reads 0 and reports 0. Five of the 91 seed tenants are over
-the wall, so this is not a theoretical cap — those Boards are truncated by construction and say so
+the wall, so this is not a theoretical cap — such a Board is truncated by construction and says so
 (:meth:`~BaseScraper.mark_truncated`, ADR-0053), which is what keeps ``index sync`` from reading
-the unreachable 9,650th posting onwards as a mass delisting.
+the unreachable tail as a mass delisting. None of those five is in the shipped ledger (the largest
+Board there is ~9.4k), so that arm is exercised by the tests rather than in production today.
 """
 
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, ClassVar
 
-from headstart import company_name, http
+from headstart import http
 from headstart.models import Job, host_of, html_to_text
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -76,7 +77,7 @@ class PhenomScraper(BaseScraper):
     # on — same shape as eightfold's and icims's host slugs.
     #
     # The `cc` segment is NOT always "us": measured across the 91 reachable seed tenants, 30 are
-    # something else — `global` (26), `ca` (2), `amer`, `gb`, `na` — so a `us`-anchored pattern
+    # something else — `global` (25), `ca` (2), `amer`, `gb`, `na` — so a `us`-anchored pattern
     # would reject a third of this provider's real links. Both segments therefore stay loose.
     # The trailing title slug is omitted deliberately; see `job_url`.
     url_shape = r"https://[^/]+/[^/]+/[^/]+/job/[^/?#]+"
@@ -89,9 +90,6 @@ class PhenomScraper(BaseScraper):
         # Board turned out to use, and falls back to the probe prefix for a Board never fetched
         # (the liveness prober builds a scraper and reads `url()` without calling `fetch_raw`).
         self._cc, self._lang = _PROBE_PREFIX
-        # The Board's own name for itself, taken from any detail payload (`companyName`). Read by
-        # `resolve_company`, which runs after `fetch_raw`.
-        self._stated_company: str | None = None
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -106,6 +104,24 @@ class PhenomScraper(BaseScraper):
 
     def url(self) -> str:
         return f"https://{self.slug}/{self._cc}/{self._lang}/search-results"
+
+    def board_page(self) -> str:
+        """The careers landing page, whose ``<title>`` carries the company name.
+
+        A page title rather than the `companyName` field every detail payload states, which looks
+        like the better source and is not. That field is **per posting, not per Board**, and it
+        disagrees with itself: `careers.dhl.com` returns ``Blue Dart Express Limited`` — a
+        subsidiary — on all 12 sampled postings of a 9,376-job DHL board, and `careers.honda.com`
+        splits 7/5 across two legal entities. Taking the first one to arrive would name a Board
+        after whichever posting happened to sort first.
+
+        It also would not survive a second run. ADR-0048 skips the detail fetch for a Job whose
+        description the store already holds, so a steady-state Board fetches *no* details and
+        would have nothing to read the name from — measured: `careers.zelis.com` resolves to
+        ``Zelis`` on the first scrape and reverts to ``careers.zelis.com`` on every one after.
+        A title is one request, on the Board itself, every run.
+        """
+        return f"https://{self.slug}/{self._cc}/{self._lang}"
 
     # --- locale prefix ----------------------------------------------------------------------
 
@@ -146,16 +162,23 @@ class PhenomScraper(BaseScraper):
 
     # --- listing ----------------------------------------------------------------------------
 
+    def _widgets_url(self) -> str:
+        return f"https://{self.slug}/widgets"
+
+    #: The one set of headers both widget calls send. Declared once because the sync and async
+    #: paths post to the same endpoint, and two copies of a header block drift.
+    _WIDGET_HEADERS: ClassVar[dict[str, str]] = {
+        "User-Agent": USER_AGENT,
+        "Accept": "*/*",
+        "Content-Type": "application/json",
+    }
+
     def _widgets(self, payload: dict[str, Any]) -> dict[str, Any]:
         response = self._fetch(
             "POST",
-            f"https://{self.slug}/widgets",
+            self._widgets_url(),
             json=payload,
-            headers={
-                "User-Agent": USER_AGENT,
-                "Accept": "*/*",
-                "Content-Type": "application/json",
-            },
+            headers=self._WIDGET_HEADERS,
             timeout=45,
         )
         response.raise_for_status()
@@ -228,6 +251,17 @@ class PhenomScraper(BaseScraper):
             self.mark_truncated(
                 f"{len(jobs)} of {total} readable — the result window closes at {_RESULT_WINDOW}"
             )
+        elif total:
+            # A shortfall inside the window is *measurable* against the Board's own stated total,
+            # so it goes to the tolerant verdict (ADR-0121): at or above MIN_AUTHORITATIVE_SHARE
+            # the list stays authoritative and the few missing ids fall to ADR-0083's per-Job
+            # grace period, below it the Board leaves the eviction scope. Without this branch a
+            # walk that ended early — a page the edge dropped, or dedupe collapsing a shifting
+            # index — would report a short list as a complete one and feed the difference to
+            # `index sync` as delistings. oracle and eightfold both gate their walks the same way.
+            self.mark_truncated_unless_negligible(
+                len(jobs), total, f"read {len(jobs)} of {total} listed"
+            )
         return jobs
 
     # --- detail -----------------------------------------------------------------------------
@@ -272,13 +306,9 @@ class PhenomScraper(BaseScraper):
             response = await self._fetch_async(
                 session,
                 "POST",
-                f"https://{self.slug}/widgets",
+                self._widgets_url(),
                 json=self._detail_payload(native_id),
-                headers={
-                    "User-Agent": USER_AGENT,
-                    "Accept": "*/*",
-                    "Content-Type": "application/json",
-                },
+                headers=self._WIDGET_HEADERS,
                 timeout=45,
             )
             response.raise_for_status()
@@ -313,25 +343,7 @@ class PhenomScraper(BaseScraper):
             # ADR-0053 is about the list, not the fields.
             self.report_detail_gaps(fetched, "descriptions")
             details = {i: d for i, d in zip(wanted, fetched) if d}
-        for detail in details.values():
-            stated = (detail.get("companyName") or "").strip()
-            if stated:
-                self._stated_company = stated
-                break
         return {"jobs": listed, "details": details}
-
-    def resolve_company(self) -> None:
-        """Serve the Board's own name for itself, which every detail payload states.
-
-        ``companyName`` is the real display name (``Mastercard``, not ``careers.mastercard.com``),
-        so unlike the six scrapers that scrape a page ``<title>``, this needs no extra request and
-        no title patterns. The slug guard is the base class's: a Board that already carries a real
-        name keeps it, and a slug is only ever replaced, never the reverse (ADR-0114).
-        """
-        if self._stated_company and company_name.looks_like_slug(self.company):
-            self.company = self._stated_company
-            return
-        super().resolve_company()
 
     # --- parse ------------------------------------------------------------------------------
 

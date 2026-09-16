@@ -130,19 +130,67 @@ def test_remote_is_none_when_the_board_states_no_workplace_field():
     assert _jobs({"jobs": listed, "details": _details()})[HYBRID_ID].remote is None
 
 
-def test_the_company_is_the_boards_stated_name_not_its_host():
-    scraper = _scraper()
-    scraper._stated_company = "Cisco"
+def _titled(scraper, title: str):
+    """Point the scraper's one `resolve_company` request at a canned page title."""
+
+    class _Response:
+        status_code = 200
+        text = f"<html><head><title>{title}</title></head></html>"
+
+    scraper._fetch = lambda *a, **k: _Response()
+    return scraper
+
+
+def test_the_board_page_is_the_landing_page_for_this_boards_prefix():
+    assert _scraper().board_page() == f"https://{HOST}/us/en"
+
+
+def test_the_company_is_read_from_the_board_page_title():
+    scraper = _titled(_scraper(), "Careers at Cisco")
     scraper.resolve_company()
     assert scraper.company == "Cisco"
 
 
+def test_a_title_with_a_second_clause_does_not_swallow_it_into_the_name():
+    # "Careers at Zelis | Zelis Jobs" — `_CAREERS_WRAPPER`'s `$`-anchored group would take the
+    # whole tail, which is why phenom has its own patterns.
+    scraper = _titled(
+        PhenomScraper("careers.zelis.com"), "Careers at Zelis | Zelis Jobs"
+    )
+    scraper.resolve_company()
+    assert scraper.company == "Zelis"
+
+
+def test_a_colon_tagline_is_not_part_of_the_name():
+    scraper = _titled(
+        PhenomScraper("careers.omnicable.com"), "OmniCable Careers: Play to Win"
+    )
+    scraper.resolve_company()
+    assert scraper.company == "OmniCable"
+
+
+def test_an_unwrapped_title_leaves_the_slug_alone_rather_than_guessing():
+    # `Home | BAE Systems` states no wrapper this ATS uses; ADR-0114's floor is that a slug is
+    # never replaced by a non-name.
+    scraper = _titled(PhenomScraper("jobs.baesystems.com"), "Home | BAE Systems")
+    scraper.resolve_company()
+    assert scraper.company == "jobs.baesystems.com"
+
+
 def test_a_board_already_carrying_a_real_name_keeps_it():
     # ADR-0114: a slug is only ever replaced, never the reverse.
-    scraper = PhenomScraper(HOST, company="Cisco Systems")
-    scraper._stated_company = "Cisco"
+    scraper = _titled(PhenomScraper(HOST, company="Cisco Systems"), "Careers at Cisco")
     scraper.resolve_company()
     assert scraper.company == "Cisco Systems"
+
+
+def test_the_company_survives_a_run_that_fetches_no_details():
+    """ADR-0048 skips the detail fetch for a Job we already hold, so a steady-state Board
+    fetches none. The name must not depend on one having been fetched."""
+    scraper = _titled(_scraper(), "Careers at Cisco")
+    scraper.parse({"jobs": _listing(), "details": {}}, SCRAPED_AT)
+    scraper.resolve_company()
+    assert scraper.company == "Cisco"
 
 
 def test_the_core_fields_come_from_the_listing():
@@ -204,6 +252,39 @@ def test_a_board_inside_the_window_is_not_called_truncated(monkeypatch):
 
     monkeypatch.setattr(scraper, "_widgets", fake)
     assert len(scraper._listing()) == 88
+    assert scraper.truncated is None
+
+
+def test_a_walk_that_ends_short_of_the_stated_total_is_reported(monkeypatch):
+    """A shortfall inside the window is measurable, so it goes to the ADR-0121 tolerant verdict.
+
+    Without this the Board would look complete and `index sync` would read the difference as
+    delistings — the failure ADR-0053 exists to prevent.
+    """
+    scraper = _scraper()
+
+    def fake(payload):
+        # states 500, serves 50 and then nothing
+        rows = [{"jobId": f"J{i}"} for i in range(50)] if payload["from"] == 0 else []
+        return {"refineSearch": {"totalHits": 500, "data": {"jobs": rows}}}
+
+    monkeypatch.setattr(scraper, "_widgets", fake)
+    assert len(scraper._listing()) == 50
+    assert scraper.truncated is not None
+    assert "50 of 500" in scraper.truncated
+
+
+def test_a_negligible_shortfall_leaves_the_board_authoritative(monkeypatch):
+    """At or above MIN_AUTHORITATIVE_SHARE the list stays authoritative and the missing ids
+    fall to ADR-0083's per-Job grace period instead of excluding the whole Board."""
+    scraper = _scraper()
+
+    def fake(payload):
+        rows = [{"jobId": f"J{i}"} for i in range(999)] if payload["from"] == 0 else []
+        return {"refineSearch": {"totalHits": 1000, "data": {"jobs": rows}}}
+
+    monkeypatch.setattr(scraper, "_widgets", fake)
+    assert len(scraper._listing()) == 999
     assert scraper.truncated is None
 
 
