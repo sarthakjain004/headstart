@@ -72,12 +72,13 @@ Full Stack Engineer (Remote)" confirm which field is telling the truth). `_remot
 `locationType` first and falls back to `isRemote` only if `locationType` is ever absent, which it
 never was in this sample.
 
-**Every job's detail is fetched, with no ADR-0048 skip.** Phenom can skip a Job whose description is
-already stored because every other field it emits also comes from its listing; Gem cannot make that
-same claim, because `posted_at` and `compensationHtml` are detail-only (never on `JobBoardList`) —
-skipping the fetch for an already-seen Job would silently null those fields on every run after the
-first. Batching keeps the cost of always fetching low: a 300-posting board costs three detail
-requests regardless.
+**Every *tech* job's detail is fetched, with no ADR-0048 skip.** Phenom can skip a Job whose
+description is already stored because every other field it emits also comes from its listing; Gem
+cannot make that same claim, because `posted_at` and `compensationHtml` are detail-only (never on
+`JobBoardList`) — skipping the fetch for an already-seen Job would silently null those fields on
+every run after the first. Batching keeps the cost of always fetching low: a 300-posting board
+costs three detail requests regardless. The ADR-0166 tech gate is a separate skip and does apply
+(`fetch_raw`): a posting `filter_tech` will drop has no fields worth keeping at all.
 
 **Company name: the board page renders server-side, and its title wrapper is one this repo already
 knows.** Sampled 60 live board pages — no JS wall, real HTML on a bare GET. ~95% follow "{Name}
@@ -165,6 +166,19 @@ _DETAIL_QUERY = """query ExternalJobPostingQuery($boardId: String!, $extId: Stri
     __typename
   }
 }"""
+
+
+def _listing_title(row: dict[str, Any]) -> str | None:
+    """A listing posting's title, for the tech gate. Named rather than an inline lambda because
+    this gate is a *measured* tolerance and not an exact one — ``parse`` falls back to the
+    detail's own ``title``, so an accessor that quietly started reading a different key would
+    classify on the wrong string and nothing would raise."""
+    return row.get("title")
+
+
+def _listing_department(row: dict[str, Any]) -> str | None:
+    """A listing posting's department, for the tech gate. See :func:`_listing_title`."""
+    return ((row.get("job") or {}).get("department") or {}).get("name")
 
 
 class GemScraper(BaseScraper):
@@ -290,7 +304,17 @@ class GemScraper(BaseScraper):
         # No ADR-0048 skip here — see the module docstring: posted_at and compensationHtml are
         # detail-only, so skipping a previously-seen Job would silently null them on every later
         # run rather than merely re-fetch a description we already store.
-        wanted = [str(j["extId"]) for j in listed if j.get("extId")]
+        #
+        # The ADR-0166 tech gate does apply: a posting `filter_tech` drops is never embedded,
+        # indexed or shown, so its detail buys nothing. A *measured* tolerance rather than
+        # exactness — `parse` reads `title` and `job.department.name` off the listing row but
+        # falls back to the detail's own for both, so a posting whose listing omits what its
+        # detail states could disagree. Measured live 2026-09-17 over the 40 Boards the
+        # 2026-09-17 pre-filter corpus says lean hardest on `department` (56 of its 620 tech
+        # postings are ones a department-blind gate would drop), 1,304 postings: 606 kept by the
+        # gate, 606 by the filter, zero disagreements. Re-check it if this query's shape moves.
+        tech = self.tech_detail_wanted(listed, _listing_title, _listing_department)
+        wanted = [str(j["extId"]) for j in tech if j.get("extId")]
         batches = [
             wanted[i : i + _DETAIL_BATCH_SIZE]
             for i in range(0, len(wanted), _DETAIL_BATCH_SIZE)

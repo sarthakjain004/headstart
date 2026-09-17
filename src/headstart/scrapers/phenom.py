@@ -67,6 +67,23 @@ _PROBE_PREFIX = ("us", "en")
 _PREFIX_RE = re.compile(r"^https?://[^/]+/([^/?#]+)/([^/?#]+)")
 
 
+def _listing_title(row: dict) -> str | None:
+    """A listing posting's title, for the tech gate. Named rather than an inline lambda because
+    this gate is a *measured* tolerance and not an exact one — ``parse`` prefers the detail's own
+    ``title`` over this one — so an accessor that quietly started reading a neighbouring key
+    (``descriptionTeaser`` sits right beside it) would classify on the wrong string and nothing
+    would raise."""
+    return row.get("title")
+
+
+def _listing_department(row: dict) -> str | None:
+    """A listing posting's department, for the tech gate. Named for the domain field (`department`,
+    the same word jazzhr's and gem's accessors use) rather than for the wire key it happens to
+    read: `category` is the listing's own department label, and it is what ``parse`` reads first.
+    See :func:`_listing_title`."""
+    return row.get("category")
+
+
 class PhenomScraper(BaseScraper):
     """Phenom scraper — ``slug`` is the board host."""
 
@@ -325,9 +342,22 @@ class PhenomScraper(BaseScraper):
         # employment type, department, location, remote — the *listing* also states, so a skipped
         # Job keeps real values rather than blanking fields that had them. eightfold makes the
         # same call for the same reason.
+        # Two skips, both over the listing rows: the ADR-0166 tech gate drops what `filter_tech`
+        # would drop anyway, and `needs_detail` drops what the description store already holds.
+        # The gate is a *measured* tolerance rather than exactness — `parse` prefers the detail's
+        # `title` over the listing's, and falls back to the detail's `category`/`jobFamilyGroup`
+        # where the listing states no `category` — so a posting the two payloads label
+        # differently could disagree. Measured live 2026-09-17 over all 10 Boards the 2026-09-17
+        # pre-filter corpus covers, 15,321 postings: 2,126 kept by the gate, 2,126 by the filter,
+        # zero disagreements. Both fallbacks were then probed where they could actually fire —
+        # `careers.dhl.com` is the one Board that leaves `category` empty on most rows (7,269 of
+        # 9,515), and on 300 of those, sampled at random and fetched, **0** details state a
+        # `category`/`jobFamilyGroup` the listing did not and **0** carry a different `title`.
+        # Re-check it if either payload's field set moves.
+        tech = self.tech_detail_wanted(listed, _listing_title, _listing_department)
         wanted = [
             str(j["jobId"])
-            for j in listed
+            for j in tech
             if j.get("jobId") and self.needs_detail(str(j["jobId"]))
         ]
         details: dict[str, dict] = {}
