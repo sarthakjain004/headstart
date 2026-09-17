@@ -355,6 +355,27 @@ def _posted_at(source: dict) -> str | None:
 
 class ZwayamScraper(BaseScraper):
     ats = "zwayam"
+    #: zwayam meters **cumulative requests per IP** over a window and refuses with a bare 403 — no
+    #: `Retry-After`, no `cf-mitigated`, no interstitial body. Every tenant is probed through the
+    #: one shared API (`public.zwayam.com`), so one origin carries the whole ATS and the quota is
+    #: spent within a single run: 47-71% of attempted Boards failed in each of the five runs
+    #: 35175065218-35188643520, 55-73% of every run's board errors.
+    #:
+    #: Opted in on the **mechanism**, which is the bar this attribute's own docstring sets after
+    #: freshteam (#311) and personio (#312/#313) were opted in on an aggregate count and reverted.
+    #: Measured 2026-09-17 from one IP (`experiment/zwayam-403-wall/LOG.md`):
+    #:   - 100/200/300/400 cumulative requests -> 200 on every one; 23 of 100 refused at 500;
+    #:     100 of 100 at 600. It meters volume, not width — 60 requests at 16-wide all answered.
+    #:   - Against 25 slugs that had *just* been refused, interleaved: **WARP cleared 25/25, the
+    #:     direct route 12/25.** A different address is the only thing that clears it.
+    #:   - End to end, in `check_liveness`'s equivalent rung: a 3,239-Board sweep went from 2,816
+    #:     UNKNOWN to **3**, and 756 of 757 ledger-live Boards re-confirmed live. The Boards were
+    #:     never gone — the quota was spent.
+    #:
+    #: Carried by `base._fetch`, which every request here goes through via `_page`/`_detail`, so
+    #: the opt-in is not inert (the caution on `egress_fallback_on` about direct `http.fetch`
+    #: calls does not apply).
+    egress_fallback_on = frozenset({403})
     # scraper: f"{link_base}{quote(jobUrl)}" where the SLUG IS THE BOARD HOST — the API keys on
     # the hostname, and Boards sit on customer domains (careers.persistent.com) as well as the
     # vendor namespace ({slug}.openings.co), so there is no host to anchor on. `link_base` is one
