@@ -1,4 +1,4 @@
-# ADR-0165: Gate the detail pass on the tech filter, behind one seam
+# ADR-0166: Gate the detail pass on the tech filter, behind one seam
 
 **Status:** accepted · **Date:** 2026-09-17 · **Amends:** [ADR-0048](0048-skip-details-we-already-hold.md)
 (its 2026-09-16 amendments described two hand-rolled gates; this replaces both with one seam and
@@ -60,14 +60,28 @@ The test is not "does the listing carry a title". It is **does the gate read the
 `filter_tech` will read** — because `tech_filter` rule 4 promotes a vague title on a technical
 department, so a gate blind to `department` drops those postings silently.
 
-**Exact** (`parse` reads both fields off the listing, detail overrides neither, so no sampling is
-needed — the proof is the call site): workday, smartrecruiters, apple, trakstar, zwayam, rippling,
+**Exact** (`parse` reads both fields off the listing, the detail overrides neither, so no sampling
+is needed — the proof is the call site): workday, smartrecruiters, apple, trakstar, zwayam,
 eightfold.
 
-**Measured tolerance** (re-check if the surface changes): successfactors, off the URL slug —
-403/403 and 400/400 agreement on two structurally different tenants (ADR-0048's amendment); and
-jazzhr, whose detail may override `department` — 1,748 postings across the ten Boards the corpus
-says lean hardest on `department`, zero disagreements.
+**Measured tolerance** (re-check if the surface changes):
+
+- successfactors, off the URL slug — 403/403 and 400/400 agreement on two structurally different
+  tenants (ADR-0048's amendment).
+- jazzhr, whose detail page may override `department` — 1,748 postings across the ten Boards the
+  corpus says lean hardest on `department`, zero disagreements.
+- **rippling**, which reads as exact and is not: `parse` is
+  `_department_of(it) or _department_of(detail)`, so the detail *is* a fallback and can state a
+  department the gate never saw. It is safe only because nothing ever does — `department` is
+  populated on **0 of 1,515** rippling postings in the 2026-09-17 corpus, listing and detail
+  alike, so the fallback is inert and the gate is title-only on both sides of the seam. A
+  tenant that started stating one on the detail alone would break that silently, which is why
+  this is a measurement with a date on it and not a property of the call site.
+
+**Deferred**: ripplehire. Its `department` is detail-only, so a gate there is title-only, and
+that measures at 1.8% recall loss — 7 of 395 tech postings, a real loss rather than a rounding
+error. At 0.3% of board-seconds it does not pay for the per-tenant sample that would be needed to
+accept it. Revisit if ripplehire grows.
 
 **Unmeasured, so not yet wired** ([#510](https://github.com/sarthakjain004/headstart/issues/510)):
 taleo_enterprise, taleo_be, gem, phenom. All four carry `title` *and* `department` on the listing,

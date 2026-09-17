@@ -172,10 +172,10 @@ class TrakstarScraper(BaseScraper):
         # request, which makes a skipped one worth more here than the card count suggests.
         wanted = [
             code
-            for block, code in self.tech_detail_wanted(
+            for _block, code in self.tech_detail_wanted(
                 _cards_from(html),
-                lambda bc: _card_title(bc[0]),
-                lambda bc: _card_dept(bc[0]),
+                lambda card: _card_title(card[0]),
+                lambda card: _card_dept(card[0]),
             )
         ]
         if self.async_fanout_enabled():

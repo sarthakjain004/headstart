@@ -185,6 +185,18 @@ def _attributes(page: str) -> dict[str, str]:
     return found
 
 
+def _row_title(row: tuple[str, str, str | None, str | None]) -> str:
+    """A listing row's title, for the tech gate. Named rather than `row[1]`, because this gate is
+    a measured tolerance rather than an exact one — an index that silently drifted onto
+    `location` would classify on the wrong string and nothing would raise."""
+    return row[1]
+
+
+def _row_department(row: tuple[str, str, str | None, str | None]) -> str | None:
+    """A listing row's department, for the tech gate. See :func:`_row_title`."""
+    return row[3]
+
+
 def _rows(listing: str) -> list[tuple[str, str, str | None, str | None]]:
     """``(key, title, location, department)`` per posting on the ``/apply/jobs`` table.
 
@@ -279,7 +291,7 @@ class JazzHRScraper(BaseScraper):
         # disagreements. Re-check it if this page's markup moves.
         keys = [
             key
-            for key, *_ in self.tech_detail_wanted(rows, lambda r: r[1], lambda r: r[3])
+            for key, *_ in self.tech_detail_wanted(rows, _row_title, _row_department)
         ]
         # `_rows` skips any `row_job_` <tr> whose posting link it cannot read, and the skip is
         # the one thing on this page that can go wrong without anything failing: the shell is

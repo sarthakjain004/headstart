@@ -52,12 +52,18 @@ verdict *is* the filter's verdict. No sampling needed; the proof is the call sit
 | `zwayam` | `source["jobTitle"]` | `source["departmentName"]` | 1.7% | 77.1% |
 | `trakstar` | listing card `_TITLE` | listing card `_DEPT` | 0.7% | 84.9% |
 | `apple` | `item["postingTitle"]` | `item["team"]["teamName"]` | 0.4% | 29.2% |
-| `rippling` | `it["name"]` | `it["department"]` (detail only as fallback) | 0.4% | 77.8% |
+
 
 Worth knowing: **`workday`'s `department` is empty on 131,347 of 131,347 postings.** The
 `jobFamilyGroup` facet is a *query* parameter; the returned item never carries it. Workday jobs are
 already classified on title alone by `filter_tech`, so the gate changes nothing about the verdict —
 measured recall loss 0 of 20,517 tech postings. Same for `rippling` (0.0% department).
+
+`rippling` is **not** in this tier, though an earlier draft of this doc put it here. `parse` is
+`_department_of(it) or _department_of(detail)` — the detail is a fallback, so gate and filter
+*could* diverge. They cannot today only because `department` is populated on 0 of 1,515 rippling
+postings, listing and detail alike. That is a measurement with a date on it, not a property of the
+call site, so rippling is graded a measured tolerance alongside jazzhr and successfactors.
 
 ### Tier 2 — blocked, and not for the reason #500 states
 

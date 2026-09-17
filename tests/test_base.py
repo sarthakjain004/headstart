@@ -525,3 +525,78 @@ def test_job_id_composes_board_key_and_native_id_for_every_scraper():
         ),
     ):
         assert get_scraper(ats, slug).job_id("42") == expected
+
+
+# --- the ADR-0166 pre-detail tech gate ------------------------------------------------
+
+
+def test_tech_detail_wanted_is_off_outside_the_pipeline_and_armed_inside_it():
+    """``have_details`` is the one signal that says "the pipeline is running".
+
+    Eight scripts construct scrapers directly and three read a Board's completeness as a health
+    metric, so a gate that fired for them would have those three report a collapse that is not
+    real. ``tech_gate_enabled`` is the separate kill switch, and is on by default because two
+    call sites were already gating in production before this seam existed."""
+    from headstart.scrapers.registry import get_scraper
+
+    items = [{"t": "Backend Engineer"}, {"t": "Housekeeper"}]
+    scraper = get_scraper("smartrecruiters", "acme")
+
+    assert scraper.have_details is None
+    assert scraper.tech_detail_wanted(items, lambda i: i["t"]) == items, (
+        "direct caller keeps the Board"
+    )
+
+    scraper.have_details = frozenset()
+    assert scraper.tech_detail_wanted(items, lambda i: i["t"]) == [items[0]]
+    assert scraper.telemetry["tech_gated_details"] == 1
+
+
+def test_tech_detail_wanted_reads_department_so_a_vague_title_is_not_dropped():
+    """`tech_filter` rule 4 promotes a vague title on a technical department, and the gate has
+    to honour it or it silently drops those postings.
+
+    This is the whole reason oracle, zoho, icims, bamboohr and jobvite cannot take this gate:
+    their department arrives on the *detail*, so a gate cannot see it. Measured over the real
+    2026-09-17 corpus, a department-blind gate drops 46.0% of oracle's tech postings and 47.4%
+    of zoho's — docs/pipeline/2026-09-17_pre-detail-tech-gate-measurement.md."""
+    from headstart.scrapers.registry import get_scraper
+
+    scraper = get_scraper("smartrecruiters", "acme")
+    scraper.have_details = frozenset()
+    vague = [{"t": "System Technician", "d": "Information Technology"}]
+
+    assert (
+        scraper.tech_detail_wanted(vague, lambda i: i["t"], lambda i: i["d"]) == vague
+    )
+    assert scraper.tech_detail_wanted(vague, lambda i: i["t"]) == [], (
+        "without the department the same posting is dropped — the recall cliff"
+    )
+
+
+def test_tech_detail_wanted_kill_switch_restores_the_whole_board(monkeypatch):
+    from headstart.scrapers.registry import get_scraper
+
+    scraper = get_scraper("smartrecruiters", "acme")
+    scraper.have_details = frozenset()
+    items = [{"t": "Housekeeper"}]
+
+    assert scraper.tech_detail_wanted(items, lambda i: i["t"]) == []
+    monkeypatch.setenv("HEADSTART_TECH_GATE", "0")
+    assert scraper.tech_detail_wanted(items, lambda i: i["t"]) == items
+
+
+def test_attach_details_pairs_against_the_fetched_subset_not_the_full_list():
+    """ADR-0048's alignment trap, at the seam rather than at nine call sites.
+
+    ``zip(items, results)`` is the bug: both are lists of the right shape, so a subset fan-out
+    pairs every result with the wrong item and nothing raises. Items that were never fetched must
+    come back with an empty detail, not a neighbour's."""
+    from headstart.scrapers.base import BaseScraper
+
+    items = [{"id": "a"}, {"id": "b"}, {"id": "c"}]
+    fetched = [items[1]]  # only "b" passed the gate
+    BaseScraper.attach_details(items, fetched, [{"description": "b body"}])
+
+    assert items[1]["_detail"] == {"description": "b body"}
+    assert items[0]["_detail"] == {} and items[2]["_detail"] == {}

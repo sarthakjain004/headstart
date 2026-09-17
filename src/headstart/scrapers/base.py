@@ -462,7 +462,6 @@ class BaseScraper(ABC):
         items: Sequence[dict[str, Any]],
         fetched: Sequence[dict[str, Any]],
         results: Sequence[Any],
-        key: str = "_detail",
     ) -> None:
         """Hang each detail on the item it was fetched for, and an empty one on the rest.
 
@@ -477,9 +476,9 @@ class BaseScraper(ABC):
         wrong.
         """
         for item in items:
-            item[key] = {}
+            item["_detail"] = {}
         for item, result in zip(fetched, results):
-            item[key] = result or {}
+            item["_detail"] = result or {}
 
     @staticmethod
     def tech_gate_enabled() -> bool:
@@ -490,8 +489,8 @@ class BaseScraper(ABC):
 
         On rather than off because two of the nine call sites shipped before this seam existed
         and were already gating in production (eightfold, ADR-0048's amendment; successfactors,
-        #503). A default of off would have silently switched both back on the commit that
-        routed them through here."""
+        #503). A default of off would have silently switched both back off in the commit
+        that routed them through here."""
         return os.environ.get("HEADSTART_TECH_GATE", "1") != "0"
 
     @staticmethod

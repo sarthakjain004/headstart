@@ -472,10 +472,13 @@ class EightfoldScraper(BaseScraper):
                 workers=_DETAIL_WORKERS,
             )
         self.report_detail_gaps(fetched, "descriptions")
-        if len(wanted) < len(positions):
+        if len(wanted) < len(tech):
+            # Only the held-detail half: the tech half has its own line now, from the seam
+            # (`tech_detail_wanted`). Saying it in both double-counted every Board for anything
+            # grepping these, which is the defect `_report_detail_losses` exists to avoid.
             _log.info(
-                f"{self.board_key()}: fetched {len(wanted)}/{len(positions)} descriptions "
-                f"({len(positions) - len(tech)} non-tech, {len(tech) - len(wanted)} already held)"
+                f"{self.board_key()}: fetched {len(wanted)}/{len(tech)} descriptions "
+                f"({len(tech) - len(wanted)} already held)"
             )
         # Re-align to `positions`: the fan-out covered only the subset still needing a detail, so
         # zipping it against the full list would pair descriptions with the wrong Jobs.
