@@ -671,12 +671,43 @@ def _fetch(method, url, **kw):
             return cs
     if r.status_code == 429:
         _on_429(gate or _ensure_gate(netloc, "429"), r, url)
+    elif _is_quota_403(netloc, r) and not challenged:
+        _on_quota_403(gate or _ensure_gate(netloc, "403"), r, url)
     elif challenged:
         _note(f"challenge-{r.status_code}")
         (gate or _ensure_gate(netloc, str(r.status_code))).trip(
             _CHALLENGE_COOLDOWN_S, f"{r.status_code}, bot-wall challenge"
         )
     return r
+
+
+# Hosts that meter **per IP over a window** and refuse with a bare 403 — no `Retry-After`, no
+# `cf-mitigated`, no interstitial body, so neither `_on_429` nor `_is_challenge` sees them and the
+# refusal used to fall straight through to UNKNOWN with no gate trip and no rotation.
+#
+# Keyed by `_gate_key`, which is also the spare-egress group, so one entry covers every board on
+# the host. zwayam qualifies on both counts: every tenant is probed through the one shared API
+# (`search_request` sends `careers.infoedge.com`, `adani.openings.co` and `careers.practo.com`
+# alike to `public.zwayam.com`), and the wall is a cumulative request quota, not a concurrency
+# limit.
+#
+# The entry is the **exact host**, because `zwayam.com` is not in `_SPANNING` and `_gate_key`
+# therefore returns `public.zwayam.com` unchanged. Writing the registrable domain here instead
+# looks right and silently never matches — `test_the_quota_403_key_matches_the_gate_key` pins it.
+#
+# Read off the scraper's own request rather than spelled out, for the reason `p_zwayam` already
+# imports `search_request`: a hardcoded copy is a copy that can drift, and this module has drifted
+# on exactly that before (the User-Agent). `search_request` builds a request without sending one,
+# so asking it where a probe would go is free, and if zwayam ever moves the API this follows it.
+#
+# Measured 2026-09-17, one IP, 16-wide (`experiment/zwayam-403-wall/LOG.md`):
+#   - 100/200/300/400 cumulative requests -> 200 on every one;
+#   - at 500 -> 23 of 100 refused; at 600 -> 100 of 100 refused. The wall is volume, not width.
+#   - Against 25 slugs that had *just* been refused, interleaved: **WARP cleared 25/25 while the
+#     direct route cleared 12/25.** Rotation is what clears it.
+# Before this, a full 3,239-board sweep walled partway through its first quartile and returned
+# 2,816 UNKNOWN — quartiles 2-4 were 809/809 unknown each.
+_QUOTA_403 = frozenset({urllib.parse.urlsplit(search_request("probe")[0]).netloc})
 
 
 # A bot wall's interstitial, served as 429. Cloudflare labels its own with a header; Vercel's
@@ -696,6 +727,34 @@ def _is_challenge(r):
         return True
     body = r.content[:4096] if r.content else b""
     return any(m in body for m in _CHALLENGE_BODIES)
+
+
+def _is_quota_403(netloc, r):
+    """Is this the bare 403 of a host that meters per IP? See `_QUOTA_403`.
+
+    "Bare" is the caller's job: `_fetch` tests `not challenged` alongside this, so a genuine
+    bot-wall 403 from a metered host still takes the challenge arm and still logs
+    `challenge-403`. Without that, the rung would shadow it and mislabel the mechanism in the
+    `_note` counters — which is the whole thing this change exists to name correctly.
+    """
+    return r.status_code == 403 and _gate_key(netloc) in _QUOTA_403
+
+
+def _on_quota_403(gate, r, url):
+    """Move this gate to a different address; ban only if none can be had.
+
+    The same rung `_on_429` reaches for a ban-length Retry-After, for the same reason — the limit
+    *is* the address, so easing the pace cannot clear it — but reached directly, because a quota
+    403 carries none of the signals the 429 ladder reads: no Retry-After to measure, and no
+    challenge markers (`_is_challenge` returns False for it on purpose, and must keep doing so, or
+    an ordinary "forbidden" would start rotating too).
+    """
+    _note("403-quota")
+    # `_EGRESS_REST_S`, not `_CHALLENGE_COOLDOWN_S`: this only matters on the fall-through, where
+    # no spare egress can be had, and then the honest wait is the quota's own refill. A bot wall
+    # needs the 30-minute cooldown because nothing but time clears it; a quota refills in about a
+    # minute of quiet — the same measurement `_EGRESS_REST_S` is already sized to.
+    _ban_or_rotate(gate, r, url, _EGRESS_REST_S, "403, per-IP quota spent")
 
 
 def _on_429(gate, r, url):
@@ -761,7 +820,7 @@ def _addresses_seen():
     return sum(1 for key in spare_egress.egress_ips() if key.startswith("ip:"))
 
 
-def _fresh_egress(gate):
+def _fresh_egress(gate, status=429):
     """Move this gate onto a different egress address. Its identity, or None if none can be had.
 
     Two rungs, the same pair `http.fetch` climbs: a gate still on the direct route is *moved onto*
@@ -793,7 +852,7 @@ def _fresh_egress(gate):
         spare_egress.proxy_url() is None
     ):  # no WARP here — cached, so only the first caller waits
         return None
-    spare_egress.mark_walled(gate.key, 429)
+    spare_egress.mark_walled(gate.key, status)
     return _addresses_seen()
 
 
@@ -810,13 +869,13 @@ def _ban_or_rotate(gate, r, url, seconds, why):
     would otherwise take costs every board behind it and a rotation costs seconds.
     """
     if _redirected_off_host(url, r):
-        _note("429-off-host")
+        _note(f"{r.status_code}-off-host")
         gate.trip(seconds, f"{why}, from a redirect off-host")
         return
     # Bans older than this are about the address we are leaving, so `recover` may clear them.
     since = time.monotonic()
     was = gate.address()
-    address = _fresh_egress(gate)
+    address = _fresh_egress(gate, r.status_code)
     if address is None:
         gate.trip(seconds, why)
         return
@@ -850,7 +909,7 @@ def _ban_or_rotate(gate, r, url, seconds, why):
         # generally. So would something much smaller: one cached AAAA lookup per gate, since a
         # host with no AAAA provably cannot have its egress moved by rotation, so it should rest
         # unconditionally. Neither is written yet.
-        _note("429-same-address")
+        _note(f"{r.status_code}-same-address")
         gate.rest(_EGRESS_REST_S)
         return
     gate.recover(why, address, since)
@@ -1731,7 +1790,11 @@ def p_zwayam(t, u):
         # non-200 is about the request or the edge, not the Board. (A 403 from the Akamai front
         # has been seen once, in 2026-08 discovery; ~2,160 requests of deliberate load-testing on
         # 2026-08-27 — 34 req/s sustained, 32-wide concurrency, 60 distinct domains — could not
-        # reproduce it, so treat it as rare and transient rather than a known threshold.)
+        # reproduce it.) **That "rare and transient" reading is now falsified**: measured
+        # 2026-09-17, the 403 is a cumulative per-IP request quota and the earlier sweep simply
+        # stayed under it — 100/200/300/400 requests all answered 200, 23 of 100 were refused at
+        # 500 and 100 of 100 at 600. It is volume, not width, which is why a 32-wide burst missed
+        # it. `_QUOTA_403` now rotates the egress on it; see `experiment/zwayam-403-wall/LOG.md`.
         return UNKNOWN, None
     try:
         payload = r.json() or {}
