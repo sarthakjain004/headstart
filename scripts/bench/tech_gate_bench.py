@@ -107,8 +107,17 @@ def _compare(control: dict[str, Any], treatment: dict[str, Any]) -> dict[str, An
         if (c[jid].title, c[jid].department, c[jid].location, c[jid].url)
         != (t[jid].title, t[jid].department, t[jid].location, t[jid].url)
     ]
+    # **Both directions, because one direction cannot tell a regression from flakiness.** A
+    # detail fetch fails transiently on a busy origin, in whichever arm happens to draw it, so
+    # counting only control-had/treatment-lacks reports half of a symmetric process as if it
+    # were one-sided damage. Measured on `jll.wd1.myworkdayjobs.com`, where the gate is exact
+    # and `tech_lost` is 0: 47 lost one way on 2026-09-17 — and the reverse column is what says
+    # whether that is the gate or the origin.
     desc_lost = [
         jid for jid in set(c) & set(t) if c[jid].description and not t[jid].description
+    ]
+    desc_gained = [
+        jid for jid in set(c) & set(t) if t[jid].description and not c[jid].description
     ]
     return {
         "churned": churned,
@@ -116,6 +125,7 @@ def _compare(control: dict[str, Any], treatment: dict[str, Any]) -> dict[str, An
         "tech_gained": len(gained),
         "tech_fields_changed": len(changed),
         "tech_description_lost": len(desc_lost),
+        "tech_description_gained": len(desc_gained),
         "examples_lost": [f"{c[j].title} | {c[j].department}" for j in lost[:5]],
         "examples_desc_lost": [f"{c[j].title}" for j in desc_lost[:5]],
     }
@@ -180,7 +190,9 @@ def main() -> None:
                 print(
                     f"  rep{rep} -> {cmp['speedup']}x faster, "
                     f"{cmp['requests_saved_pct']}% fewer requests, "
-                    f"tech_lost={cmp['tech_lost']} desc_lost={cmp['tech_description_lost']} "
+                    f"tech_lost={cmp['tech_lost']} "
+                    f"desc-lost/gained={cmp['tech_description_lost']}/"
+                    f"{cmp['tech_description_gained']} "
                     f"churned={cmp['churned']} "
                     f"{verdict}",
                     flush=True,

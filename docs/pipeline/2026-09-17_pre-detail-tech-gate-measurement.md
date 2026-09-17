@@ -4,8 +4,9 @@ Measurement for [#500](https://github.com/sarthakjain004/headstart/issues/500). 
 each answered from data rather than from reading the code alone:
 
 1. **How many scrapers do a detail pass?** 21 of 39.
-2. **Which of them can take the gate safely?** Six can, by construction. Six cannot, and the
-   reason is not the one #500 gives. Five need one more measurement.
+2. **Which of them can take the gate safely?** Six can by construction and three more on a
+   measured tolerance. Six cannot, and for five of them the reason is not the one #500 gives.
+   One is deferred and four are still unmeasured.
 3. **What is it worth?** ~48.7% of all board-seconds from the safe six alone, and the gate already
    shipped on one ATS is delivering **3.03x** on four real production Boards.
 
@@ -16,7 +17,7 @@ each answered from data rather than from reading the code alone:
 | per-Board cost | `data/state/board_cost.csv`, pulled from HF | rows dated ≥2026-09-16 (115,927 of 119,643) |
 | per-ATS tech share | `filter_tech`'s own log, run `35193130454` | 2026-09-17 07:38 UTC |
 | pre-filter corpus | `scrape-fragment-{0,1,2,4}` of that run — 490,417 postings | 2026-09-17 |
-| A/B wall clock | `bench-tech-gate.yml` runs `35198692670` / `35199442248`, `ubuntu-latest` | 2026-09-17 |
+| A/B wall clock | `bench-tech-gate.yml` runs `35198692670`, `35199442248`, `35203021883`, `ubuntu-latest` | 2026-09-17 |
 | production before/after | scrape logs of runs `35116292689`, `35129140615` (pre-gate) vs `35193130454` | 2026-09-16/17 |
 
 Board seconds are one sweep of every Board, not one run — `board_cost.csv` holds each Board's most
@@ -157,12 +158,17 @@ the 2026-09-16 timing analysis named as owning the scrape maximum; it is no long
 
 ### Measured on a runner, for the unshipped Tier 1
 
-`bench-tech-gate.yml`, `ubuntu-latest`, A/B/A/B, two independent runs. 24 A/B pairs, **`tech_lost=0`
-in every one**:
+`bench-tech-gate.yml`, `ubuntu-latest`, A/B/A/B, three independent runs — **51 A/B pairs**.
+`tech_lost=0` on **49**. The two that were not both predate the churn fix described below, and
+both are churn: `is_tech` keeps `IND Lead Associate / Engineer` and `Formal Verification Engineer
+| Hardware`, so `tech_detail_wanted` would have fetched each, and neither board listed it in both
+arms. Re-measured with the churn-aware harness, the same two boards report `tech_lost=0,
+churned=2` and `tech_lost=0, churned=4`.
 
 | Board | postings | tech | requests | wall clock |
 | --- | ---: | ---: | --- | --- |
 | `workday:greystar/External` | 1,596 | 11 | 1,597 → 12 (−99.2%) | 170.8s → 11.8s (**14.4x**) |
+| `workday:jll/jllcareers` | 3,463 | 450 | 3,466 → 452 (−87.0%) | 513.5s → 97.8s (**4.1–5.3x**) |
 | `smartrecruiters:pilotcompany` | 1,764 | 5 | 1,782 → 23 (−98.7%) | ~96s → ~8.6s (**10.8–11.4x**) |
 | `smartrecruiters:RamsayHealthCare1` | 329 | 2 | 333 → 6 (−98.2%) | ~31s → ~3.8s (**6.1–9.4x**) |
 | `workday:aveva/AVEVA_careers` | 253 | 72 | 254 → 73 (−71.3%) | ~22s → ~9.2s (**1.8–3.4x**) |
@@ -181,8 +187,23 @@ came back `tech_lost=0` on both repeats.
 
 Repeat-to-repeat spread is under 1% on the large Boards, which is what makes the A/B/A/B worth its
 cost. Wall-clock saving tracks request saving at ~0.9x on large Boards and falls off on small ones,
-where the listing walk is the floor. `workday:jll/jllcareers` produced no pair — its *control* arm
-died on an origin HTTP 500, which is an ATS flake, not the gate.
+where the listing walk is the floor.
+
+**`jll` is the one Board with a second loss signal, and it needs stating.** Its control arm died on
+an origin HTTP 500 in run `35198692670` — an ATS flake, not the gate — and paired cleanly in the
+other two. In those pairs `tech_lost` is 0 but **`desc_lost` is 2 and 47**: tech Jobs that carried
+a description in the control arm and none in the gated one. That is 2 of 51 pairs; the other 49 are
+`desc_lost=0`, and jll is the only Board that produced any.
+
+It is not the gate dropping work — a tech posting is *always* in `wanted` on an exact-gate Board,
+so it is always fetched — it is a detail fetch failing, and jll is a demonstrably flaky origin (it
+is the Board whose control arm 500'd outright). But **the harness could not tell those apart as
+written**, because it counted only control-had/treatment-lacks and never the reverse, so it
+reported half of a symmetric process as one-sided damage.
+
+It now counts both directions, and that settles it. Re-measured on jll 2026-09-17 with the
+bidirectional harness: **`desc-lost/gained = 0/1`** — the *gated* arm came back with a description
+the control arm lacked. The asymmetry was in the metric, not in the mechanism.
 
 ### Projected, across every Board
 

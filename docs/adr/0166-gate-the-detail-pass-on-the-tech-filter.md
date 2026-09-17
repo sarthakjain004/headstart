@@ -116,10 +116,20 @@ already behaved, and is why `filter_tech`'s per-ATS `kept%` stays meaningful for
 unlike successfactors, where the posting never arrives at all.
 
 **Measured saving: ~44–49% of all board-seconds**, discounting the request saving by the ~0.9
-wall-clock ratio measured on the runner. On `ubuntu-latest`, 25 A/B pairs, **zero tech jobs lost
-in every pair**: `workday:greystar` 1,597 → 12 requests and 14.4x, `apple:jobs.apple.com` 1.52x,
-`smartrecruiters:soprasteria1` 1.55x (the least favourable). In production the same technique on
-successfactors already delivered **3.03x** across four Boards.
+wall-clock ratio measured on the runner. On `ubuntu-latest`, **51 A/B pairs across three runs**,
+`tech_lost=0` on 49 — the two exceptions both predate the churn fix below and are both churn, on
+titles `is_tech` keeps. `workday:greystar` 1,597 → 12 requests and 14.4x, `workday:jll` 4.1–5.3x,
+`apple:jobs.apple.com` 1.52x, `smartrecruiters:soprasteria1` 1.55x (the least favourable). In
+production the same technique on successfactors already delivered **3.03x** across four Boards.
+
+**One Board also showed a second loss signal**, and it is reported rather than buried: `jll`
+returned `desc_lost` 2 and 47 — tech Jobs described in the control arm and not in the gated one —
+against `desc_lost=0` on the other 49 pairs. A tech posting is always in `wanted` on an exact-gate
+Board, so this is a detail fetch failing on a flaky origin (the same Board whose control arm 500'd
+outright in a third run), not work the gate declined. The harness could not *prove* that as
+written, because it counted only one direction of a symmetric process; it now counts both, and a
+re-measurement of jll returned `desc-lost/gained = 0/1` — the gated arm holding a description the
+control arm lacked. The asymmetry was in the metric.
 
 **It does not fix the floor.** The scrape stage is floor-bound — 95–98% of the straggler shard is
 one Board — and after the gate that floor is `oracle:ejwl` (1,354s) and `oracle:ejwl-dev7` (977s),
