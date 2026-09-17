@@ -71,6 +71,7 @@ def _run(board: str, gate: bool) -> dict[str, Any]:
     seconds = time.monotonic() - t0
     tech = {j.id: j for j in jobs if is_tech(j.title, j.department)}
     return {
+        "listed_ids": {j.id for j in jobs},
         "seconds": round(seconds, 2),
         "requests": counter.n,
         "jobs": len(jobs),
@@ -86,10 +87,20 @@ def _compare(control: dict[str, Any], treatment: dict[str, Any]) -> dict[str, An
     """What the gate changed about the Jobs that reach the index.
 
     Only the tech subset is compared: a non-tech Job's description is discarded by `filter_tech`
-    before anything reads it, so losing it is the saving, not a regression."""
+    before anything reads it, so losing it is the saving, not a regression.
+
+    **Churn is subtracted before anything is called a loss.** The arms are separate live reads
+    minutes apart, and a Board that opens or closes a posting between them puts an id in one arm
+    and not the other — which a plain set difference reports as the gate deleting a tech job.
+    Not hypothetical: on `thehartford` 2026-09-17 one arm listed "IND Lead Associate / Engineer"
+    and the other did not, and the gate *keeps* that title (`is_tech` -> generic-tech-token), so
+    it cannot have been the cause. Only ids **both** arms listed can testify about the gate; the
+    rest are counted as `churned` and reported separately."""
     c, t = control["_tech"], treatment["_tech"]
-    lost = sorted(set(c) - set(t))
-    gained = sorted(set(t) - set(c))
+    both_listed = control["listed_ids"] & treatment["listed_ids"]
+    churned = len(control["listed_ids"] ^ treatment["listed_ids"])
+    lost = sorted((set(c) - set(t)) & both_listed)
+    gained = sorted((set(t) - set(c)) & both_listed)
     changed = [
         jid
         for jid in set(c) & set(t)
@@ -100,6 +111,7 @@ def _compare(control: dict[str, Any], treatment: dict[str, Any]) -> dict[str, An
         jid for jid in set(c) & set(t) if c[jid].description and not t[jid].description
     ]
     return {
+        "churned": churned,
         "tech_lost": len(lost),
         "tech_gained": len(gained),
         "tech_fields_changed": len(changed),
@@ -169,6 +181,7 @@ def main() -> None:
                     f"  rep{rep} -> {cmp['speedup']}x faster, "
                     f"{cmp['requests_saved_pct']}% fewer requests, "
                     f"tech_lost={cmp['tech_lost']} desc_lost={cmp['tech_description_lost']} "
+                    f"churned={cmp['churned']} "
                     f"{verdict}",
                     flush=True,
                 )
@@ -177,6 +190,7 @@ def main() -> None:
                         print(f"        LOST: {e}", flush=True)
         for a in arms:
             a.pop("_tech", None)
+            a.pop("listed_ids", None)
         results.append({"board": board, "arms": arms, "pairs": pairs})
         out.write_text(
             json.dumps(results, indent=2)
