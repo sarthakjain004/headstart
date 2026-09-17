@@ -17,6 +17,13 @@ on:
   # `main` to be measured. Scoped to `bench/**` so nothing else in the repo triggers it.
   push:
     branches: ["bench/**"]
+    # Only when something that can change the measurement changes. A docs or ADR commit used to
+    # retrigger the whole matrix, apple's ~40-minute leg included, and three runs stacked up on
+    # one review round before this was added.
+    paths:
+      - "src/headstart/**"
+      - "scripts/bench/tech_gate_bench.py"
+      - ".github/workflows/bench-tech-gate.yml"
   workflow_dispatch:
     inputs:
       repeats:
@@ -28,6 +35,11 @@ on:
 
 permissions:
   contents: read
+
+# A superseded measurement is worth nothing, and each leg holds a runner for up to 40 minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   bench:
