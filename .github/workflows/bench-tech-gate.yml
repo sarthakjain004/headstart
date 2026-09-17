@@ -33,7 +33,7 @@ on:
   workflow_dispatch:
     inputs:
       repeats:
-        description: "A/B pairs per Board (A/B/A/B = 2)"
+        description: "A/B pairs per Board. 2 gives A/B/B/A; 1 cannot counterbalance arm order"
         default: "2"
       boards:
         description: "Optional space-separated ats:slug list; overrides the matrix leg"
