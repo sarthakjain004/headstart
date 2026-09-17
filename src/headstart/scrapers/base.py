@@ -17,6 +17,7 @@ from typing import Any, TypeVar
 from headstart import company_name, fanout_stats, http, log, spare_egress
 from headstart.fetcher import Fetcher
 from headstart.models import Job
+from headstart.tech_filter import is_tech
 
 #: The one User-Agent every scraper sends. Public because nine of them re-declared
 #: this same literal locally, which is a set of strings that can silently disagree.
@@ -411,6 +412,56 @@ class BaseScraper(ABC):
         if self.have_details is None:
             return True
         return f"{self.board_key()}:{native_id}" not in self.have_details
+
+    def tech_wanted(
+        self,
+        items: Sequence[_T],
+        title_of: Callable[[_T], str | None],
+        department_of: Callable[[_T], str | None] | None = None,
+    ) -> list[_T]:
+        """The subset of ``items`` whose detail fetch is worth making (ADR-0017 + ADR-0048).
+
+        A detail fetch costs one request against a per-origin budget; a posting the tech filter
+        drops is never embedded, indexed or shown, so that request buys nothing that survives the
+        run. This asks :func:`~headstart.tech_filter.is_tech` the same question ``filter_tech``
+        will ask downstream, with the fields the *listing* already carries, and returns only the
+        items still worth fetching.
+
+        **The accessors must read what ``parse`` reads.** Where they do — the listing states both
+        fields and no detail overrides either — the gate is exact by construction: the same two
+        strings reach the same predicate, so no posting can be gated out that the filter would
+        have kept. Where the detail can supply or override ``department``, the gate is an
+        *approximation* and must be measured against the real verdict before it ships: on Oracle,
+        measured live 2026-09-17, a title-only gate dropped 61.5% of one board's tech postings,
+        because ``tech_filter``'s rule 4 promotes a vague title on a technical department and the
+        gate never sees that department.
+
+        Off unless ``HEADSTART_TECH_GATE`` is set, and off for every caller that is not the
+        pipeline (``have_details is None``) — a directly-constructed scraper keeps the whole
+        Board, which is what ``scripts/validate/verify_scraper.py`` and the enrichment samplers
+        measure against.
+        """
+        if not self.tech_gate_enabled() or self.have_details is None:
+            return list(items)
+        kept = [
+            item
+            for item in items
+            if is_tech(title_of(item), department_of(item) if department_of else None)
+        ]
+        skipped = len(items) - len(kept)
+        if skipped:
+            self.telemetry["tech_gated_details"] = skipped
+            self._log.info(
+                f"{self.board_key()}: skipping {skipped}/{len(items)} non-tech detail "
+                f"fetches (ADR-0017 gate)"
+            )
+        return kept
+
+    @staticmethod
+    def tech_gate_enabled() -> bool:
+        """Whether the pre-detail tech gate runs. One switch, so a tenant whose titles the gate
+        misreads is one env var away from the old behaviour rather than 19 reverts."""
+        return os.environ.get("HEADSTART_TECH_GATE", "0") != "0"
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:

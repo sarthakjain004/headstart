@@ -1,0 +1,81 @@
+# A/B the pre-detail tech gate (ADR-0017) on the runner that actually pays for the scrape.
+#
+# Manual only. Reads live ATS origins and writes nothing: no HF token, no dataset, no LFS, no
+# artifacts beyond the measurement JSON. `contents: read` is the whole permission set.
+#
+# One matrix leg per Board group so each measurement gets its own runner — two groups sharing a
+# 4-vCPU box would contend on the same event loop and the A/B would measure the contention.
+# `ubuntu-latest` and the same `pip install -e ".[scrape]"` the production scrape shards use, so
+# the seconds are comparable to `board_cost.csv`. WARP is deliberately NOT installed: the spare
+# egress is dialled lazily by a walled ATS (ADR-0063) and would add a variable neither arm
+# controls — both arms share this runner's direct route, which is what makes the ratio honest.
+name: bench-tech-gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      repeats:
+        description: "A/B pairs per Board (A/B/A/B = 2)"
+        default: "2"
+      boards:
+        description: "Optional space-separated ats:slug list; overrides the matrix leg"
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The 2026-09-16 stage-timing doc's floor board: 95-98% of its shard's wall clock, and
+          # the least favourable case for this gate at ~70.8% tech. One A/B pair, because one
+          # ungated arm is ~25 min on its own.
+          - leg: apple
+            repeats: "1"
+            boards: "apple:jobs.apple.com"
+          # Workday is 48.4% of all board-seconds in board_cost.csv and 16.1% tech — the single
+          # biggest lever. One large Board, one A/B pair.
+          - leg: workday-large
+            repeats: "1"
+            boards: "workday:https://greystar.wd1.myworkdayjobs.com/External workday:https://jll.wd1.myworkdayjobs.com/jllcareers"
+          # Mid-size Boards, two A/B pairs each: enough repeats to show whether the ratio is
+          # stable or just drift.
+          - leg: workday-mid
+            repeats: "2"
+            boards: "workday:https://aveva.wd3.myworkdayjobs.com/AVEVA_careers workday:https://trendmicro.wd3.myworkdayjobs.com/External workday:https://thehartford.wd5.myworkdayjobs.com/Careers_External"
+          - leg: smartrecruiters
+            repeats: "2"
+            boards: "smartrecruiters:soprasteria1 smartrecruiters:RamsayHealthCare1 smartrecruiters:pilotcompany"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[scrape]"
+      - name: A/B the gate
+        run: |
+          python -u scripts/bench/tech_gate_bench.py \
+            --repeats "${{ github.event.inputs.repeats || matrix.repeats }}" \
+            --out "bench-${{ matrix.leg }}.json" \
+            ${{ github.event.inputs.boards || matrix.boards }} | tee "bench-${{ matrix.leg }}.log"
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo "## ${{ matrix.leg }}"
+            echo '```'
+            grep -E '^(===|  rep)' "bench-${{ matrix.leg }}.log" || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: bench-${{ matrix.leg }}
+          path: |
+            bench-${{ matrix.leg }}.json
+            bench-${{ matrix.leg }}.log

@@ -133,19 +133,29 @@ class SmartRecruitersScraper(BaseScraper):
             self.mark_truncated(
                 f"read {len(postings)} of {total} postings{cap_note} — the rest unread"
             )
+        # `parse` reads `name` and `department.label` off this listing posting and never off
+        # `_detail`, so the gate asks `filter_tech`'s own question with `filter_tech`'s own
+        # inputs. A gated posting still ships as a Job without a description.
+        wanted = self.tech_wanted(
+            postings,
+            lambda p: p.get("name"),
+            lambda p: (p.get("department") or {}).get("label"),
+        )
         if self.async_fanout_enabled():
             details = self.fan_out_async(
-                postings,
+                wanted,
                 lambda session, p: self._job_detail_async(session, p.get("id")),
             )
         else:
             details = self.fan_out(
-                postings,
+                wanted,
                 lambda p: self._job_detail(p.get("id")),
                 workers=_DETAIL_WORKERS,
             )
         self.report_detail_gaps(details, "details")
-        for posting, detail in zip(postings, details):
+        for posting in postings:
+            posting["_detail"] = {}
+        for posting, detail in zip(wanted, details):
             posting["_detail"] = detail or {}
         return data
 
