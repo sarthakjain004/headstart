@@ -16,6 +16,7 @@ import pytest
 from headstart import tech_filter
 from headstart.tech_filter import (
     _STRONG,
+    TECH_FILTER_VERSION,
     classify,
     filter_jobs,
     filter_jobs_and_report,
@@ -446,3 +447,183 @@ def test_hiring_department_only_withdraws_the_department_booster():
 def test_real_tech_departments_still_promote_a_vague_title(department):
     """The 51 departments rule 4 promoted from in the survey; the veto matched exactly one."""
     assert is_tech("Intern", department=department) is True
+
+
+# --- TECH_FILTER_VERSION 2: the title decides ------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "title,department",
+    [
+        # The case this change was decided on: the department says who they sit with, the title
+        # says what they do, and on this question the title wins.
+        ("Administrative Assistant", "Software Engineering"),
+        ("Sales Executive", "Technology"),
+        ("Accountant", "IT Services"),
+        ("Customer Service Agent - Remote Data Entry", "Data Entry"),
+        ("Content Creator", "Software development"),
+        # `_STRONG` used to read `title + department`, so "Software development" matched
+        # "software dev" and scored these a strong software signal.
+        ("Receptionist", "Software Development"),
+        ("Recruiter", "Engineering"),
+    ],
+)
+def test_a_technical_department_does_not_promote_another_profession(title, department):
+    assert is_tech(title, department=department) is False
+
+
+@pytest.mark.parametrize(
+    "title,department",
+    [
+        # `_GENERIC` also read `title + department`, so the word "Engineering" in a facilities
+        # org made every trade a generic tech token.
+        ("Plumber", "Engineering & Facilities"),
+        ("Painter", "Engineering & Facilities"),
+        ("Carpenter", "Engineering and Maintenance"),
+        ("Electrician", "Hotel-Engineering"),
+        # rule 4's `security` promoted physical guards; 1,338 on one sweep.
+        ("Security Officer", "Security Officers"),
+        ("Loss Prevention Officer", "Loss Prevention & Security"),
+        ("Armed Security Officer", "Safety and Security"),
+    ],
+)
+def test_a_trade_or_guard_is_not_promoted_by_its_org_label(title, department):
+    assert is_tech(title, department=department) is False
+
+
+def test_the_gate_stays_recall_biased_for_a_genuinely_vague_title():
+    """Only titles naming a *different profession* are refused. A vague one still passes."""
+    assert is_tech("Analyst", department="Software Engineering") is True
+    assert is_tech("Associate", department="Technology") is True
+    assert is_tech("Intern", department="Platform Engineering") is True
+
+
+def test_a_software_title_still_passes_inside_a_non_software_org():
+    """The department is blanked, not turned into a veto — rules 1-3 still decide on the title."""
+    assert is_tech("Software Engineer", department="Facilities Systems") is True
+    assert is_tech("Data Engineer", department="Hotel Engineering") is True
+    assert is_tech("Backend Developer", department="Security Officers") is True
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        # Titles the department used to have to carry — each found by reading the postings rule 4
+        # rescued over the 2026-09-17 corpus, not invented.
+        "Solution Architect",
+        "Cloud Solution Architect",
+        "Senior Java Architect",
+        "AI/ML Architect",
+        "Oracle APEX Architect",
+        "Network Architect",
+        "Penetration Tester",
+        "Senior Software Tester",
+        "Scrum Master",
+        "Systems Analyst",
+        "System Administrator",
+        "IT System Administrator",
+        "IT Manager",
+        "IT Support Specialist",
+        "Help Desk Technician",
+        "Desktop Support Technician",
+        "Data Analyst",
+        "SOC Analyst",
+        "Information Systems Manager",
+        "Technical Writer",
+        "Technical Project Manager",
+        "Technology Support Lead",
+        "Power BI Analyst",
+        "SAP ABAP Consultant",
+        "Salesforce Administrator",
+        "Database Administrator",
+    ],
+)
+def test_titles_the_department_used_to_carry_now_stand_alone(title):
+    assert is_tech(title) is True
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Junior Architect",  # a building architect
+        "Landscape Architect",
+        "Program Manager Non Tech",  # says so outright; Oracle really posts this
+        "Project Manager Non Tech",
+        "Financial Analyst",
+        "Marketing Analyst",
+    ],
+)
+def test_the_widened_patterns_did_not_swallow_their_neighbours(title):
+    assert is_tech(title) is False
+
+
+@pytest.mark.parametrize(
+    "title,department",
+    [
+        # Each of these was a real recall loss in the first draft of `_NON_TECH_ROLE`, found by
+        # diffing against the pre-change filter rather than by reading the regex. A gate whose
+        # contract is "dropping a real tech job is not acceptable" cannot afford any of them.
+        (
+            "Windows Server Administrator",
+            "IT Infrastructure",
+        ),  # bare `server` (the restaurant one)
+        ("SQL Server Specialist", "Information Technology"),
+        ("Server Support Specialist", "Technology"),
+        ("Technician - Software", "Technology"),  # `technician - \w+`
+        ("Technician - Network Operations", "IT"),
+        ("HR Technology Manager", "Technology"),  # `\bhr\b`
+        ("Specialist", "Guardian Data Platform"),  # bare `guard` in the department list
+    ],
+)
+def test_the_non_tech_role_list_does_not_refuse_a_real_software_role(title, department):
+    assert is_tech(title, department=department) is True
+
+
+def test_a_non_software_department_still_vetoes_a_generic_title():
+    """ADR-0068's veto must survive rule 4's new guard.
+
+    An earlier draft *blanked* an uninformative department before every rule, which also removed
+    it from `_NON_SOFTWARE`'s reach — so "Installation Engineer" in "HVAC & Facilities" flipped
+    from non-tech to tech. The guard is scoped to rule 4; the veto at rule 2 is untouched."""
+    assert is_tech("Installation Engineer", department="HVAC & Facilities") is False
+    assert is_tech("Software Engineer", department="HVAC & Facilities") is True
+
+
+def test_the_version_counter_moved_with_the_line():
+    """`role_trends` reads this to tell "we changed who counts" from "the market moved"."""
+    assert TECH_FILTER_VERSION == 2, (
+        "bump this and its comment together — the comment carries the commit range and the "
+        "measured effect, and a bump without one is what CLAUDE.md's DERIVATIONS_VERSION rule "
+        "exists to stop"
+    )
+
+
+@pytest.mark.parametrize(
+    "title,department",
+    [
+        # ADR-0068's veto, which rule 4 has to apply itself now that rules 1-2 read the title.
+        # While they read `title + department`, each of these tripped rule 2's generic token off
+        # the department's own "engineering" and was vetoed there; reading the title only closed
+        # that path, and rule 4 promoted them instead until it gained the same guard.
+        ("Civil Designer", "Engineering"),
+        ("Welding Inspector", "Engineering"),
+        ("HVAC Journeyman Chiller Mechanic", "Engineering"),
+        ("Structural EIT/Coordinator", "Building Engineering"),
+        ("Mechanical Department Manager", "Mechanical Engineering"),
+    ],
+)
+def test_rule_four_does_not_promote_another_engineering_discipline(title, department):
+    assert is_tech(title, department=department) is False
+
+
+def test_the_two_not_software_lists_read_different_inputs():
+    """`_NOT_TECH_DEPT` reads departments, `_NON_TECH_ROLE` reads titles, and their shared members
+    earn their place — trimming the five overlapping ones lets 581 rows back in, on labels like
+    "Campus Safety & Security" whose titles ("PRIA Specialist") the role list does not match."""
+    assert is_tech("PRIA Specialist", department="Safety & Security") is False
+    assert (
+        is_tech("Regional Security Manager", department="Security & Life Safety")
+        is False
+    )
+    # ...and the title list still works where the department says nothing either way.
+    assert is_tech("Security Officer", department="Corporate") is False
