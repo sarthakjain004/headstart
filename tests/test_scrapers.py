@@ -6095,6 +6095,11 @@ def test_successfactors_skips_the_detail_fetch_for_a_non_tech_slug(monkeypatch):
 
     monkeypatch.setattr(scraper, "_job_fields", fake_job_fields)
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    # The gate is conditional on `have_details`, the pipeline's own signal — an empty container
+    # says "the pipeline is running and holds no detail for this Board", which is the first-run
+    # state. Without it this scraper is a direct caller and keeps the whole Board; that is
+    # asserted separately below.
+    scraper.have_details = frozenset()
 
     raw = scraper.fetch_raw()
 
@@ -6105,6 +6110,36 @@ def test_successfactors_skips_the_detail_fetch_for_a_non_tech_slug(monkeypatch):
     assert scraper.truncated is None, (
         "skipping a non-tech posting is not a loss against the tech-only denominator"
     )
+
+
+def test_successfactors_gate_is_off_for_a_caller_outside_the_pipeline(monkeypatch):
+    """A directly-constructed scraper keeps the whole Board.
+
+    This gate shipped unconditional in #503, unlike eightfold's. The cost was measurable: run
+    35193130454's `filter_tech` reported `successfactors 32,891/33,035 = 99.6% tech`, because a
+    non-tech posting never reached the corpus, so the ATS's real tech share had stopped being
+    readable from the pipeline's own data. `verify_scraper.py` and the enrichment samplers build
+    scrapers this way and need the Board whole."""
+    from headstart.scrapers import successfactors as sf
+
+    scraper = sf.SuccessFactorsScraper("jobs.example.com")
+    monkeypatch.setattr(scraper, "_fetch_sitemap", lambda: ("urlset", "", None))
+    monkeypatch.setattr(
+        scraper,
+        "_search_job_urls",
+        lambda: (
+            [
+                ("https://jobs.example.com/job/Software-Engineer/1/", "1"),
+                ("https://jobs.example.com/job/Housekeeper/2/", "2"),
+            ],
+            None,
+        ),
+    )
+    monkeypatch.setattr(scraper, "_job_fields", lambda url: {"title": "whatever"})
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+
+    assert scraper.have_details is None, "the default for a direct caller"
+    assert {item["id"] for item in scraper.fetch_raw()} == {"1", "2"}
 
 
 def _workday_scraper():
@@ -8611,17 +8646,21 @@ def test_zwayam_a_body_error_code_raises_rather_than_reading_as_an_empty_board(
 def test_zwayam_detail_text_wins_and_the_skip_list_prunes_the_fetch():
     """The listing's text can be silently truncated with no way to tell (632 chars listed vs
     909 of stripped detail text, measured), so the detail is fetched for every row not on the
-    ADR-0050 skip-list and its text wins over whatever the listing carried."""
+    ADR-0050 skip-list and its text wins over whatever the listing carried.
+
+    The titles are real tech ones because setting ``have_details`` also arms the ADR-0017 tech
+    gate, and a fixture titled "A"/"B"/"C" would be gated out before the skip-list this test is
+    about ever ran — the test would then pass for the wrong reason."""
     page = {
         "data": {
             "totalCount": 3,
             "hasMoreData": False,
             "data": [
-                {"_source": {"id": 1, "jobTitle": "A", "jobUrl": "a"}},
+                {"_source": {"id": 1, "jobTitle": "Backend Engineer", "jobUrl": "a"}},
                 {
                     "_source": {
                         "id": 2,
-                        "jobTitle": "B",
+                        "jobTitle": "Data Engineer",
                         "jobUrl": "b",
                         "mediumDescriptionWithoutHtml": "possibly truncated listing",
                     }
@@ -8629,7 +8668,7 @@ def test_zwayam_detail_text_wins_and_the_skip_list_prunes_the_fetch():
                 {
                     "_source": {
                         "id": 3,
-                        "jobTitle": "C",
+                        "jobTitle": "QA Engineer",
                         "jobUrl": "c",
                         # The row MUST carry listing text: without it this test passes whether
                         # or not a skip-listed row falls through to the listing, which is the
@@ -9362,3 +9401,245 @@ def test_a_payload_with_no_postings_container_says_the_board_was_unread(
     caplog.clear()
     assert scraper.parse({container: []}, SCRAPED_AT) == []
     assert caplog.text == ""
+
+
+# --- the ADR-0017 pre-detail tech gate (issue #500) -------------------------------------------
+def test_workday_gates_details_and_pairs_them_back_by_the_right_posting(monkeypatch):
+    """The ADR-0048 alignment trap, at a second call site.
+
+    The fan-out now covers a subset of the listing, so zipping its results against the full
+    posting list would hang each description on the wrong Job. A gated posting must come back
+    with an empty ``_detail`` — it is still a Job, it just has no description, and the Board's
+    list stays whole so no truncation denominator moves."""
+    # The threaded path, so `_job_detail` below is the seam that gets patched — the async
+    # default would call `_job_detail_async` and put a real request on the wire.
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    scraper = _workday_scraper()
+    scraper.have_details = frozenset()
+    postings = [
+        {"title": "Housekeeper", "externalPath": "/job/hk", "bulletFields": ["R1"]},
+        {
+            "title": "Backend Engineer",
+            "externalPath": "/job/be",
+            "bulletFields": ["R2"],
+        },
+        {"title": "Chef", "externalPath": "/job/chef", "bulletFields": ["R3"]},
+    ]
+    scraper._exhaust = lambda facets, absorb, depth: absorb(postings)
+    fetched: list[str] = []
+
+    def _detail(path, classes):
+        fetched.append(path)
+        return {"description": f"body for {path}", "startDate": "2026-09-17"}
+
+    scraper._job_detail = _detail
+    raw = scraper.fetch_raw()
+
+    assert fetched == ["/job/be"], "only the tech posting cost a request"
+    by_title = {item["title"]: item["_detail"] for item in raw}
+    assert by_title["Backend Engineer"]["description"] == "body for /job/be"
+    assert by_title["Housekeeper"] == {} and by_title["Chef"] == {}
+    assert scraper.truncated is None
+
+
+def test_smartrecruiters_gates_details_and_pairs_them_back(monkeypatch):
+    """The same trap at smartrecruiters' call site — `p["_detail"]` is what `parse` reads."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    scraper = get_scraper("smartrecruiters", "acme")
+    scraper.have_details = frozenset()
+    postings = [
+        {"id": "1", "name": "Housekeeper"},
+        {"id": "2", "name": "Backend Engineer"},
+        {"id": "3", "name": "Chef"},
+    ]
+    monkeypatch.setattr(
+        scraper, "_get", lambda *a: json.dumps({"content": postings, "totalFound": 3})
+    )
+    fetched: list[str] = []
+
+    def _detail(posting_id):
+        fetched.append(posting_id)
+        return {"description": f"body {posting_id}"}
+
+    monkeypatch.setattr(scraper, "_job_detail", _detail)
+    raw = scraper.fetch_raw()
+
+    assert fetched == ["2"], "only the tech posting cost a request"
+    by_id = {p["id"]: p["_detail"] for p in raw["content"]}
+    assert by_id["2"] == {"description": "body 2"}
+    assert by_id["1"] == {} and by_id["3"] == {}
+
+
+def test_rippling_gates_details_and_reads_a_dict_department_like_parse_does(
+    monkeypatch,
+):
+    """rippling states `department` as a bare string on some tenants and `{"name": ...}` on
+    others, and `parse` unpacks the dict. The gate must unpack it the same way or it classifies
+    on a different string than `filter_tech` gets."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    scraper = get_scraper("rippling", "acme")
+    scraper.have_details = frozenset()
+    items = [
+        {
+            "uuid": "1",
+            "name": "Technician",
+            "department": {"name": "Information Technology"},
+        },
+        {"uuid": "2", "name": "Receptionist", "department": {"name": "Front Desk"}},
+    ]
+
+    class _Resp:
+        status_code = 200
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        @staticmethod
+        def json():
+            return items
+
+    monkeypatch.setattr(scraper._fetcher, "fetch", lambda *a, **k: _Resp())
+    fetched: list[str] = []
+
+    def _detail(uuid):
+        fetched.append(uuid)
+        return {"description": f"body {uuid}"}
+
+    monkeypatch.setattr(scraper, "_detail", _detail)
+    raw = scraper.fetch_raw()
+
+    assert fetched == ["1"], (
+        "a vague title is rescued by its department — the gate must see through the dict"
+    )
+    assert {it["uuid"]: it["_detail"] for it in raw} == {
+        "1": {"description": "body 1"},
+        "2": {},
+    }
+
+
+def test_apple_gates_details_on_the_listing_title_and_team(monkeypatch):
+    """apple's accessors are `postingTitle` and `team.teamName` — the two `parse` reads."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    scraper = get_scraper("apple", "jobs.apple.com")
+    scraper.have_details = frozenset()
+    items = [
+        {"id": "1", "postingTitle": "Housekeeper", "team": {"teamName": "Facilities"}},
+        {
+            "id": "2",
+            "postingTitle": "Backend Engineer",
+            "team": {"teamName": "Software"},
+        },
+        # A vague title rescued only by its team — the gate must read the department too.
+        {
+            "id": "3",
+            "postingTitle": "Technician",
+            "team": {"teamName": "Information Technology"},
+        },
+    ]
+    monkeypatch.setattr(scraper, "_listing", lambda: items)
+    fetched: list[str] = []
+    monkeypatch.setattr(
+        scraper, "_detail", lambda i: fetched.append(i) or {"description": f"body {i}"}
+    )
+
+    raw = scraper.fetch_raw()
+
+    assert sorted(fetched) == ["2", "3"]
+    assert set(raw["details"]) == {"2", "3"}
+
+
+def test_jazzhr_gate_reads_the_row_title_and_department_not_its_location(monkeypatch):
+    """`_rows` yields `(key, title, location, department)` and the gate indexes into it.
+
+    An accessor that drifted onto `location` would classify on the wrong string and nothing would
+    raise, which is why `_row_title`/`_row_department` are named functions. The third row here is
+    the one that proves it: its department rescues a title the gate would otherwise drop, and its
+    *location* would not."""
+    import re
+
+    import headstart.scrapers.jazzhr as jazzhr_module
+
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    scraper = get_scraper("jazzhr", "acme")
+    scraper.have_details = frozenset()
+    rows = [
+        ("k1", "Housekeeper", "Software City", None),
+        ("k2", "Backend Engineer", "Remote", None),
+        ("k3", "Technician", "Remote", "Information Technology"),
+    ]
+    monkeypatch.setattr(scraper, "_listing", lambda: "<listing/>")
+    monkeypatch.setattr(jazzhr_module, "_rows", lambda listing: rows)
+    monkeypatch.setattr(jazzhr_module, "_ROW", re.compile("(?!x)x"))
+    fetched: list[str] = []
+    monkeypatch.setattr(
+        scraper, "_detail_page", lambda k: fetched.append(k) or f"<page>{k}</page>"
+    )
+
+    raw = scraper.fetch_raw()
+
+    assert fetched == ["k2", "k3"], (
+        "k1's location says 'Software City' — reading it as the title would keep it"
+    )
+    assert set(raw["details"]) == {"k2", "k3"}
+
+
+def test_zwayam_gate_and_the_held_detail_skip_compose(monkeypatch):
+    """zwayam is the one scraper carrying both skips; each must prune independently."""
+    page = {
+        "data": {
+            "totalCount": 3,
+            "hasMoreData": False,
+            "data": [
+                {"_source": {"id": 1, "jobTitle": "Backend Engineer", "jobUrl": "a"}},
+                {"_source": {"id": 2, "jobTitle": "Housekeeper", "jobUrl": "b"}},
+                {"_source": {"id": 3, "jobTitle": "Data Engineer", "jobUrl": "c"}},
+            ],
+        }
+    }
+    scraper = get_scraper("zwayam", "h.example")
+    scraper._page = lambda start: page
+    scraper._link_base = lambda: "https://h.example/jobview/"
+    scraper._company_id = lambda: 4242
+    scraper.have_details = {"zwayam:h.example:3"}  # id 3's text is already stored
+    fetched: list[str] = []
+    scraper._job_detail = lambda cid, url: fetched.append(url) or f"detail {url}"
+
+    scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+
+    assert fetched == ["a"], "2 is gated out as non-tech, 3 is already held"
+
+
+def test_trakstar_gates_on_the_card_not_the_code(monkeypatch):
+    """trakstar fans out over codes, but the title and department live on the card block, so the
+    gate reads the block and projects the codes from what survives."""
+    import headstart.scrapers.trakstar as trakstar_module
+
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    scraper = get_scraper("trakstar", "acme")
+    scraper.have_details = frozenset()
+    card = (
+        '<div class="rb-source-item" data-href="/jobs/{code}/">'
+        '<h3 class="js-job-list-opening-name" title="{title}"></h3>'
+        '<div class="rb-text-4">{dept}</div></div>'
+    )
+    html = trakstar_module._ITEM.join(
+        [
+            "<html>",
+            card.format(code="c1", title="Housekeeper", dept="Facilities"),
+            card.format(code="c2", title="Backend Engineer", dept="Software"),
+        ]
+    )
+    monkeypatch.setattr(scraper, "_get", lambda *a, **k: html)
+    monkeypatch.setattr(trakstar_module, "_is_capped", lambda h, n: False)
+    fetched: list[str] = []
+    monkeypatch.setattr(
+        scraper,
+        "_job_posting",
+        lambda code: fetched.append(code) or {"description": f"body {code}"},
+    )
+
+    raw = scraper.fetch_raw()
+
+    assert fetched == ["c2"]
+    assert set(raw["postings"]) == {"c2"}

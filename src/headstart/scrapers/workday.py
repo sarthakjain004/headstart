@@ -868,16 +868,25 @@ class WorkdayScraper(BaseScraper):
         classes: Counter[str] = Counter()
         self._settled_5xx_streak = 0  # ADR-0100, per pass
         self._detail_pass_broken = False
+        # `parse` reads `title` and `jobFamilyGroup` off this same listing item and never off
+        # `_detail`, so the gate's verdict is the one `filter_tech` will reach — exact, not
+        # approximate. A gated posting still becomes a Job, with `description=None`; the Board's
+        # list stays whole, so no truncation denominator moves.
+        wanted = self.tech_detail_wanted(
+            postings,
+            lambda item: item.get("title"),
+            lambda item: item.get("jobFamilyGroup"),
+        )
         if self.async_fanout_enabled():
             details = self.fan_out_async(
-                postings,
+                wanted,
                 lambda session, item: self._job_detail_async(
                     session, item.get("externalPath"), classes
                 ),
             )
         else:
             details = self.fan_out(
-                postings,
+                wanted,
                 lambda item: self._job_detail(item.get("externalPath"), classes),
                 workers=_DETAIL_WORKERS,
             )
@@ -893,8 +902,9 @@ class WorkdayScraper(BaseScraper):
             if not item.get("externalPath") and (item.get("title") or "").strip()
         )
         self._report_detail_losses(details, classes, titled_stubs)
-        for item, detail in zip(postings, details):
-            item["_detail"] = detail or {}
+        # The fan-out covered `wanted`, a subset of `postings` — see `attach_details` for why
+        # zipping against the full list would hang each detail on the wrong posting.
+        self.attach_details(postings, wanted, details)
         return postings
 
     def _detail_url(self, external_path: str) -> str:

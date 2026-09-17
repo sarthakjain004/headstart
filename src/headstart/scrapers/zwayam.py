@@ -623,9 +623,18 @@ class ZwayamScraper(BaseScraper):
         # listing's own fields can be silently truncated (module docstring), so the detail is
         # the only text trusted as complete. Steady state, `needs_detail` prunes this to the
         # Board's new postings.
+        # Two skips, both on `rows`: the tech gate (ADR-0017) drops what `filter_tech` would
+        # drop anyway, and `needs_detail` (ADR-0048) drops what the description store already
+        # holds. The gate is exact here — `parse` reads `jobTitle` and `departmentName` off this
+        # same listing row and the detail supplies only text — so it cannot cost a Job the
+        # index would have kept.
         need = [
             row
-            for row in rows
+            for row in self.tech_detail_wanted(
+                rows,
+                lambda r: r.get("jobTitle"),
+                lambda r: r.get("departmentName") or r.get("DepartmentName"),
+            )
             if (row.get("jobUrl") or "").strip()
             and self.needs_detail(str(row.get("id")))
         ]
