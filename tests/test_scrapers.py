@@ -4428,14 +4428,14 @@ def test_successfactors_fields_of_labels_a_soft_404_apart_from_an_ambiguous_loss
     "we don't know why this page didn't parse" — the first must not count against the Board's
     authoritative share (ADR-0053/ADR-0121), because it isn't evidence our read was short; the
     second still must, unchanged."""
-    from headstart.scrapers.successfactors import SuccessFactorsScraper
+    from headstart.scrapers import successfactors as sf
 
     class _Resp:
         def __init__(self, text):
             self.status_code = 200
             self.text = text
 
-    scraper = SuccessFactorsScraper("careers.hcltech.com")
+    scraper = sf.SuccessFactorsScraper("careers.hcltech.com")
     assert scraper._fields_of(_Resp(_tombstone_page()), "https://x/job/a/1/") is None
     assert (
         scraper._fields_of(_Resp("<html>garbled</html>"), "https://x/job/b/2/") is None
@@ -4445,9 +4445,9 @@ def test_successfactors_fields_of_labels_a_soft_404_apart_from_an_ambiguous_loss
     assert causes.get("200 without a parseable title") == 1, (
         "an unexplained parse failure keeps its existing, ambiguous label"
     )
-    assert (
-        sum(v for k, v in causes.items() if k != "200 without a parseable title") == 1
-    ), "the soft-404 gets its own distinct cause, not folded into the ambiguous bucket"
+    assert causes.get(sf._CONFIRMED_GONE_CAUSE) == 1, (
+        "the soft-404 gets its own distinct cause, not folded into the ambiguous bucket"
+    )
 
 
 def test_successfactors_confirmed_gone_pages_drain_via_adr_0083_not_scope_exclusion(
