@@ -59,9 +59,13 @@ guaranteed even there — one of two fixture postings carries it, the other does
 read directly rather than guessed from the location string — the same precedent Oracle's
 ``WorkplaceTypeCode`` set.
 
-**No rate limit found.** 8, then 16, concurrent detail fetches (2026-09-11 and 2026-09-12), zero
-non-200s at either width (a deliberately small sample — this is one host, not a multi-tenant ATS,
-so there is no population of boards to protect).
+**No rate limit found.** 8, then 16 concurrent detail fetches (2026-09-11 and 2026-09-12), then 32
+and 64 (2026-09-17, ~800 requests) — zero non-200s at every width. Deliberately small samples:
+this is one host, not a multi-tenant ATS, so there is no population of boards to protect. The pass
+runs at 32 (:data:`_DETAIL_WORKERS`) and over **connections rather than streams**, because this
+origin meters per connection — see :attr:`AppleScraper.async_fanout` and
+`experiment/apple-detail-transport/LOG.md`. 64 is not taken: the gain flattens and the width is
+already past what one company's careers site should be asked for.
 
 **Job URL**: ``https://jobs.apple.com/en-us/details/{positionId}/{transformedPostingTitle}`` —
 verified live: the page 200s and its ``<title>`` carries the posting title.
@@ -70,9 +74,11 @@ verified live: the page 200s and its ``<title>`` carries the posting title.
 from __future__ import annotations
 
 import json
+import threading
+import time
 from typing import Any
 
-from headstart import http
+from headstart import fanout_stats, http
 from headstart.models import Job, html_to_text
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -85,9 +91,12 @@ _PAGE_SIZE = 20
 #: 1,000 pages is 20,000 postings against today's board of 6,083 — headroom for the board to grow,
 #: not a bound expected to be reached.
 _MAX_PAGES = 1000
-_DETAIL_WORKERS = (
-    16  # measured clean at this exact concurrency, live, 2026-09-12 (16/16 200s)
-)
+#: Detail-pass width, on the **sync** path — see `AppleScraper.async_fanout_enabled`. 32, not the
+#: earlier 16, because the binding constraint is connections and this is how many are opened.
+#: Measured live 2026-09-17, zero non-200s at 32 and at 64 over ~800 requests; 32 is taken rather
+#: than 64 because the gain flattens (10.3 -> 15.7 req/s on the thread path) and this is one
+#: company's careers origin, not a multi-tenant ATS with a population of Boards to spread over.
+_DETAIL_WORKERS = 32
 _SEARCH_FORMAT = {"longDate": "MMMM D, YYYY", "mediumDate": "MMM D, YYYY"}
 
 
@@ -107,6 +116,17 @@ class AppleScraper(BaseScraper):
         True  # per-Job fetch fills description + employment_type (ADR-0050)
     )
     detail_workers = _DETAIL_WORKERS
+
+    #: This origin meters per **connection**, not per stream, so the multiplexed path is what
+    #: limits it (ADR-0167). Live 2026-09-17, interleaved A/B on fresh ids, three rounds, zero
+    #: non-200s either way: one ``AsyncSession`` holds ~4.2-4.4 req/s at 16, 32 *and* 64 streams
+    #: alike, while 32 threads — 32 connections — reach 9.0-11.7. The server is not the one
+    #: refusing: its own SETTINGS frame advertises ``MAX_CONCURRENT_STREAMS = 128``.
+    #:
+    #: This is why the number is not simply moved to :attr:`detail_streams`: that widens streams on
+    #: the one connection, which is exactly what was measured to have no effect. Revisit if the
+    #: base ever grows a multi-session async path — the finding is about connections, not async.
+    async_fanout = False
 
     def __init__(self, slug: str, company: str | None = None) -> None:
         # A Single source scraper has exactly one company; hardcoding it is simpler and more
@@ -182,6 +202,35 @@ class AppleScraper(BaseScraper):
             )
         return list(seen.values())
 
+    def _timed_details(self, ids: list[str]) -> list[Any]:
+        """The threaded detail pass, recording its operating point like the async one does.
+
+        `fan_out_async` wraps itself in `fanout_stats.batch`, so every multiplexed ATS reports a
+        ``concurrency {ats} details @N`` line and its widths stay comparable across runs.
+        `fan_out` records nothing — it is a `@staticmethod` with no scraper to name — so moving
+        this Board to the sync path would have silently deleted the very line the transport
+        decision was made from, leaving only the board-level `slow board` total, which cannot
+        separate the listing from the details.
+
+        The lock is this method's own, and is not redundant: `fanout_stats.batch`'s callback
+        accumulates into an unsynchronised dict, safe under the async gather because that calls it
+        from one event-loop thread. Here :attr:`detail_workers` threads call it at once.
+        """
+        lock = threading.Lock()
+        with fanout_stats.batch(
+            f"{self.ats} details", self.detail_workers
+        ) as item_done:
+
+            def timed(native_id: str) -> Any:
+                started = time.monotonic()
+                try:
+                    return self._detail(native_id)
+                finally:
+                    with lock:
+                        item_done(time.monotonic() - started)
+
+            return self.fan_out(ids, timed, workers=self.detail_workers)
+
     def fetch_raw(self) -> Any:
         items = self._listing()
         # Every listed posting gets its detail payload, with no ADR-0048 `needs_detail` skip.
@@ -202,7 +251,7 @@ class AppleScraper(BaseScraper):
         if self.async_fanout_enabled():
             fetched = self.fan_out_async(ids, self._detail_async)
         else:
-            fetched = self.fan_out(ids, self._detail, workers=self.detail_workers)
+            fetched = self._timed_details(ids)
         self.report_detail_gaps(fetched, "detail payloads")
         details = {i: d for i, d in zip(ids, fetched) if d}
         return {"searchResults": items, "details": details}
