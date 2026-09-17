@@ -24,6 +24,12 @@ on:
       - "src/headstart/**"
       - "scripts/bench/tech_gate_bench.py"
       - ".github/workflows/bench-tech-gate.yml"
+      # This job's own header claims its seconds are comparable to `board_cost.csv` *because* it
+      # installs what the scrape shards install — so a dependency bump is a change to the
+      # measurement, and a transitively-resolved version is not visible in any other diff.
+      # `pipeline-smoke.yml` added this file for the same reason after a transformers bump
+      # broke the stage it guards and the run that would have proved the fix never fired.
+      - "pyproject.toml"
   workflow_dispatch:
     inputs:
       repeats:
@@ -37,8 +43,11 @@ permissions:
   contents: read
 
 # A superseded measurement is worth nothing, and each leg holds a runner for up to 40 minutes.
+# Keyed on the *inputs* as well as the ref: two dispatches measuring different Board sets on one
+# branch are not supersessions of each other, and a bare ref key would have the second silently
+# kill the first mid-run. A push carries no inputs, so it keeps the plain per-ref behaviour.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event.inputs.boards || 'push' }}
   cancel-in-progress: true
 
 jobs:

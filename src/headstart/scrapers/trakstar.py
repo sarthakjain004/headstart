@@ -131,7 +131,7 @@ class TrakstarScraper(BaseScraper):
         # Split once: the cap check needs the count, the tech gate below needs each card's own
         # title and department, and `parse` re-reads the same blocks. `_codes_from` stays as the
         # projection `scripts/enrich/salary_sample.py` calls.
-        cards = _cards_from(html)
+        cards = _job_cards(html)
         codes = [code for _block, code in cards]
         if _is_capped(html, len(codes)):
             # This Board's card list is short of its real total (the page's own "View N
@@ -332,7 +332,7 @@ def _card_dept(block: str) -> str | None:
     return _html.unescape(m.group(1)).strip() if m else None
 
 
-def _cards_from(html: str) -> list[tuple[str, str]]:
+def _job_cards(html: str) -> list[tuple[str, str]]:
     """``(block, code)`` per job card — :func:`_codes_from` keeping the block the code came from,
     so the tech gate can read the card's own title and department without re-splitting."""
     return [
@@ -348,7 +348,7 @@ def _codes_from(html: str) -> list[str]:
     ``scripts/enrich/salary_sample.py``) so the two don't carry two copies of the same
     card-splitting logic — the same reuse ``_fetch_successfactors`` already gets from this
     module's ``_job_urls_from``-equivalent, ``successfactors.py``'s own module-level helper."""
-    return [code for _block, code in _cards_from(html)]
+    return [code for _block, code in _job_cards(html)]
 
 
 def _total_openings(html: str) -> int | None:
