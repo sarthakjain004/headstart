@@ -182,6 +182,14 @@ class BaseScraper(ABC):
     #: divergence is what ADR-0047 found for Eightfold and this cost Workday too.
     detail_workers: int | None = None
 
+    #: Whether this scraper's detail pass may use the multiplexed async path at all (ADR-0167).
+    #: True for everything unless an origin has been *measured* to meter per **connection** rather
+    #: than per stream — where it does, one shared ``AsyncSession`` is a single connection and
+    #: widening :attr:`detail_streams` buys nothing, so the sync thread path (one connection per
+    #: worker, at :attr:`detail_workers`) is the faster transport. Apple is the measured case.
+    #: Read by :meth:`async_fanout_enabled`; a scraper declares it rather than overriding that.
+    async_fanout: bool = True
+
     #: Optional async-only override of :attr:`detail_workers`, as HTTP/2 **streams**. Set it only
     #: where a wider multiplexing width has been *measured* to be safe (Eightfold's 25, ADR-0047);
     #: leaving it None keeps the async path as polite as the sync one.
@@ -948,11 +956,17 @@ class BaseScraper(ABC):
             )
         return missing
 
-    @staticmethod
-    def async_fanout_enabled() -> bool:
+    @classmethod
+    def async_fanout_enabled(cls) -> bool:
         """Whether the detail pass uses the multiplexed async path (ADR-0015, default per ADR-0016).
 
-        On by default; set ``HEADSTART_ASYNC_FANOUT=0`` to fall back to the sync thread-pool path.
-        Centralised here so every detail-fetch scraper shares one policy.
+        On by default; ``HEADSTART_ASYNC_FANOUT=0`` falls back to the sync thread-pool path for
+        every scraper at once. The policy still lives here — a scraper does not reimplement it,
+        it only declares :attr:`async_fanout` (ADR-0167), and the env switch still overrides that
+        in the *off* direction. There is deliberately no on-switch: a scraper sets the attribute
+        False only on a measurement, and an operator flag that could override the measurement
+        would make the slow path reachable by accident.
         """
-        return os.environ.get("HEADSTART_ASYNC_FANOUT", "1") != "0"
+        if os.environ.get("HEADSTART_ASYNC_FANOUT", "1") == "0":
+            return False
+        return cls.async_fanout

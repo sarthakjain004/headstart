@@ -34,6 +34,11 @@ centralised in `BaseScraper.async_fanout_enabled()` — on unless `HEADSTART_ASY
   response and for hosts that punish concurrency — deleting it trades a one-flag safety net for nothing.
 - **Per-ATS default flags.** Overkill: one global default plus Trakstar's explicit width already
   covers the only host that needs special handling.
+  **Reversed 2026-09-17 by [ADR-0167](0167-a-scraper-may-decline-the-multiplexed-path.md)**, for a
+  case this rejection did not anticipate: it assumed the only per-ATS variable is how *wide* to fan
+  out. `jobs.apple.com` meters per **connection**, so the multiplexed path is structurally slower
+  there at every width and no number reaches the fast one. The flag is `async_fanout`, and the
+  policy still lives in one place.
 
 ## Consequences
 

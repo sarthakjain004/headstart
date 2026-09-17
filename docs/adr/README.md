@@ -166,3 +166,4 @@ supersedes it and note the supersession in both.
 | [0163](0163-report-the-description-gap-as-a-drain.md) | Report the description gap as a drain, and reclassify the Boards that are not Scrapable | 2026-09-16 |
 | [0164](0164-mark-when-the-definition-changed-not-just-the-data.md) | Mark when the definition changed, not just when the data did | 2026-09-16 |
 | [0166](0166-gate-the-detail-pass-on-the-tech-filter.md) | Gate the detail pass on the tech filter, behind one seam | 2026-09-17 |
+| [0167](0167-a-scraper-may-decline-the-multiplexed-path.md) | A scraper may decline the multiplexed path, on a measurement | 2026-09-17 |
