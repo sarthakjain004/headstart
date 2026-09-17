@@ -90,11 +90,16 @@ jobs:
             repeats: "2"
             boards: "jazzhr:brightvisiontechnologies jazzhr:pacificacontinental jazzhr:idsinternational jazzhr:vyvebroadband"
           # gem and phenom are the two of #510's four that measured clean, and both gates are
-          # measured tolerances rather than exact — `parse` can take `title` and `department`
-          # from the detail on either. So the Boards here are, again, the ones the corpus says
-          # lean hardest on `department`: `rctsglobal-com` would lose 9 of its 23 tech postings
-          # to a department-blind gate and `careers.bcg.com` 182 of 335. `coupa-software-inc-ats-1`
-          # and `careers.allianz.com` are the size end of each ATS.
+          # measured tolerances rather than exact — `parse` can take `title` or `department` from
+          # the detail on either. So the Boards here are, again, the ones the corpus says lean
+          # hardest on `department`: `rctsglobal-com` would lose 9 of its 23 tech postings to a
+          # department-blind gate and `careers.bcg.com` 182 of 335. `coupa-software-inc-ats-1` and
+          # `careers.allianz.com` are the size end of each ATS.
+          #
+          # The gem leg is here for `tech_lost`, not for the speed-up. gem batches 100 details per
+          # request, so a 581-posting sweep is ~6 requests ungated and ~4 gated — the saving this
+          # gate exists for is already batched away, and what the leg proves is that the accessors
+          # agree with `parse` on a live Board.
           - leg: gem
             repeats: "2"
             boards: "gem:rctsglobal-com gem:the-boring-company gem:the-swift-group gem:coupa-software-inc-ats-1"

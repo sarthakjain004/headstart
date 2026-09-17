@@ -485,9 +485,9 @@ class BaseScraper(ABC):
         """Whether the pre-detail tech gate runs. **On by default**, like
         :meth:`async_fanout_enabled`, with ``HEADSTART_TECH_GATE=0`` as the kill switch — so a
         tenant whose titles the gate misreads is one workflow variable away from the old
-        behaviour rather than nine reverts and a deploy.
+        behaviour rather than a revert per call site and a deploy.
 
-        On rather than off because two of the nine call sites shipped before this seam existed
+        On rather than off because two of the call sites shipped before this seam existed
         and were already gating in production (eightfold, ADR-0048's amendment; successfactors,
         #503). A default of off would have silently switched both back off in the commit
         that routed them through here."""

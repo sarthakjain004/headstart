@@ -76,9 +76,11 @@ def _listing_title(row: dict) -> str | None:
     return row.get("title")
 
 
-def _listing_category(row: dict) -> str | None:
-    """A listing posting's department, for the tech gate. ``category`` is the listing's own
-    department label, which is what ``parse`` reads first. See :func:`_listing_title`."""
+def _listing_department(row: dict) -> str | None:
+    """A listing posting's department, for the tech gate. Named for the domain field (`department`,
+    the same word jazzhr's and gem's accessors use) rather than for the wire key it happens to
+    read: `category` is the listing's own department label, and it is what ``parse`` reads first.
+    See :func:`_listing_title`."""
     return row.get("category")
 
 
@@ -352,7 +354,7 @@ class PhenomScraper(BaseScraper):
         # 9,515), and on 300 of those, sampled at random and fetched, **0** details state a
         # `category`/`jobFamilyGroup` the listing did not and **0** carry a different `title`.
         # Re-check it if either payload's field set moves.
-        tech = self.tech_detail_wanted(listed, _listing_title, _listing_category)
+        tech = self.tech_detail_wanted(listed, _listing_title, _listing_department)
         wanted = [
             str(j["jobId"])
             for j in tech
