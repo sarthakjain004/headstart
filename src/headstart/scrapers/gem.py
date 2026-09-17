@@ -167,6 +167,19 @@ _DETAIL_QUERY = """query ExternalJobPostingQuery($boardId: String!, $extId: Stri
 }"""
 
 
+def _listing_title(row: dict[str, Any]) -> str | None:
+    """A listing posting's title, for the tech gate. Named rather than an inline lambda because
+    this gate is a *measured* tolerance and not an exact one — ``parse`` falls back to the
+    detail's own ``title``, so an accessor that quietly started reading a different key would
+    classify on the wrong string and nothing would raise."""
+    return row.get("title")
+
+
+def _listing_department(row: dict[str, Any]) -> str | None:
+    """A listing posting's department, for the tech gate. See :func:`_listing_title`."""
+    return ((row.get("job") or {}).get("department") or {}).get("name")
+
+
 class GemScraper(BaseScraper):
     """Gem scraper — ``slug`` is the board's path segment on ``jobs.gem.com``."""
 
@@ -290,7 +303,17 @@ class GemScraper(BaseScraper):
         # No ADR-0048 skip here — see the module docstring: posted_at and compensationHtml are
         # detail-only, so skipping a previously-seen Job would silently null them on every later
         # run rather than merely re-fetch a description we already store.
-        wanted = [str(j["extId"]) for j in listed if j.get("extId")]
+        #
+        # The ADR-0166 tech gate does apply: a posting `filter_tech` drops is never embedded,
+        # indexed or shown, so its detail buys nothing. A *measured* tolerance rather than
+        # exactness — `parse` reads `title` and `job.department.name` off the listing row but
+        # falls back to the detail's own for both, so a posting whose listing omits what its
+        # detail states could disagree. Measured live 2026-09-17 over the 40 Boards the
+        # 2026-09-17 pre-filter corpus says lean hardest on `department` (56 of its 620 tech
+        # postings are ones a department-blind gate would drop), 1,304 postings: 606 kept by the
+        # gate, 606 by the filter, zero disagreements. Re-check it if this query's shape moves.
+        tech = self.tech_detail_wanted(listed, _listing_title, _listing_department)
+        wanted = [str(j["extId"]) for j in tech if j.get("extId")]
         batches = [
             wanted[i : i + _DETAIL_BATCH_SIZE]
             for i in range(0, len(wanted), _DETAIL_BATCH_SIZE)

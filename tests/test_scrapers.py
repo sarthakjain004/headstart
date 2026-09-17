@@ -9643,3 +9643,96 @@ def test_trakstar_gates_on_the_card_not_the_code(monkeypatch):
 
     assert fetched == ["c2"]
     assert set(raw["postings"]) == {"c2"}
+
+
+def test_gem_gate_reads_the_listing_department_not_the_location(monkeypatch):
+    """gem's department is nested at ``job.department.name``, beside a sibling ``locations``.
+
+    ``_listing_department`` has to walk that nesting, and an accessor that drifted onto the
+    location — the only other human-readable string on the row — would classify on the wrong
+    string and nothing would raise. The third row is the one that proves it: its department
+    rescues a title the gate would otherwise drop, and its location would not."""
+    listed = [
+        {
+            "extId": "e1",
+            "title": "Housekeeper",
+            "locations": [{"name": "Software City"}],
+            "job": {"department": {"name": "Facilities"}},
+        },
+        {
+            "extId": "e2",
+            "title": "Backend Engineer",
+            "locations": [{"name": "Remote"}],
+            "job": {"department": {"name": "Engineering"}},
+        },
+        {
+            "extId": "e3",
+            "title": "Technician",
+            "locations": [{"name": "Remote"}],
+            "job": {"department": {"name": "Information Technology"}},
+        },
+    ]
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    scraper = get_scraper("gem", "acme")
+    scraper.have_details = frozenset()
+    monkeypatch.setattr(scraper, "_listing", lambda: listed)
+    batched: list[list[str]] = []
+    monkeypatch.setattr(
+        scraper,
+        "_detail_batch",
+        lambda batch: batched.append(batch) or {i: {"extId": i} for i in batch},
+    )
+
+    raw = scraper.fetch_raw()
+
+    assert batched == [["e2", "e3"]], (
+        "e1's location says 'Software City' — reading it as the department would keep it"
+    )
+    assert set(raw["details"]) == {"e2", "e3"}
+
+
+def test_phenom_gate_reads_the_listing_title_and_category_not_the_teaser(monkeypatch):
+    """phenom's listing row carries a `descriptionTeaser` beside its `title`, and its department
+    label is `category` — not the `jobFamilyGroup` the *detail* uses.
+
+    An accessor that drifted onto either neighbour would classify on the wrong string and nothing
+    would raise. The first row proves the title: its teaser names an engineering team. The third
+    proves the department: its `category` rescues a title the gate would otherwise drop, and the
+    `jobFamilyGroup` sitting beside it would not. The gate runs before `needs_detail`, so the
+    second row also shows the two skips composing."""
+    listed = [
+        {
+            "jobId": "1",
+            "title": "Housekeeper",
+            "descriptionTeaser": "Join our software engineering team",
+            "category": "Facilities",
+        },
+        {"jobId": "2", "title": "Backend Engineer", "category": "Engineering"},
+        {
+            "jobId": "3",
+            "title": "Technician",
+            "category": "Information Technology",
+            "jobFamilyGroup": "Facilities",
+        },
+        {"jobId": "4", "title": "Data Engineer", "category": "Engineering"},
+    ]
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    scraper = get_scraper("phenom", "careers.acme.com")
+    # id 4's text is already stored
+    scraper.have_details = {"phenom:careers.acme.com:4"}
+    monkeypatch.setattr(scraper, "_prefix", lambda: ("us", "en"))
+    monkeypatch.setattr(scraper, "_listing", lambda: listed)
+    fetched: list[str] = []
+    monkeypatch.setattr(
+        scraper,
+        "_detail",
+        lambda jid: fetched.append(jid) or {"description": f"body {jid}"},
+    )
+
+    raw = scraper.fetch_raw()
+
+    assert fetched == ["2", "3"], (
+        "1's teaser names engineering — reading it as the title would keep it; 3's "
+        "jobFamilyGroup says Facilities — reading it as the department would drop it"
+    )
+    assert set(raw["details"]) == {"2", "3"}
