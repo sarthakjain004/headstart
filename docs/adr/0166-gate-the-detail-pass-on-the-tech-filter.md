@@ -35,7 +35,7 @@ questions about the same fetch ("would the index want this posting" vs "do we al
 text"), and zwayam and eightfold ask both.
 
 `BaseScraper.attach_details` is its companion, because a gate turns ADR-0048's **alignment trap**
-from a one-scraper hazard into a nine-scraper one: once the fan-out covers a subset,
+from a one-scraper hazard into one every gated call site carries: once the fan-out covers a subset,
 `zip(items, results)` pairs each result with the wrong item, silently, since both are lists of the
 right shape. Three scrapers had hand-written the same three lines; three copies of an alignment
 trap is where the fourth gets it wrong.
@@ -70,6 +70,16 @@ eightfold.
   tenants (ADR-0048's amendment).
 - jazzhr, whose detail page may override `department` — 1,748 postings across the ten Boards the
   corpus says lean hardest on `department`, zero disagreements.
+- **gem** and **phenom**, measured for [#510](https://github.com/sarthakjain004/headstart/issues/510):
+  1,304 postings over gem's 40 most department-dependent Boards and 15,321 over all ten of
+  phenom's, zero disagreements on either. Neither is quite jazzhr's shape, and the difference is
+  worth stating because #510 grouped all four as "the detail overrides `department`": gem's detail
+  is a *fallback* on both fields (`row.title or detail.title`, listing department first), the
+  rippling shape; phenom's is a fallback on `department` but a true **override** on `title`
+  (`detail.title or row.title`). That override arm was probed where it can fire — on
+  `careers.dhl.com`, the one Board leaving `category` empty on most rows (7,269 of 9,515 on the
+  live listing), 300 of those rows sampled at random supplied **0** departments the listing
+  lacked and **0** different titles.
 - **rippling**, which reads as exact and is not: `parse` is
   `_department_of(it) or _department_of(detail)`, so the detail *is* a fallback and can state a
   department the gate never saw. It is safe only because nothing ever does — `department` is
@@ -83,11 +93,36 @@ that measures at 1.8% recall loss — 7 of 395 tech postings, a real loss rather
 error. At 0.3% of board-seconds it does not pay for the per-tenant sample that would be needed to
 accept it. Revisit if ripplehire grows.
 
-**Unmeasured, so not yet wired** ([#510](https://github.com/sarthakjain004/headstart/issues/510)):
-taleo_enterprise, taleo_be, gem, phenom. All four carry `title` *and* `department` on the listing,
-but `parse` lets the detail override the department, so they are the jazzhr shape and need the
-same paired sample before shipping. Together ~2.2% of board-seconds, which is why they did not
-block this. `meta` is a different case and is simply out: its sitemap URLs are bare numeric ids
+**Measured and refused** ([#510](https://github.com/sarthakjain004/headstart/issues/510)):
+taleo_enterprise and taleo_be. These two really are jazzhr's shape — `detail.get("department") or
+listing` — so both were sampled the jazzhr way, and unlike jazzhr both disagree.
+
+- **taleo_enterprise: 68 of 133 tech postings lost (51.1%), on 10 of 10 Boards.** Its listing is
+  a tenant-configured result *table*, and `_column` can only read a department where the tenant
+  put one in it: many career sections do not, so the gate sees `None` while `parse` takes
+  `reqlistitem.jobfield` off the detail page. On `dasstateoh.taleo.net/careersection/oh_ext` that
+  costs 15 of 23.
+
+  **That 51.1% is the adversarial sample's rate, not the population's**, and the distinction
+  matters because it inverts the shape. Those ten Boards were picked precisely as the ones where
+  `department` does the most work, which is the right way to *find* a cliff and the wrong sample
+  to generalise from. Re-measured on seven Boards drawn without that bias — three taken in ledger
+  order, four seeded-random — the loss is **11 of 120 tech postings (9.2%)**, and **three of the
+  six Boards carrying any tech postings lose nothing at all**: 0%, 0%, 0%, 10%, 30%, 40%. So this
+  is a per-tenant cliff after all, which is a stronger reason to refuse rather than a weaker one —
+  it is the shape ADR-0166 already refuses oracle for, where one Board loses 61.5% and another 0%.
+  A reader reconsidering this later should expect ~9% on a Board drawn at random and up to half on
+  a Board whose career section omits the department column, not a flat 51%.
+- **taleo_be: 5 of 351 tech postings lost, all 5 on one of 10 Boards** — 5 of that Board's 16.
+  `_listing` reads the header fields *positionally* (`fields[0]` department, `fields[1]`
+  location), and on `phf.tbe.taleo.net/phf01/…?org=JSHR6E&cws=53` the tenant emits them the
+  other way round, so the listing's "department" is a location ("NH, Nashua", "Hal Far, Malta")
+  and the detail's labelled `Department` is what `parse` actually serves. That is exactly the
+  per-tenant recall cliff this ADR refuses oracle for, at 0.2% of board-seconds. The positional
+  read is a pre-existing listing defect, not one this gate introduces — the detail pass has
+  always corrected it — and it is left alone here.
+
+`meta` is a different case and is simply out: its sitemap URLs are bare numeric ids
 (994 of 994 probed live), so it has no pre-detail signal of any kind — not a listing field, not a
 slug.
 
@@ -113,7 +148,16 @@ approximate or impossible anyway, so the two problems never have to be reasoned 
 
 **A gated posting reaches the corpus with a null description**, which is how eightfold's gate
 already behaved, and is why `filter_tech`'s per-ATS `kept%` stays meaningful for these seven —
-unlike successfactors, where the posting never arrives at all.
+unlike successfactors, where the posting never arrives at all. On **gem** it is null in three
+fields, not one: `posted_at` and `compensationHtml` are detail-only there, which is exactly why
+gem refuses ADR-0048's skip. The gate is still right to fire — a posting `filter_tech` drops has
+no `posted_at` worth keeping either — but the blanket sentence above has that exception.
+
+**gem and phenom add 32 more A/B pairs** (runs `35219838067` and `35221354254`, the second a
+re-measurement of the same Boards on the reviewed code), `tech_lost=0`, `desc_lost=0` and
+`churned=0` on all 32. `phenom:careers.allianz.com` 1,691 → 252 requests and 4.1–5.2x;
+`gem:coupa-software-inc-ats-1` 4 → 3 requests and 0.94–1.06x, because gem batches 100 details per
+request and has almost nothing left for this gate to save.
 
 **Measured saving: ~44–49% of all board-seconds**, discounting the request saving by the ~0.9
 wall-clock ratio measured on the runner. On `ubuntu-latest`, **51 A/B pairs across three runs**,

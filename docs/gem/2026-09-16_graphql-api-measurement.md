@@ -145,7 +145,7 @@ Gem's raw `FULL_TIME`/`PART_TIME`/`CONTRACT`/`TEMPORARY`/`INTERN` strings are em
 Upstream's `_EMPLOYMENT_TYPE_MAP` normalization table is not ported: it exists to homogenize across
 ATSes, which this repo's model deliberately does not do.
 
-### Every job's detail is fetched — no ADR-0048 skip
+### Every tech job's detail is fetched — no ADR-0048 skip
 
 Phenom can skip a Job whose description the store already holds, because every *other* field it
 emits also comes from its listing. Gem cannot make the same claim: `posted_at` and
@@ -154,6 +154,12 @@ definitions above) — skipping the detail fetch for an already-seen Job would s
 two fields on every run after the first. `fetch_raw()` therefore does not call `needs_detail()` at
 all. The cost is small: batching means a 300-posting board (the largest seen) still costs only
 three detail requests, skip or no skip.
+
+**Amended 2026-09-17 (#510):** the ADR-0048 skip is still refused for exactly the reason above, but
+a *different* skip now applies — ADR-0166's pre-detail tech gate. A posting `filter_tech` will drop
+has no `posted_at` or `compensationHtml` worth keeping either, so the argument here does not cover
+it. Measured over gem's 40 most department-dependent Boards (1,304 postings): 606 kept by the gate,
+606 by the filter, zero disagreements. So the heading reads "every **tech** job's detail" now.
 
 ## Salary: `compensationHtml`
 

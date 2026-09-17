@@ -4,9 +4,9 @@ Measurement for [#500](https://github.com/sarthakjain004/headstart/issues/500). 
 each answered from data rather than from reading the code alone:
 
 1. **How many scrapers do a detail pass?** 21 of 39.
-2. **Which of them can take the gate safely?** Six can by construction and three more on a
-   measured tolerance. Six cannot, and for five of them the reason is not the one #500 gives.
-   One is deferred and four are still unmeasured.
+2. **Which of them can take the gate safely?** Six can by construction and five more on a
+   measured tolerance. Eight cannot, and for five of them the reason is not the one #500 gives.
+   One is deferred.
 3. **What is it worth?** ~48.7% of all board-seconds from the safe six alone, and the gate already
    shipped on one ATS is delivering **3.03x** on four real production Boards.
 
@@ -17,7 +17,9 @@ each answered from data rather than from reading the code alone:
 | per-Board cost | `data/state/board_cost.csv`, pulled from HF | rows dated ≥2026-09-16 (115,927 of 119,643) |
 | per-ATS tech share | `filter_tech`'s own log, run `35193130454` | 2026-09-17 07:38 UTC |
 | pre-filter corpus | `scrape-fragment-{0,1,2,4}` of that run — 490,417 postings | 2026-09-17 |
-| A/B wall clock | `bench-tech-gate.yml` runs `35198692670`, `35199442248`, `35203021883`, `ubuntu-latest` | 2026-09-17 |
+| #510's Board selection | `scrape-fragment-*` of run `35208295039` — all 15 for gem/phenom/taleo_be, 5 for taleo_enterprise | 2026-09-17 |
+| #510's paired sample | one ungated live scrape per Board, `measure`d against `parse`'s own Jobs | 2026-09-17 |
+| A/B wall clock | `bench-tech-gate.yml` runs `35198692670`, `35199442248`, `35203021883`, `35219838067` + `35221354254` (gem/phenom), `ubuntu-latest` | 2026-09-17 |
 | production before/after | scrape logs of runs `35116292689`, `35129140615` (pre-gate) vs `35193130454` | 2026-09-16/17 |
 
 Board seconds are one sweep of every Board, not one run — `board_cost.csv` holds each Board's most
@@ -104,22 +106,80 @@ insufficient.
 It would also not be worth much — a single Board, 985 postings, 60 board-seconds, 0.0% of the
 total — but cost is not why it is out.
 
-### Tier 3 — needs one more measurement
+### Tier 3 — the listing carries a department, but the detail has a say
 
-The listing carries a department, but the detail can override it (`detail.get("department") or
-listing`). The gate sees only the listing's, so the two can disagree. The department-blind figure
-below is the **worst case**, not the answer.
+Each of these can disagree with `filter_tech` because `parse` reads at least one of the two fields
+from the detail as well as the listing, so each needs a paired sample rather than a reading of the
+call site. The department-blind figure below is the **worst case**, not the answer — §2.1 has the
+answers. (All five are measured now; two were clean and two were not.)
 
 | ATS | board-sec share | worst case | status |
 | --- | ---: | ---: | --- |
 | `jazzhr` | 9.5% | 9.3% | **MEASURED CLEAN — 0 of 845 tech postings lost** |
-| `taleo_enterprise` | 2.1% | 42.1% | unmeasured |
-| `taleo_be` | 0.2% | 2.8% | unmeasured |
-| `gem` | 0.1% | 10.2% | unmeasured |
-| `phenom` | 0.1% | 53.9% | unmeasured |
+| `taleo_enterprise` | 2.1% | 42.1% | **MEASURED DIRTY — 68 of 133 (51.1%) on 10 adversarial Boards; 11 of 120 (9.2%) on 7 unbiased ones, 3 of them clean** |
+| `taleo_be` | 0.2% | 2.8% | **MEASURED DIRTY — 5 of 351 lost, all on one Board (5 of its 16)** |
+| `gem` | 0.1% | 10.2% | **MEASURED CLEAN — 0 of 606 tech postings lost** |
+| `phenom` | 0.1% | 53.9% | **MEASURED CLEAN — 0 of 2,126 tech postings lost** |
 
-The four still-unmeasured ones are tracked as
-[#510](https://github.com/sarthakjain004/headstart/issues/510), which carries the method.
+The other four were measured for
+[#510](https://github.com/sarthakjain004/headstart/issues/510) — see §2.1 below. Two of them shipped
+the gate; two did not.
+
+#### 2.1 The four unmeasured scrapers, measured (2026-09-17)
+
+**They are not one shape, which #510 assumed they were.** Only `taleo_enterprise` and `taleo_be`
+read `detail.get("department") or listing` — jazzhr's real shape. `gem`'s detail is a *fallback*
+on both fields (`row.title or detail.title`, listing department first), the rippling shape;
+`phenom`'s is a fallback on `department` but a true **override** on `title`
+(`detail.title or row.title`), the only one of the four where the gate can be wrong about the
+title. That is worth knowing before reading the numbers, because it says which arm of each one
+had to be probed.
+
+Same method as jazzhr: Boards chosen from run `35208295039`'s pre-filter corpus as the ones where
+`department` does the most work (the highest count of postings `is_tech(title, department)` keeps
+and `is_tech(title)` alone does not), then one ungated scrape of each — every posting gets its
+detail — and `is_tech(listing title, listing department)` paired against `is_tech` of the Job
+`parse` actually built.
+
+| ATS | Boards | postings paired | gate keeps | filter keeps | recall lost | verdict |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `gem` | 40 | 1,304 | 606 | 606 | **0** | wired |
+| `phenom` | 10 | 15,321 | 2,126 | 2,126 | **0** | wired |
+| `taleo_be` | 10 | 1,329 | 346 | 351 | **5** | refused |
+| `taleo_enterprise` | 10 | 1,577 | 80 | 133 | **68** | refused |
+
+**gem** covers 40 Boards rather than ten because its whole corpus slice is small: those 40 carry
+606 of the corpus's 620 tech postings and *all* 56 of the ones a department-blind gate would drop.
+**phenom** covers all ten Boards the corpus holds, `careers.dhl.com` included — the paired scrape
+read 9,512 of its postings.
+
+**phenom needed a second probe, because its `parse` prefers the *detail's* `title`** — the only one
+of the four where the gate can be wrong about the title rather than the department. It ran on
+`careers.dhl.com`, the one Board that leaves `category` empty on most rows and so the only one
+where either fallback can fire. That listing read 9,515 postings — three more than the paired
+scrape twenty minutes earlier, which is this Board opening postings between two live reads, not a
+disagreement — of which 7,269 carried no `category`. 300 of those 7,269 were sampled at random and
+their details fetched: **0 state a `category`/`jobFamilyGroup` the listing did not, and 0 carry a
+different `title`.** Both fallbacks are inert in the data, the way rippling's `department` fallback
+is — a measurement with a date on it, not a property of the call site.
+
+**taleo_enterprise fails uniformly.** Its listing is a tenant-configured result *table*, and
+`_column` finds a department only where that tenant put one in it. Many career sections do not, so
+the gate reads `None` while `parse` takes `reqlistitem.jobfield` off the detail page. Every one of
+the ten sampled Boards lost postings: 15 of 23 tech on `dasstateoh.taleo.net/careersection/oh_ext`,
+11 of 17 on `careerglobalhc`, 9 of 20 on `uab`, down to 2 of 3 on `iamgold`. At 2.1% of
+board-seconds it was the one of the four most likely to pay, and it is the one that fails hardest.
+
+**taleo_be fails on one tenant, which is the worse shape.** 9 of its 10 Boards agreed exactly.
+The tenth, `phf.tbe.taleo.net/phf01/…?org=JSHR6E&cws=53`, lost 5 of its 16 tech postings —
+`IT Site Support Analyst`, `System Admin, Level 2`, `IT Governance, Risk, and Compliance Senior
+Analyst` among them. Cause, read off the live listing: `_listing` takes the head fields
+*positionally* (`fields[0]` department, `fields[1]` location) and this tenant emits them the other
+way round, so its listing "department" is `NH, Nashua` / `Hal Far, Malta` / `United Kingdom` while
+the detail's labelled `Department` says `Information Technology`. That is a per-tenant recall
+cliff — the exact shape §"Tier 2" refuses oracle for — at 0.2% of board-seconds, so there is
+nothing to weigh. (The positional read is a pre-existing listing defect that the detail pass has
+always corrected, not one the gate introduces. It is recorded here, not fixed here.)
 
 jazzhr is now **the pipeline's straggler Board**: `jazzhr:amadaseniorcarenorthshore` took 850s in
 run `35193130454`, owning the slowest shard. Its own code comment already measures the override at
@@ -185,6 +245,28 @@ its gate could most plausibly have failed on: `vyvebroadband` has 31 tech postin
 department-blind gate would drop 30, and `idsinternational` 44 of which it would drop 24. Both
 came back `tech_lost=0` on both repeats.
 
+**gem and phenom, runs `35219838067` and `35221354254`, 32 further A/B pairs — `tech_lost=0`,
+`desc_lost=0` and `churned=0` on every one of the 32.** Two runs because the second re-measured the
+same Boards on the reviewed code; both agree. Same adversarial selection: `rctsglobal-com` would
+lose 9 of its 23 tech postings to a department-blind gate, `careers.bcg.com` 182 of 335.
+
+| Board | postings | tech | requests | wall clock (4 pairs) |
+| --- | ---: | ---: | --- | --- |
+| `phenom:careers.allianz.com` | 1,686 | 247 | 1,691 → 252 (−85.1%) | **4.1–5.2x** |
+| `phenom:careers.bcg.com` | 907 | 335 | 910 → 338 (−62.9%) | **2.0–2.2x** |
+| `phenom:careers.united.com` | 170 | 76 | 172 → 78 (−54.7/54.9%) | **1.5–1.9x** |
+| `phenom:jobs.bell.ca` | 70 | 31 | 72 → 33 (−54.2%) | **1.6–2.1x** |
+| `gem:the-boring-company` | 116 | 24 | 3 → 2 (−33.3%) | **2.1–3.0x** |
+| `gem:the-swift-group` | 128 | 79 | 3 → 2 (−33.3%) | **1.2–1.4x** |
+| `gem:coupa-software-inc-ats-1` | 300 | 138 | 4 → 3 (−25.0%) | **0.94–1.26x** |
+| `gem:rctsglobal-com` | 37 | 23 | 2 → 2 (0%) | **1.2–1.4x** |
+
+**gem's rows are the safety number, not a saving.** It batches 100 details per request, so the
+whole four-Board sweep is 12 requests ungated and 9 gated — this gate's cost model does not apply
+to an ATS that already spends one request per hundred postings. phenom is the opposite and is where
+the ATS's own board-seconds go: `careers.allianz.com` is 14.7% tech and gives up 85% of its
+requests.
+
 Repeat-to-repeat spread is under 1% on the large Boards, which is what makes the A/B/A/B worth its
 cost. Wall-clock saving tracks request saving at ~0.9x on large Boards and falls off on small ones,
 where the listing walk is the floor.
@@ -238,7 +320,9 @@ request ratio:
   147,000s of that.
 - **jazzhr, now measured clean: a further ~24,600s (6.8%)** — and it owns the current straggler
   shard, so this one buys critical path, not just work.
-- The rest of Tier 3, if it measures clean: ~7,800s (2.2%).
+- The rest of Tier 3, now measured: **gem and phenom clean, ~700s (0.2%)** — the small half. The
+  2.1% that would have mattered was `taleo_enterprise`, and it is refused; `taleo_be` adds
+  another 0.2% to the refused column.
 - Tier 2: ~53,000s (14.7%) that this technique cannot have.
 
 ### What it does *not* fix
