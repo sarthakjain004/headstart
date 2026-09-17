@@ -133,13 +133,20 @@ origin. The harness now counterbalances arm order by repeat. Until that has run 
 an open question about one flaky Board, recorded rather than closed.
 
 **It does not fix the floor.** The scrape stage is floor-bound — 95–98% of the straggler shard is
-one Board — and after the gate that floor is `oracle:ejwl` (1,354s) and `oracle:ejwl-dev7` (977s),
-neither of which may take it, plus apple, which is 70.8% tech and gives up only ~29%. This removes
-roughly half the scrape *work*, which the packer converts into a lower even-share term; the floor
-needs Oracle's `categoriesFacet` idea (#500) or parking, not this gate.
+one Board. In run `35193130454` that floor was `jazzhr:amadaseniorcarenorthshore` (850s),
+`oracle:ejwl` (1,354s), `apple:jobs.apple.com` (1,179s) and `oracle:ejwl-dev7` (977s). This change
+reaches two of the four: **jazzhr**, which was the slowest Board of that run, and **apple**, which
+gives up only ~29% at 70.8% tech. Neither Oracle Board can take the gate — and `oracle:ejwl` was
+separately **parked** on `main` in `c5984f38` while this was in review, for an unrelated WARP-path
+slowdown, which takes it off the floor without addressing the class. `ejwl-dev7` remains. So this
+removes roughly half the scrape *work*, which the packer converts into a lower even-share term,
+and takes one floor Board with it; the Oracle class still needs `categoriesFacet` (#500) or more
+parking.
 
-**A/B/A/B, and churn is not loss.** `scripts/bench/tech_gate_bench.py` interleaves the arms
-because two consecutive scrapes of one Board are not two draws from one distribution. It also
+**A/B/B/A, and churn is not loss.** `scripts/bench/tech_gate_bench.py` interleaves the arms
+because two consecutive scrapes of one Board are not two draws from one distribution, and
+alternates which arm leads each repeat (`arm_order`) because interleaving repeats does not control
+the order *within* one — see the jll paragraph above for what that cost. It also
 subtracts Board churn before calling anything a loss: a posting listed in one arm and not the
 other is not evidence about the gate, and reading it as such produced two false `tech_lost=1`
 reports before it was fixed — on `thehartford` and on apple, both on titles `is_tech` keeps.
