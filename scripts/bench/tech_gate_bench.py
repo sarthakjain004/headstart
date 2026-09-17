@@ -63,6 +63,24 @@ class _CountingFetcher:
         return await self._inner.fetch_async(session, method, url, **kwargs)
 
 
+def arm_order(rep: int) -> tuple[bool, bool]:
+    """Which arm runs first in repeat ``rep``, as ``(first gate flag, second gate flag)``.
+
+    Counterbalanced, because interleaving repeats does not control the order *within* one. The
+    first version of this harness ran control-then-gated in every repeat, so the gated arm always
+    inherited the control's warmed connections and freshly-spent origin budget — and on
+    `jll.wd1.myworkdayjobs.com` that produced a `desc_lost` of 2, 47, 7 and 59 across four pairs:
+    never zero, always the same direction, which is an order effect's signature and not
+    flakiness'. Named and tested rather than inline for exactly that reason.
+    """
+    return (False, True) if rep % 2 == 0 else (True, False)
+
+
+def ran_first(rep: int, gate: bool) -> bool:
+    """Whether the arm carrying this ``gate`` flag was the first of its repeat."""
+    return gate == arm_order(rep)[0]
+
+
 def _run(board: str, gate: bool) -> dict[str, Any]:
     """One arm: a fresh scraper, one full fetch_raw + parse, timed."""
     ats, slug = board.split(":", 1)
@@ -159,10 +177,7 @@ def main() -> None:
         print(f"\n=== {board}", flush=True)
         arms: list[dict[str, Any]] = []
         for rep in range(args.repeats):
-            # Counterbalanced: even reps run control-then-gated, odd reps gated-then-control, so
-            # neither arm is systematically the one that inherits the other's warmed connections
-            # and spent origin budget. `--repeats 1` cannot counterbalance and says so below.
-            for gate in (False, True) if rep % 2 == 0 else (True, False):
+            for gate in arm_order(rep):
                 label = "gate-ON " if gate else "gate-OFF"
                 try:
                     arm = _run(board, gate)
@@ -180,7 +195,7 @@ def main() -> None:
                         flush=True,
                     )
                 arm.update(
-                    board=board, rep=rep, gate=gate, ran_first=(gate == (rep % 2 == 1))
+                    board=board, rep=rep, gate=gate, ran_first=ran_first(rep, gate)
                 )
                 arms.append(arm)
         ok = [a for a in arms if "error" not in a]

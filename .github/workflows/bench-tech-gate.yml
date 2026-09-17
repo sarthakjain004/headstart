@@ -43,6 +43,10 @@ permissions:
   contents: read
 
 # A superseded measurement is worth nothing, and each leg holds a runner for up to 40 minutes.
+# The cost of that is real and worth knowing before you push: a merge from `main` touched `src/`
+# and cancelled an in-flight jll measurement at the 9-minute mark on 2026-09-17. Nothing is wrong
+# with the rule — that run *was* measuring superseded code — but a long leg wants a quiet branch,
+# so land what you have before starting one.
 # Keyed on the *inputs* as well as the ref: two dispatches measuring different Board sets on one
 # branch are not supersessions of each other, and a bare ref key would have the second silently
 # kill the first mid-run. A push carries no inputs, so it keeps the plain per-ref behaviour.
