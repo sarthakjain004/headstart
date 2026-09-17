@@ -128,7 +128,11 @@ class TrakstarScraper(BaseScraper):
 
     def fetch_raw(self) -> Any:
         html = self._get()  # the careers page HTML (job cards)
-        codes = _codes_from(html)
+        # Split once: the cap check needs the count, the tech gate below needs each card's own
+        # title and department, and `parse` re-reads the same blocks. `_codes_from` stays as the
+        # projection `scripts/enrich/salary_sample.py` calls.
+        cards = _job_cards(html)
+        codes = [code for _block, code in cards]
         if _is_capped(html, len(codes)):
             # This Board's card list is short of its real total (the page's own "View N
             # Openings" count says so, or — on the rare template without that button — the
@@ -166,16 +170,28 @@ class TrakstarScraper(BaseScraper):
         # (bounded); failures -> None. The detail pages sit behind DataDome, so the async path
         # pins the multiplexing width to the gentle _DETAIL_WORKERS rather than the global
         # HEADSTART_H2_STREAMS.
+        # The tech gate (ADR-0017), on the cards rather than the codes: `parse` reads `_TITLE`
+        # and `_DEPT` out of this same block and the JSON-LD overrides neither, so the gate's
+        # verdict is the one `filter_tech` will reach. Each detail page is a DataDome-guarded
+        # request, which makes a skipped one worth more here than the card count suggests.
+        wanted = [
+            code
+            for _block, code in self.tech_detail_wanted(
+                cards,
+                lambda card: _card_title(card[0]),
+                lambda card: _card_dept(card[0]),
+            )
+        ]
         if self.async_fanout_enabled():
             results = self.fan_out_async(
-                codes,
+                wanted,
                 lambda session, code: self._job_posting_async(session, code),
                 concurrency=_DETAIL_WORKERS,
             )
         else:
-            results = self.fan_out(codes, self._job_posting, workers=_DETAIL_WORKERS)
+            results = self.fan_out(wanted, self._job_posting, workers=_DETAIL_WORKERS)
         self.report_detail_gaps(results, "JSON-LD postings")
-        postings = dict(zip(codes, results))
+        postings = dict(zip(wanted, results))
         return {"html": html, "postings": postings}
 
     def fetch_via_feed(self, scraped_at: str) -> list[Job] | None:
@@ -270,9 +286,7 @@ class TrakstarScraper(BaseScraper):
             code = _CODE.search(block)
             if not code:
                 continue
-            title = _TITLE.search(block)
             loc = _LOC.search(block)
-            dept = _DEPT.search(block)
             emp = _EMPTYPE.search(block)
             location = _html.unescape(loc.group(1)).strip() if loc else None
             posting = postings.get(code.group(1)) or {}
@@ -281,10 +295,13 @@ class TrakstarScraper(BaseScraper):
                     id=self.job_id(code.group(1)),
                     ats=self.ats,
                     company=self.company,
-                    title=_html.unescape(title.group(1)).strip() if title else "",
+                    # The same two readers the tech gate in `fetch_raw` uses, so the
+                    # gate cannot classify on a different string than this Job
+                    # carries into `filter_tech`.
+                    title=_card_title(block) or "",
                     location=location,
                     remote=is_remote(location),
-                    department=_html.unescape(dept.group(1)).strip() if dept else None,
+                    department=_card_dept(block),
                     url=self.job_url(code.group(1)),
                     # the listing card has no date; the detail JSON-LD does
                     posted_at=posting.get("datePosted"),
@@ -303,13 +320,35 @@ class TrakstarScraper(BaseScraper):
         return None
 
 
+def _card_title(block: str) -> str | None:
+    """The card's title, read exactly as :meth:`TrakstarScraper.parse` reads it."""
+    m = _TITLE.search(block)
+    return _html.unescape(m.group(1)).strip() if m else None
+
+
+def _card_dept(block: str) -> str | None:
+    """The card's department, read exactly as :meth:`TrakstarScraper.parse` reads it."""
+    m = _DEPT.search(block)
+    return _html.unescape(m.group(1)).strip() if m else None
+
+
+def _job_cards(html: str) -> list[tuple[str, str]]:
+    """``(block, code)`` per job card — :func:`_codes_from` keeping the block the code came from,
+    so the tech gate can read the card's own title and department without re-splitting."""
+    return [
+        (block, m.group(1))
+        for block in html.split(_ITEM)[1:]
+        if (m := _CODE.search(block))
+    ]
+
+
 def _codes_from(html: str) -> list[str]:
     """Every job code on a careers-page listing, in the order the cards appear. Shared by
     ``fetch_raw()`` and the sampling script's own bounded adapter (``_fetch_trakstar``,
     ``scripts/enrich/salary_sample.py``) so the two don't carry two copies of the same
     card-splitting logic — the same reuse ``_fetch_successfactors`` already gets from this
     module's ``_job_urls_from``-equivalent, ``successfactors.py``'s own module-level helper."""
-    return [m.group(1) for block in html.split(_ITEM)[1:] if (m := _CODE.search(block))]
+    return [code for _block, code in _job_cards(html)]
 
 
 def _total_openings(html: str) -> int | None:

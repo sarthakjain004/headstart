@@ -1,0 +1,125 @@
+# A/B the pre-detail tech gate (ADR-0017) on the runner that actually pays for the scrape.
+#
+# Manual only. Reads live ATS origins and writes nothing: no HF token, no dataset, no LFS, no
+# artifacts beyond the measurement JSON. `contents: read` is the whole permission set.
+#
+# One matrix leg per Board group so each measurement gets its own runner — two groups sharing a
+# 4-vCPU box would contend on the same event loop and the A/B would measure the contention.
+# `ubuntu-latest` and the same `pip install -e ".[scrape]"` the production scrape shards use, so
+# the seconds are comparable to `board_cost.csv`. WARP is deliberately NOT installed: the spare
+# egress is dialled lazily by a walled ATS (ADR-0063) and would add a variable neither arm
+# controls — both arms share this runner's direct route, which is what makes the ratio honest.
+name: bench-tech-gate
+
+on:
+  # `push` as well as `workflow_dispatch`: a dispatch-only workflow has to sit on the default
+  # branch before the API will fire it, and a measurement branch should not have to land on
+  # `main` to be measured. Scoped to `bench/**` so nothing else in the repo triggers it.
+  push:
+    branches: ["bench/**"]
+    # Only when something that can change the measurement changes. A docs or ADR commit used to
+    # retrigger the whole matrix, apple's ~40-minute leg included, and three runs stacked up on
+    # one review round before this was added.
+    paths:
+      - "src/headstart/**"
+      - "scripts/bench/tech_gate_bench.py"
+      - ".github/workflows/bench-tech-gate.yml"
+      # This job's own header claims its seconds are comparable to `board_cost.csv` *because* it
+      # installs what the scrape shards install — so a dependency bump is a change to the
+      # measurement, and a transitively-resolved version is not visible in any other diff.
+      # `pipeline-smoke.yml` added this file for the same reason after a transformers bump
+      # broke the stage it guards and the run that would have proved the fix never fired.
+      - "pyproject.toml"
+  workflow_dispatch:
+    inputs:
+      repeats:
+        description: "A/B pairs per Board. 2 gives A/B/B/A; 1 cannot counterbalance arm order"
+        default: "2"
+      boards:
+        description: "Optional space-separated ats:slug list; overrides the matrix leg"
+        default: ""
+
+permissions:
+  contents: read
+
+# A superseded measurement is worth nothing, and each leg holds a runner for up to 40 minutes.
+# The cost of that is real and worth knowing before you push: a merge from `main` touched `src/`
+# and cancelled an in-flight jll measurement at the 9-minute mark on 2026-09-17. Nothing is wrong
+# with the rule — that run *was* measuring superseded code — but a long leg wants a quiet branch,
+# so land what you have before starting one.
+# Keyed on the *inputs* as well as the ref: two dispatches measuring different Board sets on one
+# branch are not supersessions of each other, and a bare ref key would have the second silently
+# kill the first mid-run. A push carries no inputs, so it keeps the plain per-ref behaviour.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event.inputs.boards || 'push' }}
+  cancel-in-progress: true
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The 2026-09-16 stage-timing doc's floor board: 95-98% of its shard's wall clock, and
+          # the least favourable case for this gate at ~70.8% tech. One A/B pair, because one
+          # ungated arm is ~25 min on its own.
+          - leg: apple
+            repeats: "1"
+            boards: "apple:jobs.apple.com"
+          # Workday is 48.4% of all board-seconds in board_cost.csv and 16.1% tech — the single
+          # biggest lever. Two repeats, not one, because `jll` is the Board with the unexplained
+          # `desc_lost` and one repeat cannot counterbalance arm order — which is the leading
+          # candidate for it.
+          - leg: workday-large
+            repeats: "2"
+            boards: "workday:https://greystar.wd1.myworkdayjobs.com/External workday:https://jll.wd1.myworkdayjobs.com/jllcareers"
+          # Mid-size Boards, two A/B pairs each: enough repeats to show whether the ratio is
+          # stable or just drift.
+          - leg: workday-mid
+            repeats: "2"
+            boards: "workday:https://aveva.wd3.myworkdayjobs.com/AVEVA_careers workday:https://trendmicro.wd3.myworkdayjobs.com/External workday:https://thehartford.wd5.myworkdayjobs.com/Careers_External"
+          - leg: smartrecruiters
+            repeats: "2"
+            boards: "smartrecruiters:soprasteria1 smartrecruiters:RamsayHealthCare1 smartrecruiters:pilotcompany"
+          # jazzhr owns the straggler shard of run 35193130454 (850s). Its gate is a measured
+          # tolerance rather than exact, so the Boards here are the ones the corpus says lean
+          # hardest on `department` — where a gate reading the wrong field would show up.
+          - leg: jazzhr
+            repeats: "2"
+            boards: "jazzhr:brightvisiontechnologies jazzhr:pacificacontinental jazzhr:idsinternational jazzhr:vyvebroadband"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[scrape]"
+      - name: A/B the gate
+        # Dispatch inputs reach the shell through `env`, never interpolated into `run:` —
+        # `${{ }}` substitution happens before bash sees the script, so a board string
+        # containing shell syntax would execute rather than be an argument.
+        env:
+          REPEATS: ${{ github.event.inputs.repeats || matrix.repeats }}
+          BOARDS: ${{ github.event.inputs.boards || matrix.boards }}
+          LEG: ${{ matrix.leg }}
+        run: |
+          # shellcheck disable=SC2086 -- BOARDS is a deliberate space-separated argument list
+          python -u scripts/bench/tech_gate_bench.py \
+            --repeats "$REPEATS" --out "bench-$LEG.json" $BOARDS | tee "bench-$LEG.log"
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo "## ${{ matrix.leg }}"
+            echo '```'
+            grep -E '^(===|  rep)' "bench-${{ matrix.leg }}.log" || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: bench-${{ matrix.leg }}
+          path: |
+            bench-${{ matrix.leg }}.json
+            bench-${{ matrix.leg }}.log

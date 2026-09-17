@@ -189,7 +189,16 @@ class AppleScraper(BaseScraper):
         # nothing else — false here, the same fork Oracle hit: this payload is also the only
         # source of `employment_type` (module docstring). Skipping it for an already-described
         # Job would blank that field on every later run.
-        ids = [i["id"] for i in items if i.get("id")]
+        # The tech gate (ADR-0017), exact here: `parse` reads `postingTitle` and
+        # `team.teamName` off this same listing item and never off the detail, so the gate
+        # reaches the verdict `filter_tech` will reach. Apple is ~70.8% tech, so this saves
+        # less than on any other Board — it is wired for the same reason it is cheap.
+        wanted = self.tech_detail_wanted(
+            [i for i in items if i.get("id")],
+            lambda i: i.get("postingTitle"),
+            lambda i: (i.get("team") or {}).get("teamName"),
+        )
+        ids = [i["id"] for i in wanted]
         if self.async_fanout_enabled():
             fetched = self.fan_out_async(ids, self._detail_async)
         else:
