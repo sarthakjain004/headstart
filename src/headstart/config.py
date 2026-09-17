@@ -297,6 +297,21 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         # above — or if the index ever serves non-tech roles. Both are observable here; "if the
         # trust posts tech roles" is not, because parking is what stops us looking.
         "teamtailor:waymaneducation-1710232669",
+        # The run-owning floor-bound straggler in 8 of 8 pipeline runs sampled 2026-09-16 (98% of
+        # its shard, 18.7-43.7 min each run). Real data, not a demo tenant — a live sample of 300
+        # titles that same day came back 0.0% test-marked, ordinary hospitality postings ("Commis
+        # (Uzbek national)" in Tashkent, "Junior Sous Chef" in Bucharest). Not fetch-volume-bound
+        # either: live-measured 2026-09-17, a direct (non-WARP) connection cleared the board's
+        # real workload — 20 concurrent listing pages and 100 detail calls at 16 workers (matching
+        # `_DETAIL_WORKERS`) — 100% 200s, 0 429s, 25.5 req/s, predicting ~8-9 min end to end. The
+        # pipeline's own WARP-routed runs take 2-5x that, and that shard alone carries the highest
+        # 429/network retry ratio of any shard measured (0.30 vs 0.07-0.17 elsewhere) despite the
+        # scraper already rotating egress on every 429. So the cost is specific to the WARP path,
+        # not this board's size — and it is also permanently offset-capped at 9,926 of 13,642
+        # postings regardless (Oracle serves no offset past 10,000, ADR-0053 scope-excludes it
+        # from eviction every run). Un-park once the WARP-path slowdown is understood and fixed,
+        # or a direct route exists for this host.
+        "oracle:ejwl.fa.us2.oraclecloud.com",
     }
 )
 

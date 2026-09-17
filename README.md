@@ -247,13 +247,13 @@ their tech yield. `CONTEXT.md`'s §Counting Boards names each of these stages pr
 | − `config.EXCLUDED_BOARDS` | −47 | vendor test/sandbox boards, confirmed by reading their postings |
 | − alias ledger | −78 | one company, two hostnames sharing one board (ADR-0111) |
 | − case-variant dedupe | −6,630 | `company/External` and `company/external` are one board (ADR-0023) |
-| − `config.PARKED_BOARDS` | −4 | real boards withheld for now — their scrape cost dwarfs their tech yield |
-| = **Scrapable Board** | **120,544** | |
+| − `config.PARKED_BOARDS` | −5 | real boards withheld for now — their scrape cost dwarfs their tech yield |
+| = **Scrapable Board** | **120,543** | |
 
 That order matters: excluding before deduping reads −47 and −6,630, deduping first reads −45,
-because two excluded boards were themselves duplicates. Both land on 120,544.
+because two excluded boards were themselves duplicates. Both land on 120,543.
 
-Of those, **78,086 are currently hiring** — the 42,458 live-but-empty boards are skipped as having
+Of those, **78,085 are currently hiring** — the 42,458 live-but-empty boards are skipped as having
 nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
 sticky measure of tech-job yield) and a random exploration tail drawn from everything else, so
 newly-productive boards can never starve and eviction keeps working on boards outside the head.

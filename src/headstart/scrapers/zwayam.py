@@ -97,8 +97,14 @@ load, so throughput lands at ~8-9 responses/s per IP at both widths probed (16-w
 32-wide 9.3/s — different Boards, so they bound the ceiling rather than rank the widths; see
 :attr:`ZwayamScraper.detail_workers` for why the narrower one is used regardless). One Akamai
 403 was seen during 2026-08 discovery
-and is real, but it is rare and transient rather than a threshold to pace against. The binding
-costs are **bytes and detail latency, not request counts**: a 10-row page is 70-200 KB and a
+and is real. It was read as rare and transient; **that reading is falsified** (measured
+2026-09-17, `experiment/zwayam-403-wall/LOG.md`): it is a cumulative **per-IP request quota**, and
+the 2026-08 probes simply stayed under it. From one IP, 100/200/300/400 cumulative requests all
+answered 200, 23 of 100 were refused at 500 and 100 of 100 at 600 — volume, not width, which is
+why a 32-wide burst never reproduced it. So request counts *do* bind, per IP and across every
+tenant at once, since all three API calls share one origin; :attr:`egress_fallback_on` answers it
+by rotating rather than by pacing. The other binding
+costs are **bytes and detail latency**: a 10-row page is 70-200 KB and a
 detail ~15 KB, so the first full pass moves ~680 MB and its 22,456 details take ~45 minutes of
 aggregate wall-clock at the ceiling — once, since the ADR-0050 store prunes every later run to
 new postings.
@@ -355,6 +361,34 @@ def _posted_at(source: dict) -> str | None:
 
 class ZwayamScraper(BaseScraper):
     ats = "zwayam"
+    #: zwayam meters **cumulative requests per IP** over a window and refuses with a bare 403 — no
+    #: `Retry-After`, no `cf-mitigated`, no interstitial body. Every tenant is probed through the
+    #: one shared API (`public.zwayam.com`), so one origin carries the whole ATS and the quota is
+    #: spent within a single run: 47-71% of attempted Boards failed in each of the five runs
+    #: 35175065218-35188643520, 55-73% of every run's board errors.
+    #:
+    #: Opted in on the **mechanism**, which is the bar this attribute's own docstring sets after
+    #: freshteam (#311) and personio (#312/#313) were opted in on an aggregate count and reverted.
+    #: Measured 2026-09-17 from one IP (`experiment/zwayam-403-wall/LOG.md`):
+    #:   - 100/200/300/400 cumulative requests -> 200 on every one; 23 of 100 refused at 500;
+    #:     100 of 100 at 600. It meters volume, not width — 60 requests at 16-wide all answered.
+    #:   - Against 25 slugs that had *just* been refused, interleaved: **WARP cleared 25/25, the
+    #:     direct route 12/25.** A different address is the only thing that clears it.
+    #:   - End to end, in `check_liveness`'s equivalent rung: a 3,239-Board sweep went from 2,816
+    #:     UNKNOWN to **3**, and 756 of 757 ledger-live Boards re-confirmed live. The Boards were
+    #:     never gone — the quota was spent.
+    #:
+    #: Carried by `base._fetch`, which all four request sites here go through, so the opt-in is
+    #: not inert (the caution above about direct `http.fetch` calls does not apply). Three of the
+    #: four hit the metered API — `_page` (`_API`), `_company_id` (`_CONFIG_API`) and `_detail`
+    #: (`_DETAIL_API`), all on `public.zwayam.com`. The fourth, `_link_base`, GETs the Board's own
+    #: customer domain and passes `marks_wall=False` for that reason; see the note there.
+    #:
+    #: `_DETAIL_API`'s documented UA-rule 403 (above) is a malformed-request 403, not a quota one.
+    #: It is answered by sending the right User-Agent, and a rotation cannot fix it — but it is
+    #: constant-cost and self-inflicted rather than traffic-dependent, so it cannot spend the
+    #: rotation budget the way a per-tenant WAF could.
+    egress_fallback_on = frozenset({403})
     # scraper: f"{link_base}{quote(jobUrl)}" where the SLUG IS THE BOARD HOST — the API keys on
     # the hostname, and Boards sit on customer domains (careers.persistent.com) as well as the
     # vendor namespace ({slug}.openings.co), so there is no host to anchor on. `link_base` is one
@@ -449,6 +483,14 @@ class ZwayamScraper(BaseScraper):
             response = self._fetch(
                 "GET",
                 self.url(),
+                # `marks_wall=False`: this is the only request here that does NOT go to the
+                # metered API — it GETs the Board's own customer domain
+                # (`careers.persistent.com`, `adani.openings.co`). A WAF 403 from one customer
+                # says nothing about zwayam's per-IP quota, and marking on it would wall the whole
+                # ATS for the run off one tenant's edge — the exact shape of the personio revert
+                # (#312/#313) that `egress_fallback_on`'s own docstring cites. Routing is kept,
+                # marking is dropped (the eightfold precedent, `base._egress`).
+                marks_wall=False,
                 headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
                 timeout=30,
             )
