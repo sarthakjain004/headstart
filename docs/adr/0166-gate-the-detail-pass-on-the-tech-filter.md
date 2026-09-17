@@ -101,7 +101,18 @@ listing` — so both were sampled the jazzhr way, and unlike jazzhr both disagre
   a tenant-configured result *table*, and `_column` can only read a department where the tenant
   put one in it: many career sections do not, so the gate sees `None` while `parse` takes
   `reqlistitem.jobfield` off the detail page. On `dasstateoh.taleo.net/careersection/oh_ext` that
-  costs 15 of 23. A uniform refusal, not a per-tenant cliff, but a refusal either way.
+  costs 15 of 23.
+
+  **That 51.1% is the adversarial sample's rate, not the population's**, and the distinction
+  matters because it inverts the shape. Those ten Boards were picked precisely as the ones where
+  `department` does the most work, which is the right way to *find* a cliff and the wrong sample
+  to generalise from. Re-measured on seven Boards drawn without that bias — three taken in ledger
+  order, four seeded-random — the loss is **11 of 120 tech postings (9.2%)**, and **three of the
+  six Boards carrying any tech postings lose nothing at all**: 0%, 0%, 0%, 10%, 30%, 40%. So this
+  is a per-tenant cliff after all, which is a stronger reason to refuse rather than a weaker one —
+  it is the shape ADR-0166 already refuses oracle for, where one Board loses 61.5% and another 0%.
+  A reader reconsidering this later should expect ~9% on a Board drawn at random and up to half on
+  a Board whose career section omits the department column, not a flat 51%.
 - **taleo_be: 5 of 351 tech postings lost, all 5 on one of 10 Boards** — 5 of that Board's 16.
   `_listing` reads the header fields *positionally* (`fields[0]` department, `fields[1]`
   location), and on `phf.tbe.taleo.net/phf01/…?org=JSHR6E&cws=53` the tenant emits them the

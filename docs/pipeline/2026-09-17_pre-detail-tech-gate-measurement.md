@@ -116,7 +116,7 @@ answers. (All five are measured now; two were clean and two were not.)
 | ATS | board-sec share | worst case | status |
 | --- | ---: | ---: | --- |
 | `jazzhr` | 9.5% | 9.3% | **MEASURED CLEAN — 0 of 845 tech postings lost** |
-| `taleo_enterprise` | 2.1% | 42.1% | **MEASURED DIRTY — 68 of 133 lost (51.1%), 10 of 10 Boards** |
+| `taleo_enterprise` | 2.1% | 42.1% | **MEASURED DIRTY — 68 of 133 (51.1%) on 10 adversarial Boards; 11 of 120 (9.2%) on 7 unbiased ones, 3 of them clean** |
 | `taleo_be` | 0.2% | 2.8% | **MEASURED DIRTY — 5 of 351 lost, all on one Board (5 of its 16)** |
 | `gem` | 0.1% | 10.2% | **MEASURED CLEAN — 0 of 606 tech postings lost** |
 | `phenom` | 0.1% | 53.9% | **MEASURED CLEAN — 0 of 2,126 tech postings lost** |
