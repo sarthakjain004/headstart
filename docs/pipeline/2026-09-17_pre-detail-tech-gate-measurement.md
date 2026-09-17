@@ -19,7 +19,7 @@ each answered from data rather than from reading the code alone:
 | pre-filter corpus | `scrape-fragment-{0,1,2,4}` of that run — 490,417 postings | 2026-09-17 |
 | #510's Board selection | `scrape-fragment-*` of run `35208295039` — all 15 for gem/phenom/taleo_be, 5 for taleo_enterprise | 2026-09-17 |
 | #510's paired sample | one ungated live scrape per Board, `measure`d against `parse`'s own Jobs | 2026-09-17 |
-| A/B wall clock | `bench-tech-gate.yml` runs `35198692670`, `35199442248`, `35203021883`, `35219838067` (gem/phenom), `ubuntu-latest` | 2026-09-17 |
+| A/B wall clock | `bench-tech-gate.yml` runs `35198692670`, `35199442248`, `35203021883`, `35219838067` + `35221354254` (gem/phenom), `ubuntu-latest` | 2026-09-17 |
 | production before/after | scrape logs of runs `35116292689`, `35129140615` (pre-gate) vs `35193130454` | 2026-09-16/17 |
 
 Board seconds are one sweep of every Board, not one run — `board_cost.csv` holds each Board's most
@@ -106,11 +106,12 @@ insufficient.
 It would also not be worth much — a single Board, 985 postings, 60 board-seconds, 0.0% of the
 total — but cost is not why it is out.
 
-### Tier 3 — needs one more measurement
+### Tier 3 — the listing carries a department, but the detail has a say
 
-The listing carries a department, but the detail can override it (`detail.get("department") or
-listing`). The gate sees only the listing's, so the two can disagree. The department-blind figure
-below is the **worst case**, not the answer.
+Each of these can disagree with `filter_tech` because `parse` reads at least one of the two fields
+from the detail as well as the listing, so each needs a paired sample rather than a reading of the
+call site. The department-blind figure below is the **worst case**, not the answer — §2.1 has the
+answers. (All five are measured now; two were clean and two were not.)
 
 | ATS | board-sec share | worst case | status |
 | --- | ---: | ---: | --- |
@@ -244,20 +245,21 @@ its gate could most plausibly have failed on: `vyvebroadband` has 31 tech postin
 department-blind gate would drop 30, and `idsinternational` 44 of which it would drop 24. Both
 came back `tech_lost=0` on both repeats.
 
-**gem and phenom, run `35219838067`, 16 further A/B pairs — `tech_lost=0`, `desc_lost=0` and
-`churned=0` on every one of the 16.** Same adversarial selection: `rctsglobal-com` would lose 9 of
-its 23 tech postings to a department-blind gate, `careers.bcg.com` 182 of 335.
+**gem and phenom, runs `35219838067` and `35221354254`, 32 further A/B pairs — `tech_lost=0`,
+`desc_lost=0` and `churned=0` on every one of the 32.** Two runs because the second re-measured the
+same Boards on the reviewed code; both agree. Same adversarial selection: `rctsglobal-com` would
+lose 9 of its 23 tech postings to a department-blind gate, `careers.bcg.com` 182 of 335.
 
-| Board | postings | tech | requests | wall clock |
+| Board | postings | tech | requests | wall clock (4 pairs) |
 | --- | ---: | ---: | --- | --- |
-| `phenom:careers.allianz.com` | 1,686 | 247 | 1,691 → 252 (−85.1%) | 48.7–60.7s → 11.6–12.0s (**4.1–5.2x**) |
-| `phenom:careers.bcg.com` | 907 | 335 | 910 → 338 (−62.9%) | 13.3–14.8s → 6.4–6.6s (**2.1–2.2x**) |
-| `phenom:careers.united.com` | 170 | 76 | 172 → 78 (−54.7%) | 3.5–4.1s → 2.1s (**1.6–1.9x**) |
-| `phenom:jobs.bell.ca` | 70 | 31 | 72 → 33 (−54.2%) | 2.2–2.6s → 1.1–1.2s (**1.9–2.1x**) |
-| `gem:the-boring-company` | 116 | 24 | 3 → 2 (−33.3%) | 1.7–2.2s → 0.7–0.9s (**2.35x**) |
-| `gem:the-swift-group` | 128 | 79 | 3 → 2 (−33.3%) | 2.1–2.5s → 1.7–1.8s (**1.3–1.4x**) |
-| `gem:coupa-software-inc-ats-1` | 300 | 138 | 4 → 3 (−25.0%) | 2.5s → 2.4–2.6s (**0.94–1.06x**) |
-| `gem:rctsglobal-com` | 37 | 23 | 2 → 2 (0%) | 1.1–1.2s → 0.9s (**1.2–1.4x**) |
+| `phenom:careers.allianz.com` | 1,686 | 247 | 1,691 → 252 (−85.1%) | **4.1–5.2x** |
+| `phenom:careers.bcg.com` | 907 | 335 | 910 → 338 (−62.9%) | **2.0–2.2x** |
+| `phenom:careers.united.com` | 170 | 76 | 172 → 78 (−54.7/54.9%) | **1.5–1.9x** |
+| `phenom:jobs.bell.ca` | 70 | 31 | 72 → 33 (−54.2%) | **1.6–2.1x** |
+| `gem:the-boring-company` | 116 | 24 | 3 → 2 (−33.3%) | **2.1–3.0x** |
+| `gem:the-swift-group` | 128 | 79 | 3 → 2 (−33.3%) | **1.2–1.4x** |
+| `gem:coupa-software-inc-ats-1` | 300 | 138 | 4 → 3 (−25.0%) | **0.94–1.26x** |
+| `gem:rctsglobal-com` | 37 | 23 | 2 → 2 (0%) | **1.2–1.4x** |
 
 **gem's rows are the safety number, not a saving.** It batches 100 details per request, so the
 whole four-Board sweep is 12 requests ungated and 9 gated — this gate's cost model does not apply

@@ -142,8 +142,9 @@ fields, not one: `posted_at` and `compensationHtml` are detail-only there, which
 gem refuses ADR-0048's skip. The gate is still right to fire — a posting `filter_tech` drops has
 no `posted_at` worth keeping either — but the blanket sentence above has that exception.
 
-**gem and phenom add 16 more A/B pairs** (run `35219838067`), `tech_lost=0`, `desc_lost=0` and
-`churned=0` on all 16. `phenom:careers.allianz.com` 1,691 → 252 requests and 4.1–5.2x;
+**gem and phenom add 32 more A/B pairs** (runs `35219838067` and `35221354254`, the second a
+re-measurement of the same Boards on the reviewed code), `tech_lost=0`, `desc_lost=0` and
+`churned=0` on all 32. `phenom:careers.allianz.com` 1,691 → 252 requests and 4.1–5.2x;
 `gem:coupa-software-inc-ats-1` 4 → 3 requests and 0.94–1.06x, because gem batches 100 details per
 request and has almost nothing left for this gate to save.
 
