@@ -117,8 +117,13 @@ it is wrong — measured 2026-09-17, after the fact:
   liveness measurement and its numbers must not be written to the ledger.
 
 So the Boards are live and the 403 is a self-inflicted quota wall that clears on cooldown. Treating
-it as a gone-strike would quarantine ~100 **live** Boards per run. The real fix is pacing plus
-spare-egress rotation, and today **neither fires for a zwayam 403**: `_EGRESS_ON` is empty on
+it as a gone-strike would quarantine ~100 **live** Boards per run.
+
+**The fix is rotation, not pacing** — the wall meters cumulative requests per IP, not concurrency
+(100 requests per block at 16-wide: 200s through 400, 23 of 100 refused at 500, 100 of 100 at 600,
+while 60 requests at that same width never tripped it). Slowing down cannot buy quota back; a
+different address can, and does — against 25 just-refused slugs, WARP cleared 25/25 where the
+direct route cleared 12/25. Today **rotation does not fire for a zwayam 403** at all: `_EGRESS_ON` is empty on
 purpose (a single response may route over the spare egress but must never *mark* the group walled —
 the decision lives in `_ban_or_rotate`), while `_ban_or_rotate` is only reached from `_on_429` or a
 *detected* challenge, and a bare Akamai 403 matches neither `cf-mitigated: challenge` nor any of the
@@ -209,8 +214,11 @@ pipeline.
    Worth re-measuring on a post-`c5984f38` run first, and worth checking whether `ejwl`'s finding
    generalises: if the cost is the WARP-routed path rather than the fetch volume, apple may be the
    same shape rather than a Board to drop.
-2. **Make a zwayam 403 rotate the egress** (§4) — not a gone-strike. Until it does, the liveness
-   ledger cannot be refreshed and ~100 live Boards fail every run. Largest error source, unbounded.
+2. ~~Make a zwayam 403 rotate the egress~~ — **done** on `fix/zwayam-403-rotates-egress`, both
+   halves: the liveness checker's ladder and the scraper's `egress_fallback_on`. The re-run sweep
+   went from 2,816 `unknown` to 3. What remains is a decision, not work: **applying that sweep to
+   the ledger** would revive 98 Boards and retire 1, and `recheck_boards.py` deliberately does not
+   write it — measuring and delisting are separate calls.
 3. **Stop trusting Oracle `TotalJobsCount` on sparse pods** (§2) — unblocks the ADR-0053 accretion
    at its root.
 4. **Give ADR-0053 a drain**, or at least alert on `careers.hcltech.com`'s permanent ~2k rows (§3).

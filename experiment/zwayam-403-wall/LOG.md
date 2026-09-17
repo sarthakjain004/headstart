@@ -10,11 +10,38 @@
 | 14 ledger-live Boards, real scraper, ~34 requests in | **12 of 14 HTTP 403** |
 | 10 Boards the fast sweep called `unknown`, serial, 3s apart | **10 of 10 live** |
 | 60 distinct Boards, 16-wide concurrency, 60 requests | **200 on all 60** |
-| 6 Boards, direct vs WARP, after cooldown | **200 on both routes** |
+| 6 Boards, direct vs WARP, after cooldown | **200 on both routes** (no wall up — inconclusive) |
 
-16-wide concurrency does not trip it; ~3,000 cumulative requests does. So it meters **requests per
-IP over a window**, and it clears on cooldown. Slowing down does not buy quota back — a different
-address does, which is exactly what the spare egress is for.
+The last row is why the decisive test had to drive the wall up first rather than probe after a
+rest. Raw output: `artifacts/2026-09-17_wall-ladder-and-warp-vs-direct.txt`.
+
+### It meters volume, not width
+
+100 requests per block, 16-wide, distinct Boards, one IP:
+
+| cumulative requests | 200 | 403 |
+| ---: | ---: | ---: |
+| 100 | 100 | 0 |
+| 200 | 100 | 0 |
+| 300 | 100 | 0 |
+| 400 | 100 | 0 |
+| **500** | 77 | **23** |
+| **600** | 0 | **100** |
+
+16-wide never trips it on its own — 60 requests at that width all answered 200 — so the variable
+is cumulative volume per IP, not concurrency. **Slowing down therefore cannot buy quota back.**
+
+### A different address can — and that is the whole case for rotating
+
+Against **25 slugs that had just been refused**, direct and WARP interleaved, same process:
+
+| route | 200 | 403 |
+| --- | ---: | ---: |
+| direct | 12 | 13 |
+| **WARP** | **25** | **0** |
+
+This is the load-bearing measurement: it is taken *while the wall is up*, so unlike the
+after-cooldown row above it separates "a new address clears it" from "time clears it".
 
 ## The full sweep is INVALID — do not load it into the ledger
 
@@ -68,7 +95,8 @@ The same 3,239-board sweep, re-run with it — `artifacts/2026-09-17_full-sweep-
 | live | 120 | **854** |
 | unknown | **2,816** | **3** |
 
-Rotation fired twice, and the log says so:
+Rotation fired twice, and the log says so
+(`artifacts/2026-09-17_full-sweep-with-rotation.log`):
 
     [gate] public.zwayam.com on a fresh egress address (#1, was 403, per-IP quota spent)
            — ban cleared, back to 10.0 req/s
@@ -95,10 +123,10 @@ Totals now: 854 live, 225 hiring, 23,972 jobs (ledger holds 757 live / 224 hirin
 
 ## Still open
 
-- **The scrape path does not rotate either.** `BaseScraper.egress_fallback_on` defaults to
-  `frozenset()` and `ZwayamScraper` never sets it, so the pipeline's own zwayam requests carry
-  `egress_group="zwayam"` with an empty `egress_on` — routed but never marking the wall. That is
-  the production half of this fix and it is a one-line opt-in, since `base._fetch` already applies
-  `**self._egress()`.
+- ~~The scrape path does not rotate either.~~ **Closed in this branch.**
+  `ZwayamScraper.egress_fallback_on = frozenset({403})` opts the pipeline in;
+  `_link_base` passes `marks_wall=False` because it is the one request here that goes to the
+  Board's own customer domain rather than the metered API, and a customer WAF's 403 must not wall
+  the whole ATS (the personio #312/#313 shape).
 - **The ledger is still unwritten.** `recheck_boards.py` reports only, by design: delisting is a
   separate call from measuring. Applying this sweep would revive 98 Boards and retire 1.

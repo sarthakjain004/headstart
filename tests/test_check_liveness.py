@@ -109,6 +109,7 @@ class _FakeEgress:
         self.available = False
         self.rotates = True
         self.walled = []
+        self.walled_statuses = []  # the status each wall was recorded under
         self.rotated = []
         self.repeats = False  # when True, a restart comes back on the SAME address
         self._addresses = []  # distinct addresses handed out, in order
@@ -127,6 +128,7 @@ class _FakeEgress:
         return None
 
     def mark_walled(self, key, status):
+        self.walled_statuses.append(status)
         if key not in self.walled:
             self.walled.append(key)
 
@@ -565,4 +567,44 @@ def test_an_ordinary_forbidden_from_any_other_host_still_never_rotates(cl):
     assert not cl._is_quota_403("public.zwayam.com", _Resp(404))
     assert not cl._is_challenge(_Resp(403, content=b'{"error":"forbidden"}')), (
         "the quota rung must not make a bare 403 a challenge for everyone else"
+    )
+
+
+def test_a_bot_wall_403_from_a_metered_host_still_takes_the_challenge_arm(cl, egress):
+    """Ordering. The quota rung sits above the challenge arm, so without an explicit guard a
+    genuine bot wall on a metered host would log `403-quota` and rotate where the challenge arm
+    would trip — mislabelling the mechanism in the `_note` counters."""
+    egress.available = True
+    walled = _Resp(403, content=b"<html><title>Just a moment...</title>")
+
+    assert cl._is_challenge(walled), "fixture must actually read as a bot wall"
+    assert cl._is_quota_403("public.zwayam.com", walled), (
+        "the host+status test alone cannot tell them apart — the guard is `not challenged`"
+    )
+
+
+def test_the_quota_rung_rests_for_the_refill_not_the_bot_wall_cooldown(cl, egress):
+    """The fall-through, where no address can be had. A quota refills in about a minute; banning
+    zwayam for the 30-minute bot-wall cooldown would cost every remaining Board for no reason."""
+    egress.available = False
+    gate = cl._HostGate(8, 0.25, "public.zwayam.com")
+
+    cl._on_quota_403(gate, _Resp(403), _URL)
+
+    assert gate.blocked(), "with no spare address the gate must still back off"
+    assert cl._EGRESS_REST_S < cl._CHALLENGE_COOLDOWN_S, (
+        "the quota rung deliberately rests for the shorter, measured refill"
+    )
+
+
+def test_a_quota_403_rotation_does_not_report_itself_as_a_429(cl, egress):
+    """`_fresh_egress` and the two `_note` labels hardcoded 429 when 429 was the only caller."""
+    egress.available = True
+    gate = cl._HostGate(8, 0.25, "public.zwayam.com")
+
+    cl._on_quota_403(gate, _Resp(403), _URL)
+
+    assert egress.walled == ["public.zwayam.com"]
+    assert egress.walled_statuses == [403], (
+        "a 403 wall must be recorded as a 403, not as someone else's 429"
     )
