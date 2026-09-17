@@ -4,10 +4,19 @@ The gate skips a detail fetch for a posting `filter_tech` will drop anyway. Whet
 anything is a wall-clock question about a live origin, so this measures it rather than modelling
 it: the same scraper, the same Board, the same process, differing only in `HEADSTART_TECH_GATE`.
 
-**A/B/A/B, not A/B.** Two consecutive scrapes of one Board are not two draws from one
-distribution — origin latency drifts, caches warm, and a single A/B hands the second arm whatever
-the first arm's warming left behind. Interleaving and reporting each repeat separately is what
-lets a reader tell a real saving from drift (`scalar_index_bench_abab.py` established the shape).
+**A/B/B/A, and the arm order alternates.** Two consecutive scrapes of one Board are not two draws
+from one distribution — origin latency drifts, caches warm, and a single A/B hands the second arm
+whatever the first arm's warming left behind. Interleaving and reporting each repeat separately is
+what lets a reader tell a real saving from drift (`scalar_index_bench_abab.py` established the
+shape).
+
+Interleaving *reps* is not enough on its own, which this harness learned the hard way. It ran
+`for gate in (False, True)` inside each rep, so the gated arm was always second and always
+followed the control's full detail pass against the same origin — a systematic, one-directional
+confound. On `jll.wd1.myworkdayjobs.com` that showed up as `desc_lost` of 2, 47, 7 and 59 across
+four pairs: never zero, always the same direction, which is what an order effect looks like and
+not what symmetric flakiness looks like. Odd reps now run the gated arm **first**, so any
+remaining one-directional result is the mechanism rather than the running order.
 
 **The safety number is the point, not the speed-up.** A gate that is fast and drops real tech jobs
 is a defect, so every arm's Jobs are compared field-by-field over the *tech* subset — the only one
@@ -138,13 +147,22 @@ def main() -> None:
     ap.add_argument("--out", default="tech_gate_bench.json")
     args = ap.parse_args()
 
+    if args.repeats < 2:
+        print(
+            "NOTE: --repeats 1 runs control-then-gated only, so arm order is not counterbalanced "
+            "and a one-directional desc-lost/gained cannot be told from an order effect.",
+            flush=True,
+        )
     results: list[dict[str, Any]] = []
     out = pathlib.Path(args.out)
     for board in args.boards:
         print(f"\n=== {board}", flush=True)
         arms: list[dict[str, Any]] = []
         for rep in range(args.repeats):
-            for gate in (False, True):
+            # Counterbalanced: even reps run control-then-gated, odd reps gated-then-control, so
+            # neither arm is systematically the one that inherits the other's warmed connections
+            # and spent origin budget. `--repeats 1` cannot counterbalance and says so below.
+            for gate in (False, True) if rep % 2 == 0 else (True, False):
                 label = "gate-ON " if gate else "gate-OFF"
                 try:
                     arm = _run(board, gate)
@@ -161,7 +179,9 @@ def main() -> None:
                         f"{arm['tech_jobs']:>5} tech  {arm['gated_out']:>6} gated-out",
                         flush=True,
                     )
-                arm.update(board=board, rep=rep, gate=gate)
+                arm.update(
+                    board=board, rep=rep, gate=gate, ran_first=(gate == (rep % 2 == 1))
+                )
                 arms.append(arm)
         ok = [a for a in arms if "error" not in a]
         pairs = []

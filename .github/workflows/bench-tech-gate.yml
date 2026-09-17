@@ -65,9 +65,11 @@ jobs:
             repeats: "1"
             boards: "apple:jobs.apple.com"
           # Workday is 48.4% of all board-seconds in board_cost.csv and 16.1% tech — the single
-          # biggest lever. One large Board, one A/B pair.
+          # biggest lever. Two repeats, not one, because `jll` is the Board with the unexplained
+          # `desc_lost` and one repeat cannot counterbalance arm order — which is the leading
+          # candidate for it.
           - leg: workday-large
-            repeats: "1"
+            repeats: "2"
             boards: "workday:https://greystar.wd1.myworkdayjobs.com/External workday:https://jll.wd1.myworkdayjobs.com/jllcareers"
           # Mid-size Boards, two A/B pairs each: enough repeats to show whether the ratio is
           # stable or just drift.

@@ -189,21 +189,45 @@ Repeat-to-repeat spread is under 1% on the large Boards, which is what makes the
 cost. Wall-clock saving tracks request saving at ~0.9x on large Boards and falls off on small ones,
 where the listing walk is the floor.
 
-**`jll` is the one Board with a second loss signal, and it needs stating.** Its control arm died on
-an origin HTTP 500 in run `35198692670` — an ATS flake, not the gate — and paired cleanly in the
-other two. In those pairs `tech_lost` is 0 but **`desc_lost` is 2 and 47**: tech Jobs that carried
-a description in the control arm and none in the gated one. That is 2 of 51 pairs; the other 49 are
-`desc_lost=0`, and jll is the only Board that produced any.
+### `jll` has a second loss signal, and it reproduces
 
-It is not the gate dropping work — a tech posting is *always* in `wanted` on an exact-gate Board,
-so it is always fetched — it is a detail fetch failing, and jll is a demonstrably flaky origin (it
-is the Board whose control arm 500'd outright). But **the harness could not tell those apart as
-written**, because it counted only control-had/treatment-lacks and never the reverse, so it
-reported half of a symmetric process as one-sided damage.
+`jll.wd1.myworkdayjobs.com` is the only Board of the set that ever returned a non-zero
+`desc_lost` — tech Jobs carrying a description in the control arm and none in the gated one — and
+it returned one every single time it paired:
 
-It now counts both directions, and that settles it. Re-measured on jll 2026-09-17 with the
-bidirectional harness: **`desc-lost/gained = 0/1`** — the *gated* arm came back with a description
-the control arm lacked. The asymmetry was in the metric, not in the mechanism.
+| run | `tech_lost` | `desc_lost` | churned |
+| --- | ---: | ---: | ---: |
+| `35199442248` | 0 | 2 | 3 |
+| `35203021883` | 0 | 47 | 4 |
+| `35205699837` | 0 | 7 | 1 |
+| `35206816836` | 0 | 59 | 6 |
+
+Four of four, never zero, always the same direction. (`35198692670` and `35207534986` produced no
+jll pair at all — the *control* arm died on an origin HTTP 500 both times, which is its own
+evidence about this origin.) Every other Board in the set is `desc_lost=0` on every pair.
+
+**What this is not.** It is not the gate declining work the index wanted. On an exact-gate Board a
+tech posting is *always* in `wanted`, so it is always fetched; that is a property of the call site,
+not a measurement, and `tech_lost=0` across all 51 pairs is consistent with it.
+
+**What it might be, and what was wrong with the first answer.** The first pass here claimed the
+asymmetry was in the metric: the harness counted only control-had/treatment-lacks and never the
+reverse, so symmetric per-request flakiness would read as one-sided damage. That reasoning is
+sound, but the evidence offered for it was one re-run returning `desc-lost/gained = 0/1`, and a
+single draw showing no loss cannot establish that an earlier 47 was symmetric — with nothing lost
+there was nothing for the reverse column to be symmetric about. Four positive draws out of four
+is not what symmetric flakiness looks like.
+
+The likelier mechanism is one the harness itself created. It ran `for gate in (False, True)` inside
+each repeat, so **the gated arm always ran second**, always immediately after the control arm had
+just put 3,466 detail requests through the same origin. A/B/A/B interleaves *repeats*; it never
+controlled arm order *within* a repeat. That is a systematic one-directional confound, and a 4-of-4
+positive `desc_lost` is exactly its shape.
+
+The harness now counterbalances: even repeats run control-then-gated, odd repeats gated-then-
+control, and each arm records whether it ran first. That is the measurement that can tell an order
+effect from a real one; until it has run on jll across both orders, this is **an open question
+about one flaky Board, not a settled one**, and it is recorded here rather than dropped.
 
 ### Projected, across every Board
 

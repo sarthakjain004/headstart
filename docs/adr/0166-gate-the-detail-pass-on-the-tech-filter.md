@@ -122,14 +122,15 @@ titles `is_tech` keeps. `workday:greystar` 1,597 → 12 requests and 14.4x, `wor
 `apple:jobs.apple.com` 1.52x, `smartrecruiters:soprasteria1` 1.55x (the least favourable). In
 production the same technique on successfactors already delivered **3.03x** across four Boards.
 
-**One Board also showed a second loss signal**, and it is reported rather than buried: `jll`
-returned `desc_lost` 2 and 47 — tech Jobs described in the control arm and not in the gated one —
-against `desc_lost=0` on the other 49 pairs. A tech posting is always in `wanted` on an exact-gate
-Board, so this is a detail fetch failing on a flaky origin (the same Board whose control arm 500'd
-outright in a third run), not work the gate declined. The harness could not *prove* that as
-written, because it counted only one direction of a symmetric process; it now counts both, and a
-re-measurement of jll returned `desc-lost/gained = 0/1` — the gated arm holding a description the
-control arm lacked. The asymmetry was in the metric.
+**One Board shows a second loss signal that is not yet explained.** `jll` returned `desc_lost` of
+2, 47, 7 and 59 across the four pairs it produced — tech Jobs described in the control arm and not
+in the gated one — against `desc_lost=0` on every pair of every other Board. It is not the gate
+declining work: on an exact-gate Board a tech posting is always in `wanted`, so it is always
+fetched, and `tech_lost=0` across all 51 pairs agrees. But four positive draws out of four is not
+symmetric flakiness either, and the harness had a confound that fits it exactly — it ran the gated
+arm second in every repeat, immediately after the control had put 3,466 requests through the same
+origin. The harness now counterbalances arm order by repeat. Until that has run on jll, this is
+an open question about one flaky Board, recorded rather than closed.
 
 **It does not fix the floor.** The scrape stage is floor-bound — 95–98% of the straggler shard is
 one Board — and after the gate that floor is `oracle:ejwl` (1,354s) and `oracle:ejwl-dev7` (977s),
