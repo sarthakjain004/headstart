@@ -136,7 +136,7 @@ class SmartRecruitersScraper(BaseScraper):
         # `parse` reads `name` and `department.label` off this listing posting and never off
         # `_detail`, so the gate asks `filter_tech`'s own question with `filter_tech`'s own
         # inputs. A gated posting still ships as a Job without a description.
-        wanted = self.tech_wanted(
+        wanted = self.tech_detail_wanted(
             postings,
             lambda p: p.get("name"),
             lambda p: (p.get("department") or {}).get("label"),
@@ -153,10 +153,7 @@ class SmartRecruitersScraper(BaseScraper):
                 workers=_DETAIL_WORKERS,
             )
         self.report_detail_gaps(details, "details")
-        for posting in postings:
-            posting["_detail"] = {}
-        for posting, detail in zip(wanted, details):
-            posting["_detail"] = detail or {}
+        self.attach_details(postings, wanted, details)
         return data
 
     def _detail_url(self, posting_id: str) -> str:

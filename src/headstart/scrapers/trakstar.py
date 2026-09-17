@@ -172,7 +172,7 @@ class TrakstarScraper(BaseScraper):
         # request, which makes a skipped one worth more here than the card count suggests.
         wanted = [
             code
-            for block, code in self.tech_wanted(
+            for block, code in self.tech_detail_wanted(
                 _cards_from(html),
                 lambda bc: _card_title(bc[0]),
                 lambda bc: _card_dept(bc[0]),
@@ -282,9 +282,7 @@ class TrakstarScraper(BaseScraper):
             code = _CODE.search(block)
             if not code:
                 continue
-            title = _TITLE.search(block)
             loc = _LOC.search(block)
-            dept = _DEPT.search(block)
             emp = _EMPTYPE.search(block)
             location = _html.unescape(loc.group(1)).strip() if loc else None
             posting = postings.get(code.group(1)) or {}
@@ -293,10 +291,13 @@ class TrakstarScraper(BaseScraper):
                     id=self.job_id(code.group(1)),
                     ats=self.ats,
                     company=self.company,
-                    title=_html.unescape(title.group(1)).strip() if title else "",
+                    # The same two readers the tech gate in `fetch_raw` uses, so the
+                    # gate cannot classify on a different string than this Job
+                    # carries into `filter_tech`.
+                    title=_card_title(block) or "",
                     location=location,
                     remote=is_remote(location),
-                    department=_html.unescape(dept.group(1)).strip() if dept else None,
+                    department=_card_dept(block),
                     url=self.job_url(code.group(1)),
                     # the listing card has no date; the detail JSON-LD does
                     posted_at=posting.get("datePosted"),
@@ -343,7 +344,7 @@ def _codes_from(html: str) -> list[str]:
     ``scripts/enrich/salary_sample.py``) so the two don't carry two copies of the same
     card-splitting logic — the same reuse ``_fetch_successfactors`` already gets from this
     module's ``_job_urls_from``-equivalent, ``successfactors.py``'s own module-level helper."""
-    return [m.group(1) for block in html.split(_ITEM)[1:] if (m := _CODE.search(block))]
+    return [code for _block, code in _cards_from(html)]
 
 
 def _total_openings(html: str) -> int | None:

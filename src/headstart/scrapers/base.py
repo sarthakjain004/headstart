@@ -413,7 +413,7 @@ class BaseScraper(ABC):
             return True
         return f"{self.board_key()}:{native_id}" not in self.have_details
 
-    def tech_wanted(
+    def tech_detail_wanted(
         self,
         items: Sequence[_T],
         title_of: Callable[[_T], str | None],
@@ -456,6 +456,30 @@ class BaseScraper(ABC):
                 f"fetches (ADR-0017 gate)"
             )
         return kept
+
+    @staticmethod
+    def attach_details(
+        items: Sequence[dict[str, Any]],
+        fetched: Sequence[dict[str, Any]],
+        results: Sequence[Any],
+        key: str = "_detail",
+    ) -> None:
+        """Hang each detail on the item it was fetched for, and an empty one on the rest.
+
+        ADR-0048's alignment trap, in one place. Once a gate makes the fan-out cover a *subset*
+        of the listing, ``zip(items, results)`` pairs each result with the wrong item — silently,
+        because both are lists of the right shape. Pairing against ``fetched`` is the fix, and
+        the items that were never fetched must still be given an empty detail rather than left
+        carrying a previous run's or another item's.
+
+        Written once rather than at each call site because three scrapers had hand-written the
+        same three lines, and three copies of an alignment trap is where the fourth one gets it
+        wrong.
+        """
+        for item in items:
+            item[key] = {}
+        for item, result in zip(fetched, results):
+            item[key] = result or {}
 
     @staticmethod
     def tech_gate_enabled() -> bool:

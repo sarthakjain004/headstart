@@ -97,7 +97,7 @@ class RipplingScraper(BaseScraper):
         # falling back to the detail only for a department the listing omitted — and `department`
         # is empty on every one of the 1,515 rippling postings in the 2026-09-17 corpus, so that
         # fallback recovers nothing the gate is missing.
-        wanted = self.tech_wanted(
+        wanted = self.tech_detail_wanted(
             items, lambda it: it.get("name"), lambda it: _department_of(it)
         )
         # Fill each posting's detail concurrently (bounded); a failed fetch leaves ``_detail`` {}.
@@ -117,10 +117,7 @@ class RipplingScraper(BaseScraper):
         # {} is this scraper's failure sentinel (a real record is never empty), so map
         # falsy to None for the gap count.
         self.report_detail_gaps([d or None for d in details], "details")
-        for item in items:
-            item["_detail"] = {}
-        for item, detail in zip(wanted, details):
-            item["_detail"] = detail
+        self.attach_details(items, wanted, details)
         return items
 
     def _detail_url(self, uuid: str) -> str:

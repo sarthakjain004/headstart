@@ -588,7 +588,7 @@ class ZwayamScraper(BaseScraper):
         # index would have kept.
         need = [
             row
-            for row in self.tech_wanted(
+            for row in self.tech_detail_wanted(
                 rows,
                 lambda r: r.get("jobTitle"),
                 lambda r: r.get("departmentName") or r.get("DepartmentName"),

@@ -193,7 +193,7 @@ class AppleScraper(BaseScraper):
         # `team.teamName` off this same listing item and never off the detail, so the gate
         # reaches the verdict `filter_tech` will reach. Apple is ~70.8% tech, so this saves
         # less than on any other Board — it is wired for the same reason it is cheap.
-        wanted = self.tech_wanted(
+        wanted = self.tech_detail_wanted(
             [i for i in items if i.get("id")],
             lambda i: i.get("postingTitle"),
             lambda i: (i.get("team") or {}).get("teamName"),

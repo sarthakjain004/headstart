@@ -278,7 +278,8 @@ class JazzHRScraper(BaseScraper):
         # `idsinternational` 24 of 44): 845 kept by the gate, 845 by the filter, zero
         # disagreements. Re-check it if this page's markup moves.
         keys = [
-            key for key, *_ in self.tech_wanted(rows, lambda r: r[1], lambda r: r[3])
+            key
+            for key, *_ in self.tech_detail_wanted(rows, lambda r: r[1], lambda r: r[3])
         ]
         # `_rows` skips any `row_job_` <tr> whose posting link it cannot read, and the skip is
         # the one thing on this page that can go wrong without anything failing: the shell is
@@ -291,7 +292,7 @@ class JazzHRScraper(BaseScraper):
         unread = len(_ROW.findall(listing)) - len(rows)
         if unread > 0:
             _log.info(
-                f"{self.board_key()}: {unread} of {unread + len(keys)} listing row(s) carried "
+                f"{self.board_key()}: {unread} of {unread + len(rows)} listing row(s) carried "
                 "no posting link — those postings are listed but unread"
             )
         details: dict[str, str] = {}

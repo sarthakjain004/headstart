@@ -317,14 +317,16 @@ class SuccessFactorsScraper(BaseScraper):
         # eightfold's exact, listing-derived signal); this is the same trade on an approximate,
         # measured one instead — see :func:`_title_from_slug`.
         #
-        # Routed through `tech_wanted` so this gate answers the same way every other one does —
+        # Routed through `tech_detail_wanted` so this gate answers the same way every other one does —
         # in particular it is now conditional on `have_details`, the pipeline signal, which it
         # was not when it shipped in #503. That divergence had a visible cost: `filter_tech`
         # reported `successfactors 32,891/33,035 = 99.6% tech` in run 35193130454, because a
         # non-tech posting never reached the corpus at all, so this ATS's real tech share was no
         # longer readable from the pipeline's own data. `verify_scraper.py` and the enrichment
         # samplers construct scrapers directly and now see whole Boards again.
-        tech_listed = self.tech_wanted(listed, lambda pair: _title_from_slug(pair[0]))
+        tech_listed = self.tech_detail_wanted(
+            listed, lambda pair: _title_from_slug(pair[0])
+        )
         # Detail pass: every field comes from the job page, so fetch each one (bounded); a
         # failed fetch leaves fields None and parse drops just that job.
         if self.async_fanout_enabled():

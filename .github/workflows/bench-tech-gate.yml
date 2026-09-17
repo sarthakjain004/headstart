@@ -69,11 +69,17 @@ jobs:
           python-version: "3.12"
       - run: pip install -e ".[scrape]"
       - name: A/B the gate
+        # Dispatch inputs reach the shell through `env`, never interpolated into `run:` —
+        # `${{ }}` substitution happens before bash sees the script, so a board string
+        # containing shell syntax would execute rather than be an argument.
+        env:
+          REPEATS: ${{ github.event.inputs.repeats || matrix.repeats }}
+          BOARDS: ${{ github.event.inputs.boards || matrix.boards }}
+          LEG: ${{ matrix.leg }}
         run: |
+          # shellcheck disable=SC2086 -- BOARDS is a deliberate space-separated argument list
           python -u scripts/bench/tech_gate_bench.py \
-            --repeats "${{ github.event.inputs.repeats || matrix.repeats }}" \
-            --out "bench-${{ matrix.leg }}.json" \
-            ${{ github.event.inputs.boards || matrix.boards }} | tee "bench-${{ matrix.leg }}.log"
+            --repeats "$REPEATS" --out "bench-$LEG.json" $BOARDS | tee "bench-$LEG.log"
       - name: Summarise
         if: always()
         run: |

@@ -872,7 +872,7 @@ class WorkdayScraper(BaseScraper):
         # `_detail`, so the gate's verdict is the one `filter_tech` will reach — exact, not
         # approximate. A gated posting still becomes a Job, with `description=None`; the Board's
         # list stays whole, so no truncation denominator moves.
-        wanted = self.tech_wanted(
+        wanted = self.tech_detail_wanted(
             postings,
             lambda item: item.get("title"),
             lambda item: item.get("jobFamilyGroup"),
@@ -902,13 +902,9 @@ class WorkdayScraper(BaseScraper):
             if not item.get("externalPath") and (item.get("title") or "").strip()
         )
         self._report_detail_losses(details, classes, titled_stubs)
-        # Re-align by identity, not position: the fan-out covered `wanted`, a subset of
-        # `postings`, so zipping it against the full list would hang each detail on the wrong
-        # posting (ADR-0048's alignment trap). Gated postings keep the empty `_detail` below.
-        for item in postings:
-            item["_detail"] = {}
-        for item, detail in zip(wanted, details):
-            item["_detail"] = detail or {}
+        # The fan-out covered `wanted`, a subset of `postings` — see `attach_details` for why
+        # zipping against the full list would hang each detail on the wrong posting.
+        self.attach_details(postings, wanted, details)
         return postings
 
     def _detail_url(self, external_path: str) -> str:

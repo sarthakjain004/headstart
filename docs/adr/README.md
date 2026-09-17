@@ -165,3 +165,4 @@ supersedes it and note the supersession in both.
 | [0162](0162-a-gone-verdict-expires-quarantine-parole.md) | A gone-verdict expires — quarantined Boards go on parole, not away | 2026-09-16 |
 | [0163](0163-report-the-description-gap-as-a-drain.md) | Report the description gap as a drain, and reclassify the Boards that are not Scrapable | 2026-09-16 |
 | [0164](0164-mark-when-the-definition-changed-not-just-the-data.md) | Mark when the definition changed, not just when the data did | 2026-09-16 |
+| [0165](0165-gate-the-detail-pass-on-the-tech-filter.md) | Gate the detail pass on the tech filter, behind one seam | 2026-09-17 |

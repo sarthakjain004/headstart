@@ -71,7 +71,7 @@ These lose `department` at gate time. Measured over the real pre-filter corpus, 
 | `jobvite` | 0.4% | **40.6%** | "implies title/department are already on the listing" — **neither** is; the listing is ids only |
 | `icims` | 2.8% | **25.8%** | "check whether their job URLs carry a recoverable slug" — they do (`/jobs/{id}/{title-slug}/job`), and it does not help |
 | `bamboohr` | 3.4% | 13.6% | not listed (post-dates the issue) |
-| `ripplehire` | 0.3% | 1.8% | "title might still support a title-only gate" — plausibly yes, the only Tier-2 ATS where it is |
+| `ripplehire` | 0.3% | 1.8% | "title might still support a title-only gate" — plausibly yes, the only one here where it is. **Deferred, not refused**: 1.8% is 7 of 395 tech postings, which is a real loss rather than a rounding error, and at 0.3% of board-seconds it does not pay for the per-tenant sample that would be needed to accept it. Revisit if ripplehire grows. |
 
 **Oracle is the important correction.** #500 rules it out because `Category`/`JobFunction` are 0.0%
 on the listing and ids are not slugs. But `Title` *is* on the listing — 600/600 across three hosts
@@ -85,6 +85,12 @@ recall cliff.
 **iCIMS is the other correction.** Its URLs do carry a clean title slug, so the successfactors
 pattern transfers mechanically. It is still blocked, because the slug recovers the title and
 nothing recovers the department.
+
+**`meta` is the one detail-pass ATS with no tier**, because it is not worth one: a single Board,
+985 postings, 60 board-seconds — 0.0% of the total. For the record it is shaped like icims (title
+from the detail page's JSON-LD) but *unlike* icims it would be safe, since `parse` hardcodes
+`department=None`, so a slug-derived gate would read exactly what `filter_tech` reads. It is left
+alone because 60 seconds does not justify a slug parser and a per-tenant sample.
 
 ### Tier 3 — needs one more measurement
 
@@ -201,6 +207,7 @@ python -u scripts/bench/tech_gate_bench.py --repeats 2 \
   "workday:https://aveva.wd3.myworkdayjobs.com/AVEVA_careers" smartrecruiters:pilotcompany
 ```
 
-`HEADSTART_TECH_GATE=1` turns the gate on; it is off by default and off for any caller with
-`have_details is None`. Push to a `bench/**` branch to run it on a runner — `workflow_dispatch`
+The gate is **on by default** (`HEADSTART_TECH_GATE=0` is the kill switch) and off for any caller
+with `have_details is None`; the bench sets the variable explicitly for both arms rather than
+relying on either default. Push to a `bench/**` branch to run it on a runner — `workflow_dispatch`
 alone will not fire until the workflow is on the default branch.

@@ -9406,7 +9406,7 @@ def test_a_payload_with_no_postings_container_says_the_board_was_unread(
 # --- the ADR-0017 pre-detail tech gate (issue #500) -------------------------------------------
 
 
-def test_tech_wanted_is_off_outside_the_pipeline_and_armed_inside_it():
+def test_tech_detail_wanted_is_off_outside_the_pipeline_and_armed_inside_it():
     """``have_details`` is the one signal that says "the pipeline is running".
 
     Eight scripts construct scrapers directly and three read a Board's completeness as a health
@@ -9419,16 +9419,16 @@ def test_tech_wanted_is_off_outside_the_pipeline_and_armed_inside_it():
     scraper = get_scraper("smartrecruiters", "acme")
 
     assert scraper.have_details is None
-    assert scraper.tech_wanted(items, lambda i: i["t"]) == items, (
+    assert scraper.tech_detail_wanted(items, lambda i: i["t"]) == items, (
         "direct caller keeps the Board"
     )
 
     scraper.have_details = frozenset()
-    assert scraper.tech_wanted(items, lambda i: i["t"]) == [items[0]]
+    assert scraper.tech_detail_wanted(items, lambda i: i["t"]) == [items[0]]
     assert scraper.telemetry["tech_gated_details"] == 1
 
 
-def test_tech_wanted_reads_department_so_a_vague_title_is_not_dropped():
+def test_tech_detail_wanted_reads_department_so_a_vague_title_is_not_dropped():
     """`tech_filter` rule 4 promotes a vague title on a technical department, and the gate has
     to honour it or it silently drops those postings.
 
@@ -9442,22 +9442,24 @@ def test_tech_wanted_reads_department_so_a_vague_title_is_not_dropped():
     scraper.have_details = frozenset()
     vague = [{"t": "System Technician", "d": "Information Technology"}]
 
-    assert scraper.tech_wanted(vague, lambda i: i["t"], lambda i: i["d"]) == vague
-    assert scraper.tech_wanted(vague, lambda i: i["t"]) == [], (
+    assert (
+        scraper.tech_detail_wanted(vague, lambda i: i["t"], lambda i: i["d"]) == vague
+    )
+    assert scraper.tech_detail_wanted(vague, lambda i: i["t"]) == [], (
         "without the department the same posting is dropped — the recall cliff"
     )
 
 
-def test_tech_wanted_kill_switch_restores_the_whole_board(monkeypatch):
+def test_tech_detail_wanted_kill_switch_restores_the_whole_board(monkeypatch):
     from headstart.scrapers.registry import get_scraper
 
     scraper = get_scraper("smartrecruiters", "acme")
     scraper.have_details = frozenset()
     items = [{"t": "Housekeeper"}]
 
-    assert scraper.tech_wanted(items, lambda i: i["t"]) == []
+    assert scraper.tech_detail_wanted(items, lambda i: i["t"]) == []
     monkeypatch.setenv("HEADSTART_TECH_GATE", "0")
-    assert scraper.tech_wanted(items, lambda i: i["t"]) == items
+    assert scraper.tech_detail_wanted(items, lambda i: i["t"]) == items
 
 
 def test_workday_gates_details_and_pairs_them_back_by_the_right_posting(monkeypatch):
@@ -9496,3 +9498,95 @@ def test_workday_gates_details_and_pairs_them_back_by_the_right_posting(monkeypa
     assert by_title["Backend Engineer"]["description"] == "body for /job/be"
     assert by_title["Housekeeper"] == {} and by_title["Chef"] == {}
     assert scraper.truncated is None
+
+
+def test_attach_details_pairs_against_the_fetched_subset_not_the_full_list():
+    """ADR-0048's alignment trap, at the seam rather than at nine call sites.
+
+    ``zip(items, results)`` is the bug: both are lists of the right shape, so a subset fan-out
+    pairs every result with the wrong item and nothing raises. Items that were never fetched must
+    come back with an empty detail, not a neighbour's."""
+    from headstart.scrapers.base import BaseScraper
+
+    items = [{"id": "a"}, {"id": "b"}, {"id": "c"}]
+    fetched = [items[1]]  # only "b" passed the gate
+    BaseScraper.attach_details(items, fetched, [{"description": "b body"}])
+
+    assert items[1]["_detail"] == {"description": "b body"}
+    assert items[0]["_detail"] == {} and items[2]["_detail"] == {}
+
+
+def test_smartrecruiters_gates_details_and_pairs_them_back(monkeypatch):
+    """The same trap at smartrecruiters' call site — `p["_detail"]` is what `parse` reads."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    scraper = get_scraper("smartrecruiters", "acme")
+    scraper.have_details = frozenset()
+    postings = [
+        {"id": "1", "name": "Housekeeper"},
+        {"id": "2", "name": "Backend Engineer"},
+        {"id": "3", "name": "Chef"},
+    ]
+    monkeypatch.setattr(
+        scraper, "_get", lambda *a: json.dumps({"content": postings, "totalFound": 3})
+    )
+    fetched: list[str] = []
+
+    def _detail(posting_id):
+        fetched.append(posting_id)
+        return {"description": f"body {posting_id}"}
+
+    monkeypatch.setattr(scraper, "_job_detail", _detail)
+    raw = scraper.fetch_raw()
+
+    assert fetched == ["2"], "only the tech posting cost a request"
+    by_id = {p["id"]: p["_detail"] for p in raw["content"]}
+    assert by_id["2"] == {"description": "body 2"}
+    assert by_id["1"] == {} and by_id["3"] == {}
+
+
+def test_rippling_gates_details_and_reads_a_dict_department_like_parse_does(
+    monkeypatch,
+):
+    """rippling states `department` as a bare string on some tenants and `{"name": ...}` on
+    others, and `parse` unpacks the dict. The gate must unpack it the same way or it classifies
+    on a different string than `filter_tech` gets."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    scraper = get_scraper("rippling", "acme")
+    scraper.have_details = frozenset()
+    items = [
+        {
+            "uuid": "1",
+            "name": "Technician",
+            "department": {"name": "Information Technology"},
+        },
+        {"uuid": "2", "name": "Receptionist", "department": {"name": "Front Desk"}},
+    ]
+
+    class _Resp:
+        status_code = 200
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        @staticmethod
+        def json():
+            return items
+
+    monkeypatch.setattr(scraper._fetcher, "fetch", lambda *a, **k: _Resp())
+    fetched: list[str] = []
+
+    def _detail(uuid):
+        fetched.append(uuid)
+        return {"description": f"body {uuid}"}
+
+    monkeypatch.setattr(scraper, "_detail", _detail)
+    raw = scraper.fetch_raw()
+
+    assert fetched == ["1"], (
+        "a vague title is rescued by its department — the gate must see through the dict"
+    )
+    assert {it["uuid"]: it["_detail"] for it in raw} == {
+        "1": {"description": "body 1"},
+        "2": {},
+    }
