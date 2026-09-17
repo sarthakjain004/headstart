@@ -64,8 +64,9 @@ DBA.
 
 ## What it moved
 
-**+1,488 postings, +1.38%** — 109,172 indexed against 107,684. Near-neutral in size, and much
-further in composition: **+6,673 in, −5,185 out**, so more than a tenth of what the index holds is
+**+481 postings, +0.45%** — 108,165 indexed against 107,684, over a 489,661-posting sample (4 of
+run `35193130454`'s 15 scrape fragments, so a sample and not the corpus). Near-neutral in size, and
+much further in composition: **+5,868 in, −5,387 out** — about a tenth of what the index holds is
 different even though its size barely moved.
 
 | in | out |
@@ -98,6 +99,16 @@ this change's own first draft, and there were several:
   from `_NON_SOFTWARE`'s reach and flipped `Installation Engineer` in `HVAC & Facilities` from
   non-tech to tech, undoing ADR-0068. The blanking turned out to be redundant once rules 1-2 read
   the title — rule 4's own guard is sufficient — so it is gone and the veto is intact.
+- **Rule 4 then had to apply that veto itself**, which the draft missed. While rules 1-2 read
+  `title + department`, a non-software title always tripped rule 2's generic token off the
+  department's own "engineering" and was vetoed there. Reading the title only closes that path, so
+  rule 4 promoted them instead: `Civil Designer`, `Welding Inspector`, `HVAC Journeyman Chiller
+  Mechanic` and `Structural EIT/Coordinator` all flipped to tech, and the population of tech rows
+  with a `_NON_SOFTWARE` title rose **52%**. Rule 4 now checks `_NON_SOFTWARE` on the title.
+- **A plausible simplification that measurement refused.** `_NOT_TECH_DEPT` and `_NON_TECH_ROLE`
+  share five members, which reads as duplication. Trimming them lets **581** rows back in, because
+  in `_NOT_TECH_DEPT` they are *department* labels whose titles the role list does not match —
+  "Campus Safety & Security" over "PRIA Specialist". Two lists, two inputs; the overlap stays.
 
 Every one of those is a recall loss on a gate whose contract is that dropping a real tech job is
 not acceptable, and none was visible from reading the regex. `tests/test_tech_filter.py` pins all
@@ -109,12 +120,12 @@ It does not unlock the gate for the five ATSes it was aimed at. A title-only gat
 
 | ATS | before | after |
 | --- | ---: | ---: |
-| oracle | 46.0% | **34.9%** |
-| zoho | 47.4% | **36.2%** |
-| icims | 25.8% | 19.7% |
-| jobvite | 40.6% | 13.4% |
+| oracle | 46.0% | **34.3%** |
+| zoho | 47.4% | **34.4%** |
+| icims | 25.8% | 18.8% |
+| jobvite | 40.6% | 12.8% |
 | bamboohr | 13.6% | 10.4% |
-| *corpus-wide* | 20.7% | 15.0% |
+| *sample-wide* | 20.7% | 14.2% |
 
 jobvite and bamboohr are now in a range worth re-examining; oracle and zoho are not. The residual
 there is not a pattern gap that more regexes would close — it is genuinely vague titles

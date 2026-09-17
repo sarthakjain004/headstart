@@ -596,3 +596,34 @@ def test_the_version_counter_moved_with_the_line():
         "measured effect, and a bump without one is what CLAUDE.md's DERIVATIONS_VERSION rule "
         "exists to stop"
     )
+
+
+@pytest.mark.parametrize(
+    "title,department",
+    [
+        # ADR-0068's veto, which rule 4 has to apply itself now that rules 1-2 read the title.
+        # While they read `title + department`, each of these tripped rule 2's generic token off
+        # the department's own "engineering" and was vetoed there; reading the title only closed
+        # that path, and rule 4 promoted them instead until it gained the same guard.
+        ("Civil Designer", "Engineering"),
+        ("Welding Inspector", "Engineering"),
+        ("HVAC Journeyman Chiller Mechanic", "Engineering"),
+        ("Structural EIT/Coordinator", "Building Engineering"),
+        ("Mechanical Department Manager", "Mechanical Engineering"),
+    ],
+)
+def test_rule_four_does_not_promote_another_engineering_discipline(title, department):
+    assert is_tech(title, department=department) is False
+
+
+def test_the_two_not_software_lists_read_different_inputs():
+    """`_NOT_TECH_DEPT` reads departments, `_NON_TECH_ROLE` reads titles, and their shared members
+    earn their place — trimming the five overlapping ones lets 581 rows back in, on labels like
+    "Campus Safety & Security" whose titles ("PRIA Specialist") the role list does not match."""
+    assert is_tech("PRIA Specialist", department="Safety & Security") is False
+    assert (
+        is_tech("Regional Security Manager", department="Security & Life Safety")
+        is False
+    )
+    # ...and the title list still works where the department says nothing either way.
+    assert is_tech("Security Officer", department="Corporate") is False

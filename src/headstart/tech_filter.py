@@ -46,8 +46,9 @@ from pathlib import Path
 # 2 (2026-09-17, `git log 277b5e2a..1fd0f843 -- src/headstart/tech_filter.py`): rules 1 and 2
 # stopped reading the department, rule 4 stopped promoting a title
 # that names a different profession, and the strong list gained the roles the department had been
-# covering for. Net **+1.38%** on a 489,661-posting corpus (107,684 -> 109,172; +6,673 in,
-# -5,185 out), so the composition moves much further than the total — see
+# covering for. Net **+0.45%** on a 489,661-posting sample — 4 of run 35193130454's 15 scrape
+# fragments — at 107,684 -> 108,165, +5,868 in and -5,387 out, so the composition moves much
+# further than the total. See
 # docs/tech-filter/2026-09-17_the-title-decides.md. This is exactly the shape the counter exists
 # for: `role_trends` would otherwise read "Security Officer" leaving the index as the market
 # shedding security jobs.
@@ -197,6 +198,10 @@ _TECH_DEPT = re.compile(
 #     it overwhelmingly means procurement, not candidates. All 10 live occurrences in a
 #     418-Board, 22,573-job survey were supply-chain ("Category Sourcing", "Sourcing & Quality",
 #     "Global Sourcing", "Product Sourcing"), so including it would veto on the wrong meaning.
+_HIRING_DEPT = re.compile(
+    r"\b(recruit\w*|staffing|talent acquisition)\b", re.IGNORECASE
+)
+
 # 4c. Departments whose technical-looking word does not mean software. `security` promotes
 #     physical guards ("Security Officer" x1,338 on one sweep) and `engineering` promotes the
 #     trades out of "Engineering & Facilities" (plumbers, painters, carpenters, electricians).
@@ -208,12 +213,19 @@ _TECH_DEPT = re.compile(
 #     is what keeps "Software Engineer, Facilities Systems" working.
 #
 #     **Its marginal contribution is 1,457 of the change's 5,185 removals**, measured by ablation
-#     over the 2026-09-17 corpus — not the 3,030 rows it matches, because `_NON_TECH_ROLE` already
+#     over that same 489,661-posting sample — not the 3,030 rows it matches, because `_NON_TECH_ROLE` already
 #     refuses most of those by title. Security Officer, Plumber, Painter, Carpenter and Electrician
 #     are all in that list too and would be refused without this rule; what only *this* rule
 #     catches is the title that names no profession at all — a bare "Technician", "General
 #     Technician", "Maintenance Manager", "Security Site Supervisor", or the hotel trades
 #     ("Laundry & Kitchen Technician", "Technicien(-ne) de maintenance").
+#
+#     **The overlap with `_NON_TECH_ROLE` is deliberate, and measured rather than assumed.**
+#     Trimming the five shared members (`security officer`, `security guard`, `loss prevention`,
+#     `janitor`, `housekeep`) out of this list lets **581** rows back in, because here they are
+#     *department* labels whose titles that list does not match: "Campus Safety & Security" over
+#     "PRIA Specialist", "Engineering and Safety" over "Shift Technician (Buggy & Generator)",
+#     "Security & Life Safety" over "Regional Security Manager". Two lists, two inputs.
 #     See docs/tech-filter/2026-09-17_the-title-decides.md.
 _NOT_TECH_DEPT = re.compile(
     # No trailing \b: the plural is the common spelling ("Security Officers" is the department,
@@ -261,10 +273,6 @@ _NON_TECH_ROLE = re.compile(
     re.IGNORECASE,
 )
 
-_HIRING_DEPT = re.compile(
-    r"\b(recruit\w*|staffing|talent acquisition)\b", re.IGNORECASE
-)
-
 
 @dataclass(frozen=True, slots=True)
 class Verdict:
@@ -283,7 +291,8 @@ def classify(title: str | None, department: str | None = None) -> Verdict:
     # so `Content Creator` in it scored a strong software signal, and `Engineering & Facilities`
     # contains "engineering", so `Plumber` scored a generic one. The department already has its
     # own rule below, with its own guards; letting it also fire rules 1-2 counted it twice and
-    # bypassed those guards. Measured over the 489,661-posting pre-filter corpus of 2026-09-17,
+    # bypassed those guards. Measured over a 489,661-posting pre-filter sample of 2026-09-17 (4 of run 35193130454's 15
+    # scrape fragments),
     # **~8,900** postings were reaching the index on a department-only rule-1/2 match.
     if _STRONG.search(title_text):
         return Verdict(True, "strong-software-signal")
@@ -301,6 +310,15 @@ def classify(title: str | None, department: str | None = None) -> Verdict:
         and not _HIRING_DEPT.search(dept)
         and not _NOT_TECH_DEPT.search(dept)
         and not _NON_TECH_ROLE.search(title_text)
+        # ADR-0068's veto, which rule 4 now has to apply itself. While rules 1-2 read
+        # `title + department`, a non-software title always tripped rule 2's generic token off
+        # the department's own "engineering" and was vetoed there. Reading the title only closes
+        # that path, so without this line rule 4 promoted them instead: `Civil Designer`,
+        # `Welding Inspector`, `HVAC Journeyman Chiller Mechanic` and `Structural
+        # EIT/Coordinator` all flipped to tech, and the population of tech rows with a
+        # `_NON_SOFTWARE` title rose 52%. The title says what they do — including when what it
+        # says is "a different kind of engineer".
+        and not _NON_SOFTWARE.search(title_text)
     ):
         return Verdict(True, "tech-department")
     return Verdict(False, "no-tech-signal")
