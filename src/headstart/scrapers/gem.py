@@ -72,12 +72,13 @@ Full Stack Engineer (Remote)" confirm which field is telling the truth). `_remot
 `locationType` first and falls back to `isRemote` only if `locationType` is ever absent, which it
 never was in this sample.
 
-**Every job's detail is fetched, with no ADR-0048 skip.** Phenom can skip a Job whose description is
-already stored because every other field it emits also comes from its listing; Gem cannot make that
-same claim, because `posted_at` and `compensationHtml` are detail-only (never on `JobBoardList`) —
-skipping the fetch for an already-seen Job would silently null those fields on every run after the
-first. Batching keeps the cost of always fetching low: a 300-posting board costs three detail
-requests regardless.
+**Every *tech* job's detail is fetched, with no ADR-0048 skip.** Phenom can skip a Job whose
+description is already stored because every other field it emits also comes from its listing; Gem
+cannot make that same claim, because `posted_at` and `compensationHtml` are detail-only (never on
+`JobBoardList`) — skipping the fetch for an already-seen Job would silently null those fields on
+every run after the first. Batching keeps the cost of always fetching low: a 300-posting board
+costs three detail requests regardless. The ADR-0166 tech gate is a separate skip and does apply
+(`fetch_raw`): a posting `filter_tech` will drop has no fields worth keeping at all.
 
 **Company name: the board page renders server-side, and its title wrapper is one this repo already
 knows.** Sampled 60 live board pages — no JS wall, real HTML on a bare GET. ~95% follow "{Name}
