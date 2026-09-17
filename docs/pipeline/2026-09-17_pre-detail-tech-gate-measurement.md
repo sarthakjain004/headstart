@@ -243,13 +243,20 @@ request ratio:
 
 ### What it does *not* fix
 
-The scrape stage is floor-bound: 95–98% of the straggler shard is one Board. After the gate, the
-floor set of run `35193130454` is `jazzhr:amadaseniorcarenorthshore` (850s), `oracle:ejwl` (1,354s),
-`apple:jobs.apple.com` (1,179s), `oracle:ejwl-dev7` (977s). The gate takes **apple** down by only
-~29% (it is 70.8% tech) and cannot touch **either Oracle Board at all**. So this removes roughly
-half the total scrape *work* — which the packer converts into a lower even-share term — while the
-**floor stays Oracle-bound**. Oracle needs the separate `categoriesFacet` idea in #500 §"Known not
-viable", not this gate.
+The scrape stage is floor-bound: 95–98% of the straggler shard is one Board. In run `35193130454`
+the floor set was `jazzhr:amadaseniorcarenorthshore` (850s), `oracle:ejwl` (1,354s),
+`apple:jobs.apple.com` (1,179s) and `oracle:ejwl-dev7` (977s).
+
+Of those four, this change reaches two. **jazzhr** is gated here, and its Board was the slowest of
+the run. **apple** is gated too but gives up only ~29%, being 70.8% tech. **Neither Oracle Board
+can take the gate at all** — and `oracle:ejwl`, the largest, was separately **parked** on `main` in
+`c5984f38` while this branch was in review, for an unrelated reason (a WARP-path slowdown), which
+removes it from the floor without addressing the class. `oracle:ejwl-dev7` is still there.
+
+So this removes roughly half the total scrape *work*, which the packer converts into a lower
+even-share term, and takes the single slowest Board of that run off the floor. What it does not do
+is fix the Oracle class: that needs the separate `categoriesFacet` idea in #500 §"Known not
+viable", or more parking.
 
 ## 4. Two claims in #500 that did not survive
 
