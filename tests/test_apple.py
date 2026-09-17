@@ -300,3 +300,78 @@ def test_the_scraper_declares_a_detail_pass():
     from headstart.scrapers.registry import detail_pass_atses
 
     assert "apple" in detail_pass_atses()
+
+
+# --- transport: this origin meters per connection, not per stream -----------------------------
+# Measured live 2026-09-17, interleaved A/B on fresh ids, three rounds, zero non-200s either way:
+# one AsyncSession at 16/32/64 streams lands at ~4.2-4.4 req/s no matter the width, while 32
+# threads (32 connections) reach ~9-12 req/s. The server is not the one refusing — its own
+# SETTINGS frame advertises MAX_CONCURRENT_STREAMS=128. End to end through `fetch_raw` over 400
+# deduped postings: 85.5s async vs 41.1s threaded, same details, same employment_type coverage.
+
+
+def test_apple_uses_connections_not_streams_for_its_detail_pass():
+    """Pins the decision, because it is invisible at the call site: `fetch_raw` just asks
+    `async_fanout_enabled()`. Flipping this back silently halves the Board's throughput, and this
+    Board owns the scrape stage's critical path."""
+    assert AppleScraper.async_fanout_enabled() is False
+
+
+def test_the_width_is_the_connection_count():
+    """`detail_workers`, not `detail_streams`: widening streams on the one shared connection is
+    the thing measured to have no effect, so a number parked there would read as a tuning knob
+    while doing nothing."""
+    assert AppleScraper.detail_workers == 32
+    assert AppleScraper.detail_streams is None
+
+
+def test_fetch_raw_takes_the_threaded_path(monkeypatch):
+    """The attribute above only matters if `fetch_raw` actually routes on it."""
+    s = AppleScraper(SLUG)
+    listing, details = _listing(), _details()
+    monkeypatch.setattr(AppleScraper, "_listing", lambda self: listing)
+    monkeypatch.setattr(AppleScraper, "_detail", lambda self, i: details.get(i))
+
+    took = {"sync": 0, "async": 0}
+    real_fan_out = (
+        AppleScraper.fan_out
+    )  # a staticmethod: (items, fn, *, workers, default)
+
+    def spy_sync(items, fn, **kw):
+        took["sync"] += 1
+        assert kw.get("workers") == AppleScraper.detail_workers, (
+            "the detail pass must open as many connections as the measurement was taken at"
+        )
+        return real_fan_out(items, fn, **kw)
+
+    def spy_async(self, *a, **kw):  # pragma: no cover - must not run
+        took["async"] += 1
+        raise AssertionError("the multiplexed path is the slow one for this origin")
+
+    monkeypatch.setattr(AppleScraper, "fan_out", staticmethod(spy_sync))
+    monkeypatch.setattr(AppleScraper, "fan_out_async", spy_async)
+
+    raw = s.fetch_raw()
+
+    assert took == {"sync": 1, "async": 0}
+    assert raw["details"], "the threaded path must still return the detail payloads"
+
+
+def test_the_threaded_detail_pass_still_records_its_operating_point(monkeypatch):
+    """`fan_out_async` instruments itself; `fan_out` does not. Without `_timed_details` the move
+    to the sync path would delete the `concurrency apple details @N` line — the one the transport
+    decision was read from — leaving only a board-level total that cannot separate listing from
+    details."""
+    from headstart import fanout_stats
+
+    monkeypatch.setattr(fanout_stats, "_rows", {})
+    s = AppleScraper(SLUG)
+    details = _details()
+    monkeypatch.setattr(AppleScraper, "_detail", lambda self, i: details.get(i))
+
+    s._timed_details(list(details))
+
+    recorded = fanout_stats.stats()
+    key = ("apple details", AppleScraper.detail_workers)
+    assert key in recorded, f"no operating point recorded; got {list(recorded)}"
+    assert recorded[key]["items"] == len(details)
