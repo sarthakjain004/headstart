@@ -4403,6 +4403,145 @@ def test_successfactors_page_fields_csb_meta_microdata():
     assert _csb_posted_at(label_page) == "2026-06-25"
 
 
+def _tombstone_page() -> str:
+    """A minimal fixture for SuccessFactors' own soft-404: a 200 OK shell whose canonical link
+    never got a slug/id filled in, because the requisition the URL named no longer resolves.
+    Trimmed from a real careers.hcltech.com response (2026-09-16) to the load-bearing element —
+    verified live against 13/13 title-less pages on that board plus one on careers.wipro.com, all
+    sharing this exact canonical shape and no JSON-LD, no CSB microdata, and each other."""
+    return (
+        '<html><head><link rel="canonical" href="https://careers.hcltech.com/job///" />'
+        "</head><body>body{display:none !important;}</body></html>"
+    )
+
+
+def test_successfactors_page_fields_confirmed_gone_has_no_title():
+    from headstart.scrapers.successfactors import _page_fields
+
+    # the tombstone shell carries no JSON-LD and no CSB microdata either — same as any other
+    # unparseable page at the _page_fields layer; the distinction is drawn one layer up
+    assert _page_fields(_tombstone_page()).get("title") is None
+
+
+def test_successfactors_fields_of_labels_a_soft_404_apart_from_an_ambiguous_loss():
+    """The discriminator between "SuccessFactors itself says this requisition is gone" and
+    "we don't know why this page didn't parse" — the first must not count against the Board's
+    authoritative share (ADR-0053/ADR-0121), because it isn't evidence our read was short; the
+    second still must, unchanged."""
+    from headstart.scrapers.successfactors import SuccessFactorsScraper
+
+    class _Resp:
+        def __init__(self, text):
+            self.status_code = 200
+            self.text = text
+
+    scraper = SuccessFactorsScraper("careers.hcltech.com")
+    assert scraper._fields_of(_Resp(_tombstone_page()), "https://x/job/a/1/") is None
+    assert (
+        scraper._fields_of(_Resp("<html>garbled</html>"), "https://x/job/b/2/") is None
+    )
+
+    causes = dict(scraper.detail_losses)
+    assert causes.get("200 without a parseable title") == 1, (
+        "an unexplained parse failure keeps its existing, ambiguous label"
+    )
+    assert (
+        sum(v for k, v in causes.items() if k != "200 without a parseable title") == 1
+    ), "the soft-404 gets its own distinct cause, not folded into the ambiguous bucket"
+
+
+def test_successfactors_confirmed_gone_pages_drain_via_adr_0083_not_scope_exclusion(
+    monkeypatch,
+):
+    """The fix for issue #7: HCLTech's detail pass loses ~16% of its listing to SuccessFactors'
+    own soft-404 (a requisition that no longer resolves), every run, forever — ADR-0121's 99%
+    tolerance can never absorb a stable loss that size, so the Board never re-enters the eviction
+    scope and NONE of its postings can ever be confirmed closed, including the ones that really
+    did close. Once those losses are recognised as confirmed-gone rather than ambiguous, the
+    Board's authoritative share is measured against what's actually still listed, and those
+    specific Jobs still drop out of the returned list — handing them to ADR-0083's own per-Job
+    grace period instead of accreting in ADR-0053 exclusion with no drain."""
+    from headstart.scrapers import successfactors as sf
+
+    scraper = sf.SuccessFactorsScraper("careers.hcltech.com")
+    monkeypatch.setattr(scraper, "_fetch_sitemap", lambda: ("urlset", "", None))
+    monkeypatch.setattr(
+        scraper,
+        "_search_job_urls",
+        lambda: (
+            [
+                (f"https://careers.hcltech.com/job/Engineer/{i}/", str(i))
+                for i in range(200)
+            ],
+            None,
+        ),
+    )
+
+    def fake_job_fields(url):
+        i = int(url.rstrip("/").rsplit("/", 1)[-1])
+        if i < 30:  # 15% confirmed-gone, matching the measured live rate
+            scraper.note_detail_loss(sf._CONFIRMED_GONE_CAUSE)
+            return None
+        return {"title": "Engineer"}
+
+    monkeypatch.setattr(scraper, "_job_fields", fake_job_fields)
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+
+    raw = scraper.fetch_raw()
+
+    assert scraper.truncated is None, (
+        "confirmed-gone pages must not count against the authoritative share — 170/170 real "
+        "postings still read cleanly"
+    )
+    assert len(scraper.parse(raw, "2026-01-01")) == 170, (
+        "the 30 confirmed-gone ids are still absent from the returned list, which is exactly "
+        "what routes them to ADR-0083 instead of nowhere"
+    )
+
+
+def test_successfactors_ambiguous_losses_still_truncate_even_alongside_confirmed_gone(
+    monkeypatch,
+):
+    """The other half: a genuinely unexplained shortfall must still protect the Board, whether or
+    not some of its other losses are confirmed-gone."""
+    from headstart.scrapers import successfactors as sf
+
+    scraper = sf.SuccessFactorsScraper("careers.hcltech.com")
+    monkeypatch.setattr(scraper, "_fetch_sitemap", lambda: ("urlset", "", None))
+    monkeypatch.setattr(
+        scraper,
+        "_search_job_urls",
+        lambda: (
+            [
+                (f"https://careers.hcltech.com/job/Engineer/{i}/", str(i))
+                for i in range(200)
+            ],
+            None,
+        ),
+    )
+
+    def fake_job_fields(url):
+        i = int(url.rstrip("/").rsplit("/", 1)[-1])
+        if i < 10:  # confirmed-gone: must not count
+            scraper.note_detail_loss(sf._CONFIRMED_GONE_CAUSE)
+            return None
+        if (
+            i < 90
+        ):  # 80/190 ambiguous once confirmed-gone is excluded — well past the 99% floor
+            scraper.note_detail_loss("HTTP 503")
+            return None
+        return {"title": "Engineer"}
+
+    monkeypatch.setattr(scraper, "_job_fields", fake_job_fields)
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+
+    scraper.fetch_raw()
+
+    assert scraper.truncated is not None, (
+        "an 80-of-190 ambiguous read must still leave the Board Unauthoritative"
+    )
+
+
 def test_successfactors_location_from_slug_recovers_the_prefix():
     # Real gap found in a location-field audit, 2026-08-24: some CSB tenants' job pages carry
     # no location markup anywhere — not JSON-LD, not itemprop, not a joblayouttoken label — yet

@@ -58,6 +58,20 @@ _DETAIL_WORKERS = 6  # sync-path detail fetches; bounded since they hit one host
 # span %-escapes and XML entities; the trailing numeric segment is the stable posting id.
 _JOB_PATH = re.compile(r"(/job/[^\s\"'<>?#]+/(\d+)/)")
 
+# SuccessFactors' own soft-404: a live requisition's canonical link always resolves to its real
+# slug/id (``.../job/Real-Title/158715-en_US/``); a requisition the platform can no longer find
+# renders the identical generic shell with the template's slug/id left unfilled instead —
+# ``.../job///`` — HTTP 200, no JSON-LD, no CSB microdata. Measured live 2026-09-16: 13/13
+# title-less pages sampled across careers.hcltech.com (120-URL sample) carry this exact
+# canonical, plus a same-shaped miss on careers.wipro.com, and every one is byte-length-identical
+# to every other one — the platform rendering nothing job-specific because the lookup came back
+# empty, not a parser gap or a different template.
+_EMPTY_JOB_CANONICAL = re.compile(r'<link[^>]*rel="canonical"[^>]*href="[^"]*?/job///"')
+# The distinct loss cause for a confirmed soft-404 (see :func:`_is_confirmed_gone`) — kept apart
+# from "200 without a parseable title" so it can be excluded from the authoritative-share
+# calculation in :meth:`SuccessFactorsScraper.fetch_raw` without touching that ambiguous bucket.
+_CONFIRMED_GONE_CAUSE = "200 soft-404 (requisition no longer resolves)"
+
 _LD_BLOCK = re.compile(
     r'<script type="application/ld\+json">\s*(.*?)\s*</script>', re.DOTALL
 )
@@ -348,11 +362,29 @@ class SuccessFactorsScraper(BaseScraper):
             # be indexed regardless of whether its detail was fetched, so it must not count
             # against how authoritative this Board's *tech* read is. This is the shape that
             # excluded whole 2,130-page Boards over a single unreadable page (ADR-0121).
+            #
+            # A confirmed soft-404 (issue #7) is excluded from BOTH sides of the share: it isn't
+            # evidence our read was short, it's SuccessFactors' own signal that the requisition
+            # named by that sitemap entry no longer exists. A Board whose entire loss is this
+            # shape — careers.hcltech.com stably loses ~16% of its listing to it — would otherwise
+            # never cross MIN_AUTHORITATIVE_SHARE and would sit outside the eviction scope
+            # forever, protecting even its genuinely closed postings from ever draining (ADR-0053
+            # has no drain of its own). The Job is still dropped from the returned list either
+            # way, so it still reaches ADR-0083's per-id grace period rather than nowhere.
+            confirmed_gone = self.detail_losses.get(_CONFIRMED_GONE_CAUSE, 0)
+            ambiguous = lost - confirmed_gone
+            expected = len(tech_listed) - confirmed_gone
             self.mark_truncated_unless_negligible(
-                len(tech_listed) - lost,
-                len(tech_listed),
-                f"{lost}/{len(tech_listed)} job pages unreadable — those Jobs are listed but "
-                "unbuilt",
+                expected - ambiguous,
+                expected,
+                f"{ambiguous}/{expected} job pages unreadable — those Jobs are listed but "
+                "unbuilt"
+                + (
+                    f" ({confirmed_gone} more no longer resolve at all — SuccessFactors' own "
+                    "soft-404, excluded from this share)"
+                    if confirmed_gone
+                    else ""
+                ),
             )
         return [
             {"url": url, "id": job_id, "fields": page_fields}
@@ -401,7 +433,10 @@ class SuccessFactorsScraper(BaseScraper):
             return None
         fields = _titled_fields(response.text, url)
         if fields is None:
-            self.note_detail_loss("200 without a parseable title")
+            if _is_confirmed_gone(response.text):
+                self.note_detail_loss(_CONFIRMED_GONE_CAUSE)
+            else:
+                self.note_detail_loss("200 without a parseable title")
         return fields
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
@@ -578,6 +613,17 @@ def _titled_fields(page: str, url: str | None = None) -> dict[str, Any] | None:
     root-cause.md §4)."""
     fields = _page_fields(page, url)
     return fields if fields.get("title") else None
+
+
+def _is_confirmed_gone(page: str) -> bool:
+    """Whether a title-less page is SuccessFactors' own soft-404 for a requisition that no
+    longer resolves, rather than a genuinely ambiguous parse failure (issue #7, ADR-0053/0121).
+
+    A title-less page has always counted as a loss (:func:`_titled_fields`'s own docstring), and
+    that stays true here — this only asks *which kind* of loss it is, so the caller can decide
+    whether it counts against the Board's authoritative share. See :data:`_EMPTY_JOB_CANONICAL`
+    for what was measured and why this signal is trusted."""
+    return bool(_EMPTY_JOB_CANONICAL.search(page))
 
 
 def _jsonld_fields(page: str) -> dict[str, Any] | None:
