@@ -16,8 +16,15 @@ Precedence (first match wins):
      department that names a discipline       -> not tech
   3. a generic role token alone              -> tech      (recall: keep the ambiguous ones)
   4. a clearly-technical department, unless
-     that department names a hiring function  -> tech      (recall booster for vague titles)
+     it names a hiring function, or means
+     something other than software, or the
+     title names a different profession       -> tech      (recall booster for vague titles)
   5. otherwise                               -> not tech
+
+**Rules 1-3 read the title; only rule 4 reads the department.** Until 2026-09-17 rules 1 and 2 ran
+over ``title + department``, so a department could settle a title question — "Software development"
+contains "software dev", so a Content Creator in it scored a strong software signal. The department
+has one rule, and that is where its guards live.
 """
 
 from __future__ import annotations
@@ -36,9 +43,11 @@ from pathlib import Path
 # same reason: this gate's output feeds `role_trends`, whose per-tick counts silently absorb a
 # widened or narrowed regex as if the market moved. Reading this value once per tick lets a
 # reader tell "we changed who counts" from "conditions changed" instead of conflating the two.
-# 2 (2026-09-17): rules 1 and 2 stopped reading the department, rule 4 stopped promoting a title
+# 2 (2026-09-17, `git log 277b5e2a..1fd0f843 -- src/headstart/tech_filter.py`): rules 1 and 2
+# stopped reading the department, rule 4 stopped promoting a title
 # that names a different profession, and the strong list gained the roles the department had been
-# covering for. Net +1.0% on a 489,661-posting corpus, but the composition moves a long way — see
+# covering for. Net **+1.38%** on a 489,661-posting corpus (107,684 -> 109,172; +6,673 in,
+# -5,185 out), so the composition moves much further than the total — see
 # docs/tech-filter/2026-09-17_the-title-decides.md. This is exactly the shape the counter exists
 # for: `role_trends` would otherwise read "Security Officer" leaving the index as the market
 # shedding security jobs.
@@ -198,9 +207,14 @@ _TECH_DEPT = re.compile(
 #     software title inside a facilities org still passes on its own signal at rules 1-3, which
 #     is what keeps "Software Engineer, Facilities Systems" working.
 #
-#     Measured over the 2026-09-17 pre-filter corpus (489,661 postings): removes 3,086, of which
-#     the top entries are Security Officer, Loss Prevention Officer, Plumber, Painter, Carpenter
-#     and Electrician. See docs/tech-filter/2026-09-17_the-title-decides.md.
+#     **Its marginal contribution is 1,457 of the change's 5,185 removals**, measured by ablation
+#     over the 2026-09-17 corpus — not the 3,030 rows it matches, because `_NON_TECH_ROLE` already
+#     refuses most of those by title. Security Officer, Plumber, Painter, Carpenter and Electrician
+#     are all in that list too and would be refused without this rule; what only *this* rule
+#     catches is the title that names no profession at all — a bare "Technician", "General
+#     Technician", "Maintenance Manager", "Security Site Supervisor", or the hotel trades
+#     ("Laundry & Kitchen Technician", "Technicien(-ne) de maintenance").
+#     See docs/tech-filter/2026-09-17_the-title-decides.md.
 _NOT_TECH_DEPT = re.compile(
     # No trailing \b: the plural is the common spelling ("Security Officers" is the department,
     # "Security Officer" the title) and a closing boundary fails on it.
@@ -270,7 +284,7 @@ def classify(title: str | None, department: str | None = None) -> Verdict:
     # contains "engineering", so `Plumber` scored a generic one. The department already has its
     # own rule below, with its own guards; letting it also fire rules 1-2 counted it twice and
     # bypassed those guards. Measured over the 489,661-posting pre-filter corpus of 2026-09-17,
-    # **8,885** postings were reaching the index on a department-only rule-1/2 match.
+    # **~8,900** postings were reaching the index on a department-only rule-1/2 match.
     if _STRONG.search(title_text):
         return Verdict(True, "strong-software-signal")
     if _GENERIC.search(title_text):

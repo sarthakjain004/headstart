@@ -26,8 +26,10 @@ That third of the five ATSes' rescues was not rule 4 at all. `classify` built
 The department was counted twice.
 
 The 3,494 + 2,288 above are the five ATSes only. **Corpus-wide the same mechanism was keeping
-8,885 postings**, which is the number the code comment carries — the five-ATS figure is the one
-that motivated the investigation, not the one that measures the defect.
+~8,900 postings** — the five-ATS figure is what motivated the investigation, not what measures the
+defect. Stated to two significant figures on purpose: two independent counts of it landed on 8,885
+and 8,954, a 0.8% spread that comes from how each treats a row whose title *also* matches, and
+neither is more right than the other.
 
 ## What changed
 
@@ -40,10 +42,17 @@ Engineering department is not a software job. Deliberately a list of *clear* non
 not vague ones — the gate stays recall-biased, so `Analyst`, `Associate` and `Intern` in a
 Software Engineering department are all still kept.
 
-**3. A department that says nothing about software is blanked** (`_NOT_TECH_DEPT`): "Security
-Officers", "Engineering & Facilities", "Data Entry". Blanked rather than vetoed, so a genuine
-software title inside a facilities org still passes on its own signal — `Software Engineer,
-Facilities Systems` is unaffected.
+**3. A department that says nothing about software stops acting as the recall booster**
+(`_NOT_TECH_DEPT`): "Security Officers", "Engineering & Facilities", "Data Entry". Scoped to rule 4,
+so a genuine software title inside a facilities org still passes on its own signal at rules 1-3 —
+`Software Engineer, Facilities Systems` is unaffected, and so is ADR-0068's `_NON_SOFTWARE` veto.
+
+Measured by ablation, this rule's **marginal** contribution is 1,457 of the 5,185 removals, not the
+3,030 rows it matches: `_NON_TECH_ROLE` already refuses most of them by title. Security Officer,
+Plumber, Painter, Carpenter and Electrician would all still go without it. What only this rule
+catches is the title naming no profession at all — a bare `Technician`, `General Technician`,
+`Maintenance Manager`, `Security Site Supervisor`, and the hotel trades
+(`Laundry & Kitchen Technician`, `Technicien(-ne) de maintenance`).
 
 **4. The strong list gained the roles the department was covering for.** Every entry was found by
 reading rule 4's rescues, not invented: the architect family (`solutions architect` was plural-only,
@@ -55,8 +64,9 @@ DBA.
 
 ## What it moved
 
-**+1,488 postings, +1.38%** — 109,172 indexed against 107,684. Near-neutral in size, a long way in
-composition.
+**+1,488 postings, +1.38%** — 109,172 indexed against 107,684. Near-neutral in size, and much
+further in composition: **+6,673 in, −5,185 out**, so more than a tenth of what the index holds is
+different even though its size barely moved.
 
 | in | out |
 | --- | --- |
