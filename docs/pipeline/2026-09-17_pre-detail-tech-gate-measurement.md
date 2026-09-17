@@ -106,6 +106,9 @@ below is the **worst case**, not the answer.
 | `gem` | 0.1% | 10.2% | unmeasured |
 | `phenom` | 0.1% | 53.9% | unmeasured |
 
+The four still-unmeasured ones are tracked as
+[#510](https://github.com/sarthakjain004/headstart/issues/510), which carries the method.
+
 jazzhr is now **the pipeline's straggler Board**: `jazzhr:amadaseniorcarenorthshore` took 850s in
 run `35193130454`, owning the slowest shard. Its own code comment already measures the override at
 117 additions / 8 changes per 1,526 paired postings, so the disagreement surface is ~8%.
@@ -155,6 +158,15 @@ in every one**:
 | `workday:thehartford/Careers_External` | 238 | 88 | ~239 → 89 (−63%) | ~19s → ~8.6s (**1.7–4.2x**) |
 | `workday:trendmicro/External` | 208 | 103 | 209 → 104 (−50.2%) | ~19s → ~10s (**1.5–2.1x**) |
 | `smartrecruiters:soprasteria1` | 1,978 | 1,206 | 1,998 → 1,226 (−38.6%) | ~109s → ~70s (**1.54–1.59x**) |
+| `jazzhr:pacificacontinental` | 437 | 36 | 438 → 37 (−91.6%) | ~121s → ~11s (**8.4–15.0x**) |
+| `jazzhr:vyvebroadband` | 73 | 31 | 74 → 32 (−56.8%) | ~18s → ~7.5s (**2.3–2.6x**) |
+| `jazzhr:idsinternational` | 101 | 44 | 102 → 45 (−55.9%) | ~26s → ~13s (**1.9–2.3x**) |
+| `jazzhr:brightvisiontechnologies` | 571 | 457 | 572 → 458 (−19.9%) | ~202s → ~146s (**1.1–1.8x**) |
+
+The four jazzhr Boards are the confirmation that matters for that ATS, because they are the ones
+its gate could most plausibly have failed on: `vyvebroadband` has 31 tech postings of which a
+department-blind gate would drop 30, and `idsinternational` 44 of which it would drop 24. Both
+came back `tech_lost=0` on both repeats.
 
 Repeat-to-repeat spread is under 1% on the large Boards, which is what makes the A/B/A/B worth its
 cost. Wall-clock saving tracks request saving at ~0.9x on large Boards and falls off on small ones,
