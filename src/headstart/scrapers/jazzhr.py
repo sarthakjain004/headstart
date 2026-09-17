@@ -267,7 +267,19 @@ class JazzHRScraper(BaseScraper):
         # reason (`zoho.py fetch_raw` — gating on description presence made Salary structurally
         # invisible on ~60% of its jobs).
         listing = self._listing()
-        keys = [key for key, *_ in _rows(listing)]
+        rows = _rows(listing)
+        # The tech gate (ADR-0017). `_rows` states title and department per listing row, so the
+        # gate asks `filter_tech`'s question before spending a page on the answer. Unlike
+        # workday's, this is a *measured* tolerance rather than exactness: `parse` lets the
+        # detail page's department win, so a tenant whose listing omits a department its detail
+        # supplies could disagree. Measured live 2026-09-17 over 10 Boards / 1,748 postings,
+        # chosen from the corpus as the ones where `department` does the most work (on
+        # `vyvebroadband` a department-blind gate drops 30 of 31 tech postings, on
+        # `idsinternational` 24 of 44): 845 kept by the gate, 845 by the filter, zero
+        # disagreements. Re-check it if this page's markup moves.
+        keys = [
+            key for key, *_ in self.tech_wanted(rows, lambda r: r[1], lambda r: r[3])
+        ]
         # `_rows` skips any `row_job_` <tr> whose posting link it cannot read, and the skip is
         # the one thing on this page that can go wrong without anything failing: the shell is
         # present, `_listing` is satisfied, and a Board whose markup moved parses to zero keys —
@@ -276,7 +288,7 @@ class JazzHRScraper(BaseScraper):
         # only total this listing states. Not marked truncated: this module's 1,000-tenant sweep
         # never saw a link-less row, so how many are benign is unmeasured, and a truncation guard
         # built on a guess is the one this repo has learned not to ship.
-        unread = len(_ROW.findall(listing)) - len(keys)
+        unread = len(_ROW.findall(listing)) - len(rows)
         if unread > 0:
             _log.info(
                 f"{self.board_key()}: {unread} of {unread + len(keys)} listing row(s) carried "

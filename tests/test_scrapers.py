@@ -6095,6 +6095,11 @@ def test_successfactors_skips_the_detail_fetch_for_a_non_tech_slug(monkeypatch):
 
     monkeypatch.setattr(scraper, "_job_fields", fake_job_fields)
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    # The gate is conditional on `have_details`, the pipeline's own signal — an empty container
+    # says "the pipeline is running and holds no detail for this Board", which is the first-run
+    # state. Without it this scraper is a direct caller and keeps the whole Board; that is
+    # asserted separately below.
+    scraper.have_details = frozenset()
 
     raw = scraper.fetch_raw()
 
@@ -6105,6 +6110,36 @@ def test_successfactors_skips_the_detail_fetch_for_a_non_tech_slug(monkeypatch):
     assert scraper.truncated is None, (
         "skipping a non-tech posting is not a loss against the tech-only denominator"
     )
+
+
+def test_successfactors_gate_is_off_for_a_caller_outside_the_pipeline(monkeypatch):
+    """A directly-constructed scraper keeps the whole Board.
+
+    This gate shipped unconditional in #503, unlike eightfold's. The cost was measurable: run
+    35193130454's `filter_tech` reported `successfactors 32,891/33,035 = 99.6% tech`, because a
+    non-tech posting never reached the corpus, so the ATS's real tech share had stopped being
+    readable from the pipeline's own data. `verify_scraper.py` and the enrichment samplers build
+    scrapers this way and need the Board whole."""
+    from headstart.scrapers import successfactors as sf
+
+    scraper = sf.SuccessFactorsScraper("jobs.example.com")
+    monkeypatch.setattr(scraper, "_fetch_sitemap", lambda: ("urlset", "", None))
+    monkeypatch.setattr(
+        scraper,
+        "_search_job_urls",
+        lambda: (
+            [
+                ("https://jobs.example.com/job/Software-Engineer/1/", "1"),
+                ("https://jobs.example.com/job/Housekeeper/2/", "2"),
+            ],
+            None,
+        ),
+    )
+    monkeypatch.setattr(scraper, "_job_fields", lambda url: {"title": "whatever"})
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+
+    assert scraper.have_details is None, "the default for a direct caller"
+    assert {item["id"] for item in scraper.fetch_raw()} == {"1", "2"}
 
 
 def _workday_scraper():
@@ -8611,17 +8646,21 @@ def test_zwayam_a_body_error_code_raises_rather_than_reading_as_an_empty_board(
 def test_zwayam_detail_text_wins_and_the_skip_list_prunes_the_fetch():
     """The listing's text can be silently truncated with no way to tell (632 chars listed vs
     909 of stripped detail text, measured), so the detail is fetched for every row not on the
-    ADR-0050 skip-list and its text wins over whatever the listing carried."""
+    ADR-0050 skip-list and its text wins over whatever the listing carried.
+
+    The titles are real tech ones because setting ``have_details`` also arms the ADR-0017 tech
+    gate, and a fixture titled "A"/"B"/"C" would be gated out before the skip-list this test is
+    about ever ran — the test would then pass for the wrong reason."""
     page = {
         "data": {
             "totalCount": 3,
             "hasMoreData": False,
             "data": [
-                {"_source": {"id": 1, "jobTitle": "A", "jobUrl": "a"}},
+                {"_source": {"id": 1, "jobTitle": "Backend Engineer", "jobUrl": "a"}},
                 {
                     "_source": {
                         "id": 2,
-                        "jobTitle": "B",
+                        "jobTitle": "Data Engineer",
                         "jobUrl": "b",
                         "mediumDescriptionWithoutHtml": "possibly truncated listing",
                     }
@@ -8629,7 +8668,7 @@ def test_zwayam_detail_text_wins_and_the_skip_list_prunes_the_fetch():
                 {
                     "_source": {
                         "id": 3,
-                        "jobTitle": "C",
+                        "jobTitle": "QA Engineer",
                         "jobUrl": "c",
                         # The row MUST carry listing text: without it this test passes whether
                         # or not a skip-listed row falls through to the listing, which is the
@@ -9362,3 +9401,98 @@ def test_a_payload_with_no_postings_container_says_the_board_was_unread(
     caplog.clear()
     assert scraper.parse({container: []}, SCRAPED_AT) == []
     assert caplog.text == ""
+
+
+# --- the ADR-0017 pre-detail tech gate (issue #500) -------------------------------------------
+
+
+def test_tech_wanted_is_off_outside_the_pipeline_and_armed_inside_it():
+    """``have_details`` is the one signal that says "the pipeline is running".
+
+    Eight scripts construct scrapers directly and three read a Board's completeness as a health
+    metric, so a gate that fired for them would have those three report a collapse that is not
+    real. ``tech_gate_enabled`` is the separate kill switch, and is on by default because two
+    call sites were already gating in production before this seam existed."""
+    from headstart.scrapers.registry import get_scraper
+
+    items = [{"t": "Backend Engineer"}, {"t": "Housekeeper"}]
+    scraper = get_scraper("smartrecruiters", "acme")
+
+    assert scraper.have_details is None
+    assert scraper.tech_wanted(items, lambda i: i["t"]) == items, (
+        "direct caller keeps the Board"
+    )
+
+    scraper.have_details = frozenset()
+    assert scraper.tech_wanted(items, lambda i: i["t"]) == [items[0]]
+    assert scraper.telemetry["tech_gated_details"] == 1
+
+
+def test_tech_wanted_reads_department_so_a_vague_title_is_not_dropped():
+    """`tech_filter` rule 4 promotes a vague title on a technical department, and the gate has
+    to honour it or it silently drops those postings.
+
+    This is the whole reason oracle, zoho, icims, bamboohr and jobvite cannot take this gate:
+    their department arrives on the *detail*, so a gate cannot see it. Measured over the real
+    2026-09-17 corpus, a department-blind gate drops 46.0% of oracle's tech postings and 47.4%
+    of zoho's — docs/pipeline/2026-09-17_pre-detail-tech-gate-measurement.md."""
+    from headstart.scrapers.registry import get_scraper
+
+    scraper = get_scraper("smartrecruiters", "acme")
+    scraper.have_details = frozenset()
+    vague = [{"t": "System Technician", "d": "Information Technology"}]
+
+    assert scraper.tech_wanted(vague, lambda i: i["t"], lambda i: i["d"]) == vague
+    assert scraper.tech_wanted(vague, lambda i: i["t"]) == [], (
+        "without the department the same posting is dropped — the recall cliff"
+    )
+
+
+def test_tech_wanted_kill_switch_restores_the_whole_board(monkeypatch):
+    from headstart.scrapers.registry import get_scraper
+
+    scraper = get_scraper("smartrecruiters", "acme")
+    scraper.have_details = frozenset()
+    items = [{"t": "Housekeeper"}]
+
+    assert scraper.tech_wanted(items, lambda i: i["t"]) == []
+    monkeypatch.setenv("HEADSTART_TECH_GATE", "0")
+    assert scraper.tech_wanted(items, lambda i: i["t"]) == items
+
+
+def test_workday_gates_details_and_pairs_them_back_by_the_right_posting(monkeypatch):
+    """The ADR-0048 alignment trap, at a second call site.
+
+    The fan-out now covers a subset of the listing, so zipping its results against the full
+    posting list would hang each description on the wrong Job. A gated posting must come back
+    with an empty ``_detail`` — it is still a Job, it just has no description, and the Board's
+    list stays whole so no truncation denominator moves."""
+    # The threaded path, so `_job_detail` below is the seam that gets patched — the async
+    # default would call `_job_detail_async` and put a real request on the wire.
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    scraper = _workday_scraper()
+    scraper.have_details = frozenset()
+    postings = [
+        {"title": "Housekeeper", "externalPath": "/job/hk", "bulletFields": ["R1"]},
+        {
+            "title": "Backend Engineer",
+            "externalPath": "/job/be",
+            "bulletFields": ["R2"],
+        },
+        {"title": "Chef", "externalPath": "/job/chef", "bulletFields": ["R3"]},
+    ]
+    scraper._exhaust = lambda facets, absorb, depth: absorb(postings)
+    fetched: list[str] = []
+
+    def _detail(path, classes):
+        fetched.append(path)
+        return {"description": f"body for {path}", "startDate": "2026-09-17"}
+
+    scraper._job_detail = _detail
+    raw = scraper.fetch_raw()
+
+    assert fetched == ["/job/be"], "only the tech posting cost a request"
+    by_title = {item["title"]: item["_detail"] for item in raw}
+    assert by_title["Backend Engineer"]["description"] == "body for /job/be"
+    assert by_title["Housekeeper"] == {} and by_title["Chef"] == {}
+    assert scraper.truncated is None

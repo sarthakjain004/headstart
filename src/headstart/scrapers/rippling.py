@@ -21,6 +21,18 @@ _API = "https://api.rippling.com/platform/api/ats/v1/board"
 _DETAIL_WORKERS = 8
 
 
+def _department_of(record: dict[str, Any]) -> str | None:
+    """A record's department, whether it states a bare string or a ``{"name": ...}`` object.
+
+    One expression rather than two: the tech gate reads it off the listing item and ``parse``
+    reads it off the item then the detail, and a gate that unpacked the dict differently from
+    ``parse`` would classify on a different string than ``filter_tech`` does."""
+    dept = record.get("department")
+    if isinstance(dept, dict):
+        dept = dept.get("name")
+    return dept or None
+
+
 def _location(item: dict) -> str | None:
     wl = item.get("workLocation") or {}
     if isinstance(wl, dict) and wl.get("label"):
@@ -81,16 +93,23 @@ class RipplingScraper(BaseScraper):
             if isinstance(data, list)
             else (data.get("items") or data.get("jobs") or [])
         )
+        # The tech gate (ADR-0017): `parse` reads `name` and `department` off this listing item,
+        # falling back to the detail only for a department the listing omitted — and `department`
+        # is empty on every one of the 1,515 rippling postings in the 2026-09-17 corpus, so that
+        # fallback recovers nothing the gate is missing.
+        wanted = self.tech_wanted(
+            items, lambda it: it.get("name"), lambda it: _department_of(it)
+        )
         # Fill each posting's detail concurrently (bounded); a failed fetch leaves ``_detail`` {}.
         if self.async_fanout_enabled():
             details = self.fan_out_async(
-                items,
+                wanted,
                 lambda session, it: self._detail_async(session, it.get("uuid")),
                 default={},
             )
         else:
             details = self.fan_out(
-                items,
+                wanted,
                 lambda it: self._detail(it.get("uuid")),
                 workers=_DETAIL_WORKERS,
                 default={},
@@ -98,7 +117,9 @@ class RipplingScraper(BaseScraper):
         # {} is this scraper's failure sentinel (a real record is never empty), so map
         # falsy to None for the gap count.
         self.report_detail_gaps([d or None for d in details], "details")
-        for item, detail in zip(items, details):
+        for item in items:
+            item["_detail"] = {}
+        for item, detail in zip(wanted, details):
             item["_detail"] = detail
         return items
 
@@ -153,9 +174,7 @@ class RipplingScraper(BaseScraper):
         for it in raw:
             detail = it.get("_detail") or {}
             location = _location(it)
-            dept = it.get("department") or detail.get("department")
-            if isinstance(dept, dict):
-                dept = dept.get("name")
+            dept = _department_of(it) or _department_of(detail)
             jobs.append(
                 Job(
                     id=self.job_id(it["uuid"]),

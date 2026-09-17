@@ -166,16 +166,28 @@ class TrakstarScraper(BaseScraper):
         # (bounded); failures -> None. The detail pages sit behind DataDome, so the async path
         # pins the multiplexing width to the gentle _DETAIL_WORKERS rather than the global
         # HEADSTART_H2_STREAMS.
+        # The tech gate (ADR-0017), on the cards rather than the codes: `parse` reads `_TITLE`
+        # and `_DEPT` out of this same block and the JSON-LD overrides neither, so the gate's
+        # verdict is the one `filter_tech` will reach. Each detail page is a DataDome-guarded
+        # request, which makes a skipped one worth more here than the card count suggests.
+        wanted = [
+            code
+            for block, code in self.tech_wanted(
+                _cards_from(html),
+                lambda bc: _card_title(bc[0]),
+                lambda bc: _card_dept(bc[0]),
+            )
+        ]
         if self.async_fanout_enabled():
             results = self.fan_out_async(
-                codes,
+                wanted,
                 lambda session, code: self._job_posting_async(session, code),
                 concurrency=_DETAIL_WORKERS,
             )
         else:
-            results = self.fan_out(codes, self._job_posting, workers=_DETAIL_WORKERS)
+            results = self.fan_out(wanted, self._job_posting, workers=_DETAIL_WORKERS)
         self.report_detail_gaps(results, "JSON-LD postings")
-        postings = dict(zip(codes, results))
+        postings = dict(zip(wanted, results))
         return {"html": html, "postings": postings}
 
     def fetch_via_feed(self, scraped_at: str) -> list[Job] | None:
@@ -301,6 +313,28 @@ class TrakstarScraper(BaseScraper):
         # Not yet measured: no structured compensation field has been looked for in this
         # scraper's raw record shape. Needs its own measurement pass before this can claim more.
         return None
+
+
+def _card_title(block: str) -> str | None:
+    """The card's title, read exactly as :meth:`TrakstarScraper.parse` reads it."""
+    m = _TITLE.search(block)
+    return _html.unescape(m.group(1)).strip() if m else None
+
+
+def _card_dept(block: str) -> str | None:
+    """The card's department, read exactly as :meth:`TrakstarScraper.parse` reads it."""
+    m = _DEPT.search(block)
+    return _html.unescape(m.group(1)).strip() if m else None
+
+
+def _cards_from(html: str) -> list[tuple[str, str]]:
+    """``(block, code)`` per job card — :func:`_codes_from` keeping the block the code came from,
+    so the tech gate can read the card's own title and department without re-splitting."""
+    return [
+        (block, m.group(1))
+        for block in html.split(_ITEM)[1:]
+        if (m := _CODE.search(block))
+    ]
 
 
 def _codes_from(html: str) -> list[str]:

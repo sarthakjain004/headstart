@@ -56,6 +56,12 @@ jobs:
           - leg: smartrecruiters
             repeats: "2"
             boards: "smartrecruiters:soprasteria1 smartrecruiters:RamsayHealthCare1 smartrecruiters:pilotcompany"
+          # jazzhr owns the straggler shard of run 35193130454 (850s). Its gate is a measured
+          # tolerance rather than exact, so the Boards here are the ones the corpus says lean
+          # hardest on `department` — where a gate reading the wrong field would show up.
+          - leg: jazzhr
+            repeats: "2"
+            boards: "jazzhr:brightvisiontechnologies jazzhr:pacificacontinental jazzhr:idsinternational jazzhr:vyvebroadband"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0

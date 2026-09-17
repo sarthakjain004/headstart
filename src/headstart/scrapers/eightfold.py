@@ -48,7 +48,6 @@ from typing import Any
 from headstart import http, log
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
-from headstart.tech_filter import is_tech
 
 _log = log.get(__name__)
 
@@ -457,10 +456,9 @@ class EightfoldScraper(BaseScraper):
         respecting one — and it costs nothing: every sharded run ships the list (`scrape_run`
         reads it whenever ``--assignment`` is set; the five runs of 2026-09-16 logged
         `detail skip-list: 671,630 / 671,833 / 672,468 Job details already held`)."""
-        if self.have_details is None:
-            tech = positions
-        else:
-            tech = [p for p in positions if is_tech(p.get("name"), _department_of(p))]
+        tech = self.tech_wanted(
+            positions, lambda p: p.get("name"), lambda p: _department_of(p)
+        )
         wanted = [str(p.get("id")) for p in tech if self.needs_detail(str(p.get("id")))]
         if self.async_fanout_enabled():
             fetched = self.fan_out_async(

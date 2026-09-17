@@ -436,10 +436,10 @@ class BaseScraper(ABC):
         because ``tech_filter``'s rule 4 promotes a vague title on a technical department and the
         gate never sees that department.
 
-        Off unless ``HEADSTART_TECH_GATE`` is set, and off for every caller that is not the
-        pipeline (``have_details is None``) — a directly-constructed scraper keeps the whole
-        Board, which is what ``scripts/validate/verify_scraper.py`` and the enrichment samplers
-        measure against.
+        **Off for every caller that is not the pipeline** (``have_details is None``): a
+        directly-constructed scraper keeps the whole Board, which is what
+        ``scripts/validate/verify_scraper.py`` and the enrichment samplers measure against, and
+        what makes an ATS's real tech share readable at all.
         """
         if not self.tech_gate_enabled() or self.have_details is None:
             return list(items)
@@ -459,9 +459,16 @@ class BaseScraper(ABC):
 
     @staticmethod
     def tech_gate_enabled() -> bool:
-        """Whether the pre-detail tech gate runs. One switch, so a tenant whose titles the gate
-        misreads is one env var away from the old behaviour rather than 19 reverts."""
-        return os.environ.get("HEADSTART_TECH_GATE", "0") != "0"
+        """Whether the pre-detail tech gate runs. **On by default**, like
+        :meth:`async_fanout_enabled`, with ``HEADSTART_TECH_GATE=0`` as the kill switch — so a
+        tenant whose titles the gate misreads is one workflow variable away from the old
+        behaviour rather than nine reverts and a deploy.
+
+        On rather than off because two of the nine call sites shipped before this seam existed
+        and were already gating in production (eightfold, ADR-0048's amendment; successfactors,
+        #503). A default of off would have silently switched both back on the commit that
+        routed them through here."""
+        return os.environ.get("HEADSTART_TECH_GATE", "1") != "0"
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
