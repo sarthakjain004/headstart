@@ -36,7 +36,13 @@ from pathlib import Path
 # same reason: this gate's output feeds `role_trends`, whose per-tick counts silently absorb a
 # widened or narrowed regex as if the market moved. Reading this value once per tick lets a
 # reader tell "we changed who counts" from "conditions changed" instead of conflating the two.
-TECH_FILTER_VERSION = 1
+# 2 (2026-09-17): rules 1 and 2 stopped reading the department, rule 4 stopped promoting a title
+# that names a different profession, and the strong list gained the roles the department had been
+# covering for. Net +1.0% on a 489,661-posting corpus, but the composition moves a long way — see
+# docs/tech-filter/2026-09-17_the-title-decides.md. This is exactly the shape the counter exists
+# for: `role_trends` would otherwise read "Security Officer" leaving the index as the market
+# shedding security jobs.
+TECH_FILTER_VERSION = 2
 
 # 1. Strong, software-specific signals. A match here means tech regardless of any disqualifier.
 _STRONG_TERMS = [
@@ -75,14 +81,22 @@ _STRONG_TERMS = [
     r"automation engineer",
     r"embedded (software|engineer|developer|systems)",
     r"\bfirmware\b",
-    r"(software|systems|solutions|technical|cloud|data|security|platform|enterprise|integration) architect",
+    (
+        r"(software|systems?|solutions?|technical|technology|cloud|data|security|platform"
+        r"|enterprise|integration|application|infrastructure|network|devops|ai|ml|iam|api"
+        r"|java|\.net|dotnet|python|salesforce|servicenow|sap|azure|aws|oracle|mobile|frontend"
+        r"|backend|full[\s-]?stack) architect"
+    ),
     r"\bprogrammer\b",
     r"\bblockchain\b",
     r"smart contract",
     r"\bweb3\b",
     r"game (developer|engineer|programmer)",
     r"api (developer|engineer)",
-    r"(systems|network|database|devops|cloud|linux) (administrator|admin|engineer)",
+    # `systems?`, not `systems`: "System Administrator" and "System Engineer" are the commoner
+    # singular spellings and were falling through — measured on a jobvite board serving
+    # "IT System Administrator (TS/SCI with Polygraph)", a cleared sysadmin role, as non-tech.
+    r"(systems?|network|database|devops|cloud|linux) (administrator|admin|engineer)",
     r"engineering manager",
     r"(director|vp|vice president|head) of (engineering|ai|ml|data|software|platform|infrastructure|technology|security)",
     r"\bcto\b",
@@ -91,6 +105,34 @@ _STRONG_TERMS = [
     r"developer (advocate|relations)",
     r"\bdevrel\b",
     r"(react|angular|vue|node|python|java|golang|rust|kubernetes) (developer|engineer)",
+    # Roles whose title names the discipline without using "engineer"/"developer" — these were
+    # reaching the index only because their *department* said "Technology", which is what makes
+    # them invisible to a pre-detail gate (ADR-0166).
+    r"(penetration|software|automation|qa|game|performance) tester",
+    r"\bpentest(er)?\b",
+    r"scrum master",
+    r"(systems?|business systems|technical|data|security|soc|cyber|network|application) analyst",
+    (
+        r"\b(it|ict)[\s/-]+(manager|director|support|specialist|analyst|technician"
+        r"|administrator|lead|engineer|operations|officer|consultant|coordinator)\b"
+    ),
+    r"(information|business) systems",
+    r"\binformation security\b",
+    r"\binfosec\b",
+    r"help[\s-]?desk",
+    r"desktop support",
+    (
+        r"(technology|technical) (support|operations|lead|specialist|writer|consultant"
+        r"|program manager|project manager|product manager)"
+    ),
+    r"(power ?bi|tableau|looker|qlik) (developer|analyst|specialist|consultant)",
+    (
+        r"(salesforce|servicenow|sharepoint|sap|abap|apex|workday|netsuite|dynamics) "
+        r"(developer|administrator|consultant|analyst|specialist|architect|lead)"
+    ),
+    r"\b(etl|rpa|middleware|integration) (developer|specialist|consultant|lead)\b",
+    r"database (administrator|analyst|specialist|developer)",
+    r"\bdba\b",
 ]
 _STRONG = re.compile("|".join(_STRONG_TERMS), re.IGNORECASE)
 
@@ -146,6 +188,55 @@ _TECH_DEPT = re.compile(
 #     it overwhelmingly means procurement, not candidates. All 10 live occurrences in a
 #     418-Board, 22,573-job survey were supply-chain ("Category Sourcing", "Sourcing & Quality",
 #     "Global Sourcing", "Product Sourcing"), so including it would veto on the wrong meaning.
+# 4c. Departments whose technical-looking word does not mean software. `security` promotes
+#     physical guards ("Security Officer" x1,338 on one sweep) and `engineering` promotes the
+#     trades out of "Engineering & Facilities" (plumbers, painters, carpenters, electricians).
+#     Neither title carries a software signal of its own, so rule 4 is the only thing keeping
+#     them and it is keeping them for the wrong reason.
+#
+#     Scoped to rule 4 exactly like :data:`_HIRING_DEPT`, and not a disqualifier: a genuine
+#     software title inside a facilities org still passes on its own signal at rules 1-3, which
+#     is what keeps "Software Engineer, Facilities Systems" working.
+#
+#     Measured over the 2026-09-17 pre-filter corpus (489,661 postings): removes 3,086, of which
+#     the top entries are Security Officer, Loss Prevention Officer, Plumber, Painter, Carpenter
+#     and Electrician. See docs/tech-filter/2026-09-17_titles-the-department-was-carrying.md.
+_NOT_TECH_DEPT = re.compile(
+    # No trailing \b: the plural is the common spelling ("Security Officers" is the department,
+    # "Security Officer" the title) and a closing boundary fails on it.
+    r"\b(security officer|loss prevention|physical security|guard|safety"
+    r"|facilit|maintenance|janitor|custodial|housekeep|hotel)",
+    re.IGNORECASE,
+)
+
+# 4d. Roles whose title says plainly that they are not software, so a technical department must
+#     not promote them. This is what makes "Administrative Assistant" in "Software Engineering"
+#     a non-tech job: the department says who they sit with, the title says what they do, and on
+#     this question the title wins.
+#
+#     Deliberately a list of *clear* non-software roles, not of merely vague ones — the gate stays
+#     recall-biased, so "Analyst" or "Associate" in a Software Engineering department is still
+#     kept. Only titles that name a different profession are refused.
+_NON_TECH_ROLE = re.compile(
+    r"\b("
+    r"administrative assistant|admin assistant|executive assistant|personal assistant"
+    r"|receptionist|secretar\w+|office (manager|assistant|administrator)"
+    r"|account(ant|ing)|bookkeep\w+|payroll|auditor|tax \w+"
+    r"|sales (executive|manager|representative|associate|consultant|director)"
+    r"|business development|account (manager|executive)|telecaller|telesales"
+    r"|customer (service|support|success|care)|call cent\w+"
+    r"|recruit\w+|human resources|\bhr\b|talent acquisition"
+    r"|content (writer|creator)|copywriter|social media|graphic design\w*"
+    r"|nurse|nursing|physician|pharmacist|therapist|caregiver|medical assistant"
+    r"|driver|warehouse|forklift|cashier|janitor\w*|housekeep\w+|custodian"
+    r"|security officer|security guard|loss prevention"
+    r"|chef|cook|server|bartender|barista|waiter|waitress"
+    r"|teacher|tutor|instructor|lecturer"
+    r"|plumber|painter|carpenter|electrician|welder|machinist|technician - \w+"
+    r")\b",
+    re.IGNORECASE,
+)
+
 _HIRING_DEPT = re.compile(
     r"\b(recruit\w*|staffing|talent acquisition)\b", re.IGNORECASE
 )
@@ -163,10 +254,25 @@ def classify(title: str | None, department: str | None = None) -> Verdict:
     """Decide whether a job is a software/tech role, with the reason (recall-biased; see module doc)."""
     dept = (department or "").strip()
     title_text = (title or "").strip()
-    text = f"{title_text} {dept}"
-    if _STRONG.search(text):
+    if dept and _NOT_TECH_DEPT.search(dept):
+        # This label carries no information about whether the role writes software, so it must
+        # not contribute at *any* rule — not just rule 4. Rules 1 and 2 read `title + department`,
+        # so leaving it in is how "Plumber" in "Engineering & Facilities" became a generic tech
+        # token off the word "Engineering", and how a guard in "Security Officers" reached the
+        # index. Blanked rather than vetoed: a genuine software title inside a facilities org
+        # still passes on its own signal, which is what keeps "Software Engineer, Facilities
+        # Systems" working.
+        dept = ""
+    # Rules 1 and 2 read the **title**, not the title and department concatenated. Reading both
+    # let a department decide a title question: "Software development" contains "software dev",
+    # so `Content Creator` in it scored a strong software signal, and `Engineering & Facilities`
+    # contains "engineering", so `Plumber` scored a generic one. The department already has its
+    # own rule below, with its own guards; letting it also fire rules 1-2 counted it twice and
+    # bypassed those guards. Measured over the 2026-09-17 pre-filter corpus, 5,782 postings were
+    # reaching the index this way.
+    if _STRONG.search(title_text):
         return Verdict(True, "strong-software-signal")
-    if _GENERIC.search(text):
+    if _GENERIC.search(title_text):
         # A department vetoes only through a discipline that names the role; strip the org-only
         # words first, so "Hardware and Mechanical Engineering" still vetoes on `mechanical`.
         if _NON_SOFTWARE.search(title_text) or _NON_SOFTWARE.search(
@@ -174,7 +280,13 @@ def classify(title: str | None, department: str | None = None) -> Verdict:
         ):
             return Verdict(False, "generic-token-but-non-software")
         return Verdict(True, "generic-tech-token")
-    if dept and _TECH_DEPT.search(dept) and not _HIRING_DEPT.search(dept):
+    if (
+        dept
+        and _TECH_DEPT.search(dept)
+        and not _HIRING_DEPT.search(dept)
+        and not _NOT_TECH_DEPT.search(dept)
+        and not _NON_TECH_ROLE.search(title_text)
+    ):
         return Verdict(True, "tech-department")
     return Verdict(False, "no-tech-signal")
 
