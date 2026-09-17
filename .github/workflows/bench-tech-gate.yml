@@ -12,6 +12,11 @@
 name: bench-tech-gate
 
 on:
+  # `push` as well as `workflow_dispatch`: a dispatch-only workflow has to sit on the default
+  # branch before the API will fire it, and a measurement branch should not have to land on
+  # `main` to be measured. Scoped to `bench/**` so nothing else in the repo triggers it.
+  push:
+    branches: ["bench/**"]
   workflow_dispatch:
     inputs:
       repeats:
