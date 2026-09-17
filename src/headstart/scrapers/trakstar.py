@@ -128,7 +128,11 @@ class TrakstarScraper(BaseScraper):
 
     def fetch_raw(self) -> Any:
         html = self._get()  # the careers page HTML (job cards)
-        codes = _codes_from(html)
+        # Split once: the cap check needs the count, the tech gate below needs each card's own
+        # title and department, and `parse` re-reads the same blocks. `_codes_from` stays as the
+        # projection `scripts/enrich/salary_sample.py` calls.
+        cards = _cards_from(html)
+        codes = [code for _block, code in cards]
         if _is_capped(html, len(codes)):
             # This Board's card list is short of its real total (the page's own "View N
             # Openings" count says so, or — on the rare template without that button — the
@@ -173,7 +177,7 @@ class TrakstarScraper(BaseScraper):
         wanted = [
             code
             for _block, code in self.tech_detail_wanted(
-                _cards_from(html),
+                cards,
                 lambda card: _card_title(card[0]),
                 lambda card: _card_dept(card[0]),
             )

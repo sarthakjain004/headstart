@@ -457,7 +457,7 @@ class EightfoldScraper(BaseScraper):
         reads it whenever ``--assignment`` is set; the five runs of 2026-09-16 logged
         `detail skip-list: 671,630 / 671,833 / 672,468 Job details already held`)."""
         tech = self.tech_detail_wanted(
-            positions, lambda p: p.get("name"), lambda p: _department_of(p)
+            positions, lambda p: p.get("name"), _department_of
         )
         wanted = [str(p.get("id")) for p in tech if self.needs_detail(str(p.get("id")))]
         if self.async_fanout_enabled():

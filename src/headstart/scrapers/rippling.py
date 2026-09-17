@@ -98,7 +98,7 @@ class RipplingScraper(BaseScraper):
         # is empty on every one of the 1,515 rippling postings in the 2026-09-17 corpus, so that
         # fallback recovers nothing the gate is missing.
         wanted = self.tech_detail_wanted(
-            items, lambda it: it.get("name"), lambda it: _department_of(it)
+            items, lambda it: it.get("name"), _department_of
         )
         # Fill each posting's detail concurrently (bounded); a failed fetch leaves ``_detail`` {}.
         if self.async_fanout_enabled():

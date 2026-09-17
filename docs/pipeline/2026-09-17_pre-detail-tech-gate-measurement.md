@@ -53,7 +53,6 @@ verdict *is* the filter's verdict. No sampling needed; the proof is the call sit
 | `trakstar` | listing card `_TITLE` | listing card `_DEPT` | 0.7% | 84.9% |
 | `apple` | `item["postingTitle"]` | `item["team"]["teamName"]` | 0.4% | 29.2% |
 
-
 Worth knowing: **`workday`'s `department` is empty on 131,347 of 131,347 postings.** The
 `jobFamilyGroup` facet is a *query* parameter; the returned item never carries it. Workday jobs are
 already classified on title alone by `filter_tech`, so the gate changes nothing about the verdict —
