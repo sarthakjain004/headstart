@@ -200,11 +200,13 @@ _TECH_DEPT = re.compile(
 #
 #     Measured over the 2026-09-17 pre-filter corpus (489,661 postings): removes 3,086, of which
 #     the top entries are Security Officer, Loss Prevention Officer, Plumber, Painter, Carpenter
-#     and Electrician. See docs/tech-filter/2026-09-17_titles-the-department-was-carrying.md.
+#     and Electrician. See docs/tech-filter/2026-09-17_the-title-decides.md.
 _NOT_TECH_DEPT = re.compile(
     # No trailing \b: the plural is the common spelling ("Security Officers" is the department,
     # "Security Officer" the title) and a closing boundary fails on it.
-    r"\b(security officer|loss prevention|physical security|guard|safety"
+    # `security guard`, not bare `guard`: the bare word matched the department
+    # "Guardian Data Platform".
+    r"\b(security officer|loss prevention|physical security|security guard|safety"
     r"|facilit|maintenance|janitor|custodial|housekeep|hotel)",
     re.IGNORECASE,
 )
@@ -225,14 +227,22 @@ _NON_TECH_ROLE = re.compile(
     r"|sales (executive|manager|representative|associate|consultant|director)"
     r"|business development|account (manager|executive)|telecaller|telesales"
     r"|customer (service|support|success|care)|call cent\w+"
-    r"|recruit\w+|human resources|\bhr\b|talent acquisition"
+    # `human resources`, not `\bhr\b`: the initialism refused `HR Technology Manager` while
+    # `HRIS Specialist` stayed — an inconsistency with no defence.
+    r"|recruit\w+|human resources|talent acquisition"
     r"|content (writer|creator)|copywriter|social media|graphic design\w*"
     r"|nurse|nursing|physician|pharmacist|therapist|caregiver|medical assistant"
     r"|driver|warehouse|forklift|cashier|janitor\w*|housekeep\w+|custodian"
     r"|security officer|security guard|loss prevention"
-    r"|chef|cook|server|bartender|barista|waiter|waitress"
+    # No bare `server`: it refused `Windows Server Administrator`, `SQL Server Specialist` and
+    # `Server Support Specialist`, all of which the filter kept before. In job titles the machine
+    # sense dominates and the restaurant sense is rare.
+    r"|chef|cook|bartender|barista|waiter|waitress"
     r"|teacher|tutor|instructor|lecturer"
-    r"|plumber|painter|carpenter|electrician|welder|machinist|technician - \w+"
+    # No `technician - \w+`: it reads as "a technician of some trade" but matched
+    # `Technician - Software` and `Technician - Network Operations`, and was brittle anyway —
+    # it needed spaces and an ASCII hyphen, so `Technician-HVAC` and `Technician – HVAC` missed.
+    r"|plumber|painter|carpenter|electrician|welder|machinist"
     r")\b",
     re.IGNORECASE,
 )
@@ -254,22 +264,13 @@ def classify(title: str | None, department: str | None = None) -> Verdict:
     """Decide whether a job is a software/tech role, with the reason (recall-biased; see module doc)."""
     dept = (department or "").strip()
     title_text = (title or "").strip()
-    if dept and _NOT_TECH_DEPT.search(dept):
-        # This label carries no information about whether the role writes software, so it must
-        # not contribute at *any* rule — not just rule 4. Rules 1 and 2 read `title + department`,
-        # so leaving it in is how "Plumber" in "Engineering & Facilities" became a generic tech
-        # token off the word "Engineering", and how a guard in "Security Officers" reached the
-        # index. Blanked rather than vetoed: a genuine software title inside a facilities org
-        # still passes on its own signal, which is what keeps "Software Engineer, Facilities
-        # Systems" working.
-        dept = ""
     # Rules 1 and 2 read the **title**, not the title and department concatenated. Reading both
     # let a department decide a title question: "Software development" contains "software dev",
     # so `Content Creator` in it scored a strong software signal, and `Engineering & Facilities`
     # contains "engineering", so `Plumber` scored a generic one. The department already has its
     # own rule below, with its own guards; letting it also fire rules 1-2 counted it twice and
-    # bypassed those guards. Measured over the 2026-09-17 pre-filter corpus, 5,782 postings were
-    # reaching the index this way.
+    # bypassed those guards. Measured over the 489,661-posting pre-filter corpus of 2026-09-17,
+    # **8,885** postings were reaching the index on a department-only rule-1/2 match.
     if _STRONG.search(title_text):
         return Verdict(True, "strong-software-signal")
     if _GENERIC.search(title_text):

@@ -20,9 +20,14 @@ kept *only* by their department. Reading them split three ways.
 | `strong-software-signal` | 3,494 | **rules 1-2 reading the department**: "Content Creator" in "Software development" matched `software dev` |
 | `generic-tech-token` | 2,288 | same mechanism: "Plumber" in "Engineering & Facilities" matched `engineering` |
 
-That third of the corpus was not rule 4 at all. `classify` built `text = f"{title} {department}"`
-and ran rules 1 and 2 over it, so a department could decide a *title* question — and could do so
-while bypassing rule 4's own guards (`_HIRING_DEPT`, ADR-0087). The department was counted twice.
+That third of the five ATSes' rescues was not rule 4 at all. `classify` built
+`text = f"{title} {department}"` and ran rules 1 and 2 over it, so a department could decide a
+*title* question — and could do so while bypassing rule 4's own guards (`_HIRING_DEPT`, ADR-0087).
+The department was counted twice.
+
+The 3,494 + 2,288 above are the five ATSes only. **Corpus-wide the same mechanism was keeping
+8,885 postings**, which is the number the code comment carries — the five-ATS figure is the one
+that motivated the investigation, not the one that measures the defect.
 
 ## What changed
 
@@ -50,22 +55,43 @@ DBA.
 
 ## What it moved
 
-**+1,374 postings, +1.3%** — 109,058 indexed against 107,684. Near-neutral in size, a long way in
-composition: **+6,414 in, −5,290 out.**
+**+1,488 postings, +1.38%** — 109,172 indexed against 107,684. Near-neutral in size, a long way in
+composition.
 
 | in | out |
 | --- | --- |
 | Data Analyst, Technical Writer, Solution Architect, Technical Project/Program Manager, Scrum Master, Information Systems Manager, System Administrator, IT Support Technician | Security Officer, Loss Prevention Officer, Plumber, Painter, Carpenter, Electrician, Administrative Assistant, and a large block of "Remote Data Entry / Work From Home" listings |
 
-The biggest proportional move is **freshteam, −54%** — and all 736 of its removals are one thing:
-`Administrative Assistant / Data Entry Clerk (Work From Home)`-class listings in a department
-called **"Data Entry"**, which matched `\bdata\b` in `_TECH_DEPT`. freshteam reading 80.3% tech was
-that artefact, not a real signal.
+The biggest proportional move is **freshteam, −54%** — and **729 of its 734 removals** come from a
+single department called **"Data Entry"**, which matched `\bdata\b` in `_TECH_DEPT`: mostly
+`Administrative Assistant / Data Entry Clerk (Work From Home)`-class listings. freshteam reading
+80.3% tech was that artefact, not a real signal. (The other five are two "Other IT", two "Software
+Sales" and one Chinese-labelled architecture department — so "all one thing" is nearly, not
+exactly, true, and the exact split is stated here rather than rounded away.)
 
-Read the changed values, not the total (ADR-0066's discipline). One genuine loss surfaced that way
-and was fixed rather than accepted: jobvite was dropping `IT System Administrator (TS/SCI with
-Polygraph)`, a cleared sysadmin role, because the existing administrator pattern was `systems`
-plural-only.
+Read the changed values, not the total (ADR-0066's discipline). That is what caught the defects in
+this change's own first draft, and there were several:
+
+- The existing administrator pattern was `systems` plural-only, so jobvite was serving
+  `IT System Administrator (TS/SCI with Polygraph)` — a cleared sysadmin role — as non-tech.
+- `_NON_TECH_ROLE` listed `server` for the restaurant sense, and it refused
+  `Windows Server Administrator`, `SQL Server Specialist` and `Server Support Specialist`. In job
+  titles the machine sense dominates; the entry is gone.
+- `technician - \w+` reads as "a technician of some trade" and matched `Technician - Software` and
+  `Technician - Network Operations`. It was also brittle — spaces and an ASCII hyphen required, so
+  `Technician-HVAC` missed anyway. Gone.
+- `\bhr\b` refused `HR Technology Manager` while `HRIS Specialist` stayed. Narrowed to
+  `human resources`.
+- A bare `guard` in `_NOT_TECH_DEPT` matched the department `Guardian Data Platform`. Narrowed to
+  `security guard`.
+- The first draft **blanked** an uninformative department before every rule, which also removed it
+  from `_NON_SOFTWARE`'s reach and flipped `Installation Engineer` in `HVAC & Facilities` from
+  non-tech to tech, undoing ADR-0068. The blanking turned out to be redundant once rules 1-2 read
+  the title — rule 4's own guard is sufficient — so it is gone and the veto is intact.
+
+Every one of those is a recall loss on a gate whose contract is that dropping a real tech job is
+not acceptable, and none was visible from reading the regex. `tests/test_tech_filter.py` pins all
+of them.
 
 ## What it does **not** do
 
@@ -73,12 +99,12 @@ It does not unlock the gate for the five ATSes it was aimed at. A title-only gat
 
 | ATS | before | after |
 | --- | ---: | ---: |
-| oracle | 46.0% | **34.8%** |
-| zoho | 47.4% | **35.7%** |
-| icims | 25.8% | 19.6% |
+| oracle | 46.0% | **34.9%** |
+| zoho | 47.4% | **36.2%** |
+| icims | 25.8% | 19.7% |
 | jobvite | 40.6% | 13.4% |
-| bamboohr | 13.6% | 10.2% |
-| *corpus-wide* | 20.7% | 14.9% |
+| bamboohr | 13.6% | 10.4% |
+| *corpus-wide* | 20.7% | 15.0% |
 
 jobvite and bamboohr are now in a range worth re-examining; oracle and zoho are not. The residual
 there is not a pattern gap that more regexes would close — it is genuinely vague titles

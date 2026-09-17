@@ -16,6 +16,7 @@ import pytest
 from headstart import tech_filter
 from headstart.tech_filter import (
     _STRONG,
+    TECH_FILTER_VERSION,
     classify,
     filter_jobs,
     filter_jobs_and_report,
@@ -556,8 +557,42 @@ def test_the_widened_patterns_did_not_swallow_their_neighbours(title):
     assert is_tech(title) is False
 
 
+@pytest.mark.parametrize(
+    "title,department",
+    [
+        # Each of these was a real recall loss in the first draft of `_NON_TECH_ROLE`, found by
+        # diffing against the pre-change filter rather than by reading the regex. A gate whose
+        # contract is "dropping a real tech job is not acceptable" cannot afford any of them.
+        (
+            "Windows Server Administrator",
+            "IT Infrastructure",
+        ),  # bare `server` (the restaurant one)
+        ("SQL Server Specialist", "Information Technology"),
+        ("Server Support Specialist", "Technology"),
+        ("Technician - Software", "Technology"),  # `technician - \w+`
+        ("Technician - Network Operations", "IT"),
+        ("HR Technology Manager", "Technology"),  # `\bhr\b`
+        ("Specialist", "Guardian Data Platform"),  # bare `guard` in the department list
+    ],
+)
+def test_the_non_tech_role_list_does_not_refuse_a_real_software_role(title, department):
+    assert is_tech(title, department=department) is True
+
+
+def test_a_non_software_department_still_vetoes_a_generic_title():
+    """ADR-0068's veto must survive rule 4's new guard.
+
+    An earlier draft *blanked* an uninformative department before every rule, which also removed
+    it from `_NON_SOFTWARE`'s reach — so "Installation Engineer" in "HVAC & Facilities" flipped
+    from non-tech to tech. The guard is scoped to rule 4; the veto at rule 2 is untouched."""
+    assert is_tech("Installation Engineer", department="HVAC & Facilities") is False
+    assert is_tech("Software Engineer", department="HVAC & Facilities") is True
+
+
 def test_the_version_counter_moved_with_the_line():
     """`role_trends` reads this to tell "we changed who counts" from "the market moved"."""
-    from headstart.tech_filter import TECH_FILTER_VERSION
-
-    assert TECH_FILTER_VERSION >= 2
+    assert TECH_FILTER_VERSION == 2, (
+        "bump this and its comment together — the comment carries the commit range and the "
+        "measured effect, and a bump without one is what CLAUDE.md's DERIVATIONS_VERSION rule "
+        "exists to stop"
+    )
