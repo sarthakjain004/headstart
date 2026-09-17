@@ -86,11 +86,17 @@ recall cliff.
 pattern transfers mechanically. It is still blocked, because the slug recovers the title and
 nothing recovers the department.
 
-**`meta` is the one detail-pass ATS with no tier**, because it is not worth one: a single Board,
-985 postings, 60 board-seconds — 0.0% of the total. For the record it is shaped like icims (title
-from the detail page's JSON-LD) but *unlike* icims it would be safe, since `parse` hardcodes
-`department=None`, so a slug-derived gate would read exactly what `filter_tech` reads. It is left
-alone because 60 seconds does not justify a slug parser and a per-tenant sample.
+**`meta` cannot take the gate at all**, and the reason is the one #500 asks for — *"check whether
+their job URLs carry a recoverable slug before assuming this is viable at all"*. It does not.
+Probed live 2026-09-17, **994 of 994** `<loc>` entries in `https://www.metacareers.com/jobsearch/
+sitemap.xml` are `/profile/job_details/{17 digits}/` with no title token, which is what the
+scraper's own `url_shape` and module docstring already say ("the sitemap carries no title,
+location, or anything else"). So there is no pre-detail signal of any kind: not a listing field,
+not a slug. That is a stronger exclusion than icims', where a slug exists and is merely
+insufficient.
+
+It would also not be worth much — a single Board, 985 postings, 60 board-seconds, 0.0% of the
+total — but cost is not why it is out.
 
 ### Tier 3 — needs one more measurement
 

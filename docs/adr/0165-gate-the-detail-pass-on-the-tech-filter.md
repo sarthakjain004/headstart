@@ -69,6 +69,14 @@ eightfold.
 jazzhr, whose detail may override `department` — 1,748 postings across the ten Boards the corpus
 says lean hardest on `department`, zero disagreements.
 
+**Unmeasured, so not yet wired** ([#510](https://github.com/sarthakjain004/headstart/issues/510)):
+taleo_enterprise, taleo_be, gem, phenom. All four carry `title` *and* `department` on the listing,
+but `parse` lets the detail override the department, so they are the jazzhr shape and need the
+same paired sample before shipping. Together ~2.2% of board-seconds, which is why they did not
+block this. `meta` is a different case and is simply out: its sitemap URLs are bare numeric ids
+(994 of 994 probed live), so it has no pre-detail signal of any kind — not a listing field, not a
+slug.
+
 **Excluded, on measured recall**: oracle (46.0%), zoho (47.4%), jobvite (40.6%), icims (25.8%),
 bamboohr (13.6%) — the share of each ATS's *tech* postings a department-blind gate would drop,
 over the real 2026-09-17 pre-filter corpus. Oracle is the one worth stating twice: #500 ruled it
