@@ -155,11 +155,24 @@ PRUNE_DONE = re.compile(
 # per run — 48% of the control run's — and hid the entire iCIMS ramp-in (1,503 adds) from every
 # reader of the churn table.
 _ATS = tuple(sorted(SCRAPERS))
+
+
 # Anchored to whitespace (or the line start), not a bare `\b`. A board slug may repeat its own
 # ATS name: `rippling:rippling:78904b0c-...` is a real id in run 34197315179, and a `\b` lookahead
 # split its inner `rippling:` into two fake ids, breaking that batch's count the same way a
 # missing name does.
+#
+# Spelled as a literal `re.compile` rather than built by a helper, even though `_boundary_from_log`
+# builds the same shape: `test_log_contract.test_every_runlog_pattern_is_accounted_for` finds
+# module-level patterns by AST, and cannot see through a call. That enforced convention outranks
+# de-duplicating the expression — keep the two in step by hand.
 _ID_BOUNDARY = re.compile(r"(?:(?<=\s)|(?<=\A))(?=(?:" + "|".join(_ATS) + r"):)")
+
+# How many times a qualifying `prefix:` must open a token before `_boundary_from_log` believes it
+# names an ATS. Low, because a real provider appears once per id it contributed and a batch holds
+# 100 ids. It is a tie-breaker only: the second-colon test does the actual separating, since debris
+# recurs too (`Date` x5 in run 32624890700).
+_MIN_NAME_HITS = 3
 
 # --- role_trends -----------------------------------------------------------------------------
 TRENDS_ASSIGNING = re.compile(
@@ -289,6 +302,42 @@ def update_meta_report(text: str) -> None:
         print(f"  watermark -> v{w.group(1)}", flush=True)
 
 
+def _boundary_from_log(text: str) -> re.Pattern[str]:
+    """`_ID_BOUNDARY`, widened by any ATS name this run used that the local registry lacks.
+
+    `_ATS` comes from `SCRAPERS` — but from the registry this *process* imports, which is the
+    editable install in the primary checkout, not the run's and not even this worktree's. A
+    worktree therefore does NOT isolate it: `scripts/` is checked out per tree, `headstart` is not.
+    Reading a newer run from an older checkout drops whole 100-id batches and prints a
+    `!! churn by ATS ... NOT counted` warning that points at the pipeline when the fault is the
+    reader's. Measured 2026-09-17 on runs 35175065218-35188643520 against a checkout predating
+    `bamboohr`/`gem`: 300-500 ids dropped per run, 0 once those two names were known.
+
+    So harvest the vocabulary from the log itself. A name qualifies when it opens a token, recurs,
+    and is followed by a **second colon** — because an id is `ats:tenant:native-id`, so a real
+    provider prefix always has more colons after it while debris does not.
+
+    Recurrence alone is NOT enough, and assuming it was is how the first version of this shipped a
+    regression: a Workday id can read `workday:rbs/rbs:Closing Date: 01/09/2026`, where a blind
+    split leaves the token `Date:` five times over any sane count bar. On run 32624890700 that
+    admitted `Date` as a provider, over-split those ids and dropped a 100-id evict batch that had
+    parsed cleanly before. Measured across all 2,625 cached logs in `experiment/runlog/artifacts`,
+    the second-colon rule admits `bamboohr` and `gem` and **no** debris at all; the count bar alone
+    admits `Date`. The registry stays the trusted core; this only ever *adds* to it.
+    """
+    seen: Counter = Counter()
+    for _, _, _, ids in ID_BATCH.findall(text):
+        for tok in ids.split():
+            name, sep, rest = tok.partition(":")
+            if sep and name and name.isidentifier() and ":" in rest:
+                seen[name] += 1
+    extra = {n for n, c in seen.items() if c >= _MIN_NAME_HITS} - set(_ATS)
+    if not extra:
+        return _ID_BOUNDARY
+    names = sorted(set(_ATS) | extra)
+    return re.compile(r"(?:(?<=\s)|(?<=\A))(?=(?:" + "|".join(names) + r"):)")
+
+
 def _id_churn_by_ats(text: str) -> tuple[dict[str, Counter], Counter]:
     """Bucket `[index] add`/`evict` id batches by ATS only — never by full board. `ats:tenant:id`
     is ambiguous past the first `:` (a Workday id can itself contain both), and this is exactly
@@ -298,9 +347,10 @@ def _id_churn_by_ats(text: str) -> tuple[dict[str, Counter], Counter]:
     with its own `[start-end]` header — the caller reports those, so this stays a pure parser."""
     out: dict[str, Counter] = {"add": Counter(), "evict": Counter()}
     dropped: Counter = Counter()
+    boundary = _boundary_from_log(text)
     for label, start, end, ids in ID_BATCH.findall(text):
         expected = int(end) - int(start) + 1
-        parts = [p.strip() for p in _ID_BOUNDARY.split(ids) if p.strip()]
+        parts = [p.strip() for p in boundary.split(ids) if p.strip()]
         if len(parts) != expected:
             # The boundary regex missed or over-split this line. Trusting the line's own
             # [start-end] count over a wrong per-ATS breakdown is right; doing it silently was
