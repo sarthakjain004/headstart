@@ -671,12 +671,38 @@ def _fetch(method, url, **kw):
             return cs
     if r.status_code == 429:
         _on_429(gate or _ensure_gate(netloc, "429"), r, url)
+    elif _is_quota_403(netloc, r):
+        _on_quota_403(gate or _ensure_gate(netloc, "403"), r, url)
     elif challenged:
         _note(f"challenge-{r.status_code}")
         (gate or _ensure_gate(netloc, str(r.status_code))).trip(
             _CHALLENGE_COOLDOWN_S, f"{r.status_code}, bot-wall challenge"
         )
     return r
+
+
+# Hosts that meter **per IP over a window** and refuse with a bare 403 — no `Retry-After`, no
+# `cf-mitigated`, no interstitial body, so neither `_on_429` nor `_is_challenge` sees them and the
+# refusal used to fall straight through to UNKNOWN with no gate trip and no rotation.
+#
+# Keyed by `_gate_key`, which is also the spare-egress group, so one entry covers every board on
+# the host. zwayam qualifies on both counts: every tenant is probed through the one shared API
+# (`search_request` sends `careers.infoedge.com`, `adani.openings.co` and `careers.practo.com`
+# alike to `public.zwayam.com`), and the wall is a cumulative request quota, not a concurrency
+# limit.
+#
+# The entry is the **exact host**, because `zwayam.com` is not in `_SPANNING` and `_gate_key`
+# therefore returns `public.zwayam.com` unchanged. Writing the registrable domain here instead
+# looks right and silently never matches — `test_the_quota_403_key_matches_the_gate_key` pins it.
+#
+# Measured 2026-09-17, one IP, 16-wide (`experiment/zwayam-403-wall/LOG.md`):
+#   - 100/200/300/400 cumulative requests -> 200 on every one;
+#   - at 500 -> 23 of 100 refused; at 600 -> 100 of 100 refused. The wall is volume, not width.
+#   - Against 25 slugs that had *just* been refused, interleaved: **WARP cleared 25/25 while the
+#     direct route cleared 12/25.** Rotation is what clears it.
+# Before this, a full 3,239-board sweep walled partway through its first quartile and returned
+# 2,816 UNKNOWN — quartiles 2-4 were 809/809 unknown each.
+_QUOTA_403 = frozenset({"public.zwayam.com"})
 
 
 # A bot wall's interstitial, served as 429. Cloudflare labels its own with a header; Vercel's
@@ -696,6 +722,24 @@ def _is_challenge(r):
         return True
     body = r.content[:4096] if r.content else b""
     return any(m in body for m in _CHALLENGE_BODIES)
+
+
+def _is_quota_403(netloc, r):
+    """Is this the bare 403 of a host that meters per IP? See `_QUOTA_403`."""
+    return r.status_code == 403 and _gate_key(netloc) in _QUOTA_403
+
+
+def _on_quota_403(gate, r, url):
+    """Move this gate to a different address; ban only if none can be had.
+
+    The same rung `_on_429` reaches for a ban-length Retry-After, for the same reason — the limit
+    *is* the address, so easing the pace cannot clear it — but reached directly, because a quota
+    403 carries none of the signals the 429 ladder reads: no Retry-After to measure, and no
+    challenge markers (`_is_challenge` returns False for it on purpose, and must keep doing so, or
+    an ordinary "forbidden" would start rotating too).
+    """
+    _note("403-quota")
+    _ban_or_rotate(gate, r, url, _CHALLENGE_COOLDOWN_S, "403, per-IP quota spent")
 
 
 def _on_429(gate, r, url):

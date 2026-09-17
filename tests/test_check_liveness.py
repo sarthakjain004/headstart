@@ -524,3 +524,45 @@ def test_an_unseeded_spanning_host_gets_one_gate_not_one_per_tenant(cl):
     finally:
         cl._SPANNING = tuple(d for d in cl._SPANNING if d != "unseeded.example")
         cl._GATES.pop("unseeded.example", None)
+
+
+# --- a per-IP quota served as a bare 403 -------------------------------------------------------
+# zwayam meters cumulative requests per IP and refuses with a plain 403 — no Retry-After, no
+# cf-mitigated, no interstitial body — so neither `_on_429` nor `_is_challenge` sees it and the
+# refusal used to fall through to UNKNOWN with no gate trip and no rotation. Measured 2026-09-17
+# (`experiment/zwayam-403-wall/LOG.md`): the wall trips on volume, not width (200s through 400
+# cumulative requests, 23/100 refused at 500, 100/100 at 600), and against 25 just-refused slugs
+# WARP cleared 25/25 while the direct route cleared 12/25.
+
+
+def test_the_quota_403_key_matches_the_gate_key(cl):
+    """The trap this pins: `zwayam.com` is not in `_SPANNING`, so `_gate_key` returns the exact
+    host. An entry written as the registrable domain reads correctly and never matches."""
+    api = "public.zwayam.com"
+
+    assert cl._gate_key(api) in cl._QUOTA_403, (
+        "_QUOTA_403 must hold whatever _gate_key actually produces for the probed host"
+    )
+
+
+def test_a_bare_quota_403_moves_egress_instead_of_falling_through(cl, egress):
+    egress.available = True
+    gate = cl._HostGate(8, 0.25, "public.zwayam.com")
+
+    assert cl._is_quota_403("public.zwayam.com", _Resp(403))
+    cl._on_quota_403(gate, _Resp(403), _URL)
+
+    assert not gate.blocked(), "a fresh address makes the cooldown pointless — lift it"
+    assert egress.walled == ["public.zwayam.com"], (
+        "the gate's boards must be routed under the same key the gate is filed under"
+    )
+
+
+def test_an_ordinary_forbidden_from_any_other_host_still_never_rotates(cl):
+    """Scope. A 403 means *forbidden* on most hosts, and rotating on all of them would spend the
+    daemon's cooldown on refusals a new address cannot fix."""
+    assert not cl._is_quota_403("boards.greenhouse.io", _Resp(403))
+    assert not cl._is_quota_403("public.zwayam.com", _Resp(404))
+    assert not cl._is_challenge(_Resp(403, content=b'{"error":"forbidden"}')), (
+        "the quota rung must not make a bare 403 a challenge for everyone else"
+    )
