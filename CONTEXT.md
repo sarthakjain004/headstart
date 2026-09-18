@@ -353,7 +353,8 @@ the compare-and-swap on an HF state prefix. `state_guard record` fingerprints th
 fetch, `state_guard verify` retakes it immediately before the upload, and a difference means another
 workflow wrote while this one worked — so the upload is refused and the step goes red. The
 fingerprint is **content**, sorted `path:blob_id` pairs hashed: the pipeline publishes four or five
-commits per run and the daily squash rewrites every sha, so a commit id identifies nothing here.
+commits per run and the reclaim squashes on any run with orphans to drop (ADR-0168), rewriting
+every sha, so a commit id identifies nothing here.
 Both writers of `data/lancedb` carry it — the pipeline's `merge` job and `cleanup-index`.
 _Avoid_: calling it a lock. It serialises nothing and prevents no collision; it converts a silent
 overwrite into a visible refusal, and the loser still loses its run's work.

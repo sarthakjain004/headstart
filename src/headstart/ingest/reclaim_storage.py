@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import time
 from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
@@ -66,6 +67,34 @@ DEFAULT_MIN_AGE_MINUTES = 45
 # on essentially every run and the path stays continuously exercised rather than rotting until the
 # one day it is needed.
 DEFAULT_MIN_RECLAIM_GB = 1.0
+
+# `usedStorage` does not update synchronously with the delete. Measured live 2026-09-18 against
+# the real dataset, deleting 14 orphans worth 6.71 GB: the call returned in 2.8s and the counter
+# still read the old 14.31 GB at t+3.3s and t+9.1s, falling to 7.60 GB by t+24.5s and staying
+# there. So an immediate read sees the *pre-delete* figure and would fail every healthy reclaim.
+# Poll instead, generously over the measured ~25s, and only call it a failure at the end.
+VERIFY_TIMEOUT_S = 180.0
+VERIFY_INTERVAL_S = 5.0
+
+
+class _Hub(Protocol):
+    """The parts of ``huggingface_hub.HfApi`` this module calls.
+
+    Named so the seam is typed rather than ``api=None`` meaning "anything": the tests drive the
+    real :func:`reclaim` over a fake, and this says exactly what a fake has to provide.
+    """
+
+    def repo_info(self, repo_id: str, /, **kwargs): ...
+
+    def list_lfs_files(self, repo_id: str, /, **kwargs): ...
+
+    def list_repo_commits(self, repo_id: str, /, **kwargs): ...
+
+    def super_squash_history(self, **kwargs) -> None: ...
+
+    def permanently_delete_lfs_files(
+        self, repo_id: str, files, /, **kwargs
+    ) -> None: ...
 
 
 class _Blob(Protocol):
@@ -108,11 +137,8 @@ def orphans(
     return [b for b in stored if b.file_oid not in live and b.pushed_at < cutoff]
 
 
-def _gb(n: float) -> str:
-    """Bytes as a GB figure, unit deliberately left to the caller — see ADR-0039: the log
-    contract verifies wording by reading literal runs out of the emitter's source, so ` GB`
-    has to sit in the format string rather than behind this helper."""
-    return f"{n / 1e9:.2f}"
+def _gb(n: float | None) -> str:
+    return "unknown" if n is None else f"{n / 1e9:.2f} GB"
 
 
 def reclaim(
@@ -121,7 +147,9 @@ def reclaim(
     *,
     min_age_minutes: int = DEFAULT_MIN_AGE_MINUTES,
     min_reclaim_gb: float = DEFAULT_MIN_RECLAIM_GB,
-    api=None,
+    verify_timeout_s: float = VERIFY_TIMEOUT_S,
+    verify_interval_s: float = VERIFY_INTERVAL_S,
+    api: _Hub | None = None,
 ) -> int:
     """Squash, delete the orphaned blobs, and require ``usedStorage`` to have fallen."""
     if (
@@ -131,21 +159,23 @@ def reclaim(
 
         api = HfApi(token=token)
 
-    def state() -> tuple[int, int, list]:
+    def read_usage() -> tuple[int | None, int, list]:
+        """``used_storage`` stays ``None`` when the Hub declines to report it rather than being
+        coerced to 0 — 0 reads as "nothing stored", which would fail the check below."""
         info = api.repo_info(repo, repo_type="dataset", files_metadata=True)
         siblings = list(info.siblings or [])
         return (
-            (info.used_storage or 0),
+            info.used_storage,
             sum(s.lfs.size for s in siblings if getattr(s, "lfs", None)),
             siblings,
         )
 
-    used_before, live_bytes, siblings = state()
+    used_before, live_bytes, siblings = read_usage()
     stored = list(api.list_lfs_files(repo, repo_type="dataset"))
     stored_bytes = sum(b.size for b in stored)
     _log.info(
-        f"usedStorage {_gb(used_before)} GB · live {_gb(live_bytes)} GB across {len(siblings)} file(s) "
-        f"· stored {_gb(stored_bytes)} GB across {len(stored)} LFS object(s)"
+        f"usedStorage {_gb(used_before)} · live {_gb(live_bytes)} across {len(siblings)} file(s) "
+        f"· stored {_gb(stored_bytes)} across {len(stored)} LFS object(s)"
     )
 
     live = live_oids(siblings)
@@ -168,7 +198,7 @@ def reclaim(
     dead_bytes = sum(b.size for b in dead)
     if dead_bytes < min_reclaim_gb * 1e9:
         _log.info(
-            f"{_gb(dead_bytes)} GB orphaned across {len(dead)} object(s) — under the "
+            f"{_gb(dead_bytes)} orphaned across {len(dead)} object(s) — under the "
             f"{min_reclaim_gb:.0f} GB floor, nothing to reclaim"
         )
         return 0
@@ -177,7 +207,7 @@ def reclaim(
     for b in dead:
         by_file[b.filename] = by_file.get(b.filename, 0) + b.size
     for name, size in sorted(by_file.items(), key=lambda kv: -kv[1])[:10]:
-        _log.info(f"  orphaned {_gb(size)} GB  {name}")
+        _log.info(f"  orphaned {_gb(size)}  {name}")
 
     # Squash first: collapsing history to one commit is what makes "absent from HEAD" mean
     # "referenced by nothing at all", so the delete below is unambiguous.
@@ -195,27 +225,43 @@ def reclaim(
         )
         return 1
 
-    _log.info(f"deleting {len(dead)} orphaned object(s), {_gb(dead_bytes)} GB")
+    _log.info(f"deleting {len(dead)} orphaned object(s), {_gb(dead_bytes)}")
     api.permanently_delete_lfs_files(repo, dead, repo_type="dataset")
 
-    used_after, live_after, siblings_after = state()
-    # The whole point of this module: the old step announced a reclaim it never measured.
+    # The whole point of this module: the old step announced a reclaim it never measured. But
+    # the counter lags the delete (see VERIFY_TIMEOUT_S), so poll it rather than read once —
+    # reading immediately is how this check would have cried wolf on every healthy run.
+    deadline = time.monotonic() + verify_timeout_s
+    while True:
+        used_after, live_after, siblings_after = read_usage()
+        if used_before is None or (used_after is not None and used_after < used_before):
+            break
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(verify_interval_s)
+
     if live_after < live_bytes:
         _log.error(
-            f"live files shrank ({_gb(live_bytes)} GB -> {_gb(live_after)} GB) across the reclaim — "
+            f"live files shrank ({_gb(live_bytes)} -> {_gb(live_after)}) across the reclaim — "
             "investigate before the next run"
         )
         return 1
-    if used_after >= used_before:
+    if used_before is not None and (used_after is None or used_after >= used_before):
         _log.error(
-            f"reclaim did not free anything: usedStorage {_gb(used_before)} GB -> {_gb(used_after)} GB "
-            f"after deleting {len(dead)} object(s) worth {_gb(dead_bytes)} GB. The quota fills at "
-            "~100 GB/day, so this will reject uploads within a day if it is not fixed."
+            f"reclaim did not free anything: usedStorage {_gb(used_before)} -> {_gb(used_after)} "
+            f"after deleting {len(dead)} object(s) worth {_gb(dead_bytes)}, and still had not "
+            f"moved {verify_timeout_s:.0f}s later. The quota fills at ~100 GB/day, so this will "
+            "reject uploads within a day if it is not fixed."
         )
         return 1
+    freed = (
+        used_before - used_after
+        if used_before is not None and used_after is not None
+        else None
+    )
     _log.info(
-        f"reclaimed {_gb(used_before - used_after)} GB: usedStorage {_gb(used_before)} GB -> "
-        f"{_gb(used_after)} GB, live {_gb(live_after)} GB intact across {len(siblings_after)} file(s)"
+        f"reclaimed {_gb(freed)}: usedStorage {_gb(used_before)} -> "
+        f"{_gb(used_after)}, live {_gb(live_after)} intact across {len(siblings_after)} file(s)"
     )
     return 0
 

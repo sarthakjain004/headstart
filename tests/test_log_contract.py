@@ -136,7 +136,7 @@ import sys
 from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
 
@@ -1009,7 +1009,7 @@ def _plan_measured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     then deals items heaviest-first, so equal costs would make which Board lands on which shard —
     and therefore the per-shard counts — depend on the shuffle.
     """
-    from datetime import UTC, datetime
+    from datetime import datetime
 
     from headstart import board_cost, board_description_gap, board_priority
     from headstart.config import CompanyRef
@@ -1675,90 +1675,51 @@ _EGRESS = "headstart.spare_egress"
 _RECLAIM = "headstart.ingest.reclaim_storage"
 
 # -- the storage reclaim (ADR-0168) -----------------------------------------------------------
-# `reclaim_storage` takes its Hub client as an argument, so these drive the *real* emitter over a
-# fake Hub rather than reading its source. No heavy extras: the module imports `huggingface_hub`
-# lazily, inside the branch that builds a client, which `api=` skips.
+# `reclaim_storage` takes its Hub client as an argument, so these drive the *real* emitter over
+# the fake `tests/test_reclaim_storage.py` already defines rather than a second copy of it. No
+# heavy extras: the module imports `huggingface_hub` lazily, inside the branch `api=` skips.
 
 
-class _FakeHub:
-    """Enough of `HfApi` to walk `reclaim()` down one branch."""
+def _reclaim_run(
+    *, used, used_after, dead_bytes=89_260_000_000, dead=1, lag_reads=0
+) -> None:
+    from test_reclaim_storage import FakeHub, blob, sibling
 
-    def __init__(
-        self, used, used_after, live_sha="live", dead=1, dead_size=89_260_000_000
-    ):
-        from types import SimpleNamespace
-
-        self._used, self._used_after, self._reads = used, used_after, 0
-        self._sibs = [
-            SimpleNamespace(
-                rfilename="data/embeddings/jobs/embeddings.f32",
-                size=7_570_000_000,
-                lfs=SimpleNamespace(sha256=live_sha, size=7_570_000_000),
-            )
-        ]
-        now = datetime(2026, 9, 18, 12, 0, tzinfo=UTC)
-        self._stored = [
-            SimpleNamespace(
-                file_oid=live_sha,
-                filename="data/embeddings/jobs/embeddings.f32",
-                size=7_570_000_000,
-                pushed_at=now - timedelta(days=1),
-            )
-        ] + [
-            SimpleNamespace(
-                file_oid=f"dead{i}",
-                filename="data/embeddings/jobs/embeddings.f32",
-                size=dead_size // max(dead, 1),
-                pushed_at=now - timedelta(days=1),
-            )
-            for i in range(dead)
-        ]
-
-    def repo_info(self, repo, repo_type=None, files_metadata=False):
-        from types import SimpleNamespace
-
-        self._reads += 1
-        used = self._used if self._reads == 1 else self._used_after
-        return SimpleNamespace(siblings=self._sibs, used_storage=used)
-
-    def list_lfs_files(self, repo, repo_type=None):
-        return list(self._stored)
-
-    def list_repo_commits(self, repo, repo_type=None):
-        return [object()] * 5
-
-    def super_squash_history(self, repo_id=None, repo_type=None):
-        pass
-
-    def permanently_delete_lfs_files(self, repo, files, repo_type=None):
-        pass
-
-
-def _reclaim_run(hub) -> None:
     from headstart.ingest import reclaim_storage
 
-    reclaim_storage.reclaim("imPoseidon/headstart-index", None, api=hub)
-
-
-def _reclaim_storage_line(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _reclaim_run(_FakeHub(used=96_830_000_000, used_after=7_570_000_000))
+    live = [sibling("live", 7_570_000_000)]
+    stored = [blob("live", 7_570_000_000)] + [
+        blob(f"dead{i}", dead_bytes // dead) for i in range(dead)
+    ]
+    reclaim_storage.reclaim(
+        "imPoseidon/headstart-index",
+        None,
+        api=FakeHub(
+            live=live,
+            stored=stored,
+            used=used,
+            used_after=used_after,
+            lag_reads=lag_reads,
+        ),
+        verify_timeout_s=0.05,
+        verify_interval_s=0.0,
+    )
 
 
 def _reclaim_freed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _reclaim_run(_FakeHub(used=96_830_000_000, used_after=7_570_000_000))
+    """One successful reclaim emits both the opening storage line and the closing receipt."""
+    _reclaim_run(used=96_830_000_000, used_after=7_570_000_000)
 
 
 def _reclaim_below_floor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _reclaim_run(
-        _FakeHub(
-            used=8_000_000_000, used_after=8_000_000_000, dead=3, dead_size=500_000_000
-        )
+        used=8_000_000_000, used_after=8_000_000_000, dead_bytes=500_000_000, dead=3
     )
 
 
 def _reclaim_noop(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The 2026-09-18 failure: blobs deleted, quota unmoved."""
-    _reclaim_run(_FakeHub(used=96_830_000_000, used_after=96_830_000_000))
+    """The 2026-09-18 failure: blobs deleted, quota unmoved even after the poll window."""
+    _reclaim_run(used=96_830_000_000, used_after=96_830_000_000, lag_reads=99)
 
 
 _PIPELINE = ".github/workflows/pipeline.yml"
@@ -2537,7 +2498,7 @@ CONTRACT: tuple[Line, ...] = (
     Line(
         consumer="fanout_merge.STORAGE_LINE",
         emitter=_RECLAIM,
-        emit=_reclaim_storage_line,
+        emit=_reclaim_freed,
         body=(
             "usedStorage 96.83 GB · live 7.57 GB across 1 file(s) · stored 96.83 GB "
             "across 2 LFS object(s)"
@@ -2567,8 +2528,8 @@ CONTRACT: tuple[Line, ...] = (
         emit=_reclaim_noop,
         body=(
             "reclaim did not free anything: usedStorage 96.83 GB -> 96.83 GB after deleting "
-            "1 object(s) worth 89.26 GB. The quota fills at ~100 GB/day, so this will reject "
-            "uploads within a day if it is not fixed."
+            "1 object(s) worth 89.26 GB, and still had not moved 0s later. The quota fills at "
+            "~100 GB/day, so this will reject uploads within a day if it is not fixed."
         ),
         why=(
             "the 2026-09-18 failure: blobs deleted and the quota unmoved. The old step could "

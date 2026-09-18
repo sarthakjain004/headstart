@@ -55,7 +55,15 @@ class FakeHub:
     """Enough of ``HfApi`` to exercise the decision, and it records what was deleted."""
 
     def __init__(
-        self, *, live, stored, used, used_after=None, commits=5, live_after=None
+        self,
+        *,
+        live,
+        stored,
+        used,
+        used_after=None,
+        commits=5,
+        live_after=None,
+        lag_reads=0,
     ):
         self._live = live
         self._stored = list(stored)
@@ -63,19 +71,22 @@ class FakeHub:
         self._used_after = used if used_after is None else used_after
         self._commits = commits
         self._live_after = live_after
+        # Measured live 2026-09-18: usedStorage keeps reporting the pre-delete figure for
+        # 9-25s after the delete returns. `lag_reads` is how many post-delete reads still do.
+        self._lag_reads = lag_reads
         self.deleted: list = []
         self.squashed = False
         self._reads = 0
 
     def repo_info(self, repo, repo_type=None, files_metadata=False):
         self._reads += 1
-        # The second read is the post-reclaim one.
+        # Read 1 is the pre-delete snapshot; the next `lag_reads` are the stale window.
         sibs = (
             self._live
             if self._reads == 1 or self._live_after is None
             else self._live_after
         )
-        used = self._used if self._reads == 1 else self._used_after
+        used = self._used if self._reads <= 1 + self._lag_reads else self._used_after
         return SimpleNamespace(siblings=sibs, used_storage=used)
 
     def list_lfs_files(self, repo, repo_type=None):
@@ -92,6 +103,9 @@ class FakeHub:
 
 
 def run(hub, **kw):
+    """Poll window collapsed to nothing — no test should sit through the real 180s."""
+    kw.setdefault("verify_timeout_s", 0.05)
+    kw.setdefault("verify_interval_s", 0.0)
     return rs.reclaim(REPO, None, api=hub, **kw)
 
 
@@ -204,3 +218,45 @@ def test_single_commit_repo_skips_the_squash_but_still_deletes():
     assert run(hub) == 0
     assert not hub.squashed
     assert [b.file_oid for b in hub.deleted] == ["dead"]
+
+
+# --- the counter lags the delete (measured live 2026-09-18) --------------------------------
+
+
+def test_waits_out_a_lagging_counter_instead_of_crying_wolf():
+    """`usedStorage` still read the pre-delete figure at t+3.3s and t+9.1s, falling by t+24.5s.
+
+    Reading it once, immediately, is how this check would fail every healthy reclaim — which is
+    the same "announce what you never measured" bug the module exists to remove.
+    """
+    hub = FakeHub(
+        live=[sibling("live", 7_570_000_000)],
+        stored=[blob("live", 7_570_000_000), blob("dead", 89_260_000_000)],
+        used=96_830_000_000,
+        used_after=7_570_000_000,
+        lag_reads=3,
+    )
+    assert run(hub, verify_timeout_s=5.0, verify_interval_s=0.0) == 0
+
+
+def test_a_counter_that_never_moves_still_fails_after_the_timeout():
+    hub = FakeHub(
+        live=[sibling("live", 7_570_000_000)],
+        stored=[blob("live", 7_570_000_000), blob("dead", 89_260_000_000)],
+        used=96_830_000_000,
+        used_after=96_830_000_000,
+        lag_reads=99,
+    )
+    assert run(hub, verify_timeout_s=0.05, verify_interval_s=0.0) == 1
+
+
+def test_an_unreported_usedstorage_is_not_read_as_zero():
+    """`used_storage` comes back None when the Hub declines to report it. Coercing that to 0
+    would make `0 >= 0` true and fail a reclaim that may well have worked."""
+    hub = FakeHub(
+        live=[sibling("live", 7_570_000_000)],
+        stored=[blob("live", 7_570_000_000), blob("dead", 89_260_000_000)],
+        used=None,
+        used_after=None,
+    )
+    assert run(hub) == 0

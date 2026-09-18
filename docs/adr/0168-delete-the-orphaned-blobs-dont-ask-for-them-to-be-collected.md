@@ -69,6 +69,15 @@ Because this call will happily delete a blob a live commit points at, three inva
   rather than read as a repo with nothing live in it. ADR-0030's rule, applied to the destructive
   direction.
 
+**The verification polls, because the counter lags the delete.** Measured live 2026-09-18,
+deleting 14 orphans worth 6.71 GB: the call returned in 2.8s, `usedStorage` still read the
+pre-delete 14.31 GB at t+3.3s **and** t+9.1s, and had fallen to 7.60 GB by t+24.5s, stable
+thereafter. A single read straight after the delete therefore sees the *old* figure and fails a
+reclaim that worked — which would have fired the `::error::` on every healthy run and trained
+everyone to ignore the one alarm that matters. So the check re-reads for up to 180s and only calls
+it a failure at the end. The first draft of this change asserted that timing without measuring it,
+which is the very mistake the change exists to correct.
+
 **The logic moved out of the workflow YAML into a module**, which is the other half of the fix: the
 old step could not be tested, and so it never was. `tests/test_reclaim_storage.py` fakes the Hub at
 the `HfApi` seam and pins each invariant plus the bug itself — removing the `usedStorage` check
@@ -81,16 +90,20 @@ at 40 GB is a path that is cold exactly when it is finally needed.
 
 ## Consequences
 
-- Storage sits at roughly live size (~7.6 GB) instead of drifting to the quota, and the reclaim is
-  verified rather than predicted. A reclaim that frees nothing now exits non-zero and annotates.
+- Storage sits near live plus one or two runs of churn — measured 14.31 GB against 7.60 GB live
+  just before a manual reclaim — instead of drifting to the quota. It is *not* pinned at live size:
+  the 45-minute age guard deliberately spares the most recent run's blobs, and runs are ~48 minutes
+  apart. The reclaim is verified rather than predicted; one that frees nothing exits non-zero.
 - The step stays `continue-on-error: true`: the data is already uploaded when it runs, and
   reclaiming space must never be able to lose a run. The `::error::` is the signal, not the exit.
 - **All rollback history is destroyed, every run.** This was already true of the squash; it is now
   true by deletion as well, so the blobs cannot be recovered by HF either. Acceptable because every
   byte is derived state the pipeline regenerates, and the live revision is asserted intact across
   the operation.
-- Manual reclaim (`squash-dataset-history`) now actually reclaims. It previously squashed and
-  reported success while freeing nothing — a trap for whoever reached for it mid-outage.
+- Manual reclaim now actually reclaims, and is renamed `squash-dataset-history.yml` ->
+  `reclaim-dataset-storage.yml` to say so: it previously squashed and reported success while
+  freeing nothing — a trap for whoever reached for it mid-outage. Older ADRs still name it by
+  its old filename; they are records of what was decided then and are left as written.
 - **Still missing: nothing alerts when the reclaim has not succeeded in N days.** The `::error::`
   makes each individual failure visible in its own run; none of it notices an *absence*. That is
   ADR-0091's open item verbatim, one step over, and it is not addressed here.

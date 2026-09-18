@@ -143,6 +143,13 @@ outright and exits non-zero if `usedStorage` did not fall, instead of squashing 
 lives in a module rather than inline workflow YAML specifically so it can be tested — being
 untestable is why the old one was never checked.
 
+**And the fix nearly repeated the bug.** Its first draft read `usedStorage` immediately after the
+delete and errored if it hadn't dropped — another claim about HF behaviour taken on faith. Measured
+before shipping: the delete call returns in 2.8s but the counter still reports the pre-delete figure
+at t+3.3s and t+9.1s, falling only by t+24.5s. That version would have annotated `::error::` on
+every *healthy* run. The check now polls for up to 180s. Two reviewers, one measurement: the second
+version of a fix deserves the same "measure, don't reason" discipline as the first.
+
 ## A "0% overlap" that was really a sample size, and the rule it nearly justified (2026-09-11)
 
 A pipeline review found that a third of Oracle's ingested volume comes from tenants whose pod label
