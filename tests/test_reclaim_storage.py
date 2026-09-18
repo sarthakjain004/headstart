@@ -28,6 +28,7 @@ from types import SimpleNamespace
 import headstart.ingest.reclaim_storage as rs
 
 REPO = "imPoseidon/headstart-index"
+_UNSET = object()  # `None` is a real usedStorage value, so it cannot mean "not given"
 NOW = datetime(2026, 9, 18, 12, 0, tzinfo=UTC)
 
 
@@ -60,7 +61,7 @@ class FakeHub:
         live,
         stored,
         used,
-        used_after=None,
+        used_after=_UNSET,
         commits=5,
         live_after=None,
         lag_reads=0,
@@ -68,7 +69,7 @@ class FakeHub:
         self._live = live
         self._stored = list(stored)
         self._used = used
-        self._used_after = used if used_after is None else used_after
+        self._used_after = used if used_after is _UNSET else used_after
         self._commits = commits
         self._live_after = live_after
         # Measured live 2026-09-18: usedStorage keeps reporting the pre-delete figure for
@@ -260,3 +261,39 @@ def test_an_unreported_usedstorage_is_not_read_as_zero():
         used_after=None,
     )
     assert run(hub) == 0
+
+
+def test_a_counter_that_stops_reporting_is_inconclusive_not_a_failure():
+    """None after a number is no evidence that nothing moved.
+
+    The symmetric case (`used_before is None`) is already treated as a pass, and erroring here
+    would both cry wolf and emit `-> unknown`, which `fanout_merge.RECLAIM_NOOP` cannot match —
+    a loud branch silent in the log.
+    """
+    hub = FakeHub(
+        live=[sibling("live", 7_570_000_000)],
+        stored=[blob("live", 7_570_000_000), blob("dead", 89_260_000_000)],
+        used=96_830_000_000,
+        used_after=None,
+    )
+    assert run(hub) == 0
+    assert hub.deleted, "the delete itself still happened"
+
+
+def test_the_live_set_assertion_fires_even_if_selection_is_wrong(monkeypatch):
+    """The last line of defence, pinned.
+
+    `orphans()` already excludes live blobs, so through the Hub seam alone this assert is
+    unreachable and survives being deleted. It guards against a *future* selection bug, so the
+    test has to inject one: make the planner hand back a live blob and require the abort.
+    """
+    live_blob = blob("live", 7_570_000_000)
+    hub = FakeHub(
+        live=[sibling("live", 7_570_000_000)],
+        stored=[live_blob, blob("dead", 89_260_000_000)],
+        used=96_830_000_000,
+        used_after=7_570_000_000,
+    )
+    monkeypatch.setattr(rs, "orphans", lambda *a, **k: [live_blob])
+    assert run(hub) == 1
+    assert hub.deleted == [], "nothing may be deleted once the assertion trips"

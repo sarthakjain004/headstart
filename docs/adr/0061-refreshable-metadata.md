@@ -80,7 +80,7 @@ grows with the size of the sweep.
 
 - **HF blob minting** (the ADR-0050 concern): `meta.jsonl` is already appended to and re-uploaded
   whole every run; an occasional in-place rewrite is the same upload class, and
-  `squash-dataset-history` reclaims history either way. The description store's fragment overlay
+  `reclaim-dataset-storage` reclaims history either way. The description store's fragment overlay
   is *not* copied here because meta has no equivalent of its 174 MB/run rewrite problem.
 - **Lance table writes**: the reconcile writes append-class fragments sized to the diff, exactly
   like sync's adds (the discipline that moved `compact` to `cleanup-index`). A version bump makes

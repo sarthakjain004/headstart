@@ -42,8 +42,9 @@ Squash first, then delete: collapsing history to a single commit is what makes "
 "referenced by nothing", so the two steps compose into the procedure that was run by hand to
 recover the outage.
 
-Exit: 0 when storage is within budget (reclaimed or nothing to do), 1 when the reclaim ran and
-``usedStorage`` did **not** fall — the failure the old step could not see.
+Exit: 0 when storage is within budget (reclaimed, nothing to do, or the Hub declined to report
+``usedStorage`` at all — no evidence is not evidence of failure), 1 when the reclaim ran and the
+counter did **not** fall — the failure the old step could not see.
 """
 
 from __future__ import annotations
@@ -90,7 +91,7 @@ class _Hub(Protocol):
 
     def list_repo_commits(self, repo_id: str, /, **kwargs): ...
 
-    def super_squash_history(self, **kwargs) -> None: ...
+    def super_squash_history(self, *, repo_id: str, **kwargs) -> None: ...
 
     def permanently_delete_lfs_files(
         self, repo_id: str, files, /, **kwargs
@@ -199,7 +200,7 @@ def reclaim(
     if dead_bytes < min_reclaim_gb * 1e9:
         _log.info(
             f"{_gb(dead_bytes)} orphaned across {len(dead)} object(s) — under the "
-            f"{min_reclaim_gb:.0f} GB floor, nothing to reclaim"
+            f"{min_reclaim_gb:g} GB floor, nothing to reclaim"
         )
         return 0
 
@@ -246,7 +247,18 @@ def reclaim(
             "investigate before the next run"
         )
         return 1
-    if used_before is not None and (used_after is None or used_after >= used_before):
+    if used_before is None or used_after is None:
+        # No evidence either way. Erroring here would cry wolf exactly as the immediate read did,
+        # and the message would carry "-> unknown", which `fanout_merge.RECLAIM_NOOP` cannot
+        # match — a loud branch that is silent in the log is worse than a quiet one. The delete
+        # itself succeeded; the next run re-checks, since this runs every run.
+        _log.warning(
+            f"reclaim verification inconclusive: the Hub reported usedStorage as "
+            f"{_gb(used_before)} before and {_gb(used_after)} after, so whether the "
+            f"{len(dead)} deleted object(s) freed anything cannot be told from here"
+        )
+        return 0
+    if used_after >= used_before:
         _log.error(
             f"reclaim did not free anything: usedStorage {_gb(used_before)} -> {_gb(used_after)} "
             f"after deleting {len(dead)} object(s) worth {_gb(dead_bytes)}, and still had not "

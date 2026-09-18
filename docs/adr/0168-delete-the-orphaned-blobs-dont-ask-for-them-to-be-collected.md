@@ -50,7 +50,7 @@ live — and the fix chosen then was the squash whose assumption was never re-va
 
 **Delete the orphaned blobs with `permanently_delete_lfs_files`, then require the quota to have
 moved.** `headstart.ingest.reclaim_storage` replaces the inline step in `merge` and the body of the
-manual `squash-dataset-history` escape hatch.
+manual escape hatch, renamed `reclaim-dataset-storage` here.
 
 It still squashes first — collapsing history to one commit is what makes "absent from HEAD" mean
 "referenced by nothing", so the delete set is unambiguous — but squashing is no longer mistaken for
@@ -96,6 +96,11 @@ at 40 GB is a path that is cold exactly when it is finally needed.
   apart. The reclaim is verified rather than predicted; one that frees nothing exits non-zero.
 - The step stays `continue-on-error: true`: the data is already uploaded when it runs, and
   reclaiming space must never be able to lose a run. The `::error::` is the signal, not the exit.
+- **An unreadable counter is a third outcome, not a failure.** If the Hub reports `usedStorage` as
+  `None` on either side, the step warns and passes rather than erroring: no evidence is not
+  evidence of failure, and the alternative both cries wolf and emits `-> unknown`, which
+  `fanout_merge.RECLAIM_NOOP` cannot match — a loud branch that is silent in the log is worse than
+  a quiet one. Every run re-checks, so a real failure is caught the next time the counter answers.
 - **All rollback history is destroyed, every run.** This was already true of the squash; it is now
   true by deletion as well, so the blobs cannot be recovered by HF either. Acceptable because every
   byte is derived state the pipeline regenerates, and the live revision is asserted intact across

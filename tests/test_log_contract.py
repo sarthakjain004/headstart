@@ -136,7 +136,7 @@ import sys
 from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from types import ModuleType
 
@@ -1009,7 +1009,7 @@ def _plan_measured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     then deals items heaviest-first, so equal costs would make which Board lands on which shard —
     and therefore the per-shard counts — depend on the shuffle.
     """
-    from datetime import datetime
+    from datetime import UTC, datetime
 
     from headstart import board_cost, board_description_gap, board_priority
     from headstart.config import CompanyRef

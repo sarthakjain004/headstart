@@ -96,7 +96,8 @@ replaces did: live files settle at ~3.5 GB after a squash and each run adds ~1.8
 stating because the first revision used 55 GB, which measures out at ~34 h — *less* often than the
 daily schedule it replaced, and so a regression dressed as an improvement. A threshold is only
 equivalent to a schedule if someone does that arithmetic.
-`squash-dataset-history.yml` loses its schedule and stays as a manual escape hatch.
+`squash-dataset-history.yml` loses its schedule and stays as a manual escape hatch (renamed
+`reclaim-dataset-storage.yml` by ADR-0168, which also replaced the squash it ran with a delete).
 
 ### `cleanup-index` keeps the shared group, and may occasionally be displaced
 
