@@ -42,15 +42,15 @@ and the message body as it really appears. Five checks run over it:
    either in this table or in :data:`EXEMPT` with a reason. Adding an analyser regex without a
    contract entry is what fails, so no human has to remember.
 
-**Emitter-verified vs source-verified, and why the mix.** 78 of the 102 entries carry `emit=`,
+**Emitter-verified vs source-verified, and why the mix.** 82 of the 103 entries carry `emit=`,
 so their `body` is a line the emitter was watched producing rather than a line someone believed
-it produced. 27 of those 78 are marked `heavy`: they need a dependency CI does not install
+it produced. 27 of those 82 are marked `heavy`: they need a dependency CI does not install
 (`.[dev]` and nothing else — no numpy, torch, pyarrow, lancedb or langdetect), so they run for
 anyone editing `index`, `role_trends` or `embed_*` locally and skip in CI. That is weaker than a
 check that always runs, and it is the same trade `tests/test_readme_schema.py` already makes here.
 
-The 24 that stay source-verified are blocked rather than neglected: the storage check's emitter is
-shell inside `pipeline.yml` (3); `fanout_plan.GATE_BOARD` documents a *fragment* of the value
+The 21 that stay source-verified are blocked rather than neglected:
+`fanout_plan.GATE_BOARD` documents a *fragment* of the value
 gate's sample rather than a whole line, and check 4 asks whether `body` is one of the messages
 logged; and `spare_egress`'s remaining sites sit inside the WARP rotation path (a subprocess and
 a SOCKS5 dial).
@@ -136,7 +136,7 @@ import sys
 from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import ModuleType
 
@@ -1672,6 +1672,95 @@ _META = "headstart.ingest.update_meta"
 _INDEX = "headstart.ingest.index"
 _TRENDS = "headstart.ingest.role_trends"
 _EGRESS = "headstart.spare_egress"
+_RECLAIM = "headstart.ingest.reclaim_storage"
+
+# -- the storage reclaim (ADR-0168) -----------------------------------------------------------
+# `reclaim_storage` takes its Hub client as an argument, so these drive the *real* emitter over a
+# fake Hub rather than reading its source. No heavy extras: the module imports `huggingface_hub`
+# lazily, inside the branch that builds a client, which `api=` skips.
+
+
+class _FakeHub:
+    """Enough of `HfApi` to walk `reclaim()` down one branch."""
+
+    def __init__(
+        self, used, used_after, live_sha="live", dead=1, dead_size=89_260_000_000
+    ):
+        from types import SimpleNamespace
+
+        self._used, self._used_after, self._reads = used, used_after, 0
+        self._sibs = [
+            SimpleNamespace(
+                rfilename="data/embeddings/jobs/embeddings.f32",
+                size=7_570_000_000,
+                lfs=SimpleNamespace(sha256=live_sha, size=7_570_000_000),
+            )
+        ]
+        now = datetime(2026, 9, 18, 12, 0, tzinfo=UTC)
+        self._stored = [
+            SimpleNamespace(
+                file_oid=live_sha,
+                filename="data/embeddings/jobs/embeddings.f32",
+                size=7_570_000_000,
+                pushed_at=now - timedelta(days=1),
+            )
+        ] + [
+            SimpleNamespace(
+                file_oid=f"dead{i}",
+                filename="data/embeddings/jobs/embeddings.f32",
+                size=dead_size // max(dead, 1),
+                pushed_at=now - timedelta(days=1),
+            )
+            for i in range(dead)
+        ]
+
+    def repo_info(self, repo, repo_type=None, files_metadata=False):
+        from types import SimpleNamespace
+
+        self._reads += 1
+        used = self._used if self._reads == 1 else self._used_after
+        return SimpleNamespace(siblings=self._sibs, used_storage=used)
+
+    def list_lfs_files(self, repo, repo_type=None):
+        return list(self._stored)
+
+    def list_repo_commits(self, repo, repo_type=None):
+        return [object()] * 5
+
+    def super_squash_history(self, repo_id=None, repo_type=None):
+        pass
+
+    def permanently_delete_lfs_files(self, repo, files, repo_type=None):
+        pass
+
+
+def _reclaim_run(hub) -> None:
+    from headstart.ingest import reclaim_storage
+
+    reclaim_storage.reclaim("imPoseidon/headstart-index", None, api=hub)
+
+
+def _reclaim_storage_line(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _reclaim_run(_FakeHub(used=96_830_000_000, used_after=7_570_000_000))
+
+
+def _reclaim_freed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _reclaim_run(_FakeHub(used=96_830_000_000, used_after=7_570_000_000))
+
+
+def _reclaim_below_floor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _reclaim_run(
+        _FakeHub(
+            used=8_000_000_000, used_after=8_000_000_000, dead=3, dead_size=500_000_000
+        )
+    )
+
+
+def _reclaim_noop(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The 2026-09-18 failure: blobs deleted, quota unmoved."""
+    _reclaim_run(_FakeHub(used=96_830_000_000, used_after=96_830_000_000))
+
+
 _PIPELINE = ".github/workflows/pipeline.yml"
 
 
@@ -2444,24 +2533,47 @@ CONTRACT: tuple[Line, ...] = (
         emit=_trends_bad_taxonomy,
         heavy=True,
     ),
-    # -- the workflow's own storage check (shell in pipeline.yml, not the Python package) ------
+    # -- the storage reclaim (moved out of pipeline.yml shell into a module, ADR-0168) ---------
     Line(
         consumer="fanout_merge.STORAGE_LINE",
-        emitter=_PIPELINE,
-        body="usedStorage 12.4 GB · live 8.1 GB · 1204 commits",
-        why="`live` is the number to trend — squash-independent, unlike `usedStorage`",
+        emitter=_RECLAIM,
+        emit=_reclaim_storage_line,
+        body=(
+            "usedStorage 96.83 GB · live 7.57 GB across 1 file(s) · stored 96.83 GB "
+            "across 2 LFS object(s)"
+        ),
+        why="`live` is the number to trend; the `stored` gap is the dead weight being reclaimed",
     ),
     Line(
-        consumer="fanout_merge.SQUASHED",
-        emitter=_PIPELINE,
-        body="squashed; live 8.1 GB",
-        why="the reclaim actually fired this run",
+        consumer="fanout_merge.RECLAIMED",
+        emitter=_RECLAIM,
+        emit=_reclaim_freed,
+        body=(
+            "reclaimed 89.26 GB: usedStorage 96.83 GB -> 7.57 GB, live 7.57 GB intact "
+            "across 1 file(s)"
+        ),
+        why="the reclaim actually freed bytes — measured after the fact, not predicted",
     ),
     Line(
         consumer="fanout_merge.NOTHING_TO_RECLAIM",
-        emitter=_PIPELINE,
-        body="under 20 GB — nothing to reclaim",
+        emitter=_RECLAIM,
+        emit=_reclaim_below_floor,
+        body="0.50 GB orphaned across 3 object(s) — under the 1 GB floor, nothing to reclaim",
         why="the reclaim deliberately did nothing — not the same as the step not running",
+    ),
+    Line(
+        consumer="fanout_merge.RECLAIM_NOOP",
+        emitter=_RECLAIM,
+        emit=_reclaim_noop,
+        body=(
+            "reclaim did not free anything: usedStorage 96.83 GB -> 96.83 GB after deleting "
+            "1 object(s) worth 89.26 GB. The quota fills at ~100 GB/day, so this will reject "
+            "uploads within a day if it is not fixed."
+        ),
+        why=(
+            "the 2026-09-18 failure: blobs deleted and the quota unmoved. The old step could "
+            "not emit this at all — it announced a reclaim it never measured"
+        ),
     ),
     # -- scrape_plan (emitter-verified: `main()` over a stubbed active list and four ledgers) --
     Line(

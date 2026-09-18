@@ -3,7 +3,10 @@
 **Status:** accepted · **Date:** 2026-08-20 · **Amended by:**
 [ADR-0093](0093-chain-the-successor-the-cron-is-only-a-seed.md) (on the *mechanism* that delivers
 the cadence — GitHub stopped delivering this repo's cron reliably on 2026-08-26, so each run now
-dispatches its own successor; the cadence target and the storage arithmetic below stand) ·
+dispatches its own successor; the cadence target and the storage arithmetic below stand),
+[ADR-0168](0168-delete-the-orphaned-blobs-dont-ask-for-them-to-be-collected.md) (on the *reclaim*
+this ADR placed in `merge`: the placement stands, but `super_squash_history` only makes blobs
+eligible for collection and does not free the quota, so the step now deletes them and verifies) ·
 **Relates to:**
 [ADR-0020](0020-free-tier-deployment.md) (the free-tier deployment this cadence serves),
 [ADR-0025](0025-parallelize-nightly-pipeline.md) /
