@@ -42,15 +42,15 @@ and the message body as it really appears. Five checks run over it:
    either in this table or in :data:`EXEMPT` with a reason. Adding an analyser regex without a
    contract entry is what fails, so no human has to remember.
 
-**Emitter-verified vs source-verified, and why the mix.** 78 of the 102 entries carry `emit=`,
+**Emitter-verified vs source-verified, and why the mix.** 82 of the 103 entries carry `emit=`,
 so their `body` is a line the emitter was watched producing rather than a line someone believed
-it produced. 27 of those 78 are marked `heavy`: they need a dependency CI does not install
+it produced. 27 of those 82 are marked `heavy`: they need a dependency CI does not install
 (`.[dev]` and nothing else — no numpy, torch, pyarrow, lancedb or langdetect), so they run for
 anyone editing `index`, `role_trends` or `embed_*` locally and skip in CI. That is weaker than a
 check that always runs, and it is the same trade `tests/test_readme_schema.py` already makes here.
 
-The 24 that stay source-verified are blocked rather than neglected: the storage check's emitter is
-shell inside `pipeline.yml` (3); `fanout_plan.GATE_BOARD` documents a *fragment* of the value
+The 21 that stay source-verified are blocked rather than neglected:
+`fanout_plan.GATE_BOARD` documents a *fragment* of the value
 gate's sample rather than a whole line, and check 4 asks whether `body` is one of the messages
 logged; and `spare_egress`'s remaining sites sit inside the WARP rotation path (a subprocess and
 a SOCKS5 dial).
@@ -1672,6 +1672,56 @@ _META = "headstart.ingest.update_meta"
 _INDEX = "headstart.ingest.index"
 _TRENDS = "headstart.ingest.role_trends"
 _EGRESS = "headstart.spare_egress"
+_RECLAIM = "headstart.ingest.reclaim_storage"
+
+# -- the storage reclaim (ADR-0168) -----------------------------------------------------------
+# `reclaim_storage` takes its Hub client as an argument, so these drive the *real* emitter over
+# the fake `tests/test_reclaim_storage.py` already defines rather than a second copy of it. No
+# heavy extras: the module imports `huggingface_hub` lazily, inside the branch `api=` skips.
+
+
+def _reclaim_run(
+    *, used, used_after, dead_bytes=89_260_000_000, dead=1, lag_reads=0
+) -> None:
+    from test_reclaim_storage import FakeHub, blob, sibling
+
+    from headstart.ingest import reclaim_storage
+
+    live = [sibling("live", 7_570_000_000)]
+    stored = [blob("live", 7_570_000_000)] + [
+        blob(f"dead{i}", dead_bytes // dead) for i in range(dead)
+    ]
+    reclaim_storage.reclaim(
+        "imPoseidon/headstart-index",
+        None,
+        api=FakeHub(
+            live=live,
+            stored=stored,
+            used=used,
+            used_after=used_after,
+            lag_reads=lag_reads,
+        ),
+        verify_timeout_s=0.05,
+        verify_interval_s=0.0,
+    )
+
+
+def _reclaim_freed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """One successful reclaim emits both the opening storage line and the closing receipt."""
+    _reclaim_run(used=96_830_000_000, used_after=7_570_000_000)
+
+
+def _reclaim_below_floor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _reclaim_run(
+        used=8_000_000_000, used_after=8_000_000_000, dead_bytes=500_000_000, dead=3
+    )
+
+
+def _reclaim_noop(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The 2026-09-18 failure: blobs deleted, quota unmoved even after the poll window."""
+    _reclaim_run(used=96_830_000_000, used_after=96_830_000_000, lag_reads=99)
+
+
 _PIPELINE = ".github/workflows/pipeline.yml"
 
 
@@ -2444,24 +2494,47 @@ CONTRACT: tuple[Line, ...] = (
         emit=_trends_bad_taxonomy,
         heavy=True,
     ),
-    # -- the workflow's own storage check (shell in pipeline.yml, not the Python package) ------
+    # -- the storage reclaim (moved out of pipeline.yml shell into a module, ADR-0168) ---------
     Line(
         consumer="fanout_merge.STORAGE_LINE",
-        emitter=_PIPELINE,
-        body="usedStorage 12.4 GB · live 8.1 GB · 1204 commits",
-        why="`live` is the number to trend — squash-independent, unlike `usedStorage`",
+        emitter=_RECLAIM,
+        emit=_reclaim_freed,
+        body=(
+            "usedStorage 96.83 GB · live 7.57 GB across 1 file(s) · stored 96.83 GB "
+            "across 2 LFS object(s)"
+        ),
+        why="`live` is the number to trend; the `stored` gap is the dead weight being reclaimed",
     ),
     Line(
-        consumer="fanout_merge.SQUASHED",
-        emitter=_PIPELINE,
-        body="squashed; live 8.1 GB",
-        why="the reclaim actually fired this run",
+        consumer="fanout_merge.RECLAIMED",
+        emitter=_RECLAIM,
+        emit=_reclaim_freed,
+        body=(
+            "reclaimed 89.26 GB: usedStorage 96.83 GB -> 7.57 GB, live 7.57 GB intact "
+            "across 1 file(s)"
+        ),
+        why="the reclaim actually freed bytes — measured after the fact, not predicted",
     ),
     Line(
         consumer="fanout_merge.NOTHING_TO_RECLAIM",
-        emitter=_PIPELINE,
-        body="under 20 GB — nothing to reclaim",
+        emitter=_RECLAIM,
+        emit=_reclaim_below_floor,
+        body="0.50 GB orphaned across 3 object(s) — under the 1 GB floor, nothing to reclaim",
         why="the reclaim deliberately did nothing — not the same as the step not running",
+    ),
+    Line(
+        consumer="fanout_merge.RECLAIM_NOOP",
+        emitter=_RECLAIM,
+        emit=_reclaim_noop,
+        body=(
+            "reclaim did not free anything: usedStorage 96.83 GB -> 96.83 GB after deleting "
+            "1 object(s) worth 89.26 GB, and still had not moved 0s later. The quota fills at "
+            "~100 GB/day, so this will reject uploads within a day if it is not fixed."
+        ),
+        why=(
+            "the 2026-09-18 failure: blobs deleted and the quota unmoved. The old step could "
+            "not emit this at all — it announced a reclaim it never measured"
+        ),
     ),
     # -- scrape_plan (emitter-verified: `main()` over a stubbed active list and four ledgers) --
     Line(

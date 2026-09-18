@@ -1,0 +1,55 @@
+name: reclaim-dataset-storage
+
+# Reclaim HF dataset storage on demand, by deleting the orphaned LFS blobs.
+#
+# Every pipeline run rewrites `embeddings.f32` (2.71 GB) and `meta.jsonl` (0.577 GB) wholesale, so
+# at ~30 runs/day the repo sheds ~100 GB of dead blobs a day — its entire free-tier quota. HF bills
+# stored bytes, not reachable ones, so that weight counts even once nothing references it.
+#
+# **Squashing alone does not free it.** `super_squash_history` collapses the branch to one commit,
+# which makes the prior blobs *unreachable* and therefore eligible for HF's asynchronous
+# collection — no more. On 2026-09-18 that collection did not arrive: 96.83 GB stored against
+# 7.57 GB live, and three pipeline runs died on `403 Private repository storage limit reached`
+# while every reclaim step reported success. `permanently_delete_lfs_files` is the lever that
+# actually removes bytes, and `headstart.ingest.reclaim_storage` wraps it with the three
+# invariants that make it safe (never delete a live blob, never race an in-flight upload, refuse
+# an empty listing) plus the verification the old step lacked. See ADR-0168.
+#
+# The trade is deliberate and total: **all rollback history is destroyed.** That is acceptable
+# because everything in the dataset is derived state the pipeline regenerates, and the current
+# revision is untouched — which the module asserts rather than assumes.
+#
+# **No schedule (ADR-0071).** The reclaim runs inside the pipeline's `merge` job, which already
+# holds the `nightly-pipeline` concurrency group and therefore races nothing. Kept as a manual
+# escape hatch: run it by hand to reclaim immediately, or if that step is failing. It still shares
+# the group, so it waits for any run in flight — which is the behaviour you want.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-pipeline # never reclaim while a run is mid-upload
+  cancel-in-progress: false
+
+env:
+  HF_DATASET: imPoseidon/headstart-index
+
+jobs:
+  reclaim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5.0.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      # No uv here on purpose: `pipeline.yml` documents its `UV_VERSION` pin as a single
+      # hand-maintained edit point, and this job installs one pure-Python package, so a second
+      # copy of that literal would buy nothing and drift.
+      - run: pip install -e . huggingface_hub
+      - name: Reclaim dataset storage
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python -m headstart.ingest.reclaim_storage

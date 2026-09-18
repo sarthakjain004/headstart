@@ -16,7 +16,7 @@ name: squash-subscribers-history
 # Saved jobs and Subscriptions, not only résumés. That is a real loss of rollback for
 # irreplaceable user data, and it is accepted here for reasons ADR-0131 records rather than
 # assumes. The short version: writes are per-record files, so a bug can only damage the record it
-# was writing; the sibling `squash-dataset-history` workflow's own justification ("everything here
+# was writing; the sibling `reclaim-dataset-storage` workflow's own justification ("everything here
 # is derived state the pipeline regenerates") does NOT transfer to this repo and is not being
 # borrowed; and the one record that is genuinely irreplaceable — the résumé — is the one whose
 # working copy lives in the Account's own browser, because HF is its sync target and never its
@@ -34,7 +34,7 @@ name: squash-subscribers-history
 # before/after check below catches the shapes of it that are detectable. It deliberately does NOT
 # share a concurrency group with `email-alerts`: only one run may be pending per group, so a
 # Digest fired by the pipeline would displace a queued squash and silently disable the retention
-# this promise rests on — the exact failure `squash-dataset-history` documents.
+# this promise rests on — the exact failure `reclaim-dataset-storage` documents.
 on:
   schedule:
     - cron: "17 3 * * 0" # Sundays, 03:17 UTC — quiet, and off the hour so it isn't queued behind everything else

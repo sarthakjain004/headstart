@@ -989,69 +989,31 @@ jobs:
               print(f"publication {key.replace('_', ' ')}: {value}", flush=True)
           print(f"complete publication: {'yes' if complete else 'NO'}", flush=True)
           PY
-      # Reclaim dataset history here rather than from a separate scheduled workflow (ADR-0071).
+      # Reclaim dataset storage here rather than from a separate scheduled workflow (ADR-0071).
       # A standalone squash shares this group, so it sits *pending* behind the run in flight —
       # measured at 37-55 min — and an hourly cron then displaces it. Run from inside the job
       # that already holds the group and it races nothing by construction. Placed after the
       # upload and made non-fatal: reclaiming space must never be able to lose a run's data.
-      - name: Reclaim dataset history when the quota is filling
+      #
+      # It **deletes** the orphaned blobs rather than squashing and hoping (ADR-0168). Squashing
+      # only makes them eligible for HF's asynchronous collection; on 2026-09-18 that collection
+      # did not arrive and three runs died on `403 Private repository storage limit reached` with
+      # 96.83 GB stored against 7.57 GB live — each run having reported a successful reclaim,
+      # because the old step printed a prediction and never re-read the number. The logic lives in
+      # a module so it can be tested; being inline here is why it never was.
+      - name: Reclaim dataset storage when blobs are orphaned
         # `always()`, not the implicit `success()`: `Upload index state` pushes four separate
         # commits, so a failure on the fourth leaves the dataset grown with the reclaim skipped —
         # precisely the state moving it here was meant to prevent.
         if: always() && needs.scrape-plan.outputs.run == 'true'
-        # Never fail the run for want of reclaimed space; the data is already uploaded. The
-        # safety invariant still shouts through `::error::` below, because a silently-failing
-        # reclaim compounds toward a mid-run push failure about two days out.
+        # Never fail the run for want of reclaimed space; the data is already uploaded. The module
+        # still shouts through `::error::` when it deletes blobs and the quota does not move —
+        # the failure the old inline step could not see.
         continue-on-error: true
         timeout-minutes: 10
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          # Sized to honour "squash at least daily": live files sit ~3.5 GB after a squash and the
-          # run writes ~1.86 GB, so (40 - 3.5) / 1.86 = ~19.6 runs, which at the ~19.4 runs/day
-          # ceiling is ~24 h. A 55 GB threshold measured out at ~34 h — less often than daily,
-          # which was the opposite of the intent.
-          SQUASH_ABOVE_GB: "40"
-        run: |
-          python - <<'PY'
-          import os
-          from huggingface_hub import HfApi
-
-          api = HfApi(token=os.environ["HF_TOKEN"])
-          repo = os.environ["HF_DATASET"]
-          limit = float(os.environ["SQUASH_ABOVE_GB"]) * 1e9
-
-          info = api.repo_info(repo, repo_type="dataset", files_metadata=True)
-          used = info.used_storage or 0
-          live = sum(f.size or 0 for f in info.siblings)
-          commits = len(api.list_repo_commits(repo, repo_type="dataset"))
-          print(f"usedStorage {used / 1e9:.2f} GB · live {live / 1e9:.2f} GB · {commits} commits",
-                flush=True)
-
-          # Threshold, not a schedule: at ~1.86 GB/run the quota is the thing that matters, and a
-          # run-count or day-count proxy drifts whenever run size or cadence does.
-          if used < limit:
-              print(f"under {limit / 1e9:.0f} GB — nothing to reclaim", flush=True)
-              raise SystemExit(0)
-          if commits <= 1:
-              print("already a single commit", flush=True)
-              raise SystemExit(0)
-
-          api.super_squash_history(repo_id=repo, repo_type="dataset")
-          after = api.repo_info(repo, repo_type="dataset", files_metadata=True)
-          live2 = sum(f.size or 0 for f in after.siblings)
-          # The live-file set must survive untouched — that is the whole safety property.
-          if live2 < live:
-              # The one invariant this step must never break. `continue-on-error` keeps the job
-              # green, so say it loudly enough to survive that.
-              print(
-                  f"::error::live files shrank ({live / 1e9:.2f} -> {live2 / 1e9:.2f} GB) after "
-                  "squash — investigate before the next run",
-                  flush=True,
-              )
-              raise SystemExit(1)
-          print(f"::notice::squashed; live {live2 / 1e9:.2f} GB, usedStorage falls as HF collects "
-                "the orphans", flush=True)
-          PY
+        run: python -m headstart.ingest.reclaim_storage
       # The compaction that keeps `_deletions/` under HF's 10,000-file **per-directory** limit is
       # still cron-triggered, and on 2026-08-28 that cron did not fire — the same delivery failure
       # that forced ADR-0093. Compaction is the one job here that cannot merely be late: its
