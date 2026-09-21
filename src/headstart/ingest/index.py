@@ -5,11 +5,12 @@ Stage 5 runs these back-to-back against the same table, so they live in one modu
 
     python -m headstart.ingest.index sync              # ADR-0014, ADR-0019
     python -m headstart.ingest.index prune [--apply]   # ADR-0023
+    python -m headstart.ingest.index refresh-indexes   # ADR-0174
     python -m headstart.ingest.index compact           # ADR-0020, ADR-0023
     python -m headstart.ingest.index backfill-from-store [--apply]   # ADR-0104
 
-The first three are the merge stage's; **backfill-from-store** is not — like ``compact`` it is a
-whole-table rewrite the per-run storage budget cannot afford, so it runs from ``cleanup-index``.
+The first three are the merge stage's. **compact** and **backfill-from-store** are not: both are
+whole-table rewrites, so they run from ``cleanup-index``.
 
 **sync** reconciles the table against the embedding store incrementally: fresh ids are the corpus
 ids that have a vector, and the scraped-Board set is taken from the *full* scrape, not the tech
@@ -59,7 +60,7 @@ local version history — and a week of additive uploads (pre-ADR-0023 ``--delet
 such untracked orphans, so the download-then-optimize path plateaued at ~14 GB. Rewriting each table
 into a fresh directory keeps only the live fragments (measured: 1.9 GB → 0.23 GB), and the
 ``--delete`` upload then prunes the remote to match. It also recreates the measured scalar and
-vector Search indexes (ADR-0173); building them anywhere else would only last until this rewrite.
+vector Search indexes (ADR-0173), so cleanup never drops what the pipeline refreshes.
 
 Exit: 0 clean/dry-run, 1 on a safety abort.
 """
@@ -283,8 +284,8 @@ def _migrate_experience_filter_flags(table: Any) -> None:
         table.add_columns(missing)
 
 
-def _create_search_indexes(table: Any) -> None:
-    """Create the measured Search indexes missing from a freshly rebuilt production table."""
+def _create_search_indexes(table: Any, *, replace: bool = False) -> None:
+    """Create missing Search indexes, or replace them over the table's current rows."""
     from lancedb.index import Bitmap, BTree, IvfSq
 
     existing = {column for index in table.list_indices() for column in index.columns}
@@ -308,33 +309,35 @@ def _create_search_indexes(table: Any) -> None:
         ),
     ]
     for column, index_type, config in specs:
-        if column not in table.schema.names or column in existing:
+        if column not in table.schema.names or (column in existing and not replace):
             continue
         started = datetime.now(UTC)
         if unified:
-            table.create_index(column, config=config, replace=False)
+            table.create_index(column, config=config, replace=replace)
         else:  # LanceDB 0.33's sync wrapper predates the unified API.
-            table.create_scalar_index(column, index_type=index_type, replace=False)
+            table.create_scalar_index(column, index_type=index_type, replace=replace)
         elapsed = (datetime.now(UTC) - started).total_seconds()
-        _log.info(f"search index: built {column} ({index_type}) in {elapsed:.1f}s")
+        verb = "refreshed" if column in existing else "built"
+        _log.info(f"search index: {verb} {column} ({index_type}) in {elapsed:.1f}s")
 
     # Exact scans are already cheap on tiny test/dev tables, and an ANN index needs a real
     # training population. Production is over 500k rows; this boundary is deliberately remote.
-    if table.count_rows() >= 256 and "vector" not in existing:
+    if table.count_rows() >= 256 and ("vector" not in existing or replace):
         started = datetime.now(UTC)
         if unified:
             table.create_index(
-                "vector", config=IvfSq(distance_type="cosine"), replace=False
+                "vector", config=IvfSq(distance_type="cosine"), replace=replace
             )
         else:
             table.create_index(
                 metric="cosine",
                 vector_column_name="vector",
                 index_type="IVF_SQ",
-                replace=False,
+                replace=replace,
             )
         elapsed = (datetime.now(UTC) - started).total_seconds()
-        _log.info(f"search index: built vector (IVF_SQ) in {elapsed:.1f}s")
+        verb = "refreshed" if "vector" in existing else "built"
+        _log.info(f"search index: {verb} vector (IVF_SQ) in {elapsed:.1f}s")
 
 
 def _load_store() -> tuple[list[dict], np.ndarray]:
@@ -1008,6 +1011,73 @@ def prune(args: argparse.Namespace) -> int:
     return 0
 
 
+def refresh_indexes(args: argparse.Namespace) -> int:
+    """Replace every Search index over the rows this pipeline will publish."""
+    db = lancedb.connect(args.db)
+    if PROD_TABLE not in db.list_tables().tables:
+        _log.error(f"ABORT: table '{PROD_TABLE}' does not exist at {args.db}")
+        return 1
+
+    table = db.open_table(PROD_TABLE)
+    required = {
+        "ats",
+        "country",
+        "remote",
+        "posted_at",
+        _POSTED_AT_COMPARABLE_FIELD.name,
+        "first_seen",
+        _DESCRIPTION_STORED_FIELD.name,
+        _SALARY_KNOWN_FIELD.name,
+        *(experience_filter_column(ceiling) for ceiling in EXPERIENCE_FILTER_CEILINGS),
+        *(rule.column for rule in EMPLOYMENT_TYPE_FILTERS.values()),
+    }
+    if table.count_rows() >= 256:
+        required.add("vector")
+    missing_columns = sorted(required - set(table.schema.names))
+    if missing_columns:
+        _log.error(
+            f"ABORT: table '{PROD_TABLE}' is missing Search columns {missing_columns}; "
+            "sync must migrate the schema before indexes are refreshed"
+        )
+        return 1
+
+    _create_search_indexes(table, replace=True)
+    indices = {
+        column: index
+        for index in table.list_indices()
+        for column in index.columns
+        if column in required
+    }
+    missing_indexes = sorted(required - set(indices))
+    stale = []
+    for column, index in indices.items():
+        stats = table.index_stats(index.name)
+        if stats is None or stats.num_unindexed_rows:
+            stale.append(
+                f"{column} ({'unknown' if stats is None else stats.num_unindexed_rows})"
+            )
+    if missing_indexes or stale:
+        _log.error(
+            "ABORT: Search indexes are incomplete after refresh: "
+            f"missing={missing_indexes}, unindexed={sorted(stale)}"
+        )
+        return 1
+
+    rows = table.count_rows()
+    write_base(args.db, rows, "refresh-indexes")
+    _log.info(
+        f"done: refreshed {len(required)} Search indexes over {rows} rows at {args.db}"
+    )
+    observability.summary(
+        "Search index refresh",
+        [
+            f"- refreshed **{len(required)}** indexes",
+            f"- indexed **{rows:,}** current rows; **0** remain outside them",
+        ],
+    )
+    return 0
+
+
 def compact(args: argparse.Namespace) -> int:
     db_path = Path(args.db)
     db = lancedb.connect(db_path)
@@ -1241,6 +1311,13 @@ def main() -> int:
     )
     p_prune.set_defaults(fn=prune)
 
+    p_refresh = sub.add_parser(
+        "refresh-indexes",
+        help="replace every Search index over the current table (ADR-0174)",
+    )
+    _add_db(p_refresh)
+    p_refresh.set_defaults(fn=refresh_indexes)
+
     p_compact = sub.add_parser(
         "compact", help="rebuild the table fresh to reclaim size"
     )
@@ -1264,7 +1341,7 @@ def main() -> int:
     p_backfill.set_defaults(fn=backfill_from_store)
 
     args = ap.parse_args()
-    # After parsing, not before it: one entry point runs four different passes, and `stage=index`
+    # After parsing, not before it: one entry point runs five different passes, and `stage=index`
     # alone cannot say which of them a log belongs to — `sync` and `prune` even run back to back
     # in the same `merge` job. Same reason `update_ledgers` rides its ledger name.
     log.context("index", step=args.step)

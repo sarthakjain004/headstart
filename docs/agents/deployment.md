@@ -71,7 +71,8 @@ The run is a **download → mutate → upload cycle** over the dataset, parallel
    table (`index sync`: add ids that now have a vector, evict postings gone from scraped boards —
    incremental, no rebuild), **prune** rows the board-scoped sync can't reach (`index prune --apply` —
    dead boards keyed on the live ledger + case-variant dups, ADR-0023; safety-aborts on a too-small
-   keep-set) — `index compact` is **not** in this run, it moved to `cleanup-index` — then
+   keep-set), **refresh** all Search indexes over the final rows (`index refresh-indexes`,
+   ADR-0174) — `index compact` is **not** in this run, it moved to `cleanup-index` — then
    **upload** four dirs back —
    `data/embeddings/jobs`, `data/lancedb`, `data/descriptions`, then `data/state` **last** because
    it carries the ADR-0095 witness — with retry/backoff, and **restart the Space** to pick up the

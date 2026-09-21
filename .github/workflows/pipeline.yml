@@ -6,7 +6,7 @@ name: nightly-pipeline
 #     → scrape (matrix, ≤15 shards, each scrapes its boards into a fragment)
 #       → join (union fragments → tech-filter → descriptions → ledgers → plan the embed fan-out)
 #         → embed (matrix, ≤15 shards, each embeds its Docs into a fragment)
-#           → merge (single writer: concatenate → meta → sync → prune → trends → upload
+#           → merge (single writer: concatenate → meta → sync → prune → refresh indexes → trends → upload
 #             → restart)
 #             → chain (dispatch the successor — this is the cadence, ADR-0093)
 #             → request-compaction (ask cleanup-index for one when `_deletions/` is filling).
@@ -722,7 +722,7 @@ jobs:
           retention-days: 1
 
   # ── Stage 5: the single writer (unchanged from Phase 1). Pulls the prior store + LanceDB from HF,
-  # concatenates the embed fragments, then sync → prune → upload → restart. Runs even when
+  # concatenates the embed fragments, then sync → prune → refresh indexes → upload → restart. Runs even when
   # embed was skipped (eviction/prune still needed); every step gated on the run flag.
   merge:
     needs: [scrape-plan, join, embed]
@@ -841,6 +841,11 @@ jobs:
       - name: Prune dead-Board and duplicate rows
         if: needs.scrape-plan.outputs.run == 'true'
         run: python -m headstart.ingest.index prune --apply
+      - name: Refresh Search indexes over the published rows
+        # Every published table is indexed, including Jobs added by this run. This replaces the
+        # indexes only; it does NOT compact/rewrite the 3.3 GB table (ADR-0174).
+        if: needs.scrape-plan.outputs.run == 'true'
+        run: python -m headstart.ingest.index refresh-indexes
       - name: Append role-trend counts (ADR-0040)
         # Never fatal: the module itself no-ops with a warning when the centroid store hasn't
         # reached this runner (fit not shipped yet, or the join's state artifact was lost) —
@@ -856,12 +861,12 @@ jobs:
         if: needs.scrape-plan.outputs.run == 'true'
         continue-on-error: true
         run: python -m headstart.ingest.hot_boards
-      # No compaction here — it moved to the `cleanup-index` run. `index compact`
-      # rebuilds the table into ONE new .lance file, so every run minted a brand-new ~755 MB blob
-      # that HF stores in full and keeps forever; at ~1.9 GB/run the 100 GB quota filled in ~45
-      # runs. Lance appends instead: `sync`/`prune` write small new fragments and leave the big
-      # existing file untouched, so a run now uploads a fraction of the table. Measured on a
-      # 20k-row 61.6 MB table: 5 appends + a delete added 5 files totalling 6.17 MB (~10%).
+      # No compaction here — it moved to the `cleanup-index` run. Search indexes ARE refreshed
+      # above; `index compact` rebuilds the table into ONE new .lance file, so every run minted a
+      # brand-new ~755 MB blob that HF stores in full and keeps forever; at ~1.9 GB/run the 100 GB
+      # quota filled in ~45 runs. Lance table data appends instead: `sync`/`prune` write small new
+      # fragments and leave the big existing data files untouched. `refresh-indexes` deliberately
+      # adds ~402 MB of replacement index files at 509k rows (ADR-0174), reclaimed by cleanup.
       - name: Upload index state
         id: publish
         if: needs.scrape-plan.outputs.run == 'true'
