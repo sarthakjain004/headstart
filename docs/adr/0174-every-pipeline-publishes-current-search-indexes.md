@@ -26,8 +26,9 @@ them.
 ## Decision
 
 Add `python -m headstart.ingest.index refresh-indexes` to every pipeline run, after `sync` and
-`prune` and before publication. It replaces the 17 Search indexes over the final row set the run
-will publish:
+`prune` and immediately before LanceDB publication. The embedding store is banked first, so a
+failed refresh keeps the run's vectors for the next pipeline while preventing an unindexed table
+publication. The command replaces the 17 Search indexes over the final row set the run will publish:
 
 - cosine IVF-SQ on `vector`;
 - 14 bitmap indexes on the categorical and materialized filter columns;

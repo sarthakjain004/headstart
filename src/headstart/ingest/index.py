@@ -284,60 +284,71 @@ def _migrate_experience_filter_flags(table: Any) -> None:
         table.add_columns(missing)
 
 
-def _create_search_indexes(table: Any, *, replace: bool = False) -> None:
-    """Create missing Search indexes, or replace them over the table's current rows."""
+class _SearchIndexSpec(NamedTuple):
+    column: str
+    index_type: str
+    config: Any
+    minimum_rows: int = 0
+
+
+def _search_index_specs() -> list[_SearchIndexSpec]:
+    """The one authoritative set used to build and verify Search indexes."""
     from lancedb.index import Bitmap, BTree, IvfSq
 
-    existing = {column for index in table.list_indices() for column in index.columns}
-    unified = "config" in inspect.signature(table.create_index).parameters
-    specs = [
-        ("ats", "BITMAP", Bitmap()),
-        ("country", "BITMAP", Bitmap()),
-        ("remote", "BITMAP", Bitmap()),
-        ("posted_at", "BTREE", BTree()),
-        (_POSTED_AT_COMPARABLE_FIELD.name, "BITMAP", Bitmap()),
-        ("first_seen", "BTREE", BTree()),
-        (_DESCRIPTION_STORED_FIELD.name, "BITMAP", Bitmap()),
-        (_SALARY_KNOWN_FIELD.name, "BITMAP", Bitmap()),
+    return [
+        _SearchIndexSpec("ats", "BITMAP", Bitmap()),
+        _SearchIndexSpec("country", "BITMAP", Bitmap()),
+        _SearchIndexSpec("remote", "BITMAP", Bitmap()),
+        _SearchIndexSpec("posted_at", "BTREE", BTree()),
+        _SearchIndexSpec(_POSTED_AT_COMPARABLE_FIELD.name, "BITMAP", Bitmap()),
+        _SearchIndexSpec("first_seen", "BTREE", BTree()),
+        _SearchIndexSpec(_DESCRIPTION_STORED_FIELD.name, "BITMAP", Bitmap()),
+        _SearchIndexSpec(_SALARY_KNOWN_FIELD.name, "BITMAP", Bitmap()),
         *(
-            (experience_filter_column(ceiling), "BITMAP", Bitmap())
+            _SearchIndexSpec(experience_filter_column(ceiling), "BITMAP", Bitmap())
             for ceiling in EXPERIENCE_FILTER_CEILINGS
         ),
         *(
-            (rule.column, "BITMAP", Bitmap())
+            _SearchIndexSpec(rule.column, "BITMAP", Bitmap())
             for rule in EMPLOYMENT_TYPE_FILTERS.values()
         ),
+        # Exact scans are already cheap on tiny test/dev tables, and an ANN index needs a real
+        # training population. Production is over 500k rows; this boundary is deliberately remote.
+        _SearchIndexSpec("vector", "IVF_SQ", IvfSq(distance_type="cosine"), 256),
     ]
-    for column, index_type, config in specs:
-        if column not in table.schema.names or (column in existing and not replace):
+
+
+def _create_search_indexes(table: Any, *, replace: bool = False) -> None:
+    """Create missing Search indexes, or replace them over the table's current rows."""
+    existing = {column for index in table.list_indices() for column in index.columns}
+    unified = "config" in inspect.signature(table.create_index).parameters
+    rows = table.count_rows()
+    for spec in _search_index_specs():
+        if (
+            rows < spec.minimum_rows
+            or spec.column not in table.schema.names
+            or (spec.column in existing and not replace)
+        ):
             continue
         started = datetime.now(UTC)
         if unified:
-            table.create_index(column, config=config, replace=replace)
-        else:  # LanceDB 0.33's sync wrapper predates the unified API.
-            table.create_scalar_index(column, index_type=index_type, replace=replace)
-        elapsed = (datetime.now(UTC) - started).total_seconds()
-        verb = "refreshed" if column in existing else "built"
-        _log.info(f"search index: {verb} {column} ({index_type}) in {elapsed:.1f}s")
-
-    # Exact scans are already cheap on tiny test/dev tables, and an ANN index needs a real
-    # training population. Production is over 500k rows; this boundary is deliberately remote.
-    if table.count_rows() >= 256 and ("vector" not in existing or replace):
-        started = datetime.now(UTC)
-        if unified:
-            table.create_index(
-                "vector", config=IvfSq(distance_type="cosine"), replace=replace
-            )
-        else:
+            table.create_index(spec.column, config=spec.config, replace=replace)
+        elif spec.column == "vector":
             table.create_index(
                 metric="cosine",
                 vector_column_name="vector",
                 index_type="IVF_SQ",
                 replace=replace,
             )
+        else:  # LanceDB 0.33's sync wrapper predates the unified API.
+            table.create_scalar_index(
+                spec.column, index_type=spec.index_type, replace=replace
+            )
         elapsed = (datetime.now(UTC) - started).total_seconds()
-        verb = "refreshed" if "vector" in existing else "built"
-        _log.info(f"search index: {verb} vector (IVF_SQ) in {elapsed:.1f}s")
+        verb = "refreshed" if spec.column in existing else "built"
+        _log.info(
+            f"search index: {verb} {spec.column} ({spec.index_type}) in {elapsed:.1f}s"
+        )
 
 
 def _load_store() -> tuple[list[dict], np.ndarray]:
@@ -1019,20 +1030,10 @@ def refresh_indexes(args: argparse.Namespace) -> int:
         return 1
 
     table = db.open_table(PROD_TABLE)
+    rows = table.count_rows()
     required = {
-        "ats",
-        "country",
-        "remote",
-        "posted_at",
-        _POSTED_AT_COMPARABLE_FIELD.name,
-        "first_seen",
-        _DESCRIPTION_STORED_FIELD.name,
-        _SALARY_KNOWN_FIELD.name,
-        *(experience_filter_column(ceiling) for ceiling in EXPERIENCE_FILTER_CEILINGS),
-        *(rule.column for rule in EMPLOYMENT_TYPE_FILTERS.values()),
+        spec.column for spec in _search_index_specs() if rows >= spec.minimum_rows
     }
-    if table.count_rows() >= 256:
-        required.add("vector")
     missing_columns = sorted(required - set(table.schema.names))
     if missing_columns:
         _log.error(
@@ -1063,7 +1064,6 @@ def refresh_indexes(args: argparse.Namespace) -> int:
         )
         return 1
 
-    rows = table.count_rows()
     write_base(args.db, rows, "refresh-indexes")
     _log.info(
         f"done: refreshed {len(required)} Search indexes over {rows} rows at {args.db}"
