@@ -42,6 +42,7 @@ FILTERS = {
     ),
 }
 
+
 def flags(value: str | None) -> dict[str, bool]:
     """The four served boolean columns for one raw employment-type value."""
     return {rule.column: rule.matches(value) for rule in FILTERS.values()}
