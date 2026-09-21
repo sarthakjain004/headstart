@@ -259,9 +259,11 @@ python scripts/state/retire_legacy_trends_csv.py            # report only
 python scripts/state/retire_legacy_trends_csv.py --apply    # delete it
 ```
 
-It is idempotent (`already gone — nothing to do`, exit 0) and carries **both** preconditions this
-section established: the Parquet must exist, *and* it must hold at least `MIN_ROWS = 2_400_000`
-rows, read from its own Parquet metadata. The row-count floor is the point — it is what turns a bad
+It is idempotent (`already gone — nothing to do`, exit 0) and enforces **two of the three**
+preconditions this section established: the Parquet must exist, *and* it must hold more than
+`MIN_ROWS = 2_400_000` rows, read from its own Parquet metadata. **The third — timing — is prose
+only, and is therefore the one a re-run will skip.** Nothing in the script checks whether a
+pipeline run is mid-flight; you have to. The row-count floor is the point — it is what turns a bad
 fold-in from silent permanent data loss into a recoverable state, because the CSV is still there to
 migrate again. The hazard is concrete: `merge` running without the `corpus-state` artifact writes a
 fresh one-tick ledger (~10,700 rows) that the upload then publishes over the real one, and
@@ -280,8 +282,8 @@ CSV's literal first row (`stock,ai-ml,entry,all`) read back with its identical c
 
 ### Also verified 2026-09-10, eleven days before the delete
 
-The check above passed then too, and a stronger one was run alongside it — **that the live Parquet is a
-strict superset of the CSV**, not merely bigger:
+The check above passed then too, and a stronger one was run alongside it — **that the live
+Parquet is a strict superset of the CSV**, not merely bigger:
 
 | | rows | distinct stamps |
 |---|---|---|
@@ -291,9 +293,10 @@ strict superset of the CSV**, not merely bigger:
 **0** CSV stamps missing from the Parquet, **0** with a changed row count. Every row the CSV holds
 is in the Parquet, plus 14 further ticks written since the cutover.
 
-Check against the CSV **currently on HF**, not a local copy. The CSV kept growing after the
-Parquet work began — the last pre-cutover pipeline run still wrote to it — so a stale copy pulled
-before the cutover verifies 510 stamps and silently misses 5. Re-pull it first.
+That check was against the CSV **currently on HF**, not a local copy — the CSV kept growing after
+the Parquet work began, so a stale copy pulled before the cutover verifies 510 stamps and silently
+misses 5. The instruction is preserved for its lesson, not to be followed: the CSV is gone, so
+there is nothing left to re-pull unless a run resurrects it.
 
 Sizes at that moment: CSV 174,894,709 bytes, Parquet 3,597,994 — **48.6x**. Retiring the CSV is
 what banked the saving; it was not retired for another eleven days, during which both

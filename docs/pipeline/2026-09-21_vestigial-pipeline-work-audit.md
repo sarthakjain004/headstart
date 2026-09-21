@@ -15,7 +15,10 @@ Findings are ranked by what they cost now, not by how easy they are to remove. T
 
 ## 1. `data/state/role_trends.csv` — 174.89 MB, dead since 2026-09-09, still downloaded twice a run
 
-ADR-0120 moved the trends ledger from CSV to Parquet on 2026-09-09 and prescribed the cleanup in as
+ADR-0120 moved the trends ledger from CSV to Parquet on **2026-09-09** — the anchor every span
+in this section counts from, so "twelve days" here and the "eleven days" in ADR-0120 and
+`docs/agents/deployment.md` (which count from the 09-10 verification) are the same gap. It
+prescribed the cleanup in as
 many words (`docs/adr/0120-...:87`): a one-time `delete_file` **after** the first Parquet lands. The
 Parquet landed. The delete never happened.
 
@@ -40,11 +43,20 @@ scrape-plan  [state_fetch] fetched 233 file(s), 213 MB in 15s: data/state/*
 join         [state_fetch] fetched 234 file(s), 807 MB in 33s: data/embeddings/jobs/meta.jsonl data/state/*
 ```
 
-**Cost:** ~350 MB of HF egress per run. Per day that is **~11.7 GB**, and the derivation matters
-because it is not `× 26`: the two fetches sit at different depths, so they are counted separately —
-`scrape-plan` runs on every run that passes the gate (~37/day, failures included, since its fetch
-is the first thing after the gate) and `join` on the ~30/day that get that far. 174.89 MB × (37 +
-30) ≈ 11.7 GB. On successful runs alone it is 9.1 GB.
+**Cost:** ~350 MB of HF egress per run — two fetches of 174.89 MB. The per-day figure is
+**~11 GB**, and it is worth showing the working, because an earlier draft of this section guessed
+the two sides fetched at *different* rates and they do not. Measured over the 25 runs of
+2026-09-21 02:26–16:56 UTC, by grepping each job's own `state_fetch] fetched` line: **22 of 25 ran
+the `scrape-plan` fetch and the same 22 ran the `join` fetch** — the other three were cancelled
+before `scrape-plan` started. So both sides fire on ~88% of runs, not 37 and 30. Against the
+measured cadence of ~36 runs/day (35 on 09-20, 37 on 09-19, all conclusions), that is ~32 fetches
+per side, ~64 total: 64 × 174.89 MB ≈ **11.2 GB/day**, moving ±1 GB with the day's run count.
+
+Note what this is *not* evidence of. The gate can stand a run down before it fetches anything —
+but no run in this window did, and an early attempt to count stand-downs by grepping the log for
+`standing this run down` returned 23 of 25, because that string is in the step's own **echoed
+source** and appears whether or not the branch is taken. The figure above avoids the class
+entirely by counting the fetch line itself.
 
 Plus ~20 s of the run's serial wall-clock (12.5 s in `scrape-plan` at its measured 14.1 MB/s, ~7 s
 in `join` at 24.2 MB/s), and 2.4% of the dataset's 7.3 GB live footprint.

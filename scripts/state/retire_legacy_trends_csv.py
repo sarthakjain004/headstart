@@ -47,14 +47,18 @@ REPLACEMENT = "data/state/role_trends.parquet"
 #: the `corpus-state` artifact writes a *fresh* ledger of one tick and the upload publishes it
 #: over the real one (ADR-0120's own "pre-existing hazard"), and `role_trends.py` folds the CSV
 #: back in only when the Parquet is **absent** — so a short-but-present Parquet plus a deleted
-#: CSV is silent, permanent loss of every historical row. The floor is the runbook's
-#: (`docs/agents/deployment.md`): comfortably under the 5,405,929 rows measured on 2026-09-21
-#: and far above any one tick's ~10,700.
+#: CSV is silent, permanent loss of every historical row. The floor is the **2,400,903**
+#: pre-cutover rows measured on 2026-09-21, rounded down: a Parquet holding fewer cannot be
+#: carrying the folded-in history. It sits far above the ~10,700 of a single tick, which is the
+#: shape a failed fold-in actually takes. `docs/agents/deployment.md` quotes the same floor, but
+#: the number's authority is that measurement, not the doc.
 MIN_ROWS = 2_400_000
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument(
         "--apply", action="store_true", help="actually delete (default: report only)"
     )
@@ -68,8 +72,9 @@ def main() -> int:
         print(f"{LEGACY} is already gone — nothing to do", flush=True)
         return 0
 
-    # Refuse to delete the old ledger unless the new one is actually there. The ADR's precondition,
-    # enforced rather than assumed: a delete with no replacement loses the ledger outright.
+    # Refuse to delete the old ledger unless the new one is actually there: a delete with no
+    # replacement loses the ledger outright. This is the cheap half of the precondition — the
+    # half ADR-0120 actually states is the row floor below.
     if REPLACEMENT not in sizes:
         print(
             f"REFUSING: {REPLACEMENT} is absent, so {LEGACY} is still the only trends ledger",
@@ -78,16 +83,22 @@ def main() -> int:
         )
         return 1
 
-    # Presence is not enough — see MIN_ROWS. Read from the file's own Parquet metadata rather than
-    # from its size: `zstd` compression means bytes do not bound row count in either direction.
+    print(f"legacy      {sizes[LEGACY] / 1e6:8.2f} MB  {LEGACY}", flush=True)
+    print(f"replacement {sizes[REPLACEMENT] / 1e6:8.2f} MB  {REPLACEMENT}", flush=True)
+
+    # ADR-0120's precondition, enforced rather than assumed: presence is not enough, the landed
+    # Parquet must carry >2.4M rows (see MIN_ROWS). Read from the file's own Parquet metadata
+    # rather than its size: `zstd` means bytes do not bound row count in either direction.
     import pyarrow.parquet as pq
 
     rows = pq.ParquetFile(
         hf_hub_download(REPO, REPLACEMENT, repo_type="dataset")
     ).metadata.num_rows
-    if rows < MIN_ROWS:
+    print(f"            {rows:,} rows (floor {MIN_ROWS:,})", flush=True)
+
+    if rows <= MIN_ROWS:
         print(
-            f"REFUSING: {REPLACEMENT} carries only {rows:,} rows, under the {MIN_ROWS:,} floor — "
+            f"REFUSING: {REPLACEMENT} carries only {rows:,} rows, not over the {MIN_ROWS:,} floor — "
             f"the fold-in did not happen, so {LEGACY} is still the truth. Re-run the migration "
             "first; this delete is not reversible.",
             file=sys.stderr,
@@ -95,11 +106,6 @@ def main() -> int:
         )
         return 1
 
-    print(f"legacy      {sizes[LEGACY] / 1e6:8.2f} MB  {LEGACY}", flush=True)
-    print(
-        f"replacement {sizes[REPLACEMENT] / 1e6:8.2f} MB  {REPLACEMENT} ({rows:,} rows)",
-        flush=True,
-    )
     print(
         f"reclaims    {sizes[LEGACY] / 1e6:8.2f} MB from the head revision", flush=True
     )

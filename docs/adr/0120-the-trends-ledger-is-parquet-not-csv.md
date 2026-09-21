@@ -85,11 +85,13 @@ were before; that logic moved rather than disappeared.
 on HF until something removes it explicitly. The writer deliberately does not delete it: removing
 it locally would not retire the remote copy, and would only make a re-run re-migrate. Retirement is
 a one-time `HfApi().delete_file("data/state/role_trends.csv", ...)` **after** the first Parquet has
-landed — in that order, so the ledger is never absent from the dataset. Until it runs, this change
-has added 3.4 MB rather than saved 169 MB. The step has an owner and a runnable recipe:
-`docs/agents/deployment.md` §"Done: the pre-ADR-0120 trends CSV is retired" (performed 2026-09-21), which asserts the
-landed Parquet carries >2.4M rows *before* deleting anything — so a fold-in that silently did not
-happen leaves the CSV in place to migrate again rather than losing the history.
+landed — in that order, so the ledger is never absent from the dataset. Until that ran, this change
+had added 3.4 MB rather than saved 169 MB. **It ran on 2026-09-21** (see "Banked 2026-09-21"
+below). The step had an owner and a runnable recipe:
+`docs/agents/deployment.md` §"Done: the pre-ADR-0120 trends CSV is retired", which asserts
+the landed Parquet carries >2.4M rows *before* deleting anything — so a fold-in that silently
+did not happen leaves the CSV in place to migrate again rather than losing the history. That
+assertion now lives in `scripts/state/retire_legacy_trends_csv.py` as `MIN_ROWS`.
 
 **The rollout has a window.** The pipeline writes and the Space reads, and they deploy
 independently: `deploy-space.yml` pushes on any `deploy/hf-space/**` change to main, so the Space
@@ -119,8 +121,9 @@ wall, and it is verified by test, not assumed. The window is bounded by the pipe
   pyarrow-gated test that runs locally. Adding pyarrow to `[dev]` would fix the gap but pulls a
   large binary wheel into a job whose stated purpose is to stay light; not worth it for one
   function, and the loader is covered by the migration evidence below.
-- **The read-side saving does not arrive until the CSV is retired.** `join` fetches
-  `data/state/*`, so until the delete runs it still downloads the 172 MB CSV every run and passes
+- **The read-side saving does not arrive until the CSV is retired** (it was, on 2026-09-21 —
+  "Banked" below; this bullet describes the state until then). `join` fetches
+  `data/state/*`, so until the delete ran it still downloaded the 172 MB CSV every run and passed
   it to `merge` through the `corpus-state` artifact. Retirement is what banks the win on both
   sides, not the format change alone.
 - **A pre-existing hazard the migration inherits, unchanged.** `merge` gets `data/state` only from
@@ -150,7 +153,15 @@ The delete finally happened eleven days later, at which point the CSV was 174.89
 `data/state/`'s 212.8 MB** — and the Parquet 7.29 MB carrying 5,405,929 rows. `data/state/` is now
 **37.9 MB**. The saving is larger than this ADR projected, because the projection counted only
 `join`: `scrape-plan` fetches `data/state/*` with the same wildcard, so the CSV rode the wire
-**twice** per run, roughly 11.7 GB/day across ~37 planned and ~30 joined runs a day.
+**twice** per run — ~11.2 GB/day, measured rather than assumed: 22 of the 25 runs of 2026-09-21
+02:26–16:56 UTC ran *both* fetches, against a cadence of ~36 runs/day.
+
+One premise of this ADR has moved and is worth flagging rather than leaving for a later reader.
+"510 timestamps in 3.4 MB, so a year of history is affordable without pruning anything" was
+written on 2026-09-10; the Parquet is **7.29 MB** eleven days later, ~0.33 MB/day. That still
+leaves a year affordable in bytes, but the margin is smaller than the sentence implies, and the
+sibling `data/state/role_trend_board_deltas/` has no retention at all (one file per run, 211 so
+far, against HF's 10,000-file directory limit). Both are covered in the audit's §6.
 
 The eleven-day gap is itself the finding: a cleanup prescribed in an ADR, with an owner and a
 verified runbook, still did not happen, and nothing in the pipeline noticed. Written up in
