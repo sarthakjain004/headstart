@@ -1,7 +1,7 @@
 # The families still outside the gate — 2026-09-21
 
 `TECH_FILTER_VERSION` 2 → 3. Measured over the **332,383-posting pre-filter snapshot** in
-`data/jobs/` (16 ATSes, scraped 2026-08-28 on this machine — `data/jobs/` is ephemeral and reaches
+`data/jobs/` (16 ATSes, scraped 2026-07-03 to 07-05 on this machine — `data/jobs/` is ephemeral and reaches
 neither git nor HF, so it is a local snapshot, not a run artifact; it is the same corpus ADR-0068
 was measured on).
 
@@ -29,7 +29,7 @@ jobs, veterinarian). Everything below is tail. Counts are rows version 2 dropped
 
 | family | rows | why version 2 missed it |
 | --- | ---: | --- |
-| enterprise platform | 589 | the arm required the product and the role word to be **adjacent**; the module name almost always sits between them |
+| enterprise platform | 674 | the arm required the product and the role word to be **adjacent**; the module name almost always sits between them, and `oracle` was not in the list at all |
 | Member of Technical Staff | 124 | names no discipline; nothing in the strong list covered it |
 | QA/test role words | 66 | `… tester` and `… analyst` arms carried neither `qa lead` nor `test analyst` nor `manual tester` |
 | silicon design (VLSI/FPGA/ASIC/RTL/DV/PD) | 61 | never represented |
@@ -40,7 +40,7 @@ jobs, veterinarian). Everything below is tail. Counts are rows version 2 dropped
 | applied scientist | 17 | never represented |
 | bioinformatics / computational biology | 10 | never represented |
 
-Four families that looked missing at first turned out to be already covered by version 2 and were
+Six families that looked missing at first turned out to be already covered by version 2 and were
 dropped from the change: data analyst, technical program/project/product manager, solution
 architect, system administrator, network architect and DBA all measured **0 still-dropped rows**.
 That is the whole value of rebaselining against the current classifier rather than the one in the
@@ -73,14 +73,34 @@ it completely; only a row-level old-vs-new diff surfaced it. Shipped as `s?\b`, 
 This is the same lesson ADR-0066 records for `experience.py`: measure **changed values**, not only
 coverage.
 
+## What review caught
+
+Two axes of review ran against this branch, and both found real defects that measurement — not
+reading — settled:
+
+- **`oracle` was missing from the enterprise arm.** It was present when the change was measured
+  against a stale base and fell out when `main`'s own product list was adopted. 48 rows, every
+  sampled one a genuine Oracle-platform role ("Oracle HCM Cloud Consultant", "Oracle EBS Sr.
+  Architect"). This is the *only* one of the three families explicitly asked for that `main` does
+  not already cover, so losing it silently would have missed the request.
+- **`dynamics` was in the forward arm but not the reverse one.** Measuring rather than reasoning
+  settled it: adding it recovers 3 genuine Microsoft Dynamics consultants and admits one
+  mechanical row ("CAE Analyst - (Multi-Body Dynamics - MBD)"). Under a recall-biased gate that
+  is an add, not an exclusion to document.
+- **A comment asserted a number the data did not support.** It said 2 of 46 distinct dropped
+  `\brtl\b` titles were media roles; the truth is 3 of 6 (the 46 was the distinct count for the
+  whole combined silicon probe, misattributed). Corrected in place.
+- **A test docstring contained a literal backspace**, because `` `\b` `` was written in a non-raw
+  docstring. `\b` is a valid Python escape, so no linter could see it.
+
 ## Net effect
 
 | | rows | share of corpus |
 | --- | ---: | ---: |
 | version 2 keeps | 67,506 | 20.31% |
-| version 3 keeps | 68,548 | 20.62% |
+| version 3 keeps | 68,600 | 20.64% |
 
-**+1,042 in, 0 out** — purely additive, so unlike version 2 the composition moves exactly as far as
+**+1,094 in, 0 out** — purely additive, so unlike version 2 the composition moves exactly as far as
 the total. `verify_tech.py`'s self-consistency check (no dropped job may match a strong signal)
 stays at 0.
 
@@ -94,4 +114,6 @@ Three families were measured, considered and left out, so the next reader does n
   `desktop support` and the `\b(it|ict)[\s/-]+(support|…)` arm, so the remaining rows are BPO
   call-centre listings phrased as "helpdesk agent", which are not tech roles.
 - **"Research Scientist" unqualified** — 152 rows, but at a biotech it is a wet-lab job. Only the
-  `ai`/`ml`-qualified form ships.
+  `ai`/`ml`-qualified form ships. `bioinformatic` and `computational biolog` are *not* the same
+  call and do ship: computational biology is applied computing, where writing the code is the job,
+  and the title names the method rather than the industry.

@@ -57,7 +57,7 @@ from pathlib import Path
 # Member of Technical Staff, Forward Deployed Engineer, AI/ML research and applied scientists,
 # business intelligence, silicon design, security operations, the QA role words, bioinformatics —
 # and the enterprise-platform arm stopped requiring the product and the role word to be adjacent.
-# Net **+1.54%** on the 332,383-posting pre-filter snapshot, 67,506 -> 68,548: **+1,042 in, 0 out**,
+# Net **+1.62%** on the 332,383-posting pre-filter snapshot, 67,506 -> 68,600: **+1,094 in, 0 out**,
 # so unlike version 2 this one is purely additive and the composition moves exactly as far as the
 # total. See docs/tech-filter/2026-09-21_the-families-still-outside-the-gate.md.
 TECH_FILTER_VERSION = 3
@@ -153,12 +153,14 @@ _STRONG_TERMS = [
     # closing `\b` drops both, and the adjacent form this replaces had no closing boundary,
     # so tightening it without the `s?` would have been a recall regression.
     (
-        r"\b(salesforce|servicenow|sharepoint|sap|abap|apex|workday|netsuite|dynamics)\b"
+        r"\b(salesforce|servicenow|sharepoint|sap|abap|apex|workday|netsuite|oracle"
+        r"|dynamics)\b"
         r".{0,24}\b(developer|administrator|consultant|analyst|specialist|architect|lead)s?\b"
     ),
     (
         r"\b(developer|administrator|consultant|analyst|specialist|architect|lead)s?\b"
-        r".{0,24}\b(salesforce|servicenow|sharepoint|sap|abap|apex|workday|netsuite)\b"
+        r".{0,24}\b(salesforce|servicenow|sharepoint|sap|abap|apex|workday|netsuite|oracle"
+        r"|dynamics)\b"
     ),
     r"\b(etl|rpa|middleware|integration) (developer|specialist|consultant|lead)\b",
     r"database (administrator|analyst|specialist|developer)",
@@ -170,7 +172,7 @@ _STRONG_TERMS = [
     r"member of (the )?technical staff",
     # Qualified so "Forward Deployed Creative" stays out. It has to be a strong signal rather
     # than a generic one because these sit under a Sales/GTM department, which rule 2 vetoes on.
-    r"forward[- ]deployed (software |ai |)engineer",
+    r"forward[- ]deployed (software |ai )?engineer",
     # The `\b(ai|ml)[\s/&,-]*(…|scientist|researcher)` arm above needs the role word adjacent to
     # `ai`/`ml`, so "AI Research Scientist" — one word in between — matched nothing at all.
     r"\b(ai|ml|artificial intelligence) research (scientist|engineer|lead|manager)",
@@ -178,10 +180,14 @@ _STRONG_TERMS = [
     r"analytics engineer",
     r"business intelligence (analyst|developer|engineer|consultant|specialist)",
     r"\bbi (developer|analyst|engineer)s?\b",
-    r"bioinformatic|computational biolog",
+    # Computational biology is applied computing — the code is the job — which is why it ships
+    # while unqualified "Research Scientist" does not: that one is a bench role at a biotech.
+    r"bioinformatic",
+    r"computational biolog",
     # Silicon design is HDL/EDA work — software by any reading, and the premise ADR-0068 already
     # applied to `hardware` as an org label. `rtl` is qualified because the bare acronym matches
-    # the broadcaster: 2 of its 46 distinct dropped titles were "RTL Nieuws" media roles.
+    # the broadcaster: of the 6 dropped titles `\brtl\b` matches, 3 are media roles ("Data /
+    # Distributie Redacteur RTL Nieuws" and two "Media Consultant (Mensch) RTL / Veltins").
     r"\b(vlsi|fpga|asic)\b",
     r"rtl (design|verification)",
     r"design verification",
@@ -191,7 +197,11 @@ _STRONG_TERMS = [
     # which matches "EHS and Security Specialist", i.e. physical security.
     r"security operations",
     r"\bsoc (specialist|manager|engineer|architect|lead)",
-    # `qa`/`test` role words the `… tester` and `… analyst` arms above do not carry.
+    # `qa`/`test` role words the `… tester` and `… analyst` arms above do not carry. Both this
+    # and `security operations` admit some creep the narrowed patterns above refuse — 4 pharma/AML
+    # rows of the 65 this promotes, 1 ambiguous "Security Operations Officer" of 24. That is the
+    # recall-bias trade this gate is built on, and a different ratio from the 3-of-6 that made
+    # bare `\brtl\b` not worth keeping.
     r"\bqa (analyst|lead|manager)s?\b",
     r"test analyst",
     r"manual tester",

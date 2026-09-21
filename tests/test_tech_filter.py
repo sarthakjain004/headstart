@@ -695,10 +695,28 @@ def test_the_platform_arm_tolerates_a_module_name_in_between():
 
 
 @pytest.mark.parametrize(
+    "title",
+    [
+        "Oracle HCM Cloud Consultant",
+        "Oracle Cloud Senior Consultant - SCM",
+        "Oracle EPM Consultant",
+        "Consultant MS Dynamics 365 F&O",
+    ],
+)
+def test_every_platform_in_the_arm_is_actually_in_both_arms(title):
+    """`oracle` fell out of the list when main's own spelling of it was adopted — 48 rows.
+
+    `dynamics` was in the forward arm but not the reverse one, which cost 3 more. Both were
+    found by review; neither is visible from the totals, which went up either way.
+    """
+    assert is_tech(title) is True, f"RECALL VIOLATION: tech job dropped -> {title!r}"
+
+
+@pytest.mark.parametrize(
     "title", ["ServiceNow Developers", "Higher Education Workday Consultants"]
 )
 def test_the_platform_arm_still_matches_a_plural_role_word(title):
-    """Regression: the form this replaced had no closing boundary and kept these.
+    r"""Regression: the form this replaced had no closing boundary and kept these.
 
     Adding `\b` to tighten the new arm dropped both — caught by measuring the change against
     the corpus rather than only counting what it gained.
@@ -710,7 +728,7 @@ def test_the_platform_arm_still_matches_a_plural_role_word(title):
     "title",
     [
         # bare `\brtl\b` matches the broadcaster; `security specialist` matches physical security
-        "Media Consultant RTL / Veltins",
+        "Media Consultant (Mensch) RTL / Veltins",
         "EHS and Security Specialist",
     ],
 )
