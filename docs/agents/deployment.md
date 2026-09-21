@@ -242,46 +242,45 @@ scraped this run, so it can't reach a board that dropped off the live ledger —
 version of this note called it a known v1 gap; prune closes it.)
 
 
-## One-time: retire the pre-ADR-0120 trends CSV
+## Done: the pre-ADR-0120 trends CSV is retired
 
-**Status: verified and ready to run; the delete itself is NOT yet done (2026-09-10).** The
-condition below has been checked against live data and passes — see "Verified" at the end of this
-section. The trends ledger moved from
-`data/state/role_trends.csv` (172,537,804 bytes) to `data/state/role_trends.parquet`
-(3,430,805 bytes) in ADR-0120. The `merge` job uploads `data/state` as a **folder without
-`--delete`**, so the old CSV survives on HF until someone removes it — and until it is gone the
-saving is only half banked: `join`'s `state_fetch 'data/state/*'` still downloads the 172 MB CSV
-every run and ships it to `merge` through the `corpus-state` artifact.
+**Status: DONE — deleted 2026-09-21.** `data/state/role_trends.csv` (174.89 MB) is gone from the
+dataset; `data/state/` went from 212.8 MB to **37.9 MB**. Nothing here is left to run. The section
+stays because the *hazard* it documents outlives the deletion: `merge` uploads `data/state` as a
+folder **without `--delete`**, so any run sitting between `join`'s `state_fetch 'data/state/*'` and
+`merge`'s upload when a delete lands will put the file straight back.
 
-Run this **after** a pipeline run has published the Parquet, never before — the writer folds the
-CSV in on its first Parquet write, so deleting it earlier loses every historical row.
+**If it ever comes back, re-run the tool — do not hand-run a recipe.** The heredoc that used to sit
+here has been folded into `scripts/state/retire_legacy_trends_csv.py`, so there is one spelling of
+this operation rather than two that can drift:
 
 ```bash
-python - <<'EOF'
-from huggingface_hub import HfApi
-import pyarrow.parquet as pq, huggingface_hub as hh
-
-api = HfApi()
-REPO = "imPoseidon/headstart-index"
-# 1. The Parquet must exist AND carry the full history — a short one means the fold-in did not
-#    happen (e.g. merge ran without the corpus-state artifact) and the CSV is still the truth.
-path = hh.hf_hub_download(REPO, "data/state/role_trends.parquet", repo_type="dataset")
-rows = pq.ParquetFile(path).metadata.num_rows
-print(f"parquet rows: {rows:,}")
-assert rows > 2_400_000, f"only {rows} rows — do NOT delete the CSV; re-run the migration first"
-# 2. Only then retire the CSV.
-api.delete_file("data/state/role_trends.csv", REPO, repo_type="dataset",
-                commit_message="retire the pre-ADR-0120 trends CSV (ADR-0120)")
-print("deleted data/state/role_trends.csv")
-EOF
+python scripts/state/retire_legacy_trends_csv.py            # report only
+python scripts/state/retire_legacy_trends_csv.py --apply    # delete it
 ```
 
-The row-count assertion is the point: it is what turns a bad fold-in from silent permanent data
-loss into a recoverable state, because the CSV is still there to migrate again.
+It is idempotent (`already gone — nothing to do`, exit 0) and carries **both** preconditions this
+section established: the Parquet must exist, *and* it must hold at least `MIN_ROWS = 2_400_000`
+rows, read from its own Parquet metadata. The row-count floor is the point — it is what turns a bad
+fold-in from silent permanent data loss into a recoverable state, because the CSV is still there to
+migrate again. The hazard is concrete: `merge` running without the `corpus-state` artifact writes a
+fresh one-tick ledger (~10,700 rows) that the upload then publishes over the real one, and
+`role_trends.py` folds the CSV back in **only when the Parquet is absent** — so a short-but-present
+Parquet plus a deleted CSV loses every historical row with nothing to say so.
 
-### Verified 2026-09-10, before deleting anything
+Timing matters as much as the guard: delete only while no run sits between `join`'s fetch and
+`merge`'s upload. On 2026-09-21 that meant waiting for run `35628837050` to be in `scrape` with
+zero `join`/`merge` jobs started.
 
-The check above passes, and a stronger one was run alongside it — **that the live Parquet is a
+### Verified 2026-09-21, before deleting
+The Parquet's row-group `ts` statistics spanned `2026-08-11T12:57:28+00:00` →
+`2026-09-21T16:55:09+00:00` — the lower bound *exactly* the CSV's first row, read back over a
+350-byte HTTP range request. **2,400,903** of its 5,405,929 rows predated the migration, and the
+CSV's literal first row (`stock,ai-ml,entry,all`) read back with its identical count of `819`.
+
+### Also verified 2026-09-10, eleven days before the delete
+
+The check above passed then too, and a stronger one was run alongside it — **that the live Parquet is a
 strict superset of the CSV**, not merely bigger:
 
 | | rows | distinct stamps |
@@ -296,6 +295,7 @@ Check against the CSV **currently on HF**, not a local copy. The CSV kept growin
 Parquet work began — the last pre-cutover pipeline run still wrote to it — so a stale copy pulled
 before the cutover verifies 510 stamps and silently misses 5. Re-pull it first.
 
-Sizes at that moment: CSV 174,894,709 bytes, Parquet 3,597,994 — **48.6x**, so retiring the CSV is
-what banks the ~171 MB/run saving. Until it goes, the dataset carries both and `join`'s
-`state_fetch 'data/state/*'` still downloads the CSV every run.
+Sizes at that moment: CSV 174,894,709 bytes, Parquet 3,597,994 — **48.6x**. Retiring the CSV is
+what banked the saving; it was not retired for another eleven days, during which both
+`scrape-plan` and `join` kept fetching it by wildcard. That delay is the finding written up in
+`docs/pipeline/2026-09-21_vestigial-pipeline-work-audit.md` §1.

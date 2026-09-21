@@ -9,9 +9,10 @@ The Parquet landed on 2026-09-09; the delete did not happen until **2026-09-21**
 and `join` both fetch `data/state/*` with a wildcard, so it rode the wire twice per run.
 
 Measured against the live dataset: the CSV was **174.89 MB** — 82% of `data/state/`'s 212.8 MB —
-while `role_trends.parquet` carries the same ledger in **7.29 MB**. Nothing reads the CSV:
-`role_trends.py`'s `_LEDGER` points at the Parquet, `deploy/hf-space/app.py` serves `/trends` from
-it, and a grep of `src/`, `scripts/` and `deploy/` finds no other reference.
+while `role_trends.parquet` carries the same ledger in **7.29 MB**. Nothing reads the CSV in steady
+state: `role_trends.py`'s `_LEDGER` points at the Parquet and `deploy/hf-space/app.py` serves
+`/trends` from it. Its one reader is `role_trends.py`'s migration fold-in, on the branch taken only
+when the **Parquet is absent** — which is exactly the recovery net `MIN_ROWS` below protects.
 
 The Parquet is a superset, verified before the delete rather than taken from the ADR: its
 row-group `ts` statistics span `2026-08-11T12:57:28+00:00 -> 2026-09-21T16:55:09+00:00`, the lower
@@ -37,11 +38,19 @@ from __future__ import annotations
 import argparse
 import sys
 
-from huggingface_hub import HfApi
+from huggingface_hub import HfApi, hf_hub_download
 
 REPO = "imPoseidon/headstart-index"
 LEGACY = "data/state/role_trends.csv"
 REPLACEMENT = "data/state/role_trends.parquet"
+#: The landed Parquet must carry the whole history, not merely exist. `merge` running without
+#: the `corpus-state` artifact writes a *fresh* ledger of one tick and the upload publishes it
+#: over the real one (ADR-0120's own "pre-existing hazard"), and `role_trends.py` folds the CSV
+#: back in only when the Parquet is **absent** — so a short-but-present Parquet plus a deleted
+#: CSV is silent, permanent loss of every historical row. The floor is the runbook's
+#: (`docs/agents/deployment.md`): comfortably under the 5,405,929 rows measured on 2026-09-21
+#: and far above any one tick's ~10,700.
+MIN_ROWS = 2_400_000
 
 
 def main() -> int:
@@ -69,8 +78,28 @@ def main() -> int:
         )
         return 1
 
+    # Presence is not enough — see MIN_ROWS. Read from the file's own Parquet metadata rather than
+    # from its size: `zstd` compression means bytes do not bound row count in either direction.
+    import pyarrow.parquet as pq
+
+    rows = pq.ParquetFile(
+        hf_hub_download(REPO, REPLACEMENT, repo_type="dataset")
+    ).metadata.num_rows
+    if rows < MIN_ROWS:
+        print(
+            f"REFUSING: {REPLACEMENT} carries only {rows:,} rows, under the {MIN_ROWS:,} floor — "
+            f"the fold-in did not happen, so {LEGACY} is still the truth. Re-run the migration "
+            "first; this delete is not reversible.",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 1
+
     print(f"legacy      {sizes[LEGACY] / 1e6:8.2f} MB  {LEGACY}", flush=True)
-    print(f"replacement {sizes[REPLACEMENT] / 1e6:8.2f} MB  {REPLACEMENT}", flush=True)
+    print(
+        f"replacement {sizes[REPLACEMENT] / 1e6:8.2f} MB  {REPLACEMENT} ({rows:,} rows)",
+        flush=True,
+    )
     print(
         f"reclaims    {sizes[LEGACY] / 1e6:8.2f} MB from the head revision", flush=True
     )

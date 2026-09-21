@@ -23,8 +23,14 @@ Verified live today:
 
 | file | size | read by |
 | --- | ---: | --- |
-| `data/state/role_trends.csv` | **174.89 MB** | nothing — grep of `src/`, `scripts/`, `deploy/`, `.github/` finds no reader |
-| `data/state/role_trends.parquet` | 7.27 MB | `role_trends.py`'s `_LEDGER`; `deploy/hf-space/app.py:98` serves `/trends` from it |
+| `data/state/role_trends.csv` | **174.89 MB** | nothing in steady state — see the caveat below |
+| `data/state/role_trends.parquet` | 7.29 MB | `role_trends.py`'s `_LEDGER`; `deploy/hf-space/app.py:98`/`:258` serves `/trends` from it |
+
+**"No reader" needs one qualification, and it is the one that matters.** `role_trends.py:354-364`
+*does* read the CSV — `legacy = ledger.with_suffix(".csv")` → `_legacy_rows()` — but only on the
+`else` branch taken when the **Parquet is absent**. That is the one-time migration fold-in, and it
+doubles as the recovery net: it is why a short-but-present Parquet is the dangerous state, and why
+the delete must assert a row floor rather than mere presence (see the guard below).
 
 It is **82% of `data/state/`** (212.8 MB across 235 files), and both `scrape-plan` and `join` fetch
 that directory with a `data/state/*` wildcard, so it is pulled twice per run:
@@ -34,12 +40,20 @@ scrape-plan  [state_fetch] fetched 233 file(s), 213 MB in 15s: data/state/*
 join         [state_fetch] fetched 234 file(s), 807 MB in 33s: data/embeddings/jobs/meta.jsonl data/state/*
 ```
 
-**Cost:** ~350 MB of HF egress per run — about **11.7 GB/day** — plus ~20 s of the run's serial
-wall-clock (12.5 s in `scrape-plan` at its measured 14.1 MB/s, ~7 s in `join` at 24.2 MB/s), and
-2.4% of the dataset's 7.3 GB live footprint.
+**Cost:** ~350 MB of HF egress per run. Per day that is **~11.7 GB**, and the derivation matters
+because it is not `× 26`: the two fetches sit at different depths, so they are counted separately —
+`scrape-plan` runs on every run that passes the gate (~37/day, failures included, since its fetch
+is the first thing after the gate) and `join` on the ~30/day that get that far. 174.89 MB × (37 +
+30) ≈ 11.7 GB. On successful runs alone it is 9.1 GB.
 
-**Fix:** it is already written. `scripts/state/retire_legacy_trends_csv.py` exists in a working tree
-but was never committed or run; it refuses to delete unless the Parquet is present.
+Plus ~20 s of the run's serial wall-clock (12.5 s in `scrape-plan` at its measured 14.1 MB/s, ~7 s
+in `join` at 24.2 MB/s), and 2.4% of the dataset's 7.3 GB live footprint.
+
+**Why it survived twelve days:** the tool existed. `scripts/state/retire_legacy_trends_csv.py` sat
+untracked in a working tree, written and never run — and `docs/agents/deployment.md` carried a
+second, *stronger* hand-run recipe for the same operation, still headed "the delete itself is NOT
+yet done". Two spellings of one step, each of which could be mistaken for the other's owner, and
+neither with anything watching whether it had happened.
 
 ### Done — 2026-09-21T17:0x UTC
 

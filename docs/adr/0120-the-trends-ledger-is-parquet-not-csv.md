@@ -87,7 +87,7 @@ it locally would not retire the remote copy, and would only make a re-run re-mig
 a one-time `HfApi().delete_file("data/state/role_trends.csv", ...)` **after** the first Parquet has
 landed — in that order, so the ledger is never absent from the dataset. Until it runs, this change
 has added 3.4 MB rather than saved 169 MB. The step has an owner and a runnable recipe:
-`docs/agents/deployment.md` §"One-time: retire the pre-ADR-0120 trends CSV", which asserts the
+`docs/agents/deployment.md` §"Done: the pre-ADR-0120 trends CSV is retired" (performed 2026-09-21), which asserts the
 landed Parquet carries >2.4M rows *before* deleting anything — so a fold-in that silently did not
 happen leaves the CSV in place to migrate again rather than losing the history.
 
@@ -143,6 +143,18 @@ The pipeline has written the Parquet ledger and the reduction is live, not proje
 of the CSV's 515 stamps is present in the Parquet with an identical row count, and 14 further
 ticks have accrued since. The CSV had **not** yet been deleted when this was written, so the
 per-run saving is not yet banked — see `docs/agents/deployment.md`.
+
+### Banked 2026-09-21
+
+The delete finally happened eleven days later, at which point the CSV was 174.89 MB — **82% of
+`data/state/`'s 212.8 MB** — and the Parquet 7.29 MB carrying 5,405,929 rows. `data/state/` is now
+**37.9 MB**. The saving is larger than this ADR projected, because the projection counted only
+`join`: `scrape-plan` fetches `data/state/*` with the same wildcard, so the CSV rode the wire
+**twice** per run, roughly 11.7 GB/day across ~37 planned and ~30 joined runs a day.
+
+The eleven-day gap is itself the finding: a cleanup prescribed in an ADR, with an owner and a
+verified runbook, still did not happen, and nothing in the pipeline noticed. Written up in
+`docs/pipeline/2026-09-21_vestigial-pipeline-work-audit.md` §1, alongside eight more candidates.
 
 ## Verification
 
