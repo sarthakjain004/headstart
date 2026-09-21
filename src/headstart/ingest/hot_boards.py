@@ -301,8 +301,10 @@ def display_name(company: str, board: str) -> str:
     """A name a person can read, without inventing one.
 
     Four rows in five carry an ATS slug rather than a resolved company name (ADR-0114), and a
-    slug is very often a hostname — `www.amazon.jobs`, `careers.wipro.com` — which on a company
-    leaderboard reads as a bug. This drops the labels of a host that name the board or the
+    slug is very often a hostname — `careers.wipro.com`, `careers-inc.nttdata.com` — which on a
+    company leaderboard reads as a bug. (`www.amazon.jobs` was the stock example until the eight
+    Single source scrapers began declaring `BaseScraper.COMPANY`; they now arrive named, so this
+    function no longer has to rescue them.) This drops the labels of a host that name the board or the
     vendor and keeps the first that names the company.
 
     Picking the *first non-noise label* rather than the registrable domain is deliberate, and

@@ -89,8 +89,11 @@ through one pooled, thread-local `curl_cffi` client that impersonates Chrome, so
 serves plain JSON APIs and TLS-fingerprinted (Cloudflare / DataDome) boards alike (ADR-0002). A
 Board's `company` name is read off the board page itself where the ATS makes that possible
 (`ashby`, `eightfold`, `gem`, `jobvite`, `keka`, `lever`, `phenom`, `ripplehire`,
-`taleo_enterprise` — ADR-0114); every other ATS serves the **ATS slug** in that field instead, so
-a row's `company` may be either.
+`taleo_enterprise` — ADR-0114). The eight **Single source scrapers** above need no page fetch for
+it: one fixed company each, so the name is declared as `BaseScraper.COMPANY` and always served.
+Every *other* ATS serves the **ATS slug** in that field instead, so a row's `company` may be
+either — four served rows in five carry a slug rather than a name, which is why `CompanyPrefs` is
+keyed by **board_key** and never by company name.
 
 The liveness pipeline has probed **256,993 ledger rows**: 152,791 live, 88,111 dead, 16,091 unknown
 — rows, not boards; they collapse to 146,159 Unique Boards once duplicate spellings of the same

@@ -240,6 +240,28 @@ class BaseScraper(ABC):
     #: every other caller leaves it alone.
     have_details: Container[str] | None = None
 
+    #: The one company this Board belongs to, for a **Single source scraper** (ADR-0139) —
+    #: declared here rather than in the ledger, and left ``None`` by every multi-tenant ATS
+    #: (ADR-0172).
+    #:
+    #: The ledger cannot carry it. `load_active_companies` builds
+    #: ``CompanyRef(slug=scraper.slug_from(tenant, url), name=tenant)`` — so ``name`` is the raw
+    #: ``tenant`` column, whatever that happens to be, while ``slug`` goes through
+    #: :meth:`slug_from`. A Board whose tenant was recorded as a hostname therefore *displays* the
+    #: hostname: ``amazon``/``apple``/``google``/``tiktok``/``bytedance`` served
+    #: ``www.amazon.jobs`` and friends to the UI, 17,587 served tech rows between them.
+    #:
+    #: Renaming the tenant is not the fix. :meth:`slug_from` defaults to returning the tenant, and
+    #: those five do not override it, so a tenant of ``Amazon`` makes the slug ``Amazon``, changes
+    #: every :meth:`job_id`, and `index prune` evicts the Board's whole population as off-Board
+    #: (ADR-0023). ``meta``/``tesla`` could hold a name in that column only because they *do*
+    #: override :meth:`slug_from` to read the host out of ``url``.
+    #:
+    #: A declared name also needs no request, which is the point `meta` made in declining a
+    #: `company_name` pattern: :meth:`resolve_company` costs a page fetch per Board and buys
+    #: nothing where there is exactly one, known company.
+    COMPANY: str | None = None
+
     def __init__(
         self,
         slug: str,
@@ -247,7 +269,10 @@ class BaseScraper(ABC):
         fetcher: Fetcher | None = None,
     ) -> None:
         self.slug = slug
-        self.company = company or slug
+        # `COMPANY` outranks the ledger's name because a Single source scraper knows its own
+        # company at authorship time and the ledger's does not: that column doubles as the slug,
+        # so a Board discovered by hostname carries the hostname as its display name.
+        self.company = self.COMPANY or company or slug
         # The Fetcher seam (ADR-0153): every method below that used to reach `headstart.http`
         # as a module global now goes through this instead. Defaulting to `http.DEFAULT_FETCHER`
         # — resolved here, not as the parameter's own default value — means a caller that never
