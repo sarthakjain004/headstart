@@ -1,0 +1,249 @@
+  skip workday:kimberlyclark/XXX_APAC (not in the workday ledger)
+probing 239 board(s) with 12 workers
+
+  dead     ashby:backpack
+  dead     ashby:datastealth
+  dead     ashby:crunchbase
+  dead     ashby:conscious-talent
+  dead     ashby:coldstartventures
+  dead     ashby:clove
+  dead     ashby:bug-bounty-switzerland
+  dead     ashby:ableai
+  dead     ashby:atmos-financial
+  dead     ashby:bhblasted
+  dead     ashby:air
+  dead     ashby:calif
+  dead     ashby:echotwin
+  dead     ashby:general-context
+  dead     ashby:doxy.me
+  live     ashby:hex (2 jobs)
+  dead     ashby:lean
+  dead     ashby:goodship
+  dead     ashby:mobasi
+  dead     ashby:deposely
+  dead     ashby:iterable
+  dead     ashby:ernest
+  dead     ashby:infinite
+  dead     ashby:monsters
+  dead     ashby:phoebe
+  dead     ashby:roots-automation
+  dead     ashby:nen
+  dead     ashby:phare-r1-r37
+  dead     ashby:ona
+  dead     ashby:runloop
+  dead     ashby:parashift
+  dead     ashby:quantilehealth
+  dead     ashby:saturn
+  dead     ashby:rad-intel
+  dead     ashby:finvest
+  dead     ashby:skyscanner
+  dead     ashby:woflow
+  dead     ashby:squadformers
+  dead     ashby:vibecode
+  dead     greenhouse:algorium
+  dead     ashby:superhuman
+  dead     ashby:savvyinsurance-trellis
+  dead     greenhouse:adaptivewater
+  dead     ashby:shield-ai
+  dead     ashby:todyl
+  dead     ashby:vinci4d
+  live     ashby:sievo (2 jobs)
+  dead     greenhouse:bessemerventurepartnersfellows
+  dead     greenhouse:cardinalpoint
+  dead     greenhouse:berkadia
+  live     greenhouse:capitalize (3 jobs)
+  dead     greenhouse:alpineinternships-private
+  dead     greenhouse:casted
+  dead     greenhouse:buyersedgeplatformrecruiting
+  dead     greenhouse:cerebralgoogle
+  dead     greenhouse:bioskryb
+  dead     greenhouse:aztecgroup
+  dead     greenhouse:boston
+  dead     greenhouse:civilscienceweb
+  dead     greenhouse:cobo
+  dead     greenhouse:econocomint
+  dead     greenhouse:cker
+  dead     greenhouse:edume
+  dead     greenhouse:ebaka-games
+  dead     greenhouse:dmarket
+  dead     greenhouse:econocomnl
+  dead     greenhouse:clickhouse
+  dead     greenhouse:flaunt
+  dead     greenhouse:esusu
+  dead     greenhouse:fuzehealth
+  dead     greenhouse:cognitotherapeutics
+  dead     greenhouse:holder
+  dead     greenhouse:gocontact
+  dead     greenhouse:giantspoon
+  dead     greenhouse:hyphenconnect
+  dead     greenhouse:geniantllc
+  dead     greenhouse:instabase
+  dead     greenhouse:janeasystems
+  dead     greenhouse:heycar
+  dead     greenhouse:hiddenroad
+  dead     greenhouse:mqrecruitingevents
+  dead     greenhouse:liquidinstruments
+  dead     greenhouse:marqeta
+  dead     greenhouse:junglescout
+  dead     greenhouse:kca
+  dead     greenhouse:liminalbuild
+  dead     greenhouse:nauto
+  dead     greenhouse:postman
+  dead     greenhouse:ncjobs
+  dead     greenhouse:palaktakidsacademy
+  dead     greenhouse:meitu
+  dead     greenhouse:pvotaltechnologies
+  dead     greenhouse:preacher
+  dead     greenhouse:providencedig
+  dead     greenhouse:pti
+  dead     greenhouse:russett
+  dead     greenhouse:qualogy
+  dead     greenhouse:shyftsolutionsllc
+  dead     greenhouse:sisense
+  dead     greenhouse:sorcero
+  dead     greenhouse:sixthstreet
+  dead     greenhouse:softexpert
+  dead     greenhouse:halfbrickstudios
+  dead     greenhouse:trustedhealth
+  dead     greenhouse:regscale
+  dead     greenhouse:tlatechinc
+  dead     greenhouse:underdogfantasy
+  dead     greenhouse:stepmobile
+  dead     greenhouse:tecnoempleo
+  dead     greenhouse:temporaltechnologies
+  dead     greenhouse:vicarioussurgical
+  dead     greenhouse:warmer
+  dead     greenhouse:winholding
+  dead     greenhouse:whistlertrading
+  dead     greenhouse:worldlabs
+  dead     greenhouse:toogoodtogo
+  dead     greenhouse:truepill
+  dead     greenhouse:zylo
+  dead     greenhouse:vetto
+  dead     greenhouse:zenvia
+  dead     lever:connectly
+  dead     lever:dnc
+  dead     lever:daedalean
+  dead     lever:calstart
+  dead     lever:durin
+  dead     lever:menlovc
+  dead     lever:owner
+  dead     lever:rahr
+  dead     lever:elearningmind
+  dead     lever:ledger
+  dead     lever:sanctuary
+  dead     lever:sauvage-tv
+  dead     lever:sensortower
+  dead     lever:spaceback
+  dead     lever:stackblitz
+  dead     lever:zinier
+  dead     personio:a4g
+  [gate] jobs.personio.de banned us (429, bot-wall challenge, from a redirect off-host) — every board behind it short-circuits to UNKNOWN for 1800s
+  [gate] jobs.personio.com banned us (429, bot-wall challenge, from a redirect off-host) — every board behind it short-circuits to UNKNOWN for 1800s
+  unknown  personio:auxalia
+  unknown  personio:bto-consultora-digital-sl
+  unknown  personio:warchildnederland
+  unknown  personio:whe
+  unknown  personio:ddbm
+  unknown  personio:straight
+  unknown  personio:wos
+  unknown  personio:taros
+  unknown  personio:ketryx
+  live     phenom:careers.merckgroup.com (849 jobs)
+  dead     rippling:acretrader-jobs
+  dead     lever:healthmark-group
+  dead     rippling:etg
+  live     rippling:kindthread (52 jobs)
+  dead     recruitee:osalas
+  dead     recruitee:rsm
+  dead     recruitee:skmgroup
+  dead     rippling:smart-tech-contracting
+  dead     teamtailor:blueheartenergybv
+  dead     teamtailor:chatterbox-1590408089
+  dead     teamtailor:confirmasoftware
+  dead     teamtailor:emballatorvaxjo-1741355327
+  dead     teamtailor:hcswatertreatmentltd
+  dead     teamtailor:kiongroupnordics
+  dead     teamtailor:livihealthcare
+  dead     teamtailor:jvai
+  dead     teamtailor:palta
+  dead     teamtailor:nur
+  dead     teamtailor:psl
+  dead     teamtailor:rapidrecruitment-1728987335
+  dead     teamtailor:westregioncareers
+  dead     teamtailor:talentiagroup
+  dead     workable:cosmote-global-solutions-nv
+  dead     workable:delta-consulting-company
+  dead     trakstar:happyfactory
+  dead     trakstar:humach
+  live     zwayam:airbus.openings.co (23 jobs)
+  dead     greenhouse:vettoai
+  dead     workable:living-room-la
+  live     zwayam:adani.openings.co (1607 jobs)
+  live     zwayam:career.indianippon.com (54 jobs)
+  dead     trakstar:scishis
+  dead     workable:talent3600
+  live     zwayam:careers.dixitindia.com (52 jobs)
+  live     zwayam:career.crisil.com (665 jobs)
+  live     zwayam:careers.cyient.com (142 jobs)
+  live     zwayam:careers.coforge.com (106 jobs)
+  live     zwayam:careers.conneqtcorp.com (613 jobs)
+  live     zwayam:careers.eaplworld.com (1776 jobs)
+  live     zwayam:careers.exponentia.ai (30 jobs)
+  live     zwayam:bmwtechworks.openings.co (26 jobs)
+  dead     workable:thehrgame
+  live     zwayam:careers.mathco.com (46 jobs)
+  live     zwayam:careers.infoedge.com (296 jobs)
+  live     zwayam:careers.iftas.in (38 jobs)
+  live     zwayam:careers.in.ncs-i.com (49 jobs)
+  live     zwayam:careers.greyorange.com (87 jobs)
+  live     zwayam:careers.microland.com (1127 jobs)
+  live     zwayam:careers.infovision.com (28 jobs)
+  live     zwayam:careers.kohler.co.in (55 jobs)
+  live     zwayam:careers.tecnimont.in (88 jobs)
+  live     zwayam:careers.snapmint.com (46 jobs)
+  live     zwayam:careers.tavant.com (25 jobs)
+  live     zwayam:careers.synoptek.com (32 jobs)
+  live     zwayam:careers.rsystems.com (13 jobs)
+  live     zwayam:careers.persistent.com (706 jobs)
+  live     zwayam:careers.thesmartq.com (84 jobs)
+  live     zwayam:careers.sailssoftware.com (41 jobs)
+  live     zwayam:careers.newtonschool.co (94 jobs)
+  dead     trakstar:avaaz22194
+  live     zwayam:careers.unitedtechno.com (23 jobs)
+  dead     trakstar:cmed
+  live     zwayam:careers.tigeranalytics.com (105 jobs)
+  live     zwayam:careerscc.vit.ac.in (54 jobs)
+  dead     lever:unstructuredtechnologies
+  live     zwayam:epam.cluster3.openings.co (588 jobs)
+  live     zwayam:careers.torryharris.com (25 jobs)
+  live     zwayam:careers98765.sansera.in (91 jobs)
+  live     zwayam:carrier.openings.co (86 jobs)
+  live     zwayam:careers.vit.ac.in (88 jobs)
+  live     zwayam:impetus.openings.co (30 jobs)
+  live     zwayam:jobs.happiestminds.com (401 jobs)
+  live     zwayam:jobs.itcinfotech.com (355 jobs)
+  live     zwayam:hirefast.openings.co (584 jobs)
+  live     zwayam:naukriexpertassist.openings.co (106 jobs)
+  live     zwayam:puresoftware.openings.co (26 jobs)
+  live     zwayam:recruit.trianz.com (21 jobs)
+  live     zwayam:protribeglobalprivatelimited.openings.co (110 jobs)
+  live     zwayam:ra1.openings.co (413 jobs)
+  live     zwayam:source4hire.openings.co (75 jobs)
+  live     zwayam:hyundaimobisin.openings.co (74 jobs)
+  live     zwayam:jobs.qentelli.com (39 jobs)
+  live     zwayam:samsungenaindia.openings.co (59 jobs)
+  live     zwayam:stark-inc.openings.co (141 jobs)
+  live     zwayam:talentsst1.openings.co (52 jobs)
+  live     zwayam:infotalent.infocepts.com (32 jobs)
+  live     zwayam:trask.openings.co (228 jobs)
+  live     zwayam:spearheadtech.openings.co (38 jobs)
+  live     zwayam:venushrsolutionsprivatelimited.openings.co (152 jobs)
+  live     zwayam:verticalraisersindiapvtltd.openings.co (111 jobs)
+  live     zwayam:zywavesoftwareindiaprivatelimited.openings.co (30 jobs)
+  live     zwayam:visionetsystems.openings.co (38 jobs)
+
+239 probed: 167 dead, 63 live, 9 unknown
+-> experiment/quarantine-drain/artifacts/2026-09-21_reprobe-verdicts.csv
+
+Ledger not modified. Decide delisting separately from measuring.

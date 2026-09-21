@@ -152,6 +152,43 @@ belongs in the liveness ledger as `dead`, not in a quarantine set that is re-par
 (The sample the emitter prints is alphabetical and capped at 20, so it does not establish which ATS
 dominates — that needs the state file, not the log.)
 
+> **Correction, 2026-09-21 — the ledger does drain, it is not ~98% confirmed-gone, and the
+> promote-to-`dead` recommendation is withdrawn
+> ([ADR-0170](../adr/0170-a-provider-outage-is-not-a-gone-verdict.md)).**
+> Three claims above do not survive measurement against the state file and a live re-probe.
+>
+> **`0 cleared` is an undersampled rate, not a broken mechanism.** That field counts rows a
+> successful scrape cleared *in that run*. Of the 23 Boards ADR-0162's 2026-09-16 probe found
+> answering 200, **22 are gone from the ledger five days later** — ≈0.18 clears/run over ≈120 runs,
+> so a 10-run window reading 0 every time is the expected observation, not evidence that nothing
+> clears. Relatedly, "re-admits exactly 1 Board per run" is not a stuck mechanism either: parole
+> re-confirms every row weekly, so `now − last_seen_gone` is p50 4.6 d / max 7.5 d with 880 of 882
+> rows under a week, and only ~2 rows are parole-eligible at any instant.
+>
+> **The set is ~9% live, not ~98% confirmed-gone.** "At the terminal strike count" is a fact about
+> the counter, not about the Boards. A stratified re-probe through the liveness sweep's own
+> `check_liveness.PROBES` (n=239 of 882; all 80 Boards whose priority row was refreshed in the last
+> week, 60 of 204 older producers, 100 of 598 that never produced) returned **63 live / 167 dead /
+> 9 unverdictable**, which stratum-weights to **≈75 of 882 live right now**. Live share is 75.0% in
+> the recent-producer stratum against 1.7–2.0% in the other two, and **58 of the 63 are zwayam**: all
+> 59 zwayam rows sit at exactly 5 strikes, 55 share `2026-09-19T21:14:57`, all produced tech jobs
+> that same day, and 58 of 58 answer live today. That is one provider outage quarantining a whole
+> ATS at once, not 59 dead Boards — five consecutive scrapes is five *runs*, ≈5 hours at this
+> review's own measured cadence.
+>
+> **So "a 404 at 6 strikes belongs in the liveness ledger as `dead`" is withdrawn.** On today's
+> ledger it would delist those ≈75 live Boards; and because `dead` drops a Board from
+> `load_active_companies` it also drops from `index_plan.live_keep_set`, so the next
+> `index prune --apply` would evict every one of their served rows as off-Board. Liveness is
+> committed to git and only the offline probes write it, so the pipeline could not undo it.
+>
+> **What stands:** the set does grow net — arrivals outpace recoveries — and the standing cost is
+> real: 882 rows × one parole probe per 7 days ≈ **126 dead requests/day**, growing ≈ +25/day,
+> unbounded. A terminal drain is still wanted. What it needs first is a correlated-gone guard so a
+> provider outage never becomes a per-Board verdict, and that threshold cannot be fitted to the
+> single outage in this data. The alphabetical-cap caveat above was right, and reading the state
+> file is what found greenhouse (326) rather than ashby (173) dominating.
+
 ### 9. The re-derive queue is climbing (LOW-MEDIUM — watch)
 
 `update_meta`'s `queued to re-derive` over the window: 286, 308, 178, 169, 278, 391, 462, 633, 628.
