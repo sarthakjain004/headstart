@@ -249,7 +249,7 @@ def _migrate_employment_type_flags(table: Any) -> None:
 
 
 def _migrate_presence_flags(table: Any) -> None:
-    """Materialize two high-cost null checks on a table that predates ADR-0172."""
+    """Materialize two high-cost null checks on a table that predates ADR-0173."""
     missing = {}
     if _DESCRIPTION_STORED_FIELD.name not in table.schema.names:
         missing[_DESCRIPTION_STORED_FIELD.name] = "description IS NOT NULL"
@@ -261,7 +261,7 @@ def _migrate_presence_flags(table: Any) -> None:
 
 
 def _migrate_posted_at_comparable(table: Any) -> None:
-    """Materialize the posting-date shape guard on a table that predates ADR-0172."""
+    """Materialize the posting-date shape guard on a table that predates ADR-0173."""
     if _POSTED_AT_COMPARABLE_FIELD.name not in table.schema.names:
         _log.info(f"adding '{_POSTED_AT_COMPARABLE_FIELD.name}' to the existing table")
         table.add_columns(
@@ -270,7 +270,7 @@ def _migrate_posted_at_comparable(table: Any) -> None:
 
 
 def _migrate_experience_filter_flags(table: Any) -> None:
-    """Materialize the four facet ceilings on a table that predates ADR-0172."""
+    """Materialize the four facet ceilings on a table that predates ADR-0173."""
     missing = {
         experience_filter_column(ceiling): (
             f"min_years <= {ceiling} OR min_years IS NULL"

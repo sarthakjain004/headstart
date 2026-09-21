@@ -21,7 +21,7 @@ must label the number as matching *filters* rather than matching the query.
 
 **Cost.** Re-measured 2026-09-07 on the 318,003-row served table: one :meth:`count_rows` with a
 plain filter is 9–13 ms, and the full strip below is **46** of them. A description-scoped keyword
-adds its two coverage counts; no other request pays them (ADR-0172). The figure that matters is not
+adds its two coverage counts; no other request pays them (ADR-0173). The figure that matters is not
 the count alone: a count carrying the India clause was **353 ms**,
 so the strip's cost is dominated by whichever filter is active rather than by how many options it
 counts — see ADR-0024's 2026-09-06 amendment, which cut that clause from 267 ``LIKE``s to 10
