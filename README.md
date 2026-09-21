@@ -158,7 +158,7 @@ flowchart TB
         P2["<b>scrape</b><br/>≤15 VMs · 60m budget<br/>34 enabled scrapers → fragments"]
         P3["<b>join</b><br/>1 VM<br/>union · tech-filter · descriptions<br/>ledgers · plan embed"]
         P4["<b>embed</b><br/>≤15 VMs · 180m budget<br/>nomic on CPU → fragments"]
-        P5["<b>merge</b><br/>1 VM · single writer<br/>concat · meta refresh · sync · prune · index · trends · hot"]
+        P5["<b>merge</b><br/>1 VM · single writer<br/>concat · meta refresh · sync · prune · trends · hot · index"]
         P1 --> P2 --> P3 --> P4 --> P5
     end
 
@@ -393,10 +393,10 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
   as `python -m headstart.ingest.<module>` (ADR-0028): `scrape_plan`, `scrape_run`, `scrape_join`,
   `filter_tech`, `update_descriptions` (ADR-0050), `update_ledgers`
   (`priority`/`cost`/`failures`/`gap`), `embed_plan`, `embed_run`, `embed_merge`, `update_meta`
-  (ADR-0061), `index` (`sync`, `prune`, then `refresh-indexes`), `role_trends` (ADR-0040).
-  `.github/workflows/pipeline.yml` runs exactly these — every publication refreshes Search indexes
-  over its fresh Jobs (ADR-0174); `index compact` is a subcommand of the same module but belongs to
-  `cleanup-index`, not this run. Its pipeline-only helpers live here too:
+  (ADR-0061), `index` (`sync` and `prune`), `role_trends` (ADR-0040), then `index refresh-indexes`
+  immediately before LanceDB publication. `.github/workflows/pipeline.yml` runs exactly these —
+  every publication refreshes Search indexes over its fresh Jobs (ADR-0174); `index compact` is a
+  subcommand of the same module but belongs to `cleanup-index`, not this run. Its pipeline-only helpers live here too:
   `binpack.py` (LPT packing), `doc_prep.py`, `index_plan.py`, `shard_plan.py`, `shard_speedup.py`,
   `derived_meta.py`, `board_failures.py` (ADR-0058), `board_freshness.py`, `role_assignments.py`
   (ADR-0057), `observability.py`, `state_fetch.py`, `state_guard.py`, `state_witness.py`.
