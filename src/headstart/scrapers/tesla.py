@@ -246,6 +246,8 @@ def _job_url(job_id: str, title: str) -> str:
 class TeslaScraper(BaseScraper):
     """Tesla's own in-house careers system — a single-source ats (ADR-0139)."""
 
+    COMPANY = "Tesla"
+
     ats = "tesla"
     # single-source ats (ADR-0139) — one tenant, so the host is a literal, not a wildcard.
     # scraper builds f"{_SEARCH_URL}job/{title-slug}-{id}" (job_url below, via _job_url).

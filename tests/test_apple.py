@@ -57,11 +57,19 @@ def test_the_slug_is_fixed_regardless_of_input():
     assert scraper.board_key() == f"apple:{SLUG}"
 
 
-def test_company_defaults_to_apple_not_the_slug():
-    """A Single source scraper has exactly one company — hardcoded rather than resolved from a
-    scraped page title, unlike the multi-tenant ATSes' `resolve_company` path."""
+def test_company_is_apple_even_when_the_ledger_passes_a_hostname():
+    """A Single source scraper has exactly one company — declared as `BaseScraper.COMPANY` rather
+    than resolved from a scraped page title, unlike the multi-tenant ATSes' `resolve_company` path.
+
+    This used to assert the opposite for a passed name (`"Apple Inc."` outranking `"Apple"`), and
+    that rule is gone deliberately: the only caller that passes one is the pipeline, which passes
+    `CompanyRef.name` — and for a Board discovered by hostname that IS the hostname, so the
+    override fired on `jobs.apple.com` and served it to the UI. There is exactly one company here,
+    so nothing a caller supplies can be better informed than the class itself.
+    """
     assert get_scraper("apple", SLUG).company == "Apple"
-    assert get_scraper("apple", SLUG, "Apple Inc.").company == "Apple Inc."
+    assert get_scraper("apple", SLUG, SLUG).company == "Apple"
+    assert get_scraper("apple", SLUG, "Apple Inc.").company == "Apple"
 
 
 def test_alias_key_is_the_slug_itself():
