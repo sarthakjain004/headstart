@@ -1,0 +1,195 @@
+
+===== run 35569584172 head=96c0c70 — retries =====
+  sh         network   429-ratelimit             5xx        403-wall        405-wall    total  429/net    egress  (arrival order)
+   0             441              68             291               4               0      804     0.15      warp
+   5             132              30             278               6               0      446     0.23      warp
+   4             429             125             449               2               0     1005     0.29      warp
+   7             677             174             344              10               0     1205     0.26      warp
+   6             811             199             380               5               0     1395     0.25      warp
+   3             546             228             338              19               0     1131     0.42      warp
+   2             339             162             366               9               0      876     0.48      warp
+   1            1055             403             357               8               0     1823     0.38      warp
+   9              33              11             566               9               0      619     0.33      warp
+   8              49               4             979               4               0     1036     0.08      warp
+  12             261              60             402              19               0      742     0.23      warp
+  13               2             230             479               4               0      715   115.00    DIRECT !MISMATCH
+  11             111              32             411               1               0      555     0.29      warp
+  10             120              38             515               2               0      675     0.32      warp
+  14               3               7             506               0               0      516     2.33         ?
+   Σ            5009            1771            6661             102               0    13543
+  egress: 1/15 shards look DIRECT by retry ratio; 0/15 logged 'degrading to direct'
+  those shards spent 230 rate-limit retries against ~110 on a healthy shard — 120 excess
+  rotation activity (NOT health, ADR-0067/0081): 203 rotations, 203 wall events, 15 budgets spent
+
+===== run 35572417059 head=96c0c70 — retries =====
+  sh         network   429-ratelimit             5xx        403-wall        405-wall    total  429/net    egress  (arrival order)
+   0             752             118             356               3               0     1229     0.16      warp
+   1             234              79             439               5               0      757     0.34      warp
+   2             148              40             398               4               0      590     0.27      warp
+   4             186              40             773              10               0     1009     0.22      warp
+   5             171              61             688              13               0      933     0.36      warp
+   6             639             139             634               2               0     1414     0.22      warp
+   3             968             200             277               6               0     1451     0.21      warp
+   7             808             183             731               4               0     1726     0.23      warp
+   8             187              61             420               4               0      672     0.33      warp
+  11             167              38             558               2               0      765     0.23      warp
+   9             139              23             393               2               0      557     0.17      warp
+  12              53              16             775               5               0      849     0.30      warp
+  10             303             117             402               4               0      826     0.39      warp
+  14               3              18             444               6               0      471     6.00    DIRECT !MISMATCH
+  13             302             128             288               2               0      720     0.42      warp
+   Σ            5060            1261            7576              72               0    13969
+  egress: 1/15 shards look DIRECT by retry ratio; 0/15 logged 'degrading to direct'
+  those shards spent 18 rate-limit retries against ~89 on a healthy shard — -71 excess
+  rotation activity (NOT health, ADR-0067/0081): 184 rotations, 184 wall events, 18 budgets spent
+
+===== run 35575571888 head=96c0c70 — retries =====
+  sh         network   429-ratelimit             5xx        403-wall        405-wall    total  429/net    egress  (arrival order)
+   2             144              39             403              10               0      596     0.27      warp
+   7             318              96             393               6               0      813     0.30      warp
+   5             106              21             556               4               0      687     0.20      warp
+   4             245              97             524               6               0      872     0.40      warp
+   0             811             182             311               1               0     1305     0.22      warp
+   3             524             152             291              10               0      977     0.29      warp
+   6             489              56             682               4               0     1231     0.11      warp
+   1            1197             467             269               4               0     1937     0.39      warp
+   8             101              26             551               8               0      686     0.26      warp
+  10             612             130             489               2               0     1233     0.21      warp
+  12              86              45             639               2               0      772     0.52      warp
+  14             101              44             770               0               0      915     0.44      warp
+   9             478             178             639               6               0     1301     0.37      warp
+  11             459             330             833               6               0     1628     0.72      warp
+  13             293             183             386              10               0      872     0.62      warp
+   Σ            5964            2046            7736              79               0    15825
+  egress: 0/15 shards look DIRECT by retry ratio; 0/15 logged 'degrading to direct'
+  rotation activity (NOT health, ADR-0067/0081): 274 rotations, 274 wall events, 16 budgets spent
+
+===== run 35579899915 head=96c0c70 — retries =====
+  sh         network   429-ratelimit             5xx        403-wall        405-wall    total  429/net    egress  (arrival order)
+   7             613             115             446               2               0     1176     0.19      warp
+   0             421              88             260              10               0      779     0.21      warp
+   1             337             103             538               8               0      986     0.31      warp
+   4             519             168             481               2               0     1170     0.32      warp
+   6             156              49             494              21               0      720     0.31      warp
+   5             147              47             457               0               0      651     0.32      warp
+   2             916             299             421               4               0     1640     0.33      warp
+   3            1560             288             377               4               0     2229     0.18      warp
+   8              91              28             753               3               0      875     0.31      warp
+  10             209              54             529               4               0      796     0.26      warp
+  12             159             115             376               6               0      656     0.72      warp
+   9             102              32             635               4               0      773     0.31      warp
+  13               3              19             740               8               0      770     6.33    DIRECT !MISMATCH
+  11               3              15             486               4               0      508     5.00         ?
+  14             188             115             597               4               0      904     0.61      warp
+   Σ            5424            1535            7590              84               0    14633
+  egress: 1/15 shards look DIRECT by retry ratio; 0/15 logged 'degrading to direct'
+  those shards spent 19 rate-limit retries against ~108 on a healthy shard — -89 excess
+  rotation activity (NOT health, ADR-0067/0081): 205 rotations, 205 wall events, 16 budgets spent
+
+===== run 35583945947 head=96c0c70 — retries =====
+  sh         network   429-ratelimit             5xx        403-wall        405-wall    total  429/net    egress  (arrival order)
+   2             290             108             608              11               0     1017     0.37      warp
+   7             886             176             379               6               0     1447     0.20      warp
+   1             178              69             523               3               0      773     0.39      warp
+   6             543             133             462               2               0     1140     0.24      warp
+   3            1032             296             279               0               0     1607     0.29      warp
+   5             299              36             710               3               0     1048     0.12      warp
+   0             301              51             452               9               0      813     0.17      warp
+   4             175              34             554               6               1      770     0.19      warp
+   8             151              51             404               8               0      614     0.34      warp
+   9             144              35             485              12               0      676     0.24      warp
+  10              62              90             539               4               0      695     1.45         ?
+  11              68              24             381              16               0      489     0.35      warp
+  13              73              31             591               4               0      699     0.42      warp
+  14             176              82             524               2               0      784     0.47      warp
+  12             213              73             638               6               0      930     0.34      warp
+   Σ            4591            1289            7529              92               1    13502
+  egress: 0/15 shards look DIRECT by retry ratio; 0/15 logged 'degrading to direct'
+  rotation activity (NOT health, ADR-0067/0081): 167 rotations, 167 wall events, 16 budgets spent
+
+===== run 35587348049 head=96c0c70 — retries =====
+  sh         network   429-ratelimit             5xx        403-wall        405-wall    total  429/net    egress  (arrival order)
+   4             256              90             433               7               0      786     0.35      warp
+   2             460             118             388               7               0      973     0.26      warp
+   0               2              17             428               4               0      451     8.50    DIRECT !MISMATCH
+   7             181              43             538               3               0      765     0.24      warp
+   6             153              40             657               2               0      852     0.26      warp
+   5             105              32             541              12               0      690     0.30      warp
+   3             253              98             436               2               0      789     0.39      warp
+   1             375              52             545               4               0      976     0.14      warp
+   8             362              84             499               2               0      947     0.23      warp
+  12             257              74             557               2               0      890     0.29      warp
+  10             346              42             425              14               0      827     0.12      warp
+  11              77              22             607              11               0      717     0.29      warp
+  14             240              30             750               0               0     1020     0.12      warp
+  13               2              20             566               6               0      594    10.00    DIRECT !MISMATCH
+   9              34              23             565               4               0      626     0.68      warp
+   Σ            3103             785            7935              80               0    11903
+  egress: 2/15 shards look DIRECT by retry ratio; 0/15 logged 'degrading to direct'
+  those shards spent 37 rate-limit retries against ~58 on a healthy shard — -78 excess
+  rotation activity (NOT health, ADR-0067/0081): 115 rotations, 115 wall events, 17 budgets spent
+
+===== run 35590192500 head=96c0c70 — retries =====
+  sh         network   429-ratelimit             5xx        403-wall        405-wall    total  429/net    egress  (arrival order)
+   2             503             115             390              12               0     1020     0.23      warp
+   7              11              23             489               6               0      529     2.09         ?
+   4             539             113             494              10               0     1156     0.21      warp
+   6             176              45             599               3               0      823     0.26      warp
+   5               5               5             474               0               0      484     1.00         ?
+   1             315             137             411               4               0      867     0.43      warp
+   3             472              82             670               3               1     1228     0.17      warp
+   0            1030             198             265               3               0     1496     0.19      warp
+   8             325             113             445               2               0      885     0.35      warp
+   9             252              79             358               2               0      691     0.31      warp
+  10              11             473             551               4               0     1039    43.00    DIRECT !MISMATCH
+  11              31              29             497               4               0      561     0.94      warp
+  14               0              20             387               2               0      409      inf    DIRECT !MISMATCH
+  13             108              32             695              10               0      845     0.30      warp
+  12               1              18             739               6               0      764    18.00    DIRECT !MISMATCH
+   Σ            3779            1482            7464              71               1    12797
+  egress: 3/15 shards look DIRECT by retry ratio; 0/15 logged 'degrading to direct'
+  those shards spent 511 rate-limit retries against ~81 on a healthy shard — 268 excess
+  rotation activity (NOT health, ADR-0067/0081): 134 rotations, 134 wall events, 16 budgets spent
+
+===== run 35592873553 head=96c0c70 — retries =====
+  sh         network   429-ratelimit             5xx        403-wall        405-wall    total  429/net    egress  (arrival order)
+   0             170              81             455               6               0      712     0.48      warp
+   7             519             187             424               7               0     1137     0.36      warp
+   2             545             148             481              11               0     1185     0.27      warp
+   4             292              55             585               4               0      936     0.19      warp
+   6             935             216             360               3               0     1514     0.23      warp
+   3             570             151             294               6               0     1021     0.26      warp
+   1              23               0             430               6               0      459     0.00      warp
+   5             515             122             536               6               0     1179     0.24      warp
+   8              33              23             758              10               0      824     0.70      warp
+  13               2              15             621               9               0      647     7.50    DIRECT !MISMATCH
+  11             162              67             548               0               0      777     0.41      warp
+  10              88              32             643               4               0      767     0.36      warp
+   9             135              33             546               1               0      715     0.24      warp
+  12              11              42             583               0               0      636     3.82         ?
+  14             276              88             550               7               1      922     0.32      warp
+   Σ            4276            1260            7814              80               1    13431
+  egress: 1/15 shards look DIRECT by retry ratio; 0/15 logged 'degrading to direct'
+  those shards spent 15 rate-limit retries against ~89 on a healthy shard — -74 excess
+  rotation activity (NOT health, ADR-0067/0081): 149 rotations, 149 wall events, 16 budgets spent
+
+===== run 35595828212 head=96c0c70 — retries =====
+  sh         network   429-ratelimit             5xx        403-wall        405-wall    total  429/net    egress  (arrival order)
+   7             287             227             591               6               0     1111     0.79      warp
+   5             506             251             421               6               0     1184     0.50      warp
+   3             464             145             457               6               0     1072     0.31      warp
+   0             583             153             341               8               0     1085     0.26      warp
+   4             654             141             547               2               0     1344     0.22      warp
+   1             348              88             744              18               0     1198     0.25      warp
+   2             293              66             419               3               0      781     0.23      warp
+   6              92              25             547               2               0      666     0.27      warp
+   9             306              56             661               4               1     1028     0.18      warp
+  10             115              29             599               6               0      749     0.25      warp
+  12              79              35             506               2               0      622     0.44      warp
+  14              39              17             600               0               0      656     0.44      warp
+   8             210             159             460               6               0      835     0.76      warp
+  11             156              54             653               0               0      863     0.35      warp
+  13              41              18             513               6               0      578     0.44      warp
+   Σ            4173            1464            8059              75               1    13772
+  egress: 0/15 shards look DIRECT by retry ratio; 0/15 logged 'degrading to direct'
+  rotation activity (NOT health, ADR-0067/0081): 169 rotations, 169 wall events, 17 budgets spent
