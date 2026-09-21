@@ -159,6 +159,28 @@ test('late facets cannot replace newer counts or release an old search render', 
   assert.ok(!nodes.results.innerHTML.includes('OLD'));
 });
 
+test('search rows paint before a slow facet count finishes', async () => {
+  let resolveFacets;
+  const { nodes, t } = loadApp(url => {
+    const q = qs(url).q;
+    if (url.startsWith('/facets?') && q === 'measured') {
+      return new Promise(resolve => { resolveFacets = resolve; });
+    }
+    if (url.startsWith('/facets?')) return { total: 1, facets: {} };
+    return url.startsWith('/search?') ? [job(q || 'initial', { title: (q || 'initial').toUpperCase() })] : [];
+  });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  set(nodes, 'q', 'measured');
+  const pending = t.go();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.ok(nodes.results.innerHTML.includes('MEASURED'));
+  assert.strictEqual(nodes.n.textContent, '1 result');
+
+  resolveFacets({ total: 42, facets: {} });
+  await pending;
+  assert.ok(nodes.n.textContent.includes('of 42 matching your filters'));
+});
+
 test('deleting a Saved set invalidates its in-flight matches', async () => {
   let resolveOld, sets = [{ id: 'old', name: 'old', query: 'old' }];
   const { nodes, t } = loadApp(url => {
@@ -295,7 +317,7 @@ test('a keyword is sent, and its scope only when it is not the default', async (
   assert.equal(q.kw, 'kubernetes');
   assert.equal(q.kw_in, undefined);           // default scope: omitted, the server assumes it
   fetches.length = 0;
-  set(nodes, 'kwin', 'description');
+  set(nodes, 'kw', 'rust'); set(nodes, 'kwin', 'description');
   await t.go();
   q = lastSearch();
   assert.equal(q.kw_in, 'description');
@@ -309,9 +331,18 @@ test('the disclaimer is silent for the title scope', async () => {
   assert.equal(nodes.kwnote.textContent, '');
 });
 
+test('a description scope with no keyword asks and says nothing', async () => {
+  const { nodes, t } = loadApp(url => url.startsWith('/facets')
+    ? { total: 12, facets: {}, blocking: null, description_coverage: null } : [], SCOPES);
+  set(nodes, 'kw', ''); set(nodes, 'kwin', 'description');
+  await t.go();
+  assert.equal(nodes.kwnote.textContent, '');
+});
+
 test('a description-bearing scope shows the coverage against the other filters\' total, not the header\'s', async () => {
   const { nodes, t } = loadApp(url => url.startsWith('/facets')
     ? { total: 12, facets: {}, blocking: null, description_coverage: { covered: 42, total: 100 } } : [], SCOPES);
+  set(nodes, 'kw', 'rust');
   for (const scope of ['description', 'both']){       // both come from the map, not a name
     set(nodes, 'kwin', scope);
     await t.go();
@@ -324,7 +355,7 @@ test('a description-bearing scope shows the coverage against the other filters\'
 test('a null coverage means the column does not exist yet, not zero', async () => {
   const { nodes, t } = loadApp(url => url.startsWith('/facets')
     ? { total: 12, facets: {}, blocking: null, description_coverage: null } : [], SCOPES);
-  set(nodes, 'kwin', 'description');
+  set(nodes, 'kw', 'rust'); set(nodes, 'kwin', 'description');
   await t.go();
   assert.match(nodes.kwnote.textContent, /isn't available yet/);
   assert.doesNotMatch(nodes.kwnote.textContent, /0 of/);
@@ -337,7 +368,7 @@ test('a failed /facets replaces a stale note with the plain fact, never leaves t
     if (!facetsOk) throw new Error('down');       // .catch(() => null) in fetchPage
     return { total: 12, facets: {}, blocking: null, description_coverage: { covered: 42, total: 100 } };
   }, SCOPES);
-  set(nodes, 'kwin', 'description');
+  set(nodes, 'kw', 'rust'); set(nodes, 'kwin', 'description');
   await t.go();
   assert.match(nodes.kwnote.textContent, /42 of the 100/);
   facetsOk = false;
