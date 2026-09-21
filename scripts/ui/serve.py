@@ -11,6 +11,7 @@ Run:  python scripts/ui/serve.py    then open  http://localhost:8000
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import lancedb
@@ -31,6 +32,12 @@ _REPO = Path(__file__).resolve().parents[2]
 # the same headstart/ui regardless of whether headstart is this repo's src/ or the Space
 # image's copy of it.
 _UI = Path(headstart.__file__).parent / "ui"
+
+# The hot list is a plain artifact with no secret behind it, so unlike trends it renders here
+# whenever a local pipeline run (or a pull) has left one — which is what makes the tab
+# reviewable without deploying.
+_HOT_PATH = _REPO / "data" / "state" / "hot_boards.json"
+_HOT = json.loads(_HOT_PATH.read_text(encoding="utf-8")) if _HOT_PATH.exists() else {}
 
 print("loading model + index ...", flush=True)
 _model = load_encoder()
@@ -112,6 +119,7 @@ def index():
         keyword_default_scope=KEYWORD_DEFAULT_SCOPE,
         has_description=_searcher.has_description,
         trends_on=False,
+        hot_on=bool(_HOT),
         alerts_on=False,
         sets_on=False,
         saved_on=False,
@@ -124,6 +132,14 @@ def index():
 def coverage():
     """The Data tab's live counts (ADR-0113) — the Space route's local twin."""
     return jsonify(_searcher.coverage())
+
+
+@app.route("/hot")
+def hot_companies():
+    """Mirror of the Space's route, so the tab is reviewable locally (ADR-0042)."""
+    if not _HOT:
+        return jsonify({"error": "no hot list built locally"}), 503
+    return jsonify(_HOT)
 
 
 @app.route("/search")

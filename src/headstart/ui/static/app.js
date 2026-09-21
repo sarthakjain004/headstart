@@ -19,6 +19,7 @@ function showTab(name){
   document.querySelectorAll('.panel').forEach(p => { p.hidden = p.id !== 'panel-' + name; });
   document.querySelectorAll('.tabs [data-tab]').forEach(a =>
     a.setAttribute('aria-current', a.dataset.tab === name ? 'page' : 'false'));
+  if (name === 'hot' && el('hot-results') && !hotData) loadHot();
   if (name === 'trends' && el('trends') && !trendData) loadTrends(null);
   if (name === 'matches' && el('sets-strip')){
     if (!mySets) loadSets();
@@ -2563,6 +2564,126 @@ if (el('matches-controls')){
     rerun();
   });
 }
+
+/* ---- "Hiring now" (hot_boards): a pre-ranked leaderboard of the Boards opening roles.
+
+   The whole artifact arrives in one fetch — three lenses of at most 100 rows — so switching
+   lens or revealing staffing firms is a re-render, never a round trip. It is a pipeline
+   product read from a static file, so it is fetched once per visit and not re-polled. ---- */
+let hotData = null;
+
+const HOT_OPERATOR = {
+  services: { label: 'staffing / services', hint: 'This board belongs to an IT services or staffing firm, so most roles are placements with its clients rather than jobs at the company itself.' },
+  aggregator: { label: 'job board', hint: 'This board re-posts other companies’ jobs. The employer behind a given role is somebody else.' },
+};
+
+async function loadHot(){
+  el('hot-msg').textContent = 'Loading…';
+  try{
+    const r = await fetch('/hot');
+    if (!r.ok){
+      // 503 is "no run has written one", which is a different thing from a failure and is the
+      // only case the tab can be opened in without data.
+      el('hot-msg').textContent = r.status === 503
+        ? 'No ranking yet — the next pipeline run will build one.'
+        : 'Couldn’t load the ranking.';
+      return;
+    }
+    hotData = await r.json();
+  }catch(e){ el('hot-msg').textContent = 'Couldn’t load the ranking.'; return; }
+  el('hot-msg').textContent = '';
+  drawHotProvenance();
+  drawHot();
+}
+
+function hotLens(){
+  const picked = document.querySelector('input[name="hot-lens"]:checked');
+  return picked ? picked.value : 'expansion';
+}
+
+/* The number that *is* the ranking, per lens, plus how to say it. Each lens leads with its own
+   measure and prints the other two small, so a row can be read against the question that
+   ordered it rather than a single column that means something different on each tab. */
+const HOT_MEASURE = {
+  expansion: r => ({ big: (r.net > 0 ? '+' : '') + r.net, unit: 'net roles', sub:
+    `${r.new7} opened this week · ${r.stock} open now` }),
+  volume:    r => ({ big: String(r.new7), unit: 'opened this week', sub:
+    `${r.stock} open now · ${r.net >= 0 ? '+' : ''}${r.net} net` }),
+  rate:      r => ({ big: r.rate + '%', unit: 'of its board is new', sub:
+    `${r.new7} opened this week · ${r.stock} open now` }),
+};
+
+function drawHot(){
+  if (!hotData) return;
+  const lens = hotLens();
+  const showAll = el('hot-show-all').checked;
+  const all = hotData.lenses[lens] || [];
+  const rows = showAll ? all : all.filter(r => r.operator === 'employer');
+  const hiddenCount = all.length - rows.length;
+
+  el('hot-filtered').textContent = hiddenCount
+    ? `${hiddenCount} staffing ${hiddenCount === 1 ? 'firm or job board' : 'firms and job boards'} hidden`
+    : (showAll ? '' : 'nothing filtered on this view');
+
+  if (!rows.length){
+    el('hot-results').innerHTML =
+      '<li class="hot-empty">Nothing qualified on this view. Try another measure, or show staffing firms.</li>';
+    return;
+  }
+  el('hot-results').innerHTML = rows.map((r, i) => hotRow(r, i, lens)).join('');
+}
+
+function hotRow(r, i, lens){
+  const m = HOT_MEASURE[lens](r);
+  const op = HOT_OPERATOR[r.operator];
+  // The rank is decorative — the list is already ordered and screen readers announce <ol>
+  // position — so it is hidden from the accessibility tree rather than read out twice.
+  return `
+    <li class="hot-row${op ? ' flagged' : ''}" style="animation-delay:${Math.min(i,12)*30}ms">
+      <span class="hot-rank" aria-hidden="true">${i + 1}</span>
+      <div class="hot-who">
+        <div class="hot-name">${esc(r.company)}</div>
+        <div class="hot-tags">
+          <span class="src" title="Read directly from this company’s ${esc(r.ats)} board">via ${esc(r.ats)}</span>
+          ${op ? `<span class="tag flag" title="${esc(op.hint)}">${esc(op.label)}</span>` : ''}
+        </div>
+      </div>
+      <div class="hot-measure">
+        <b>${esc(m.big)}</b>
+        <span class="hot-unit">${esc(m.unit)}</span>
+        <span class="hot-sub">${esc(m.sub)}</span>
+      </div>
+      <button class="ghost hot-see" data-company="${esc(r.company)}">See roles</button>
+    </li>`;
+}
+
+function drawHotProvenance(){
+  const w = hotData.window || {}, x = hotData.excluded || {};
+  const day = s => (s || '').slice(0, 10);
+  el('hot-provenance').textContent =
+    `Measured ${day(w.from)} to ${day(w.to)}. ${x.ranked ?? 0} companies ranked; ` +
+    `${x.below_min_stock ?? 0} with fewer than 25 open roles and ${x.newly_discovered ?? 0} ` +
+    `boards we had only just discovered were left out.`;
+}
+
+/* One delegated listener for the whole panel, like the sets strip — never an inline handler
+   with an interpolated company name in it. */
+if (el('hot-results')){
+  document.querySelectorAll('input[name="hot-lens"]').forEach(input =>
+    input.addEventListener('change', drawHot));
+  el('hot-show-all').addEventListener('change', drawHot);
+  el('hot-results').addEventListener('click', ev => {
+    const btn = ev.target.closest('.hot-see');
+    if (!btn) return;
+    // Hand the company to Search rather than filtering here: Search already owns the filter
+    // vocabulary, the ranking and the job card, and a second place that lists jobs would be a
+    // second place to keep them consistent.
+    el('company').value = btn.dataset.company;
+    location.hash = '#search';
+    go();
+  });
+}
+
 try { applyDensity(!!localStorage.getItem(DENSITY_KEY)); } catch(e){ applyDensity(false); }
 go();   // an empty query browses the newest jobs (ADR-0074) — the Search tab is never empty
 whoAmI();

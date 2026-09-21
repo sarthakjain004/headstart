@@ -390,7 +390,9 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   store, after the tech filter and before `embed_plan`), `update_ledgers` (four subcommands, invoked in
   this order: `priority`, `cost`, `failures`, `gap`), `embed_plan`, `embed_run`, `embed_merge`, `update_meta` (the ADR-0061
   metadata refresh, after the merge and before `sync`), `index` (`sync` then `prune --apply`),
-  `role_trends` (the ADR-0040 trends ledger, after prune). `index compact` is a subcommand of the
+  `role_trends` (the ADR-0040 trends ledger, after prune), `hot_boards` (the actively-hiring
+  ranking the "Hiring now" tab serves, strictly after `role_trends` because it reads that
+  stage's Board-count snapshot and delta ledger). `index compact` is a subcommand of the
   same module but is **not** part of this run — it moved to the `cleanup-index` workflow, because
   rewriting the whole table once per run is what the storage budget cannot afford.
   One more entry point is not a stage but opens three of them: `state_fetch` (ADR-0030) pulls each
@@ -400,7 +402,8 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   HF's collection, which is how the 100 GB quota filled on 2026-09-18.
   If you change what the pipeline runs, change it there and update `.github/workflows/pipeline.yml`
   to match. Don't add a pipeline stage to `scripts/`. Helper modules used *only* by the pipeline
-  live there too (`binpack`, `board_failures`, `derived_meta`, `doc_prep`, `index_plan`,
+  live there too (`binpack`, `board_failures`, `board_operator`, `derived_meta`, `doc_prep`,
+  `index_plan`,
   `observability`, `role_assignments`, `shard_plan`, `shard_speedup`, `trends_epochs`) — with
   one deliberate exception: `alerts/run.py` imports `observability.named_sample` to bound its
   post-loop summary, which keeps one sampling contract

@@ -1049,3 +1049,68 @@ textarea:focus{ border-color:var(--accent); }
   margin-right:2px; }
 .cov-txt .aside{ margin-top:2px; }
 @media (max-width:520px){ .cov-row{ grid-template-columns:48px 1fr; gap:10px; } }
+
+/* ---- "Hiring now" (hot_boards) ------------------------------------------------------------
+   A leaderboard, so the row is a grid with the ranking number in its own column: the measure
+   is the thing being compared and it stays on one right-aligned axis down the list, which is
+   the only reason a ranked list reads faster than the same rows unranked. Every value here is
+   a token — this panel introduces no colour of its own. */
+.hot-head{ display:flex; align-items:baseline; gap:12px; margin:0 0 14px; }
+.hot-head h2{ margin:0; font:700 19px var(--sans); }
+
+/* The lens is the question, not a sort order, so each option states its own measure under its
+   name. Three labelled radios rather than a dropdown: the lists barely overlap, and a reader
+   who cannot see all three options cannot tell that choosing between them matters. */
+.hot-lenses{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
+.hot-lenses .lens{ flex:1 1 190px; display:flex; flex-direction:column; gap:2px;
+  padding:11px 14px; min-height:44px; border:1px solid var(--rule); border-radius:var(--r-lg);
+  background:var(--raise); cursor:pointer; transition:border-color var(--step), background var(--step); }
+.hot-lenses .lens:hover{ background:var(--raise-2); }
+.hot-lenses .lens input{ position:absolute; opacity:0; pointer-events:none; }
+.hot-lenses .lens:has(input:checked){ border-color:var(--accent);
+  background:color-mix(in srgb, var(--accent) 10%, transparent); }
+/* The focus ring rides the label, since the input itself is visually hidden — without this the
+   keyboard user gets no indication at all of where they are in the group. */
+.hot-lenses .lens:has(input:focus-visible){ outline:2px solid var(--accent); outline-offset:2px; }
+.lens-name{ font:600 13.5px var(--sans); color:var(--ink); }
+.lens-why{ font:400 11.5px var(--sans); color:var(--ink-3); }
+
+.hot-controls{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:12px; }
+.hot-controls .switch{ display:inline-flex; align-items:center; gap:8px; min-height:44px;
+  font:500 12.5px var(--sans); color:var(--ink-2); cursor:pointer; }
+
+.hot-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
+.hot-row{ display:grid; grid-template-columns:34px 1fr auto auto; align-items:center; gap:0 16px;
+  padding:12px 16px; border:1px solid var(--rule); border-radius:var(--r-lg);
+  background:var(--raise); animation:rise .28s both; }
+.hot-row:hover{ border-color:var(--rule-2); }
+/* A flagged row is kept legible, not greyed out: it is hidden by default, so anyone seeing it
+   has asked for it and should be able to read it. */
+.hot-row.flagged{ background:var(--raise-2); }
+.hot-rank{ font:600 13px var(--mono); font-variant-numeric:tabular-nums; color:var(--ink-3);
+  text-align:right; }
+.hot-name{ font:600 14.5px var(--sans); color:var(--ink); }
+.hot-tags{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:5px; }
+.hot-tags .src{ font:500 11px var(--sans); color:var(--ink-3); }
+/* The label never carries the meaning in colour alone — it says "staffing / services" in
+   words, and the tint is only there to make it findable while scanning. */
+.tag.flag{ background:color-mix(in srgb, var(--alert) 14%, transparent); color:var(--alert);
+  border-color:color-mix(in srgb, var(--alert) 34%, transparent); }
+.hot-measure{ display:flex; flex-direction:column; align-items:flex-end; gap:1px; text-align:right; }
+.hot-measure b{ font:700 17px var(--mono); font-variant-numeric:tabular-nums; color:var(--ink); }
+.hot-unit{ font:500 11px var(--sans); color:var(--ink-2); }
+.hot-sub{ font:400 11px var(--sans); color:var(--ink-3); }
+.hot-see{ padding:8px 14px; min-height:44px; font-size:12.5px; }
+.hot-empty{ padding:22px 16px; border:1px dashed var(--rule); border-radius:var(--r-lg);
+  color:var(--ink-2); font-size:13px; text-align:center; }
+
+/* Phone: the four-column grid becomes two rows, because a leaderboard that scrolls sideways
+   cannot be scanned at all (ux: Responsive / Table Handling). The rank leaves the flow — the
+   ordered list still conveys position — and the action goes full width so it stays tappable. */
+@media (max-width:640px){
+  .hot-row{ grid-template-columns:1fr auto; gap:10px 12px; }
+  .hot-rank{ display:none; }
+  .hot-measure{ align-items:flex-end; }
+  .hot-see{ grid-column:1 / -1; width:100%; }
+}
+@media (prefers-reduced-motion:reduce){ .hot-row{ animation:none; } }

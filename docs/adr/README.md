@@ -169,3 +169,4 @@ supersedes it and note the supersession in both.
 | [0167](0167-a-scraper-may-decline-the-multiplexed-path.md) | A scraper may decline the multiplexed path, on a measurement | 2026-09-17 |
 | [0168](0168-delete-the-orphaned-blobs-dont-ask-for-them-to-be-collected.md) | Delete the orphaned blobs, don't ask for them to be collected | 2026-09-18 |
 | [0169](0169-an-empty-page-ends-an-oracle-board-totaljobscount-does-not.md) | An empty page ends an Oracle Board; `TotalJobsCount` does not | 2026-09-21 |
+| [0171](0171-the-hot-tab-curates-what-it-shows-not-the-whole-index.md) | The Hot tab curates what it shows, not the whole index | 2026-09-21 |

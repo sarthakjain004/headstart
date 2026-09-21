@@ -38,6 +38,14 @@ _Avoid_: conflating with **Board** itself — a Board is the thing (one company'
 ATS); a board_key is only its string name. Before ADR-0155 five call sites each computed that
 string independently, with three different opinions about a slug that wouldn't parse.
 
+**Operator** (ADR-0171):
+Who runs a Board — the `employer` itself, a `services` firm (IT services, consulting, staffing, BPO) placing people with its clients, or an `aggregator` re-posting other companies' postings. A curated label (`ingest/board_operator.py`) applied only to the Boards the Hot list displays, never a property of every Board: the measurement behind it says no cheap rule separates a services firm from an employer (F1 52.7, and it demotes Cerebras).
+_Avoid_: reading `services` as a judgement on the company — Capgemini employs its own engineers; the label says its postings are client placements, which is a different thing for a job hunter.
+
+**Lens** (ADR-0171):
+One of the three questions "actively hiring" can mean, each ranking the same Boards differently: **Expansion** (net change in open roles — who is growing), **Volume** (roles opened in the rolling 7-day window), **Rate** (that count as a share of the Board's open roles). Amazon opened 1,396 roles in one measured week at a net change of −3, which is why these are three lenses and not one number.
+_Avoid_: "hot" as a measure — it names the tab, never a value.
+
 **Careers page**:
 A company's own web page that links to or embeds its Board; the input to careers-page discovery, distinct from the Board itself.
 
