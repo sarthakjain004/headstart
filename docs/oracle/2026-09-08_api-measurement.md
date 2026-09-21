@@ -147,6 +147,19 @@ therefore had zero headroom and still truncated `egjl` falsely. Two keeps every 
 reported by a wide mark: `etud` 89 of 114 in a single page, `egud` 10,000 of 11,056, `ejwl`
 9,926 of 13,429.
 
+> **Correction, 2026-09-21 — `etud` was not a loss, and `_SLACK_PER_PAGE` is gone
+> ([ADR-0169](../adr/0169-an-empty-page-ends-an-oracle-board-totaljobscount-does-not.md)).**
+> The paragraph above splits its examples into "benign" (`elfw`, `fa-eomf`, `egjl`) and "measured
+> loss" (`etud`) on the *size* of the gap. Re-probed live, `etud.fa.us8` states 123 and serves 98,
+> and the boundary-shifted re-walk this doc used to clear `egjl` clears `etud` too: an exhaustive
+> sweep of every 200-row offset window up to the stated total returns those same 98 ids and no
+> others. Repeated across **16 Boards** stating 123–6,786 rows — every one below the API's
+> 10,000-offset ceiling, past which a sweep cannot look either — the ordinary walk lost **zero**
+> rows on every one. So the gap's size carries no information about loss, no per-page constant can
+> separate the two classes, and the sub-ceiling comparison has been removed rather than retuned.
+> `egud` and `ejwl` remain genuine — both are the **offset ceiling**, which is reported by its own
+> clause and is unaffected.
+
 **The ceiling is reported whatever the slack says**, and that is a separate clause rather than a
 bigger number on purpose. A Board stating 10,001-10,102 reads exactly 10,000, and 51 pages of
 allowance would swallow the gap — a knowingly short list served as whole, which is the one thing

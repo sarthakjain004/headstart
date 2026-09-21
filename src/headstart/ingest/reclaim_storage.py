@@ -20,8 +20,10 @@ The reclaim step had reported success on every one of those runs, because it pri
 
 The margin was one day wide and the old design did not know it. The run rewrites
 ``embeddings.f32`` (2.71 GB) and ``meta.jsonl`` (0.577 GB) **wholesale**, ~3.31 GB of new blobs per
-run at ~30 runs/day: the repo generates its entire 100 GB quota in dead weight every 24 hours, so
-the maximum tolerable collection lag was ~24h for a process with no SLA and no signal.
+run at ~38.6 runs/day (re-measured over the 99 runs in the 2.57 days to 2026-09-21; median
+start-to-start 34.6 min, against the ~30 runs/day this first cited): the repo generates **~128 GB**
+of dead weight a day against a 100 GB quota, so the maximum tolerable collection lag is **~19h**
+for a process with no SLA and no signal.
 
 So delete the blobs outright (:func:`~huggingface_hub.HfApi.permanently_delete_lfs_files`) rather
 than asking for them to be collected, and **verify the number moved**. Three invariants, because
