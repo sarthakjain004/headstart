@@ -2,6 +2,11 @@
 
 **Status:** accepted · **Date:** 2026-09-16 · **Amends:**
 [ADR-0058](0058-consecutive-gone-quarantine.md) (the consecutive-gone ledger this drains) ·
+**Amended by:** [ADR-0170](0170-a-provider-outage-is-not-a-gone-verdict.md) (parole is confirmed
+working — 22 of the 23 Boards measured live below are gone from the ledger five days later — and
+stays the *only* drain; but the **3.0% live** figure here is superseded, and so is the method that
+produced it: one unstratified sweep averaged a 75%-live stratum into a 2%-live one, and hid a
+whole provider at 58/58 live) ·
 **Relates to:** [ADR-0064](0064-a-boards-hour-must-buy-tech-jobs.md) (the same "expire the evidence"
 move, at a cadence set by a cost three orders of magnitude larger),
 [ADR-0083](0083-evict-only-on-a-second-consecutive-absence.md) (one absence is not a verdict)

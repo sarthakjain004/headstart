@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml)
 [![pipeline](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml)
-[![ADRs](https://img.shields.io/badge/ADRs-160-blue)](./docs/adr/)
+[![ADRs](https://img.shields.io/badge/ADRs-161-blue)](./docs/adr/)
 [![Python](https://img.shields.io/badge/python-3.12+-blue)](./pyproject.toml)
 
 Find software-engineering openings straight from companies' ATS (Applicant Tracking System)
@@ -236,9 +236,10 @@ No always-on server: scheduled GitHub Actions and a free-tier Space.
 A run does not scrape every board it could. The liveness ledger's headline number reduces through
 several filters before it reaches what a run can even consider — `registry.DISABLED_ATS`,
 vendor test/sandbox boards, hostname aliases (one board serving two hostnames), case-variant
-duplicate spellings, and a handful of real boards deliberately parked because their cost dwarfs
-their tech yield. `CONTEXT.md`'s §Counting Boards names each of these stages precisely, and
-`tests/test_board_counts.py` keeps this table in lockstep with the committed ledger:
+duplicate spellings, and a handful of real boards deliberately parked — most because their cost
+dwarfs their tech yield, two because what they serve is near-duplicate spam. `CONTEXT.md`'s
+§Counting Boards names each of these stages precisely, and `tests/test_board_counts.py` keeps this
+table in lockstep with the committed ledger:
 
 | | boards | |
 | --- | ---: | --- |
@@ -247,13 +248,13 @@ their tech yield. `CONTEXT.md`'s §Counting Boards names each of these stages pr
 | − `config.EXCLUDED_BOARDS` | −47 | vendor test/sandbox boards, confirmed by reading their postings |
 | − alias ledger | −78 | one company, two hostnames sharing one board (ADR-0111) |
 | − case-variant dedupe | −6,630 | `company/External` and `company/external` are one board (ADR-0023) |
-| − `config.PARKED_BOARDS` | −5 | real boards withheld for now — their scrape cost dwarfs their tech yield |
-| = **Scrapable Board** | **120,543** | |
+| − `config.PARKED_BOARDS` | −7 | real boards withheld for now — five for scrape cost, two for near-duplicate spam |
+| = **Scrapable Board** | **120,541** | |
 
 That order matters: excluding before deduping reads −47 and −6,630, deduping first reads −45,
-because two excluded boards were themselves duplicates. Both land on 120,543.
+because two excluded boards were themselves duplicates. Both land on 120,541.
 
-Of those, **78,085 are currently hiring** — the 42,458 live-but-empty boards are skipped as having
+Of those, **78,083 are currently hiring** — the 42,458 live-but-empty boards are skipped as having
 nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
 sticky measure of tech-job yield) and a random exploration tail drawn from everything else, so
 newly-productive boards can never starve and eviction keeps working on boards outside the head.

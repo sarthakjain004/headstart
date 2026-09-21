@@ -1,0 +1,106 @@
+{
+  "board": "smartrecruiters:EndeavorITSolution",
+  "measured_at": "2026-09-21T14:45:46Z",
+  "postings": 8478,
+  "distinct_ids": 8478,
+  "distinct_titles": 5050,
+  "distinct_locations": 5,
+  "distinct_title_location_pairs": 5064,
+  "max_postings_one_title": 49,
+  "top_titles": [
+    [
+      "Internship / Training for PHP",
+      49
+    ],
+    [
+      "Fresher Android Developer Training Program",
+      43
+    ],
+    [
+      "Internship For IOS from an IT solution",
+      40
+    ],
+    [
+      "Android Developer",
+      39
+    ],
+    [
+      "PHP Developer",
+      38
+    ],
+    [
+      "Internship for Fresher",
+      38
+    ],
+    [
+      "PHP Developer (Fresher)",
+      29
+    ],
+    [
+      "Digital Marketing Internship",
+      29
+    ],
+    [
+      "Hiring PHP Developer (Fresher)",
+      21
+    ],
+    [
+      "PHP Developer- HTML/CSS3/Ajax/Javascript",
+      21
+    ],
+    [
+      "Direct Walk-in for PHP Developer",
+      20
+    ],
+    [
+      "Internship / Training Programm",
+      20
+    ],
+    [
+      "Android Application Developer",
+      19
+    ],
+    [
+      "Java Developer Fresher Walk -in",
+      18
+    ],
+    [
+      "Application Developer for fresher",
+      18
+    ]
+  ],
+  "top_locations": [
+    [
+      "Indore, MP, India",
+      8454
+    ],
+    [
+      "Indore, MH, India",
+      19
+    ],
+    [
+      "Indore, India",
+      2
+    ],
+    [
+      "Indianapolis, IN, United States",
+      2
+    ],
+    [
+      "Indapur, MH, India",
+      1
+    ]
+  ],
+  "sample_titles": [
+    "Jobs for BE freshers!!",
+    "Jobs for PHP Developer freshers",
+    "Java Developer Trainee in Indore",
+    "Java Developer Job Requirements",
+    "Java Developer Fresher Walk -in",
+    "Internship for MCA Freshers",
+    "Interns for Web Developer !! Freshers",
+    "Internship At Endeavor IT Solution",
+    "PHP developer Immediate joining",
+    "Freshers - Java Developers"
+  ]
+}
