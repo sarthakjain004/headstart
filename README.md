@@ -383,7 +383,7 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
   `AI_Integration/`, `agents/` (issue tracker, triage, domain, deployment runbooks).
 - `.github/workflows/` — `pipeline.yml` (the 5-stage ingest), `pipeline-smoke.yml`, `ci.yml`
   (lint + format + tests), `alerts.yml` and `bot.yml` (email/Telegram alerts), `deploy-space.yml`,
-  `cleanup-index.yml`, `cluster-roles.yml`, `squash-dataset-history.yml` and
+  `cleanup-index.yml`, `cluster-roles.yml`, `reclaim-dataset-storage.yml` and
   `squash-subscribers-history.yml`, two embed benchmarks (`embed-bench.yml` / `embed-threads.yml`),
   and a handful of one-off diagnostic probes.
 

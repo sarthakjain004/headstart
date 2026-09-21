@@ -115,7 +115,7 @@ Anyone tuning experience patterns against Eightfold must first re-scrape with th
 
 The list adds a few megabytes to the dataset every run — the ids share long common prefixes and
 compress well — against an HF quota the workflow already
-works to stay inside; the existing `squash-dataset-history.yml` is what keeps that history from
+works to stay inside; the existing `reclaim-dataset-storage.yml` is what keeps that history from
 growing without bound, and this rides on it rather than needing anything new.
 
 The list is shipped whole rather than partitioned per shard — ~6 MB gzipped, in an artifact every

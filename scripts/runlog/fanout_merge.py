@@ -210,10 +210,25 @@ TRENDS_SKIP_TAXONOMY = re.compile(
     r"\[role_trends\] role taxonomy unusable, no trends this run"
 )
 
-# --- storage (workflow-embedded, not the Python package) -------------------------------------
-STORAGE_LINE = re.compile(r"usedStorage ([\d.]+) GB · live ([\d.]+) GB · (\d+) commits")
-SQUASHED = re.compile(r"squashed; live ([\d.]+) GB")
-NOTHING_TO_RECLAIM = re.compile(r"under (\d+) GB — nothing to reclaim")
+# --- storage (headstart.ingest.reclaim_storage, ADR-0168) ------------------------------------
+# Was workflow-embedded shell until 2026-09-18. `usedStorage` counts stored bytes and `live` only
+# what HEAD references, so the gap is dead weight: the step deletes it rather than squashing and
+# waiting on HF's collection, which is what let the quota fill while every run reported success.
+STORAGE_LINE = re.compile(
+    r"\[reclaim_storage\] usedStorage ([\d.]+) GB · live ([\d.]+) GB across (\d+) file\(s\) "
+    r"· stored ([\d.]+) GB across (\d+) LFS object\(s\)"
+)
+RECLAIMED = re.compile(
+    r"\[reclaim_storage\] reclaimed ([\d.]+) GB: usedStorage ([\d.]+) GB -> ([\d.]+) GB"
+)
+NOTHING_TO_RECLAIM = re.compile(
+    r"\[reclaim_storage\] ([\d.]+) GB orphaned across (\d+) object\(s\) — under the"
+)
+# The failure the old step could not see: blobs deleted, quota unmoved. At ~3.3 GB/run this
+# refills the 100 GB quota in about a day, so it is the line worth shouting about.
+RECLAIM_NOOP = re.compile(
+    r"\[reclaim_storage\] reclaim did not free anything: usedStorage ([\d.]+) GB -> ([\d.]+) GB"
+)
 
 
 def embed_merge_report(text: str) -> None:
@@ -519,15 +534,32 @@ def storage_report(text: str) -> None:
     if not s:
         print("  no storage line found (reclaim step may not have run)", flush=True)
         return
-    used, live, commits = s.groups()
-    print(f"  usedStorage {used} GB · live {live} GB · {commits} commits", flush=True)
-    sq = SQUASHED.search(text)
+    used, live, files, stored, objects = s.groups()
+    print(
+        f"  usedStorage {used} GB · live {live} GB across {files} file(s) "
+        f"· stored {stored} GB across {objects} LFS object(s)",
+        flush=True,
+    )
+    noop = RECLAIM_NOOP.search(text)
+    got = RECLAIMED.search(text)
     ntr = NOTHING_TO_RECLAIM.search(text)
-    if sq:
-        print(f"  squashed this run -> live {sq.group(1)} GB", flush=True)
+    if noop:
+        # Loudest branch on purpose: this is the state that filled the quota on 2026-09-18.
+        print(
+            f"  RECLAIM FREED NOTHING — usedStorage {noop.group(1)} -> {noop.group(2)} GB "
+            "after deleting blobs; the quota refills in ~a day",
+            flush=True,
+        )
+    elif got:
+        print(
+            f"  reclaimed {got.group(1)} GB -> usedStorage {got.group(3)} GB",
+            flush=True,
+        )
     elif ntr:
         print(
-            f"  under the {ntr.group(1)} GB threshold — no reclaim needed", flush=True
+            f"  only {ntr.group(1)} GB orphaned across {ntr.group(2)} object(s) — "
+            "under the floor, no reclaim needed",
+            flush=True,
         )
 
 
