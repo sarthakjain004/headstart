@@ -1111,7 +1111,6 @@ textarea:focus{ border-color:var(--accent); }
   .hot-row{ grid-template-columns:1fr auto; gap:10px 12px; }
   .hot-rank{ display:none; }
   .hot-measure{ align-items:flex-end; }
-  .hot-see{ grid-column:1 / -1; width:100%; }
 }
 @media (prefers-reduced-motion:reduce){ .hot-row{ animation:none; } }
 

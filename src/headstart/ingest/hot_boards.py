@@ -130,21 +130,23 @@ def read_stock_change(delta_dir: Path) -> tuple[collections.Counter, list[str]]:
     """
     import pyarrow.parquet as pq
 
-    files = sorted(delta_dir.glob("*.parquet"))
-    stamps_seen = [
-        ts
-        for path in files
-        for ts in pq.read_table(path, columns=["ts"]).column("ts").to_pylist()[:1]
-    ]
-    if not stamps_seen:
+    # (path, first stamp) built as pairs, so a tick that somehow holds no rows drops out of
+    # both lists together. Reading the two separately and zipping them `strict=True` was only
+    # correct because `role_trends` never writes an empty tick — a coupling to another module's
+    # behaviour that nothing here would have shown.
+    ticks = []
+    for path in sorted(delta_dir.glob("*.parquet")):
+        stamps_in_file = pq.read_table(path, columns=["ts"]).column("ts").to_pylist()
+        if stamps_in_file:
+            ticks.append((path, stamps_in_file[0]))
+    if not ticks:
         return collections.Counter(), []
-    cutoff = (
-        datetime.fromisoformat(max(stamps_seen)) - timedelta(days=WINDOW_DAYS)
-    ).isoformat()
+    newest = max(ts for _, ts in ticks)
+    cutoff = (datetime.fromisoformat(newest) - timedelta(days=WINDOW_DAYS)).isoformat()
 
     moved: collections.Counter = collections.Counter()
     stamps: list[str] = []
-    for path, first_ts in zip(files[1:], stamps_seen[1:], strict=True):
+    for path, first_ts in ticks[1:]:
         if first_ts < cutoff:
             continue
         table = pq.read_table(path).to_pydict()

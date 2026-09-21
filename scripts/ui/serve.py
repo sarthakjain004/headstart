@@ -19,12 +19,12 @@ from flask import Flask, jsonify, render_template, request
 
 import headstart
 from headstart import facets, fx, geo
-from headstart.alerts.store import CompanyPrefs
+from headstart.alerts.store import MAX_COMPANIES, CompanyPrefs
 from headstart.search import (
     KEYWORD_DEFAULT_SCOPE,
     PROD_TABLE,
     JobSearch,
-    board_clause,
+    account_clause,
     keyword_scope_options,
     load_encoder,
 )
@@ -146,15 +146,12 @@ _LOCAL_COMPANIES = CompanyPrefs.blank("local")
 
 
 def _company_where(args) -> str | None:
-    """Mirror of the Space's per-request follow/hide clause."""
-    clauses = []
-    if args.get("mine") in ("1", "true"):
-        clauses.append(
-            board_clause(_LOCAL_COMPANIES.followed, exclude=False) or "false"
-        )
-    if _LOCAL_COMPANIES.hidden:
-        clauses.append(board_clause(_LOCAL_COMPANIES.hidden, exclude=True))
-    return " AND ".join(c for c in clauses if c) or None
+    """Mirror of the Space's per-request follow/hide clause — the rule itself is shared."""
+    return account_clause(
+        _LOCAL_COMPANIES.followed,
+        _LOCAL_COMPANIES.hidden,
+        mine=args.get("mine") in ("1", "true"),
+    )
 
 
 @app.route("/companies")
@@ -177,6 +174,21 @@ def set_company():
         return jsonify(
             {"error": "board and action (follow|hide|clear) are required"}
         ), 400
+    # The same cap answer as the Space, so the two mirrors cannot disagree at the limit.
+    # `with_board` trims to the cap by dropping the OLDEST entry, so at the limit a new Board
+    # would silently un-follow or un-hide something else. The new entry ALWAYS lands (it is
+    # appended, then the front is cut), so "did it land?" never detects the trim — measured
+    # through the route, the 201st follow answered 200. What detects it is the state BEFORE the
+    # write: a Board not already listed, on a list already at the cap, is one that would evict.
+    prior = _LOCAL_COMPANIES.followed if action == "follow" else _LOCAL_COMPANIES.hidden
+    if (
+        action in ("follow", "hide")
+        and board not in prior
+        and len(prior) >= MAX_COMPANIES
+    ):
+        return jsonify(
+            {"error": f"at most {MAX_COMPANIES} companies in each list"}
+        ), 409
     _LOCAL_COMPANIES = _LOCAL_COMPANIES.with_board(board, action)
     return list_companies()
 

@@ -370,6 +370,28 @@ def board_clause(boards: Collection[str], *, exclude: bool) -> str | None:
     return f"NOT ({joined})" if exclude else f"({joined})"
 
 
+def account_clause(
+    followed: Collection[str], hidden: Collection[str], *, mine: bool
+) -> str | None:
+    """The whole follow/hide rule for one request (ADR-0171), or None when it says nothing.
+
+    Stated here rather than in each app, because there are two apps serving the same UI — the
+    Space and the local renderer (ADR-0042) — and a rule written twice is a rule that can come
+    to disagree. They differ only in where the lists come from.
+
+    Hidden Boards are excluded on **every** request, with or without ``mine``: hiding a company
+    means not seeing it, not "not seeing it while a toggle happens to be on". ``mine`` with an
+    **empty** follow list compiles to ``false`` rather than to no clause at all — silently
+    widening to the whole index is the opposite of what was asked.
+    """
+    clauses = []
+    if mine:
+        clauses.append(board_clause(followed, exclude=False) or "false")
+    if hidden:
+        clauses.append(board_clause(hidden, exclude=True))
+    return " AND ".join(c for c in clauses if c) or None
+
+
 def _keyword_terms(kw: str) -> list[str]:
     """The Keyword filter's terms: whitespace-split, each escaped by :func:`_like`, capped.
 

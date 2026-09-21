@@ -393,15 +393,9 @@ def _company_where(args) -> str | None:
         return None
     email, store = gate
     prefs = store.get_companies(subscription_id(email))
-    clauses = []
-    if args.get("mine") in ("1", "true"):
-        # An empty follow list with `mine=1` compiles to no clause, which would silently widen
-        # to the whole index — the opposite of what was asked. Match nothing instead; the UI
-        # explains the empty page.
-        clauses.append(search.board_clause(prefs.followed, exclude=False) or "false")
-    if prefs.hidden:
-        clauses.append(search.board_clause(prefs.hidden, exclude=True))
-    return " AND ".join(c for c in clauses if c) or None
+    return search.account_clause(
+        prefs.followed, prefs.hidden, mine=args.get("mine") in ("1", "true")
+    )
 
 
 @app.route("/search")
@@ -442,10 +436,22 @@ def set_company():
             {"error": "board and action (follow|hide|clear) are required"}
         ), 400
     account = subscription_id(email)
-    prefs = store.get_companies(account).with_board(board, action)
-    if len(prefs.followed) >= MAX_COMPANIES and action == "follow":
-        # The cap trims silently on write, so say so rather than letting a follow vanish.
-        return jsonify({"error": f"at most {MAX_COMPANIES} followed companies"}), 409
+    current = store.get_companies(account)
+    # `with_board` trims to the cap by dropping the OLDEST entry, so at the limit a new Board
+    # would silently un-follow or un-hide something else. The new entry ALWAYS lands (it is
+    # appended, then the front is cut), so "did it land?" never detects the trim — measured
+    # through the route, the 201st follow answered 200. What detects it is the state BEFORE the
+    # write: a Board not already listed, on a list already at the cap, is one that would evict.
+    prior = current.followed if action == "follow" else current.hidden
+    if (
+        action in ("follow", "hide")
+        and board not in prior
+        and len(prior) >= MAX_COMPANIES
+    ):
+        return jsonify(
+            {"error": f"at most {MAX_COMPANIES} companies in each list"}
+        ), 409
+    prefs = current.with_board(board, action)
     store.put_companies(prefs)
     return jsonify({"followed": list(prefs.followed), "hidden": list(prefs.hidden)})
 

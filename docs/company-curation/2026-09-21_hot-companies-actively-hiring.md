@@ -78,8 +78,10 @@ The prototype produced three defensible lists that barely overlap, and the tab h
 expose all three.
 
 **Volume** — most new roles this week. Answers "where is the most opportunity right now". Always
-won by the largest employers; Amazon's 1,396 new roles come with a net stock change of **−3**,
-meaning constant churn at a steady size.
+won by the largest employers; Amazon's 1,396 new roles come with a net stock change of **−3** over
+the 8-day prototype window — constant churn at a steady size. *(What shipped bounds the window to
+7 days to match the `new` metric, where the same Board reads **+20**. Both say "flat"; quote the
+7-day figure, since that is what the tab serves.)*
 
 **Expansion** — opening more than it closes, net. Answers "who is actually growing". HCLTech
 at +1,010 and Wipro at +764 over eight days are genuinely expanding, not just churning.

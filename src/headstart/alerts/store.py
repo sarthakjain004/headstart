@@ -1022,8 +1022,14 @@ class Store:
 
         Fail-OPEN, unlike :meth:`parses_used`, and the direction matters: collapsing an
         unreadable record into "nothing followed, nothing hidden" shows the user more jobs than
-        they asked for, which is a visibly wrong result they can act on. Failing closed would
-        show an empty Search page and read as a broken index.
+        they asked for, which is a visibly wrong result they can act on. Failing closed — keeping
+        the filters on with no list to fill them — would hide everything instead.
+
+        One case is not open at all: with ``mine=1`` an empty follow list compiles to ``false``
+        (see :func:`headstart.search.account_clause`), so a record that failed to load *does*
+        produce an empty page on that one view. That is deliberate there — silently widening
+        "only my companies" to the whole index would be worse — but it means this method's
+        failure is not invisible on every path.
         """
         if not _ID.fullmatch(account):
             return CompanyPrefs.blank(account)

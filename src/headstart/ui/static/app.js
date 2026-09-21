@@ -787,10 +787,21 @@ function jobCard(r, i, canHide){
    `backend` search spans 2,807 companies at a median of 1), so capping costs almost every
    company nothing and only trims the handful that would otherwise fill the screen. ---- */
 const COMPANY_CAP = 2;
-const boardOf = id => (id || '').slice(0, (id || '').lastIndexOf(':'));
+// The Board a Job id belongs to. Mirrors `board_identity.board_of` and inherits its documented
+// caveat (ADR-0049): exact only where the native id carries no colon, so a Board whose jobs have
+// colon-bearing native ids resolves to a phantom prefix and hiding it hides fewer rows than the
+// user expects — never more, because the prefix is longer, not shorter. `-1` is guarded: without
+// it a colonless string would slice to itself-minus-a-character rather than to nothing.
+const boardOf = id => {
+  const cut = (id || '').lastIndexOf(':');
+  return cut > 0 ? id.slice(0, cut) : '';
+};
 
 let myCompanies = { followed: [], hidden: [] };
-let capOverflow = new Map();   // board -> [card html] withheld from this page
+// Keyed by LIST, then Board. One shared map was a real defect: `draw` renders Search, Matches
+// and Saved through the same path, so drawing one list cleared another's withheld rows and its
+// "N more" buttons became dead clicks — while the ADR claims a capped row is one click away.
+const capOverflow = new Map();   // listId -> Map(board -> [card html])
 
 async function loadCompanies(){
   try{
@@ -812,41 +823,46 @@ async function setCompany(board, action){
 }
 
 function capRows(rows, target){
+  const listId = target || 'results';
   const seen = new Map(), firstOf = new Map();
-  capOverflow = new Map();
+  const withheld = new Map();
+  capOverflow.set(listId, withheld);
   const chunks = [];
   rows.forEach((r, i) => {
     const board = boardOf(r.id);
+    // `(r, i) => …` and an explicit third argument, never a bare `rows.map(jobCard)`: map passes
+    // the array as a third argument, which would land on `canHide` and put a × on every list.
     const html = jobCard(r, i, !target);
     if (!board){ chunks.push(html); return; }
     const n = (seen.get(board) || 0) + 1;
     seen.set(board, n);
     if (n === 1) firstOf.set(board, r.company);
     if (n <= COMPANY_CAP){ chunks.push(html); return; }
-    if (!capOverflow.has(board)){
-      capOverflow.set(board, []);
+    if (!withheld.has(board)){
+      withheld.set(board, []);
       // The expander sits where this company's next result would have been, so the list still
       // reads in rank order rather than collecting the leftovers at the bottom.
       chunks.push({ board });
     }
-    capOverflow.get(board).push(html);
+    withheld.get(board).push(html);
   });
-  return chunks.map(c => typeof c === 'string' ? c : moreRow(c.board, firstOf.get(c.board)));
+  return chunks.map(c =>
+    typeof c === 'string' ? c : moreRow(listId, c.board, firstOf.get(c.board), withheld));
 }
 
-function moreRow(board, company){
-  const n = (capOverflow.get(board) || []).length;
-  return `<div class="more-row" data-board="${esc(board)}">
+function moreRow(listId, board, company, withheld){
+  const n = (withheld.get(board) || []).length;
+  return `<div class="more-row" data-board="${esc(board)}" data-list="${esc(listId)}">
       <button class="ghost" data-more="${esc(board)}">
         ${n} more at ${esc(company || board)}
       </button>
     </div>`;
 }
 
-function expandCompany(board){
-  const holder = document.querySelector(`.more-row[data-board="${CSS.escape(board)}"]`);
-  const rows = capOverflow.get(board);
-  if (!holder || !rows) return;
+function expandCompany(holder){
+  const board = holder.dataset.board, listId = holder.dataset.list;
+  const rows = (capOverflow.get(listId) || new Map()).get(board);
+  if (!rows) return;
   holder.outerHTML = rows.join('');
 }
 
@@ -857,8 +873,6 @@ function draw(rows, target){
   // which reads as "sort my results" and is not: the server now orders the whole result set
   // (issue #275), so by the time rows arrive they are already in the asked-for order.
   rows.forEach(r => { if (r.id) drawnRows.set(r.id, r); });   // starring needs the row later
-  // `(r, i) => …`, never a bare `rows.map(jobCard)`: map passes the array as a third argument,
-  // which would land on `canHide` and quietly put a × on every list.
   el(target || 'results').innerHTML = capRows(rows, target).join('');
   setResultRows(rows.length, target);
   if (!target) drawHidden(rows);
@@ -2725,7 +2739,10 @@ function drawHot(){
 function hotRow(r, i, lens){
   const m = HOT_MEASURE[lens](r);
   const op = HOT_OPERATOR[r.operator];
-  const followed = (myCompanies.followed || []).includes(r.board);
+  // Lowercased both sides, like `board_clause` — the index holds Board keys that differ only
+  // in casing, and an exact check would offer "Follow" on a Board already being followed.
+  const followed = (myCompanies.followed || []).some(
+    b => b.toLowerCase() === (r.board || '').toLowerCase());
   // The rank is decorative — the list is already ordered and screen readers announce <ol>
   // position — so it is hidden from the accessibility tree rather than read out twice.
   return `
@@ -2792,7 +2809,7 @@ if (el('hot-results')){
    Saved) — never an inline handler with an interpolated Board key in it. */
 document.addEventListener('click', async ev => {
   const more = ev.target.closest('[data-more]');
-  if (more){ expandCompany(more.dataset.more); return; }
+  if (more){ expandCompany(more.closest('.more-row')); return; }
   const hide = ev.target.closest('[data-hide-company]');
   if (!hide) return;
   hide.disabled = true;
