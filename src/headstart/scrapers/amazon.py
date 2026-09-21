@@ -121,6 +121,8 @@ class AmazonScraper(BaseScraper):
     exactly the meaningful case the default is for, not the empty one.
     """
 
+    COMPANY = "Amazon"
+
     ats = "amazon"
     # scraper: f"https://{slug}{job_path}" where the SLUG IS THE BOARD HOST (ADR-0139, one
     # tenant) and job_path is the API's own field, e.g. "/en/jobs/10537803/data-center-...".

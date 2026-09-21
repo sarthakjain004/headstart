@@ -104,6 +104,8 @@ class AppleScraper(BaseScraper):
     """jobs.apple.com — a Single source scraper (ADR-0139). ``slug`` is fixed to the host,
     never discovered."""
 
+    COMPANY = "Apple"
+
     ats = "apple"
     # scraper: f"https://{slug}/en-us/details/{positionId}/{transformedPostingTitle}" (job_url
     # below) — slug is the fixed host jobs.apple.com (ADR-0139, a Single source scraper: one
@@ -127,12 +129,6 @@ class AppleScraper(BaseScraper):
     #: the one connection, which is exactly what was measured to have no effect. Revisit if the
     #: base ever grows a multi-session async path — the finding is about connections, not async.
     async_fanout = False
-
-    def __init__(self, slug: str, company: str | None = None) -> None:
-        # A Single source scraper has exactly one company; hardcoding it is simpler and more
-        # reliable than resolve_company()'s title-scrape, which exists for slugs that stand in
-        # for an unknown display name (ADR-0114) — a problem this ATS does not have.
-        super().__init__(slug, company or "Apple")
 
     def url(self) -> str:
         return f"https://{self.slug}/{_LOCALE}/search"

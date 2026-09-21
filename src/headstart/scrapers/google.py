@@ -205,6 +205,8 @@ def _description(job: list[Any]) -> str | None:
 class GoogleScraper(BaseScraper):
     """Google careers scraper — a Single source scraper (ADR-0139), no discovery, no detail pass."""
 
+    COMPANY = "Google"
+
     ats = "google"
     # scraper: f"https://www.google.com/about/careers/applications/jobs/results/{id}?hl=en_US"
     # (job_url below) — the id-only path, verified live 2026-09-11 to resolve the correct
