@@ -312,6 +312,50 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         # from eviction every run). Un-park once the WARP-path slowdown is understood and fixed,
         # or a direct route exists for this host.
         "oracle:ejwl.fa.us2.oraclecloud.com",
+        # The two below are the first parked for what they *serve* rather than what they cost:
+        # near-duplicate spam, holding a top-5 priority slot each. They are the same defect from
+        # opposite ends — one role across 2,352 cities, and one city repeating a handful of roles
+        # 8,478 times — so neither shape describes both; see each entry. `index prune`'s duplicate
+        # check cannot reach either: every posting carries its own id, so they are duplicates
+        # semantically, not by identity (ADR-0023 groups on identity).
+        #
+        # Measured live 2026-09-21 (`registry.get_scraper(...).fetch_raw()`/`.parse()`, captures in
+        # `experiment/near-duplicate-spam-boards/`): **4,377 postings, 2,562 distinct titles across
+        # 2,352 distinct locations** — and no exact title repeats more than 4x, which is why a
+        # distinct-title ratio reads this Board as ordinary. Strip each title's per-city tail and
+        # **4,249 of the 4,377 (97.1%) are the one stem "Data Center Technician"**, over 70 stems
+        # total: "... - Saudi Arabia - Khobar - On-site", "... - Nigeria - Lagos - On-site",
+        # "... - PR - Guaynabo - On-site". Ranked #3 in `data/state/board_priority.csv` on the same
+        # date, credited 4,334 tech rows — **40.6% of every tech row the ledger credits to
+        # recruitee at all**, across its 1,304 scored Boards.
+        # Un-park if the postings ever stop being one templated role, or once a near-duplicate gate
+        # on the index path can collapse them. That gate was deliberately **not** built here, on a
+        # measured prevalence sample of the top 30 priority Boards (same experiment folder): this
+        # Board's 97.1% is 5.3x the worst of the other 23 measured, so a rule keyed on it would
+        # fire on exactly one Board — a hardcoded park with extra steps.
+        "recruitee:rebootmonkey",
+        # The same shape reached the other way: not one role across every city, but one city
+        # posting the same handful of roles over and over. Measured live 2026-09-21: **8,478
+        # postings, 8,454 of them (99.7%) in "Indore, MP, India"** — 5 distinct locations in total
+        # — dominated by exact-title repeats: `Internship / Training for PHP` x49, `Fresher Android
+        # Developer Training Program` x43, `Internship For IOS from an IT solution` x40, `Android
+        # Developer` x39, `PHP Developer` x38, `Internship for Fresher` x38. Ranked #5 in
+        # `data/state/board_priority.csv`, credited 4,252 tech rows — 6.5% of every tech row the
+        # ledger credits to smartrecruiters, from one of its 3,606 scored Boards.
+        # Content read before parking, per EXCLUDED_BOARDS' rule above: these are real postings,
+        # not a vendor sandbox — a real Indore IT-training shop advertising the same trainee intake
+        # repeatedly — which is why this is a park and not an exclusion.
+        # This one is parked on the content, not on a ratio, and that is deliberate: the same
+        # prevalence sample found **no cheap ratio separates it at all**. It ranks 19th of 25 on
+        # top-stem share (2.9%), and on its own two markers `successfactors:careers.hcltech.com`
+        # looks worse — 2,975 postings across 4 locations with 399 copies of one exact title,
+        # against Endeavor's 49 — while being a real employer doing genuine bulk hiring. Any gate
+        # strong enough to catch this Board evicts HCLTech and Wipro first.
+        # Un-park on the same condition as Reboot Monkey above. Note the ledger also carries six
+        # sibling `EndeavorIt...` tenants (`EndeavorITSolution10` at 808 postings,
+        # `EndeavorItSolution9` at 158, four at 0-10); they are separate Boards, left alone here
+        # because only this one is large enough to have been measured.
+        "smartrecruiters:endeavoritsolution",
     }
 )
 
