@@ -52,7 +52,7 @@ from pathlib import Path
 # docs/tech-filter/2026-09-17_the-title-decides.md. This is exactly the shape the counter exists
 # for: `role_trends` would otherwise read "Security Officer" leaving the index as the market
 # shedding security jobs.
-# 3 (2026-09-21, `git log 96c0c702..SHA_PLACEHOLDER -- src/headstart/tech_filter.py`): the strong
+# 3 (2026-09-21, `git log 96c0c702..c2c026ed -- src/headstart/tech_filter.py`): the strong
 # list gained the role families still outside it after version 2 moved rules 1-2 onto the title —
 # Member of Technical Staff, Forward Deployed Engineer, AI/ML research and applied scientists,
 # business intelligence, silicon design, security operations, the QA role words, bioinformatics —
