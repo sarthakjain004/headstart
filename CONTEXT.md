@@ -44,7 +44,9 @@ _Avoid_: reading `services` as a judgement on the company — Capgemini employs 
 
 **Lens** (ADR-0171):
 One of the three questions "actively hiring" can mean, each ranking the same Boards differently: **Expansion** (net change in open roles — who is growing), **Volume** (roles opened in the rolling 7-day window), **Rate** (that count as a share of the Board's open roles). Amazon opened 1,396 roles in one measured week at a net change of −3, which is why these are three lenses and not one number.
-_Avoid_: "hot" as a measure — it names the tab, never a value.
+_Avoid_: "hot" as a measure. `hot` is the internal name of the ranking — the stage
+(`ingest/hot_boards`), its artifact and its route — while **Hiring now** is what the tab is
+called in the UI. Neither is a value a row can hold; a row holds a lens figure and an Operator.
 
 **Careers page**:
 A company's own web page that links to or embeds its Board; the input to careers-page discovery, distinct from the Board itself.

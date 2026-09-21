@@ -9,9 +9,10 @@ Runs after ``role_trends`` in the back-to-back run, because it consumes that sta
 
 ## Three lenses, because "actively hiring" is three questions
 
-``expansion`` — net change in open roles across the delta window. *Who is actually growing.*
-The default: Amazon opened 1,396 roles in a week at a net change of **−3**, which is churn at a
-steady size, not growth, and only this lens says so.
+``expansion`` — net change in open roles across the trailing ``WINDOW_DAYS``. *Who is actually
+growing.*
+The default: over the 7 days to 2026-09-21 Amazon opened **1,396** roles at a net change of
+**+20** — churn at a near-constant size rather than growth, which only this lens says.
 
 ``volume`` — the rolling 7-day count of roles first seen inside the window. *Where the most
 opportunity is right now.* Always led by the largest employers.
@@ -27,9 +28,11 @@ the next tick's 127. Summing from it reports every Board on the index as brand n
 the first run of the prototype behind this module.
 
 **A Board whose entire stock arrives inside the window was newly *discovered*, not newly
-hiring.** That was 6,996 Boards — a fifth of the ledger — over one 8-day window, and they would
-otherwise own every lens. ADR-0143 exists for this confound; the exclusion here is its
-Hot-tab-shaped equivalent, and the count is reported rather than quietly applied.
+hiring.** Over the whole ledger and an 8-day span that was 6,996 Boards, a fifth of it; scoped
+as this stage scopes it — the trailing 7 days, Boards at or above ``MIN_STOCK`` — it was 108 on
+2026-09-21. Either way they would own every lens. ADR-0143 exists for this confound; the
+exclusion here is its Hot-tab-shaped equivalent, and its count ships in the artifact rather than
+being quietly applied.
 
 **``watch:`` families double-count** against centroid families (ADR-0051), so they are dropped
 from every total.
@@ -51,7 +54,7 @@ import argparse
 import collections
 import json
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
@@ -82,6 +85,11 @@ MIN_STOCK = 25
 #: strict equality and let it back onto every lens.
 NEWLY_FOUND_SHARE = 0.9
 
+#: The trailing window Expansion is measured over. Seven days, to match the `new` metric's own
+#: rolling window (ADR-0051's NEW_WINDOW_DAYS) — the two are printed on the same row, so they
+#: have to describe the same length of time or the row compares a week against a month.
+WINDOW_DAYS = 7
+
 _WATCH = "watch:"  # headstart.roles.WATCH_PREFIX; double-counts (ADR-0051)
 
 
@@ -102,19 +110,43 @@ def read_levels(path: Path) -> tuple[collections.Counter, collections.Counter]:
 
 
 def read_stock_change(delta_dir: Path) -> tuple[collections.Counter, list[str]]:
-    """Net per-Board stock change across the window, and the tick stamps it covers.
+    """Net per-Board stock change over the trailing window, and the tick stamps it covers.
 
-    The first file is skipped: it is the ledger's baseline dump, not a change. The returned
-    stamps therefore describe the window actually measured, which is what the UI prints — a tab
-    claiming "this week" over a window that is really two days would be a lie the data can
-    already tell.
+    **The window is bounded to the same span as ``new``, and that is the point.** An unbounded
+    sum grows by one run every run, so Expansion would quietly measure a longer period each
+    time while Volume stayed a rolling 7-day level — and a row prints the two side by side.
+    Within a day of shipping, "+1,010 net roles" and "924 opened this week" would have described
+    different lengths of time under one heading.
+
+    The ledger's first tick is dropped as well. It is a baseline dump of every Board's whole
+    stock rather than a change (196,824 rows against the next tick's 127), and while the ledger
+    is younger than the window it would otherwise fall inside it. It is identified by position,
+    which is safe *here*: this stage runs on the merge VM immediately after the stage that
+    writes the directory, so the directory is complete. A caller reading a partially fetched
+    copy would mistake its oldest present tick for the baseline and lose one real measurement.
+
+    The returned stamps describe the window actually measured, never the window intended — a tab
+    claiming a week over two days of data would be a lie the data can already tell.
     """
     import pyarrow.parquet as pq
 
     files = sorted(delta_dir.glob("*.parquet"))
+    stamps_seen = [
+        ts
+        for path in files
+        for ts in pq.read_table(path, columns=["ts"]).column("ts").to_pylist()[:1]
+    ]
+    if not stamps_seen:
+        return collections.Counter(), []
+    cutoff = (
+        datetime.fromisoformat(max(stamps_seen)) - timedelta(days=WINDOW_DAYS)
+    ).isoformat()
+
     moved: collections.Counter = collections.Counter()
     stamps: list[str] = []
-    for path in files[1:]:
+    for path, first_ts in zip(files[1:], stamps_seen[1:], strict=True):
+        if first_ts < cutoff:
+            continue
         table = pq.read_table(path).to_pydict()
         for board, metric, family, delta, ts in zip(
             table["board"],
@@ -137,6 +169,12 @@ def board_names(db: Path, table_name: str) -> dict[str, str]:
     than not: only ~20% of served rows sit on an ATS that resolves one (ADR-0114), so most
     Boards fall back to their slug. Unreadable rather than fatal — a ranking of slugs is worse
     than a ranking of names and better than no tab.
+
+    This does scan the whole table to name at most a few hundred displayed rows, which is worth
+    stating rather than hiding. It is affordable because of where it runs: `role_trends`, the
+    stage immediately before this one on the same merge VM, already reads every row *including
+    the 768-d vector column*. Two string columns over the same rows is strictly cheaper than a
+    step the run has just paid for. If this ever moves off that VM, revisit it.
     """
     try:
         import lancedb
@@ -329,7 +367,7 @@ def rank(
     moved: collections.Counter,
     names: dict[str, str],
 ) -> tuple[dict[str, list[dict[str, Any]]], dict[str, int]]:
-    """The three lenses plus the counts of what each exclusion removed.
+    """The three lenses, plus the counts of what was ranked and what each exclusion removed.
 
     Exclusions are counted and returned rather than silently applied: a tab that quietly drops a
     fifth of the ledger should say so, and the numbers are how anyone checks this stage is
@@ -372,14 +410,20 @@ def rank(
     }
     shown = {c["board"]: c for lens in lenses.values() for c in lens}
     counted = collections.Counter(c["operator"] for c in shown.values())
-    excluded = {
+    # Named `counts`, not `excluded`: it holds what was *kept* as well as what was dropped, and
+    # a key called `excluded["ranked"]` reads as the opposite of the number it carries.
+    counts = {
+        "ranked": len(candidates),
         "newly_discovered": newly_found,
         "below_min_stock": sum(1 for v in stock.values() if v < MIN_STOCK),
-        "ranked": len(candidates),
+        # The threshold travels with the counts it explains. The UI prints "fewer than N open
+        # roles", and with N hardcoded there, changing MIN_STOCK would leave that sentence
+        # quietly stating a number the ranking no longer uses.
+        "min_stock": MIN_STOCK,
         "services": counted["services"],
         "aggregator": counted["aggregator"],
     }
-    return lenses, excluded
+    return lenses, counts
 
 
 def main() -> int:
@@ -411,20 +455,20 @@ def main() -> int:
             "only the baseline delta tick exists — no measured window, no hot list"
         )
         return 0
-    lenses, excluded = rank(new, stock, moved, board_names(args.db, PROD_TABLE))
+    lenses, counts = rank(new, stock, moved, board_names(args.db, PROD_TABLE))
 
     payload = {
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "window": {"from": min(stamps), "to": max(stamps)},
         "lenses": lenses,
-        "excluded": excluded,
+        "counts": counts,
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(payload, indent=1), encoding="utf-8")
     _log.info(
-        f"hot list: {excluded['ranked']} Boards ranked, "
-        f"{excluded['newly_discovered']} newly discovered excluded, "
-        f"{excluded['services']} services and {excluded['aggregator']} aggregators labelled "
+        f"hot list: {counts['ranked']} Boards ranked, "
+        f"{counts['newly_discovered']} newly discovered excluded, "
+        f"{counts['services']} services and {counts['aggregator']} aggregators labelled "
         f"across the window {payload['window']['from']} -> {payload['window']['to']}"
     )
     return 0

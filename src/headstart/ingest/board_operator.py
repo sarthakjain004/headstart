@@ -22,10 +22,14 @@ names, so no surface feature separates them — Capgemini churns at 0.25, CI&T a
 Foundever at 0.20, and Jobs for Lebanon, an actual job board, at 0.04. The thing that
 separates them is what the company *does*, which none of those features observes.
 
-So the scope is deliberately the head of one ranked list rather than the whole index. Against
-the Expansion lens this list removes 73% of the net growth from the top 20 rows, 52% of the
-top 50 and 40% of the top 100 — decreasing, because the tail is endless. Measurements and
-method: `docs/company-curation/2026-09-21_employer-type-classifier-measurement.md`.
+So the scope is deliberately the head of one ranked list rather than the whole index. Measured
+2026-09-21 against the Expansion lens over its 7-day window, **the entries this file ships**
+flag 79% of the net growth in the top 20 rows, 62% of the top 50 and 48% of the top 100 —
+decreasing, because the tail is endless. Those figures move with the list and must be
+re-measured when names are added: the 45-entry draft in the research doc measured 73/52/40, and
+quoting a number that describes a list nobody shipped is exactly the kind of borrowed fact this
+repo has been caught by before. Method:
+`docs/company-curation/2026-09-21_employer-type-classifier-measurement.md`.
 
 Two consequences for anyone extending this:
 
@@ -174,6 +178,10 @@ EXCEPTIONS: Final[frozenset[str]] = frozenset(
         # A law firm, not the BPO "Sutherland" — `eversheds-sutherland` splits to both.
         "evershedssutherland",
         "eversheds",
+        # A research institute, not the talent marketplace "Turing" — which is a real entry
+        # (`greenhouse:turing`), so the collision cannot be fixed by dropping the entry.
+        "alanturinginstitute",
+        "turinginstitute",
     }
 )
 
@@ -220,10 +228,6 @@ def _forms(text: str) -> set[str]:
     return {f for f in forms if f}
 
 
-def _matches(forms: set[str], tokens: frozenset[str]) -> bool:
-    return bool(forms & tokens)
-
-
 def classify(board_key: str, company: str | None = None) -> Operator:
     """The operator behind this Board, defaulting to ``employer``.
 
@@ -240,10 +244,10 @@ def classify(board_key: str, company: str | None = None) -> Operator:
     demoted is a job nobody sees.
     """
     forms = _forms(_tenant(board_key)) | _forms(company or "")
-    if _matches(forms, EXCEPTIONS):
+    if forms & EXCEPTIONS:
         return "employer"
-    if _matches(forms, AGGREGATORS):
+    if forms & AGGREGATORS:
         return "aggregator"
-    if _matches(forms, SERVICES):
+    if forms & SERVICES:
         return "services"
     return "employer"

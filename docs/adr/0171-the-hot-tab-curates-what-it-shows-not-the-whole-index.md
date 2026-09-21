@@ -39,10 +39,24 @@ it. Nothing is evicted, demoted in search, or removed from the index: ADR-0053 a
 sole ownership of eviction, and a label here changes only what one tab lists first.
 
 The scope is bounded to the head of one ranked list, where the cost of a wrong answer is highest
-and the volume is smallest. Against the Expansion lens the list removes 73% of net growth from the
-top 20, 52% of the top 50 and 40% of the top 100 — decreasing, because the tail is endless. Going
-deeper means adjudicating the Boards that actually reach the tab, a few new entrants per run, not
-scoring 33,480.
+and the volume is smallest. Measured against the Expansion lens over its 7-day window, the entries
+that ship flag 79% of net growth in the top 20, 62% of the top 50 and 48% of the top 100 —
+decreasing, because the tail is endless. (The research doc's 73/52/40 describes an earlier
+45-entry draft; the figures move with the list.) Going deeper means adjudicating the Boards that
+actually reach the tab, a few new entrants per run, not scoring 33,480.
+
+**Both lenses that carry a time span use the same one.** Expansion sums stock deltas over a
+trailing seven days, matching the rolling window `new` already uses (ADR-0051), because a row
+prints the two side by side. An unbounded sum — the first implementation — would have grown by one
+run every run, so "net roles" and "opened this week" would have described different lengths of time
+under one heading within a day.
+
+**Company identity on this tab is display-level and deliberately shallow.** A curated alias map
+plus slug tidying gives each row a readable name, and rows sharing a name collapse to the
+best-ranked Board. This exists because Lockheed Martin reaches Expansion on both Eightfold and
+SuccessFactors and ranked first and second as two companies. It is **not** cross-ATS Board
+identity, which the trimming research calls an ADR-sized decision in its own right: an unlisted
+pair still shows twice, and nothing downstream of this tab consumes these names.
 
 **Matching is exact against normalized forms, never substring or prefix.** Both looser rules were
 run over the real population and both demoted real companies: substring matching labels every
@@ -52,8 +66,8 @@ rather than its whole key, because Hyatt's Taleo section is named `infosys_intl`
 
 **"Actively hiring" is served as three lenses, defaulting to Expansion** (net change), with Volume
 (roles opened) and Rate (opened as a share of size). They produce barely-overlapping lists and only
-Expansion separates growth from churn — Amazon opened 1,396 roles in the measured week at a net
-change of −3. **Acceleration is not offered**: "started hiring recently" needs a before and an
+Expansion separates growth from churn — over the 7 days to 2026-09-21 Amazon opened 1,396 roles at
+a net change of +20, a near-constant size. **Acceleration is not offered**: "started hiring recently" needs a before and an
 after, and the ledger began on 2026-09-13.
 
 **Ranking happens in the pipeline; the Space serves a static artifact** (`data/state/hot_boards.json`,
@@ -76,3 +90,14 @@ run does.
 - **Showing every Board and letting the user filter.** Tested by building it: the first screen is
   HCLTech, Wipro, Bluelight Consulting and Jobgether, which reads as a broken product before any
   filter is found.
+
+## Deferred, and said so here rather than left implied
+
+Two parts of the plan this tab belongs to are **not** in it: per-company capping in
+`JobSearch.run`, and per-account follow/hide. Both are self-contained changes that touch the
+search path rather than this one, and the research recommends doing them — they are sequenced
+after this tab because it is the front door that makes a follow list worth having, not dropped.
+
+One change here falls outside the tab: the site footer claimed "no reposts and no agencies", which
+this work disproves — an aggregator and 111 services Boards sit in the index. Shipping the evidence
+while leaving the claim would be worse than the out-of-scope edit.

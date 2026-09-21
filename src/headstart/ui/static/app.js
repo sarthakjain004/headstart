@@ -2658,11 +2658,12 @@ function hotRow(r, i, lens){
 }
 
 function drawHotProvenance(){
-  const w = hotData.window || {}, x = hotData.excluded || {};
+  const w = hotData.window || {}, x = hotData.counts || {};
   const day = s => (s || '').slice(0, 10);
   el('hot-provenance').textContent =
     `Measured ${day(w.from)} to ${day(w.to)}. ${x.ranked ?? 0} companies ranked; ` +
-    `${x.below_min_stock ?? 0} with fewer than 25 open roles and ${x.newly_discovered ?? 0} ` +
+    `${x.below_min_stock ?? 0} with fewer than ${x.min_stock ?? '?'} open roles and ` +
+    `${x.newly_discovered ?? 0} ` +
     `boards we had only just discovered were left out.`;
 }
 

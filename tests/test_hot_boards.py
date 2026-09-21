@@ -78,6 +78,32 @@ def test_baseline_tick_is_not_a_change(tmp_path: Path) -> None:
     assert stamps == ["2026-09-14T12:00:00+00:00"]
 
 
+def test_the_window_is_bounded_so_it_cannot_outgrow_the_new_metric(
+    tmp_path: Path,
+) -> None:
+    """Expansion and Volume print on one row, so they must span the same number of days.
+
+    An unbounded sum grows by a run every run: within a day of shipping, "net roles" would have
+    covered a longer period than "opened this week" under one heading.
+    """
+    deltas = tmp_path / "deltas"
+    deltas.mkdir()
+    ticks = [
+        ("2026-09-01T12:00:00+00:00", 500),  # baseline dump, always dropped
+        ("2026-09-02T12:00:00+00:00", 7),  # inside the ledger, outside the window
+        ("2026-09-20T12:00:00+00:00", 3),  # inside the window
+        ("2026-09-21T12:00:00+00:00", 4),
+    ]
+    for ts, delta in ticks:
+        pq.write_table(
+            _deltas(ts, [("greenhouse:acme", "stock", "se", delta)]),
+            deltas / f"{ts.replace(':', '-')}.parquet",
+        )
+    moved, stamps = hot_boards.read_stock_change(deltas)
+    assert moved["greenhouse:acme"] == 7, "only the two ticks inside the 7-day window"
+    assert min(stamps) == "2026-09-20T12:00:00+00:00"
+
+
 def test_only_a_baseline_means_no_measured_window(tmp_path: Path) -> None:
     deltas = tmp_path / "deltas"
     deltas.mkdir()
@@ -119,7 +145,7 @@ def test_small_boards_are_not_ranked() -> None:
 
 
 def test_expansion_separates_growth_from_churn() -> None:
-    """Amazon's measured case: 1,396 roles opened in a week at a net change of -3."""
+    """Amazon's measured shape: ~1,400 roles opened in a week at a near-zero net change."""
     lenses, _ = _rank(
         new={"a:churner": 1396, "b:grower": 100},
         stock={"a:churner": 9081, "b:grower": 500},

@@ -66,6 +66,20 @@ def test_known_operators_are_labelled(
     assert classify(board, company) == expected
 
 
+def test_an_exception_beats_a_real_entry_they_collide_with() -> None:
+    """Both sides are real: `greenhouse:turing` is the marketplace, ATI is a research institute.
+
+    The collision is at whole-segment granularity, so no matching rule separates them — only
+    knowing the two organisations does, which is what EXCEPTIONS is for.
+    """
+    assert classify("greenhouse:turing", "Turing") == "services"
+    assert classify("greenhouse:acme", "Alan Turing Institute") == "employer"
+    assert (
+        classify("greenhouse:alan-turing-institute", "The Alan Turing Institute")
+        == "employer"
+    )
+
+
 def test_unknown_board_defaults_to_employer() -> None:
     """The default is recall-biased on purpose — see the module docstring's measurement."""
     assert (
