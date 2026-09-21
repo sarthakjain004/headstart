@@ -66,7 +66,10 @@ def main() -> int:
     ap.add_argument("--timeout", type=float, default=90)
     ap.add_argument(
         "--out",
-        default="experiment/search-index-performance/artifacts/live-baseline.jsonl",
+        default=(
+            "experiment/search-index-performance/artifacts/"
+            "2026-09-21_api-live-baseline.jsonl"
+        ),
     )
     args = ap.parse_args()
 

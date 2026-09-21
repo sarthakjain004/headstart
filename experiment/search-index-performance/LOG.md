@@ -79,13 +79,14 @@ read on stdin and is absent from every artifact.
 
 | workload | baseline | retained | change |
 | --- | ---: | ---: | ---: |
-| semantic | 107.02 ms | 19.01 ms | -82.2% |
-| semantic + ATS | 89.48 ms | 14.39 ms | -83.9% |
-| semantic + full-time | 164.08 ms | 14.69 ms | -91.0% |
-| semantic + India | 98.09 ms | 10.42 ms | -89.4% |
-| semantic + combined | 84.41 ms | 10.26 ms | -87.8% |
-| facets + combined | 244.59 ms | 40.22 ms | -83.6% |
-| facets + India | 231.25 ms | 72.01 ms | -68.9% |
+| semantic | 102.94 ms | 18.36 ms | -82.2% |
+| semantic + ATS | 85.38 ms | 13.60 ms | -84.1% |
+| semantic + full-time | 156.93 ms | 15.36 ms | -90.2% |
+| semantic + India | 93.98 ms | 10.69 ms | -88.6% |
+| semantic + combined | 83.26 ms | 9.11 ms | -89.1% |
+| facets, no filters | 75.76 ms | 8.34 ms | -89.0% |
+| facets + combined | 123.33 ms | 19.26 ms | -84.4% |
+| facets + India | 105.00 ms | 9.70 ms | -90.8% |
 
 Retained: cosine IVF-SQ (`nprobes=80`, `refine_factor=2`), 14 bitmap indexes (ATS/country/remote,
 presence/shape flags, four employment types, four offered experience ceilings), and B-trees on
@@ -95,6 +96,8 @@ setting returned every exact top-20 id across 16 real query vectors × four filt
 Removing unused description coverage plus the presence/date/experience bitmaps reduced cold
 no-filter facets from 423.65 to 28.53 ms. The 60-second bounded cache serves repeated filter sets
 at a 0.0042 ms in-process median and is invalidated by every pipeline-triggered Space restart.
+A separate 128-entry vector LRU avoids repeating model inference when only filters or pages change;
+startup performs one semantic pass to remove the measured first-request model penalty.
 
 Full-set correctness (not only top-20): all four employment flags produced identical legacy/new
 Job-id set fingerprints and zero row mismatches across 508,991 rows. The incremental positive

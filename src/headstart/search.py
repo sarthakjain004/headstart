@@ -118,6 +118,7 @@ FACET_CACHE_SIZE = 128
 FACET_CACHE_TTL_SECONDS = 60
 BROWSE_CACHE_SIZE = 64
 BROWSE_CACHE_TTL_SECONDS = 60
+QUERY_VECTOR_CACHE_SIZE = 128
 
 
 def _cache_get(cache: OrderedDict, lock: Lock, key: Any, ttl: float) -> Any | None:
@@ -1034,6 +1035,10 @@ class JobSearch:
             OrderedDict()
         )
         self._browse_cache_lock = Lock()
+        # Changing a filter or page must not run the same model inference again. Query vectors
+        # depend only on this process's immutable model, so they need a size bound but no TTL.
+        self._query_vector_cache: OrderedDict[str, Any] = OrderedDict()
+        self._query_vector_cache_lock = Lock()
         # The four flags above are each a whole feature silently switched off: an un-migrated
         # table ignores every `seen_within`/`first_seen_after` bound, the salary bracket and
         # `has_salary`, the Keyword filter's description scope, and the `seen`/`salary` sorts
@@ -1182,6 +1187,19 @@ class JobSearch:
         )
         return counted
 
+    def _query_vector(self, query: str) -> Any:
+        with self._query_vector_cache_lock:
+            cached = self._query_vector_cache.pop(query, None)
+            if cached is not None:
+                self._query_vector_cache[query] = cached
+                return cached
+        vector = encode_query(self._model, query)
+        with self._query_vector_cache_lock:
+            self._query_vector_cache[query] = vector
+            while len(self._query_vector_cache) > QUERY_VECTOR_CACHE_SIZE:
+                self._query_vector_cache.popitem(last=False)
+        return vector
+
     def run(
         self, args: Mapping[str, str], *, extra_where: str | None = None
     ) -> list[dict]:
@@ -1223,9 +1241,7 @@ class JobSearch:
                 return cached
 
         if query:
-            search = self._table.search(encode_query(self._model, query)).metric(
-                "cosine"
-            )
+            search = self._table.search(self._query_vector(query)).metric("cosine")
             if self.has_vector_index:
                 search = search.nprobes(ANN_NPROBES).refine_factor(ANN_REFINE_FACTOR)
         else:
@@ -1351,9 +1367,10 @@ class JobSearch:
         return result
 
     def warm(self) -> None:
-        """Preload the two no-query responses every fresh process serves first."""
+        """Preload default responses plus one semantic pass every fresh process serves first."""
         self.run({})
         self.facets({})
+        self.run({"q": "software engineer"})
 
     def indexed(self, ids: Collection[str]) -> set[str]:
         """Which of these job ids are still in the index — the Saved tab's "closed" check.

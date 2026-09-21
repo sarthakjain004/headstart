@@ -19,6 +19,7 @@ from headstart.search import (
     EMPLOYMENT_TYPES,
     ETYPE_CLAUSES,
     FACET_CACHE_SIZE,
+    QUERY_VECTOR_CACHE_SIZE,
     RESULT_COLUMNS,
     SORT_COLUMNS,
     IndexCapabilities,
@@ -518,6 +519,29 @@ def test_empty_query_pages_are_cached_and_expire(monkeypatch):
     assert table.search_calls == 2
 
 
+def test_semantic_vector_is_reused_across_filter_and_page_changes():
+    class CountingModel(_Model):
+        def __init__(self):
+            self.calls = 0
+
+        def encode(self, texts, normalize_embeddings=False):
+            self.calls += 1
+            return super().encode(texts, normalize_embeddings)
+
+    model = CountingModel()
+    table = _Table([dict(_ROW)])
+    searcher = JobSearch(model, table)
+    table.search_calls = 0
+    searcher.run({"q": "backend engineer", "remote": "true"})
+    searcher.run({"q": "backend engineer", "page": "2"})
+    assert model.calls == 1
+    assert table.search_calls == 2
+
+    for n in range(QUERY_VECTOR_CACHE_SIZE + 1):
+        searcher.run({"q": f"query-{n}"})
+    assert len(searcher._query_vector_cache) == QUERY_VECTOR_CACHE_SIZE
+
+
 def test_warm_uses_the_same_normalized_key_as_the_first_browser_request(monkeypatch):
     from headstart import facets
 
@@ -527,9 +551,9 @@ def test_warm_uses_the_same_normalized_key_as_the_first_browser_request(monkeypa
     searcher, table = _searcher()
     table.search_calls = 0
     searcher.warm()
-    assert table.search_calls == 1
+    assert table.search_calls == 2
     searcher.run({"q": "", "k": "20", "page": "1"})
-    assert table.search_calls == 1
+    assert table.search_calls == 2
 
 
 def test_startup_scan_learns_atses_and_first_seen():

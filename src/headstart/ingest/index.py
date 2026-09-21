@@ -225,7 +225,7 @@ def _schema(dim: int) -> pa.Schema:
 
 
 def _served_meta(meta: dict) -> dict:
-    """Store metadata plus the Search-only employment-type acceleration columns."""
+    """Store metadata plus the Search-only materialized filter verdicts."""
     row = dict(meta)
     row.update(employment_type_flags(meta.get("employment_type")))
     row[_SALARY_KNOWN_FIELD.name] = meta.get("min_salary_annual") is not None

@@ -21,7 +21,16 @@ from search_table import (
 from headstart.search import JobSearch
 
 
-def _one(fn):
+def _clear_response_caches(searcher: JobSearch) -> None:
+    """Measure the table path, not a nanosecond-scale response-cache lookup."""
+    with searcher._browse_cache_lock:
+        searcher._browse_cache.clear()
+    with searcher._facet_cache_lock:
+        searcher._facet_cache.clear()
+
+
+def _one(fn, searcher: JobSearch):
+    _clear_response_caches(searcher)
     started = time.perf_counter()
     value = fn()
     return (time.perf_counter() - started) * 1000, value
@@ -61,13 +70,13 @@ def main() -> int:
             a, b = [], []
             value_a = value_b = None
             for _ in range(args.cycles):
-                ms, value_a = _one(fn_a)
+                ms, value_a = _one(fn_a, baseline)
                 a.append(ms)
-                ms, value_b = _one(fn_b)
+                ms, value_b = _one(fn_b, candidate)
                 b.append(ms)
-                ms, value_b = _one(fn_b)
+                ms, value_b = _one(fn_b, candidate)
                 b.append(ms)
-                ms, value_a = _one(fn_a)
+                ms, value_a = _one(fn_a, baseline)
                 a.append(ms)
             row = {
                 "case": name,

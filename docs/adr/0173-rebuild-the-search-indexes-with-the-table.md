@@ -32,12 +32,14 @@ result count. Those knobs apply only when `JobSearch` observes a vector index; a
 unindexed table keeps exhaustive search unchanged.
 
 `JobSearch` also keeps bounded 60-second LRUs for facet payloads (128 filter sets) and browse pages
-(64 filter/page/sort sets). Facets are query-independent, and the table cannot change during a
+(64 filter/page/sort sets), plus 128 query vectors with no TTL because the loaded model is immutable.
+Changing a filter or page for the same semantic text therefore does not repeat model inference.
+Facets are query-independent, and the table cannot change during a
 process's lifetime — every successful pipeline publication restarts the Space on the newly-opened
 table — so changing only the semantic query must not repeat ~60 counts. The short TTL keeps 2-hour
 recency windows moving even in a long-lived process; the bounds prevent arbitrary requests growing
-memory without limit. Startup preloads the unfiltered browse and facet responses from that fresh
-table, so the first page does not make the first visitor pay to populate them.
+memory without limit. Startup preloads the unfiltered browse and facet responses plus one semantic
+pass from that fresh table, so the first visitor pays neither cache population nor lazy model work.
 
 The existing query shape remains deliberate: filters run before ANN search, the production result
 projection omits vector/description payloads, and ranked date/salary sorts keep their 2,000-result
@@ -85,25 +87,25 @@ Every Search-result and facet-payload fingerprint matched.
 
 | production-table workload | no index | retained candidate | change |
 | --- | ---: | ---: | ---: |
-| browse | 48.05 ms | 47.96 ms | -0.2% |
-| browse, ATS filter | 17.17 ms | 13.62 ms | -20.7% |
-| browse, employer-date order | 41.71 ms | 28.37 ms | -32.0% |
-| semantic, no filter | 107.02 ms | 19.01 ms | -82.2% |
-| semantic, ATS | 89.48 ms | 14.39 ms | -83.9% |
-| semantic, full-time | 164.08 ms | 14.69 ms | -91.0% |
-| semantic, salary bracket | 157.86 ms | 60.39 ms | -61.7% |
-| semantic, India | 98.09 ms | 10.42 ms | -89.4% |
-| semantic, combined filters | 84.41 ms | 10.26 ms | -87.8% |
-| facets, no filters (cold) | 251.21 ms | 28.53 ms | -88.6% |
-| facets, combined filters (browser cold) | 244.59 ms | 26.40 ms | -89.2% |
-| facets, repeated filter set | 244.59 ms | ~1 ms HTTP | >-99% |
+| browse | 47.76 ms | 48.29 ms | +1.1% |
+| browse, ATS filter | 17.09 ms | 13.72 ms | -19.7% |
+| browse, employer-date order | 42.45 ms | 39.35 ms | -7.3% |
+| semantic, no filter | 102.94 ms | 18.36 ms | -82.2% |
+| semantic, ATS | 85.38 ms | 13.60 ms | -84.1% |
+| semantic, full-time | 156.93 ms | 15.36 ms | -90.2% |
+| semantic, salary bracket | 142.18 ms | 33.41 ms | -76.5% |
+| semantic, India | 93.98 ms | 10.69 ms | -88.6% |
+| semantic, combined filters | 83.26 ms | 9.11 ms | -89.1% |
+| facets, no filters (uncached) | 75.76 ms | 8.34 ms | -89.0% |
+| facets, combined filters (uncached) | 123.33 ms | 19.26 ms | -84.4% |
+| facets, India (uncached) | 105.00 ms | 9.70 ms | -90.8% |
 
 IVF-SQ at 80 probes + 2× refinement reproduced **every top-20 id** across 16 real query vectors
 and four filter selectivities (1,280 expected result positions). Building the full retained set
 took **6.31 s** and added **402,650,424 bytes (13.70%)**. A full indexed compaction took 10.78 s
-against the old path's 6.53 s. A cold retained facet request remained
-40–274 ms by filter shape; the same filter set with different semantic queries then measured a
-0.0042 ms warm median from the bounded cache.
+against the old path's 6.53 s. Uncached retained facet requests measured 8.34–134.19 ms by filter
+shape; the same filter set with different semantic queries then measured a 0.0042 ms warm median
+from the bounded cache.
 
 Each employment-type flag was also checked over the full table, not only on returned pages:
 313,836 full-time, 5,347 part-time, 20,464 contract and 2,186 internship Job ids produced identical
