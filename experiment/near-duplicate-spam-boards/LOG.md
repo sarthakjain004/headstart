@@ -50,8 +50,8 @@ Delivery Manager (Datacenter Field Services) - Dominican Republic
 ```
 
 Priority rank **#3** in `data/state/board_priority.csv` (pulled fresh from HF the same day),
-credited **4,334 tech rows** — **40.6% of every tech row that ledger credits to recruitee at all**,
-across its 1,304 scored recruitee Boards.
+credited **4,334 tech rows** — **40.6% of every tech row that ledger credits to recruitee at all**
+(4,334 of 10,684, across its 1,304 scored recruitee Boards).
 
 ## 2. `smartrecruiters:EndeavorITSolution` — one city, the same intake reposted
 
@@ -66,7 +66,12 @@ Priority rank **#5**, credited **4,252 tech rows**.
 
 **One number in the originating review does not reproduce.** It says this Board is "8.4% of all
 smartrecruiters tech jobs"; against the 2026-09-21 priority ledger it is **6.5%** (4,252 of the
-65,444 tech rows credited to smartrecruiters across 3,606 scored Boards). Trust the 6.5%.
+65,453 tech rows credited to smartrecruiters across 3,605 scored Boards). Trust the 6.5%.
+
+Both denominators are quoted off the **freshest** pull of that ledger (2026-09-21 ~20:55 UTC). An
+earlier pull an hour before read 65,444 / 3,606 for smartrecruiters and 10,688 for recruitee — the
+file is rewritten every run, so name the pull rather than the number alone. Both ratios are 6.50% and
+40.6% on either pull, so nothing downstream of them moves.
 
 Content read before parking, per `EXCLUDED_BOARDS`' own rule: these are real postings from a real
 Indore IT-training shop advertising the same trainee intake over and over — not a vendor sandbox.
