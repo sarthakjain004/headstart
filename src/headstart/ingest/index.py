@@ -69,6 +69,7 @@ from __future__ import annotations
 import argparse
 import csv
 import gc
+import inspect
 import json
 import os
 import shutil
@@ -284,27 +285,36 @@ def _migrate_experience_filter_flags(table: Any) -> None:
 
 def _create_search_indexes(table: Any) -> None:
     """Create the measured Search indexes missing from a freshly rebuilt production table."""
+    from lancedb.index import Bitmap, BTree, IvfSq
+
     existing = {column for index in table.list_indices() for column in index.columns}
+    unified = "config" in inspect.signature(table.create_index).parameters
     specs = [
-        ("ats", "BITMAP"),
-        ("country", "BITMAP"),
-        ("remote", "BITMAP"),
-        ("posted_at", "BTREE"),
-        (_POSTED_AT_COMPARABLE_FIELD.name, "BITMAP"),
-        ("first_seen", "BTREE"),
-        (_DESCRIPTION_STORED_FIELD.name, "BITMAP"),
-        (_SALARY_KNOWN_FIELD.name, "BITMAP"),
+        ("ats", "BITMAP", Bitmap()),
+        ("country", "BITMAP", Bitmap()),
+        ("remote", "BITMAP", Bitmap()),
+        ("posted_at", "BTREE", BTree()),
+        (_POSTED_AT_COMPARABLE_FIELD.name, "BITMAP", Bitmap()),
+        ("first_seen", "BTREE", BTree()),
+        (_DESCRIPTION_STORED_FIELD.name, "BITMAP", Bitmap()),
+        (_SALARY_KNOWN_FIELD.name, "BITMAP", Bitmap()),
         *(
-            (experience_filter_column(ceiling), "BITMAP")
+            (experience_filter_column(ceiling), "BITMAP", Bitmap())
             for ceiling in EXPERIENCE_FILTER_CEILINGS
         ),
-        *((rule.column, "BITMAP") for rule in EMPLOYMENT_TYPE_FILTERS.values()),
+        *(
+            (rule.column, "BITMAP", Bitmap())
+            for rule in EMPLOYMENT_TYPE_FILTERS.values()
+        ),
     ]
-    for column, index_type in specs:
+    for column, index_type, config in specs:
         if column not in table.schema.names or column in existing:
             continue
         started = datetime.now(UTC)
-        table.create_scalar_index(column, index_type=index_type, replace=False)
+        if unified:
+            table.create_index(column, config=config, replace=False)
+        else:  # LanceDB 0.33's sync wrapper predates the unified API.
+            table.create_scalar_index(column, index_type=index_type, replace=False)
         elapsed = (datetime.now(UTC) - started).total_seconds()
         _log.info(f"search index: built {column} ({index_type}) in {elapsed:.1f}s")
 
@@ -312,12 +322,17 @@ def _create_search_indexes(table: Any) -> None:
     # training population. Production is over 500k rows; this boundary is deliberately remote.
     if table.count_rows() >= 256 and "vector" not in existing:
         started = datetime.now(UTC)
-        table.create_index(
-            metric="cosine",
-            vector_column_name="vector",
-            index_type="IVF_SQ",
-            replace=False,
-        )
+        if unified:
+            table.create_index(
+                "vector", config=IvfSq(distance_type="cosine"), replace=False
+            )
+        else:
+            table.create_index(
+                metric="cosine",
+                vector_column_name="vector",
+                index_type="IVF_SQ",
+                replace=False,
+            )
         elapsed = (datetime.now(UTC) - started).total_seconds()
         _log.info(f"search index: built vector (IVF_SQ) in {elapsed:.1f}s")
 
