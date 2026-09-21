@@ -134,6 +134,45 @@ Probed live:
 duplicates semantically, not by identity. Together they are ~1.7% of the 507,7xx-row served table,
 and they consume two of the five slots the priority ledger ranks highest.
 
+> **Correction and addition, 2026-09-21 — the 8.4% is wrong (6.5%), "distinct titles across
+> distinct locations" is the wrong instrument, and the two boards are *not* the same shape.**
+> Both boards re-measured live through their registered scrapers before being parked
+> ([PR #520](https://github.com/sarthakjain004/headstart/pull/520); captures and method in
+> `experiment/near-duplicate-spam-boards/`). The posting/title/location counts above all reproduce
+> exactly. Four things change.
+>
+> **8.4% → 6.5%, and the denominator is now named.** Against `data/state/board_priority.csv` pulled
+> fresh the same day, `smartrecruiters:EndeavorITSolution` is **4,252 of the 65,453 tech rows the
+> ledger credits to smartrecruiters across its 3,605 scored boards = 6.5%**. (A pull an hour earlier
+> read 65,444 / 3,606 — the ledger moves every run; the ratio is 6.50% on both.)
+>
+> **The more striking share was missing: `recruitee:rebootmonkey` is 4,334 of 10,684 recruitee tech
+> rows across 1,304 scored boards = 40.6%** — two fifths of everything that ATS contributes, from one
+> board.
+>
+> **"2,562 distinct titles across 2,352 distinct locations" is not self-evidently damning — it reads
+> the opposite way.** On this board **no exact title repeats more than 4 times**, so a distinct-title
+> ratio scores it 58.5% unique and therefore *ordinary*. The duplication only becomes visible after
+> stripping each title's per-city tail: the board collapses to **70 title stems, one of which — "data
+> center technician" — holds 4,249 of the 4,377 postings (97.1%)**, runner-up 36. Any future claim of
+> this kind needs the stem, not the raw title count.
+>
+> **The two boards are the same defect from opposite ends, and only one of them is detectable
+> cheaply.** Reboot Monkey is one role across 2,352 cities; Endeavor is one city (99.7% Indore, 5
+> locations in total) repeating a handful of roles. A bounded prevalence sweep over the top 30
+> priority boards (23 measurable) separates them completely: Reboot Monkey's 97.1% top-stem share is
+> **5.3x the 18.3% maximum among the other 23**, while **Endeavor ranks 19th of 25 on that same
+> measure (2.9%)**. Endeavor's own markers — one city, 49 copies of one exact title — are *beaten* by
+> `successfactors:careers.hcltech.com` (2,975 postings across **4** locations, **399** copies of one
+> exact title) and `careers.wipro.com` (404) — both floors, since those two boards could only be
+> measured on their tech subset — and both are real employers doing genuine bulk requisition hiring
+> this index wants. **So every cheap ratio strong enough to catch Endeavor evicts HCLTech and
+> Wipro first**, which is the load-bearing reason PR #520 parks two measured boards rather than adding
+> a near-duplicate gate to the index path. Caveat on that sweep: 23 boards drawn from the head of the
+> priority ledger say nothing about the tail.
+>
+> The severity ranking above is unchanged, as is everything else in this finding.
+
 ### 7. 23.3% of the served table is non-tech (MEDIUM)
 
 `role_trends` reports `non-tech: 118,263–118,338 of 507,673–507,886 served rows (23.3%)` — the same
