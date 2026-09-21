@@ -6,10 +6,10 @@
     retries: 403-wall 34, 405-wall 74, 429-ratelimit 2207, 5xx 2943, network 9286 (total 14544)
 
 **The headline use is detecting a shard that lost its spare egress, without trusting a log
-string.** Measured over runs 32261793515 and 32272854468 (30 shards), the two populations do not
-overlap:
+string.** Measured over runs 32261793515 and 32272854468 (30 shards) — **the 2026-08 regime, not
+today's volumes; see the re-measurement below** — the two populations do not overlap:
 
-| shard state | `network` retries | `429-ratelimit` retries |
+| shard state (2026-08) | `network` retries | `429-ratelimit` retries |
 | --- | --- | --- |
 | WARP healthy | 5,000-19,000 | 1,100-2,900 |
 | degraded to direct | **0-13** | **14,600-23,800** |
@@ -27,7 +27,27 @@ when new log wording made an old phenomenon look new.
 **Sample size: 4 degraded shards, all from one run (32261793515), against 26 healthy ones.** The
 separation is wide — healthy shards top out at 0.37, degraded ones start at 1489 — but four is a
 small n drawn from a single run, so treat `DIRECT_RATIO` as calibrated, not proven. A shard landing
-in the ambiguous band between the thresholds is reported as `?` rather than forced to a verdict.
+in the ambiguous band between the thresholds is reported as `?` rather than forced to a verdict —
+and so, since `MIN_EGRESS_RETRIES` below, is one that retried too little for the ratio to mean
+anything. Both print `?`; the ratio column tells them apart, a number against a `-`.
+
+**Retry volume has since collapsed by more than an order of magnitude, and the ratio alone became
+a false-positive machine.** Re-measured 2026-09-21 over the 9 measurable of the 10 most recent
+`pipeline.yml` runs — 35569584172, 35572417059, 35575571888, 35579899915, 35583945947, 35587348049,
+35590192500, 35592873553, 35595828212 (35578784666 stood down), 135 shards:
+
+| 2026-09 regime | `network` retries | `429-ratelimit` retries |
+| --- | --- | --- |
+| per shard | 0-1,560 | 0-473 |
+| whole run, all 15 shards | 3,103-5,964 | 785-2,046 |
+
+A whole run now spends 11,903-15,825 retries of every class, comparable to what a *single* degraded
+shard used to spend on 429s alone. Against those volumes the ratio fired `DIRECT !MISMATCH` on
+**6 of the 9 runs, 9 shards in total, while 0 of 135 shards logged `degrading to direct`** — and on
+4 of the 6 the excess line came out *negative* (-71, -89, -78, -74), i.e. the shard flagged as
+having lost its proxy spent **fewer** rate-limit retries than a healthy one. The flagged shapes say
+why: `network=2, 429=230`, `network=3, 429=18`, `network=0, 429=20` (prints `inf`), `network=11,
+429=473`. That is a near-zero denominator, not degradation — hence `MIN_EGRESS_RETRIES`.
 
 **A caution the measurement earned.** `spare_egress.rotations()` counts tunnel restarts, and a
 restart that returns the same address counts the same as one that does not — so rotation counts
@@ -73,6 +93,17 @@ SPENT = re.compile(
 DIRECT_RATIO = 5.0
 WARP_RATIO = 1.0
 
+# A ratio needs a denominator. `429/network` on a shard that spent 2 network and 17 rate-limit
+# retries reads 8.50 and prints DIRECT — and that, not lost egress, is what produced every one of
+# the 9 `!MISMATCH` rows in the 2026-09 window above. So classify only above a floor on the two
+# classes together. 1,000 is **calibrated, not proven**: 2.1x the largest false positive measured
+# (484 = 11 network + 473 429; the other eight are all under 250), 6.1x below the smallest healthy
+# shard the ratios were drawn from (6,100 = 5,000 + 1,100), and 14.6x below the degraded
+# population's own 429 floor (14,600) — so it abstains on 125 of the 135 shards in that window,
+# while still clearing a degradation an order of magnitude smaller than 2026-08's. Zero of
+# both classes, the case this guard originally special-cased, is simply the bottom of that range.
+MIN_EGRESS_RETRIES = 1000
+
 
 class Row(NamedTuple):
     shard: int | None
@@ -85,14 +116,15 @@ class Row(NamedTuple):
 
 
 def direct_ratio(counts: dict[str, int]) -> float | None:
-    """429-per-network, the egress fingerprint. `None` only when the shard spent **zero** of both
-    classes — it is then silent, not direct, and calling it direct was a real false positive this
-    guard exists to stop. A shard with zero network but any rate-limit retries still reads
-    `inf`/DIRECT, deliberately: no proxy failures at all alongside walling is the degraded shape."""
+    """429-per-network, the egress fingerprint. `None` — and `None` only — when the two classes
+    together fall below `MIN_EGRESS_RETRIES`: the shard is then quiet, not direct, and calling it
+    direct was a real false positive this guard exists to stop. Above the floor, a shard with zero
+    network reads `inf`/DIRECT, deliberately: no proxy failures at all alongside that much walling
+    is the degraded shape."""
     net, lim = counts.get("network", 0), counts.get("429-ratelimit", 0)
-    if net == 0:
-        return None if lim == 0 else float("inf")
-    return lim / net
+    if net + lim < MIN_EGRESS_RETRIES:
+        return None
+    return float("inf") if net == 0 else lim / net
 
 
 def verdict_of(ratio: float | None) -> str:
@@ -175,9 +207,12 @@ def report(run: Run) -> None:
 
     direct = [r for r in rows if verdict_of(direct_ratio(r.counts)) == "DIRECT"]
     logged = [r for r in rows if r.logged_degraded]
+    quiet = [r for r in rows if direct_ratio(r.counts) is None]
     print(
         f"  egress: {len(direct)}/{len(rows)} shards look DIRECT by retry ratio; "
-        f"{len(logged)}/{len(rows)} logged '{DEGRADED}'",
+        f"{len(logged)}/{len(rows)} logged '{DEGRADED}'; "
+        f"{len(quiet)}/{len(rows)} spent under {MIN_EGRESS_RETRIES:,} network+429 retries, too few "
+        f"to read a ratio from (shown '-')",
         flush=True,
     )
     if direct:
