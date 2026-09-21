@@ -394,7 +394,10 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   same module but is **not** part of this run — it moved to the `cleanup-index` workflow, because
   rewriting the whole table once per run is what the storage budget cannot afford.
   One more entry point is not a stage but opens three of them: `state_fetch` (ADR-0030) pulls each
-  stage's slice of HF state in `scrape-plan`, `join` and `merge`, or aborts.
+  stage's slice of HF state in `scrape-plan`, `join` and `merge`, or aborts. And one runs at the
+  end of `merge` without being a stage either: `reclaim_storage` (ADR-0168) deletes the orphaned
+  LFS blobs and verifies the quota actually fell — squashing history only makes them eligible for
+  HF's collection, which is how the 100 GB quota filled on 2026-09-18.
   If you change what the pipeline runs, change it there and update `.github/workflows/pipeline.yml`
   to match. Don't add a pipeline stage to `scripts/`. Helper modules used *only* by the pipeline
   live there too (`binpack`, `board_failures`, `derived_meta`, `doc_prep`, `index_plan`,

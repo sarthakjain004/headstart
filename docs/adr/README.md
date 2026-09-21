@@ -167,3 +167,4 @@ supersedes it and note the supersession in both.
 | [0164](0164-mark-when-the-definition-changed-not-just-the-data.md) | Mark when the definition changed, not just when the data did | 2026-09-16 |
 | [0166](0166-gate-the-detail-pass-on-the-tech-filter.md) | Gate the detail pass on the tech filter, behind one seam | 2026-09-17 |
 | [0167](0167-a-scraper-may-decline-the-multiplexed-path.md) | A scraper may decline the multiplexed path, on a measurement | 2026-09-17 |
+| [0168](0168-delete-the-orphaned-blobs-dont-ask-for-them-to-be-collected.md) | Delete the orphaned blobs, don't ask for them to be collected | 2026-09-18 |

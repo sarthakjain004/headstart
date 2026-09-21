@@ -20,7 +20,7 @@ Four things were genuinely open. Each is settled below, with the option that was
 **Decision: build it.** `.github/workflows/squash-subscribers-history.yml`, weekly, green no-op
 until the deployment's secrets are set.
 
-The cost is not the one the sibling workflow pays. `squash-dataset-history` collapses the *index*
+The cost is not the one the sibling workflow pays. `reclaim-dataset-storage` collapses the *index*
 dataset, and its stated justification is that "everything in the dataset is derived state the
 pipeline regenerates". **That reasoning does not transfer here and is not borrowed.** The
 Subscriptions repo holds Profiles, Saved sets, Saved jobs and Subscriptions — user records with no
@@ -59,7 +59,7 @@ while it is being squashed. The window is one API call wide, it runs at 03:17 UT
 the before/after file-map check catches the detectable shapes of it. It deliberately takes its own
 concurrency group rather than sharing `email-alerts`: only one run may be pending per group, so a
 Digest fired by the pipeline would displace a queued squash and silently disable the retention the
-promise rests on — the exact failure `squash-dataset-history`'s own header documents.
+promise rests on — the exact failure `reclaim-dataset-storage`'s own header documents.
 
 ## 2. Two browsers, one document: refuse, and keep both
 

@@ -2,6 +2,154 @@
 
 Running log of non-obvious findings worth keeping. Newest first.
 
+## Squashing history does not free HF storage — the quota counts bytes, not commits (2026-09-18)
+
+The pipeline started failing its `merge` job outright:
+
+```
+403 Forbidden: Private repository storage limit reached, please upgrade your plan
+to increase your private storage limit.
+```
+
+Three of the last fifteen runs died that way. The dataset's `usedStorage` read **96.83 GB of the
+free tier's 100 GB** — while the current revision held **7.57 GB** across a single commit, with no
+other branch, tag or open PR to pin anything. 89.26 GB was dead weight the repo was still paying
+for.
+
+### The concept: git keeps the bytes even when it drops the pointer
+
+Git is content-addressed and deliberately non-destructive. A commit's tree references a blob by
+hash; LFS splits that further — the commit holds a ~130-byte *pointer file*, and the actual bytes
+live in a separate object store keyed by sha256. **Deleting a file, or rewriting every commit that
+ever mentioned it, only removes pointers.** The blob stays in the object store, because that is
+precisely what makes history recoverable.
+
+Hugging Face bills on **stored** bytes, not **reachable** bytes. So a repo whose HEAD is 7.57 GB can
+legitimately cost 96.83 GB, and both numbers are correct at the same time. `usedStorage` is the one
+the quota enforces; the file listing in the UI shows the other.
+
+`HfApi.super_squash_history()` collapses the branch to one commit. That makes every prior blob
+*unreachable* — which makes it **eligible** for garbage collection, and nothing more. Collection
+itself is asynchronous, batched, and entirely HF's to schedule. No API promises when.
+
+### Root cause: a control loop whose actuator was a request to a third party
+
+`pipeline.yml`'s reclaim step fires `super_squash_history()` whenever `usedStorage` crosses
+`SQUASH_ABOVE_GB: "40"`, then prints:
+
+```
+::notice::squashed; live 7.50 GB, usedStorage falls as HF collects the orphans
+```
+
+That last clause is a **prediction stated as an outcome**. The step re-reads `live2` (to assert the
+live set didn't shrink — a good check) but never re-reads `usedStorage`. So it announced success on
+every run while the number it existed to move climbed: `98.85 → 99.23 → 99.42 → 99.78 GB` across
+four consecutive merge logs, each line printed *before* that run's own squash, each one the previous
+squash's real result.
+
+The squash was working perfectly. It was simply not the thing that frees bytes, and nothing
+downstream of it was ever measured.
+
+**The margin was one day wide, and the design didn't know it.** Measured from the orphan inventory —
+184 objects spanning 2026-09-17 11:55 to 2026-09-18 09:21, a 21.4-hour window:
+
+| what | per run | note |
+| --- | ---: | --- |
+| `data/embeddings/jobs/embeddings.f32` | 2.71 GB | rewritten **wholesale**, 27 dead copies |
+| `data/embeddings/jobs/meta.jsonl` | 0.577 GB | same, 27 dead copies |
+| state parquets / gz | ~0.02 GB | 26 copies each |
+| **total new blobs** | **3.31 GB** | at ~30 runs/day |
+
+That is **~100 GB of orphaned blobs per day against a 100 GB quota**. The repo generates its entire
+quota in dead weight every 24 hours, so the *maximum tolerable GC lag was about one day* — for a
+process with no SLA, no signal, and no visibility. The 21.4 hours of uncollected orphans that filled
+the disk were not an outage on HF's side; they were inside the budget the design had silently
+assumed away.
+
+The threshold's own justification was also stale. Its comment reasons: *"live files sit ~3.5 GB
+after a squash and the run writes ~1.86 GB, so (40 - 3.5) / 1.86 = ~19.6 runs, which at the ~19.4
+runs/day ceiling is ~24 h."* Today the run writes 3.31 GB at ~30 runs/day, so 40 GB is crossed in
+~10 runs ≈ 7.8 hours. The step had quietly gone from "squash daily" to "squash constantly and still
+lose" — and firing more often looked harmless precisely because each firing reported success.
+
+### Why nothing caught it
+
+- **The number that would have caught it was printed every run and read by nothing.**
+  `usedStorage 99.78 GB · live 7.57 GB · 5 commits` sat in four consecutive merge logs, walking
+  toward 100. No alert watches it. ADR-0091 closes with this exact admission for compaction —
+  *"nothing alerts when compaction has not succeeded in N days… none of them notices an absence"* —
+  and the identical blind spot sat one step away in the same job.
+- **The verifying variant existed but was unreachable.** `squash-dataset-history.yml` *does*
+  re-read and print the after-state (`used2, live2, commits2`). It is `workflow_dispatch`-only. The
+  copy that actually runs every night is the one that checks less.
+- **"5 commits" looked like proof it was working.** Every run reported the same count before
+  squashing, which is exactly the steady state you'd see if squashing worked (1 squash commit + 4
+  upload commits). A stable number read as health; it was equally consistent with total failure.
+- **This wall had been hit before and the lesson was recorded as the fix, not the cause.** The
+  squash workflow's own header documents 2026-07-27: *96.8 GB of 100 with only 1.9 GB of live
+  files.* Same number, same repo, seven weeks apart — because squash treated the symptom
+  under an assumption about HF's GC that was never re-validated.
+
+### The fix
+
+`HfApi.permanently_delete_lfs_files()` deletes blobs from the object store directly instead of
+waiting for collection. It is flagged non-revertible and potentially repo-corrupting for a real
+reason: it will happily delete a blob a live commit still points at, leaving a dangling pointer. So
+the selection is the safety property, not the deletion:
+
+```python
+info = api.repo_info(repo, repo_type='dataset', files_metadata=True)
+live_oids = {s.lfs.sha256 for s in info.siblings if s.lfs}     # sibling.lfs.sha256 == LFSFileInfo.file_oid
+cutoff = datetime.now(timezone.utc) - timedelta(minutes=45)    # never race an in-flight upload
+orphans = [f for f in api.list_lfs_files(repo, repo_type='dataset')
+           if f.file_oid not in live_oids and f.pushed_at < cutoff]
+assert not (live_oids & {f.file_oid for f in orphans})         # assert, then delete
+api.permanently_delete_lfs_files(repo, orphans, repo_type='dataset')
+```
+
+Result: **96.83 GB → 7.57 GB**, 184 objects removed, live set byte-identical at 2,717 objects
+(`embeddings.f32`, `meta.jsonl`, `manifest.json`, `board_priority.csv`, 1,860 lancedb files and 897
+description files all intact).
+
+### Three things worth carrying
+
+**1. A threshold that triggers a request is not a control loop.** The step measured an input, fired
+an action it did not own, and never measured the output. Any step whose success depends on a third
+party's scheduler must re-measure the quantity it claims to have changed, and go red when it hasn't.
+The one-line version: never `print("::notice::…")` a future tense.
+
+**2. Storage cost is set by rewrite granularity, not data size.** Content-addressing means an
+unchanged file is free forever and a 2.75 GB file with one changed vector is a brand-new 2.75 GB
+object. The corpus is ~7.5 GB and grows slowly; the *bill* was 100 GB/day because two large files
+are re-uploaded whole every 48 minutes. Appending or sharding the embeddings store would attack the
+cause rather than the symptom. (Open question worth measuring: the repo is Xet-backed — the
+`lfs-files` rows carry `xetHash` — and Xet chunk-dedups, yet `usedStorage` still billed 27 × 2.71 GB
+for near-identical files. Whether Xet dedup is reflected in quota accounting at all is unverified;
+don't assume it rescues this.)
+
+**3. When a wall is hit twice with the same number, the first fix treated a symptom.** 96.8 GB on
+2026-07-27, 96.83 GB on 2026-09-18. The quota is the same, so an unchanged root cause reproduces the
+identical figure. A recurrence at a suspiciously exact number is a signal to re-read the *previous*
+fix's assumptions rather than re-apply it harder.
+
+**Confirmed on the next run.** The first `merge` after the reclaim went green (run `35339901313` —
+the three before it had failed on the 403), and the repo settled at `used_storage` 10.94 GB / live
+7.59 GB with **7 orphans totalling 3.35 GB**: exactly one run of churn, against the 3.31 GB/run this
+entry predicted. The 5-commit steady state (1 squash + 4 uploads) is there too. The rate is real and
+it is running right now.
+
+**Fixed** in `headstart.ingest.reclaim_storage` (ADR-0168): the step now deletes the orphaned blobs
+outright and exits non-zero if `usedStorage` did not fall, instead of squashing and predicting. It
+lives in a module rather than inline workflow YAML specifically so it can be tested — being
+untestable is why the old one was never checked.
+
+**And the fix nearly repeated the bug.** Its first draft read `usedStorage` immediately after the
+delete and errored if it hadn't dropped — another claim about HF behaviour taken on faith. Measured
+before shipping: the delete call returns in 2.8s but the counter still reports the pre-delete figure
+at t+3.3s and t+9.1s, falling only by t+24.5s. That version would have annotated `::error::` on
+every *healthy* run. The check now polls for up to 180s. Two reviewers, one measurement: the second
+version of a fix deserves the same "measure, don't reason" discipline as the first.
+
 ## A "0% overlap" that was really a sample size, and the rule it nearly justified (2026-09-11)
 
 A pipeline review found that a third of Oracle's ingested volume comes from tenants whose pod label

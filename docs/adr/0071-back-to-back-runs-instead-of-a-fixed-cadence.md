@@ -3,7 +3,10 @@
 **Status:** accepted · **Date:** 2026-08-20 · **Amended by:**
 [ADR-0093](0093-chain-the-successor-the-cron-is-only-a-seed.md) (on the *mechanism* that delivers
 the cadence — GitHub stopped delivering this repo's cron reliably on 2026-08-26, so each run now
-dispatches its own successor; the cadence target and the storage arithmetic below stand) ·
+dispatches its own successor; the cadence target and the storage arithmetic below stand),
+[ADR-0168](0168-delete-the-orphaned-blobs-dont-ask-for-them-to-be-collected.md) (on the *reclaim*
+this ADR placed in `merge`: the placement stands, but `super_squash_history` only makes blobs
+eligible for collection and does not free the quota, so the step now deletes them and verifies) ·
 **Relates to:**
 [ADR-0020](0020-free-tier-deployment.md) (the free-tier deployment this cadence serves),
 [ADR-0025](0025-parallelize-nightly-pipeline.md) /
@@ -93,7 +96,8 @@ replaces did: live files settle at ~3.5 GB after a squash and each run adds ~1.8
 stating because the first revision used 55 GB, which measures out at ~34 h — *less* often than the
 daily schedule it replaced, and so a regression dressed as an improvement. A threshold is only
 equivalent to a schedule if someone does that arithmetic.
-`squash-dataset-history.yml` loses its schedule and stays as a manual escape hatch.
+`squash-dataset-history.yml` loses its schedule and stays as a manual escape hatch (renamed
+`reclaim-dataset-storage.yml` by ADR-0168, which also replaced the squash it ran with a delete).
 
 ### `cleanup-index` keeps the shared group, and may occasionally be displaced
 

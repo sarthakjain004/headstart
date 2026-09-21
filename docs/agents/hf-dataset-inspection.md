@@ -117,9 +117,13 @@ print(f"commits     {commits}")
 PY
 ```
 
-`usedStorage` counts history; `live` does not. The gap is what `super_squash_history` reclaims, and
-it falls on HF's own garbage-collection schedule rather than immediately — **a spike in `usedStorage`
-alone proves nothing about what one run did.** Compare `live` across runs instead.
+`usedStorage` counts every stored blob; `live` counts only what HEAD references. The gap is dead
+weight, and since ADR-0168 it is **deleted outright** by `headstart.ingest.reclaim_storage` in the
+merge job rather than left to HF's garbage collection — squashing alone only makes blobs *eligible*
+for collection, which on 2026-09-18 did not arrive and filled the 100 GB quota. Expect the gap to
+sit near one run of churn (~3.3 GB); a gap in the tens of GB means the reclaim is not running.
+**A spike in `usedStorage` alone still proves nothing about what one run did** — compare `live`
+across runs for that.
 
 ## Recent commits — who wrote what · 1 API call
 

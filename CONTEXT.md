@@ -287,7 +287,8 @@ _Avoid_: saying a Résumé document "is stored on the server" without naming whi
 
 **Subscriptions dataset** (ADR-0035, ADR-0042):
 The private HF dataset every per-Account record is filed in — `Subscription`s, **Saved set**s, **Saved job**s, **Profile**s and now **Account copies** of a **Résumé document**, one file per record so two writers can never lose one another's. Named here because five ADRs and a dozen modules say it and none of them defined it; the repo id itself ends `-subscribers`, which is the one place that spelling is correct.
-_Avoid_: the subscribers dataset, the subscribers repo — **Account** already says not to call a person a subscriber, and the store holds far more than Subscriptions. Keep it apart from the **index** dataset, which holds the served table and is derived state a pipeline regenerates; the two have opposite recovery stories and one scheduled squash each.
+_Avoid_: the subscribers dataset, the subscribers repo — **Account** already says not to call a person a subscriber, and the store holds far more than Subscriptions. Keep it apart from the **index** dataset, which holds the served table and is derived state a pipeline regenerates; the two have opposite recovery stories: the subscriptions dataset is squashed on a schedule,
+while the index dataset has its orphaned blobs deleted inside every pipeline run (ADR-0168).
 
 **Account copy** (ADR-0124, ADR-0131):
 The **Résumé document** as one JSON file at `resumes/{account}/{document_id}.json` in the private Subscriptions dataset — the same store, the same `subscription_id(email)` identifier and the same traversal guard as the **Profile**, **Saved set** and **Saved job**. It is the browser's own export byte for byte, so there is no second schema. A *sync target*, never a source: it is written on three coarse events (an explicit save, the tab going away, and at most one push every three minutes while editing) and read only to restore a document onto a browser that does not have it. Carries a **revision** the client increments; a push that is not exactly one past the stored one is refused, and the client then keeps both copies rather than picking a winner. A stored copy that cannot be *read* is refused the same way: an unanswered read is not evidence that the slot is empty, and accepting a push on it overwrites whatever is there.
@@ -353,7 +354,8 @@ the compare-and-swap on an HF state prefix. `state_guard record` fingerprints th
 fetch, `state_guard verify` retakes it immediately before the upload, and a difference means another
 workflow wrote while this one worked — so the upload is refused and the step goes red. The
 fingerprint is **content**, sorted `path:blob_id` pairs hashed: the pipeline publishes four or five
-commits per run and the daily squash rewrites every sha, so a commit id identifies nothing here.
+commits per run and the reclaim squashes on any run with orphans to drop (ADR-0168), rewriting
+every sha, so a commit id identifies nothing here.
 Both writers of `data/lancedb` carry it — the pipeline's `merge` job and `cleanup-index`.
 _Avoid_: calling it a lock. It serialises nothing and prevents no collision; it converts a silent
 overwrite into a visible refusal, and the loser still loses its run's work.
