@@ -201,6 +201,11 @@ Live: **211 files**, `2026-09-13T12-00-39` → `2026-09-21T16-55-09`, so ~26/day
 (~3 MB total); file count is. A retention sweep keeping ~2× the window would fix it before it is
 urgent.
 
+**This stopped being only a future problem when §1 was measured.** `data/state/`'s fetch is bound
+by per-file latency, and these files are now most of its file count — both planners download all
+211 every run and neither opens one. They already cost more of the run's wall-clock than the
+174.89 MB CSV did, and unlike the CSV that cost grows daily.
+
 ## 7. `request-compaction` is dormant
 
 The `merge` job spends an `HfApi().repo_info()` call per run deciding whether to dispatch a
@@ -247,5 +252,9 @@ reader has to rule out:
   still move the gap-backlog verdict in §5, which is the finding most sensitive to it.
 - §4 and §6 are greps plus a live file listing, not proof that no out-of-repo consumer exists.
 - §7's ~350 files/day projection is extrapolated from a single eight-hour observation.
-- Nothing here was measured by removing it and re-running. §1 is the only item where the effect size
-  is arithmetic rather than inference.
+- §1 is the only item measured by removing it and re-running — and the re-run is **n=1**. Its byte
+  figures are solid (213 → 38 MB in `scrape-plan`, 807 → 633 MB in `join`, against a dead-flat
+  213/807 baseline). Its *timing* conclusion — that the delete buys no wall-clock — rests on one
+  post-delete sample landing inside a twelve-run pre-delete spread. That is consistent with no
+  effect but does not bound a small one; two more post-delete runs would settle it.
+- Everything else here is inference from logs, not from removal.
