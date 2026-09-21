@@ -60,13 +60,28 @@ on:
     # The 2h cadence this replaced left a measured **46.7 min idle per cycle** (mean
     # start-to-start 120.8 min against a 74.1 min run), capping throughput at 11.9 runs/day.
     #
+    # THE CADENCE HAS SINCE DOUBLED, and every figure above is the 2026-08-19 measurement rather
+    # than today's. Re-measured over the **99 completed runs** in the 2.57 days to 2026-09-21:
+    # median duration **36.1 min** (mean 38.8, stand-downs excluded), median start-to-start
+    # **34.6 min**, and an **observed 38.6 runs/day**. Two rates, and they are not the same
+    # quantity: 38.6 is completed runs over elapsed days, which is what storage inflow follows;
+    # the 34.6 min median gap implies a **41.6 runs/day ceiling**, which back-to-back runs only
+    # reach when none stand down and none run long. Runs are ~2x faster than when the numbers
+    # below were derived, so they produce ~2x the runs and ~2x the blob inflow. Anything sized
+    # against "~19.4 runs/day" is sized against half the real rate — which is how the old
+    # `SQUASH_ABOVE_GB` threshold came to be crossed on every run instead of daily (ADR-0168).
+    #
     # STORAGE BUDGET — the binding constraint, not compute. Each run rewrites ~1.86 GB of LFS
     # blobs (embeddings.f32 948 MB + jobs.lance 755 MB + meta.jsonl 154 MB) and HF retains every
     # prior revision, so the 100 GB dataset quota buys ~54 runs from empty — and only ~39 from the
     # 26.6 GB the dataset already held on 2026-08-19. At ~19.4 runs/day that is **~2 days**, which
     # is why the reclaim moved *into* the merge job below (ADR-0071) rather than staying a
-    # separate scheduled workflow that this cadence would have starved. Check
-    # `repo_info(...).used_storage` before assuming headroom.
+    # separate scheduled workflow that this cadence would have starved. Both halves of that
+    # arithmetic have since moved and they compound: `reclaim_storage`'s own measurement puts the
+    # per-run write at **3.31 GB**, not 1.86, so the quota buys **~30 runs from empty**, not ~54 —
+    # and at 38.6 runs/day that is **~19 h**, not ~2 days. The run generates ~128 GB of blobs a
+    # day against a 100 GB quota, so reclaiming is not housekeeping, it is load-bearing every
+    # single day. Check `repo_info(...).used_storage` before assuming headroom.
     #
     # SINCE 2026-08-28 THIS CRON IS NOT THE CADENCE — the `chain` job at the bottom is (ADR-0093).
     # GitHub stopped delivering this repo's scheduled events reliably on 2026-08-26. Measured over
@@ -1028,6 +1043,10 @@ jobs:
       # buying a long runway. It does not: margin from 3,000 to the limit is only ~16 runs
       # (~0.8 days), and dropping the threshold to 500 would buy just 28. The quadratic is why
       # compacting *often* is the protection and a bigger buffer is not.
+      #
+      # The threshold itself is a FILE COUNT, so it needs no cadence correction — more runs cross
+      # it sooner, which is the behaviour wanted. Only the margin quoted in *days* moves: at the
+      # 38.6 runs/day measured at `schedule` above, 16 runs is **~10 hours**, not ~0.8 days.
       #
       # Caveat on the evidence: the one measurement here — 309 files after the six runs since the
       # previous compaction emptied the directory — fits linear (~51/run) and quadratic (~7.7n²,

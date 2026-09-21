@@ -58,19 +58,6 @@ _MAX_PAGES = 100
 #: `eluq.fa.us2`. A Board above it cannot be read whole by offset paging at all.
 _OFFSET_CEILING = 10_000
 
-#: Rows a completed walk may fall short of `TotalJobsCount`, **per page fetched**, before it is
-#: called truncated. Per-page rather than flat because the shortfall scales with the walk, and a
-#: flat figure (the first attempt) fits small Boards while falsely truncating large ones every
-#: run into ADR-0053's exclusion scope, which has no drain.
-#:
-#: **Two** because the worst *benign* ratio measured is **1.0**, not the 0.5 an earlier and
-#: smaller sample suggested: over 245 multi-page Boards, `elfw.fa.us2` (728 of 733 over 5 pages)
-#: and `fa-eomf` (232 of 235 over 3) sit exactly on one row per page, and `egjl.fa.us6` (492 of
-#: 497 over 4) exceeds it at 1.25 while being demonstrably benign — a boundary-shifted re-walk at
-#: limit=100 finds no id the ordinary walk missed. One per page therefore had zero headroom and
-#: still truncated `egjl` falsely; two gives a real margin and still reports every measured loss
-#: by a wide mark (`etud` 89 of 114 in one page, `egud` 10,000 of 11,056, `ejwl` 9,926 of 13,429).
-_SLACK_PER_PAGE = 2
 #: Concurrent detail fetches. Measured clean at 32 across five regional pods (us2, ocs, em3, em2,
 #: us6) — 454 calls, 46-65 req/s, zero non-200s, and no rate limit found anywhere in 6,351
 #: requests. Half that here because `harvest` scrapes Boards concurrently *and* each Board fans
@@ -204,30 +191,36 @@ class OracleScraper(BaseScraper):
                 f"hit the {_MAX_PAGES}-page cap at {len(reqs)} of {total or 'unknown'} "
                 "requisitions — the rest unread"
             )
-        # Counts the fetches made, so it includes the final empty one — the allowance is
-        # data-pages + 1 rows. Deliberate: the margin sits on the safe side of a false truncation.
-        pages = self._offset // _PAGE_SIZE
         if total and len(reqs) < total:
-            # The ceiling is reported whatever the slack says. Without this clause the slack can
-            # *mask* it: a Board stating 10,001-10,102 reads exactly 10,000, and 51 pages of
-            # allowance swallow the gap — a silent short list, which is the one thing ADR-0053
-            # exists to prevent. The slack exists for a counter that over-counts by a row or two,
-            # not for a Board the API will not serve.
             if self._offset >= _OFFSET_CEILING:
-                # Unconditional: the ceiling is a hard cap, so the remainder is unreachable on
-                # every run rather than a transient miss, and no share of it is negligible
-                # however close to `total` the read landed. A Board stating 10,050 and reading
-                # 10,000 is 99.5% and still must not be declared authoritative — the class
-                # ADR-0121 keeps outside the tolerance.
+                # The one genuine incompleteness this walk can suffer below `_MAX_PAGES`: the API
+                # serves no offset past 10,000, so the remainder is unreachable on every run
+                # rather than a transient miss, and no share of it is negligible however close to
+                # `total` the read landed. A Board stating 10,050 and reading 10,000 is 99.5% and
+                # still must not be declared authoritative — the class ADR-0121 keeps outside the
+                # tolerance. Measured live on `eubt.fa.us6`: 10,000 read of a stated 78,431.
                 self.mark_truncated(
                     f"read {len(reqs)} of {total} requisitions — the API serves no offset past "
                     f"{_OFFSET_CEILING:,}, so the rest is unreachable, not absent"
                 )
-            elif len(reqs) < total - pages * _SLACK_PER_PAGE:
-                self.mark_truncated_unless_negligible(
-                    len(reqs),
-                    total,
-                    f"read {len(reqs)} of {total} requisitions — the rest is unread, not absent",
+            else:
+                # Below the ceiling the walk stopped because a page came back empty, and an empty
+                # page is the end of the Board — so this list is whole and a shortfall against
+                # `TotalJobsCount` says nothing about it (ADR-0169). The counter is not a count of
+                # servable requisitions: measured live 2026-09-21 across 17 Boards, an exhaustive
+                # sweep of every offset window up to the stated total found **zero** ids the
+                # ordinary walk had missed. The claim rests on the **16** stating under 10,000,
+                # where the sweep can look past where the walk stopped; the 17th sits at the
+                # ceiling, where it stops at the same wall, so it proves nothing and is excluded.
+                # Nine of the 16 were being marked truncated here, at ratios from 27-of-600 to
+                # 98-of-123. Truncating on that gap parked complete reads in ADR-0053's exclusion
+                # scope, which has no drain, so their closed postings were served indefinitely.
+                #
+                # Logged rather than silent: the inflation is worth watching, and this is the only
+                # place that can see it.
+                self._log.info(
+                    f"{self.board_key()}: served {len(reqs)} of a stated {total} requisitions — "
+                    "the Board ended on an empty page, so the counter over-states it (ADR-0169)"
                 )
         return reqs
 

@@ -15,6 +15,7 @@ went unnoticed. The measurements behind every assertion are in
 from __future__ import annotations
 
 import json
+import logging
 from collections import Counter
 from pathlib import Path
 
@@ -323,7 +324,8 @@ def test_a_short_page_does_not_end_the_walk(monkeypatch):
     fake.short_at = {0}  # page 0 comes back with 199
     scraper = _paged(monkeypatch, fake)
     raw = scraper.fetch_raw()
-    # 199 + 200 + 20 = 419, one short of the stated total, which is inside the slack.
+    # 199 + 200 + 20 = 419, one short of the stated total — and the walk ended on an empty
+    # page, so that gap is not reported (ADR-0169).
     assert len(raw["requisitionList"]) == 419
     # Four fetches, not three: landing under the total costs one extra request to see the empty
     # page that proves the Board is exhausted. That is the price of the fix, paid by the Boards
@@ -334,53 +336,16 @@ def test_a_short_page_does_not_end_the_walk(monkeypatch):
     assert scraper.truncated is None
 
 
-def test_a_walk_ending_just_under_the_total_is_not_called_truncated(monkeypatch):
-    """The API's counter is slightly inflated: of 55 multi-page Boards walked to an empty page,
-    46 matched it exactly and 9 fell short. Marking those truncated every run would park them in
-    ADR-0053's exclusion scope, which has no drain."""
-    fake = _FakeListing(total_ids=298, page_size=200, reported_total=300)
-    scraper = _paged(monkeypatch, fake)
-    scraper.fetch_raw()
-    assert scraper.truncated is None
-
-
-def test_the_slack_scales_with_the_number_of_pages_walked(monkeypatch):
-    """Where the constant actually decides, and why it is per-page rather than flat.
-
-    A flat slack of 2 was the first attempt, and a review measured it wrong: the shortfall
-    grows with the walk (7 rows over 15 pages, 5 over 20, 4 over 8), so a flat figure fits
-    small Boards and falsely truncates large ones on every run. Both halves are pinned here —
-    a gap equal to the page count is tolerated, one row more is not."""
-    # 3 pages walked (200 + 94 + the empty one), so a 6-row gap sits exactly on the allowance.
-    fake = _FakeListing(total_ids=294, page_size=200, reported_total=300)
-    scraper = _paged(monkeypatch, fake)
-    scraper.fetch_raw()
-    assert scraper.truncated is None
-
-    # Same walk, one row further under: now it is reported.
-    fake = _FakeListing(total_ids=293, page_size=200, reported_total=300)
-    scraper = _paged(monkeypatch, fake)
-    scraper.fetch_raw()
-    assert scraper.truncated and "293 of 300" in scraper.truncated
-
-    # And the scaling itself, which the two cases above cannot see: a *shorter* walk earns a
-    # *smaller* allowance, so the same 6-row gap over 2 pages IS reported. Without this, a flat
-    # slack of 6 would satisfy both halves above and the per-page property would be untested.
-    fake = _FakeListing(total_ids=194, page_size=200, reported_total=200)
-    scraper = _paged(monkeypatch, fake)
-    scraper.fetch_raw()
-    assert scraper.truncated and "194 of 200" in scraper.truncated
-
-
-def test_the_offset_ceiling_is_reported_even_when_the_slack_would_swallow_it(
+def test_the_offset_ceiling_is_reported_though_every_other_shortfall_is_not(
     monkeypatch,
 ):
-    """The slack must not mask the API's own ceiling.
+    """The ceiling is the one shortfall that still truncates.
 
-    Oracle serves no offset past 10,000. A Board stating 10,001-10,102 therefore reads exactly
-    10,000 — and 51 pages of allowance would swallow that gap, serving a knowingly short list as
-    if it were whole. That is the single thing ADR-0053 exists to prevent, so the ceiling is
-    reported whatever the slack says.
+    Oracle serves no offset past 10,000, so a Board stating more than that reads exactly 10,000 and
+    the remainder is unreachable on every run — a knowingly short list, which is the single thing
+    ADR-0053 exists to prevent. ADR-0169 stopped reporting *sub*-ceiling gaps because they are not
+    losses; this arm must survive that, which is why it is checked on a Board whose gap (50 rows)
+    is far smaller than the sub-ceiling gaps now tolerated.
     """
     fake = _FakeListing(total_ids=10_050, page_size=200, reported_total=10_050)
     scraper = _paged(monkeypatch, fake)
@@ -389,13 +354,21 @@ def test_the_offset_ceiling_is_reported_even_when_the_slack_would_swallow_it(
     assert scraper.truncated and "no offset past 10,000" in scraper.truncated
 
 
-def test_a_materially_short_walk_is_still_called_truncated(monkeypatch):
-    """The allowance is a row per page, not a licence to lose hundreds. Real case: `etud.fa.us8`
-    states 114 and serves 89 in a single page, and that 25-row gap must still be reported."""
-    fake = _FakeListing(total_ids=150, page_size=200, reported_total=900)
+def test_the_etud_shortfall_that_justified_the_slack_is_not_a_loss(monkeypatch):
+    """The case `_SLACK_PER_PAGE` was sized against, re-measured and reversed (ADR-0169).
+
+    `etud.fa.us8` was cited in three places as a measured loss — "89 of 114 in one page" — and was
+    the widest benign-vs-real margin the old per-page slack claimed to separate. Re-probed live
+    2026-09-21 it states 123 and serves 98, and an exhaustive sweep of every offset window up to
+    the stated total finds **those same 98 ids and no others**. Nothing was ever lost; the counter
+    over-states. A large gap is therefore not evidence of an unread remainder, so no gap below the
+    offset ceiling is reported.
+    """
+    fake = _FakeListing(total_ids=98, page_size=200, reported_total=123)
     scraper = _paged(monkeypatch, fake)
-    scraper.fetch_raw()
-    assert scraper.truncated and "150 of 900" in scraper.truncated
+    raw = scraper.fetch_raw()
+    assert len(raw["requisitionList"]) == 98
+    assert scraper.truncated is None
 
 
 def test_an_empty_page_ends_the_walk_when_no_total_is_stated(monkeypatch):
@@ -407,15 +380,6 @@ def test_an_empty_page_ends_the_walk_when_no_total_is_stated(monkeypatch):
     assert len(raw["requisitionList"]) == 250
     # With no total to satisfy, only an empty page can end the walk.
     assert fake.offsets == [0, 200, 400]
-
-
-def test_a_board_short_of_its_own_total_is_marked_truncated(monkeypatch):
-    """A short list that looks complete is what `index sync` reads as a delisting (ADR-0053)."""
-    fake = _FakeListing(total_ids=150, page_size=200, reported_total=900)
-    scraper = _paged(monkeypatch, fake)
-    scraper.fetch_raw()
-    assert scraper.truncated
-    assert "150 of 900" in scraper.truncated
 
 
 def test_hitting_the_page_cap_marks_truncated(monkeypatch):
@@ -492,3 +456,40 @@ def test_the_scraper_declares_a_detail_pass():
     from headstart.scrapers.registry import detail_pass_atses
 
     assert "oracle" in detail_pass_atses()
+
+
+def test_a_walk_that_ended_on_an_empty_page_is_authoritative_however_short(monkeypatch):
+    """`TotalJobsCount` is not a count of servable requisitions, so a shortfall against it is not
+    evidence of an unread remainder (ADR-0169).
+
+    Real case, measured live 2026-09-21: `ialmme-test.fa.ocs` states 600 and serves 27, and an
+    exhaustive sweep of every 200-row offset window up to the stated total finds those same 27 ids
+    and no others. Measured the same way across 16 Boards stating 123-6,786 rows — every Board
+    below the API's 10,000-offset ceiling, where the sweep can look past where the walk stopped —
+    the ordinary walk lost **zero** rows on every one, while 9 of them were being wrongly parked
+    in ADR-0053's exclusion scope, which has no drain.
+    """
+    fake = _FakeListing(total_ids=27, page_size=200, reported_total=600)
+    scraper = _paged(monkeypatch, fake)
+    raw = scraper.fetch_raw()
+    assert len(raw["requisitionList"]) == 27
+    # Two fetches: the page holding all 27, then the empty one that proves the Board is exhausted.
+    assert fake.offsets == [0, 200]
+    assert scraper.truncated is None
+
+
+def test_the_tolerated_gap_is_logged_with_both_numbers(monkeypatch, caplog):
+    """ADR-0169 keeps the over-count visible, and this line is the only place that can see it.
+
+    Nothing downstream records a shortfall once the Board is authoritative, so if this stops firing
+    the inflation goes dark — and the shape to watch for a genuine sub-ceiling loss (a served count
+    that falls while the stated total holds) becomes unreadable. Both numbers must be in it.
+    """
+    fake = _FakeListing(total_ids=27, page_size=200, reported_total=600)
+    scraper = _paged(monkeypatch, fake)
+    with caplog.at_level(logging.INFO, logger="headstart.scrapers.oracle"):
+        scraper.fetch_raw()
+    logged = " ".join(r.getMessage() for r in caplog.records)
+    assert "served 27 of a stated 600" in logged
+    assert scraper.board_key() in logged
+    assert scraper.truncated is None

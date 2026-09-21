@@ -3,8 +3,10 @@ name: reclaim-dataset-storage
 # Reclaim HF dataset storage on demand, by deleting the orphaned LFS blobs.
 #
 # Every pipeline run rewrites `embeddings.f32` (2.71 GB) and `meta.jsonl` (0.577 GB) wholesale, so
-# at ~30 runs/day the repo sheds ~100 GB of dead blobs a day — its entire free-tier quota. HF bills
-# stored bytes, not reachable ones, so that weight counts even once nothing references it.
+# at the measured ~38.6 runs/day (99 runs over the 2.57 days to 2026-09-21) the repo sheds ~128 GB
+# of dead blobs a day — MORE than its entire 100 GB free-tier quota, so the quota refills in ~19 h,
+# not 24. HF bills stored bytes, not reachable ones, so that weight counts even once nothing
+# references it.
 #
 # **Squashing alone does not free it.** `super_squash_history` collapses the branch to one commit,
 # which makes the prior blobs *unreachable* and therefore eligible for HF's asynchronous
