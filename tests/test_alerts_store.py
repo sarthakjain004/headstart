@@ -769,3 +769,52 @@ def test_the_cap_drops_the_oldest_so_callers_must_detect_the_trim():
     assert "greenhouse:c0" not in full.followed, (
         "...and the OLDEST is what silently went"
     )
+
+
+def test_a_differently_cased_key_is_the_same_board():
+    """The filter matches case-insensitively, so the record must too, or the pair is not disjoint.
+
+    Following `workday:Micron/External` and then hiding `workday:micron/external` used to leave
+    one Board on BOTH lists; the clause then required and excluded the same rows and the search
+    returned nothing, silently. The index holds 335 Board-key groups differing only in casing.
+    """
+    prefs = (
+        st.CompanyPrefs.blank("a" * 16)
+        .with_board("workday:Micron/External", "follow")
+        .with_board("workday:micron/external", "hide")
+    )
+    assert prefs.followed == ()
+    assert prefs.hidden == ("workday:micron/external",)
+    assert not (set(prefs.followed) & set(prefs.hidden))
+
+
+def test_a_record_written_with_mixed_casing_is_folded_on_read():
+    raw = {
+        "account": "a" * 16,
+        "followed": ["Lever:Acme", "lever:acme"],
+        "hidden": [],
+    }
+    assert st.CompanyPrefs.from_dict(raw).followed == ("lever:acme",), (
+        "one Board, not two"
+    )
+
+
+def test_would_evict_is_what_the_routes_ask_before_writing():
+    """Both /companies mirrors ask the record, so they cannot answer differently at the limit."""
+    prefs = st.CompanyPrefs.blank("a" * 16)
+    assert prefs.would_evict("greenhouse:acme", "follow") is False
+    for n in range(st.MAX_COMPANIES):
+        prefs = prefs.with_board(f"greenhouse:c{n}", "follow")
+    assert prefs.would_evict("greenhouse:new", "follow") is True, (
+        "a new Board at the cap"
+    )
+    assert prefs.would_evict("greenhouse:c5", "follow") is False, (
+        "already listed — a no-op"
+    )
+    assert prefs.would_evict("GREENHOUSE:C5", "follow") is False, (
+        "...whatever its casing"
+    )
+    assert prefs.would_evict("greenhouse:new", "hide") is False, (
+        "the other list is empty"
+    )
+    assert prefs.would_evict("greenhouse:new", "clear") is False, "clear never adds"

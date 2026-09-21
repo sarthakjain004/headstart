@@ -38,6 +38,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from headstart import log
+from headstart.board_identity import lower_key
 
 from .access import normalize
 
@@ -404,6 +405,13 @@ class CompanyPrefs:
     Followed and hidden live in one record because they are one decision with two directions,
     and a single file means following a company cannot race un-hiding it. The pair is kept
     disjoint — the last action wins — so a filter can never both require and exclude a Board.
+
+    Keys are canonicalised through :func:`board_identity.lower_key` on the way in, because the
+    filter they compile to matches case-insensitively. Comparing them exactly here did **not**
+    hold the invariant: following `workday:Micron/External` and hiding `workday:micron/external`
+    left one Board on both lists, and the clause then required and excluded the same rows —
+    zero results, silently. The index holds 335 Board-key groups that differ only in casing, so
+    that is the population rather than a contrived case.
     """
 
     account: str  # subscription_id(email)
@@ -419,8 +427,10 @@ class CompanyPrefs:
         """This record with ``board`` moved to ``follow``, ``hide``, or neither (``clear``).
 
         Removing it from both lists first is what keeps them disjoint: following a Board that
-        was hidden has to un-hide it.
+        was hidden has to un-hide it. The key is folded first, so a differently-cased spelling
+        of a Board already listed is the *same* Board rather than a second entry.
         """
+        board = lower_key(board)
         followed = tuple(b for b in self.followed if b != board)
         hidden = tuple(b for b in self.hidden if b != board)
         if action == "follow":
@@ -428,6 +438,19 @@ class CompanyPrefs:
         elif action == "hide":
             hidden = (*hidden, board)[-MAX_COMPANIES:]
         return replace(self, followed=followed, hidden=hidden, updated_at=now_iso())
+
+    def would_evict(self, board: str, action: str) -> bool:
+        """Whether writing ``board`` would silently drop a different Board to stay under the cap.
+
+        Asked by both `/companies` routes *before* the write, and it has to be asked there
+        rather than inferred afterwards: :meth:`with_board` appends and then cuts the front, so
+        the new entry always lands and the OLDEST is what goes. Checking the result instead
+        never fires — measured through the route, the 201st follow answered 200.
+        """
+        if action not in ("follow", "hide"):
+            return False
+        listed = self.followed if action == "follow" else self.hidden
+        return lower_key(board) not in listed and len(listed) >= MAX_COMPANIES
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -443,9 +466,9 @@ class CompanyPrefs:
             raw = data.get(key) or []
             # Bounded and de-duplicated on READ as well as on write: a record hand-edited or
             # left by an older build must not be able to produce an unbounded where-clause.
-            return tuple(dict.fromkeys(b for b in raw if isinstance(b, str) and b))[
-                :MAX_COMPANIES
-            ]
+            return tuple(
+                dict.fromkeys(lower_key(b) for b in raw if isinstance(b, str) and b)
+            )[:MAX_COMPANIES]
 
         followed = boards("followed")
         return cls(

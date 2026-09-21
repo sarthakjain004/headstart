@@ -1111,6 +1111,10 @@ textarea:focus{ border-color:var(--accent); }
   .hot-row{ grid-template-columns:1fr auto; gap:10px 12px; }
   .hot-rank{ display:none; }
   .hot-measure{ align-items:flex-end; }
+  /* The rules the comment above promises. They were in a second `max-width:640px` block
+     further down, so the sentence described something 24 lines away from itself. */
+  .hot-actions{ grid-column:1 / -1; width:100%; }
+  .hot-actions button{ flex:1; }
 }
 @media (prefers-reduced-motion:reduce){ .hot-row{ animation:none; } }
 
@@ -1130,10 +1134,6 @@ textarea:focus{ border-color:var(--accent); }
    use — and it still says "Following" in words rather than relying on the tint. */
 .hot-track[aria-pressed="true"]{ border-color:var(--accent); color:var(--accent);
   background:color-mix(in srgb, var(--accent) 12%, transparent); }
-@media (max-width:640px){
-  .hot-actions{ grid-column:1 / -1; width:100%; }
-  .hot-actions button{ flex:1; }
-}
 /* The hide control rides the company line, so it is present on every result rather than only
    on a capped one — and it is a link, not a button, so it never competes with the apply link. */
 .org .hide-co{ margin-left:6px; font-size:11.5px; }

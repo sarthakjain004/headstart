@@ -22,6 +22,7 @@ from headstart.search import (
     IndexCapabilities,
     JobSearch,
     SearchFilters,
+    account_clause,
     board_clause,
     build_filter,
     eval_filter,
@@ -1295,8 +1296,6 @@ def test_boards_are_deduplicated_and_ordered(exclude: bool) -> None:
 
 def test_account_clause_states_the_rule_once_for_both_apps():
     """The Space and the dev renderer share this, so the rule cannot come to differ."""
-    from headstart.search import account_clause
-
     assert account_clause([], [], mine=False) is None
     # An empty follow list with `mine` must match NOTHING, never widen to the whole index.
     assert account_clause([], [], mine=True) == "false"

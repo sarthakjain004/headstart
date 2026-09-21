@@ -48,6 +48,7 @@ from headstart.search import (
     IndexCapabilities,
     SearchFilters,
     build_filter,
+    with_extra,
 )
 
 # How long "first seen by HeadStart" can look back, in hours. The short end matters more than
@@ -90,15 +91,22 @@ POSTED_OPTIONS = tuple((d, _days(d)) for d in POSTED_DAYS)
 
 
 def counts(
-    table: Any, filters: SearchFilters, capabilities: IndexCapabilities
+    table: Any,
+    filters: SearchFilters,
+    capabilities: IndexCapabilities,
+    *,
+    extra_where: str | None = None,
 ) -> dict[str, Any]:
     """Every facet's per-option count, plus the total, for one request's filters.
 
     ``filters`` is :meth:`headstart.search.JobSearch.parse_filters` output and ``capabilities``
     is :attr:`headstart.search.JobSearch.capabilities` (ADR-0149) — shared with the ranked search
     precisely so the count and the list it counts can never describe different queries. Together
-    they are the only input: the request's query never reaches here, because a count is decided
-    by the where-clause alone.
+    they describe the request's own controls; the query never reaches here, because a count is
+    decided by the where-clause alone. ``extra_where`` is the one further input — the Account's
+    follow/hide clause (ADR-0171), which is not a control the user set on this request and so is
+    not part of ``filters``. It narrows **every** count, including the total and the blocking
+    answer, because the list it describes is narrowed by it too.
 
     Returns ``{"total": int, "facets": {dimension: [{value,label,count}, ...]}, "blocking":
     str|None}``. ``blocking`` names the single filter whose removal recovers the most results
@@ -109,7 +117,9 @@ def counts(
     """
 
     def where_for(**overrides: Any) -> str | None:
-        return build_filter(replace(filters, **overrides), capabilities)
+        return with_extra(
+            build_filter(replace(filters, **overrides), capabilities), extra_where
+        )
 
     # (dimension, option value, label, the kwargs that option overrides). Built in full first
     # and counted second, so every count can go out at once.

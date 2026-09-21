@@ -437,17 +437,7 @@ def set_company():
         ), 400
     account = subscription_id(email)
     current = store.get_companies(account)
-    # `with_board` trims to the cap by dropping the OLDEST entry, so at the limit a new Board
-    # would silently un-follow or un-hide something else. The new entry ALWAYS lands (it is
-    # appended, then the front is cut), so "did it land?" never detects the trim — measured
-    # through the route, the 201st follow answered 200. What detects it is the state BEFORE the
-    # write: a Board not already listed, on a list already at the cap, is one that would evict.
-    prior = current.followed if action == "follow" else current.hidden
-    if (
-        action in ("follow", "hide")
-        and board not in prior
-        and len(prior) >= MAX_COMPANIES
-    ):
+    if current.would_evict(board, action):
         return jsonify(
             {"error": f"at most {MAX_COMPANIES} companies in each list"}
         ), 409
@@ -482,7 +472,9 @@ def search_facets():
     user nothing beyond the search they were already waiting for.
     """
     try:
-        return jsonify(_searcher.facets(request.args))
+        return jsonify(
+            _searcher.facets(request.args, extra_where=_company_where(request.args))
+        )
     except ValueError:
         return jsonify({"error": "invalid filter"}), 400
 

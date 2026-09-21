@@ -39,7 +39,12 @@ _UI = Path(headstart.__file__).parent / "ui"
 # whenever a local pipeline run (or a pull) has left one — which is what makes the tab
 # reviewable without deploying.
 _HOT_PATH = _REPO / "data" / "state" / "hot_boards.json"
-_HOT = json.loads(_HOT_PATH.read_text(encoding="utf-8")) if _HOT_PATH.exists() else {}
+try:  # a half-written artifact must not stop the renderer booting, as on the Space
+    _HOT = (
+        json.loads(_HOT_PATH.read_text(encoding="utf-8")) if _HOT_PATH.exists() else {}
+    )
+except (OSError, ValueError):
+    _HOT = {}
 
 print("loading model + index ...", flush=True)
 _model = load_encoder()
@@ -174,18 +179,8 @@ def set_company():
         return jsonify(
             {"error": "board and action (follow|hide|clear) are required"}
         ), 400
-    # The same cap answer as the Space, so the two mirrors cannot disagree at the limit.
-    # `with_board` trims to the cap by dropping the OLDEST entry, so at the limit a new Board
-    # would silently un-follow or un-hide something else. The new entry ALWAYS lands (it is
-    # appended, then the front is cut), so "did it land?" never detects the trim — measured
-    # through the route, the 201st follow answered 200. What detects it is the state BEFORE the
-    # write: a Board not already listed, on a list already at the cap, is one that would evict.
-    prior = _LOCAL_COMPANIES.followed if action == "follow" else _LOCAL_COMPANIES.hidden
-    if (
-        action in ("follow", "hide")
-        and board not in prior
-        and len(prior) >= MAX_COMPANIES
-    ):
+    # The record owns the rule, so the two mirrors cannot answer differently at the limit.
+    if _LOCAL_COMPANIES.would_evict(board, action):
         return jsonify(
             {"error": f"at most {MAX_COMPANIES} companies in each list"}
         ), 409
@@ -215,7 +210,9 @@ def search_jobs():
 def search_facets():
     """Per-option result counts (issue #275) — the same shared path the Space serves."""
     try:
-        return jsonify(_searcher.facets(request.args))
+        return jsonify(
+            _searcher.facets(request.args, extra_where=_company_where(request.args))
+        )
     except ValueError:
         return jsonify({"error": "invalid filter"}), 400
 

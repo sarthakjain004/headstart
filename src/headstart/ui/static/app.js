@@ -724,7 +724,7 @@ function drawPager(rowCount, facets){
    drawn: the × belongs to the Search list, which is the one with the hidden-count note and the
    "show" toggle beside it. On Saved the equivalent gesture is unstarring, and two controls for
    one intent would disagree about which list the row is in. ---- */
-function jobCard(r, i, canHide){
+function jobCard(r, i, canHide, canHideCompany){
   // A browsed row (no query) was never ranked, so it carries no score (ADR-0074) — the
   // match ring would otherwise show a misleading "0%" rather than "not applicable".
   const ranked = r.score != null;
@@ -740,7 +740,7 @@ function jobCard(r, i, canHide){
           // result they do not want, and the first such result is rarely the third from that
           // company. A plain inline control rather than a hover reveal — a control that only
           // exists on hover does not exist on a phone.
-          CAN_COMPANIES && boardOf(r.id)
+          CAN_COMPANIES && canHideCompany && boardOf(r.id)
             ? ` <button class="linkish hide-co" data-hide-company="${esc(boardOf(r.id))}"
                  title="Stop showing ${esc(r.company)} in your results">hide</button>`
             : ''}</div>
@@ -777,6 +777,9 @@ function jobCard(r, i, canHide){
 
 /* ---- Per-company capping and the follow/hide lists (ADR-0171) ----------------------------
 
+   Capping applies to the two lists that re-run against the index, Search and Matches; the Saved
+   tab renders through `jobCard` directly and is deliberately left alone (see `renderSaved`).
+
    Capping is a DISPLAY grouping over the rows this page already fetched, not a filter: the
    ranked set, its count and its pagination are untouched, and every capped row is one click
    away rather than gone. Doing it server-side would mean over-fetching and then slicing, which
@@ -798,9 +801,9 @@ const boardOf = id => {
 };
 
 let myCompanies = { followed: [], hidden: [] };
-// Keyed by LIST, then Board. One shared map was a real defect: `draw` renders Search, Matches
-// and Saved through the same path, so drawing one list cleared another's withheld rows and its
-// "N more" buttons became dead clicks — while the ADR claims a capped row is one click away.
+// Keyed by LIST, then Board. One shared map was a real defect: `draw` renders both Search and
+// Matches, so drawing one cleared the other's withheld rows and its "N more" buttons became
+// dead clicks — while the ADR claims a capped row is one click away.
 const capOverflow = new Map();   // listId -> Map(board -> [card html])
 
 async function loadCompanies(){
@@ -832,7 +835,7 @@ function capRows(rows, target){
     const board = boardOf(r.id);
     // `(r, i) => …` and an explicit third argument, never a bare `rows.map(jobCard)`: map passes
     // the array as a third argument, which would land on `canHide` and put a × on every list.
-    const html = jobCard(r, i, !target);
+    const html = jobCard(r, i, !target, true);
     if (!board){ chunks.push(html); return; }
     const n = (seen.get(board) || 0) + 1;
     seen.set(board, n);
@@ -847,13 +850,13 @@ function capRows(rows, target){
     withheld.get(board).push(html);
   });
   return chunks.map(c =>
-    typeof c === 'string' ? c : moreRow(listId, c.board, firstOf.get(c.board), withheld));
+    typeof c === 'string' ? c : moreRow(listId, c.board, firstOf.get(c.board)));
 }
 
-function moreRow(listId, board, company, withheld){
-  const n = (withheld.get(board) || []).length;
+function moreRow(listId, board, company){
+  const n = ((capOverflow.get(listId) || new Map()).get(board) || []).length;
   return `<div class="more-row" data-board="${esc(board)}" data-list="${esc(listId)}">
-      <button class="ghost" data-more="${esc(board)}">
+      <button class="ghost" data-more>
         ${n} more at ${esc(company || board)}
       </button>
     </div>`;
@@ -1157,7 +1160,10 @@ function renderSaved(){
   const jobs = mySaved.slice().sort((a,b) => (b.starred_at||'').localeCompare(a.starred_at||''));
   el('saved-msg').textContent = jobs.length + ' saved job' + (jobs.length===1?'':'s');
   setResultRows(jobs.length, 'saved-results');
-  box.innerHTML = jobs.map((j, i) => jobCard(savedRow(j), i, false)).join('');
+  // No "hide" here, and no capping: the Saved tab lists jobs this Account chose one at a time,
+  // so a company-level control would either do nothing visible or remove something deliberately
+  // kept. It is the one list that does NOT go through `draw`/`capRows`.
+  box.innerHTML = jobs.map((j, i) => jobCard(savedRow(j), i, false, false)).join('');
 }
 
 // A stored star, in the shape jobCard reads. The record is a display copy taken at star time
@@ -2789,7 +2795,10 @@ if (el('hot-results')){
     if (track){
       track.disabled = true;
       const board = track.dataset.track;
-      const on = (myCompanies.followed || []).includes(board);
+      // Folded, like `hotRow` and `board_clause` — an exact check here left the button
+      // showing "Following" and then posting `follow` again, so it never cleared.
+      const on = (myCompanies.followed || []).some(
+        b => b.toLowerCase() === board.toLowerCase());
       if (await setCompany(board, on ? 'clear' : 'follow')) drawHot();
       else track.disabled = false;
       return;
@@ -2805,8 +2814,9 @@ if (el('hot-results')){
   });
 }
 
-/* One delegated listener for the capped-row controls, anywhere they render (Search, Matches,
-   Saved) — never an inline handler with an interpolated Board key in it. */
+/* One delegated listener for the capped-row controls, wherever they render — Search and
+   Matches, the two lists that re-run against the index. Never an inline handler with an
+   interpolated Board key in it. */
 document.addEventListener('click', async ev => {
   const more = ev.target.closest('[data-more]');
   if (more){ expandCompany(more.closest('.more-row')); return; }

@@ -370,6 +370,18 @@ def board_clause(boards: Collection[str], *, exclude: bool) -> str | None:
     return f"NOT ({joined})" if exclude else f"({joined})"
 
 
+def with_extra(where: str | None, extra: str | None) -> str | None:
+    """``where`` narrowed by ``extra``, either of which may be absent.
+
+    One helper rather than the same three lines in :meth:`JobSearch.run` and
+    :meth:`JobSearch.facets`: the ranked list and the counts beside it must be narrowed
+    identically, or the page reports a total for a different query than the one it lists.
+    """
+    if not extra:
+        return where
+    return f"({where}) AND {extra}" if where else extra
+
+
 def account_clause(
     followed: Collection[str], hidden: Collection[str], *, mine: bool
 ) -> str | None:
@@ -1043,8 +1055,14 @@ class JobSearch:
             else None,
         )
 
-    def facets(self, args: Mapping[str, str]) -> dict[str, Any]:
+    def facets(
+        self, args: Mapping[str, str], *, extra_where: str | None = None
+    ) -> dict[str, Any]:
         """Per-option result counts for these filters — see :mod:`headstart.facets`.
+
+        ``extra_where`` is the same Account clause :meth:`run` takes, and passing it here is not
+        optional: the UI prints ``facets.total`` as "Showing 1-N of TOTAL", so counting without
+        it reported the whole index beside a list of ten rows.
 
         Here rather than in the route so the table and the runtime schema facts stay behind
         this object; a caller reaching for ``_table`` to count would be the same class of leak
@@ -1054,7 +1072,12 @@ class JobSearch:
         """
         from headstart import facets
 
-        return facets.counts(self._table, self.parse_filters(args), self.capabilities)
+        return facets.counts(
+            self._table,
+            self.parse_filters(args),
+            self.capabilities,
+            extra_where=extra_where,
+        )
 
     def run(
         self, args: Mapping[str, str], *, extra_where: str | None = None
@@ -1068,9 +1091,9 @@ class JobSearch:
         """
         query = (args.get("q") or "").strip()
         _int = _int_arg(args)
-        where = build_filter(self.parse_filters(args), self.capabilities)
-        if extra_where:
-            where = f"({where}) AND {extra_where}" if where else extra_where
+        where = with_extra(
+            build_filter(self.parse_filters(args), self.capabilities), extra_where
+        )
         # Whitelisted to a column name, never taken from the query string — this reaches an
         # ORDER BY. An unknown value is no sort at all, which is the existing behaviour.
         sort = SORT_COLUMNS.get((args.get("sort") or "").strip())

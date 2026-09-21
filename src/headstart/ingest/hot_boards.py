@@ -61,7 +61,11 @@ from typing import Any, Final
 from headstart import log
 from headstart.ingest.board_operator import classify
 
-_log = log.get(__name__)
+# `__spec__` as well as `__name__`, like every other module that doubles as a `python -m`
+# entry point: run that way `__name__` is "__main__", which falls outside the `headstart`
+# root that `setup()` configures, and every line is discarded. Missing both this and
+# `setup()` below, the stage ran to completion in total silence.
+_log = log.get(__name__, __spec__)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 _BOARD_COUNTS = REPO_ROOT / "data" / "state" / "role_trend_board_counts.parquet"
@@ -429,6 +433,9 @@ def rank(
 
 
 def main() -> int:
+    # `setup()` before `context()`: without it nothing this stage logs is ever emitted, so a
+    # silently skipped Hot list looked exactly like a successful run in CI.
+    log.setup()
     log.context("hot_boards")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--board-counts", type=Path, default=_BOARD_COUNTS)
