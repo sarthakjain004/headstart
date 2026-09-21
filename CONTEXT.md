@@ -378,7 +378,9 @@ compares row counts *across* runs, and they fail in different directions.
 
 **Base record** (ADR-0129):
 `data/lancedb/_index_base.json`, the row count each writer left behind. `index sync` and
-`index prune` log it beside the count they opened, and refuse a base they cannot explain. It lives
+`index prune` log it beside the count they opened, and refuse a base they cannot explain;
+`index refresh-indexes` rewrites the receipt after it moves the table version without changing the
+row count. It lives
 inside `data/lancedb` so it ships in the same commit as the table it describes — `cleanup-index`
 never uploads `data/state`, so a copy kept there would go stale on every compaction.
 _Avoid_: reading it as a rollback detector in general. Because it travels *with* the table, a

@@ -2,7 +2,8 @@ name: pipeline-smoke
 
 # End-to-end smoke for the ingest path (ADR-0025 Phase 1), on a tiny synthetic corpus with the real
 # encoder — no HF_TOKEN, no production state. It runs the stages the way the pipeline does (shard
-# fragments -> join -> tech filter -> embed -> merge -> sync -> prune) over **two cycles**, because
+# fragments -> join -> tech filter -> embed -> merge -> sync -> prune -> refresh indexes) over
+# **three cycles**, because
 # the failures worth catching only exist *between* runs:
 #
 #   cycle 1 — proves the sharded path (plan -> embed --assignment -> merge) yields the SAME vectors
@@ -144,6 +145,8 @@ jobs:
           PY
       - name: Sync the merged store into a real index
         run: python -m headstart.ingest.index sync
+      - name: Build Search indexes on the first cycle
+        run: python -m headstart.ingest.index refresh-indexes
       - name: Assert the index holds every job
         run: |
           python - <<'PY'
@@ -215,6 +218,8 @@ jobs:
           python -m headstart.ingest.filter_tech
       - name: Sync the second cycle
         run: python -m headstart.ingest.index sync
+      - name: Refresh Search indexes on the second cycle
+        run: python -m headstart.ingest.index refresh-indexes
       - name: Assert eviction follows delisting, not scrape failure
         run: |
           python - <<'PY'
@@ -301,6 +306,8 @@ jobs:
           python -m headstart.ingest.filter_tech
       - name: Sync the third cycle
         run: python -m headstart.ingest.index sync
+      - name: Refresh Search indexes on the third cycle
+        run: python -m headstart.ingest.index refresh-indexes
       - name: Assert the second consecutive absence finally evicts
         run: |
           python - <<'PY'

@@ -1,6 +1,8 @@
 # ADR-0173: Rebuild the Search indexes with the table
 
-**Status:** accepted · **Date:** 2026-09-21 · **Amends:**
+**Status:** accepted · **Date:** 2026-09-21 · **Amended by:**
+[ADR-0174](0174-every-pipeline-publishes-current-search-indexes.md) (every pipeline refreshes the
+indexes over its final rows) · **Amends:**
 [ADR-0138](0138-a-materialized-country-column-serves-the-india-filter.md) (its deliberate
 no-index scope and the `compact()` index-loss blocker) · **Relates to:**
 [ADR-0091](0091-compaction-outranks-the-pipeline.md) (the isolated whole-table rebuild),
@@ -78,7 +80,8 @@ There is deliberately no per-pipeline `table.optimize()`. Indexed LanceDB search
 appended, unindexed fragments. A 5,000-row append kept recall@20 at 1.00 and moved median ANN
 latency only 16.81 → 17.14 ms. `optimize()` improved that to 12.75 ms but retained old versions and
 doubled the directory from 3.34 to 6.99 GB. The next cleanup rebuild folds the new rows into every
-index without that accumulation.
+index without that accumulation. ADR-0174 later keeps the `optimize()` rejection but replaces only
+the indexes after every pipeline run, so cleanup is no longer the freshness boundary.
 
 ## Measurement
 
