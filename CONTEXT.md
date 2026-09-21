@@ -48,6 +48,10 @@ _Avoid_: "hot" as a measure. `hot` is the internal name of the ranking — the s
 (`ingest/hot_boards`), its artifact and its route — while **Hiring now** is what the tab is
 called in the UI. Neither is a value a row can hold; a row holds a lens figure and an Operator.
 
+**Followed / Hidden Board** (ADR-0171):
+A Board an Account has chosen to see more or less of, held as a `CompanyPrefs` record keyed by **board_key** — never by company name, which four served rows in five do not carry. Hidden Boards are excluded from every search; followed ones are what the "only companies I follow" control narrows to. The two lists are disjoint by construction, and they are Account state rather than a Search filter, so a **Saved Set** never freezes them.
+_Avoid_: "blocked" or "muted" — a hidden Board is still scraped, still indexed and still served to everyone else; only this Account stops seeing it.
+
 **Careers page**:
 A company's own web page that links to or embeds its Board; the input to careers-page discovery, distinct from the Board itself.
 

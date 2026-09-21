@@ -19,10 +19,12 @@ from flask import Flask, jsonify, render_template, request
 
 import headstart
 from headstart import facets, fx, geo
+from headstart.alerts.store import CompanyPrefs
 from headstart.search import (
     KEYWORD_DEFAULT_SCOPE,
     PROD_TABLE,
     JobSearch,
+    board_clause,
     keyword_scope_options,
     load_encoder,
 )
@@ -122,6 +124,8 @@ def index():
         hot_on=bool(_HOT),
         alerts_on=False,
         sets_on=False,
+        # unlike the rest: this renderer implements /companies over one in-memory record
+        companies_on=True,
         saved_on=False,
         profile_on=False,
         resume_sync_on=False,  # no sign-in here, so there is no account to keep a copy on
@@ -132,6 +136,49 @@ def index():
 def coverage():
     """The Data tab's live counts (ADR-0113) — the Space route's local twin."""
     return jsonify(_searcher.coverage())
+
+
+# Follow/hide (ADR-0171). The Space keeps these per Account in the HF-backed store; there are
+# no accounts here, so this renderer keeps ONE in-memory set for the single local user. That is
+# enough to exercise the real filter and the real UI, and it is deliberately not persisted —
+# a dev server that remembered your hidden companies between restarts would hide a bug.
+_LOCAL_COMPANIES = CompanyPrefs.blank("local")
+
+
+def _company_where(args) -> str | None:
+    """Mirror of the Space's per-request follow/hide clause."""
+    clauses = []
+    if args.get("mine") in ("1", "true"):
+        clauses.append(
+            board_clause(_LOCAL_COMPANIES.followed, exclude=False) or "false"
+        )
+    if _LOCAL_COMPANIES.hidden:
+        clauses.append(board_clause(_LOCAL_COMPANIES.hidden, exclude=True))
+    return " AND ".join(c for c in clauses if c) or None
+
+
+@app.route("/companies")
+def list_companies():
+    return jsonify(
+        {
+            "followed": list(_LOCAL_COMPANIES.followed),
+            "hidden": list(_LOCAL_COMPANIES.hidden),
+        }
+    )
+
+
+@app.route("/companies", methods=["POST"])
+def set_company():
+    global _LOCAL_COMPANIES
+    body = request.get_json(silent=True) or {}
+    board = str(body.get("board") or "").strip()
+    action = str(body.get("action") or "").strip()
+    if not board or action not in ("follow", "hide", "clear"):
+        return jsonify(
+            {"error": "board and action (follow|hide|clear) are required"}
+        ), 400
+    _LOCAL_COMPANIES = _LOCAL_COMPANIES.with_board(board, action)
+    return list_companies()
 
 
 @app.route("/hot")
@@ -145,7 +192,9 @@ def hot_companies():
 @app.route("/search")
 def search_jobs():
     try:
-        return jsonify(_searcher.run(request.args))
+        return jsonify(
+            _searcher.run(request.args, extra_where=_company_where(request.args))
+        )
     except ValueError:
         return jsonify({"error": "invalid filter"}), 400
 

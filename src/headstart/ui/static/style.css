@@ -1114,3 +1114,27 @@ textarea:focus{ border-color:var(--accent); }
   .hot-see{ grid-column:1 / -1; width:100%; }
 }
 @media (prefers-reduced-motion:reduce){ .hot-row{ animation:none; } }
+
+/* ---- Per-company capping and the follow/hide controls (ADR-0171) -------------------------
+   The "N more at X" row sits inline where that company's next result would have been, so the
+   list still reads in rank order. It is styled as a seam between cards rather than as a card:
+   it is not a job, and looking like one would make the list's own count read wrong. */
+.more-row{ display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  padding:8px 16px; margin:-2px 0; border:1px dashed var(--rule); border-radius:var(--r-md);
+  background:color-mix(in srgb, var(--raise) 60%, transparent); }
+.more-row button{ padding:6px 12px; min-height:44px; font-size:12.5px; }
+.my-companies-row{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+.my-companies-row .switch{ display:inline-flex; align-items:center; gap:8px; min-height:44px;
+  font:500 12.5px var(--sans); color:var(--ink-2); cursor:pointer; }
+.hot-actions{ display:flex; gap:8px; align-items:center; }
+/* Following is a state, not an action, so the pressed chip carries the accent the lens cards
+   use — and it still says "Following" in words rather than relying on the tint. */
+.hot-track[aria-pressed="true"]{ border-color:var(--accent); color:var(--accent);
+  background:color-mix(in srgb, var(--accent) 12%, transparent); }
+@media (max-width:640px){
+  .hot-actions{ grid-column:1 / -1; width:100%; }
+  .hot-actions button{ flex:1; }
+}
+/* The hide control rides the company line, so it is present on every result rather than only
+   on a capped one — and it is a link, not a button, so it never competes with the apply link. */
+.org .hide-co{ margin-left:6px; font-size:11.5px; }

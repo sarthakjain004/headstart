@@ -320,10 +320,54 @@ def _like(term: str) -> str:
     leave a trailing lone backslash, which escapes the pattern's own closing `%` and then matches
     nothing at all (measured: 0 rows).
     """
-    term = term[:60]
+    return _escape_like(term[:60]).lower()
+
+
+def _escape_like(term: str) -> str:
+    r"""LIKE metacharacters escaped and quotes doubled — case and length left alone.
+
+    Split out of :func:`_like` for :func:`board_clause`, which needs the escaping without the
+    other two steps: a Board key is matched at full length (a Taleo key is a whole URL, and the
+    60-char cap would turn it into a *shorter prefix* that hides more Boards than were chosen)
+    and it lowercases both sides of its own comparison rather than only the pattern.
+    """
     for char in ("\\", "%", "_"):
         term = term.replace(char, "\\" + char)
-    return term.replace("'", "''").lower()
+    return term.replace("'", "''")
+
+
+def board_clause(boards: Collection[str], *, exclude: bool) -> str | None:
+    """A where-clause over whole Boards, or None when there are none to name (ADR-0171).
+
+    A Job id is ``{board_key}:{native_id}``, so a Board is a prefix match on ``id`` —
+    ``id LIKE 'greenhouse:acme:%'``. The trailing colon is load-bearing: without it
+    ``greenhouse:acme`` would also match a Board called ``greenhouse:acmecorp``, quietly hiding
+    or following a company the user never chose.
+
+    Kept **out** of :class:`SearchFilters` deliberately. That class is the vocabulary of controls
+    a user sets, and a Saved Set serializes it (``alerts.store.ALLOWED_SEARCH_FILTERS``); baking
+    a follow list into a stored Set would freeze it at save time, so a company followed later
+    would never appear in a Set saved earlier. Account state is applied fresh on every request
+    instead, which is also how the Matches tab already treats "current".
+
+    Terms are escaped even though these strings come from our own ledger rather than a query
+    string — a Board key legitimately contains ``_`` (``workday:ngc/Northrop_Grumman_External_Site``),
+    which is a LIKE wildcard, and unescaped it would match Boards nobody chose.
+
+    Both sides are lowercased, which has a second effect worth stating: the served index holds
+    335 groups of Board keys that differ only in casing (43,067 rows), one company recorded
+    twice. Matching case-insensitively means hiding or following such a company catches both
+    spellings, where an exact match would silently catch one.
+    """
+    terms = [
+        f"lower(id) LIKE '{_escape_like(board + ':').lower()}%'"
+        for board in sorted(set(boards))
+        if board
+    ]
+    if not terms:
+        return None
+    joined = " OR ".join(terms)
+    return f"NOT ({joined})" if exclude else f"({joined})"
 
 
 def _keyword_terms(kw: str) -> list[str]:
@@ -990,10 +1034,21 @@ class JobSearch:
 
         return facets.counts(self._table, self.parse_filters(args), self.capabilities)
 
-    def run(self, args: Mapping[str, str]) -> list[dict]:
+    def run(
+        self, args: Mapping[str, str], *, extra_where: str | None = None
+    ) -> list[dict]:
+        """One page of results. ``extra_where`` is ANDed onto the compiled filter.
+
+        A separate parameter rather than another :class:`SearchFilters` field, because what goes
+        here is **Account state** — the follow/hide lists (ADR-0171) — not a control the user set
+        on this request. Keeping it out of `SearchFilters` is what stops a Saved Set freezing a
+        follow list at the moment it was saved.
+        """
         query = (args.get("q") or "").strip()
         _int = _int_arg(args)
         where = build_filter(self.parse_filters(args), self.capabilities)
+        if extra_where:
+            where = f"({where}) AND {extra_where}" if where else extra_where
         # Whitelisted to a column name, never taken from the query string — this reaches an
         # ORDER BY. An unknown value is no sort at all, which is the existing behaviour.
         sort = SORT_COLUMNS.get((args.get("sort") or "").strip())

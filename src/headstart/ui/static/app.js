@@ -471,6 +471,9 @@ async function fetchPage(){
   const p = new URLSearchParams({ q, k: PAGE_SIZE, page });
   for (const [key, value] of Object.entries(currentFilters())) p.set(key, value);
   if (el('sort').value !== 'rel') p.set('sort', el('sort').value);
+  // Deliberately NOT part of currentFilters(): a Saved Set serializes that, and freezing "only
+  // my companies" into a stored Set would pin it to the list as it was on the day it was saved.
+  if (el('mine') && el('mine').checked) p.set('mine', '1');
   el('results').innerHTML = skeleton() + skeleton() + skeleton();
   setResultRows(3);
   busy(true);
@@ -732,7 +735,15 @@ function jobCard(r, i, canHide){
     <div class="${cls}" style="${ranked?`--tone:${tone(s)}; `:''}animation-delay:${Math.min(i,12)*35}ms">
       <div class="who">
         <a class="title" href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}<svg class="ext" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6.5 3.5H3.5v9h9v-3M9.5 3.5h3v3M12.5 3.5 7 9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens on the employer's own board</span></a>
-        <div class="org">${esc(r.company)}${r.location? ' <span>·</span> '+esc(r.location) : ''}</div>
+        <div class="org">${esc(r.company)}${r.location? ' <span>·</span> '+esc(r.location) : ''}${
+          // On every card, not only on a capped one: hiding a company is how a user acts on a
+          // result they do not want, and the first such result is rarely the third from that
+          // company. A plain inline control rather than a hover reveal — a control that only
+          // exists on hover does not exist on a phone.
+          CAN_COMPANIES && boardOf(r.id)
+            ? ` <button class="linkish hide-co" data-hide-company="${esc(boardOf(r.id))}"
+                 title="Stop showing ${esc(r.company)} in your results">hide</button>`
+            : ''}</div>
         <div class="tags">
           ${r.closed? '<span class="tag closed" title="No longer in HeadStart\u2019s index \u2014 almost always because the employer took it down. The link still goes to them.">closed</span>':''}
           ${isNew(r.first_seen)? '<span class="tag new" title="New to HeadStart\u2019s index within your chosen window \u2014 not necessarily newly posted by the employer">new</span>':''}
@@ -764,6 +775,81 @@ function jobCard(r, i, canHide){
     </div>`;
 }
 
+/* ---- Per-company capping and the follow/hide lists (ADR-0171) ----------------------------
+
+   Capping is a DISPLAY grouping over the rows this page already fetched, not a filter: the
+   ranked set, its count and its pagination are untouched, and every capped row is one click
+   away rather than gone. Doing it server-side would mean over-fetching and then slicing, which
+   breaks offset pagination — the same tied-sort trap `run()` documents, where rows repeat and
+   vanish across pages.
+
+   It earns its place because the median company contributes ONE job to a query (measured: a
+   `backend` search spans 2,807 companies at a median of 1), so capping costs almost every
+   company nothing and only trims the handful that would otherwise fill the screen. ---- */
+const COMPANY_CAP = 2;
+const boardOf = id => (id || '').slice(0, (id || '').lastIndexOf(':'));
+
+let myCompanies = { followed: [], hidden: [] };
+let capOverflow = new Map();   // board -> [card html] withheld from this page
+
+async function loadCompanies(){
+  try{
+    const r = await fetch('/companies');
+    if (r.ok) myCompanies = await r.json();
+  }catch(e){ /* dark deployment or signed out — the controls simply don't render */ }
+}
+
+async function setCompany(board, action){
+  try{
+    const r = await fetch('/companies', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ board, action })
+    });
+    if (!r.ok) return false;
+    myCompanies = await r.json();
+    return true;
+  }catch(e){ return false; }
+}
+
+function capRows(rows, target){
+  const seen = new Map(), firstOf = new Map();
+  capOverflow = new Map();
+  const chunks = [];
+  rows.forEach((r, i) => {
+    const board = boardOf(r.id);
+    const html = jobCard(r, i, !target);
+    if (!board){ chunks.push(html); return; }
+    const n = (seen.get(board) || 0) + 1;
+    seen.set(board, n);
+    if (n === 1) firstOf.set(board, r.company);
+    if (n <= COMPANY_CAP){ chunks.push(html); return; }
+    if (!capOverflow.has(board)){
+      capOverflow.set(board, []);
+      // The expander sits where this company's next result would have been, so the list still
+      // reads in rank order rather than collecting the leftovers at the bottom.
+      chunks.push({ board });
+    }
+    capOverflow.get(board).push(html);
+  });
+  return chunks.map(c => typeof c === 'string' ? c : moreRow(c.board, firstOf.get(c.board)));
+}
+
+function moreRow(board, company){
+  const n = (capOverflow.get(board) || []).length;
+  return `<div class="more-row" data-board="${esc(board)}">
+      <button class="ghost" data-more="${esc(board)}">
+        ${n} more at ${esc(company || board)}
+      </button>
+    </div>`;
+}
+
+function expandCompany(board){
+  const holder = document.querySelector(`.more-row[data-board="${CSS.escape(board)}"]`);
+  const rows = capOverflow.get(board);
+  if (!holder || !rows) return;
+  holder.outerHTML = rows.join('');
+}
+
 function draw(rows, target){
   // Only the Search list is labelled with the bracket's currency — see `convTo`.
   convTo = target ? '' : (currentFilters().salary_currency || '');
@@ -773,7 +859,7 @@ function draw(rows, target){
   rows.forEach(r => { if (r.id) drawnRows.set(r.id, r); });   // starring needs the row later
   // `(r, i) => …`, never a bare `rows.map(jobCard)`: map passes the array as a third argument,
   // which would land on `canHide` and quietly put a × on every list.
-  el(target || 'results').innerHTML = rows.map((r, i) => jobCard(r, i, !target)).join('');
+  el(target || 'results').innerHTML = capRows(rows, target).join('');
   setResultRows(rows.length, target);
   if (!target) drawHidden(rows);
 }
@@ -990,6 +1076,9 @@ function dismissRow(id){
 }
 
 const CAN_STAR = !!el('saved-results');   // the Saved tab only renders when configured
+// Follow/hide is gated separately from starring: the local dev renderer serves /companies over
+// one in-memory record even though it has no Accounts at all (ADR-0042 keeps the two mirrors).
+const CAN_COMPANIES = !!el('my-companies');
 let mySaved = null;                        // server-truth list, newest star first
 const savedByJob = new Map();              // job id → saved record
 const drawnRows = new Map();               // job id → last drawn result row
@@ -2636,6 +2725,7 @@ function drawHot(){
 function hotRow(r, i, lens){
   const m = HOT_MEASURE[lens](r);
   const op = HOT_OPERATOR[r.operator];
+  const followed = (myCompanies.followed || []).includes(r.board);
   // The rank is decorative — the list is already ordered and screen readers announce <ol>
   // position — so it is hidden from the accessibility tree rather than read out twice.
   return `
@@ -2653,7 +2743,11 @@ function hotRow(r, i, lens){
         <span class="hot-unit">${esc(m.unit)}</span>
         <span class="hot-sub">${esc(m.sub)}</span>
       </div>
-      <button class="ghost hot-see" data-company="${esc(r.company)}">See roles</button>
+      <div class="hot-actions">
+        ${CAN_COMPANIES ? `<button class="ghost hot-track" data-track="${esc(r.board)}"
+          aria-pressed="${followed}">${followed ? 'Following' : 'Follow'}</button>` : ''}
+        <button class="ghost hot-see" data-company="${esc(r.company)}">See roles</button>
+      </div>
     </li>`;
 }
 
@@ -2673,7 +2767,16 @@ if (el('hot-results')){
   document.querySelectorAll('input[name="hot-lens"]').forEach(input =>
     input.addEventListener('change', drawHot));
   el('hot-show-all').addEventListener('change', drawHot);
-  el('hot-results').addEventListener('click', ev => {
+  el('hot-results').addEventListener('click', async ev => {
+    const track = ev.target.closest('[data-track]');
+    if (track){
+      track.disabled = true;
+      const board = track.dataset.track;
+      const on = (myCompanies.followed || []).includes(board);
+      if (await setCompany(board, on ? 'clear' : 'follow')) drawHot();
+      else track.disabled = false;
+      return;
+    }
     const btn = ev.target.closest('.hot-see');
     if (!btn) return;
     // Hand the company to Search rather than filtering here: Search already owns the filter
@@ -2685,6 +2788,37 @@ if (el('hot-results')){
   });
 }
 
+/* One delegated listener for the capped-row controls, anywhere they render (Search, Matches,
+   Saved) — never an inline handler with an interpolated Board key in it. */
+document.addEventListener('click', async ev => {
+  const more = ev.target.closest('[data-more]');
+  if (more){ expandCompany(more.dataset.more); return; }
+  const hide = ev.target.closest('[data-hide-company]');
+  if (!hide) return;
+  hide.disabled = true;
+  if (await setCompany(hide.dataset.hideCompany, 'hide')) { drawMyCompanies(); await fetchPage(); }
+  else { hide.disabled = false; }
+});
+
+/* The hidden list is shown as a count with an undo, not a silent filter. A user who cannot see
+   what was removed cannot tell "I hid this" from "the index has nothing". */
+function drawMyCompanies(){
+  const box = el('my-companies');
+  if (!box) return;
+  const n = (myCompanies.hidden || []).length;
+  box.innerHTML = n
+    ? `${n} ${n === 1 ? 'company' : 'companies'} hidden from your results ` +
+      `<button class="linkish" id="unhide-all">show them again</button>`
+    : '';
+  if (el('unhide-all')) el('unhide-all').addEventListener('click', async () => {
+    for (const board of [...(myCompanies.hidden || [])]) await setCompany(board, 'clear');
+    drawMyCompanies();
+    await fetchPage();
+  });
+}
+
+if (el('mine')) el('mine').addEventListener('change', () => go());
+
 try { applyDensity(!!localStorage.getItem(DENSITY_KEY)); } catch(e){ applyDensity(false); }
 go();   // an empty query browses the newest jobs (ADR-0074) — the Search tab is never empty
 whoAmI();
@@ -2692,3 +2826,4 @@ showTab(currentTab());
 // Result cards need star states before the Saved tab is ever opened; landing ON the tab
 // already loads via showTab above.
 if (CAN_STAR && currentTab() !== 'saved') loadSaved();
+loadCompanies().then(drawMyCompanies);

@@ -91,13 +91,37 @@ run does.
   HCLTech, Wipro, Bluelight Consulting and Jobgether, which reads as a broken product before any
   filter is found.
 
-## Deferred, and said so here rather than left implied
+## Two more decisions the same work forced
 
-Two parts of the plan this tab belongs to are **not** in it: per-company capping in
-`JobSearch.run`, and per-account follow/hide. Both are self-contained changes that touch the
-search path rather than this one, and the research recommends doing them — they are sequenced
-after this tab because it is the front door that makes a follow list worth having, not dropped.
+**Per-company capping is a display grouping, not a filter.** At most two rows per company are
+shown, with the rest behind one "N more at X" expander placed where that company's next result
+would have been. The ranked set, its count and its pagination are untouched and nothing is
+hidden — a capped row is one click away.
 
-One change here falls outside the tab: the site footer claimed "no reposts and no agencies", which
-this work disproves — an aggregator and 111 services Boards sit in the index. Shipping the evidence
-while leaving the claim would be worse than the out-of-scope edit.
+Server-side capping was rejected on a measurement already in `run()`: pagination is
+offset-based, so capping would mean over-fetching and slicing, and a slice whose size changes
+per page repeats and drops rows across pages — the same trap the tied-sort comment there
+records. Capping the fetched page instead costs nothing and is honest, because the median
+company contributes **one** job to a query (a `backend` search spans 2,807 companies at a median
+of 1). Capping therefore costs almost every company nothing and trims only the handful that
+would otherwise fill a screen.
+
+**Follow and hide are Account state, applied per request, never part of `SearchFilters`.** The
+pair lives in one record (`CompanyPrefs`) keyed by Board key rather than company name, because
+a name is absent on four served rows in five (ADR-0114) and a Board key is exactly the prefix a
+Job id carries. They are kept disjoint, and `run()` takes them through a separate `extra_where`
+argument rather than a filter field — a Saved Set serializes `SearchFilters`, so a follow list
+baked in there would freeze at save time and a company followed later would never appear in a
+Set saved earlier.
+
+Hidden Boards are excluded from **every** request; `mine=1` additionally narrows to followed
+ones. An empty follow list with `mine=1` compiles to `false` rather than to no clause, because
+silently widening to the whole index is the opposite of what was asked. Matching is
+case-insensitive on both sides, which also unifies the 335 Board-key groups that differ only in
+casing — one company that would otherwise be half-hidden.
+
+## One change outside the tab
+
+The site footer claimed "no reposts and no agencies", which this work disproves — an aggregator
+and 111 services Boards sit in the index. Shipping the evidence while leaving the claim would be
+worse than the out-of-scope edit.

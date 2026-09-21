@@ -32,6 +32,7 @@ from headstart import facets, fx, geo, llm_router, profile_extract, search
 # modules, whose dependencies (xlsxwriter, Resend) this image does not install.
 from headstart.alerts import access, identity
 from headstart.alerts.store import (
+    MAX_COMPANIES,
     MAX_PARSES,
     MAX_RESUME_BYTES,
     MAX_RESUMES,
@@ -377,13 +378,76 @@ def _require_sign_in():
     return None
 
 
+def _company_where(args) -> str | None:
+    """The signed-in Account's follow/hide clause for this request (ADR-0171), or None.
+
+    Read fresh per request rather than carried in the query string: the lists are Account
+    state, so a bookmarked URL or a Saved Set must not be able to pin them to what they were.
+
+    ``mine=1`` narrows to followed Boards. Hidden Boards are excluded on **every** request,
+    with or without that flag — hiding a company means not seeing it, not "not seeing it while
+    a toggle happens to be on".
+    """
+    gate = _account_gate()
+    if not gate:
+        return None
+    email, store = gate
+    prefs = store.get_companies(subscription_id(email))
+    clauses = []
+    if args.get("mine") in ("1", "true"):
+        # An empty follow list with `mine=1` compiles to no clause, which would silently widen
+        # to the whole index — the opposite of what was asked. Match nothing instead; the UI
+        # explains the empty page.
+        clauses.append(search.board_clause(prefs.followed, exclude=False) or "false")
+    if prefs.hidden:
+        clauses.append(search.board_clause(prefs.hidden, exclude=True))
+    return " AND ".join(c for c in clauses if c) or None
+
+
 @app.route("/search")
 def search_jobs():
     """A thin adapter over the shared search path — parse/filter/rank live in JobSearch."""
     try:
-        return jsonify(_searcher.run(request.args))
+        return jsonify(
+            _searcher.run(request.args, extra_where=_company_where(request.args))
+        )
     except ValueError:
         return jsonify({"error": "invalid filter"}), 400
+
+
+@app.route("/companies")
+def list_companies():
+    """The Account's followed and hidden Boards."""
+    gate = _account_gate()
+    if not gate:
+        return jsonify({"error": "accounts are not configured here"}), 503
+    email, store = gate
+    prefs = store.get_companies(subscription_id(email))
+    return jsonify({"followed": list(prefs.followed), "hidden": list(prefs.hidden)})
+
+
+@app.route("/companies", methods=["POST"])
+def set_company():
+    """Follow, hide, or clear one Board. The whole record is rewritten, so the two lists
+    cannot drift apart — `CompanyPrefs.with_board` keeps them disjoint."""
+    gate = _account_gate()
+    if not gate:
+        return jsonify({"error": "accounts are not configured here"}), 503
+    email, store = gate
+    body = request.get_json(silent=True) or {}
+    board = str(body.get("board") or "").strip()
+    action = str(body.get("action") or "").strip()
+    if not board or action not in ("follow", "hide", "clear"):
+        return jsonify(
+            {"error": "board and action (follow|hide|clear) are required"}
+        ), 400
+    account = subscription_id(email)
+    prefs = store.get_companies(account).with_board(board, action)
+    if len(prefs.followed) >= MAX_COMPANIES and action == "follow":
+        # The cap trims silently on write, so say so rather than letting a follow vanish.
+        return jsonify({"error": f"at most {MAX_COMPANIES} followed companies"}), 409
+    store.put_companies(prefs)
+    return jsonify({"followed": list(prefs.followed), "hidden": list(prefs.hidden)})
 
 
 @app.route("/hot")
@@ -1367,6 +1431,7 @@ def index():
         hot_on=bool(_HOT),
         alerts_on=_ALERTS_ON,
         sets_on=_SETS_ON,
+        companies_on=_SETS_ON,  # same prerequisites — the lists are per-Account records
         saved_on=_SETS_ON,  # same prerequisites — see the _SETS_ON comment
         profile_on=_SETS_ON,  # likewise (the parse button 503s on its own if the router is down)
     )

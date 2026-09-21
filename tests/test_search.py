@@ -1215,3 +1215,31 @@ def test_without_a_rate_table_the_bracket_falls_back_to_one_currency(monkeypatch
         "salary_currency = 'USD' AND "
         "COALESCE(max_salary_annual, min_salary_annual) >= 100000"
     )
+
+
+def test_extra_where_is_anded_onto_the_compiled_filter():
+    """Account state (ADR-0171) rides alongside the filters, never instead of them.
+
+    An `extra_where` that replaced the compiled clause would silently drop every control the
+    user set; one that was ORed would widen the result rather than narrow it.
+    """
+    searcher, table = _searcher()
+    searcher.run(
+        {"q": "x", "remote": "true"}, extra_where="NOT (lower(id) LIKE 'lever:x:%')"
+    )
+    assert "remote = true" in table.last_where
+    assert "NOT (lower(id) LIKE 'lever:x:%')" in table.last_where
+    assert " AND " in table.last_where
+
+
+def test_extra_where_alone_still_filters():
+    """No controls set, so there is nothing to AND it onto — it must still reach the table."""
+    searcher, table = _searcher()
+    searcher.run({"q": "x"}, extra_where="(lower(id) LIKE 'lever:x:%')")
+    assert table.last_where == "(lower(id) LIKE 'lever:x:%')"
+
+
+def test_no_extra_where_leaves_the_clause_untouched():
+    searcher, table = _searcher()
+    searcher.run({"q": "x", "remote": "true"})
+    assert "lower(id)" not in (table.last_where or "")
