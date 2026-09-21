@@ -694,3 +694,127 @@ def test_absent_is_separated_from_an_unreachable_hub():
     assert _is_absent(hub_errors.EntryNotFoundError("no such file")) is True
     assert _is_absent(hub_errors.LocalEntryNotFoundError("hub unreachable")) is False
     assert _is_absent(ValueError("corrupt json")) is False
+
+
+# --- CompanyPrefs: an Account's followed/hidden Boards (ADR-0171) ---
+
+
+def test_following_a_hidden_board_unhides_it() -> None:
+    """The lists must stay disjoint, or a filter both requires and excludes the same rows."""
+    prefs = st.CompanyPrefs.blank("a" * 16).with_board("greenhouse:acme", "hide")
+    assert prefs.hidden == ("greenhouse:acme",)
+    prefs = prefs.with_board("greenhouse:acme", "follow")
+    assert prefs.followed == ("greenhouse:acme",)
+    assert prefs.hidden == ()
+
+
+def test_clear_removes_from_both() -> None:
+    prefs = st.CompanyPrefs.blank("a" * 16).with_board("lever:x", "follow")
+    assert prefs.with_board("lever:x", "clear").followed == ()
+
+
+def test_following_the_same_board_twice_does_not_duplicate_it() -> None:
+    prefs = st.CompanyPrefs.blank("a" * 16)
+    for _ in range(3):
+        prefs = prefs.with_board("ashby:acme", "follow")
+    assert prefs.followed == ("ashby:acme",)
+
+
+def test_the_cap_bounds_the_list_on_write() -> None:
+    prefs = st.CompanyPrefs.blank("a" * 16)
+    for n in range(st.MAX_COMPANIES + 10):
+        prefs = prefs.with_board(f"greenhouse:c{n}", "follow")
+    assert len(prefs.followed) == st.MAX_COMPANIES
+    assert prefs.followed[-1] == f"greenhouse:c{st.MAX_COMPANIES + 9}", "newest kept"
+
+
+def test_a_record_is_bounded_on_read_too() -> None:
+    """Every entry becomes a LIKE term, so a hand-edited record must not widen the clause."""
+    raw = {
+        "account": "a" * 16,
+        "followed": [f"greenhouse:c{n}" for n in range(st.MAX_COMPANIES + 50)],
+        "hidden": [],
+    }
+    assert len(st.CompanyPrefs.from_dict(raw).followed) == st.MAX_COMPANIES
+
+
+def test_a_record_that_lists_a_board_twice_is_read_disjoint() -> None:
+    raw = {
+        "account": "a" * 16,
+        "followed": ["lever:x"],
+        "hidden": ["lever:x", "lever:y"],
+    }
+    prefs = st.CompanyPrefs.from_dict(raw)
+    assert prefs.followed == ("lever:x",)
+    assert prefs.hidden == ("lever:y",), "followed wins; the pair stays disjoint"
+
+
+def test_the_cap_drops_the_oldest_so_callers_must_detect_the_trim():
+    """`with_board` trims silently, which is what the /companies routes have to detect.
+
+    The trim drops the OLDEST entry, so the new Board always lands. Both "is it in the list
+    afterwards?" and "is the list at the cap afterwards?" therefore fail to detect it — the
+    first never fires (measured through the route: the 201st follow answered 200), the second
+    fires one entry early. The routes check the state BEFORE the write instead: a Board not
+    already listed, on a list already at the cap.
+    """
+    prefs = st.CompanyPrefs.blank("a" * 16)
+    for n in range(st.MAX_COMPANIES):
+        prefs = prefs.with_board(f"greenhouse:c{n}", "follow")
+    assert len(prefs.followed) == st.MAX_COMPANIES
+    assert "greenhouse:c0" in prefs.followed, "the cap is reached, nothing trimmed yet"
+
+    full = prefs.with_board("greenhouse:one-too-many", "follow")
+    assert "greenhouse:one-too-many" in full.followed, "the new entry lands..."
+    assert "greenhouse:c0" not in full.followed, (
+        "...and the OLDEST is what silently went"
+    )
+
+
+def test_a_differently_cased_key_is_the_same_board():
+    """The filter matches case-insensitively, so the record must too, or the pair is not disjoint.
+
+    Following `workday:Micron/External` and then hiding `workday:micron/external` used to leave
+    one Board on BOTH lists; the clause then required and excluded the same rows and the search
+    returned nothing, silently. The index holds 335 Board-key groups differing only in casing.
+    """
+    prefs = (
+        st.CompanyPrefs.blank("a" * 16)
+        .with_board("workday:Micron/External", "follow")
+        .with_board("workday:micron/external", "hide")
+    )
+    assert prefs.followed == ()
+    assert prefs.hidden == ("workday:micron/external",)
+    assert not (set(prefs.followed) & set(prefs.hidden))
+
+
+def test_a_record_written_with_mixed_casing_is_folded_on_read():
+    raw = {
+        "account": "a" * 16,
+        "followed": ["Lever:Acme", "lever:acme"],
+        "hidden": [],
+    }
+    assert st.CompanyPrefs.from_dict(raw).followed == ("lever:acme",), (
+        "one Board, not two"
+    )
+
+
+def test_would_evict_is_what_the_routes_ask_before_writing():
+    """Both /companies mirrors ask the record, so they cannot answer differently at the limit."""
+    prefs = st.CompanyPrefs.blank("a" * 16)
+    assert prefs.would_evict("greenhouse:acme", "follow") is False
+    for n in range(st.MAX_COMPANIES):
+        prefs = prefs.with_board(f"greenhouse:c{n}", "follow")
+    assert prefs.would_evict("greenhouse:new", "follow") is True, (
+        "a new Board at the cap"
+    )
+    assert prefs.would_evict("greenhouse:c5", "follow") is False, (
+        "already listed — a no-op"
+    )
+    assert prefs.would_evict("GREENHOUSE:C5", "follow") is False, (
+        "...whatever its casing"
+    )
+    assert prefs.would_evict("greenhouse:new", "hide") is False, (
+        "the other list is empty"
+    )
+    assert prefs.would_evict("greenhouse:new", "clear") is False, "clear never adds"

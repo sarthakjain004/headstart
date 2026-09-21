@@ -1,0 +1,46 @@
+<section class="hot">
+  <div class="hot-head">
+    <h2>Hiring right now</h2>
+    <span class="note" id="hot-msg" role="status"></span>
+  </div>
+
+  {# The lens IS the question being asked, so it is a labelled radio group rather than a sort
+     dropdown: the three produce barely-overlapping lists, and a user who reads "Growing" knows
+     what the number under it means. Radios, not buttons, so arrow keys move between them. #}
+  <div class="hot-lenses" role="radiogroup" aria-label="What actively hiring means">
+    <label class="lens">
+      <input type="radio" name="hot-lens" value="expansion" checked>
+      <span class="lens-name">Growing</span>
+      <span class="lens-why">opening more than they close</span>
+    </label>
+    <label class="lens">
+      <input type="radio" name="hot-lens" value="volume">
+      <span class="lens-name">Most roles</span>
+      <span class="lens-why">largest number opened this week</span>
+    </label>
+    <label class="lens">
+      <input type="radio" name="hot-lens" value="rate">
+      <span class="lens-name">Fastest</span>
+      <span class="lens-why">most new for their size</span>
+    </label>
+  </div>
+
+  <div class="hot-controls">
+    <label class="switch">
+      <input type="checkbox" id="hot-show-all">
+      <span>Show staffing firms and job boards</span>
+    </label>
+    <span class="note" id="hot-filtered"></span>
+  </div>
+
+  <ol class="hot-list" id="hot-results" aria-live="polite"></ol>
+
+  {# The provenance line, not a footnote: this tab's numbers are a measured window over a
+     partial scrape, and every one of those words changes what the ranking means. #}
+  <p class="kind" id="hot-provenance"></p>
+  <p class="kind">A company is ranked on the roles HeadStart can see on its board, so a company
+    whose board we do not read yet cannot appear here, and one the last run did not re-read
+    shows no change rather than a fall. Boards we have only just discovered are left out
+    entirely — their whole backlog would otherwise read as a hiring spree.
+    <a href="#data">What's in the index, and what isn't →</a></p>
+</section>

@@ -19,6 +19,7 @@ function showTab(name){
   document.querySelectorAll('.panel').forEach(p => { p.hidden = p.id !== 'panel-' + name; });
   document.querySelectorAll('.tabs [data-tab]').forEach(a =>
     a.setAttribute('aria-current', a.dataset.tab === name ? 'page' : 'false'));
+  if (name === 'hot' && el('hot-results') && !hotData) loadHot();
   if (name === 'trends' && el('trends') && !trendData) loadTrends(null);
   if (name === 'matches' && el('sets-strip')){
     if (!mySets) loadSets();
@@ -470,6 +471,9 @@ async function fetchPage(){
   const p = new URLSearchParams({ q, k: PAGE_SIZE, page });
   for (const [key, value] of Object.entries(currentFilters())) p.set(key, value);
   if (el('sort').value !== 'rel') p.set('sort', el('sort').value);
+  // Deliberately NOT part of currentFilters(): a Saved Set serializes that, and freezing "only
+  // my companies" into a stored Set would pin it to the list as it was on the day it was saved.
+  if (el('mine') && el('mine').checked) p.set('mine', '1');
   el('results').innerHTML = skeleton() + skeleton() + skeleton();
   setResultRows(3);
   busy(true);
@@ -720,7 +724,7 @@ function drawPager(rowCount, facets){
    drawn: the × belongs to the Search list, which is the one with the hidden-count note and the
    "show" toggle beside it. On Saved the equivalent gesture is unstarring, and two controls for
    one intent would disagree about which list the row is in. ---- */
-function jobCard(r, i, canHide){
+function jobCard(r, i, canHide, canHideCompany){
   // A browsed row (no query) was never ranked, so it carries no score (ADR-0074) — the
   // match ring would otherwise show a misleading "0%" rather than "not applicable".
   const ranked = r.score != null;
@@ -731,7 +735,15 @@ function jobCard(r, i, canHide){
     <div class="${cls}" style="${ranked?`--tone:${tone(s)}; `:''}animation-delay:${Math.min(i,12)*35}ms">
       <div class="who">
         <a class="title" href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}<svg class="ext" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6.5 3.5H3.5v9h9v-3M9.5 3.5h3v3M12.5 3.5 7 9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens on the employer's own board</span></a>
-        <div class="org">${esc(r.company)}${r.location? ' <span>·</span> '+esc(r.location) : ''}</div>
+        <div class="org">${esc(r.company)}${r.location? ' <span>·</span> '+esc(r.location) : ''}${
+          // On every card, not only on a capped one: hiding a company is how a user acts on a
+          // result they do not want, and the first such result is rarely the third from that
+          // company. A plain inline control rather than a hover reveal — a control that only
+          // exists on hover does not exist on a phone.
+          CAN_COMPANIES && canHideCompany && boardOf(r.id)
+            ? ` <button class="linkish hide-co" data-hide-company="${esc(boardOf(r.id))}"
+                 title="Stop showing ${esc(r.company)} in your results">hide</button>`
+            : ''}</div>
         <div class="tags">
           ${r.closed? '<span class="tag closed" title="No longer in HeadStart\u2019s index \u2014 almost always because the employer took it down. The link still goes to them.">closed</span>':''}
           ${isNew(r.first_seen)? '<span class="tag new" title="New to HeadStart\u2019s index within your chosen window \u2014 not necessarily newly posted by the employer">new</span>':''}
@@ -763,6 +775,100 @@ function jobCard(r, i, canHide){
     </div>`;
 }
 
+/* ---- Per-company capping and the follow/hide lists (ADR-0171) ----------------------------
+
+   Capping applies to the two lists that re-run against the index, Search and Matches; the Saved
+   tab renders through `jobCard` directly and is deliberately left alone (see `renderSaved`).
+
+   Capping is a DISPLAY grouping over the rows this page already fetched, not a filter: the
+   ranked set, its count and its pagination are untouched, and every capped row is one click
+   away rather than gone. Doing it server-side would mean over-fetching and then slicing, which
+   breaks offset pagination — the same tied-sort trap `run()` documents, where rows repeat and
+   vanish across pages.
+
+   It earns its place because the median company contributes ONE job to a query (measured: a
+   `backend` search spans 2,807 companies at a median of 1), so capping costs almost every
+   company nothing and only trims the handful that would otherwise fill the screen. ---- */
+const COMPANY_CAP = 2;
+// The Board a Job id belongs to. Mirrors `board_identity.board_of` and inherits its documented
+// caveat (ADR-0049): exact only where the native id carries no colon, so a Board whose jobs have
+// colon-bearing native ids resolves to a phantom prefix and hiding it hides fewer rows than the
+// user expects — never more, because the prefix is longer, not shorter. `-1` is guarded: without
+// it a colonless string would slice to itself-minus-a-character rather than to nothing.
+const boardOf = id => {
+  const cut = (id || '').lastIndexOf(':');
+  return cut > 0 ? id.slice(0, cut) : '';
+};
+
+let myCompanies = { followed: [], hidden: [] };
+// Keyed by LIST, then Board. One shared map was a real defect: `draw` renders both Search and
+// Matches, so drawing one cleared the other's withheld rows and its "N more" buttons became
+// dead clicks — while the ADR claims a capped row is one click away.
+const capOverflow = new Map();   // listId -> Map(board -> [card html])
+
+async function loadCompanies(){
+  try{
+    const r = await fetch('/companies');
+    if (r.ok) myCompanies = await r.json();
+  }catch(e){ /* dark deployment or signed out — the controls simply don't render */ }
+}
+
+async function setCompany(board, action){
+  try{
+    const r = await fetch('/companies', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ board, action })
+    });
+    if (!r.ok) return false;
+    myCompanies = await r.json();
+    return true;
+  }catch(e){ return false; }
+}
+
+function capRows(rows, target){
+  const listId = target || 'results';
+  const seen = new Map(), firstOf = new Map();
+  const withheld = new Map();
+  capOverflow.set(listId, withheld);
+  const chunks = [];
+  rows.forEach((r, i) => {
+    const board = boardOf(r.id);
+    // `(r, i) => …` and an explicit third argument, never a bare `rows.map(jobCard)`: map passes
+    // the array as a third argument, which would land on `canHide` and put a × on every list.
+    const html = jobCard(r, i, !target, true);
+    if (!board){ chunks.push(html); return; }
+    const n = (seen.get(board) || 0) + 1;
+    seen.set(board, n);
+    if (n === 1) firstOf.set(board, r.company);
+    if (n <= COMPANY_CAP){ chunks.push(html); return; }
+    if (!withheld.has(board)){
+      withheld.set(board, []);
+      // The expander sits where this company's next result would have been, so the list still
+      // reads in rank order rather than collecting the leftovers at the bottom.
+      chunks.push({ board });
+    }
+    withheld.get(board).push(html);
+  });
+  return chunks.map(c =>
+    typeof c === 'string' ? c : moreRow(listId, c.board, firstOf.get(c.board)));
+}
+
+function moreRow(listId, board, company){
+  const n = ((capOverflow.get(listId) || new Map()).get(board) || []).length;
+  return `<div class="more-row" data-board="${esc(board)}" data-list="${esc(listId)}">
+      <button class="ghost" data-more>
+        ${n} more at ${esc(company || board)}
+      </button>
+    </div>`;
+}
+
+function expandCompany(holder){
+  const board = holder.dataset.board, listId = holder.dataset.list;
+  const rows = (capOverflow.get(listId) || new Map()).get(board);
+  if (!rows) return;
+  holder.outerHTML = rows.join('');
+}
+
 function draw(rows, target){
   // Only the Search list is labelled with the bracket's currency — see `convTo`.
   convTo = target ? '' : (currentFilters().salary_currency || '');
@@ -770,9 +876,7 @@ function draw(rows, target){
   // which reads as "sort my results" and is not: the server now orders the whole result set
   // (issue #275), so by the time rows arrive they are already in the asked-for order.
   rows.forEach(r => { if (r.id) drawnRows.set(r.id, r); });   // starring needs the row later
-  // `(r, i) => …`, never a bare `rows.map(jobCard)`: map passes the array as a third argument,
-  // which would land on `canHide` and quietly put a × on every list.
-  el(target || 'results').innerHTML = rows.map((r, i) => jobCard(r, i, !target)).join('');
+  el(target || 'results').innerHTML = capRows(rows, target).join('');
   setResultRows(rows.length, target);
   if (!target) drawHidden(rows);
 }
@@ -989,6 +1093,9 @@ function dismissRow(id){
 }
 
 const CAN_STAR = !!el('saved-results');   // the Saved tab only renders when configured
+// Follow/hide is gated separately from starring: the local dev renderer serves /companies over
+// one in-memory record even though it has no Accounts at all (ADR-0042 keeps the two mirrors).
+const CAN_COMPANIES = !!el('my-companies');
 let mySaved = null;                        // server-truth list, newest star first
 const savedByJob = new Map();              // job id → saved record
 const drawnRows = new Map();               // job id → last drawn result row
@@ -1053,7 +1160,10 @@ function renderSaved(){
   const jobs = mySaved.slice().sort((a,b) => (b.starred_at||'').localeCompare(a.starred_at||''));
   el('saved-msg').textContent = jobs.length + ' saved job' + (jobs.length===1?'':'s');
   setResultRows(jobs.length, 'saved-results');
-  box.innerHTML = jobs.map((j, i) => jobCard(savedRow(j), i, false)).join('');
+  // No "hide" here, and no capping: the Saved tab lists jobs this Account chose one at a time,
+  // so a company-level control would either do nothing visible or remove something deliberately
+  // kept. It is the one list that does NOT go through `draw`/`capRows`.
+  box.innerHTML = jobs.map((j, i) => jobCard(savedRow(j), i, false, false)).join('');
 }
 
 // A stored star, in the shape jobCard reads. The record is a display copy taken at star time
@@ -2563,6 +2673,179 @@ if (el('matches-controls')){
     rerun();
   });
 }
+
+/* ---- "Hiring now" (hot_boards): a pre-ranked leaderboard of the Boards opening roles.
+
+   The whole artifact arrives in one fetch — three lenses of at most 100 rows — so switching
+   lens or revealing staffing firms is a re-render, never a round trip. It is a pipeline
+   product read from a static file, so it is fetched once per visit and not re-polled. ---- */
+let hotData = null;
+
+const HOT_OPERATOR = {
+  services: { label: 'staffing / services', hint: 'This board belongs to an IT services or staffing firm, so most roles are placements with its clients rather than jobs at the company itself.' },
+  aggregator: { label: 'job board', hint: 'This board re-posts other companies’ jobs. The employer behind a given role is somebody else.' },
+};
+
+async function loadHot(){
+  el('hot-msg').textContent = 'Loading…';
+  try{
+    const r = await fetch('/hot');
+    if (!r.ok){
+      // 503 is "no run has written one", which is a different thing from a failure and is the
+      // only case the tab can be opened in without data.
+      el('hot-msg').textContent = r.status === 503
+        ? 'No ranking yet — the next pipeline run will build one.'
+        : 'Couldn’t load the ranking.';
+      return;
+    }
+    hotData = await r.json();
+  }catch(e){ el('hot-msg').textContent = 'Couldn’t load the ranking.'; return; }
+  el('hot-msg').textContent = '';
+  drawHotProvenance();
+  drawHot();
+}
+
+function hotLens(){
+  const picked = document.querySelector('input[name="hot-lens"]:checked');
+  return picked ? picked.value : 'expansion';
+}
+
+/* The number that *is* the ranking, per lens, plus how to say it. Each lens leads with its own
+   measure and prints the other two small, so a row can be read against the question that
+   ordered it rather than a single column that means something different on each tab. */
+const HOT_MEASURE = {
+  expansion: r => ({ big: (r.net > 0 ? '+' : '') + r.net, unit: 'net roles', sub:
+    `${r.new7} opened this week · ${r.stock} open now` }),
+  volume:    r => ({ big: String(r.new7), unit: 'opened this week', sub:
+    `${r.stock} open now · ${r.net >= 0 ? '+' : ''}${r.net} net` }),
+  rate:      r => ({ big: r.rate + '%', unit: 'of its board is new', sub:
+    `${r.new7} opened this week · ${r.stock} open now` }),
+};
+
+function drawHot(){
+  if (!hotData) return;
+  const lens = hotLens();
+  const showAll = el('hot-show-all').checked;
+  const all = hotData.lenses[lens] || [];
+  const rows = showAll ? all : all.filter(r => r.operator === 'employer');
+  const hiddenCount = all.length - rows.length;
+
+  el('hot-filtered').textContent = hiddenCount
+    ? `${hiddenCount} staffing ${hiddenCount === 1 ? 'firm or job board' : 'firms and job boards'} hidden`
+    : (showAll ? '' : 'nothing filtered on this view');
+
+  if (!rows.length){
+    el('hot-results').innerHTML =
+      '<li class="hot-empty">Nothing qualified on this view. Try another measure, or show staffing firms.</li>';
+    return;
+  }
+  el('hot-results').innerHTML = rows.map((r, i) => hotRow(r, i, lens)).join('');
+}
+
+function hotRow(r, i, lens){
+  const m = HOT_MEASURE[lens](r);
+  const op = HOT_OPERATOR[r.operator];
+  // Lowercased both sides, like `board_clause` — the index holds Board keys that differ only
+  // in casing, and an exact check would offer "Follow" on a Board already being followed.
+  const followed = (myCompanies.followed || []).some(
+    b => b.toLowerCase() === (r.board || '').toLowerCase());
+  // The rank is decorative — the list is already ordered and screen readers announce <ol>
+  // position — so it is hidden from the accessibility tree rather than read out twice.
+  return `
+    <li class="hot-row${op ? ' flagged' : ''}" style="animation-delay:${Math.min(i,12)*30}ms">
+      <span class="hot-rank" aria-hidden="true">${i + 1}</span>
+      <div class="hot-who">
+        <div class="hot-name">${esc(r.company)}</div>
+        <div class="hot-tags">
+          <span class="src" title="Read directly from this company’s ${esc(r.ats)} board">via ${esc(r.ats)}</span>
+          ${op ? `<span class="tag flag" title="${esc(op.hint)}">${esc(op.label)}</span>` : ''}
+        </div>
+      </div>
+      <div class="hot-measure">
+        <b>${esc(m.big)}</b>
+        <span class="hot-unit">${esc(m.unit)}</span>
+        <span class="hot-sub">${esc(m.sub)}</span>
+      </div>
+      <div class="hot-actions">
+        ${CAN_COMPANIES ? `<button class="ghost hot-track" data-track="${esc(r.board)}"
+          aria-pressed="${followed}">${followed ? 'Following' : 'Follow'}</button>` : ''}
+        <button class="ghost hot-see" data-company="${esc(r.company)}">See roles</button>
+      </div>
+    </li>`;
+}
+
+function drawHotProvenance(){
+  const w = hotData.window || {}, x = hotData.counts || {};
+  const day = s => (s || '').slice(0, 10);
+  el('hot-provenance').textContent =
+    `Measured ${day(w.from)} to ${day(w.to)}. ${x.ranked ?? 0} companies ranked; ` +
+    `${x.below_min_stock ?? 0} with fewer than ${x.min_stock ?? '?'} open roles and ` +
+    `${x.newly_discovered ?? 0} ` +
+    `boards we had only just discovered were left out.`;
+}
+
+/* One delegated listener for the whole panel, like the sets strip — never an inline handler
+   with an interpolated company name in it. */
+if (el('hot-results')){
+  document.querySelectorAll('input[name="hot-lens"]').forEach(input =>
+    input.addEventListener('change', drawHot));
+  el('hot-show-all').addEventListener('change', drawHot);
+  el('hot-results').addEventListener('click', async ev => {
+    const track = ev.target.closest('[data-track]');
+    if (track){
+      track.disabled = true;
+      const board = track.dataset.track;
+      // Folded, like `hotRow` and `board_clause` — an exact check here left the button
+      // showing "Following" and then posting `follow` again, so it never cleared.
+      const on = (myCompanies.followed || []).some(
+        b => b.toLowerCase() === board.toLowerCase());
+      if (await setCompany(board, on ? 'clear' : 'follow')) drawHot();
+      else track.disabled = false;
+      return;
+    }
+    const btn = ev.target.closest('.hot-see');
+    if (!btn) return;
+    // Hand the company to Search rather than filtering here: Search already owns the filter
+    // vocabulary, the ranking and the job card, and a second place that lists jobs would be a
+    // second place to keep them consistent.
+    el('company').value = btn.dataset.company;
+    location.hash = '#search';
+    go();
+  });
+}
+
+/* One delegated listener for the capped-row controls, wherever they render — Search and
+   Matches, the two lists that re-run against the index. Never an inline handler with an
+   interpolated Board key in it. */
+document.addEventListener('click', async ev => {
+  const more = ev.target.closest('[data-more]');
+  if (more){ expandCompany(more.closest('.more-row')); return; }
+  const hide = ev.target.closest('[data-hide-company]');
+  if (!hide) return;
+  hide.disabled = true;
+  if (await setCompany(hide.dataset.hideCompany, 'hide')) { drawMyCompanies(); await fetchPage(); }
+  else { hide.disabled = false; }
+});
+
+/* The hidden list is shown as a count with an undo, not a silent filter. A user who cannot see
+   what was removed cannot tell "I hid this" from "the index has nothing". */
+function drawMyCompanies(){
+  const box = el('my-companies');
+  if (!box) return;
+  const n = (myCompanies.hidden || []).length;
+  box.innerHTML = n
+    ? `${n} ${n === 1 ? 'company' : 'companies'} hidden from your results ` +
+      `<button class="linkish" id="unhide-all">show them again</button>`
+    : '';
+  if (el('unhide-all')) el('unhide-all').addEventListener('click', async () => {
+    for (const board of [...(myCompanies.hidden || [])]) await setCompany(board, 'clear');
+    drawMyCompanies();
+    await fetchPage();
+  });
+}
+
+if (el('mine')) el('mine').addEventListener('change', () => go());
+
 try { applyDensity(!!localStorage.getItem(DENSITY_KEY)); } catch(e){ applyDensity(false); }
 go();   // an empty query browses the newest jobs (ADR-0074) — the Search tab is never empty
 whoAmI();
@@ -2570,3 +2853,4 @@ showTab(currentTab());
 // Result cards need star states before the Saved tab is ever opened; landing ON the tab
 // already loads via showTab above.
 if (CAN_STAR && currentTab() !== 'saved') loadSaved();
+loadCompanies().then(drawMyCompanies);

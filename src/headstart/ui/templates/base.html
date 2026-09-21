@@ -36,6 +36,9 @@
       {% else %}
       <span class="nav-item soon" title="Coming soon">Saved<span class="chip-soon">soon</span></span>
       {% endif %}
+      {% if hot_on %}
+      <a class="nav-item" href="#hot" data-tab="hot" aria-current="false">Hiring now</a>
+      {% endif %}
       {% if trends_on %}
       <a class="nav-item" href="#trends" data-tab="trends" aria-current="false">Trends</a>
       {% endif %}
@@ -61,6 +64,9 @@
       {% if profile_on %}
     <section class="panel" id="panel-profile" hidden>{% include "profile.html" %}</section>
       {% endif %}
+      {% if hot_on %}
+    <section class="panel" id="panel-hot" hidden>{% include "hot.html" %}</section>
+      {% endif %}
       {% if trends_on %}
     <section class="panel" id="panel-trends" hidden>{% include "trends.html" %}</section>
       {% endif %}
@@ -68,8 +74,10 @@
     <section class="panel" id="panel-data" hidden>{% include "data.html" %}</section>
   </div>
 
-  <div class="foot">Every job here is read straight from the company's own careers page — no
-    reposts and no agencies. Your search is matched on meaning rather than
+  <div class="foot">Every job here is read straight from the board the employer runs — never
+    scraped from another job site. Some of those boards belong to staffing firms and
+    recruiters rather than the end employer; the <a href="#hot">Hiring now</a> tab labels the
+    ones we have identified. Your search is matched on meaning rather than
     keywords. English-language tech roles, refreshed every couple of hours.
     <a href="#data">What's in the index, and what isn't →</a></div>
 </div>

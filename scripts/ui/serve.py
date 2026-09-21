@@ -11,6 +11,7 @@ Run:  python scripts/ui/serve.py    then open  http://localhost:8000
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import lancedb
@@ -18,10 +19,12 @@ from flask import Flask, jsonify, render_template, request
 
 import headstart
 from headstart import facets, fx, geo
+from headstart.alerts.store import MAX_COMPANIES, CompanyPrefs
 from headstart.search import (
     KEYWORD_DEFAULT_SCOPE,
     PROD_TABLE,
     JobSearch,
+    account_clause,
     keyword_scope_options,
     load_encoder,
 )
@@ -31,6 +34,17 @@ _REPO = Path(__file__).resolve().parents[2]
 # the same headstart/ui regardless of whether headstart is this repo's src/ or the Space
 # image's copy of it.
 _UI = Path(headstart.__file__).parent / "ui"
+
+# The hot list is a plain artifact with no secret behind it, so unlike trends it renders here
+# whenever a local pipeline run (or a pull) has left one — which is what makes the tab
+# reviewable without deploying.
+_HOT_PATH = _REPO / "data" / "state" / "hot_boards.json"
+try:  # a half-written artifact must not stop the renderer booting, as on the Space
+    _HOT = (
+        json.loads(_HOT_PATH.read_text(encoding="utf-8")) if _HOT_PATH.exists() else {}
+    )
+except (OSError, ValueError):
+    _HOT = {}
 
 print("loading model + index ...", flush=True)
 _model = load_encoder()
@@ -112,8 +126,11 @@ def index():
         keyword_default_scope=KEYWORD_DEFAULT_SCOPE,
         has_description=_searcher.has_description,
         trends_on=False,
+        hot_on=bool(_HOT),
         alerts_on=False,
         sets_on=False,
+        # unlike the rest: this renderer implements /companies over one in-memory record
+        companies_on=True,
         saved_on=False,
         profile_on=False,
         resume_sync_on=False,  # no sign-in here, so there is no account to keep a copy on
@@ -126,10 +143,65 @@ def coverage():
     return jsonify(_searcher.coverage())
 
 
+# Follow/hide (ADR-0171). The Space keeps these per Account in the HF-backed store; there are
+# no accounts here, so this renderer keeps ONE in-memory set for the single local user. That is
+# enough to exercise the real filter and the real UI, and it is deliberately not persisted —
+# a dev server that remembered your hidden companies between restarts would hide a bug.
+_LOCAL_COMPANIES = CompanyPrefs.blank("local")
+
+
+def _company_where(args) -> str | None:
+    """Mirror of the Space's per-request follow/hide clause — the rule itself is shared."""
+    return account_clause(
+        _LOCAL_COMPANIES.followed,
+        _LOCAL_COMPANIES.hidden,
+        mine=args.get("mine") in ("1", "true"),
+    )
+
+
+@app.route("/companies")
+def list_companies():
+    return jsonify(
+        {
+            "followed": list(_LOCAL_COMPANIES.followed),
+            "hidden": list(_LOCAL_COMPANIES.hidden),
+        }
+    )
+
+
+@app.route("/companies", methods=["POST"])
+def set_company():
+    global _LOCAL_COMPANIES
+    body = request.get_json(silent=True) or {}
+    board = str(body.get("board") or "").strip()
+    action = str(body.get("action") or "").strip()
+    if not board or action not in ("follow", "hide", "clear"):
+        return jsonify(
+            {"error": "board and action (follow|hide|clear) are required"}
+        ), 400
+    # The record owns the rule, so the two mirrors cannot answer differently at the limit.
+    if _LOCAL_COMPANIES.would_evict(board, action):
+        return jsonify(
+            {"error": f"at most {MAX_COMPANIES} companies in each list"}
+        ), 409
+    _LOCAL_COMPANIES = _LOCAL_COMPANIES.with_board(board, action)
+    return list_companies()
+
+
+@app.route("/hot")
+def hot_companies():
+    """Mirror of the Space's route, so the tab is reviewable locally (ADR-0042)."""
+    if not _HOT:
+        return jsonify({"error": "no hot list built locally"}), 503
+    return jsonify(_HOT)
+
+
 @app.route("/search")
 def search_jobs():
     try:
-        return jsonify(_searcher.run(request.args))
+        return jsonify(
+            _searcher.run(request.args, extra_where=_company_where(request.args))
+        )
     except ValueError:
         return jsonify({"error": "invalid filter"}), 400
 
@@ -138,7 +210,9 @@ def search_jobs():
 def search_facets():
     """Per-option result counts (issue #275) — the same shared path the Space serves."""
     try:
-        return jsonify(_searcher.facets(request.args))
+        return jsonify(
+            _searcher.facets(request.args, extra_where=_company_where(request.args))
+        )
     except ValueError:
         return jsonify({"error": "invalid filter"}), 400
 
