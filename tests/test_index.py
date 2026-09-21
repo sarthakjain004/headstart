@@ -323,6 +323,89 @@ def test_employment_type_flag_migration_preserves_the_legacy_verdicts(tmp_path):
     )
 
 
+def test_presence_flag_migration_matches_the_nullable_source_columns(tmp_path):
+    import pyarrow as pa
+
+    old_schema = pa.schema(
+        [
+            field
+            for field in idx._schema(_DIM)
+            if field.name not in {"description_stored", "salary_known"}
+        ]
+    )
+    table = lancedb.connect(str(tmp_path / "db")).create_table(
+        idx.PROD_TABLE, schema=old_schema
+    )
+    table.add(
+        [
+            {
+                "id": "greenhouse:a:1",
+                "description": "Build things",
+                "min_salary_annual": 100_000,
+                "vector": [0.0] * _DIM,
+            },
+            {"id": "greenhouse:a:2", "vector": [0.0] * _DIM},
+        ]
+    )
+    idx._migrate_presence_flags(table)
+    rows = {row["id"]: row for row in table.search().limit(10).to_list()}
+    assert (
+        rows["greenhouse:a:1"]["description_stored"],
+        rows["greenhouse:a:1"]["salary_known"],
+    ) == (True, True)
+    assert (
+        rows["greenhouse:a:2"]["description_stored"],
+        rows["greenhouse:a:2"]["salary_known"],
+    ) == (False, False)
+
+
+def test_posted_at_comparable_migration_matches_the_legacy_shape_guard(tmp_path):
+    import pyarrow as pa
+
+    old_schema = pa.schema(
+        [f for f in idx._schema(_DIM) if f.name != "posted_at_comparable"]
+    )
+    table = lancedb.connect(str(tmp_path / "db")).create_table(
+        idx.PROD_TABLE, schema=old_schema
+    )
+    table.add(
+        [
+            {"id": "greenhouse:a:1", "posted_at": "2026-09-21", "vector": [0.0] * _DIM},
+            {
+                "id": "greenhouse:a:2",
+                "posted_at": "21-Sep-2026",
+                "vector": [0.0] * _DIM,
+            },
+        ]
+    )
+    idx._migrate_posted_at_comparable(table)
+    rows = {row["id"]: row for row in table.search().limit(10).to_list()}
+    assert rows["greenhouse:a:1"]["posted_at_comparable"] is True
+    assert rows["greenhouse:a:2"]["posted_at_comparable"] is False
+
+
+def test_experience_filter_flag_migration_keeps_unknowns_eligible(tmp_path):
+    import pyarrow as pa
+
+    old_schema = pa.schema(
+        [f for f in idx._schema(_DIM) if not f.name.startswith("experience_at_most_")]
+    )
+    table = lancedb.connect(str(tmp_path / "db")).create_table(
+        idx.PROD_TABLE, schema=old_schema
+    )
+    table.add(
+        [
+            {"id": "greenhouse:a:1", "min_years": 5, "vector": [0.0] * _DIM},
+            {"id": "greenhouse:a:2", "min_years": None, "vector": [0.0] * _DIM},
+        ]
+    )
+    idx._migrate_experience_filter_flags(table)
+    rows = {row["id"]: row for row in table.search().limit(10).to_list()}
+    assert rows["greenhouse:a:1"]["experience_at_most_2"] is False
+    assert rows["greenhouse:a:1"]["experience_at_most_5"] is True
+    assert rows["greenhouse:a:2"]["experience_at_most_0"] is True
+
+
 def test_log_ids_batches_and_labels(caplog):
     import logging
 
@@ -454,6 +537,35 @@ def test_sync_refresh_writes_nothing_when_the_table_already_matches(
     assert any("already matches the store" in r.getMessage() for r in caplog.records)
 
 
+def test_sync_refreshes_materialized_search_flags_with_their_sources(
+    tmp_path, monkeypatch
+):
+    ids = ["greenhouse:a:1"]
+    _sync(tmp_path, monkeypatch, ids)
+    _sync(
+        tmp_path,
+        monkeypatch,
+        ids,
+        meta_over={
+            "employment_type": "Contract",
+            "min_years": 2,
+            "min_salary_annual": 100_000,
+            "posted_at": "2026-09-21",
+        },
+    )
+    row = (
+        lancedb.connect(str(tmp_path / "db"))
+        .open_table(idx.PROD_TABLE)
+        .search()
+        .limit(1)
+        .to_list()[0]
+    )
+    assert row["is_contract"] is True
+    assert row["experience_at_most_2"] is True
+    assert row["salary_known"] is True
+    assert row["posted_at_comparable"] is True
+
+
 # ---- the description column (ADR-0104) ----
 
 
@@ -472,6 +584,12 @@ def test_an_added_row_carries_its_corpus_description(tmp_path, monkeypatch):
     got = _descriptions(tmp_path)
     assert got["greenhouse:a:1"] == "We run Kubernetes on AWS."
     assert got["greenhouse:a:2"] is None  # no text in the corpus -> null, never ""
+    table = lancedb.connect(str(tmp_path / "db")).open_table(idx.PROD_TABLE)
+    flags = {
+        row["id"]: row["description_stored"]
+        for row in table.search().limit(10).to_list()
+    }
+    assert flags == {"greenhouse:a:1": True, "greenhouse:a:2": False}
 
 
 def test_sync_adds_the_description_column_to_a_table_that_predates_it(
@@ -707,8 +825,9 @@ def test_backfill_preserves_every_other_column_of_a_rewritten_row(
     )
     assert after["description"] == "Rust services."
     assert list(after["vector"]) == list(before["vector"])
-    for column in set(before) - {"description", "vector"}:
+    for column in set(before) - {"description", "description_stored", "vector"}:
         assert after[column] == before[column], column
+    assert after["description_stored"] is True
 
 
 def test_backfill_refuses_a_table_that_predates_the_column(tmp_path, monkeypatch):
@@ -857,11 +976,19 @@ def test_compact_rebuilds_the_measured_search_indexes(tmp_path):
     assert indexed == {
         "ats",
         "country",
+        "remote",
         "posted_at",
         "first_seen",
         "is_full_time",
         "is_part_time",
         "is_contract",
         "is_internship",
+        "description_stored",
+        "salary_known",
+        "posted_at_comparable",
+        "experience_at_most_0",
+        "experience_at_most_2",
+        "experience_at_most_5",
+        "experience_at_most_10",
         "vector",
     }

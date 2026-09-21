@@ -670,7 +670,7 @@ function applyFacets(facets){
 function drawKeywordNote(facets){
   const note = el('kwnote'), scope = el('kwin');
   const needs = (CFG.keyword_scopes || {})[scope.value];
-  if (!needs){ note.textContent = ''; return; }
+  if (!el('kw').value.trim() || !needs){ note.textContent = ''; return; }
   if (!facets){
     note.textContent = 'Only jobs with a stored description can match a keyword here — not every job has one.';
     return; }

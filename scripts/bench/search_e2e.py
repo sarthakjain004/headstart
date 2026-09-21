@@ -13,6 +13,17 @@ from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright
 
 CASES = (
+    ("browse", "", {}),
+    (
+        "browse_combined_cold",
+        "",
+        {"remote": True, "ats": "greenhouse", "maxyears": "5", "seen": "168"},
+    ),
+    (
+        "browse_combined_warm",
+        "",
+        {"remote": True, "ats": "greenhouse", "maxyears": "5", "seen": "168"},
+    ),
     ("semantic", "backend engineer", {}),
     (
         "combined_cold",

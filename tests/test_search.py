@@ -28,6 +28,7 @@ from headstart.search import (
     board_clause,
     build_filter,
     eval_filter,
+    posted_at_is_comparable,
 )
 
 # `IndexCapabilities`'s field names — used below to route a `_clause`/`_bracket` override into
@@ -65,6 +66,16 @@ def test_eval_unknown_employment_type_rejected():
 
 def test_eval_max_years_keeps_unknown_experience():
     assert eval_filter(max_years=5) == "(min_years <= 5 OR min_years IS NULL)"
+
+
+def test_product_experience_filter_uses_flags_only_for_materialized_ceilings():
+    assert (
+        _clause(max_years=5, has_experience_filter_flags=True)
+        == "experience_at_most_5 = true"
+    )
+    assert _clause(max_years=3, has_experience_filter_flags=True) == (
+        "(min_years <= 3 OR min_years IS NULL)"
+    )
 
 
 def test_eval_filters_combine_with_and():
@@ -353,8 +364,10 @@ class _Table:
         self.last_nprobes = None
         self.last_refine_factor = None
         self.indices = []
+        self.search_calls = 0
 
     def search(self, *args, **kwargs):
+        self.search_calls += 1
         self.last_query = args[0] if args else None  # None => a browse, not a search
         return _Query(self)
 
@@ -447,6 +460,56 @@ def test_facets_cache_the_filter_set_not_the_semantic_query(monkeypatch):
     for n in range(FACET_CACHE_SIZE + 1):
         searcher.facets({"location": f"place-{n}"})
     assert len(searcher._facet_cache) == FACET_CACHE_SIZE
+
+
+def test_facet_cache_expires_so_recency_counts_keep_moving(monkeypatch):
+    from headstart import facets
+    from headstart import search as search_module
+
+    now = [100.0]
+    calls = []
+    monkeypatch.setattr(search_module.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(
+        facets,
+        "counts",
+        lambda *_args: calls.append(now[0]) or {"total": len(calls), "facets": {}},
+    )
+    searcher, _ = _searcher()
+    first = searcher.facets({})
+    now[0] += 61
+    second = searcher.facets({})
+    assert first != second
+    assert calls == [100.0, 161.0]
+
+
+def test_empty_query_pages_are_cached_and_expire(monkeypatch):
+    from headstart import search as search_module
+
+    now = [100.0]
+    monkeypatch.setattr(search_module.time, "monotonic", lambda: now[0])
+    searcher, table = _searcher()
+    table.search_calls = 0  # ignore constructor capability scans
+    first = searcher.run({})
+    second = searcher.run({"q": ""})
+    assert first is second
+    assert table.search_calls == 1
+
+    now[0] += 61
+    third = searcher.run({})
+    assert third is not second
+    assert table.search_calls == 2
+
+
+def test_warm_uses_the_same_normalized_key_as_the_first_browser_request(monkeypatch):
+    from headstart import facets
+
+    monkeypatch.setattr(facets, "counts", lambda *_args: {"total": 1, "facets": {}})
+    searcher, table = _searcher()
+    table.search_calls = 0
+    searcher.warm()
+    assert table.search_calls == 1
+    searcher.run({"q": "", "k": "20", "page": "1"})
+    assert table.search_calls == 1
 
 
 def test_startup_scan_learns_atses_and_first_seen():
@@ -620,6 +683,16 @@ def test_has_country_is_learned_from_the_schema():
     assert JobSearch(_Model(), table).has_country is True
 
 
+def test_posted_at_shape_guard_prefers_the_materialized_flag():
+    assert posted_at_is_comparable("2026-09-21T00:00:00Z") is True
+    assert posted_at_is_comparable("21-Sep-2026") is False
+    assert posted_at_is_comparable(None) is False
+    assert (
+        _clause(posted_after="2026-09-01", has_posted_at_comparable=True)
+        == "(posted_at >= '2026-09-01' AND posted_at_comparable = true)"
+    )
+
+
 def test_employment_type_flags_are_used_only_after_the_whole_migration_lands():
     assert _clause(etype="contract") == ETYPE_CLAUSES["contract"]
     assert (
@@ -668,6 +741,17 @@ def test_has_salary_matches_a_description_only_derived_value():
     searcher.run({"q": "x", "has_salary": "true"})
     assert "min_salary_annual IS NOT NULL" in table.last_where
     assert "salary IS NOT NULL" not in table.last_where
+
+
+def test_has_salary_prefers_the_materialized_presence_flag():
+    assert _clause(has_salary=True, has_salary_known=True) == "salary_known = true"
+    _, table = _searcher()
+    table.schema = types.SimpleNamespace(
+        names=["ats", "title", "min_salary_annual", "salary_known"]
+    )
+    searcher = JobSearch(_Model(), table)
+    searcher.run({"q": "x", "has_salary": "true"})
+    assert table.last_where == "salary_known = true"
 
 
 def test_has_salary_stays_dark_without_the_column():

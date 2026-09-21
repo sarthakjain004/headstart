@@ -1,0 +1,325 @@
+{
+  "counts": [
+    {
+      "count": 312013,
+      "elapsed_ms": 19.06,
+      "where": "(posted_at >= '2026-06-23' AND posted_at_comparable = true)"
+    },
+    {
+      "count": 185805,
+      "elapsed_ms": 18.64,
+      "where": "(posted_at >= '2026-08-22' AND posted_at_comparable = true)"
+    },
+    {
+      "count": 66790,
+      "elapsed_ms": 15.48,
+      "where": "(posted_at >= '2026-09-14' AND posted_at_comparable = true)"
+    },
+    {
+      "count": 107635,
+      "elapsed_ms": 10.66,
+      "where": "first_seen >= '2026-09-14T16:34:35+00:00'"
+    },
+    {
+      "count": 6662,
+      "elapsed_ms": 10.35,
+      "where": "(posted_at >= '2026-09-20' AND posted_at_comparable = true)"
+    },
+    {
+      "count": 1419,
+      "elapsed_ms": 8.69,
+      "where": "first_seen >= '2026-09-21T14:34:35+00:00'"
+    },
+    {
+      "count": 1419,
+      "elapsed_ms": 8.62,
+      "where": "first_seen >= '2026-09-21T12:34:35+00:00'"
+    },
+    {
+      "count": 5240,
+      "elapsed_ms": 8.45,
+      "where": "first_seen >= '2026-09-20T22:34:35+00:00'"
+    },
+    {
+      "count": 5903,
+      "elapsed_ms": 8.34,
+      "where": "first_seen >= '2026-09-20T16:34:35+00:00'"
+    },
+    {
+      "count": 2556,
+      "elapsed_ms": 8.18,
+      "where": "first_seen >= '2026-09-21T10:34:35+00:00'"
+    },
+    {
+      "count": 3154,
+      "elapsed_ms": 7.86,
+      "where": "first_seen >= '2026-09-21T08:34:35+00:00'"
+    },
+    {
+      "count": 4709,
+      "elapsed_ms": 7.77,
+      "where": "first_seen >= '2026-09-21T04:34:35+00:00'"
+    },
+    {
+      "count": 181641,
+      "elapsed_ms": 2.68,
+      "where": "experience_at_most_2 = true"
+    },
+    {
+      "count": 313836,
+      "elapsed_ms": 2.5,
+      "where": "is_full_time = true"
+    },
+    {
+      "count": 398081,
+      "elapsed_ms": 2.48,
+      "where": "experience_at_most_5 = true"
+    },
+    {
+      "count": 107131,
+      "elapsed_ms": 2.44,
+      "where": "experience_at_most_0 = true"
+    },
+    {
+      "count": 20464,
+      "elapsed_ms": 2.12,
+      "where": "is_contract = true"
+    },
+    {
+      "count": 499477,
+      "elapsed_ms": 2.08,
+      "where": "experience_at_most_10 = true"
+    },
+    {
+      "count": 140968,
+      "elapsed_ms": 1.96,
+      "where": "salary_known = true"
+    },
+    {
+      "count": 5347,
+      "elapsed_ms": 1.94,
+      "where": "is_part_time = true"
+    },
+    {
+      "count": 48278,
+      "elapsed_ms": 1.89,
+      "where": "ats = 'greenhouse'"
+    },
+    {
+      "count": 2186,
+      "elapsed_ms": 1.83,
+      "where": "is_internship = true"
+    },
+    {
+      "count": 57853,
+      "elapsed_ms": 1.83,
+      "where": "remote = true"
+    },
+    {
+      "count": 9089,
+      "elapsed_ms": 1.7,
+      "where": "ats = 'amazon'"
+    },
+    {
+      "count": 7157,
+      "elapsed_ms": 1.64,
+      "where": "ats = 'jazzhr'"
+    },
+    {
+      "count": 2223,
+      "elapsed_ms": 1.59,
+      "where": "ats = 'phenom'"
+    },
+    {
+      "count": 21091,
+      "elapsed_ms": 1.56,
+      "where": "ats = 'icims'"
+    },
+    {
+      "count": 38529,
+      "elapsed_ms": 1.56,
+      "where": "ats = 'successfactors'"
+    },
+    {
+      "count": 3263,
+      "elapsed_ms": 1.54,
+      "where": "ats = 'jobvite'"
+    },
+    {
+      "count": 400,
+      "elapsed_ms": 1.51,
+      "where": "ats = 'meta'"
+    },
+    {
+      "count": 24375,
+      "elapsed_ms": 1.44,
+      "where": "ats = 'eightfold'"
+    },
+    {
+      "count": 22486,
+      "elapsed_ms": 1.38,
+      "where": "ats = 'zoho'"
+    },
+    {
+      "count": 3278,
+      "elapsed_ms": 1.37,
+      "where": "ats = 'keka'"
+    },
+    {
+      "count": 22366,
+      "elapsed_ms": 1.37,
+      "where": "ats = 'taleo_enterprise'"
+    },
+    {
+      "count": 4419,
+      "elapsed_ms": 1.33,
+      "where": "ats = 'teamtailor'"
+    },
+    {
+      "count": 51697,
+      "elapsed_ms": 1.32,
+      "where": "ats = 'smartrecruiters'"
+    },
+    {
+      "count": 1622,
+      "elapsed_ms": 1.31,
+      "where": "ats = 'tesla'"
+    },
+    {
+      "count": 101826,
+      "elapsed_ms": 1.31,
+      "where": "ats = 'workday'"
+    },
+    {
+      "count": 1280,
+      "elapsed_ms": 1.26,
+      "where": "ats = 'tiktok'"
+    },
+    {
+      "count": 2177,
+      "elapsed_ms": 1.26,
+      "where": "ats = 'trakstar'"
+    },
+    {
+      "count": 13849,
+      "elapsed_ms": 1.26,
+      "where": "ats = 'workable'"
+    },
+    {
+      "count": 4465,
+      "elapsed_ms": 1.25,
+      "where": "ats = 'apple'"
+    },
+    {
+      "count": 24901,
+      "elapsed_ms": 1.25,
+      "where": "ats = 'ashby'"
+    },
+    {
+      "count": 7286,
+      "elapsed_ms": 1.25,
+      "where": "ats = 'bamboohr'"
+    },
+    {
+      "count": 1145,
+      "elapsed_ms": 1.25,
+      "where": "ats = 'personio'"
+    },
+    {
+      "count": 883,
+      "elapsed_ms": 1.24,
+      "where": "ats = 'bytedance'"
+    },
+    {
+      "count": 4233,
+      "elapsed_ms": 1.21,
+      "where": "ats = 'zwayam'"
+    },
+    {
+      "count": 3046,
+      "elapsed_ms": 1.2,
+      "where": "ats = 'freshteam'"
+    },
+    {
+      "count": 47312,
+      "elapsed_ms": 1.2,
+      "where": "ats = 'oracle'"
+    },
+    {
+      "count": 8159,
+      "elapsed_ms": 1.2,
+      "where": "ats = 'recruitee'"
+    },
+    {
+      "count": 2891,
+      "elapsed_ms": 1.19,
+      "where": "ats = 'rippling'"
+    },
+    {
+      "count": 102,
+      "elapsed_ms": 1.17,
+      "where": "ats = 'uber'"
+    },
+    {
+      "count": 2762,
+      "elapsed_ms": 1.16,
+      "where": "ats = 'ripplehire'"
+    },
+    {
+      "count": 1552,
+      "elapsed_ms": 1.09,
+      "where": "ats = 'darwinbox'"
+    },
+    {
+      "count": 15734,
+      "elapsed_ms": 1.08,
+      "where": "ats = 'lever'"
+    },
+    {
+      "count": 1681,
+      "elapsed_ms": 1.01,
+      "where": "ats = 'taleo_be'"
+    },
+    {
+      "count": 1739,
+      "elapsed_ms": 0.98,
+      "where": "ats = 'gem'"
+    },
+    {
+      "count": 1695,
+      "elapsed_ms": 0.88,
+      "where": "ats = 'google'"
+    },
+    {
+      "count": 508991,
+      "elapsed_ms": 0.53,
+      "where": null
+    },
+    {
+      "count": 508991,
+      "elapsed_ms": 0.33,
+      "where": null
+    },
+    {
+      "count": 508991,
+      "elapsed_ms": 0.27,
+      "where": null
+    },
+    {
+      "count": 508991,
+      "elapsed_ms": 0.24,
+      "where": null
+    },
+    {
+      "count": 508991,
+      "elapsed_ms": 0.23,
+      "where": null
+    },
+    {
+      "count": 508991,
+      "elapsed_ms": 0.23,
+      "where": null
+    }
+  ],
+  "wall_ms": 28.53
+}

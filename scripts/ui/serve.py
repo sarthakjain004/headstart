@@ -50,6 +50,7 @@ print("loading model + index ...", flush=True)
 _model = load_encoder()
 _table = lancedb.connect(_REPO / "data" / "lancedb").open_table(PROD_TABLE)
 _searcher = JobSearch(_model, _table)
+_searcher.warm()
 print(f"ready: {_table.count_rows()} jobs", flush=True)
 
 app = Flask(

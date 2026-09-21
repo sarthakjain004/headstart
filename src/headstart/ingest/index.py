@@ -87,6 +87,9 @@ from headstart.board_identity import ats_of, lower_key
 from headstart.corpus import iter_jobs
 from headstart.employment_type import FILTERS as EMPLOYMENT_TYPE_FILTERS
 from headstart.employment_type import flags as employment_type_flags
+from headstart.experience_filter import CEILINGS as EXPERIENCE_FILTER_CEILINGS
+from headstart.experience_filter import column as experience_filter_column
+from headstart.experience_filter import flags as experience_filter_flags
 from headstart.ingest import (
     PENDING_UPGRADES_PATH,
     REPO_ROOT,
@@ -110,7 +113,7 @@ from headstart.ingest.index_plan import (
     scraped_boards,
 )
 from headstart.ingest.update_descriptions import read_store
-from headstart.search import PROD_TABLE
+from headstart.search import PROD_TABLE, posted_at_is_comparable
 
 _log = log.get(__name__, __spec__)
 
@@ -148,6 +151,7 @@ _FIRST_SEEN_FIELD = pa.field("first_seen", pa.string())
 # like `first_seen`, never compare it against meta, or every row would read stale and be clobbered
 # to null on every run.
 _DESCRIPTION_FIELD = pa.field("description", pa.string())
+_DESCRIPTION_STORED_FIELD = pa.field("description_stored", pa.bool_())
 # "IN" when `location` matches the India gazetteer's country-level rule, else null (ADR-0138).
 # Materializes `geo.where("india")`'s query-time regex alternation so the India filter's
 # whole-country case can use a plain equality instead. Held as a module constant for the same
@@ -155,6 +159,12 @@ _DESCRIPTION_FIELD = pa.field("description", pa.string())
 _COUNTRY_FIELD = pa.field("country", pa.string())
 _EMPLOYMENT_TYPE_FIELDS = tuple(
     pa.field(rule.column, pa.bool_()) for rule in EMPLOYMENT_TYPE_FILTERS.values()
+)
+_SALARY_KNOWN_FIELD = pa.field("salary_known", pa.bool_())
+_POSTED_AT_COMPARABLE_FIELD = pa.field("posted_at_comparable", pa.bool_())
+_EXPERIENCE_FILTER_FIELDS = tuple(
+    pa.field(experience_filter_column(ceiling), pa.bool_())
+    for ceiling in EXPERIENCE_FILTER_CEILINGS
 )
 
 
@@ -178,6 +188,7 @@ def _schema(dim: int) -> pa.Schema:
             pa.field("company", pa.string()),
             pa.field("title", pa.string()),
             _DESCRIPTION_FIELD,
+            _DESCRIPTION_STORED_FIELD,
             pa.field("location", pa.string()),
             _COUNTRY_FIELD,
             pa.field("remote", pa.bool_()),
@@ -189,6 +200,7 @@ def _schema(dim: int) -> pa.Schema:
             pa.field(
                 "experience_source", pa.string()
             ),  # "field" | "regex" | "seniority" | null
+            *_EXPERIENCE_FILTER_FIELDS,
             pa.field("salary", pa.string()),  # raw string for display (ADR-0019)
             pa.field(
                 "min_salary_annual", pa.int32()
@@ -200,9 +212,11 @@ def _schema(dim: int) -> pa.Schema:
             pa.field(
                 "salary_source", pa.string()
             ),  # "field" | "regex" | null — no seniority tier
+            _SALARY_KNOWN_FIELD,
             pa.field("department", pa.string()),
             pa.field("url", pa.string()),
             pa.field("posted_at", pa.string()),
+            _POSTED_AT_COMPARABLE_FIELD,
             _FIRST_SEEN_FIELD,
             pa.field("vector", pa.list_(pa.float32(), dim)),
         ]
@@ -213,6 +227,11 @@ def _served_meta(meta: dict) -> dict:
     """Store metadata plus the Search-only employment-type acceleration columns."""
     row = dict(meta)
     row.update(employment_type_flags(meta.get("employment_type")))
+    row[_SALARY_KNOWN_FIELD.name] = meta.get("min_salary_annual") is not None
+    row[_POSTED_AT_COMPARABLE_FIELD.name] = posted_at_is_comparable(
+        meta.get("posted_at")
+    )
+    row.update(experience_filter_flags(meta.get("min_years")))
     return row
 
 
@@ -228,6 +247,41 @@ def _migrate_employment_type_flags(table: Any) -> None:
         table.add_columns(missing)
 
 
+def _migrate_presence_flags(table: Any) -> None:
+    """Materialize two high-cost null checks on a table that predates ADR-0170."""
+    missing = {}
+    if _DESCRIPTION_STORED_FIELD.name not in table.schema.names:
+        missing[_DESCRIPTION_STORED_FIELD.name] = "description IS NOT NULL"
+    if _SALARY_KNOWN_FIELD.name not in table.schema.names:
+        missing[_SALARY_KNOWN_FIELD.name] = "min_salary_annual IS NOT NULL"
+    if missing:
+        _log.info(f"adding {list(missing)} to the existing table")
+        table.add_columns(missing)
+
+
+def _migrate_posted_at_comparable(table: Any) -> None:
+    """Materialize the posting-date shape guard on a table that predates ADR-0170."""
+    if _POSTED_AT_COMPARABLE_FIELD.name not in table.schema.names:
+        _log.info(f"adding '{_POSTED_AT_COMPARABLE_FIELD.name}' to the existing table")
+        table.add_columns(
+            {_POSTED_AT_COMPARABLE_FIELD.name: "posted_at LIKE '____-__-__%'"}
+        )
+
+
+def _migrate_experience_filter_flags(table: Any) -> None:
+    """Materialize the four facet ceilings on a table that predates ADR-0170."""
+    missing = {
+        experience_filter_column(ceiling): (
+            f"min_years <= {ceiling} OR min_years IS NULL"
+        )
+        for ceiling in EXPERIENCE_FILTER_CEILINGS
+        if experience_filter_column(ceiling) not in table.schema.names
+    }
+    if missing:
+        _log.info(f"adding {list(missing)} to the existing table")
+        table.add_columns(missing)
+
+
 def _create_search_indexes(table: Any) -> None:
     """Create the measured Search indexes missing from a freshly rebuilt production table."""
     from lancedb.index import Bitmap, BTree, IvfSq
@@ -236,8 +290,16 @@ def _create_search_indexes(table: Any) -> None:
     specs = [
         ("ats", Bitmap()),
         ("country", Bitmap()),
+        ("remote", Bitmap()),
         ("posted_at", BTree()),
+        (_POSTED_AT_COMPARABLE_FIELD.name, Bitmap()),
         ("first_seen", BTree()),
+        (_DESCRIPTION_STORED_FIELD.name, Bitmap()),
+        (_SALARY_KNOWN_FIELD.name, Bitmap()),
+        *(
+            (experience_filter_column(ceiling), Bitmap())
+            for ceiling in EXPERIENCE_FILTER_CEILINGS
+        ),
         *((rule.column, Bitmap()) for rule in EMPLOYMENT_TYPE_FILTERS.values()),
     ]
     # Exact scans are already cheap on tiny test/dev tables, and an ANN index needs a real
@@ -395,7 +457,12 @@ def _refresh_metadata(
     the ~25 KB vector rewrite and fill nothing. That is what makes "rewrites every row it fills"
     true, and why the backfill is the deliberate one-time step it is documented as.
     """
-    carried = ("vector", _FIRST_SEEN_FIELD.name, _DESCRIPTION_FIELD.name)
+    carried = (
+        "vector",
+        _FIRST_SEEN_FIELD.name,
+        _DESCRIPTION_FIELD.name,
+        _DESCRIPTION_STORED_FIELD.name,
+    )
     columns = [f for f in table.schema.names if f not in carried]
     indexed = _scan(table, columns + [_FIRST_SEEN_FIELD.name, _DESCRIPTION_FIELD.name])
 
@@ -455,7 +522,9 @@ def _refresh_metadata(
             index = row_of[kept.job_id]
             fresh = {field: _served_meta(metas[index]).get(field) for field in columns}
             fresh[_FIRST_SEEN_FIELD.name] = kept.first_seen
-            fresh[_DESCRIPTION_FIELD.name] = kept.description or texts.get(kept.job_id)
+            description = kept.description or texts.get(kept.job_id)
+            fresh[_DESCRIPTION_FIELD.name] = description
+            fresh[_DESCRIPTION_STORED_FIELD.name] = description is not None
             fresh["vector"] = vectors[index].tolist()
             rows.append(fresh)
         apply_sync(table, rows, [kept.job_id for kept in batch])
@@ -701,6 +770,10 @@ def sync(args: argparse.Namespace) -> int:
         _log.info(f"adding '{_DESCRIPTION_FIELD.name}' to the existing table")
         table.add_columns(_DESCRIPTION_FIELD)
 
+    _migrate_presence_flags(table)
+    _migrate_posted_at_comparable(table)
+    _migrate_experience_filter_flags(table)
+
     # And for `country` (ADR-0138). Existing rows get null until `_refresh_metadata` below rewrites
     # them from the store — no bespoke backfill command needed here, unlike description: `country`'s
     # true value lives fully in `meta.jsonl` once `update_meta`'s DERIVATIONS_VERSION=9 sweep runs
@@ -796,7 +869,9 @@ def sync(args: argparse.Namespace) -> int:
                 )  # store-only meta; the table's schema has no column for it
             row["vector"] = vectors[row_of[job_id]].tolist()
             row[_FIRST_SEEN_FIELD.name] = taken.get(job_id) or stamp
-            row[_DESCRIPTION_FIELD.name] = texts.get(job_id)
+            description = texts.get(job_id)
+            row[_DESCRIPTION_FIELD.name] = description
+            row[_DESCRIPTION_STORED_FIELD.name] = description is not None
             rows.append(row)
         apply_sync(table, rows, ())
         _log.info(f"added {min(start + _ADD_CHUNK, len(add_ids))}/{len(add_ids)}")
@@ -935,6 +1010,9 @@ def compact(args: argparse.Namespace) -> int:
         gc.collect()
         if name == PROD_TABLE:
             _migrate_employment_type_flags(table)
+            _migrate_presence_flags(table)
+            _migrate_posted_at_comparable(table)
+            _migrate_experience_filter_flags(table)
             _create_search_indexes(table)
         count = table.count_rows()
         if name == PROD_TABLE:
@@ -981,6 +1059,7 @@ def backfill_from_store(args: argparse.Namespace) -> int:
             f"table '{PROD_TABLE}' has no `{_DESCRIPTION_FIELD.name}` column — run "
             "`python -m headstart.ingest.index sync` once to add it first (ADR-0104)",
         )
+    _migrate_presence_flags(table)
     # `IS NULL` rather than scanning the column: selecting `description` to test it would pull
     # every stored description into memory to learn which rows have none.
     empty = f"{_DESCRIPTION_FIELD.name} IS NULL"
@@ -1043,6 +1122,7 @@ def backfill_from_store(args: argparse.Namespace) -> int:
             )
             for row in rows:
                 row[_DESCRIPTION_FIELD.name] = texts[row["id"]]
+                row[_DESCRIPTION_STORED_FIELD.name] = True
             apply_sync(table, rows, [row["id"] for row in rows], chunk=_ADD_CHUNK)
             filled += len(rows)
             # Per batch, not at the end: a whole-table pass is long, and a crash halfway through

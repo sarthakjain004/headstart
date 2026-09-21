@@ -243,10 +243,28 @@ def test_description_coverage_is_null_not_zero_without_the_column():
     assert not any(w and "description IS NOT NULL" in w for w in table.seen)
 
 
-def test_description_coverage_with_no_filters_is_a_bare_not_null_count():
+def test_description_coverage_is_not_counted_when_the_ui_will_not_show_it():
     table = _CountingTable()
     facets.counts(table, *_kwargs())
-    assert "description IS NOT NULL" in table.seen
+    assert not any(where and "description IS NOT NULL" in where for where in table.seen)
+
+    title = _CountingTable()
+    facets.counts(title, *_kwargs(kw="rust", kw_in="title"))
+    assert not any(where and "description IS NOT NULL" in where for where in title.seen)
+
+
+def test_description_coverage_uses_the_materialized_presence_flag():
+    table = _CountingTable()
+    out = facets.counts(
+        table,
+        *_kwargs(
+            kw="rust",
+            kw_in="description",
+            has_description_stored=True,
+        ),
+    )
+    assert any(where and "description_stored = true" in where for where in table.seen)
+    assert out["description_coverage"] == {"covered": 42, "total": 100}
 
 
 def test_a_keyword_can_be_named_as_the_blocker_but_its_scope_never_can():

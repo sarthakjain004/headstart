@@ -23,17 +23,21 @@ that operation would therefore buy speed only until the next cleanup.
 The fresh-directory rebuild creates the Search indexes after it writes the live rows:
 
 - `vector`: cosine **IVF-SQ**.
-- `ats`, `country`, and the four employment-type flags: **bitmap**.
+- `ats`, `country`, `remote`, two presence flags, the posting-date shape flag, four
+  employment-type flags, and four offered experience ceilings: **bitmap**.
 - `posted_at` and `first_seen`: **B-tree**.
 
 An indexed vector query uses 80 IVF probes and exact-vector refinement over twice the requested
 result count. Those knobs apply only when `JobSearch` observes a vector index; an old or local
 unindexed table keeps exhaustive search unchanged.
 
-`JobSearch` also keeps a 128-entry LRU of facet payloads keyed by parsed structured filters. Facets
-are query-independent, and the table cannot change during a process's lifetime — publication
-restarts the Space — so changing only the semantic query must not repeat ~60 counts. The bound
-prevents arbitrary requests growing memory without limit; a restart is the invalidation boundary.
+`JobSearch` also keeps bounded 60-second LRUs for facet payloads (128 filter sets) and browse pages
+(64 filter/page/sort sets). Facets are query-independent, and the table cannot change during a
+process's lifetime — every successful pipeline publication restarts the Space on the newly-opened
+table — so changing only the semantic query must not repeat ~60 counts. The short TTL keeps 2-hour
+recency windows moving even in a long-lived process; the bounds prevent arbitrary requests growing
+memory without limit. Startup preloads the unfiltered browse and facet responses from that fresh
+table, so the first page does not make the first visitor pay to populate them.
 
 The existing query shape remains deliberate: filters run before ANN search, the production result
 projection omits vector/description payloads, and ranked date/salary sorts keep their 2,000-result
@@ -55,9 +59,18 @@ the same raw clauses in LanceDB; new and refreshed rows compute the same flags i
 four exist, Search keeps the old LIKE clauses. Migration can therefore be partial without changing
 which Jobs match.
 
+Three other repeated expressions are materialized without replacing their source fields:
+`description_stored` mirrors `description IS NOT NULL`, `salary_known` mirrors
+`min_salary_annual IS NOT NULL`, and `posted_at_comparable` mirrors the exact legacy
+`posted_at LIKE '____-__-__%'` guard. The first removes the one 423 ms count every cold facet
+request used to execute even when no description keyword was active; that coverage count now runs
+only when its note can actually be shown. The four experience ceilings offered by facets are also
+stored as booleans, while arbitrary user-entered ceilings keep the legacy expression. Every flag
+keeps its raw fallback until the whole migration has landed.
+
 The rebuild drops the in-memory Arrow table before training indexes. Without that release, peak RSS
 rose from the old compactor's 7.14 GB to 9.63 GB. Releasing it first held the indexed rebuild to
-7.33 GB, 2.6% above the old path rather than 35%.
+7.30 GB, 2.2% above the old path rather than 35%.
 
 There is deliberately no per-pipeline `table.optimize()`. Indexed LanceDB searches include newly
 appended, unindexed fragments. A 5,000-row append kept recall@20 at 1.00 and moved median ANN
@@ -81,13 +94,13 @@ Every Search-result and facet-payload fingerprint matched.
 | semantic, salary bracket | 157.86 ms | 60.39 ms | -61.7% |
 | semantic, India | 98.09 ms | 10.42 ms | -89.4% |
 | semantic, combined filters | 84.41 ms | 10.26 ms | -87.8% |
-| facets, no filters | 251.21 ms | 260.52 ms | +3.7% |
-| facets, combined filters | 244.59 ms | 40.22 ms | -83.6% |
-| facets, India | 231.25 ms | 72.01 ms | -68.9% |
+| facets, no filters (cold) | 251.21 ms | 28.53 ms | -88.6% |
+| facets, combined filters (browser cold) | 244.59 ms | 26.40 ms | -89.2% |
+| facets, repeated filter set | 244.59 ms | ~1 ms HTTP | >-99% |
 
 IVF-SQ at 80 probes + 2× refinement reproduced **every top-20 id** across 16 real query vectors
 and four filter selectivities (1,280 expected result positions). Building the full retained set
-took **4.71 s** and added **401,266,643 bytes (13.65%)**. A full indexed compaction took 10.25 s
+took **6.31 s** and added **402,650,424 bytes (13.70%)**. A full indexed compaction took 10.78 s
 against the old path's 6.53 s. A cold retained facet request remained
 40–274 ms by filter shape; the same filter set with different semantic queries then measured a
 0.0042 ms warm median from the bounded cache.
@@ -97,14 +110,24 @@ Each employment-type flag was also checked over the full table, not only on retu
 order-independent set fingerprints under the legacy clause and the new flag, with zero row-level
 mismatches.
 
+The other materialized verdicts passed the same full-set check with zero mismatches: 497,800 Jobs
+with stored descriptions, 140,968 with known salaries, 487,469 with comparable posting dates, and
+all four experience ceilings (107,131 / 181,641 / 398,081 / 499,477 Jobs). Removing the unused
+description coverage scan and adding these bitmaps reduced a cold no-filter facet payload from
+423.65 to **28.53 ms**. The date flag cut 30/90-day semantic pages from 28.92/38.82 to
+13.06/14.15 ms; experience flags cut the four offered ceilings by 40–46%. A `remote` bitmap was
+retested after ANN changed the plan and reduced its semantic page to 12.67 ms, so the earlier
+exact-scan rejection no longer applied.
+
 ### Browser end to end
 
 Playwright measured the click in the page (not automation actionability time), Resource Timing for
 both requests, and MutationObserver stamps for first cards and fully reconciled counts.
 
-The authenticated deployed baseline dispatched both requests in under 1 ms, but repeated combined
-filters had ~5.00 s Search TTFB, ~6.08 s facet TTFB, and a **6,079 ms** median to visible/settled
-cards because the deployed JavaScript waits for facets. This is production observation, not a
+The authenticated deployed baseline dispatched both requests in under 1 ms. With an empty semantic
+query, `/search` took 2.15–2.49 s under concurrent load, `/facets` took 5.54–6.05 s, and the UI
+showed nothing until **5.55–6.05 s**. Repeated semantic combined filters similarly settled at a
+6,214 ms median. The deployed JavaScript waits for facets. This is production observation, not a
 candidate comparison: the PR is not deployed yet.
 
 For a comparable before/after, current `origin/main` and this branch ran locally on the same host,
@@ -112,16 +135,19 @@ against copy-on-write clones of the same 508,991-row production table and the re
 
 | browser interaction | current main | retained candidate | change |
 | --- | ---: | ---: | ---: |
-| combined filters, first filter set, rows visible | 286.2 ms | 37.6 ms | -86.9% |
-| combined filters, first filter set, fully settled | 286.2 ms | 44.6 ms | -84.4% |
-| combined filters, repeated filter set, fully settled median | 279.2 ms | 23.7 ms | -91.5% |
+| empty query, no filters, fully settled | 268.5 ms | 32.8 ms | -87.8% |
+| empty query, first combined filter set, fully settled | 257.0 ms | 27.6 ms | -89.3% |
+| empty query, repeated combined filters, fully settled | 295.5 ms | 17.8 ms | -94.0% |
+| semantic query, repeated combined filters, fully settled median | 320.1 ms | 25.9 ms | -91.9% |
 
-On the candidate's cold combined interaction, Search TTFB was 35.4 ms, facets TTFB 42.7 ms,
-cards painted at 37.6 ms, and counts settled at 44.6 ms. On warm repeats, the facet cache responded
-in 1.0–1.3 ms end to end and Search in 21.8–22.7 ms; cards settled in 23.3–24.4 ms.
+On the final candidate's cold empty-query combined interaction, Search TTFB was 20.3 ms, facets
+TTFB 25.7 ms, cards painted at 22.5 ms, and counts settled at 27.6 ms. Repeating it returned both
+cached endpoints in 1.0–1.3 ms and settled at 17.8 ms including browser work. Semantic warm
+repeats settled in 24.8–26.9 ms.
 
-Raw samples, scripts, live observations, and every rejected arm are under
-`experiment/search-index-performance/`.
+Raw samples, live observations, and every rejected arm are under
+`experiment/search-index-performance/`; their reusable harnesses are
+`scripts/bench/search_*.py`.
 
 ## Rejected experiments
 
@@ -130,7 +156,6 @@ Raw samples, scripts, live observations, and every rejected arm are under
 - **IVF-Flat:** added 1.57 GB (53%) and still had 0.90 worst-query recall at the useful settings.
 - **HNSW-SQ:** default unfiltered recall was 0.87; `ef=240` reached only 0.96 mean / 0.90 minimum.
 - **HNSW-Flat:** added 1.63 GB (56%) before query tuning, failing the storage gate.
-- **`remote` bitmap:** regressed remote semantic search and the combined page.
 - **`min_years` B-tree:** the real `(min_years <= N OR min_years IS NULL)` path doubled from
   roughly 138 to 292 ms. A coalesced materialized integer with a B-tree was equally bad; without
   the index it changed latency by less than 1%.
@@ -145,17 +170,19 @@ Raw samples, scripts, live observations, and every rejected arm are under
 - **NGRAM FTS:** compact (29 MB) and fast for selective terms, but exposes a BM25-ranked top-k,
   not the deterministic boolean candidate set the explicit Keyword filter promises. Feeding only
   that top-k into semantic ranking would silently discard valid matches.
-- **Stored USD salary columns and a stored posting date:** LanceDB 0.36 cannot express the needed
-  guarded CASE transforms as an in-place migration; their existing paths were no longer top costs
-  after ANN indexing, so a pipeline-wide derivation was not justified.
+- **Stored USD salary columns:** LanceDB 0.36 cannot express the needed guarded CASE transforms as
+  an in-place migration; the numeric bracket was no longer a top cost after ANN indexing, so a
+  pipeline-wide FX derivation was not justified.
 
 ## Consequences
 
-- The first cleanup after deployment materializes the flags, rebuilds all nine indexes, uploads
+- The first cleanup after deployment materializes the flags, rebuilds all 17 indexes, uploads
   the larger table, and restarts the Space. Ordinary pipeline appends remain incremental.
 - Exact exhaustive search remains the fallback on a table without the vector index.
+- Every successful pipeline publication restarts the Space after opening the newly-uploaded table;
+  no process cache survives across that boundary, so newly-arrived Jobs cannot be hidden by it.
 - Adding a new employment-type filter now requires one rule whose Python verdict, legacy raw SQL,
   served boolean, migration expression, and bitmap index all derive from the same definition.
-- Current-state storage rises by 13.65%; cleanup upload cost and HF history pressure rise with it.
+- Current-state storage rises by 13.70%; cleanup upload cost and HF history pressure rise with it.
   The existing orphan-blob reclamation remains responsible for preventing old rebuilt blobs from
   accumulating against quota.

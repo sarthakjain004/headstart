@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 import lancedb
-from bench_table import (
+from search_table import (
     FACET_CASES,
     SEARCH_CASES,
     _fingerprint,

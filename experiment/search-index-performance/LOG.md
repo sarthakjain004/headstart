@@ -87,37 +87,44 @@ read on stdin and is absent from every artifact.
 | facets + combined | 244.59 ms | 40.22 ms | -83.6% |
 | facets + India | 231.25 ms | 72.01 ms | -68.9% |
 
-Retained: cosine IVF-SQ (`nprobes=80`, `refine_factor=2`), bitmap indexes on ATS/country and the
-four materialized employment-type flags, B-trees on employer date and first-seen date. Build:
-4.71 s; +401,266,643 bytes (+13.65%). The vector setting returned every exact top-20 id across
-16 real query vectors × four filter selectivities.
+Retained: cosine IVF-SQ (`nprobes=80`, `refine_factor=2`), 14 bitmap indexes (ATS/country/remote,
+presence/shape flags, four employment types, four offered experience ceilings), and B-trees on
+employer date and first-seen date. Full build: 6.31 s; +402,650,424 bytes (+13.70%). The vector
+setting returned every exact top-20 id across 16 real query vectors × four filter selectivities.
 
-The bounded facet cache preserved the cold indexed path (40–274 ms across the four cases) and
-served the same filters with different semantic query text at a 0.0042 ms warm median.
+Removing unused description coverage plus the presence/date/experience bitmaps reduced cold
+no-filter facets from 423.65 to 28.53 ms. The 60-second bounded cache serves repeated filter sets
+at a 0.0042 ms in-process median and is invalidated by every pipeline-triggered Space restart.
 
 Full-set correctness (not only top-20): all four employment flags produced identical legacy/new
 Job-id set fingerprints and zero row mismatches across 508,991 rows. The incremental positive
 control appended a new vector equal to a real query vector; it ranked first under exhaustive and
 indexed search both before and after index optimization.
 
+The presence/date/experience flags also matched their complete legacy Job-id sets with zero row
+mismatches. Counts: description 497,800; salary 140,968; comparable date 487,469; experience
+ceilings 107,131 / 181,641 / 398,081 / 499,477. Cold no-filter facets fell from 423.65 ms before
+these fixes to 28.53 ms after them. A remote bitmap, rejected under exhaustive search, was retested
+with the retained ANN plan and improved the remote semantic page to 12.67 ms, so it is retained.
+
 Independent query-shape results: prefiltering retained 1.00 recall and was faster; postfiltering
 fell to 0.003–0.19 mean recall and sometimes returned no rows. Id-only / production / all-column
 projection measured 16.39 / 19.29 / 22.03 ms. Ranked windows of 20 / 400 / 1,000 / 2,000 measured
 18.98 / 35.04 / 50.07 / 64.20 ms; 2,000 remains the pagination contract.
 
-Playwright end to end: deployed baseline warm combined filters dispatched in <1 ms, reached Search
-TTFB at ~5.00 s and facet TTFB at ~6.08 s, and showed cards only at the 6,079 ms settled median.
-Same-host/current-main against the same table settled warm at 279.2 ms; the candidate settled at
-23.7 ms (-91.5%). Candidate cold combined filters: dispatch 0.5–0.6 ms, Search TTFB 35.4 ms,
-facets TTFB 42.7 ms, cards 37.6 ms, settled 44.6 ms. The UI now paints Search results before a cold
-facet request finishes, then reconciles the total/pager.
+Playwright end to end: deployed baseline empty-query requests dispatched in <1 ms but Search took
+2.15–2.49 s, facets 5.54–6.05 s, and cards waited the full 5.55–6.05 s. Same-host/current-main
+against the same table settled an unfiltered browse at 268.5 ms and repeated filtered browse at
+295.5 ms. The final candidate settled those at 32.8 and 17.8 ms. Candidate cold filtered browse:
+Search TTFB 20.3 ms, facets TTFB 25.7 ms, cards 22.5 ms, settled 27.6 ms. The UI now paints Search
+results before a cold facet request finishes, then reconciles the total/pager.
 
 ### Lifecycle checks
 
 - Appending 5,000 unindexed Jobs: 1.00 mean/min recall@20; 16.81 → 17.14 ms.
 - Generic `table.optimize()`: 12.75 ms, but 3.34 → 6.99 GB because old versions remained — reject.
 - Old full compaction: 6.53 s, 7.14 GB max RSS.
-- Indexed full compaction after releasing the Arrow owner: 10.25 s, 7.33 GB max RSS; all nine
+- Indexed full compaction after releasing the Arrow owner: 10.78 s, 7.30 GB max RSS; all 17
   indexes present after the directory swap.
 
 ### Discarded
@@ -125,7 +132,8 @@ facet request finishes, then reconciles the total/pager.
 - IVF-PQ: inadequate recall even with 16x refinement.
 - IVF-Flat / HNSW-Flat: +1.57 / +1.63 GB, beyond the storage gate.
 - HNSW-SQ: inadequate unfiltered recall.
-- `remote`, `min_years`, salary group: scalar-index regressions.
+- `min_years` B-tree and the numeric salary index group: scalar-index regressions. A remote bitmap
+  was later retained after IVF-SQ changed the query plan and the combined benchmark showed a win.
 - Coalesced experience column: <1% without an index, ~2x slower with one.
 - Lowercased title + FM: 98 → 28 ms for rare `kubernetes`, but 192 ms → 9.54 s for `engineer`.
 - Lowercased location + FM: ~101 → 328 ms.

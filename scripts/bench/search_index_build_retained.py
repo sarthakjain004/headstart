@@ -13,6 +13,9 @@ import lancedb
 from headstart.ingest.index import (
     _create_search_indexes,
     _migrate_employment_type_flags,
+    _migrate_experience_filter_flags,
+    _migrate_posted_at_comparable,
+    _migrate_presence_flags,
 )
 
 
@@ -40,6 +43,9 @@ def main() -> int:
     _save(dest, payload)
     started = time.perf_counter()
     _migrate_employment_type_flags(table)
+    _migrate_presence_flags(table)
+    _migrate_posted_at_comparable(table)
+    _migrate_experience_filter_flags(table)
     _create_search_indexes(table)
     seconds = time.perf_counter() - started
     payload = {

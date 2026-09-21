@@ -279,6 +279,7 @@ fails if this table drifts from it.
 | `company` | string | the company's name where its Board states one (see *ATS coverage*, above); otherwise the ATS slug |
 | `title` | string | embedded, with the description |
 | `description` | string | the Job's description text, so the Keyword filter can match inside it (ADR-0104). **Nullable** — null on rows indexed before the column existed and on Jobs whose detail pass found nothing. Stored, not served: the API omits it |
+| `description_stored` | bool | whether this row carries `description`; materialized and bitmap-indexed so coverage does not scan the text column (ADR-0170) |
 | `location` | string | raw ATS text; the India filter maps it via a gazetteer (ADR-0024) |
 | `country` | string | `"IN"` when `location` matches the India gazetteer's country-level rule, else null. Materialized so the India filter's whole-country case is a plain equality instead of a large regex alternation (ADR-0138) |
 | `remote` | bool | the scraper's own ATS-native field, **unless** the description confidently reads as remote — then `true` wins regardless of what the field said (ADR-0061). One-directional: a description read as onsite or hybrid never overrides the field |
@@ -291,14 +292,20 @@ fails if this table drifts from it.
 | `min_years` | int32 | parsed from `experience`; **nullable** — null means unknown, not zero (ADR-0009) |
 | `max_years` | int32 | parsed alongside `min_years`, but not currently read by any filter, sort, or the API — the `max_years` *query parameter* filters on `min_years` instead. Kept in the schema; see the note below |
 | `experience_source` | string | `field` \| `regex` \| `seniority` \| null — how the years were derived. Not served to the API, but read during re-derivation: it's what lets the pipeline tell a description-sourced value apart from a title-only guess when deciding whether to trust or re-guess a row (ADR-0018) |
+| `experience_at_most_0` | bool | whether the Job passes the “Entry level” ceiling, including unknown experience; bitmap-indexed (ADR-0170) |
+| `experience_at_most_2` | bool | whether the Job passes the 2-years-or-less facet; bitmap-indexed (ADR-0170) |
+| `experience_at_most_5` | bool | whether the Job passes the 5-years-or-less facet; bitmap-indexed (ADR-0170) |
+| `experience_at_most_10` | bool | whether the Job passes the 10-years-or-less facet; bitmap-indexed (ADR-0170) |
 | `salary` | string | raw, for display (`"INR 3 - 5 (Annual)"`) |
 | `min_salary_annual` | int32 | parsed from `salary` or the description; period-normalized to an annual figure in the job's native currency; **nullable** — null means unknown, not zero (ADR-0082) |
 | `max_salary_annual` | int32 | nullable — open-ended when only a floor is stated |
 | `salary_currency` | string | ISO 4217 code where determinable (`"USD"`, `"INR"`, `"EUR"`, …); null if a number was found but the currency wasn't |
 | `salary_source` | string | `field` \| `regex` \| null — how it was derived; no seniority-style tier exists for salary (ADR-0082) |
+| `salary_known` | bool | whether `min_salary_annual` is known; materialized and bitmap-indexed for the “Shows salary” filter (ADR-0170) |
 | `department` | string | raw ATS text. Not served to the API and not currently read from this table by any filter, sort, or downstream logic — its one real consumer is the tech filter, which reads it off the *raw scrape record*, before a row ever reaches this table. See the note below |
 | `url` | string | the job-detail link |
 | `posted_at` | string | **the company's** posting date, straight from the ATS — inconsistent in shape across ATSes (`2026-01-09T00:46:44.672+00:00`, `03-Jul-2026`) and null on a meaningful share of rows |
+| `posted_at_comparable` | bool | whether `posted_at` has the `____-__-__` prefix the date filters can compare; materialized and bitmap-indexed (ADR-0170) |
 | `first_seen` | string | **ours** — ISO-8601 UTC, stamped when `index sync` first adds the row. Write-once, and null on rows added before the column existed (ADR-0031) |
 | `vector` | list\<float32\>[768] | `title + cleaned description`, L2-normalized |
 
@@ -320,11 +327,16 @@ Two rows, fetched live from the index:
   "remote": null, "employment_type": "FullTime",
   "is_full_time": true, "is_part_time": false,
   "is_contract": false, "is_internship": false,
+  "description_stored": true,
   "min_years": 5,
+  "experience_at_most_0": false, "experience_at_most_2": false,
+  "experience_at_most_5": true, "experience_at_most_10": true,
   "salary": "180000-300000 USD 1 YEAR",
   "min_salary_annual": 180000, "max_salary_annual": 300000, "salary_currency": "USD",
+  "salary_known": true,
   "url": "https://jobs.ashbyhq.com/character/b063d44b-e1fd-4777-8079-573706a589a0",
   "posted_at": "2025-12-08T19:38:59.867+00:00",
+  "posted_at_comparable": true,
   "first_seen": null
 }
 {
@@ -335,11 +347,16 @@ Two rows, fetched live from the index:
   "remote": false, "employment_type": "Full-time",
   "is_full_time": true, "is_part_time": false,
   "is_contract": false, "is_internship": false,
+  "description_stored": true,
   "min_years": 5,
+  "experience_at_most_0": false, "experience_at_most_2": false,
+  "experience_at_most_5": true, "experience_at_most_10": true,
   "salary": "108000-125000 MYR 1 YEAR",
   "min_salary_annual": 108000, "max_salary_annual": 125000, "salary_currency": null,
+  "salary_known": true,
   "url": "https://jobs.smartrecruiters.com/xplor/744000140844907",
   "posted_at": "2026-07-31T07:57:53.720Z",                 // not every ATS's date is ISO
+  "posted_at_comparable": true,
   "first_seen": "2026-08-20T16:19:41+00:00"
 }
 ```

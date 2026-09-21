@@ -25,6 +25,7 @@ constants and both filter builders stay importable (and unit-testable) without t
 
 from __future__ import annotations
 
+import time
 from collections import OrderedDict
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
@@ -35,6 +36,8 @@ from urllib.parse import urlsplit
 
 from headstart import fx, geo, log
 from headstart.employment_type import FILTERS as EMPLOYMENT_TYPE_FILTERS
+from headstart.experience_filter import CEILINGS as EXPERIENCE_FILTER_CEILINGS
+from headstart.experience_filter import column as experience_filter_column
 
 # In the Space nothing calls `setup()` (ADR-0153's app.py boots straight into serving), which
 # is why the one boot line below is a WARNING — `logging.lastResort` carries WARNING and above
@@ -112,6 +115,28 @@ ETYPE_CLAUSES = {
 ANN_NPROBES = 80
 ANN_REFINE_FACTOR = 2
 FACET_CACHE_SIZE = 128
+FACET_CACHE_TTL_SECONDS = 60
+BROWSE_CACHE_SIZE = 64
+BROWSE_CACHE_TTL_SECONDS = 60
+
+
+def _cache_get(cache: OrderedDict, lock: Lock, key: Any, ttl: float) -> Any | None:
+    now = time.monotonic()
+    with lock:
+        cached = cache.pop(key, None)
+        if cached is not None and now - cached[0] <= ttl:
+            cache[key] = cached
+            return cached[1]
+    return None
+
+
+def _cache_put(
+    cache: OrderedDict, lock: Lock, key: Any, value: Any, limit: int
+) -> None:
+    with lock:
+        cache[key] = (time.monotonic(), value)
+        while len(cache) > limit:
+            cache.popitem(last=False)
 
 
 #: Exactly the columns :meth:`JobSearch.run` reads to build a result row — the projection the
@@ -264,13 +289,12 @@ class IndexCapabilities:
 
     Learned once per process in :meth:`JobSearch.__init__` (two full-table scans plus a schema
     check) and handed to :func:`build_filter` and :func:`headstart.facets.counts` as one object,
-    in place of the seven loose keyword arguments both used to take. ``atses``, ``has_first_seen``
+    in place of the loose keyword arguments both used to take. ``atses``, ``has_first_seen``
     and ``has_min_salary_annual`` carry no default: forgetting one used to silently drop the ATS
     whitelist, or turn ADR-0035's exact Watermark cutoff into no clause at all, so a caller that
-    builds this by hand must state them. ``currencies``, ``has_description``, ``has_country`` and
-    ``has_employment_type_flags`` default because forgetting them only ever selects a safe
-    fallback or narrows a feature to "not offered on this table" — never widens what matches or
-    corrupts a result.
+    builds this by hand must state them. ``currencies`` and the optional-column/acceleration flags
+    default because forgetting them only ever selects a safe fallback or narrows a feature to
+    "not offered on this table" — never widens what matches or corrupts a result.
     """
 
     atses: Collection[str]
@@ -280,6 +304,10 @@ class IndexCapabilities:
     has_description: bool = False
     has_country: bool = False
     has_employment_type_flags: bool = False
+    has_description_stored: bool = False
+    has_salary_known: bool = False
+    has_posted_at_comparable: bool = False
+    has_experience_filter_flags: bool = False
 
 
 def _int_arg(args: Mapping[str, str]) -> Callable[[str], int | None]:
@@ -559,6 +587,7 @@ def _salary_clauses(
     salary_currency: str | None,
     currencies: Collection[str],
     has_min_salary_annual: bool,
+    has_salary_known: bool,
 ) -> list[str]:
     """The "shows salary" switch and the ADR-0082 salary bracket, which share a column."""
     filters: list[str] = []
@@ -571,7 +600,11 @@ def _salary_clauses(
         # number" check either way. Guarded like `has_first_seen` above: a table LanceDB
         # hasn't migrated onto the new columns yet would error on every query otherwise —
         # the feature stays dark until then rather than 500ing.
-        filters.append("min_salary_annual IS NOT NULL")
+        filters.append(
+            "salary_known = true"
+            if has_salary_known
+            else "min_salary_annual IS NOT NULL"
+        )
 
     # The salary bracket (issue #275) is stated in ONE currency the user picks, and that is not
     # a UI nicety: salary is period-normalised but stored in the employer's own currency
@@ -679,12 +712,18 @@ def _salary_clauses(
     return filters
 
 
+def posted_at_is_comparable(value: str | None) -> bool:
+    """Whether the raw date matches Lance's legacy ``LIKE '____-__-__%'`` guard."""
+    return bool(value and len(value) >= 10 and value[4] == "-" and value[7] == "-")
+
+
 def _posted_clauses(
     *,
     posted_sortable: bool,
     posted_within: int | None,
     posted_after: str | None,
     posted_before: str | None,
+    has_posted_at_comparable: bool,
 ) -> list[str]:
     """Everything keyed on ``posted_at`` — the company's own date.
 
@@ -694,19 +733,24 @@ def _posted_clauses(
     about.
     """
     filters: list[str] = []
+    guard = (
+        "posted_at_comparable = true"
+        if has_posted_at_comparable
+        else "posted_at LIKE '____-__-__%'"
+    )
     if posted_sortable:
         # Ordering by `posted_at` needs the same shape guard filtering by it does, and it has
         # to be compiled HERE rather than bolted onto the where-clause in `run` — otherwise the
         # facet counts, which never see the sort, would count rows the sorted list excludes and
         # the header would overstate the result set by the 8.4% carrying no readable date.
-        filters.append("(posted_at LIKE '____-__-__%')")
+        filters.append(f"({guard})")
     if posted_within is not None:
         # posted_at is a raw string; ISO-prefixed values (97%) compare correctly. The LIKE
         # shape guard excludes the rest — non-ISO forms like darwinbox's legacy
         # '21-Apr-2026' sort lexicographically ABOVE any ISO cutoff and would otherwise
         # leak into every window.
         cutoff = _ago(days=int(posted_within)).strftime("%Y-%m-%d")
-        filters.append(f"(posted_at >= '{cutoff}' AND posted_at LIKE '____-__-__%')")
+        filters.append(f"(posted_at >= '{cutoff}' AND {guard})")
 
     # Custom date ranges (both ends optional, both inclusive). Each value arrives as free
     # text and lands in a where-clause, so it is re-serialized through date.fromisoformat —
@@ -714,11 +758,9 @@ def _posted_clauses(
     # ever interpolated. `_next_day` carries why the upper bound is exclusive.
     if posted_after:
         start = date.fromisoformat(posted_after).isoformat()
-        filters.append(f"(posted_at >= '{start}' AND posted_at LIKE '____-__-__%')")
+        filters.append(f"(posted_at >= '{start}' AND {guard})")
     if posted_before:
-        filters.append(
-            f"(posted_at < '{_next_day(posted_before)}' AND posted_at LIKE '____-__-__%')"
-        )
+        filters.append(f"(posted_at < '{_next_day(posted_before)}' AND {guard})")
     return filters
 
 
@@ -774,12 +816,12 @@ def build_filter(filters: SearchFilters, capabilities: IndexCapabilities) -> str
     particular Search index happens to support right now — :class:`IndexCapabilities`: the ATS
     and currency whitelists the ``ats``/``salary_currency`` clauses may name, and which
     migration-only columns (``first_seen``, the ADR-0082 salary columns, ``description``,
-    ``country``) it carries. Both are required, and deliberately so, for the reason the seven loose
+    ``country``) it carries. Both are required, and deliberately so, for the reason the loose
     facts used to be: a caller that reaches this directly (``scripts/bench/scalar_index_bench_v2
     .py``, a hand-built request) that skimps on ``capabilities`` can silently drop the ATS
     whitelist, turn ADR-0035's exact Watermark cutoff into no clause at all, or make a salary
     bound compile to **nothing** — see :class:`IndexCapabilities`'s docstring for which of its
-    seven fields fail loudly (no default) and which fail quietly (default, but only by narrowing a
+    fields fail loudly (no default) and which fail quietly (default, but only by narrowing a
     feature to "not offered here").
 
     Every in-repo caller reaches this through :meth:`JobSearch.parse_filters` (``filters``) and
@@ -789,7 +831,13 @@ def build_filter(filters: SearchFilters, capabilities: IndexCapabilities) -> str
     if filters.remote:
         clauses.append("remote = true")
     if filters.max_years is not None:
-        clauses.append(f"(min_years <= {int(filters.max_years)} OR min_years IS NULL)")
+        years = int(filters.max_years)
+        clauses.append(
+            f"{experience_filter_column(years)} = true"
+            if capabilities.has_experience_filter_flags
+            and years in EXPERIENCE_FILTER_CEILINGS
+            else f"(min_years <= {years} OR min_years IS NULL)"
+        )
     # A value that misses either whitelist drops the filter silently *here* and is reported
     # once, by `JobSearch.parse_filters`, before this compiler is ever entered. It cannot be
     # reported here: `facets.counts` recompiles the same filters once per facet option, so a
@@ -836,12 +884,14 @@ def build_filter(filters: SearchFilters, capabilities: IndexCapabilities) -> str
         salary_currency=filters.salary_currency,
         currencies=capabilities.currencies,
         has_min_salary_annual=capabilities.has_min_salary_annual,
+        has_salary_known=capabilities.has_salary_known,
     )
     clauses += _posted_clauses(
         posted_sortable=filters.posted_sortable,
         posted_within=filters.posted_within,
         posted_after=filters.posted_after,
         posted_before=filters.posted_before,
+        has_posted_at_comparable=capabilities.has_posted_at_comparable,
     )
     clauses += _first_seen_clauses(
         seen_after=filters.seen_after,
@@ -900,8 +950,8 @@ class JobSearch:
     The two facts the UI templates need — :attr:`atses` for the Board dropdown and
     :attr:`has_first_seen` for the "first seen" control — are attributes, not methods, so a
     template context can carry them straight through. :attr:`capabilities` (ADR-0149) bundles
-    those and the other five runtime facts into one :class:`IndexCapabilities` for
-    :func:`build_filter` and :func:`headstart.facets.counts`; the seven individual attributes stay
+    those and the other runtime facts into one :class:`IndexCapabilities` for
+    :func:`build_filter` and :func:`headstart.facets.counts`; the capability attributes stay
     directly settable, since templates and tests both read and monkeypatch them one at a time.
     """
 
@@ -938,6 +988,13 @@ class JobSearch:
             rule.column in table.schema.names
             for rule in EMPLOYMENT_TYPE_FILTERS.values()
         )
+        self.has_description_stored = "description_stored" in table.schema.names
+        self.has_salary_known = "salary_known" in table.schema.names
+        self.has_posted_at_comparable = "posted_at_comparable" in table.schema.names
+        self.has_experience_filter_flags = all(
+            experience_filter_column(ceiling) in table.schema.names
+            for ceiling in EXPERIENCE_FILTER_CEILINGS
+        )
         list_indices = getattr(table, "list_indices", None)
         self.has_vector_index = bool(
             list_indices and any("vector" in index.columns for index in list_indices())
@@ -970,9 +1027,13 @@ class JobSearch:
         # lifetime (the Space restarts when a new table lands). Cache only the parsed structured
         # filters, bounded so arbitrary public requests cannot grow memory without limit.
         self._facet_cache: OrderedDict[
-            tuple[SearchFilters, str | None], dict[str, Any]
+            tuple[SearchFilters, str | None], tuple[float, dict[str, Any]]
         ] = OrderedDict()
         self._facet_cache_lock = Lock()
+        self._browse_cache: OrderedDict[tuple[Any, ...], tuple[float, list[dict]]] = (
+            OrderedDict()
+        )
+        self._browse_cache_lock = Lock()
         # The four flags above are each a whole feature silently switched off: an un-migrated
         # table ignores every `seen_within`/`first_seen_after` bound, the salary bracket and
         # `has_salary`, the Keyword filter's description scope, and the `seen`/`salary` sorts
@@ -1002,13 +1063,13 @@ class JobSearch:
 
     @property
     def capabilities(self) -> IndexCapabilities:
-        """This table's :class:`IndexCapabilities` (ADR-0149) — the seven attributes above,
+        """This table's :class:`IndexCapabilities` (ADR-0149) — the attributes above,
         bundled for :func:`build_filter` and :func:`headstart.facets.counts`.
 
-        A property, not a field set once and cached: the seven individual attributes stay
+        A property, not a field set once and cached: the individual attributes stay
         directly settable (the UI templates read them one at a time, and the test suite
         monkeypatches them the same way), and this just re-packs whatever they currently hold
-        on every access — free, since it costs seven attribute reads and no table I/O.
+        on every access — free, since it costs attribute reads and no table I/O.
         """
         return IndexCapabilities(
             atses=self.atses,
@@ -1018,6 +1079,10 @@ class JobSearch:
             has_description=self.has_description,
             has_country=self.has_country,
             has_employment_type_flags=self.has_employment_type_flags,
+            has_description_stored=self.has_description_stored,
+            has_salary_known=self.has_salary_known,
+            has_posted_at_comparable=self.has_posted_at_comparable,
+            has_experience_filter_flags=self.has_experience_filter_flags,
         )
 
     def parse_filters(self, args: Mapping[str, str]) -> SearchFilters:
@@ -1094,21 +1159,27 @@ class JobSearch:
 
         filters = self.parse_filters(args)
         cache_key = (filters, extra_where)
-        with self._facet_cache_lock:
-            cached = self._facet_cache.pop(cache_key, None)
-            if cached is not None:
-                self._facet_cache[cache_key] = cached
-                return cached
+        cached = _cache_get(
+            self._facet_cache,
+            self._facet_cache_lock,
+            cache_key,
+            FACET_CACHE_TTL_SECONDS,
+        )
+        if cached is not None:
+            return cached
         counted = facets.counts(
             self._table,
             filters,
             self.capabilities,
             extra_where=extra_where,
         )
-        with self._facet_cache_lock:
-            self._facet_cache[cache_key] = counted
-            while len(self._facet_cache) > FACET_CACHE_SIZE:
-                self._facet_cache.popitem(last=False)
+        _cache_put(
+            self._facet_cache,
+            self._facet_cache_lock,
+            cache_key,
+            counted,
+            FACET_CACHE_SIZE,
+        )
         return counted
 
     def run(
@@ -1123,9 +1194,8 @@ class JobSearch:
         """
         query = (args.get("q") or "").strip()
         _int = _int_arg(args)
-        where = with_extra(
-            build_filter(self.parse_filters(args), self.capabilities), extra_where
-        )
+        filters = self.parse_filters(args)
+        where = with_extra(build_filter(filters, self.capabilities), extra_where)
         # Whitelisted to a column name, never taken from the query string — this reaches an
         # ORDER BY. An unknown value is no sort at all, which is the existing behaviour.
         sort = SORT_COLUMNS.get((args.get("sort") or "").strip())
@@ -1141,6 +1211,16 @@ class JobSearch:
         page = _int("page")
         page = max(1, min(1 if page is None else page, self.max_page))
         offset = (page - 1) * k
+        browse_key = (filters, sort, k, page, extra_where)
+        if not query:
+            cached = _cache_get(
+                self._browse_cache,
+                self._browse_cache_lock,
+                browse_key,
+                BROWSE_CACHE_TTL_SECONDS,
+            )
+            if cached is not None:
+                return cached
 
         if query:
             search = self._table.search(encode_query(self._model, query)).metric(
@@ -1236,7 +1316,7 @@ class JobSearch:
                 )
             rows = search.limit(k).offset(offset).to_list()
 
-        return [
+        result = [
             {
                 "id": r.get("id"),  # the star identity — {ats}:{slug}:{native_id}
                 "score": round(1 - r["_distance"], 3) if query else None,
@@ -1260,6 +1340,20 @@ class JobSearch:
             }
             for r in rows
         ]
+        if not query:
+            _cache_put(
+                self._browse_cache,
+                self._browse_cache_lock,
+                browse_key,
+                result,
+                BROWSE_CACHE_SIZE,
+            )
+        return result
+
+    def warm(self) -> None:
+        """Preload the two no-query responses every fresh process serves first."""
+        self.run({})
+        self.facets({})
 
     def indexed(self, ids: Collection[str]) -> set[str]:
         """Which of these job ids are still in the index — the Saved tab's "closed" check.
@@ -1333,11 +1427,19 @@ class JobSearch:
                 "first_seen": "first_seen IS NOT NULL AND first_seen != ''"
                 if self.has_first_seen
                 else None,
-                "salary": "min_salary_annual IS NOT NULL"
+                "salary": (
+                    "salary_known = true"
+                    if self.has_salary_known
+                    else "min_salary_annual IS NOT NULL"
+                )
                 if self.has_min_salary_annual
                 else None,
                 "min_years": "min_years IS NOT NULL",
-                "description": "description IS NOT NULL AND description != ''"
+                "description": (
+                    "description_stored = true"
+                    if self.has_description_stored
+                    else "description IS NOT NULL AND description != ''"
+                )
                 if self.has_description
                 else None,
             }

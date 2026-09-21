@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 import lancedb
-from bench_table import FACET_CASES, _FixedEncoder, _load_vector
+from search_table import FACET_CASES, _FixedEncoder, _load_vector
 
 from headstart.search import JobSearch
 
