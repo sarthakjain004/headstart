@@ -490,8 +490,9 @@ def test_facet_cache_expires_so_recency_counts_keep_moving(monkeypatch):
     monkeypatch.setattr(
         facets,
         "counts",
-        lambda *_args, **_kwargs: calls.append(now[0])
-        or {"total": len(calls), "facets": {}},
+        lambda *_args, **_kwargs: (
+            calls.append(now[0]) or {"total": len(calls), "facets": {}}
+        ),
     )
     searcher, _ = _searcher()
     first = searcher.facets({})
