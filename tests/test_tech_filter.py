@@ -591,7 +591,7 @@ def test_a_non_software_department_still_vetoes_a_generic_title():
 
 def test_the_version_counter_moved_with_the_line():
     """`role_trends` reads this to tell "we changed who counts" from "the market moved"."""
-    assert TECH_FILTER_VERSION == 2, (
+    assert TECH_FILTER_VERSION == 3, (
         "bump this and its comment together — the comment carries the commit range and the "
         "measured effect, and a bump without one is what CLAUDE.md's DERIVATIONS_VERSION rule "
         "exists to stop"
@@ -627,3 +627,110 @@ def test_the_two_not_software_lists_read_different_inputs():
     )
     # ...and the title list still works where the department says nothing either way.
     assert is_tech("Security Officer", department="Corporate") is False
+
+
+# --- TECH_FILTER_VERSION 3: the families still outside the gate ------------------------------
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Member of Technical Staff",
+        "Senior Member of Technical Staff, Post-Training",
+        "Lead Member of Technical Staff, Inference Infrastructure",
+        "Forward Deployed Engineer",
+        "AI Research Scientist",
+        "Staff ML Research Scientist, Co-Folding and Affinity",
+        "Applied Scientist",
+        "Analytics Engineer",
+        "Business Intelligence Analyst",
+        "BI Analyst",
+        "Bioinformatics Analyst",
+        "Computational Biologist",
+        "ASIC Architect",
+        "FPGA Engineer",
+        "RTL Design Engineer",
+        "Security Operations Analyst",
+        "SOC Specialist II - Cyber Security",
+        "SOC Manager",
+        "QA Lead",
+        "QA Analyst",
+        "Test Analyst",
+        "Manual Tester",
+    ],
+)
+def test_version_3_families_are_kept(title):
+    """Each was measured as dropped by version 2 over the 332,383-posting snapshot."""
+    assert is_tech(title) is True, f"RECALL VIOLATION: tech job dropped -> {title!r}"
+
+
+def test_member_of_technical_staff_needs_no_department():
+    """It names no discipline, so once rules 1-2 read the title only nothing else could keep it.
+
+    124 rows, on boards whose departments read Modeling, Research, Inference, Technical Staff.
+    """
+    for dept in ("Modeling", "Research", "Inference", "Technical Staff", ""):
+        assert is_tech("Member of Technical Staff", department=dept) is True
+
+
+def test_forward_deployed_engineer_survives_a_sales_department():
+    """An engineering role that reports into GTM, so rule 2 would otherwise veto it.
+
+    Only the engineer spelling: "Forward Deployed Creative" is not an engineering job.
+    """
+    assert is_tech("Forward Deployed Engineer, GTM", department="Sales") is True
+    assert is_tech("Forward Deployed Creative", department="Sales") is False
+
+
+def test_the_platform_arm_tolerates_a_module_name_in_between():
+    """ "SAP FICO Consultant" is the common shape; requiring adjacency left 589 rows out."""
+    assert is_tech("SAP FICO Consultant") is True
+    assert is_tech("SAP Basis Migration Consultant") is True
+    assert is_tech("Salesforce Pre-Sales Architect") is True
+    assert is_tech("ServiceNow Business Analyst") is True
+    # reverse order, which the adjacent form could not express at all
+    assert is_tech("Business Analyst - ServiceNow") is True
+    # the product name alone, with no technical role beside it, is still not enough
+    assert is_tech("Marketing Manager | B2B Growth | Salesforce & AI") is False
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Oracle HCM Cloud Consultant",
+        "Oracle Cloud Senior Consultant - SCM",
+        "Oracle EPM Consultant",
+        "Consultant MS Dynamics 365 F&O",
+    ],
+)
+def test_every_platform_in_the_arm_is_actually_in_both_arms(title):
+    """`oracle` fell out of the list when main's own spelling of it was adopted — 48 rows.
+
+    `dynamics` was in the forward arm but not the reverse one, which cost 3 more. Both were
+    found by review; neither is visible from the totals, which went up either way.
+    """
+    assert is_tech(title) is True, f"RECALL VIOLATION: tech job dropped -> {title!r}"
+
+
+@pytest.mark.parametrize(
+    "title", ["ServiceNow Developers", "Higher Education Workday Consultants"]
+)
+def test_the_platform_arm_still_matches_a_plural_role_word(title):
+    r"""Regression: the form this replaced had no closing boundary and kept these.
+
+    Adding `\b` to tighten the new arm dropped both — caught by measuring the change against
+    the corpus rather than only counting what it gained.
+    """
+    assert is_tech(title) is True
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        # bare `\brtl\b` matches the broadcaster; `security specialist` matches physical security
+        "Media Consultant (Mensch) RTL / Veltins",
+        "EHS and Security Specialist",
+    ],
+)
+def test_the_narrowed_patterns_do_not_fire_on_their_near_misses(title):
+    assert is_tech(title) is False
