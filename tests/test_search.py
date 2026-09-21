@@ -17,6 +17,7 @@ import pytest
 
 from headstart.search import (
     EMPLOYMENT_TYPES,
+    ETYPE_CLAUSES,
     RESULT_COLUMNS,
     SORT_COLUMNS,
     IndexCapabilities,
@@ -301,6 +302,14 @@ class _Query:
     def metric(self, _m):
         return self
 
+    def nprobes(self, value):
+        self._t.last_nprobes = value
+        return self
+
+    def refine_factor(self, value):
+        self._t.last_refine_factor = value
+        return self
+
     def select(self, cols):
         # lancedb raises `columns must be a list or a dictionary` on a tuple, and the browse
         # branch shipped one — green here, 500 in production, because this fake took anything.
@@ -340,10 +349,16 @@ class _Table:
         self.last_offset = None
         self.last_order = None
         self.last_select = None
+        self.last_nprobes = None
+        self.last_refine_factor = None
+        self.indices = []
 
     def search(self, *args, **kwargs):
         self.last_query = args[0] if args else None  # None => a browse, not a search
         return _Query(self)
+
+    def list_indices(self):
+        return self.indices
 
 
 _ROW = {
@@ -581,6 +596,42 @@ def test_has_country_is_learned_from_the_schema():
     assert JobSearch(_Model(), table).has_country is False
     table.schema = types.SimpleNamespace(names=["ats", "title", "country"])
     assert JobSearch(_Model(), table).has_country is True
+
+
+def test_employment_type_flags_are_used_only_after_the_whole_migration_lands():
+    assert _clause(etype="contract") == ETYPE_CLAUSES["contract"]
+    assert (
+        _clause(etype="contract", has_employment_type_flags=True)
+        == "is_contract = true"
+    )
+
+    _, table = _searcher()
+    table.schema = types.SimpleNamespace(
+        names=[
+            "ats",
+            "title",
+            "is_full_time",
+            "is_part_time",
+            "is_contract",
+            "is_internship",
+        ]
+    )
+    assert JobSearch(_Model(), table).has_employment_type_flags is True
+    table.schema = types.SimpleNamespace(
+        names=["ats", "title", "is_full_time", "is_part_time", "is_contract"]
+    )
+    assert JobSearch(_Model(), table).has_employment_type_flags is False
+
+
+def test_ann_tuning_is_applied_only_when_the_table_has_a_vector_index():
+    searcher, table = _searcher()
+    searcher.run({"q": "backend"})
+    assert table.last_nprobes is None and table.last_refine_factor is None
+
+    table.indices = [types.SimpleNamespace(columns=["vector"])]
+    JobSearch(_Model(), table).run({"q": "backend"})
+    assert table.last_nprobes == 80
+    assert table.last_refine_factor == 2
 
 
 def test_has_salary_matches_a_description_only_derived_value():

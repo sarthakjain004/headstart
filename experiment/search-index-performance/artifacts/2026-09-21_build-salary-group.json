@@ -1,0 +1,68 @@
+{
+  "builds": [
+    {
+      "column": "salary_currency",
+      "config": "Bitmap",
+      "index": {
+        "columns": [
+          "salary_currency"
+        ],
+        "name": "salary_currency_idx",
+        "type": "Bitmap"
+      },
+      "seconds": 0.032,
+      "stats": {
+        "distance_type": null,
+        "index_type": "BITMAP",
+        "num_indexed_rows": 508991,
+        "num_indices": 1,
+        "num_unindexed_rows": 0
+      }
+    },
+    {
+      "column": "min_salary_annual",
+      "config": "BTree",
+      "index": {
+        "columns": [
+          "min_salary_annual"
+        ],
+        "name": "min_salary_annual_idx",
+        "type": "BTree"
+      },
+      "seconds": 0.022,
+      "stats": {
+        "distance_type": null,
+        "index_type": "BTREE",
+        "num_indexed_rows": 508991,
+        "num_indices": 1,
+        "num_unindexed_rows": 0
+      }
+    },
+    {
+      "column": "max_salary_annual",
+      "config": "BTree",
+      "index": {
+        "columns": [
+          "max_salary_annual"
+        ],
+        "name": "max_salary_annual_idx",
+        "type": "BTree"
+      },
+      "seconds": 0.021,
+      "stats": {
+        "distance_type": null,
+        "index_type": "BTREE",
+        "num_indexed_rows": 508991,
+        "num_indices": 1,
+        "num_unindexed_rows": 0
+      }
+    }
+  ],
+  "bytes_added": 3171714,
+  "bytes_after": 2942245863,
+  "bytes_before": 2939074149,
+  "lancedb": "0.36.0",
+  "measured_at": "2026-09-21T15:12:41.090339+00:00",
+  "profile": "salary_group",
+  "rows": 508991
+}

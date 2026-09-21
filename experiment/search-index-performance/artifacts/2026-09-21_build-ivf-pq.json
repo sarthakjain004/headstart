@@ -1,0 +1,30 @@
+{
+  "builds": [
+    {
+      "column": "vector",
+      "config": "IvfPq",
+      "index": {
+        "columns": [
+          "vector"
+        ],
+        "name": "vector_idx",
+        "type": "IvfPq"
+      },
+      "seconds": 13.75,
+      "stats": {
+        "distance_type": "cosine",
+        "index_type": "IVF_PQ",
+        "num_indexed_rows": 508991,
+        "num_indices": 1,
+        "num_unindexed_rows": 0
+      }
+    }
+  ],
+  "bytes_added": 27009052,
+  "bytes_after": 2966083201,
+  "bytes_before": 2939074149,
+  "lancedb": "0.36.0",
+  "measured_at": "2026-09-21T15:22:17.369989+00:00",
+  "profile": "ivf_pq",
+  "rows": 508991
+}

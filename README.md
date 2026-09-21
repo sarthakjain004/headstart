@@ -282,7 +282,11 @@ fails if this table drifts from it.
 | `location` | string | raw ATS text; the India filter maps it via a gazetteer (ADR-0024) |
 | `country` | string | `"IN"` when `location` matches the India gazetteer's country-level rule, else null. Materialized so the India filter's whole-country case is a plain equality instead of a large regex alternation (ADR-0138) |
 | `remote` | bool | the scraper's own ATS-native field, **unless** the description confidently reads as remote — then `true` wins regardless of what the field said (ADR-0061). One-directional: a description read as onsite or hybrid never overrides the field |
-| `employment_type` | string | raw per-ATS text (`FullTime`, `Full Time`, `Contract`, …), normalised at query time |
+| `employment_type` | string | raw per-ATS text (`FullTime`, `Full Time`, `Contract`, …), retained for display |
+| `is_full_time` | bool | materialized verdict of the Search filter's `full` / `permanent` substring rule; bitmap-indexed (ADR-0173) |
+| `is_part_time` | bool | materialized verdict of the Search filter's `part` substring rule; bitmap-indexed (ADR-0173) |
+| `is_contract` | bool | materialized verdict of the Search filter's `contract` / `freelance` substring rule; bitmap-indexed (ADR-0173) |
+| `is_internship` | bool | materialized verdict of the guarded `intern` substring rule (`international` excluded); bitmap-indexed (ADR-0173) |
 | `experience` | string | raw ATS text — not served to the API, but read on every merge to detect whether a posting's stated experience changed, which is what triggers re-deriving `min_years`/`max_years` for that row |
 | `min_years` | int32 | parsed from `experience`; **nullable** — null means unknown, not zero (ADR-0009) |
 | `max_years` | int32 | parsed alongside `min_years`, but not currently read by any filter, sort, or the API — the `max_years` *query parameter* filters on `min_years` instead. Kept in the schema; see the note below |
@@ -314,6 +318,8 @@ Two rows, fetched live from the index:
   "title": "Software Engineer, Backend",
   "location": "Redwood City, CA, California, United States",
   "remote": null, "employment_type": "FullTime",
+  "is_full_time": true, "is_part_time": false,
+  "is_contract": false, "is_internship": false,
   "min_years": 5,
   "salary": "180000-300000 USD 1 YEAR",
   "min_salary_annual": 180000, "max_salary_annual": 300000, "salary_currency": "USD",
@@ -327,6 +333,8 @@ Two rows, fetched live from the index:
   "title": "Backend Engineer",
   "location": "Kuala Lumpur, Federal Territory of Kuala Lumpur, Malaysia",
   "remote": false, "employment_type": "Full-time",
+  "is_full_time": true, "is_part_time": false,
+  "is_contract": false, "is_internship": false,
   "min_years": 5,
   "salary": "108000-125000 MYR 1 YEAR",
   "min_salary_annual": 108000, "max_salary_annual": 125000, "salary_currency": null,

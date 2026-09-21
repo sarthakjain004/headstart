@@ -1,0 +1,49 @@
+{
+  "builds": [],
+  "bytes_after": 2939223917,
+  "bytes_before": 2939074149,
+  "lancedb": "0.36.0",
+  "materialize_seconds": 0.034,
+  "measured_at": "2026-09-21T15:16:56.442016+00:00",
+  "new": {
+    "count": 313836,
+    "fingerprint": "7e2a05a0386ae9c654b08c18d62d89a51a5013b6cfa1d6d3e400c08b8380a59b",
+    "median_ms": 146.82,
+    "samples_ms": [
+      147.15,
+      146.59,
+      146.56,
+      147.53,
+      146.82,
+      145.66,
+      145.92,
+      149.0,
+      146.44,
+      148.37,
+      148.25
+    ],
+    "where": "is_full_time = true"
+  },
+  "old": {
+    "count": 313836,
+    "fingerprint": "7e2a05a0386ae9c654b08c18d62d89a51a5013b6cfa1d6d3e400c08b8380a59b",
+    "median_ms": 153.85,
+    "samples_ms": [
+      156.81,
+      154.12,
+      157.21,
+      155.02,
+      152.88,
+      154.12,
+      153.85,
+      152.9,
+      151.92,
+      153.81,
+      153.44
+    ],
+    "where": "(lower(employment_type) LIKE '%full%' OR lower(employment_type) LIKE '%permanent%')"
+  },
+  "profile": "full_time",
+  "rows": 508991,
+  "skip_index": true
+}

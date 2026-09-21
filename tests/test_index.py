@@ -288,6 +288,41 @@ def test_migration_is_idempotent(tmp_path, monkeypatch):
     )
 
 
+def test_employment_type_flag_migration_preserves_the_legacy_verdicts(tmp_path):
+    import pyarrow as pa
+
+    old_schema = pa.schema(
+        [f for f in idx._schema(_DIM) if not f.name.startswith("is_")]
+    )
+    table = lancedb.connect(str(tmp_path / "db")).create_table(
+        idx.PROD_TABLE, schema=old_schema
+    )
+    table.add(
+        [
+            {
+                "id": "greenhouse:a:1",
+                "employment_type": "Permanent / Full-Time",
+                "vector": [0.0] * _DIM,
+            },
+            {
+                "id": "greenhouse:a:2",
+                "employment_type": "International Internship",
+                "vector": [0.0] * _DIM,
+            },
+        ]
+    )
+
+    idx._migrate_employment_type_flags(table)
+    rows = {row["id"]: row for row in table.search().limit(10).to_list()}
+    assert rows["greenhouse:a:1"]["is_full_time"] is True
+    assert rows["greenhouse:a:1"]["is_internship"] is False
+    assert rows["greenhouse:a:2"]["is_internship"] is False
+    assert all(
+        rule.column in table.schema.names
+        for rule in idx.EMPLOYMENT_TYPE_FILTERS.values()
+    )
+
+
 def test_log_ids_batches_and_labels(caplog):
     import logging
 
@@ -790,3 +825,43 @@ def test_compact_always_leaves_a_record(tmp_path):
     idx.compact(argparse.Namespace(db=str(db)))
     assert idx.read_base(db) is not None
     assert idx.read_base(db)["by"] == "compact"
+
+
+def test_compact_rebuilds_the_measured_search_indexes(tmp_path):
+    db = tmp_path / "db"
+    table = lancedb.connect(str(db)).create_table(
+        idx.PROD_TABLE, schema=idx._schema(_DIM)
+    )
+    table.add(
+        [
+            {
+                "id": f"greenhouse:a:{n}",
+                "ats": "greenhouse",
+                "country": "IN" if n % 2 else None,
+                "posted_at": "2026-09-01",
+                "first_seen": "2026-09-02T00:00:00+00:00",
+                "employment_type": "Full-time",
+                "is_full_time": True,
+                "is_part_time": False,
+                "is_contract": False,
+                "is_internship": False,
+                "vector": [float(n % 7), 0.0, 0.0, 1.0],
+            }
+            for n in range(300)
+        ]
+    )
+
+    assert idx.compact(argparse.Namespace(db=str(db))) == 0
+    rebuilt = lancedb.connect(str(db)).open_table(idx.PROD_TABLE)
+    indexed = {column for index in rebuilt.list_indices() for column in index.columns}
+    assert indexed == {
+        "ats",
+        "country",
+        "posted_at",
+        "first_seen",
+        "is_full_time",
+        "is_part_time",
+        "is_contract",
+        "is_internship",
+        "vector",
+    }

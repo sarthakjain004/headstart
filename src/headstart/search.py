@@ -32,6 +32,7 @@ from typing import Any, NamedTuple
 from urllib.parse import urlsplit
 
 from headstart import fx, geo, log
+from headstart.employment_type import FILTERS as EMPLOYMENT_TYPE_FILTERS
 
 # In the Space nothing calls `setup()` (ADR-0153's app.py boots straight into serving), which
 # is why the one boot line below is a WARNING — `logging.lastResort` carries WARNING and above
@@ -100,22 +101,14 @@ def eval_filter(
 # Canonical employment-type filters mapped onto the messy per-ATS raw values
 # ("fulltime", "Full-time", "fulltime_permanent", "Permanent / Full-Time", …).
 ETYPE_CLAUSES = {
-    "full-time": "(lower(employment_type) LIKE '%full%'"
-    " OR lower(employment_type) LIKE '%permanent%')",
-    "part-time": "lower(employment_type) LIKE '%part%'",
-    "contract": "(lower(employment_type) LIKE '%contract%'"
-    " OR lower(employment_type) LIKE '%freelance%')",
-    # Guarded like the gazetteer's collision traps, and for the same reason: the substring
-    # `intern` is inside `international`, which on the served table claimed 47 of the 794 rows
-    # this option returned (5.9%) — "International EOR", "International Full Time Employee",
-    # "International Office Entity". Every distinct value carrying both words is one of those,
-    # so nothing genuine is excluded; a real "International Internship" would be, and is the
-    # cost of a substring match without word boundaries (DataFusion's regex has no lookaround).
-    "internship": (
-        "(lower(employment_type) LIKE '%intern%'"
-        " AND lower(employment_type) NOT LIKE '%international%')"
-    ),
+    name: rule.raw_clause() for name, rule in EMPLOYMENT_TYPE_FILTERS.items()
 }
+
+# The retained production-table operating point (ADR-0173): IVF-SQ at 80 probes with a 2x
+# exact-vector refinement reproduced every top-20 result across 16 real queries and four filter
+# selectivities. Lower settings lost results; IVF/HNSW Flat cost over 1.5 GB of extra storage.
+ANN_NPROBES = 80
+ANN_REFINE_FACTOR = 2
 
 
 #: Exactly the columns :meth:`JobSearch.run` reads to build a result row — the projection the
@@ -268,12 +261,13 @@ class IndexCapabilities:
 
     Learned once per process in :meth:`JobSearch.__init__` (two full-table scans plus a schema
     check) and handed to :func:`build_filter` and :func:`headstart.facets.counts` as one object,
-    in place of the six loose keyword arguments both used to take. ``atses``, ``has_first_seen``
+    in place of the seven loose keyword arguments both used to take. ``atses``, ``has_first_seen``
     and ``has_min_salary_annual`` carry no default: forgetting one used to silently drop the ATS
     whitelist, or turn ADR-0035's exact Watermark cutoff into no clause at all, so a caller that
-    builds this by hand must state them. ``currencies``, ``has_description`` and ``has_country``
-    default because forgetting them only ever narrows a feature to "not offered on this table" —
-    never widens what matches or corrupts a result.
+    builds this by hand must state them. ``currencies``, ``has_description``, ``has_country`` and
+    ``has_employment_type_flags`` default because forgetting them only ever selects a safe
+    fallback or narrows a feature to "not offered on this table" — never widens what matches or
+    corrupts a result.
     """
 
     atses: Collection[str]
@@ -282,6 +276,7 @@ class IndexCapabilities:
     currencies: Collection[str] = ()
     has_description: bool = False
     has_country: bool = False
+    has_employment_type_flags: bool = False
 
 
 def _int_arg(args: Mapping[str, str]) -> Callable[[str], int | None]:
@@ -776,12 +771,12 @@ def build_filter(filters: SearchFilters, capabilities: IndexCapabilities) -> str
     particular Search index happens to support right now — :class:`IndexCapabilities`: the ATS
     and currency whitelists the ``ats``/``salary_currency`` clauses may name, and which
     migration-only columns (``first_seen``, the ADR-0082 salary columns, ``description``,
-    ``country``) it carries. Both are required, and deliberately so, for the reason the six loose
+    ``country``) it carries. Both are required, and deliberately so, for the reason the seven loose
     facts used to be: a caller that reaches this directly (``scripts/bench/scalar_index_bench_v2
     .py``, a hand-built request) that skimps on ``capabilities`` can silently drop the ATS
     whitelist, turn ADR-0035's exact Watermark cutoff into no clause at all, or make a salary
     bound compile to **nothing** — see :class:`IndexCapabilities`'s docstring for which of its
-    six fields fail loudly (no default) and which fail quietly (default, but only by narrowing a
+    seven fields fail loudly (no default) and which fail quietly (default, but only by narrowing a
     feature to "not offered here").
 
     Every in-repo caller reaches this through :meth:`JobSearch.parse_filters` (``filters``) and
@@ -802,7 +797,11 @@ def build_filter(filters: SearchFilters, capabilities: IndexCapabilities) -> str
     ):  # whitelist — never interpolated from free text
         clauses.append(f"ats = '{filters.ats}'")
     if filters.etype in ETYPE_CLAUSES:
-        clauses.append(ETYPE_CLAUSES[filters.etype])
+        clauses.append(
+            f"{EMPLOYMENT_TYPE_FILTERS[filters.etype].column} = true"
+            if capabilities.has_employment_type_flags
+            else ETYPE_CLAUSES[filters.etype]
+        )
     if filters.india:
         # "india" is the exact sentinel `geo.where()` itself uses for "whole country" (as
         # opposed to a REGIONS/CITIES key like "bengaluru"), and it is the only case the 1,338ms
@@ -899,7 +898,7 @@ class JobSearch:
     :attr:`has_first_seen` for the "first seen" control — are attributes, not methods, so a
     template context can carry them straight through. :attr:`capabilities` (ADR-0149) bundles
     those and the other four runtime facts into one :class:`IndexCapabilities` for
-    :func:`build_filter` and :func:`headstart.facets.counts`; the six individual attributes stay
+    :func:`build_filter` and :func:`headstart.facets.counts`; the seven individual attributes stay
     directly settable, since templates and tests both read and monkeypatch them one at a time.
     """
 
@@ -930,6 +929,16 @@ class JobSearch:
         # synced since, `build_filter` falls back to `geo.where("india")`'s slower-but-correct
         # regex alternation rather than erroring on a column that isn't there yet.
         self.has_country = "country" in table.schema.names
+        # The employment-type booleans are an optional acceleration layer. A pre-migration
+        # table keeps the raw LIKE clauses above, so this can never disable the filter.
+        self.has_employment_type_flags = all(
+            rule.column in table.schema.names
+            for rule in EMPLOYMENT_TYPE_FILTERS.values()
+        )
+        list_indices = getattr(table, "list_indices", None)
+        self.has_vector_index = bool(
+            list_indices and any("vector" in index.columns for index in list_indices())
+        )
         #: :data:`RESULT_COLUMNS` narrowed to what this table actually has — see that constant
         #: for why the intersection is mandatory rather than defensive.
         self.projection = tuple(c for c in RESULT_COLUMNS if c in table.schema.names)
@@ -983,13 +992,13 @@ class JobSearch:
 
     @property
     def capabilities(self) -> IndexCapabilities:
-        """This table's :class:`IndexCapabilities` (ADR-0149) — the six attributes above,
+        """This table's :class:`IndexCapabilities` (ADR-0149) — the seven attributes above,
         bundled for :func:`build_filter` and :func:`headstart.facets.counts`.
 
-        A property, not a field set once and cached: the six individual attributes stay
+        A property, not a field set once and cached: the seven individual attributes stay
         directly settable (the UI templates read them one at a time, and the test suite
         monkeypatches them the same way), and this just re-packs whatever they currently hold
-        on every access — free, since it costs six attribute reads and no table I/O.
+        on every access — free, since it costs seven attribute reads and no table I/O.
         """
         return IndexCapabilities(
             atses=self.atses,
@@ -998,6 +1007,7 @@ class JobSearch:
             currencies=self.currencies,
             has_description=self.has_description,
             has_country=self.has_country,
+            has_employment_type_flags=self.has_employment_type_flags,
         )
 
     def parse_filters(self, args: Mapping[str, str]) -> SearchFilters:
@@ -1114,6 +1124,8 @@ class JobSearch:
             search = self._table.search(encode_query(self._model, query)).metric(
                 "cosine"
             )
+            if self.has_vector_index:
+                search = search.nprobes(ANN_NPROBES).refine_factor(ANN_REFINE_FACTOR)
         else:
             search = (
                 self._table.search()

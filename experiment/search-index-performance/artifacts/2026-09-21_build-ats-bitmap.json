@@ -1,0 +1,30 @@
+{
+  "builds": [
+    {
+      "column": "ats",
+      "config": "Bitmap",
+      "index": {
+        "columns": [
+          "ats"
+        ],
+        "name": "ats_idx",
+        "type": "Bitmap"
+      },
+      "seconds": 0.046,
+      "stats": {
+        "distance_type": null,
+        "index_type": "BITMAP",
+        "num_indexed_rows": 508991,
+        "num_indices": 1,
+        "num_unindexed_rows": 0
+      }
+    }
+  ],
+  "bytes_added": 301232,
+  "bytes_after": 2939375381,
+  "bytes_before": 2939074149,
+  "lancedb": "0.36.0",
+  "measured_at": "2026-09-21T15:08:54.739306+00:00",
+  "profile": "ats_bitmap",
+  "rows": 508991
+}

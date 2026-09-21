@@ -58,8 +58,8 @@ fragments and drops old *versions*, but it does **not** delete fragment files th
 local version history — and a week of additive uploads (pre-ADR-0023 ``--delete``) left thousands of
 such untracked orphans, so the download-then-optimize path plateaued at ~14 GB. Rewriting each table
 into a fresh directory keeps only the live fragments (measured: 1.9 GB → 0.23 GB), and the
-``--delete`` upload then prunes the remote to match. Cheap relative to the download: a couple of
-hundred MB rewritten in seconds.
+``--delete`` upload then prunes the remote to match. It also recreates the measured scalar and
+vector Search indexes (ADR-0173); building them anywhere else would only last until this rewrite.
 
 Exit: 0 clean/dry-run, 1 on a safety abort.
 """
@@ -68,6 +68,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import gc
 import json
 import os
 import shutil
@@ -84,6 +85,8 @@ import pyarrow as pa
 from headstart import log
 from headstart.board_identity import ats_of, lower_key
 from headstart.corpus import iter_jobs
+from headstart.employment_type import FILTERS as EMPLOYMENT_TYPE_FILTERS
+from headstart.employment_type import flags as employment_type_flags
 from headstart.ingest import (
     PENDING_UPGRADES_PATH,
     REPO_ROOT,
@@ -150,6 +153,9 @@ _DESCRIPTION_FIELD = pa.field("description", pa.string())
 # whole-country case can use a plain equality instead. Held as a module constant for the same
 # reason `_FIRST_SEEN_FIELD`/`_DESCRIPTION_FIELD` are: `_schema` and `sync`'s migration both need it.
 _COUNTRY_FIELD = pa.field("country", pa.string())
+_EMPLOYMENT_TYPE_FIELDS = tuple(
+    pa.field(rule.column, pa.bool_()) for rule in EMPLOYMENT_TYPE_FILTERS.values()
+)
 
 
 class _Stale(NamedTuple):
@@ -176,6 +182,7 @@ def _schema(dim: int) -> pa.Schema:
             _COUNTRY_FIELD,
             pa.field("remote", pa.bool_()),
             pa.field("employment_type", pa.string()),
+            *_EMPLOYMENT_TYPE_FIELDS,
             pa.field("experience", pa.string()),  # raw string for display ("5+")
             pa.field("min_years", pa.int32()),  # parsed, filterable
             pa.field("max_years", pa.int32()),
@@ -200,6 +207,52 @@ def _schema(dim: int) -> pa.Schema:
             pa.field("vector", pa.list_(pa.float32(), dim)),
         ]
     )
+
+
+def _served_meta(meta: dict) -> dict:
+    """Store metadata plus the Search-only employment-type acceleration columns."""
+    row = dict(meta)
+    row.update(employment_type_flags(meta.get("employment_type")))
+    return row
+
+
+def _migrate_employment_type_flags(table: Any) -> None:
+    """Materialize the exact legacy LIKE verdicts on a table that predates ADR-0173."""
+    missing = {
+        rule.column: rule.raw_clause()
+        for rule in EMPLOYMENT_TYPE_FILTERS.values()
+        if rule.column not in table.schema.names
+    }
+    if missing:
+        _log.info(f"adding {list(missing)} to the existing table")
+        table.add_columns(missing)
+
+
+def _create_search_indexes(table: Any) -> None:
+    """Create the measured Search indexes missing from a freshly rebuilt production table."""
+    from lancedb.index import Bitmap, BTree, IvfSq
+
+    existing = {column for index in table.list_indices() for column in index.columns}
+    specs = [
+        ("ats", Bitmap()),
+        ("country", Bitmap()),
+        ("posted_at", BTree()),
+        ("first_seen", BTree()),
+        *((rule.column, Bitmap()) for rule in EMPLOYMENT_TYPE_FILTERS.values()),
+    ]
+    # Exact scans are already cheap on tiny test/dev tables, and an ANN index needs a real
+    # training population. Production is over 500k rows; this boundary is deliberately remote.
+    if table.count_rows() >= 256:
+        specs.append(("vector", IvfSq(distance_type="cosine")))
+    for column, config in specs:
+        if column not in table.schema.names or column in existing:
+            continue
+        started = datetime.now(UTC)
+        table.create_index(column, config=config, replace=False)
+        elapsed = (datetime.now(UTC) - started).total_seconds()
+        _log.info(
+            f"search index: built {column} ({type(config).__name__}) in {elapsed:.1f}s"
+        )
 
 
 def _load_store() -> tuple[list[dict], np.ndarray]:
@@ -362,7 +415,7 @@ def _refresh_metadata(
         index = row_of.get(job_id)
         if index is None or job_id in just_added:
             continue
-        stored = metas[index]
+        stored = _served_meta(metas[index])
         kept = _Stale(
             job_id, row[_FIRST_SEEN_FIELD.name], row.get(_DESCRIPTION_FIELD.name)
         )
@@ -400,7 +453,7 @@ def _refresh_metadata(
         rows = []
         for kept in batch:
             index = row_of[kept.job_id]
-            fresh = {field: metas[index].get(field) for field in columns}
+            fresh = {field: _served_meta(metas[index]).get(field) for field in columns}
             fresh[_FIRST_SEEN_FIELD.name] = kept.first_seen
             fresh[_DESCRIPTION_FIELD.name] = kept.description or texts.get(kept.job_id)
             fresh["vector"] = vectors[index].tolist()
@@ -657,6 +710,8 @@ def sync(args: argparse.Namespace) -> int:
         _log.info(f"adding '{_COUNTRY_FIELD.name}' to the existing table")
         table.add_columns(_COUNTRY_FIELD)
 
+    _migrate_employment_type_flags(table)
+
     # Replace the rows of Jobs being re-embedded with a description they previously lacked
     # (ADR-0050) — before planning, not after. `plan_sync` computes add = fresh - index, so an id
     # still listed in `index_ids` is excluded from the adds; deleting its row afterwards would take
@@ -734,7 +789,7 @@ def sync(args: argparse.Namespace) -> int:
         chunk = add_ids[start : start + _ADD_CHUNK]
         rows = []
         for job_id in chunk:
-            row = dict(metas[row_of[job_id]])
+            row = _served_meta(metas[row_of[job_id]])
             for field in PLANNER_ONLY_FIELDS:
                 row.pop(
                     field, None
@@ -872,8 +927,16 @@ def compact(args: argparse.Namespace) -> int:
     served = None
     for name in names:
         rows = db.open_table(name).to_arrow()  # only the live version's rows
-        fresh.create_table(name, rows)
-        count = fresh.open_table(name).count_rows()
+        table = fresh.create_table(name, rows)
+        # The jobs Arrow table holds ~3 GB of buffers. Index construction has its own training
+        # working set, so retaining both raised measured peak RSS from 7.1 to 9.6 GB. The new
+        # table has committed the rows; release the Python/Arrow owner before training indexes.
+        del rows
+        gc.collect()
+        if name == PROD_TABLE:
+            _migrate_employment_type_flags(table)
+            _create_search_indexes(table)
+        count = table.count_rows()
         if name == PROD_TABLE:
             served = count
         _log.info(f"rebuilt '{name}': {count} rows")
