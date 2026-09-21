@@ -20,8 +20,9 @@ call and no vector at all — which is why this module never touches the model, 
 must label the number as matching *filters* rather than matching the query.
 
 **Cost.** Re-measured 2026-09-07 on the 318,003-row served table: one :meth:`count_rows` with a
-plain filter is 9–13 ms, and the full strip below is **46** of them (48 once ``description``
-lands). The figure that matters is not that one: a count carrying the India clause is **353 ms**,
+plain filter is 9–13 ms, and the full strip below is **46** of them. A description-scoped keyword
+adds its two coverage counts; no other request pays them (ADR-0173). The figure that matters is not
+the count alone: a count carrying the India clause was **353 ms**,
 so the strip's cost is dominated by whichever filter is active rather than by how many options it
 counts — see ADR-0024's 2026-09-06 amendment, which cut that clause from 267 ``LIKE``s to 10
 ``regexp_like``s for this reason. They are issued through one
@@ -43,8 +44,11 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from typing import Any
 
+from headstart.experience_filter import CEILINGS as EXPERIENCE_FILTER_CEILINGS
 from headstart.search import (
     ETYPE_CLAUSES,
+    KEYWORD_DEFAULT_SCOPE,
+    KEYWORD_SCOPES,
     IndexCapabilities,
     SearchFilters,
     build_filter,
@@ -63,7 +67,7 @@ POSTED_DAYS = (1, 7, 30, 90)
 
 # Experience ceilings the UI offers. `max_years` is a "no more than" filter, so these read as
 # "roles open to someone with N years".
-MAX_YEARS = (0, 2, 5, 10)
+MAX_YEARS = EXPERIENCE_FILTER_CEILINGS
 
 # Enough to keep the strip's wall cost near the slowest single count rather than their sum,
 # without opening a thread per option. LanceDB counts in Rust with the GIL released.
@@ -113,7 +117,7 @@ def counts(
     when the total is zero, and is ``None`` otherwise — the "why did I get nothing" answer that
     the same counting machinery already pays for. ``description_coverage`` is the Keyword
     filter's disclaimer (ADR-0104): ``{"covered": int, "total": int}`` counted with the keyword
-    lifted, or ``None`` while the served table has no ``description`` column.
+    lifted only while the active keyword scope uses descriptions; otherwise ``None``.
     """
 
     def where_for(**overrides: Any) -> str | None:
@@ -186,12 +190,22 @@ def counts(
         # almost nothing has text. None while the column does not exist yet, which the UI reads
         # as "not available", distinct from a genuine zero.
         unkeyed = where_for(kw=None, kw_in=None)
+        keyword_scope = filters.kw_in or KEYWORD_DEFAULT_SCOPE
+        needs_description_coverage = bool(
+            filters.kw
+            and keyword_scope in KEYWORD_SCOPES
+            and "description" in KEYWORD_SCOPES[keyword_scope].columns
+        )
         coverage = (
             (
-                pool.submit(_count, table, _with_description(unkeyed)),
+                pool.submit(
+                    _count,
+                    table,
+                    _with_description(unkeyed, capabilities.has_description_stored),
+                ),
                 pool.submit(_count, table, unkeyed),
             )
-            if capabilities.has_description
+            if capabilities.has_description and needs_description_coverage
             else None
         )
         results = list(pool.map(lambda c: _count(table, c[3]), counted))
@@ -215,20 +229,18 @@ def counts(
     }
 
 
-def _with_description(where: str | None) -> str:
+def _with_description(where: str | None, materialized: bool) -> str:
     """A where-clause narrowed to rows whose description is stored."""
-    return (
-        f"({where}) AND description IS NOT NULL" if where else "description IS NOT NULL"
-    )
+    present = "description_stored = true" if materialized else "description IS NOT NULL"
+    return f"({where}) AND {present}" if where else present
 
 
 def _count(table: Any, where: str | None) -> int:
     return table.count_rows(filter=where) if where else table.count_rows()
 
 
-# Keys :func:`_blocking` may never name. The runtime facts of the index — `atses`, `currencies`,
-# `has_first_seen`, `has_min_salary_annual`, `has_description`, `has_country` — are not even
-# candidates any more (ADR-0149): `_blocking` walks `SearchFilters`'s own fields, a different,
+# Keys :func:`_blocking` may never name. The runtime facts in `IndexCapabilities` are not even
+# candidates (ADR-0149): `_blocking` walks `SearchFilters`'s own fields, a different,
 # narrower object than `IndexCapabilities`, so this set only has to name real filters the UI has
 # no way to drop. `posted_sortable` is one: it is the sort control's shape guard, not a user
 # filter. Naming any of these would render a raw key in the empty state beside a button that

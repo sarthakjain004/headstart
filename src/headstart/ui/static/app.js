@@ -497,21 +497,37 @@ async function fetchPage(){
     el('results').innerHTML = '<div class="empty">One of the filters isn\'t valid — clear it and try again.</div>';
     setResultRows(1);
     el('n').textContent = ''; el('kind').textContent = ''; return; }
-  const facets = await facetsPromise;
-  if (request !== searchRequest) return;
-  drawKeywordNote(facets);
+  // Paint the ranked rows as soon as /search returns. Facets are independent counts and can be
+  // much slower on a cold filter shape; keeping the skeleton up until they finish made their
+  // latency the page's latency even though the actual Jobs were already here. The count/pager
+  // start from the rows we know and are reconciled below when facets arrive.
   drawResultKind(q, rows.length);
   if(!rows.length){
     el('results').innerHTML = page === 1
-      ? '<div class="empty"><div class="big">Nothing matched</div>' + whyNothing(facets) + '</div>'
+      ? '<div class="empty"><div class="big">Nothing matched</div>' + whyNothing(null) + '</div>'
       : '<div class="empty"><div class="big">No more jobs</div>' +
         'You\'ve reached the end of these results.</div>';
     setResultRows(1);
     el('n').textContent = page === 1 ? '0 results' : '';
+    drawPager(0, null);
+  } else {
+    drawCount(rows.length, null);
+    draw(rows);
+    drawPager(rows.length, null);
+  }
+
+  const facets = await facetsPromise;
+  if (request !== searchRequest) return;
+  drawKeywordNote(facets);
+  if(!rows.length){
+    if (page === 1){
+      el('results').innerHTML = '<div class="empty"><div class="big">Nothing matched</div>' +
+        whyNothing(facets) + '</div>';
+    }
     drawPager(0, facets);
-    return; }
+    return;
+  }
   drawCount(rows.length, facets);
-  draw(rows);
   drawPager(rows.length, facets);
 }
 
@@ -654,7 +670,7 @@ function applyFacets(facets){
 function drawKeywordNote(facets){
   const note = el('kwnote'), scope = el('kwin');
   const needs = (CFG.keyword_scopes || {})[scope.value];
-  if (!needs){ note.textContent = ''; return; }
+  if (!el('kw').value.trim() || !needs){ note.textContent = ''; return; }
   if (!facets){
     note.textContent = 'Only jobs with a stored description can match a keyword here — not every job has one.';
     return; }

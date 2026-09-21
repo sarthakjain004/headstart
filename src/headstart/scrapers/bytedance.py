@@ -113,15 +113,14 @@ class ByteDanceScraper(BaseScraper):
     """ByteDance's own careers API — a Single source scraper (ADR-0139). ``slug`` is fixed to
     ``"jobs.bytedance.com"``."""
 
+    COMPANY = "ByteDance"
+
     ats = "bytedance"
     # scraper: f"https://jobs.bytedance.com/en/position/{id}" (job_url below). A Single source
     # scraper (ADR-0139) — one fixed host, so unlike the platform ATSes above there is nothing
     # to leave host-agnostic. Verified live 2026-09-11: the route answers 200 for a real id
     # pulled from the search API; ids are numeric strings (e.g. "7673941558289205509").
     url_shape = r"https://jobs\.bytedance\.com/en/position/\d+"
-
-    def __init__(self, slug: str, company: str | None = None) -> None:
-        super().__init__(slug, company or "ByteDance")
 
     def url(self) -> str:
         return _SEARCH_URL

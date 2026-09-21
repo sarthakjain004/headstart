@@ -73,6 +73,8 @@ _LD_BLOCK = re.compile(
 class MetaScraper(BaseScraper):
     """metacareers.com — a Single source scraper (ADR-0139); ``slug`` is the fixed careers host."""
 
+    COMPANY = "Meta"
+
     ats = "meta"
     # scraper passes through the sitemap's own <loc>: the canonical
     # https://www.metacareers.com/profile/job_details/{id}/ page. `meta` is a Single source

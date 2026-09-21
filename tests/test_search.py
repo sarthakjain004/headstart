@@ -17,6 +17,9 @@ import pytest
 
 from headstart.search import (
     EMPLOYMENT_TYPES,
+    ETYPE_CLAUSES,
+    FACET_CACHE_SIZE,
+    QUERY_VECTOR_CACHE_SIZE,
     RESULT_COLUMNS,
     SORT_COLUMNS,
     IndexCapabilities,
@@ -26,6 +29,7 @@ from headstart.search import (
     board_clause,
     build_filter,
     eval_filter,
+    posted_at_is_comparable,
 )
 
 # `IndexCapabilities`'s field names — used below to route a `_clause`/`_bracket` override into
@@ -63,6 +67,16 @@ def test_eval_unknown_employment_type_rejected():
 
 def test_eval_max_years_keeps_unknown_experience():
     assert eval_filter(max_years=5) == "(min_years <= 5 OR min_years IS NULL)"
+
+
+def test_product_experience_filter_uses_flags_only_for_materialized_ceilings():
+    assert (
+        _clause(max_years=5, has_experience_filter_flags=True)
+        == "experience_at_most_5 = true"
+    )
+    assert _clause(max_years=3, has_experience_filter_flags=True) == (
+        "(min_years <= 3 OR min_years IS NULL)"
+    )
 
 
 def test_eval_filters_combine_with_and():
@@ -301,6 +315,14 @@ class _Query:
     def metric(self, _m):
         return self
 
+    def nprobes(self, value):
+        self._t.last_nprobes = value
+        return self
+
+    def refine_factor(self, value):
+        self._t.last_refine_factor = value
+        return self
+
     def select(self, cols):
         # lancedb raises `columns must be a list or a dictionary` on a tuple, and the browse
         # branch shipped one — green here, 500 in production, because this fake took anything.
@@ -340,10 +362,18 @@ class _Table:
         self.last_offset = None
         self.last_order = None
         self.last_select = None
+        self.last_nprobes = None
+        self.last_refine_factor = None
+        self.indices = []
+        self.search_calls = 0
 
     def search(self, *args, **kwargs):
+        self.search_calls += 1
         self.last_query = args[0] if args else None  # None => a browse, not a search
         return _Query(self)
+
+    def list_indices(self):
+        return self.indices
 
 
 _ROW = {
@@ -410,6 +440,121 @@ def test_facets_import_stays_deferred_to_the_method_body():
     assert body_imports, (
         "JobSearch.facets must import headstart.facets inside its own body"
     )
+
+
+def test_facets_cache_the_filter_set_not_the_semantic_query(monkeypatch):
+    from headstart import facets
+
+    calls = []
+
+    def counted(_table, filters, _capabilities, *, extra_where=None):
+        calls.append((filters, extra_where))
+        return {"total": len(calls), "facets": {}}
+
+    monkeypatch.setattr(facets, "counts", counted)
+    searcher, _ = _searcher()
+    first = searcher.facets({"q": "backend", "remote": "true"})
+    second = searcher.facets({"q": "frontend", "remote": "true"})
+    assert first is second
+    assert len(calls) == 1
+
+    for n in range(FACET_CACHE_SIZE + 1):
+        searcher.facets({"location": f"place-{n}"})
+    assert len(searcher._facet_cache) == FACET_CACHE_SIZE
+
+
+def test_facet_cache_keeps_account_clauses_separate(monkeypatch):
+    from headstart import facets
+
+    calls = []
+
+    def counted(_table, _filters, _capabilities, *, extra_where=None):
+        calls.append(extra_where)
+        return {"total": len(calls), "facets": {}}
+
+    monkeypatch.setattr(facets, "counts", counted)
+    searcher, _ = _searcher()
+    first = searcher.facets({}, extra_where="account = 1")
+    second = searcher.facets({}, extra_where="account = 2")
+    assert first is not second
+    assert calls == ["account = 1", "account = 2"]
+
+
+def test_facet_cache_expires_so_recency_counts_keep_moving(monkeypatch):
+    from headstart import facets
+    from headstart import search as search_module
+
+    now = [100.0]
+    calls = []
+    monkeypatch.setattr(search_module.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(
+        facets,
+        "counts",
+        lambda *_args, **_kwargs: (
+            calls.append(now[0]) or {"total": len(calls), "facets": {}}
+        ),
+    )
+    searcher, _ = _searcher()
+    first = searcher.facets({})
+    now[0] += 61
+    second = searcher.facets({})
+    assert first != second
+    assert calls == [100.0, 161.0]
+
+
+def test_empty_query_pages_are_cached_and_expire(monkeypatch):
+    from headstart import search as search_module
+
+    now = [100.0]
+    monkeypatch.setattr(search_module.time, "monotonic", lambda: now[0])
+    searcher, table = _searcher()
+    table.search_calls = 0  # ignore constructor capability scans
+    first = searcher.run({})
+    second = searcher.run({"q": ""})
+    assert first is second
+    assert table.search_calls == 1
+
+    now[0] += 61
+    third = searcher.run({})
+    assert third is not second
+    assert table.search_calls == 2
+
+
+def test_semantic_vector_is_reused_across_filter_and_page_changes():
+    class CountingModel(_Model):
+        def __init__(self):
+            self.calls = 0
+
+        def encode(self, texts, normalize_embeddings=False):
+            self.calls += 1
+            return super().encode(texts, normalize_embeddings)
+
+    model = CountingModel()
+    table = _Table([dict(_ROW)])
+    searcher = JobSearch(model, table)
+    table.search_calls = 0
+    searcher.run({"q": "backend engineer", "remote": "true"})
+    searcher.run({"q": "backend engineer", "page": "2"})
+    assert model.calls == 1
+    assert table.search_calls == 2
+
+    for n in range(QUERY_VECTOR_CACHE_SIZE + 1):
+        searcher.run({"q": f"query-{n}"})
+    assert len(searcher._query_vector_cache) == QUERY_VECTOR_CACHE_SIZE
+
+
+def test_warm_uses_the_same_normalized_key_as_the_first_browser_request(monkeypatch):
+    from headstart import facets
+
+    monkeypatch.setattr(
+        facets, "counts", lambda *_args, **_kwargs: {"total": 1, "facets": {}}
+    )
+    searcher, table = _searcher()
+    table.search_calls = 0
+    searcher.warm()
+    assert table.search_calls == 2
+    searcher.run({"q": "", "k": "20", "page": "1"})
+    assert table.search_calls == 2
 
 
 def test_startup_scan_learns_atses_and_first_seen():
@@ -583,6 +728,52 @@ def test_has_country_is_learned_from_the_schema():
     assert JobSearch(_Model(), table).has_country is True
 
 
+def test_posted_at_shape_guard_prefers_the_materialized_flag():
+    assert posted_at_is_comparable("2026-09-21T00:00:00Z") is True
+    assert posted_at_is_comparable("21-Sep-2026") is False
+    assert posted_at_is_comparable(None) is False
+    assert (
+        _clause(posted_after="2026-09-01", has_posted_at_comparable=True)
+        == "(posted_at >= '2026-09-01' AND posted_at_comparable = true)"
+    )
+
+
+def test_employment_type_flags_are_used_only_after_the_whole_migration_lands():
+    assert _clause(etype="contract") == ETYPE_CLAUSES["contract"]
+    assert (
+        _clause(etype="contract", has_employment_type_flags=True)
+        == "is_contract = true"
+    )
+
+    _, table = _searcher()
+    table.schema = types.SimpleNamespace(
+        names=[
+            "ats",
+            "title",
+            "is_full_time",
+            "is_part_time",
+            "is_contract",
+            "is_internship",
+        ]
+    )
+    assert JobSearch(_Model(), table).has_employment_type_flags is True
+    table.schema = types.SimpleNamespace(
+        names=["ats", "title", "is_full_time", "is_part_time", "is_contract"]
+    )
+    assert JobSearch(_Model(), table).has_employment_type_flags is False
+
+
+def test_ann_tuning_is_applied_only_when_the_table_has_a_vector_index():
+    searcher, table = _searcher()
+    searcher.run({"q": "backend"})
+    assert table.last_nprobes is None and table.last_refine_factor is None
+
+    table.indices = [types.SimpleNamespace(columns=["vector"])]
+    JobSearch(_Model(), table).run({"q": "backend"})
+    assert table.last_nprobes == 80
+    assert table.last_refine_factor == 2
+
+
 def test_has_salary_matches_a_description_only_derived_value():
     # A Job whose only known salary is Tier-2-derived from the description (ADR-0082) has
     # `salary` (the raw display string) null — it only ever gets populated from a scraper's
@@ -595,6 +786,17 @@ def test_has_salary_matches_a_description_only_derived_value():
     searcher.run({"q": "x", "has_salary": "true"})
     assert "min_salary_annual IS NOT NULL" in table.last_where
     assert "salary IS NOT NULL" not in table.last_where
+
+
+def test_has_salary_prefers_the_materialized_presence_flag():
+    assert _clause(has_salary=True, has_salary_known=True) == "salary_known = true"
+    _, table = _searcher()
+    table.schema = types.SimpleNamespace(
+        names=["ats", "title", "min_salary_annual", "salary_known"]
+    )
+    searcher = JobSearch(_Model(), table)
+    searcher.run({"q": "x", "has_salary": "true"})
+    assert table.last_where == "salary_known = true"
 
 
 def test_has_salary_stays_dark_without_the_column():
@@ -1239,6 +1441,14 @@ def test_extra_where_alone_still_filters():
     searcher, table = _searcher()
     searcher.run({"q": "x"}, extra_where="(lower(id) LIKE 'lever:x:%')")
     assert table.last_where == "(lower(id) LIKE 'lever:x:%')"
+
+
+def test_browse_cache_keeps_account_clauses_separate():
+    searcher, table = _searcher()
+    table.search_calls = 0
+    searcher.run({}, extra_where="(lower(id) LIKE 'lever:x:%')")
+    searcher.run({}, extra_where="(lower(id) LIKE 'lever:y:%')")
+    assert table.search_calls == 2
 
 
 def test_no_extra_where_leaves_the_clause_untouched():

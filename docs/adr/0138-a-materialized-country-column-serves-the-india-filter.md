@@ -77,10 +77,10 @@ country-level alternation was ever measured as expensive; individual city clause
 and were never flagged.
 
 No scalar index on the new column, and no change to `compact()`'s silent index-dropping behavior —
-both explicitly out of scope. A plain equality scan on a low-cardinality string column is already
-far cheaper than the alternation it replaces, without indexing at all; indexing `country` is a
-future, separate change, gated on fixing `compact` first (`experiment/lancedb-scalar-index/LOG.md`'s
-own "blocker that applies to every index type here" section).
+both explicitly out of scope at this decision. A plain equality scan on a low-cardinality string
+column was already far cheaper than the alternation it replaced. **ADR-0173 later closes the named
+blocker:** `compact()` now recreates a measured bitmap index on `country` as part of the fresh-table
+rebuild.
 
 ## Why not a boolean `is_india` column
 

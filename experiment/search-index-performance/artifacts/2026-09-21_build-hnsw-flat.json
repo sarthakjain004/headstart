@@ -1,0 +1,30 @@
+{
+  "builds": [
+    {
+      "column": "vector",
+      "config": "HnswFlat",
+      "index": {
+        "columns": [
+          "vector"
+        ],
+        "name": "vector_idx",
+        "type": "IvfHnswFlat"
+      },
+      "seconds": 62.937,
+      "stats": {
+        "distance_type": "cosine",
+        "index_type": "IVF_HNSW_FLAT",
+        "num_indexed_rows": 508991,
+        "num_indices": 1,
+        "num_unindexed_rows": 0
+      }
+    }
+  ],
+  "bytes_added": 1631588286,
+  "bytes_after": 4570662435,
+  "bytes_before": 2939074149,
+  "lancedb": "0.36.0",
+  "measured_at": "2026-09-21T15:26:42.935374+00:00",
+  "profile": "hnsw_flat",
+  "rows": 508991
+}

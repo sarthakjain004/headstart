@@ -171,3 +171,5 @@ supersedes it and note the supersession in both.
 | [0169](0169-an-empty-page-ends-an-oracle-board-totaljobscount-does-not.md) | An empty page ends an Oracle Board; `TotalJobsCount` does not | 2026-09-21 |
 | [0170](0170-a-provider-outage-is-not-a-gone-verdict.md) | A provider outage is not a gone-verdict, so the quarantine ledger gets no terminal drain yet | 2026-09-21 |
 | [0171](0171-the-hot-tab-curates-what-it-shows-not-the-whole-index.md) | The Hot tab curates what it shows, not the whole index | 2026-09-21 |
+| [0172](0172-a-single-source-scraper-declares-its-company.md) | A Single source scraper declares its company; the ledger cannot | 2026-09-21 |
+| [0173](0173-rebuild-the-search-indexes-with-the-table.md) | Rebuild the Search indexes with the table | 2026-09-21 |

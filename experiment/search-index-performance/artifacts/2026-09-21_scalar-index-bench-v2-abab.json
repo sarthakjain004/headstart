@@ -1,0 +1,277 @@
+{
+  "measured_at": "2026-09-21",
+  "rows": 508991,
+  "reps": 11,
+  "A1_no_index": [
+    {
+      "filter": "none",
+      "where": null,
+      "matched": 508991,
+      "page_ms": 115.8
+    },
+    {
+      "filter": "remote",
+      "where": "remote = true",
+      "matched": 57853,
+      "page_ms": 98.1
+    },
+    {
+      "filter": "ats=greenhouse",
+      "where": "ats = 'greenhouse'",
+      "matched": 48278,
+      "page_ms": 93.0
+    },
+    {
+      "filter": "max_years=3 (real OR-IS-NULL shape)",
+      "where": "(min_years <= 3 OR min_years IS NULL)",
+      "matched": 251585,
+      "page_ms": 149.8
+    },
+    {
+      "filter": "salary_min=100k USD",
+      "where": "min_salary_annual IS NOT NULL AND ((salary_currency = 'AED' AND COALESCE(max_salary_annual, min_salary_annual) >= 367250) OR (salary_currency = 'AUD' AND COALESCE(max_salary_annual, min_salary_annual) >= 138770) OR (salary_currency = 'CAD' AND COALESCE(max_salary_annual, min_salary_annual) >= 138310) OR (salary_currency = 'CHF' AND COALESCE(max_salary_annual, min_salary_annual) >= 80990) OR (salary_currency = 'EUR' AND COALESCE(max_salary_annual, min_salary_annual) >= 86110) OR (salary_currency = 'GBP' AND COALESCE(max_salary_annual, min_salary_annual) >= 73970) OR (salary_currency = 'HKD' AND COALESCE(max_salary_annual, min_salary_annual) >= 784100) OR (salary_currency = 'INR' AND COALESCE(max_salary_annual, min_salary_annual) >= 9455000) OR (salary_currency = 'PLN' AND COALESCE(max_salary_annual, min_salary_annual) >= 371400) OR (salary_currency = 'SEK' AND COALESCE(max_salary_annual, min_salary_annual) >= 957170) OR (salary_currency = 'USD' AND COALESCE(max_salary_annual, min_salary_annual) >= 100000))",
+      "matched": 106280,
+      "page_ms": 157.2
+    },
+    {
+      "filter": "combined(ats+remote+years)",
+      "where": "remote = true AND (min_years <= 3 OR min_years IS NULL) AND ats = 'greenhouse'",
+      "matched": 3690,
+      "page_ms": 82.4
+    },
+    {
+      "filter": "posted_within=30d",
+      "where": "(posted_at LIKE '____-__-__%') AND (posted_at >= '2026-08-22' AND posted_at LIKE '____-__-__%')",
+      "matched": 185805,
+      "page_ms": 176.7
+    },
+    {
+      "filter": "etype=full-time (LIKE, control)",
+      "where": "(lower(employment_type) LIKE '%full%' OR lower(employment_type) LIKE '%permanent%')",
+      "matched": 313836,
+      "page_ms": 162.4
+    },
+    {
+      "filter": "location LIKE bangalore (LIKE, control)",
+      "where": "lower(location) LIKE '%bangalore%'",
+      "matched": 11413,
+      "page_ms": 104.2
+    },
+    {
+      "filter": "india=india (country-level)",
+      "where": "country = 'IN'",
+      "matched": 69719,
+      "page_ms": 99.6
+    },
+    {
+      "filter": "india=bengaluru (city-level, control)",
+      "where": "(regexp_like(lower(location), 'bengaluru|bangalore|banagalore|banglore|bengalooru|benguluru|bengalura|koramangala|madiwala|madivala|electronic\\ city|marathahalli|hebbal|yelahanka|sarjapur|attibele'))",
+      "matched": 24349,
+      "page_ms": 163.9
+    }
+  ],
+  "B1_indexed": [
+    {
+      "filter": "none",
+      "where": null,
+      "matched": 508991,
+      "page_ms": 117.0
+    },
+    {
+      "filter": "remote",
+      "where": "remote = true",
+      "matched": 57853,
+      "page_ms": 109.3
+    },
+    {
+      "filter": "ats=greenhouse",
+      "where": "ats = 'greenhouse'",
+      "matched": 48278,
+      "page_ms": 16.7
+    },
+    {
+      "filter": "max_years=3 (real OR-IS-NULL shape)",
+      "where": "(min_years <= 3 OR min_years IS NULL)",
+      "matched": 251585,
+      "page_ms": 300.2
+    },
+    {
+      "filter": "salary_min=100k USD",
+      "where": "min_salary_annual IS NOT NULL AND ((salary_currency = 'AED' AND COALESCE(max_salary_annual, min_salary_annual) >= 367250) OR (salary_currency = 'AUD' AND COALESCE(max_salary_annual, min_salary_annual) >= 138770) OR (salary_currency = 'CAD' AND COALESCE(max_salary_annual, min_salary_annual) >= 138310) OR (salary_currency = 'CHF' AND COALESCE(max_salary_annual, min_salary_annual) >= 80990) OR (salary_currency = 'EUR' AND COALESCE(max_salary_annual, min_salary_annual) >= 86110) OR (salary_currency = 'GBP' AND COALESCE(max_salary_annual, min_salary_annual) >= 73970) OR (salary_currency = 'HKD' AND COALESCE(max_salary_annual, min_salary_annual) >= 784100) OR (salary_currency = 'INR' AND COALESCE(max_salary_annual, min_salary_annual) >= 9455000) OR (salary_currency = 'PLN' AND COALESCE(max_salary_annual, min_salary_annual) >= 371400) OR (salary_currency = 'SEK' AND COALESCE(max_salary_annual, min_salary_annual) >= 957170) OR (salary_currency = 'USD' AND COALESCE(max_salary_annual, min_salary_annual) >= 100000))",
+      "matched": 106280,
+      "page_ms": 161.8
+    },
+    {
+      "filter": "combined(ats+remote+years)",
+      "where": "remote = true AND (min_years <= 3 OR min_years IS NULL) AND ats = 'greenhouse'",
+      "matched": 3690,
+      "page_ms": 14.3
+    },
+    {
+      "filter": "posted_within=30d",
+      "where": "(posted_at LIKE '____-__-__%') AND (posted_at >= '2026-08-22' AND posted_at LIKE '____-__-__%')",
+      "matched": 185805,
+      "page_ms": 117.8
+    },
+    {
+      "filter": "etype=full-time (LIKE, control)",
+      "where": "(lower(employment_type) LIKE '%full%' OR lower(employment_type) LIKE '%permanent%')",
+      "matched": 313836,
+      "page_ms": 156.9
+    },
+    {
+      "filter": "location LIKE bangalore (LIKE, control)",
+      "where": "lower(location) LIKE '%bangalore%'",
+      "matched": 11413,
+      "page_ms": 103.7
+    },
+    {
+      "filter": "india=india (country-level)",
+      "where": "country = 'IN'",
+      "matched": 69719,
+      "page_ms": 98.3
+    },
+    {
+      "filter": "india=bengaluru (city-level, control)",
+      "where": "(regexp_like(lower(location), 'bengaluru|bangalore|banagalore|banglore|bengalooru|benguluru|bengalura|koramangala|madiwala|madivala|electronic\\ city|marathahalli|hebbal|yelahanka|sarjapur|attibele'))",
+      "matched": 24349,
+      "page_ms": 165.3
+    }
+  ],
+  "A2_no_index": [
+    {
+      "filter": "none",
+      "where": null,
+      "matched": 508991,
+      "page_ms": 115.3
+    },
+    {
+      "filter": "remote",
+      "where": "remote = true",
+      "matched": 57853,
+      "page_ms": 97.3
+    },
+    {
+      "filter": "ats=greenhouse",
+      "where": "ats = 'greenhouse'",
+      "matched": 48278,
+      "page_ms": 93.1
+    },
+    {
+      "filter": "max_years=3 (real OR-IS-NULL shape)",
+      "where": "(min_years <= 3 OR min_years IS NULL)",
+      "matched": 251585,
+      "page_ms": 145.1
+    },
+    {
+      "filter": "salary_min=100k USD",
+      "where": "min_salary_annual IS NOT NULL AND ((salary_currency = 'AED' AND COALESCE(max_salary_annual, min_salary_annual) >= 367250) OR (salary_currency = 'AUD' AND COALESCE(max_salary_annual, min_salary_annual) >= 138770) OR (salary_currency = 'CAD' AND COALESCE(max_salary_annual, min_salary_annual) >= 138310) OR (salary_currency = 'CHF' AND COALESCE(max_salary_annual, min_salary_annual) >= 80990) OR (salary_currency = 'EUR' AND COALESCE(max_salary_annual, min_salary_annual) >= 86110) OR (salary_currency = 'GBP' AND COALESCE(max_salary_annual, min_salary_annual) >= 73970) OR (salary_currency = 'HKD' AND COALESCE(max_salary_annual, min_salary_annual) >= 784100) OR (salary_currency = 'INR' AND COALESCE(max_salary_annual, min_salary_annual) >= 9455000) OR (salary_currency = 'PLN' AND COALESCE(max_salary_annual, min_salary_annual) >= 371400) OR (salary_currency = 'SEK' AND COALESCE(max_salary_annual, min_salary_annual) >= 957170) OR (salary_currency = 'USD' AND COALESCE(max_salary_annual, min_salary_annual) >= 100000))",
+      "matched": 106280,
+      "page_ms": 155.2
+    },
+    {
+      "filter": "combined(ats+remote+years)",
+      "where": "remote = true AND (min_years <= 3 OR min_years IS NULL) AND ats = 'greenhouse'",
+      "matched": 3690,
+      "page_ms": 82.5
+    },
+    {
+      "filter": "posted_within=30d",
+      "where": "(posted_at LIKE '____-__-__%') AND (posted_at >= '2026-08-22' AND posted_at LIKE '____-__-__%')",
+      "matched": 185805,
+      "page_ms": 171.5
+    },
+    {
+      "filter": "etype=full-time (LIKE, control)",
+      "where": "(lower(employment_type) LIKE '%full%' OR lower(employment_type) LIKE '%permanent%')",
+      "matched": 313836,
+      "page_ms": 157.9
+    },
+    {
+      "filter": "location LIKE bangalore (LIKE, control)",
+      "where": "lower(location) LIKE '%bangalore%'",
+      "matched": 11413,
+      "page_ms": 102.9
+    },
+    {
+      "filter": "india=india (country-level)",
+      "where": "country = 'IN'",
+      "matched": 69719,
+      "page_ms": 97.1
+    },
+    {
+      "filter": "india=bengaluru (city-level, control)",
+      "where": "(regexp_like(lower(location), 'bengaluru|bangalore|banagalore|banglore|bengalooru|benguluru|bengalura|koramangala|madiwala|madivala|electronic\\ city|marathahalli|hebbal|yelahanka|sarjapur|attibele'))",
+      "matched": 24349,
+      "page_ms": 163.6
+    }
+  ],
+  "B2_indexed": [
+    {
+      "filter": "none",
+      "where": null,
+      "matched": 508991,
+      "page_ms": 110.9
+    },
+    {
+      "filter": "remote",
+      "where": "remote = true",
+      "matched": 57853,
+      "page_ms": 109.0
+    },
+    {
+      "filter": "ats=greenhouse",
+      "where": "ats = 'greenhouse'",
+      "matched": 48278,
+      "page_ms": 16.6
+    },
+    {
+      "filter": "max_years=3 (real OR-IS-NULL shape)",
+      "where": "(min_years <= 3 OR min_years IS NULL)",
+      "matched": 251585,
+      "page_ms": 295.9
+    },
+    {
+      "filter": "salary_min=100k USD",
+      "where": "min_salary_annual IS NOT NULL AND ((salary_currency = 'AED' AND COALESCE(max_salary_annual, min_salary_annual) >= 367250) OR (salary_currency = 'AUD' AND COALESCE(max_salary_annual, min_salary_annual) >= 138770) OR (salary_currency = 'CAD' AND COALESCE(max_salary_annual, min_salary_annual) >= 138310) OR (salary_currency = 'CHF' AND COALESCE(max_salary_annual, min_salary_annual) >= 80990) OR (salary_currency = 'EUR' AND COALESCE(max_salary_annual, min_salary_annual) >= 86110) OR (salary_currency = 'GBP' AND COALESCE(max_salary_annual, min_salary_annual) >= 73970) OR (salary_currency = 'HKD' AND COALESCE(max_salary_annual, min_salary_annual) >= 784100) OR (salary_currency = 'INR' AND COALESCE(max_salary_annual, min_salary_annual) >= 9455000) OR (salary_currency = 'PLN' AND COALESCE(max_salary_annual, min_salary_annual) >= 371400) OR (salary_currency = 'SEK' AND COALESCE(max_salary_annual, min_salary_annual) >= 957170) OR (salary_currency = 'USD' AND COALESCE(max_salary_annual, min_salary_annual) >= 100000))",
+      "matched": 106280,
+      "page_ms": 161.3
+    },
+    {
+      "filter": "combined(ats+remote+years)",
+      "where": "remote = true AND (min_years <= 3 OR min_years IS NULL) AND ats = 'greenhouse'",
+      "matched": 3690,
+      "page_ms": 14.2
+    },
+    {
+      "filter": "posted_within=30d",
+      "where": "(posted_at LIKE '____-__-__%') AND (posted_at >= '2026-08-22' AND posted_at LIKE '____-__-__%')",
+      "matched": 185805,
+      "page_ms": 116.2
+    },
+    {
+      "filter": "etype=full-time (LIKE, control)",
+      "where": "(lower(employment_type) LIKE '%full%' OR lower(employment_type) LIKE '%permanent%')",
+      "matched": 313836,
+      "page_ms": 156.3
+    },
+    {
+      "filter": "location LIKE bangalore (LIKE, control)",
+      "where": "lower(location) LIKE '%bangalore%'",
+      "matched": 11413,
+      "page_ms": 103.2
+    },
+    {
+      "filter": "india=india (country-level)",
+      "where": "country = 'IN'",
+      "matched": 69719,
+      "page_ms": 94.9
+    },
+    {
+      "filter": "india=bengaluru (city-level, control)",
+      "where": "(regexp_like(lower(location), 'bengaluru|bangalore|banagalore|banglore|bengalooru|benguluru|bengalura|koramangala|madiwala|madivala|electronic\\ city|marathahalli|hebbal|yelahanka|sarjapur|attibele'))",
+      "matched": 24349,
+      "page_ms": 163.5
+    }
+  ]
+}

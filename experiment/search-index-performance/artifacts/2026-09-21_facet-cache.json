@@ -1,0 +1,26 @@
+[
+  {
+    "case": "facets_none",
+    "cold_ms": 273.56,
+    "warm_max_ms": 0.02,
+    "warm_median_ms": 0.0041
+  },
+  {
+    "case": "facets_combined",
+    "cold_ms": 40.11,
+    "warm_max_ms": 0.0177,
+    "warm_median_ms": 0.0042
+  },
+  {
+    "case": "facets_country",
+    "cold_ms": 60.09,
+    "warm_max_ms": 0.0198,
+    "warm_median_ms": 0.0041
+  },
+  {
+    "case": "facets_keyword_title",
+    "cold_ms": 258.62,
+    "warm_max_ms": 0.018,
+    "warm_median_ms": 0.0042
+  }
+]

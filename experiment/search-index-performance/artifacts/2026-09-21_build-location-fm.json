@@ -1,0 +1,30 @@
+{
+  "builds": [
+    {
+      "column": "location",
+      "config": "Fm",
+      "index": {
+        "columns": [
+          "location"
+        ],
+        "name": "location_idx",
+        "type": "Fm"
+      },
+      "seconds": 0.067,
+      "stats": {
+        "distance_type": null,
+        "index_type": "FM",
+        "num_indexed_rows": 508991,
+        "num_indices": 1,
+        "num_unindexed_rows": 0
+      }
+    }
+  ],
+  "bytes_added": 30639912,
+  "bytes_after": 2969714061,
+  "bytes_before": 2939074149,
+  "lancedb": "0.36.0",
+  "measured_at": "2026-09-21T15:13:36.876679+00:00",
+  "profile": "location_fm",
+  "rows": 508991
+}

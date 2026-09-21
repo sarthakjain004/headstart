@@ -83,6 +83,8 @@ class TikTokScraper(BaseScraper):
     marketing host even though the marketing host itself is not the data source (module
     docstring)."""
 
+    COMPANY = "TikTok"
+
     ats = "tiktok"
     # scraper: f"https://{slug}/search/{id}" (job_url below, the reference implementation's own
     # convention — ADR-0139, single fixed slug "lifeattiktok.com"). Not verified end-to-end: the

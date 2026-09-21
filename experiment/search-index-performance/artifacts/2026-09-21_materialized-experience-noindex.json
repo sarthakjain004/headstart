@@ -1,0 +1,49 @@
+{
+  "builds": [],
+  "bytes_after": 2939416126,
+  "bytes_before": 2939074149,
+  "lancedb": "0.36.0",
+  "materialize_seconds": 0.027,
+  "measured_at": "2026-09-21T15:16:51.879605+00:00",
+  "new": {
+    "count": 251585,
+    "fingerprint": "0930e7f18b24a6e3f64962d843201371e7f524f9a0b0e6046cdc219f81771e95",
+    "median_ms": 142.26,
+    "samples_ms": [
+      142.17,
+      142.24,
+      143.53,
+      142.8,
+      144.09,
+      142.26,
+      144.13,
+      141.65,
+      141.33,
+      140.92,
+      144.03
+    ],
+    "where": "filter_min_years <= 3"
+  },
+  "old": {
+    "count": 251585,
+    "fingerprint": "0930e7f18b24a6e3f64962d843201371e7f524f9a0b0e6046cdc219f81771e95",
+    "median_ms": 143.25,
+    "samples_ms": [
+      143.25,
+      144.7,
+      144.04,
+      141.67,
+      142.41,
+      142.68,
+      142.05,
+      143.94,
+      142.87,
+      143.26,
+      148.6
+    ],
+    "where": "(min_years <= 3 OR min_years IS NULL)"
+  },
+  "profile": "experience",
+  "rows": 508991,
+  "skip_index": true
+}
