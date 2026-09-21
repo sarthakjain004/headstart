@@ -1748,9 +1748,10 @@ def test_pipeline_refreshes_search_indexes_after_prune_and_before_publication():
     workflow = Path(_PIPELINE).read_text(encoding="utf-8")
 
     prune = workflow.index("python -m headstart.ingest.index prune --apply")
+    embedding = workflow.index('publish embedding_store "$HF_DATASET"')
     refresh = workflow.index("python -m headstart.ingest.index refresh-indexes")
     publish = workflow.index('publish lancedb_index "$HF_DATASET"')
-    assert prune < refresh < publish
+    assert prune < embedding < refresh < publish
 
 
 CONTRACT: tuple[Line, ...] = (

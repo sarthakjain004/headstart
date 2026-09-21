@@ -71,9 +71,9 @@ The run is a **download → mutate → upload cycle** over the dataset, parallel
    table (`index sync`: add ids that now have a vector, evict postings gone from scraped boards —
    incremental, no rebuild), **prune** rows the board-scoped sync can't reach (`index prune --apply` —
    dead boards keyed on the live ledger + case-variant dups, ADR-0023; safety-aborts on a too-small
-   keep-set), **refresh** all Search indexes over the final rows (`index refresh-indexes`,
-   ADR-0174) — `index compact` is **not** in this run, it moved to `cleanup-index` — then
-   **upload** four dirs back —
+   keep-set), append the trends/Hot ledgers, bank the embedding store, then **refresh** all Search
+   indexes over the final rows (`index refresh-indexes`, ADR-0174) — `index compact` is **not** in
+   this run, it moved to `cleanup-index` — then **upload** the remaining dirs back —
    `data/embeddings/jobs`, `data/lancedb`, `data/descriptions`, then `data/state` **last** because
    it carries the ADR-0095 witness — with retry/backoff, and **restart the Space** to pick up the
    new table. None of the four passes `--delete` any more; the daily `cleanup-index` run is what
@@ -209,7 +209,7 @@ this machine — the watermark env vars and bucketed batching are load-bearing):
 .venv/bin/python -m headstart.ingest.embed_run --resume
 .venv/bin/python -m headstart.ingest.index sync
 .venv/bin/python -m headstart.ingest.index prune --apply
-.venv/bin/python -m headstart.ingest.index compact
+.venv/bin/python -m headstart.ingest.index refresh-indexes
 # then the three hf upload commands above, then restart the Space
 ```
 
@@ -221,8 +221,10 @@ upload (this clobbered the 2026-07-05 surgery state). Check
 `gh run list --workflow nightly-pipeline` and wait for / cancel in-flight runs before any local
 `hf upload` of the state dirs; dispatch new runs only after the upload lands.
 
-**Compact before every upload.** Lance keeps every prior version's fragments after incremental
-sync; skipping `index compact` balloons the dataset and every Space cold start.
+**Refresh indexes before every LanceDB upload; compact only in cleanup.** `refresh-indexes` puts
+fresh rows into all Search indexes without rewriting table data. `index compact` rewrites the
+whole table and belongs to the guarded `cleanup-index` workflow, which reclaims accumulated
+fragments and superseded index files with a deleting upload.
 
 **401 on the dataset = token scope, not a missing repo.** Private-repo 401s are rendered as
 `RepositoryNotFoundError`. Check which token the failing context holds before touching anything
