@@ -156,6 +156,11 @@ The delete finally happened eleven days later, at which point the CSV was 174.89
 **twice** per run — ~11.2 GB/day, measured rather than assumed: 22 of the 25 runs of 2026-09-21
 02:26–16:56 UTC ran *both* fetches, against a cadence of ~36 runs/day.
 
+**The saving is bytes and storage, not time.** The first post-delete `scrape-plan` fetched 38 MB
+where the previous twelve fetched 213 MB, and took 23 s against their 14–25 s. This ADR's
+"read-side saving" is real in egress and in the storage quota, but `data/state/`'s fetch is bound
+by per-file latency across ~237 files, so removing one large file does not shorten it.
+
 One premise of this ADR has moved and is worth flagging rather than leaving for a later reader.
 "510 timestamps in 3.4 MB, so a year of history is affordable without pruning anything" was
 written on 2026-09-10; the Parquet is **7.29 MB** eleven days later, ~0.33 MB/day. That still

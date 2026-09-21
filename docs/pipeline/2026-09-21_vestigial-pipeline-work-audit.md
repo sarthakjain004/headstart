@@ -58,8 +58,19 @@ but no run in this window did, and an early attempt to count stand-downs by grep
 source** and appears whether or not the branch is taken. The figure above avoids the class
 entirely by counting the fetch line itself.
 
-Plus ~20 s of the run's serial wall-clock (12.5 s in `scrape-plan` at its measured 14.1 MB/s, ~7 s
-in `join` at 24.2 MB/s), and 2.4% of the dataset's 7.3 GB live footprint.
+Plus 2.4% of the dataset's 7.3 GB live footprint.
+
+**It buys no wall-clock, and that correction is the more useful finding.** A draft of this section
+projected ~20 s/run from the measured MB/s. The post-delete run disproves it: `scrape-plan`'s fetch
+went from 213 MB to 38 MB and took **23 s**, against a pre-delete spread of **14–25 s** (mean ~20 s
+over the twelve runs `35583945947`→`35628837050`). Dropping 82% of the bytes moved the duration not
+at all, because the fetch is bound by per-file latency over ~237 files, not by bandwidth — the one
+large file was the cheapest part of it per byte.
+
+That reframes §2 and §6 below. The lever on `data/state/`'s fetch **time** is file *count*, not
+size: the 211 `role_trend_board_deltas/*.parquet` neither planner opens cost more wall-clock than
+the 175 MB CSV did. The count is visible climbing in those same logs — 227 files at
+`35583945947`, 237 thirteen runs later.
 
 **Why it survived twelve days:** the tool existed. `scripts/state/retire_legacy_trends_csv.py` sat
 untracked in a working tree, written and never run — and `docs/agents/deployment.md` carried a
@@ -109,6 +120,11 @@ Everything else on the wire is never opened by either: `role_trends.parquet`,
 Even after §1 removes the 175 MB, this is ~22 MB/run of dead transfer and 200-odd needless file
 fetches. Naming the patterns explicitly — the way `merge` already names
 `'data/embeddings/jobs/*' 'data/lancedb/*'` — closes both.
+
+**Rank this above §1 on wall-clock, below it on bytes.** §1's measurement shows the fetch is
+latency-bound per file, so the ~200 files the planners never open are where the seconds are; the
+CSV was 82% of the bytes and worth ~0 s. Neither number is the other's proxy, which is exactly the
+mistake §1 corrects.
 
 ## 3. ADR-0057 reassignment tracking has measured exactly zero for two weeks
 
