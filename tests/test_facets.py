@@ -95,14 +95,17 @@ def test_other_filters_stay_applied_while_one_dimension_varies():
 def test_counts_never_need_the_query_or_the_encoder():
     """A vector search ranks the filtered set rather than shrinking it, so a count is decided
     by the where-clause alone — which is why the request's query never reaches this module at
-    all. The signature is the guarantee: there is nowhere to pass one."""
+    all. The signature is the guarantee: there is nowhere to pass one.
+
+    `extra_where` (ADR-0171) is keyword-only and is a *clause*, not a query — it exists so the
+    Account's follow/hide narrowing reaches the counts as well as the list they describe.
+    """
     import inspect
 
-    assert list(inspect.signature(facets.counts).parameters) == [
-        "table",
-        "filters",
-        "capabilities",
-    ]
+    params = inspect.signature(facets.counts).parameters
+    assert list(params) == ["table", "filters", "capabilities", "extra_where"]
+    assert params["extra_where"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert not {"q", "query", "model", "encoder"} & set(params), "no query, no encoder"
     a, b = _CountingTable(), _CountingTable()
     without = facets.counts(a, *_kwargs())
     withq = facets.counts(b, *_kwargs())
@@ -367,3 +370,19 @@ def test_every_nameable_filter_is_labelled_and_clearable_in_the_ui():
     # or it stays silently un-nameable. LABELS is deliberately not checked in this direction —
     # `kw_in` is labelled for the active-filter pills while being denied as a blocker.
     assert not control & set(facets.NEVER_BLOCKING)
+
+
+def test_the_account_clause_narrows_every_count_including_the_total():
+    """The UI prints `facets.total` as "Showing 1-N of TOTAL" beside the list `run` returns.
+
+    Counting without the Account's follow/hide clause reported the whole index next to a list
+    of ten rows — measured live at 459,291 against 10.
+    """
+    table = _CountingTable()
+    facets.counts(
+        table, *_kwargs(remote=True), extra_where="NOT (lower(id) LIKE 'lever:x:%')"
+    )
+    assert table.seen, "something was counted"
+    assert all("NOT (lower(id) LIKE 'lever:x:%')" in (c or "") for c in table.seen), (
+        "every count, not just the total"
+    )

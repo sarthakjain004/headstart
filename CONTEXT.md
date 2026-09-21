@@ -38,6 +38,20 @@ _Avoid_: conflating with **Board** itself — a Board is the thing (one company'
 ATS); a board_key is only its string name. Before ADR-0155 five call sites each computed that
 string independently, with three different opinions about a slug that wouldn't parse.
 
+**Operator** (ADR-0171):
+Who runs a Board — the `employer` itself, a `services` firm (IT services, consulting, staffing, BPO) placing people with its clients, or an `aggregator` re-posting other companies' postings. A curated label (`ingest/board_operator.py`) applied only to the Boards the Hot list displays, never a property of every Board: the measurement behind it says no cheap rule separates a services firm from an employer (F1 52.7, and it demotes Cerebras).
+_Avoid_: reading `services` as a judgement on the company — Capgemini employs its own engineers; the label says its postings are client placements, which is a different thing for a job hunter.
+
+**Lens** (ADR-0171):
+One of the three questions "actively hiring" can mean, each ranking the same Boards differently: **Expansion** (net change in open roles — who is growing), **Volume** (roles opened in the rolling 7-day window), **Rate** (that count as a share of the Board's open roles). Amazon opened 1,396 roles in one measured week at a net change of −3, which is why these are three lenses and not one number.
+_Avoid_: "hot" as a measure. `hot` is the internal name of the ranking — the stage
+(`ingest/hot_boards`), its artifact and its route — while **Hiring now** is what the tab is
+called in the UI. Neither is a value a row can hold; a row holds a lens figure and an Operator.
+
+**Followed / Hidden Board** (ADR-0171):
+A Board an Account has chosen to see more or less of, held as a `CompanyPrefs` record keyed by **board_key** — never by company name, which four served rows in five do not carry. Hidden Boards are excluded from every search; followed ones are what the "only companies I follow" control narrows to. The two lists are disjoint by construction, and they are Account state rather than a Search filter, so a **Saved Set** never freezes them.
+_Avoid_: "blocked" or "muted" — a hidden Board is still scraped, still indexed and still served to everyone else; only this Account stops seeing it.
+
 **Careers page**:
 A company's own web page that links to or embeds its Board; the input to careers-page discovery, distinct from the Board itself.
 

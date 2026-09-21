@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml)
 [![pipeline](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml)
-[![ADRs](https://img.shields.io/badge/ADRs-154-blue)](./docs/adr/)
+[![ADRs](https://img.shields.io/badge/ADRs-161-blue)](./docs/adr/)
 [![Python](https://img.shields.io/badge/python-3.12+-blue)](./pyproject.toml)
 
 Find software-engineering openings straight from companies' ATS (Applicant Tracking System)
@@ -155,7 +155,7 @@ flowchart TB
         P2["<b>scrape</b><br/>≤15 VMs · 60m budget<br/>34 enabled scrapers → fragments"]
         P3["<b>join</b><br/>1 VM<br/>union · tech-filter · descriptions<br/>ledgers · plan embed"]
         P4["<b>embed</b><br/>≤15 VMs · 180m budget<br/>nomic on CPU → fragments"]
-        P5["<b>merge</b><br/>1 VM · single writer<br/>concat · meta refresh · sync · prune · trends"]
+        P5["<b>merge</b><br/>1 VM · single writer<br/>concat · meta refresh · sync · prune · trends · hot"]
         P1 --> P2 --> P3 --> P4 --> P5
     end
 

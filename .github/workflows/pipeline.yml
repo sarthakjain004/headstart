@@ -848,6 +848,14 @@ jobs:
         if: needs.scrape-plan.outputs.run == 'true'
         continue-on-error: true
         run: python -m headstart.ingest.role_trends
+      - name: Rank the actively-hiring Boards
+        # Strictly after role_trends: it reads that stage's Board-count snapshot and delta
+        # ledger. Never fatal for the same reason — when role_trends skipped, this one finds no
+        # ledger, warns and exits 0, which hides the tab rather than failing a run that has
+        # already scraped, embedded and indexed successfully.
+        if: needs.scrape-plan.outputs.run == 'true'
+        continue-on-error: true
+        run: python -m headstart.ingest.hot_boards
       # No compaction here — it moved to the `cleanup-index` run. `index compact`
       # rebuilds the table into ONE new .lance file, so every run minted a brand-new ~755 MB blob
       # that HF stores in full and keeps forever; at ~1.9 GB/run the 100 GB quota filled in ~45

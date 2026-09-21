@@ -32,6 +32,7 @@ from headstart import facets, fx, geo, llm_router, profile_extract, search
 # modules, whose dependencies (xlsxwriter, Resend) this image does not install.
 from headstart.alerts import access, identity
 from headstart.alerts.store import (
+    MAX_COMPANIES,
     MAX_PARSES,
     MAX_RESUME_BYTES,
     MAX_RESUMES,
@@ -96,6 +97,9 @@ def _pull_index(attempts: int = 5) -> None:
                     "data/lancedb/*",
                     "data/state/role_trends.parquet",
                     "data/state/role_trend_board_deltas/*",
+                    # the hot list (hot_boards) — a few tens of KB, and absent until a run
+                    # writes one, which hides the tab rather than failing the pull
+                    "data/state/hot_boards.json",
                 ],
                 token=os.environ.get("HF_TOKEN"),
             )
@@ -203,6 +207,26 @@ def _watch_meta(path: Path) -> dict[str, dict[str, str]]:
     }
 
 
+def _load_hot(path: Path) -> dict:
+    """The pre-ranked hot list (``headstart.ingest.hot_boards``), or ``{}`` until it exists.
+
+    Read once at startup and served as-is. The ranking is a pipeline product, not a query: the
+    ledgers behind it are tens of megabytes and the answer only changes when a run does, so
+    re-deriving it per request would buy nothing and cost the Space its memory headroom.
+
+    Empty on a deployment whose pipeline has not written it yet — the tab is then hidden rather
+    than shown broken, the same dark-until-ready shape the Trends tab uses.
+    """
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        # A half-written artifact must not take the Space down at import, which is the failure
+        # mode `_pull_index` already exists to prevent for the index itself.
+        return {}
+
+
 _EPOCH_LABELS = (
     ("centroid_version", "role taxonomy refit"),
     ("family_map_fingerprint", "role family map edited"),
@@ -244,6 +268,7 @@ if _TRENDS:
 _TREND_DELTAS = _load_board_deltas(
     _STATE / "data" / "state" / "role_trend_board_deltas"
 )
+_HOT = _load_hot(_STATE / "data" / "state" / "hot_boards.json")
 # Email alerts (ADR-0035) — invite-only, so all three must be set before the panel appears:
 # the Google client id the sign-in button needs, and a token scoped to the Subscriptions
 # dataset alone (never the index token, which is read-only by design).
@@ -353,13 +378,86 @@ def _require_sign_in():
     return None
 
 
+def _company_where(args) -> str | None:
+    """The signed-in Account's follow/hide clause for this request (ADR-0171), or None.
+
+    Read fresh per request rather than carried in the query string: the lists are Account
+    state, so a bookmarked URL or a Saved Set must not be able to pin them to what they were.
+
+    ``mine=1`` narrows to followed Boards. Hidden Boards are excluded on **every** request,
+    with or without that flag — hiding a company means not seeing it, not "not seeing it while
+    a toggle happens to be on".
+    """
+    gate = _account_gate()
+    if not gate:
+        return None
+    email, store = gate
+    prefs = store.get_companies(subscription_id(email))
+    return search.account_clause(
+        prefs.followed, prefs.hidden, mine=args.get("mine") in ("1", "true")
+    )
+
+
 @app.route("/search")
 def search_jobs():
     """A thin adapter over the shared search path — parse/filter/rank live in JobSearch."""
     try:
-        return jsonify(_searcher.run(request.args))
+        return jsonify(
+            _searcher.run(request.args, extra_where=_company_where(request.args))
+        )
     except ValueError:
         return jsonify({"error": "invalid filter"}), 400
+
+
+@app.route("/companies")
+def list_companies():
+    """The Account's followed and hidden Boards."""
+    gate = _account_gate()
+    if not gate:
+        return jsonify({"error": "accounts are not configured here"}), 503
+    email, store = gate
+    prefs = store.get_companies(subscription_id(email))
+    return jsonify({"followed": list(prefs.followed), "hidden": list(prefs.hidden)})
+
+
+@app.route("/companies", methods=["POST"])
+def set_company():
+    """Follow, hide, or clear one Board. The whole record is rewritten, so the two lists
+    cannot drift apart — `CompanyPrefs.with_board` keeps them disjoint."""
+    gate = _account_gate()
+    if not gate:
+        return jsonify({"error": "accounts are not configured here"}), 503
+    email, store = gate
+    body = request.get_json(silent=True) or {}
+    board = str(body.get("board") or "").strip()
+    action = str(body.get("action") or "").strip()
+    if not board or action not in ("follow", "hide", "clear"):
+        return jsonify(
+            {"error": "board and action (follow|hide|clear) are required"}
+        ), 400
+    account = subscription_id(email)
+    current = store.get_companies(account)
+    if current.would_evict(board, action):
+        return jsonify(
+            {"error": f"at most {MAX_COMPANIES} companies in each list"}
+        ), 409
+    prefs = current.with_board(board, action)
+    store.put_companies(prefs)
+    return jsonify({"followed": list(prefs.followed), "hidden": list(prefs.hidden)})
+
+
+@app.route("/hot")
+def hot_companies():
+    """The pre-ranked actively-hiring list, or 503 until the pipeline has written one.
+
+    Served whole rather than paged or filtered server-side: it is three lenses of at most 100
+    rows each, so the lens switch and the "show staffing" toggle are instant in the browser and
+    cost no round trip. 503 rather than an empty 200, so the tab can tell "not built yet" from
+    "built, and nothing qualified".
+    """
+    if not _HOT:
+        return jsonify({"error": "no hot list on this deployment yet"}), 503
+    return jsonify(_HOT)
 
 
 @app.route("/facets")
@@ -374,7 +472,9 @@ def search_facets():
     user nothing beyond the search they were already waiting for.
     """
     try:
-        return jsonify(_searcher.facets(request.args))
+        return jsonify(
+            _searcher.facets(request.args, extra_where=_company_where(request.args))
+        )
     except ValueError:
         return jsonify({"error": "invalid filter"}), 400
 
@@ -1326,8 +1426,10 @@ def index():
         auth_on=_AUTH_ON,
         resume_sync_on=_SETS_ON,
         trends_on=bool(_TRENDS),
+        hot_on=bool(_HOT),
         alerts_on=_ALERTS_ON,
         sets_on=_SETS_ON,
+        companies_on=_SETS_ON,  # same prerequisites — the lists are per-Account records
         saved_on=_SETS_ON,  # same prerequisites — see the _SETS_ON comment
         profile_on=_SETS_ON,  # likewise (the parse button 503s on its own if the router is down)
     )

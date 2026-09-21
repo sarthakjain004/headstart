@@ -177,6 +177,18 @@
           <input id="company" type="text" placeholder="e.g. Binance"></div>
       </div>
 
+      {# Account state, not a filter: it reads the follow list live, so it is never written into
+         a Saved Set. Rendered only where accounts exist, like the star and the Saved tab. #}
+      {% if companies_on %}
+      <div class="set my-companies-row">
+        <label class="switch" for="mine">
+          <input type="checkbox" id="mine">
+          <span>Only companies I follow</span>
+        </label>
+        <span class="note" id="my-companies"></span>
+      </div>
+      {% endif %}
+
       <div class="set">
         <h2>Freshness</h2>
         <div class="f"><label for="posted">Posted by the employer</label>
