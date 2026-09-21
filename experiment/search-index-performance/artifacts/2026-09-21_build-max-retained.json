@@ -1,0 +1,127 @@
+{
+  "bytes_after": 3341673477,
+  "bytes_before": 3340625238,
+  "indices": [
+    {
+      "columns": [
+        "ats"
+      ],
+      "name": "ats_idx",
+      "type": "Bitmap"
+    },
+    {
+      "columns": [
+        "country"
+      ],
+      "name": "country_idx",
+      "type": "Bitmap"
+    },
+    {
+      "columns": [
+        "description_stored"
+      ],
+      "name": "description_stored_idx",
+      "type": "Bitmap"
+    },
+    {
+      "columns": [
+        "experience_at_most_0"
+      ],
+      "name": "experience_at_most_0_idx",
+      "type": "Bitmap"
+    },
+    {
+      "columns": [
+        "experience_at_most_10"
+      ],
+      "name": "experience_at_most_10_idx",
+      "type": "Bitmap"
+    },
+    {
+      "columns": [
+        "experience_at_most_2"
+      ],
+      "name": "experience_at_most_2_idx",
+      "type": "Bitmap"
+    },
+    {
+      "columns": [
+        "experience_at_most_5"
+      ],
+      "name": "experience_at_most_5_idx",
+      "type": "Bitmap"
+    },
+    {
+      "columns": [
+        "first_seen"
+      ],
+      "name": "first_seen_idx",
+      "type": "BTree"
+    },
+    {
+      "columns": [
+        "is_contract"
+      ],
+      "name": "is_contract_idx",
+      "type": "Bitmap"
+    },
+    {
+      "columns": [
+        "is_full_time"
+      ],
+      "name": "is_full_time_idx",
+      "type": "Bitmap"
+    },
+    {
+      "columns": [
+        "is_internship"
+      ],
+      "name": "is_internship_idx",
+      "type": "Bitmap"
+    },
+    {
+      "columns": [
+        "is_part_time"
+      ],
+      "name": "is_part_time_idx",
+      "type": "Bitmap"
+    },
+    {
+      "columns": [
+        "posted_at_comparable"
+      ],
+      "name": "posted_at_comparable_idx",
+      "type": "Bitmap"
+    },
+    {
+      "columns": [
+        "posted_at"
+      ],
+      "name": "posted_at_idx",
+      "type": "BTree"
+    },
+    {
+      "columns": [
+        "remote"
+      ],
+      "name": "remote_idx",
+      "type": "Bitmap"
+    },
+    {
+      "columns": [
+        "salary_known"
+      ],
+      "name": "salary_known_idx",
+      "type": "Bitmap"
+    },
+    {
+      "columns": [
+        "vector"
+      ],
+      "name": "vector_idx",
+      "type": "IvfSq"
+    }
+  ],
+  "seconds": 0.245,
+  "status": "complete"
+}

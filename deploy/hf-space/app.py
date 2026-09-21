@@ -129,6 +129,10 @@ _table = lancedb.connect(_STATE / "data" / "lancedb").open_table(search.PROD_TAB
 # The whole query path — parse, whitelist, rank, project — lives behind this one object
 # (search.JobSearch); its startup scan supplies the ATS dropdown and the first_seen flag.
 _searcher = search.JobSearch(_model, _table)
+# The first page always browses with no filters and asks for the matching facet strip. Build both
+# from this process's freshly-opened table before accepting traffic; every pipeline publication
+# restarts the Space, so a new table necessarily gets new caches.
+_searcher.warm()
 
 # Role trends (ADR-0040). Same dark-until-ready shape as the two above: the ledger only exists
 # after a pipeline run has written it, so an absent file hides the panel rather than erroring.

@@ -1,0 +1,54 @@
+{
+  "builds": [
+    {
+      "column": "location_search",
+      "seconds": 0.061,
+      "type": "Fm"
+    }
+  ],
+  "bytes_after": 2975865667,
+  "bytes_before": 2939074149,
+  "lancedb": "0.36.0",
+  "materialize_seconds": 0.095,
+  "measured_at": "2026-09-21T15:16:22.046778+00:00",
+  "new": {
+    "count": 11413,
+    "fingerprint": "5c6483af0d42918ed359cdc35b7b59ee3e9d5ebc48c09e89e33337b06a25ce4f",
+    "median_ms": 328.18,
+    "samples_ms": [
+      327.42,
+      338.73,
+      337.19,
+      326.87,
+      326.14,
+      328.18,
+      335.59,
+      332.71,
+      327.36,
+      335.91,
+      327.58
+    ],
+    "where": "contains(location_search, 'bangalore')"
+  },
+  "old": {
+    "count": 11413,
+    "fingerprint": "5c6483af0d42918ed359cdc35b7b59ee3e9d5ebc48c09e89e33337b06a25ce4f",
+    "median_ms": 101.33,
+    "samples_ms": [
+      101.57,
+      101.32,
+      105.54,
+      102.82,
+      102.24,
+      101.33,
+      101.62,
+      100.18,
+      99.57,
+      100.71,
+      101.06
+    ],
+    "where": "lower(location) LIKE '%bangalore%'"
+  },
+  "profile": "location",
+  "rows": 508991
+}

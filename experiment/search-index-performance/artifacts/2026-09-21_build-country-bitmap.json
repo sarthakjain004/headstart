@@ -1,0 +1,30 @@
+{
+  "builds": [
+    {
+      "column": "country",
+      "config": "Bitmap",
+      "index": {
+        "columns": [
+          "country"
+        ],
+        "name": "country_idx",
+        "type": "Bitmap"
+      },
+      "seconds": 0.029,
+      "stats": {
+        "distance_type": null,
+        "index_type": "BITMAP",
+        "num_indexed_rows": 508991,
+        "num_indices": 1,
+        "num_unindexed_rows": 0
+      }
+    }
+  ],
+  "bytes_added": 37611,
+  "bytes_after": 2939111760,
+  "bytes_before": 2939074149,
+  "lancedb": "0.36.0",
+  "measured_at": "2026-09-21T15:10:49.330783+00:00",
+  "profile": "country_bitmap",
+  "rows": 508991
+}

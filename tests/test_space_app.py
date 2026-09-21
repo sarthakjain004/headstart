@@ -65,6 +65,9 @@ class _Table:
     def search(self, *a, **k):
         return self
 
+    def metric(self, *a, **k):
+        return self
+
     def select(self, cols, *a, **k):
         # lancedb rejects a tuple (`columns must be a list or a dictionary`); this fake
         # took anything, which is how a browse-path 500 stayed green in the suite.
@@ -86,6 +89,7 @@ class _Table:
     def to_list(self):
         return [
             {
+                "_distance": 0.1,
                 "ats": "greenhouse",
                 "title": "Backend Engineer",
                 "company": "Acme",
@@ -100,6 +104,7 @@ class _Table:
                 "id": "greenhouse:acme:1",
             },
             {
+                "_distance": 0.2,
                 "ats": "lever",
                 "title": "Frontend Engineer",
                 "company": "Beta",
@@ -123,6 +128,17 @@ class _Table:
         return 2 if filter is None else 1
 
 
+class _Vector:
+    def astype(self, _dtype):
+        return self
+
+
+class _Model:
+    def encode(self, _texts, *, normalize_embeddings):
+        assert normalize_embeddings
+        return [_Vector()]
+
+
 @contextmanager
 def _space_app(state, env=None):
     """Load the Space app from its path with the heavy imports stubbed (module docstring).
@@ -137,7 +153,7 @@ def _space_app(state, env=None):
             ),
         ),
         "sentence_transformers": _module(
-            "sentence_transformers", SentenceTransformer=lambda *a, **k: object()
+            "sentence_transformers", SentenceTransformer=lambda *a, **k: _Model()
         ),
         "huggingface_hub": _module(
             "huggingface_hub", snapshot_download=lambda *a, **k: str(state)
