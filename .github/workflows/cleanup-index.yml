@@ -7,8 +7,9 @@ name: cleanup-index
 # Now also the pipeline's periodic compaction. `index compact` used to run on EVERY pipeline run,
 # which rebuilt the table into one new .lance file each time — a brand-new ~755 MB blob that HF
 # stores in full and retains forever, filling the 100 GB quota in ~45 runs. Between compactions
-# Lance simply appends: `sync`/`prune` write small new fragments and leave the existing file alone,
-# so a run uploads ~10% of the table instead of all of it.
+# Lance table data still appends: `sync`/`prune` write small new fragments and leave the existing
+# data files alone. ADR-0174 separately replaces the Search indexes on every pipeline (~402 MB at
+# 509k rows), and this cleanup reclaims those superseded index files with the other old versions.
 #
 # Daily, not weekly: Lance's own guidance is to optimize after ~20 data-modification operations,
 # and the pipeline does several per run. Fragments accumulating between compactions is the

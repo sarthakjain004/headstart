@@ -992,3 +992,61 @@ def test_compact_rebuilds_the_measured_search_indexes(tmp_path):
         "experience_at_most_10",
         "vector",
     }
+
+    # A later pipeline append is searchable, but LanceDB reports it outside every existing
+    # index until the per-run refresh replaces them over the new table version.
+    rebuilt.add(
+        [
+            {
+                "id": "greenhouse:a:fresh",
+                "ats": "greenhouse",
+                "country": "IN",
+                "posted_at": "2026-09-21",
+                "first_seen": "2026-09-21T00:00:00+00:00",
+                "employment_type": "Full-time",
+                "is_full_time": True,
+                "is_part_time": False,
+                "is_contract": False,
+                "is_internship": False,
+                "vector": [1.0, 0.0, 0.0, 1.0],
+            }
+        ]
+    )
+    assert {
+        rebuilt.index_stats(index.name).num_unindexed_rows
+        for index in rebuilt.list_indices()
+    } == {1}
+
+    assert idx.refresh_indexes(argparse.Namespace(db=str(db))) == 0
+    refreshed = lancedb.connect(str(db)).open_table(idx.PROD_TABLE)
+    assert {
+        refreshed.index_stats(index.name).num_unindexed_rows
+        for index in refreshed.list_indices()
+    } == {0}
+    assert idx.read_base(db)["by"] == "refresh-indexes"
+
+
+def test_refresh_indexes_builds_the_first_set_without_compacting(tmp_path):
+    db = tmp_path / "db"
+    table = lancedb.connect(str(db)).create_table(
+        idx.PROD_TABLE, schema=idx._schema(_DIM)
+    )
+    table.add(
+        [
+            {
+                "id": f"greenhouse:a:{n}",
+                "ats": "greenhouse",
+                "vector": [float(n % 7), 0.0, 0.0, 1.0],
+            }
+            for n in range(300)
+        ]
+    )
+    assert list(table.list_indices()) == []
+
+    assert idx.refresh_indexes(argparse.Namespace(db=str(db))) == 0
+    refreshed = lancedb.connect(str(db)).open_table(idx.PROD_TABLE)
+    assert len(list(refreshed.list_indices())) == 17
+    assert all(
+        refreshed.index_stats(index.name).num_unindexed_rows == 0
+        for index in refreshed.list_indices()
+    )

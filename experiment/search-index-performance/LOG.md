@@ -130,6 +130,19 @@ results before a cold facet request finishes, then reconciles the total/pager.
 - Indexed full compaction after releasing the Arrow owner: 10.78 s, 7.30 GB max RSS; all 17
   indexes present after the directory swap.
 
+### Per-pipeline index refresh
+
+The first production cleanup after deployment lost its publication race to the pipeline and the
+state guard correctly refused to overwrite 86 newer LanceDB files. That exposed the wrong delivery
+contract: cleanup was still required to create the first indexes. ADR-0174 moves an index-only
+refresh into every pipeline after sync/prune.
+
+On the 508,991-row production copy, replacing all 17 indexes took 5.52 s, peaked at 2.46 GB RSS,
+and added 401,637,376 bytes without rewriting table data. Every `index_stats()` result ended at
+zero unindexed rows. A five-cycle cache-cleared ABBA comparison preserved every fingerprint and
+kept every median within -1.6% to +0.9% of the already-indexed source table. Raw summary:
+`artifacts/2026-09-21_pipeline-index-refresh.json`.
+
 ### Discarded
 
 - IVF-PQ: inadequate recall even with 16x refinement.
@@ -144,4 +157,4 @@ results before a cold facet request finishes, then reconciles the total/pager.
 - Description FM: +2.89 GB and `kubernetes` 2.47 → 5.11 s.
 - NGRAM FTS: fast BM25 top-k, but cannot preserve the Keyword filter's boolean-set contract.
 
-See `artifacts/` for raw samples and ADR-0173 for the durable decision.
+See `artifacts/` for raw samples and ADR-0173/ADR-0174 for the durable decisions.

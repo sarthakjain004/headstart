@@ -173,3 +173,4 @@ supersedes it and note the supersession in both.
 | [0171](0171-the-hot-tab-curates-what-it-shows-not-the-whole-index.md) | The Hot tab curates what it shows, not the whole index | 2026-09-21 |
 | [0172](0172-a-single-source-scraper-declares-its-company.md) | A Single source scraper declares its company; the ledger cannot | 2026-09-21 |
 | [0173](0173-rebuild-the-search-indexes-with-the-table.md) | Rebuild the Search indexes with the table | 2026-09-21 |
+| [0174](0174-every-pipeline-publishes-current-search-indexes.md) | Every pipeline publishes current Search indexes | 2026-09-21 |
