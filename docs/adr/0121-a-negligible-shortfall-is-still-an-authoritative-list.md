@@ -2,6 +2,11 @@
 
 **Status:** accepted · **Date:** 2026-09-09 · **Amends:**
 [ADR-0053](0053-scope-eviction-on-scrape-outcome.md) (adds the tolerance its gate never had) ·
+**Amended by:**
+[ADR-0169](0169-an-empty-page-ends-an-oracle-board-totaljobscount-does-not.md) (on the Consequences
+note below that Oracle's `_SLACK_PER_PAGE` already absorbed this tolerance: measured over 16 Boards,
+Oracle's stated total is not a count of servable rows, so Oracle now reports no sub-ceiling
+shortfall at all and no longer calls `mark_truncated_unless_negligible`) ·
 **Relates to:** [ADR-0083](0083-evict-only-on-a-second-consecutive-absence.md) (the per-Job
 mechanism this hands small shortfalls to),
 [ADR-0088](0088-a-lost-detail-is-not-a-truncation.md) (which priced this exclusion and declined to

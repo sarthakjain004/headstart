@@ -168,3 +168,4 @@ supersedes it and note the supersession in both.
 | [0166](0166-gate-the-detail-pass-on-the-tech-filter.md) | Gate the detail pass on the tech filter, behind one seam | 2026-09-17 |
 | [0167](0167-a-scraper-may-decline-the-multiplexed-path.md) | A scraper may decline the multiplexed path, on a measurement | 2026-09-17 |
 | [0168](0168-delete-the-orphaned-blobs-dont-ask-for-them-to-be-collected.md) | Delete the orphaned blobs, don't ask for them to be collected | 2026-09-18 |
+| [0169](0169-an-empty-page-ends-an-oracle-board-totaljobscount-does-not.md) | An empty page ends an Oracle Board; `TotalJobsCount` does not | 2026-09-21 |

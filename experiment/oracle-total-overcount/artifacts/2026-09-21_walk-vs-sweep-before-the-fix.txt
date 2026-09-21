@@ -1,0 +1,17 @@
+host                                            stated   walk  sweep  lost extra  verdict
+etud.fa.us8.oraclecloud.com                        123     98     98     0     0  read 98 of 123 requisitions — the rest is unread, not abse
+ialmme-test.fa.ocs.oraclecloud.com                 600     27     27     0     0  read 27 of 600 requisitions — the rest is unread, not abse
+eofe-dev3.fa.us2.oraclecloud.com                   806     49     49     0     0  read 49 of 806 requisitions — the rest is unread, not abse
+edca-test.fa.us2.oraclecloud.com                   373     43     43     0     0  read 43 of 373 requisitions — the rest is unread, not abse
+hcpd-test.fa.ca2.oraclecloud.com                   636    307    307     0     0  read 307 of 636 requisitions — the rest is unread, not abs
+eofe-dev11.fa.us2.oraclecloud.com                 1623    605    605     0     0  read 605 of 1623 requisitions — the rest is unread, not ab
+hdpc-dev6.fa.us2.oraclecloud.com                  1477    407    407     0     0  read 407 of 1477 requisitions — the rest is unread, not ab
+edel-test.fa.us2.oraclecloud.com                   920    493    493     0     0  read 493 of 920 requisitions — the rest is unread, not abs
+eubt.fa.us6.oraclecloud.com                      78431  10000  10000     0     0  read 10000 of 78431 requisitions — the API serves no offse
+eczy-dev3.fa.us2.oraclecloud.com                  2552   2552   2552     0     0  
+hdjq.fa.us2.oraclecloud.com                       1076   1071   1071     0     0  
+efuf.fa.em2.oraclecloud.com                        739    739    739     0     0  
+erym.fa.us6.oraclecloud.com                        543    543    543     0     0  
+ekkt.fa.us2.oraclecloud.com                        310    310    310     0     0  
+hcjq.fa.ap1.oraclecloud.com                        185    185    185     0     0  
+eczf-test.fa.us2.oraclecloud.com                   160    160    160     0     0  
