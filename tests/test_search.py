@@ -446,8 +446,8 @@ def test_facets_cache_the_filter_set_not_the_semantic_query(monkeypatch):
 
     calls = []
 
-    def counted(_table, filters, _capabilities):
-        calls.append(filters)
+    def counted(_table, filters, _capabilities, *, extra_where=None):
+        calls.append((filters, extra_where))
         return {"total": len(calls), "facets": {}}
 
     monkeypatch.setattr(facets, "counts", counted)
@@ -462,6 +462,23 @@ def test_facets_cache_the_filter_set_not_the_semantic_query(monkeypatch):
     assert len(searcher._facet_cache) == FACET_CACHE_SIZE
 
 
+def test_facet_cache_keeps_account_clauses_separate(monkeypatch):
+    from headstart import facets
+
+    calls = []
+
+    def counted(_table, _filters, _capabilities, *, extra_where=None):
+        calls.append(extra_where)
+        return {"total": len(calls), "facets": {}}
+
+    monkeypatch.setattr(facets, "counts", counted)
+    searcher, _ = _searcher()
+    first = searcher.facets({}, extra_where="account = 1")
+    second = searcher.facets({}, extra_where="account = 2")
+    assert first is not second
+    assert calls == ["account = 1", "account = 2"]
+
+
 def test_facet_cache_expires_so_recency_counts_keep_moving(monkeypatch):
     from headstart import facets
     from headstart import search as search_module
@@ -472,7 +489,8 @@ def test_facet_cache_expires_so_recency_counts_keep_moving(monkeypatch):
     monkeypatch.setattr(
         facets,
         "counts",
-        lambda *_args: calls.append(now[0]) or {"total": len(calls), "facets": {}},
+        lambda *_args, **_kwargs: calls.append(now[0])
+        or {"total": len(calls), "facets": {}},
     )
     searcher, _ = _searcher()
     first = searcher.facets({})
@@ -503,7 +521,9 @@ def test_empty_query_pages_are_cached_and_expire(monkeypatch):
 def test_warm_uses_the_same_normalized_key_as_the_first_browser_request(monkeypatch):
     from headstart import facets
 
-    monkeypatch.setattr(facets, "counts", lambda *_args: {"total": 1, "facets": {}})
+    monkeypatch.setattr(
+        facets, "counts", lambda *_args, **_kwargs: {"total": 1, "facets": {}}
+    )
     searcher, table = _searcher()
     table.search_calls = 0
     searcher.warm()
@@ -1396,6 +1416,14 @@ def test_extra_where_alone_still_filters():
     searcher, table = _searcher()
     searcher.run({"q": "x"}, extra_where="(lower(id) LIKE 'lever:x:%')")
     assert table.last_where == "(lower(id) LIKE 'lever:x:%')"
+
+
+def test_browse_cache_keeps_account_clauses_separate():
+    searcher, table = _searcher()
+    table.search_calls = 0
+    searcher.run({}, extra_where="(lower(id) LIKE 'lever:x:%')")
+    searcher.run({}, extra_where="(lower(id) LIKE 'lever:y:%')")
+    assert table.search_calls == 2
 
 
 def test_no_extra_where_leaves_the_clause_untouched():

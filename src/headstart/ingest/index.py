@@ -248,7 +248,7 @@ def _migrate_employment_type_flags(table: Any) -> None:
 
 
 def _migrate_presence_flags(table: Any) -> None:
-    """Materialize two high-cost null checks on a table that predates ADR-0170."""
+    """Materialize two high-cost null checks on a table that predates ADR-0172."""
     missing = {}
     if _DESCRIPTION_STORED_FIELD.name not in table.schema.names:
         missing[_DESCRIPTION_STORED_FIELD.name] = "description IS NOT NULL"
@@ -260,7 +260,7 @@ def _migrate_presence_flags(table: Any) -> None:
 
 
 def _migrate_posted_at_comparable(table: Any) -> None:
-    """Materialize the posting-date shape guard on a table that predates ADR-0170."""
+    """Materialize the posting-date shape guard on a table that predates ADR-0172."""
     if _POSTED_AT_COMPARABLE_FIELD.name not in table.schema.names:
         _log.info(f"adding '{_POSTED_AT_COMPARABLE_FIELD.name}' to the existing table")
         table.add_columns(
@@ -269,7 +269,7 @@ def _migrate_posted_at_comparable(table: Any) -> None:
 
 
 def _migrate_experience_filter_flags(table: Any) -> None:
-    """Materialize the four facet ceilings on a table that predates ADR-0170."""
+    """Materialize the four facet ceilings on a table that predates ADR-0172."""
     missing = {
         experience_filter_column(ceiling): (
             f"min_years <= {ceiling} OR min_years IS NULL"
@@ -284,37 +284,42 @@ def _migrate_experience_filter_flags(table: Any) -> None:
 
 def _create_search_indexes(table: Any) -> None:
     """Create the measured Search indexes missing from a freshly rebuilt production table."""
-    from lancedb.index import Bitmap, BTree, IvfSq
-
     existing = {column for index in table.list_indices() for column in index.columns}
     specs = [
-        ("ats", Bitmap()),
-        ("country", Bitmap()),
-        ("remote", Bitmap()),
-        ("posted_at", BTree()),
-        (_POSTED_AT_COMPARABLE_FIELD.name, Bitmap()),
-        ("first_seen", BTree()),
-        (_DESCRIPTION_STORED_FIELD.name, Bitmap()),
-        (_SALARY_KNOWN_FIELD.name, Bitmap()),
+        ("ats", "BITMAP"),
+        ("country", "BITMAP"),
+        ("remote", "BITMAP"),
+        ("posted_at", "BTREE"),
+        (_POSTED_AT_COMPARABLE_FIELD.name, "BITMAP"),
+        ("first_seen", "BTREE"),
+        (_DESCRIPTION_STORED_FIELD.name, "BITMAP"),
+        (_SALARY_KNOWN_FIELD.name, "BITMAP"),
         *(
-            (experience_filter_column(ceiling), Bitmap())
+            (experience_filter_column(ceiling), "BITMAP")
             for ceiling in EXPERIENCE_FILTER_CEILINGS
         ),
-        *((rule.column, Bitmap()) for rule in EMPLOYMENT_TYPE_FILTERS.values()),
+        *((rule.column, "BITMAP") for rule in EMPLOYMENT_TYPE_FILTERS.values()),
     ]
-    # Exact scans are already cheap on tiny test/dev tables, and an ANN index needs a real
-    # training population. Production is over 500k rows; this boundary is deliberately remote.
-    if table.count_rows() >= 256:
-        specs.append(("vector", IvfSq(distance_type="cosine")))
-    for column, config in specs:
+    for column, index_type in specs:
         if column not in table.schema.names or column in existing:
             continue
         started = datetime.now(UTC)
-        table.create_index(column, config=config, replace=False)
+        table.create_scalar_index(column, index_type=index_type, replace=False)
         elapsed = (datetime.now(UTC) - started).total_seconds()
-        _log.info(
-            f"search index: built {column} ({type(config).__name__}) in {elapsed:.1f}s"
+        _log.info(f"search index: built {column} ({index_type}) in {elapsed:.1f}s")
+
+    # Exact scans are already cheap on tiny test/dev tables, and an ANN index needs a real
+    # training population. Production is over 500k rows; this boundary is deliberately remote.
+    if table.count_rows() >= 256 and "vector" not in existing:
+        started = datetime.now(UTC)
+        table.create_index(
+            metric="cosine",
+            vector_column_name="vector",
+            index_type="IVF_SQ",
+            replace=False,
         )
+        elapsed = (datetime.now(UTC) - started).total_seconds()
+        _log.info(f"search index: built vector (IVF_SQ) in {elapsed:.1f}s")
 
 
 def _load_store() -> tuple[list[dict], np.ndarray]:
