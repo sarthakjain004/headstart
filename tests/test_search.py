@@ -18,6 +18,7 @@ import pytest
 from headstart.search import (
     EMPLOYMENT_TYPES,
     ETYPE_CLAUSES,
+    FACET_CACHE_SIZE,
     RESULT_COLUMNS,
     SORT_COLUMNS,
     IndexCapabilities,
@@ -425,6 +426,27 @@ def test_facets_import_stays_deferred_to_the_method_body():
     assert body_imports, (
         "JobSearch.facets must import headstart.facets inside its own body"
     )
+
+
+def test_facets_cache_the_filter_set_not_the_semantic_query(monkeypatch):
+    from headstart import facets
+
+    calls = []
+
+    def counted(_table, filters, _capabilities):
+        calls.append(filters)
+        return {"total": len(calls), "facets": {}}
+
+    monkeypatch.setattr(facets, "counts", counted)
+    searcher, _ = _searcher()
+    first = searcher.facets({"q": "backend", "remote": "true"})
+    second = searcher.facets({"q": "frontend", "remote": "true"})
+    assert first is second
+    assert len(calls) == 1
+
+    for n in range(FACET_CACHE_SIZE + 1):
+        searcher.facets({"location": f"place-{n}"})
+    assert len(searcher._facet_cache) == FACET_CACHE_SIZE
 
 
 def test_startup_scan_learns_atses_and_first_seen():

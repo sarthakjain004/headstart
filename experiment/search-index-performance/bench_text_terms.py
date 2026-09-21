@@ -16,7 +16,7 @@ import numpy as np
 TERMS = ("engineer", "senior", "java", "go", "react", "kubernetes", "rust", "c++")
 
 
-def _run(table, vector, where: str) -> tuple[float, list[str]]:
+def _run(table, vector, where: str, reps: int) -> tuple[float, list[str]]:
     def query():
         return (
             table.search(vector)
@@ -31,7 +31,7 @@ def _run(table, vector, where: str) -> tuple[float, list[str]]:
     query()
     samples = []
     rows = []
-    for _ in range(11):
+    for _ in range(reps):
         started = time.perf_counter()
         rows = query()
         samples.append((time.perf_counter() - started) * 1000)
@@ -43,32 +43,40 @@ def main() -> int:
     ap.add_argument("--db", required=True)
     ap.add_argument("--vector", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--source-column", default="title")
+    ap.add_argument("--search-column", default="title_search")
+    ap.add_argument("--terms", nargs="+", default=TERMS)
+    ap.add_argument("--reps", type=int, default=11)
     args = ap.parse_args()
     table = lancedb.connect(args.db).open_table("jobs")
     vector = np.load(args.vector).astype("float32")
     result = []
-    for term in TERMS:
-        escaped = term.replace("'", "''")
-        old = f"lower(title) LIKE '%{escaped}%'"
-        new = f"contains(title_search, '{escaped}')"
-        old_ms, old_ids = _run(table, vector, old)
-        new_ms, new_ids = _run(table, vector, new)
-        row = {
-            "term": term,
-            "old_count": table.count_rows(filter=old),
-            "new_count": table.count_rows(filter=new),
-            "old_ms": round(old_ms, 2),
-            "new_ms": round(new_ms, 2),
-            "old_ids": hashlib.sha256("\n".join(sorted(old_ids)).encode()).hexdigest(),
-            "new_ids": hashlib.sha256("\n".join(sorted(new_ids)).encode()).hexdigest(),
-        }
-        result.append(row)
-        print(json.dumps(row, sort_keys=True), flush=True)
     dest = Path(args.out)
     dest.parent.mkdir(parents=True, exist_ok=True)
     with dest.open("w", encoding="utf-8") as out:
-        json.dump(result, out, indent=2, sort_keys=True)
-        out.write("\n")
+        for term in args.terms:
+            escaped = term.replace("'", "''")
+            old = f"lower({args.source_column}) LIKE '%{escaped}%'"
+            new = f"contains({args.search_column}, '{escaped}')"
+            old_ms, old_ids = _run(table, vector, old, args.reps)
+            new_ms, new_ids = _run(table, vector, new, args.reps)
+            row = {
+                "term": term,
+                "old_count": table.count_rows(filter=old),
+                "new_count": table.count_rows(filter=new),
+                "old_ms": round(old_ms, 2),
+                "new_ms": round(new_ms, 2),
+                "old_ids": hashlib.sha256(
+                    "\n".join(sorted(old_ids)).encode()
+                ).hexdigest(),
+                "new_ids": hashlib.sha256(
+                    "\n".join(sorted(new_ids)).encode()
+                ).hexdigest(),
+            }
+            result.append(row)
+            out.write(json.dumps(row, sort_keys=True) + "\n")
+            out.flush()
+            print(json.dumps(row, sort_keys=True), flush=True)
     return (
         0
         if all(

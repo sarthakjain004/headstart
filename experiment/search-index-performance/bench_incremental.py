@@ -12,9 +12,17 @@ from pathlib import Path
 import lancedb
 import numpy as np
 
+from headstart.search import ANN_NPROBES, ANN_REFINE_FACTOR
+
 
 def _bytes(path: Path) -> int:
     return sum(p.stat().st_size for p in path.rglob("*") if p.is_file())
+
+
+def _save(path: Path, payload: dict) -> None:
+    with path.open("w", encoding="utf-8") as out:
+        json.dump(payload, out, indent=2, sort_keys=True, default=str)
+        out.write("\n")
 
 
 def _measure(table, vectors):
@@ -24,7 +32,7 @@ def _measure(table, vectors):
             table.search(vector)
             .metric("cosine")
             .bypass_vector_index()
-            .select(["id"])
+            .select(["id", "_distance"])
             .limit(20)
             .to_list()
         )
@@ -32,9 +40,9 @@ def _measure(table, vectors):
         indexed = (
             table.search(vector)
             .metric("cosine")
-            .nprobes(80)
-            .refine_factor(2)
-            .select(["id"])
+            .nprobes(ANN_NPROBES)
+            .refine_factor(ANN_REFINE_FACTOR)
+            .select(["id", "_distance"])
             .limit(20)
             .to_list()
         )
@@ -49,6 +57,35 @@ def _measure(table, vectors):
     }
 
 
+def _fresh_control(table, vector, job_id: str) -> dict:
+    exact = (
+        table.search(vector)
+        .metric("cosine")
+        .bypass_vector_index()
+        .select(["id", "_distance"])
+        .limit(20)
+        .to_list()
+    )
+    indexed = (
+        table.search(vector)
+        .metric("cosine")
+        .nprobes(ANN_NPROBES)
+        .refine_factor(ANN_REFINE_FACTOR)
+        .select(["id", "_distance"])
+        .limit(20)
+        .to_list()
+    )
+    exact_ids = [row["id"] for row in exact]
+    indexed_ids = [row["id"] for row in indexed]
+    return {
+        "id": job_id,
+        "exact_rank": exact_ids.index(job_id) + 1 if job_id in exact_ids else None,
+        "indexed_rank": indexed_ids.index(job_id) + 1
+        if job_id in indexed_ids
+        else None,
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--db", required=True)
@@ -57,6 +94,8 @@ def main() -> int:
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
     db_path = Path(args.db)
+    dest = Path(args.out)
+    dest.parent.mkdir(parents=True, exist_ok=True)
     table = lancedb.connect(db_path).open_table("jobs")
     vectors = np.load(args.vectors)["vectors"].astype("float32")
     vector_index = next(i for i in table.list_indices() if "vector" in i.columns)
@@ -83,12 +122,16 @@ def main() -> int:
     for n, row in enumerate(sample):
         row["id"] = f"greenhouse:incremental:{n}"
         row["ats"] = "greenhouse"
+    sentinel = "greenhouse:incremental:fresh-control"
+    sample[0]["id"] = sentinel
+    sample[0]["vector"] = vectors[0].tolist()
 
     payload = {
         "rows_before": table.count_rows(),
         "bytes_before": _bytes(db_path),
         "before": _measure(table, vectors),
     }
+    _save(dest, payload)
     started = time.perf_counter()
     table.add(sample)
     payload["append_seconds"] = round(time.perf_counter() - started, 3)
@@ -96,6 +139,8 @@ def main() -> int:
     payload["bytes_after_append"] = _bytes(db_path)
     payload["stats_after_append"] = vars(table.index_stats(vector_index.name))
     payload["after_append"] = _measure(table, vectors)
+    payload["fresh_control_after_append"] = _fresh_control(table, vectors[0], sentinel)
+    _save(dest, payload)
 
     started = time.perf_counter()
     table.optimize()
@@ -103,14 +148,16 @@ def main() -> int:
     payload["bytes_after_optimize"] = _bytes(db_path)
     payload["stats_after_optimize"] = vars(table.index_stats(vector_index.name))
     payload["after_optimize"] = _measure(table, vectors)
-
-    dest = Path(args.out)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    with dest.open("w", encoding="utf-8") as out:
-        json.dump(payload, out, indent=2, sort_keys=True, default=str)
-        out.write("\n")
+    payload["fresh_control_after_optimize"] = _fresh_control(
+        table, vectors[0], sentinel
+    )
+    _save(dest, payload)
     print(json.dumps(payload, indent=2, sort_keys=True, default=str), flush=True)
-    return 0
+    controls = (
+        payload["fresh_control_after_append"],
+        payload["fresh_control_after_optimize"],
+    )
+    return 0 if all(c["exact_rank"] and c["indexed_rank"] for c in controls) else 3
 
 
 if __name__ == "__main__":

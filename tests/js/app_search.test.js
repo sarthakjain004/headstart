@@ -159,6 +159,28 @@ test('late facets cannot replace newer counts or release an old search render', 
   assert.ok(!nodes.results.innerHTML.includes('OLD'));
 });
 
+test('search rows paint before a slow facet count finishes', async () => {
+  let resolveFacets;
+  const { nodes, t } = loadApp(url => {
+    const q = qs(url).q;
+    if (url.startsWith('/facets?') && q === 'measured') {
+      return new Promise(resolve => { resolveFacets = resolve; });
+    }
+    if (url.startsWith('/facets?')) return { total: 1, facets: {} };
+    return url.startsWith('/search?') ? [job(q || 'initial', { title: (q || 'initial').toUpperCase() })] : [];
+  });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  set(nodes, 'q', 'measured');
+  const pending = t.go();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.ok(nodes.results.innerHTML.includes('MEASURED'));
+  assert.strictEqual(nodes.n.textContent, '1 result');
+
+  resolveFacets({ total: 42, facets: {} });
+  await pending;
+  assert.ok(nodes.n.textContent.includes('of 42 matching your filters'));
+});
+
 test('deleting a Saved set invalidates its in-flight matches', async () => {
   let resolveOld, sets = [{ id: 'old', name: 'old', query: 'old' }];
   const { nodes, t } = loadApp(url => {

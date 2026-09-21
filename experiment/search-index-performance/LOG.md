@@ -92,6 +92,26 @@ four materialized employment-type flags, B-trees on employer date and first-seen
 4.71 s; +401,266,643 bytes (+13.65%). The vector setting returned every exact top-20 id across
 16 real query vectors × four filter selectivities.
 
+The bounded facet cache preserved the cold indexed path (40–274 ms across the four cases) and
+served the same filters with different semantic query text at a 0.0042 ms warm median.
+
+Full-set correctness (not only top-20): all four employment flags produced identical legacy/new
+Job-id set fingerprints and zero row mismatches across 508,991 rows. The incremental positive
+control appended a new vector equal to a real query vector; it ranked first under exhaustive and
+indexed search both before and after index optimization.
+
+Independent query-shape results: prefiltering retained 1.00 recall and was faster; postfiltering
+fell to 0.003–0.19 mean recall and sometimes returned no rows. Id-only / production / all-column
+projection measured 16.39 / 19.29 / 22.03 ms. Ranked windows of 20 / 400 / 1,000 / 2,000 measured
+18.98 / 35.04 / 50.07 / 64.20 ms; 2,000 remains the pagination contract.
+
+Playwright end to end: deployed baseline warm combined filters dispatched in <1 ms, reached Search
+TTFB at ~5.00 s and facet TTFB at ~6.08 s, and showed cards only at the 6,079 ms settled median.
+Same-host/current-main against the same table settled warm at 279.2 ms; the candidate settled at
+23.7 ms (-91.5%). Candidate cold combined filters: dispatch 0.5–0.6 ms, Search TTFB 35.4 ms,
+facets TTFB 42.7 ms, cards 37.6 ms, settled 44.6 ms. The UI now paints Search results before a cold
+facet request finishes, then reconciles the total/pager.
+
 ### Lifecycle checks
 
 - Appending 5,000 unindexed Jobs: 1.00 mean/min recall@20; 16.81 → 17.14 ms.
@@ -109,5 +129,8 @@ four materialized employment-type flags, B-trees on employer date and first-seen
 - Coalesced experience column: <1% without an index, ~2x slower with one.
 - Lowercased title + FM: 98 → 28 ms for rare `kubernetes`, but 192 ms → 9.54 s for `engineer`.
 - Lowercased location + FM: ~101 → 328 ms.
+- Company FM: `google` 82.6 → 38.8 ms, but `tech` 90.3 → 557 ms and `a` 192 ms → 18.34 s.
+- Description FM: +2.89 GB and `kubernetes` 2.47 → 5.11 s.
+- NGRAM FTS: fast BM25 top-k, but cannot preserve the Keyword filter's boolean-set contract.
 
 See `artifacts/` for raw samples and ADR-0173 for the durable decision.

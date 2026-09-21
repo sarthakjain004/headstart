@@ -12,6 +12,7 @@ from typing import Any
 
 import lancedb
 from lancedb.index import (
+    FTS,
     Bitmap,
     BTree,
     Fm,
@@ -37,6 +38,19 @@ PROFILES: dict[str, tuple[tuple[str, Any], ...]] = {
         ("max_salary_annual", BTree()),
     ),
     "title_fm": (("title", Fm()),),
+    "title_fts_ngram": (
+        (
+            "title",
+            FTS(
+                base_tokenizer="ngram",
+                lower_case=True,
+                stem=False,
+                remove_stop_words=False,
+                ngram_min_length=3,
+                ngram_max_length=3,
+            ),
+        ),
+    ),
     "location_fm": (("location", Fm()),),
     "scalar_candidate": (
         ("ats", Bitmap()),
@@ -56,6 +70,12 @@ def _bytes(path: Path) -> int:
     return sum(p.stat().st_size for p in path.rglob("*") if p.is_file())
 
 
+def _save(path: Path, payload: dict) -> None:
+    with path.open("w", encoding="utf-8") as out:
+        json.dump(payload, out, indent=2, sort_keys=True, default=str)
+        out.write("\n")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--db", required=True)
@@ -64,9 +84,21 @@ def main() -> int:
     args = ap.parse_args()
 
     db_path = Path(args.db)
+    dest = Path(args.out)
+    dest.parent.mkdir(parents=True, exist_ok=True)
     table = lancedb.connect(db_path).open_table("jobs")
     before = _bytes(db_path)
     builds = []
+    payload = {
+        "measured_at": datetime.now(UTC).isoformat(),
+        "lancedb": lancedb.__version__,
+        "profile": args.profile,
+        "rows": table.count_rows(),
+        "bytes_before": before,
+        "builds": builds,
+        "status": "building",
+    }
+    _save(dest, payload)
     for column, config in PROFILES[args.profile]:
         started = time.perf_counter()
         table.create_index(column, config=config, replace=True)
@@ -90,23 +122,17 @@ def main() -> int:
             f"{args.profile}: {column} {type(config).__name__} built in {elapsed:.2f}s",
             flush=True,
         )
+        _save(dest, payload)
 
     after = _bytes(db_path)
-    payload = {
-        "measured_at": datetime.now(UTC).isoformat(),
-        "lancedb": lancedb.__version__,
-        "profile": args.profile,
-        "rows": table.count_rows(),
-        "bytes_before": before,
-        "bytes_after": after,
-        "bytes_added": after - before,
-        "builds": builds,
-    }
-    dest = Path(args.out)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    with dest.open("w", encoding="utf-8") as out:
-        json.dump(payload, out, indent=2, sort_keys=True, default=str)
-        out.write("\n")
+    payload.update(
+        {
+            "status": "complete",
+            "bytes_after": after,
+            "bytes_added": after - before,
+        }
+    )
+    _save(dest, payload)
     print(json.dumps(payload, indent=2, sort_keys=True, default=str), flush=True)
     return 0
 

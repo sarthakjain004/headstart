@@ -25,9 +25,11 @@ constants and both filter builders stay importable (and unit-testable) without t
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from threading import Lock
 from typing import Any, NamedTuple
 from urllib.parse import urlsplit
 
@@ -109,6 +111,7 @@ ETYPE_CLAUSES = {
 # selectivities. Lower settings lost results; IVF/HNSW Flat cost over 1.5 GB of extra storage.
 ANN_NPROBES = 80
 ANN_REFINE_FACTOR = 2
+FACET_CACHE_SIZE = 128
 
 
 #: Exactly the columns :meth:`JobSearch.run` reads to build a result row — the projection the
@@ -897,7 +900,7 @@ class JobSearch:
     The two facts the UI templates need — :attr:`atses` for the Board dropdown and
     :attr:`has_first_seen` for the "first seen" control — are attributes, not methods, so a
     template context can carry them straight through. :attr:`capabilities` (ADR-0149) bundles
-    those and the other four runtime facts into one :class:`IndexCapabilities` for
+    those and the other five runtime facts into one :class:`IndexCapabilities` for
     :func:`build_filter` and :func:`headstart.facets.counts`; the seven individual attributes stay
     directly settable, since templates and tests both read and monkeypatch them one at a time.
     """
@@ -963,6 +966,13 @@ class JobSearch:
         # boot is the one moment a cold Space has a visitor waiting on it, and nobody has
         # asked for the tab yet.
         self._coverage: dict[str, Any] | None = None
+        # Facets ignore the semantic query and the served table is immutable for this process's
+        # lifetime (the Space restarts when a new table lands). Cache only the parsed structured
+        # filters, bounded so arbitrary public requests cannot grow memory without limit.
+        self._facet_cache: OrderedDict[
+            tuple[SearchFilters, str | None], dict[str, Any]
+        ] = OrderedDict()
+        self._facet_cache_lock = Lock()
         # The four flags above are each a whole feature silently switched off: an un-migrated
         # table ignores every `seen_within`/`first_seen_after` bound, the salary bracket and
         # `has_salary`, the Keyword filter's description scope, and the `seen`/`salary` sorts
@@ -1082,12 +1092,24 @@ class JobSearch:
         """
         from headstart import facets
 
-        return facets.counts(
+        filters = self.parse_filters(args)
+        cache_key = (filters, extra_where)
+        with self._facet_cache_lock:
+            cached = self._facet_cache.pop(cache_key, None)
+            if cached is not None:
+                self._facet_cache[cache_key] = cached
+                return cached
+        counted = facets.counts(
             self._table,
-            self.parse_filters(args),
+            filters,
             self.capabilities,
             extra_where=extra_where,
         )
+        with self._facet_cache_lock:
+            self._facet_cache[cache_key] = counted
+            while len(self._facet_cache) > FACET_CACHE_SIZE:
+                self._facet_cache.popitem(last=False)
+        return counted
 
     def run(
         self, args: Mapping[str, str], *, extra_where: str | None = None

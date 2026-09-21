@@ -30,6 +30,24 @@ An indexed vector query uses 80 IVF probes and exact-vector refinement over twic
 result count. Those knobs apply only when `JobSearch` observes a vector index; an old or local
 unindexed table keeps exhaustive search unchanged.
 
+`JobSearch` also keeps a 128-entry LRU of facet payloads keyed by parsed structured filters. Facets
+are query-independent, and the table cannot change during a process's lifetime — publication
+restarts the Space — so changing only the semantic query must not repeat ~60 counts. The bound
+prevents arbitrary requests growing memory without limit; a restart is the invalidation boundary.
+
+The existing query shape remains deliberate: filters run before ANN search, the production result
+projection omits vector/description payloads, and ranked date/salary sorts keep their 2,000-result
+window. Post-filtering was both slower and destructive (0.003–0.19 mean recall with some queries
+returning zero rows). On the indexed table, id-only / production / all-column projections measured
+16.39 / 19.29 / 22.03 ms; the production fields are the response contract. Ranked windows of
+20 / 400 / 1,000 / 2,000 measured 18.98 / 35.04 / 50.07 / 64.20 ms; shrinking the last one would
+make later pages unreachable rather than merely faster.
+
+The browser no longer keeps result cards as skeletons until facets finish. `/search` and `/facets`
+still start together; Jobs paint as soon as the Search response arrives, initially with the count
+known from that page, then the total and pager reconcile when facets return. Empty and stale-request
+paths keep the same request-generation guards.
+
 The raw `employment_type` remains the display value. Four booleans materialize the existing
 filter verdicts (`is_full_time`, `is_part_time`, `is_contract`, `is_internship`), including the
 accepted `intern`-but-not-`international` rule. `index sync` adds them to an old table by evaluating
@@ -70,7 +88,37 @@ Every Search-result and facet-payload fingerprint matched.
 IVF-SQ at 80 probes + 2× refinement reproduced **every top-20 id** across 16 real query vectors
 and four filter selectivities (1,280 expected result positions). Building the full retained set
 took **4.71 s** and added **401,266,643 bytes (13.65%)**. A full indexed compaction took 10.25 s
-against the old path's 6.53 s.
+against the old path's 6.53 s. A cold retained facet request remained
+40–274 ms by filter shape; the same filter set with different semantic queries then measured a
+0.0042 ms warm median from the bounded cache.
+
+Each employment-type flag was also checked over the full table, not only on returned pages:
+313,836 full-time, 5,347 part-time, 20,464 contract and 2,186 internship Job ids produced identical
+order-independent set fingerprints under the legacy clause and the new flag, with zero row-level
+mismatches.
+
+### Browser end to end
+
+Playwright measured the click in the page (not automation actionability time), Resource Timing for
+both requests, and MutationObserver stamps for first cards and fully reconciled counts.
+
+The authenticated deployed baseline dispatched both requests in under 1 ms, but repeated combined
+filters had ~5.00 s Search TTFB, ~6.08 s facet TTFB, and a **6,079 ms** median to visible/settled
+cards because the deployed JavaScript waits for facets. This is production observation, not a
+candidate comparison: the PR is not deployed yet.
+
+For a comparable before/after, current `origin/main` and this branch ran locally on the same host,
+against copy-on-write clones of the same 508,991-row production table and the real encoder:
+
+| browser interaction | current main | retained candidate | change |
+| --- | ---: | ---: | ---: |
+| combined filters, first filter set, rows visible | 286.2 ms | 37.6 ms | -86.9% |
+| combined filters, first filter set, fully settled | 286.2 ms | 44.6 ms | -84.4% |
+| combined filters, repeated filter set, fully settled median | 279.2 ms | 23.7 ms | -91.5% |
+
+On the candidate's cold combined interaction, Search TTFB was 35.4 ms, facets TTFB 42.7 ms,
+cards painted at 37.6 ms, and counts settled at 44.6 ms. On warm repeats, the facet cache responded
+in 1.0–1.3 ms end to end and Search in 21.8–22.7 ms; cards settled in 23.3–24.4 ms.
 
 Raw samples, scripts, live observations, and every rejected arm are under
 `experiment/search-index-performance/`.
@@ -91,6 +139,12 @@ Raw samples, scripts, live observations, and every rejected arm are under
   them. A lowercased title column made rare `kubernetes` queries fast, but `engineer` regressed
   from 192 ms to 9.54 s; location similarly regressed. Arbitrary user substrings cannot take that
   selectivity cliff.
+- **Company/description FM indexes:** selective `google` improved 82.6 → 38.8 ms, but `tech`,
+  `group`, and `a` regressed to 0.56 s, 0.28 s, and 18.34 s. A lowercased description plus FM
+  doubled current-state storage to 5.83 GB and made `kubernetes` 2.47 → 5.11 s.
+- **NGRAM FTS:** compact (29 MB) and fast for selective terms, but exposes a BM25-ranked top-k,
+  not the deterministic boolean candidate set the explicit Keyword filter promises. Feeding only
+  that top-k into semantic ranking would silently discard valid matches.
 - **Stored USD salary columns and a stored posting date:** LanceDB 0.36 cannot express the needed
   guarded CASE transforms as an in-place migration; their existing paths were no longer top costs
   after ANN indexing, so a pipeline-wide derivation was not justified.
