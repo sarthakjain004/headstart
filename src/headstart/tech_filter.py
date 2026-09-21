@@ -52,7 +52,15 @@ from pathlib import Path
 # docs/tech-filter/2026-09-17_the-title-decides.md. This is exactly the shape the counter exists
 # for: `role_trends` would otherwise read "Security Officer" leaving the index as the market
 # shedding security jobs.
-TECH_FILTER_VERSION = 2
+# 3 (2026-09-21, `git log 96c0c702..SHA_PLACEHOLDER -- src/headstart/tech_filter.py`): the strong
+# list gained the role families still outside it after version 2 moved rules 1-2 onto the title —
+# Member of Technical Staff, Forward Deployed Engineer, AI/ML research and applied scientists,
+# business intelligence, silicon design, security operations, the QA role words, bioinformatics —
+# and the enterprise-platform arm stopped requiring the product and the role word to be adjacent.
+# Net **+1.54%** on the 332,383-posting pre-filter snapshot, 67,506 -> 68,548: **+1,042 in, 0 out**,
+# so unlike version 2 this one is purely additive and the composition moves exactly as far as the
+# total. See docs/tech-filter/2026-09-21_the-families-still-outside-the-gate.md.
+TECH_FILTER_VERSION = 3
 
 # 1. Strong, software-specific signals. A match here means tech regardless of any disqualifier.
 _STRONG_TERMS = [
@@ -136,13 +144,57 @@ _STRONG_TERMS = [
         r"|program manager|project manager|product manager)"
     ),
     r"(power ?bi|tableau|looker|qlik) (developer|analyst|specialist|consultant)",
+    # A bounded gap, not a single space: the platform's own module name almost always sits
+    # between the product and the role — "SAP FICO Consultant", "SAP Basis Migration Consultant",
+    # "Salesforce Pre-Sales Architect", "ServiceNow Business Analyst". Requiring adjacency left
+    # 589 such rows outside the gate. The second arm is the reverse order ("Business Analyst -
+    # ServiceNow"), which the single-arm form could not express at all. `s?\b` because the
+    # role word is routinely plural ("ServiceNow Developers", "Workday Consultants"): a bare
+    # closing `\b` drops both, and the adjacent form this replaces had no closing boundary,
+    # so tightening it without the `s?` would have been a recall regression.
     (
-        r"(salesforce|servicenow|sharepoint|sap|abap|apex|workday|netsuite|dynamics) "
-        r"(developer|administrator|consultant|analyst|specialist|architect|lead)"
+        r"\b(salesforce|servicenow|sharepoint|sap|abap|apex|workday|netsuite|dynamics)\b"
+        r".{0,24}\b(developer|administrator|consultant|analyst|specialist|architect|lead)s?\b"
+    ),
+    (
+        r"\b(developer|administrator|consultant|analyst|specialist|architect|lead)s?\b"
+        r".{0,24}\b(salesforce|servicenow|sharepoint|sap|abap|apex|workday|netsuite)\b"
     ),
     r"\b(etl|rpa|middleware|integration) (developer|specialist|consultant|lead)\b",
     r"database (administrator|analyst|specialist|developer)",
     r"\bdba\b",
+    # The standard IC title at AI labs and at Bell-lineage firms, and it names no discipline of
+    # its own, so nothing in this list covered it. Since rules 1-2 read the title only (ADR-0166)
+    # it had no department left to rescue it either: 124 rows, on boards whose departments read
+    # Modeling, Research, Inference, Technical Staff.
+    r"member of (the )?technical staff",
+    # Qualified so "Forward Deployed Creative" stays out. It has to be a strong signal rather
+    # than a generic one because these sit under a Sales/GTM department, which rule 2 vetoes on.
+    r"forward[- ]deployed (software |ai |)engineer",
+    # The `\b(ai|ml)[\s/&,-]*(…|scientist|researcher)` arm above needs the role word adjacent to
+    # `ai`/`ml`, so "AI Research Scientist" — one word in between — matched nothing at all.
+    r"\b(ai|ml|artificial intelligence) research (scientist|engineer|lead|manager)",
+    r"applied scientist",
+    r"analytics engineer",
+    r"business intelligence (analyst|developer|engineer|consultant|specialist)",
+    r"\bbi (developer|analyst|engineer)s?\b",
+    r"bioinformatic|computational biolog",
+    # Silicon design is HDL/EDA work — software by any reading, and the premise ADR-0068 already
+    # applied to `hardware` as an org label. `rtl` is qualified because the bare acronym matches
+    # the broadcaster: 2 of its 46 distinct dropped titles were "RTL Nieuws" media roles.
+    r"\b(vlsi|fpga|asic)\b",
+    r"rtl (design|verification)",
+    r"design verification",
+    r"physical design",
+    # `security operations`/`soc` beyond the `… analyst` arm above — "SOC Specialist II",
+    # "SOC Manager", "Security Operations Lead". Deliberately not bare `security specialist`,
+    # which matches "EHS and Security Specialist", i.e. physical security.
+    r"security operations",
+    r"\bsoc (specialist|manager|engineer|architect|lead)",
+    # `qa`/`test` role words the `… tester` and `… analyst` arms above do not carry.
+    r"\bqa (analyst|lead|manager)s?\b",
+    r"test analyst",
+    r"manual tester",
 ]
 _STRONG = re.compile("|".join(_STRONG_TERMS), re.IGNORECASE)
 
