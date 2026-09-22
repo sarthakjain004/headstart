@@ -424,7 +424,9 @@ class TaleoBEScraper(BaseScraper):
             None,
         )
         if low and high:
-            return f"{low} - {high}"
+            # ICANN writes each bound as "$40,000 + 10% Bonus + Benefits"; joined whole, the
+            # tail between the figures leaves no range and extract keeps only the floor.
+            return f"{low.split('+')[0].strip()} - {high.split('+')[0].strip()}"
         for name, value in raw.items():
             if any(
                 word in name for word in ("salary", "pay range", "compensation")
