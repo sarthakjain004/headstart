@@ -19,8 +19,12 @@ ADA = "2000"
 class _Store:
     """The Subscriptions dataset as a dict keyed by record id."""
 
-    def __init__(self, records=None):
+    def __init__(self, records=None, invites=()):
         self.records = dict(records or {})
+        self.allowlist = list(invites)
+
+    def invites(self):
+        return self.allowlist
 
     def get(self, sub_id):
         return self.records.get(sub_id)
@@ -298,14 +302,15 @@ def test_allow_still_rejects_an_id_that_never_asked():
     assert store.get(chat_subscription_id("99999")) is None
 
 
-@pytest.fixture
-def hub_store(monkeypatch):
+def _real_store(monkeypatch, invites=()):
     """The real Store over a dict Hub. `_Store` above does not model the opt-out marker every
     removal leaves (ADR-0142), which is how a re-approval that raised on every attempt stayed
     green here."""
+    import json
+
     from headstart.alerts import store as st
 
-    files: dict[str, bytes] = {}
+    files = {st.ALLOWLIST_PATH: json.dumps({"allowed": list(invites)}).encode()}
     monkeypatch.setattr(st, "_read", lambda repo, path, token: files[path])
     monkeypatch.setattr(st, "_is_absent", lambda exc: isinstance(exc, KeyError))
 
@@ -320,6 +325,11 @@ def hub_store(monkeypatch):
 
     monkeypatch.setattr(st, "_commit", commit)
     return st.Store("acme/subs", "tok")
+
+
+@pytest.fixture
+def hub_store(monkeypatch):
+    return _real_store(monkeypatch)
 
 
 @pytest.mark.parametrize(
@@ -352,6 +362,56 @@ def test_the_master_can_set_a_search_again_after_their_own_stop(hub_store):
 
     assert replies == [(MASTER, "Searching for: infra")]
     assert hub_store.get(chat_subscription_id(MASTER)).query == "infra"
+
+
+@pytest.fixture
+def invited(monkeypatch):
+    """A chat the owner routed to Telegram by hand: an Invite carrying its chat id
+    (docs/telegram-alerts.md "Without the bot"), with the record the alerts run made for it."""
+    from headstart.alerts import run
+
+    store = _real_store(
+        monkeypatch,
+        [{"email": "ada@example.com", "query": "backend", "telegram": ADA}],
+    )
+    (invite,) = store.invites()
+    assert run.subscription_for(invite, store, frozenset()) is not None
+    return store, invite
+
+
+def test_an_invited_chat_can_stop_its_alerts(invited):
+    from headstart.alerts import run
+
+    store, invite = invited
+
+    replies = bot.handle(_update(ADA, "/stop"), Registry(master=MASTER), store)
+
+    assert [chat for chat, _ in replies] == [ADA] and "Stopped" in replies[0][1]
+    assert run.subscription_for(invite, store, frozenset()) is None
+
+
+@pytest.mark.parametrize("command", ["/q infra", "/status"])
+def test_an_invited_chat_is_told_the_owner_manages_its_search(invited, command):
+    store, _ = invited
+    registry = Registry(master=MASTER)
+
+    replies = bot.handle(_update(ADA, command), registry, store)
+
+    assert [chat for chat, _ in replies] == [ADA] and "owner" in replies[0][1]
+    assert store.get(chat_subscription_id(ADA)) is None
+    assert registry.pending == {}, "an invited chat is not a stranger asking in"
+
+
+def test_an_invited_chat_cannot_be_approved_into_a_second_record(invited):
+    # Two records for one chat would deliver every Digest to it twice.
+    store, _ = invited
+    registry = Registry(master=MASTER, pending={ADA: Pending(ADA, "ada_l", "Ada")})
+
+    replies = bot.handle(_update(MASTER, f"/allow {ADA}"), registry, store)
+
+    assert [chat for chat, _ in replies] == [MASTER]
+    assert store.get(chat_subscription_id(ADA)) is None
+    assert ADA not in registry.pending
 
 
 def test_an_allow_the_store_refuses_leaves_the_request_waiting():

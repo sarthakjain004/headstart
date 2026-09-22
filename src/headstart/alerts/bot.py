@@ -27,7 +27,14 @@ from typing import Any
 from headstart import log
 
 from .registry import Pending, Registry
-from .store import Store, Subscription, chat_subscription_id, now_iso
+from .store import (
+    Invite,
+    Store,
+    Subscription,
+    chat_subscription_id,
+    now_iso,
+    subscription_id,
+)
 
 _log = log.get(__name__, __spec__)
 
@@ -104,6 +111,10 @@ def handle(
         return _master_command(command, argument, registry, store, chat_id)
 
     if not known:
+        # Read only here, for a chat the bot has no record of: approved chats never pay it.
+        invite = _invite_for(chat_id, store)
+        if invite:
+            return _invited_command(command, chat_id, invite, store)
         return _request_access(command, chat_id, username, name, registry)
 
     if command == "q":
@@ -118,6 +129,32 @@ def handle(
             store.remove(sub.id)
         return [(chat_id, "Stopped. Send /start to set it up again.")]
     return [(chat_id, MASTER_HELP if is_master else HELP)]
+
+
+OWNER_MANAGED = (
+    "Your alerts were set up by the bot's owner, who manages your search — ask them to "
+    "change it. /stop — stop alerts"
+)
+
+
+def _invite_for(chat_id: str, store: Store) -> Invite | None:
+    """The allowlist entry that routes this chat's Digests, if the owner wrote one by hand.
+
+    Such a chat is already enrolled — its Subscription is keyed by the address, not the chat
+    (ADR-0038) — so the bot must neither treat it as a stranger nor mint it a second record,
+    which would deliver every Digest to it twice."""
+    return next((i for i in store.invites() if i.telegram == chat_id), None)
+
+
+def _invited_command(
+    command: str, chat_id: str, invite: Invite, store: Store
+) -> list[tuple[str, str]]:
+    """/stop opts the address-keyed record out, which `run.subscription_for` honours; the
+    search itself is the allowlist's, so /q and /status point at the owner."""
+    if command == "stop":
+        store.remove(subscription_id(invite.email))
+        return [(chat_id, "Stopped. Ask the bot's owner to set it up again.")]
+    return [(chat_id, OWNER_MANAGED)]
 
 
 def _request_access(
@@ -162,6 +199,9 @@ def _master_command(
         return [(master, f"Which id? e.g. /{command} 12345")]
 
     if command == "allow":
+        if _invite_for(argument, store):
+            registry.pending.pop(argument, None)
+            return [(master, f"{argument} already gets alerts from the allowlist.")]
         # Read, not popped, until the record is written: `main` saves the registry even when
         # this raises, so popping first would drop the request with neither side told.
         waiting = registry.pending.get(argument)
