@@ -794,8 +794,8 @@ def _ledger_gap_no_meta(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
 def _ledger_gap_empty_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The store downloaded empty — distinct from the no-store case above, and it must be.
 
-    The join fetches the description store on a warn-only fallback, so an empty one here means a
-    lost download. Writing the ledger from it would mark every embedded Board gap-ful.
+    An empty store here means the store was never fetched (the join's fetch fails closed, so not
+    there). Writing the ledger from it would mark every embedded Board gap-ful.
     """
     from headstart.ingest import update_ledgers
 
@@ -1748,9 +1748,11 @@ def test_pipeline_refreshes_search_indexes_after_prune_and_before_publication():
     workflow = Path(_PIPELINE).read_text(encoding="utf-8")
 
     prune = workflow.index("python -m headstart.ingest.index prune --apply")
-    embedding = workflow.index('publish embedding_store "$HF_DATASET"')
+    embedding = workflow.index('publish embedding_store hf upload "$HF_DATASET"')
     refresh = workflow.index("python -m headstart.ingest.index refresh-indexes")
-    publish = workflow.index('publish lancedb_index "$HF_DATASET"')
+    publish = workflow.index(
+        'publish lancedb_index python -m headstart.ingest.index_publish "$HF_DATASET"'
+    )
     assert prune < embedding < refresh < publish
 
 

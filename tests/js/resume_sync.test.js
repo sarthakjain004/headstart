@@ -75,7 +75,7 @@ function loadSync(options) {
     schedule: (fn, ms) => { timers.push({ fn, at: clock.at + ms }); return timers.length - 1; },
     cancel: handle => { if (timers[handle]) timers[handle].cancelled = true; },
     onMessage: (text, sticky) => messages.push({ text, sticky }),
-    onAdopt: (incoming, mine) => adopted.push({ incoming, mine }),
+    onAdopt: (incoming, mine) => { adopted.push({ incoming, mine }); if (opts.onAdopt) opts.onAdopt(incoming, mine); },
   });
   /* Run every timer that is due at the current clock, the way a browser would. */
   const tick = ms => {
@@ -237,6 +237,54 @@ test('a refused push keeps BOTH copies and never picks a winner', () => {
        for byte — rather than the one that just moved out of the way. */
     assert.equal(sync.status().error, '');
     assert.ok(sync.status().at, 'the adopted copy reads as unsaved');
+  });
+});
+
+test('after a conflict, what was typed during the refused push is not pushed again', () => {
+  /* That edit is already in the copy kept aside, and the document now open IS the account's.
+     Left dirty, the heartbeat pushed the pre-conflict document at its old revision, was refused
+     again, and kept a second "(this device)" copy — of the account's own words, since that is
+     what `_current` resolves to by then. */
+  const theirs = aDoc({ rev: 9, name: 'written on the desktop' });
+  let open = aDoc({ rev: 1, name: 'written on the laptop' });
+  const refused = { status: 409, body: { error: 'changed elsewhere', stored: theirs } };
+  const { sync, repository, adopted, wire, tick, MIN } = loadSync({
+    docs: [open], live: () => open, answers: [refused, refused],
+  });
+  sync.note(open);
+  const pushing = sync.flush('tab hidden');
+  open = Object.assign({}, open, { name: 'typed while it was in flight' });
+  repository.save(open);
+  sync.note(open);   // its local save lands while the PUT is still out
+  return pushing.then(() => {
+    open = adopted[0].incoming;   // what the editor does with the account's copy
+    tick(MIN);
+    return settled();
+  }).then(() => {
+    assert.equal(wire.calls.length, 1, 'the pre-conflict document was pushed again');
+    assert.equal(repository.all().filter(d => /this device/.test(d.name)).length, 1,
+      'one conflict kept two copies aside');
+  });
+});
+
+test('a local save still waiting when the conflict lands cannot overwrite the account copy', () => {
+  /* Review pass 1: the editor's adopt flushes its debounced save of the OUTGOING document — same
+     id — so the browser's copy of the account document was the local text again, and a reload
+     opened it at the old revision. The local words are already in the "(this device)" copy. */
+  const theirs = aDoc({ rev: 9, name: 'written on the desktop' });
+  const open = aDoc({ rev: 1, name: 'written on the laptop' });
+  let repo;
+  const { sync, repository } = loadSync({
+    docs: [open], live: () => open,
+    answers: [{ status: 409, body: { error: 'changed elsewhere', stored: theirs } }],
+    onAdopt: () => repo.save(Object.assign({}, open, { name: 'debounced local save' })),
+  });
+  repo = repository;
+  sync.note(open);
+  return sync.flush('tab hidden').then(() => {
+    const kept = repository.all().find(d => d.id === theirs.id);
+    assert.equal(kept.name, 'written on the desktop', 'the flush overwrote the account copy');
+    assert.equal(kept.rev, 9);
   });
 });
 
@@ -468,6 +516,55 @@ test('turning it off only says "removed" when the account copy really went', () 
     assert.equal(repository.get('rmfk3n2abcd').rev, 4, 'the revision was cleared on a failed delete');
     assert.ok(messages.some(m => m.sticky && /still on your account/i.test(m.text)));
   });
+});
+
+test('switching off lands on the document as it stands NOW, not on the one the switch saw', () => {
+  /* The user keeps typing through the DELETE, and every command replaces the document object.
+     Writing the flags onto the one captured at click time left the live document at
+     `sync: true` — its next save queued a push that put the résumé back on the Account — and
+     stored the pre-typing words over what had been typed. */
+  let open = aDoc({ sync: true, rev: 1, name: 'before the switch' });
+  const { sync, repository, wire } = loadSync({
+    docs: [open], live: () => open, answers: [{ status: 200, body: { ok: true } }],
+  });
+  const switching = sync.setEnabled(open, false);
+  open = Object.assign({}, open, { name: 'typed while it was in flight' });
+  repository.save(open);
+  return switching.then(gone => {
+    assert.equal(gone, true);
+    assert.equal(open.sync, false, 'the document on screen still has sync on');
+    assert.equal(open.rev, 0);
+    const kept = repository.get('rmfk3n2abcd');
+    assert.equal(kept.name, 'typed while it was in flight', 'the in-flight edit was overwritten');
+    assert.equal(kept.sync, false);
+    sync.note(open);   // its next local save
+    return sync.flush('tab hidden');
+  }).then(() => {
+    assert.ok(!wire.calls.some(c => c.method === 'PUT'), 'the résumé went back onto the account');
+  });
+});
+
+test('a document deleted while its push is in flight stays deleted, here and on the account', () => {
+  /* The push outlives the delete. Its answer found no local copy, so `_current` fell back to the
+     payload and saved it back into this browser; and the server may apply the PUT after the
+     DELETE, which leaves the résumé on the Account the user just removed it from. */
+  const doc = aDoc({ rev: 1 });
+  const { sync, repository, wire } = loadSync({
+    docs: [doc], answers: [{ status: 200, body: { ok: true, rev: 2 } }, { status: 200, body: { ok: true } }],
+  });
+  sync.note(doc);
+  const pushing = sync.flush('tab hidden');
+  sync.forget(doc.id);              // what the editor's delete does, in its order
+  sync.drop(doc.id);
+  repository.remove(doc.id);
+  return pushing.then(settled).then(() => {
+    assert.equal(repository.get(doc.id), null, 'the deleted résumé was saved back into this browser');
+    const last = wire.calls[wire.calls.length - 1];
+    assert.equal(last.method, 'DELETE', 'a PUT that landed after the DELETE was left on the account');
+    assert.equal(last.url, '/resumes/' + doc.id);
+    return sync.flush('tab hidden');
+  }).then(() => assert.equal(wire.calls.filter(c => c.method === 'PUT').length, 1,
+    'the deleted résumé was queued to go up again'));
 });
 
 test('a 404 on the way off counts as gone — the record is not there, which is what was asked', () => {

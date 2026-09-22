@@ -129,6 +129,11 @@ def read_stock_change(delta_dir: Path) -> tuple[collections.Counter, list[str]]:
     writes the directory, so the directory is complete. A caller reading a partially fetched
     copy would mistake its oldest present tick for the baseline and lose one real measurement.
 
+    **Only the newest tick's ``centroid_version`` is summed** (ADR-0040/ADR-0143). A refit finds no
+    Board counts at its own version, so `role_trends` writes that version a fresh baseline of
+    every Board's stock; summed across versions it made every Board "newly discovered" for a week.
+    The same by-position rule drops the current version's first tick as its baseline.
+
     The returned stamps describe the window actually measured, never the window intended — a tab
     claiming a week over two days of data would be a lie the data can already tell.
     """
@@ -140,11 +145,14 @@ def read_stock_change(delta_dir: Path) -> tuple[collections.Counter, list[str]]:
     # behaviour that nothing here would have shown.
     ticks = []
     for path in sorted(delta_dir.glob("*.parquet")):
-        stamps_in_file = pq.read_table(path, columns=["ts"]).column("ts").to_pylist()
+        table = pq.read_table(path, columns=["ts"])
+        stamps_in_file = table.column("ts").to_pylist()
         if stamps_in_file:
-            ticks.append((path, stamps_in_file[0]))
+            version = (table.schema.metadata or {}).get(b"centroid_version")
+            ticks.append((path, stamps_in_file[0], version))
     if not ticks:
         return collections.Counter(), []
+    ticks = [t[:2] for t in ticks if t[2] == ticks[-1][2]]
     newest = max(ts for _, ts in ticks)
     cutoff = (datetime.fromisoformat(newest) - timedelta(days=WINDOW_DAYS)).isoformat()
 

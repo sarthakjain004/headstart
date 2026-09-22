@@ -68,3 +68,14 @@ The residual risk is a company whose *name* collides with a token and isn't in t
 yet — the failure mode is a wrongly-dead Board with a 90-day TTL, visible in the ledger diff, and
 the fix is a one-line exception. The tokens are deliberately only the three with measured sightings;
 `test`/`staging`/`preview` wait for evidence before earning a slot.
+
+## Amendment (2026-09-23): `test`/`dev` earn a slot on Oracle only
+
+The evidence arrived for Oracle. Oracle names a tenant's non-production pods after its production
+one (`jpmc-dev9`, `jpmc-test`, `fa-exuf-test-saasfaprod1`), so there the tokens are the vendor's
+environment names, not a customer's. Sampled on 15 such pods, 86 of 328 listing ids exist on the
+production pod — a clone, served twice under two Board keys — and the rest are closed there or
+synthetic ("Software Engineer 092 - enable auto approval for testing"). `_ORACLE_NONPROD` reads
+`-test`/`-dev{N}` only inside an `*.oraclecloud.com` host. Globally the tokens stay out: they would
+kill `ashby:convex-dev`, `ashby:magic.dev` and `recruitee:test1234`, all real. The 343 live rows it
+catches (193,640 ledger postings) were flipped live→dead in the same change.

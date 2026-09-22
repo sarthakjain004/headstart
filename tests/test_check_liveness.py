@@ -9,6 +9,7 @@ ones, because widening the pattern to catch `stldemo` would re-admit `sandboxvr`
 
 from __future__ import annotations
 
+import csv
 import importlib.util
 import threading
 import time
@@ -42,6 +43,9 @@ def cl():
         ("demo.uipath.com", "", True),
         ("careers-uat.morganstanley.com.cn", "", True),
         ("acme", "https://demo.acme.com/board", True),  # marker in the url, not tenant
+        # a numbered instance is the same marker — NVIDIA's staging mirror of jobs.nvidia.com
+        ("nvidia-sandbox2.eightfold.ai", "https://nvidia-sandbox2.eightfold.ai", True),
+        ("uat2", "https://uat2.ripplehire.com", True),
         # token-bounding: one-word names containing a marker must NOT match
         ("sandboxvr", "", False),
         ("thesandbox", "", False),
@@ -52,10 +56,42 @@ def cl():
         # exact-tenant blocklist: concatenated markers the token rule cannot see
         ("stldemo", "https://stldemo.ripplehire.com", True),
         ("stl", "", False),  # the real company the blocklist must not bleed onto
+        # Oracle's own non-prod pods, `{pod}-test` / `{pod}-dev{N}`: stale or cloned postings
+        ("jpmc-dev9.fa.oraclecloud.com", "https://jpmc-dev9.fa.oraclecloud.com", True),
+        ("jpmc-test.fa.oraclecloud.com", "https://jpmc-test.fa.oraclecloud.com", True),
+        ("ehap-dev5", "ehap-dev5.fa.us2.oraclecloud.com", True),
+        (
+            "fa-exuf-test-saasfaprod1.fa.ocs.oraclecloud.com",
+            "https://fa-exuf-test-saasfaprod1.fa.ocs.oraclecloud.com",
+            True,
+        ),
+        # ...but not their production pods, and not test/dev off Oracle, where they are names
+        ("jpmc.fa.oraclecloud.com", "https://jpmc.fa.oraclecloud.com", False),
+        (
+            "fa-exuf-saasfaprod1.fa.ocs.oraclecloud.com",
+            "https://fa-exuf-saasfaprod1.fa.ocs.oraclecloud.com",
+            False,
+        ),
+        ("convex-dev", "https://jobs.ashbyhq.com/convex-dev", False),
+        ("test1234", "https://test1234.recruitee.com", False),
     ],
 )
 def test_is_nonprod(cl, tenant, url, nonprod):
     assert cl.is_nonprod(tenant, url) is nonprod
+
+
+def test_no_live_ledger_row_is_nonprod(cl):
+    """The committed ledger agrees with the rule. A widened rule only reaches a row when its TTL
+    lapses, so until then the row stays `live` and is scraped and served (ADR-0034 flipped its 48
+    in the same change for this reason)."""
+    ledger = _SCRIPT.parents[2] / "data" / "validate" / "liveness"
+    live_nonprod = [
+        f"{row['ats']}:{row['tenant']}"
+        for path in sorted(ledger.glob("*.csv"))
+        for row in csv.DictReader(path.open(encoding="utf-8"))
+        if row["status"] == "live" and cl.is_nonprod(row["tenant"], row["url"])
+    ]
+    assert live_nonprod == []
 
 
 # --- eightfold alias losers (#157) ----------------------------------------------------------
@@ -608,3 +644,43 @@ def test_a_quota_403_rotation_does_not_report_itself_as_a_429(cl, egress):
     assert egress.walled_statuses == [403], (
         "a 403 wall must be recorded as a 403, not as someone else's 429"
     )
+
+
+def test_an_unknown_reprobe_keeps_a_live_verdict(cl, tmp_path, monkeypatch):
+    """ADR-0177: an inconclusive re-probe of a `live` Board must not overwrite it. `unknown` leaves
+    the Scrapable set and `index prune` then evicts every row of the Board, with no grace period —
+    a 429 breaker once turned all of workable UNKNOWN in one run. A Board never seen live still
+    records `unknown`."""
+    pool, ledger = tmp_path / "pool", tmp_path / "ledger"
+    pool.mkdir()
+    (pool / "greenhouse.csv").write_text(
+        "tenant,url\nstripe,https://boards.greenhouse.io/stripe\n"
+        "newco,https://boards.greenhouse.io/newco\n",
+        encoding="utf-8",
+    )
+    live = cl.liveness.Verdict(
+        "greenhouse",
+        "stripe",
+        "https://boards.greenhouse.io/stripe",
+        "live",
+        300,
+        "2026-01-01",
+    )
+    cl.liveness.write(ledger / "greenhouse.csv", [live])
+    monkeypatch.setitem(cl.PROBES, "greenhouse", lambda tenant, url: (cl.UNKNOWN, None))
+    monkeypatch.setattr(cl, "PASSES", [(1, 1)])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "check_liveness",
+            "--dir",
+            str(pool),
+            "--ledger-dir",
+            str(ledger),
+            "greenhouse",
+        ],
+    )
+    cl.main()
+    after = cl.liveness.load(ledger / "greenhouse.csv")
+    assert after["stripe"] == live
+    assert after["newco"].status == cl.UNKNOWN

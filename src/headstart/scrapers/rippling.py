@@ -36,12 +36,28 @@ def _department_of(record: dict[str, Any]) -> str | None:
     return dept or None
 
 
-def _location(item: dict) -> str | None:
-    wl = item.get("workLocation") or {}
-    if isinstance(wl, dict) and wl.get("label"):
-        return wl["label"]
-    wls = (item.get("_detail") or {}).get("workLocations") or []
-    return wls[0] if wls else None
+def _location(rows: list[dict], detail: dict) -> str | None:
+    """Every place a posting names, ``; ``-joined in first-seen order.
+
+    A multi-location posting is listed once per work location: rows sharing one ``uuid`` and
+    differing only in ``workLocation`` (measured live 2026-09-23 across 25 Boards: 141 of 143
+    multi-row postings; the other 2 repeat a row exactly). The detail's ``workLocations`` names
+    the same places (136/143; the other 7 spell a state differently), so it is read only when no
+    row states a label.
+    """
+    labels = [
+        wl["label"]
+        for wl in (row.get("workLocation") for row in rows)
+        if isinstance(wl, dict) and wl.get("label")
+    ]
+    return "; ".join(dict.fromkeys(labels or detail.get("workLocations") or [])) or None
+
+
+def _format_amount(v: float) -> str:
+    """Fixed-point, never scientific notation or a trailing ".0" — keka's ``_format_num`` fix:
+    ``:g`` writes 2,000,000 as "2e+06", which ``salary.py`` cannot parse, so a band reaching a
+    million (live: heymarvin's INR bands, 2026-09-22) lost its salary entirely."""
+    return f"{v:f}".rstrip("0").rstrip(".") or "0"
 
 
 def _employment_type(detail: dict) -> str | None:
@@ -112,6 +128,8 @@ class RipplingScraper(BaseScraper):
         wanted = self.tech_detail_wanted(
             items, lambda it: it.get("name"), _department_of
         )
+        # One detail per posting, not one per location row — `parse` merges a posting's rows.
+        wanted = list({it.get("uuid"): it for it in wanted}.values())
         # Fill each posting's detail concurrently (bounded); a failed fetch leaves ``_detail`` {}.
         if self.async_fanout_enabled():
             details = self.fan_out_async(
@@ -179,10 +197,17 @@ class RipplingScraper(BaseScraper):
         return self._extract_detail(resp)
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
-        jobs: list[Job] = []
+        # A multi-location posting is N rows sharing one `uuid` (see `_location`) — grouped so it
+        # serves as one Job with every location, rather than colliding down to one row's in the
+        # harvest's within-Board first-wins dedupe. Only one row of a group carries the detail.
+        by_uuid: dict[str, list[dict]] = {}
         for it in raw:
-            detail = it.get("_detail") or {}
-            location = _location(it)
+            by_uuid.setdefault(it["uuid"], []).append(it)
+        jobs: list[Job] = []
+        for rows in by_uuid.values():
+            it = rows[0]
+            detail = next((r["_detail"] for r in rows if r.get("_detail")), {})
+            location = _location(rows, detail)
             dept = _department_of(it) or _department_of(detail)
             jobs.append(
                 Job(
@@ -241,14 +266,16 @@ class RipplingScraper(BaseScraper):
         ]
         los = [r["rangeStart"] for r in same_unit if r.get("rangeStart") is not None]
         his = [r["rangeEnd"] for r in same_unit if r.get("rangeEnd") is not None]
-        if not los and not his:
+        if not los:
+            # blank, or a ceiling alone — `salary.extract` reads a lone figure as a floor, so
+            # "up to 120000" would serve as a 120k minimum (recruitee and iCIMS refuse the same)
             return None
-        lo = min(los) if los else None
+        lo = min(los)
         hi = max(his) if his else None
         span = (
-            f"{lo:g}-{hi:g}"
-            if lo is not None and hi is not None
-            else f"{(lo if lo is not None else hi):g}"
+            f"{_format_amount(lo)}-{_format_amount(hi)}"
+            if hi is not None
+            else _format_amount(lo)
         )
         currency, frequency = unit
         return " ".join(str(x) for x in (span, currency, frequency) if x)

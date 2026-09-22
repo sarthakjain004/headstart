@@ -33,6 +33,9 @@ MAX_RESUME_CHARS = (
     20_000  # a real résumé is ~3-6 KB of text; anything bigger is not one
 )
 _MAX_QUERY_CHARS = 200  # the search box is one line; a paragraph is the model rambling
+# How much of the raw text the scrub reads at all. POST /profile hands it a request body of
+# any size, and `re` holds the GIL while it matches, so an unread tail must cost nothing.
+_MAX_SCRUB_CHARS = 1_000
 _MAX_FACT_CHARS = 200  # each fact renders as one form field
 
 _PROMPT = """You are helping a job seeker set up their profile on a semantic search index of \
@@ -62,10 +65,12 @@ Resume:
 # "query" sentence. Deliberately narrow: this runs on a one-line role description the user
 # sees and edits, so a false negative costs one visible keystroke. Known leaks, accepted:
 # bare "150k" (the money branch requires a currency sign — which is also why "401k" can
-# never false-positive), hyphenated "8-year", and acronyms like "8 YOE".
+# never false-positive), hyphenated "8-year", and acronyms like "8 YOE". The years branch is
+# written to stay linear: `(?<!\d)` stops every digit of a run being a fresh start, and one
+# `\s*` per side of the "+" stops a whitespace run being split two ways — both were quadratic.
 _FORBIDDEN = re.compile(
     r"""
-    \d+\s*\+?\s*(?:years?|yrs?)(?:\s+of\s+experience)?   # 7 years / 10+ yrs of experience
+    (?<!\d)\d+\s*(?:\+\s*)?(?:years?|yrs?)(?:\s+of\s+experience)?  # 7 years / 10+ yrs of experience
     | (?:₹|\$|€|£)\s*\d[\d,.]*\s*(?:k|m|lpa|lakhs?|cr)?  # $150k / ₹30 LPA
     | \b\d+\s*(?:lpa|lakhs?)\b                           # 30 LPA without a currency sign
     | \bsalary\b | \bcompensation\b | \bctc\b
@@ -92,6 +97,8 @@ class EmptyExtraction(ResumeError):
 
 def _reply_json(reply: str) -> dict[str, Any]:
     """The one JSON object in the model's reply, fences and preamble tolerated."""
+    if not isinstance(reply, str):  # a router answering `content: null` still answered
+        raise EmptyExtraction("couldn't read a profile from that text — try again")
     start, end = reply.find("{"), reply.rfind("}")
     if start == -1 or end <= start:
         raise EmptyExtraction("couldn't read a profile from that text — try again")
@@ -110,8 +117,10 @@ def scrub_query(raw: str) -> str:
     """The Query contract enforced in code, not hope: strip any years/salary phrasing,
     then tidy the punctuation the removal leaves behind. Public because the model's
     sentence is not the only door — a hand-edited Profile save goes through this too."""
+    raw = raw[:_MAX_SCRUB_CHARS]
     query = _FORBIDDEN.sub("", raw.strip().strip("`\"'“”‘’ ").rstrip("."))
-    query = re.sub(r"\s*,\s*(?:,\s*)+", ", ", query)
+    # `(?<!\s)`: starting mid-run would re-scan the whole whitespace run from every position
+    query = re.sub(r"(?<!\s)\s*,\s*(?:,\s*)+", ", ", query)
     query = re.sub(r"\s{2,}", " ", query).strip(" ,;-")
     return query[:_MAX_QUERY_CHARS].rstrip(" ,;-")
 
@@ -126,7 +135,7 @@ def _fact(value: Any) -> str:
 def _years(value: Any) -> int | None:
     try:
         years = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):  # OverflowError: JSON's 1e999 is inf
         return None
     return years if 0 <= years <= 60 else None
 

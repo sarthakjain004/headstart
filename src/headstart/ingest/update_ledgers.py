@@ -264,10 +264,11 @@ def gap(args: argparse.Namespace) -> int:
 
     held = held_ids(args.descriptions)
     if not held:
-        # The join fetches the description store on a warn-only fallback, so an empty one here
-        # means the download failed, not that we hold nothing. Writing the ledger now would
-        # mark *every* embedded Board as gap-ful and hand the next run's scrape a slice built
-        # from a missing file — worse than no boost at all.
+        # Written for the join's old warn-only fetch of the description store, which now fails
+        # closed; an empty store here is one that was never fetched (a local run, say) or that
+        # holds nothing yet. Writing the ledger now would mark *every* embedded Board as gap-ful
+        # and hand the next run's scrape a slice built from a missing file — worse than no boost
+        # at all.
         _log.warning(
             f"gap: {args.descriptions} holds nothing — the store is missing, not empty; "
             "leaving the ledger as it is"

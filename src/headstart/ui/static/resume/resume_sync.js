@@ -46,6 +46,7 @@
  *   adoptAccountCopy(id)   -> Promise<bool>        …when this browser also has that document,
  *                                                  keeping the local one beside it
  *   forget(id)             -> Promise              take one off the Account
+ *   drop(id)                                       deleted here; never push it again
  */
 (function (root) {
   'use strict';
@@ -91,6 +92,8 @@
     this._timer = null;
     this._lastPush = 0;      // ms, 0 = never
     this._inflight = null;   // one push at a time; a second would race itself
+    this._pushing = null;    // the document that push carries
+    this._dropped = new Set();   // ids deleted while their push was in flight
     this._error = '';
   }
 
@@ -187,6 +190,17 @@
     });
   };
 
+  /** A document deleted from this browser. Whatever it had waiting to go up goes with it: left
+   *  dirty, the next coarse event PUT it onto the slot `forget` had just emptied — which accepts
+   *  any revision — and `_settle`, finding no local copy, saved it back into this browser too. */
+  Sync.prototype.drop = function (id) {
+    /* A push already out outlives the delete; its answer is dealt with in `_settle`. */
+    if (this._pushing && this._pushing.id === id) this._dropped.add(id);
+    if (!this._dirty || this._dirty.id !== id) return;
+    this._dirty = null;
+    this._clearTimer();
+  };
+
   /** The per-document opt-in. ON pushes immediately, so the switch means something the moment
    *  it is flipped; OFF takes the copy off the Account rather than merely stopping future
    *  pushes — leaving a résumé there after being told to stop is the same defect as never
@@ -209,9 +223,12 @@
         self._onChange();
         return false;
       }
-      doc.sync = false;
-      doc.rev = 0;   // safe only now: there is nothing stored for the next push to be behind
-      self._save(doc);
+      /* The document as it stands NOW, as `_settle` does: typing through the DELETE replaced
+         `doc`, and flags written onto it left the live one at `sync: true` to push itself back. */
+      const mine = self._current(doc);
+      mine.sync = false;
+      mine.rev = 0;   // safe only now: there is nothing stored for the next push to be behind
+      self._save(mine);
       self._dirty = null;
       self._clearTimer();
       self._onMessage('Removed from your account.');
@@ -268,18 +285,31 @@
       return this._inflight;
     }
     const candidate = Object.assign({}, doc, { rev: (doc.rev || 0) + 1 });
+    this._pushing = doc;
     this._inflight = this._call('/resumes/' + encodeURIComponent(doc.id), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(candidate),
     }).then(result => {
       self._inflight = null;
+      self._pushing = null;
       return self._settle(doc, candidate, result, reason);
-    }, () => { self._inflight = null; self._dirty = doc; return null; });
+    }, () => {
+      self._inflight = null;
+      self._pushing = null;
+      if (!self._dropped.delete(doc.id)) self._dirty = doc;
+      return null;
+    });
     return this._inflight;
   };
 
   Sync.prototype._settle = function (doc, candidate, result, reason) {
+    /* Deleted while this push was out. Nothing is saved back — `_current` would fall back to
+       the payload — and a PUT that may have landed after the DELETE is taken off again. */
+    if (this._dropped.delete(doc.id)) {
+      if (result.status === 200 || result.state === 'unreachable') this.forget(doc.id);
+      return null;
+    }
     this._error = '';
     if (result.state === 'signed-out') {
       /* Not an error and not a retry loop: the session expired, the browser copy is untouched,
@@ -356,6 +386,14 @@
        exactly two rows — the account's, and this device's with its name saying so. */
     this._onMessage('Edited elsewhere — both copies kept, see Résumés.', true);
     this._onAdopt(stored, mine);
+    /* After the adopt, which can note the outgoing document once more on its way out. Whatever
+       was queued for this id is in the copy just kept aside; pushed, it carried the old `rev`,
+       was refused again, and kept a second "(this device)" copy of the account's own words. */
+    if (this._dirty && this._dirty.id === stored.id) { this._dirty = null; this._clearTimer(); }
+    /* The adopt's flush can also have SAVED that outgoing document under the account copy's id,
+       so a reload would open the local words at the old `rev`. They are in `mine`; put the
+       account's back. */
+    this._save(stored);
     this._onChange();
     return null;
   };

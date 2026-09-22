@@ -30,7 +30,9 @@ _MAX_PLAUSIBLE_ANNUAL = {
     "EUR": 750_000,
     "CAD": 900_000,
     "AUD": 900_000,
-    "INR": 20_00_00_000,  # 2 crore
+    "INR": 3_00_00_000,  # 3 crore — was 20 crore under a "2 crore" comment. Genuine bands reach
+    # ~2.9 crore (zwayam:epam, ashby:lambda); above 3 the served rows were misreads (₹4-8 crore
+    # zwayam bands, annual figures typed as "INR 1 MONTH").
     "HKD": 6_000_000,
     "SEK": 6_000_000,
     "PLN": 3_000_000,
@@ -120,13 +122,36 @@ _CURRENCY_CODE = re.compile(rf"\b({_CURRENCY_CODES})\b", re.IGNORECASE)
 # of that specific pattern (a label's own filler, say) happened to consume it too, which is real
 # for some phrasings and not others. Folding the prefix into the shared symbol fragment itself
 # means every caller captures it reliably, not by accident of surrounding text — see
-# `_guess_currency`'s own handling of a `sym` value longer than one character.
-_SYM = r"(?:(?:CA|C)?\$|[£€₹])"
-_RANGE = re.compile(r"(\d(?:[\d,]*\d)?(?:\.\d+)?)\s*[-–]\s*(\d(?:[\d,]*\d)?(?:\.\d+)?)")
+# `_guess_currency`'s own handling of a `sym` value longer than one character. The other dollar
+# prefixes joined later ("HK$", "S$", "A$", "NZ$" were being captured as a bare "$" and served as
+# USD — HK$370,000 as a $370k job); the lookbehind keeps a letter-glued prefix from being carved
+# out of a longer one ("US$" is not "S$").
+_SYM = r"(?:(?<![A-Za-z])(?:CA|C|HK|SG|S|AU|A|NZ|US)\$|\$|[£€₹])"
+_DOLLAR_PREFIX = {
+    "CA": "CAD",
+    "C": "CAD",
+    "HK": "HKD",
+    "SG": "SGD",
+    "S": "SGD",
+    "AU": "AUD",
+    "A": "AUD",
+    "NZ": "NZD",
+    "US": "USD",
+}
+# The optional symbol after the dash lets a free-text field state one per side ("$85,000 -
+# $135,000", zoho): without it the range failed and `_SINGLE_NUM` silently kept only the floor.
+_RANGE = re.compile(
+    rf"(\d(?:[\d,]*\d)?(?:\.\d+)?)\s*[-–]\s*{_SYM}?\s*(\d(?:[\d,]*\d)?(?:\.\d+)?)"
+)
 _SINGLE_NUM = re.compile(r"(\d(?:[\d,]*\d)?(?:\.\d+)?)")
 
 
 def _num(s: str) -> int:
+    """:func:`_num_value`, rounded to a whole unit."""
+    return round(_num_value(s))
+
+
+def _num_value(s: str) -> float:
     """Parse a captured number in either US (comma=thousands, period=decimal: "50,000.00",
     "50,000") or European (period=thousands, comma=decimal: "50.000,00", "50.000", "14,00")
     convention. Found on personio's pass (2026-08-22): real German-formatted salary text was
@@ -149,27 +174,29 @@ def _num(s: str) -> int:
     place of the period before the cents) repeats the same separator character right up to the
     decimal group ("125,000,00"). Blindly converting every comma to a period would leave TWO
     periods in the string and crash `float()`; `rpartition` isolates the last group and strips
-    every earlier occurrence outright, regardless of how many there are."""
+    every earlier occurrence outright, regardless of how many there are.
+
+    Unrounded: a "k"/"L" figure's fraction ("28,5k", "62.5k") belongs to the thousands, so
+    callers that scale by a magnitude round only after scaling."""
     if "," in s and "." in s:
         if s.rindex(",") > s.rindex("."):
             s = s.replace(".", "").replace(",", ".")  # European: 1.234.567,89
         else:
             s = s.replace(",", "")  # US: 1,234,567.89
-        return round(float(s))
+        return float(s)
     if "," in s:
         head, _, tail = s.rpartition(",")
-        if len(tail) == 2:
-            return round(
-                float(head.replace(",", "") + "." + tail)
-            )  # European decimal: 14,00
-        return round(float(s.replace(",", "")))  # US thousands: 50,000
+        # 1 digit too ("28,5k"): a thousands group is always 3, so a 1-digit tail is a decimal.
+        if len(tail) in (1, 2):
+            return float(head.replace(",", "") + "." + tail)  # European decimal: 14,00
+        return float(s.replace(",", ""))  # US thousands: 50,000
     if "." in s and re.fullmatch(r"\d{1,3}(\.\d{3})+", s):
-        return round(float(s.replace(".", "")))  # European thousands: 49.000
+        return float(s.replace(".", ""))  # European thousands: 49.000
     # Defensive mirror of the comma fix above: strip every period but the last before falling
     # through to a bare decimal read, in case the same typo pattern repeats with periods instead
     # of commas (not observed yet, but the failure mode — an uncaught ValueError — is cheap to
     # close off given it already happened once with the other separator).
-    return round(float(s.replace(".", "", max(0, s.count(".") - 1))))
+    return float(s.replace(".", "", max(0, s.count(".") - 1)))
 
 
 # "up to $X" (or "upto"/LPA's "up to ₹X") states a CEILING, not a floor — but SalarySpan.min_annual
@@ -192,7 +219,12 @@ def _num(s: str) -> int:
 _CEILING_CONNECTOR_WINDOW = (
     15  # chars scanned before the number; mirrors _CONTEXT_WINDOW's naming
 )
-_UP_TO_CONNECTOR = re.compile(r"\bup\s*to\s*[$£€₹]?\s*$", re.IGNORECASE)
+# A currency code or a prefixed symbol may sit between "up to" and the figure too ("up to USD
+# 150,000", "Upto INR 13,00,000", "up to CA$120,000") — allowing only a one-character symbol let
+# those through, and the ceiling was stored as a floor.
+_UP_TO_CONNECTOR = re.compile(
+    rf"\bup\s*to\s*(?:(?:{_SYM}|(?:{_CURRENCY_CODES})\b)\s*){{0,2}}$", re.IGNORECASE
+)
 
 
 def _states_a_ceiling_only(text: str, lo_start: int) -> bool:
@@ -397,12 +429,13 @@ def _field_darwinbox(value: str) -> SalarySpan | None:
 #: gem pass (2026-09-16): `compensationHtml` is machine-templated on 132/136 (97%) of the real
 #: sampled postings that state one at all — "The base pay range for this role is $X – $Y per
 #: year." (or "per hour"/"per month"), even when it sits inside a longer prose paragraph the
-#: employer wrote around it. `_field_generic`'s own `_RANGE` cannot read it: that pattern requires
-#: the second number to start immediately after the separator, and Gem's own template puts a
-#: currency symbol in front of EACH number ("$80,000 – $120,000"), so `_RANGE.search` fails to
-#: match at all and `_field_generic` falls through to `_SINGLE_NUM` — silently keeping the floor
-#: and discarding a ceiling that was right there in the text. `_GEM_RANGE` reads the symbol on
-#: each side instead, exactly like Gem states it.
+#: employer wrote around it. `_field_generic`'s own `_RANGE` could not read it when this was built:
+#: that pattern required the second number to start immediately after the separator, and Gem's own
+#: template puts a currency symbol in front of EACH number ("$80,000 – $120,000"), so
+#: `_field_generic` fell through to `_SINGLE_NUM` — silently keeping the floor and discarding a
+#: ceiling that was right there in the text. `_RANGE` now accepts that symbol, but `_GEM_RANGE`
+#: still earns its place: it reads the "to" separator and resolves a bare `$` (see below), neither
+#: of which `_field_generic` does.
 #:
 #: Symbols measured across the real sample: `$`, `CA$`/`C$`, `A$`, `€`, `£`, `₹` — each mapped
 #: explicitly rather than guessed. `_guess_currency`'s Tier-2 rule (any multi-char `$`-ending
@@ -486,15 +519,28 @@ _FIELD_PARSERS = {
 }
 
 
+def _symbol_currency(value: str, start: int) -> str | None:
+    """The currency a symbol directly before ``value[start:]`` names, resolved by Tier 2's own
+    :func:`_guess_currency` — so "CA$"/"HK$" name their dollar. A bare "$" stays None: measured on
+    the 2026-09-15 snapshot, ~15% of bare-"$" fields were Canadian, Australian or even stated
+    "MXN", and a wrong USD puts them in the USD bracket and sort, where None only leaves them out."""
+    sym = re.search(rf"({_SYM})\s*$", value[:start])
+    if not sym or sym.group(1) == "$":
+        return None
+    return _guess_currency(sym.group(1), "")
+
+
 def _field_generic(value: str) -> SalarySpan | None:
     """Best-effort for an ATS with no calibrated parser yet: a range or single figure plus
-    whatever currency code/period the string happens to state. Deliberately conservative — no
-    per-ATS quirk handling, so it under-extracts rather than mis-extracts."""
+    whatever currency code/period the string happens to state — an ISO code first, else a
+    currency symbol on the figure itself. Deliberately conservative — no per-ATS quirk handling, so
+    it under-extracts rather than mis-extracts."""
     code_m = _CURRENCY_CODE.search(value)
     currency = code_m.group(1).upper() if code_m else None
     mult = _period_multiplier(value)
     m = _RANGE.search(value)
     if m:
+        currency = currency or _symbol_currency(value, m.start(1))
         lo, hi = _num(m.group(1)) * mult, _num(m.group(2)) * mult
         return _bounded(min(lo, hi), max(lo, hi), currency)
     single = _SINGLE_NUM.search(value)
@@ -505,6 +551,7 @@ def _field_generic(value: str) -> SalarySpan | None:
         # floor (code review, PR #238).
         if _states_a_ceiling_only(value, single.start(1)):
             return None
+        currency = currency or _symbol_currency(value, single.start(1))
         v = _num(single.group(1)) * mult
         return _bounded(v, None, currency)
     return None
@@ -944,10 +991,9 @@ _STRONG_PERIOD_HINT = re.compile(
 
 def _guess_currency(sym: str | None, code_context: str) -> str | None:
     if sym and sym.endswith("$") and sym != "$":
-        return (
-            "CAD"  # "CA$"/"C$" — see _SYM's own docstring for why this must be checked
-        )
-        # against `sym` itself, not searched for separately in the surrounding match text.
+        # "CA$"/"HK$"/... — see _SYM's own docstring for why this must be checked against `sym`
+        # itself, not searched for separately in the surrounding match text.
+        return _DOLLAR_PREFIX[sym[:-1].upper()]
     if sym and sym != "$":
         return _CURRENCY_SYM.get(sym)
     code_m = _CURRENCY_CODE.search(code_context)
@@ -1009,10 +1055,35 @@ def _period_from_window(text: str, start: int, end: int) -> int:
     English figure too."""
     window_start = max(0, start - 20)
     window = text[window_start : end + 30]
-    matches = list(_PERIOD_HINT.finditer(window))
+    rel_start, rel_end = start - window_start, end - window_start
+    # The slice's own ends satisfy `\b`, so a word it cuts reads as a hint ("What Matters Mo|st"
+    # as monthly): a match touching either end counts only if the word really ends there.
+    # An all-caps "HR"/"MO" is the acronym or Missouri's state code ("HR functions Salary: INR
+    # 15,000", "$55,000 - $65,000 Springfield MO"), never the figure's period — unless it TOUCHES
+    # the figure ("$17.95 HR", "$17.95/HR") and no lowercase word follows ("HR department").
+    matches = [
+        hm
+        for hm in _PERIOD_HINT.finditer(window)
+        if not (
+            hm.group(0) in ("HR", "MO")
+            and (
+                hm.end() <= rel_start
+                or window[rel_end : hm.start()].strip(" /")
+                or re.match(r"\s+[a-z]", window[hm.end() :])
+            )
+        )
+        and not (
+            hm.start() == 0
+            and hm.group(0)[0].isalnum()
+            and window_start
+            and text[window_start - 1].isalnum()
+        )
+        and not (
+            hm.end() == len(window) and text[window_start + hm.end() :][:1].isalnum()
+        )
+    ]
     if not matches:
         return 1
-    rel_start, rel_end = start - window_start, end - window_start
     m = min(matches, key=lambda hm: _distance(hm, rel_start, rel_end))
     # Checked AFTER finding the hint (not by pre-trimming the window) so the number's own trailing
     # digit stays available for _PERIOD_HINT's leading \b to anchor against (e.g. "0" before
@@ -1076,10 +1147,10 @@ def _span_from_match(
         if re.search(r"\d[lL]\b", matched)
         else 1
     )
-    mult = _period_from_window(text, m.start(), m.end()) * magnitude_mult
+    mult = _period_from_window(text, m.start(), m.end())
     currency = _guess_currency(m.groupdict().get("sym"), matched)
-    lo = _num(lo_raw) * mult
-    hi = _num(hi_raw) * mult if hi_raw else None
+    lo = round(_num_value(lo_raw) * magnitude_mult) * mult
+    hi = round(_num_value(hi_raw) * magnitude_mult) * mult if hi_raw else None
     span = _bounded(min(lo, hi) if hi else lo, max(lo, hi) if hi else None, currency)
     if span is None:
         return None

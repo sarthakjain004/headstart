@@ -563,6 +563,11 @@ class WorkdayScraper(BaseScraper):
         instance = self._instance or match.group("instance")
         return match.group("company"), instance, match.group("site")
 
+    @property
+    def _requested_instance(self) -> str:
+        """The ``wdN`` a request goes to: the resolved one if migrated, else the slug's own."""
+        return self._parts()[1]
+
     def _resolve_instance(self) -> None:
         """Point this scrape at the data center currently serving the tenant.
 
@@ -703,7 +708,9 @@ class WorkdayScraper(BaseScraper):
         try:
             payload = response.json()
         except ValueError as exc:
-            diagnostic, transient = _listing_diagnostic(response, self._instance)
+            diagnostic, transient = _listing_diagnostic(
+                response, self._requested_instance
+            )
             if transient:
                 _log.info(
                     f"{self.board_key()}: {diagnostic}; retrying once via direct egress"
@@ -717,11 +724,14 @@ class WorkdayScraper(BaseScraper):
                 try:
                     payload = response.json()
                 except ValueError as retry_exc:
-                    diagnostic, _ = _listing_diagnostic(response, self._instance)
+                    diagnostic, _ = _listing_diagnostic(
+                        response, self._requested_instance
+                    )
                     classification, _ = _listing_class(
                         response, _listing_body(response)
                     )
                     self._record_listing_loss(classification)
+                    response.raise_for_status()  # an error status is a lost page (ADR-0076)
                     raise UnexpectedListingResponse(diagnostic) from retry_exc
                 if response.status_code >= 400:
                     self._record_listing_loss(f"HTTP {response.status_code}")
@@ -730,6 +740,12 @@ class WorkdayScraper(BaseScraper):
                     int(self.telemetry.get("listing_transient_recovered", 0)) + 1
                 )
             else:
+                if response.status_code >= 400:
+                    # An error status with an HTML error page is still the HTTP error, raised as
+                    # the `RequestsError` callers count as one lost page (ADR-0076) — not the
+                    # unrecognised-body Board failure ADR-0140 reserves for a 2xx.
+                    self._record_listing_loss(f"HTTP {response.status_code}")
+                    response.raise_for_status()
                 self._record_listing_loss("unexpected-body")
                 raise UnexpectedListingResponse(diagnostic) from exc
         if response.status_code >= 400:
@@ -800,7 +816,9 @@ class WorkdayScraper(BaseScraper):
         try:
             payload = response.json()
         except ValueError as exc:
-            diagnostic, transient = _listing_diagnostic(response, self._instance)
+            diagnostic, transient = _listing_diagnostic(
+                response, self._requested_instance
+            )
             if transient:
                 _log.info(
                     f"{self.board_key()}: {diagnostic}; retrying once via direct egress"
@@ -812,11 +830,14 @@ class WorkdayScraper(BaseScraper):
                 try:
                     payload = response.json()
                 except ValueError as retry_exc:
-                    diagnostic, _ = _listing_diagnostic(response, self._instance)
+                    diagnostic, _ = _listing_diagnostic(
+                        response, self._requested_instance
+                    )
                     classification, _ = _listing_class(
                         response, _listing_body(response)
                     )
                     self._record_listing_loss(classification)
+                    response.raise_for_status()  # an error status is a lost page (ADR-0076)
                     raise UnexpectedListingResponse(diagnostic) from retry_exc
                 if response.status_code >= 400:
                     self._record_listing_loss(f"HTTP {response.status_code}")
@@ -825,6 +846,12 @@ class WorkdayScraper(BaseScraper):
                     int(self.telemetry.get("listing_transient_recovered", 0)) + 1
                 )
             else:
+                if response.status_code >= 400:
+                    # An error status with an HTML error page is still the HTTP error, raised as
+                    # the `RequestsError` callers count as one lost page (ADR-0076) — not the
+                    # unrecognised-body Board failure ADR-0140 reserves for a 2xx.
+                    self._record_listing_loss(f"HTTP {response.status_code}")
+                    response.raise_for_status()
                 self._record_listing_loss("unexpected-body")
                 raise UnexpectedListingResponse(diagnostic) from exc
         if response.status_code >= 400:
@@ -915,19 +942,12 @@ class WorkdayScraper(BaseScraper):
         )
 
     def job_url(self, external_path: str) -> str:
-        """This Job's served link, built on the slug's OWN instance — not
-        :meth:`_page_url`'s *resolved* one (ADR-0153). That is the one deliberate difference
-        :meth:`_page_url` documents: it fetches from wherever the tenant actually answers today,
-        while this keeps serving the host the slug names, migrated or not."""
-        base = self.slug.rstrip("/")
-        return f"{base}{external_path}" if external_path else base
-
-    def _page_url(self, external_path: str) -> str:
-        """The posting's public job page, server-rendered with a JSON-LD ``JobPosting`` even on
-        sub-sites the CXS API won't serve. The page :meth:`job_url` names, with one deliberate
-        difference: this builds on the *resolved* instance (``_resolve_instance``), where
-        :meth:`job_url` keeps the slug's own — for a migrated tenant the slug's stale ``wdN``
-        host 500s, and the resolved one is the host that answers."""
+        """This Job's served link, which is also the public job page the detail pass falls back
+        to — server-rendered with a JSON-LD ``JobPosting`` even on sub-sites the CXS API won't
+        serve. Built on the *resolved* instance (``_resolve_instance``), not the slug's own: for
+        a migrated tenant the slug's stale ``wdN`` host 500s, and the resolved one is the host
+        that answers (ADR-0157's 2026-09-23 amendment). Built from :meth:`_parts`, so a query
+        string on the slug (gatesfoundation's ``?source=``) never swallows the path."""
         company, instance, site = self._parts()
         return f"https://{company}.{instance}.myworkdayjobs.com/{site}{external_path}"
 
@@ -1019,7 +1039,7 @@ class WorkdayScraper(BaseScraper):
         try:
             response = self._fetch(
                 "GET",
-                self._page_url(external_path),
+                self.job_url(external_path),
                 timeout=30,
                 headers={"User-Agent": USER_AGENT},
             )
@@ -1142,7 +1162,7 @@ class WorkdayScraper(BaseScraper):
             response = await self._fetch_async(
                 session,
                 "GET",
-                self._page_url(external_path),
+                self.job_url(external_path),
                 timeout=30,
                 headers={"User-Agent": USER_AGENT},
             )

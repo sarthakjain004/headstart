@@ -172,8 +172,13 @@ firmographics and affinity-based company discovery. That drops option 5's compan
 single most expensive item measured here, and option 6 with it.
 
 **Removal policy: demote and filter only.** Nothing leaves the served index. Option 1 above is
-therefore amended: test pods, sandboxes and aggregators get a **type label and a demotion**, not an
-eviction.
+therefore amended: aggregators get a **type label and a demotion**, not an eviction.
+
+*Amended 2026-09-23:* test pods and sandboxes are **evicted**, not demoted. They are non-production
+tenants, not employers, and serve postings that are closed on production or synthetic, so the
+ADR-0034 non-prod rule marks them dead — widened to Oracle's `-test`/`-dev{N}` pods and numbered
+tokens like `nvidia-sandbox2` by
+[ADR-0034's 2026-09-23 amendment](../adr/0034-nonprod-boards-dead-by-convention.md#amendment-2026-09-23-testdev-earn-a-slot-on-oracle-only).
 
 ### The conflict this creates, and where it has to be settled
 

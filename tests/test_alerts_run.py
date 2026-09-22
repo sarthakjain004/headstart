@@ -497,6 +497,90 @@ def test_main_builds_its_config_from_transports_not_a_name_list(monkeypatch):
     assert seen.get("SLACK_WEBHOOK_URL") == "https://hooks.example"
 
 
+@pytest.mark.parametrize("invite_query", ["backend", ""])
+def test_a_chat_an_invite_delivers_to_is_not_sent_its_bot_record_too(
+    monkeypatch, invite_query
+):
+    """A bot record for a chat an Invite also routes to (made before the bot knew Invite
+    chats, or the master's own /q) doubled every Digest. Skipped only when the Invite
+    actually delivered this run: an Invite with no Query yet must not silence the chat."""
+    bot_record = Subscription.for_chat("4242", "backend")
+
+    class _Repo:
+        def __init__(self, *a, **k):
+            pass
+
+        def invites(self):
+            return [Invite("ada@example.com", invite_query, telegram="4242")]
+
+        def get(self, sub_id):
+            return None
+
+        def opted_out(self, sub_id):
+            return False
+
+        def put(self, sub, **kwargs):
+            pass
+
+        def accounts_with_sets(self):
+            return frozenset()
+
+        def all(self):
+            return [bot_record]
+
+    sent = []
+    monkeypatch.setenv("SUBSCRIBERS_REPO", "repo")
+    monkeypatch.setenv("SUBSCRIBERS_TOKEN", "tok")
+    monkeypatch.setattr(run, "Store", _Repo)
+    monkeypatch.setattr(
+        run, "send_one", lambda sub, store, space, config: sent.append(sub.id) or 0
+    )
+
+    assert run.main() == 0
+    if invite_query:
+        assert sent == [run.subscription_id("ada@example.com")]
+    else:
+        assert sent == [bot_record.id]
+
+
+def test_an_empty_space_url_falls_back_to_the_default(monkeypatch):
+    # alerts.yml always exports `SPACE_URL: ${{ vars.SPACE_URL }}`, which is "" when the
+    # variable is unset — docs/email-alerts.md calls it optional, defaulting to the Space.
+    class _Repo:
+        def __init__(self, *a, **k):
+            pass
+
+        def invites(self):
+            return [Invite("ada@example.com", "backend engineer")]
+
+        def get(self, sub_id):
+            return None
+
+        def opted_out(self, sub_id):
+            return False
+
+        def put(self, sub):
+            pass
+
+        def accounts_with_sets(self):
+            return frozenset()
+
+        def all(self):
+            return []
+
+    seen = []
+    monkeypatch.setenv("SUBSCRIBERS_REPO", "repo")
+    monkeypatch.setenv("SUBSCRIBERS_TOKEN", "tok")
+    monkeypatch.setenv("SPACE_URL", "")
+    monkeypatch.setattr(run, "Store", _Repo)
+    monkeypatch.setattr(
+        run, "send_one", lambda sub, store, space, config: seen.append(space) or 0
+    )
+
+    assert run.main() == 0
+    assert seen == ["https://imposeidon-headstart-search.hf.space"]
+
+
 def test_a_dead_space_costs_one_annotation_not_one_per_subscription(
     monkeypatch, caplog
 ):

@@ -1140,6 +1140,135 @@ def test_sorting_a_ranked_window_by_salary_puts_the_unpriced_rows_last():
     assert [r["id"] for r in out] == ["c", "a", "b"]
 
 
+def _priced(table):
+    table.schema = types.SimpleNamespace(
+        names=["ats", "title", "first_seen", "min_salary_annual", "salary_currency"]
+    )
+    return table
+
+
+def test_a_ranked_salary_sort_compares_across_currencies_in_one(monkeypatch):
+    """Salary is stored in the employer's own currency (ADR-0082), so ordering the raw number
+    ranked ₹40,00,000 above $300,000 — on the 2026-09-15 served table the first 400
+    salary-sorted rows were all INR. The ranked window restates each row in the sort's
+    currency with the ADR-0117 rates; a currency with no rate cannot be compared, so it sorts
+    with the unpriced rows rather than being taken 1:1.
+    """
+    from headstart import fx
+
+    monkeypatch.setattr(
+        fx, "table", lambda: {"rates": {"USD": 1.0, "INR": 80.0, "EUR": 0.9}}
+    )
+    rows = [
+        {
+            **_ROW,
+            "id": "inr",
+            "min_salary_annual": 4_000_000.0,
+            "salary_currency": "INR",
+        },
+        {**_ROW, "id": "usd", "min_salary_annual": 300_000.0, "salary_currency": "USD"},
+        {**_ROW, "id": "eur", "min_salary_annual": 90_000.0, "salary_currency": "EUR"},
+        {**_ROW, "id": "xyz", "min_salary_annual": 9e9, "salary_currency": "XYZ"},
+        {**_ROW, "id": "b-none", "min_salary_annual": None, "salary_currency": None},
+    ]
+    searcher = JobSearch(_Model(), _priced(_Table(rows)))
+    out = searcher.run({"q": "backend", "sort": "salary", "k": "5"})
+    assert [r["id"] for r in out] == ["usd", "eur", "inr", "xyz", "b-none"]
+
+
+class _SegmentQuery(_Query):
+    """Answers the two browse segments the way LanceDB would: filtered, ordered, paged."""
+
+    def __init__(self, table):
+        super().__init__(table)
+        self._where, self._limit, self._offset = None, None, 0
+
+    def where(self, clause, prefilter=False):
+        self._where = clause
+        self._t.segments.append(clause)
+        return super().where(clause, prefilter)
+
+    def limit(self, k):
+        self._limit = k
+        return super().limit(k)
+
+    def offset(self, off):
+        self._offset = off
+        return super().offset(off)
+
+    def to_list(self):
+        if self._where is None:  # the constructor's own whitelist scans
+            return list(self._t.rows)
+        own = "salary_currency = 'USD'" in self._where
+        rows = self._t.own if own else self._t.rest
+        return rows[self._offset : self._offset + self._limit]
+
+
+class _SegmentTable(_Table):
+    def __init__(self, own, rest):
+        super().__init__(own + rest)
+        self.own, self.rest, self.segments = own, rest, []
+
+    def count_rows(self, filter=None):
+        return (
+            len(self.own)
+            if "salary_currency = 'USD'" in (filter or "")
+            else len(self.rows)
+        )
+
+    def search(self, *args, **kwargs):
+        super().search(*args, **kwargs)
+        return _SegmentQuery(self)
+
+
+def test_a_salary_browse_lists_the_sort_currency_first_then_the_rest_by_currency():
+    """A browse is ordered by LanceDB over the whole table, which can only ORDER BY a stored
+    column — so it cannot compare across currencies. It lists the sort currency's Jobs first,
+    in true salary order, then every other Job grouped by currency (each group in its own true
+    order) and the unpriced last. The result SET is unchanged, so the facet total still
+    describes it; scoping to one currency instead emptied an India browse sorted in USD.
+    """
+    usd = [
+        {**_ROW, "id": f"u{i}", "min_salary_annual": 1e5, "salary_currency": "USD"}
+        for i in range(3)
+    ]
+    rest = [
+        {**_ROW, "id": f"r{i}", "min_salary_annual": 4e6, "salary_currency": "INR"}
+        for i in range(2)
+    ]
+    table = _priced(_SegmentTable(usd, rest))
+    searcher = JobSearch(_Model(), table)
+
+    out = searcher.run({"q": "", "sort": "salary", "k": "2", "page": "2"})
+
+    assert [r["id"] for r in out] == ["u2", "r0"]  # the page straddles the two segments
+    own_clause, rest_clause = table.segments[-2:]
+    assert own_clause == "salary_currency = 'USD'"
+    assert rest_clause == "(salary_currency IS NULL OR salary_currency <> 'USD')"
+    assert table.last_order[0] == {
+        "column_name": "salary_currency",
+        "ascending": True,
+        "nulls_first": False,
+    }
+
+
+def test_the_salary_sort_follows_the_pickers_currency():
+    """The currency picker is sent beside a salary sort even with no bound set, and the sort is
+    stated in it — an India browse sorted in INR lists INR first. An unknown one falls back to
+    SALARY_DEFAULT_CURRENCY, exactly like the bracket, since it reaches a where-clause.
+    """
+    usd = [{**_ROW, "id": "u0", "min_salary_annual": 1e5, "salary_currency": "USD"}]
+    inr = [{**_ROW, "id": "i0", "min_salary_annual": 4e6, "salary_currency": "INR"}]
+    table = _priced(_SegmentTable(usd, inr))
+    searcher = JobSearch(_Model(), table)
+
+    searcher.run({"q": "", "sort": "salary", "salary_currency": "inr"})
+    assert "salary_currency = 'INR'" in table.segments
+
+    searcher.run({"q": "", "sort": "salary", "salary_currency": "'; --"})
+    assert "salary_currency = 'USD'" in table.segments
+
+
 def test_the_salary_sort_is_dark_until_the_column_exists():
     """Same dark-until-migrated rule the first-seen sort follows (ADR-0031): the ADR-0082
     columns arrive by migration, and `order_by` on a column the table lacks fails planning.
@@ -1338,9 +1467,8 @@ def test_the_two_sort_paths_break_ties_in_opposite_directions():
     from headstart.search import JobSearch
 
     src = inspect.getsource(JobSearch.run)
-    assert "missing if r.get(sort) is None else r.get(sort)," in src
-    assert 'r.get("id") or "",' in src
-    assert "reverse=True," in src
+    assert 'return (missing if value is None else value, r.get("id") or "")' in src
+    assert "window.sort(key=key, reverse=True)" in src
     assert '{"column_name": "id", "ascending": True}' in src
 
 

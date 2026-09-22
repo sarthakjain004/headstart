@@ -36,8 +36,7 @@ clamps to 250, not the 100 an earlier measurement reported** — re-measured tod
 (365 postings): `limit=250` returns 250 objects, `limit=300`/`500`/`1000` all still return exactly
 250, so pagination steps by whatever the server actually handed back rather than trusting a fixed
 number. No posting-date field exists anywhere in this surface's objects (confirmed across every
-tenant sampled) — a Job filled from here always carries ``posted_at=None``, same trade successfactors'
-``/sitemal.xml`` field surface makes for the fields *it* lacks. A prior sample found 3 large boards
+tenant sampled) — a Job filled from here always carries ``posted_at=None``. A prior sample found 3 large boards
 hitting a transient ``IncompleteRead`` where the RSS path succeeded, all matching exactly on retry
 — not proof the API is less reliable per request, but reason enough to keep the HTML+RSS+detail
 path below rather than delete it: it is now the fallback for the ``offset=0`` case, used only when

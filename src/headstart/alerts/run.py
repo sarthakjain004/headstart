@@ -243,7 +243,10 @@ def main() -> int:
         _log.info(f"alerts not configured (missing {', '.join(missing)}) - skipping")
         return 0
 
-    space = os.environ.get("SPACE_URL", "https://imposeidon-headstart-search.hf.space")
+    # `or`, not a get() default: alerts.yml exports an unset repo variable as "", not absent
+    space = (
+        os.environ.get("SPACE_URL") or "https://imposeidon-headstart-search.hf.space"
+    )
     store = Store(os.environ["SUBSCRIBERS_REPO"], os.environ["SUBSCRIBERS_TOKEN"])
     # Each transport is read but not demanded: a repo with only Telegram configured should
     # run Telegram and skip the email Subscriptions, not refuse to start (ADR-0038).
@@ -257,6 +260,11 @@ def main() -> int:
 
     sent = failed = skipped = 0
     email_not_enabled: list[str] = []
+    # Chats an Invite delivered to this run. A bot record for one of them (made before the bot
+    # recognised Invite chats, or the master's own /q) would send every Digest twice — but only
+    # an Invite that actually resolved to a Query covers the chat, so one with none yet never
+    # silences it. Invites run first, so the set is complete before any bot record is reached.
+    covered: set[str] = set()
     for item in (*invites, *chats):
         # An Invite still has to be resolved to a Subscription, and may create one; a
         # record the bot made is already the thing to deliver. Resolution reads and may
@@ -274,6 +282,12 @@ def main() -> int:
                 _log.info(f"{sub_id}: no query set yet - skipped")
                 skipped += 1
                 continue
+            if not from_allowlist and sub.telegram in covered:
+                _log.info(f"{sub_id}: its chat's Invite already delivers - skipped")
+                skipped += 1
+                continue
+            if from_allowlist and item.telegram:
+                covered.add(item.telegram)
             count = send_one(sub, store, space, config)
         except TransportUnset as exc:
             # Not a failure: this is the dark-until-configured state the feature is built

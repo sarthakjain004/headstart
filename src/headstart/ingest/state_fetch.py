@@ -443,9 +443,10 @@ def _fetch_ranged(url: str, dest: Path, size: int, headers: dict[str, str]) -> N
     """One large file, fetched as concurrent ranged chunks then concatenated (ADR-0085).
 
     Skips outright if ``dest`` already landed — see :func:`_fetch_whole`'s docstring for why
-    that matters across ``fetch_state``'s outer retries. Chunk boundaries are absolute (``i``'s
-    range never depends on progress), so a chunk file already at its full size is skipped too —
-    free resumption *within* one call to this function if it was interrupted mid-transfer.
+    that matters across ``fetch_state``'s outer retries. Chunk files are NOT reused across calls:
+    each call is a new outer attempt, and the remote may have been republished (even at the same
+    size) during the backoff before it, so a leftover chunk would splice two versions of the file
+    into one that still passes the size check. Discarded up front instead.
     """
     if dest.exists():
         return
@@ -454,14 +455,14 @@ def _fetch_ranged(url: str, dest: Path, size: int, headers: dict[str, str]) -> N
         (i, off, min(off + _CHUNK_BYTES, size))
         for i, off in enumerate(range(0, size, _CHUNK_BYTES))
     ]
+    for i, _, _ in plan:
+        _chunk_path(dest, i).unlink(missing_ok=True)
     _log.info(f"  fetching {dest.name} ({size / 1e6:.0f} MB, {len(plan)} chunks)")
 
     def fetch_chunk(spec: tuple[int, int, int]) -> None:
         i, lo, hi = spec
         cf = _chunk_path(dest, i)
         want = hi - lo
-        if cf.exists() and cf.stat().st_size == want:
-            return
         r = _get_with_retry(
             url, dict(headers, Range=f"bytes={lo}-{hi - 1}"), timeout=(20, 90)
         )

@@ -40,6 +40,15 @@ _HEAD_FIELDS = re.compile(
     r"<h4[^>]*>.*?</h4>(?P<fields>.*?)(?=</div>\s*<!--/.accordion-head-info)", re.DOTALL
 )
 _DIV = re.compile(r"<div[^>]*>(.*?)</div>", re.DOTALL | re.IGNORECASE)
+#: The listing's "Sort by" options name the card's columns: ``sortColumn=0`` is the title and
+#: ``sortColumn=N`` the card's Nth head-info div. Tenants choose and order their own columns
+#: (dates, job codes, statuses, shifts), so fields are read by header, never by position —
+#: measured live 2026-09-23, 30 org-deduped hiring tenants: 30/30 carry the select and 244/244
+#: cards have exactly one div per non-title option.
+_SORT_COLUMN = re.compile(
+    r"<option[^>]*\bsortColumn=(?P<n>\d+)[^>]*>(?P<label>.*?)</option>",
+    re.DOTALL | re.IGNORECASE,
+)
 _NEXT = re.compile(r'<a\s+href="(?P<href>[^"]+)"\s+class="jscroll-next"', re.IGNORECASE)
 _COMPANY = re.compile(r"Company:\s*(?P<company>[^%<\r\n]+)", re.IGNORECASE)
 #: The description container's *opening* tag. Its extent is found by depth-counting
@@ -64,6 +73,9 @@ _LABEL = re.compile(
     r"<span[^>]*>\s*(?P<label>[^<]+?)\s*</span>\s*<strong>\s*(?P<value>.*?)\s*</strong>",
     re.DOTALL | re.IGNORECASE,
 )
+#: The JobPosting JSON-LD's ``datePosted`` — the only date TBE pages state: live 2026-09-22,
+#: 0 of 15 tenants render a "Date Posted" label while 9 of 15 carry this key.
+_DATE_POSTED = re.compile(r'"datePosted"\s*:\s*"(?P<value>[^"]+)"')
 _CUSTOM_LABEL = re.compile(
     r"<div[^>]*cws-V2-reqfieldcell-right[^>]*>\s*(?P<label>.*?)\s*</div>\s*"
     r"<div[^>]*cws-V2-reqfieldcell-left[^>]*>\s*<strong>\s*(?P<value>.*?)\s*</strong>",
@@ -119,8 +131,21 @@ def _labels(page: str) -> dict[str, str]:
     for match in pairs:
         label, value = _text(match.group("label")), _text(match.group("value"))
         if label and value:
-            labels[label.lower()] = value
+            # custom-field cells render "Employment Type: " — the colon is not the name
+            labels[label.lower().rstrip(":").strip()] = value
     return labels
+
+
+def _column(
+    headers: dict[int, str], fields: list[str | None], *words: str
+) -> str | None:
+    """The card field under the first header naming any of ``words`` (see :data:`_SORT_COLUMN`).
+    Only unambiguous words: a "Division" was a legal entity on one tenant and a department on
+    another in the same sample, so it is left for the detail labels to state."""
+    for n, header in sorted(headers.items()):
+        if n and n <= len(fields) and any(word in header for word in words):
+            return fields[n - 1]
+    return None
 
 
 def _field(labels: dict[str, str], *names: str) -> str | None:
@@ -255,6 +280,10 @@ class TaleoBEScraper(BaseScraper):
                 break
             seen_pages.add(page_url)
             page = self._get(page_url)
+            headers = {
+                int(m.group("n")): (_text(m.group("label")) or "").lower()
+                for m in _SORT_COLUMN.finditer(page)
+            }
             for block in _BLOCK.findall(page):
                 match = _JOB.search(block)
                 if not match or match.group("id") in seen_jobs:
@@ -277,8 +306,12 @@ class TaleoBEScraper(BaseScraper):
                             html.unescape(urljoin(page_url, match.group("href")))
                         ),
                         "title": _text(match.group("title")),
-                        "department": fields[0] if fields else None,
-                        "location": fields[1] if len(fields) > 1 else None,
+                        "department": _column(
+                            headers, fields, "department", "département", "dept"
+                        ),
+                        "location": _column(
+                            headers, fields, "location", "localisation", "lieu"
+                        ),
                         "company": _text(company_match.group("company"))
                         if company_match
                         else None,
@@ -322,20 +355,23 @@ class TaleoBEScraper(BaseScraper):
             # was the only kind that recorded nothing: the fetch succeeded, so no exception
             # reached `note_detail_exception` and the cause map stayed empty.
             self.note_detail_loss("200 without a parseable description body")
+        date = _DATE_POSTED.search(page)
         return {
             "description": _text(body) if body else None,
             "location": _field(labels, "Primary Location", "Location"),
             "department": _field(labels, "Department"),
             "employment_type": _field(labels, "Employment Type", "Job Type"),
-            "posted_at": _posted_at(_field(labels, "Date Posted", "Posting Date")),
+            "posted_at": _posted_at(
+                _field(labels, "Date Posted", "Posting Date")
+                or (date.group("value") if date else None)
+            ),
             "salary": self._salary_field(labels),
             # Both spellings are real, measured live (80-tenant sample): NBF1199 states
-            # "Workplace Arrangement:" (with the trailing colon _field matches literally —
-            # the colonless spelling was never observed and is deliberately not listed here),
-            # Covestic states "Location Type" (no colon).
+            # "Workplace Arrangement:" (its trailing colon dropped by `_labels`), Covestic
+            # states "Location Type".
             "workplace_arrangement": _field(
                 labels,
-                "Workplace Arrangement:",
+                "Workplace Arrangement",
                 "Location Type",
             ),
         }
@@ -371,11 +407,13 @@ class TaleoBEScraper(BaseScraper):
         return jobs
 
     def _salary_field(self, raw: dict[str, str]) -> str | None:
+        # ICANN labels its bounds "Targeted Base Salary Low/High"; ASPENGOV "Pay Range (Min/Max)".
         low = next(
             (
                 value
                 for name, value in raw.items()
-                if "salary" in name and "low" in name
+                if ("salary" in name or "pay range" in name)
+                and re.search(r"\b(low|min|minimum)\b", name)
             ),
             None,
         )
@@ -383,12 +421,15 @@ class TaleoBEScraper(BaseScraper):
             (
                 value
                 for name, value in raw.items()
-                if "salary" in name and "high" in name
+                if ("salary" in name or "pay range" in name)
+                and re.search(r"\b(high|max|maximum)\b", name)
             ),
             None,
         )
         if low and high:
-            return f"{low} - {high}"
+            # ICANN writes each bound as "$40,000 + 10% Bonus + Benefits"; joined whole, the
+            # tail between the figures leaves no range and extract keeps only the floor.
+            return f"{low.split('+')[0].strip()} - {high.split('+')[0].strip()}"
         for name, value in raw.items():
             if any(
                 word in name for word in ("salary", "pay range", "compensation")

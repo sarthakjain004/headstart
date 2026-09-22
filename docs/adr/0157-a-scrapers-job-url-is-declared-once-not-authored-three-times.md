@@ -148,3 +148,15 @@ the deployed module's own constraints don't apply.
   existing live-Space harness (`verify-search-filters` skill) still catches a shape that is
   *wrong against real served data*; `test_every_scraper_declares_a_compilable_url_shape` catches
   a shape that is *missing or malformed* without needing a deployment at all.
+
+## Amendment (2026-09-23): Workday's served link follows the resolved pod
+
+Workday's fetch and served URLs no longer differ. The slug-pinned link was preserved behaviour, not
+a measured choice, and it is dead for a migrated tenant: `board_key` is pod-blind, so the ledger row
+that survives dedupe can name a retired `wdN`. Measured live 2026-09-22/23 on netflix (wd1→wd108),
+otis (wd5→wd504), verisure (wd3→wd502) and cmu (wd5→wd115): the stale pod's CXS 422s and its job
+pages 500 with no JSON-LD, while the resolved pod serves them 200 with a `JobPosting` (8 of 8
+postings across the four; netflix and otis re-checked through the real scraper, 4 of 4). A
+non-migrated control (3m, wd1) is unchanged. `WorkdayScraper.job_url` now builds on
+the instance `_resolve_instance` found, which makes it the same URL as the public-page detail
+fallback, so `_page_url` is folded into it.

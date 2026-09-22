@@ -2011,6 +2011,22 @@ def test_workday_parse():
     assert j.employment_type == "Full time"  # timeType
 
 
+def test_workday_job_url_drops_a_query_string_the_slug_carries():
+    """The live gatesfoundation ledger slug carries `?source=...`, which `_parts()` already
+    ignores. Appending the posting's path after it put the path inside the query string — a URL
+    that loads the board root with no JobPosting (checked live 2/2)."""
+    scraper = get_scraper(
+        "workday",
+        "https://gatesfoundation.wd1.myworkdayjobs.com/Gates?source=gatesfoundation.org",
+        "Gates Foundation",
+    )
+
+    assert scraper.job_url("/job/Nairobi-Kenya/Officer_B021772-1") == (
+        "https://gatesfoundation.wd1.myworkdayjobs.com/Gates/job/Nairobi-Kenya/"
+        "Officer_B021772-1"
+    )
+
+
 def test_workday_remote_falls_back_to_location():
     # remoteType is absent on ~99% of Workday listings (remote-audit LOG); the location
     # string then decides. A decisive remoteType still wins over the location string.
@@ -2696,6 +2712,21 @@ def test_workday_follows_migrated_instance(monkeypatch):
     s._resolve_instance()
     assert s._instance == "wd103"
     assert ".wd103." in s.url() and "/wday/cxs/acme/careers/jobs" in s.url()
+
+
+def test_workday_job_url_follows_the_resolved_instance(monkeypatch):
+    """The served link follows the pod that serves the Board (ADR-0157's 2026-09-23
+    amendment): on netflix's stale wd1 a job page 500s while wd108 serves it, so a link pinned
+    to the slug's own pod was dead for every posting on the Board."""
+    monkeypatch.setattr("headstart.http.fetch", _workday_fetch_stub("wd108"))
+    s = get_scraper(
+        "workday", "https://netflix.wd1.myworkdayjobs.com/netflix", "Netflix"
+    )
+    path = "/job/Los-Gatos-California/Software-Engineer_JR32657"
+
+    assert s.job_url(path) == f"https://netflix.wd1.myworkdayjobs.com/netflix{path}"
+    s._resolve_instance()
+    assert s.job_url(path) == f"https://netflix.wd108.myworkdayjobs.com/netflix{path}"
 
 
 def test_workday_leaves_instance_when_none_serves(monkeypatch):
@@ -3823,6 +3854,16 @@ def test_recruitee_salary_formatting():
     assert _salary({"min": 80000, "currency": "USD"}) == "80000 USD"  # one-sided range
 
 
+def test_recruitee_ceiling_only_salary_is_refused():
+    """A lone figure reads as a floor (`salary.extract` has no spelling for a ceiling), so
+    oralcare's "up to EUR 5,339 a month" would serve as a EUR 64k/yr floor."""
+    _salary = get_scraper("recruitee", "acme")._salary_field
+    assert (
+        _salary({"min": None, "max": "5339", "currency": "EUR", "period": "month"})
+        is None
+    )
+
+
 def _teamtailor_pages(monkeypatch, scraper, pages):
     """Serve `pages` (a list of item-id lists) from jobs.json, recording each URL requested.
 
@@ -4704,6 +4745,25 @@ def test_rippling_pay_range_majority_unit_wins_regardless_of_position():
     assert _pay_range(ranges) == "160000-200000 USD YEAR"
 
 
+def test_rippling_pay_range_at_or_above_a_million_is_not_scientific():
+    """`:g` wrote 2,000,000 as "2e+06", which `salary.extract` cannot parse — live on
+    heymarvin's INR Product Designer band (2026-09-22)."""
+    _pay_range = get_scraper("rippling", "acme")._salary_field
+    band = {"rangeStart": 2000000, "rangeEnd": 2800000.5, "currency": "INR"}
+    assert _pay_range([{**band, "frequency": "YEAR"}]) == "2000000-2800000.5 INR YEAR"
+
+
+def test_rippling_ceiling_only_pay_range_is_refused():
+    """A lone figure reads as a floor (`salary.extract` has no spelling for a ceiling), the
+    same shape recruitee refuses; a floor alone is still kept."""
+    _pay_range = get_scraper("rippling", "acme")._salary_field
+    unit = {"currency": "USD", "frequency": "YEAR"}
+    assert _pay_range([{"rangeStart": None, "rangeEnd": 120000, **unit}]) is None
+    assert _pay_range([{"rangeStart": 90000, "rangeEnd": None, **unit}]) == (
+        "90000 USD YEAR"
+    )
+
+
 def test_rippling_employment_type_empty_label_does_not_fall_back():
     """`.label` is checked with `is not None`, not truthiness — the same class of bug
     `_salary_field` fixes for rangeStart/rangeEnd. A present-but-empty label (never observed
@@ -4720,6 +4780,56 @@ def test_rippling_employment_type_empty_label_does_not_fall_back():
     ]
     jobs = get_scraper("rippling", "acme", "Acme").parse(raw, SCRAPED_AT)
     assert jobs[0].employment_type == ""
+
+
+def _rippling_multi_location_rows() -> list[dict]:
+    """One posting listed once per work location, as the live `rippling` Board lists
+    94486f41 (2026-09-22): same `uuid`, differing only in `workLocation`."""
+    u = "94486f41-6474-446a-b67a-c164e11354ea"
+    return [
+        {"uuid": u, "name": "Account Executive", "workLocation": {"label": label}}
+        for label in ("Pittsburgh, PA", "Cleveland, OH", "Pittsburgh, PA")
+    ]
+
+
+def test_rippling_merges_a_postings_location_rows_into_one_job():
+    rows = _rippling_multi_location_rows()
+    rows[0]["_detail"] = {}  # this row's detail was not fetched; the next row's was
+    rows[1]["_detail"] = {"description": {"role": "<p>Sell.</p>"}}
+    jobs = get_scraper("rippling", "acme", "Acme").parse(rows, SCRAPED_AT)
+    assert [(j.id, j.location) for j in jobs] == [
+        (
+            "rippling:acme:94486f41-6474-446a-b67a-c164e11354ea",
+            "Pittsburgh, PA; Cleveland, OH",
+        )
+    ]
+    assert jobs[0].description == "Sell."
+
+
+def test_rippling_fetches_one_detail_per_posting_not_per_location_row(monkeypatch):
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    scraper = get_scraper("rippling", "acme")
+    rows = _rippling_multi_location_rows()
+
+    class _Resp:
+        status_code = 200
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        @staticmethod
+        def json():
+            return rows
+
+    monkeypatch.setattr(scraper._fetcher, "fetch", lambda *a, **k: _Resp())
+    fetched: list[str] = []
+    monkeypatch.setattr(
+        scraper, "_detail", lambda uuid: fetched.append(uuid) or {"createdOn": "x"}
+    )
+    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+    assert fetched == ["94486f41-6474-446a-b67a-c164e11354ea"]
+    assert [j.posted_at for j in jobs] == ["x"]
 
 
 def test_unknown_ats_raises():
@@ -4748,6 +4858,20 @@ def test_darwinbox_iso_date():
     assert _iso_date(1706918400000) == "2024-02-03"  # epoch ms
     assert _iso_date(1706918400) == "2024-02-03"  # epoch seconds
     assert _iso_date(0) is None  # falsy -> unknown, not 1970
+
+
+def test_darwinbox_iso_date_reads_an_epoch_as_the_posters_local_midnight():
+    """A live `posted_on` int is the posting's date at 00:00 in the poster's own zone, so
+    an IST posting's UTC reading lands on the previous calendar day."""
+    from headstart.scrapers.darwinbox import _iso_date
+
+    assert _iso_date(1789497000) == "2026-09-16"  # 2026-09-15T18:30Z, IST midnight
+    assert _iso_date(1789488000) == "2026-09-16"  # 16:00Z, UTC+8 midnight
+    assert _iso_date(1789509600) == "2026-09-16"  # 22:00Z, CEST midnight
+    assert _iso_date(1789531200) == "2026-09-16"  # 2026-09-16T04:00Z, EDT midnight
+    assert _iso_date(1789497000000) == "2026-09-16"  # same, in ms
+    # a legacy value that is a real instant (== created_on), not a midnight: its UTC date
+    assert _iso_date(1582293124) == "2020-02-21"  # 2020-02-21T13:52:04Z
 
 
 def test_darwinbox_salary_range_not_double_suffixed():
@@ -4953,10 +5077,13 @@ def test_successfactors_strip_cdata_unwraps_and_passes_through():
     assert _strip_cdata("plain text, no CDATA") == "plain text, no CDATA"
 
 
-def test_successfactors_fetch_raw_skips_the_detail_page_for_a_sitemal_covered_id(
+def test_successfactors_fetch_raw_reads_every_page_even_where_sitemal_covers_it(
     monkeypatch,
 ):
-    """The whole point of the surface: an id `/sitemal.xml` covers never reaches `_job_fields`."""
+    """The job page is the authority: `/sitemal.xml` states no posting date, and the page does
+    (CSB pages too, via `_csb_posted_at` — 8 of 9 tenants measured 2026-09-22). Skipping a page
+    the feed covered shipped `posted_at=None`, which `update_meta` then wrote over the stored
+    date. And with every page read, the feed is not fetched at all."""
     scraper = _successfactors_board(
         monkeypatch,
         sitemap=(
@@ -4967,25 +5094,71 @@ def test_successfactors_fetch_raw_skips_the_detail_page_for_a_sitemal_covered_id
             ),
             None,
         ),
-        search=([], None),
+        search=([], None, None),
         rss=([], {}, None),
-        sitemal={"1": {"title": "Engineer", "description": "d", "location": "Berlin"}},
+    )
+    sitemal_reads: list[int] = []
+    monkeypatch.setattr(
+        scraper,
+        "_sitemal_fields",
+        lambda: sitemal_reads.append(1) or {"1": {"title": "Engineer"}},
     )
     fetched: list[str] = []
     monkeypatch.setattr(
         scraper,
         "_job_fields",
-        lambda url: fetched.append(url) or {"title": "Analyst"},
+        lambda url: fetched.append(url) or {"title": "T", "posted_at": "2026-08-25"},
     )
 
     raw = scraper.fetch_raw()
 
-    assert fetched == ["https://careers.voith.com/job/Analyst/2/"], (
-        "only the id sitemal.xml didn't cover was fetched"
+    assert fetched == [
+        "https://careers.voith.com/job/Engineer/1/",
+        "https://careers.voith.com/job/Analyst/2/",
+    ]
+    assert [item["fields"]["posted_at"] for item in raw] == ["2026-08-25"] * 2
+    assert sitemal_reads == []
+
+
+def test_successfactors_fetch_raw_rescues_only_an_unreadable_page_from_sitemal(
+    monkeypatch,
+):
+    """`/sitemal.xml` fills a Job only where its page yielded nothing, and a rescued Job is not
+    lost: only the page neither source could read counts against the Board — out of every tech
+    id, since every one was fetched (ADR-0121)."""
+    scraper = _successfactors_board(
+        monkeypatch,
+        sitemap=(
+            "urlset",
+            "".join(
+                f"<loc>https://careers.voith.com/job/Engineer/{i}/</loc>"
+                for i in (1, 2, 3)
+            ),
+            None,
+        ),
+        search=([], None, None),
+        rss=([], {}, None),
+        sitemal={
+            "1": {"title": "Feed title", "description": "feed"},
+            "2": {"title": "Engineer", "description": "feed", "location": "Berlin"},
+        },
     )
+    monkeypatch.setattr(
+        scraper,
+        "_job_fields",
+        lambda url: {"title": "Page title"} if url.endswith("/1/") else None,
+    )
+
+    raw = scraper.fetch_raw()
+
     by_id = {item["id"]: item["fields"] for item in raw}
-    assert by_id["1"]["description"] == "d"  # served straight from the sitemal cache
-    assert by_id["2"]["title"] == "Analyst"  # the fallback fetch's own result
+    assert by_id["1"]["title"] == "Page title"  # the page wins where it read
+    assert by_id["2"]["description"] == "feed"  # the feed rescued the unreadable page
+    assert by_id["3"] is None  # neither source had it
+    assert (
+        scraper.truncated
+        == "1/3 job pages unreadable — those Jobs are listed but unbuilt"
+    )
 
 
 def test_successfactors_fetch_raw_falls_back_whole_when_sitemal_is_unavailable(
@@ -5001,7 +5174,7 @@ def test_successfactors_fetch_raw_falls_back_whole_when_sitemal_is_unavailable(
             "<loc>https://careers.voith.com/job/Engineer/1/</loc>",
             None,
         ),
-        search=([], None),
+        search=([], None, None),
         rss=([], {}, None),
         sitemal={},
     )
@@ -5050,7 +5223,7 @@ def test_successfactors_rss_stream_fills_department_end_to_end(monkeypatch):
     </channel></rss>"""
     scraper = sf.SuccessFactorsScraper("careers.voith.com")
     monkeypatch.setattr(scraper, "_fetch_sitemap", lambda: ("rss", "", None))
-    monkeypatch.setattr(scraper, "_search_job_urls", lambda: ([], None))
+    monkeypatch.setattr(scraper, "_search_job_urls", lambda: ([], None, None))
     monkeypatch.setattr(
         scraper,
         "_rss_job_urls",
@@ -5997,6 +6170,7 @@ def test_successfactors_tolerates_one_unreadable_page_but_still_drops_its_job(
                 for i in range(200)
             ],
             None,
+            None,
         ),
     )
     monkeypatch.setattr(scraper, "_sitemal_fields", dict)
@@ -6033,7 +6207,7 @@ def test_successfactors_truncates_on_a_surface_that_states_no_total(monkeypatch)
     )
     scraper = sf.SuccessFactorsScraper("jobs.example.com")
     monkeypatch.setattr(scraper, "_fetch_sitemap", lambda: ("rss", "", None))
-    monkeypatch.setattr(scraper, "_search_job_urls", lambda: ([], None))
+    monkeypatch.setattr(scraper, "_search_job_urls", lambda: ([], None, None))
     monkeypatch.setattr(
         scraper,
         "_rss_job_urls",
@@ -6388,7 +6562,7 @@ def _successfactors_board(
     """A SuccessFactors scraper whose three listing surfaces are stubbed. Each returns what the
     real one does — its list plus why-it-came-up-short: ``sitemap`` as ``(kind, text, cut_short)``
     (defaulting to an RSS classification, so the whole fallback chain runs), ``search`` as
-    ``(pairs, cut_short)`` from the ``/search/`` walk, ``rss`` as ``(pairs, job_functions,
+    ``(pairs, cut_short, total)`` from the ``/search/`` walk, ``rss`` as ``(pairs, job_functions,
     cut_short)`` from the patient stream. ``sitemal`` is the ``/sitemal.xml`` field cache
     (``{job_id: fields}``, default ``{}``) — stubbed too, so these tests exercise the
     pre-existing surface fallback without a real request to that fourth surface."""
@@ -6477,8 +6651,8 @@ def test_successfactors_rss_stream_reports_a_feed_that_aborted_mid_read(monkeypa
     assert cut_short and "aborted" in cut_short
     assert scraper.truncated is None  # reported to fetch_raw, not recorded here
 
-    # ...a feed still streaming at `_SITEMAP_CAP` is the same kind of short list.
-    monkeypatch.setattr(sf, "_SITEMAP_CAP", 2 * 1024 * 1024)
+    # ...a feed still streaming at `_RSS_CAP` is the same kind of short list.
+    monkeypatch.setattr(sf, "_RSS_CAP", 2 * 1024 * 1024)
     _stub_stream(
         monkeypatch,
         sf,
@@ -6497,6 +6671,27 @@ def test_successfactors_rss_stream_reports_a_feed_that_aborted_mid_read(monkeypa
     assert scraper._rss_job_urls()[2] is None
 
 
+def test_successfactors_rss_stream_reads_a_feed_past_the_urlset_cap(monkeypatch):
+    """jobs.crh.com's whole feed is 32.8 MB — a full description per item — and its `/search/`
+    lists nothing, so this stream is its only surface. The urlset guard's 30 MB cut it 86 postings
+    short of 1,905 and left the Board Unauthoritative every run."""
+    from headstart.scrapers import successfactors as sf
+
+    scraper = sf.SuccessFactorsScraper("jobs.example.com")
+    _stub_stream(
+        monkeypatch,
+        sf,
+        _StreamedBody(
+            [b" " * (33 * 1024 * 1024), b"<loc>https://jobs.example.com/job/x/7/</loc>"]
+        ),
+    )
+
+    found, _job_functions, cut_short = scraper._rss_job_urls()
+
+    assert [job_id for _url, job_id in found] == ["7"]
+    assert cut_short is None
+
+
 def test_successfactors_search_walk_reports_where_it_stopped_without_claiming_the_board(
     monkeypatch,
 ):
@@ -6509,7 +6704,7 @@ def test_successfactors_search_walk_reports_where_it_stopped_without_claiming_th
     pages = [_SearchPage(200, '<a href="/job/x/11/">a</a>'), _SearchPage(503)]
     monkeypatch.setattr(sf.http, "fetch", lambda *a, **k: pages.pop(0))
 
-    found, why = scraper._search_job_urls()
+    found, why, _total = scraper._search_job_urls()
 
     assert [job_id for _url, job_id in found] == ["11"]
     # startrow 1, not 25: the walk steps by the page it got (one posting here). It used to step
@@ -6538,7 +6733,7 @@ def test_successfactors_search_walk_reports_its_page_ceiling(monkeypatch):
         lambda *a, **k: _SearchPage(200, f'<a href="/job/x/{next(n)}/">a</a>'),
     )
 
-    found, why = scraper._search_job_urls()
+    found, why, _total = scraper._search_job_urls()
 
     assert len(found) == 3
     assert why and "ceiling" in why
@@ -6574,7 +6769,7 @@ def test_successfactors_search_walk_reads_every_row_of_a_small_page(monkeypatch)
     monkeypatch.setattr(sf.http, "fetch", _serve)
     scraper = sf.SuccessFactorsScraper("jobs.example.com")
 
-    found, why = scraper._search_job_urls()
+    found, why, _total = scraper._search_job_urls()
 
     assert {i for _u, i in found} == {str(i) for i in range(total)}, (
         f"read {len(found)} of {total} postings — the step overshot the page and skipped rows"
@@ -6610,10 +6805,40 @@ def test_successfactors_reports_reading_fewer_than_the_board_advertises(monkeypa
 
     monkeypatch.setattr(sf.http, "fetch", _serve)
 
-    found, why = sf.SuccessFactorsScraper("jobs.example.com")._search_job_urls()
+    found, why, _total = sf.SuccessFactorsScraper("jobs.example.com")._search_job_urls()
 
     assert len(found) == 10
     assert why and "10 of the 40" in why
+
+
+@pytest.mark.parametrize(("served", "truncated"), [(199, False), (197, True)])
+def test_successfactors_search_shortfall_takes_the_adr_0121_tolerance(
+    monkeypatch, served, truncated
+):
+    """A walk measured against the Board's own stated total is exactly the shortfall ADR-0121
+    tolerates: jobs.xpo.com read 524 of 526 (99.6%) and still left the eviction scope. Below
+    the tolerance it is Unauthoritative as before."""
+    from headstart.scrapers import successfactors as sf
+
+    def _serve(method, url, **kw):
+        startrow = int(url.rsplit("startrow=", 1)[1])
+        return _SearchPage(
+            200,
+            _labelled_search_page(range(startrow, min(startrow + 10, served)), 200),
+        )
+
+    monkeypatch.setattr(sf.http, "fetch", _serve)
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    scraper = sf.SuccessFactorsScraper("jobs.example.com")
+    monkeypatch.setattr(scraper, "_fetch_sitemap", lambda: ("rss", "", None))
+    monkeypatch.setattr(scraper, "_job_fields", lambda url: {"title": "Engineer"})
+
+    raw = scraper.fetch_raw()
+
+    assert len(raw) == served
+    assert (scraper.truncated is not None) is truncated
+    if truncated:
+        assert f"read {served} of the 200 postings" in scraper.truncated
 
 
 def test_successfactors_makes_no_completeness_claim_without_a_label(monkeypatch):
@@ -6629,7 +6854,7 @@ def test_successfactors_makes_no_completeness_claim_without_a_label(monkeypatch)
 
     monkeypatch.setattr(sf.http, "fetch", _serve)
 
-    found, why = sf.SuccessFactorsScraper("jobs.example.com")._search_job_urls()
+    found, why, _total = sf.SuccessFactorsScraper("jobs.example.com")._search_job_urls()
 
     assert len(found) == 10
     assert why is None, "no total advertised, so nothing to compare against"
@@ -6670,7 +6895,7 @@ def test_successfactors_walks_a_board_that_renders_more_links_than_it_lists(
 
     monkeypatch.setattr(sf.http, "fetch", _serve)
 
-    found, why = sf.SuccessFactorsScraper("jobs.example.com")._search_job_urls()
+    found, why, _total = sf.SuccessFactorsScraper("jobs.example.com")._search_job_urls()
     ids = {i for _u, i in found}
 
     assert {str(i) for i in range(board)} <= ids, "a window's worth of rows went unread"
@@ -6711,7 +6936,11 @@ def test_successfactors_keeps_a_whole_rss_board_off_the_truncated_list(monkeypat
     would then be served forever."""
     scraper = _successfactors_board(
         monkeypatch,
-        search=([], "HTTP 503 at startrow 0 — 0 postings read before the walk stopped"),
+        search=(
+            [],
+            "HTTP 503 at startrow 0 — 0 postings read before the walk stopped",
+            None,
+        ),
         rss=([("https://careers.voith.com/job/Engineer/1/", "1")], {}, None),
     )
 
@@ -6730,6 +6959,7 @@ def test_successfactors_reports_a_short_search_walk_when_it_is_the_answer(monkey
         search=(
             [("https://careers.voith.com/job/x/1/", "1")],
             "HTTP 503 at startrow 25 — 1 postings read before the walk stopped",
+            None,
         ),
         rss=([("https://careers.voith.com/job/x/1/", "1")], {}, None),
     )
@@ -6748,7 +6978,7 @@ def test_successfactors_reports_an_rss_stream_that_ended_early(monkeypatch):
     it *is* the Board's answer and its truncation is the Board's."""
     scraper = _successfactors_board(
         monkeypatch,
-        search=([], None),
+        search=([], None, None),
         rss=(
             [("https://careers.voith.com/job/Engineer/1/", "1")],
             {},
@@ -6774,7 +7004,7 @@ def test_successfactors_reports_a_sitemap_cut_at_the_read_cap(monkeypatch):
     unlisted, not absent (ADR-0053)."""
     scraper = _successfactors_board(
         monkeypatch,
-        search=([], None),
+        search=([], None, None),
         rss=([], {}, None),
         sitemap=(
             "urlset",
@@ -6799,7 +7029,7 @@ def test_successfactors_keeps_a_capped_sitemap_that_listed_nothing_off_the_board
     which must not inherit the sitemap's truncation."""
     scraper = _successfactors_board(
         monkeypatch,
-        search=([("https://careers.voith.com/job/Engineer/9/", "9")], None),
+        search=([("https://careers.voith.com/job/Engineer/9/", "9")], None, None),
         rss=([], {}, None),
         sitemap=(
             "urlset",
@@ -6869,6 +7099,7 @@ def test_successfactors_skips_the_detail_fetch_for_a_non_tech_slug(monkeypatch):
                 ("https://jobs.example.com/job/Data-Engineer/3/", "3"),
             ],
             None,
+            None,
         ),
     )
     fetched: list[str] = []
@@ -6917,6 +7148,7 @@ def test_successfactors_gate_is_off_for_a_caller_outside_the_pipeline(monkeypatc
                 ("https://jobs.example.com/job/Software-Engineer/1/", "1"),
                 ("https://jobs.example.com/job/Housekeeper/2/", "2"),
             ],
+            None,
             None,
         ),
     )
@@ -7733,6 +7965,19 @@ def test_workday_unknown_listing_body_raises_with_bounded_diagnostics_without_re
     assert scraper.telemetry["listing_page_losses"] == 1
 
 
+def test_workday_listing_diagnostic_names_the_instance_actually_requested(monkeypatch):
+    """ADR-0140's diagnostic records the Workday instance. `_instance` is only the migration
+    override — None on every tenant that never moved — so reading it logged `instance=None` on
+    all 25 production recurrences; the instance requested is the one `_parts()` resolves."""
+    from headstart.scrapers.workday import UnexpectedListingResponse, WorkdayScraper
+
+    monkeypatch.setattr(http, "fetch", lambda *a, **k: _NonJsonListing("unknown"))
+    scraper = WorkdayScraper("https://acme.wd5.myworkdayjobs.com/ext")
+
+    with pytest.raises(UnexpectedListingResponse, match="instance=wd5 "):
+        scraper._post({}, 0, raise_gone=True)
+
+
 def test_workday_listing_diagnostic_redacts_a_bearer_credential():
     from headstart.scrapers.workday import _listing_diagnostic
 
@@ -7846,6 +8091,86 @@ def test_workday_async_structured_http_error_after_retry_is_not_recovered(monkey
         asyncio.run(scraper._post_async(SimpleNamespace(cookies=_CookieJar()), {}, 20))
 
     assert scraper.telemetry.get("listing_transient_recovered", 0) == 0
+    assert scraper.telemetry["listing_page_losses"] == 1
+
+
+# Workday's own 455-byte Tomcat page, what 20 of the 25 production listing failures in runs
+# 35737647801/35733082366 settled on (status=500 content_type=text/html).
+_TOMCAT_500 = (
+    "<!doctype html><html><head><title>HTTP Status 500 – Internal Server Error</title>"
+    "</head><body><h1>HTTP Status 500 – Internal Server Error</h1></body></html>"
+)
+
+
+def test_workday_html_500_mid_crawl_is_one_lost_page_not_a_failed_board(monkeypatch):
+    """ADR-0140 made an unrecognised *2xx* body a Board failure; it did not repeal ADR-0076 for
+    an error status that happens to carry an HTML page. Parsing before the status turned one
+    settled 500 page into `UnexpectedListingResponse` — not a `RequestsError`, so `_paginate`
+    let it escape and `fetch_raw` discarded every posting already read. Drives the real
+    `_exhaust` -> `_paginate_async` -> `_post_async`, faking only the transport."""
+    from headstart.scrapers.workday import WorkdayScraper
+
+    def page(offset):
+        return _Status(
+            payload={
+                "total": 100,
+                "jobPostings": [{"bulletFields": [f"R{offset}"]}],
+                "facets": [],
+            }
+        )
+
+    async def fetch_async(session, method, url, **kw):
+        offset = kw["json"]["offset"]
+        if offset == 40:
+            return _NonJsonListing(_TOMCAT_500, status_code=500)
+        return page(offset)
+
+    monkeypatch.setattr(http, "fetch", lambda method, url, **kw: page(0))
+    monkeypatch.setattr(http, "fetch_async", fetch_async)
+    scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+    absorbed = []
+    scraper._exhaust({}, absorbed.extend, depth=0)
+
+    assert sorted(p["bulletFields"][0] for p in absorbed) == [
+        "R0",
+        "R20",
+        "R60",
+        "R80",
+    ]
+    assert "1 of 5 page(s) failed mid-crawl" in scraper.truncated
+    assert scraper.telemetry["listing_loss_causes"] == {"HTTP 500": 1}
+
+
+@pytest.mark.parametrize(
+    "responses",
+    [
+        pytest.param(lambda: [_NonJsonListing(_TOMCAT_500, status_code=500)], id="500"),
+        pytest.param(
+            lambda: [
+                _NonJsonListing(
+                    "<html><title>Just a moment...</title></html>", status_code=429
+                )
+                for _ in range(2)
+            ],
+            id="429-challenge-twice",
+        ),
+    ],
+)
+def test_workday_html_error_status_raises_as_an_http_error(monkeypatch, responses):
+    """The sync `_post` too — every slice's first page, which `_exhaust`'s slice loop drops as a
+    truncation only if it is a `RequestsError`. A challenge still earns its one direct retry
+    (ADR-0140); what the persisting error status raises afterwards is the status."""
+    from headstart.scrapers.workday import WorkdayScraper
+
+    outcomes = responses()
+    calls = len(outcomes)
+    monkeypatch.setattr(http, "fetch", lambda *a, **k: outcomes.pop(0))
+    scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+
+    with pytest.raises(http.RequestsError):
+        scraper._post({"jobFamilyGroup": ["x"]}, 0, raise_gone=True)
+    assert outcomes == []
+    assert scraper.telemetry["listing_fetch_calls"] == calls
     assert scraper.telemetry["listing_page_losses"] == 1
 
 
@@ -8763,6 +9088,7 @@ def test_successfactors_marks_truncation_when_detail_pages_are_lost(monkeypatch)
                 for i in (1, 2, 3)
             ],
             None,
+            None,
         ),
     )
     # the middle page 404s; the other two read fine
@@ -8809,6 +9135,7 @@ def test_successfactors_marks_truncation_when_a_page_loads_but_has_no_title(
                 (f"https://jobs.example.com/job/Engineer/{i}/", str(i))
                 for i in (1, 2, 3)
             ],
+            None,
             None,
         ),
     )
@@ -8960,6 +9287,7 @@ def test_successfactors_does_not_mark_a_board_whose_pages_all_arrived(monkeypatc
         "_search_job_urls",
         lambda: (
             [(f"https://jobs.example.com/job/x/{i}/", str(i)) for i in (1, 2)],
+            None,
             None,
         ),
     )

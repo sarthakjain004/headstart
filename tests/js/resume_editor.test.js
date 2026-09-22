@@ -1019,11 +1019,14 @@ test('forty keystrokes cost no commits; leaving the tab costs one', () => {
     const bullet = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current())
       .filter(n => n.type === 'bullet')[0];
     ctx.ResumeEditor.select(bullet.id);
+    /* On `rb`, where the editor's delegated listener is; fired on the pane it typed nothing. */
     for (let i = 0; i < 40; i++) {
-      el('rb-pane-document').fire('input', {
+      el('rb').fire('input', {
         target: target({ node: bullet.id, field: 'text' }, { value: 'Shipped it ' + i }),
       });
     }
+    assert.equal(ctx.ResumeEditor.current().content[bullet.id].text, 'Shipped it 39',
+      'the keystrokes never reached the document');
     assert.equal(wire.filter(c => c.method === 'PUT').length, before,
       'typing reached the account — the localStorage debounce was reused for the commit');
 
@@ -1096,6 +1099,69 @@ test('deleting a synced résumé says it leaves the account too, and takes it of
   });
 });
 
+test('a deleted synced résumé with an edit still waiting to go up stays deleted', () => {
+  /* The delete emptied the account slot and this browser, but the edit typed since the last push
+     was still queued for the heartbeat. An empty slot accepts any revision, so the next coarse
+     event put the résumé back on the Account — and the answer saved it back into this browser. */
+  const storage = fakeStorage();
+  const { ctx, el, panel, wire } = loadEditor({ account: {}, storage });
+  const id = ctx.ResumeEditor.current().id;
+  el('rb-sync').checked = true;
+  el('rb-sync').fire('change', { target: el('rb-sync') });
+  let deletedAt;
+  return settled().then(() => {
+    const bullet = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current())
+      .filter(n => n.type === 'bullet')[0];
+    ctx.ResumeEditor.select(bullet.id);
+    panel.fire('input', { target: target({ node: bullet.id, field: 'text' }, { value: 'One more edit' }) });
+    ctx.ResumeEditor.flush();   // the debounced local write lands, which is what queues the push
+    el('rb-open').fire('click');
+    el('rb-doclist').fire('click', { target: target({ drop: id }) });
+    el('rb-doclist').fire('click', { target: target({ dropYes: id }) });
+    deletedAt = wire.length;
+    return settled();
+  }).then(() => {
+    assert.ok(wire.some(c => c.method === 'DELETE' && c.url === '/resumes/' + id));
+    ctx.document.visibilityState = 'hidden';
+    el('rb-paper')._docVisibility.forEach(fn => fn({}));
+    return settled();
+  }).then(() => {
+    assert.ok(!wire.slice(deletedAt).some(c => c.method === 'PUT' && c.url === '/resumes/' + id),
+      'the deleted résumé was pushed back onto the account');
+    assert.equal(storage.getItem('headstart.resume.' + id), null, 'it came back into this browser');
+  });
+});
+
+test('a résumé deleted while its last keystroke is still unsaved stays deleted', () => {
+  /* The local write is debounced by 400 ms, and opening the next document flushes whatever is
+     pending on the way out — which was the document just deleted. It went back into this
+     browser, and the save queued its push to the Account again. */
+  const storage = fakeStorage();
+  const { ctx, el, panel, wire } = loadEditor({ account: {}, storage });
+  const id = ctx.ResumeEditor.current().id;
+  el('rb-sync').checked = true;
+  el('rb-sync').fire('change', { target: el('rb-sync') });
+  let deletedAt;
+  return settled().then(() => {
+    const bullet = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current())
+      .filter(n => n.type === 'bullet')[0];
+    ctx.ResumeEditor.select(bullet.id);
+    panel.fire('input', { target: target({ node: bullet.id, field: 'text' }, { value: 'Typed just now' }) });
+    el('rb-open').fire('click');
+    el('rb-doclist').fire('click', { target: target({ drop: id }) });
+    el('rb-doclist').fire('click', { target: target({ dropYes: id }) });
+    deletedAt = wire.length;
+    assert.equal(storage.getItem('headstart.resume.' + id), null, 'it came back into this browser');
+    ctx.document.visibilityState = 'hidden';
+    el('rb-paper')._docVisibility.forEach(fn => fn({}));
+    return settled();
+  }).then(() => {
+    assert.ok(!wire.slice(deletedAt).some(c => c.method === 'PUT' && c.url === '/resumes/' + id),
+      'the deleted résumé was pushed back onto the account');
+    assert.equal(storage.getItem('headstart.resume.' + id), null);
+  });
+});
+
 test('the status line stops saying "Saved" once the pushes stop landing', () => {
   /* The dishonest state this feature's own header says it must never sit in, reached through
      the real editor: the switch on, the account unreachable, and the line still reading
@@ -1113,9 +1179,11 @@ test('the status line stops saying "Saved" once the pushes stop landing', () => 
     const bullet = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current())
       .filter(n => n.type === 'bullet')[0];
     ctx.ResumeEditor.select(bullet.id);
-    el('rb-pane-document').fire('input', {
+    el('rb').fire('input', {
       target: target({ node: bullet.id, field: 'text' }, { value: 'Written while offline' }),
     });
+    assert.equal(ctx.ResumeEditor.current().content[bullet.id].text, 'Written while offline',
+      'the edit never reached the document');
     ctx.document.visibilityState = 'hidden';
     el('rb-paper')._docVisibility.forEach(fn => fn({}));
     return settled();
