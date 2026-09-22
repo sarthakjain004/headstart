@@ -221,6 +221,19 @@ def test_listing_columns_are_read_by_their_header_not_their_position(monkeypatch
     assert _served(monkeypatch, mba) == ("Washington, DC", "Research")
 
 
+def test_posted_at_falls_back_to_the_json_ld_date_posted(monkeypatch):
+    """No sampled tenant renders a "Date Posted" label; 9 of 15 state JSON-LD `datePosted`
+    (live 2026-09-22), in the shape NBF1199 rid=11231 serves."""
+    scraper = TaleoBEScraper(URL, "ICANN")
+    ld = '<script type="application/ld+json">{"datePosted" : "2026-08-12 00:00:00.0"}</script>'
+    monkeypatch.setattr(
+        scraper,
+        "_get",
+        lambda url=None: _listing(1, "Engineer") if url == URL else ld + DETAIL,
+    )
+    assert scraper.fetch()[0].posted_at == "2026-08-12T00:00:00+00:00"
+
+
 def test_posted_at_parses_the_fractional_second_shape_the_live_page_serves():
     # Real live value, NBF1199 rid=11231, verified 2026-09-22: a bare `%Y-%m-%d %H:%M:%S` has
     # no fractional-second group to consume the trailing ".0", so it fails to parse this exactly

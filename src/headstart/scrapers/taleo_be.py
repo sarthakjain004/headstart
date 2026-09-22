@@ -73,6 +73,9 @@ _LABEL = re.compile(
     r"<span[^>]*>\s*(?P<label>[^<]+?)\s*</span>\s*<strong>\s*(?P<value>.*?)\s*</strong>",
     re.DOTALL | re.IGNORECASE,
 )
+#: The JobPosting JSON-LD's ``datePosted`` — the only date TBE pages state: live 2026-09-22,
+#: 0 of 15 tenants render a "Date Posted" label while 9 of 15 carry this key.
+_DATE_POSTED = re.compile(r'"datePosted"\s*:\s*"(?P<value>[^"]+)"')
 _CUSTOM_LABEL = re.compile(
     r"<div[^>]*cws-V2-reqfieldcell-right[^>]*>\s*(?P<label>.*?)\s*</div>\s*"
     r"<div[^>]*cws-V2-reqfieldcell-left[^>]*>\s*<strong>\s*(?P<value>.*?)\s*</strong>",
@@ -351,12 +354,16 @@ class TaleoBEScraper(BaseScraper):
             # was the only kind that recorded nothing: the fetch succeeded, so no exception
             # reached `note_detail_exception` and the cause map stayed empty.
             self.note_detail_loss("200 without a parseable description body")
+        date = _DATE_POSTED.search(page)
         return {
             "description": _text(body) if body else None,
             "location": _field(labels, "Primary Location", "Location"),
             "department": _field(labels, "Department"),
             "employment_type": _field(labels, "Employment Type", "Job Type"),
-            "posted_at": _posted_at(_field(labels, "Date Posted", "Posting Date")),
+            "posted_at": _posted_at(
+                _field(labels, "Date Posted", "Posting Date")
+                or (date.group("value") if date else None)
+            ),
             "salary": self._salary_field(labels),
             # Both spellings are real, measured live (80-tenant sample): NBF1199 states
             # "Workplace Arrangement:" (with the trailing colon _field matches literally —
