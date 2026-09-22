@@ -176,7 +176,8 @@ def _num(s: str) -> int:
         return round(float(s))
     if "," in s:
         head, _, tail = s.rpartition(",")
-        if len(tail) == 2:
+        # 1 digit too ("28,5k"): a thousands group is always 3, so a 1-digit tail is a decimal.
+        if len(tail) in (1, 2):
             return round(
                 float(head.replace(",", "") + "." + tail)
             )  # European decimal: 14,00
