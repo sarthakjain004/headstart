@@ -1129,6 +1129,36 @@ test('a deleted synced résumé with an edit still waiting to go up stays delete
   });
 });
 
+test('a résumé deleted while its last keystroke is still unsaved stays deleted', () => {
+  /* The local write is debounced by 400 ms, and opening the next document flushes whatever is
+     pending on the way out — which was the document just deleted. It went back into this
+     browser, and the save queued its push to the Account again. */
+  const storage = fakeStorage();
+  const { ctx, el, panel, wire } = loadEditor({ account: {}, storage });
+  const id = ctx.ResumeEditor.current().id;
+  el('rb-sync').checked = true;
+  el('rb-sync').fire('change', { target: el('rb-sync') });
+  let deletedAt;
+  return settled().then(() => {
+    const bullet = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current())
+      .filter(n => n.type === 'bullet')[0];
+    ctx.ResumeEditor.select(bullet.id);
+    panel.fire('input', { target: target({ node: bullet.id, field: 'text' }, { value: 'Typed just now' }) });
+    el('rb-open').fire('click');
+    el('rb-doclist').fire('click', { target: target({ drop: id }) });
+    el('rb-doclist').fire('click', { target: target({ dropYes: id }) });
+    deletedAt = wire.length;
+    assert.equal(storage.getItem('headstart.resume.' + id), null, 'it came back into this browser');
+    ctx.document.visibilityState = 'hidden';
+    el('rb-paper')._docVisibility.forEach(fn => fn({}));
+    return settled();
+  }).then(() => {
+    assert.ok(!wire.slice(deletedAt).some(c => c.method === 'PUT' && c.url === '/resumes/' + id),
+      'the deleted résumé was pushed back onto the account');
+    assert.equal(storage.getItem('headstart.resume.' + id), null);
+  });
+});
+
 test('the status line stops saying "Saved" once the pushes stop landing', () => {
   /* The dishonest state this feature's own header says it must never sit in, reached through
      the real editor: the switch on, the account unreachable, and the line still reading
