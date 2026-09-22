@@ -67,6 +67,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import html
 import importlib.util
 import json
 import re
@@ -77,7 +78,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
 
 import certifi
 from curl_cffi import requests as _requests
@@ -245,6 +246,8 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
     # Both scrapers are host-keyed.  Capturing only the first provider label would turn
     # `1-bp.icims.com` into `1-bp`, a string no scraper can use.
     "icims": ("ats", [HOST + r"([a-z0-9][a-z0-9-]{1,60}\.icims\.com)"]),
+    # Host-only Taleo evidence proves the vendor but cannot name a Board. Concrete URLs are
+    # split into supported taleo_be/taleo_enterprise identities by taleo_board_from_url().
     "taleo": ("ats", [SUB + r"taleo\.net"]),
     "jobvite": ("ats", [r"jobs\.jobvite\.com/([a-zA-Z0-9_-]+)", SUB + r"jobvite\.com"]),
     "bamboohr": ("ats", [SUB + r"bamboohr\.(?:com|co\.uk)"]),
@@ -364,6 +367,47 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
         ],
     ),
 }
+
+# Taleo's hostname identifies the platform, not the Board. Enterprise needs its Career Section;
+# Business Edition needs shard/instance plus org/cws. A host-only signal remains generic `taleo`
+# below, while a concrete URL is promoted to one of the two supported scraper identities.
+TALEO_URL = re.compile(r"https?://[a-z0-9.-]+\.taleo\.net/[^\s\"'<>]+", re.IGNORECASE)
+TALEO_ENTERPRISE_SECTION = re.compile(r"^/careersection/([^/?#]+)/?", re.IGNORECASE)
+TALEO_BE_ROUTE = re.compile(
+    r"^(?P<base>/[^/?#]+/ats/careers/v2)/(?:viewRequisition|searchResults)/?$",
+    re.IGNORECASE,
+)
+
+
+def taleo_board_from_url(url: str) -> tuple[str, str] | None:
+    """Supported Taleo ATS and canonical Board slug from a concrete job/board URL."""
+    parsed = urlsplit(html.unescape(url).rstrip(".,;)"))
+    host = (parsed.hostname or "").lower()
+    if not host.endswith(".taleo.net"):
+        return None
+    if host.endswith(".tbe.taleo.net"):
+        route = TALEO_BE_ROUTE.match(parsed.path)
+        query = parse_qs(parsed.query)
+        if not route or not query.get("org") or not query.get("cws"):
+            return None
+        board = urlunsplit(
+            (
+                "https",
+                host,
+                route.group("base") + "/searchResults",
+                urlencode((("org", query["org"][0]), ("cws", query["cws"][0]))),
+                "",
+            )
+        )
+        return "taleo_be", board
+    section = TALEO_ENTERPRISE_SECTION.match(parsed.path)
+    if not section or section.group(1).lower().endswith(".ftl"):
+        return None
+    return (
+        "taleo_enterprise",
+        urlunsplit(("https", host, f"/careersection/{section.group(1)}", "", "")),
+    )
+
 
 # Tokens that are never a real tenant slug — provider infra, generic path words, minifier debris.
 # Reused from scripts/resolve/fingerprint.py, which learned most of these the hard way.
@@ -743,7 +787,7 @@ CNAME_LABEL_ATS = frozenset(
 
 # Bump when a probe gains a materially new signal.  Resume skips only a row from this exact
 # channel set, and never suppresses an unreachable result.
-CHANNELS = "apply-url+cname-chain+http+robots+sitemap+jsbundle+slugprobe:v4"
+CHANNELS = "apply-url+cname-chain+http+robots+sitemap+jsbundle+slugprobe:v5"
 if _DNS is None:
     CHANNELS += ":no-dns"
 CHANNELS += ":psl-v1"
@@ -840,6 +884,15 @@ def scan(
     rd = reg_domain(self_domain)
     hits: list[tuple[str, str, str]] = []
     counts: Counter[tuple[str, str, str]] = Counter()
+    for match in TALEO_URL.finditer(text):
+        resolved = taleo_board_from_url(match.group(0))
+        if not resolved:
+            continue
+        ats, tenant = resolved
+        key = (ats, "ats", tenant)
+        if key not in counts:
+            hits.append(key)
+        counts[key] += 1
     for ats, (kind, pats) in PATTERNS.items():
         if not allow_provider_host and rd in PROVIDER_DOMAINS.get(ats, set()):
             continue
@@ -1563,7 +1616,7 @@ def indeed_seeds(path: Path, include_resolved: bool = False) -> list[HostSeed]:
                 continue
             if (
                 not include_resolved
-                and job.get("_ats") != "vanity"
+                and job.get("_ats") not in {"vanity", "taleo"}
                 and (job.get("_ats_slug") or job.get("_apply_host") != "grnh.se")
             ):
                 continue
@@ -1586,7 +1639,9 @@ def indeed_seeds(path: Path, include_resolved: bool = False) -> list[HostSeed]:
                 input_id = f"{host}#employer={employer_key}"
             if apply_url and (
                 host in PATH_IDENTITY_HOSTS
-                or host.endswith((".myworkdayjobs.com", ".myworkdaysite.com"))
+                or host.endswith(
+                    (".myworkdayjobs.com", ".myworkdaysite.com", ".taleo.net")
+                )
             ):
                 # Shared providers group by Board, not by job URL or provider host. Short links
                 # remain URL-scoped until the redirect reveals their identity.

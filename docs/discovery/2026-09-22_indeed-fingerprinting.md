@@ -62,6 +62,24 @@ was exercised live and is available for later unresolved inputs; its incremental
   Up to three original apply URLs may be followed to recover shortlink/vanity destinations; a
   successful match is reported against the original URL. Workday alternate domains are reconciled
   by tenant/site identity, and Zwayam's fragment-based job routes are recognized.
+- Taleo apply URLs no longer collapse to the unsupported `taleo:<host>` bucket. Enterprise URLs
+  retain `careersection/{section}` and become `taleo_enterprise`; Business Edition URLs retain
+  shard/instance plus `org`/`cws`, replace the job-specific `viewRequisition` path with the
+  canonical `searchResults` path, and become `taleo_be`. Host-only Taleo evidence stays generic
+  because a hostname cannot identify either kind of Board. The Indeed adapter deliberately
+  reprocesses older `_ats: taleo` rows from their preserved full apply URLs.
+
+## Taleo correction on the live v3 harvest
+
+Read-only replay on 2026-09-23 over the completed 679,687-Job v3 harvest classified 2,258 of its
+2,268 generic Taleo records: 1,603 Enterprise and 655 Business Edition. Ten job URLs on two hosts
+(`manpower.taleo.net`, 7; `valero.taleo.net`, 3) use `/careersection/jobdetail.ftl` with no Career
+Section identifier; they remain generic rather than minting `jobdetail.ftl` as a fake Board. The
+other 49 host buckets expand to 146 canonical Boards because one host may serve several Career
+Sections or TBE `org`/`cws` sites: 53 Enterprise and 93 Business Edition. Compared by canonical
+`board_key()` against every liveness-ledger row, 120 were already known and 26 were unledgered
+candidates (11 Enterprise, 15 Business Edition). These remain candidates until the normal
+verification/liveness workflow lands them; the replay made no ledger changes.
 
 ## Deep channels and bounds
 
@@ -105,7 +123,7 @@ for other ATSes explicitly reports `not-implemented-for-provider`.
 Independent critique iterations scored 4.0, 6.5, 6.0, 7.3, 8.5; the new deep extension scored 8.2
 before destination/gating corrections and **8.6 after corrections and live same-job evidence**.
 Scores reflect method quality, not recall. The final small Workday site-namespace tightening has
-a regression test. The fingerprinting, Board identity, and existing Wayback tests total **113
+a regression test. The fingerprinting, Board identity, and existing Wayback tests total **115
 passing tests**; Ruff and whitespace checks pass.
 
 Local run-owned evidence is intentionally retained under `experiment/fingerprint-validation/`
