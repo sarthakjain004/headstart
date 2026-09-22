@@ -778,11 +778,13 @@ jobs:
           python -m headstart.ingest.state_fetch 'data/embeddings/jobs/*' 'data/lancedb/*'
       - name: Download corpus + refreshed state
         # continue-on-error: `join` is the one un-bankable stage, so if it timed out this artifact
-        # is missing. Proceeding degrades to a safe no-op rather than a hard failure — with no
-        # corpus, `plan_sync` sees an empty fresh-id set *and* an empty scraped-Board set, so it
-        # adds and evicts nothing (verified), while prune still runs and the store is
-        # re-uploaded unchanged. The scrape work is lost either way; failing here would lose the
-        # dead-Board sweep too.
+        # is missing. Proceeding degrades to a safe no-op rather than a hard failure: every step
+        # that reads the corpus or this run's `data/state` is skipped on `steps.corpus.outcome`
+        # — `embed_merge`, `update_meta`, `sync`, and the description-store and data/state
+        # uploads — while prune still runs and the store is re-uploaded unchanged. Skipped, never
+        # fed an empty corpus: `sync` would read one as every Job gone and start evicting. The
+        # scrape work is lost either way; failing here would lose the dead-Board sweep too.
+        id: corpus
         if: needs.scrape-plan.outputs.run == 'true'
         continue-on-error: true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -800,7 +802,7 @@ jobs:
           pattern: embed-fragment-*
           path: data/embeddings/fragments
       - name: Merge shard fragments into the store
-        if: needs.scrape-plan.outputs.run == 'true'
+        if: needs.scrape-plan.outputs.run == 'true' && steps.corpus.outcome == 'success'
         # `--evict-ids` drops the stale row of any Job being re-embedded with a description it
         # previously lacked, before the new vector is appended (ADR-0050). It has to happen here
         # rather than after: this merge appends without deduping by id, so a later eviction would
@@ -825,7 +827,7 @@ jobs:
         # covering input loading, draining workers and writing the complete aligned metadata.
         # A hard runner shutdown before publication loses this run's progress, but not the
         # checkpoints previous runs published. The temp rewrite is outside the uploaded store.
-        if: needs.scrape-plan.outputs.run == 'true'
+        if: needs.scrape-plan.outputs.run == 'true' && steps.corpus.outcome == 'success'
         continue-on-error: true
         timeout-minutes: 35
         run: python -m headstart.ingest.update_meta --sweep-budget-seconds 600
@@ -835,7 +837,7 @@ jobs:
         # pulled `data/state` be scoped by whichever run wrote it. Passing it here is what says
         # "this job's `data/state` came from *this* run's join". Missing, it warns and falls back
         # to the corpus's own Boards — narrower, so it under-evicts rather than over-evicts.
-        if: needs.scrape-plan.outputs.run == 'true'
+        if: needs.scrape-plan.outputs.run == 'true' && steps.corpus.outcome == 'success'
         run: >-
           python -m headstart.ingest.index sync
           --scraped-boards data/state/scraped_boards.json
@@ -869,6 +871,7 @@ jobs:
         if: needs.scrape-plan.outputs.run == 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          CORPUS: ${{ steps.corpus.outcome }}
         run: |
           publication_status="$RUNNER_TEMP/headstart-publication-status"
           printf '%s\n' \
@@ -962,6 +965,13 @@ jobs:
           # Append-only (ADR-0050): each run adds small per-ATS fragments and leaves the base
           # files alone, so this uploads ~430 KB rather than re-minting the ~174 MB store.
           # `cleanup-index` folds the fragments into the bases with --delete.
+          # Both it and data/state below arrive only in the corpus artifact: without it neither
+          # was fetched or changed, and there is nothing of this run's to publish.
+          if [ "$CORPUS" != success ]; then
+            publication_state description_store skipped
+            publication_state pipeline_state skipped
+            exit 0
+          fi
           publish description_store hf upload "$HF_DATASET" data/descriptions data/descriptions \
             --repo-type dataset --commit-message "nightly: description store"
           # data/state LAST, because it carries the witness (ADR-0095). The property is that the
