@@ -5052,7 +5052,7 @@ def test_successfactors_fetch_raw_reads_every_page_even_where_sitemal_covers_it(
             ),
             None,
         ),
-        search=([], None),
+        search=([], None, None),
         rss=([], {}, None),
     )
     sitemal_reads: list[int] = []
@@ -5094,7 +5094,7 @@ def test_successfactors_fetch_raw_rescues_only_an_unreadable_page_from_sitemal(
             ),
             None,
         ),
-        search=([], None),
+        search=([], None, None),
         rss=([], {}, None),
         sitemal={
             "1": {"title": "Feed title", "description": "feed"},
@@ -5132,7 +5132,7 @@ def test_successfactors_fetch_raw_falls_back_whole_when_sitemal_is_unavailable(
             "<loc>https://careers.voith.com/job/Engineer/1/</loc>",
             None,
         ),
-        search=([], None),
+        search=([], None, None),
         rss=([], {}, None),
         sitemal={},
     )
@@ -5181,7 +5181,7 @@ def test_successfactors_rss_stream_fills_department_end_to_end(monkeypatch):
     </channel></rss>"""
     scraper = sf.SuccessFactorsScraper("careers.voith.com")
     monkeypatch.setattr(scraper, "_fetch_sitemap", lambda: ("rss", "", None))
-    monkeypatch.setattr(scraper, "_search_job_urls", lambda: ([], None))
+    monkeypatch.setattr(scraper, "_search_job_urls", lambda: ([], None, None))
     monkeypatch.setattr(
         scraper,
         "_rss_job_urls",
@@ -6128,6 +6128,7 @@ def test_successfactors_tolerates_one_unreadable_page_but_still_drops_its_job(
                 for i in range(200)
             ],
             None,
+            None,
         ),
     )
     monkeypatch.setattr(scraper, "_sitemal_fields", dict)
@@ -6164,7 +6165,7 @@ def test_successfactors_truncates_on_a_surface_that_states_no_total(monkeypatch)
     )
     scraper = sf.SuccessFactorsScraper("jobs.example.com")
     monkeypatch.setattr(scraper, "_fetch_sitemap", lambda: ("rss", "", None))
-    monkeypatch.setattr(scraper, "_search_job_urls", lambda: ([], None))
+    monkeypatch.setattr(scraper, "_search_job_urls", lambda: ([], None, None))
     monkeypatch.setattr(
         scraper,
         "_rss_job_urls",
@@ -6519,7 +6520,7 @@ def _successfactors_board(
     """A SuccessFactors scraper whose three listing surfaces are stubbed. Each returns what the
     real one does — its list plus why-it-came-up-short: ``sitemap`` as ``(kind, text, cut_short)``
     (defaulting to an RSS classification, so the whole fallback chain runs), ``search`` as
-    ``(pairs, cut_short)`` from the ``/search/`` walk, ``rss`` as ``(pairs, job_functions,
+    ``(pairs, cut_short, total)`` from the ``/search/`` walk, ``rss`` as ``(pairs, job_functions,
     cut_short)`` from the patient stream. ``sitemal`` is the ``/sitemal.xml`` field cache
     (``{job_id: fields}``, default ``{}``) — stubbed too, so these tests exercise the
     pre-existing surface fallback without a real request to that fourth surface."""
@@ -6661,7 +6662,7 @@ def test_successfactors_search_walk_reports_where_it_stopped_without_claiming_th
     pages = [_SearchPage(200, '<a href="/job/x/11/">a</a>'), _SearchPage(503)]
     monkeypatch.setattr(sf.http, "fetch", lambda *a, **k: pages.pop(0))
 
-    found, why = scraper._search_job_urls()
+    found, why, _total = scraper._search_job_urls()
 
     assert [job_id for _url, job_id in found] == ["11"]
     # startrow 1, not 25: the walk steps by the page it got (one posting here). It used to step
@@ -6690,7 +6691,7 @@ def test_successfactors_search_walk_reports_its_page_ceiling(monkeypatch):
         lambda *a, **k: _SearchPage(200, f'<a href="/job/x/{next(n)}/">a</a>'),
     )
 
-    found, why = scraper._search_job_urls()
+    found, why, _total = scraper._search_job_urls()
 
     assert len(found) == 3
     assert why and "ceiling" in why
@@ -6726,7 +6727,7 @@ def test_successfactors_search_walk_reads_every_row_of_a_small_page(monkeypatch)
     monkeypatch.setattr(sf.http, "fetch", _serve)
     scraper = sf.SuccessFactorsScraper("jobs.example.com")
 
-    found, why = scraper._search_job_urls()
+    found, why, _total = scraper._search_job_urls()
 
     assert {i for _u, i in found} == {str(i) for i in range(total)}, (
         f"read {len(found)} of {total} postings — the step overshot the page and skipped rows"
@@ -6762,10 +6763,40 @@ def test_successfactors_reports_reading_fewer_than_the_board_advertises(monkeypa
 
     monkeypatch.setattr(sf.http, "fetch", _serve)
 
-    found, why = sf.SuccessFactorsScraper("jobs.example.com")._search_job_urls()
+    found, why, _total = sf.SuccessFactorsScraper("jobs.example.com")._search_job_urls()
 
     assert len(found) == 10
     assert why and "10 of the 40" in why
+
+
+@pytest.mark.parametrize(("served", "truncated"), [(199, False), (197, True)])
+def test_successfactors_search_shortfall_takes_the_adr_0121_tolerance(
+    monkeypatch, served, truncated
+):
+    """A walk measured against the Board's own stated total is exactly the shortfall ADR-0121
+    tolerates: jobs.xpo.com read 524 of 526 (99.6%) and still left the eviction scope. Below
+    the tolerance it is Unauthoritative as before."""
+    from headstart.scrapers import successfactors as sf
+
+    def _serve(method, url, **kw):
+        startrow = int(url.rsplit("startrow=", 1)[1])
+        return _SearchPage(
+            200,
+            _labelled_search_page(range(startrow, min(startrow + 10, served)), 200),
+        )
+
+    monkeypatch.setattr(sf.http, "fetch", _serve)
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    scraper = sf.SuccessFactorsScraper("jobs.example.com")
+    monkeypatch.setattr(scraper, "_fetch_sitemap", lambda: ("rss", "", None))
+    monkeypatch.setattr(scraper, "_job_fields", lambda url: {"title": "Engineer"})
+
+    raw = scraper.fetch_raw()
+
+    assert len(raw) == served
+    assert (scraper.truncated is not None) is truncated
+    if truncated:
+        assert f"read {served} of the 200 postings" in scraper.truncated
 
 
 def test_successfactors_makes_no_completeness_claim_without_a_label(monkeypatch):
@@ -6781,7 +6812,7 @@ def test_successfactors_makes_no_completeness_claim_without_a_label(monkeypatch)
 
     monkeypatch.setattr(sf.http, "fetch", _serve)
 
-    found, why = sf.SuccessFactorsScraper("jobs.example.com")._search_job_urls()
+    found, why, _total = sf.SuccessFactorsScraper("jobs.example.com")._search_job_urls()
 
     assert len(found) == 10
     assert why is None, "no total advertised, so nothing to compare against"
@@ -6822,7 +6853,7 @@ def test_successfactors_walks_a_board_that_renders_more_links_than_it_lists(
 
     monkeypatch.setattr(sf.http, "fetch", _serve)
 
-    found, why = sf.SuccessFactorsScraper("jobs.example.com")._search_job_urls()
+    found, why, _total = sf.SuccessFactorsScraper("jobs.example.com")._search_job_urls()
     ids = {i for _u, i in found}
 
     assert {str(i) for i in range(board)} <= ids, "a window's worth of rows went unread"
@@ -6863,7 +6894,11 @@ def test_successfactors_keeps_a_whole_rss_board_off_the_truncated_list(monkeypat
     would then be served forever."""
     scraper = _successfactors_board(
         monkeypatch,
-        search=([], "HTTP 503 at startrow 0 — 0 postings read before the walk stopped"),
+        search=(
+            [],
+            "HTTP 503 at startrow 0 — 0 postings read before the walk stopped",
+            None,
+        ),
         rss=([("https://careers.voith.com/job/Engineer/1/", "1")], {}, None),
     )
 
@@ -6882,6 +6917,7 @@ def test_successfactors_reports_a_short_search_walk_when_it_is_the_answer(monkey
         search=(
             [("https://careers.voith.com/job/x/1/", "1")],
             "HTTP 503 at startrow 25 — 1 postings read before the walk stopped",
+            None,
         ),
         rss=([("https://careers.voith.com/job/x/1/", "1")], {}, None),
     )
@@ -6900,7 +6936,7 @@ def test_successfactors_reports_an_rss_stream_that_ended_early(monkeypatch):
     it *is* the Board's answer and its truncation is the Board's."""
     scraper = _successfactors_board(
         monkeypatch,
-        search=([], None),
+        search=([], None, None),
         rss=(
             [("https://careers.voith.com/job/Engineer/1/", "1")],
             {},
@@ -6926,7 +6962,7 @@ def test_successfactors_reports_a_sitemap_cut_at_the_read_cap(monkeypatch):
     unlisted, not absent (ADR-0053)."""
     scraper = _successfactors_board(
         monkeypatch,
-        search=([], None),
+        search=([], None, None),
         rss=([], {}, None),
         sitemap=(
             "urlset",
@@ -6951,7 +6987,7 @@ def test_successfactors_keeps_a_capped_sitemap_that_listed_nothing_off_the_board
     which must not inherit the sitemap's truncation."""
     scraper = _successfactors_board(
         monkeypatch,
-        search=([("https://careers.voith.com/job/Engineer/9/", "9")], None),
+        search=([("https://careers.voith.com/job/Engineer/9/", "9")], None, None),
         rss=([], {}, None),
         sitemap=(
             "urlset",
@@ -7021,6 +7057,7 @@ def test_successfactors_skips_the_detail_fetch_for_a_non_tech_slug(monkeypatch):
                 ("https://jobs.example.com/job/Data-Engineer/3/", "3"),
             ],
             None,
+            None,
         ),
     )
     fetched: list[str] = []
@@ -7069,6 +7106,7 @@ def test_successfactors_gate_is_off_for_a_caller_outside_the_pipeline(monkeypatc
                 ("https://jobs.example.com/job/Software-Engineer/1/", "1"),
                 ("https://jobs.example.com/job/Housekeeper/2/", "2"),
             ],
+            None,
             None,
         ),
     )
@@ -8995,6 +9033,7 @@ def test_successfactors_marks_truncation_when_detail_pages_are_lost(monkeypatch)
                 for i in (1, 2, 3)
             ],
             None,
+            None,
         ),
     )
     # the middle page 404s; the other two read fine
@@ -9041,6 +9080,7 @@ def test_successfactors_marks_truncation_when_a_page_loads_but_has_no_title(
                 (f"https://jobs.example.com/job/Engineer/{i}/", str(i))
                 for i in (1, 2, 3)
             ],
+            None,
             None,
         ),
     )
@@ -9192,6 +9232,7 @@ def test_successfactors_does_not_mark_a_board_whose_pages_all_arrived(monkeypatc
         "_search_job_urls",
         lambda: (
             [(f"https://jobs.example.com/job/x/{i}/", str(i)) for i in (1, 2)],
+            None,
             None,
         ),
     )
