@@ -179,6 +179,48 @@ def test_no_native_field_falls_back_to_is_remote(monkeypatch):
     assert jobs[0].remote is False  # unchanged from before this field existed
 
 
+def _headed_listing(headers: list[str], fields: list[str]) -> str:
+    """One card under the page's own "Sort by" select, whose options name the card's columns
+    in order after the title (sortColumn=0) — HTML shape as served live 2026-09-23."""
+    options = "".join(
+        f'<option value="{URL}&act=sort&sortColumn={n}">{label}</option>'
+        for n, label in enumerate(["Title", *headers])
+    )
+    divs = "".join(f'<div tabindex="0" >{field}</div>' for field in fields)
+    return f"""<select class="form-select orderbyPicker" id="sel1">{options}</select>
+    <div class="oracletaleocwsv2-accordion-block"><div class="oracletaleocwsv2-accordion-head-info">
+    <h4><a href="/phe03/ats/careers/v2/viewRequisition?org=ICANN&amp;cws=37&amp;rid=1">Nurse</a></h4>
+    {divs}
+    </div><!--/.accordion-head-info --></div><!--/.accordion-block-->"""
+
+
+def _served(monkeypatch, listing: str) -> tuple[str | None, str | None]:
+    """(location, department) served when the detail page states neither label."""
+    scraper = TaleoBEScraper(URL, "ICANN")
+    bare = '<div name="cwsJobDescription"><p>Care.</p></div>'
+    monkeypatch.setattr(
+        scraper, "_get", lambda url=None: listing if url == URL else bare
+    )
+    (job,) = scraper.fetch()
+    return job.location, job.department
+
+
+def test_listing_columns_are_read_by_their_header_not_their_position(monkeypatch):
+    """Each tenant picks and orders its own card columns (live: HENRYMAYO, DSB, MBA)."""
+    henrymayo = _headed_listing(
+        ["Department", "Employment Status", "Shift Start/End Time"],
+        ["Cardiology", "Per Diem", "6:30AM- 3:00PM"],
+    )
+    assert _served(monkeypatch, henrymayo) == (None, "Cardiology")
+    dsb = _headed_listing(
+        ["Post date", "Division", "Dept/branch"],
+        ["17/06/2026", "Retail Banking", "Direct Channels"],
+    )
+    assert _served(monkeypatch, dsb) == (None, "Direct Channels")
+    mba = _headed_listing(["Location", "Department"], ["Washington, DC", "Research"])
+    assert _served(monkeypatch, mba) == ("Washington, DC", "Research")
+
+
 def test_posted_at_parses_the_fractional_second_shape_the_live_page_serves():
     # Real live value, NBF1199 rid=11231, verified 2026-09-22: a bare `%Y-%m-%d %H:%M:%S` has
     # no fractional-second group to consume the trailing ".0", so it fails to parse this exactly
