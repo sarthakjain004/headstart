@@ -97,6 +97,8 @@ class EmptyExtraction(ResumeError):
 
 def _reply_json(reply: str) -> dict[str, Any]:
     """The one JSON object in the model's reply, fences and preamble tolerated."""
+    if not isinstance(reply, str):  # a router answering `content: null` still answered
+        raise EmptyExtraction("couldn't read a profile from that text — try again")
     start, end = reply.find("{"), reply.rfind("}")
     if start == -1 or end <= start:
         raise EmptyExtraction("couldn't read a profile from that text — try again")
@@ -133,7 +135,7 @@ def _fact(value: Any) -> str:
 def _years(value: Any) -> int | None:
     try:
         years = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):  # OverflowError: JSON's 1e999 is inf
         return None
     return years if 0 <= years <= 60 else None
 
