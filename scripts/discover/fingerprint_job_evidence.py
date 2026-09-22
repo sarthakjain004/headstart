@@ -26,6 +26,9 @@ def match_listing(ats: str, tenant: str, payload: dict, urls: set[str]) -> list[
             if parsed.hostname != tenant:
                 continue
             path = unquote(parsed.path).rstrip("/")
+            fragment = unquote(parsed.fragment).removeprefix("!")
+            if fragment.startswith(("/job-view/", "/jobview/")):
+                path = fragment.rstrip("/")
             if any(
                 path.endswith(
                     ("/jobview/" + unquote(slug), "/job-view/" + unquote(slug))
@@ -42,8 +45,11 @@ def match_listing(ats: str, tenant: str, payload: dict, urls: set[str]) -> list[
             if parsed.hostname == tenant and job and job.group(1) in ids:
                 matched.append(url)
     elif ats == "workday":
-        expected_host = urlsplit(tenant).hostname
-        expected_site = unquote(urlsplit(tenant).path).strip("/").split("/")[-1]
+        from headstart.scrapers.workday import WorkdayScraper
+
+        expected_company, expected_site = (
+            WorkdayScraper(tenant).board_key().removeprefix("workday:").split("/", 1)
+        )
         paths = {
             unquote(r["externalPath"]).rstrip("/")
             for r in payload.get("jobPostings", [])
@@ -52,7 +58,15 @@ def match_listing(ats: str, tenant: str, payload: dict, urls: set[str]) -> list[
         for url in urls:
             parsed = urlsplit(url)
             source_path = unquote(parsed.path).rstrip("/")
-            if parsed.hostname == expected_host and any(
+            host = parsed.hostname or ""
+            company = re.fullmatch(r"([a-z0-9-]+)\.wd\d+\.myworkdayjobs\.com", host)
+            source_company = company.group(1) if company else ""
+            if re.fullmatch(r"wd\d+\.myworkdaysite\.com", host):
+                recruiting = re.search(
+                    r"/(?:recruiting|wday/cxs)/([^/]+)/", source_path
+                )
+                source_company = recruiting.group(1).lower() if recruiting else ""
+            if source_company == expected_company and any(
                 source_path.endswith(path)
                 and source_path[: -len(path)].rstrip("/").split("/")[-1]
                 == expected_site
@@ -84,7 +98,11 @@ def match_listing(ats: str, tenant: str, payload: dict, urls: set[str]) -> list[
 def check_jobs(
     ats: str, tenant: str, urls: set[str], get, post, max_pages: int = 3
 ) -> tuple[str, list[str]]:
-    """Use scraper-owned request shapes, never scrape details or entire paginated boards."""
+    """At most three listing pages and three apply-URL follows; no full-board crawl.
+
+    A source URL may be a shortlink or vanity redirect. Only a fresh, successful follow of that
+    exact source can supply its destination; homepage/JS fingerprint evidence is never substituted.
+    """
     from headstart.scrapers.phenom import PhenomScraper
     from headstart.scrapers.workday import WorkdayScraper
     from headstart.scrapers.zwayam import body_error_code, search_request
@@ -93,6 +111,8 @@ def check_jobs(
         return "not-implemented-for-provider", []
     if not urls:
         return "no-source-job-urls", []
+    apply_redirects: dict[str, str] = {}
+    followed = False
     for page in range(min(max(max_pages, 1), 3)):
         if ats == "zwayam":
             endpoint, headers, body = search_request(tenant, page * 10)
@@ -132,6 +152,23 @@ def check_jobs(
             return "api-schema-error", []
         if matches:
             return "matched-job", matches[:3]
+        if not followed:
+            followed = True
+            for source in sorted(urls)[:3]:
+                if urlsplit(source).scheme not in {"http", "https"}:
+                    continue
+                _body, final, redirect_error = get(source)
+                if not redirect_error and final != source:
+                    apply_redirects[source] = final
+        if apply_redirects:
+            targets = set(
+                match_listing(ats, tenant, data, set(apply_redirects.values()))
+            )
+            redirected_matches = sorted(
+                source for source, final in apply_redirects.items() if final in targets
+            )
+            if redirected_matches:
+                return "matched-job", redirected_matches[:3]
         if ats == "greenhouse":
             break
     return "no-match-in-bounded-sample", []

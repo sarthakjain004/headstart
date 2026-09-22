@@ -59,6 +59,9 @@ was exercised live and is available for later unresolved inputs; its incremental
 - Job reconciliation compares exact native job identifiers/paths against source apply URLs for
   Zwayam, Phenom, Workday, and Greenhouse. It reads at most three listing pages and caches their
   responses per Board, while retaining per-input matches. Missing matches are inconclusive, not dead.
+  Up to three original apply URLs may be followed to recover shortlink/vanity destinations; a
+  successful match is reported against the original URL. Workday alternate domains are reconciled
+  by tenant/site identity, and Zwayam's fragment-based job routes are recognized.
 
 ## Deep channels and bounds
 
@@ -102,7 +105,7 @@ for other ATSes explicitly reports `not-implemented-for-provider`.
 Independent critique iterations scored 4.0, 6.5, 6.0, 7.3, 8.5; the new deep extension scored 8.2
 before destination/gating corrections and **8.6 after corrections and live same-job evidence**.
 Scores reflect method quality, not recall. The final small Workday site-namespace tightening has
-a regression test. The fingerprinting, Board identity, and existing Wayback tests total **112
+a regression test. The fingerprinting, Board identity, and existing Wayback tests total **113
 passing tests**; Ruff and whitespace checks pass.
 
 Local run-owned evidence is intentionally retained under `experiment/fingerprint-validation/`

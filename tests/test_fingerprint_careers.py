@@ -653,23 +653,31 @@ def test_job_matching_is_exact_and_tenant_scoped():
 
     urls = {
         "https://careers.acme.com/jobview/role-123",
+        "https://careers.acme.com/#!/job-view/role-123",
         "https://careers.rival.com/jobview/role-123",
         "https://careers.acme.com/jobview/role-1234",
     }
     payload = {"data": {"data": [{"_source": {"jobUrl": "role-123"}}]}}
     assert match_listing("zwayam", "careers.acme.com", payload, urls) == [
-        "https://careers.acme.com/jobview/role-123"
+        "https://careers.acme.com/#!/job-view/role-123",
+        "https://careers.acme.com/jobview/role-123",
     ]
     urls = {
         "https://acme.wd1.myworkdayjobs.com/en-US/Careers/job/City/Engineer_R1",
         "https://acme.wd1.myworkdayjobs.com/Other/job/City/Engineer_R1",
+        "https://wd5.myworkdaysite.com/recruiting/acme/Careers/job/City/Engineer_R1",
+        "https://wd5.myworkdaysite.com/recruiting/rival/Careers/job/City/Engineer_R1",
+        "https://wd5.myworkdaysite.com/recruiting/acme/Other/job/City/Engineer_R1",
     }
     assert match_listing(
         "workday",
         "https://acme.wd1.myworkdayjobs.com/Careers",
         {"jobPostings": [{"externalPath": "/job/City/Engineer_R1"}]},
         urls,
-    ) == ["https://acme.wd1.myworkdayjobs.com/en-US/Careers/job/City/Engineer_R1"]
+    ) == [
+        "https://acme.wd1.myworkdayjobs.com/en-US/Careers/job/City/Engineer_R1",
+        "https://wd5.myworkdaysite.com/recruiting/acme/Careers/job/City/Engineer_R1",
+    ]
     assert match_listing(
         "greenhouse",
         "acme",
@@ -694,12 +702,33 @@ def test_job_check_is_bounded_and_absence_is_inconclusive():
         "zwayam",
         "careers.acme.com",
         {"https://careers.acme.com/jobview/missing"},
-        None,
+        lambda url: ("", url, "http404"),
         post,
         max_pages=999,
     )
     assert len(calls) == 3
     assert (state, matches) == ("no-match-in-bounded-sample", [])
+
+
+def test_shortlink_job_evidence_follows_the_source_and_reports_the_source():
+    from fingerprint_job_evidence import check_jobs
+
+    source = "https://grnh.se/acme123"
+    final = "https://boards.greenhouse.io/acme/jobs/123"
+    calls = []
+
+    def get(url):
+        calls.append(url)
+        if url == source:
+            return "", final, ""
+        assert url == "https://boards-api.greenhouse.io/v1/boards/acme/jobs"
+        return '{"jobs":[{"id":123}]}', url, ""
+
+    assert check_jobs("greenhouse", "acme", {source}, get, None) == (
+        "matched-job",
+        [source],
+    )
+    assert calls == ["https://boards-api.greenhouse.io/v1/boards/acme/jobs", source]
 
 
 def test_verification_job_evidence_does_not_leak_between_inputs(tmp_path, monkeypatch):
