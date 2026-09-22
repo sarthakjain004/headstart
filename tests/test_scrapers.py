@@ -2714,6 +2714,21 @@ def test_workday_follows_migrated_instance(monkeypatch):
     assert ".wd103." in s.url() and "/wday/cxs/acme/careers/jobs" in s.url()
 
 
+def test_workday_job_url_follows_the_resolved_instance(monkeypatch):
+    """The served link follows the pod that serves the Board (ADR-0157's 2026-09-23
+    amendment): on netflix's stale wd1 a job page 500s while wd108 serves it, so a link pinned
+    to the slug's own pod was dead for every posting on the Board."""
+    monkeypatch.setattr("headstart.http.fetch", _workday_fetch_stub("wd108"))
+    s = get_scraper(
+        "workday", "https://netflix.wd1.myworkdayjobs.com/netflix", "Netflix"
+    )
+    path = "/job/Los-Gatos-California/Software-Engineer_JR32657"
+
+    assert s.job_url(path) == f"https://netflix.wd1.myworkdayjobs.com/netflix{path}"
+    s._resolve_instance()
+    assert s.job_url(path) == f"https://netflix.wd108.myworkdayjobs.com/netflix{path}"
+
+
 def test_workday_leaves_instance_when_none_serves(monkeypatch):
     # gone everywhere (422 on all DCs) -> keep hinted; crawl yields nothing
     monkeypatch.setattr("headstart.http.fetch", _workday_fetch_stub("nowhere"))

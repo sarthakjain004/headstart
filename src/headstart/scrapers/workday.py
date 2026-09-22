@@ -929,22 +929,12 @@ class WorkdayScraper(BaseScraper):
         )
 
     def job_url(self, external_path: str) -> str:
-        """This Job's served link, built on the slug's OWN instance — not
-        :meth:`_page_url`'s *resolved* one (ADR-0153). That is the one deliberate difference
-        :meth:`_page_url` documents: it fetches from wherever the tenant actually answers today,
-        while this keeps serving the host the slug names, migrated or not. A query string or
-        fragment on the slug is dropped, as :meth:`_parts` drops it: the path appended after one
-        would sit inside it (gatesfoundation's ``?source=``) and load the board root instead."""
-        base = urlunsplit(urlsplit(self.slug)._replace(query="", fragment=""))
-        base = base.rstrip("/")
-        return f"{base}{external_path}" if external_path else base
-
-    def _page_url(self, external_path: str) -> str:
-        """The posting's public job page, server-rendered with a JSON-LD ``JobPosting`` even on
-        sub-sites the CXS API won't serve. The page :meth:`job_url` names, with one deliberate
-        difference: this builds on the *resolved* instance (``_resolve_instance``), where
-        :meth:`job_url` keeps the slug's own — for a migrated tenant the slug's stale ``wdN``
-        host 500s, and the resolved one is the host that answers."""
+        """This Job's served link, which is also the public job page the detail pass falls back
+        to — server-rendered with a JSON-LD ``JobPosting`` even on sub-sites the CXS API won't
+        serve. Built on the *resolved* instance (``_resolve_instance``), not the slug's own: for
+        a migrated tenant the slug's stale ``wdN`` host 500s, and the resolved one is the host
+        that answers (ADR-0157's 2026-09-23 amendment). Built from :meth:`_parts`, so a query
+        string on the slug (gatesfoundation's ``?source=``) never swallows the path."""
         company, instance, site = self._parts()
         return f"https://{company}.{instance}.myworkdayjobs.com/{site}{external_path}"
 
@@ -1036,7 +1026,7 @@ class WorkdayScraper(BaseScraper):
         try:
             response = self._fetch(
                 "GET",
-                self._page_url(external_path),
+                self.job_url(external_path),
                 timeout=30,
                 headers={"User-Agent": USER_AGENT},
             )
@@ -1159,7 +1149,7 @@ class WorkdayScraper(BaseScraper):
             response = await self._fetch_async(
                 session,
                 "GET",
-                self._page_url(external_path),
+                self.job_url(external_path),
                 timeout=30,
                 headers={"User-Agent": USER_AGENT},
             )
