@@ -192,13 +192,12 @@ class JoinScraper(BaseScraper):
         jobs: list[Job] = []
         for it in raw.get("items", []):
             city = it.get("city") or {}
-            country = it.get("country") or {}
             location = (
                 ", ".join(
                     p
                     for p in (
-                        city.get("label") or city.get("name"),
-                        country.get("name"),
+                        city.get("cityName"),
+                        city.get("countryName"),
                     )
                     if p
                 )
