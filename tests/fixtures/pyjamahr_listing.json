@@ -1,0 +1,51 @@
+{
+  "count": 3,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": 143305,
+      "slug": "technical-support-tier-2-hk",
+      "title": "Technical Support - Tier 2 | HK",
+      "max_experience": 8.0,
+      "min_experience": 5.0,
+      "country": "India",
+      "location": "India",
+      "other_locations": [],
+      "department_name": null,
+      "published_internally": false,
+      "workplace_type": "REMOTE",
+      "product": null
+    },
+    {
+      "id": 96551,
+      "slug": "fashion-consultant-anu-4",
+      "title": "Fashion Consultant-Anu",
+      "max_experience": 2.0,
+      "min_experience": 0.0,
+      "country": "India",
+      "location": "Hyderabad, Telangana, India",
+      "other_locations": [
+        "Bangalore, Karnataka, India"
+      ],
+      "department_name": "sales",
+      "published_internally": false,
+      "workplace_type": "HYBRID",
+      "product": null
+    },
+    {
+      "id": 119154,
+      "slug": "tele-sales-executive-domestic-asp",
+      "title": "Tele Sales Executive-Domestic-ASP",
+      "max_experience": 5.0,
+      "min_experience": 1.0,
+      "country": "India",
+      "location": "Thane, Maharashtra, India",
+      "other_locations": [],
+      "department_name": "sales",
+      "published_internally": false,
+      "workplace_type": "ON_SITE",
+      "product": null
+    }
+  ]
+}

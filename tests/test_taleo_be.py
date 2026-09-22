@@ -2,7 +2,7 @@ import re
 
 from headstart.ingest.doc_prep import to_meta
 from headstart.scrapers.registry import SCRAPERS, get_scraper
-from headstart.scrapers.taleo_be import TaleoBEScraper, _workplace_remote
+from headstart.scrapers.taleo_be import TaleoBEScraper, _posted_at, _workplace_remote
 
 URL = "https://phe.tbe.taleo.net/phe03/ats/careers/v2/searchResults?org=ICANN&cws=37"
 
@@ -177,3 +177,22 @@ def test_no_native_field_falls_back_to_is_remote(monkeypatch):
     jobs = scraper.fetch()
     assert jobs[0].location == "Los Angeles"
     assert jobs[0].remote is False  # unchanged from before this field existed
+
+
+def test_posted_at_parses_the_fractional_second_shape_the_live_page_serves():
+    # Real live value, NBF1199 rid=11231, verified 2026-09-22: a bare `%Y-%m-%d %H:%M:%S` has
+    # no fractional-second group to consume the trailing ".0", so it fails to parse this exactly
+    # as the pre-fix format list did.
+    assert _posted_at("2026-08-12 00:00:00.0") == "2026-08-12T00:00:00+00:00"
+
+
+def test_posted_at_still_parses_the_pre_existing_formats():
+    assert _posted_at("08/12/2026") == "2026-08-12T00:00:00+00:00"
+    assert _posted_at("2026-08-12") == "2026-08-12T00:00:00+00:00"
+    assert _posted_at("2026-08-12 09:30:00") == "2026-08-12T09:30:00+00:00"
+
+
+def test_posted_at_none_on_unparseable_input():
+    assert _posted_at(None) is None
+    assert _posted_at("") is None
+    assert _posted_at("not a date") is None

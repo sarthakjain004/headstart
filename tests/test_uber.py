@@ -93,9 +93,16 @@ def test_the_core_identity_fields_come_from_the_listing():
     assert job.description and "<" not in job.description  # HTML stripped
 
 
-def test_location_joins_city_region_country_of_the_first_entry():
+def test_location_joins_every_locations_entry_preferring_each_ones_address():
+    """302269's real ``Locations`` array (2026-09-11 capture) has two entries: the first states
+    ``City: "Bruxelles"`` (French) but ``Address: "Brussels, Belgium"`` (English) — Address is
+    preferred per the module docstring's measurement that it's the fuller/more reliable string,
+    not reconstructed from parts whose ``Region`` is often blank. The second entry is a
+    country-only Belgium listing with no city. Both entries are real, distinct information the
+    posting states (149/535 = 27.9% of a full board sweep list 2+ offices), so both are joined —
+    unlike the old first-entry-only read, which silently dropped the second."""
     job = _jobs()["302269"]  # multi-location: Brussels first
-    assert job.location == "Bruxelles, Belgium"
+    assert job.location == "Brussels, Belgium; Belgium"
 
 
 def test_department_is_the_first_team():

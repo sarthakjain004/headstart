@@ -118,6 +118,17 @@ ATS_PATTERNS = {
             r"apply\.workable\.com/(?:api/v1/widget/accounts/)?([a-z0-9][a-z0-9-]+)",
         ],
     },
+    "pyjamahr": {
+        # One shared board host, slug is the path segment (`jobs.pyjamahr.com/{slug}`), the
+        # same shape as ashby/rippling. `api.pyjamahr.com` carries the slug only in a query
+        # string (`?company_slug=`) and `app.pyjamahr.com` keys its embed on the uuid, so
+        # neither is a target. The trailing lookahead keeps `sitemap-jobs.xml` and
+        # `robots.txt` from reading as tenants — the vendor's sitemap
+        # (`scripts/discover/mine_pyjamahr.py`) is the primary roster; this adds what it lacks.
+        "targets": ["jobs.pyjamahr.com"],
+        "kind": "slug",
+        "patterns": [r"jobs\.pyjamahr\.com/([a-z0-9][a-z0-9_-]+)(?=[/?#]|$)"],
+    },
     "rippling": {
         "targets": ["ats.rippling.com", "api.rippling.com"],
         "kind": "slug",

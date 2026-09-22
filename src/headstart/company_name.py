@@ -118,6 +118,15 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     "keka": _CAREERS_WRAPPER,
     "ripplehire": (re.compile(r"^(?P<name>.+?)\s+Careers\s*\|", re.IGNORECASE),),
     "lever": (re.compile(r"^(?P<name>.+)$"),),
+    # pyjamahr: the board page's <title> is the bare company name, with no wrapper at all —
+    # it equalled the SSR payload's `companyDetails.name` on 757 of 757 live tenants
+    # (2026-09-22), so the catch-all is reading a field, not guessing at a slogan. Run through
+    # `from_title`, 723 of those 757 resolve. Of the 34 that keep their slug, 25 are titles that
+    # *are* the slug ("smallcase", "volopay" — nothing to upgrade), 5 carry a separator
+    # ("RealPage | Rexera", "Ana Reis - Headhunter"), 3 are written as hostnames
+    # ("aainacareers.com") and one is a page label ("Careers at AiFA Labs"); the slug is the
+    # floor this module promises, and every refusal here lands on it.
+    "pyjamahr": (re.compile(r"^(?P<name>.+)$"),),
     # phenom: `_CAREERS_WRAPPER` cannot be reused, because these titles carry a second clause
     # after a pipe or a colon ("Careers at Zelis | Zelis Jobs", "OmniCable Careers: Play to
     # Win") and its `$`-anchored non-greedy group would swallow the whole tail as the name.
@@ -216,6 +225,10 @@ _VENDOR_ALIASES: dict[str, frozenset[str]] = {
     # entry is not merely precautionary. `phenompeople` is the legacy brand the CDN and the dead
     # `*.phenompeople.com` host namespace still carry.
     "phenom": frozenset({"phenom", "phenompeople"}),
+    # The vendor hires on its own platform (`jobs.pyjamahr.com/pyjamahr`, title "PyjamaHR"), so
+    # like phenom's this entry is reached by a real Board, not only by a failed render: that one
+    # tenant keeps its slug, which reads the same.
+    "pyjamahr": frozenset({"pyjamahr"}),
     # No matched-wrapper case reached this in the 150-Board sample — "Oracle Taleo" and
     # "Taleo | Mercedes-Benz Group AG" are both already refused for being unwrapped or not
     # matching any of the four shapes. Kept as a precaution: a themed board could plausibly

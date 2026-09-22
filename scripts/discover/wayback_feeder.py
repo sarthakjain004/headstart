@@ -352,6 +352,11 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
         "fa.oraclecloud.com",
     ),
     "personio": _with_style("sub", "jobs.personio.com", "jobs.personio.de"),
+    # `path` style: every tenant is one segment on the shared board host, exactly the slug
+    # `pyjamahr.py` keys the API with. The vendor's own cross-tenant jobs sitemap
+    # (`scripts/discover/mine_pyjamahr.py`) is the primary roster; this sweep adds the tenants
+    # whose postings are not in it — 77 of 757 on 2026-09-22, 3 of them hiring.
+    "pyjamahr": _with_style("path", "jobs.pyjamahr.com"),
     "recruitee": _with_style("sub", "recruitee.com"),
     "ripplehire": _with_style("sub", "ripplehire.com"),
     "rippling": _with_style("path", "ats.rippling.com"),
@@ -407,9 +412,11 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
 #   sensehq — has a scraper (`registry.SCRAPERS`) and an enumerable `{slug}.sensehq.com`, but no
 #             liveness ledger, so there is nothing to check a sweep against yet. Add it here once
 #             `data/validate/liveness/sensehq.csv` exists.
-#   phenom, pyjamahr, zwayam — no enumerable host namespace (per-tenant pods, UUIDs, or boards
-#             that live on customer domains). Oracle was listed here until its pods turned out to
-#             be enumerable after all; it now has 17 entries above.
+#   phenom, zwayam — no enumerable host namespace (per-tenant pods, or boards that live on
+#             customer domains). Oracle was listed here until its pods turned out to be
+#             enumerable after all; it now has 17 entries above. pyjamahr was listed here too, on
+#             the belief its Boards were keyed by an opaque UUID — they are keyed by a path slug
+#             on one shared host, so it is a `path` entry above.
 #   greythr, qandle, beehive, taleo, HirePro, iSmartRecruit, Recruit CRM, Ceipal — verified dead
 #             ends (CLAUDE.md's ATS-expansion TODO); the retired PowerShell feeder still swept
 #             qandle and beehive.

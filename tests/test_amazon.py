@@ -20,6 +20,7 @@ from pathlib import Path
 from headstart.scrapers.amazon import (
     AmazonScraper,
     _full_description,
+    _location,
     _posted_at,
     _remote,
 )
@@ -148,6 +149,49 @@ def test_remote_falls_back_to_the_location_string_with_no_locations_array():
 
 def test_remote_ignores_an_unparseable_locations_entry():
     assert _remote({"locations": ["not json"]}, None) is None
+
+
+# ----------------------------------------------------------------------------- location
+
+
+def test_location_joins_every_locations_entry():
+    """The bug this pins: `normalized_location` names only one place on a multi-location
+    posting — 40/100 page-1 postings measured live 2026-09-22. Real id 10555899 shape:
+    normalizes to "Tel Aviv-Yafo..." while `locations` holds Haifa AND Tel Aviv."""
+    r = {
+        "normalized_location": "Tel Aviv-Yafo, Tel Aviv, ISR",
+        "locations": [
+            json.dumps({"normalizedLocation": "Haifa, Haifa, ISR", "type": "ONSITE"}),
+            json.dumps(
+                {"normalizedLocation": "Tel Aviv-Yafo, Tel Aviv, ISR", "type": "ONSITE"}
+            ),
+        ],
+    }
+    assert _location(r) == "Haifa, Haifa, ISR; Tel Aviv-Yafo, Tel Aviv, ISR"
+
+
+def test_location_dedupes_identical_entries():
+    r = {
+        "locations": [
+            json.dumps({"normalizedLocation": "Austin, TX, USA", "type": "ONSITE"}),
+            json.dumps({"normalizedLocation": "Austin, TX, USA", "type": "ONSITE"}),
+        ]
+    }
+    assert _location(r) == "Austin, TX, USA"
+
+
+def test_location_falls_back_to_normalized_location_with_no_locations_array():
+    assert _location({"normalized_location": "US, VA, Ashburn", "locations": []}) == (
+        "US, VA, Ashburn"
+    )
+    assert _location({"location": "Remote"}) == "Remote"
+
+
+def test_location_end_to_end_on_the_real_multi_location_fixture():
+    """The REMOTE_ID fixture's own `locations` (Seattle ONSITE + Nevada VIRTUAL) — real data,
+    not synthetic — end to end through `parse`."""
+    job = _jobs()[REMOTE_ID]
+    assert job.location == "Seattle, Washington, USA; Nevada, USA"
 
 
 # ------------------------------------------------------------------------------ description

@@ -114,7 +114,36 @@ sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` 
   **Greenhouse** (2: Groww on the EU pod `job-boards.eu.greenhouse.io`, HighRadius embed-only).
 
 **New providers — endpoints VERIFIED live 2026-07-21** (full protocols: PLAN.md §4b + `artifacts/research_*.md`):
-- **PyjamaHR** — S, easiest. Open REST no auth: `GET api.pyjamahr.com/api/career/jobs/?company_uuid={UUID}` (+ `/jobs/{id}/?company_uuid=` for description). Native workplace_type + experience + salary.
+- **PyjamaHR** ✅ DONE (2026-09-22) — `scrapers/pyjamahr.py`, wired through liveness (767 live /
+  683 hiring Boards, 8,895 postings, `data/validate/liveness/pyjamahr.csv`). **Slug = the company
+  slug**, the path segment of `jobs.pyjamahr.com/{slug}` — not the `company_uuid` this entry used to
+  key on. The API takes `?company_slug=` on both endpoints (the board's own route builds its calls
+  with it), so the slug is the URL, the API key and the discovery key at once; the uuid is never
+  fetched. Four measured facts are wired into the code rather than documented (ADR-0175,
+  `docs/pyjamahr/2026-09-22_career-api-measurement.md`). **The roster is published by the vendor:**
+  `jobs.pyjamahr.com/sitemap-jobs.xml` lists every posting on the platform across every tenant
+  (7,801 URLs, 680 tenants), read by `scripts/discover/mine_pyjamahr.py`; a `path`-style
+  `wayback_feeder` entry adds the 77 tenants whose postings are not in it (78 slugs; one is a
+  non-tenant path the prober killed), and the `cc_miner`
+  pattern swept every Common Crawl index of the last three years (33, `CC-MAIN-2023-40`..`2026-39`):
+  161 tenants, 10 new to the pool, all live, one hiring — CC's count went flat at 136 before
+  `CC-MAIN-2025-05`, so older indexes hold nothing further. **An unknown slug is not
+  an error** — the listing answers 200 `count: 0`, byte-identical to a live empty Board — so the
+  prober settles a zero off the board page (200 live, real 404 dead). **`published_internally`
+  rows are served by the API and hidden by the board** (112 of 8,897, 39 tenants); the scraper
+  drops them, all four public implementations found on GitHub serve them. **The detail's `remote`
+  boolean is false on every posting**, including the 102 REMOTE ones; `workplace_type` is the
+  answer and never disagrees with the location (0 of 7,674 ON_SITE/HYBRID rows name a remote one).
+  The listing is one call: the undocumented `limit` parameter has no ceiling (`999999999` returns
+  the 643-row Board whole) while `page_size` is ignored; `next` is still followed. Description,
+  `job_type`, salary and `created_at` are detail-only, so the ADR-0048 skip is not taken (oracle's
+  reason: it would blank three fields) — the ADR-0166 tech gate is, as an exact site (`title` and
+  `department_name` are listing fields the detail never overrides). Salary bounds appear iff
+  `is_salary_visible` (1,236/1,236 visible, 0/505 hidden), periods ANNUAL/MONTHLY/HOURLY, currency
+  INR 91%. No rate limit found in ~3,800 requests (84 req/s at conc 32, zero non-200s; the prober
+  ran 680 Boards in 3.8 s at 432 workers); UA-agnostic. Company name is the board page `<title>`,
+  equal to `companyDetails.name` on 757/757 — 723 resolve through a catch-all
+  `company_name.PATTERNS["pyjamahr"]`. ~25% tech by the post-hoc gate; India is 78% of rows.
 - **Eightfold** — M, best discoverability (`{slug}.eightfold.ai` sweep → `/careers/sitemap.xml` → JSON-LD; the `/api/apply/v2/jobs` XHR is 403-hardened). Qualcomm/NVIDIA/Micron/Vodafone GCCs, ~75-89% tech.
 - **TurboHire** — M, token flow: `/api/token/noauth` (needs Referer) → `POST /api/careerpagev2/filteredjobs?orgId={GUID}`. 72 hosts; unlocks Cleartrip/Flipkart, Ola.
 - **Zwayam / Naukri Talent Cloud** ✅ DONE (2026-08-27, #320) — `scrapers/zwayam.py`, wired through
