@@ -275,11 +275,14 @@ def test_telegram_subscriptions_are_the_bot_records_only():
     alone would deliver to that person twice in one run."""
 
     class _All:
-        def __init__(self, records):
-            self._records = records
+        def __init__(self, records, invites=()):
+            self._records, self._invites = records, list(invites)
 
         def all(self):
             return self._records
+
+        def invites(self):
+            return self._invites
 
     from_bot = Subscription.for_chat("4242", "backend")
     allowlisted_with_chat = Subscription(
@@ -292,6 +295,15 @@ def test_telegram_subscriptions_are_the_bot_records_only():
     )
 
     assert [s.id for s in picked] == [from_bot.id]
+
+    # Review pass 1: a bot record for a chat an Invite already names — created before the bot
+    # knew about Invite chats, or the master's own /q — was delivered on top of the Invite.
+    picked = run.telegram_subscriptions(
+        _All(
+            [from_bot], invites=[Invite("ada@example.com", "backend", telegram="4242")]
+        )
+    )
+    assert picked == []
 
 
 def test_the_spreadsheet_carries_more_than_the_message(monkeypatch, no_xlsx):

@@ -226,8 +226,17 @@ def telegram_subscriptions(store: Store) -> list[Subscription]:
 
     A record with no Query yet — approved but hasn't sent `/q` — is skipped by `main` the
     same way an Invite with no Query is.
+
+    A bot record whose chat an Invite already routes to is skipped too: the Invite delivers
+    there, and a record made before the bot recognised Invite chats (or the master's own `/q`)
+    would otherwise send every alert twice.
     """
-    return [sub for sub in store.all() if sub.telegram and not sub.email]
+    invited = {i.telegram for i in store.invites() if i.telegram}
+    return [
+        sub
+        for sub in store.all()
+        if sub.telegram and not sub.email and sub.telegram not in invited
+    ]
 
 
 def main() -> int:
