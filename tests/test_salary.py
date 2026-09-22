@@ -529,6 +529,17 @@ def test_description_up_to_states_a_ceiling_not_a_floor():
     )
 
 
+def test_up_to_a_currency_code_or_prefixed_symbol_is_still_a_ceiling():
+    # Real served floors (ashby:clera "up to EUR 130,000", zoho "Upto INR 13,00,000", oracle
+    # "upto USD 93,600"): the connector allowed only a one-character symbol before the figure,
+    # so a code or "CA$" slipped past it and the ceiling was stored as min_annual.
+    assert from_description("Salary: up to USD 150,000 per year") is None
+    assert from_description("Salary: up to CA$120,000") is None
+    assert from_description("Salary: Upto INR 13,00,000") is None
+    assert from_description("Salary: up to EUR 130,000") is None
+    assert from_field("Up to USD 90,000", "zoho") is None
+
+
 def test_description_labeled_range_usd_k_shorthand():
     assert from_description("Compensation: $100-120k") == SalarySpan(
         100_000, 120_000, "USD", "regex"
