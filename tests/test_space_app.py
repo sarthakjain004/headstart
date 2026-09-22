@@ -601,6 +601,92 @@ def test_presets_subscription_is_adopted_as_the_emailing_set(
     assert len(client.get("/sets", base_url=_HTTPS).json) == 1
 
 
+# ---- Company prefs (ADR-0171) ----
+
+
+def _stored_companies(app_module, hub, followed=(), hidden=()):
+    import json as _json
+
+    account = app_module.subscription_id("dev@example.com")
+    path = f"companies/{account}.json"
+    hub[path] = _json.dumps(
+        {"account": account, "followed": list(followed), "hidden": list(hidden)}
+    ).encode()
+    return path
+
+
+def test_a_company_click_during_a_failed_read_never_blanks_the_lists(
+    sets_app, hub, monkeypatch
+):
+    # `get_companies` fails open for search, so the write that follows it must not treat
+    # "unreadable" as "nothing stored" and replace the Account's lists with one entry.
+    import headstart.alerts.store as st
+
+    path = _stored_companies(
+        sets_app, hub, followed=["greenhouse:acme", "lever:beta"], hidden=["ashby:c"]
+    )
+    before = hub[path]
+    real_read = st._read
+
+    def flaky(repo, name, token):
+        if name == path:
+            raise OSError("Hub timed out")
+        return real_read(repo, name, token)
+
+    monkeypatch.setattr(st, "_read", flaky)
+    client = _signed_in(sets_app, monkeypatch)
+
+    r = client.post(
+        "/companies", json={"board": "lever:delta", "action": "follow"}, base_url=_HTTPS
+    )
+
+    assert r.status_code == 503
+    assert hub[path] == before
+
+
+def test_a_company_click_racing_another_cannot_silently_drop_it(
+    sets_app, hub, monkeypatch
+):
+    # Two clicks in flight read the same record; the second write must not erase the
+    # first. Simulated deterministically: this request reads the record as it was before
+    # another click's hide landed.
+    import headstart.alerts.store as st
+
+    path = _stored_companies(sets_app, hub, hidden=["lever:a"])
+    stale = hub[path]
+    _stored_companies(sets_app, hub, hidden=["lever:a", "lever:b"])
+    real_read = st._read
+    monkeypatch.setattr(
+        st,
+        "_read",
+        lambda repo, name, token: (
+            stale if name == path else real_read(repo, name, token)
+        ),
+    )
+    client = _signed_in(sets_app, monkeypatch)
+
+    r = client.post(
+        "/companies", json={"board": "lever:c", "action": "hide"}, base_url=_HTTPS
+    )
+
+    assert r.status_code == 409
+    assert b"lever:b" in hub[path]
+
+
+def test_a_company_click_is_stored(sets_app, hub, monkeypatch):
+    path = _stored_companies(sets_app, hub, followed=["greenhouse:acme"])
+    client = _signed_in(sets_app, monkeypatch)
+
+    r = client.post(
+        "/companies", json={"board": "lever:b", "action": "hide"}, base_url=_HTTPS
+    )
+
+    assert r.status_code == 200
+    assert r.json == {"followed": ["greenhouse:acme"], "hidden": ["lever:b"]}
+    assert client.get("/companies", base_url=_HTTPS).json == r.json
+    assert b"lever:b" in hub[path]
+
+
 # ---- Profile (ADR-0041) ----
 
 _EXTRACTION = {
