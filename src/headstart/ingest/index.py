@@ -556,7 +556,9 @@ def _refresh_metadata(
             index = row_of[kept.job_id]
             fresh = {field: _served_meta(metas[index]).get(field) for field in columns}
             fresh[_FIRST_SEEN_FIELD.name] = kept.first_seen
-            description = kept.description or texts.get(kept.job_id)
+            # The corpus's text first: this row is being rewritten anyway, and an edited
+            # posting's fresh text must not lose to the table's copy of the old one.
+            description = texts.get(kept.job_id) or kept.description
             fresh[_DESCRIPTION_FIELD.name] = description
             fresh[_DESCRIPTION_STORED_FIELD.name] = description is not None
             fresh["vector"] = vectors[index].tolist()
