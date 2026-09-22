@@ -128,13 +128,30 @@ _JSONLD = re.compile(r'type="application/ld\+json"[^>]*>(.*?)</script>', re.DOTA
 #: "Account Executive- Slots" into "Account Executive- Slots Canada".
 _HTML_TITLE = re.compile(r'<h2 class="jv-header">(.*?)</h2>', re.DOTALL)
 _HTML_META = re.compile(r'<p class="jv-job-detail-meta">(.*?)</p>', re.DOTALL)
-_HTML_DESCRIPTION = re.compile(
-    r'<div class="jv-job-detail-description"[^>]*>(.*?)</div>\s*<div', re.DOTALL
-)
+#: The description container's *opening* tag; its extent is found by depth-counting
+#: :data:`_DIV_TAG` (as taleo_be does). Ending at the first ``</div>`` followed by ``<div`` cut
+#: bodies whose sections are nested divs down to the intro: live 2026-09-22 on nutanix, 4 of 8
+#: postings lost their tail, oLhCAfwY keeping 1,489 of 5,792 chars.
+_HTML_DESCRIPTION = re.compile(r'<div class="jv-job-detail-description"[^>]*>')
+_DIV_TAG = re.compile(r"<(?P<close>/?)div\b", re.IGNORECASE)
 #: ``jv-job-detail-meta`` reads "Category<separator>City, Region<separator>Req.Num.: N" — the
 #: separator is an empty ``<span class="jv-inline-separator">``, so it survives tag-stripping only
 #: if the split happens first.
 _SEPARATOR = re.compile(r"<span class='jv-inline-separator'></span>")
+
+
+def _description_html(page: str) -> str | None:
+    """The HTML inside ``jv-job-detail-description`` up to its *own* closing tag, or None
+    when the page has no such container or its divs never balance."""
+    opening = _HTML_DESCRIPTION.search(page)
+    if not opening:
+        return None
+    depth = 1
+    for tag in _DIV_TAG.finditer(page, opening.end()):
+        depth += -1 if tag.group("close") else 1
+        if depth == 0:
+            return page[opening.end() : tag.start()]
+    return None
 
 
 def total_of(page: str) -> int | None:
@@ -321,9 +338,9 @@ class JobviteScraper(BaseScraper):
         heading = title.group(1)
         text = html_to_text(heading.split("<", 1)[0]) or html_to_text(heading)
         posting: dict[str, Any] = {"title": text}
-        description = _HTML_DESCRIPTION.search(page)
+        description = _description_html(page)
         if description:
-            posting["description"] = description.group(1)
+            posting["description"] = description
         meta = _HTML_META.search(page)
         if meta:
             # "Category | City, Region | Req.Num.: N" — the department is the first segment and

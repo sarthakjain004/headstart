@@ -92,6 +92,20 @@ def test_a_nested_heading_does_not_leak_into_the_title():
     assert job.title == "Account Executive- Slots"
 
 
+def test_posting_of_reads_the_whole_description_past_nested_divs():
+    """nutanix wraps each section in its own div; ending at the first `</div><div` served
+    only the boilerplate intro (oLhCAfwY: 1,489 of 5,792 chars, live 2026-09-22)."""
+    page = (
+        '<h2 class="jv-header">Account Manager</h2>'
+        '<div class="jv-job-detail-description"><div><p>About Nutanix.</p></div>\n'
+        "<div><p>5+ years of experience.</p></div></div>\n"
+        '<div class="jv-job-apply">Apply</div>'
+    )
+    description = JobviteScraper._posting_of(page)["description"]
+    assert "5+ years of experience." in description
+    assert "Apply" not in description
+
+
 def test_posting_of_reads_the_heading_only_to_its_first_nested_tag():
     page = (
         '<h2 class="jv-header">\n  Staff Engineer\n<br>\n<h3>\n Canada\n</h3>\n</h2>'
