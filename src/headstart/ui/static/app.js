@@ -489,8 +489,8 @@ async function fetchPage(){
   const facetsPromise = fetch('/facets?'+p).then(r => r.json()).catch(() => null);
   facetsPromise.then(facets => { if (request === searchRequest) applyFacets(facets); });
   drawSortNote();
-  let rows;
-  try { rows = await (await fetch('/search?'+p)).json(); }
+  let rows, r;
+  try { r = await fetch('/search?'+p); rows = await r.json(); }
   catch(e){ if (request !== searchRequest) return;
             busy(false); el('results').innerHTML = '<div class="empty">That search didn\'t go through. Try again.</div>';
             setResultRows(1);
@@ -498,7 +498,11 @@ async function fetchPage(){
   if (request !== searchRequest) return;
   busy(false);
   if(!Array.isArray(rows)){
-    el('results').innerHTML = '<div class="empty">One of the filters isn\'t valid — clear it and try again.</div>';
+    // The sign-in wall's 401 is not a filter's fault — reading it as one had the user clearing
+    // filters that were never the problem.
+    el('results').innerHTML = '<div class="empty">' + (r.status === 401
+      ? 'Your session expired — sign in again to search.'
+      : 'One of the filters isn\'t valid — clear it and try again.') + '</div>';
     setResultRows(1);
     el('n').textContent = ''; el('kind').textContent = ''; return; }
   // Paint the ranked rows as soon as /search returns. Facets are independent counts and can be
@@ -989,11 +993,13 @@ async function runSet(id){
   const p = new URLSearchParams({ q: s.query, k: 20 });
   for (const [key, value] of Object.entries(s.search_filters || {})) p.set(key, value);
   for (const [key, value] of Object.entries(matchesRange())) p.set(key, value);
-  let rows;
-  try { rows = await (await fetch('/search?'+p)).json(); }
+  let rows, r;
+  try { r = await fetch('/search?'+p); rows = await r.json(); }
   catch(e){ if (request === matchesRequest) el('matches-msg').textContent = 'That search didn\'t go through.'; return; }
   if (request !== matchesRequest) return;
-  if (!Array.isArray(rows)){ el('matches-msg').textContent = 'A saved filter isn\'t valid — refine the set.'; return; }
+  if (!Array.isArray(rows)){ el('matches-msg').textContent = r.status === 401
+    ? 'Your session expired — sign in again to see your matches.'
+    : 'A saved filter isn\'t valid — refine the set.'; return; }
   el('matches-msg').textContent = rows.length
     ? `${rows.length} match${rows.length === 1 ? '' : 'es'} for “${s.name}”`
     : `Nothing matches “${s.name}” right now`;

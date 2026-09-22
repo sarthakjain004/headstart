@@ -303,6 +303,24 @@ test('an invalid-filter response (non-array) shows the filter error, not a crash
   assert.ok(nodes.results.innerHTML.includes("isn't valid"));
 });
 
+test('an expired session says so, rather than blaming a filter', async () => {
+  // The sign-in wall answers every /search with 401 {"error": "sign in first"} once the session
+  // ends (measured on the live Space), and a non-array body read as an invalid filter — so the
+  // user cleared filters that were never the problem.
+  const { t, nodes, ctx } = loadApp(url => (url === '/sets'
+    ? [{ id: 's1', name: 'Backend', query: 'backend' }] : []));
+  const base = ctx.fetch;
+  ctx.fetch = url => (String(url).startsWith('/search?')
+    ? Promise.resolve({ ok: false, status: 401, json: () => Promise.resolve({ error: 'sign in first' }) })
+    : base(url));
+  await t.go();
+  assert.ok(/session expired/i.test(nodes.results.innerHTML), 'Search says: ' + nodes.results.innerHTML);
+  await t.loadSets();
+  await new Promise(r => setTimeout(r, 0));
+  assert.ok(/session expired/i.test(nodes['matches-msg'].textContent),
+    'Matches says: ' + nodes['matches-msg'].textContent);
+});
+
 test('a description-only (Tier-2) salary still reaches the pay column', async () => {
   // `salary` (the raw display string) is only ever populated from a scraper's own structured
   // field — most of this initiative's own measured salary coverage is Tier-2, description-
