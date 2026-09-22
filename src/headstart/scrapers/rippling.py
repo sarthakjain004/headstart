@@ -53,6 +53,13 @@ def _location(rows: list[dict], detail: dict) -> str | None:
     return "; ".join(dict.fromkeys(labels or detail.get("workLocations") or [])) or None
 
 
+def _format_amount(v: float) -> str:
+    """Fixed-point, never scientific notation or a trailing ".0" — keka's ``_format_num`` fix:
+    ``:g`` writes 2,000,000 as "2e+06", which ``salary.py`` cannot parse, so a band reaching a
+    million (live: heymarvin's INR bands, 2026-09-22) lost its salary entirely."""
+    return f"{v:f}".rstrip("0").rstrip(".") or "0"
+
+
 def _employment_type(detail: dict) -> str | None:
     """``employmentType.label`` is a clean 6-value enum (SALARIED_FT, HOURLY_FT, ...); ``.id``
     is tenant free text (347 distinct spellings measured live, 130 of them singletons). The two
@@ -264,9 +271,9 @@ class RipplingScraper(BaseScraper):
         lo = min(los) if los else None
         hi = max(his) if his else None
         span = (
-            f"{lo:g}-{hi:g}"
+            f"{_format_amount(lo)}-{_format_amount(hi)}"
             if lo is not None and hi is not None
-            else f"{(lo if lo is not None else hi):g}"
+            else _format_amount(lo if lo is not None else hi)
         )
         currency, frequency = unit
         return " ".join(str(x) for x in (span, currency, frequency) if x)

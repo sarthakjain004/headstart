@@ -4714,6 +4714,14 @@ def test_rippling_pay_range_majority_unit_wins_regardless_of_position():
     assert _pay_range(ranges) == "160000-200000 USD YEAR"
 
 
+def test_rippling_pay_range_at_or_above_a_million_is_not_scientific():
+    """`:g` wrote 2,000,000 as "2e+06", which `salary.extract` cannot parse — live on
+    heymarvin's INR Product Designer band (2026-09-22)."""
+    _pay_range = get_scraper("rippling", "acme")._salary_field
+    band = {"rangeStart": 2000000, "rangeEnd": 2800000.5, "currency": "INR"}
+    assert _pay_range([{**band, "frequency": "YEAR"}]) == "2000000-2800000.5 INR YEAR"
+
+
 def test_rippling_employment_type_empty_label_does_not_fall_back():
     """`.label` is checked with `is not None`, not truthiness — the same class of bug
     `_salary_field` fixes for rangeStart/rangeEnd. A present-but-empty label (never observed
