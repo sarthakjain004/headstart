@@ -246,6 +246,25 @@ test('goToPage sends the requested page and updates the page counter', async () 
   assert.strictEqual(t.page(), 4);
 });
 
+test('Prev/Next page the search that ran, not an edit that was never submitted', async () => {
+  // The pager re-read the query box and the rail live, so a query typed (or a box ticked)
+  // without pressing Search went out at page 2 — and the first 20 rows of it were never shown.
+  // The lines describing the rows follow the same snapshot, so the screen describes what is
+  // actually being paged.
+  const { t, nodes, fetches } = loadApp(url => (url.startsWith('/facets?') ? { total: 500 }
+    : Array.from({ length: 20 }, (_, i) => job(qs(url).page + '-' + i))));
+  await t.go();                                   // a browse: empty query, no filters
+  set(nodes, 'q', 'data scientist');
+  nodes.remote.checked = true;
+  await t.goToPage(2);
+  const sent = qs(fetches.filter(f => f.startsWith('/search?')).pop());
+  assert.strictEqual(sent.page, '2');
+  assert.strictEqual(sent.q, '', 'the unsubmitted query went out');
+  assert.ok(!('remote' in sent), 'the unsubmitted filter went out');
+  assert.strictEqual(nodes.active.innerHTML, '', 'the chips describe a filter nothing applied');
+  assert.ok(/no search yet/.test(nodes.kind.textContent), 'the kind line: ' + nodes.kind.textContent);
+});
+
 test('goToPage clamps below 1 and above the 20-page ceiling', async () => {
   const { t, fetches } = loadApp(() => [job('a')]);
   await t.goToPage(0);
