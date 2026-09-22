@@ -263,7 +263,24 @@ def build_doc(job: dict) -> str:
 # sweep (535 postings, 2026-09-22), not just coverage: 207 records improved (174 floor-only ->
 # full, 33 None -> full), zero regressions (no record lost a value or had an already-resolved
 # min/max change). On top of the v13 bump at `ea577fff`.
-DERIVATIONS_VERSION = 14
+# v15: the 2026-09-22 bug-hunt fixes, all one PR on top of the v14 bump at `90a6fc64` (full list:
+# `git log 90a6fc64..ab2d6c19 -- src/headstart/salary.py src/headstart/experience.py
+# src/headstart/remote.py` on that PR's branch; the commits by subject, in case it lands squashed:
+# "Read £/€/₹ and per-side symbols in generic salary fields", "Map HK$/S$/A$/AU$/NZ$/US$ salary
+# symbols to their currency", "Treat 'not a fully remote position' as a negation", "Refuse 'up to
+# USD X' ceilings instead of storing them as floors", "Convert month-denominated experience fields
+# to whole years", "Stop reading a preceding HR acronym or MO state code as a period", "Read a
+# one-digit comma tail as a decimal in salary numbers", "Lower the INR salary ceiling to 3 crore",
+# "Ignore period hints cut from a word at the window edge"). Each changes what `extract()` returns
+# for raw input already stored. Measured old vs new on the 2026-09-15 LanceDB snapshot (459,291
+# rows, 7 days stale — not the live table), per ADR-0066: ~790 salary answers move (329 ceilings
+# recovered, ~480 currencies corrected, None->value and misread->None both in the tens, every
+# value->None read by hand), 9 experience fields, 35 remote True->False. `remote` reaches only rows
+# whose Board is scraped in the sweep run (it has no stored raw field to re-derive from) — a
+# known gap, not closed here. The one other salary.py commit since v14, `2ab9e6ba` (#562, keka's
+# `_field_keka` now applies `_period_multiplier`), is inert on stored rows: their raw keka string
+# carries no period word, which `_period_multiplier` reads as annual (x1), so it needed no bump.
+DERIVATIONS_VERSION = 15
 
 
 def to_meta(job: dict) -> dict:
