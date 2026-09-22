@@ -1785,6 +1785,20 @@ def test_hr_acronym_and_missouri_before_the_figure_are_not_periods():
     )
 
 
+def test_hr_and_mo_after_the_figure_are_units_only_when_they_touch_it():
+    # Review pass 1: skipping only a PRECEDING HR/MO left the trailing class open — a state code
+    # after the city still multiplied by 12, and an adjacent "HR department" read hourly.
+    assert from_description("Salary: $55,000 - $65,000 Springfield MO") == SalarySpan(
+        55_000, 65_000, "USD", "regex"
+    )
+    assert from_description("Pay: $50,000 - $60,000 HR department") == SalarySpan(
+        50_000, 60_000, "USD", "regex"
+    )
+    assert from_description("Pay $17.95/HR Qualifications") == SalarySpan(
+        37_440, None, "USD", "regex"
+    )
+
+
 def test_num_single_digit_decimal_comma_is_a_decimal():
     # Real served row (successfactors:jobs.avl.com, Cavriago IT): "Starting Salary: 28,5k" was
     # served as 285,000 — a one-digit comma tail can never be a thousands group (those are 3).
