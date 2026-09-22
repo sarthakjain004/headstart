@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare unsupported ATSes by what they would actually contribute: live boards, tech jobs, India.
+"""Compare unsupported ATSes by what they would actually contribute: live rows, tech jobs, India.
 
 `data/ats-tenants-merged/` holds ~51k candidate tenants on ATSes HeadStart has no scraper for, and
 the row counts alone are a bad way to rank them — measured on bamboohr, 45% of a 15,602-row pool
@@ -10,7 +10,7 @@ So this probes a random sample of each ATS's pool and reports the four numbers t
 a scraper is worth building:
 
   live rate      what fraction of the pool still resolves and answers
-  jobs/board     how much a live board actually carries (most SMB boards carry nothing)
+  jobs/row       how much a live row actually carries (most SMB boards carry nothing)
   tech share     `headstart.tech_filter.is_tech` over the title
   India share    the location, where the surface exposes one
 
@@ -194,8 +194,8 @@ def main() -> None:
         print(
             f"\n=== {ats}: {len(pick)} sampled of {len(rows)} pool rows ===\n"
             f"  outcomes     : {dict(states.most_common())}\n"
-            f"  live boards  : {live} ({100 * live / len(pick):.0f}%)\n"
-            f"  jobs         : {jobs}  ({jobs / live:.1f}/live board)"
+            f"  live rows    : {live} ({100 * live / len(pick):.0f}%)\n"
+            f"  jobs         : {jobs}  ({jobs / live:.1f}/live row)"
             if live
             else f"  jobs: {jobs}",
             flush=True,

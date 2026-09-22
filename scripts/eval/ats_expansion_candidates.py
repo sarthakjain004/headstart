@@ -215,6 +215,11 @@ def main() -> None:
         flush=True,
     )
 
+    # Rewritten after every ATS, not once at the end: each one costs a download and a full-file
+    # scan, so a crash on the last of them would otherwise discard every earlier result.
+    out_json = OUT_DIR / "artifacts" / "ats_expansion_candidates.json"
+    out_json.parent.mkdir(parents=True, exist_ok=True)
+
     results = []
     for ats in candidates:
         entry = by_ats[ats]
@@ -234,10 +239,8 @@ def main() -> None:
             f"({stats.get('india_pct', 0):.1f}%) tech&india={stats.get('tech_and_india')}",
             flush=True,
         )
+        out_json.write_text(json.dumps(results, indent=2, ensure_ascii=False))
 
-    out_json = OUT_DIR / "artifacts" / "ats_expansion_candidates.json"
-    out_json.parent.mkdir(parents=True, exist_ok=True)
-    out_json.write_text(json.dumps(results, indent=2, ensure_ascii=False))
     print(f"\nwrote {out_json}", flush=True)
 
     results.sort(key=lambda r: r.get("tech", 0), reverse=True)
