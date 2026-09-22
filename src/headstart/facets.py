@@ -220,7 +220,7 @@ def counts(
     return {
         "total": total,
         "facets": facets,
-        "blocking": _blocking(table, filters, capabilities, total),
+        "blocking": _blocking(table, filters, capabilities, total, extra_where),
         "description_coverage": (
             {"covered": coverage[0].result(), "total": coverage[1].result()}
             if coverage
@@ -277,14 +277,20 @@ NEVER_BLOCKING = frozenset(
 
 
 def _blocking(
-    table: Any, filters: SearchFilters, capabilities: IndexCapabilities, total: int
+    table: Any,
+    filters: SearchFilters,
+    capabilities: IndexCapabilities,
+    total: int,
+    extra_where: str | None,
 ) -> str | None:
     """Which single active filter is costing the user everything, when nothing matched.
 
     Only computed on a zero total, where it is the whole answer and the request is otherwise
     doing no work anyway. It drops each active filter in turn and keeps the one that recovers
     the most rows; ``None`` when nothing matched even with every filter dropped, because then
-    no filter is to blame and saying one is would be a lie.
+    no filter is to blame and saying one is would be a lie. Every recount keeps
+    ``extra_where`` (the Account clause) applied, as :func:`counts` does for the total: a filter
+    whose removal only recovers rows the Account clause hides would remove nothing on screen.
     """
     if total:
         return None
@@ -304,7 +310,13 @@ def _blocking(
         # "Unset" is False for the two switches and None for everything else — build_filter
         # reads both as absent, but a bool kwarg given None would be a lie about its type.
         unset = False if isinstance(getattr(filters, key), bool) else None
-        n = _count(table, build_filter(replace(filters, **{key: unset}), capabilities))
+        n = _count(
+            table,
+            with_extra(
+                build_filter(replace(filters, **{key: unset}), capabilities),
+                extra_where,
+            ),
+        )
         if n > best_n:
             best, best_n = key, n
     return best
