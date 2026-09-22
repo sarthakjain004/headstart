@@ -97,6 +97,8 @@ def _pull_index(attempts: int = 5) -> None:
                     "data/lancedb/*",
                     "data/state/role_trends.parquet",
                     "data/state/role_trend_board_deltas/*",
+                    # the methodology epochs the Trends chart marks (ADR-0164) — a few rows
+                    "data/state/trends_epochs.csv",
                     # the hot list (hot_boards) — a few tens of KB, and absent until a run
                     # writes one, which hides the tab rather than failing the pull
                     "data/state/hot_boards.json",
