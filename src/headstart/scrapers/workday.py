@@ -722,6 +722,7 @@ class WorkdayScraper(BaseScraper):
                         response, _listing_body(response)
                     )
                     self._record_listing_loss(classification)
+                    response.raise_for_status()  # an error status is a lost page (ADR-0076)
                     raise UnexpectedListingResponse(diagnostic) from retry_exc
                 if response.status_code >= 400:
                     self._record_listing_loss(f"HTTP {response.status_code}")
@@ -730,6 +731,12 @@ class WorkdayScraper(BaseScraper):
                     int(self.telemetry.get("listing_transient_recovered", 0)) + 1
                 )
             else:
+                if response.status_code >= 400:
+                    # An error status with an HTML error page is still the HTTP error, raised as
+                    # the `RequestsError` callers count as one lost page (ADR-0076) — not the
+                    # unrecognised-body Board failure ADR-0140 reserves for a 2xx.
+                    self._record_listing_loss(f"HTTP {response.status_code}")
+                    response.raise_for_status()
                 self._record_listing_loss("unexpected-body")
                 raise UnexpectedListingResponse(diagnostic) from exc
         if response.status_code >= 400:
@@ -817,6 +824,7 @@ class WorkdayScraper(BaseScraper):
                         response, _listing_body(response)
                     )
                     self._record_listing_loss(classification)
+                    response.raise_for_status()  # an error status is a lost page (ADR-0076)
                     raise UnexpectedListingResponse(diagnostic) from retry_exc
                 if response.status_code >= 400:
                     self._record_listing_loss(f"HTTP {response.status_code}")
@@ -825,6 +833,12 @@ class WorkdayScraper(BaseScraper):
                     int(self.telemetry.get("listing_transient_recovered", 0)) + 1
                 )
             else:
+                if response.status_code >= 400:
+                    # An error status with an HTML error page is still the HTTP error, raised as
+                    # the `RequestsError` callers count as one lost page (ADR-0076) — not the
+                    # unrecognised-body Board failure ADR-0140 reserves for a 2xx.
+                    self._record_listing_loss(f"HTTP {response.status_code}")
+                    response.raise_for_status()
                 self._record_listing_loss("unexpected-body")
                 raise UnexpectedListingResponse(diagnostic) from exc
         if response.status_code >= 400:
