@@ -318,15 +318,20 @@ def _field_range_currency_interval(value: str) -> SalarySpan | None:
 
 
 def _field_keka(value: str) -> SalarySpan | None:
-    """ "25000-30000 INR" — period is not in the payload at all (confirmed in keka.py's own
-    docstring), so this is left un-annualized; a future keka-specific research pass may find the
-    period is knowable from context this string alone doesn't carry."""
+    """ "25000-30000 INR" (period undecoded — annual is `_period_multiplier`'s default) or
+    "25000-30000 INR monthly"/"...hourly" (period decoded by `keka.py`'s own
+    ``KekaScraper._salary_field``, which appends the phrase word `_period_multiplier` recognizes
+    only for the three ``salaryPeriod`` values a live re-measurement confirmed by magnitude — see
+    that method's docstring). Applying `_period_multiplier` here is what turns a real monthly or
+    hourly figure into a plausible annual one instead of one small enough to fail `_bounded`'s
+    floor and be silently dropped."""
     m = _RANGE.search(value)
     if not m:
         return None
     code_m = _CURRENCY_CODE.search(value)
     currency = code_m.group(1).upper() if code_m else None
-    lo, hi = _num(m.group(1)), _num(m.group(2))
+    mult = _period_multiplier(value)
+    lo, hi = _num(m.group(1)) * mult, _num(m.group(2)) * mult
     return _bounded(min(lo, hi), max(lo, hi), currency)
 
 

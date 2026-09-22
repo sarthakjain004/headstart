@@ -6,7 +6,7 @@ careers SPA itself does not):
 
   POST /ms/candidateapi/job/alljobs?companyId=main
        body {"companyId":"main","page":N,"sort_option":"new","limit":100}
-       -> {"status":"success","data":[ ...jobs... ]}
+       -> {"status":"success","data":[ ...jobs... ],"job_counts":N}
 
 Two wrinkles drive the shape of this scraper:
   * Cloudflare fingerprints the edge, so this is the one scraper that fetches via curl_cffi
@@ -29,6 +29,21 @@ silently re-reading half of it through a second transport.
 
 Only tenants with recruitment enabled return jobs; HR-only tenants (e.g. games24x7,
 recruitment_enabled:false) return an empty list.
+
+**`job_counts` is a real, stable board-wide total — verified 2026-09-22 through `browser_http`
+(issue #549 was blocked on a direct-curl 403; the wall admits a browser, per the note above).**
+10 Hiring Boards checked, ids and hosts in `docs/darwinbox/2026-09-22_job-counts-measurement.md`:
+present and non-null on every one, from a 2-job board up to 280. On the two boards spanning more
+than one page (271 and 280 jobs), it held the exact same value across every page fetched,
+including the terminal short page that ends the loop naturally — so it is safe to check the
+pagination loop's own final total against, not just a per-page count. `fetch_raw` and
+`_fetch_raw_browser` both now call `mark_truncated_unless_negligible` when the loop ends short of
+it (ADR-0121); a hard page-cap exit still calls the unconditional `mark_truncated`, since that
+shortfall is unreachable rather than measured. **`experience_from_num` does not exist** on any of
+the 10 boards — only `experience_from`/`experience_to` (both real, e.g. `"1"`/`"2"`) alongside the
+`experience` string (`"1 - 2 Years"`) this scraper already reads; not wired, since the string
+field is already well-formed on every sampled job and nothing here shows it losing information the
+numeric pair would recover.
 """
 
 from __future__ import annotations
@@ -118,7 +133,12 @@ class DarwinboxScraper(BaseScraper):
         )
 
     def _alljobs(self, host: str, page: int) -> list[dict]:
-        """POST one page of the board (retry — incl. the Cloudflare 403 blip — lives in fetch)."""
+        """POST one page of the board (retry — incl. the Cloudflare 403 blip — lives in fetch).
+
+        Also stashes the envelope's ``job_counts`` on ``self._job_counts`` for `fetch_raw` to
+        check pagination against once the loop ends — same ad hoc instance-attribute pattern as
+        ``_host``/``_new_careers`` below, set here and read back after the call returns.
+        """
         api = f"{host}/ms/candidateapi/job/alljobs?companyId=main"
         body = {
             "companyId": "main",
@@ -134,7 +154,9 @@ class DarwinboxScraper(BaseScraper):
             headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
         )
         response.raise_for_status()
-        return response.json().get("data") or []
+        payload = response.json()
+        self._job_counts = payload.get("job_counts")
+        return payload.get("data") or []
 
     def _portal_is_v2(self, host: str) -> bool:
         """Whether the tenant runs the candidatev2 careers portal (companyinfo.new_careers).
@@ -167,7 +189,9 @@ class DarwinboxScraper(BaseScraper):
         with self._browser_fetcher(f"{host}/ms/candidate/careers") as browser:
             response = browser.fetch("POST", api, json={**body, "page": 1})
             response.raise_for_status()
-            batch = response.json().get("data") or []
+            payload = response.json()
+            self._job_counts = payload.get("job_counts")
+            batch = payload.get("data") or []
             jobs = list(batch)
             page = 1
             while len(batch) == _PAGE_SIZE and page < _MAX_PAGES:
@@ -179,6 +203,15 @@ class DarwinboxScraper(BaseScraper):
             if len(batch) == _PAGE_SIZE:
                 self.mark_truncated(  # same cap as `fetch_raw`'s curl loop below (ADR-0053)
                     f"hit the {_MAX_PAGES}-page cap at {len(jobs)} jobs — the rest unread"
+                )
+            elif self._job_counts and len(jobs) < self._job_counts:
+                # Same `job_counts`-vs-collected check as the curl path's loop in `fetch_raw`
+                # (see its docstring note there for the live evidence); here because a walled
+                # Board never reaches that loop at all.
+                self.mark_truncated_unless_negligible(
+                    len(jobs),
+                    self._job_counts,
+                    f"job_counts={self._job_counts} but only {len(jobs)} read — the rest unread",
                 )
             try:
                 info = browser.fetch(
@@ -233,6 +266,23 @@ class DarwinboxScraper(BaseScraper):
             self.mark_truncated(
                 f"hit the {_MAX_PAGES}-page cap at {len(jobs)} jobs — the rest unread"
             )
+        else:
+            # A short PAGE ended the loop naturally, but the envelope's own `job_counts` says
+            # the board isn't actually exhausted — live-confirmed real (2026-09-22, 10 Hiring
+            # Boards through `browser_http`, module docstring update): stable across every page
+            # of a walk including the terminal short one, and equal to the exact summed job
+            # count on every board checked. `mark_truncated_unless_negligible` rather than a
+            # flat `mark_truncated`: unlike the page cap above, this total is a real, measured
+            # figure to tolerate a small gap against (ADR-0121), not an unreachable hard limit.
+            # `getattr` because a test (or a curl call this pass didn't reach) may not have set
+            # it, the same defensive read `_host`/`_new_careers` already use above.
+            job_counts = getattr(self, "_job_counts", None)
+            if job_counts and len(jobs) < job_counts:
+                self.mark_truncated_unless_negligible(
+                    len(jobs),
+                    job_counts,
+                    f"job_counts={job_counts} but only {len(jobs)} read — the rest unread",
+                )
         return jobs
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:

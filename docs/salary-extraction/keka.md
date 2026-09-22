@@ -325,9 +325,12 @@ to a specific, understood mechanism.
   insurance-coverage mentions ("group medical insurance of 3 lakhs for family"). Not built as a
   general pattern; the label-anchored "L" suffix captures the safe, evidenced subset of this
   same underlying convention.
-- **The confirmed-undecodable `salaryPeriod` enum** — not a gap this or any future pass can close
-  without new information: the label mapping doesn't exist anywhere in keka's own public product,
-  confirmed by reading the actual JS the careers page loads. Left correctly omitted, not guessed.
+- ~~The confirmed-undecodable `salaryPeriod` enum~~ — **superseded 2026-09-22, see the dated
+  update at the bottom of this doc.** This pass's "no label mapping exists anywhere in keka's own
+  public product" was true and stays true, but it turned out not to be the only route to a
+  decoded map: an independent third-party implementation's map, checked against a live
+  re-measurement by magnitude rather than trusted, held for 3 of the 5 enum values. Left as
+  struck-through rather than deleted, per this repo's convention for a superseded verdict.
 
 ## Carried forward from workable through lever — and new lessons
 
@@ -369,3 +372,47 @@ to a specific, understood mechanism.
   before/after diff pair (`main`'s frozen value vs. the working tree's) was actually the buggy one,
   not just counting how many lines changed. A LOST/CHANGED line where `main` itself already shows
   the bug is evidence the defect predates the current pass entirely.
+
+## 2026-09-22 update: `salaryPeriod` re-opened and partly wired (issue #546)
+
+The 2026-08-22 pass above closed `salaryPeriod` as confirmed-undecodable on the strength of one
+argument: no label string for it exists anywhere in keka's own public product (the tenant JS
+bundle), so there was nothing to reverse-engineer. That's still true. What changed is that a
+label map doesn't have to come from keka's own product to be checkable — an independent
+third-party scraper (`kalil0321/ats-scrapers`) ships one (`{1: Hourly, 3: Monthly, 4: Annual}`,
+plus a separate purely-descriptive label for `0`/`2` it doesn't actually map), and that map is an
+empirical claim: it predicts a magnitude shape per period, which a live sample can check without
+needing keka's own bundle to say anything at all.
+
+**Re-measured live, 2026-09-22**, across ~200 randomly sampled Hiring Boards (`data/validate/
+liveness/keka.csv`) and ~5,000 total jobs, ~1,300 of them carrying a stated amount:
+
+| period | n (stated amount) | claimed unit | magnitude consistent with claim |
+|---|---|---|---|
+| 0 | 662 (60-board sample) | "Not Available" | mixed — 152 LPA-scale, 230 monthly-scale, 278 annual-scale, no signal |
+| 1 | 2 | Hourly | both small enough to be plausible hourly rates (too few to confirm alone) |
+| 2 | 1 | Bi Weekly | too rare to say anything (1 example in ~5,000 jobs) |
+| 3 | 215 | Monthly | 179/215 (83%) monthly-scale |
+| 4 | 375 | Annual | 330/375 (88%) annual-scale |
+
+This holds the label map for 1/3/4 and leaves 0/2 exactly as undecoded as before — 0 because
+re-measurement confirms it is still genuinely mixed-magnitude (the real finding this pass's
+"inconsistent per-company data entry" phrase was actually describing, just scoped wider than it
+should have been), and 2 because one example is not a population.
+
+**Wired**: `KekaScraper._salary_field` (`src/headstart/scrapers/keka.py`) now appends the phrase
+word `headstart.salary._period_multiplier` recognizes ("monthly"/"hourly") for periods 3/1 only;
+`salary._field_keka` now applies `_period_multiplier` to the parsed figure before the plausibility
+check, the same pattern every other structured-field parser in this module already uses. Values
+under 0/2 are emitted exactly as before (no period word), so this is additive: it recovers a
+figure for the tail carrying a decodable period without touching the 0-majority. No
+`DERIVATIONS_VERSION` bump: `Job.salary`'s raw string itself changes ("25000-30000 INR" ->
+"25000-30000 INR monthly") once a Board carrying a decodable period is rescraped, so
+`update_meta`'s `salary_inputs_moved` check (`src/headstart/ingest/update_meta.py:287`) already
+reprocesses it — confirmed by reading that check, not assumed from the 2026-08-22 pass's general
+claim about it.
+
+**Do NOT** copy upstream's own `salaryPeriod == 0 -> empty salary` branch
+(`src/ats_scrapers/scrapers/keka.py:432-433`): measured on this same sample, period 0 carries a
+stated amount on 662 of the ~1,300 stated-amount jobs (about half), so that branch would discard
+roughly half of keka's real salary data to avoid a genuinely undecodable minority case.

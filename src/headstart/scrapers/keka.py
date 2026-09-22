@@ -57,6 +57,14 @@ def _format_num(v: float) -> str:
     return f"{v:f}".rstrip("0").rstrip(".") or "0"
 
 
+#: salaryPeriod -> the phrase word `headstart.salary._period_multiplier` recognizes, so
+#: `_field_keka` annualizes the figure before the plausibility bounds are checked. See
+#: `KekaScraper._salary_field`'s docstring for the live re-measurement behind this map. Period 4
+#: (Annual) needs no word: `_period_multiplier`'s default, with no period phrase present, is
+#: already annual.
+_PERIOD_WORDS = {1: "hourly", 3: "monthly"}
+
+
 class KekaScraper(BaseScraper):
     ats = "keka"
     url_shape = r"https://[^.]+\.keka\.com/careers/jobdetails/\d+"
@@ -130,20 +138,29 @@ class KekaScraper(BaseScraper):
         return jobs
 
     def _salary_field(self, raw: dict | None) -> str | None:
-        """Format keka's salaryRange, e.g. '25000-30000 INR'. None when no amounts published.
+        """Format keka's salaryRange, e.g. '25000-30000 INR monthly'. None when no amounts
+        published.
 
-        The raw payload also carries a numeric ``salaryPeriod`` enum (confirmed real: values 0-4
-        seen across a 150-board sample, salary-extraction pass 2026-08-22) — but its label
-        mapping is confirmed UNDECODABLE, not just undocumented: the tenant-specific JS bundle
-        every keka careers page actually loads
-        (`{slug}.keka.com/careers/api/embedjobs/js/{tenant_uuid}`) contains zero occurrences of
-        the string "salary" anywhere in it — the public embed-jobs widget doesn't render salary
-        at all, so no label mapping exists anywhere in the public product to reverse-engineer,
-        not merely one this scraper hasn't found yet. Statistical inference from magnitude
-        doesn't resolve it either: the same enum value spans both LPA-shorthand-scale numbers
-        ("3-5") and absolute-rupee-scale numbers ("300000-500000") across different tenants,
-        consistent with inconsistent data entry by each company's own HR staff rather than a
-        clean, guessable convention. The period is correctly omitted rather than guessed.
+        The raw payload also carries a numeric ``salaryPeriod`` enum. A prior pass
+        (salary-extraction pass 2026-08-22) called the label mapping "confirmed UNDECODABLE" on
+        the grounds that no keka careers page's own JS bundle mentions "salary" anywhere — true,
+        but that only rules out reverse-engineering the labels from keka's own product; it does
+        not rule out an externally-sourced map being right. An independent third-party
+        implementation (kalil0321/ats-scrapers) ships one — ``{1: Hourly, 3: Monthly, 4:
+        Annual}`` — and re-measuring against it live (2026-09-22, ~200 random Hiring Boards,
+        ~5,000 jobs with a stated amount) confirms it holds by magnitude: period 3 values are
+        monthly-scale (10³–10⁵) on 179/215 (83%), period 4 values are annual-scale (10⁵–10⁷) on
+        330/375 (88%), and both stated period-1 values are small enough to be plausible hourly
+        rates. ``_PERIOD_WORDS`` below wires only those three — 0 ("Not Available") stays
+        undecoded on purpose: it is keka's own blank-field default (see the ``or None`` note
+        below) *and* a real per-company value, and re-measurement found it still genuinely
+        mixed-magnitude (662 sampled values, a 60-board subsample, spanning LPA-, monthly- and
+        absolute-annual-scale with no signal to split them by — see
+        docs/salary-extraction/keka.md's 2026-09-22 update for the per-scale breakdown) — the
+        "inconsistent per-company data entry" finding
+        that closed this out in 2026-08-22 was real, just scoped to 0 rather than the whole
+        enum. 2 ("Bi Weekly") had a single stated example in the whole re-measurement — too rare
+        to confirm, and the upstream map omits it too.
         """
         raw = raw or {}
         # `or None` (truthy, not `is not None`) is deliberate here, checked against real data
@@ -161,4 +178,5 @@ class KekaScraper(BaseScraper):
             if lo and hi
             else _format_num(lo or hi)
         )
-        return " ".join(str(x) for x in (span, raw.get("currency")) if x)
+        period = _PERIOD_WORDS.get(raw.get("salaryPeriod"))
+        return " ".join(str(x) for x in (span, raw.get("currency"), period) if x)
