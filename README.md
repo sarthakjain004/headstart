@@ -120,8 +120,8 @@ Every *other* ATS serves the **ATS slug** in that field instead, so a row's `com
 either — four served rows in five carry a slug rather than a name, which is why `CompanyPrefs` is
 keyed by **board_key** and never by company name.
 
-The liveness pipeline has probed **257,753 ledger rows**: 153,550 live, 88,112 dead, 16,091 unknown
-— rows, not boards; they collapse to 146,918 Unique Boards once duplicate spellings of the same
+The liveness pipeline has probed **257,761 ledger rows**: 153,558 live, 88,112 dead, 16,091 unknown
+— rows, not boards; they collapse to 146,926 Unique Boards once duplicate spellings of the same
 board are folded together (`CONTEXT.md` §Counting Boards).
 
 ## What this optimises for
@@ -173,7 +173,7 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>153,550 live rows of 257,753<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>153,558 live rows of 257,761<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
@@ -271,18 +271,18 @@ table in lockstep with the committed ledger:
 
 | | boards | |
 | --- | ---: | --- |
-| live rows in the ledger | 153,550 | a row, not a board — 6,632 of them are duplicate spellings |
+| live rows in the ledger | 153,558 | a row, not a board — 6,632 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −25,488 | all of it `join` |
 | − `config.EXCLUDED_BOARDS` | −47 | vendor test/sandbox boards, confirmed by reading their postings |
 | − alias ledger | −78 | one company, two hostnames sharing one board (ADR-0111) |
 | − case-variant dedupe | −6,630 | `company/External` and `company/external` are one board (ADR-0023) |
 | − `config.PARKED_BOARDS` | −7 | real boards withheld for now — five for scrape cost, two for near-duplicate spam |
-| = **Scrapable Board** | **121,300** | |
+| = **Scrapable Board** | **121,308** | |
 
 That order matters: excluding before deduping reads −47 and −6,630, deduping first reads −45,
-because two excluded boards were themselves duplicates. Both land on 121,300.
+because two excluded boards were themselves duplicates. Both land on 121,308.
 
-Of those, **78,765 are currently hiring** — the 42,535 live-but-empty boards are skipped as having
+Of those, **78,766 are currently hiring** — the 42,542 live-but-empty boards are skipped as having
 nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
 sticky measure of tech-job yield) and a random exploration tail drawn from everything else, so
 newly-productive boards can never starve and eviction keeps working on boards outside the head.
