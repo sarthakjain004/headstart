@@ -201,11 +201,14 @@ class SuccessFactorsScraper(BaseScraper):
             _cap_reason("sitemap", _SITEMAP_CAP) if capped else None,
         )
 
-    def _search_job_urls(self) -> tuple[list[tuple[str, str]], str | None]:
+    def _search_job_urls(
+        self,
+    ) -> tuple[list[tuple[str, str]], str | None, int | None]:
         """Enumerate the board via the server-rendered ``/search/`` pages.
 
-        Returns the pairs found and, when the walk was cut short rather than reaching the end,
-        why. Reported rather than recorded, because whether it matters is the caller's to decide:
+        Returns the pairs found; when the walk was cut short rather than reaching the end, why;
+        and, when that shortfall is measured against the board's own stated total, the total —
+        the one shape ADR-0121 tolerates. Reported rather than recorded, because whether it matters is the caller's to decide:
         this surface is only the Board's answer when it returns something, and a truncation on a
         surface that lost the fallback race must not be attached to the list that won it
         (ADR-0053)."""
@@ -228,9 +231,13 @@ class SuccessFactorsScraper(BaseScraper):
                 # Unlike the empty-page exit below, this is the walk being cut short rather than
                 # reaching the end: whatever sits past this offset is unread, not absent
                 # (ADR-0053). No total to compare against here, so report the offset instead.
-                return [(u, i) for i, u in seen.items()], (
-                    f"HTTP {response.status_code} at startrow {startrow} — "
-                    f"{len(seen)} postings read before the walk stopped"
+                return (
+                    [(u, i) for i, u in seen.items()],
+                    (
+                        f"HTTP {response.status_code} at startrow {startrow} — "
+                        f"{len(seen)} postings read before the walk stopped"
+                    ),
+                    None,
                 )
             if page_index == 0:
                 paging = _advertised_paging(response.text)
@@ -255,9 +262,13 @@ class SuccessFactorsScraper(BaseScraper):
             # Ran out of pages rather than reaching the end. Eightfold and Workday both mark
             # their equivalent ceilings; this one returned None and the short list read as the
             # whole Board (ADR-0053).
-            return [(u, i) for i, u in seen.items()], (
-                f"hit the {_MAX_SEARCH_PAGES}-page search ceiling at startrow {startrow} — "
-                f"{len(seen)} postings read, the rest unread"
+            return (
+                [(u, i) for i, u in seen.items()],
+                (
+                    f"hit the {_MAX_SEARCH_PAGES}-page search ceiling at startrow {startrow} — "
+                    f"{len(seen)} postings read, the rest unread"
+                ),
+                None,
             )
         # Reaching the natural end is not proof the walk read everything — the stride bug above
         # exited by exactly this path for months. The board states its own total on the search
@@ -273,11 +284,15 @@ class SuccessFactorsScraper(BaseScraper):
         # eviction, while over-reporting marks the Board unauthoritative and serves its closed
         # postings indefinitely.
         if advertised_total is not None and len(seen) < advertised_total:
-            return [(u, i) for i, u in seen.items()], (
-                f"read {len(seen)} of the {advertised_total} postings the board advertises — "
-                "the rest were not listed"
+            return (
+                [(u, i) for i, u in seen.items()],
+                (
+                    f"read {len(seen)} of the {advertised_total} postings the board "
+                    "advertises — the rest were not listed"
+                ),
+                advertised_total,
             )
-        return [(u, i) for i, u in seen.items()], None
+        return [(u, i) for i, u in seen.items()], None, None
 
     def _rss_job_urls(
         self,
@@ -388,10 +403,15 @@ class SuccessFactorsScraper(BaseScraper):
         if listed and sitemap_cut_short:
             self.mark_truncated(sitemap_cut_short)
         if not listed:
-            listed, search_cut_short = self._search_job_urls()
+            listed, search_cut_short, search_total = self._search_job_urls()
             if listed:
                 surface = "search-pages"
-                if search_cut_short:
+                if search_cut_short and search_total:
+                    # Measured against the Board's own stated total (ADR-0121).
+                    self.mark_truncated_unless_negligible(
+                        len(listed), search_total, search_cut_short
+                    )
+                elif search_cut_short:
                     self.mark_truncated(search_cut_short)
         if not listed and kind == "rss":
             listed, job_functions, rss_cut_short = self._rss_job_urls()
