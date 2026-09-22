@@ -46,6 +46,7 @@
  *   adoptAccountCopy(id)   -> Promise<bool>        …when this browser also has that document,
  *                                                  keeping the local one beside it
  *   forget(id)             -> Promise              take one off the Account
+ *   drop(id)                                       deleted here; never push it again
  */
 (function (root) {
   'use strict';
@@ -185,6 +186,15 @@
          that was still true, so unticking it visibly snapped back on before turning off. */
       return gone;
     });
+  };
+
+  /** A document deleted from this browser. Whatever it had waiting to go up goes with it: left
+   *  dirty, the next coarse event PUT it onto the slot `forget` had just emptied — which accepts
+   *  any revision — and `_settle`, finding no local copy, saved it back into this browser too. */
+  Sync.prototype.drop = function (id) {
+    if (!this._dirty || this._dirty.id !== id) return;
+    this._dirty = null;
+    this._clearTimer();
   };
 
   /** The per-document opt-in. ON pushes immediately, so the switch means something the moment
