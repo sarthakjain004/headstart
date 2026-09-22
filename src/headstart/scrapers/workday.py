@@ -937,7 +937,17 @@ class WorkdayScraper(BaseScraper):
         the raw-HTML description, plus startDate/timeType — the list payload only carries a
         relative posted date ("30+ Days Ago") and no employment type — plus the real
         location(s), country and remoteType, which the list payload rolls up or omits (see
-        :func:`_location_from`)."""
+        :func:`_location_from`).
+
+        ``jobDescription`` is the only description-shaped key read here on purpose, not an
+        unmeasured gap — a third-party implementation reads `jobDescription`, then
+        `externalJobDescription`, then `description` as if any could carry it. Checked live
+        (2026-09-22, issue #555): 13 real tenants, 26 posting details, every
+        `jobPostingInfo` key that ever appeared collected into one set. Neither
+        `externalJobDescription` nor `description` was present on a single one — only
+        `jobDescription` is a real key in this API's actual shape, so there is nothing for the
+        other two to recover.
+        """
         if response.status_code != 200:
             return None
         info = response.json().get("jobPostingInfo") or {}

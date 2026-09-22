@@ -69,20 +69,41 @@ def test_field_teamtailor():
     )
 
 
-def test_field_keka_no_period_left_unannualized():
-    # keka's payload never carries the period at all (its scraper's own docstring). An
-    # annually-plausible figure is kept as-is rather than guessing a period.
+def test_field_keka_no_period_word_left_unannualized():
+    # KekaScraper._salary_field only appends a period word for salaryPeriod in {1, 3} (hourly,
+    # monthly) — 4 (annual) needs none, since annual is `_period_multiplier`'s default, and 0
+    # ("Not Available") is keka's own blank-field default plus a genuinely mixed-magnitude real
+    # value (re-measured 2026-09-22, see keka.py's own docstring), so it's never mapped to a
+    # word. A value with no period word is kept as-is rather than guessing one.
     assert from_field("2500000-3000000 INR", "keka") == SalarySpan(
         2_500_000, 3_000_000, "INR", "field"
     )
 
 
-def test_field_keka_low_magnitude_real_example_correctly_unresolved():
-    # keka.py's own docstring example, "25000-30000 INR", is almost certainly a monthly figure
-    # (₹25-30k/mo is plausible; as an annual figure it isn't) — but the period genuinely isn't in
-    # the payload, so this is honestly unresolved rather than guessed at, pending keka's own
-    # research pass (docs/salary-extraction/README.md's processing order).
+def test_field_keka_low_magnitude_no_period_word_correctly_unresolved():
+    # "25000-30000 INR" with no period word (e.g. a salaryPeriod=0 board) is almost certainly a
+    # monthly figure (₹25-30k/mo is plausible; as an annual figure it isn't) — but with no period
+    # word to annualize against, this is honestly left unresolved rather than guessed at.
     assert from_field("25000-30000 INR", "keka") is None
+
+
+def test_field_keka_monthly_period_word_annualizes():
+    # salaryPeriod=3 ("Monthly", live-confirmed 2026-09-22: 179/215 sampled period-3 values were
+    # monthly-scale) — KekaScraper._salary_field appends "monthly", and this parser must
+    # annualize it (x12) before the plausibility check, recovering a figure the no-period-word
+    # case above correctly leaves unresolved.
+    assert from_field("25000-30000 INR monthly", "keka") == SalarySpan(
+        300_000, 360_000, "INR", "field"
+    )
+
+
+def test_field_keka_hourly_period_word_annualizes():
+    # salaryPeriod=1 ("Hourly") — both live-sampled period-1 values were small enough to read as
+    # plausible hourly rates (2026-09-22). Annualized at the standard 2080 (40hr/wk x 52wk)
+    # full-time-equivalent multiplier `_period_multiplier` already uses for every other ATS.
+    assert from_field("80-90 INR hourly", "keka") == SalarySpan(
+        166_400, 187_200, "INR", "field"
+    )
 
 
 def test_field_darwinbox_lakhs():

@@ -47,8 +47,12 @@ on anything nonzero, before ever reading ``data``.
 **No detail pass — the listing is the whole Job.** Every one of 100 sampled postings carried
 non-null ``description`` and ``requirement`` (concatenated here for ``description``); ``code``,
 ``title``, ``recruit_type``, ``job_category`` and ``city_info`` were 100% non-null too.
-``job_post_info`` (salary, level, expiry) and ``job_subject``/``department_info``/``tag_list`` were
-null on every sampled row — this tenant simply doesn't populate them, not a truncation. **There is
+``job_post_info`` (salary, level, expiry) and ``department_info``/``tag_list`` were null on every
+sampled row — this tenant simply doesn't populate them, not a truncation. ``job_subject`` is **not**
+always null (re-measured 2026-09-22: 38/100 sampled rows carry one) — it is a campus-cohort label
+("PhD Graduates - 2027 Start"), not a team name, so it never actually reaches ``department`` below:
+``job_category`` is 100% non-null, and the ``or`` fallback to ``job_subject`` only fires when
+``job_category`` is empty. **There is
 no posted-date field anywhere in the payload** (measured across the same 100-row sample: zero
 non-null timestamp of any kind, despite the reference scraper reading ``publish_time``/
 ``post_time`` keys that do not exist in this response), so ``posted_at`` is always ``None`` here.

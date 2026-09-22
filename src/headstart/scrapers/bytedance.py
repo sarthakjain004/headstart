@@ -62,7 +62,10 @@ code, title, description, requirement, recruit_type, job_category, city_info (a 
 place-name chain up to country), tag_list, job_subject, vacancies, department_info,
 job_post_info (salary/experience/degree — all null in every one of the 100 sampled postings) and
 process_type/channel_online_status. There is no date field to read or fabricate, so ``posted_at``
-is always None here — a measured fact, not an oversight.
+is always None here — a measured fact, not an oversight. ``job_subject`` is **not** always null
+either (re-measured 2026-09-22: 48/100 sampled rows carry one) — like TikTok's, it is a
+campus-cohort label ("PhD Graduates - 2027 Start"), not a team name; ``department`` below reads
+only ``job_category`` (100% non-null), so this never changes its value.
 
 **Job detail page:** ``https://jobs.bytedance.com/en/position/{id}`` answers 200 for a real id
 (verified: the id from a live search result). It is itself a client-rendered shell like the search
