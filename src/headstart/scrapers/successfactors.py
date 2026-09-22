@@ -36,7 +36,13 @@ It is the full Google-jobs RSS: one GET carries ``title``/``description``/``g:lo
 for (usually) the whole board — measured live 2026-09-22, exact id parity against ``/sitemap.xml``
 on the two tenants small enough to read both whole (``basf.jobs`` 789/789, ``ace1950.jobs2web.com``
 60/60; the id is the same numeric value as ``/sitemap.xml``'s trailing path segment, stated again
-as ``<guid>``/``<g:id>``). Not every tenant has it (``jobs.thyssenkrupp.com`` 404s), so it is read
+as ``<guid>``/``<g:id>``). **Parity is not exact at larger scale** — the largest live RSS-shaped
+tenant found, ``jobsearch.alstom.com`` (2,283 postings via its own ``/search/`` total, the biggest
+of every SuccessFactors tenant sampled across this pass), covers only 2,234/2,283 (97.9%); the 49
+missing ids are not silently dropped, just costlier — they fall through to the per-job page fetch
+below like any other id ``/sitemal.xml`` doesn't state. No >5k-posting tenant was found to test
+against; 2,283 is the largest real board located. Not every tenant has it (``jobs.thyssenkrupp.com``
+404s), so it is read
 as a **best-effort field cache, not a listing surface**: ``/sitemap.xml`` (or whichever surface won
 above) stays the sole authority on which ids exist — unchanged by this — and only the ids that
 surface lists still get a per-job page fetch when ``/sitemal.xml`` doesn't cover them, whether
