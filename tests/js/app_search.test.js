@@ -528,6 +528,27 @@ test('changing the currency re-runs the search — the label and the results can
   assert.strictEqual(qs(search).salary_currency, 'INR');
 });
 
+test('a salary sort is stated in the picker\'s currency even with no bound set', async () => {
+  // Salary is stored in each employer's own currency (ADR-0082), so the server orders a salary
+  // sort in ONE currency. With no bound the bracket sends none, and an India browse sorted by
+  // salary listed USD first no matter what the picker said. The note names the same currency.
+  const { t, nodes, fetches } = loadApp(() => []);
+  set(nodes, 'sort', 'salary');
+  set(nodes, 'salcur', 'INR');
+  fetches.length = 0;
+  await t.go();
+  const search = fetches.filter(u => u.startsWith('/search?')).at(-1);
+  assert.strictEqual(qs(search).sort, 'salary');
+  assert.strictEqual(qs(search).salary_currency, 'INR');
+  assert.ok(nodes.sortnote.textContent.includes('INR'), nodes.sortnote.textContent);
+
+  set(nodes, 'sort', 'posted');
+  fetches.length = 0;
+  await t.go();
+  assert.strictEqual(qs(fetches.filter(u => u.startsWith('/search?')).at(-1)).salary_currency,
+    undefined, 'the currency only rides along with a salary sort or a bound');
+});
+
 test('the handles cannot cross, and an end stop means unbounded rather than zero', () => {
   const { t, nodes } = loadApp(() => []);
   nodes.salrmin.value = '30';
