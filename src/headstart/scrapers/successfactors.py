@@ -33,6 +33,44 @@ each field falls back independently, since tenants mix the shapes. No detail mar
 carries a department field at all, which is why ``department`` was hardcoded ``None`` until this
 RSS-feed field was found — see :func:`_job_functions_from`'s docstring. A page that yields no
 title drops that job for the run (there is nothing to keep it by); it returns next scrape.
+
+**A fourth, cheap-first surface fills fields without the per-job detail pass: ``/sitemal.xml``**
+(that typo, not ``sitemap`` — the same undocumented-but-stable path on every tenant that has it).
+It is the full Google-jobs RSS: one GET carries ``title``/``description``/``g:location`` inline
+for (usually) the whole board — measured live 2026-09-22, exact id parity against ``/sitemap.xml``
+on the two tenants small enough to read both whole (``basf.jobs`` 789/789, ``ace1950.jobs2web.com``
+60/60; the id is the same numeric value as ``/sitemap.xml``'s trailing path segment, stated again
+as ``<guid>``/``<g:id>``). **Parity is not exact at larger scale** — the largest live RSS-shaped
+tenant found, ``jobsearch.alstom.com`` (2,283 postings via its own ``/search/`` total, the biggest
+of every SuccessFactors tenant sampled across this pass), covers only 2,234/2,283 (97.9%); the 49
+missing ids are not silently dropped, just costlier — they fall through to the per-job page fetch
+below like any other id ``/sitemal.xml`` doesn't state. No >5k-posting tenant was found to test
+against; 2,283 is the largest real board located. Not every tenant has it (``jobs.thyssenkrupp.com``
+404s), so it is read
+as a **best-effort field cache, not a listing surface**: ``/sitemap.xml`` (or whichever surface won
+above) stays the sole authority on which ids exist — unchanged by this — and only the ids that
+surface lists still get a per-job page fetch when ``/sitemal.xml`` doesn't cover them, whether
+because the tenant has no such feed or a given id is simply absent from it.
+
+**It does not carry every field the detail pass can find, and this is a deliberate trade, not an
+oversight.** Sampled whole across three tenants (basf.jobs, ace1950.jobs2web.com, careers.te.com —
+3,083 items): every item states ``title``/``description``/``g:location``, some state
+``g:expiration_date``/``g:salary`` (unused — ``Job`` has no field for the former, and the latter
+would need its own measurement pass), and **none** state a posting date or employment type — so a
+Job filled from this feed carries ``posted_at``/``employment_type``/``remote`` as ``None`` even on
+a tenant whose own job page would have stated one (``careers.te.com``'s CSB pages carry a
+"Posting Start Date:" label this feed has no equivalent for). Measured on the same three tenants,
+that cost is smaller than it looks: two of them (basf, ace1950-class CSB pages) already yield
+``None`` for those three fields from the page today, since they carry no JSON-LD either, so the
+loss is real only on classic JSON-LD tenants sending a job through this path. The win is one
+request instead of up to a couple thousand (``careers.te.com`` alone: 2,234), which is why the
+trade is taken anyway.
+
+The feed also appends the location to the title in parens (``"... (Ludwigshafen am Rhein, DE)"``,
+matching the item's own ``g:location`` value exactly) — a job page's own title never carries that
+suffix, so :func:`_sitemal_items` strips it back off wherever the parenthesized tail matches the
+location field verbatim, rather than serving a title shaped differently depending on which surface
+happened to answer for it.
 """
 
 from __future__ import annotations
@@ -77,6 +115,16 @@ _TITLE_TAG = re.compile(r"<title>([^<|]*)", re.IGNORECASE)
 _DESC_OPEN = re.compile(
     r'<(span|div)\b[^>]*itemprop="description"[^>]*>', re.IGNORECASE
 )
+
+# /sitemal.xml — the Google-jobs RSS field surface (module docstring). Matched with simple,
+# non-nesting patterns rather than a general XML parser: every field it carries is a leaf element
+# with no nested tags of the same name, unlike the department blocks bamboohr.py has to walk.
+_SITEMAL_ITEM = re.compile(r"<item>(.*?)</item>", re.DOTALL)
+_SITEMAL_TITLE = re.compile(r"<title>(.*?)</title>", re.DOTALL)
+_SITEMAL_DESCRIPTION = re.compile(r"<description>(.*?)</description>", re.DOTALL)
+_SITEMAL_LOCATION = re.compile(r"<g:location>(.*?)</g:location>", re.DOTALL)
+_SITEMAL_LINK = re.compile(r"<link>(.*?)</link>", re.DOTALL)
+_CDATA = re.compile(r"\A\s*<!\[CDATA\[(.*)\]\]>\s*\Z", re.DOTALL)
 
 # Vanity-host labels that are the board, not the company: jobs.sap.com -> "sap".
 _BOARD_HOST_LABELS = {"jobs", "careers", "career", "jobsearch", "jobdetails"}
@@ -289,6 +337,39 @@ class SuccessFactorsScraper(BaseScraper):
             cut_short,
         )
 
+    def _sitemal_fields(self) -> dict[str, dict[str, Any]]:
+        """``{job_id: fields}`` off ``/sitemal.xml`` (module docstring) — a best-effort field
+        cache, never the listing authority. Degrades to ``{}`` on anything short of a clean 200:
+        a 404 (most tenants don't have this surface at all), a mid-stream abort, or a body that
+        doesn't parse as the expected feed. Every id this misses simply falls through to the
+        existing per-job page fetch in :meth:`fetch_raw`, so a failure here costs a request
+        count, never a Job."""
+        try:
+            response = self._fetch(
+                "GET",
+                f"https://{self.slug}/sitemal.xml",
+                headers={"User-Agent": USER_AGENT},
+                timeout=_RSS_TIMEOUT,
+                stream=True,
+            )
+        except http.RequestsError:
+            return {}
+        chunks: list[bytes] = []
+        size = 0
+        try:
+            for chunk in response.iter_content():
+                chunks.append(chunk)
+                size += len(chunk)
+                if size >= _SITEMAP_CAP:
+                    break
+        except http.RequestsError:
+            pass  # keep whatever arrived — partial coverage still saves detail fetches
+        finally:
+            response.close()
+        if response.status_code != 200:
+            return {}
+        return _sitemal_items(b"".join(chunks).decode("utf-8", "replace"))
+
     def fetch_raw(self) -> Any:
         # Each of the three surfaces hands back *why* its list came up short, and the truncation
         # is recorded only in the branch where that surface is what the Board returns. A surface
@@ -368,16 +449,28 @@ class SuccessFactorsScraper(BaseScraper):
             lambda pair: _title_from_slug(pair[0]),
             lambda pair: job_functions.get(pair[1]),
         )
-        # Detail pass: every field comes from the job page, so fetch each one (bounded); a
-        # failed fetch leaves fields None and parse drops just that job.
+        # /sitemal.xml (module docstring): one GET, tried before any per-job page fetch. Only
+        # the ids it doesn't cover — because the tenant has no such feed, the id is genuinely
+        # absent from it, or the request itself failed — still need their own page fetch below.
+        # `/sitemap.xml` (or whichever surface `listed` came from above) stays the sole id
+        # authority regardless of what this returns; this only ever fills fields.
+        sitemal_fields = self._sitemal_fields()
+        needs_detail = [pair for pair in tech_listed if pair[1] not in sitemal_fields]
+        if sitemal_fields:
+            _log.info(
+                f"{self.slug}: sitemal.xml covered {len(tech_listed) - len(needs_detail)}/"
+                f"{len(tech_listed)} job pages — {len(needs_detail)} still need a fetch"
+            )
+        # Detail pass: every field comes from the job page, so fetch each remaining one
+        # (bounded); a failed fetch leaves fields None and parse drops just that job.
         if self.async_fanout_enabled():
             fields = self.fan_out_async(
-                tech_listed,
+                needs_detail,
                 lambda session, pair: self._job_fields_async(session, pair[0]),
             )
         else:
             fields = self.fan_out(
-                tech_listed,
+                needs_detail,
                 lambda pair: self._job_fields(pair[0]),
                 workers=_DETAIL_WORKERS,
             )
@@ -388,31 +481,36 @@ class SuccessFactorsScraper(BaseScraper):
             # is exactly what `index sync` reads as a delisting — it would evict Jobs that are
             # still posted, purely because their detail fetch failed (ADR-0053).
             #
-            # Measured against `tech_listed`, not `listed`: a non-tech posting was never going to
-            # be indexed regardless of whether its detail was fetched, so it must not count
-            # against how authoritative this Board's *tech* read is. This is the shape that
-            # excluded whole 2,130-page Boards over a single unreadable page (ADR-0121).
+            # Measured against `needs_detail`, not `tech_listed`: a posting `sitemal_fields`
+            # already covered was never going to hit the page fetch this counts, so folding it
+            # into the denominator would dilute a real failure rate on the fetches that did run.
+            # This is the shape that excluded whole 2,130-page Boards over a single unreadable
+            # page (ADR-0121).
             self.mark_truncated_unless_negligible(
-                len(tech_listed) - lost,
-                len(tech_listed),
-                f"{lost}/{len(tech_listed)} job pages unreadable — those Jobs are listed but "
+                len(needs_detail) - lost,
+                len(needs_detail),
+                f"{lost}/{len(needs_detail)} job pages unreadable — those Jobs are listed but "
                 "unbuilt",
             )
+        page_fields = dict(zip((job_id for _, job_id in needs_detail), fields))
         # `department` folded in here, not read on the job page — the detail markup (JSON-LD
         # and the CSB microdata/label-span fallbacks) carries no department field on any tenant
         # sampled (module docstring), so the RSS feed's own `g:job_function` is the only source
         # there is, and it exists only for the `job_functions` this Board's surface populated.
+        # `/sitemal.xml` carries no department field either (:func:`_sitemal_items`), so this
+        # applies the same way whichever of the two sources supplied the base fields.
         return [
             {
                 "url": url,
                 "id": job_id,
                 "fields": (
-                    {**page_fields, "department": job_functions.get(job_id)}
-                    if page_fields is not None
+                    {**base, "department": job_functions.get(job_id)}
+                    if (base := sitemal_fields.get(job_id) or page_fields.get(job_id))
+                    is not None
                     else None
                 ),
             }
-            for (url, job_id), page_fields in zip(tech_listed, fields)
+            for url, job_id in tech_listed
         ]
 
     def _job_fields(self, url: str) -> dict[str, Any] | None:
@@ -568,6 +666,61 @@ def _job_urls_from(text: str, host: str) -> list[tuple[str, str]]:
         if job_id not in pairs:
             pairs[job_id] = f"https://{host}{unescape(match.group(1))}"
     return [(url, job_id) for job_id, url in pairs.items()]
+
+
+def _strip_cdata(value: str) -> str:
+    """Unwrap a ``<![CDATA[...]]>`` section, or return ``value`` unchanged if it isn't one —
+    ``/sitemal.xml``'s ``<description>`` is CDATA-wrapped (module docstring), the rest of its
+    fields aren't."""
+    match = _CDATA.match(value)
+    return match.group(1) if match else value
+
+
+def _strip_location_suffix(title: str, location: str | None) -> str:
+    """``/sitemal.xml`` appends the location in parens to every title (module docstring); a job
+    page's own title never does, so this brings the two surfaces back to the same shape rather
+    than shipping a title whose form depends on which one happened to answer. Stripped only when
+    the parenthesized tail is an exact match for ``location`` — anything else is a real "(...)"
+    the title itself carries (e.g. "(m/w/d)") and must survive."""
+    if location and title.endswith(f" ({location})"):
+        return title[: -(len(location) + 3)].strip()
+    return title
+
+
+def _sitemal_items(text: str) -> dict[str, dict[str, Any]]:
+    """``{job_id: fields}`` from a ``/sitemal.xml`` body (module docstring) — every ``<item>``
+    that states both a job-page ``<link>`` (the id source, via the same :data:`_JOB_PATH` every
+    other surface uses) and a non-empty title. No ``posted_at``/``employment_type``/``remote``:
+    this feed states none of them on any tenant sampled."""
+    fields: dict[str, dict[str, Any]] = {}
+    for item_match in _SITEMAL_ITEM.finditer(text):
+        item = item_match.group(1)
+        link_match = _SITEMAL_LINK.search(item)
+        job_id = None
+        if link_match:
+            path_match = _JOB_PATH.search(unescape(link_match.group(1)))
+            if path_match:
+                job_id = path_match.group(2)
+        if not job_id:
+            continue
+        title_match = _SITEMAL_TITLE.search(item)
+        title = unescape(title_match.group(1)).strip() if title_match else None
+        if not title:
+            continue
+        location_match = _SITEMAL_LOCATION.search(item)
+        location = unescape(location_match.group(1)).strip() if location_match else None
+        description_match = _SITEMAL_DESCRIPTION.search(item)
+        description = (
+            html_to_text(_strip_cdata(description_match.group(1)))
+            if description_match
+            else None
+        )
+        fields[job_id] = {
+            "title": _strip_location_suffix(title, location),
+            "description": description,
+            "location": location,
+        }
+    return fields
 
 
 def _job_functions_from(text: str) -> dict[str, str]:

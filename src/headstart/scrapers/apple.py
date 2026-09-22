@@ -52,8 +52,30 @@ endpoint, ``GET /api/v1/jobDetails/{jobNumber}`` (also unauthenticated, also no 
 hence the detail pass. ``jobNumber`` is the listing's own ``id`` with a ``PIPE-`` prefix stripped
 if present — REQ's ``id`` already has no prefix. An unknown id answers a clean ``HTTP 404``
 (``{"error":"jobsite.general.serviceError"}``), unlike Oracle's silent-200-empty-items shape.
-``employmentType`` is likewise detail-only (absent from every listing row sampled) and not
-guaranteed even there — one of two fixture postings carries it, the other doesn't.
+
+**``employment_type`` comes from the listing, not the detail's ``employmentType``.** Measured live
+2026-09-22 (60 listing rows, ~50 details sampled off pages 3/50/150/250): ``standardWeeklyHours``
+is present and non-zero on 20/20 listing rows sampled then, and a wider 280-row sweep across pages
+1-300 the same day found it on 280/280 with real spread (5, 16, 20, 35, 37.5, 38, 38.25, 38.5, 39,
+40, 42, 45) — never a distinguishing constant. The detail's own ``employmentType`` is mostly the
+opposite: absent on 10/10 details sampled off page 3, and on the other 30 (pages 50/150/250) it is
+present but always the same string, ``"Standard"`` — including on six 20 h/week retail postings.
+So :func:`_employment_type` maps ``standardWeeklyHours`` to ``"Full-time"``/``"Part-time"`` at the
+same ``>= 30`` split upstream uses (matching ``search.ETYPE_CLAUSES``' substring rules:
+"full"/"part").
+
+**One real exception found widening the sample past the issue's own 50, kept rather than
+dropped.** A ``postingTitle`` containing the standalone word "Intern" is a genuine third value the
+weekly-hours split can't produce and would otherwise erase: measured live 2026-09-22, 15/15
+Intern-titled REQ postings pulled from a live search (`intern`-matched titles across pages 1-400)
+carry ``standardWeeklyHours: 40`` — which the hours split alone would read as "Full-time", losing
+the one value the ``internship`` filter (``employment_type.py``'s ``is_internship`` rule) actually
+matches on. 11/15 of those also state ``employmentType: "Intern"`` on their detail (the other 4
+state nothing), so the *title* carries the signal at least as reliably as the detail field it is
+replacing, and it comes from the listing — available whether or not this run fetches the detail, so
+it survives the ADR-0048 skip re-enabled below. A 2,080-title sweep (pages 1-400, every third page)
+found 20 ``\bintern\b`` matches and zero false positives ("International", "internal" don't match a
+whole-word boundary), so :func:`_employment_type` checks the title first.
 
 **``homeOffice`` is Apple's own explicit remote flag**, present on both listing and detail and
 read directly rather than guessed from the location string — the same precedent Oracle's
@@ -74,6 +96,7 @@ verified live: the page 200s and its ``<title>`` carries the posting title.
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 from typing import Any
@@ -98,6 +121,11 @@ _MAX_PAGES = 1000
 #: company's careers origin, not a multi-tenant ATS with a population of Boards to spread over.
 _DETAIL_WORKERS = 32
 _SEARCH_FORMAT = {"longDate": "MMMM D, YYYY", "mediumDate": "MMM D, YYYY"}
+#: Whole-word "Intern" in a listing title — module docstring: 15/15 Intern-titled REQ postings
+#: sampled live carry `standardWeeklyHours: 40`, which the hours split alone reads as full-time.
+#: `\b` excludes "International"/"internal" (measured: 20/2,080 titles matched, zero false
+#: positives).
+_INTERN_TITLE_RE = re.compile(r"\bintern\b", re.IGNORECASE)
 
 
 class AppleScraper(BaseScraper):
@@ -114,9 +142,7 @@ class AppleScraper(BaseScraper):
     # can in theory be empty (job_url falls back to "" when transformedPostingTitle is
     # missing) so it is loose.
     url_shape = r"https://jobs\.apple\.com/en-us/details/\d+/[\w-]*"
-    has_detail_pass = (
-        True  # per-Job fetch fills description + employment_type (ADR-0050)
-    )
+    has_detail_pass = True  # per-Job fetch fills description only (ADR-0048/ADR-0050)
     detail_workers = _DETAIL_WORKERS
 
     #: This origin meters per **connection**, not per stream, so the multiplexed path is what
@@ -229,20 +255,20 @@ class AppleScraper(BaseScraper):
 
     def fetch_raw(self) -> Any:
         items = self._listing()
-        # Every listed posting gets its detail payload, with no ADR-0048 `needs_detail` skip.
-        # That optimisation is only safe where the detail fetch supplies the description and
-        # nothing else — false here, the same fork Oracle hit: this payload is also the only
-        # source of `employment_type` (module docstring). Skipping it for an already-described
-        # Job would blank that field on every later run.
-        # The tech gate (ADR-0017), exact here: `parse` reads `postingTitle` and
-        # `team.teamName` off this same listing item and never off the detail, so the gate
-        # reaches the verdict `filter_tech` will reach. Apple is ~70.8% tech, so this saves
-        # less than on any other Board — it is wired for the same reason it is cheap.
+        # ADR-0017 tech gate: `parse` reads `postingTitle` and `team.teamName` off this same
+        # listing item and never off the detail, so the gate reaches the verdict `filter_tech`
+        # will reach. Apple is ~70.8% tech, so this saves less than on any other Board — it is
+        # wired for the same reason it is cheap.
         wanted = self.tech_detail_wanted(
             [i for i in items if i.get("id")],
             lambda i: i.get("postingTitle"),
             lambda i: (i.get("team") or {}).get("teamName"),
         )
+        # ADR-0048 `needs_detail` skip: now safe to re-enable. `employment_type` moved off the
+        # detail payload onto the listing's own `standardWeeklyHours` (module docstring), so the
+        # detail fetch supplies only `description` — exactly the case the skip exists for. An
+        # already-described Job (`have_details`) is left alone rather than re-fetched.
+        wanted = [i for i in wanted if self.needs_detail(i["id"])]
         ids = [i["id"] for i in wanted]
         if self.async_fanout_enabled():
             fetched = self.fan_out_async(ids, self._detail_async)
@@ -290,6 +316,21 @@ class AppleScraper(BaseScraper):
         ]
         return "; ".join(names) or None
 
+    def _employment_type(self, item: dict) -> str | None:
+        """ "Intern"/"Full-time"/"Part-time" from the listing alone — never the detail's
+        ``employmentType``, which is absent or the constant ``"Standard"`` on almost every
+        posting (module docstring). A title carrying the whole word "Intern" wins first: it is
+        the one value the hours split can't produce and would otherwise erase, and unlike the
+        detail field it doesn't disappear once the ADR-0048 skip stops fetching a Job's detail.
+        Otherwise ``standardWeeklyHours >= 30`` matches upstream's own split; wording carries
+        "full"/"part"/"intern" so ``search.ETYPE_CLAUSES``' substring rules read it."""
+        if _INTERN_TITLE_RE.search(item.get("postingTitle") or ""):
+            return "Intern"
+        hours = item.get("standardWeeklyHours")
+        if hours is None:
+            return None
+        return "Full-time" if hours >= 30 else "Part-time"
+
     def _description(self, detail: dict) -> str | None:
         # jobSummary is the team-level boilerplate (module docstring) — not used here, so the
         # description is only what the detail endpoint states about this specific posting.
@@ -324,7 +365,7 @@ class AppleScraper(BaseScraper):
                     posted_at=item.get("postDateInGMT"),
                     scraped_at=scraped_at,
                     description=self._description(detail),
-                    employment_type=detail.get("employmentType"),
+                    employment_type=self._employment_type(item),
                 )
             )
         return jobs

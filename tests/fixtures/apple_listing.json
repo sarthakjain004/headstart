@@ -30,7 +30,8 @@
         },
         "type": "PIPE",
         "homeOffice": false,
-        "jobPositionId": "PIPE-200313970"
+        "jobPositionId": "PIPE-200313970",
+        "standardWeeklyHours": 40
       },
       {
         "id": "200681917-3715",
@@ -61,7 +62,8 @@
         },
         "type": "REQ",
         "homeOffice": false,
-        "jobPositionId": "REQ-200681917"
+        "jobPositionId": "REQ-200681917",
+        "standardWeeklyHours": 40
       }
     ],
     "totalRecords": 6083

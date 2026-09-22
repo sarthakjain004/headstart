@@ -21,6 +21,25 @@ period}` block (10.48% of postings, previously unread — see `_salary_field()`)
 feeds both `description` and `salary`. A failed detail fetch leaves both None — the job is
 still kept.
 
+`department` falls back to `function.label` when `department.label` is null (added 2026-09-22).
+Measured live that day, 8 boards / 772 postings: `department` null on 54.7%, `function` present on
+100% of those. Re-running `is_tech(title, None)` vs `is_tech(title, department or function)` over
+just that null-department slice: +22 promoted to tech, 0 lost, on that sample. It matters twice —
+`tech_filter` rule 4 promotes a vague title sitting in a technical department/function, and
+`tech_detail_wanted` (the pre-detail gate) reads the same pair, so a null department was silently
+narrowing both. A **wider, independently drawn** 10-board / 720-posting re-check (different boards
+from the 8 above) found the same shape at a different scale — 77.6% null, +83 gained — but also
+**3 losses**, all from a title tripping only the ambiguous "…Engineer" rule (`tech_filter.py`
+rule 2) whose department is genuinely a non-software function once substituted in: one
+`Sales`-departed "Solutions Engineer" (`tech_filter.py`'s own docstring already treats a
+Sales-department "Solutions Engineer" as correctly non-tech, the same call `_NON_SOFTWARE`'s
+`sales` term makes on purpose), and two `Manufacturing`-departed hardware/software roles at one
+company — the latter is a genuine `tech_filter.py` gap (only `hardware`, not `manufacturing`, is
+in `_ORG_NOT_ROLE`'s org-vs-discipline exception, ADR-0068), pre-existing and out of scope here:
+this change only supplies `department` where none existed, it does not touch how `department` is
+read. Net across both samples: 105 gained, 2-3 lost — a real, disclosed trade in the gate's
+recall-biased direction, not a silent one.
+
 Reading this field does NOT need a `doc_prep.DERIVATIONS_VERSION` bump: `salary` is a
 re-observed FACT_FIELD (`update_meta.py`), so once a Board is rescraped its now-populated raw
 `Job.salary` differs from the stored one, `refresh_row`'s `salary_inputs_moved` fires, and the
@@ -60,6 +79,16 @@ _MAX_PAGES = 50
 _COMPENSATION_FIELD_LABEL = re.compile(
     r"salary|compensation|pay\s*range", re.IGNORECASE
 )
+
+
+def _department_of(p: dict) -> str | None:
+    """``department.label``, falling back to ``function.label`` when the posting states no
+    department (module docstring) — read by both the pre-detail tech gate and ``parse()`` so
+    the two can never disagree. No new ``Job`` field: the whole value here is that
+    ``filter_tech`` reads ``department``."""
+    return (p.get("department") or {}).get("label") or (p.get("function") or {}).get(
+        "label"
+    )
 
 
 def _compensation_custom_fields(custom_field: Any) -> str:
@@ -133,13 +162,13 @@ class SmartRecruitersScraper(BaseScraper):
             self.mark_truncated(
                 f"read {len(postings)} of {total} postings{cap_note} — the rest unread"
             )
-        # `parse` reads `name` and `department.label` off this listing posting and never off
+        # `parse` reads `name` and `_department_of` off this listing posting and never off
         # `_detail`, so the gate asks `filter_tech`'s own question with `filter_tech`'s own
         # inputs. A gated posting still ships as a Job without a description.
         wanted = self.tech_detail_wanted(
             postings,
             lambda p: p.get("name"),
-            lambda p: (p.get("department") or {}).get("label"),
+            _department_of,
         )
         if self.async_fanout_enabled():
             details = self.fan_out_async(
@@ -267,7 +296,7 @@ class SmartRecruitersScraper(BaseScraper):
                     title=(p.get("name") or "").strip(),
                     location=location,
                     remote=bool(loc.get("remote")) or is_remote(location),
-                    department=(p.get("department") or {}).get("label"),
+                    department=_department_of(p),
                     url=self.job_url(p["id"]),
                     posted_at=p.get("releasedDate"),
                     scraped_at=scraped_at,

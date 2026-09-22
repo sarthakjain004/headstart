@@ -73,6 +73,27 @@ values sampled, no consistent shape). `salary.py`'s `_field_generic` already ext
 range/single figure plus whatever ISO currency code or period phrase the string states, and
 declines the ambiguous shapes ("Negotiable", "$100K+ ...") rather than guess — exactly the
 caution this field needs, so no dedicated `_field_bamboohr` parser was added.
+
+**ADR-0017 tech gate, added 2026-09-22: this was the only ``has_detail_pass`` ATS without one.**
+The widget's own markup already groups positions under a department header —
+``<li id="bhrDepartmentID_…">`` wrapping a ``BambooHR-ATS-Department-Header`` ``<div>`` and a
+nested ``<ul>`` of that department's ``<li id="bhrPositionID_…">`` rows (verified live 2026-09-22
+on ``a3.bamboohr.com``: 7 department blocks wrapping 28 positions, and job 577's detail
+``departmentLabel`` — ``'ASH IV'`` — is the *identical string* its department header already
+carries, not an approximation of it). :func:`_department_map` reads that for free at listing
+time, so the gate (:meth:`BambooHR.fetch_raw`) can ask ``is_tech(title, department)`` — the same
+question ``filter_tech`` asks downstream — before spending a detail fetch on a posting it will
+drop. Department also now survives a detail the gate skipped or that failed: ``parse`` falls back
+to the listing's own mapped department when ``departmentLabel`` is absent, rather than nulling the
+one field the tech filter itself reads.
+
+**Listing parse-drift guard, added 2026-09-22.** If the ``bhrPositionID_`` marker is present in
+the fetched HTML but ``_POSITION`` matches nothing, the row markup changed under the regex — not
+a Board with nothing open — so this is `note_unreadable_board`'d rather than returned as an empty,
+whole listing (which ADR-0083's one-scrape grace period would then evict). `_POSITION` is the
+looser, id-only regex of the two scrapers measured against this ATS (`jazzhr.py`/`jobvite.py`
+match a named wrapper element instead), so this is cheap insurance against a silent full-Board
+eviction, not a bug with a live reproduction today.
 """
 
 from __future__ import annotations
@@ -92,6 +113,16 @@ _POSITION = re.compile(
 )
 _TITLE = re.compile(r"<a[^>]*>(?P<title>.*?)</a>", re.IGNORECASE | re.DOTALL)
 _LOCATION = re.compile(r"BambooHR-ATS-Location[^>]*>(?P<loc>[^<]*)<", re.IGNORECASE)
+#: A department header — `<li id="bhrDepartmentID_…">` wraps a `<div class="…Department-
+#: Header">NAME</div>` then a `<ul>` of that department's own `<li id="bhrPositionID_…">` rows
+#: (module docstring). The header's own `<li>` doesn't close until after its nested positions
+#: do, so it can't be bounded the way `_POSITION` bounds a position block; matching just the
+#: header and walking match offsets in document order (see `_department_map`) sidesteps that
+#: without needing an HTML parser.
+_DEPARTMENT = re.compile(
+    r'BambooHR-ATS-Department-Header"[^>]*>(?P<name>.*?)</div>',
+    re.IGNORECASE | re.DOTALL,
+)
 
 #: The wrapper every LIVE tenant serves, jobs or not (see module docstring's dead-vs-empty
 #: measurement) — a dead tenant's widget has none of this, just an empty body.
@@ -114,6 +145,24 @@ def _canonical_location(location: Any) -> str | None:
         if location.get(k)
     ]
     return ", ".join(parts) or None
+
+
+def _department_map(page: str) -> dict[str, str]:
+    """``{position_id: department name}`` off the widget's own department blocks (module
+    docstring). Built by walking department-header and position matches together in document
+    order and carrying the most recently seen header forward — a position before any header (a
+    straggler after the last department block) gets no entry, so its department is ``None``."""
+    events = [(m.start(), "dept", m.group("name")) for m in _DEPARTMENT.finditer(page)]
+    events += [(m.start(), "pos", m.group("id")) for m in _POSITION.finditer(page)]
+    events.sort(key=lambda e: e[0])
+    result: dict[str, str] = {}
+    current: str | None = None
+    for _, kind, value in events:
+        if kind == "dept":
+            current = html_to_text(value)
+        elif current:
+            result[value] = current
+    return result
 
 
 def _remote(location_type: Any, listing_location: str | None) -> bool | None:
@@ -149,7 +198,33 @@ class BambooHRScraper(BaseScraper):
                 f"the {_LIVE_WRAPPER} widget wrapper", "an unrecognized or empty body"
             )
             return {"page": "", "details": {}}
-        ids = [m.group("id") for m in _POSITION.finditer(page)]
+        matches = list(_POSITION.finditer(page))
+        if not matches and "bhrPositionID_" in page:
+            # The marker is present but nothing matched `_POSITION` — the row markup changed
+            # under it, not a Board with nothing open (module docstring's parse-drift guard).
+            self.note_unreadable_board(
+                "bhrPositionID_ rows parsed from the widget",
+                "the marker present but the row markup didn't match",
+            )
+            return {"page": "", "details": {}}
+        # ADR-0017 tech gate (module docstring): `parse` reads the same title/department pair
+        # off this same listing, so the gate reaches the verdict `filter_tech` will reach.
+        departments = _department_map(page)
+        candidates = []
+        for m in matches:
+            title_m = _TITLE.search(m.group("body"))
+            if title_m:
+                candidates.append(
+                    {
+                        "id": m.group("id"),
+                        "title": html_to_text(title_m.group("title")),
+                        "department": departments.get(m.group("id")),
+                    }
+                )
+        wanted = self.tech_detail_wanted(
+            candidates, lambda c: c["title"], lambda c: c["department"]
+        )
+        ids = [c["id"] for c in wanted]
         details: dict[str, dict] = {}
         if ids:
             if self.async_fanout_enabled():
@@ -158,7 +233,9 @@ class BambooHRScraper(BaseScraper):
                 fetched = self.fan_out(ids, self._detail, workers=self.detail_workers)
             self.report_detail_gaps(fetched, "job details")
             details = {jid: d for jid, d in zip(ids, fetched) if d}
-        return {"page": page, "details": details}
+        # Computed once here for the gate above and threaded through for `parse` to reuse,
+        # rather than walking the same HTML's department blocks a second time per Board.
+        return {"page": page, "details": details, "departments": departments}
 
     def _opening_of(self, body: str) -> dict | None:
         try:
@@ -196,6 +273,14 @@ class BambooHRScraper(BaseScraper):
         page, details = (
             (raw["page"], raw["details"]) if isinstance(raw, dict) else (raw, {})
         )
+        # `fetch_raw` already walked the department blocks once, for the gate — reuse that
+        # rather than doing it again here. Recomputed only for a caller that built `raw` by
+        # hand without a "departments" key (every real fetch_raw path always carries one).
+        departments = (
+            raw.get("departments")
+            if isinstance(raw, dict) and raw.get("departments") is not None
+            else _department_map(page)
+        )
         jobs: list[Job] = []
         for m in _POSITION.finditer(page):
             native_id = m.group("id")
@@ -216,7 +301,12 @@ class BambooHRScraper(BaseScraper):
                     title=title,
                     location=location,
                     remote=_remote(opening.get("locationType"), listing_location),
-                    department=(opening.get("departmentLabel") or "").strip() or None,
+                    # departmentLabel first (the detail's own, when fetched); the listing's own
+                    # mapped department otherwise — survives a detail the ADR-0017 gate skipped
+                    # or that failed, where it used to go null along with everything else the
+                    # detail alone supplied.
+                    department=(opening.get("departmentLabel") or "").strip()
+                    or departments.get(native_id),
                     url=self.job_url(native_id),
                     posted_at=opening.get("datePosted") or None,
                     scraped_at=scraped_at,
