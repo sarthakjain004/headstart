@@ -81,22 +81,35 @@ class ExperienceSpan:
 # rather than selecting it: ">3 years", ">2yrs", "Minimum 3 years". It is a floor either way, which
 # is what `min_years` already means, so the prefix is consumed rather than interpreted. Only `>`
 # and `min`/`minimum` are accepted — they are the forms the corpus actually contains.
+#
+# A few keka/zoho/darwinbox fields state months ("6 Months", "1 - 6 Months", "6 Months - 2 years"),
+# so a "months" unit is captured after either number. A unitless floor takes the ceiling's unit
+# ("1 - 6 Months"); a floor with its own non-month unit never reaches the ceiling at all.
 _FIELD = re.compile(
-    r"^\s*(?:min(?:imum)?\.?\s*)?>?\s*(\d{1,3})\s*"
-    r"(?:\+|(?:to|-|\u2013|\u2014)\s*(\d{1,3}))?",
+    r"^\s*(?:min(?:imum)?\.?\s*)?>?\s*(?P<lo>\d{1,3})\s*(?P<lo_mo>months?\b)?\s*"
+    r"(?:\+\s*(?P<plus_mo>months?\b)?"
+    r"|(?:to|-|\u2013|\u2014)\s*(?P<hi>\d{1,3})\s*(?P<hi_mo>months?\b)?)?",
     re.IGNORECASE,
 )
 
 
 def from_field(value: str | None) -> ExperienceSpan | None:
-    """Tier 1 — parse a source's structured experience field. Deterministic, no description needed."""
+    """Tier 1 — parse a source's structured experience field. Deterministic, no description needed.
+
+    Months become whole years the way the filter reads them: the floor rounds down (`min_years
+    <= N` — six months is open to someone with 0 whole years), the ceiling up (eighteen months is
+    not "up to 1 year"), so the whole-year span always contains the stated one."""
     if not value:
         return None
     match = _FIELD.match(value)
     if not match:
         return None
-    lo = int(match.group(1))
-    hi = int(match.group(2)) if match.group(2) else None
+    lo = int(match.group("lo"))
+    hi = int(match.group("hi")) if match.group("hi") else None
+    if match.group("lo_mo") or match.group("plus_mo") or match.group("hi_mo"):
+        lo //= 12
+    if hi is not None and match.group("hi_mo"):
+        hi = -(-hi // 12)
     if lo > _MAX_PLAUSIBLE_YEARS:
         return None
     if hi is not None and (
