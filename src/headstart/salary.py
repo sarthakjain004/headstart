@@ -1042,10 +1042,17 @@ def _period_from_window(text: str, start: int, end: int) -> int:
     English figure too."""
     window_start = max(0, start - 20)
     window = text[window_start : end + 30]
-    matches = list(_PERIOD_HINT.finditer(window))
+    rel_start, rel_end = start - window_start, end - window_start
+    # An all-caps "HR"/"MO" BEFORE the figure is the acronym or Missouri's state code ("HR
+    # functions Salary: INR 15,000", "St. Louis, MO Only Pay Range: $122,000"), never its
+    # period; after it ("$17.95 HR") it is still a unit.
+    matches = [
+        hm
+        for hm in _PERIOD_HINT.finditer(window)
+        if not (hm.group(0) in ("HR", "MO") and hm.end() <= rel_start)
+    ]
     if not matches:
         return 1
-    rel_start, rel_end = start - window_start, end - window_start
     m = min(matches, key=lambda hm: _distance(hm, rel_start, rel_end))
     # Checked AFTER finding the hint (not by pre-trimming the window) so the number's own trailing
     # digit stays available for _PERIOD_HINT's leading \b to anchor against (e.g. "0" before
