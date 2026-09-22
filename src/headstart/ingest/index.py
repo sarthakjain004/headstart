@@ -857,7 +857,9 @@ def sync(args: argparse.Namespace) -> int:
     # after a partial failure, it could name ids the run had already evicted, and a later
     # absent -> present -> absent id would then be read as twice-absent and deleted on its first
     # miss — reintroducing the exact false eviction ADR-0083 exists to prevent. Erring toward an
-    # extra look is the safe direction; erring toward a stale streak is not.
+    # extra look is the safe direction; erring toward a stale streak is not. The same holds on the
+    # Hub: the pipeline publishes this file in the table's own commit (`index_publish`), so a
+    # published table is never paired with another run's grace set.
     write_id_list(Path(args.unconfirmed), plan.unconfirmed)
     if plan.unconfirmed or was_unconfirmed:
         reappeared, still_waiting = grace_period_counts(was_unconfirmed, fresh, plan)

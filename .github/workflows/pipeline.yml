@@ -894,13 +894,15 @@ jobs:
           # The sleep is guarded: the old loop slept after its *final* failed attempt and then
           # returned anyway, so every terminal failure burned one last backoff for nothing
           # (measured: 07:08:00 fail -> "retrying in 90s" -> 07:09:30 exit, with no fourth attempt).
+          # It runs whatever command it is given: three stores go up with `hf upload`, the table
+          # through `index_publish`, which needs a commit `hf upload` cannot make.
           up() {
             local delays="30 60 120 240 480"
             local attempt=1
             local total
             total=$(( $(echo "$delays" | wc -w) + 1 ))
             for delay in $delays; do
-              hf upload "$@" && return 0
+              "$@" && return 0
               # Plain stdout, not `::warning::`. ADR-0039's budget is 10 annotations per *step*,
               # and this function runs once per store, four stores to a step: at six attempts each
               # a retrying warning would emit up to 24 and GitHub would drop the overflow —
@@ -909,7 +911,7 @@ jobs:
               sleep "$delay"
               attempt=$(( attempt + 1 ))
             done
-            hf upload "$@" && return 0
+            "$@" && return 0
             echo "::warning::hf upload gave up after ${total} attempts"
             return 1
           }
@@ -933,7 +935,7 @@ jobs:
           # all four uploads instead.
           python -m headstart.ingest.state_witness publish \
             || echo "::warning::could not publish the state witness; the prior one stands"
-          publish embedding_store "$HF_DATASET" data/embeddings/jobs data/embeddings/jobs \
+          publish embedding_store hf upload "$HF_DATASET" data/embeddings/jobs data/embeddings/jobs \
             --repo-type dataset --commit-message "nightly: embedding store"
           # Bank the embedding store first: if index construction fails, the next pipeline can
           # reuse this run's vectors while LanceDB publication fails closed (ADR-0129/ADR-0174).
@@ -952,12 +954,15 @@ jobs:
             publication_state lancedb_index conflict
             exit 1
           fi
-          publish lancedb_index "$HF_DATASET" data/lancedb data/lancedb \
-            --repo-type dataset --commit-message "nightly: lancedb index"
+          # One commit with `data/state/unconfirmed_ids.txt` (ADR-0083): `sync` wrote that grace
+          # set for THIS table, and if data/state below then failed, a table published alone was
+          # paired on the Hub with the previous run's set — an absent/present/absent id was then
+          # evicted on one miss. Additive, like the other uploads (see the --delete note above).
+          publish lancedb_index python -m headstart.ingest.index_publish "$HF_DATASET"
           # Append-only (ADR-0050): each run adds small per-ATS fragments and leaves the base
           # files alone, so this uploads ~430 KB rather than re-minting the ~174 MB store.
           # `cleanup-index` folds the fragments into the bases with --delete.
-          publish description_store "$HF_DATASET" data/descriptions data/descriptions \
+          publish description_store hf upload "$HF_DATASET" data/descriptions data/descriptions \
             --repo-type dataset --commit-message "nightly: description store"
           # data/state LAST, because it carries the witness (ADR-0095). The property is that the
           # witness is never committed BEFORE the roots it vouches for: if an upload above fails,
@@ -967,7 +972,7 @@ jobs:
           # `--exclude role_centroids/*`: `cluster-roles.yml` owns those files (ADR-0095). The join's
           # `data/state/*` fetch still brings them here for role_trends to read, but republishing
           # that join-time copy reverted any refit that landed while this run was in flight.
-          publish pipeline_state "$HF_DATASET" data/state data/state \
+          publish pipeline_state hf upload "$HF_DATASET" data/state data/state \
             --repo-type dataset --exclude "role_centroids/*" \
             --commit-message "nightly: board priority + published-dirs witness"
       - name: Report publication and fresh coverage
