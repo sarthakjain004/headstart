@@ -1046,6 +1046,8 @@ def _period_from_window(text: str, start: int, end: int) -> int:
     window_start = max(0, start - 20)
     window = text[window_start : end + 30]
     rel_start, rel_end = start - window_start, end - window_start
+    # The slice's own ends satisfy `\b`, so a word it cuts reads as a hint ("What Matters Mo|st"
+    # as monthly): a match touching either end counts only if the word really ends there.
     # An all-caps "HR"/"MO" BEFORE the figure is the acronym or Missouri's state code ("HR
     # functions Salary: INR 15,000", "St. Louis, MO Only Pay Range: $122,000"), never its
     # period; after it ("$17.95 HR") it is still a unit.
@@ -1053,6 +1055,15 @@ def _period_from_window(text: str, start: int, end: int) -> int:
         hm
         for hm in _PERIOD_HINT.finditer(window)
         if not (hm.group(0) in ("HR", "MO") and hm.end() <= rel_start)
+        and not (
+            hm.start() == 0
+            and hm.group(0)[0].isalnum()
+            and window_start
+            and text[window_start - 1].isalnum()
+        )
+        and not (
+            hm.end() == len(window) and text[window_start + hm.end() :][:1].isalnum()
+        )
     ]
     if not matches:
         return 1
