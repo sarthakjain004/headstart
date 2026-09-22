@@ -1806,3 +1806,11 @@ def test_inr_ceiling_is_3_crore():
     )
     assert from_field("40000000-70000000 INR", "zwayam") is None
     assert from_field("2500000-4640000 INR 1 MONTH", "smartrecruiters") is None
+
+
+def test_a_word_cut_at_the_period_window_edge_is_not_a_hint():
+    # Real workday:gafsgi template: the window ending mid-"Most" left "Mo", read as monthly,
+    # and x12 pushed every one of those salaries past the cap. A hint must be a whole word.
+    assert from_description(
+        "Base Salary Range: $108,000-$148,500 How We Protect What Matters Most: 1. We offer"
+    ) == SalarySpan(108_000, 148_500, "USD", "regex")
