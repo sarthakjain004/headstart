@@ -34,37 +34,23 @@ carries a department field at all, which is why ``department`` was hardcoded ``N
 RSS-feed field was found — see :func:`_job_functions_from`'s docstring. A page that yields no
 title drops that job for the run (there is nothing to keep it by); it returns next scrape.
 
-**A fourth, cheap-first surface fills fields without the per-job detail pass: ``/sitemal.xml``**
-(that typo, not ``sitemap`` — the same undocumented-but-stable path on every tenant that has it).
-It is the full Google-jobs RSS: one GET carries ``title``/``description``/``g:location`` inline
-for (usually) the whole board — measured live 2026-09-22, exact id parity against ``/sitemap.xml``
-on the two tenants small enough to read both whole (``basf.jobs`` 789/789, ``ace1950.jobs2web.com``
-60/60; the id is the same numeric value as ``/sitemap.xml``'s trailing path segment, stated again
-as ``<guid>``/``<g:id>``). **Parity is not exact at larger scale** — the largest live RSS-shaped
-tenant found, ``jobsearch.alstom.com`` (2,283 postings via its own ``/search/`` total, the biggest
-of every SuccessFactors tenant sampled across this pass), covers only 2,234/2,283 (97.9%); the 49
-missing ids are not silently dropped, just costlier — they fall through to the per-job page fetch
-below like any other id ``/sitemal.xml`` doesn't state. No >5k-posting tenant was found to test
-against; 2,283 is the largest real board located. Not every tenant has it (``jobs.thyssenkrupp.com``
-404s), so it is read
-as a **best-effort field cache, not a listing surface**: ``/sitemap.xml`` (or whichever surface won
-above) stays the sole authority on which ids exist — unchanged by this — and only the ids that
-surface lists still get a per-job page fetch when ``/sitemal.xml`` doesn't cover them, whether
-because the tenant has no such feed or a given id is simply absent from it.
+**A fourth surface backs up that detail pass: ``/sitemal.xml``** (that typo, not ``sitemap`` —
+the same undocumented-but-stable path on every tenant that has it). It is the full Google-jobs
+RSS: one GET carries ``title``/``description``/``g:location`` inline for (usually) the whole board,
+keyed by the same numeric id as ``/sitemap.xml``'s trailing path segment — measured live
+2026-09-22, exact id parity on ``basf.jobs`` (789/789) and ``ace1950.jobs2web.com`` (60/60), 97.9%
+on ``jobsearch.alstom.com`` (2,234/2,283). Not every tenant has it (``jobs.thyssenkrupp.com``
+404s).
 
-**It does not carry every field the detail pass can find, and this is a deliberate trade, not an
-oversight.** Sampled whole across three tenants (basf.jobs, ace1950.jobs2web.com, careers.te.com —
-3,083 items): every item states ``title``/``description``/``g:location``, some state
-``g:expiration_date``/``g:salary`` (unused — ``Job`` has no field for the former, and the latter
-would need its own measurement pass), and **none** state a posting date or employment type — so a
-Job filled from this feed carries ``posted_at``/``employment_type``/``remote`` as ``None`` even on
-a tenant whose own job page would have stated one (``careers.te.com``'s CSB pages carry a
-"Posting Start Date:" label this feed has no equivalent for). Measured on the same three tenants,
-that cost is smaller than it looks: two of them (basf, ace1950-class CSB pages) already yield
-``None`` for those three fields from the page today, since they carry no JSON-LD either, so the
-loss is real only on classic JSON-LD tenants sending a job through this path. The win is one
-request instead of up to a couple thousand (``careers.te.com`` alone: 2,234), which is why the
-trade is taken anyway.
+**It is a fallback, not a shortcut: its fields fill a Job only where that id's job page yielded
+none**, and it is fetched only when some page did. The page stays the authority because it states
+a posting date and the feed never does (no item of 3,083 over three tenants, nor of 961 on
+``jobs.sap.com``), while the page does on 8 of 9 tenants sampled 2026-09-22 — JSON-LD on classic
+pages, ``datePosted`` microdata or a "Posting Start Date:" label on CSB ones
+(:func:`_csb_posted_at`); ``basf.jobs`` is the exception. Serving the feed *instead* of readable
+pages (as #564 did) leaves ``posted_at=None`` on nearly every such Job, and ``update_meta`` then
+copies that over the indexed row's stored date. The listing surface above stays the sole authority
+on which ids exist; this only ever fills fields.
 
 The feed also appends the location to the title in parens (``"... (Ludwigshafen am Rhein, DE)"``,
 matching the item's own ``g:location`` value exactly) — a job page's own title never carries that
@@ -91,6 +77,10 @@ _log = log.get(__name__)
 
 _CLASSIFY_BYTES = 64 * 1024  # enough sitemap head to tell urlset from RSS
 _SITEMAP_CAP = 30 * 1024 * 1024  # runaway guard; largest observed urlset is ~3 MB
+# The same guard for the two full-description RSS reads, which the urlset figure does not fit: of
+# 144 live RSS feeds read whole 2026-09-23 the largest was 46 MB (jobs.scotiabank.com), and
+# jobs.crh.com's 32.8 MB feed — its only surface — was being cut 86 postings short every run.
+_RSS_CAP = 128 * 1024 * 1024
 _RSS_TIMEOUT = 300  # the RSS generator trickles (~30 KB/s); a full feed is minutes
 _MAX_SEARCH_PAGES = 400  # loop bound; 4,000 rows at the smallest measured page (10)
 _DETAIL_WORKERS = 6  # sync-path detail fetches; bounded since they hit one host
@@ -208,14 +198,17 @@ class SuccessFactorsScraper(BaseScraper):
         return (
             kind or _sitemap_kind(text),
             text,
-            _cap_reason("sitemap") if capped else None,
+            _cap_reason("sitemap", _SITEMAP_CAP) if capped else None,
         )
 
-    def _search_job_urls(self) -> tuple[list[tuple[str, str]], str | None]:
+    def _search_job_urls(
+        self,
+    ) -> tuple[list[tuple[str, str]], str | None, int | None]:
         """Enumerate the board via the server-rendered ``/search/`` pages.
 
-        Returns the pairs found and, when the walk was cut short rather than reaching the end,
-        why. Reported rather than recorded, because whether it matters is the caller's to decide:
+        Returns the pairs found; when the walk was cut short rather than reaching the end, why;
+        and, when that shortfall is measured against the board's own stated total, the total —
+        the one shape ADR-0121 tolerates. Reported rather than recorded, because whether it matters is the caller's to decide:
         this surface is only the Board's answer when it returns something, and a truncation on a
         surface that lost the fallback race must not be attached to the list that won it
         (ADR-0053)."""
@@ -238,9 +231,13 @@ class SuccessFactorsScraper(BaseScraper):
                 # Unlike the empty-page exit below, this is the walk being cut short rather than
                 # reaching the end: whatever sits past this offset is unread, not absent
                 # (ADR-0053). No total to compare against here, so report the offset instead.
-                return [(u, i) for i, u in seen.items()], (
-                    f"HTTP {response.status_code} at startrow {startrow} — "
-                    f"{len(seen)} postings read before the walk stopped"
+                return (
+                    [(u, i) for i, u in seen.items()],
+                    (
+                        f"HTTP {response.status_code} at startrow {startrow} — "
+                        f"{len(seen)} postings read before the walk stopped"
+                    ),
+                    None,
                 )
             if page_index == 0:
                 paging = _advertised_paging(response.text)
@@ -265,9 +262,13 @@ class SuccessFactorsScraper(BaseScraper):
             # Ran out of pages rather than reaching the end. Eightfold and Workday both mark
             # their equivalent ceilings; this one returned None and the short list read as the
             # whole Board (ADR-0053).
-            return [(u, i) for i, u in seen.items()], (
-                f"hit the {_MAX_SEARCH_PAGES}-page search ceiling at startrow {startrow} — "
-                f"{len(seen)} postings read, the rest unread"
+            return (
+                [(u, i) for i, u in seen.items()],
+                (
+                    f"hit the {_MAX_SEARCH_PAGES}-page search ceiling at startrow {startrow} — "
+                    f"{len(seen)} postings read, the rest unread"
+                ),
+                None,
             )
         # Reaching the natural end is not proof the walk read everything — the stride bug above
         # exited by exactly this path for months. The board states its own total on the search
@@ -283,11 +284,15 @@ class SuccessFactorsScraper(BaseScraper):
         # eviction, while over-reporting marks the Board unauthoritative and serves its closed
         # postings indefinitely.
         if advertised_total is not None and len(seen) < advertised_total:
-            return [(u, i) for i, u in seen.items()], (
-                f"read {len(seen)} of the {advertised_total} postings the board advertises — "
-                "the rest were not listed"
+            return (
+                [(u, i) for i, u in seen.items()],
+                (
+                    f"read {len(seen)} of the {advertised_total} postings the board "
+                    "advertises — the rest were not listed"
+                ),
+                advertised_total,
             )
-        return [(u, i) for i, u in seen.items()], None
+        return [(u, i) for i, u in seen.items()], None, None
 
     def _rss_job_urls(
         self,
@@ -299,7 +304,7 @@ class SuccessFactorsScraper(BaseScraper):
         ``g:job_function`` field (:func:`_job_functions_from` — free, since this surface's whole
         body is already in hand for the URL walk; no listing surface here otherwise carries a
         department field at all), and, when the stream ended early rather than completing, why —
-        an aborted feed and a feed cut at ``_SITEMAP_CAP`` both list a knowingly short board.
+        an aborted feed and a feed cut at ``_RSS_CAP`` both list a knowingly short board.
         Reported rather than recorded for the same reason :meth:`_search_job_urls` reports
         (ADR-0053)."""
         response = self._fetch(  # retry seam, as in `_fetch_sitemap`
@@ -316,8 +321,8 @@ class SuccessFactorsScraper(BaseScraper):
             for chunk in response.iter_content():
                 chunks.append(chunk)
                 size += len(chunk)
-                if size >= _SITEMAP_CAP:
-                    cut_short = _cap_reason("RSS feed")
+                if size >= _RSS_CAP:
+                    cut_short = _cap_reason("RSS feed", _RSS_CAP)
                     break
         except http.RequestsError:
             # Server-side abort: scrape the links that did arrive, and say so. No total to
@@ -339,11 +344,10 @@ class SuccessFactorsScraper(BaseScraper):
 
     def _sitemal_fields(self) -> dict[str, dict[str, Any]]:
         """``{job_id: fields}`` off ``/sitemal.xml`` (module docstring) — a best-effort field
-        cache, never the listing authority. Degrades to ``{}`` on anything short of a clean 200:
-        a 404 (most tenants don't have this surface at all), a mid-stream abort, or a body that
-        doesn't parse as the expected feed. Every id this misses simply falls through to the
-        existing per-job page fetch in :meth:`fetch_raw`, so a failure here costs a request
-        count, never a Job."""
+        fallback, never the listing authority. Degrades to ``{}`` on anything short of a clean
+        200: a 404 (not every tenant has this surface), a mid-stream abort, or a body that doesn't
+        parse as the expected feed. An id this misses stays as its failed page fetch left it, so a
+        failure here costs only the rescue, never a Job a page read."""
         try:
             response = self._fetch(
                 "GET",
@@ -360,7 +364,7 @@ class SuccessFactorsScraper(BaseScraper):
             for chunk in response.iter_content():
                 chunks.append(chunk)
                 size += len(chunk)
-                if size >= _SITEMAP_CAP:
+                if size >= _RSS_CAP:
                     break
         except http.RequestsError:
             pass  # keep whatever arrived — partial coverage still saves detail fetches
@@ -399,10 +403,15 @@ class SuccessFactorsScraper(BaseScraper):
         if listed and sitemap_cut_short:
             self.mark_truncated(sitemap_cut_short)
         if not listed:
-            listed, search_cut_short = self._search_job_urls()
+            listed, search_cut_short, search_total = self._search_job_urls()
             if listed:
                 surface = "search-pages"
-                if search_cut_short:
+                if search_cut_short and search_total:
+                    # Measured against the Board's own stated total (ADR-0121).
+                    self.mark_truncated_unless_negligible(
+                        len(listed), search_total, search_cut_short
+                    )
+                elif search_cut_short:
                     self.mark_truncated(search_cut_short)
         if not listed and kind == "rss":
             listed, job_functions, rss_cut_short = self._rss_job_urls()
@@ -449,68 +458,68 @@ class SuccessFactorsScraper(BaseScraper):
             lambda pair: _title_from_slug(pair[0]),
             lambda pair: job_functions.get(pair[1]),
         )
-        # /sitemal.xml (module docstring): one GET, tried before any per-job page fetch. Only
-        # the ids it doesn't cover — because the tenant has no such feed, the id is genuinely
-        # absent from it, or the request itself failed — still need their own page fetch below.
-        # `/sitemap.xml` (or whichever surface `listed` came from above) stays the sole id
-        # authority regardless of what this returns; this only ever fills fields.
-        sitemal_fields = self._sitemal_fields()
-        needs_detail = [pair for pair in tech_listed if pair[1] not in sitemal_fields]
-        if sitemal_fields:
-            _log.info(
-                f"{self.slug}: sitemal.xml covered {len(tech_listed) - len(needs_detail)}/"
-                f"{len(tech_listed)} job pages — {len(needs_detail)} still need a fetch"
-            )
-        # Detail pass: every field comes from the job page, so fetch each remaining one
-        # (bounded); a failed fetch leaves fields None and parse drops just that job.
+        # Detail pass: every field comes from the job page, so fetch each one (bounded); a
+        # failed fetch leaves fields None and parse drops just that job, unless the fallback
+        # below fills it.
         if self.async_fanout_enabled():
             fields = self.fan_out_async(
-                needs_detail,
+                tech_listed,
                 lambda session, pair: self._job_fields_async(session, pair[0]),
             )
         else:
             fields = self.fan_out(
-                needs_detail,
+                tech_listed,
                 lambda pair: self._job_fields(pair[0]),
                 workers=_DETAIL_WORKERS,
             )
-        lost = self.report_detail_gaps(fields, "detail fields")
+        unread = self.report_detail_gaps(fields, "detail fields")
+        # /sitemal.xml (module docstring): the fallback for a page that yielded nothing, fetched
+        # only when one did. The page stays the authority — it states the posting date the feed
+        # never does — and `listed` stays the sole id authority; this only ever fills fields.
+        sitemal_fields = self._sitemal_fields() if unread else {}
+        fields = [
+            page if page is not None else sitemal_fields.get(job_id)
+            for (_, job_id), page in zip(tech_listed, fields)
+        ]
+        lost = sum(1 for page in fields if page is None)
+        if lost < unread:
+            _log.info(
+                f"{self.slug}: sitemal.xml filled {unread - lost} of {unread} unreadable "
+                "job pages"
+            )
         if lost:
-            # Every field comes from the job page, so `parse` drops a Job whose page did not
-            # arrive. That makes the returned list knowingly short, and an unmarked short list
-            # is exactly what `index sync` reads as a delisting — it would evict Jobs that are
-            # still posted, purely because their detail fetch failed (ADR-0053).
+            # Every field comes from the job page (or its fallback), so `parse` drops a Job
+            # neither yielded. That makes the returned list knowingly short, and an unmarked
+            # short list is exactly what `index sync` reads as a delisting — it would evict Jobs
+            # that are still posted, purely because their detail fetch failed (ADR-0053).
             #
-            # Measured against `needs_detail`, not `tech_listed`: a posting `sitemal_fields`
-            # already covered was never going to hit the page fetch this counts, so folding it
-            # into the denominator would dilute a real failure rate on the fetches that did run.
-            # This is the shape that excluded whole 2,130-page Boards over a single unreadable
-            # page (ADR-0121).
+            # Measured against `tech_listed`, not `listed`: a non-tech posting was never going to
+            # be indexed regardless of whether its detail was fetched, so it must not count
+            # against how authoritative this Board's *tech* read is. This is the shape that
+            # excluded whole 2,130-page Boards over a single unreadable page (ADR-0121).
             self.mark_truncated_unless_negligible(
-                len(needs_detail) - lost,
-                len(needs_detail),
-                f"{lost}/{len(needs_detail)} job pages unreadable — those Jobs are listed but "
+                len(tech_listed) - lost,
+                len(tech_listed),
+                f"{lost}/{len(tech_listed)} job pages unreadable — those Jobs are listed but "
                 "unbuilt",
             )
-        page_fields = dict(zip((job_id for _, job_id in needs_detail), fields))
         # `department` folded in here, not read on the job page — the detail markup (JSON-LD
         # and the CSB microdata/label-span fallbacks) carries no department field on any tenant
         # sampled (module docstring), so the RSS feed's own `g:job_function` is the only source
         # there is, and it exists only for the `job_functions` this Board's surface populated.
-        # `/sitemal.xml` carries no department field either (:func:`_sitemal_items`), so this
-        # applies the same way whichever of the two sources supplied the base fields.
+        # `/sitemal.xml` states `g:job_function` too, but :func:`_sitemal_items` reads only the
+        # fallback's title/description/location, so this applies whichever source filled a Job.
         return [
             {
                 "url": url,
                 "id": job_id,
                 "fields": (
-                    {**base, "department": job_functions.get(job_id)}
-                    if (base := sitemal_fields.get(job_id) or page_fields.get(job_id))
-                    is not None
+                    {**page_fields, "department": job_functions.get(job_id)}
+                    if page_fields is not None
                     else None
                 ),
             }
-            for url, job_id in tech_listed
+            for (url, job_id), page_fields in zip(tech_listed, fields)
         ]
 
     def _job_fields(self, url: str) -> dict[str, Any] | None:
@@ -594,10 +603,10 @@ class SuccessFactorsScraper(BaseScraper):
         return None
 
 
-def _cap_reason(what: str) -> str:
-    """Why a stream that ran into ``_SITEMAP_CAP`` left the board short (ADR-0053)."""
+def _cap_reason(what: str, cap: int) -> str:
+    """Why a stream that ran into its read ``cap`` left the board short (ADR-0053)."""
     return (
-        f"the {what} hit the {_SITEMAP_CAP // (1024 * 1024)} MB read cap — "
+        f"the {what} hit the {cap // (1024 * 1024)} MB read cap — "
         "postings past it were not listed"
     )
 

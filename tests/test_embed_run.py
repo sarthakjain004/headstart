@@ -99,6 +99,17 @@ def test_build_doc_prefix_and_markdown_stripping():
     assert "**" not in doc and "#" not in doc
 
 
+def test_build_doc_keeps_the_hash_in_c_sharp_and_f_sharp():
+    doc = ej.build_doc(
+        _job(
+            title="Senior Engineer",
+            description="## Stack\nWe use **C#**, F# and .NET. 5+ years of C# required.",
+        )
+    )
+    # The heading's "##" still goes; emphasis becomes a space, as it always has.
+    assert doc.endswith("Stack We use C# , F# and .NET. 5+ years of C# required.")
+
+
 def test_english_gate():
     assert ej.is_english(
         "Software Engineer", "Build and ship backend services in Python."

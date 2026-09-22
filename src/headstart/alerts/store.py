@@ -389,7 +389,7 @@ def _profile_years(value: Any) -> int | None:
         return None
     try:
         years = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):  # OverflowError: JSON's 1e999 is inf
         return None
     return years if 0 <= years <= 60 else None
 
@@ -1053,24 +1053,37 @@ class Store:
         produce an empty page on that one view. That is deliberate there — silently widening
         "only my companies" to the whole index would be worse — but it means this method's
         failure is not invisible on every path.
+
+        Open for reading only: the bytes it saw (or a confirmed absence) are remembered, and
+        :meth:`put_companies` writes against them — so a blank that stands in for an unread
+        record is never written over the real one.
         """
         if not _ID.fullmatch(account):
             return CompanyPrefs.blank(account)
+        path = f"{COMPANIES_PREFIX}{account}.json"
         try:
-            data = json.loads(
-                _read(self._repo, f"{COMPANIES_PREFIX}{account}.json", self._token)
-            )
-            return CompanyPrefs.from_dict(data)
-        except Exception:  # noqa: BLE001 — absent and unreadable are one answer
+            raw = _read(self._repo, path, self._token)
+        except Exception as exc:  # noqa: BLE001 — absent and unreadable are one answer
+            if _is_absent(exc):
+                self._expected[path] = None
+            return CompanyPrefs.blank(account)
+        # Remembered before parsing: a record that was read but will not parse is replaced,
+        # not preserved — it holds nothing a later read could recover.
+        self._expected[path] = raw
+        try:
+            return CompanyPrefs.from_dict(json.loads(raw))
+        except Exception:  # noqa: BLE001 — a malformed record reads as blank
             return CompanyPrefs.blank(account)
 
     def put_companies(self, prefs: CompanyPrefs) -> None:
-        _write(
-            self._repo,
-            prefs.path(),
-            json.dumps(prefs.to_dict(), indent=2).encode("utf-8"),
-            self._token,
-        )
+        """Replace the record :meth:`get_companies` read, conditionally (ADR-0142's commit):
+        a record that could not be read raises StoreUnavailable, and one another request
+        changed since raises StoreConflict — either way the stored lists survive."""
+        path = prefs.path()
+        if path not in self._expected:
+            raise StoreUnavailable("Company preferences unreadable")
+        data = json.dumps(prefs.to_dict(), indent=2).encode("utf-8")
+        self._save({path: data}, {path: self._expected[path]})
 
     def get_profile(self, account: str) -> Profile | None:
         """One Account's Profile, or None — same traversal guard as :meth:`get`."""
@@ -1093,11 +1106,17 @@ class Store:
         )
 
     def remove_profile(self, account: str) -> None:
-        """Delete the career record. The parse-counter file deliberately survives —
-        deleting must not reset the lifetime cap (ADR-0041)."""
+        """Delete the career record, if there is one. The parse-counter file deliberately
+        survives — deleting must not reset the lifetime cap (ADR-0041).
+
+        Presence comes from the listing, as :meth:`parses_used` decides it, never from
+        :meth:`get_profile`: that answers None for an unreadable record too, and a delete
+        gated on it reported success while the record stayed. A listing that fails raises."""
         if not _ID.fullmatch(account):
             return
-        _delete(self._repo, f"{PROFILE_PREFIX}{account}.json", self._token)
+        path = f"{PROFILE_PREFIX}{account}.json"
+        if path in _list_files(self._repo, self._token):
+            _delete(self._repo, path, self._token)
 
     def parses_used(self, account: str) -> int:
         """How many Résumé reads this Account has spent — the ADR-0041 cap's state.

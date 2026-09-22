@@ -53,6 +53,21 @@ def test_field_empty_or_unparseable():
     assert from_field("senior") is None
 
 
+def test_field_in_months_is_converted_to_whole_years():
+    # Real keka/zoho/darwinbox fields: the unit was never read, so "6 Months" served as a
+    # 6-year floor and dropped an internship out of Entry level. The floor rounds down (the
+    # filter is `min_years <= N`, so a 6-month requirement is open to 0 whole years) and the
+    # ceiling up, so the whole-year span still contains the stated one.
+    assert from_field("6 Months") == ExperienceSpan(0, None, "field")
+    assert from_field("6+ months") == ExperienceSpan(0, None, "field")
+    assert from_field("6 to 12 months") == ExperienceSpan(0, 1, "field")
+    assert from_field("6 months - 18 months") == ExperienceSpan(0, 2, "field")
+    assert from_field("1 - 6 Months") == ExperienceSpan(0, 1, "field")
+    assert from_field("0-6 months") == ExperienceSpan(0, 1, "field")
+    assert from_field("6 Months - 2 years") == ExperienceSpan(0, 2, "field")
+    assert from_field("18 months") == ExperienceSpan(1, None, "field")
+
+
 # --- Tier 2: from_description ----------------------------------------------------------------------
 
 

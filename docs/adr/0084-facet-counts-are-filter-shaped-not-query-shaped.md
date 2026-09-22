@@ -2,6 +2,8 @@
 
 **Status:** Accepted · **Date:** 2026-08-25 · **Extends ADR-0031's filter vocabulary and ADR-0074's addressable window; scoped by ADR-0082's no-FX rule — narrowed to storage only by [ADR-0117](0117-the-salary-bracket-compares-across-currencies.md), which converts the bracket's bounds across currencies**
 
+**Amended by:** [ADR-0178](0178-salary-sort-is-stated-in-one-currency.md) — the salary sort is stated in one currency, converted on a ranked page and currency-first on a browse.
+
 ## Context
 
 Issue #275 asked for result counts beside every filter option, more "first seen" windows, a salary

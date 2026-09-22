@@ -425,7 +425,9 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   same module but is **not** part of this run — it moved to the `cleanup-index` workflow, because
   rewriting the whole table once per run is what the storage budget cannot afford.
   One more entry point is not a stage but opens three of them: `state_fetch` (ADR-0030) pulls each
-  stage's slice of HF state in `scrape-plan`, `join` and `merge`, or aborts. And one runs at the
+  stage's slice of HF state in `scrape-plan`, `join` and `merge`, or aborts. Another publishes
+  inside one: `index_publish` commits the LanceDB table and its ADR-0083 grace set in a single
+  HF commit in `merge`'s upload step, so the two can never disagree. And one runs at the
   end of `merge` without being a stage either: `reclaim_storage` (ADR-0168) deletes the orphaned
   LFS blobs and verifies the quota actually fell — squashing history only makes them eligible for
   HF's collection, which is how the 100 GB quota filled on 2026-09-18.

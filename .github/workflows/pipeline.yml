@@ -218,9 +218,22 @@ jobs:
           # longer than 6 attempts x 45 min of window plus ~90 min of work, so anything older
           # than 8 hours is stuck, not working, and is ignored.
           cutoff=$(python3 -c "import datetime as d; print((d.datetime.now(d.UTC) - d.timedelta(hours=8)).strftime('%Y-%m-%dT%H:%M:%SZ'))")
-          busy=$(gh run list -R "$GITHUB_REPOSITORY" --workflow=cleanup-index.yml --limit 20 \
-                   --json status,createdAt \
-                   --jq "[.[] | select(.status != \"completed\" and .createdAt > \"$cutoff\")] | length")
+          # Retried: one transient api.github.com failure here fails this step, which skips every
+          # downstream job including `chain` — and with no successor dispatched the cadence falls
+          # back to the cron (ADR-0093). Still fails the step once the retries are spent.
+          for attempt in 1 2 3 4; do
+            if busy=$(gh run list -R "$GITHUB_REPOSITORY" --workflow=cleanup-index.yml --limit 20 \
+                     --json status,createdAt \
+                     --jq "[.[] | select(.status != \"completed\" and .createdAt > \"$cutoff\")] | length"); then
+              break
+            fi
+            if [ "$attempt" -eq 4 ]; then
+              echo "::error::gh run list failed 4 times - cannot tell whether cleanup-index is active"
+              exit 1
+            fi
+            echo "gh run list failed (attempt ${attempt}/4); retrying"
+            sleep $((attempt * 15))
+          done
           if [ "$busy" != "0" ]; then
             # A warning, not an echo: standing down is normal but not free, and a run of them in
             # a row means a compaction is stuck. Silence is what let the mirror bug hide.
@@ -574,8 +587,13 @@ jobs:
           # writes it (update_descriptions) and reads it (embed_plan, via the repaired corpus).
           # Deliberately NOT under data/state/, whose glob scrape-plan also pulls — that would
           # ship ~174 MB toward a planner that has no use for it.
-          python -m headstart.ingest.state_fetch 'data/descriptions/*' || \
-            echo "::warning::no description store yet — first run after ADR-0050"
+          #
+          # Fails closed, like the line above. A genuine first run never fails here — a pattern
+          # the Hub lists nothing for returns 0 — so a non-zero exit is always a real failed
+          # fetch. The warn-only fallback this used to carry let the run go on from an empty
+          # store: update_descriptions then numbered its fragment 0001 for every ATS, and the
+          # merge's additive upload overwrote the store's own 0001s with it.
+          python -m headstart.ingest.state_fetch 'data/descriptions/*'
       - name: Download all scrape fragments
         # continue-on-error: take whatever fragments exist. If every scrape shard died before
         # uploading, the join still proceeds and degrades to a safe no-op — an empty data/jobs
@@ -773,11 +791,13 @@ jobs:
           python -m headstart.ingest.state_fetch 'data/embeddings/jobs/*' 'data/lancedb/*'
       - name: Download corpus + refreshed state
         # continue-on-error: `join` is the one un-bankable stage, so if it timed out this artifact
-        # is missing. Proceeding degrades to a safe no-op rather than a hard failure — with no
-        # corpus, `plan_sync` sees an empty fresh-id set *and* an empty scraped-Board set, so it
-        # adds and evicts nothing (verified), while prune still runs and the store is
-        # re-uploaded unchanged. The scrape work is lost either way; failing here would lose the
-        # dead-Board sweep too.
+        # is missing. Proceeding degrades to a safe no-op rather than a hard failure: every step
+        # that reads the corpus or this run's `data/state` is skipped on `steps.corpus.outcome`
+        # — `embed_merge`, `update_meta`, `sync`, and the description-store and data/state
+        # uploads — while prune still runs and the store is re-uploaded unchanged. Skipped, never
+        # fed an empty corpus: `sync` would read one as every Job gone and start evicting. The
+        # scrape work is lost either way; failing here would lose the dead-Board sweep too.
+        id: corpus
         if: needs.scrape-plan.outputs.run == 'true'
         continue-on-error: true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -795,7 +815,7 @@ jobs:
           pattern: embed-fragment-*
           path: data/embeddings/fragments
       - name: Merge shard fragments into the store
-        if: needs.scrape-plan.outputs.run == 'true'
+        if: needs.scrape-plan.outputs.run == 'true' && steps.corpus.outcome == 'success'
         # `--evict-ids` drops the stale row of any Job being re-embedded with a description it
         # previously lacked, before the new vector is appended (ADR-0050). It has to happen here
         # rather than after: this merge appends without deduping by id, so a later eviction would
@@ -820,7 +840,7 @@ jobs:
         # covering input loading, draining workers and writing the complete aligned metadata.
         # A hard runner shutdown before publication loses this run's progress, but not the
         # checkpoints previous runs published. The temp rewrite is outside the uploaded store.
-        if: needs.scrape-plan.outputs.run == 'true'
+        if: needs.scrape-plan.outputs.run == 'true' && steps.corpus.outcome == 'success'
         continue-on-error: true
         timeout-minutes: 35
         run: python -m headstart.ingest.update_meta --sweep-budget-seconds 600
@@ -830,7 +850,7 @@ jobs:
         # pulled `data/state` be scoped by whichever run wrote it. Passing it here is what says
         # "this job's `data/state` came from *this* run's join". Missing, it warns and falls back
         # to the corpus's own Boards — narrower, so it under-evicts rather than over-evicts.
-        if: needs.scrape-plan.outputs.run == 'true'
+        if: needs.scrape-plan.outputs.run == 'true' && steps.corpus.outcome == 'success'
         run: >-
           python -m headstart.ingest.index sync
           --scraped-boards data/state/scraped_boards.json
@@ -864,6 +884,7 @@ jobs:
         if: needs.scrape-plan.outputs.run == 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          CORPUS: ${{ steps.corpus.outcome }}
         run: |
           publication_status="$RUNNER_TEMP/headstart-publication-status"
           printf '%s\n' \
@@ -889,13 +910,15 @@ jobs:
           # The sleep is guarded: the old loop slept after its *final* failed attempt and then
           # returned anyway, so every terminal failure burned one last backoff for nothing
           # (measured: 07:08:00 fail -> "retrying in 90s" -> 07:09:30 exit, with no fourth attempt).
+          # It runs whatever command it is given: three stores go up with `hf upload`, the table
+          # through `index_publish`, which needs a commit `hf upload` cannot make.
           up() {
             local delays="30 60 120 240 480"
             local attempt=1
             local total
             total=$(( $(echo "$delays" | wc -w) + 1 ))
             for delay in $delays; do
-              hf upload "$@" && return 0
+              "$@" && return 0
               # Plain stdout, not `::warning::`. ADR-0039's budget is 10 annotations per *step*,
               # and this function runs once per store, four stores to a step: at six attempts each
               # a retrying warning would emit up to 24 and GitHub would drop the overflow —
@@ -904,7 +927,7 @@ jobs:
               sleep "$delay"
               attempt=$(( attempt + 1 ))
             done
-            hf upload "$@" && return 0
+            "$@" && return 0
             echo "::warning::hf upload gave up after ${total} attempts"
             return 1
           }
@@ -928,7 +951,7 @@ jobs:
           # all four uploads instead.
           python -m headstart.ingest.state_witness publish \
             || echo "::warning::could not publish the state witness; the prior one stands"
-          publish embedding_store "$HF_DATASET" data/embeddings/jobs data/embeddings/jobs \
+          publish embedding_store hf upload "$HF_DATASET" data/embeddings/jobs data/embeddings/jobs \
             --repo-type dataset --commit-message "nightly: embedding store"
           # Bank the embedding store first: if index construction fails, the next pipeline can
           # reuse this run's vectors while LanceDB publication fails closed (ADR-0129/ADR-0174).
@@ -947,20 +970,34 @@ jobs:
             publication_state lancedb_index conflict
             exit 1
           fi
-          publish lancedb_index "$HF_DATASET" data/lancedb data/lancedb \
-            --repo-type dataset --commit-message "nightly: lancedb index"
+          # One commit with `data/state/unconfirmed_ids.txt` (ADR-0083): `sync` wrote that grace
+          # set for THIS table, and if data/state below then failed, a table published alone was
+          # paired on the Hub with the previous run's set — an absent/present/absent id was then
+          # evicted on one miss. Additive, like the other uploads (see the --delete note above).
+          publish lancedb_index python -m headstart.ingest.index_publish "$HF_DATASET"
           # Append-only (ADR-0050): each run adds small per-ATS fragments and leaves the base
           # files alone, so this uploads ~430 KB rather than re-minting the ~174 MB store.
           # `cleanup-index` folds the fragments into the bases with --delete.
-          publish description_store "$HF_DATASET" data/descriptions data/descriptions \
+          # Both it and data/state below arrive only in the corpus artifact: without it neither
+          # was fetched or changed, and there is nothing of this run's to publish.
+          if [ "$CORPUS" != success ]; then
+            publication_state description_store skipped
+            publication_state pipeline_state skipped
+            exit 0
+          fi
+          publish description_store hf upload "$HF_DATASET" data/descriptions data/descriptions \
             --repo-type dataset --commit-message "nightly: description store"
           # data/state LAST, because it carries the witness (ADR-0095). The property is that the
           # witness is never committed BEFORE the roots it vouches for: if an upload above fails,
           # `bash -e` stops here and the new witness is simply never published, leaving the prior
           # one — which names roots the dataset still holds. Uploaded first, it would name a root
           # whose upload then failed, and an over-claiming witness fails every later fetch closed.
-          publish pipeline_state "$HF_DATASET" data/state data/state \
-            --repo-type dataset --commit-message "nightly: board priority + published-dirs witness"
+          # `--exclude role_centroids/*`: `cluster-roles.yml` owns those files (ADR-0095). The join's
+          # `data/state/*` fetch still brings them here for role_trends to read, but republishing
+          # that join-time copy reverted any refit that landed while this run was in flight.
+          publish pipeline_state hf upload "$HF_DATASET" data/state data/state \
+            --repo-type dataset --exclude "role_centroids/*" \
+            --commit-message "nightly: board priority + published-dirs witness"
       - name: Report publication and fresh coverage
         if: always() && needs.scrape-plan.outputs.run == 'true'
         env:

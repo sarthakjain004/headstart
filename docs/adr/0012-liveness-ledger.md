@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-02
+- Amended by: [ADR-0177](0177-an-unknown-reprobe-keeps-a-live-verdict.md) — a re-probe that ends `unknown` keeps a prior `live` verdict (provisional).
 
 ## Context
 

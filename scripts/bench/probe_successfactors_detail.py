@@ -110,7 +110,7 @@ def job_urls(slug: str, want: int) -> list[str]:
     kind, text, _ = scraper._fetch_sitemap()
     listed = _job_urls_from(text, slug) if kind == "urlset" else []
     if not listed:
-        listed, _ = scraper._search_job_urls()
+        listed, _, _ = scraper._search_job_urls()
     return [url for url, _ in listed[:want]]
 
 

@@ -556,7 +556,9 @@ def _refresh_metadata(
             index = row_of[kept.job_id]
             fresh = {field: _served_meta(metas[index]).get(field) for field in columns}
             fresh[_FIRST_SEEN_FIELD.name] = kept.first_seen
-            description = kept.description or texts.get(kept.job_id)
+            # The corpus's text first: this row is being rewritten anyway, and an edited
+            # posting's fresh text must not lose to the table's copy of the old one.
+            description = texts.get(kept.job_id) or kept.description
             fresh[_DESCRIPTION_FIELD.name] = description
             fresh[_DESCRIPTION_STORED_FIELD.name] = description is not None
             fresh["vector"] = vectors[index].tolist()
@@ -855,7 +857,9 @@ def sync(args: argparse.Namespace) -> int:
     # after a partial failure, it could name ids the run had already evicted, and a later
     # absent -> present -> absent id would then be read as twice-absent and deleted on its first
     # miss — reintroducing the exact false eviction ADR-0083 exists to prevent. Erring toward an
-    # extra look is the safe direction; erring toward a stale streak is not.
+    # extra look is the safe direction; erring toward a stale streak is not. The same holds on the
+    # Hub: the pipeline publishes this file in the table's own commit (`index_publish`), so a
+    # published table is never paired with another run's grace set.
     write_id_list(Path(args.unconfirmed), plan.unconfirmed)
     if plan.unconfirmed or was_unconfirmed:
         reappeared, still_waiting = grace_period_counts(was_unconfirmed, fresh, plan)

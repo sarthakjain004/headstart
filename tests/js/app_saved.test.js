@@ -51,13 +51,15 @@ const star = (id, extra) => ({
 
 /** A fresh evaluation of app.js. `saved` is what `GET /saved` answers with — an array for a
  *  signed-in account, or `{ status: 503 }` for a deployment that keeps none. Everything else
- *  answers `[]`, which is enough for the load-time search and `/me`. */
-function loadApp(saved) {
+ *  answers `[]`, which is enough for the load-time search and `/me`. `stars` stands in for the
+ *  page's star buttons, which is all `paintStars` asks the DOM for. */
+function loadApp(saved, stars) {
   const nodes = {};
   const ctx = {
     document: {
       getElementById: id => (nodes[id] ||= fakeEl()),
-      addEventListener() {}, querySelector: () => null, querySelectorAll: () => [],
+      addEventListener() {}, querySelector: () => null,
+      querySelectorAll: sel => (sel === 'button[data-star]' && stars ? stars : []),
     },
     window: { addEventListener() {}, location: { hash: '' }, CFG: {} },
     location: { hash: '' },
@@ -73,7 +75,8 @@ function loadApp(saved) {
     },
   };
   ctx.globalThis = ctx;
-  vm.runInNewContext(fs.readFileSync(APP_JS, 'utf8'), ctx);
+  vm.runInNewContext(fs.readFileSync(APP_JS, 'utf8')
+    + '\n;globalThis.__t = { draw, expandCompany, toggleStar };', ctx);
   return ctx;
 }
 
@@ -120,4 +123,48 @@ test('the list handed over is a copy, so a reader cannot reorder the Saved tab',
   // the Saved tab's list would be reordered underneath it by a menu merely being opened.
   ctx.window.savedJobs().reverse().push(star('c'));
   assert.deepEqual(ctx.window.savedJobs().map(j => j.job_id), ['a', 'b']);
+});
+
+/* ---- stars on a card the company cap held back ---------------------------------------------
+   `capRows` renders the cards past COMPANY_CAP to HTML when the list is drawn and keeps them
+   for "N more at …". A star changed in between never reached them, and the click decides its
+   direction from `savedByJob`, not from the glyph — so a stale ★ re-saved an unstarred job and
+   a stale ☆ silently removed a saved one. */
+
+test('a card held back by the company cap shows its star as it is when expanded', async () => {
+  const id = n => 'greenhouse:acme:' + n;
+  const stars = [];
+  const ctx = loadApp([star(id(3), { id: 'sv1' })], stars);
+  await settled();
+  const row = n => ({ id: id(n), title: 'Job ' + n, company: 'Acme', url: 'https://example.test/' + n });
+  ctx.__t.draw([row(1), row(2), row(3)]);   // job 3 is saved, and is the one the cap holds back
+  await ctx.__t.toggleStar(id(3));          // unstarred from the Saved tab
+  assert.equal(ctx.window.savedJobs().length, 0);
+
+  /* Inserting the held-back HTML is what puts its star buttons on the page. */
+  const holder = { dataset: { board: 'greenhouse:acme', list: 'results' } };
+  Object.defineProperty(holder, 'outerHTML', { set(html) {
+    for (const m of html.matchAll(/data-star="([^"]+)"[^>]*>([^<]*)</g)) {
+      const classes = new Set();
+      stars.push({ dataset: { star: m[1] }, textContent: m[2], setAttribute() {},
+        classList: { toggle(c, on) { if (on) classes.add(c); else classes.delete(c); } } });
+    }
+  } });
+  ctx.__t.expandCompany(holder);
+  const shown = stars.find(b => b.dataset.star === id(3));
+  assert.ok(shown, 'the held-back card was not inserted');
+  assert.equal(shown.textContent, '☆', 'the expanded card still shows the job as saved');
+});
+
+test('a repainted star says what clicking it will do, not what it did when drawn', async () => {
+  // paintStars moved the glyph and aria-pressed but left the tooltip and the accessible name:
+  // a starred job still announced "Save this job" to a screen reader.
+  const attrs = {};
+  const button = { dataset: { star: 'greenhouse:acme:1' }, textContent: '☆',
+    setAttribute(k, v) { attrs[k] = String(v); }, classList: { toggle() {} } };
+  loadApp([star('greenhouse:acme:1', { id: 'sv1' })], [button]);
+  await settled();
+  assert.equal(button.textContent, '★');
+  assert.equal(attrs.title, 'Remove from saved');
+  assert.equal(attrs['aria-label'], 'Remove this job from saved');
 });

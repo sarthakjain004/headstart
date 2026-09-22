@@ -37,7 +37,7 @@ class FakeStore:
     def get(self, sub_id):
         return self.records.get(sub_id)
 
-    def put(self, sub):
+    def put(self, sub, *, reenable=False):
         self.records[sub.id] = sub
 
     def remove(self, sub_id):

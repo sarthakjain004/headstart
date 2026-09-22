@@ -2,6 +2,8 @@
 
 **Status:** accepted · **Date:** 2026-09-07 · **Supersedes ADR-0082's "never FX-converted" clause for the *filter* only; ADR-0082's storage decision is unchanged**
 
+**Amended by:** [ADR-0178](0178-salary-sort-is-stated-in-one-currency.md) — the salary *sort* now uses these rates too, on a ranked page.
+
 ## Context
 
 ADR-0082 derives `min_salary_annual` / `max_salary_annual` by period-normalising whatever the

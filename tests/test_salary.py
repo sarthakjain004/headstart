@@ -163,9 +163,14 @@ def test_field_darwinbox_already_absolute_rupees_monthly():
     ) == SalarySpan(240_000, 300_000, "INR", "field")
 
 
-def test_field_darwinbox_magnitude_threshold_boundary():
+def test_field_darwinbox_magnitude_threshold_boundary(monkeypatch):
     # _DARWINBOX_LAKHS_THRESHOLD sits in a wide, evidence-based gap (real lakhs values top out at
     # 19, real absolute values start at 10,000) — exercise the exact 1,000 boundary mechanically.
+    # 999 lakh is 9.99 crore, above the real 3-crore INR ceiling, so the ceiling is lifted here to
+    # keep this about the magnitude branch rather than the bound.
+    from headstart import salary
+
+    monkeypatch.setitem(salary._MAX_PLAUSIBLE_ANNUAL, "INR", 10**9)
     # Just below: treated as lakhs (x100,000) -> a large but in-bounds figure.
     assert from_field("INR 999 (Annual)", "darwinbox") == SalarySpan(
         99_900_000, 99_900_000, "INR", "field"
@@ -184,17 +189,15 @@ def test_field_gem_templated_range():
     ) == SalarySpan(80_000, 120_000, "USD", "field")
 
 
-def test_field_gem_range_cannot_be_read_by_field_generic():
-    # The exact reason gem gets its own Tier-1 parser rather than falling through to
-    # _field_generic: _RANGE requires the second number to start immediately after the
-    # separator, and gem states a currency symbol before EACH side ("$80,000 – $120,000"), so
-    # _field_generic's _RANGE.search never matches and it silently keeps only the floor via
-    # _SINGLE_NUM instead of declining or reading the real range.
+def test_field_gem_range_now_reads_whole_in_field_generic_too():
+    # Gem got its own Tier-1 parser when _field_generic's _RANGE could not read a symbol before
+    # EACH side ("$80,000 – $120,000") and kept only the floor. _RANGE reads it now; the bare "$"
+    # stays currency-less there, where gem's own parser resolves it (_gem_currency).
     from headstart.salary import _field_generic
 
     assert _field_generic(
         "The base pay range for this role is $80,000 – $120,000 per year."
-    ) == SalarySpan(80_000, None, None, "field")
+    ) == SalarySpan(80_000, 120_000, None, "field")
 
 
 def test_field_gem_hourly_period():
@@ -471,6 +474,33 @@ def test_field_generic_up_to_states_a_ceiling_not_a_floor():
     )
 
 
+def test_field_generic_reads_symbol_currency_and_a_symbol_prefixed_ceiling():
+    # Real zoho/taleo_be field shapes. `_RANGE` needed a digit straight after the dash, so a
+    # symbol before the second figure fell through to `_SINGLE_NUM` and kept only the floor; and
+    # the currency came from ISO codes alone, so £/€/₹ were served currency-less — out of reach
+    # of every bracket arm, and bounded as USD. A prefixed dollar names its currency; a bare "$"
+    # stays None — ~15% of them were CAD/AUD/MXN, and a wrong USD is worse than none.
+    assert from_field(
+        "$85,000 - $135,000 depending on experience", "zoho"
+    ) == SalarySpan(85_000, 135_000, None, "field")
+    assert from_field("$69,601.28 - $92,802.13 MXN", "zoho").currency is None
+    assert from_field("CA$85,000 - CA$95,000", "zoho") == SalarySpan(
+        85_000, 95_000, "CAD", "field"
+    )
+    assert from_field("£35,000 - £40,000 per annum", "zoho") == SalarySpan(
+        35_000, 40_000, "GBP", "field"
+    )
+    assert from_field("₹105000–₹120000", "zoho") == SalarySpan(
+        105_000, 120_000, "INR", "field"
+    )
+    assert from_field("€ 45.000 - € 55.000", "taleo_be") == SalarySpan(
+        45_000, 55_000, "EUR", "field"
+    )
+    assert from_field("£35,000 per annum", "zoho") == SalarySpan(
+        35_000, None, "GBP", "field"
+    )
+
+
 def test_field_empty_or_none():
     assert from_field(None) is None
     assert from_field("") is None
@@ -507,6 +537,17 @@ def test_description_up_to_states_a_ceiling_not_a_floor():
     assert from_description("Salary: up to £29,000-£35,000") == SalarySpan(
         29000, 35000, "GBP", "regex"
     )
+
+
+def test_up_to_a_currency_code_or_prefixed_symbol_is_still_a_ceiling():
+    # Real served floors (ashby:clera "up to EUR 130,000", zoho "Upto INR 13,00,000", oracle
+    # "upto USD 93,600"): the connector allowed only a one-character symbol before the figure,
+    # so a code or "CA$" slipped past it and the ceiling was stored as min_annual.
+    assert from_description("Salary: up to USD 150,000 per year") is None
+    assert from_description("Salary: up to CA$120,000") is None
+    assert from_description("Salary: Upto INR 13,00,000") is None
+    assert from_description("Salary: up to EUR 130,000") is None
+    assert from_field("Up to USD 90,000", "zoho") is None
 
 
 def test_description_labeled_range_usd_k_shorthand():
@@ -1520,7 +1561,9 @@ def test_description_l_suffix_lakh_shorthand_recognized():
     ) == SalarySpan(3_000_000, 5_000_000, "INR", "regex")
     assert from_description(
         "Salary : INR 3.0L to 4.5L Position : Full-time", ats="keka"
-    ) == SalarySpan(300_000, 400_000, "INR", "regex")
+    ) == SalarySpan(
+        300_000, 450_000, "INR", "regex"
+    )  # was 400,000: 4.5 rounded before the L
 
 
 def test_description_l_suffix_does_not_swallow_lakhs_word():
@@ -1700,3 +1743,106 @@ def test_description_ca_dollar_and_trailing_cad_code_agree():
     assert from_description(text, ats="greenhouse") == SalarySpan(
         105_000, 145_000, "CAD", "regex"
     )
+
+
+def test_description_prefixed_dollar_symbols_name_their_currency():
+    # Real served text (recruitee:rebootmonkey, greenhouse:sayari): `_SYM` folded only the CA/C
+    # prefix into the symbol, so "HK$"/"S$"/"A$"/"NZ$" were captured as a bare "$" and served as
+    # USD — HK$370,000 read as a $370k job, ~7.8x its value — even with "(HKD annual)" beside it.
+    assert from_description(
+        "Compensation & Benefits HK$370,000-490,000/year (HKD annual)"
+    ) == SalarySpan(370_000, 490_000, "HKD", "regex")
+    assert from_description("Salary: S$165,000 to S$185,000") == SalarySpan(
+        165_000, 185_000, "SGD", "regex"
+    )
+    assert from_description(
+        "The salary range is A$86,000 - A$100,000 per year"
+    ) == SalarySpan(86_000, 100_000, "AUD", "regex")
+    assert from_description("Salary: AU$120,000 - AU$140,000") == SalarySpan(
+        120_000, 140_000, "AUD", "regex"
+    )
+    assert from_description("Salary: NZ$75,000 - NZ$85,000") == SalarySpan(
+        75_000, 85_000, "NZD", "regex"
+    )
+    # "US$" must not be read as "S$" with a stray "U" in front of it.
+    assert from_description("Salary: US$120,000 - US$140,000") == SalarySpan(
+        120_000, 140_000, "USD", "regex"
+    )
+
+
+def test_hr_acronym_and_missouri_before_the_figure_are_not_periods():
+    # Real served rows: "HR functions" read as hourly (zoho:penthara, an intern served at
+    # ₹3.12-5.2 crore) and Missouri's "MO" as monthly (workday:newbalance dropped past the cap).
+    # An all-caps HR/MO before the figure is the acronym or the state code; after it, a unit.
+    assert from_description(
+        "Location: Joplin, MO Salary: $55,000 - $65,000"
+    ) == SalarySpan(55_000, 65_000, "USD", "regex")
+    assert (
+        from_description(
+            "Exposure to a variety of HR functions Salary: INR 15,000-25,000"
+        )
+        is None
+    )
+    assert from_description("Pay $17.95 HR Qualifications") == SalarySpan(
+        37_440, None, "USD", "regex"
+    )
+
+
+def test_hr_and_mo_after_the_figure_are_units_only_when_they_touch_it():
+    # Review pass 1: skipping only a PRECEDING HR/MO left the trailing class open — a state code
+    # after the city still multiplied by 12, and an adjacent "HR department" read hourly.
+    assert from_description("Salary: $55,000 - $65,000 Springfield MO") == SalarySpan(
+        55_000, 65_000, "USD", "regex"
+    )
+    assert from_description("Pay: $50,000 - $60,000 HR department") == SalarySpan(
+        50_000, 60_000, "USD", "regex"
+    )
+    assert from_description("Pay $17.95/HR Qualifications") == SalarySpan(
+        37_440, None, "USD", "regex"
+    )
+
+
+def test_num_single_digit_decimal_comma_is_a_decimal():
+    # Real served row (successfactors:jobs.avl.com, Cavriago IT): "Starting Salary: 28,5k" was
+    # served as 285,000 — a one-digit comma tail can never be a thousands group (those are 3).
+    from headstart.salary import _num
+
+    assert _num("12,5") == 12  # banker's rounding, as for "12.5"
+    assert _num("28,5") == 28
+    assert _num("1.234,5") == 1234  # unchanged: both separators already worked
+    assert from_description("Salary: €13,5 - €15 per hour") == SalarySpan(
+        29_120, 31_200, "EUR", "regex"
+    )
+
+
+def test_k_shorthand_keeps_its_fraction():
+    # Review pass 1: `_num` rounded "28,5" to 28 BEFORE the k multiplier, so "28,5k" served
+    # 28,000 (and "28.5k" the same, pre-existing). The fraction belongs to the thousands.
+    assert from_description("Salary: €28,5k - €32,5k per year") == SalarySpan(
+        28_500, 32_500, "EUR", "regex"
+    )
+    assert from_description("Salary: $62.5k - $70k") == SalarySpan(
+        62_500, 70_000, "USD", "regex"
+    )
+
+
+def test_inr_ceiling_is_3_crore():
+    # Real served rows: ashby:lambda (₹1.66-2.21 crore) and zwayam:epam (up to ₹2.91 crore) are
+    # genuine; zwayam's ₹4-8 crore "Data Scientist"/"AVP" bands and smartrecruiters' annual
+    # figures typed as "INR 1 MONTH" (₹3-5.6 crore once annualized) are not.
+    assert from_field("16600000-22100000 INR 1 YEAR", "ashby") == SalarySpan(
+        16_600_000, 22_100_000, "INR", "field"
+    )
+    assert from_field("4160000-29120000 INR", "zwayam") == SalarySpan(
+        4_160_000, 29_120_000, "INR", "field"
+    )
+    assert from_field("40000000-70000000 INR", "zwayam") is None
+    assert from_field("2500000-4640000 INR 1 MONTH", "smartrecruiters") is None
+
+
+def test_a_word_cut_at_the_period_window_edge_is_not_a_hint():
+    # Real workday:gafsgi template: the window ending mid-"Most" left "Mo", read as monthly,
+    # and x12 pushed every one of those salaries past the cap. A hint must be a whole word.
+    assert from_description(
+        "Base Salary Range: $108,000-$148,500 How We Protect What Matters Most: 1. We offer"
+    ) == SalarySpan(108_000, 148_500, "USD", "regex")

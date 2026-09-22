@@ -922,8 +922,19 @@ LIVE, DEAD, UNKNOWN = "live", "dead", "unknown"
 # production-looking counts (measured: eightfold amdocs-sandbox 2,099 "jobs" vs the real
 # board's 5; citigroup-qa-sandbox 3,193; ripplehire hdfcbank-uat 28,886 vs 173) — so the
 # HOST NAME is the signal: sandbox/uat/demo as a delimited token in tenant or url. Token-
-# bounded on purpose: one-word names like sandboxvr or thesandbox must not match.
-_NONPROD = re.compile(r"(?:^|[-./_])(?:sandbox|uat|demo)(?:[-./_]|$)", re.IGNORECASE)
+# bounded on purpose: one-word names like sandboxvr or thesandbox must not match. A trailing
+# instance number is still the token: `nvidia-sandbox2` mirrors jobs.nvidia.com (2,376 of its
+# 2,408 title+location slugs, measured 2026-09-23), and `uat2` is RippleHire's own UAT tenant.
+_NONPROD = re.compile(r"(?:^|[-./_])(?:sandbox|uat|demo)\d*(?:[-./_]|$)", re.IGNORECASE)
+# Oracle names a tenant's non-production pods after its production one — `jpmc-dev9`, `jpmc-test`,
+# `fa-exuf-test-saasfaprod1` — so `test`/`dev` are the vendor's environment names there, safe to
+# read as tokens. Nowhere else: off Oracle they are customer names (`ashby:convex-dev`,
+# `recruitee:test1234`). Measured 2026-09-23 on 15 pods: 86 of 328 sampled ids exist on the prod
+# pod (a clone); the rest are closed there or synthetic ("Software Engineer 092 - enable auto
+# approval for testing"). Neither is a Board of its own.
+_ORACLE_NONPROD = re.compile(
+    r"-(?:test|dev)\d*[-.][^/]*\.oraclecloud\.com", re.IGNORECASE
+)
 # Real companies whose *names* collide with the tokens (found by eyeballing every ledger
 # match before the convention landed). A company here can still have a nonprod board — the
 # exception is exact-tenant, not a pattern.
@@ -945,7 +956,9 @@ def is_nonprod(tenant: str, url: str) -> bool:
         return False
     if (tenant or "") in _NONPROD_TENANTS:
         return True
-    return bool(_NONPROD.search(tenant or "") or _NONPROD.search(url or ""))
+    return any(
+        p.search(s or "") for p in (_NONPROD, _ORACLE_NONPROD) for s in (tenant, url)
+    )
 
 
 # Eightfold tenants publishing the same board as another live tenant under a second vanity
@@ -2219,8 +2232,13 @@ def main():
         )
 
     # Whatever is still unknown after the last pass is recorded as such (re-probed next run),
-    # never silently dropped.
+    # never silently dropped — except over a `live` verdict, which is kept as-is (ADR-0177):
+    # `unknown` leaves the Scrapable set and `index prune` would evict the Board's rows outright.
+    # Its stale `checked_at` still puts it back in the next run's probe list.
     for ats, tenant, url in items:
+        prior = verdicts[ats].get(tenant)
+        if prior is not None and prior.status == LIVE:
+            continue
         verdicts[ats][tenant] = liveness.Verdict(
             ats, tenant, url, UNKNOWN, None, today_iso
         )

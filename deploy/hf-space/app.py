@@ -97,6 +97,8 @@ def _pull_index(attempts: int = 5) -> None:
                     "data/lancedb/*",
                     "data/state/role_trends.parquet",
                     "data/state/role_trend_board_deltas/*",
+                    # the methodology epochs the Trends chart marks (ADR-0164) — a few rows
+                    "data/state/trends_epochs.csv",
                     # the hot list (hot_boards) — a few tens of KB, and absent until a run
                     # writes one, which hides the tab rather than failing the pull
                     "data/state/hot_boards.json",
@@ -593,9 +595,7 @@ def delete_profile():
     if not gate:
         return jsonify({"error": "profiles are not configured"}), 503
     email, store = gate
-    account = subscription_id(email)
-    if store.get_profile(account):
-        store.remove_profile(account)
+    store.remove_profile(subscription_id(email))
     return jsonify({"ok": True})
 
 
@@ -662,7 +662,8 @@ def unsubscribe():
         if (
             sub
             and sub.unsubscribe_token
-            and hmac.compare_digest(sub.unsubscribe_token, token)
+            # bytes: compare_digest raises TypeError on a non-ASCII str (see _service_caller)
+            and hmac.compare_digest(sub.unsubscribe_token.encode(), token.encode())
         ):
             store.remove(sub.id)
             # The Subscription id IS the sets namespace for this address, so an unsubscribe

@@ -56,10 +56,12 @@ const job = (id, extra) => ({
 function loadApp(respond, cfg = {}) {
   const nodes = {};
   const fetches = [];
+  // Recorded, like an element's: the capped-row controls are one delegated document listener.
+  const docHandlers = {};
   const ctx = {
     document: {
       getElementById: id => (nodes[id] ||= fakeEl()),
-      addEventListener() {},
+      addEventListener(type, fn) { (docHandlers[type] ||= []).push(fn); },
       querySelector: () => null,
       querySelectorAll: () => [],
     },
@@ -78,9 +80,9 @@ function loadApp(respond, cfg = {}) {
   const src = fs.readFileSync(APP_JS, 'utf8')
     + '\n;globalThis.__t = { go, goToPage, loadSets, runSet, page: () => page, jobCard, savedRow,'
     + ' salStop, SALARY_STOPS, stops: () => SALARY_STOPS, sync: syncSalarySlider, slide: salSlide,'
-    + ' dismiss: dismissRow, dismissed };';
+    + ' dismiss: dismissRow, dismissed, handleSetAction };';
   vm.runInNewContext(src, ctx);
-  return { nodes, fetches, t: ctx.__t, ctx };
+  return { nodes, fetches, t: ctx.__t, ctx, docHandlers };
 }
 
 /** The server's Keyword-filter scope map as index() puts it on CFG (ADR-0104). */
@@ -134,6 +136,23 @@ test('switching Saved sets keeps the newer matches when the old request finishes
   assert.ok(nodes['matches-results'].innerHTML.includes('NEW_MATCH'));
   assert.ok(!nodes['matches-results'].innerHTML.includes('OLD_MATCH'));
   assert.ok(nodes['matches-msg'].textContent.includes('“new”'));
+});
+
+test('a refused email toggle stays on screen — the set re-run does not overwrite it', async () => {
+  // The reload after the POST re-ran the set without awaiting it, so its "N matches" landed
+  // one /search later on top of the refusal — an ✉ that did not turn on, and no reason why.
+  const later = ms => new Promise(r => setTimeout(r, ms));
+  const { nodes, t } = loadApp(url => {
+    if (url === '/sets') return [{ id: 's1', name: 'Backend', query: 'backend', emails: false }];
+    if (url.endsWith('/email')) return { error: 'email alerts are invite-only — ask for access' };
+    if (url.startsWith('/search?') && qs(url).q === 'backend') return later(10).then(() => [job('a')]);
+    return [];
+  });
+  await t.loadSets();
+  await later(20);
+  await t.handleSetAction('email', 's1');
+  await later(20);
+  assert.strictEqual(nodes['matches-msg'].textContent, 'email alerts are invite-only — ask for access');
 });
 
 test('late facets cannot replace newer counts or release an old search render', async () => {
@@ -227,6 +246,25 @@ test('goToPage sends the requested page and updates the page counter', async () 
   assert.strictEqual(t.page(), 4);
 });
 
+test('Prev/Next page the search that ran, not an edit that was never submitted', async () => {
+  // The pager re-read the query box and the rail live, so a query typed (or a box ticked)
+  // without pressing Search went out at page 2 — and the first 20 rows of it were never shown.
+  // The lines describing the rows follow the same snapshot, so the screen describes what is
+  // actually being paged.
+  const { t, nodes, fetches } = loadApp(url => (url.startsWith('/facets?') ? { total: 500 }
+    : Array.from({ length: 20 }, (_, i) => job(qs(url).page + '-' + i))));
+  await t.go();                                   // a browse: empty query, no filters
+  set(nodes, 'q', 'data scientist');
+  nodes.remote.checked = true;
+  await t.goToPage(2);
+  const sent = qs(fetches.filter(f => f.startsWith('/search?')).pop());
+  assert.strictEqual(sent.page, '2');
+  assert.strictEqual(sent.q, '', 'the unsubmitted query went out');
+  assert.ok(!('remote' in sent), 'the unsubmitted filter went out');
+  assert.strictEqual(nodes.active.innerHTML, '', 'the chips describe a filter nothing applied');
+  assert.ok(/no search yet/.test(nodes.kind.textContent), 'the kind line: ' + nodes.kind.textContent);
+});
+
 test('goToPage clamps below 1 and above the 20-page ceiling', async () => {
   const { t, fetches } = loadApp(() => [job('a')]);
   await t.goToPage(0);
@@ -282,6 +320,24 @@ test('an invalid-filter response (non-array) shows the filter error, not a crash
   const { t, nodes } = loadApp(() => ({ error: 'invalid filter' }));
   await t.go();
   assert.ok(nodes.results.innerHTML.includes("isn't valid"));
+});
+
+test('an expired session says so, rather than blaming a filter', async () => {
+  // The sign-in wall answers every /search with 401 {"error": "sign in first"} once the session
+  // ends (measured on the live Space), and a non-array body read as an invalid filter — so the
+  // user cleared filters that were never the problem.
+  const { t, nodes, ctx } = loadApp(url => (url === '/sets'
+    ? [{ id: 's1', name: 'Backend', query: 'backend' }] : []));
+  const base = ctx.fetch;
+  ctx.fetch = url => (String(url).startsWith('/search?')
+    ? Promise.resolve({ ok: false, status: 401, json: () => Promise.resolve({ error: 'sign in first' }) })
+    : base(url));
+  await t.go();
+  assert.ok(/session expired/i.test(nodes.results.innerHTML), 'Search says: ' + nodes.results.innerHTML);
+  await t.loadSets();
+  await new Promise(r => setTimeout(r, 0));
+  assert.ok(/session expired/i.test(nodes['matches-msg'].textContent),
+    'Matches says: ' + nodes['matches-msg'].textContent);
 });
 
 test('a description-only (Tier-2) salary still reaches the pay column', async () => {
@@ -419,6 +475,20 @@ test('a dismissed row is marked, not dropped — the server\'s own count stays t
   t.dismissed.delete('a');
 });
 
+test('the "N hidden" note counts the page on screen, not every row drawn this session', async () => {
+  // The recount on hide went over every row ever drawn — both lists, every page — so hiding one
+  // row on page 2 after three on page 1 read "4 hidden" with one hidden row in view.
+  const { t, nodes } = loadApp(url => (qs(url).page === '2' ? [job('p2a'), job('p2b')]
+    : [job('p1a'), job('p1b'), job('p1c')]));
+  await t.go();
+  for (const id of ['p1a', 'p1b', 'p1c']) t.dismiss(id);
+  assert.ok(nodes.hidden.innerHTML.startsWith('3 hidden'));
+  await t.goToPage(2);
+  t.dismiss('p2a');
+  assert.ok(nodes.hidden.innerHTML.startsWith('1 hidden'), 'the note says: ' + nodes.hidden.innerHTML);
+  for (const id of ['p1a', 'p1b', 'p1c', 'p2a']) t.dismissed.delete(id);
+});
+
 // ── The bracket's cross-currency labels (ADR-0117) ───────────────────────────────────────────
 
 /** The rate table as index() puts it on CFG — the same object `headstart.fx.table()` returns. */
@@ -528,6 +598,27 @@ test('changing the currency re-runs the search — the label and the results can
   assert.strictEqual(qs(search).salary_currency, 'INR');
 });
 
+test('a salary sort is stated in the picker\'s currency even with no bound set', async () => {
+  // Salary is stored in each employer's own currency (ADR-0082), so the server orders a salary
+  // sort in ONE currency. With no bound the bracket sends none, and an India browse sorted by
+  // salary listed USD first no matter what the picker said. The note names the same currency.
+  const { t, nodes, fetches } = loadApp(() => []);
+  set(nodes, 'sort', 'salary');
+  set(nodes, 'salcur', 'INR');
+  fetches.length = 0;
+  await t.go();
+  const search = fetches.filter(u => u.startsWith('/search?')).at(-1);
+  assert.strictEqual(qs(search).sort, 'salary');
+  assert.strictEqual(qs(search).salary_currency, 'INR');
+  assert.ok(nodes.sortnote.textContent.includes('INR'), nodes.sortnote.textContent);
+
+  set(nodes, 'sort', 'posted');
+  fetches.length = 0;
+  await t.go();
+  assert.strictEqual(qs(fetches.filter(u => u.startsWith('/search?')).at(-1)).salary_currency,
+    undefined, 'the currency only rides along with a salary sort or a bound');
+});
+
 test('the handles cannot cross, and an end stop means unbounded rather than zero', () => {
   const { t, nodes } = loadApp(() => []);
   nodes.salrmin.value = '30';
@@ -553,4 +644,35 @@ test('the hide control is drawn on the Search list only', async () => {
   await t.go();
   assert.ok(nodes.results.innerHTML.includes('data-dismiss='));
   assert.ok(!t.jobCard(job('a'), 0, false).includes('data-dismiss='));
+});
+
+test('hiding a company from a Matches card takes it off the Matches list', async () => {
+  // The one delegated handler always re-ran the Search list, which is not the one on screen:
+  // the company just hidden stayed in Matches until the tab was opened again.
+  const hidden = new Set();
+  const row = (co, title) => job('greenhouse:' + co + ':1', { company: co, title });
+  const { nodes, t, ctx, docHandlers } = loadApp(url => {
+    if (url === '/sets') return [{ id: 's1', name: 'Backend', query: 'backend' }];
+    if (!url.startsWith('/search?')) return [];
+    return [row('spamco', 'SPAMCO_JOB'), row('goodco', 'GOODCO_JOB')]
+      .filter(r => !hidden.has(r.id.slice(0, r.id.lastIndexOf(':'))));
+  });
+  const base = ctx.fetch;
+  ctx.fetch = (url, init) => {
+    if (url !== '/companies' || !init) return base(url);
+    hidden.add(JSON.parse(init.body).board);
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ followed: [], hidden: [...hidden] }) });
+  };
+  await t.loadSets();
+  await new Promise(r => setTimeout(r, 0));
+  assert.ok(nodes['matches-results'].innerHTML.includes('SPAMCO_JOB'));
+
+  ctx.location.hash = '#matches';
+  const button = { disabled: false, dataset: { hideCompany: 'greenhouse:spamco' } };
+  const target = { closest: sel => (sel === '[data-hide-company]' ? button : null) };
+  for (const handler of docHandlers.click) await handler({ target });
+  await new Promise(r => setTimeout(r, 0));
+  assert.ok(!nodes['matches-results'].innerHTML.includes('SPAMCO_JOB'),
+    'the company just hidden is still listed on Matches');
+  assert.ok(nodes['matches-results'].innerHTML.includes('GOODCO_JOB'));
 });

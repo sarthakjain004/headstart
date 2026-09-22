@@ -216,7 +216,7 @@ def _row_ok(row: dict) -> bool:
 def _etype_ok(value: str | None, canonical: str) -> bool:
     v = (value or "").lower()
     return {
-        "full-time": ("full" in v or "permanent" in v),
+        "full-time": ("full" in v or ("permanent" in v and "part" not in v)),
         "part-time": "part" in v,
         "contract": ("contract" in v or "freelance" in v),
         "internship": "intern" in v,

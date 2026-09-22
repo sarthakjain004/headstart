@@ -179,6 +179,105 @@ def test_no_native_field_falls_back_to_is_remote(monkeypatch):
     assert jobs[0].remote is False  # unchanged from before this field existed
 
 
+def _headed_listing(headers: list[str], fields: list[str]) -> str:
+    """One card under the page's own "Sort by" select, whose options name the card's columns
+    in order after the title (sortColumn=0) — HTML shape as served live 2026-09-23."""
+    options = "".join(
+        f'<option value="{URL}&act=sort&sortColumn={n}">{label}</option>'
+        for n, label in enumerate(["Title", *headers])
+    )
+    divs = "".join(f'<div tabindex="0" >{field}</div>' for field in fields)
+    return f"""<select class="form-select orderbyPicker" id="sel1">{options}</select>
+    <div class="oracletaleocwsv2-accordion-block"><div class="oracletaleocwsv2-accordion-head-info">
+    <h4><a href="/phe03/ats/careers/v2/viewRequisition?org=ICANN&amp;cws=37&amp;rid=1">Nurse</a></h4>
+    {divs}
+    </div><!--/.accordion-head-info --></div><!--/.accordion-block-->"""
+
+
+def _served(monkeypatch, listing: str) -> tuple[str | None, str | None]:
+    """(location, department) served when the detail page states neither label."""
+    scraper = TaleoBEScraper(URL, "ICANN")
+    bare = '<div name="cwsJobDescription"><p>Care.</p></div>'
+    monkeypatch.setattr(
+        scraper, "_get", lambda url=None: listing if url == URL else bare
+    )
+    (job,) = scraper.fetch()
+    return job.location, job.department
+
+
+def test_listing_columns_are_read_by_their_header_not_their_position(monkeypatch):
+    """Each tenant picks and orders its own card columns (live: HENRYMAYO, DSB, MBA)."""
+    henrymayo = _headed_listing(
+        ["Department", "Employment Status", "Shift Start/End Time"],
+        ["Cardiology", "Per Diem", "6:30AM- 3:00PM"],
+    )
+    assert _served(monkeypatch, henrymayo) == (None, "Cardiology")
+    dsb = _headed_listing(
+        ["Post date", "Division", "Dept/branch"],
+        ["17/06/2026", "Retail Banking", "Direct Channels"],
+    )
+    assert _served(monkeypatch, dsb) == (None, "Direct Channels")
+    mba = _headed_listing(["Location", "Department"], ["Washington, DC", "Research"])
+    assert _served(monkeypatch, mba) == ("Washington, DC", "Research")
+
+
+def test_posted_at_falls_back_to_the_json_ld_date_posted(monkeypatch):
+    """No sampled tenant renders a "Date Posted" label; 9 of 15 state JSON-LD `datePosted`
+    (live 2026-09-22), in the shape NBF1199 rid=11231 serves."""
+    scraper = TaleoBEScraper(URL, "ICANN")
+    ld = '<script type="application/ld+json">{"datePosted" : "2026-08-12 00:00:00.0"}</script>'
+    monkeypatch.setattr(
+        scraper,
+        "_get",
+        lambda url=None: _listing(1, "Engineer") if url == URL else ld + DETAIL,
+    )
+    assert scraper.fetch()[0].posted_at == "2026-08-12T00:00:00+00:00"
+
+
+def test_salary_bounds_drop_their_bonus_tail_before_joining():
+    """ICANN states each bound as "40,000.00 + 10% Bonus + Benefits" (live 2026-09-22);
+    joined whole, no range survives and `salary.extract` keeps only the floor."""
+    from headstart import salary
+
+    scraper = TaleoBEScraper(URL, "ICANN")
+    labels = {
+        "targeted base salary low:": "40,000.00 + 10% Bonus + Benefits",
+        "targeted base salary high:": "55,000.00 + 10% Bonus + Benefits",
+    }
+    field = scraper._salary_field(labels)
+    assert field == "40,000.00 - 55,000.00"
+    span = salary.extract(field, None, "taleo_be")
+    assert (span.min_annual, span.max_annual) == (40_000, 55_000)
+
+
+def test_pay_range_min_and_max_labels_are_joined():
+    """ASPENGOV states its bounds as "Pay Range (Min):" / "Pay Range (Max):" (live 2026-09-23),
+    which neither the salary low/high pair nor the single-value fallback read."""
+    scraper = TaleoBEScraper(URL, "ICANN")
+    labels = {"pay range (max)": "27.93", "pay range (min)": "19.14"}
+    assert scraper._salary_field(labels) == "19.14 - 27.93"
+
+
+def test_custom_field_labels_match_despite_their_trailing_colon(monkeypatch):
+    """NBF1199 rid=11231 renders "Employment Type: " in a custom-field cell (live 2026-09-22)."""
+    scraper = TaleoBEScraper(URL, "ICANN")
+    page = (
+        '<div class="cws-V2-reqfieldcell-right"> Employment Type: </div>'
+        '<div class="cws-V2-reqfieldcell-left"><strong>Full time</strong></div>'
+        '<div class="cws-V2-reqfieldcell-right"> Workplace Arrangement: </div>'
+        '<div class="cws-V2-reqfieldcell-left"><strong>Remote</strong></div>'
+        '<div name="cwsJobDescription"><p>Count.</p></div>'
+    )
+    monkeypatch.setattr(
+        scraper,
+        "_get",
+        lambda url=None: _listing(1, "Accountant") if url == URL else page,
+    )
+    (job,) = scraper.fetch()
+    assert job.employment_type == "Full time"
+    assert job.remote is True
+
+
 def test_posted_at_parses_the_fractional_second_shape_the_live_page_serves():
     # Real live value, NBF1199 rid=11231, verified 2026-09-22: a bare `%Y-%m-%d %H:%M:%S` has
     # no fractional-second group to consume the trailing ".0", so it fails to parse this exactly

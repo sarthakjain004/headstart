@@ -483,17 +483,23 @@ def _remote(listed: dict, detail: dict) -> bool | None:
     four-tenant sample. ``Hybrid`` maps to None rather than False, matching `workday._remote_from`'s
     convention: a hybrid posting is not the remote role a remote filter is looking for, but calling
     it explicitly non-remote overstates what the Board said.
+
+    Two more measured live 2026-09-22: Sutter Health spells the key ``remoteType`` (1,233/1,233
+    rows), and Honda states "Remote Eligible up to 20%" beside "100% Onsite" — a partial share is
+    hybrid by the same convention, not remote.
     """
     for value in (
         listed.get("remote"),
         listed.get("RemoteType"),
+        listed.get("remoteType"),
         detail.get("remote"),
         detail.get("RemoteType"),
+        detail.get("remoteType"),
     ):
         if not isinstance(value, str) or not value.strip():
             continue
         normalised = value.strip().lower()
-        if "hybrid" in normalised:
+        if "hybrid" in normalised or ("%" in normalised and "100%" not in normalised):
             return None
         if "remote" in normalised or "work from home" in normalised:
             return True

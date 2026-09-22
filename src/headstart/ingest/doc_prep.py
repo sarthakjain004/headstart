@@ -25,9 +25,9 @@ from headstart.ingest.derived_meta import derive
 from headstart.search import DOC_PREFIX
 
 _MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]+\)")  # [text](url) -> text
-_MD_SYNTAX = re.compile(
-    r"[*`#>]+"
-)  # emphasis / heading / quote markers (keep `_`: tech terms)
+# Emphasis / heading / quote markers (keep `_`: tech terms). A `#` right after a letter is kept
+# for the same reason: it is C# or F#, not a heading.
+_MD_SYNTAX = re.compile(r"[*`>]+|(?<![A-Za-z])#+")
 _WS = re.compile(r"\s+")
 
 # Token-length Buckets (ADR-0005): a Doc is sorted into the smallest Bucket that holds it,
@@ -263,7 +263,32 @@ def build_doc(job: dict) -> str:
 # sweep (535 postings, 2026-09-22), not just coverage: 207 records improved (174 floor-only ->
 # full, 33 None -> full), zero regressions (no record lost a value or had an already-resolved
 # min/max change). On top of the v13 bump at `ea577fff`.
-DERIVATIONS_VERSION = 14
+# v15: the 2026-09-22 bug-hunt fixes, all one PR on top of the v14 bump at `90a6fc64` (full list:
+# `git log 90a6fc64..19027279 -- src/headstart/salary.py src/headstart/experience.py
+# src/headstart/remote.py` on that PR's branch — 2ab9e6ba in that range is #562, inert, below; a
+# later commit only moves a docstring). The commits by subject, in case it lands squashed: "Read
+# £/€/₹ and per-side symbols in generic salary fields", "Map HK$/S$/A$/AU$/NZ$/US$ salary symbols
+# to their currency", "Treat 'not a fully remote position' as a negation", "Refuse 'up to USD X'
+# ceilings instead of storing them as floors", "Convert month-denominated experience fields to
+# whole years", "Stop reading a preceding HR acronym or MO state code as a period", "Read a
+# one-digit comma tail as a decimal in salary numbers", "Lower the INR salary ceiling to 3 crore",
+# "Ignore period hints cut from a word at the window edge", "Count a trailing HR/MO as a period
+# only when it touches the figure", "Keep a k/L figure's fraction instead of rounding it away
+# first", "Read contracted negations like "isn't fully remote" as negations", and "Read a bare $
+# as USD in generic salary fields, as Tier 2 does", reversed by "Keep a bare $ currency-less in
+# fields; only prefixed dollars resolve" (a guessed USD was wrong on ~15% of those fields). Most
+# change what `extract()` returns for raw input already stored; the trailing-HR/MO guard moved no
+# stored row, and the bare-$ pair nets to nothing. Measured once for the whole branch, 87bcaff9 vs
+# 19027279, old vs new on every row of the 2026-09-15 LanceDB snapshot (459,291 rows, 7 days
+# stale — not the live table), per ADR-0066: salary 827 rows move (316 value corrected — mostly a
+# recovered ceiling, 318 currency only, 69 both, 87 None->value, 37 value->None — the INR-cap
+# misreads and refused "up to" ceilings, read by hand per commit); experience 9; remote 39
+# True->None. `remote` reaches only rows whose Board is scraped in the sweep run (it has no stored
+# raw field to re-derive from) — a known gap, not closed here. The one other salary.py commit since
+# v14, `2ab9e6ba` (#562, keka's `_field_keka` now applies `_period_multiplier`), is inert on stored
+# rows: their raw keka string carries no period word, which `_period_multiplier` reads as annual
+# (x1), so it needed no bump.
+DERIVATIONS_VERSION = 15
 
 
 def to_meta(job: dict) -> dict:

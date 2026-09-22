@@ -572,6 +572,23 @@ def test_unsubscribe_clears_the_emailing_flag(sets_app, hub, monkeypatch):
     assert sub_path not in hub
 
 
+def test_a_non_ascii_unsubscribe_token_is_a_404_not_a_500(sets_app, hub, monkeypatch):
+    # compare_digest raises TypeError on a non-ASCII str, so the query-string token has to
+    # be compared as bytes — as _service_caller already does for the bearer token.
+    import json as _json
+
+    hub["subscriptions/allowlist.json"] = b'{"allowed": ["dev@example.com"]}'
+    client = _signed_in(sets_app, monkeypatch)
+    made = client.post("/sets", json={"name": "a", "query": "qa"}, base_url=_HTTPS).json
+    client.post(f"/sets/{made['id']}/email", json={"on": True}, base_url=_HTTPS)
+    sub_path = f"subscriptions/{sets_app.subscription_id('dev@example.com')}.json"
+    sub = _json.loads(hub[sub_path])
+
+    r = client.get(f"/unsubscribe?id={sub['id']}&token=%C3%A9")
+
+    assert r.status_code == 404 and sub_path in hub
+
+
 def test_subscribe_refuses_while_sets_are_live(sets_app, hub, monkeypatch):
     client = _signed_in(sets_app, monkeypatch)
     r = client.post(
@@ -599,6 +616,92 @@ def test_presets_subscription_is_adopted_as_the_emailing_set(
     assert listed[0]["search_filters"] == {"remote": "true"}
     # idempotent: a second read adopts nothing new
     assert len(client.get("/sets", base_url=_HTTPS).json) == 1
+
+
+# ---- Company prefs (ADR-0171) ----
+
+
+def _stored_companies(app_module, hub, followed=(), hidden=()):
+    import json as _json
+
+    account = app_module.subscription_id("dev@example.com")
+    path = f"companies/{account}.json"
+    hub[path] = _json.dumps(
+        {"account": account, "followed": list(followed), "hidden": list(hidden)}
+    ).encode()
+    return path
+
+
+def test_a_company_click_during_a_failed_read_never_blanks_the_lists(
+    sets_app, hub, monkeypatch
+):
+    # `get_companies` fails open for search, so the write that follows it must not treat
+    # "unreadable" as "nothing stored" and replace the Account's lists with one entry.
+    import headstart.alerts.store as st
+
+    path = _stored_companies(
+        sets_app, hub, followed=["greenhouse:acme", "lever:beta"], hidden=["ashby:c"]
+    )
+    before = hub[path]
+    real_read = st._read
+
+    def flaky(repo, name, token):
+        if name == path:
+            raise OSError("Hub timed out")
+        return real_read(repo, name, token)
+
+    monkeypatch.setattr(st, "_read", flaky)
+    client = _signed_in(sets_app, monkeypatch)
+
+    r = client.post(
+        "/companies", json={"board": "lever:delta", "action": "follow"}, base_url=_HTTPS
+    )
+
+    assert r.status_code == 503
+    assert hub[path] == before
+
+
+def test_a_company_click_racing_another_cannot_silently_drop_it(
+    sets_app, hub, monkeypatch
+):
+    # Two clicks in flight read the same record; the second write must not erase the
+    # first. Simulated deterministically: this request reads the record as it was before
+    # another click's hide landed.
+    import headstart.alerts.store as st
+
+    path = _stored_companies(sets_app, hub, hidden=["lever:a"])
+    stale = hub[path]
+    _stored_companies(sets_app, hub, hidden=["lever:a", "lever:b"])
+    real_read = st._read
+    monkeypatch.setattr(
+        st,
+        "_read",
+        lambda repo, name, token: (
+            stale if name == path else real_read(repo, name, token)
+        ),
+    )
+    client = _signed_in(sets_app, monkeypatch)
+
+    r = client.post(
+        "/companies", json={"board": "lever:c", "action": "hide"}, base_url=_HTTPS
+    )
+
+    assert r.status_code == 409
+    assert b"lever:b" in hub[path]
+
+
+def test_a_company_click_is_stored(sets_app, hub, monkeypatch):
+    path = _stored_companies(sets_app, hub, followed=["greenhouse:acme"])
+    client = _signed_in(sets_app, monkeypatch)
+
+    r = client.post(
+        "/companies", json={"board": "lever:b", "action": "hide"}, base_url=_HTTPS
+    )
+
+    assert r.status_code == 200
+    assert r.json == {"followed": ["greenhouse:acme"], "hidden": ["lever:b"]}
+    assert client.get("/companies", base_url=_HTTPS).json == r.json
+    assert b"lever:b" in hub[path]
 
 
 # ---- Profile (ADR-0041) ----
@@ -640,6 +743,20 @@ def test_profile_get_save_roundtrip_and_counter_discipline(sets_app, hub, monkey
     assert r.json["query"] == "backend engineer" and r.json["years"] == 4
     assert r.json["parses_used"] == 0
     assert client.get("/profile", base_url=_HTTPS).json["skills"] == "Python, Go"
+
+
+def test_a_hand_saved_overflowing_years_is_dropped_not_a_500(
+    sets_app, hub, monkeypatch
+):
+    # Flask reads a JSON 1e999 as float inf, which int() refuses with OverflowError.
+    client = _signed_in(sets_app, monkeypatch)
+    r = client.post(
+        "/profile",
+        data='{"query": "backend engineer", "years": 1e999}',
+        content_type="application/json",
+        base_url=_HTTPS,
+    )
+    assert r.status_code == 200 and r.json["years"] is None
 
 
 def test_hand_saved_query_is_scrubbed_like_the_extracted_one(
@@ -700,12 +817,73 @@ def test_parse_cap_is_lifetime_and_survives_delete(sets_app, hub, monkeypatch):
     )
 
 
+@pytest.mark.parametrize("unreadable", ["hub-down", "corrupt"])
+def test_delete_removes_a_profile_it_cannot_read(
+    sets_app, hub, monkeypatch, unreadable
+):
+    # `get_profile` answers None for an unreadable record as well as an absent one; a delete
+    # gated on it answered {"ok": true} and left the record stored.
+    import headstart.alerts.store as st
+
+    client = _signed_in(sets_app, monkeypatch)
+    client.post("/profile", json={"query": "backend engineer"}, base_url=_HTTPS)
+    path = f"profiles/{sets_app.subscription_id('dev@example.com')}.json"
+    if unreadable == "corrupt":
+        hub[path] = b"not json"
+    else:
+        real_read = st._read
+
+        def flaky(repo, name, token):
+            if name == path:
+                raise OSError("Hub timed out")
+            return real_read(repo, name, token)
+
+        monkeypatch.setattr(st, "_read", flaky)
+
+    r = client.delete("/profile", base_url=_HTTPS)
+
+    assert r.status_code == 200 and path not in hub
+
+
+def test_delete_never_reports_ok_when_it_cannot_tell(sets_app, hub, monkeypatch):
+    import headstart.alerts.store as st
+
+    client = _signed_in(sets_app, monkeypatch)
+    client.post("/profile", json={"query": "backend engineer"}, base_url=_HTTPS)
+
+    def down(*args, **kwargs):
+        raise OSError("Hub timed out")
+
+    monkeypatch.setattr(st, "_list_files", down)
+    monkeypatch.setattr(st, "_read", down)
+
+    assert client.delete("/profile", base_url=_HTTPS).status_code != 200
+
+
 def test_failed_extraction_still_spends_a_read(sets_app, hub, monkeypatch):
     # The router answered garbage — the call was made, so it counts (spend bound, ADR-0041)
     client = _signed_in(sets_app, monkeypatch)
     monkeypatch.setattr(sets_app.llm_router, "ask", lambda prompt: "not json at all")
     r = client.post("/profile/parse", json={"text": "r"}, base_url=_HTTPS)
     assert r.status_code == 502
+    assert (
+        client.get("/profile", base_url=_HTTPS).json["parses_left"]
+        == sets_app.MAX_PARSES - 1
+    )
+
+
+@pytest.mark.parametrize(
+    "reply", [None, '{"query": "backend engineer", "years": 1e999}'], ids=str
+)
+def test_a_router_answer_the_reader_chokes_on_still_spends_a_read(
+    sets_app, hub, monkeypatch, reply
+):
+    # The router answered, so the call was spent — a 500 before put_parses would make the
+    # lifetime cap unbounded for any reply shaped like this.
+    client = _signed_in(sets_app, monkeypatch)
+    monkeypatch.setattr(sets_app.llm_router, "ask", lambda prompt: reply)
+    r = client.post("/profile/parse", json={"text": "r"}, base_url=_HTTPS)
+    assert r.status_code != 500
     assert (
         client.get("/profile", base_url=_HTTPS).json["parses_left"]
         == sets_app.MAX_PARSES - 1
@@ -1744,6 +1922,26 @@ def test_trends_epochs_are_not_narrowed_by_ats(epochs_trends_app):
     to an ATS selection — a tech-filter or family-map change did not happen "for" one ATS."""
     d = epochs_trends_app.app.test_client().get("/trends?ats=greenhouse").get_json()
     assert len(d["epochs"]) == 2
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "data/state/role_trends.parquet",
+        "data/state/trends_epochs.csv",
+        "data/state/hot_boards.json",
+    ],
+)
+def test_the_index_pull_fetches_every_state_file_the_app_reads(app, monkeypatch, path):
+    # The fixtures above write these files straight into the state dir, and the stubbed
+    # snapshot_download ignores its patterns — so a file the pull never fetches still passed
+    # here while production served `epochs: []`.
+    from fnmatch import fnmatch
+
+    seen = {}
+    monkeypatch.setattr(app, "snapshot_download", lambda *a, **k: seen.update(k))
+    app._pull_index()
+    assert any(fnmatch(path, pattern) for pattern in seen["allow_patterns"])
 
 
 # ── The trust surfaces (ADR-0112, ADR-0113) ────────────────────────────────────────────

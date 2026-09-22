@@ -19,8 +19,12 @@ ADA = "2000"
 class _Store:
     """The Subscriptions dataset as a dict keyed by record id."""
 
-    def __init__(self, records=None):
+    def __init__(self, records=None, invites=()):
         self.records = dict(records or {})
+        self.allowlist = list(invites)
+
+    def invites(self):
+        return self.allowlist
 
     def get(self, sub_id):
         return self.records.get(sub_id)
@@ -296,6 +300,148 @@ def test_allow_still_rejects_an_id_that_never_asked():
     assert [chat for chat, _ in replies] == [MASTER]
     assert "isn't waiting" in replies[0][1]
     assert store.get(chat_subscription_id("99999")) is None
+
+
+def _real_store(monkeypatch, invites=()):
+    """The real Store over a dict Hub. `_Store` above does not model the opt-out marker every
+    removal leaves (ADR-0142), which is how a re-approval that raised on every attempt stayed
+    green here."""
+    import json
+
+    from headstart.alerts import store as st
+
+    files = {st.ALLOWLIST_PATH: json.dumps({"allowed": list(invites)}).encode()}
+    monkeypatch.setattr(st, "_read", lambda repo, path, token: files[path])
+    monkeypatch.setattr(st, "_is_absent", lambda exc: isinstance(exc, KeyError))
+
+    def commit(repo, changes, expected, token, revision=None):
+        if any(files.get(path) != before for path, before in expected.items()):
+            raise st.StoreConflict("concurrent edit")
+        for path, data in changes.items():
+            if data is None:
+                files.pop(path, None)
+            else:
+                files[path] = data
+
+    monkeypatch.setattr(st, "_commit", commit)
+    return st.Store("acme/subs", "tok")
+
+
+@pytest.fixture
+def hub_store(monkeypatch):
+    return _real_store(monkeypatch)
+
+
+@pytest.mark.parametrize(
+    "stopped_by", [(ADA, "/stop"), (MASTER, f"/revoke {ADA}")], ids=["stop", "revoke"]
+)
+def test_a_stopped_chat_can_be_approved_again(hub_store, stopped_by):
+    # The /stop reply promises "Send /start to set it up again", and the master's /allow is
+    # the explicit enable that alone may clear the opt-out marker (ADR-0142).
+    registry = Registry(master=MASTER)
+    bot.handle(_update(ADA, "/start"), registry, hub_store)
+    bot.handle(_update(MASTER, f"/allow {ADA}"), registry, hub_store)
+    bot.handle(_update(*stopped_by), registry, hub_store)
+    assert hub_store.get(chat_subscription_id(ADA)) is None
+
+    bot.handle(_update(ADA, "/start"), registry, hub_store)
+    replies = bot.handle(_update(MASTER, f"/allow {ADA}"), registry, hub_store)
+
+    assert [chat for chat, _ in replies] == [MASTER, ADA]
+    assert hub_store.get(chat_subscription_id(ADA)) is not None
+    assert not hub_store.opted_out(chat_subscription_id(ADA))
+    assert ADA not in registry.pending
+
+
+def test_the_master_can_set_a_search_again_after_their_own_stop(hub_store):
+    registry = Registry(master=MASTER)
+    bot.handle(_update(MASTER, "/q backend"), registry, hub_store)
+    bot.handle(_update(MASTER, "/stop"), registry, hub_store)
+
+    replies = bot.handle(_update(MASTER, "/q infra"), registry, hub_store)
+
+    assert replies == [(MASTER, "Searching for: infra")]
+    assert hub_store.get(chat_subscription_id(MASTER)).query == "infra"
+
+
+@pytest.fixture
+def invited(monkeypatch):
+    """A chat the owner routed to Telegram by hand: an Invite carrying its chat id
+    (docs/telegram-alerts.md "Without the bot"), with the record the alerts run made for it."""
+    from headstart.alerts import run
+
+    store = _real_store(
+        monkeypatch,
+        [{"email": "ada@example.com", "query": "backend", "telegram": ADA}],
+    )
+    (invite,) = store.invites()
+    assert run.subscription_for(invite, store, frozenset()) is not None
+    return store, invite
+
+
+def test_an_invited_chat_can_stop_its_alerts(invited):
+    from headstart.alerts import run
+
+    store, invite = invited
+
+    replies = bot.handle(_update(ADA, "/stop"), Registry(master=MASTER), store)
+
+    assert [chat for chat, _ in replies] == [ADA] and "Stopped" in replies[0][1]
+    assert run.subscription_for(invite, store, frozenset()) is None
+
+
+def test_a_chat_with_a_record_and_an_invite_stops_both(invited):
+    # Pass 2: a chat with its own bot record AND an Invite was `known`, so /stop removed only the
+    # chat record while the Invite kept delivering.
+    from headstart.alerts import run
+
+    store, invite = invited
+    store.put(Subscription.for_chat(ADA, "backend"), reenable=True)
+
+    replies = bot.handle(_update(ADA, "/stop"), Registry(master=MASTER), store)
+
+    assert "Stopped" in replies[0][1]
+    assert store.get(chat_subscription_id(ADA)) is None
+    assert run.subscription_for(invite, store, frozenset()) is None
+
+
+@pytest.mark.parametrize("command", ["/q infra", "/status"])
+def test_an_invited_chat_is_told_the_owner_manages_its_search(invited, command):
+    store, _ = invited
+    registry = Registry(master=MASTER)
+
+    replies = bot.handle(_update(ADA, command), registry, store)
+
+    assert [chat for chat, _ in replies] == [ADA] and "owner" in replies[0][1]
+    assert store.get(chat_subscription_id(ADA)) is None
+    assert registry.pending == {}, "an invited chat is not a stranger asking in"
+
+
+def test_an_invited_chat_cannot_be_approved_into_a_second_record(invited):
+    # Two records for one chat would deliver every Digest to it twice.
+    store, _ = invited
+    registry = Registry(master=MASTER, pending={ADA: Pending(ADA, "ada_l", "Ada")})
+
+    replies = bot.handle(_update(MASTER, f"/allow {ADA}"), registry, store)
+
+    assert [chat for chat, _ in replies] == [MASTER]
+    assert store.get(chat_subscription_id(ADA)) is None
+    assert ADA not in registry.pending
+
+
+def test_an_allow_the_store_refuses_leaves_the_request_waiting():
+    # `main` saves the registry even when `handle` raises, so a request popped before the
+    # write failed would be gone with nobody told — the master's /pending must still list it.
+    class _Refusing(_Store):
+        def put(self, sub, *, reenable=False):
+            raise RuntimeError("Hub unavailable")
+
+    registry = Registry(master=MASTER, pending={ADA: Pending(ADA, "ada_l", "Ada")})
+
+    with pytest.raises(RuntimeError):
+        bot.handle(_update(MASTER, f"/allow {ADA}"), registry, _Refusing())
+
+    assert ADA in registry.pending
 
 
 def _wire_main(monkeypatch, updates, registry=None, store=None):
