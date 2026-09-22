@@ -75,12 +75,21 @@ def _iso_date(raw: str | float | None) -> str | None:
     Some tenants (e.g. orangehealth) send ``posted_on`` as an epoch int instead of the string —
     that raised an uncaught TypeError in ``strptime`` and dropped the *entire* board. Read an int
     as an epoch (ms if it looks like ms, else seconds); anything unreadable yields None (unknown
-    date — excluded from posted-within windows) rather than crashing or leaking a garbage value."""
+    date — excluded from posted-within windows) rather than crashing or leaking a garbage value.
+
+    The int is now the norm (8,244/8,244 jobs on 296 Hiring Boards, 2026-09-23) and names the
+    posting's date at 00:00 in the *poster's* zone — 18:30Z for IST, 16:00Z for UTC+8, 04:00Z for
+    EDT, mixed within one Board and unrelated to the job's own country — so its UTC date is a day
+    early east of UTC. No field states that zone, so a value on a quarter hour (every real
+    zone's midnight) is snapped to the nearest UTC midnight, right for UTC-11..UTC+12. The 10
+    off-quarter values seen were real instants equal to ``created_on`` (spoc, 2020): kept as-is."""
     if not raw:
         return None
     if isinstance(raw, (int, float)):
         try:
             seconds = raw / 1000 if raw > 1e11 else raw
+            if seconds % 900 == 0:
+                seconds += 12 * 3600
             return datetime.fromtimestamp(seconds, tz=UTC).strftime("%Y-%m-%d")
         except (ValueError, OverflowError, OSError):
             return None

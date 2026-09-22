@@ -4750,6 +4750,20 @@ def test_darwinbox_iso_date():
     assert _iso_date(0) is None  # falsy -> unknown, not 1970
 
 
+def test_darwinbox_iso_date_reads_an_epoch_as_the_posters_local_midnight():
+    """A live `posted_on` int is the posting's date at 00:00 in the poster's own zone, so
+    an IST posting's UTC reading lands on the previous calendar day."""
+    from headstart.scrapers.darwinbox import _iso_date
+
+    assert _iso_date(1789497000) == "2026-09-16"  # 2026-09-15T18:30Z, IST midnight
+    assert _iso_date(1789488000) == "2026-09-16"  # 16:00Z, UTC+8 midnight
+    assert _iso_date(1789509600) == "2026-09-16"  # 22:00Z, CEST midnight
+    assert _iso_date(1789531200) == "2026-09-16"  # 2026-09-16T04:00Z, EDT midnight
+    assert _iso_date(1789497000000) == "2026-09-16"  # same, in ms
+    # a legacy value that is a real instant (== created_on), not a midnight: its UTC date
+    assert _iso_date(1582293124) == "2020-02-21"  # 2020-02-21T13:52:04Z
+
+
 def test_darwinbox_salary_range_not_double_suffixed():
     # Real bug, salary-extraction pass 2026-08-22: `salary_range` already carries its own
     # "(Annual)"/"(Monthly)" suffix whenever one exists (confirmed: 1,874/1,874 real suffixed
