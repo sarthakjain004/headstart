@@ -713,23 +713,20 @@ def test_fetch_ranged_reassembles_a_multi_chunk_file_byte_exact(
         )  # chunk files cleaned up after concat
 
 
-def test_fetch_ranged_skips_a_chunk_already_complete_on_disk(
+def test_fetch_ranged_never_assembles_a_chunk_from_a_prior_attempt(
     tmp_path: Path, monkeypatch
 ) -> None:
-    """The free-resumption property: a chunk file already at its full size is never re-requested."""
-    payload = b"x" * 50
+    """A chunk left by an earlier outer attempt may come from an older commit of the file — the
+    remote can be republished (even at the same size) during fetch_state's backoff. Reusing it
+    spliced two versions into one file that still passed the size check."""
+    payload = b"B" * 50
     monkeypatch.setattr(sf, "_CHUNK_BYTES", 20)  # 3 chunks: 20, 20, 10
     dest = tmp_path / "big.bin"
-    sf._chunk_path(dest, 0).write_bytes(
-        b"x" * 20
-    )  # chunk 0 pre-landed, e.g. from a prior attempt
+    sf._chunk_path(dest, 0).write_bytes(b"A" * 20)  # left by attempt 1, version A
     with _serve(payload) as (url, ranges):
         sf._fetch_ranged(url, dest, len(payload), {})
         assert dest.read_bytes() == payload
-        requested = {r for r in ranges if r}
-        assert "bytes=0-19" not in requested  # chunk 0 was never re-fetched
-        assert "bytes=20-39" in requested
-        assert "bytes=40-49" in requested
+        assert "bytes=0-19" in {r for r in ranges if r}
 
 
 def test_fetch_ranged_skips_a_file_that_already_landed(tmp_path: Path) -> None:
