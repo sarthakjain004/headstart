@@ -130,6 +130,17 @@ def test_remote_is_none_when_the_board_states_no_workplace_field():
     assert _jobs({"jobs": listed, "details": _details()})[HYBRID_ID].remote is None
 
 
+def test_partial_remote_eligibility_is_hybrid_and_remote_type_is_read():
+    """Honda states "Remote Eligible up to 20%" (a mostly on-site policy) and Sutter Health
+    spells the key `remoteType` — both live 2026-09-22."""
+    from headstart.scrapers.phenom import _remote
+
+    assert _remote({}, {"remote": "Remote Eligible up to 20%"}) is None
+    assert _remote({}, {"remote": "100% Onsite"}) is False
+    assert _remote({"remoteType": "Remote"}, {}) is True
+    assert _remote({"remoteType": "Onsite"}, {}) is False
+
+
 def _titled(scraper, title: str):
     """Point the scraper's one `resolve_company` request at a canned page title."""
 
