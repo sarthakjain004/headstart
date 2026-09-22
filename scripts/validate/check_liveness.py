@@ -922,8 +922,10 @@ LIVE, DEAD, UNKNOWN = "live", "dead", "unknown"
 # production-looking counts (measured: eightfold amdocs-sandbox 2,099 "jobs" vs the real
 # board's 5; citigroup-qa-sandbox 3,193; ripplehire hdfcbank-uat 28,886 vs 173) — so the
 # HOST NAME is the signal: sandbox/uat/demo as a delimited token in tenant or url. Token-
-# bounded on purpose: one-word names like sandboxvr or thesandbox must not match.
-_NONPROD = re.compile(r"(?:^|[-./_])(?:sandbox|uat|demo)(?:[-./_]|$)", re.IGNORECASE)
+# bounded on purpose: one-word names like sandboxvr or thesandbox must not match. A trailing
+# instance number is still the token: `nvidia-sandbox2` mirrors jobs.nvidia.com (2,376 of its
+# 2,408 title+location slugs, measured 2026-09-23), and `uat2` is RippleHire's own UAT tenant.
+_NONPROD = re.compile(r"(?:^|[-./_])(?:sandbox|uat|demo)\d*(?:[-./_]|$)", re.IGNORECASE)
 # Oracle names a tenant's non-production pods after its production one — `jpmc-dev9`, `jpmc-test`,
 # `fa-exuf-test-saasfaprod1` — so `test`/`dev` are the vendor's environment names there, safe to
 # read as tokens. Nowhere else: off Oracle they are customer names (`ashby:convex-dev`,

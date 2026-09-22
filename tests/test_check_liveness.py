@@ -43,6 +43,9 @@ def cl():
         ("demo.uipath.com", "", True),
         ("careers-uat.morganstanley.com.cn", "", True),
         ("acme", "https://demo.acme.com/board", True),  # marker in the url, not tenant
+        # a numbered instance is the same marker — NVIDIA's staging mirror of jobs.nvidia.com
+        ("nvidia-sandbox2.eightfold.ai", "https://nvidia-sandbox2.eightfold.ai", True),
+        ("uat2", "https://uat2.ripplehire.com", True),
         # token-bounding: one-word names containing a marker must NOT match
         ("sandboxvr", "", False),
         ("thesandbox", "", False),
