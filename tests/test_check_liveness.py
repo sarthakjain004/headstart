@@ -9,6 +9,7 @@ ones, because widening the pattern to catch `stldemo` would re-admit `sandboxvr`
 
 from __future__ import annotations
 
+import csv
 import importlib.util
 import threading
 import time
@@ -52,10 +53,42 @@ def cl():
         # exact-tenant blocklist: concatenated markers the token rule cannot see
         ("stldemo", "https://stldemo.ripplehire.com", True),
         ("stl", "", False),  # the real company the blocklist must not bleed onto
+        # Oracle's own non-prod pods, `{pod}-test` / `{pod}-dev{N}`: stale or cloned postings
+        ("jpmc-dev9.fa.oraclecloud.com", "https://jpmc-dev9.fa.oraclecloud.com", True),
+        ("jpmc-test.fa.oraclecloud.com", "https://jpmc-test.fa.oraclecloud.com", True),
+        ("ehap-dev5", "ehap-dev5.fa.us2.oraclecloud.com", True),
+        (
+            "fa-exuf-test-saasfaprod1.fa.ocs.oraclecloud.com",
+            "https://fa-exuf-test-saasfaprod1.fa.ocs.oraclecloud.com",
+            True,
+        ),
+        # ...but not their production pods, and not test/dev off Oracle, where they are names
+        ("jpmc.fa.oraclecloud.com", "https://jpmc.fa.oraclecloud.com", False),
+        (
+            "fa-exuf-saasfaprod1.fa.ocs.oraclecloud.com",
+            "https://fa-exuf-saasfaprod1.fa.ocs.oraclecloud.com",
+            False,
+        ),
+        ("convex-dev", "https://jobs.ashbyhq.com/convex-dev", False),
+        ("test1234", "https://test1234.recruitee.com", False),
     ],
 )
 def test_is_nonprod(cl, tenant, url, nonprod):
     assert cl.is_nonprod(tenant, url) is nonprod
+
+
+def test_no_live_ledger_row_is_nonprod(cl):
+    """The committed ledger agrees with the rule. A widened rule only reaches a row when its TTL
+    lapses, so until then the row stays `live` and is scraped and served (ADR-0034 flipped its 48
+    in the same change for this reason)."""
+    ledger = _SCRIPT.parents[2] / "data" / "validate" / "liveness"
+    live_nonprod = [
+        f"{row['ats']}:{row['tenant']}"
+        for path in sorted(ledger.glob("*.csv"))
+        for row in csv.DictReader(path.open(encoding="utf-8"))
+        if row["status"] == "live" and cl.is_nonprod(row["tenant"], row["url"])
+    ]
+    assert live_nonprod == []
 
 
 # --- eightfold alias losers (#157) ----------------------------------------------------------

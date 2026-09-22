@@ -924,6 +924,15 @@ LIVE, DEAD, UNKNOWN = "live", "dead", "unknown"
 # HOST NAME is the signal: sandbox/uat/demo as a delimited token in tenant or url. Token-
 # bounded on purpose: one-word names like sandboxvr or thesandbox must not match.
 _NONPROD = re.compile(r"(?:^|[-./_])(?:sandbox|uat|demo)(?:[-./_]|$)", re.IGNORECASE)
+# Oracle names a tenant's non-production pods after its production one — `jpmc-dev9`, `jpmc-test`,
+# `fa-exuf-test-saasfaprod1` — so `test`/`dev` are the vendor's environment names there, safe to
+# read as tokens. Nowhere else: off Oracle they are customer names (`ashby:convex-dev`,
+# `recruitee:test1234`). Measured 2026-09-23 on 15 pods: 86 of 328 sampled ids exist on the prod
+# pod (a clone); the rest are closed there or synthetic ("Software Engineer 092 - enable auto
+# approval for testing"). Neither is a Board of its own.
+_ORACLE_NONPROD = re.compile(
+    r"-(?:test|dev)\d*[-.][^/]*\.oraclecloud\.com", re.IGNORECASE
+)
 # Real companies whose *names* collide with the tokens (found by eyeballing every ledger
 # match before the convention landed). A company here can still have a nonprod board — the
 # exception is exact-tenant, not a pattern.
@@ -945,7 +954,9 @@ def is_nonprod(tenant: str, url: str) -> bool:
         return False
     if (tenant or "") in _NONPROD_TENANTS:
         return True
-    return bool(_NONPROD.search(tenant or "") or _NONPROD.search(url or ""))
+    return any(
+        p.search(s or "") for p in (_NONPROD, _ORACLE_NONPROD) for s in (tenant, url)
+    )
 
 
 # Eightfold tenants publishing the same board as another live tenant under a second vanity
