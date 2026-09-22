@@ -165,6 +165,18 @@ def test_a_qualified_negation_is_not_read_as_fully_remote():
         assert extract(None, text) is None, text
 
 
+def test_a_contracted_negation_is_a_negation():
+    # Review pass 1: the negation needed a literal "not", so "isn't fully remote" still served True.
+    for text in (
+        "This role isn't fully remote.",
+        "This role isn’t fully remote.",
+        "These positions aren't remote.",
+        "The role won't be fully remote.",
+    ):
+        assert extract(None, text) is None, text
+    assert extract(None, "This role is fully remote.") is True  # control
+
+
 # --- the "work from anywhere" perk-vs-policy ambiguity --------------------------------------
 
 

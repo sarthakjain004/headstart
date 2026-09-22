@@ -90,10 +90,11 @@ _JARGON = re.compile(
 # Explicit negation near a remote/hybrid mention — checked before accepting any positive match.
 _NEGATION = re.compile(
     r"(remote|hybrid)\s+(?:work\s+)?(?:is\s+)?not\s+(?:supported|available|offered|eligible)"
-    r"|(?:no|not)\s+(?:longer\s+)?remote\b"
+    r"|(?:no|not|n['’]t)\s+(?:be\s+)?(?:longer\s+)?remote\b"
     # Qualified: "not a fully remote position", "not eligible for full remote work" — otherwise
     # `_REMOTE_EXPLICIT`'s "fully remote" matches inside its own denial and flips the field.
-    r"|(?:no|not)\s+(?:an?\s+|eligible\s+for\s+)?(?:fully|100%|full)\s+remote"
+    # Contractions too ("isn't fully remote", "won't be fully remote").
+    r"|(?:no|not|n['’]t)\s+(?:be\s+)?(?:an?\s+|eligible\s+for\s+)?(?:fully|100%|full)\s+remote"
     r"|does\s+not\s+offer\s+(?:telecommuting\s+or\s+)?remote"
     r"|we\s+do\s+not\s+offer\s+telecommuting\s+or\s+remote"
     r"|no\s+remote\s+positions?\s+available"
