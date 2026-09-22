@@ -1019,11 +1019,14 @@ test('forty keystrokes cost no commits; leaving the tab costs one', () => {
     const bullet = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current())
       .filter(n => n.type === 'bullet')[0];
     ctx.ResumeEditor.select(bullet.id);
+    /* On `rb`, where the editor's delegated listener is; fired on the pane it typed nothing. */
     for (let i = 0; i < 40; i++) {
-      el('rb-pane-document').fire('input', {
+      el('rb').fire('input', {
         target: target({ node: bullet.id, field: 'text' }, { value: 'Shipped it ' + i }),
       });
     }
+    assert.equal(ctx.ResumeEditor.current().content[bullet.id].text, 'Shipped it 39',
+      'the keystrokes never reached the document');
     assert.equal(wire.filter(c => c.method === 'PUT').length, before,
       'typing reached the account — the localStorage debounce was reused for the commit');
 
@@ -1176,9 +1179,11 @@ test('the status line stops saying "Saved" once the pushes stop landing', () => 
     const bullet = ctx.ResumeDocument.flatten(ctx.ResumeEditor.current())
       .filter(n => n.type === 'bullet')[0];
     ctx.ResumeEditor.select(bullet.id);
-    el('rb-pane-document').fire('input', {
+    el('rb').fire('input', {
       target: target({ node: bullet.id, field: 'text' }, { value: 'Written while offline' }),
     });
+    assert.equal(ctx.ResumeEditor.current().content[bullet.id].text, 'Written while offline',
+      'the edit never reached the document');
     ctx.document.visibilityState = 'hidden';
     el('rb-paper')._docVisibility.forEach(fn => fn({}));
     return settled();
