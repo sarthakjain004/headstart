@@ -250,6 +250,26 @@ def test_salary_bounds_drop_their_bonus_tail_before_joining():
     assert (span.min_annual, span.max_annual) == (40_000, 55_000)
 
 
+def test_custom_field_labels_match_despite_their_trailing_colon(monkeypatch):
+    """NBF1199 rid=11231 renders "Employment Type: " in a custom-field cell (live 2026-09-22)."""
+    scraper = TaleoBEScraper(URL, "ICANN")
+    page = (
+        '<div class="cws-V2-reqfieldcell-right"> Employment Type: </div>'
+        '<div class="cws-V2-reqfieldcell-left"><strong>Full time</strong></div>'
+        '<div class="cws-V2-reqfieldcell-right"> Workplace Arrangement: </div>'
+        '<div class="cws-V2-reqfieldcell-left"><strong>Remote</strong></div>'
+        '<div name="cwsJobDescription"><p>Count.</p></div>'
+    )
+    monkeypatch.setattr(
+        scraper,
+        "_get",
+        lambda url=None: _listing(1, "Accountant") if url == URL else page,
+    )
+    (job,) = scraper.fetch()
+    assert job.employment_type == "Full time"
+    assert job.remote is True
+
+
 def test_posted_at_parses_the_fractional_second_shape_the_live_page_serves():
     # Real live value, NBF1199 rid=11231, verified 2026-09-22: a bare `%Y-%m-%d %H:%M:%S` has
     # no fractional-second group to consume the trailing ".0", so it fails to parse this exactly

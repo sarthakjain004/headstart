@@ -131,7 +131,8 @@ def _labels(page: str) -> dict[str, str]:
     for match in pairs:
         label, value = _text(match.group("label")), _text(match.group("value"))
         if label and value:
-            labels[label.lower()] = value
+            # custom-field cells render "Employment Type: " — the colon is not the name
+            labels[label.lower().rstrip(":").strip()] = value
     return labels
 
 
@@ -366,12 +367,11 @@ class TaleoBEScraper(BaseScraper):
             ),
             "salary": self._salary_field(labels),
             # Both spellings are real, measured live (80-tenant sample): NBF1199 states
-            # "Workplace Arrangement:" (with the trailing colon _field matches literally —
-            # the colonless spelling was never observed and is deliberately not listed here),
-            # Covestic states "Location Type" (no colon).
+            # "Workplace Arrangement:" (its trailing colon dropped by `_labels`), Covestic
+            # states "Location Type".
             "workplace_arrangement": _field(
                 labels,
-                "Workplace Arrangement:",
+                "Workplace Arrangement",
                 "Location Type",
             ),
         }
