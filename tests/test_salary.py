@@ -1418,6 +1418,41 @@ def test_description_trailing_symbol_excludes_dollar_sign():
     assert from_description(text) is None
 
 
+def test_description_currency_and_period_marker_each_side():
+    # real uber phrasing (measured live 2026-09-22): "per year" sits BETWEEN the two figures,
+    # which every other range pattern requires to be adjacent — 87 of 263 stated Uber ranges
+    # were of exactly this shape and previously unparsed.
+    text = (
+        "For New York City, NY-based roles: The base salary range for this role is "
+        "USD $122,000 per year - USD $135,000 per year."
+    )
+    span = from_description(text)
+    assert span == SalarySpan(122000, 135000, "USD", "regex")
+
+
+def test_description_currency_and_period_marker_each_side_ambiguous_across_cities():
+    # Real uber phrasing: the same posting states genuinely different ranges per city. This is
+    # not a parser miss — it's the no-fabrication cascade rule correctly declining to guess
+    # which city's figure is "the" salary.
+    text = (
+        "For New York City, NY-based roles: The base salary range for this role is "
+        "USD $122,000 per year - USD $135,000 per year. For Seattle, WA-based roles: "
+        "The base salary range for this role is USD $110,000 per year - USD $122,000 per year."
+    )
+    assert from_description(text) is None
+
+
+def test_description_currency_and_period_marker_each_side_scoped_to_per_year():
+    # Deliberately scoped to "per year" only, not the full period-hint alternation (hour/day/
+    # month) — that wider shape hasn't been measured safe. A per-hour instance of the same
+    # currency-repeated-each-side structure stays unmatched by this pattern.
+    text = (
+        "For Chicago, IL-based roles: The base hourly rate range for this role is "
+        "USD $33.66 per hour - USD $35.58 per hour."
+    )
+    assert from_description(text) is None
+
+
 def test_guard_small_per_deal_commission_rejected_by_plausibility_alone():
     # A German "Provision" (commission) context-word guard was tried and reverted in this same
     # pass — see _FALSE_POSITIVE_CONTEXT's comment: it collided with the ordinary English word

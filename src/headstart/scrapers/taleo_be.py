@@ -5,8 +5,14 @@ its ``org`` code alone: the shard, instance and career-site id are all part of
 the address.  Listings are ten rows at a time and their relative ``next`` link
 needs the ``JSESSIONID`` set by the first request, so the walk is serial.
 
-The detail HTML, rather than the JSON-LD assumed by several third-party
-clients, supplies the job description and labelled metadata.
+The detail HTML — the tenant's own label/value spans and the ``cwsJobDescription`` anchor,
+rather than the ``JobPosting`` JSON-LD several third-party clients assume — supplies the job
+description and labelled metadata. That JSON-LD is not universally absent: measured live
+2026-09-22 on 3 boards, NBF1199 rid=11231 carries it (description byte-identical to this
+scraper's own ``cwsJobDescription`` read, so it rescues nothing there) while CLINIPACE rid=8094
+and YKHC rid=18951 carry neither JSON-LD nor a readable ``cwsJobDescription`` anchor — a second
+layout this scraper does not yet handle. So JSON-LD is a redundant path where this scraper
+already works, not a free fix for the layout it doesn't.
 """
 
 from __future__ import annotations
@@ -159,9 +165,19 @@ def _workplace_remote(value: str | None) -> bool | None:
 
 
 def _posted_at(value: str | None) -> str | None:
+    """Parse the tenant's own "Date Posted" label span. ``%Y-%m-%d %H:%M:%S.%f`` covers the
+    trailing ``.0`` seen on the live page — verified 2026-09-22, NBF1199 rid=11231 serves
+    ``"2026-08-12 00:00:00.0"`` for this exact field, which the plain-seconds format below
+    fails on (a bare ``%Y-%m-%d %H:%M:%S`` has no fractional-second group to consume the
+    ``.0``, so ``strptime`` raises rather than truncating)."""
     if not value:
         return None
-    for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%Y-%m-%d %H:%M:%S"):
+    for fmt in (
+        "%m/%d/%Y",
+        "%Y-%m-%d",
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%d %H:%M:%S",
+    ):
         try:
             return datetime.strptime(value.strip(), fmt).replace(tzinfo=UTC).isoformat()
         except ValueError:

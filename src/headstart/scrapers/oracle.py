@@ -66,27 +66,47 @@ _OFFSET_CEILING = 10_000
 _DETAIL_WORKERS = 16
 
 
-#: The workplace-type code meaning remote. Oracle states the workplace twice — a stable
-#: ``WorkplaceTypeCode`` and a *tenant-customised display label* — and only the code can be
-#: matched safely. Measured over 7,756 listing rows: ``ORA_REMOTE`` appears 116 times, and the
-#: labels sitting on it are "Remote" (107) **and "Work From Home" (9)**; likewise ``ORA_ON_SITE``
-#: (2,171) carries both "On-site" (2,116) and "Work From Office" (55). So a substring test against
-#: the label misses a spelling a tenant is free to invent, while the code is exact. The two are
-#: always present together (2,716 rows each), which is why the label is not consulted at all.
+#: The two workplace-type codes this repo has actually observed meaning something unambiguous.
+#: Oracle states the workplace twice — a stable ``WorkplaceTypeCode`` and a *tenant-customised
+#: display label* — and only the code can be matched safely. Measured over 7,756 listing rows:
+#: ``ORA_REMOTE`` appears 116 times, and the labels sitting on it are "Remote" (107) **and "Work
+#: From Home" (9)**; likewise ``ORA_ON_SITE`` (2,171) carries both "On-site" (2,116) and "Work
+#: From Office" (55). So a substring test against the label misses a spelling a tenant is free to
+#: invent, while the code is exact. The two are always present together (2,716 rows each), which
+#: is why the label is not consulted at all.
 _REMOTE_CODE = "ORA_REMOTE"
+_ON_SITE_CODE = "ORA_ON_SITE"
 
 
 def _remote(listed: dict, detail: dict, location: str | None) -> bool | None:
-    """Whether this posting is remote: the tenant's own answer, else the location guess.
+    """Whether this posting is remote: the tenant's own answer where unambiguous, else the
+    location guess.
 
-    Falling back to the location is safe rather than merely convenient. Of 2,716 rows stating a
-    workplace type, the two signals disagreed 109 times and **every one** was the tenant saying
-    remote where the location string did not — there is no measured case of a location guess
-    overriding an explicit on-site, which is the failure this ordering would otherwise risk.
+    Falling back to the location is safe rather than merely convenient when the tenant states
+    *no* code at all. Of 2,716 rows stating a workplace type, the two signals disagreed 109
+    times and **every one** was the tenant saying remote where the location string did not —
+    there is no measured case of a location guess overriding an explicit on-site, which is the
+    failure this ordering would otherwise risk.
+
+    A third case — a code that is neither ``ORA_REMOTE`` nor ``ORA_ON_SITE`` (``ORA_HYBRID``, or
+    any other value Oracle states) — used to fall through to a bare equality check and read as
+    ``False``, conflating "explicitly hybrid" with "explicitly on-site". That's wrong the same
+    way it would be wrong on workday/phenom/taleo_be, whose own ``_remote_from``/docstrings map
+    hybrid to ``None`` rather than ``False`` for exactly this reason: calling a hybrid posting
+    non-remote overstates what the Board said. Neither ``ORA_HYBRID`` nor a plausible
+    ``ORA_FULL_TIME_REMOTE`` variant was observed in a live sample of 289 detail payloads across
+    2 tenants (aqa.fa.us1, ejwl.fa.us2, 2026-09-22), so this maps *any* such stated-but-unknown
+    code to ``None`` rather than guessing what a specific one means — and, since the tenant DID
+    state something, this does not fall back to a location guess either: that guess is only
+    safe for a posting that stated nothing at all.
     """
     code = listed.get("WorkplaceTypeCode") or detail.get("WorkplaceTypeCode")
+    if code == _REMOTE_CODE:
+        return True
+    if code == _ON_SITE_CODE:
+        return False
     if code:
-        return code == _REMOTE_CODE
+        return None
     return is_remote(location)
 
 

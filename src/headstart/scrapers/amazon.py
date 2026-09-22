@@ -247,7 +247,7 @@ class AmazonScraper(BaseScraper):
             title = (r.get("title") or "").strip()
             if not native_id or not title:
                 continue
-            location = r.get("normalized_location") or r.get("location")
+            location = _location(r)
             jobs.append(
                 Job(
                     id=self.job_id(native_id),
@@ -272,16 +272,43 @@ class AmazonScraper(BaseScraper):
         return None
 
 
+def _parsed_locations(r: dict) -> list[dict]:
+    """Each ``locations[]`` entry decoded from its own JSON-encoded string, skipping the rare
+    unparseable one rather than failing the whole posting on it."""
+    parsed: list[dict] = []
+    for raw_loc in r.get("locations") or []:
+        try:
+            entry = json.loads(raw_loc)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(entry, dict):
+            parsed.append(entry)
+    return parsed
+
+
+def _location(r: dict) -> str | None:
+    """Every ``locations[]`` entry's own ``normalizedLocation``, joined — not just the
+    posting-level ``normalized_location``, which names only one of them.
+
+    Measured live 2026-09-22 on page 1 (100 postings): 40 have 2+ ``locations`` entries, and
+    ``normalized_location`` names only one — e.g. id 10555899 normalizes to "Tel Aviv-Yafo…"
+    while ``locations`` holds Haifa *and* Tel Aviv. Falls back to the posting-level fields for a
+    posting whose array is empty or unparseable."""
+    names: list[str] = []
+    for entry in _parsed_locations(r):
+        name = entry.get("normalizedLocation") or entry.get("location")
+        if name and name not in names:
+            names.append(name)
+    if names:
+        return "; ".join(names)
+    return r.get("normalized_location") or r.get("location")
+
+
 def _remote(r: dict, location: str | None) -> bool | None:
     """Whether this posting is remote: any ``VIRTUAL``-typed entry in its own ``locations``
     array, else the location-string fallback for a posting with none parseable."""
-    for raw_loc in r.get("locations") or []:
-        try:
-            parsed = json.loads(raw_loc)
-        except (TypeError, ValueError):
-            continue
-        if isinstance(parsed, dict) and parsed.get("type") == "VIRTUAL":
-            return True
+    if any(entry.get("type") == "VIRTUAL" for entry in _parsed_locations(r)):
+        return True
     return is_remote(location)
 
 
