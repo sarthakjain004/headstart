@@ -80,7 +80,7 @@ function loadApp(respond, cfg = {}) {
   const src = fs.readFileSync(APP_JS, 'utf8')
     + '\n;globalThis.__t = { go, goToPage, loadSets, runSet, page: () => page, jobCard, savedRow,'
     + ' salStop, SALARY_STOPS, stops: () => SALARY_STOPS, sync: syncSalarySlider, slide: salSlide,'
-    + ' dismiss: dismissRow, dismissed };';
+    + ' dismiss: dismissRow, dismissed, handleSetAction };';
   vm.runInNewContext(src, ctx);
   return { nodes, fetches, t: ctx.__t, ctx, docHandlers };
 }
@@ -136,6 +136,23 @@ test('switching Saved sets keeps the newer matches when the old request finishes
   assert.ok(nodes['matches-results'].innerHTML.includes('NEW_MATCH'));
   assert.ok(!nodes['matches-results'].innerHTML.includes('OLD_MATCH'));
   assert.ok(nodes['matches-msg'].textContent.includes('“new”'));
+});
+
+test('a refused email toggle stays on screen — the set re-run does not overwrite it', async () => {
+  // The reload after the POST re-ran the set without awaiting it, so its "N matches" landed
+  // one /search later on top of the refusal — an ✉ that did not turn on, and no reason why.
+  const later = ms => new Promise(r => setTimeout(r, ms));
+  const { nodes, t } = loadApp(url => {
+    if (url === '/sets') return [{ id: 's1', name: 'Backend', query: 'backend', emails: false }];
+    if (url.endsWith('/email')) return { error: 'email alerts are invite-only — ask for access' };
+    if (url.startsWith('/search?') && qs(url).q === 'backend') return later(10).then(() => [job('a')]);
+    return [];
+  });
+  await t.loadSets();
+  await later(20);
+  await t.handleSetAction('email', 's1');
+  await later(20);
+  assert.strictEqual(nodes['matches-msg'].textContent, 'email alerts are invite-only — ask for access');
 });
 
 test('late facets cannot replace newer counts or release an old search render', async () => {
