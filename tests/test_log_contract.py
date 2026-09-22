@@ -794,8 +794,8 @@ def _ledger_gap_no_meta(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
 def _ledger_gap_empty_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The store downloaded empty — distinct from the no-store case above, and it must be.
 
-    The join fetches the description store on a warn-only fallback, so an empty one here means a
-    lost download. Writing the ledger from it would mark every embedded Board gap-ful.
+    An empty store here means the store was never fetched (the join's fetch fails closed, so not
+    there). Writing the ledger from it would mark every embedded Board gap-ful.
     """
     from headstart.ingest import update_ledgers
 

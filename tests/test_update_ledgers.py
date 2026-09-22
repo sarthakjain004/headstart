@@ -109,8 +109,8 @@ def test_a_board_reaches_quarantine_only_after_five_consecutive_runs(tmp_path):
 #
 # The seam here mirrors the failures one: `gap` reads ids from two stores written by different
 # stages and has to pair them in the same key space. It also has to tell a *missing* description
-# store from an empty one — the join downloads it on a warn-only fallback, so getting that wrong
-# would mark every Board gap-ful from a failed download.
+# store from an empty one — getting that wrong would mark every Board gap-ful from a store that
+# was never fetched.
 
 
 def _liveness(tmp_path: Path, boards: dict[str, list[str]]) -> Path:

@@ -574,8 +574,13 @@ jobs:
           # writes it (update_descriptions) and reads it (embed_plan, via the repaired corpus).
           # Deliberately NOT under data/state/, whose glob scrape-plan also pulls — that would
           # ship ~174 MB toward a planner that has no use for it.
-          python -m headstart.ingest.state_fetch 'data/descriptions/*' || \
-            echo "::warning::no description store yet — first run after ADR-0050"
+          #
+          # Fails closed, like the line above. A genuine first run never fails here — a pattern
+          # the Hub lists nothing for returns 0 — so a non-zero exit is always a real failed
+          # fetch. The warn-only fallback this used to carry let the run go on from an empty
+          # store: update_descriptions then numbered its fragment 0001 for every ATS, and the
+          # merge's additive upload overwrote the store's own 0001s with it.
+          python -m headstart.ingest.state_fetch 'data/descriptions/*'
       - name: Download all scrape fragments
         # continue-on-error: take whatever fragments exist. If every scrape shard died before
         # uploading, the join still proceeds and degrades to a safe no-op — an empty data/jobs
