@@ -1457,6 +1457,47 @@ def p_freshteam(t, u):
     return (LIVE, n) if n is not None else (DEAD, None)
 
 
+def _pyjamahr_count(body):
+    """The envelope's `count` — the Board's whole total, whatever `limit` the page asked for.
+    None if the body is not that envelope."""
+    try:
+        count = json.loads(body).get("count")
+    except Exception:  # noqa: BLE001
+        return None
+    return count if isinstance(count, int) else None
+
+
+def p_pyjamahr(t, u):
+    # Two questions, cheapest first. The listing (`limit=1`, a ~200-byte envelope) says how many
+    # postings the Board has, and a non-zero count is proof of a tenant. A zero is NOT proof of
+    # anything: an unknown slug answers HTTP 200 with `count: 0`, byte-identical to a live Board
+    # with nothing open — measured 2026-09-22 on `notacompany123` against 75 real empty Boards.
+    # The board page tells those apart: `jobs.pyjamahr.com/{slug}` is a real 404 for a slug that
+    # is not a tenant and a 200 for every tenant, empty or not (757 of 757 census tenants 200;
+    # the three 404s in the Wayback roster were `images`, `&` and a `.js` asset, not tenants).
+    # No rate limit was found (~3,800 requests, up to 84 req/s, zero non-200s), so neither host
+    # is seeded in `_GATES`; the auto-gate covers a wall that appears later.
+    status, body = _get(
+        f"https://api.pyjamahr.com/api/career/jobs/?company_slug={t}&limit=1"
+    )
+    if status == "dns" or status in (404, 410):
+        return DEAD, None
+    if status != 200:
+        return UNKNOWN, None
+    n = _pyjamahr_count(body)
+    if n is None:
+        _note("body-unparseable")
+        return UNKNOWN, None
+    if n:
+        return LIVE, n
+    status, _ = _get(f"https://jobs.pyjamahr.com/{t}")
+    if status == 200:
+        return LIVE, 0
+    if status == "dns" or status in (404, 410):
+        return DEAD, None
+    return UNKNOWN, None
+
+
 _SF_PROBE_CAP = 256 * 1024  # capped stream: RMK RSS feeds trickle at ~30 KB/s
 
 
@@ -1989,6 +2030,7 @@ PROBES = {
     "jobvite": p_jobvite,
     "oracle": p_oracle,
     "phenom": p_phenom,
+    "pyjamahr": p_pyjamahr,
     "taleo_be": p_taleo_be,
     "taleo_enterprise": p_taleo_enterprise,
     "gem": p_gem,

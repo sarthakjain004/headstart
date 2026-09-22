@@ -174,3 +174,4 @@ supersedes it and note the supersession in both.
 | [0172](0172-a-single-source-scraper-declares-its-company.md) | A Single source scraper declares its company; the ledger cannot | 2026-09-21 |
 | [0173](0173-rebuild-the-search-indexes-with-the-table.md) | Rebuild the Search indexes with the table | 2026-09-21 |
 | [0174](0174-every-pipeline-publishes-current-search-indexes.md) | Every pipeline publishes current Search indexes | 2026-09-21 |
+| [0175](0175-a-pyjamahr-board-is-its-company-slug-discovered-from-the-vendors-sitemap.md) | A PyjamaHR Board is its company slug, discovered from the vendor's own jobs sitemap | 2026-09-22 |
