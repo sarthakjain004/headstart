@@ -147,6 +147,11 @@ _SINGLE_NUM = re.compile(r"(\d(?:[\d,]*\d)?(?:\.\d+)?)")
 
 
 def _num(s: str) -> int:
+    """:func:`_num_value`, rounded to a whole unit."""
+    return round(_num_value(s))
+
+
+def _num_value(s: str) -> float:
     """Parse a captured number in either US (comma=thousands, period=decimal: "50,000.00",
     "50,000") or European (period=thousands, comma=decimal: "50.000,00", "50.000", "14,00")
     convention. Found on personio's pass (2026-08-22): real German-formatted salary text was
@@ -169,13 +174,10 @@ def _num(s: str) -> int:
     place of the period before the cents) repeats the same separator character right up to the
     decimal group ("125,000,00"). Blindly converting every comma to a period would leave TWO
     periods in the string and crash `float()`; `rpartition` isolates the last group and strips
-    every earlier occurrence outright, regardless of how many there are."""
-    return round(_num_value(s))
+    every earlier occurrence outright, regardless of how many there are.
 
-
-def _num_value(s: str) -> float:
-    """:func:`_num` before its rounding — for a "k"/"L" figure, whose fraction ("28,5k",
-    "62.5k") belongs to the thousands and must not be rounded away first."""
+    Unrounded: a "k"/"L" figure's fraction ("28,5k", "62.5k") belongs to the thousands, so
+    callers that scale by a magnitude round only after scaling."""
     if "," in s and "." in s:
         if s.rindex(",") > s.rindex("."):
             s = s.replace(".", "").replace(",", ".")  # European: 1.234.567,89
