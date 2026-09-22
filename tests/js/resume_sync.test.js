@@ -470,6 +470,32 @@ test('turning it off only says "removed" when the account copy really went', () 
   });
 });
 
+test('switching off lands on the document as it stands NOW, not on the one the switch saw', () => {
+  /* The user keeps typing through the DELETE, and every command replaces the document object.
+     Writing the flags onto the one captured at click time left the live document at
+     `sync: true` — its next save queued a push that put the résumé back on the Account — and
+     stored the pre-typing words over what had been typed. */
+  let open = aDoc({ sync: true, rev: 1, name: 'before the switch' });
+  const { sync, repository, wire } = loadSync({
+    docs: [open], live: () => open, answers: [{ status: 200, body: { ok: true } }],
+  });
+  const switching = sync.setEnabled(open, false);
+  open = Object.assign({}, open, { name: 'typed while it was in flight' });
+  repository.save(open);
+  return switching.then(gone => {
+    assert.equal(gone, true);
+    assert.equal(open.sync, false, 'the document on screen still has sync on');
+    assert.equal(open.rev, 0);
+    const kept = repository.get('rmfk3n2abcd');
+    assert.equal(kept.name, 'typed while it was in flight', 'the in-flight edit was overwritten');
+    assert.equal(kept.sync, false);
+    sync.note(open);   // its next local save
+    return sync.flush('tab hidden');
+  }).then(() => {
+    assert.ok(!wire.calls.some(c => c.method === 'PUT'), 'the résumé went back onto the account');
+  });
+});
+
 test('a 404 on the way off counts as gone — the record is not there, which is what was asked', () => {
   const doc = aDoc({ sync: true, rev: 4 });
   const { sync, repository } = loadSync({

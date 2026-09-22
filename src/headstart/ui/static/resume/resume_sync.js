@@ -219,9 +219,12 @@
         self._onChange();
         return false;
       }
-      doc.sync = false;
-      doc.rev = 0;   // safe only now: there is nothing stored for the next push to be behind
-      self._save(doc);
+      /* The document as it stands NOW, as `_settle` does: typing through the DELETE replaced
+         `doc`, and flags written onto it left the live one at `sync: true` to push itself back. */
+      const mine = self._current(doc);
+      mine.sync = false;
+      mine.rev = 0;   // safe only now: there is nothing stored for the next push to be behind
+      self._save(mine);
       self._dirty = null;
       self._clearTimer();
       self._onMessage('Removed from your account.');
