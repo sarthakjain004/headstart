@@ -142,9 +142,11 @@ class RecruiteeScraper(BaseScraper):
         """Format Recruitee's structured salary, e.g. '50000-70000 EUR per year'. None if blank."""
         raw = raw or {}
         lo, hi = raw.get("min"), raw.get("max")
-        if not lo and not hi:
+        if not lo:
+            # blank, or a ceiling alone — `salary.extract` reads a lone figure as a floor, so
+            # "up to 5339 EUR month" would serve as a 64k/yr minimum (iCIMS refuses the same)
             return None
-        rng = f"{lo}-{hi}" if lo and hi else str(lo or hi)
+        rng = f"{lo}-{hi}" if hi else str(lo)
         return " ".join(
             str(x) for x in (rng, raw.get("currency"), raw.get("period")) if x
         )

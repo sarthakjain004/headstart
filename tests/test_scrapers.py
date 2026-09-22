@@ -3823,6 +3823,16 @@ def test_recruitee_salary_formatting():
     assert _salary({"min": 80000, "currency": "USD"}) == "80000 USD"  # one-sided range
 
 
+def test_recruitee_ceiling_only_salary_is_refused():
+    """A lone figure reads as a floor (`salary.extract` has no spelling for a ceiling), so
+    oralcare's "up to EUR 5,339 a month" would serve as a EUR 64k/yr floor."""
+    _salary = get_scraper("recruitee", "acme")._salary_field
+    assert (
+        _salary({"min": None, "max": "5339", "currency": "EUR", "period": "month"})
+        is None
+    )
+
+
 def _teamtailor_pages(monkeypatch, scraper, pages):
     """Serve `pages` (a list of item-id lists) from jobs.json, recording each URL requested.
 
