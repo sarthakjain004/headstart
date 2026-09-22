@@ -1,27 +1,47 @@
-"""Keka job-board scraper ({slug}.keka.com careers embed API).
+"""Keka job-board scraper ({slug}.keka.com careers API).
 
 Reverse-engineered from a browser HAR (no public docs; Keka's documented API is OAuth-only).
-The careers SPA loads jobs from an unauthenticated embed API in two steps:
-  1. GET /careers/api/organization/default/careerportalinfo  -> carries the tenant UUID
-  2. GET /careers/api/embedjobs/default/active/{tenant_uuid}  -> JSON array of active jobs
+Reading a board is one unauthenticated GET:
 
-The UUID in step 1 only rides along inside ``careersBackgroundPath`` (the portal's background-image
-URL), so a portal with no custom background image carries no UUID there — for those we fall back to
-the ``/careers`` page HTML, which embeds it. Keka also soft-errors at HTTP 200 with an HTML page
-("Invalid Tenant" for an unknown slug, "Forbidden Access" for a disabled portal) — either means no
-public board, so we yield no jobs rather than misreading the HTML.
+    /careers/api/jobs/default/active  -> JSON array of active jobs
+
+This replaced a two-step path that first read the tenant UUID out of
+``/careers/api/organization/default/careerportalinfo`` — where it only rides along inside
+``careersBackgroundPath``, the portal background-image URL, so a portal with no custom background
+carries no UUID there — falling back to the ``/careers`` page HTML, and only then fetched
+``/careers/api/embedjobs/default/active/{tenant_uuid}``. Those two steps are strictly worse and
+were losing whole Boards: measured over 150 random Hiring Boards (2026-09-22), they returned
+**nothing at all on 23 of them (15%)** — a background-less portal whose ``/careers`` page is a
+4.5 KB shell with no UUID in it defeats both sources at once, while ``careerportalinfo`` still
+names a real company. This endpoint served every one of those 23, and across the 125 where both
+answered it returned the same job count and the same fields, with the two-step never once
+winning. Do not reintroduce the UUID dance as a fallback; it has no measured case.
+
+This scraper was the **last** of the three call sites to migrate. ``check_liveness.p_keka`` and
+``mine_keka.py`` both moved to this endpoint on 2026-07-27 for the same reason, on a 25-of-25
+sample; ``p_keka`` also records where it comes from (the careers SPA's own call, read off
+``cdn.keka.com/careers/v/2026/scripts/app/app.min.js``:
+``$.ajax('/api/jobs/${apiPortalName}/active')``). Keep the three in step.
+Measurements: `docs/keka/2026-09-22_direct-jobs-endpoint-measurement.md`.
+
+Keka soft-errors at HTTP 200 with an HTML page ("Invalid Tenant" for an unknown slug,
+"Forbidden Access" for a disabled portal) — either means no public board, so we yield no jobs
+rather than misreading the HTML. Any *other* non-JSON 200 raises out of ``fetch`` rather than
+degrading to an empty list: a board that raises is a per-company failure and is not evicted,
+which is the safer read of a body we cannot classify.
+
+The payload carries 14 keys on every board measured, plus an optional ``jobNumber`` (3 of 8
+sampled). Every field :meth:`parse` reads is in the universal 14.
 """
 
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
-_UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 # Keka renders these at HTTP 200 (not 404/403): an unknown slug -> "Invalid Tenant", a disabled
 # careers portal -> "Forbidden Access". Either means there is no public board to read.
 _DEAD_MARKERS = ("Invalid Tenant", "Forbidden Access")
@@ -41,10 +61,6 @@ class KekaScraper(BaseScraper):
     ats = "keka"
     url_shape = r"https://[^.]+\.keka\.com/careers/jobdetails/\d+"
 
-    def __init__(self, slug: str, company: str | None = None) -> None:
-        super().__init__(slug, company)
-        self._tenant: str | None = None
-
     def job_url(self, native_id: str) -> str:
         return f"https://{self.slug}.keka.com/careers/jobdetails/{native_id}"
 
@@ -57,57 +73,27 @@ class KekaScraper(BaseScraper):
         `headstart.company_name` holds it and ADR-0114 restates it as the spec of record, and
         three copies of it had already drifted apart before this docstring stopped being a fourth.
 
-        :meth:`_tenant_uuid` GETs this same URL, but only for the portals whose
-        ``careerportalinfo`` omits the uuid — so for most Boards this is a genuinely new request,
-        not a duplicate one. Either way it costs a measured 0.12s (~2 min across a full run,
-        concurrent within each shard), which is cheaper than threading a response that may never
-        have been fetched out of ``fetch_raw`` and into ``fetch``.
+        Nothing else fetches this page — the listing no longer reads it for a tenant uuid — so it
+        is always a genuinely new request, costing a measured 0.12s (~2 min across a full run,
+        concurrent within each shard).
         """
         return f"https://{self.slug}.keka.com/careers"
 
     def url(self) -> str:
-        base = f"https://{self.slug}.keka.com/careers/api"
-        if self._tenant is None:
-            return f"{base}/organization/default/careerportalinfo"
-        return f"{base}/embedjobs/default/active/{self._tenant}"
+        return f"https://{self.slug}.keka.com/careers/api/jobs/default/active"
 
     def fetch_raw(self) -> Any:
-        # step 1: portal info. A soft-error HTML page (200) means no public board.
-        info = self._get()
-        marker = next((m for m in _DEAD_MARKERS if m in info), None)
+        body = self._get()
+        marker = next((m for m in _DEAD_MARKERS if m in body), None)
         if marker:
             # Not marked truncated: this module's own measurement (module docstring) is that the
             # marker *means* no public board, and truncating would hold a departed tenant's rows
             # in the index indefinitely. It is still worth a line — the two markers differ, and
             # "Forbidden Access" on a Board that was serving jobs yesterday is a portal someone
             # switched off, not a tenant that left.
-            self.note_unreadable_board("the portal-info JSON", f"a {marker!r} page")
+            self.note_unreadable_board("the active-jobs array", f"a {marker!r} page")
             return []
-        tenant = self._tenant_uuid(info)
-        if not tenant:
-            # The portal answered and did *not* say it was dead, so the Board is alive and its
-            # postings are simply unreachable without the uuid — a short list, not an empty one
-            # (ADR-0053), or `sync` reads every one of them as a delisting.
-            self.note_unreadable_board(
-                "an org uuid in careerportalinfo or the careers page", "neither"
-            )
-            self.mark_truncated(
-                "no org uuid on the portal — the jobs array was never requested"
-            )
-            return []
-        self._tenant = tenant
-        # step 2: the active-jobs array
-        return json.loads(self._get())
-
-    def _tenant_uuid(self, info: str) -> str | None:
-        """The org UUID: from careerportalinfo when a background image carries it, else from the
-        ``/careers`` page (portals with no custom background omit it from careerportalinfo)."""
-        match = _UUID_RE.search(info)
-        if match:
-            return match.group(0)
-        page = self._get(self.board_page())
-        match = _UUID_RE.search(page)
-        return match.group(0) if match else None
+        return json.loads(body)
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
