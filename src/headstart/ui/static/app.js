@@ -905,7 +905,7 @@ function draw(rows, target){
   rows.forEach(r => { if (r.id) drawnRows.set(r.id, r); });   // starring needs the row later
   el(target || 'results').innerHTML = capRows(rows, target).join('');
   setResultRows(rows.length, target);
-  if (!target) drawHidden(rows);
+  if (!target) drawHidden(pageRows = rows);
 }
 
 /* ---- Saved sets (ADR-0043): the Matches tab runs one live; "Save this search" creates
@@ -1099,7 +1099,9 @@ const dismissBtn = id => !id ? '' :
 
 // The count of what is hidden, beside the result count that no longer matches what is on
 // screen. Written on every draw, including when it is zero — a stale "3 hidden" is worse
-// than none.
+// than none. It counts the Search page on screen, never `drawnRows`: that holds every row of
+// every page and both lists drawn this session.
+let pageRows = [];
 function drawHidden(rows){
   const node = el('hidden'), box = el('results'); if (!node || !box) return;
   const n = rows.filter(r => r.id && dismissed.has(r.id)).length;
@@ -1110,7 +1112,7 @@ function drawHidden(rows){
 }
 function toggleDismissed(){
   revealDismissed = !revealDismissed;
-  drawHidden([...drawnRows.values()]);
+  drawHidden(pageRows);
 }
 function dismissRow(id){
   if (dismissed.has(id)) dismissed.delete(id); else dismissed.add(id);
@@ -1118,7 +1120,7 @@ function dismissRow(id){
   document.querySelectorAll('[data-dismiss]').forEach(b => {
     if (b.dataset.dismiss === id) b.closest('.card').classList.toggle('dismissed', dismissed.has(id));
   });
-  drawHidden([...drawnRows.values()]);
+  drawHidden(pageRows);
 }
 
 const CAN_STAR = !!el('saved-results');   // the Saved tab only renders when configured
