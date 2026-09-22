@@ -191,7 +191,7 @@ def test_fetch_raw_reads_a_live_but_jobless_tenants_blank_state():
         "We currently have no open positions.</div></div>"
     )
     scraper = BambooHRScraper("empty-board", fetcher=_FakeFetcher(blank))
-    assert scraper.fetch_raw() == {"page": blank, "details": {}}
+    assert scraper.fetch_raw() == {"page": blank, "details": {}, "departments": {}}
 
 
 # --- fetch_raw(): parse-drift guard (issue #534) ----------------------------------------------
@@ -218,7 +218,7 @@ def test_fetch_raw_still_reads_a_genuinely_empty_but_well_formed_board():
         "We currently have no open positions.</div></div>"
     )
     scraper = BambooHRScraper("empty-board", fetcher=_FakeFetcher(blank))
-    assert scraper.fetch_raw() == {"page": blank, "details": {}}
+    assert scraper.fetch_raw() == {"page": blank, "details": {}, "departments": {}}
 
 
 # --- fetch_raw(): the ADR-0017 tech gate (issue #533) ------------------------------------------

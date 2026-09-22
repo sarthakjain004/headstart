@@ -233,7 +233,9 @@ class BambooHRScraper(BaseScraper):
                 fetched = self.fan_out(ids, self._detail, workers=self.detail_workers)
             self.report_detail_gaps(fetched, "job details")
             details = {jid: d for jid, d in zip(ids, fetched) if d}
-        return {"page": page, "details": details}
+        # Computed once here for the gate above and threaded through for `parse` to reuse,
+        # rather than walking the same HTML's department blocks a second time per Board.
+        return {"page": page, "details": details, "departments": departments}
 
     def _opening_of(self, body: str) -> dict | None:
         try:
@@ -271,7 +273,14 @@ class BambooHRScraper(BaseScraper):
         page, details = (
             (raw["page"], raw["details"]) if isinstance(raw, dict) else (raw, {})
         )
-        departments = _department_map(page)
+        # `fetch_raw` already walked the department blocks once, for the gate — reuse that
+        # rather than doing it again here. Recomputed only for a caller that built `raw` by
+        # hand without a "departments" key (every real fetch_raw path always carries one).
+        departments = (
+            raw.get("departments")
+            if isinstance(raw, dict) and raw.get("departments") is not None
+            else _department_map(page)
+        )
         jobs: list[Job] = []
         for m in _POSITION.finditer(page):
             native_id = m.group("id")
