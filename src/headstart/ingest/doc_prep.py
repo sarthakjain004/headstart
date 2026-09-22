@@ -25,9 +25,9 @@ from headstart.ingest.derived_meta import derive
 from headstart.search import DOC_PREFIX
 
 _MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]+\)")  # [text](url) -> text
-_MD_SYNTAX = re.compile(
-    r"[*`#>]+"
-)  # emphasis / heading / quote markers (keep `_`: tech terms)
+# Emphasis / heading / quote markers (keep `_`: tech terms). A `#` right after a letter is kept
+# for the same reason: it is C# or F#, not a heading.
+_MD_SYNTAX = re.compile(r"[*`>]+|(?<![A-Za-z])#+")
 _WS = re.compile(r"\s+")
 
 # Token-length Buckets (ADR-0005): a Doc is sorted into the smallest Bucket that holds it,
