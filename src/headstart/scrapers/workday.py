@@ -703,7 +703,7 @@ class WorkdayScraper(BaseScraper):
         try:
             payload = response.json()
         except ValueError as exc:
-            diagnostic, transient = _listing_diagnostic(response, self._instance)
+            diagnostic, transient = _listing_diagnostic(response, self._parts()[1])
             if transient:
                 _log.info(
                     f"{self.board_key()}: {diagnostic}; retrying once via direct egress"
@@ -717,7 +717,7 @@ class WorkdayScraper(BaseScraper):
                 try:
                     payload = response.json()
                 except ValueError as retry_exc:
-                    diagnostic, _ = _listing_diagnostic(response, self._instance)
+                    diagnostic, _ = _listing_diagnostic(response, self._parts()[1])
                     classification, _ = _listing_class(
                         response, _listing_body(response)
                     )
@@ -807,7 +807,7 @@ class WorkdayScraper(BaseScraper):
         try:
             payload = response.json()
         except ValueError as exc:
-            diagnostic, transient = _listing_diagnostic(response, self._instance)
+            diagnostic, transient = _listing_diagnostic(response, self._parts()[1])
             if transient:
                 _log.info(
                     f"{self.board_key()}: {diagnostic}; retrying once via direct egress"
@@ -819,7 +819,7 @@ class WorkdayScraper(BaseScraper):
                 try:
                     payload = response.json()
                 except ValueError as retry_exc:
-                    diagnostic, _ = _listing_diagnostic(response, self._instance)
+                    diagnostic, _ = _listing_diagnostic(response, self._parts()[1])
                     classification, _ = _listing_class(
                         response, _listing_body(response)
                     )
