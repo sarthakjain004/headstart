@@ -122,7 +122,11 @@ _CURRENCY_CODE = re.compile(rf"\b({_CURRENCY_CODES})\b", re.IGNORECASE)
 # means every caller captures it reliably, not by accident of surrounding text — see
 # `_guess_currency`'s own handling of a `sym` value longer than one character.
 _SYM = r"(?:(?:CA|C)?\$|[£€₹])"
-_RANGE = re.compile(r"(\d(?:[\d,]*\d)?(?:\.\d+)?)\s*[-–]\s*(\d(?:[\d,]*\d)?(?:\.\d+)?)")
+# The optional symbol after the dash lets a free-text field state one per side ("$85,000 -
+# $135,000", zoho): without it the range failed and `_SINGLE_NUM` silently kept only the floor.
+_RANGE = re.compile(
+    rf"(\d(?:[\d,]*\d)?(?:\.\d+)?)\s*[-–]\s*{_SYM}?\s*(\d(?:[\d,]*\d)?(?:\.\d+)?)"
+)
 _SINGLE_NUM = re.compile(r"(\d(?:[\d,]*\d)?(?:\.\d+)?)")
 
 
@@ -397,12 +401,13 @@ def _field_darwinbox(value: str) -> SalarySpan | None:
 #: gem pass (2026-09-16): `compensationHtml` is machine-templated on 132/136 (97%) of the real
 #: sampled postings that state one at all — "The base pay range for this role is $X – $Y per
 #: year." (or "per hour"/"per month"), even when it sits inside a longer prose paragraph the
-#: employer wrote around it. `_field_generic`'s own `_RANGE` cannot read it: that pattern requires
-#: the second number to start immediately after the separator, and Gem's own template puts a
-#: currency symbol in front of EACH number ("$80,000 – $120,000"), so `_RANGE.search` fails to
-#: match at all and `_field_generic` falls through to `_SINGLE_NUM` — silently keeping the floor
-#: and discarding a ceiling that was right there in the text. `_GEM_RANGE` reads the symbol on
-#: each side instead, exactly like Gem states it.
+#: employer wrote around it. `_field_generic`'s own `_RANGE` could not read it when this was built:
+#: that pattern required the second number to start immediately after the separator, and Gem's own
+#: template puts a currency symbol in front of EACH number ("$80,000 – $120,000"), so
+#: `_field_generic` fell through to `_SINGLE_NUM` — silently keeping the floor and discarding a
+#: ceiling that was right there in the text. `_RANGE` now accepts that symbol, but `_GEM_RANGE`
+#: still earns its place: it reads the "to" separator and resolves a bare `$` (see below), neither
+#: of which `_field_generic` does.
 #:
 #: Symbols measured across the real sample: `$`, `CA$`/`C$`, `A$`, `€`, `£`, `₹` — each mapped
 #: explicitly rather than guessed. `_guess_currency`'s Tier-2 rule (any multi-char `$`-ending
@@ -486,15 +491,24 @@ _FIELD_PARSERS = {
 }
 
 
+def _symbol_currency(value: str, start: int) -> str | None:
+    """The currency a £/€/₹ symbol directly before ``value[start:]`` names (``_CURRENCY_SYM``,
+    Tier 2's own mapping). A bare "$" is not read: it stays as ambiguous here as it always was."""
+    sym = re.search(r"([£€₹])\s*$", value[:start])
+    return _CURRENCY_SYM[sym.group(1)] if sym else None
+
+
 def _field_generic(value: str) -> SalarySpan | None:
     """Best-effort for an ATS with no calibrated parser yet: a range or single figure plus
-    whatever currency code/period the string happens to state. Deliberately conservative — no
-    per-ATS quirk handling, so it under-extracts rather than mis-extracts."""
+    whatever currency code/period the string happens to state — an ISO code first, else a
+    £/€/₹ symbol on the figure itself. Deliberately conservative — no per-ATS quirk handling, so
+    it under-extracts rather than mis-extracts."""
     code_m = _CURRENCY_CODE.search(value)
     currency = code_m.group(1).upper() if code_m else None
     mult = _period_multiplier(value)
     m = _RANGE.search(value)
     if m:
+        currency = currency or _symbol_currency(value, m.start(1))
         lo, hi = _num(m.group(1)) * mult, _num(m.group(2)) * mult
         return _bounded(min(lo, hi), max(lo, hi), currency)
     single = _SINGLE_NUM.search(value)
@@ -505,6 +519,7 @@ def _field_generic(value: str) -> SalarySpan | None:
         # floor (code review, PR #238).
         if _states_a_ceiling_only(value, single.start(1)):
             return None
+        currency = currency or _symbol_currency(value, single.start(1))
         v = _num(single.group(1)) * mult
         return _bounded(v, None, currency)
     return None
