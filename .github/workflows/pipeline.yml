@@ -218,9 +218,22 @@ jobs:
           # longer than 6 attempts x 45 min of window plus ~90 min of work, so anything older
           # than 8 hours is stuck, not working, and is ignored.
           cutoff=$(python3 -c "import datetime as d; print((d.datetime.now(d.UTC) - d.timedelta(hours=8)).strftime('%Y-%m-%dT%H:%M:%SZ'))")
-          busy=$(gh run list -R "$GITHUB_REPOSITORY" --workflow=cleanup-index.yml --limit 20 \
-                   --json status,createdAt \
-                   --jq "[.[] | select(.status != \"completed\" and .createdAt > \"$cutoff\")] | length")
+          # Retried: one transient api.github.com failure here fails this step, which skips every
+          # downstream job including `chain` — and with no successor dispatched the cadence falls
+          # back to the cron (ADR-0093). Still fails the step once the retries are spent.
+          for attempt in 1 2 3 4; do
+            if busy=$(gh run list -R "$GITHUB_REPOSITORY" --workflow=cleanup-index.yml --limit 20 \
+                     --json status,createdAt \
+                     --jq "[.[] | select(.status != \"completed\" and .createdAt > \"$cutoff\")] | length"); then
+              break
+            fi
+            if [ "$attempt" -eq 4 ]; then
+              echo "::error::gh run list failed 4 times - cannot tell whether cleanup-index is active"
+              exit 1
+            fi
+            echo "gh run list failed (attempt ${attempt}/4); retrying"
+            sleep $((attempt * 15))
+          done
           if [ "$busy" != "0" ]; then
             # A warning, not an echo: standing down is normal but not free, and a run of them in
             # a row means a compaction is stuck. Silence is what let the mirror bug hide.
