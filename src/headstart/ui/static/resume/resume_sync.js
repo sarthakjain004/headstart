@@ -369,6 +369,10 @@
        exactly two rows — the account's, and this device's with its name saying so. */
     this._onMessage('Edited elsewhere — both copies kept, see Résumés.', true);
     this._onAdopt(stored, mine);
+    /* After the adopt, which can note the outgoing document once more on its way out. Whatever
+       was queued for this id is in the copy just kept aside; pushed, it carried the old `rev`,
+       was refused again, and kept a second "(this device)" copy of the account's own words. */
+    if (this._dirty && this._dirty.id === stored.id) { this._dirty = null; this._clearTimer(); }
     this._onChange();
     return null;
   };
