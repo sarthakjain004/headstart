@@ -932,8 +932,11 @@ class WorkdayScraper(BaseScraper):
         """This Job's served link, built on the slug's OWN instance — not
         :meth:`_page_url`'s *resolved* one (ADR-0153). That is the one deliberate difference
         :meth:`_page_url` documents: it fetches from wherever the tenant actually answers today,
-        while this keeps serving the host the slug names, migrated or not."""
-        base = self.slug.rstrip("/")
+        while this keeps serving the host the slug names, migrated or not. A query string or
+        fragment on the slug is dropped, as :meth:`_parts` drops it: the path appended after one
+        would sit inside it (gatesfoundation's ``?source=``) and load the board root instead."""
+        base = urlunsplit(urlsplit(self.slug)._replace(query="", fragment=""))
+        base = base.rstrip("/")
         return f"{base}{external_path}" if external_path else base
 
     def _page_url(self, external_path: str) -> str:

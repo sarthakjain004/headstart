@@ -2011,6 +2011,22 @@ def test_workday_parse():
     assert j.employment_type == "Full time"  # timeType
 
 
+def test_workday_job_url_drops_a_query_string_the_slug_carries():
+    """The live gatesfoundation ledger slug carries `?source=...`, which `_parts()` already
+    ignores. Appending the posting's path after it put the path inside the query string — a URL
+    that loads the board root with no JobPosting (checked live 2/2)."""
+    scraper = get_scraper(
+        "workday",
+        "https://gatesfoundation.wd1.myworkdayjobs.com/Gates?source=gatesfoundation.org",
+        "Gates Foundation",
+    )
+
+    assert scraper.job_url("/job/Nairobi-Kenya/Officer_B021772-1") == (
+        "https://gatesfoundation.wd1.myworkdayjobs.com/Gates/job/Nairobi-Kenya/"
+        "Officer_B021772-1"
+    )
+
+
 def test_workday_remote_falls_back_to_location():
     # remoteType is absent on ~99% of Workday listings (remote-audit LOG); the location
     # string then decides. A decisive remoteType still wins over the location string.
