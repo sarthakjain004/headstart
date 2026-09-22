@@ -389,7 +389,7 @@ def _profile_years(value: Any) -> int | None:
         return None
     try:
         years = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):  # OverflowError: JSON's 1e999 is inf
         return None
     return years if 0 <= years <= 60 else None
 

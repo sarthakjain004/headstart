@@ -745,6 +745,20 @@ def test_profile_get_save_roundtrip_and_counter_discipline(sets_app, hub, monkey
     assert client.get("/profile", base_url=_HTTPS).json["skills"] == "Python, Go"
 
 
+def test_a_hand_saved_overflowing_years_is_dropped_not_a_500(
+    sets_app, hub, monkeypatch
+):
+    # Flask reads a JSON 1e999 as float inf, which int() refuses with OverflowError.
+    client = _signed_in(sets_app, monkeypatch)
+    r = client.post(
+        "/profile",
+        data='{"query": "backend engineer", "years": 1e999}',
+        content_type="application/json",
+        base_url=_HTTPS,
+    )
+    assert r.status_code == 200 and r.json["years"] is None
+
+
 def test_hand_saved_query_is_scrubbed_like_the_extracted_one(
     sets_app, hub, monkeypatch
 ):
