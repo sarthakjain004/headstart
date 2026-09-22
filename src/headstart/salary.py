@@ -210,7 +210,12 @@ def _num(s: str) -> int:
 _CEILING_CONNECTOR_WINDOW = (
     15  # chars scanned before the number; mirrors _CONTEXT_WINDOW's naming
 )
-_UP_TO_CONNECTOR = re.compile(r"\bup\s*to\s*[$£€₹]?\s*$", re.IGNORECASE)
+# A currency code or a prefixed symbol may sit between "up to" and the figure too ("up to USD
+# 150,000", "Upto INR 13,00,000", "up to CA$120,000") — allowing only a one-character symbol let
+# those through, and the ceiling was stored as a floor.
+_UP_TO_CONNECTOR = re.compile(
+    rf"\bup\s*to\s*(?:(?:{_SYM}|(?:{_CURRENCY_CODES})\b)\s*){{0,2}}$", re.IGNORECASE
+)
 
 
 def _states_a_ceiling_only(text: str, lo_start: int) -> bool:
