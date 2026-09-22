@@ -25,8 +25,8 @@ changed three of those premises.
    published posting on the platform, `/{slug}/{job-slug}`, across every tenant: 7,801 URLs
    naming 680 tenants, refreshed daily, one 2.4 MB fetch. Every one of those 680 answered a live
    board page. The Wayback Machine's CDX index for the same host adds 77 more (3 of them hiring),
-   so the two together are the roster; Common Crawl's newest index (CC-MAIN-2026-39) names 22,
-   of which 2 are in neither — both live, both with nothing open.
+   so the two together are the roster; Common Crawl's last three years of indexes (33, from
+   `CC-MAIN-2023-40`) name 161, of which 10 are in neither — all live, one hiring.
 3. **An unknown slug is not an error.** The listing answers HTTP 200 with `count: 0` for a slug
    that is not a tenant — byte-identical to a live Board with nothing open (75 of the census).
    The board page is what tells them apart: a real 404 for a non-tenant, 200 for every tenant.
@@ -80,7 +80,7 @@ postings including the 102 whose `workplace_type` is `REMOTE`.
 - **Enumerate tenants from Common Crawl and Wayback alone**, the way every other path-style ATS
   is discovered. Rejected as the primary source: it finds what was once archived, and the vendor
   already publishes what is live today. Both stay as second sources because they name tenants
-  whose postings are not in the sitemap (77 and 2 on the day, respectively).
+  whose postings are not in the sitemap (77 and 10 on the day, respectively).
 - **Read the listing with DRF's default page of 10 and walk `next`.** The measured `limit`
   parameter has no ceiling (`999999999` returns the 643-row Board whole), so the scraper asks for
   1,000 and reads every known Board in one call — but it still follows `next` whenever the API
@@ -92,7 +92,7 @@ postings including the 102 whose `workplace_type` is `REMOTE`.
 ## Consequences
 
 - One new scraper, one probe, one miner, one feeder entry, one company-name pattern, one ledger
-  (760 rows: 759 live, 1 dead, 682 hiring, 8,894 postings on the day it landed). At ~25% tech by
+  (768 rows: 767 live, 1 dead, 683 hiring, 8,895 postings on the day it landed). At ~25% tech by
   the post-hoc gate this is a small provider; India is 78% of its rows.
 - `count` includes the internal rows the scraper drops, so the ledger's `jobs` figure and the
   shortfall check both count them. A Board whose every posting is internal is "hiring" in the
