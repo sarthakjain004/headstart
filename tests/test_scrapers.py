@@ -4722,6 +4722,56 @@ def test_rippling_employment_type_empty_label_does_not_fall_back():
     assert jobs[0].employment_type == ""
 
 
+def _rippling_multi_location_rows() -> list[dict]:
+    """One posting listed once per work location, as the live `rippling` Board lists
+    94486f41 (2026-09-22): same `uuid`, differing only in `workLocation`."""
+    u = "94486f41-6474-446a-b67a-c164e11354ea"
+    return [
+        {"uuid": u, "name": "Account Executive", "workLocation": {"label": label}}
+        for label in ("Pittsburgh, PA", "Cleveland, OH", "Pittsburgh, PA")
+    ]
+
+
+def test_rippling_merges_a_postings_location_rows_into_one_job():
+    rows = _rippling_multi_location_rows()
+    rows[0]["_detail"] = {}  # this row's detail was not fetched; the next row's was
+    rows[1]["_detail"] = {"description": {"role": "<p>Sell.</p>"}}
+    jobs = get_scraper("rippling", "acme", "Acme").parse(rows, SCRAPED_AT)
+    assert [(j.id, j.location) for j in jobs] == [
+        (
+            "rippling:acme:94486f41-6474-446a-b67a-c164e11354ea",
+            "Pittsburgh, PA; Cleveland, OH",
+        )
+    ]
+    assert jobs[0].description == "Sell."
+
+
+def test_rippling_fetches_one_detail_per_posting_not_per_location_row(monkeypatch):
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    scraper = get_scraper("rippling", "acme")
+    rows = _rippling_multi_location_rows()
+
+    class _Resp:
+        status_code = 200
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        @staticmethod
+        def json():
+            return rows
+
+    monkeypatch.setattr(scraper._fetcher, "fetch", lambda *a, **k: _Resp())
+    fetched: list[str] = []
+    monkeypatch.setattr(
+        scraper, "_detail", lambda uuid: fetched.append(uuid) or {"createdOn": "x"}
+    )
+    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+    assert fetched == ["94486f41-6474-446a-b67a-c164e11354ea"]
+    assert [j.posted_at for j in jobs] == ["x"]
+
+
 def test_unknown_ats_raises():
     with pytest.raises(ValueError):
         get_scraper("nonexistent", "foo")
