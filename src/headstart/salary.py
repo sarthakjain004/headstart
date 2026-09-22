@@ -519,10 +519,13 @@ _FIELD_PARSERS = {
 
 def _symbol_currency(value: str, start: int) -> str | None:
     """The currency a symbol directly before ``value[start:]`` names, resolved by Tier 2's own
-    :func:`_guess_currency` — so "CA$"/"HK$" name their dollar and a bare "$" reads as USD, the
-    same answer a description gets. Left None, a "$" range matched no salary bracket at all."""
+    :func:`_guess_currency` — so "CA$"/"HK$" name their dollar. A bare "$" stays None: measured on
+    the 2026-09-15 snapshot, ~15% of bare-"$" fields were Canadian, Australian or even stated
+    "MXN", and a wrong USD puts them in the USD bracket and sort, where None only leaves them out."""
     sym = re.search(rf"({_SYM})\s*$", value[:start])
-    return _guess_currency(sym.group(1), "") if sym else None
+    if not sym or sym.group(1) == "$":
+        return None
+    return _guess_currency(sym.group(1), "")
 
 
 def _field_generic(value: str) -> SalarySpan | None:
