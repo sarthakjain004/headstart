@@ -5035,10 +5035,13 @@ def test_successfactors_strip_cdata_unwraps_and_passes_through():
     assert _strip_cdata("plain text, no CDATA") == "plain text, no CDATA"
 
 
-def test_successfactors_fetch_raw_skips_the_detail_page_for_a_sitemal_covered_id(
+def test_successfactors_fetch_raw_reads_every_page_even_where_sitemal_covers_it(
     monkeypatch,
 ):
-    """The whole point of the surface: an id `/sitemal.xml` covers never reaches `_job_fields`."""
+    """The job page is the authority: `/sitemal.xml` states no posting date, and the page does
+    (CSB pages too, via `_csb_posted_at` — 8 of 9 tenants measured 2026-09-22). Skipping a page
+    the feed covered shipped `posted_at=None`, which `update_meta` then wrote over the stored
+    date. And with every page read, the feed is not fetched at all."""
     scraper = _successfactors_board(
         monkeypatch,
         sitemap=(
@@ -5051,23 +5054,69 @@ def test_successfactors_fetch_raw_skips_the_detail_page_for_a_sitemal_covered_id
         ),
         search=([], None),
         rss=([], {}, None),
-        sitemal={"1": {"title": "Engineer", "description": "d", "location": "Berlin"}},
+    )
+    sitemal_reads: list[int] = []
+    monkeypatch.setattr(
+        scraper,
+        "_sitemal_fields",
+        lambda: sitemal_reads.append(1) or {"1": {"title": "Engineer"}},
     )
     fetched: list[str] = []
     monkeypatch.setattr(
         scraper,
         "_job_fields",
-        lambda url: fetched.append(url) or {"title": "Analyst"},
+        lambda url: fetched.append(url) or {"title": "T", "posted_at": "2026-08-25"},
     )
 
     raw = scraper.fetch_raw()
 
-    assert fetched == ["https://careers.voith.com/job/Analyst/2/"], (
-        "only the id sitemal.xml didn't cover was fetched"
+    assert fetched == [
+        "https://careers.voith.com/job/Engineer/1/",
+        "https://careers.voith.com/job/Analyst/2/",
+    ]
+    assert [item["fields"]["posted_at"] for item in raw] == ["2026-08-25"] * 2
+    assert sitemal_reads == []
+
+
+def test_successfactors_fetch_raw_rescues_only_an_unreadable_page_from_sitemal(
+    monkeypatch,
+):
+    """`/sitemal.xml` fills a Job only where its page yielded nothing, and a rescued Job is not
+    lost: only the page neither source could read counts against the Board — out of every tech
+    id, since every one was fetched (ADR-0121)."""
+    scraper = _successfactors_board(
+        monkeypatch,
+        sitemap=(
+            "urlset",
+            "".join(
+                f"<loc>https://careers.voith.com/job/Engineer/{i}/</loc>"
+                for i in (1, 2, 3)
+            ),
+            None,
+        ),
+        search=([], None),
+        rss=([], {}, None),
+        sitemal={
+            "1": {"title": "Feed title", "description": "feed"},
+            "2": {"title": "Engineer", "description": "feed", "location": "Berlin"},
+        },
     )
+    monkeypatch.setattr(
+        scraper,
+        "_job_fields",
+        lambda url: {"title": "Page title"} if url.endswith("/1/") else None,
+    )
+
+    raw = scraper.fetch_raw()
+
     by_id = {item["id"]: item["fields"] for item in raw}
-    assert by_id["1"]["description"] == "d"  # served straight from the sitemal cache
-    assert by_id["2"]["title"] == "Analyst"  # the fallback fetch's own result
+    assert by_id["1"]["title"] == "Page title"  # the page wins where it read
+    assert by_id["2"]["description"] == "feed"  # the feed rescued the unreadable page
+    assert by_id["3"] is None  # neither source had it
+    assert (
+        scraper.truncated
+        == "1/3 job pages unreadable — those Jobs are listed but unbuilt"
+    )
 
 
 def test_successfactors_fetch_raw_falls_back_whole_when_sitemal_is_unavailable(
