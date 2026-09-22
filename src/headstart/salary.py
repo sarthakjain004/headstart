@@ -821,6 +821,28 @@ _BARE_RANGE_SYMBOL_EACH = re.compile(
     re.IGNORECASE,
 )
 
+# "USD $122,000 per year - USD $135,000 per year" — the code+symbol prefix repeats on EACH side
+# AND "per year" sits between the two figures. Checked BEFORE _LABELED, same reason
+# _scan_min_max_band/_scan_level_bands are: _LABELED's own for-clause word-consumption (the
+# lookahead that lets it swallow filler words like "for this role is" only blocks a word
+# directly GLUED to a currency symbol, not one separated by a space) quietly eats the bare code
+# "USD" as an ordinary filler word, then its symbol+number capture matches "$122,000" alone —
+# a real, complete-looking floor with no ceiling, which `_resolve` accepts as resolved (a
+# single span, however incomplete) and the cascade stops there, never reaching a lower tier.
+# Real, common Uber phrasing (uber pass, 2026-09-22): 87 of 263 stated ranges on a full board
+# sweep used exactly this shape and were previously unparsed — not "found nothing" but silently
+# truncated to a floor-only figure with a dropped ceiling. Scoped to the literal "per year"
+# phrase measured, not the full `_PERIOD_HINT` alternation, since the wider shape (per
+# hour/day/month with a period word on each side) hasn't been observed or measured safe.
+_RANGE_PERIOD_EACH = re.compile(
+    rf"(?:(?:{_CURRENCY_CODES})\s+)?(?P<sym>{_SYM})\s*"
+    r"(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?\s*per\s+year"
+    r"\s*[-–—]\s*"
+    rf"(?:(?:{_CURRENCY_CODES})\s+)?(?P<sym2>{_SYM})?\s*"
+    r"(?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?\s*per\s+year",
+    re.IGNORECASE,
+)
+
 # "minimum annual salary of $X, a midpoint of $Y, and a maximum salary of $Z" / "Minimum $X -
 # Maximum $Y" — a real, explicit min/max compensation-band disclosure (ashby pass: 23 real
 # occurrences, jobber + xero — a genuine range stated across two labeled endpoints, not two
@@ -1165,11 +1187,16 @@ def from_description(
     envelope — see :func:`_scan_level_bands`), an explicit "minimum $X ... maximum $Y" band
     (:func:`_scan_min_max_band` — also checked before `_LABELED`, for the same reason: `_LABELED`
     would otherwise independently match "minimum...salary of $X" and "maximum salary of $Y" as
-    two separate, mutually-inconsistent spans and decline the whole thing as ambiguous), LPA (a
+    two separate, mutually-inconsistent spans and decline the whole thing as ambiguous), a
+    currency-and-period marker repeated on each side of the range ("USD $X per year - USD $Y per
+    year", `_RANGE_PERIOD_EACH` — tried before `_LABELED` in the main tuple for a related but
+    distinct reason: `_LABELED`'s own for-clause word-consumption quietly swallows the bare
+    currency code as innocuous filler text, then matches only the floor, and a single floor-only
+    span reads as "resolved" rather than falling through), LPA (a
     distinctive, unambiguous marker when present), an explicit "Salary:"/"Compensation:"-style
     label, a bare currency-symbol range, a
-    bare number range anchored by a trailing currency code or symbol, an anchored "between $X and
-    $Y" phrase, then — last, lowest-priority of all — a bare hourly/daily rate with no label at all
+    bare number range anchored by a trailing currency code or symbol, an anchored
+    "between $X and $Y" phrase, then — last, lowest-priority of all — a bare hourly/daily rate with no label at all
     ("$X/hour" or "$X per day" standing alone). "Between" runs before the fully bare hourly/daily
     pattern but after everything else, because it tends to describe a narrower sub-detail ("new
     hires usually start between $X and $Y") rather than the headline figure a labeled or bare
@@ -1193,6 +1220,7 @@ def from_description(
         *(
             _scan(text, p)
             for p in (
+                _RANGE_PERIOD_EACH,
                 _LABELED,
                 _BARE_RANGE,
                 _BARE_RANGE_CODE,
