@@ -2232,8 +2232,13 @@ def main():
         )
 
     # Whatever is still unknown after the last pass is recorded as such (re-probed next run),
-    # never silently dropped.
+    # never silently dropped — except over a `live` verdict, which is kept as-is (ADR-0177):
+    # `unknown` leaves the Scrapable set and `index prune` would evict the Board's rows outright.
+    # Its stale `checked_at` still puts it back in the next run's probe list.
     for ats, tenant, url in items:
+        prior = verdicts[ats].get(tenant)
+        if prior is not None and prior.status == LIVE:
+            continue
         verdicts[ats][tenant] = liveness.Verdict(
             ats, tenant, url, UNKNOWN, None, today_iso
         )
