@@ -27,6 +27,13 @@ venv/
 !.claude/skills/
 CLAUDE-FABLE-5.md
 
+# Other agent tools' local config, same reasoning as `.claude/` above. `.agents/skills/` is not
+# un-ignored the way `.claude/skills/` is: it is a byte-identical copy of it, and a second tracked
+# copy is a doc that drifts. `AGENTS.md` is tracked, but as a symlink to CLAUDE.md for the same
+# reason — it was a real file, 76 lines behind, and being read as if current.
+.agents/
+.codex/
+
 # HAR captures — large and contain browser session data; keep local only
 HAR_Analysis/
 
