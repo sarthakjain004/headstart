@@ -1720,3 +1720,28 @@ def test_description_ca_dollar_and_trailing_cad_code_agree():
     assert from_description(text, ats="greenhouse") == SalarySpan(
         105_000, 145_000, "CAD", "regex"
     )
+
+
+def test_description_prefixed_dollar_symbols_name_their_currency():
+    # Real served text (recruitee:rebootmonkey, greenhouse:sayari): `_SYM` folded only the CA/C
+    # prefix into the symbol, so "HK$"/"S$"/"A$"/"NZ$" were captured as a bare "$" and served as
+    # USD — HK$370,000 read as a $370k job, ~7.8x its value — even with "(HKD annual)" beside it.
+    assert from_description(
+        "Compensation & Benefits HK$370,000-490,000/year (HKD annual)"
+    ) == SalarySpan(370_000, 490_000, "HKD", "regex")
+    assert from_description("Salary: S$165,000 to S$185,000") == SalarySpan(
+        165_000, 185_000, "SGD", "regex"
+    )
+    assert from_description(
+        "The salary range is A$86,000 - A$100,000 per year"
+    ) == SalarySpan(86_000, 100_000, "AUD", "regex")
+    assert from_description("Salary: AU$120,000 - AU$140,000") == SalarySpan(
+        120_000, 140_000, "AUD", "regex"
+    )
+    assert from_description("Salary: NZ$75,000 - NZ$85,000") == SalarySpan(
+        75_000, 85_000, "NZD", "regex"
+    )
+    # "US$" must not be read as "S$" with a stray "U" in front of it.
+    assert from_description("Salary: US$120,000 - US$140,000") == SalarySpan(
+        120_000, 140_000, "USD", "regex"
+    )
