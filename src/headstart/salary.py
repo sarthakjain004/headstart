@@ -30,7 +30,9 @@ _MAX_PLAUSIBLE_ANNUAL = {
     "EUR": 750_000,
     "CAD": 900_000,
     "AUD": 900_000,
-    "INR": 20_00_00_000,  # 2 crore
+    "INR": 3_00_00_000,  # 3 crore — was 20 crore under a "2 crore" comment. Genuine bands reach
+    # ~2.9 crore (zwayam:epam, ashby:lambda); above 3 the served rows were misreads (₹4-8 crore
+    # zwayam bands, annual figures typed as "INR 1 MONTH").
     "HKD": 6_000_000,
     "SEK": 6_000_000,
     "PLN": 3_000_000,

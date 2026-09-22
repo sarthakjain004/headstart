@@ -163,9 +163,14 @@ def test_field_darwinbox_already_absolute_rupees_monthly():
     ) == SalarySpan(240_000, 300_000, "INR", "field")
 
 
-def test_field_darwinbox_magnitude_threshold_boundary():
+def test_field_darwinbox_magnitude_threshold_boundary(monkeypatch):
     # _DARWINBOX_LAKHS_THRESHOLD sits in a wide, evidence-based gap (real lakhs values top out at
     # 19, real absolute values start at 10,000) — exercise the exact 1,000 boundary mechanically.
+    # 999 lakh is 9.99 crore, above the real 3-crore INR ceiling, so the ceiling is lifted here to
+    # keep this about the magnitude branch rather than the bound.
+    from headstart import salary
+
+    monkeypatch.setitem(salary._MAX_PLAUSIBLE_ANNUAL, "INR", 10**9)
     # Just below: treated as lakhs (x100,000) -> a large but in-bounds figure.
     assert from_field("INR 999 (Annual)", "darwinbox") == SalarySpan(
         99_900_000, 99_900_000, "INR", "field"
@@ -1787,3 +1792,17 @@ def test_num_single_digit_decimal_comma_is_a_decimal():
     assert from_description("Salary: €13,5 - €15 per hour") == SalarySpan(
         29_120, 31_200, "EUR", "regex"
     )
+
+
+def test_inr_ceiling_is_3_crore():
+    # Real served rows: ashby:lambda (₹1.66-2.21 crore) and zwayam:epam (up to ₹2.91 crore) are
+    # genuine; zwayam's ₹4-8 crore "Data Scientist"/"AVP" bands and smartrecruiters' annual
+    # figures typed as "INR 1 MONTH" (₹3-5.6 crore once annualized) are not.
+    assert from_field("16600000-22100000 INR 1 YEAR", "ashby") == SalarySpan(
+        16_600_000, 22_100_000, "INR", "field"
+    )
+    assert from_field("4160000-29120000 INR", "zwayam") == SalarySpan(
+        4_160_000, 29_120_000, "INR", "field"
+    )
+    assert from_field("40000000-70000000 INR", "zwayam") is None
+    assert from_field("2500000-4640000 INR 1 MONTH", "smartrecruiters") is None
