@@ -162,7 +162,9 @@ def _master_command(
         return [(master, f"Which id? e.g. /{command} 12345")]
 
     if command == "allow":
-        waiting = registry.pending.pop(argument, None)
+        # Read, not popped, until the record is written: `main` saves the registry even when
+        # this raises, so popping first would drop the request with neither side told.
+        waiting = registry.pending.get(argument)
         # A denied chat is deliberately not in `pending` — /deny removed it and its /start is
         # answered without re-queueing, so requiring a pending entry here made ADR-0038's
         # "the master can change their mind" unreachable.
@@ -172,8 +174,11 @@ def _master_command(
         # this `/allow` next run. Minting a second record would reset that person's
         # Watermark to now — silently skipping everything since — and rotate the
         # unsubscribe token in messages already delivered.
+        # `reenable`: the master's approval is the explicit enable that alone may clear the
+        # opt-out a /stop or /revoke left (ADR-0142) — without it, re-approval always raises.
         if store.get(chat_subscription_id(argument)) is None:
-            store.put(Subscription.for_chat(argument))
+            store.put(Subscription.for_chat(argument), reenable=True)
+        registry.pending.pop(argument, None)
         if argument in registry.denied:
             registry.denied.remove(
                 argument
@@ -215,7 +220,9 @@ def _set_query(
         if sub
         else Subscription.for_chat(chat_id, argument)
     )
-    store.put(updated)
+    # With no record this can only be the master (anyone else is a stranger), and their own
+    # /q after a /stop is the explicit enable ADR-0142 asks for before clearing the opt-out.
+    store.put(updated, reenable=sub is None)
     return [(chat_id, f"Searching for: {updated.query}")]
 
 

@@ -298,6 +298,77 @@ def test_allow_still_rejects_an_id_that_never_asked():
     assert store.get(chat_subscription_id("99999")) is None
 
 
+@pytest.fixture
+def hub_store(monkeypatch):
+    """The real Store over a dict Hub. `_Store` above does not model the opt-out marker every
+    removal leaves (ADR-0142), which is how a re-approval that raised on every attempt stayed
+    green here."""
+    from headstart.alerts import store as st
+
+    files: dict[str, bytes] = {}
+    monkeypatch.setattr(st, "_read", lambda repo, path, token: files[path])
+    monkeypatch.setattr(st, "_is_absent", lambda exc: isinstance(exc, KeyError))
+
+    def commit(repo, changes, expected, token, revision=None):
+        if any(files.get(path) != before for path, before in expected.items()):
+            raise st.StoreConflict("concurrent edit")
+        for path, data in changes.items():
+            if data is None:
+                files.pop(path, None)
+            else:
+                files[path] = data
+
+    monkeypatch.setattr(st, "_commit", commit)
+    return st.Store("acme/subs", "tok")
+
+
+@pytest.mark.parametrize(
+    "stopped_by", [(ADA, "/stop"), (MASTER, f"/revoke {ADA}")], ids=["stop", "revoke"]
+)
+def test_a_stopped_chat_can_be_approved_again(hub_store, stopped_by):
+    # The /stop reply promises "Send /start to set it up again", and the master's /allow is
+    # the explicit enable that alone may clear the opt-out marker (ADR-0142).
+    registry = Registry(master=MASTER)
+    bot.handle(_update(ADA, "/start"), registry, hub_store)
+    bot.handle(_update(MASTER, f"/allow {ADA}"), registry, hub_store)
+    bot.handle(_update(*stopped_by), registry, hub_store)
+    assert hub_store.get(chat_subscription_id(ADA)) is None
+
+    bot.handle(_update(ADA, "/start"), registry, hub_store)
+    replies = bot.handle(_update(MASTER, f"/allow {ADA}"), registry, hub_store)
+
+    assert [chat for chat, _ in replies] == [MASTER, ADA]
+    assert hub_store.get(chat_subscription_id(ADA)) is not None
+    assert not hub_store.opted_out(chat_subscription_id(ADA))
+    assert ADA not in registry.pending
+
+
+def test_the_master_can_set_a_search_again_after_their_own_stop(hub_store):
+    registry = Registry(master=MASTER)
+    bot.handle(_update(MASTER, "/q backend"), registry, hub_store)
+    bot.handle(_update(MASTER, "/stop"), registry, hub_store)
+
+    replies = bot.handle(_update(MASTER, "/q infra"), registry, hub_store)
+
+    assert replies == [(MASTER, "Searching for: infra")]
+    assert hub_store.get(chat_subscription_id(MASTER)).query == "infra"
+
+
+def test_an_allow_the_store_refuses_leaves_the_request_waiting():
+    # `main` saves the registry even when `handle` raises, so a request popped before the
+    # write failed would be gone with nobody told — the master's /pending must still list it.
+    class _Refusing(_Store):
+        def put(self, sub, *, reenable=False):
+            raise RuntimeError("Hub unavailable")
+
+    registry = Registry(master=MASTER, pending={ADA: Pending(ADA, "ada_l", "Ada")})
+
+    with pytest.raises(RuntimeError):
+        bot.handle(_update(MASTER, f"/allow {ADA}"), registry, _Refusing())
+
+    assert ADA in registry.pending
+
+
 def _wire_main(monkeypatch, updates, registry=None, store=None):
     """`main`'s collaborators replaced: the Hub-backed registry, the store, and polling.
 
