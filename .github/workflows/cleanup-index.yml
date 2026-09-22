@@ -207,9 +207,18 @@ jobs:
         continue-on-error: true
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        #
+        # Guarded like the lancedb upload below (ADR-0129), and for the same reason: `--delete
+        # "*"` reaps every fragment a pipeline merge commits after this fetch, and this step
+        # uploads before the lancedb verify could notice that merge. Its own `--file`, because the
+        # lancedb record at the default path is still waiting for its verify. A refusal only skips
+        # this compaction, which is what the flag above already allows.
         run: |
+          guard=data/.descriptions_write_guard.json
+          python -m headstart.ingest.state_guard record data/descriptions --file "$guard"
           python -m headstart.ingest.state_fetch 'data/descriptions/*' || exit 0
           python -m headstart.ingest.update_descriptions --compact
+          python -m headstart.ingest.state_guard verify data/descriptions --file "$guard"
           hf upload "$HF_DATASET" data/descriptions data/descriptions \
             --repo-type dataset --delete "*" \
             --commit-message "cleanup: compact the description store (ADR-0050)"
