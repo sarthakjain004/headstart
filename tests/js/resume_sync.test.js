@@ -75,7 +75,7 @@ function loadSync(options) {
     schedule: (fn, ms) => { timers.push({ fn, at: clock.at + ms }); return timers.length - 1; },
     cancel: handle => { if (timers[handle]) timers[handle].cancelled = true; },
     onMessage: (text, sticky) => messages.push({ text, sticky }),
-    onAdopt: (incoming, mine) => adopted.push({ incoming, mine }),
+    onAdopt: (incoming, mine) => { adopted.push({ incoming, mine }); if (opts.onAdopt) opts.onAdopt(incoming, mine); },
   });
   /* Run every timer that is due at the current clock, the way a browser would. */
   const tick = ms => {
@@ -264,6 +264,27 @@ test('after a conflict, what was typed during the refused push is not pushed aga
     assert.equal(wire.calls.length, 1, 'the pre-conflict document was pushed again');
     assert.equal(repository.all().filter(d => /this device/.test(d.name)).length, 1,
       'one conflict kept two copies aside');
+  });
+});
+
+test('a local save still waiting when the conflict lands cannot overwrite the account copy', () => {
+  /* Review pass 1: the editor's adopt flushes its debounced save of the OUTGOING document — same
+     id — so the browser's copy of the account document was the local text again, and a reload
+     opened it at the old revision. The local words are already in the "(this device)" copy. */
+  const theirs = aDoc({ rev: 9, name: 'written on the desktop' });
+  const open = aDoc({ rev: 1, name: 'written on the laptop' });
+  let repo;
+  const { sync, repository } = loadSync({
+    docs: [open], live: () => open,
+    answers: [{ status: 409, body: { error: 'changed elsewhere', stored: theirs } }],
+    onAdopt: () => repo.save(Object.assign({}, open, { name: 'debounced local save' })),
+  });
+  repo = repository;
+  sync.note(open);
+  return sync.flush('tab hidden').then(() => {
+    const kept = repository.all().find(d => d.id === theirs.id);
+    assert.equal(kept.name, 'written on the desktop', 'the flush overwrote the account copy');
+    assert.equal(kept.rev, 9);
   });
 });
 
