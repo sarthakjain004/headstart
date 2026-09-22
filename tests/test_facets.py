@@ -404,3 +404,23 @@ def test_the_account_clause_narrows_every_count_including_the_total():
     assert all("NOT (lower(id) LIKE 'lever:x:%')" in (c or "") for c in table.seen), (
         "every count, not just the total"
     )
+
+
+def test_the_account_clause_narrows_the_blocking_answer_too():
+    """A zero total under the "Following" toggle must be blamed on the population the user is
+    actually looking at. Recounted over the whole index instead, dropping `max_years` recovers
+    50 unfollowed Lever rows — so it was named, and removing it still showed nothing, while
+    dropping `ats` would have recovered the 3 followed Greenhouse jobs."""
+    followed = "lower(id) LIKE 'greenhouse:acme:%'"
+
+    def rule(where):
+        where = where or ""
+        if followed in where:
+            return 0 if "ats = 'lever'" in where else 3
+        return 50 if "ats = 'lever'" in where and "min_years" not in where else 0
+
+    out = facets.counts(
+        _CountingTable(rule), *_kwargs(ats="lever", max_years=2), extra_where=followed
+    )
+    assert out["total"] == 0
+    assert out["blocking"] == "ats"
