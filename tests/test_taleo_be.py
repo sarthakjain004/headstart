@@ -234,6 +234,22 @@ def test_posted_at_falls_back_to_the_json_ld_date_posted(monkeypatch):
     assert scraper.fetch()[0].posted_at == "2026-08-12T00:00:00+00:00"
 
 
+def test_salary_bounds_drop_their_bonus_tail_before_joining():
+    """ICANN states each bound as "40,000.00 + 10% Bonus + Benefits" (live 2026-09-22);
+    joined whole, no range survives and `salary.extract` keeps only the floor."""
+    from headstart import salary
+
+    scraper = TaleoBEScraper(URL, "ICANN")
+    labels = {
+        "targeted base salary low:": "40,000.00 + 10% Bonus + Benefits",
+        "targeted base salary high:": "55,000.00 + 10% Bonus + Benefits",
+    }
+    field = scraper._salary_field(labels)
+    assert field == "40,000.00 - 55,000.00"
+    span = salary.extract(field, None, "taleo_be")
+    assert (span.min_annual, span.max_annual) == (40_000, 55_000)
+
+
 def test_posted_at_parses_the_fractional_second_shape_the_live_page_serves():
     # Real live value, NBF1199 rid=11231, verified 2026-09-22: a bare `%Y-%m-%d %H:%M:%S` has
     # no fractional-second group to consume the trailing ".0", so it fails to parse this exactly
