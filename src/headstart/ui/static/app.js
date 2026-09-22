@@ -1180,6 +1180,9 @@ function paintStars(){
     const on = savedByJob.has(b.dataset.star);
     b.classList.toggle('on', on);
     b.setAttribute('aria-pressed', on);
+    // The same two strings starBtn draws, or a starred job still announces "Save this job".
+    b.setAttribute('title', on ? 'Remove from saved' : 'Save this job');
+    b.setAttribute('aria-label', on ? 'Remove this job from saved' : 'Save this job');
     b.textContent = on ? '★' : '☆';
   });
 }
