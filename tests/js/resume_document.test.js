@@ -194,6 +194,30 @@ test('undo and redo walk the same path back and forward', () => {
   assert.equal(store.get().content[job.id].role, 'Barista');
 });
 
+test('undo and redo step through the words, never the account copy’s switch or revision', () => {
+  /* The sync layer writes both onto the live document in place — the switch going on, a push
+     landing — so every snapshot on the stack still held the older values. Undo past a push
+     offered a revision the Account already held and conflicted with itself; undo past the
+     switch turned it off on screen with the copy still on the Account. */
+  const ctx = load(MODEL);
+  const { Commands, flatten } = ctx.ResumeDocument;
+  const store = new ctx.ResumeDocument.Store(null);
+  store.adopt(sample(ctx));
+  const job = flatten(store.get()).filter(n => n.type === 'work_entry')[0];
+  store.dispatch(Commands.setContent(job.id, { role: 'Barista' }));
+  store.get().sync = true;
+  store.get().rev = 2;
+  store.undo();
+  assert.equal(store.get().content[job.id].role, 'Cashier');
+  assert.equal(store.get().rev, 2, 'undo put the revision behind one the account already holds');
+  assert.equal(store.get().sync, true, 'undo switched sync off with the copy still on the account');
+  store.get().rev = 3;
+  store.redo();
+  assert.equal(store.get().content[job.id].role, 'Barista');
+  assert.equal(store.get().rev, 3, 'redo put the revision behind one the account already holds');
+  assert.equal(store.get().sync, true);
+});
+
 test('typing collapses into one undo step, and a different field starts a new one', () => {
   const ctx = load(MODEL);
   const { Commands, flatten } = ctx.ResumeDocument;

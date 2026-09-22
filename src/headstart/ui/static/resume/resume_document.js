@@ -159,7 +159,7 @@
          particular résumé, because storing one reverses a promise ADR-0041 made and that is not
          something to inherit silently. `rev` is what the store's conflict check compares — the
          revision the account copy is at, 0 while there is no account copy. Neither is content:
-         no Command touches them and they never enter the undo stack. */
+         no Command touches them and undo and redo never move them. */
       sync: false,
       rev: 0,
     };
@@ -625,6 +625,13 @@
     return next;
   };
 
+  /* `sync` and `rev` are the Account's, not the words' (see the Builder), and the sync layer
+     writes them onto the live document in place — so a snapshot on either stack holds values
+     that may since have moved. Restoring those put `rev` behind a push the server had already
+     accepted, and the next push conflicted with itself. A step keeps them as they stand now. */
+  const keepAccount = (snapshot, live) =>
+    Object.assign({}, snapshot, { sync: live.sync, rev: live.rev });
+
   Store.prototype.canUndo = function () { return this._undo.length > 0; };
   Store.prototype.canRedo = function () { return this._redo.length > 0; };
   Store.prototype.undoLabel = function () {
@@ -636,7 +643,7 @@
     const step = this._undo.pop();
     this._lastKey = null;   // a new run starts after an undo, never merging into the old one
     this._redo.push({ label: step.label, doc: this._doc });
-    this._doc = step.doc;
+    this._doc = keepAccount(step.doc, this._doc);
     this._emit();
     this._queueSave();
     return this._doc;
@@ -647,7 +654,7 @@
     const step = this._redo.pop();
     this._lastKey = null;
     this._undo.push({ label: step.label, doc: this._doc });
-    this._doc = step.doc;
+    this._doc = keepAccount(step.doc, this._doc);
     this._emit();
     this._queueSave();
     return this._doc;
