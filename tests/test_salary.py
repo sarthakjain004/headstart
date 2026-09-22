@@ -1774,3 +1774,16 @@ def test_hr_acronym_and_missouri_before_the_figure_are_not_periods():
     assert from_description("Pay $17.95 HR Qualifications") == SalarySpan(
         37_440, None, "USD", "regex"
     )
+
+
+def test_num_single_digit_decimal_comma_is_a_decimal():
+    # Real served row (successfactors:jobs.avl.com, Cavriago IT): "Starting Salary: 28,5k" was
+    # served as 285,000 — a one-digit comma tail can never be a thousands group (those are 3).
+    from headstart.salary import _num
+
+    assert _num("12,5") == 12  # banker's rounding, as for "12.5"
+    assert _num("28,5") == 28
+    assert _num("1.234,5") == 1234  # unchanged: both separators already worked
+    assert from_description("Salary: €13,5 - €15 per hour") == SalarySpan(
+        29_120, 31_200, "EUR", "regex"
+    )
