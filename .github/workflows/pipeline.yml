@@ -964,8 +964,12 @@ jobs:
           # `bash -e` stops here and the new witness is simply never published, leaving the prior
           # one — which names roots the dataset still holds. Uploaded first, it would name a root
           # whose upload then failed, and an over-claiming witness fails every later fetch closed.
+          # `--exclude role_centroids/*`: `cluster-roles.yml` owns those files (ADR-0095). The join's
+          # `data/state/*` fetch still brings them here for role_trends to read, but republishing
+          # that join-time copy reverted any refit that landed while this run was in flight.
           publish pipeline_state "$HF_DATASET" data/state data/state \
-            --repo-type dataset --commit-message "nightly: board priority + published-dirs witness"
+            --repo-type dataset --exclude "role_centroids/*" \
+            --commit-message "nightly: board priority + published-dirs witness"
       - name: Report publication and fresh coverage
         if: always() && needs.scrape-plan.outputs.run == 'true'
         env:
