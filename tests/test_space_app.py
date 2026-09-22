@@ -798,6 +798,24 @@ def test_failed_extraction_still_spends_a_read(sets_app, hub, monkeypatch):
     )
 
 
+@pytest.mark.parametrize(
+    "reply", [None, '{"query": "backend engineer", "years": 1e999}'], ids=str
+)
+def test_a_router_answer_the_reader_chokes_on_still_spends_a_read(
+    sets_app, hub, monkeypatch, reply
+):
+    # The router answered, so the call was spent — a 500 before put_parses would make the
+    # lifetime cap unbounded for any reply shaped like this.
+    client = _signed_in(sets_app, monkeypatch)
+    monkeypatch.setattr(sets_app.llm_router, "ask", lambda prompt: reply)
+    r = client.post("/profile/parse", json={"text": "r"}, base_url=_HTTPS)
+    assert r.status_code != 500
+    assert (
+        client.get("/profile", base_url=_HTTPS).json["parses_left"]
+        == sets_app.MAX_PARSES - 1
+    )
+
+
 def test_empty_paste_refuses_before_the_router_and_spends_nothing(
     sets_app, hub, monkeypatch
 ):

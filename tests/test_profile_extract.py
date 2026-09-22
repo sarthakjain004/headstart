@@ -128,6 +128,21 @@ def test_bad_years_become_none_rather_than_garbage():
     assert pe.extract(_RESUME, ask=_reply(years=None))["years"] is None
 
 
+def test_an_overflowing_years_reply_becomes_none_rather_than_raising():
+    # json.loads reads 1e999 and Infinity as float inf, which int() refuses with
+    # OverflowError — neither TypeError nor ValueError.
+    for raw in ("1e999", "Infinity", "-Infinity"):
+        reply = json.dumps(_REPLY).replace('"years": 7', f'"years": {raw}')
+        assert pe.extract(_RESUME, ask=lambda p, r=reply: r)["years"] is None
+
+
+def test_a_reply_with_no_text_is_an_empty_extraction():
+    # A router answering `content: null` hands back None; the route must see the answer it
+    # counts against the cap (EmptyExtraction), not an AttributeError it turns into a 500.
+    with pytest.raises(pe.EmptyExtraction):
+        pe.extract(_RESUME, ask=lambda p: None)
+
+
 def test_missing_fact_keys_become_empty_strings():
     out = pe.extract(_RESUME, ask=_reply(education=None, location=None))
     assert out["education"] == "" and out["location"] == ""
