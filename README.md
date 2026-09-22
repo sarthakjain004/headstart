@@ -2,28 +2,53 @@
 
 [![CI](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml)
 [![pipeline](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml)
-[![ADRs](https://img.shields.io/badge/ADRs-161-blue)](./docs/adr/)
+[![ADRs](https://img.shields.io/badge/ADRs-164-blue)](./docs/adr/)
 [![Python](https://img.shields.io/badge/python-3.12+-blue)](./pyproject.toml)
 
-Find software-engineering openings straight from companies' ATS (Applicant Tracking System)
-career boards — earlier and more completely than relying on LinkedIn.
+### Every opening. Straight from the source.
+
+**468,376 software-engineering roles**, read directly from the companies' own hiring boards.
+
+Not from a feed employers had to opt in to. Not from a list ranked by who paid.
 
 **[Search the index](https://imposeidon-headstart-search.hf.space)** ·
 **[Read the decisions](./docs/adr/)**
 
-## What it is
+---
 
-HeadStart discovers which companies host job boards on which ATS platform, validates those
-boards, scrapes them through **38 per-ATS scrapers**, and normalizes every posting into one `Job`
-shape. From there it serves three ways:
+### It costs nothing to run. All of it.
 
-- An **AI semantic-search layer** — type a natural-language query, apply structured filters,
-  get ranked results — running live on a free-tier Hugging Face Space over a **468,376-row**
-  index of the tech corpus.
-- A static **dashboard** built from a curated feed.
-- **Job alerts** — saved searches delivered by email or Telegram to signed-in accounts.
+Discovery. 38 scrapers. Embeddings. Vector search. Email and Telegram alerts.
 
-Everything runs on free tiers (see *What this optimises for*, below).
+Fork it, add your tokens, and the whole pipeline is yours — running on free tiers, end to
+end. No card. No trial. Not a stripped tier of something else: the same code that serves the
+index above.
+
+### Ask for the job. Not the keywords.
+
+"Backend engineer at a climate startup" is a query here.
+
+Semantic search over local embeddings, with the structured filters — years, salary, remote,
+employment type — left exactly where they belong: under your control, not inferred from a
+sentence.
+
+### 38 boards. One shape.
+
+Greenhouse, Workday, Lever, Ashby, iCIMS, Oracle, Taleo, BambooHR, Phenom, and 29 more.
+HeadStart finds which companies host boards on which ATS, checks that each board is alive,
+and normalizes every posting into a single `Job`. You never learn an ATS's name.
+
+### Everything above is measured.
+
+And every limit ships next to the result it qualifies. 164 ADRs record the options that lost,
+not just the one that won. When a later measurement contradicts an earlier one, the ADR is
+amended in place rather than quietly edited.
+
+---
+
+It serves three ways: the **AI semantic-search layer** above, a static **dashboard** built
+from a curated feed, and **job alerts** — saved searches delivered by email or Telegram to
+signed-in accounts. Everything runs on free tiers (see *What this optimises for*, below).
 
 ## Why
 
