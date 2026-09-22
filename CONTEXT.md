@@ -414,6 +414,11 @@ _Avoid_: conflating it with the _tiered_ fallback inside one family (field, then
 `data/state/pending_rederive.txt` — **Job** ids whose description arrived _this run_, so their stored metadata still carries numbers derived without that text (ADR-0062). `update_descriptions` appends, `update_meta` re-runs the extraction cascade for exactly those rows and empties the file. Only ids the embedding store already holds are queued: a Job first embedded this run had its metadata written from this very description.
 _Avoid_: deleting the file to clear it — the merge uploads `data/state` without `--delete`, so an unlink never reaches the dataset and the queue would be re-fetched and re-appended forever. Truncate instead.
 
+**Derivation sweep checkpoint**:
+The derivation version already applied to an individual Job, allowing an unfinished sweep to
+resume across pipeline runs. It becomes durable when that run publishes; the whole-store
+watermark advances only once every Job has been processed (ADR-0176).
+
 **Fan-out speedup ledger (measured ratio)**:
 How much faster a scrape shard runs than the **sum** of its Boards' measured seconds, in `data/state/shard_speedup.csv` — one row for the whole fan-out, not one per Board (ADR-0054). A shard scrapes its Boards concurrently, so its wall clock is that sum divided by the concurrency the run actually achieves; the planner predicted the sum itself and over-stated every run by ~3x, which left the "exceeds the shard budget" warning firing on all of them and signalling nothing. The ratio is an EWMA the join blends from each run's shard reports, and the makespan prediction is `max(slowest Board on the shard, serial ÷ speedup)`.
 _Avoid_: assuming it is the worker count — nominal concurrency is 16, the measured speedup ~2.8x, because per-host politeness, rate limits and stragglers eat the rest. _Avoid_: measuring it against a shard's own predicted minutes (that figure is derived from this ledger, so the estimate would chase its own tail) or against a shard killed by the budget (its wall clock measures the budget, not the work).

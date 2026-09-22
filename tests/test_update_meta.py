@@ -9,6 +9,9 @@ one invariant that would corrupt the store if broken: ``meta.jsonl`` stays row-a
 from __future__ import annotations
 
 import json
+from concurrent.futures import Executor, Future
+
+import pytest
 
 from headstart.ingest import update_meta as um
 
@@ -322,6 +325,218 @@ def test_refresh_preserves_row_order_and_count(tmp_path):
     assert [r["id"] for r in rows] == ids  # order and count are the alignment invariant
     assert rows[2]["salary"] == "€100k"
     assert rows[0]["salary"] is None  # rows outside the corpus are untouched
+
+
+def test_sweep_does_not_read_entire_store_before_writing(tmp_path, monkeypatch):
+    """Exercise refresh's real submission path with Python's eager Executor.map.
+
+    Immediate futures make this deterministic: at most two row batches may be
+    read ahead of the writer, even when every result is already available.
+    """
+    store, jobs, desc = _store_and_corpus(
+        tmp_path, {"greenhouse:acme:1": "3+ years of experience"}
+    )
+    meta_path = store / "meta.jsonl"
+    original = "".join(
+        json.dumps(_meta(id=f"greenhouse:acme:{i}")) + "\n" for i in range(8)
+    )
+    meta_path.write_text(original)
+    written = 0
+    dumps = um.json.dumps
+
+    def record_write(value, **kwargs):
+        nonlocal written
+        if isinstance(value, dict) and "id" in value:
+            written += 1
+        return dumps(value, **kwargs)
+
+    class ImmediatePool(Executor):
+        def __init__(self, **kwargs):
+            pass
+
+        def submit(self, fn, *args, **kwargs):
+            future = Future()
+            future.set_result(fn(*args, **kwargs))
+            return future
+
+    batches = um._row_batches
+
+    def bounded_source(path, size):
+        for i, batch in enumerate(batches(path, size)):
+            assert i - written < 2, "sweep reads the entire store ahead of its writer"
+            yield batch
+
+    monkeypatch.setattr(um, "ProcessPoolExecutor", ImmediatePool)
+    monkeypatch.setattr(um.os, "cpu_count", lambda: 2)
+    monkeypatch.setattr(um, "_SWEEP_CHUNK_ROWS", 1)
+    monkeypatch.setattr(um, "_row_batches", bounded_source)
+    monkeypatch.setattr(um.json, "dumps", record_write)
+    um.refresh(store, jobs, desc, tmp_path / "wm.json")
+    assert [json.loads(line)["id"] for line in meta_path.read_text().splitlines()] == [
+        f"greenhouse:acme:{i}" for i in range(8)
+    ]
+    assert written == 8
+
+
+def test_sweep_worker_failure_preserves_store_watermark_and_queue(
+    tmp_path, monkeypatch
+):
+    store, jobs, desc = _store_and_corpus(
+        tmp_path, {"greenhouse:acme:1": "3+ years of experience"}
+    )
+    meta_path = store / "meta.jsonl"
+    original = meta_path.read_bytes()
+    watermark = tmp_path / "wm.json"
+    um.write_watermark(watermark, um.DERIVATIONS_VERSION - 1)
+    queue = tmp_path / "pending.txt"
+    queue.write_text("greenhouse:acme:1\n")
+
+    def fail(args):
+        raise RuntimeError("worker failed")
+
+    monkeypatch.setattr(um.os, "cpu_count", lambda: 1)
+    monkeypatch.setattr(um, "_refresh_chunk", fail)
+    with pytest.raises(RuntimeError, match="worker failed"):
+        um.refresh(store, jobs, desc, watermark, queue)
+    assert meta_path.read_bytes() == original
+    assert um.read_watermark(watermark) == um.DERIVATIONS_VERSION - 1
+    assert queue.read_text() == "greenhouse:acme:1\n"
+    assert not (store.parent / f".{store.name}-meta.jsonl.refresh").exists()
+
+
+def test_parallel_chunks_preserves_alignment_with_reverse_completion(monkeypatch):
+    """A slow earlier chunk must neither reorder vectors nor admit an unbounded tail."""
+    submitted = []
+
+    class ControlledPool:
+        def submit(self, fn, arg):
+            future = Future()
+            submitted.append((future, arg))
+            return future
+
+    def reverse_completion(pending):
+        for future in reversed(list(pending)):
+            if not future.done():
+                arg = next(arg for f, arg in submitted if f is future)
+                future.set_result(arg)
+            yield future
+
+    monkeypatch.setattr(um, "as_completed", reverse_completion)
+    chunks = um._parallel_chunks(ControlledPool(), iter(range(7)), 2)
+    assert next(chunks) == 0
+    assert len(submitted) == 2
+    assert list(chunks) == list(range(1, 7))
+
+
+def test_parallel_chunks_propagates_later_failure_without_waiting_for_head(monkeypatch):
+    futures = []
+
+    class FailingPool:
+        def submit(self, fn, arg):
+            future = Future()
+            futures.append(future)
+            if arg == 1:
+                future.set_exception(RuntimeError("later chunk failed"))
+            return future
+
+    # Only the second chunk is complete; the first one is still queued.
+    chunks = um._parallel_chunks(FailingPool(), iter(range(10)), 2)
+    with pytest.raises(RuntimeError, match="later chunk failed"):
+        next(chunks)
+    assert len(futures) == 2
+    assert futures[0].cancelled()
+
+
+def test_partial_sweep_resumes_after_rows_move_and_new_rows_arrive(
+    tmp_path, monkeypatch
+):
+    store, jobs, desc = _store_and_corpus(tmp_path)
+    meta_path = store / "meta.jsonl"
+    rows = [_meta(id=f"greenhouse:acme:{i}", min_years=9) for i in range(6)]
+    meta_path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    descriptions = {row["id"]: "3 years of experience" for row in rows}
+    descriptions["greenhouse:acme:new"] = "5 years of experience"
+    monkeypatch.setattr(um, "held_descriptions", lambda *a, **k: descriptions)
+    monkeypatch.setattr(um.os, "cpu_count", lambda: 1)
+    monkeypatch.setattr(um, "_SWEEP_CHUNK_ROWS", 2)
+    clock = iter([100, 100, 102, 102])
+    monkeypatch.setattr(um, "monotonic", lambda: next(clock))
+    watermark = tmp_path / "wm.json"
+    um.write_watermark(watermark, um.DERIVATIONS_VERSION - 1)
+    queue = tmp_path / "pending.txt"
+    queue.write_text(rows[-1]["id"] + "\n")
+    um.refresh(store, jobs, desc, watermark, queue, sweep_budget_seconds=1)
+    partial = [json.loads(line) for line in meta_path.read_text().splitlines()]
+    assert [row["min_years"] for row in partial] == [3, 3, 9, 9, 9, 3]
+    assert um.read_watermark(watermark) == um.DERIVATIONS_VERSION - 1
+    assert queue.read_text() == ""  # queue draining continues beyond the sweep budget
+
+    # Embed upgrades may reorder/remove rows; append-only offset checkpoints are unsafe.
+    reordered = list(reversed(partial)) + [_meta(id="greenhouse:acme:new")]
+    meta_path.write_text("".join(json.dumps(row) + "\n" for row in reordered))
+    swept = []
+    refresh_row = um.refresh_row
+
+    def record_sweep(meta, facts, descriptions, sweep, rederive=False):
+        if sweep:
+            swept.append(meta["id"])
+        return refresh_row(meta, facts, descriptions, sweep, rederive)
+
+    monkeypatch.setattr(um, "refresh_row", record_sweep)
+    monkeypatch.setattr(um, "monotonic", lambda: 100)
+    um.refresh(store, jobs, desc, watermark, queue, sweep_budget_seconds=1)
+    final = [json.loads(line) for line in meta_path.read_text().splitlines()]
+    assert [row["id"] for row in final] == [row["id"] for row in reordered]
+    assert [row["min_years"] for row in final] == [3] * 6 + [5]
+    assert set(swept) == {row["id"] for row in rows[2:]} | {"greenhouse:acme:new"}
+    assert um.read_watermark(watermark) == um.DERIVATIONS_VERSION
+
+
+def test_missing_description_store_does_not_mark_rows_swept(tmp_path, monkeypatch):
+    store, jobs, desc = _store_and_corpus(tmp_path)
+    monkeypatch.setattr(um.os, "cpu_count", lambda: 1)
+    watermark = tmp_path / "wm.json"
+    um.refresh(store, jobs, desc, watermark)
+    row = json.loads((store / "meta.jsonl").read_text())
+    assert "_derivations_version" not in row
+    assert um.read_watermark(watermark) == 0
+
+
+def test_real_process_pool_sweep_matches_row_cascade(tmp_path, monkeypatch):
+    store, jobs, desc = _store_and_corpus(tmp_path)
+    rows = [_meta(id=f"greenhouse:acme:{i}", min_years=9) for i in range(9)]
+    texts = {row["id"]: f"{i + 1} years of experience" for i, row in enumerate(rows)}
+    meta_path = store / "meta.jsonl"
+    meta_path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    monkeypatch.setattr(um, "held_descriptions", lambda *a, **k: texts)
+    monkeypatch.setattr(um.os, "cpu_count", lambda: 2)
+    monkeypatch.setattr(um, "_SWEEP_CHUNK_ROWS", 2)
+    um.refresh(store, jobs, desc, tmp_path / "wm.json")
+    actual = [json.loads(line) for line in meta_path.read_text().splitlines()]
+    expected = [um.refresh_row(row, None, texts, True)[0] for row in rows]
+    for row in expected:
+        row["_derivations_version"] = um.DERIVATIONS_VERSION
+    assert actual == expected
+
+
+def test_new_version_resweeps_checkpointed_rows(tmp_path, monkeypatch):
+    store, jobs, desc = _store_and_corpus(
+        tmp_path, {"greenhouse:acme:1": "3 years of experience"}
+    )
+    monkeypatch.setattr(um.os, "cpu_count", lambda: 1)
+    watermark = tmp_path / "wm.json"
+    um.refresh(store, jobs, desc, watermark)
+    monkeypatch.setattr(um, "DERIVATIONS_VERSION", um.DERIVATIONS_VERSION + 1)
+    monkeypatch.setattr(
+        um,
+        "held_descriptions",
+        lambda *a, **k: {"greenhouse:acme:1": "6 years of experience"},
+    )
+    um.refresh(store, jobs, desc, watermark)
+    row = json.loads((store / "meta.jsonl").read_text())
+    assert row["min_years"] == 6
+    assert row["_derivations_version"] == um.DERIVATIONS_VERSION
+    assert um.read_watermark(watermark) == um.DERIVATIONS_VERSION
 
 
 def _store_and_corpus(tmp_path, descriptions: dict[str, str] | None = None):

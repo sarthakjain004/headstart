@@ -152,6 +152,21 @@ def _rows(tmp_path: Path) -> dict[str, str | None]:
     return {r["id"]: r["first_seen"] for r in table.search().limit(100).to_list()}
 
 
+def test_sync_keeps_sweep_checkpoints_out_of_served_rows(tmp_path, monkeypatch):
+    assert (
+        _sync(
+            tmp_path,
+            monkeypatch,
+            ["greenhouse:a:1"],
+            meta_over={"_derivations_version": 14},
+        )
+        == 0
+    )
+    table = lancedb.connect(str(tmp_path / "db")).open_table(idx.PROD_TABLE)
+    assert table.count_rows() == 1
+    assert "_derivations_version" not in table.schema.names
+
+
 def test_sync_stamps_every_row_it_adds(tmp_path, monkeypatch):
     assert _sync(tmp_path, monkeypatch, ["greenhouse:a:1", "greenhouse:a:2"]) == 0
     stamps = _rows(tmp_path)

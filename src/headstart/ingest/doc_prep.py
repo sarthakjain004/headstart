@@ -54,11 +54,12 @@ META_FIELDS = (
 )
 
 
-# Meta keys that exist for the *planner* and must never reach the served table. `index sync`
+# Internal ingestion meta keys that must never reach the served table. `index sync`
 # builds each add-row straight from a meta dict, and LanceDB rejects a column its schema does not
 # declare — so anything added to `to_meta` without either landing in `index._schema()` or being
 # listed here breaks every add. Kept beside `to_meta` because that is where the temptation is.
-PLANNER_ONLY_FIELDS = ("has_description",)
+# `_derivations_version` is update_meta's resumable sweep checkpoint (ADR-0176).
+PLANNER_ONLY_FIELDS = ("has_description", "_derivations_version")
 
 
 def bucket_for(n_tokens: int) -> int:
