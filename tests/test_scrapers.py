@@ -4753,6 +4753,17 @@ def test_rippling_pay_range_at_or_above_a_million_is_not_scientific():
     assert _pay_range([{**band, "frequency": "YEAR"}]) == "2000000-2800000.5 INR YEAR"
 
 
+def test_rippling_ceiling_only_pay_range_is_refused():
+    """A lone figure reads as a floor (`salary.extract` has no spelling for a ceiling), the
+    same shape recruitee refuses; a floor alone is still kept."""
+    _pay_range = get_scraper("rippling", "acme")._salary_field
+    unit = {"currency": "USD", "frequency": "YEAR"}
+    assert _pay_range([{"rangeStart": None, "rangeEnd": 120000, **unit}]) is None
+    assert _pay_range([{"rangeStart": 90000, "rangeEnd": None, **unit}]) == (
+        "90000 USD YEAR"
+    )
+
+
 def test_rippling_employment_type_empty_label_does_not_fall_back():
     """`.label` is checked with `is not None`, not truthiness — the same class of bug
     `_salary_field` fixes for rangeStart/rangeEnd. A present-but-empty label (never observed

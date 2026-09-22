@@ -266,14 +266,16 @@ class RipplingScraper(BaseScraper):
         ]
         los = [r["rangeStart"] for r in same_unit if r.get("rangeStart") is not None]
         his = [r["rangeEnd"] for r in same_unit if r.get("rangeEnd") is not None]
-        if not los and not his:
+        if not los:
+            # blank, or a ceiling alone — `salary.extract` reads a lone figure as a floor, so
+            # "up to 120000" would serve as a 120k minimum (recruitee and iCIMS refuse the same)
             return None
-        lo = min(los) if los else None
+        lo = min(los)
         hi = max(his) if his else None
         span = (
             f"{_format_amount(lo)}-{_format_amount(hi)}"
-            if lo is not None and hi is not None
-            else _format_amount(lo if lo is not None else hi)
+            if hi is not None
+            else _format_amount(lo)
         )
         currency, frequency = unit
         return " ".join(str(x) for x in (span, currency, frequency) if x)
