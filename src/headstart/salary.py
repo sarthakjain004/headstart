@@ -170,27 +170,31 @@ def _num(s: str) -> int:
     decimal group ("125,000,00"). Blindly converting every comma to a period would leave TWO
     periods in the string and crash `float()`; `rpartition` isolates the last group and strips
     every earlier occurrence outright, regardless of how many there are."""
+    return round(_num_value(s))
+
+
+def _num_value(s: str) -> float:
+    """:func:`_num` before its rounding — for a "k"/"L" figure, whose fraction ("28,5k",
+    "62.5k") belongs to the thousands and must not be rounded away first."""
     if "," in s and "." in s:
         if s.rindex(",") > s.rindex("."):
             s = s.replace(".", "").replace(",", ".")  # European: 1.234.567,89
         else:
             s = s.replace(",", "")  # US: 1,234,567.89
-        return round(float(s))
+        return float(s)
     if "," in s:
         head, _, tail = s.rpartition(",")
         # 1 digit too ("28,5k"): a thousands group is always 3, so a 1-digit tail is a decimal.
         if len(tail) in (1, 2):
-            return round(
-                float(head.replace(",", "") + "." + tail)
-            )  # European decimal: 14,00
-        return round(float(s.replace(",", "")))  # US thousands: 50,000
+            return float(head.replace(",", "") + "." + tail)  # European decimal: 14,00
+        return float(s.replace(",", ""))  # US thousands: 50,000
     if "." in s and re.fullmatch(r"\d{1,3}(\.\d{3})+", s):
-        return round(float(s.replace(".", "")))  # European thousands: 49.000
+        return float(s.replace(".", ""))  # European thousands: 49.000
     # Defensive mirror of the comma fix above: strip every period but the last before falling
     # through to a bare decimal read, in case the same typo pattern repeats with periods instead
     # of commas (not observed yet, but the failure mode — an uncaught ValueError — is cheap to
     # close off given it already happened once with the other separator).
-    return round(float(s.replace(".", "", max(0, s.count(".") - 1))))
+    return float(s.replace(".", "", max(0, s.count(".") - 1)))
 
 
 # "up to $X" (or "upto"/LPA's "up to ₹X") states a CEILING, not a floor — but SalarySpan.min_annual
@@ -1138,10 +1142,10 @@ def _span_from_match(
         if re.search(r"\d[lL]\b", matched)
         else 1
     )
-    mult = _period_from_window(text, m.start(), m.end()) * magnitude_mult
+    mult = _period_from_window(text, m.start(), m.end())
     currency = _guess_currency(m.groupdict().get("sym"), matched)
-    lo = _num(lo_raw) * mult
-    hi = _num(hi_raw) * mult if hi_raw else None
+    lo = round(_num_value(lo_raw) * magnitude_mult) * mult
+    hi = round(_num_value(hi_raw) * magnitude_mult) * mult if hi_raw else None
     span = _bounded(min(lo, hi) if hi else lo, max(lo, hi) if hi else None, currency)
     if span is None:
         return None
