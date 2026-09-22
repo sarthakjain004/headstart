@@ -891,6 +891,9 @@ function expandCompany(holder){
   const rows = (capOverflow.get(listId) || new Map()).get(board);
   if (!rows) return;
   holder.outerHTML = rows.join('');
+  // The cards were rendered when the list was drawn, and a star changed since never reached
+  // them — while the click toggles by `savedByJob`, so a stale glyph did the opposite.
+  paintStars();
 }
 
 function draw(rows, target){
