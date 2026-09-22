@@ -423,6 +423,120 @@ def test_provider_url_roundtrips_and_dns_fast_path(monkeypatch):
     assert result["board_key"] == "phenom:careers.acme.com"
 
 
+def test_taleo_url_families_resolve_to_the_supported_board_identities():
+    enterprise = (
+        "https://hdr.taleo.net/careersection/ex/jobdetail.ftl?job=192135&lang=en"
+    )
+    business = (
+        "https://phf.tbe.taleo.net/phf01/ats/careers/v2/viewRequisition"
+        "?org=COVESTIC2&cws=37&rid=13732"
+    )
+
+    enterprise_hits = fp.scan(enterprise, "indeed.com", allow_provider_host=True)
+    business_hits = fp.scan(business, "indeed.com", allow_provider_host=True)
+
+    assert (
+        "taleo_enterprise",
+        "ats",
+        "https://hdr.taleo.net/careersection/ex",
+        1,
+    ) in enterprise_hits
+    assert (
+        "taleo_be",
+        "ats",
+        (
+            "https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults"
+            "?org=COVESTIC2&cws=37"
+        ),
+        1,
+    ) in business_hits
+    assert fp.candidate_identity(
+        "taleo_enterprise",
+        "https://hdr.taleo.net/careersection/ex",
+        "HDR",
+    ) == (
+        "taleo_enterprise:https://hdr.taleo.net/careersection/ex",
+        "unverified",
+    )
+    host_only = fp.scan(
+        "Taleo careers are hosted at hdr.taleo.net",
+        "acme.com",
+        allow_provider_host=True,
+    )
+    assert not any(ats in {"taleo_be", "taleo_enterprise"} for ats, *_ in host_only)
+    missing_section = (
+        "https://manpower.taleo.net/careersection/jobdetail.ftl?lang=en&job=0034737"
+    )
+    assert fp.taleo_board_from_url(missing_section) is None
+    assert not any(
+        ats in {"taleo_be", "taleo_enterprise"}
+        for ats, *_ in fp.scan(missing_section, "indeed.com", allow_provider_host=True)
+    )
+    assert fp.candidate_identity(
+        "taleo_be",
+        "https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults"
+        "?org=COVESTIC2&cws=37",
+        "Covestic",
+    ) == (
+        (
+            "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults"
+            "?org=COVESTIC2&cws=37"
+        ),
+        "unverified",
+    )
+
+
+def test_indeed_adapter_reclassifies_generic_taleo_per_board(tmp_path):
+    harvest = tmp_path / "indeed.jsonl"
+    urls = [
+        (
+            "https://phf.tbe.taleo.net/phf01/ats/careers/v2/viewRequisition"
+            "?org=COVESTIC2&cws=37&rid=13732"
+        ),
+        (
+            "https://phf.tbe.taleo.net/phf01/ats/careers/v2/viewRequisition"
+            "?org=COVESTIC2&cws=37&rid=13561"
+        ),
+        (
+            "https://phf.tbe.taleo.net/phf01/ats/careers/v2/viewRequisition"
+            "?org=OTHER&cws=12&rid=1"
+        ),
+        "https://hdr.taleo.net/careersection/ex/jobdetail.ftl?job=192135",
+        "https://hdr.taleo.net/careersection/austin_tx/jobdetail.ftl?job=791512",
+    ]
+    harvest.write_text(
+        "".join(
+            json.dumps(
+                {
+                    "_ats": "taleo",
+                    "_ats_slug": url.split("/", 3)[2],
+                    "_apply_host": url.split("/", 3)[2],
+                    "employer": {"key": "acme", "name": "Acme"},
+                    "recruit": {"viewJobUrl": url},
+                }
+            )
+            + "\n"
+            for url in urls
+        ),
+        encoding="utf-8",
+    )
+
+    seeds = fp.indeed_seeds(harvest)
+
+    assert {seed.input_id: seed.jobs for seed in seeds} == {
+        (
+            "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/"
+            "searchResults?org=COVESTIC2&cws=37"
+        ): 2,
+        (
+            "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/"
+            "searchResults?org=OTHER&cws=12"
+        ): 1,
+        "taleo_enterprise:https://hdr.taleo.net/careersection/austin_tx": 1,
+        "taleo_enterprise:https://hdr.taleo.net/careersection/ex": 1,
+    }
+
+
 def test_host_keyed_markup_uses_serving_host():
     for ats, token in [
         ("phenom", "cdn.phenompeople.com"),
