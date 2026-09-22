@@ -29,7 +29,7 @@ in metadata while the global watermark remains old until completion. The metadat
 remains atomic and order-preserving. Its temporary file is outside the directory uploaded as
 the embedding store. Facts and queued descriptions still refresh after the sweep budget.
 
-`verify_resume.py` replays the first 1,000 captured Workday descriptions across 5,000 synthetic
+`scripts/bench/verify_metadata_sweep_resume.py` replays the first 1,000 captured Workday descriptions across 5,000 synthetic
 metadata rows with two real worker processes. A 0.1-second dispatch budget completed 2,000
 rows in 3.226 seconds and retained watermark v13; a second pass completed all 5,000 in 6.175
 seconds and advanced to v14. In-flight work explains the soft-budget overshoot. The harness
@@ -39,6 +39,13 @@ Targeted metadata, embed-merge and log-contract tests: 399 passed. Regression co
 out-of-order completion, bounded queued work, later-worker failure, preserving metadata/queue/
 watermark on failure, resumption after row reordering and addition, missing descriptions, and
 invalidating checkpoints on the next version bump.
+
+Full suite before review corrections: 3,674 passed, 1 skipped, 2 expected failures (190s).
+Standards review found one script-placement issue; the replay harness moved into `scripts/bench`.
+Spec review found one publication blocker: `index sync` passed the checkpoint field to LanceDB.
+A regression test reproduced its schema rejection; adding the field to `PLANNER_ONLY_FIELDS`
+fixed it. The complete index, metadata-refresh and README-schema suites then passed 108 tests;
+Ruff check and formatting checks passed. These reviews were performed independently.
 
 Production verification requires a pipeline built with this patch to publish a checkpoint or
 complete the sweep, followed by a successor reading that metadata. Local tests cannot establish

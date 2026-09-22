@@ -673,8 +673,8 @@ def refresh(
                     _log.info(f"  {rows} rows refreshed")
         tmp.replace(meta_path)
     except BaseException:
-        # The merge job uploads `data/embeddings/jobs` wholesale and without `--delete`, so a
-        # half-written temp file left behind here would be published to HF and stay there.
+        # Caught failures clean up immediately. A hard kill can leave this file
+        # behind, but it is outside the directory the workflow publishes.
         tmp.unlink(missing_ok=True)
         raise
     _log.info(
