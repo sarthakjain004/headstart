@@ -155,3 +155,16 @@ test('a card held back by the company cap shows its star as it is when expanded'
   assert.ok(shown, 'the held-back card was not inserted');
   assert.equal(shown.textContent, '☆', 'the expanded card still shows the job as saved');
 });
+
+test('a repainted star says what clicking it will do, not what it did when drawn', async () => {
+  // paintStars moved the glyph and aria-pressed but left the tooltip and the accessible name:
+  // a starred job still announced "Save this job" to a screen reader.
+  const attrs = {};
+  const button = { dataset: { star: 'greenhouse:acme:1' }, textContent: '☆',
+    setAttribute(k, v) { attrs[k] = String(v); }, classList: { toggle() {} } };
+  loadApp([star('greenhouse:acme:1', { id: 'sv1' })], [button]);
+  await settled();
+  assert.equal(button.textContent, '★');
+  assert.equal(attrs.title, 'Remove from saved');
+  assert.equal(attrs['aria-label'], 'Remove this job from saved');
+});
