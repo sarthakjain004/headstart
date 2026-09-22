@@ -458,7 +458,17 @@ let searchRequest = 0;
 // go(): a fresh search or browse from page 1 — Search button, Enter, a chip, or a filter
 // change. An empty query browses the newest jobs instead of ranking by similarity
 // (ADR-0074), so this always fetches; it never shows a static empty state.
-async function go(){ page = 1; await fetchPage(); }
+async function go(){ page = 1; searched = readSearch(); drawActive(); await fetchPage(); }
+
+// What go() read off the controls. Prev/Next and a hide re-run page THIS, never an edit the
+// user has not submitted — re-reading the box live sent a new query at page N and skipped its
+// first rows — and the lines describing the rows read it too, so they describe what is paged.
+let searched = null;
+function readSearch(){
+  return { q: el('q').value.trim(), filters: currentFilters(), sort: el('sort').value,
+           mine: !!(el('mine') && el('mine').checked),
+           currency: el('salcur') ? el('salcur').value : '' };
+}
 
 // goToPage(n): re-fetch the SAME query and filters at a different page. Never resets page 1
 // itself, so Prev/Next can't fight a fresh go() call.
@@ -466,18 +476,16 @@ async function goToPage(n){ page = Math.max(1, Math.min(n, MAX_PAGE)); await fet
 
 async function fetchPage(){
   const request = ++searchRequest;
-  const q = el('q').value.trim();
-  drawActive();
+  const { q, filters, sort, mine, currency } = searched;
   const p = new URLSearchParams({ q, k: PAGE_SIZE, page });
-  for (const [key, value] of Object.entries(currentFilters())) p.set(key, value);
-  if (el('sort').value !== 'rel') p.set('sort', el('sort').value);
+  for (const [key, value] of Object.entries(filters)) p.set(key, value);
+  if (sort !== 'rel') p.set('sort', sort);
   // A salary sort is stated in one currency — the picker's — even with no bound set, which is
   // why this is not in currentFilters(): there the currency means "the bracket is counted in".
-  if (el('sort').value === 'salary' && el('salcur') && !p.has('salary_currency'))
-    p.set('salary_currency', el('salcur').value);
+  if (sort === 'salary' && currency && !p.has('salary_currency')) p.set('salary_currency', currency);
   // Deliberately NOT part of currentFilters(): a Saved Set serializes that, and freezing "only
   // my companies" into a stored Set would pin it to the list as it was on the day it was saved.
-  if (el('mine') && el('mine').checked) p.set('mine', '1');
+  if (mine) p.set('mine', '1');
   el('results').innerHTML = skeleton() + skeleton() + skeleton();
   setResultRows(3);
   busy(true);
@@ -554,7 +562,7 @@ function drawResultKind(q, shown){
   // Three states, not two. A date sort re-orders the best matches, so claiming similarity
   // order there would contradict #sortnote, which sits two lines above this in the same
   // column and already says exactly that.
-  if (q && el('sort').value !== 'rel'){
+  if (q && searched.sort !== 'rel'){
     node.innerHTML = 'Your best matches for what you described, re-ordered by date rather ' +
       'than by closeness.' + explain;
   } else if (q){
@@ -564,7 +572,7 @@ function drawResultKind(q, shown){
     // the table even has `first_seen` — and the line has to name the one actually in force.
     // The default browse falls back to ordering by `id` without that column, which is not a
     // date at all, so "newest first" would simply be untrue there.
-    const sort = el('sort').value;
+    const sort = searched.sort;
     const order = sort === 'posted' ? 'newest by the employer\u2019s posting date first'
       : sort === 'seen' ? 'most recently added first'
       : CFG.has_first_seen ? 'most recently added first'
@@ -573,7 +581,7 @@ function drawResultKind(q, shown){
     // where-clause a ranked search does, so with ATS=lever the chips one line above would
     // read "ATS: lever" while this claimed the whole index. Same class of unconditional
     // sentence as the `has_first_seen` one directly below.
-    const scope = Object.keys(currentFilters()).length
+    const scope = Object.keys(searched.filters).length
       ? 'Jobs matching the filters above' : 'Jobs from across every board';
     node.textContent = `${scope}, ${order} \u2014 no search yet, so nothing is ranked. ` +
       'Describe a role above to rank by meaning.';
@@ -605,10 +613,9 @@ const SORT_NOTES = {
             c => `best-paid among your best matches, other currencies converted to ${c} — not a global salary sort`],
 };
 function drawSortNote(){
-  const note = SORT_NOTES[el('sort').value];
-  const text = !note ? '' : note[el('q').value.trim() ? 1 : 0];
-  el('sortnote').textContent = typeof text === 'function'
-    ? text(el('salcur') ? el('salcur').value : 'USD') : text;
+  const note = SORT_NOTES[searched.sort];
+  const text = !note ? '' : note[searched.q ? 1 : 0];
+  el('sortnote').textContent = typeof text === 'function' ? text(searched.currency || 'USD') : text;
 }
 
 // When a search returns nothing, name the one filter that costs the most rather than telling
@@ -682,7 +689,7 @@ function applyFacets(facets){
 function drawKeywordNote(facets){
   const note = el('kwnote'), scope = el('kwin');
   const needs = (CFG.keyword_scopes || {})[scope.value];
-  if (!el('kw').value.trim() || !needs){ note.textContent = ''; return; }
+  if (!searched.filters.kw || !needs){ note.textContent = ''; return; }
   if (!facets){
     note.textContent = 'Only jobs with a stored description can match a keyword here — not every job has one.';
     return; }
