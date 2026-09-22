@@ -514,16 +514,17 @@ _FIELD_PARSERS = {
 
 
 def _symbol_currency(value: str, start: int) -> str | None:
-    """The currency a £/€/₹ symbol directly before ``value[start:]`` names (``_CURRENCY_SYM``,
-    Tier 2's own mapping). A bare "$" is not read: it stays as ambiguous here as it always was."""
-    sym = re.search(r"([£€₹])\s*$", value[:start])
-    return _CURRENCY_SYM[sym.group(1)] if sym else None
+    """The currency a symbol directly before ``value[start:]`` names, resolved by Tier 2's own
+    :func:`_guess_currency` — so "CA$"/"HK$" name their dollar and a bare "$" reads as USD, the
+    same answer a description gets. Left None, a "$" range matched no salary bracket at all."""
+    sym = re.search(rf"({_SYM})\s*$", value[:start])
+    return _guess_currency(sym.group(1), "") if sym else None
 
 
 def _field_generic(value: str) -> SalarySpan | None:
     """Best-effort for an ATS with no calibrated parser yet: a range or single figure plus
     whatever currency code/period the string happens to state — an ISO code first, else a
-    £/€/₹ symbol on the figure itself. Deliberately conservative — no per-ATS quirk handling, so
+    currency symbol on the figure itself. Deliberately conservative — no per-ATS quirk handling, so
     it under-extracts rather than mis-extracts."""
     code_m = _CURRENCY_CODE.search(value)
     currency = code_m.group(1).upper() if code_m else None

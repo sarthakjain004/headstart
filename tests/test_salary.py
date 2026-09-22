@@ -189,15 +189,15 @@ def test_field_gem_templated_range():
     ) == SalarySpan(80_000, 120_000, "USD", "field")
 
 
-def test_field_gem_range_field_generic_leaves_a_bare_dollar_currencyless():
+def test_field_gem_range_now_reads_whole_in_field_generic_too():
     # Gem got its own Tier-1 parser when _field_generic's _RANGE could not read a symbol before
-    # EACH side ("$80,000 – $120,000") and kept only the floor. _RANGE reads it now, but a bare
-    # "$" stays currency-less there, where gem's own parser resolves it (_gem_currency).
+    # EACH side ("$80,000 – $120,000") and kept only the floor. _RANGE reads it now, and the bare
+    # "$" resolves to USD the way Tier 2 and gem's own `_gem_currency` both read it.
     from headstart.salary import _field_generic
 
     assert _field_generic(
         "The base pay range for this role is $80,000 – $120,000 per year."
-    ) == SalarySpan(80_000, 120_000, None, "field")
+    ) == SalarySpan(80_000, 120_000, "USD", "field")
 
 
 def test_field_gem_hourly_period():
@@ -478,10 +478,14 @@ def test_field_generic_reads_symbol_currency_and_a_symbol_prefixed_ceiling():
     # Real zoho/taleo_be field shapes. `_RANGE` needed a digit straight after the dash, so a
     # symbol before the second figure fell through to `_SINGLE_NUM` and kept only the floor; and
     # the currency came from ISO codes alone, so £/€/₹ were served currency-less — out of reach
-    # of every bracket arm, and bounded as USD. A bare "$" stays None: genuinely ambiguous.
+    # of every bracket arm, and bounded as USD. A bare "$" reads as USD exactly as Tier 2's
+    # `_guess_currency` reads it: left None, the job matched no salary bracket at all.
     assert from_field(
         "$85,000 - $135,000 depending on experience", "zoho"
-    ) == SalarySpan(85_000, 135_000, None, "field")
+    ) == SalarySpan(85_000, 135_000, "USD", "field")
+    assert from_field("CA$85,000 - CA$95,000", "zoho") == SalarySpan(
+        85_000, 95_000, "CAD", "field"
+    )
     assert from_field("£35,000 - £40,000 per annum", "zoho") == SalarySpan(
         35_000, 40_000, "GBP", "field"
     )
