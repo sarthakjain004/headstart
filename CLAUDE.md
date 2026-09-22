@@ -123,7 +123,8 @@ sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` 
   `docs/pyjamahr/2026-09-22_career-api-measurement.md`). **The roster is published by the vendor:**
   `jobs.pyjamahr.com/sitemap-jobs.xml` lists every posting on the platform across every tenant
   (7,801 URLs, 680 tenants), read by `scripts/discover/mine_pyjamahr.py`; a `path`-style
-  `wayback_feeder` entry adds the 78 tenants whose postings are not in it, and the `cc_miner`
+  `wayback_feeder` entry adds the 77 tenants whose postings are not in it (78 slugs; one is a
+  non-tenant path the prober killed), and the `cc_miner`
   pattern found 22 on the newest crawl, 2 of them new (both live, nothing open). **An unknown slug is not
   an error** — the listing answers 200 `count: 0`, byte-identical to a live empty Board — so the
   prober settles a zero off the board page (200 live, real 404 dead). **`published_internally`
@@ -133,8 +134,9 @@ sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` 
   answer and never disagrees with the location (0 of 7,674 ON_SITE/HYBRID rows name a remote one).
   The listing is one call: the undocumented `limit` parameter has no ceiling (`999999999` returns
   the 643-row Board whole) while `page_size` is ignored; `next` is still followed. Description,
-  `job_type`, salary and `created_at` are detail-only, so every posting gets its detail (oracle's
-  reason; the ADR-0048 skip would blank three fields). Salary bounds appear iff
+  `job_type`, salary and `created_at` are detail-only, so the ADR-0048 skip is not taken (oracle's
+  reason: it would blank three fields) — the ADR-0166 tech gate is, as an exact site (`title` and
+  `department_name` are listing fields the detail never overrides). Salary bounds appear iff
   `is_salary_visible` (1,236/1,236 visible, 0/505 hidden), periods ANNUAL/MONTHLY/HOURLY, currency
   INR 91%. No rate limit found in ~3,800 requests (84 req/s at conc 32, zero non-200s; the prober
   ran 680 Boards in 3.8 s at 432 workers); UA-agnostic. Company name is the board page `<title>`,

@@ -252,8 +252,11 @@ def test_experience_is_the_listing_bounds_as_a_string_the_field_parser_reads():
     assert jobs[ONSITE_ID].experience == "1-5 years"
     span = experience.from_field(jobs[REMOTE_ID].experience)
     assert (span.min_years, span.max_years) == (5, 8)
-    # Coinciding bounds, a floor alone, and nothing stated.
-    assert _experience({"min_experience": 3.0, "max_experience": 3.0}) == "3 years"
+    # Coinciding bounds keep their ceiling — "3 years" would read as open-ended — then a floor
+    # alone, and nothing stated.
+    assert _experience({"min_experience": 3.0, "max_experience": 3.0}) == "3-3 years"
+    exact = experience.from_field("3-3 years")
+    assert (exact.min_years, exact.max_years) == (3, 3)
     assert _experience({"min_experience": 2.0, "max_experience": None}) == "2 years"
     assert _experience({"min_experience": None, "max_experience": 4.0}) is None
 
@@ -416,6 +419,43 @@ def test_a_failed_detail_is_a_counted_gap_not_a_failed_board(monkeypatch):
     assert sum(scraper.detail_losses.values()) == 3
     assert scraper.truncated is None
     assert len(scraper.parse(raw, SCRAPED_AT)) == 3
+
+
+def test_the_tech_gate_skips_non_tech_details_but_still_emits_the_job(monkeypatch):
+    """ADR-0166's gate, taken as an exact site: `parse` reads `title` and `department_name` off
+    the listing row and the detail overrides neither. Armed only inside the pipeline
+    (`have_details` set), it spares the fetch for a posting `filter_tech` will drop — and that
+    posting still ships as a Job, without a description."""
+    monkeypatch.delenv("HEADSTART_TECH_GATE", raising=False)
+    rows = [
+        {"id": 1, "slug": "swe", "title": "Backend Engineer", "department_name": None},
+        {"id": 2, "slug": "chef", "title": "Head Chef", "department_name": "Kitchen"},
+    ]
+    listing = {"count": 2, "next": None, "results": rows}
+    scraper = _scraper()
+    scraper.have_details = frozenset()  # the pipeline's signal; nothing held yet
+    requested: list[str] = []
+
+    def fake_get(url):
+        requested.append(url)
+        if url == scraper.url():
+            return json.dumps(listing)
+        return json.dumps({"description": "<p>body</p>", "job_type": "FULLTIME"})
+
+    monkeypatch.setattr(scraper, "_get", fake_get)
+    monkeypatch.setattr(
+        scraper,
+        "fan_out_async",
+        lambda items, fn, **kw: [scraper._detail(i) for i in items],
+    )
+    raw = scraper.fetch_raw()
+    assert set(raw["details"]) == {"1"}
+    assert not any(f"{_API}2/" in u for u in requested)
+    jobs = {j.id.rsplit(":", 1)[1]: j for j in scraper.parse(raw, SCRAPED_AT)}
+    assert set(jobs) == {"1", "2"}
+    assert jobs["1"].description == "body"
+    assert jobs["2"].description is None
+    assert scraper.telemetry.get("tech_gated_details") == 1
 
 
 def test_the_scraper_declares_a_detail_pass():

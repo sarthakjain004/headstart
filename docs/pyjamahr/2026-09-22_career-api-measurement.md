@@ -141,9 +141,13 @@ The detail adds `description` (HTML, non-empty on **1,741 of 1,741**, p50 ~2,200
 `is_seo_indexable`…). `title`, `location`, `workplace_type`, the experience bounds and
 `department_name` never disagreed between the two payloads.
 
-Because `job_type`, the salary quartet and `created_at` exist only on the detail, every listed
-posting gets its detail — the ADR-0048 skip would blank `employment_type`, `salary` and
-`posted_at` on a Job the description store already covers. Same fork, same answer as oracle.
+Because `job_type`, the salary quartet and `created_at` exist only on the detail, the ADR-0048
+skip of the already-described is not taken — it would blank `employment_type`, `salary` and
+`posted_at` on a Job the description store already covers. Same fork, same answer as oracle. The
+ADR-0166 tech gate is a different skip and *is* taken, as an exact site: `parse` reads `title`
+and `department_name` off the listing row and the detail overrides neither, so the gate asks
+`filter_tech`'s question with its own inputs. At the 25.5% tech share of §9 that is about three
+of every four detail fetches not made in the pipeline.
 
 ### `remote` is dead
 

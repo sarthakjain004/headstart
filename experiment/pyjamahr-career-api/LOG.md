@@ -55,3 +55,8 @@ the decisions are ADR-0175. This log is the run record.
   8,894 postings**. Then `CC_ONLY_ATS=pyjamahr cc_miner.py` on `CC-MAIN-2026-39` (1 page): 22
   tenants, 2 new to the pool (`actgrants`, `allstarconsulting1`), both probed live with 0 jobs →
   final ledger **760 rows: 759 live, 1 dead, 682 hiring, 8,894 postings**.
+- **Code review (two-axis).** Standards found the detail pass took no ADR-0166 tech gate — it
+  is the exact case (title + department on the listing) and now takes it; also a duplicated UA
+  literal, `_amount` naming years, and a 77/78 Wayback figure drift. Spec found `_experience`
+  collapsing `3.0/3.0` to an open-ended "3 years"; it now keeps the ceiling as "3-3 years".
+  Everything else verified live.

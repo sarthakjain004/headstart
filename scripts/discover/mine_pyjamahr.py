@@ -36,11 +36,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 from headstart import http
+from headstart.scrapers.base import USER_AGENT as UA
 
 SITEMAP = "https://jobs.pyjamahr.com/sitemap-jobs.xml"
 POOL = ROOT / "data" / "ats-tenants-merged" / "pyjamahr.csv"
 TAG = "sitemap"
-UA = "headstart/0.1"
 
 _LOC = re.compile(r"<loc>https://jobs\.pyjamahr\.com/([^/<]+)/[^<]+</loc>")
 

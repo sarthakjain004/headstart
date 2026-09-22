@@ -55,11 +55,15 @@ postings including the 102 whose `workplace_type` is `REMOTE`.
   prober's gate table — ~3,800 requests at up to 84 req/s found no rate limit.
 - **`published_internally` rows are dropped**, in `parse` and before the detail pass, because the
   board hides them: they are internal postings the API happens to serve.
-- **Every listed posting gets its detail fetched, with no ADR-0048 skip.** The same fork oracle,
-  jazzhr and zoho already resolved the same way: the skip is safe only where the detail supplies
-  the description and nothing else, and here it also supplies `employment_type`, `salary` and
-  `posted_at`. Skipping it for an already-described Job would blank three fields that had values.
-  The cost is small — the whole platform is 8,897 postings at ~3.7 KB a detail.
+- **No ADR-0048 skip; the ADR-0166 tech gate, as an exact site.** The ADR-0048 fork oracle,
+  jazzhr and zoho already resolved the same way: skipping the already-described is safe only
+  where the detail supplies the description and nothing else, and here it also supplies
+  `employment_type`, `salary` and `posted_at` — skipping it would blank three fields that had
+  values. The tech gate is a different skip and is taken: `parse` reads `title` and
+  `department_name` off the listing row and the detail overrides neither, which is ADR-0166's
+  exact case (the shape workday, smartrecruiters and zwayam have), so no posting the filter would
+  keep can be gated out. A gated posting still ships as a Job without a description. At ~25% tech
+  that is roughly three of every four detail fetches not made.
 - **`remote` reads `workplace_type`, never the boolean.** The stated type wins outright; the
   location guess is consulted only for the 51 rows that state nothing, since of 7,674 rows stating
   `ON_SITE` or `HYBRID` none names a remote location.
@@ -76,7 +80,7 @@ postings including the 102 whose `workplace_type` is `REMOTE`.
 - **Enumerate tenants from Common Crawl and Wayback alone**, the way every other path-style ATS
   is discovered. Rejected as the primary source: it finds what was once archived, and the vendor
   already publishes what is live today. Both stay as second sources because they name tenants
-  whose postings are not in the sitemap (78 and 2 on the day, respectively).
+  whose postings are not in the sitemap (77 and 2 on the day, respectively).
 - **Read the listing with DRF's default page of 10 and walk `next`.** The measured `limit`
   parameter has no ceiling (`999999999` returns the 643-row Board whole), so the scraper asks for
   1,000 and reads every known Board in one call — but it still follows `next` whenever the API

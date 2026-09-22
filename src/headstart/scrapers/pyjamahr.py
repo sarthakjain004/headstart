@@ -29,10 +29,13 @@ row has id, slug, title, location, ``other_locations``, ``department_name``, ``w
 both experience bounds. ``description`` (present and non-empty on 1,741 of 1,741 details),
 ``job_type``, the salary quartet and ``created_at`` exist only on
 ``/api/career/jobs/{id}/?company_slug=`` — which 404s without the company key, and 404s with
-another tenant's. So this is a detail-pass ATS, and like oracle it fetches **every** detail rather
-than skipping the already-described (ADR-0048): the detail is the only source of
-``employment_type``, ``salary`` and ``posted_at``, and skipping it would blank three fields that
-had values.
+another tenant's. So this is a detail-pass ATS, and like oracle it does **not** take ADR-0048's
+skip of the already-described: the detail is the only source of ``employment_type``, ``salary``
+and ``posted_at``, and skipping it would blank three fields that had values. The skip it does
+take is the tech gate (ADR-0166), as an **exact** site: ``parse`` reads ``title`` and
+``department_name`` off the same listing row the gate reads and the detail overrides neither, so
+the gate asks ``filter_tech``'s question with ``filter_tech``'s own inputs. A gated posting still
+ships as a Job without a description. At ~25% tech that is three of four detail fetches saved.
 
 **``published_internally`` rows are returned but not shown.** The API serves them (112 of 8,897
 rows across 39 tenants) and the board's own page filters them out before rendering — the
@@ -135,22 +138,23 @@ def _remote(item: dict, location: str | None) -> bool | None:
     return is_remote(location)
 
 
-def _amount(value: float) -> str:
-    """A salary bound as digits — never `:g`, which writes 1,200,000 as `1.2e+06`, the trap
-    keka's own salary test pins."""
+def _digits(value: float) -> str:
+    """A float as digits — salary bounds and experience years both arrive as floats. Never
+    `:g`, which writes 1,200,000 as `1.2e+06`, the trap keka's own salary test pins."""
     return str(int(value)) if float(value).is_integer() else f"{value:.2f}"
 
 
 def _experience(item: dict) -> str | None:
     """`min_experience`..`max_experience` as the "N-M years" string `experience.from_field`
-    reads. Both are floats on every row measured, always integral and never inverted; a bare
-    "N years" when the bounds coincide or only the floor is stated."""
+    reads. Both are floats on every row measured, always integral and never inverted. Coinciding
+    bounds stay a range ("3-3 years"): the parser keeps that stated ceiling, where a bare
+    "3 years" would read as open-ended."""
     lo, hi = item.get("min_experience"), item.get("max_experience")
     if lo is None:
         return None
-    if hi is None or hi <= lo:
-        return f"{_amount(lo)} years"
-    return f"{_amount(lo)}-{_amount(hi)} years"
+    if hi is None:
+        return f"{_digits(lo)} years"
+    return f"{_digits(lo)}-{_digits(hi)} years"
 
 
 class PyjamaHRScraper(BaseScraper):
@@ -212,8 +216,16 @@ class PyjamaHRScraper(BaseScraper):
     def fetch_raw(self) -> Any:
         listed = self._listing()
         # Details only for the rows `parse` will emit — an internal posting's detail is a fetch
-        # for a Job that never ships.
-        ids = [str(i["id"]) for i in _public(listed) if i.get("id") is not None]
+        # for a Job that never ships — and, in the pipeline, only for the ones the tech filter
+        # will keep. That gate is exact here: `parse` reads `title` and `department_name` off
+        # this same listing row and the detail overrides neither (ADR-0166 §3). ADR-0048's skip
+        # of the already-described is deliberately not taken (module docstring).
+        wanted = self.tech_detail_wanted(
+            _public(listed),
+            lambda i: i.get("title"),
+            lambda i: i.get("department_name"),
+        )
+        ids = [str(i["id"]) for i in wanted if i.get("id") is not None]
         details: dict[str, dict] = {}
         if ids:
             # Multiplexed by default (ADR-0016); HEADSTART_ASYNC_FANOUT=0 falls back to threads.
@@ -303,5 +315,5 @@ class PyjamaHRScraper(BaseScraper):
             return None
         currency = (raw.get("currency") or "").strip()
         return " ".join(
-            part for part in (f"{_amount(lo)}-{_amount(hi)}", currency, period) if part
+            part for part in (f"{_digits(lo)}-{_digits(hi)}", currency, period) if part
         )
