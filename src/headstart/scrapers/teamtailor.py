@@ -15,18 +15,49 @@ repaired downstream: it is simply absent from the index, and `sync` sees a Board
 
 ``?limit=`` and ``?per_page=`` are ignored by the feed (both verified live), so paging is the
 only way through.
+
+**A second surface, ``/jobs.rss``, fills ``department`` and ``remote`` — additively, not as a
+listing replacement.** ``jobs.json`` genuinely has neither field (its ``_jobposting`` block never
+states them); ``jobs.rss`` carries ``<tt:department>`` and ``<remoteStatus>`` for the same
+postings, joined on the RSS ``<guid>``, which is byte-identical to the ``jobs.json`` item ``id``
+(verified live 2026-09-22 on 3 boards: the guid set equals the id set on every board under the RSS
+cap below). Measured over 18 boards / 576 postings: ``remoteStatus`` on 100%, ``tt:department`` on
+73.8% — tenant-optional, not a parse gap (two boards state it on zero of 109 combined postings,
+nine others state it on every posting).
+
+**``jobs.rss`` caps at 100 items with a non-functional ``page`` param — verified live 2026-09-22**:
+``lovisacareers``'s ``jobs.rss`` and ``jobs.rss?page=2`` return byte-identical 445,695-byte bodies,
+while its ``jobs.json?page=2`` returns 100 genuinely different ids — so the listing walk above is
+unaffected (it already paginates correctly) and only the enrichment join is capped. That leaves
+Jobs past the 100th on a board department/remote-blind, same as today, rather than making anything
+worse: the join only ever adds fields, never removes or reorders a listed Job (ADR-0053 truncation
+semantics: a Job the join doesn't reach is unenriched, not evicted).
+
+``remoteStatus``'s live vocabulary is ``fully``/``hybrid``/``none``/``onsite`` (measured on
+``zunogroup``: 2/4/8/13) — not the ``fully``/``none``-only enum a third-party scraper maps.
+Followed the repo's own convention for an ambiguous middle value (ashby, workday, bamboohr):
+``fully`` -> True, ``none``/``onsite`` -> False, ``hybrid`` -> None.
 """
 
 from __future__ import annotations
 
 import json
+import xml.etree.ElementTree as ET
 from typing import Any
 
+from headstart import http
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
 #: Items per page the feed serves. A full page means there is probably another.
 _PAGE_SIZE = 100
+
+_RSS_NS = {"tt": "https://teamtailor.com/locations"}
+
+#: `remoteStatus`'s live vocabulary (module docstring) mapped the same way ashby/workday/bamboohr
+#: resolve an explicit "hybrid" flag: True/False on the unambiguous ends, None (unknown) on the
+#: middle rather than guessing.
+_REMOTE_STATUS = {"fully": True, "none": False, "onsite": False}
 
 
 def _location(jobposting: dict) -> str | None:
@@ -54,6 +85,38 @@ class TeamtailorScraper(BaseScraper):
         """The feed states the job's own link directly (``url``); nothing to build, so this
         simply names that as the declared source (ADR-0153)."""
         return url
+
+    def rss_url(self) -> str:
+        return f"https://{self.slug}.teamtailor.com/jobs.rss"
+
+    def _rss_enrichment(self) -> dict[str, dict]:
+        """``{guid: {"department", "remote"}}`` off ``jobs.rss`` — additive, capped at the
+        feed's own first 100 items (module docstring). Never raises: a fetch or parse failure
+        here must not cost the Board its listing, so it degrades to no enrichment for this run
+        rather than failing `fetch_raw`.
+        """
+        try:
+            body = self._get(self.rss_url())
+        except http.RequestsError as exc:
+            self._log.info(f"{self.board_key()}: jobs.rss enrichment skipped ({exc})")
+            return {}
+        try:
+            root = ET.fromstring(body)
+        except ET.ParseError as exc:
+            self._log.info(f"{self.board_key()}: jobs.rss did not parse ({exc})")
+            return {}
+        enrichment: dict[str, dict] = {}
+        for item in root.iter("item"):
+            guid = item.findtext("guid")
+            if not guid:
+                continue
+            department = item.findtext("tt:department", namespaces=_RSS_NS)
+            status = item.findtext("remoteStatus")
+            enrichment[guid] = {
+                "department": department.strip() if department else None,
+                "remote": _REMOTE_STATUS.get(status) if status else None,
+            }
+        return enrichment
 
     def fetch_raw(self) -> Any:
         """Walk every page of the Board — no page-count ceiling.
@@ -88,14 +151,17 @@ class TeamtailorScraper(BaseScraper):
                 break
             page += 1
         feed["items"] = merged
+        feed["_rss_enrichment"] = self._rss_enrichment()
         return feed
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         feed_company = raw.get("title") or self.company
+        enrichment = raw.get("_rss_enrichment") or {}
         jobs: list[Job] = []
         for it in raw.get("items", []):
             jp = it.get("_jobposting") or {}
             location = _location(jp)
+            enriched = enrichment.get(it["id"]) or {}
             jobs.append(
                 Job(
                     id=self.job_id(it["id"]),
@@ -104,8 +170,14 @@ class TeamtailorScraper(BaseScraper):
                     or feed_company,
                     title=(it.get("title") or "").strip(),
                     location=location,
-                    remote=is_remote(location),
-                    department=None,  # not exposed in the public feed
+                    remote=(
+                        enriched["remote"]
+                        if "remote" in enriched
+                        else is_remote(location)
+                    ),
+                    department=enriched.get(
+                        "department"
+                    ),  # jobs.rss join (jobs.json omits it)
                     url=self.job_url(it.get("url", "")),
                     posted_at=it.get("date_published") or jp.get("datePosted"),
                     scraped_at=scraped_at,
