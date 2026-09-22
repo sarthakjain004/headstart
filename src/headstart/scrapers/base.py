@@ -690,8 +690,8 @@ class BaseScraper(ABC):
 
     def _get(self, url: str | None = None) -> str:
         """GET a board URL as text via the reliable-fetch seam (retry lives there). Defaults to
-        ``self.url()``; pass an explicit ``url`` to fetch a secondary endpoint (e.g. Keka's careers
-        page for the tenant id). Raises on a definitive HTTP error so a dead board surfaces as a
+        ``self.url()``; pass an explicit ``url`` to fetch a secondary endpoint (e.g. a per-job detail
+        page). Raises on a definitive HTTP error so a dead board surfaces as a
         per-company failure."""
         response = self._fetcher.fetch(
             "GET",

@@ -1,0 +1,62 @@
+{
+ "per_board": [
+  [
+   "inoptra",
+   14,
+   175
+  ],
+  [
+   "finvasia",
+   14,
+   76
+  ],
+  [
+   "mensa",
+   14,
+   49
+  ],
+  [
+   "newspace",
+   14,
+   233
+  ],
+  [
+   "techblocks",
+   15,
+   49
+  ],
+  [
+   "kpgroup",
+   15,
+   927
+  ],
+  [
+   "minitek",
+   14,
+   40
+  ],
+  [
+   "cogneesol",
+   15,
+   51
+  ]
+ ],
+ "key_counts": {
+  "jobType": 8,
+  "experience": 8,
+  "departmentIdentifier": 8,
+  "salaryRange": 8,
+  "excerpt": 8,
+  "jobLocations": 8,
+  "publishedOn": 8,
+  "publishedSinceDays": 8,
+  "skillNames": 8,
+  "departmentName": 8,
+  "id": 8,
+  "description": 8,
+  "salaryRangeFormat": 8,
+  "title": 8,
+  "jobNumber": 3
+ },
+ "n": 8
+}
