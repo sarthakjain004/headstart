@@ -658,6 +658,25 @@ def test_refresh_fills_a_null_description_on_a_row_it_rewrites_anyway(
     assert _descriptions(tmp_path)["greenhouse:a:1"] == "Now with a description."
 
 
+def test_refresh_serves_the_edited_description_on_a_row_it_rewrites_anyway(
+    tmp_path, monkeypatch
+):
+    """An edited posting: update_meta re-derives from the new text, so the row is rewritten — and
+    the rewrite must carry the corpus's fresh text, not the table's stale copy of the old one."""
+    ids = ["greenhouse:a:1"]
+    _sync(
+        tmp_path, monkeypatch, ids, descriptions={"greenhouse:a:1": "5+ years Python."}
+    )
+    _sync(
+        tmp_path,
+        monkeypatch,
+        ids,
+        meta_over={"min_years": 2},
+        descriptions={"greenhouse:a:1": "2+ years Go."},
+    )
+    assert _descriptions(tmp_path)["greenhouse:a:1"] == "2+ years Go."
+
+
 def test_a_null_description_alone_is_not_a_reason_to_rewrite_unless_backfilling(
     tmp_path, monkeypatch, caplog
 ):
