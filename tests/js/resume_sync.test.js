@@ -240,6 +240,33 @@ test('a refused push keeps BOTH copies and never picks a winner', () => {
   });
 });
 
+test('after a conflict, what was typed during the refused push is not pushed again', () => {
+  /* That edit is already in the copy kept aside, and the document now open IS the account's.
+     Left dirty, the heartbeat pushed the pre-conflict document at its old revision, was refused
+     again, and kept a second "(this device)" copy — of the account's own words, since that is
+     what `_current` resolves to by then. */
+  const theirs = aDoc({ rev: 9, name: 'written on the desktop' });
+  let open = aDoc({ rev: 1, name: 'written on the laptop' });
+  const refused = { status: 409, body: { error: 'changed elsewhere', stored: theirs } };
+  const { sync, repository, adopted, wire, tick, MIN } = loadSync({
+    docs: [open], live: () => open, answers: [refused, refused],
+  });
+  sync.note(open);
+  const pushing = sync.flush('tab hidden');
+  open = Object.assign({}, open, { name: 'typed while it was in flight' });
+  repository.save(open);
+  sync.note(open);   // its local save lands while the PUT is still out
+  return pushing.then(() => {
+    open = adopted[0].incoming;   // what the editor does with the account's copy
+    tick(MIN);
+    return settled();
+  }).then(() => {
+    assert.equal(wire.calls.length, 1, 'the pre-conflict document was pushed again');
+    assert.equal(repository.all().filter(d => /this device/.test(d.name)).length, 1,
+      'one conflict kept two copies aside');
+  });
+});
+
 test('a 409 with nothing usable in it stops rather than guessing', () => {
   const { sync, repository, adopted, messages } = loadSync({
     docs: [aDoc({ rev: 1 })], answers: [{ status: 409, body: { error: 'conflict' } }],
