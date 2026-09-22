@@ -21,14 +21,18 @@ experiment/ats-provider-expansion/artifacts/research_successfactors.md + 2026-07
    and lists nothing (Voith, Tetra Pak). Read with a long timeout, keeping whatever arrived if
    the tenant's own generator aborts mid-feed (Voith's dies ~2 MB in): partial beats none.
 
-The list surfaces carry no indexable fields, so a bounded detail pass fetches every job page and
-extracts fields from whichever markup that tenant serves: classic RMK pages embed a JSON-LD
+The list surfaces otherwise carry no indexable fields — the one exception is surface 3's own
+``g:job_function`` (:func:`_job_functions_from`), read for free since that surface's whole body
+is already being paid for; a bounded detail pass fetches every job page and extracts every other
+field from whichever markup that tenant serves: classic RMK pages embed a JSON-LD
 ``JobPosting`` (title, datePosted, jobLocation, employmentType, description); CSB-rendered pages
 (Wipro, Voith) have no JSON-LD but keep schema.org microdata (``itemprop="title"`` /
 ``"description"``), ``og:title``, a ``<title>`` of the form "{Job Title} Job Details | {Co}", and
 per-tenant ``joblayouttoken`` label/value spans (City / State/Province / Posting Start Date) —
-each field falls back independently, since tenants mix the shapes. A page that yields no title
-drops that job for the run (there is nothing to keep it by); it returns next scrape.
+each field falls back independently, since tenants mix the shapes. No detail markup sampled
+carries a department field at all, which is why ``department`` was hardcoded ``None`` until this
+RSS-feed field was found — see :func:`_job_functions_from`'s docstring. A page that yields no
+title drops that job for the run (there is nothing to keep it by); it returns next scrape.
 """
 
 from __future__ import annotations
@@ -56,6 +60,13 @@ _DETAIL_WORKERS = 6  # sync-path detail fetches; bounded since they hit one host
 # ``/job/{slug}/{id}/`` — the one URL shape all three listing surfaces share. The slug part may
 # span %-escapes and XML entities; the trailing numeric segment is the stable posting id.
 _JOB_PATH = re.compile(r"(/job/[^\s\"'<>?#]+/(\d+)/)")
+
+# The RSS/Google-jobs-feed `<item>` shape `_job_functions_from` reads a department out of —
+# see that function's docstring for the field and the junk-token guard.
+_RSS_ITEM = re.compile(r"<item>(.*?)</item>", re.DOTALL)
+_RSS_ID = re.compile(r"<g:id>\s*(\d+)\s*</g:id>")
+_RSS_JOB_FUNCTION = re.compile(r"<g:job_function>(.*?)</g:job_function>", re.DOTALL)
+_ATS_TOKEN = re.compile(r"^ATS_[A-Z0-9_]+$")
 
 _LD_BLOCK = re.compile(
     r'<script type="application/ld\+json">\s*(.*?)\s*</script>', re.DOTALL
@@ -230,11 +241,16 @@ class SuccessFactorsScraper(BaseScraper):
             )
         return [(u, i) for i, u in seen.items()], None
 
-    def _rss_job_urls(self) -> tuple[list[tuple[str, str]], str | None]:
+    def _rss_job_urls(
+        self,
+    ) -> tuple[list[tuple[str, str]], dict[str, str], str | None]:
         """Enumerate the board from the full RSS feed, patiently; keeps whatever arrived when
         the tenant's generator aborts mid-feed.
 
-        Returns the pairs found and, when the stream ended early rather than completing, why —
+        Returns the pairs found, the id -> department map read from the same feed's own
+        ``g:job_function`` field (:func:`_job_functions_from` — free, since this surface's whole
+        body is already in hand for the URL walk; no listing surface here otherwise carries a
+        department field at all), and, when the stream ended early rather than completing, why —
         an aborted feed and a feed cut at ``_SITEMAP_CAP`` both list a knowingly short board.
         Reported rather than recorded for the same reason :meth:`_search_job_urls` reports
         (ADR-0053)."""
@@ -265,9 +281,11 @@ class SuccessFactorsScraper(BaseScraper):
         finally:
             response.close()
         if response.status_code != 200:
-            return [], None
+            return [], {}, None
+        text = b"".join(chunks).decode("utf-8", "replace")
         return (
-            _job_urls_from(b"".join(chunks).decode("utf-8", "replace"), self.slug),
+            _job_urls_from(text, self.slug),
+            _job_functions_from(text),
             cut_short,
         )
 
@@ -280,6 +298,14 @@ class SuccessFactorsScraper(BaseScraper):
         kind, text, sitemap_cut_short = self._fetch_sitemap()
         listed = _job_urls_from(text, self.slug) if kind == "urlset" else []
         surface = "sitemap-urlset" if listed else ""
+        # id -> department, read off the RSS feed's own `g:job_function` field. Populated only
+        # when `rss-stream` is the surface that answers: that is the one path where this feed's
+        # full body is already being paid for (the other two surfaces carry no department field
+        # at all — module docstring), so this is free there and deliberately not fetched
+        # elsewhere (jobs.sap.com's own feed is 16 MB at ~30 KB/s — reading it just for a
+        # department label on a tenant whose `/search/` already works would cost ~9 minutes/run
+        # for nothing `/search/` doesn't already answer cheaply).
+        job_functions: dict[str, str] = {}
         if listed and sitemap_cut_short:
             self.mark_truncated(sitemap_cut_short)
         if not listed:
@@ -289,7 +315,7 @@ class SuccessFactorsScraper(BaseScraper):
                 if search_cut_short:
                     self.mark_truncated(search_cut_short)
         if not listed and kind == "rss":
-            listed, rss_cut_short = self._rss_job_urls()
+            listed, job_functions, rss_cut_short = self._rss_job_urls()
             if listed:
                 surface = "rss-stream"
                 if rss_cut_short:
@@ -310,12 +336,16 @@ class SuccessFactorsScraper(BaseScraper):
             f"{self.slug}: {surface or 'nothing'} via sitemap {kind or 'unknown'} "
             f"-> {len(listed)} job pages to fetch"
         )
-        # The tech gate (ADR-0017), read off the URL's own slug rather than the listing: unlike
-        # eightfold's PCSX surface, nothing here carries title or department pre-fetch — every
-        # field otherwise comes from the job page. A non-tech posting is never indexed, so
-        # skipping its detail costs nothing (ADR-0048's 2026-09-16 amendment established that for
-        # eightfold's exact, listing-derived signal); this is the same trade on an approximate,
-        # measured one instead — see :func:`_title_from_slug`.
+        # The tech gate (ADR-0017), read off the URL's own slug plus — on `rss-stream` boards
+        # only — the feed's own department, rather than the listing generally: unlike
+        # eightfold's PCSX surface, the sitemap-urlset and search-pages surfaces carry no title
+        # or department pre-fetch at all — every field otherwise comes from the job page. A
+        # non-tech posting is never indexed, so skipping its detail costs nothing (ADR-0048's
+        # 2026-09-16 amendment established that for eightfold's exact, listing-derived signal);
+        # this is the same trade on an approximate, measured one instead — see
+        # :func:`_title_from_slug`. Passing `department_of` unconditionally is safe even when
+        # `job_functions` is empty (the two non-RSS surfaces): `.get()` on an empty dict is just
+        # `None`, the same as before this field existed.
         #
         # Routed through `tech_detail_wanted` so this gate answers the same way every other one does —
         # in particular it is now conditional on `have_details`, the pipeline signal, which it
@@ -325,7 +355,9 @@ class SuccessFactorsScraper(BaseScraper):
         # longer readable from the pipeline's own data. `verify_scraper.py` and the enrichment
         # samplers construct scrapers directly and now see whole Boards again.
         tech_listed = self.tech_detail_wanted(
-            listed, lambda pair: _title_from_slug(pair[0])
+            listed,
+            lambda pair: _title_from_slug(pair[0]),
+            lambda pair: job_functions.get(pair[1]),
         )
         # Detail pass: every field comes from the job page, so fetch each one (bounded); a
         # failed fetch leaves fields None and parse drops just that job.
@@ -357,8 +389,20 @@ class SuccessFactorsScraper(BaseScraper):
                 f"{lost}/{len(tech_listed)} job pages unreadable — those Jobs are listed but "
                 "unbuilt",
             )
+        # `department` folded in here, not read on the job page — the detail markup (JSON-LD
+        # and the CSB microdata/label-span fallbacks) carries no department field on any tenant
+        # sampled (module docstring), so the RSS feed's own `g:job_function` is the only source
+        # there is, and it exists only for the `job_functions` this Board's surface populated.
         return [
-            {"url": url, "id": job_id, "fields": page_fields}
+            {
+                "url": url,
+                "id": job_id,
+                "fields": (
+                    {**page_fields, "department": job_functions.get(job_id)}
+                    if page_fields is not None
+                    else None
+                ),
+            }
             for (url, job_id), page_fields in zip(tech_listed, fields)
         ]
 
@@ -426,7 +470,7 @@ class SuccessFactorsScraper(BaseScraper):
                     title=title,
                     location=location,
                     remote=remote,
-                    department=None,
+                    department=fields.get("department"),
                     url=item["url"],
                     posted_at=fields.get("posted_at"),
                     scraped_at=scraped_at,
@@ -515,6 +559,32 @@ def _job_urls_from(text: str, host: str) -> list[tuple[str, str]]:
         if job_id not in pairs:
             pairs[job_id] = f"https://{host}{unescape(match.group(1))}"
     return [(url, job_id) for job_id, url in pairs.items()]
+
+
+def _job_functions_from(text: str) -> dict[str, str]:
+    """``{g:id: g:job_function}`` for every RSS ``<item>`` that states a real department label.
+
+    ``g:job_function`` is a Google-jobs-feed extension field carried only on the RSS-shaped
+    listing surface (module docstring's surfaces 2/3) — the plain urlset surface (most tenants)
+    has no such field, and neither does any job-page markup sampled (classic JSON-LD or the CSB
+    microdata/label-span fallbacks). Verified live 2026-09-22 on jobs.sap.com and
+    jobs.tetrapak.com: `g:id` matches the same numeric id `_JOB_PATH` reads off the item's own
+    `<link>`, and `g:job_function` states a clean label ("Sales", "Market Operations & Finance").
+
+    A minority of tenants state an internal ATS configuration token here instead of a real
+    department (e.g. ``ATS_WCMS_WEBFORM``, ``ATS_TALEO_APAC`` — measured live, basf.jobs,
+    2026-09-22) — :data:`_ATS_TOKEN` rejects that shape rather than feeding it to the tech gate,
+    which would otherwise classify on the literal string "ATS_WCMS_WEBFORM"."""
+    out: dict[str, str] = {}
+    for item in _RSS_ITEM.finditer(text):
+        id_m = _RSS_ID.search(item.group(1))
+        fn_m = _RSS_JOB_FUNCTION.search(item.group(1))
+        if not id_m or not fn_m:
+            continue
+        value = unescape(fn_m.group(1)).strip()
+        if value and not _ATS_TOKEN.match(value):
+            out[id_m.group(1)] = value
+    return out
 
 
 def _title_from_slug(url: str) -> str:

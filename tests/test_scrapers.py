@@ -4342,6 +4342,66 @@ def test_successfactors_job_urls_from():
     ]
 
 
+def test_successfactors_job_functions_from_reads_the_rss_feed_department():
+    from headstart.scrapers.successfactors import _job_functions_from
+
+    text = """<rss xmlns:g="http://base.google.com/ns/1.0"><channel>
+    <item><g:id>1</g:id><g:job_function>Sales &amp; Marketing</g:job_function>
+      <link>https://jobs.sap.com/job/x/1/</link></item>
+    <item><g:id>2</g:id><g:job_function></g:job_function></item>
+    </channel></rss>"""
+    assert _job_functions_from(text) == {"1": "Sales & Marketing"}
+
+
+def test_successfactors_job_functions_from_rejects_ats_internal_tokens():
+    # Real basf.jobs junk (measured live 2026-09-22): a subset of tenants state an ATS
+    # configuration token here instead of a department. Feeding that to the tech gate would
+    # classify on the literal string "ATS_WCMS_WEBFORM" — worse than no department at all.
+    from headstart.scrapers.successfactors import _job_functions_from
+
+    text = """<rss><channel>
+    <item><g:id>1</g:id><g:job_function>ATS_WCMS_WEBFORM</g:job_function></item>
+    <item><g:id>2</g:id><g:job_function>ATS_TALEO_APAC</g:job_function></item>
+    <item><g:id>3</g:id><g:job_function>Engineering</g:job_function></item>
+    </channel></rss>"""
+    assert _job_functions_from(text) == {"3": "Engineering"}
+
+
+def test_successfactors_rss_stream_fills_department_end_to_end(monkeypatch):
+    # The bug this pins: `department` was hardcoded `None` in `parse()` regardless of what the
+    # listing surface knew, so the ADR-0017 tech gate ran title-only on this whole ATS. This
+    # exercises the real path — `fetch_raw`'s rss-stream branch reading `g:job_function` off the
+    # same feed it's already downloading for URLs, through to `parse()`'s served `Job`.
+    from headstart.scrapers import successfactors as sf
+
+    rss_text = """<rss xmlns:g="http://base.google.com/ns/1.0"><channel>
+    <item><g:id>1</g:id><g:job_function>Engineering</g:job_function>
+      <link>https://careers.voith.com/job/Engineer/1/</link></item>
+    </channel></rss>"""
+    scraper = sf.SuccessFactorsScraper("careers.voith.com")
+    monkeypatch.setattr(scraper, "_fetch_sitemap", lambda: ("rss", "", None))
+    monkeypatch.setattr(scraper, "_search_job_urls", lambda: ([], None))
+    monkeypatch.setattr(
+        scraper,
+        "_rss_job_urls",
+        lambda: (
+            [("https://careers.voith.com/job/Engineer/1/", "1")],
+            sf._job_functions_from(rss_text),
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        scraper, "_job_fields", lambda url: {"title": "Software Engineer"}
+    )
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+
+    raw = scraper.fetch_raw()
+    jobs = scraper.parse(raw, "2026-09-22T00:00:00Z")
+
+    assert len(jobs) == 1
+    assert jobs[0].department == "Engineering"
+
+
 def test_successfactors_page_fields_jsonld():
     from headstart.scrapers.successfactors import _page_fields
 
@@ -5308,6 +5368,7 @@ def test_successfactors_truncates_on_a_surface_that_states_no_total(monkeypatch)
         "_rss_job_urls",
         lambda: (
             [(f"https://jobs.example.com/job/x/{i}/", str(i)) for i in range(200)],
+            {},
             aborted,
         ),
     )
@@ -5589,6 +5650,39 @@ def test_eightfold_child_sitemap_cap_truncates_even_when_every_detail_reads(
     )
 
 
+def test_oracle_remote_maps_known_codes():
+    from headstart.scrapers.oracle import _remote
+
+    assert _remote({"WorkplaceTypeCode": "ORA_REMOTE"}, {}, "Austin, TX") is True
+    assert _remote({"WorkplaceTypeCode": "ORA_ON_SITE"}, {}, "Remote") is False
+
+
+def test_oracle_remote_maps_hybrid_and_unknown_codes_to_none_not_false():
+    # The bug this pins: `code == _REMOTE_CODE` used to read ORA_HYBRID (and any other stated
+    # code) as False, conflating "explicitly hybrid" with "explicitly on-site" — against this
+    # repo's own hybrid-to-None convention (phenom.py, taleo_be.py). A stated-but-unrecognized
+    # code must not fall back to a location guess either, since the tenant DID state something.
+    from headstart.scrapers.oracle import _remote
+
+    assert _remote({"WorkplaceTypeCode": "ORA_HYBRID"}, {}, "Remote") is None
+    assert (
+        _remote({"WorkplaceTypeCode": "ORA_FULL_TIME_REMOTE"}, {}, "Austin, TX") is None
+    )
+
+
+def test_oracle_remote_falls_back_to_location_only_when_no_code_at_all():
+    from headstart.scrapers.oracle import _remote
+
+    assert _remote({}, {}, "Remote - United States") is True
+    assert _remote({}, {}, "Austin, TX") is False
+
+
+def test_oracle_remote_reads_detail_when_listing_omits_the_code():
+    from headstart.scrapers.oracle import _remote
+
+    assert _remote({}, {"WorkplaceTypeCode": "ORA_REMOTE"}, "Austin, TX") is True
+
+
 def test_oracle_offset_ceiling_truncates_however_complete_the_read_looks(monkeypatch):
     """A hard cap is never tolerated, whatever share it leaves (ADR-0121).
 
@@ -5620,8 +5714,8 @@ def _successfactors_board(monkeypatch, *, search, rss, sitemap=("rss", "", None)
     """A SuccessFactors scraper whose three listing surfaces are stubbed. Each returns what the
     real one does — its list plus why-it-came-up-short: ``sitemap`` as ``(kind, text, cut_short)``
     (defaulting to an RSS classification, so the whole fallback chain runs), ``search`` as
-    ``(pairs, cut_short)`` from the ``/search/`` walk, ``rss`` as ``(pairs, cut_short)`` from the
-    patient stream."""
+    ``(pairs, cut_short)`` from the ``/search/`` walk, ``rss`` as ``(pairs, job_functions,
+    cut_short)`` from the patient stream."""
     from headstart.scrapers.successfactors import SuccessFactorsScraper
 
     monkeypatch.setenv(
@@ -5699,9 +5793,10 @@ def test_successfactors_rss_stream_reports_a_feed_that_aborted_mid_read(monkeypa
     scraper = sf.SuccessFactorsScraper("jobs.example.com")
     _stub_stream(monkeypatch, sf, _StreamedBody(torn()))
 
-    found, cut_short = scraper._rss_job_urls()
+    found, job_functions, cut_short = scraper._rss_job_urls()
 
     assert [job_id for _url, job_id in found] == ["7"]  # what arrived is still scraped
+    assert job_functions == {}  # no `g:job_function` anywhere in this feed
     assert cut_short and "aborted" in cut_short
     assert scraper.truncated is None  # reported to fetch_raw, not recorded here
 
@@ -5714,7 +5809,7 @@ def test_successfactors_rss_stream_reports_a_feed_that_aborted_mid_read(monkeypa
             [b"<loc>https://jobs.example.com/job/x/7/</loc>" + b" " * (2 * 1024 * 1024)]
         ),
     )
-    assert "2 MB read cap" in scraper._rss_job_urls()[1]
+    assert "2 MB read cap" in scraper._rss_job_urls()[2]
 
     # ...while a feed that streams to its end reports nothing.
     _stub_stream(
@@ -5722,7 +5817,7 @@ def test_successfactors_rss_stream_reports_a_feed_that_aborted_mid_read(monkeypa
         sf,
         _StreamedBody([b"<loc>https://jobs.example.com/job/x/7/</loc>"]),
     )
-    assert scraper._rss_job_urls()[1] is None
+    assert scraper._rss_job_urls()[2] is None
 
 
 def test_successfactors_search_walk_reports_where_it_stopped_without_claiming_the_board(
@@ -5940,7 +6035,7 @@ def test_successfactors_keeps_a_whole_rss_board_off_the_truncated_list(monkeypat
     scraper = _successfactors_board(
         monkeypatch,
         search=([], "HTTP 503 at startrow 0 — 0 postings read before the walk stopped"),
-        rss=([("https://careers.voith.com/job/Engineer/1/", "1")], None),
+        rss=([("https://careers.voith.com/job/Engineer/1/", "1")], {}, None),
     )
 
     raw = scraper.fetch_raw()
@@ -5959,7 +6054,7 @@ def test_successfactors_reports_a_short_search_walk_when_it_is_the_answer(monkey
             [("https://careers.voith.com/job/x/1/", "1")],
             "HTTP 503 at startrow 25 — 1 postings read before the walk stopped",
         ),
-        rss=([("https://careers.voith.com/job/x/1/", "1")], None),
+        rss=([("https://careers.voith.com/job/x/1/", "1")], {}, None),
     )
 
     scraper.fetch_raw()
@@ -5979,6 +6074,7 @@ def test_successfactors_reports_an_rss_stream_that_ended_early(monkeypatch):
         search=([], None),
         rss=(
             [("https://careers.voith.com/job/Engineer/1/", "1")],
+            {},
             (
                 "the tenant's RSS feed aborted 2,097,152 bytes in — postings past that point "
                 "were not listed"
@@ -6002,7 +6098,7 @@ def test_successfactors_reports_a_sitemap_cut_at_the_read_cap(monkeypatch):
     scraper = _successfactors_board(
         monkeypatch,
         search=([], None),
-        rss=([], None),
+        rss=([], {}, None),
         sitemap=(
             "urlset",
             "<loc>https://careers.voith.com/job/Engineer/1/</loc>",
@@ -6027,7 +6123,7 @@ def test_successfactors_keeps_a_capped_sitemap_that_listed_nothing_off_the_board
     scraper = _successfactors_board(
         monkeypatch,
         search=([("https://careers.voith.com/job/Engineer/9/", "9")], None),
-        rss=([], None),
+        rss=([], {}, None),
         sitemap=(
             "urlset",
             "<urlset></urlset>",
@@ -9483,9 +9579,10 @@ def test_smartrecruiters_gates_details_and_pairs_them_back(monkeypatch):
 def test_rippling_gates_details_and_reads_a_dict_department_like_parse_does(
     monkeypatch,
 ):
-    """rippling states `department` as a bare string on some tenants and `{"name": ...}` on
-    others, and `parse` unpacks the dict. The gate must unpack it the same way or it classifies
-    on a different string than `filter_tech` gets."""
+    """rippling states `department` as a bare string on some tenants and `{"id", "label"}` on
+    others (measured live 2026-09-22, 76/76 postings on 3 boards — never a `name` key), and
+    `parse` unpacks the dict. The gate must unpack it the same way or it classifies on a
+    different string than `filter_tech` gets."""
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
     scraper = get_scraper("rippling", "acme")
     scraper.have_details = frozenset()
@@ -9493,9 +9590,13 @@ def test_rippling_gates_details_and_reads_a_dict_department_like_parse_does(
         {
             "uuid": "1",
             "name": "Technician",
-            "department": {"name": "Information Technology"},
+            "department": {"id": "IT", "label": "Information Technology"},
         },
-        {"uuid": "2", "name": "Receptionist", "department": {"name": "Front Desk"}},
+        {
+            "uuid": "2",
+            "name": "Receptionist",
+            "department": {"id": "Front Desk", "label": "Front Desk"},
+        },
     ]
 
     class _Resp:

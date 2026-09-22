@@ -252,7 +252,17 @@ def build_doc(job: dict) -> str:
 # textbook case this counter exists for; live-confirmed on a Zoho posting, and measured full-corpus
 # old vs new (not just coverage, per ADR-0066): zero regressions, 39 new answers, 60 corrected ones
 # — see docs/experience-extraction/2026-09-16_symbol-gap-full-corpus-measurement.md.
-DERIVATIONS_VERSION = 13
+# v14: `salary.py` gained `_RANGE_PERIOD_EACH`, a range shape where a currency code+symbol and
+# "per year" repeat on EACH side of the dash ("USD $122,000 per year - USD $135,000 per year") —
+# real, common Uber phrasing that previously broke `_LABELED`'s own connector (the "per year" in
+# the gap isn't a dash/"to", so `_LABELED` matched only the floor and stopped there, since a
+# single floor-only span already reads as "resolved"). Tried before `_LABELED` in the cascade for
+# that reason. An already-stored Job's description is unchanged raw input that now resolves a
+# ceiling the old code silently dropped — measured full-corpus old vs new on a live Uber board
+# sweep (535 postings, 2026-09-22), not just coverage: 207 records improved (174 floor-only ->
+# full, 33 None -> full), zero regressions (no record lost a value or had an already-resolved
+# min/max change). On top of the v13 bump at `ea577fff`.
+DERIVATIONS_VERSION = 14
 
 
 def to_meta(job: dict) -> dict:

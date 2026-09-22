@@ -13,6 +13,30 @@ from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
 
+def _row_location(j: dict) -> str | None:
+    return (
+        ", ".join(p for p in (j.get("city"), j.get("state"), j.get("country")) if p)
+        or None
+    )
+
+
+def _location(rows: list[dict]) -> str | None:
+    """Every place a multi-location posting names, not just its first row's.
+
+    Workable serves a multi-location posting as N listing rows sharing one ``shortcode`` —
+    identical ``url`` and description, differing only in location. Measured live 2026-09-22
+    across 11 boards / 432 rows: 147 rows (34.0%) are such duplicates, spanning 64 of 285
+    distinct postings (22.5%). Joined with ``; `` (not ``, ``) since each row's own location is
+    itself a ``, ``-joined city/state/country triple.
+    """
+    seen: list[str] = []
+    for row in rows:
+        loc = _row_location(row)
+        if loc and loc not in seen:
+            seen.append(loc)
+    return "; ".join(seen) or None
+
+
 class WorkableScraper(BaseScraper):
     ats = "workable"
     url_shape = r"https://apply\.workable\.com/(j/[A-Z0-9]+|[^/]+/j/[A-Z0-9]+)"
@@ -55,17 +79,21 @@ class WorkableScraper(BaseScraper):
             # eviction on every future run.
             self.note_unreadable_board("a payload with a `jobs` list", "no `jobs` key")
             return []
-        jobs: list[Job] = []
+        # A multi-location posting is N rows sharing one `shortcode` (identical `url` and
+        # description, differing only in location) — grouped here so it serves as one Job
+        # with every location joined, rather than colliding down to one row's location in
+        # the harvest's within-board first-wins dedupe. A dict preserves first-seen row order
+        # without assuming same-shortcode rows are adjacent in the listing.
+        by_shortcode: dict[str, list[dict]] = {}
         for j in listed:
-            location = (
-                ", ".join(
-                    p for p in (j.get("city"), j.get("state"), j.get("country")) if p
-                )
-                or None
-            )
+            by_shortcode.setdefault(j["shortcode"], []).append(j)
+        jobs: list[Job] = []
+        for shortcode, rows in by_shortcode.items():
+            j = rows[0]
+            location = _location(rows)
             jobs.append(
                 Job(
-                    id=self.job_id(j["shortcode"]),
+                    id=self.job_id(shortcode),
                     ats=self.ats,
                     company=raw.get("name") or self.company,
                     title=(j.get("title") or "").strip(),

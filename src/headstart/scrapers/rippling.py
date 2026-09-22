@@ -22,14 +22,17 @@ _DETAIL_WORKERS = 8
 
 
 def _department_of(record: dict[str, Any]) -> str | None:
-    """A record's department, whether it states a bare string or a ``{"name": ...}`` object.
+    """A record's department, whether it states a bare string or a ``{"id", "label"}`` object.
 
-    One expression rather than two: the tech gate reads it off the listing item and ``parse``
-    reads it off the item then the detail, and a gate that unpacked the dict differently from
-    ``parse`` would classify on a different string than ``filter_tech`` does."""
+    The listing item's ``department`` object carries ``{"id", "label"}`` — measured live
+    2026-09-22 across 76 postings on 3 boards, never a ``name`` key. ``label`` is the
+    human-readable value (e.g. "Engineering"); falls back to ``id`` when absent. One expression
+    rather than two: the tech gate reads it off the listing item and ``parse`` reads it off the
+    item then the detail, and a gate that unpacked the dict differently from ``parse`` would
+    classify on a different string than ``filter_tech`` does."""
     dept = record.get("department")
     if isinstance(dept, dict):
-        dept = dept.get("name")
+        dept = dept.get("label") or dept.get("id")
     return dept or None
 
 
@@ -94,9 +97,10 @@ class RipplingScraper(BaseScraper):
             else (data.get("items") or data.get("jobs") or [])
         )
         # The tech gate (ADR-0017): `parse` reads `name` and `department` off this listing item,
-        # falling back to the detail only for a department the listing omitted — and `department`
-        # is empty on every one of the 1,515 rippling postings in the 2026-09-17 corpus, so that
-        # fallback recovers nothing the gate is missing.
+        # falling back to the detail only for a department the listing omitted. The listing
+        # item's `department` carries `{id, label}` (measured live 2026-09-22, 76/76 postings
+        # on 3 boards) and `_department_of` reads that directly, so the detail fallback below
+        # exists only for the rare listing item missing the key entirely.
         wanted = self.tech_detail_wanted(
             items, lambda it: it.get("name"), _department_of
         )
