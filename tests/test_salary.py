@@ -1756,3 +1756,21 @@ def test_description_prefixed_dollar_symbols_name_their_currency():
     assert from_description("Salary: US$120,000 - US$140,000") == SalarySpan(
         120_000, 140_000, "USD", "regex"
     )
+
+
+def test_hr_acronym_and_missouri_before_the_figure_are_not_periods():
+    # Real served rows: "HR functions" read as hourly (zoho:penthara, an intern served at
+    # ₹3.12-5.2 crore) and Missouri's "MO" as monthly (workday:newbalance dropped past the cap).
+    # An all-caps HR/MO before the figure is the acronym or the state code; after it, a unit.
+    assert from_description(
+        "Location: Joplin, MO Salary: $55,000 - $65,000"
+    ) == SalarySpan(55_000, 65_000, "USD", "regex")
+    assert (
+        from_description(
+            "Exposure to a variety of HR functions Salary: INR 15,000-25,000"
+        )
+        is None
+    )
+    assert from_description("Pay $17.95 HR Qualifications") == SalarySpan(
+        37_440, None, "USD", "regex"
+    )
