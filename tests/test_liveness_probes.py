@@ -465,3 +465,71 @@ def test_a_neighbours_success_cannot_undo_the_easing(monkeypatch):
     assert gate.spacing == eased_to, "a success must not speed the gate back up"
     cl.p_workable("third", "")
     assert gate.spacing > eased_to, "and the next 429 keeps easing from where it was"
+
+
+# --- pyjamahr: an unknown slug answers 200 with count 0, so the board page settles a zero ------
+
+
+def _pyjamahr_get(api_status, api_body, page_status=None, calls=None):
+    """`_get` keyed on host: the listing on api.pyjamahr.com, the board page on jobs.pyjamahr.com."""
+
+    def _get(url, headers=None):
+        if calls is not None:
+            calls.append(url)
+        if "api.pyjamahr.com" in url:
+            return api_status, api_body
+        return page_status, b"<html><title>Acme</title></html>"
+
+    return _get
+
+
+def test_pyjamahr_a_nonzero_count_is_live_without_touching_the_board_page(monkeypatch):
+    """`count` is the Board's whole total whatever `limit` the probe asked for; a positive one is
+    proof of a tenant, so the second request is never spent."""
+    calls: list[str] = []
+    monkeypatch.setattr(
+        cl,
+        "_get",
+        _pyjamahr_get(
+            200, b'{"count": 124, "next": null, "results": [{}]}', calls=calls
+        ),
+    )
+    assert cl.p_pyjamahr("tulip-group", "https://jobs.pyjamahr.com/tulip-group") == (
+        cl.LIVE,
+        124,
+    )
+    assert (
+        len(calls) == 1
+        and "limit=1" in calls[0]
+        and "company_slug=tulip-group" in calls[0]
+    )
+
+
+def test_pyjamahr_a_zero_count_with_a_board_page_is_a_live_empty_board(monkeypatch):
+    """Measured: 75 real tenants answer `count: 0` and a 200 board page — live, nothing open."""
+    monkeypatch.setattr(
+        cl, "_get", _pyjamahr_get(200, b'{"count": 0, "results": []}', 200)
+    )
+    assert cl.p_pyjamahr("volopay", "") == (cl.LIVE, 0)
+
+
+def test_pyjamahr_a_zero_count_without_a_board_page_is_dead(monkeypatch):
+    """The same `count: 0` envelope an unknown slug gets — only the page's 404 tells them apart."""
+    monkeypatch.setattr(
+        cl, "_get", _pyjamahr_get(200, b'{"count": 0, "results": []}', 404)
+    )
+    assert cl.p_pyjamahr("notacompany123", "") == (cl.DEAD, None)
+
+
+def test_pyjamahr_inconclusive_answers_stay_unknown(monkeypatch):
+    # The API down: nothing was learned.
+    monkeypatch.setattr(cl, "_get", _pyjamahr_get(503, b""))
+    assert cl.p_pyjamahr("acme", "") == (cl.UNKNOWN, None)
+    # A 200 that is not the envelope (a wall page, say) is not a count of zero.
+    monkeypatch.setattr(cl, "_get", _pyjamahr_get(200, b"<html>checkpoint</html>", 200))
+    assert cl.p_pyjamahr("acme", "") == (cl.UNKNOWN, None)
+    # A zero count whose board page could not be read is neither empty nor gone yet.
+    monkeypatch.setattr(
+        cl, "_get", _pyjamahr_get(200, b'{"count": 0, "results": []}', 503)
+    )
+    assert cl.p_pyjamahr("acme", "") == (cl.UNKNOWN, None)

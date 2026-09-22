@@ -18,7 +18,7 @@ Not from a feed employers had to opt in to. Not from a list ranked by who paid.
 
 ### It costs nothing to run. All of it.
 
-Discovery. 38 scrapers. Embeddings. Vector search. Email and Telegram alerts.
+Discovery. 39 scrapers. Embeddings. Vector search. Email and Telegram alerts.
 
 Fork it, add your tokens, and the whole pipeline is yours — running on free tiers, end to
 end. No card. No trial. Not a stripped tier of something else: the same code that serves the
@@ -92,12 +92,12 @@ unparseable input with a 400 rather than silently ignoring it.
 
 ## ATS coverage
 
-**38 scrapers**, selected from a registry by the `ats` key: `amazon`, `apple`, `ashby`,
+**39 scrapers**, selected from a registry by the `ats` key: `amazon`, `apple`, `ashby`,
 `bamboohr`, `bytedance`, `darwinbox`, `eightfold`, `freshteam`, `gem`, `google`, `greenhouse`,
 `icims`, `jazzhr`, `jobvite`, `join`, `keka`, `lever`, `meta`, `oracle`, `personio`, `phenom`,
-`recruitee`, `ripplehire`, `rippling`, `sensehq`, `smartrecruiters`, `successfactors`, `taleo_be`,
-`taleo_enterprise`, `teamtailor`, `tesla`, `tiktok`, `trakstar`, `uber`, `workable`, `workday`,
-`zoho`, `zwayam`. All but `join` are active: `join`'s boards run ~1 tech job in ~10k (German-SMB
+`pyjamahr`, `recruitee`, `ripplehire`, `rippling`, `sensehq`, `smartrecruiters`, `successfactors`,
+`taleo_be`, `taleo_enterprise`, `teamtailor`, `tesla`, `tiktok`, `trakstar`, `uber`, `workable`,
+`workday`, `zoho`, `zwayam`. All but `join` are active: `join`'s boards run ~1 tech job in ~10k (German-SMB
 listings, almost entirely non-tech), pure noise for a tech-only index, so `registry.DISABLED_ATS`
 skips it — the scraper class and tests stay intact, and re-enabling it is a one-line change.
 
@@ -120,8 +120,8 @@ Every *other* ATS serves the **ATS slug** in that field instead, so a row's `com
 either — four served rows in five carry a slug rather than a name, which is why `CompanyPrefs` is
 keyed by **board_key** and never by company name.
 
-The liveness pipeline has probed **256,993 ledger rows**: 152,791 live, 88,111 dead, 16,091 unknown
-— rows, not boards; they collapse to 146,159 Unique Boards once duplicate spellings of the same
+The liveness pipeline has probed **257,753 ledger rows**: 153,550 live, 88,112 dead, 16,091 unknown
+— rows, not boards; they collapse to 146,918 Unique Boards once duplicate spellings of the same
 board are folded together (`CONTEXT.md` §Counting Boards).
 
 ## What this optimises for
@@ -173,7 +173,7 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>152,791 live rows of 256,993<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>153,550 live rows of 257,753<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
@@ -271,18 +271,18 @@ table in lockstep with the committed ledger:
 
 | | boards | |
 | --- | ---: | --- |
-| live rows in the ledger | 152,791 | a row, not a board — 6,632 of them are duplicate spellings |
+| live rows in the ledger | 153,550 | a row, not a board — 6,632 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −25,488 | all of it `join` |
 | − `config.EXCLUDED_BOARDS` | −47 | vendor test/sandbox boards, confirmed by reading their postings |
 | − alias ledger | −78 | one company, two hostnames sharing one board (ADR-0111) |
 | − case-variant dedupe | −6,630 | `company/External` and `company/external` are one board (ADR-0023) |
 | − `config.PARKED_BOARDS` | −7 | real boards withheld for now — five for scrape cost, two for near-duplicate spam |
-| = **Scrapable Board** | **120,541** | |
+| = **Scrapable Board** | **121,300** | |
 
 That order matters: excluding before deduping reads −47 and −6,630, deduping first reads −45,
-because two excluded boards were themselves duplicates. Both land on 120,541.
+because two excluded boards were themselves duplicates. Both land on 121,300.
 
-Of those, **78,083 are currently hiring** — the 42,458 live-but-empty boards are skipped as having
+Of those, **78,765 are currently hiring** — the 42,535 live-but-empty boards are skipped as having
 nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
 sticky measure of tech-job yield) and a random exploration tail drawn from everything else, so
 newly-productive boards can never starve and eviction keeps working on boards outside the head.
