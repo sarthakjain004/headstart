@@ -1560,7 +1560,9 @@ def test_description_l_suffix_lakh_shorthand_recognized():
     ) == SalarySpan(3_000_000, 5_000_000, "INR", "regex")
     assert from_description(
         "Salary : INR 3.0L to 4.5L Position : Full-time", ats="keka"
-    ) == SalarySpan(300_000, 400_000, "INR", "regex")
+    ) == SalarySpan(
+        300_000, 450_000, "INR", "regex"
+    )  # was 400,000: 4.5 rounded before the L
 
 
 def test_description_l_suffix_does_not_swallow_lakhs_word():
@@ -1809,6 +1811,17 @@ def test_num_single_digit_decimal_comma_is_a_decimal():
     assert _num("1.234,5") == 1234  # unchanged: both separators already worked
     assert from_description("Salary: €13,5 - €15 per hour") == SalarySpan(
         29_120, 31_200, "EUR", "regex"
+    )
+
+
+def test_k_shorthand_keeps_its_fraction():
+    # Review pass 1: `_num` rounded "28,5" to 28 BEFORE the k multiplier, so "28,5k" served
+    # 28,000 (and "28.5k" the same, pre-existing). The fraction belongs to the thousands.
+    assert from_description("Salary: €28,5k - €32,5k per year") == SalarySpan(
+        28_500, 32_500, "EUR", "regex"
+    )
+    assert from_description("Salary: $62.5k - $70k") == SalarySpan(
+        62_500, 70_000, "USD", "regex"
     )
 
 
