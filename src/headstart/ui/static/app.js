@@ -2850,7 +2850,13 @@ document.addEventListener('click', async ev => {
   const hide = ev.target.closest('[data-hide-company]');
   if (!hide) return;
   hide.disabled = true;
-  if (await setCompany(hide.dataset.hideCompany, 'hide')) { drawMyCompanies(); await fetchPage(); }
+  if (await setCompany(hide.dataset.hideCompany, 'hide')) {
+    drawMyCompanies();
+    // fetchPage redraws the Search list only; a hide clicked on Matches re-runs its Set too,
+    // or the company just hidden stays on screen there.
+    if (currentTab() === 'matches') runSet(activeSetId);
+    await fetchPage();
+  }
   else { hide.disabled = false; }
 });
 
