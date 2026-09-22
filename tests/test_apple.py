@@ -152,21 +152,63 @@ def test_description_is_built_from_the_detail_body_not_the_listing_summary():
     assert html_to_text(detail["description"]) in job.description
 
 
-def test_employment_type_comes_from_the_detail_pass_when_present():
+def test_employment_type_comes_from_the_listing_not_the_detail():
+    """`standardWeeklyHours` (both fixture rows: 40) drives Full-time/Part-time; a title
+    carrying the whole word "Intern" (the REQ row) wins over that split (module docstring)."""
     jobs = _jobs()
+    assert jobs[REQ_ID].employment_type == "Intern"  # title says "... EE Intern"
+    assert jobs[PIPE_ID].employment_type == "Full-time"  # no "intern" in the title, 40h
+
+
+def test_employment_type_survives_a_missing_detail():
+    """The whole point of moving this off the detail: it must not depend on the detail fetch
+    happening at all, since the ADR-0048 skip means most runs won't make it."""
+    raw = {"searchResults": _listing(), "details": {}}
+    jobs = {j.id.rsplit(":", 1)[1]: j for j in _scraper().parse(raw, SCRAPED_AT)}
     assert jobs[REQ_ID].employment_type == "Intern"
-    # Measured: not every detail payload states it (module docstring).
-    assert jobs[PIPE_ID].employment_type is None
+    assert jobs[PIPE_ID].employment_type == "Full-time"
+
+
+def test_employment_type_from_hours_below_thirty_is_part_time():
+    listed = [
+        {
+            "id": "REQ-4",
+            "positionId": "4",
+            "postingTitle": "UK - Specialist: Seasonal, Part-time",
+            "standardWeeklyHours": 20,
+        }
+    ]
+    (job,) = _scraper().parse({"searchResults": listed, "details": {}}, SCRAPED_AT)
+    assert job.employment_type == "Part-time"
+
+
+def test_employment_type_is_none_when_hours_are_absent():
+    listed = [{"id": "REQ-5", "positionId": "5", "postingTitle": "X"}]
+    (job,) = _scraper().parse({"searchResults": listed, "details": {}}, SCRAPED_AT)
+    assert job.employment_type is None
+
+
+def test_employment_type_intern_title_does_not_false_positive_on_international():
+    listed = [
+        {
+            "id": "REQ-6",
+            "positionId": "6",
+            "postingTitle": "International Trade Compliance Manager",
+            "standardWeeklyHours": 40,
+        }
+    ]
+    (job,) = _scraper().parse({"searchResults": listed, "details": {}}, SCRAPED_AT)
+    assert job.employment_type == "Full-time"
 
 
 def test_a_missing_detail_payload_leaves_the_job_listed_with_no_description():
     """Enrichment, not a hard dependency — unlike a genuinely truncated teaser (Oracle), Apple's
-    listing carries no posting-specific text at all, so there is nothing to fall back to."""
+    listing carries no posting-specific text at all, so there is nothing to fall back to.
+    `employment_type` is unaffected: it is sourced from the listing (see the dedicated tests)."""
     raw = {"searchResults": _listing(), "details": {}}
     jobs = {j.id.rsplit(":", 1)[1]: j for j in _scraper().parse(raw, SCRAPED_AT)}
     assert len(jobs) == 2
     assert jobs[REQ_ID].description is None
-    assert jobs[REQ_ID].employment_type is None
     assert jobs[REQ_ID].title  # still a real, listed Job
 
 
@@ -301,6 +343,43 @@ def test_hitting_the_page_cap_marks_truncated(monkeypatch):
     )
     scraper._listing()
     assert scraper.truncated and "page cap" in scraper.truncated
+
+
+def test_fetch_raw_skips_details_it_already_holds(monkeypatch):
+    """ADR-0048, re-enabled: `employment_type` moved onto the listing's `standardWeeklyHours`
+    (module docstring), so the detail fetch supplies only `description` — a held Job's detail is
+    skipped rather than re-fetched every run."""
+    scraper = _scraper()
+    listed = [
+        {
+            "id": "REQ-10",
+            "positionId": "10",
+            "postingTitle": "Held Engineer",
+            "team": {"teamName": "Software"},
+            "standardWeeklyHours": 40,
+        },
+        {
+            "id": "REQ-11",
+            "positionId": "11",
+            "postingTitle": "Fresh Engineer",
+            "team": {"teamName": "Software"},
+            "standardWeeklyHours": 40,
+        },
+    ]
+    scraper.have_details = {f"apple:{SLUG}:REQ-10"}
+    monkeypatch.setattr(scraper, "_listing", lambda: listed)
+    fetched_ids: list[str] = []
+
+    def fake_timed_details(ids):
+        fetched_ids.extend(ids)
+        return [{"description": f"desc-{i}"} for i in ids]
+
+    monkeypatch.setattr(scraper, "_timed_details", fake_timed_details)
+    raw = scraper.fetch_raw()
+
+    assert fetched_ids == ["REQ-11"]  # the held Job was never fetched
+    assert "REQ-10" not in raw["details"]
+    assert raw["details"]["REQ-11"]["description"] == "desc-REQ-11"
 
 
 def test_the_scraper_declares_a_detail_pass():

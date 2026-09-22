@@ -772,6 +772,50 @@ def test_keka_location_empty_list_stays_none():
     assert jobs[0].location is None
 
 
+def test_keka_location_joins_every_entry_not_just_the_first():
+    """Measured live 2026-09-22: 57 of 929 jobs on kpgroup.keka.com carry more than one
+    location; taking `[0]` silently dropped the rest."""
+    raw = [
+        {
+            "id": 1,
+            "title": "T",
+            "jobLocations": [
+                {"city": "Bhavnagar", "state": "GJ", "countryName": "India"},
+                {"city": "Bharuch", "state": "GJ", "countryName": "India"},
+            ],
+        }
+    ]
+    jobs = get_scraper("keka", "x", "X").parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "Bhavnagar, GJ, India; Bharuch, GJ, India"
+
+
+def test_keka_location_join_drops_an_entry_with_nothing_to_say():
+    raw = [
+        {
+            "id": 1,
+            "title": "T",
+            "jobLocations": [{}, {"city": "Pune", "countryName": "India"}],
+        }
+    ]
+    jobs = get_scraper("keka", "x", "X").parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "Pune, India"
+
+
+def test_keka_employment_type_maps_the_two_confirmed_jobtype_values():
+    raw = [
+        {"id": 1, "title": "T", "jobType": 2},
+        {"id": 2, "title": "T", "jobType": 1},
+        {
+            "id": 3,
+            "title": "T",
+            "jobType": 0,
+        },  # deliberately unmapped, see module docstring
+        {"id": 4, "title": "T"},
+    ]
+    jobs = get_scraper("keka", "x", "X").parse(raw, SCRAPED_AT)
+    assert [j.employment_type for j in jobs] == ["Full-time", "Part-time", None, None]
+
+
 def test_keka_salary_no_scientific_notation_for_large_amounts():
     # Real bug, salary-extraction pass 2026-08-22: Python's `:g` format (the previous
     # implementation) switches to scientific notation ("1e+06") for values >= 1,000,000 — neither
@@ -987,6 +1031,66 @@ def test_smartrecruiters_parse():
     assert (
         j.description and "</" not in j.description
     )  # detail fetch; populated, HTML-stripped
+
+
+def test_smartrecruiters_department_falls_back_to_function_label():
+    """`department.label` null on 54.7% of a live 8-board sample; `function.label` present on
+    100% of those (module docstring). No `team` field — `filter_tech` only reads `department`."""
+    from headstart.scrapers.smartrecruiters import _department_of
+
+    assert _department_of({"department": {"label": "Engineering"}}) == "Engineering"
+    assert _department_of({"function": {"label": "Information Technology"}}) == (
+        "Information Technology"
+    )
+    # department present wins over function, even when both are stated
+    assert (
+        _department_of(
+            {"department": {"label": "Engineering"}, "function": {"label": "Sales"}}
+        )
+        == "Engineering"
+    )
+    assert _department_of({}) is None
+
+
+def test_smartrecruiters_parse_uses_function_when_department_is_null():
+    scraper = get_scraper("smartrecruiters", "acme", "Acme")
+    raw = {
+        "content": [
+            {
+                "id": "1",
+                "name": "IT Support Specialist",
+                "function": {"label": "Information Technology"},
+            }
+        ]
+    }
+    (job,) = scraper.parse(raw, SCRAPED_AT)
+    assert job.department == "Information Technology"
+
+
+def test_smartrecruiters_tech_gate_reads_function_when_department_is_null(monkeypatch):
+    """The gate and `parse` must reach the same verdict — both go through `_department_of`."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    scraper = get_scraper("smartrecruiters", "acme")
+    scraper.have_details = frozenset()
+    postings = [
+        # vague title, no department, tech function -> rule 4 promotes it (gate must fetch it)
+        {"id": "1", "name": "Associate", "function": {"label": "Engineering"}},
+        # vague title, no department, non-tech function -> stays gated out
+        {"id": "2", "name": "Associate", "function": {"label": "Retail"}},
+    ]
+    monkeypatch.setattr(
+        scraper, "_get", lambda *a: json.dumps({"content": postings, "totalFound": 2})
+    )
+    fetched: list[str] = []
+    monkeypatch.setattr(
+        scraper,
+        "_job_detail",
+        lambda posting_id: fetched.append(posting_id) or {"description": "d"},
+    )
+
+    scraper.fetch_raw()
+
+    assert fetched == ["1"]
 
 
 def test_smartrecruiters_description_joins_requirement_sections():
@@ -2983,6 +3087,209 @@ def test_trakstar_parse():
     assert j.posted_at == "2026-02-01"  # JSON-LD datePosted; the listing card has none
 
 
+# --- jsapi.recruiterbox.com — the primary listing surface (module docstring) ------------------
+
+
+def test_trakstar_api_location_joins_city_state_country():
+    from headstart.scrapers.trakstar import _api_location
+
+    assert (
+        _api_location(
+            {
+                "city": "Bengaluru",
+                "state": "Karnataka",
+                "country": "India",
+                "zipcode": "1",
+            }
+        )
+        == "Bengaluru, Karnataka, India"
+    )
+    assert _api_location({"city": None, "state": None, "country": None}) is None
+    assert _api_location(None) is None
+    assert _api_location("not a dict") is None
+
+
+def test_trakstar_jobs_from_api_maps_every_field():
+    from headstart.scrapers.trakstar import _jobs_from_api
+
+    items = [
+        {
+            "id": "fk0z83d",
+            "title": "Backend Engineer",
+            "description": "<p>Build things.</p>",
+            "location": {"city": "Bengaluru", "state": "Karnataka", "country": "India"},
+            "allows_remote": False,
+            "position_type": "full_time",
+            "team": "Tech & Product",
+            "hosted_url": "https://exotel.hire.trakstar.com/jobs/fk0z83d/",
+        }
+    ]
+    (job,) = _jobs_from_api("trakstar", "exotel", "Exotel", items, SCRAPED_AT)
+    assert job.id == "trakstar:exotel:fk0z83d"
+    assert job.url == "https://exotel.hire.trakstar.com/jobs/fk0z83d/"
+    assert job.location == "Bengaluru, Karnataka, India"
+    assert job.remote is False
+    assert job.department == "Tech & Product"
+    assert job.employment_type == "Full-time"
+    assert job.description == "Build things."
+    assert (
+        job.posted_at is None
+    )  # this surface states no posting date (module docstring)
+
+
+def test_trakstar_jobs_from_api_skips_an_item_with_no_id_or_no_title():
+    from headstart.scrapers.trakstar import _jobs_from_api
+
+    items = [
+        {"id": "", "title": "Ghost"},
+        {"id": "x1", "title": "  "},
+        {"id": "x2", "title": "Kept"},
+    ]
+    jobs = _jobs_from_api("trakstar", "acme", "Acme", items, SCRAPED_AT)
+    assert [j.title for j in jobs] == ["Kept"]
+
+
+def test_trakstar_jobs_from_api_maps_unset_position_type_to_none():
+    """Measured live: `position_type` is `""`, not absent, when a tenant hasn't set it."""
+    from headstart.scrapers.trakstar import _jobs_from_api
+
+    items = [{"id": "x1", "title": "T", "position_type": ""}]
+    (job,) = _jobs_from_api("trakstar", "acme", "Acme", items, SCRAPED_AT)
+    assert job.employment_type is None
+
+
+def test_trakstar_api_page_returns_none_on_a_non_200(monkeypatch):
+    from headstart.scrapers.trakstar import TrakstarScraper
+
+    class _Resp:
+        status_code = 400
+        text = '{"client_name": "Invalid client name"}'
+
+    scraper = TrakstarScraper("nonexistent")
+    monkeypatch.setattr(scraper, "_fetch", lambda *a, **k: _Resp())
+    assert scraper._api_page(0) is None
+
+
+def test_trakstar_api_page_returns_none_on_unparseable_json(monkeypatch):
+    from headstart.scrapers.trakstar import TrakstarScraper
+
+    class _Resp:
+        status_code = 200
+        text = "not json"
+
+    scraper = TrakstarScraper("acme")
+    monkeypatch.setattr(scraper, "_fetch", lambda *a, **k: _Resp())
+    assert scraper._api_page(0) is None
+
+
+def test_trakstar_api_listing_returns_none_when_the_first_page_is_unreachable(
+    monkeypatch,
+):
+    """This is the signal `fetch_raw` uses to fall back to the HTML+RSS+detail path — a tenant
+    with no jsapi surface, not merely a short one."""
+    from headstart.scrapers.trakstar import TrakstarScraper
+
+    scraper = TrakstarScraper("nonexistent")
+    monkeypatch.setattr(scraper, "_api_page", lambda offset: None)
+    assert scraper._api_listing() is None
+    assert scraper.truncated is None  # unreachable is not the same claim as short
+
+
+def test_trakstar_api_listing_walks_by_the_page_size_actually_returned(monkeypatch):
+    """Measured live 2026-09-22: the server clamps `limit` to 250 regardless of a higher ask, so
+    the walk steps by `len(batch)` rather than trusting `_API_LIMIT` to stay accurate."""
+    from headstart.scrapers.trakstar import TrakstarScraper
+
+    pages = {
+        0: {"meta": {"total": 5}, "objects": [{"id": str(i)} for i in range(3)]},
+        3: {"meta": {"total": 5}, "objects": [{"id": str(i)} for i in range(3, 5)]},
+    }
+    scraper = TrakstarScraper("acme")
+    monkeypatch.setattr(scraper, "_api_page", lambda offset: pages[offset])
+
+    items = scraper._api_listing()
+
+    assert [i["id"] for i in items] == ["0", "1", "2", "3", "4"]
+    assert scraper.truncated is None
+
+
+def test_trakstar_api_listing_marks_truncated_when_a_later_page_fails(monkeypatch):
+    from headstart.scrapers.trakstar import TrakstarScraper
+
+    pages = {
+        0: {"meta": {"total": 5}, "objects": [{"id": str(i)} for i in range(3)]},
+    }
+    scraper = TrakstarScraper("acme")
+    monkeypatch.setattr(scraper, "_api_page", lambda offset: pages.get(offset))
+
+    items = scraper._api_listing()
+
+    assert len(items) == 3  # what arrived is still kept
+    assert scraper.truncated and "offset 3" in scraper.truncated
+
+
+def test_trakstar_api_listing_reports_a_shortfall_against_the_stated_total(monkeypatch):
+    """`meta.total` is exactly the stated total `mark_truncated_unless_negligible` wants
+    (ADR-0121) — a walk that ends (a short final page) but under-reads the total must still be
+    measured against it, not treated as a clean natural end."""
+    from headstart.scrapers.trakstar import TrakstarScraper
+
+    scraper = TrakstarScraper("acme")
+    monkeypatch.setattr(
+        scraper,
+        "_api_page",
+        lambda offset: (
+            {"meta": {"total": 100}, "objects": [{"id": "1"}]}
+            if offset == 0
+            else {"meta": {"total": 100}, "objects": []}
+        ),
+    )
+
+    items = scraper._api_listing()
+
+    assert len(items) == 1
+    assert scraper.truncated and "1 of 100" in scraper.truncated
+
+
+def test_trakstar_fetch_raw_prefers_the_api_and_never_touches_the_careers_page(
+    monkeypatch,
+):
+    scraper = get_scraper("trakstar", "acme", "Acme")
+    monkeypatch.setattr(
+        scraper, "_api_listing", lambda: [{"id": "1", "title": "Engineer"}]
+    )
+
+    def boom_get(url=None):
+        raise AssertionError("must not fetch the careers page when the API answered")
+
+    monkeypatch.setattr(scraper, "_get", boom_get)
+
+    raw = scraper.fetch_raw()
+
+    assert raw == {"api_items": [{"id": "1", "title": "Engineer"}]}
+    jobs = scraper.parse(raw, SCRAPED_AT)
+    assert jobs[0].id == "trakstar:acme:1"
+
+
+def test_trakstar_fetch_raw_falls_back_to_the_careers_page_when_the_api_is_unreachable(
+    monkeypatch,
+):
+    import headstart.scrapers.trakstar as trakstar_module
+
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    scraper = get_scraper("trakstar", "acme", "Acme")
+    monkeypatch.setattr(scraper, "_api_listing", lambda: None)
+    monkeypatch.setattr(
+        scraper, "_get", lambda url=None: _trakstar_cards_page(1, total=1)
+    )
+    monkeypatch.setattr(trakstar_module, "_is_capped", lambda h, n: False)
+    monkeypatch.setattr(scraper, "_job_posting", lambda code: None)
+
+    raw = scraper.fetch_raw()
+
+    assert "html" in raw  # the pre-existing path answered instead
+
+
 class _TrakstarDetailResp:
     def __init__(self, status_code=200, text=""):
         self.status_code = status_code
@@ -3238,6 +3545,9 @@ def test_trakstar_fetch_raw_uses_feed_when_capped_and_skips_the_detail_pass(
 
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
     s = get_scraper("trakstar", "acme", "Acme")
+    monkeypatch.setattr(
+        s, "_api_listing", lambda: None
+    )  # no jsapi surface -> HTML+RSS path
     monkeypatch.setattr(s, "_get", lambda url=None: _trakstar_cards_page(25, total=40))
     monkeypatch.setattr(
         trakstar_module, "_fetch_feed", lambda slug, egress_board: _TRAKSTAR_FEED
@@ -3262,6 +3572,9 @@ def test_trakstar_fetch_raw_skips_feed_when_not_capped(monkeypatch):
 
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
     s = get_scraper("trakstar", "acme", "Acme")
+    monkeypatch.setattr(
+        s, "_api_listing", lambda: None
+    )  # no jsapi surface -> HTML+RSS path
     monkeypatch.setattr(s, "_get", lambda url=None: _trakstar_cards_page(3, total=3))
 
     def boom_feed(slug, egress_board):
@@ -3285,6 +3598,9 @@ def test_trakstar_fetch_raw_keeps_html_when_feed_unreachable(monkeypatch):
 
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
     s = get_scraper("trakstar", "acme", "Acme")
+    monkeypatch.setattr(
+        s, "_api_listing", lambda: None
+    )  # no jsapi surface -> HTML+RSS path
     monkeypatch.setattr(s, "_get", lambda url=None: _trakstar_cards_page(25, total=77))
     monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug, egress_board: None)
     monkeypatch.setattr(s, "_job_posting", lambda code: None)
@@ -3311,6 +3627,9 @@ def test_trakstar_fetch_raw_does_not_mark_truncated_for_card_count_heuristic_alo
 
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
     s = get_scraper("trakstar", "acme", "Acme")
+    monkeypatch.setattr(
+        s, "_api_listing", lambda: None
+    )  # no jsapi surface -> HTML+RSS path
     monkeypatch.setattr(
         s, "_get", lambda url=None: _trakstar_cards_page(25)
     )  # no total button
@@ -3478,11 +3797,19 @@ def test_recruitee_salary_formatting():
 
 
 def _teamtailor_pages(monkeypatch, scraper, pages):
-    """Serve `pages` (a list of item-id lists) from jobs.json, recording each URL requested."""
+    """Serve `pages` (a list of item-id lists) from jobs.json, recording each URL requested.
+
+    `fetch_raw` also makes one `jobs.rss` request for the department/remote enrichment join —
+    served here as an empty, well-formed feed, so callers that only care about the jobs.json
+    pagination walk don't need their own RSS fixture. `asked` records that request too (it is a
+    real request against the Board), so an assertion on its length must count it.
+    """
     asked: list[str] = []
 
     def _get(self, url=None):
         asked.append(url or "")
+        if url and url.endswith("jobs.rss"):
+            return '<rss version="2.0"><channel></channel></rss>'
         index = 0
         if url and "page=" in url:
             index = int(url.rsplit("page=", 1)[1]) - 1
@@ -3511,16 +3838,21 @@ def test_teamtailor_walks_every_page_not_just_the_first(monkeypatch):
     jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
     assert len(jobs) == tt._PAGE_SIZE + 2
     assert len({j.id for j in jobs}) == len(jobs)  # no page overlap
-    assert "page=2" in asked[1] and len(asked) == 2  # stopped on the short page
+    assert "page=2" in asked[1]
+    assert (
+        len(asked) == 3
+    )  # 2 listing pages, stopped on the short one, + 1 rss enrichment call
 
 
 def test_teamtailor_single_page_board_costs_one_request(monkeypatch):
-    """The common case must not pay for pagination — 748 of 766 Boards are one page."""
+    """The common case must not pay for pagination — 748 of 766 Boards are one page. It does pay
+    one further request for the jobs.rss enrichment join (+1 request per Board, module
+    docstring), so this Board costs two requests total, not one."""
     s = get_scraper("teamtailor", "small", "Small")
     asked = _teamtailor_pages(monkeypatch, s, [[1, 2, 3]])
 
     assert len(s.parse(s.fetch_raw(), SCRAPED_AT)) == 3
-    assert len(asked) == 1
+    assert len(asked) == 2
 
 
 def test_teamtailor_stops_if_the_feed_ignores_the_page_parameter(monkeypatch):
@@ -3539,7 +3871,7 @@ def test_teamtailor_stops_if_the_feed_ignores_the_page_parameter(monkeypatch):
 
     jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
     assert len(jobs) == tt._PAGE_SIZE  # the repeat contributed nothing
-    assert len(asked) == 2  # it stopped rather than walking forever
+    assert len(asked) == 3  # 2 listing pages before it stopped, + 1 rss enrichment call
     assert s.truncated and "no new ids" in s.truncated
 
 
@@ -3562,7 +3894,9 @@ def test_teamtailor_walks_past_the_old_page_cap_when_the_board_is_genuinely_that
 
     raw = s.fetch_raw()
     assert len(raw["items"]) == tt._PAGE_SIZE * n_pages
-    assert len(asked) == n_pages + 1
+    assert (
+        len(asked) == n_pages + 2
+    )  # every listing page + the short last one + 1 rss call
     assert s.truncated is None  # a real short last page — nothing was left unread
 
 
@@ -3580,6 +3914,106 @@ def test_teamtailor_parse():
     assert j.url.startswith("https://1komma5.teamtailor.com/jobs/")
     assert j.posted_at.startswith("2026-")
     assert j.description and "</" not in j.description  # populated, HTML-stripped
+
+
+def test_teamtailor_parse_with_no_rss_enrichment_falls_back_to_the_location_guess():
+    """`parse` is also called directly on a raw dict with no `_rss_enrichment` key (e.g. this
+    fixture, or any caller that built `raw` by hand) — must not crash, and must fall back to the
+    pre-existing `is_remote(location)` guess rather than serving `department=None`/`remote=None`
+    as if the join ran and found nothing."""
+    jobs = get_scraper("teamtailor", "1komma5", "1KOMMA5").parse(
+        _load("teamtailor_1komma5.json"), SCRAPED_AT
+    )
+    j = jobs[0]
+    assert j.department is None  # nothing to join against
+    from headstart.models import is_remote
+
+    assert j.remote == is_remote(j.location)
+
+
+def test_teamtailor_rss_enrichment_fills_department_and_remote(monkeypatch):
+    """The join itself: `jobs.rss`'s `<guid>` keys onto the `jobs.json` item `id`."""
+
+    s = get_scraper("teamtailor", "acme", "Acme")
+    rss = """<rss version="2.0" xmlns:tt="https://teamtailor.com/locations">
+    <channel>
+      <item>
+        <guid>abc-1</guid>
+        <remoteStatus>fully</remoteStatus>
+        <tt:department>Engineering</tt:department>
+      </item>
+    </channel></rss>"""
+    monkeypatch.setattr(s, "_get", lambda url=None: rss)
+
+    enrichment = s._rss_enrichment()
+    assert enrichment == {"abc-1": {"department": "Engineering", "remote": True}}
+
+    raw = {
+        "items": [{"id": "abc-1", "title": "X", "url": "u"}],
+        "_rss_enrichment": enrichment,
+    }
+    (job,) = s.parse(raw, SCRAPED_AT)
+    assert job.department == "Engineering"
+    assert job.remote is True
+
+
+def test_teamtailor_remote_status_vocabulary(monkeypatch):
+    """The live vocabulary is fully/hybrid/none/onsite (module docstring), not upstream's
+    fully/none-only enum — mapped the same way ashby/workday/bamboohr resolve an explicit
+    "hybrid": True/False on the unambiguous ends, None on the middle."""
+    s = get_scraper("teamtailor", "acme", "Acme")
+    enrichment = {
+        "fully-1": {"department": None, "remote": True},
+        "hybrid-1": {"department": None, "remote": None},
+        "none-1": {"department": None, "remote": False},
+        "onsite-1": {"department": None, "remote": False},
+    }
+    raw = {
+        "items": [{"id": k, "title": k, "url": "u"} for k in enrichment],
+        "_rss_enrichment": enrichment,
+    }
+    jobs = {j.id.rsplit(":", 1)[1]: j for j in s.parse(raw, SCRAPED_AT)}
+    assert jobs["fully-1"].remote is True
+    assert jobs["hybrid-1"].remote is None
+    assert jobs["none-1"].remote is False
+    assert jobs["onsite-1"].remote is False
+
+
+def test_teamtailor_rss_department_is_tenant_optional(monkeypatch):
+    """Measured live: two boards state `tt:department` on zero of 109 combined postings — a
+    guid the RSS covers but with no department tag still fills `remote`, not a parse failure."""
+    s = get_scraper("teamtailor", "acme", "Acme")
+    rss = """<rss version="2.0" xmlns:tt="https://teamtailor.com/locations">
+    <channel><item><guid>x-1</guid><remoteStatus>onsite</remoteStatus></item></channel></rss>"""
+    monkeypatch.setattr(s, "_get", lambda url=None: rss)
+
+    enrichment = s._rss_enrichment()
+    assert enrichment == {"x-1": {"department": None, "remote": False}}
+
+
+def test_teamtailor_rss_enrichment_is_additive_on_fetch_failure(monkeypatch):
+    """A `jobs.rss` fetch failure must not cost the Board its listing — this is an enrichment
+    join, not a dependency, and today's every-Board behaviour (no department, guessed remote)
+    is the correct degrade."""
+    s = get_scraper("teamtailor", "acme", "Acme")
+
+    def _get(url=None):
+        if url and url.endswith("jobs.rss"):
+            raise http.RequestsError("boom")
+        return json.dumps({"title": "Co", "items": [{"id": "j1", "title": "X"}]})
+
+    monkeypatch.setattr(s, "_get", _get)
+    raw = s.fetch_raw()
+    assert raw["_rss_enrichment"] == {}
+    (job,) = s.parse(raw, SCRAPED_AT)
+    assert job.department is None
+    assert s.truncated is None  # an enrichment failure is not a listing truncation
+
+
+def test_teamtailor_rss_enrichment_ignores_malformed_xml(monkeypatch):
+    s = get_scraper("teamtailor", "acme", "Acme")
+    monkeypatch.setattr(s, "_get", lambda url=None: "<rss><not closed")
+    assert s._rss_enrichment() == {}
 
 
 def test_personio_parse():
@@ -4402,6 +4836,145 @@ def test_successfactors_job_urls_from():
             "57254244",
         ),
     ]
+
+
+def test_successfactors_sitemal_items_reads_title_description_location():
+    """`/sitemal.xml`'s shape, keyed on the same numeric id `/sitemap.xml`'s `/job/.../{id}/`
+    path carries (module docstring) — a small fixture matching the real basf.jobs/ace1950
+    structure rather than a synthetic one, description CDATA-wrapped and entity-escaped once,
+    title carrying a trailing "(location)" this function must strip back off."""
+    from headstart.scrapers.successfactors import _sitemal_items
+
+    text = """<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0"><channel>
+    <item>
+      <title>Senior Engineer (m/w/d) (Ludwigshafen am Rhein, DE)</title>
+      <description><![CDATA[&lt;p&gt;Build things.&lt;/p&gt;]]></description>
+      <link>https://basf.jobs/dark_blue_EMEA/job/Ludwigshafen-am-Rhein-Senior-Engineer-mwd/987746301/</link>
+      <guid isPermaLink="false">987746301</guid>
+      <g:id>987746301</g:id>
+      <g:employer>BASF SE</g:employer>
+      <g:location>Ludwigshafen am Rhein, DE</g:location>
+    </item>
+    </channel></rss>"""
+
+    fields = _sitemal_items(text)
+
+    assert fields == {
+        "987746301": {
+            "title": "Senior Engineer (m/w/d)",  # trailing "(location)" stripped
+            "description": "Build things.",
+            "location": "Ludwigshafen am Rhein, DE",
+        }
+    }
+
+
+def test_successfactors_sitemal_items_skips_an_item_with_no_link_or_no_title():
+    from headstart.scrapers.successfactors import _sitemal_items
+
+    text = """<rss><channel>
+    <item><title>No link</title><description>x</description></item>
+    <item><title></title><link>https://basf.jobs/job/x/1/</link></item>
+    <item><title>Kept</title><link>https://basf.jobs/job/x/2/</link></item>
+    </channel></rss>"""
+
+    assert list(_sitemal_items(text)) == ["2"]
+
+
+def test_successfactors_sitemal_items_has_no_date_or_employment_type():
+    """Measured live 2026-09-22 across three tenants (module docstring): this feed states
+    neither field on any item sampled, so a job filled from it must not silently invent one."""
+    from headstart.scrapers.successfactors import _sitemal_items
+
+    text = """<rss><channel><item>
+    <title>Engineer</title>
+    <link>https://basf.jobs/job/x/1/</link>
+    </item></channel></rss>"""
+
+    fields = _sitemal_items(text)["1"]
+    assert "posted_at" not in fields
+    assert "employment_type" not in fields
+    assert "remote" not in fields
+
+
+def test_successfactors_strip_location_suffix():
+    from headstart.scrapers.successfactors import _strip_location_suffix
+
+    assert (
+        _strip_location_suffix("Engineer (m/w/d) (Berlin, DE)", "Berlin, DE")
+        == "Engineer (m/w/d)"
+    )
+    # no location to strip against: title kept exactly as-is
+    assert _strip_location_suffix("Engineer", None) == "Engineer"
+    # a parenthetical that ISN'T the location must survive
+    assert (
+        _strip_location_suffix("Engineer (m/w/d)", "Berlin, DE") == "Engineer (m/w/d)"
+    )
+
+
+def test_successfactors_strip_cdata_unwraps_and_passes_through():
+    from headstart.scrapers.successfactors import _strip_cdata
+
+    assert _strip_cdata("<![CDATA[&lt;p&gt;hi&lt;/p&gt;]]>") == "&lt;p&gt;hi&lt;/p&gt;"
+    assert _strip_cdata("plain text, no CDATA") == "plain text, no CDATA"
+
+
+def test_successfactors_fetch_raw_skips_the_detail_page_for_a_sitemal_covered_id(
+    monkeypatch,
+):
+    """The whole point of the surface: an id `/sitemal.xml` covers never reaches `_job_fields`."""
+    scraper = _successfactors_board(
+        monkeypatch,
+        sitemap=(
+            "urlset",
+            (
+                "<loc>https://careers.voith.com/job/Engineer/1/</loc>"
+                "<loc>https://careers.voith.com/job/Analyst/2/</loc>"
+            ),
+            None,
+        ),
+        search=([], None),
+        rss=([], {}, None),
+        sitemal={"1": {"title": "Engineer", "description": "d", "location": "Berlin"}},
+    )
+    fetched: list[str] = []
+    monkeypatch.setattr(
+        scraper,
+        "_job_fields",
+        lambda url: fetched.append(url) or {"title": "Analyst"},
+    )
+
+    raw = scraper.fetch_raw()
+
+    assert fetched == ["https://careers.voith.com/job/Analyst/2/"], (
+        "only the id sitemal.xml didn't cover was fetched"
+    )
+    by_id = {item["id"]: item["fields"] for item in raw}
+    assert by_id["1"]["description"] == "d"  # served straight from the sitemal cache
+    assert by_id["2"]["title"] == "Analyst"  # the fallback fetch's own result
+
+
+def test_successfactors_fetch_raw_falls_back_whole_when_sitemal_is_unavailable(
+    monkeypatch,
+):
+    """Most tenants don't have `/sitemal.xml` at all (module docstring: jobs.thyssenkrupp.com
+    404s) — `_sitemal_fields` returning `{}` must leave every id on the existing detail path,
+    unchanged from before this surface existed."""
+    scraper = _successfactors_board(
+        monkeypatch,
+        sitemap=(
+            "urlset",
+            "<loc>https://careers.voith.com/job/Engineer/1/</loc>",
+            None,
+        ),
+        search=([], None),
+        rss=([], {}, None),
+        sitemal={},
+    )
+
+    raw = scraper.fetch_raw()
+
+    assert [item["id"] for item in raw] == ["1"]
+    assert raw[0]["fields"]["title"] == "Engineer"  # from the stubbed `_job_fields`
 
 
 def test_successfactors_job_functions_from_reads_the_rss_feed_department():
@@ -5391,6 +5964,7 @@ def test_successfactors_tolerates_one_unreadable_page_but_still_drops_its_job(
             None,
         ),
     )
+    monkeypatch.setattr(scraper, "_sitemal_fields", dict)
     monkeypatch.setattr(
         scraper,
         "_job_fields",
@@ -5434,6 +6008,7 @@ def test_successfactors_truncates_on_a_surface_that_states_no_total(monkeypatch)
             aborted,
         ),
     )
+    monkeypatch.setattr(scraper, "_sitemal_fields", dict)
     monkeypatch.setattr(scraper, "_job_fields", lambda url: {"title": "Engineer"})
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
 
@@ -5772,12 +6347,16 @@ def test_oracle_offset_ceiling_truncates_however_complete_the_read_looks(monkeyp
     assert s.truncated and "no offset past" in s.truncated
 
 
-def _successfactors_board(monkeypatch, *, search, rss, sitemap=("rss", "", None)):
+def _successfactors_board(
+    monkeypatch, *, search, rss, sitemap=("rss", "", None), sitemal=None
+):
     """A SuccessFactors scraper whose three listing surfaces are stubbed. Each returns what the
     real one does — its list plus why-it-came-up-short: ``sitemap`` as ``(kind, text, cut_short)``
     (defaulting to an RSS classification, so the whole fallback chain runs), ``search`` as
     ``(pairs, cut_short)`` from the ``/search/`` walk, ``rss`` as ``(pairs, job_functions,
-    cut_short)`` from the patient stream."""
+    cut_short)`` from the patient stream. ``sitemal`` is the ``/sitemal.xml`` field cache
+    (``{job_id: fields}``, default ``{}``) — stubbed too, so these tests exercise the
+    pre-existing surface fallback without a real request to that fourth surface."""
     from headstart.scrapers.successfactors import SuccessFactorsScraper
 
     monkeypatch.setenv(
@@ -5787,6 +6366,7 @@ def _successfactors_board(monkeypatch, *, search, rss, sitemap=("rss", "", None)
     monkeypatch.setattr(scraper, "_fetch_sitemap", lambda: sitemap)
     monkeypatch.setattr(scraper, "_search_job_urls", lambda: search)
     monkeypatch.setattr(scraper, "_rss_job_urls", lambda: rss)
+    monkeypatch.setattr(scraper, "_sitemal_fields", lambda: sitemal or {})
     monkeypatch.setattr(scraper, "_job_fields", lambda url: {"title": "Engineer"})
     return scraper
 
@@ -6262,6 +6842,7 @@ def test_successfactors_skips_the_detail_fetch_for_a_non_tech_slug(monkeypatch):
         fetched.append(url)
         return {"title": "whatever the real page says"}
 
+    monkeypatch.setattr(scraper, "_sitemal_fields", dict)
     monkeypatch.setattr(scraper, "_job_fields", fake_job_fields)
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
     # The gate is conditional on `have_details`, the pipeline's own signal — an empty container
@@ -6304,6 +6885,7 @@ def test_successfactors_gate_is_off_for_a_caller_outside_the_pipeline(monkeypatc
             None,
         ),
     )
+    monkeypatch.setattr(scraper, "_sitemal_fields", dict)
     monkeypatch.setattr(scraper, "_job_fields", lambda url: {"title": "whatever"})
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
 
@@ -8154,6 +8736,7 @@ def test_successfactors_marks_truncation_when_detail_pages_are_lost(monkeypatch)
         "_job_fields",
         lambda url: None if url.endswith("/2/") else {"title": "Engineer"},
     )
+    monkeypatch.setattr(scraper, "_sitemal_fields", dict)
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
 
     raw = scraper.fetch_raw()
@@ -8213,6 +8796,7 @@ def test_successfactors_marks_truncation_when_a_page_loads_but_has_no_title(
         return _Response(good_page)
 
     monkeypatch.setattr(sf.http, "fetch", fake_fetch)
+    monkeypatch.setattr(scraper, "_sitemal_fields", dict)
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
 
     raw = scraper.fetch_raw()
@@ -8305,6 +8889,7 @@ def test_successfactors_does_not_mark_a_board_whose_pages_all_arrived(monkeypatc
         ),
     )
     monkeypatch.setattr(scraper, "_job_fields", lambda url: {"title": "Engineer"})
+    monkeypatch.setattr(scraper, "_sitemal_fields", dict)
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
 
     scraper.fetch_raw()
@@ -9812,6 +10397,9 @@ def test_trakstar_gates_on_the_card_not_the_code(monkeypatch):
             card.format(code="c2", title="Backend Engineer", dept="Software"),
         ]
     )
+    monkeypatch.setattr(
+        scraper, "_api_listing", lambda: None
+    )  # no jsapi -> HTML+RSS path
     monkeypatch.setattr(scraper, "_get", lambda *a, **k: html)
     monkeypatch.setattr(trakstar_module, "_is_capped", lambda h, n: False)
     fetched: list[str] = []

@@ -32,6 +32,31 @@ which is the safer read of a body we cannot classify.
 
 The payload carries 14 keys on every board measured, plus an optional ``jobNumber`` (3 of 8
 sampled). Every field :meth:`parse` reads is in the universal 14.
+
+Three listing-only additions (2026-09-22), all read off the same ``active`` payload above — no
+new request:
+
+1. **``location`` joins every ``jobLocations`` entry, not just ``[0]``.** Measured live: 57 of
+   929 jobs on ``kpgroup.keka.com`` alone carry more than one location; taking the first silently
+   dropped the rest. Joined "; ", the same separator ``apple.py``/``google.py``/``workday.py``
+   use for a multi-place string.
+2. **``employment_type`` maps the ``jobType`` enum's two confirmed values.** Measured live across
+   8 boards / 2,792 postings: ``2`` (2,715, "Full-time") and ``1`` (24, "Part-time") both occur on
+   several independent tenants, in a ratio consistent with a real full/part split. A third value,
+   ``0``, also appears (53, all on one tenant, ``csdemo`` — plausibly a sandbox/demo board and not
+   independently corroborated elsewhere) and is deliberately left unmapped: guessing a label for a
+   value seen on one tenant is exactly the "unsourced enum" risk this addition exists to avoid
+   for the other two.
+
+**Not done: company name from ``careerportalinfo`` (a change requested in #547, re-verified and
+declined 2026-09-22).** #547 asked for this on the premise that the scraper "already fetches that
+exact response" — true when #547 was written, false two minutes later: #529, merged first,
+removed the ``careerportalinfo`` fetch from the listing path entirely (see above; it was strictly
+worse for the *listing*). Reading it now for the name alone would be a **new** per-Board request,
+not a free one, and #547's own "before shipping" note asks for a ≥100-board presence check against
+ADR-0114's quality bar — a measurement this pass didn't do. Filed as a follow-up rather than forced
+in under a premise that no longer holds; `board_page()`'s existing ``<title>`` reading
+(``company_name.py``, ~11% yield) is unchanged.
 """
 
 from __future__ import annotations
@@ -45,6 +70,29 @@ from headstart.scrapers.base import BaseScraper
 # Keka renders these at HTTP 200 (not 404/403): an unknown slug -> "Invalid Tenant", a disabled
 # careers portal -> "Forbidden Access". Either means there is no public board to read.
 _DEAD_MARKERS = ("Invalid Tenant", "Forbidden Access")
+
+# jobType's two confirmed values (module docstring) — 0 is deliberately absent, see there.
+_JOB_TYPE_LABELS = {1: "Part-time", 2: "Full-time"}
+
+
+def _location_part(loc: dict) -> str | None:
+    """One ``jobLocations`` entry's "City, State, Country" string. ``.strip()`` per part: `city`
+    carries a trailing space on some tenants' data (e.g. "Ahmedabad Center " while the sibling
+    `name` field for the same location is clean), which would otherwise leak into the joined
+    string."""
+    parts = (
+        (loc.get("city") or loc.get("name") or "").strip(),
+        (loc.get("state") or "").strip(),
+        (loc.get("countryName") or "").strip(),
+    )
+    return ", ".join(p for p in parts if p) or None
+
+
+def _location(job_locations: Any) -> str | None:
+    """Every stated location, "; "-joined (module docstring) — the separator
+    ``apple.py``/``google.py``/``workday.py`` already use for the same shape."""
+    parts = [_location_part(loc) for loc in job_locations or [{}]]
+    return "; ".join(p for p in parts if p) or None
 
 
 def _format_num(v: float) -> str:
@@ -98,16 +146,7 @@ class KekaScraper(BaseScraper):
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
         for j in raw:
-            loc = (j.get("jobLocations") or [{}])[0]
-            # `city` carries a trailing space on some tenants' data (e.g. "Ahmedabad Center "
-            # while the sibling `name` field for the same location is clean) — `.strip()` each
-            # part so it can't leak into the joined string.
-            parts = (
-                (loc.get("city") or loc.get("name") or "").strip(),
-                (loc.get("state") or "").strip(),
-                (loc.get("countryName") or "").strip(),
-            )
-            location = ", ".join(p for p in parts if p) or None
+            location = _location(j.get("jobLocations"))
             jobs.append(
                 Job(
                     id=self.job_id(j["id"]),
@@ -122,8 +161,7 @@ class KekaScraper(BaseScraper):
                     scraped_at=scraped_at,
                     description=html_to_text(j.get("description") or j.get("excerpt")),
                     experience=j.get("experience"),
-                    # jobType is a bare numeric enum (0/1/2) whose labels aren't in the
-                    # payload or reachable frontend code — left unmapped rather than guessed
+                    employment_type=_JOB_TYPE_LABELS.get(j.get("jobType")),
                     salary=self._salary_field(j.get("salaryRange")),
                 )
             )

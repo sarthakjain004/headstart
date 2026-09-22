@@ -18,6 +18,7 @@ from typing import Any
 from headstart.scrapers.bamboohr import (
     BambooHRScraper,
     _canonical_location,
+    _department_map,
     _remote,
 )
 from headstart.scrapers.registry import get_scraper
@@ -65,13 +66,16 @@ def test_parse_merges_detail_fields_over_the_listing():
 
 def test_parse_falls_back_to_listing_when_detail_is_missing():
     """Job 336 has no detail record in the fixture — the listing-only degrade ADR-0050 expects
-    of any detail-pass ATS."""
+    of any detail-pass ATS. `department` is the one field that no longer goes null with it: it
+    is read off the widget's own department block (ADR-0017 gate support, 2026-09-22)."""
     jobs = get_scraper("bamboohr", "4thdimension").parse(_raw({}), SCRAPED_AT)
     job = next(j for j in jobs if j.title == "Parts Production Team Leader")
     assert job.id == "bamboohr:4thdimension:336"
     assert job.location == "Egham, Surrey"  # the listing's own terse text
     assert job.remote is False  # is_remote() fallback: no "remote" substring
-    assert job.department is None
+    assert (
+        job.department == "Motomine Parts Sales & Operations"
+    )  # from the widget, not detail
     assert job.experience is None
     assert job.description is None
     assert job.salary is None
@@ -187,4 +191,115 @@ def test_fetch_raw_reads_a_live_but_jobless_tenants_blank_state():
         "We currently have no open positions.</div></div>"
     )
     scraper = BambooHRScraper("empty-board", fetcher=_FakeFetcher(blank))
-    assert scraper.fetch_raw() == {"page": blank, "details": {}}
+    assert scraper.fetch_raw() == {"page": blank, "details": {}, "departments": {}}
+
+
+# --- fetch_raw(): parse-drift guard (issue #534) ----------------------------------------------
+
+
+def test_fetch_raw_treats_changed_row_markup_as_an_unread_board_not_an_empty_one():
+    """The wrapper is present and the `bhrPositionID_` marker appears in the HTML, but nothing
+    matches `_POSITION` — the row markup itself changed, not a Board with nothing open. Must not
+    read as a whole, empty listing (ADR-0083's one-scrape grace would then evict every row)."""
+    drifted = (
+        '<div class="BambooHR-ATS-board">'
+        '<li data-position-id="331">bhrPositionID_331 moved to a data attribute</li>'
+        "</div>"
+    )
+    scraper = BambooHRScraper("drifted", fetcher=_FakeFetcher(drifted))
+    assert scraper.fetch_raw() == {"page": "", "details": {}}
+
+
+def test_fetch_raw_still_reads_a_genuinely_empty_but_well_formed_board():
+    """The guard must not misfire on the real empty-board shape: wrapper present, no
+    `bhrPositionID_` marker anywhere (nothing to have drifted)."""
+    blank = (
+        '<div class="BambooHR-ATS-board"><div class="BambooHR-ATS-blankState">'
+        "We currently have no open positions.</div></div>"
+    )
+    scraper = BambooHRScraper("empty-board", fetcher=_FakeFetcher(blank))
+    assert scraper.fetch_raw() == {"page": blank, "details": {}, "departments": {}}
+
+
+# --- fetch_raw(): the ADR-0017 tech gate (issue #533) ------------------------------------------
+
+
+def _tech_gate_page() -> str:
+    return (
+        '<div class="BambooHR-ATS-board">'
+        '<li id="bhrDepartmentID_1" class="BambooHR-ATS-Department-Item">'
+        '<div class="BambooHR-ATS-Department-Header">Engineering</div>'
+        '<ul><li id="bhrPositionID_1">'
+        '<a href="https://acme.bamboohr.com/careers/1">Backend Engineer</a>'
+        '<span class="BambooHR-ATS-Location">Remote</span></li></ul></li>'
+        '<li id="bhrDepartmentID_2" class="BambooHR-ATS-Department-Item">'
+        '<div class="BambooHR-ATS-Department-Header">Logistics</div>'
+        '<ul><li id="bhrPositionID_2">'
+        '<a href="https://acme.bamboohr.com/careers/2">Warehouse Associate</a>'
+        '<span class="BambooHR-ATS-Location">Onsite</span></li></ul></li>'
+        "</div>"
+    )
+
+
+def test_fetch_raw_skips_the_detail_fetch_for_a_posting_the_tech_filter_will_drop(
+    monkeypatch,
+):
+    """ADR-0017, added 2026-09-22 — BambooHR was the only `has_detail_pass` ATS without this
+    gate. `department` comes off the widget's own blocks (`_department_map`), so the gate can
+    run before any detail is fetched."""
+    scraper = get_scraper("bamboohr", "acme", "Acme")
+    scraper.have_details = (
+        set()
+    )  # arms the gate (off for every non-pipeline caller otherwise)
+    monkeypatch.setattr(scraper, "_get", lambda url=None: _tech_gate_page())
+    fetched: list[str] = []
+
+    def fake_fan_out_async(items, fn, **kwargs):
+        fetched.extend(items)
+        return [{"departmentLabel": "Engineering"} for _ in items]
+
+    monkeypatch.setattr(scraper, "fan_out_async", fake_fan_out_async)
+    raw = scraper.fetch_raw()
+
+    assert fetched == ["1"]  # the tech posting's detail was fetched
+    assert "2" not in raw["details"]  # the non-tech posting's detail never was
+
+
+def test_fetch_raw_fetches_every_detail_outside_the_pipeline(monkeypatch):
+    """`have_details is None` (the default for a direct caller) disarms the gate entirely — the
+    same contract every other gated scraper honours."""
+    scraper = get_scraper("bamboohr", "acme", "Acme")
+    assert scraper.have_details is None
+    monkeypatch.setattr(scraper, "_get", lambda url=None: _tech_gate_page())
+    fetched: list[str] = []
+
+    def fake_fan_out_async(items, fn, **kwargs):
+        fetched.extend(items)
+        return [{"departmentLabel": "X"} for _ in items]
+
+    monkeypatch.setattr(scraper, "fan_out_async", fake_fan_out_async)
+    scraper.fetch_raw()
+
+    assert sorted(fetched) == ["1", "2"]
+
+
+# --- _department_map(): the widget's department blocks -----------------------------------------
+
+
+def test_department_map_reads_every_position_in_the_fixture():
+    assert _department_map(_WIDGET) == {
+        "331": "Drivers",
+        "332": "Drivers",
+        "335": "FNOL",
+        "336": "Motomine Parts Sales & Operations",  # &amp; decoded
+        "334": "MotoMine Projects Sales Team",
+    }
+
+
+def test_department_map_has_no_entry_for_a_position_before_any_department_header():
+    page = (
+        '<div class="BambooHR-ATS-board">'
+        '<li id="bhrPositionID_9"><a href="#">Straggler</a></li>'
+        "</div>"
+    )
+    assert _department_map(page) == {}
