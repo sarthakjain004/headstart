@@ -6608,8 +6608,8 @@ def test_successfactors_rss_stream_reports_a_feed_that_aborted_mid_read(monkeypa
     assert cut_short and "aborted" in cut_short
     assert scraper.truncated is None  # reported to fetch_raw, not recorded here
 
-    # ...a feed still streaming at `_SITEMAP_CAP` is the same kind of short list.
-    monkeypatch.setattr(sf, "_SITEMAP_CAP", 2 * 1024 * 1024)
+    # ...a feed still streaming at `_RSS_CAP` is the same kind of short list.
+    monkeypatch.setattr(sf, "_RSS_CAP", 2 * 1024 * 1024)
     _stub_stream(
         monkeypatch,
         sf,
@@ -6626,6 +6626,27 @@ def test_successfactors_rss_stream_reports_a_feed_that_aborted_mid_read(monkeypa
         _StreamedBody([b"<loc>https://jobs.example.com/job/x/7/</loc>"]),
     )
     assert scraper._rss_job_urls()[2] is None
+
+
+def test_successfactors_rss_stream_reads_a_feed_past_the_urlset_cap(monkeypatch):
+    """jobs.crh.com's whole feed is 32.8 MB — a full description per item — and its `/search/`
+    lists nothing, so this stream is its only surface. The urlset guard's 30 MB cut it 86 postings
+    short of 1,905 and left the Board Unauthoritative every run."""
+    from headstart.scrapers import successfactors as sf
+
+    scraper = sf.SuccessFactorsScraper("jobs.example.com")
+    _stub_stream(
+        monkeypatch,
+        sf,
+        _StreamedBody(
+            [b" " * (33 * 1024 * 1024), b"<loc>https://jobs.example.com/job/x/7/</loc>"]
+        ),
+    )
+
+    found, _job_functions, cut_short = scraper._rss_job_urls()
+
+    assert [job_id for _url, job_id in found] == ["7"]
+    assert cut_short is None
 
 
 def test_successfactors_search_walk_reports_where_it_stopped_without_claiming_the_board(

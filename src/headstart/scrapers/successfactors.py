@@ -77,6 +77,10 @@ _log = log.get(__name__)
 
 _CLASSIFY_BYTES = 64 * 1024  # enough sitemap head to tell urlset from RSS
 _SITEMAP_CAP = 30 * 1024 * 1024  # runaway guard; largest observed urlset is ~3 MB
+# The same guard for the two full-description RSS reads, which the urlset figure does not fit: of
+# 144 live RSS feeds read whole 2026-09-23 the largest was 46 MB (jobs.scotiabank.com), and
+# jobs.crh.com's 32.8 MB feed — its only surface — was being cut 86 postings short every run.
+_RSS_CAP = 128 * 1024 * 1024
 _RSS_TIMEOUT = 300  # the RSS generator trickles (~30 KB/s); a full feed is minutes
 _MAX_SEARCH_PAGES = 400  # loop bound; 4,000 rows at the smallest measured page (10)
 _DETAIL_WORKERS = 6  # sync-path detail fetches; bounded since they hit one host
@@ -194,7 +198,7 @@ class SuccessFactorsScraper(BaseScraper):
         return (
             kind or _sitemap_kind(text),
             text,
-            _cap_reason("sitemap") if capped else None,
+            _cap_reason("sitemap", _SITEMAP_CAP) if capped else None,
         )
 
     def _search_job_urls(self) -> tuple[list[tuple[str, str]], str | None]:
@@ -285,7 +289,7 @@ class SuccessFactorsScraper(BaseScraper):
         ``g:job_function`` field (:func:`_job_functions_from` — free, since this surface's whole
         body is already in hand for the URL walk; no listing surface here otherwise carries a
         department field at all), and, when the stream ended early rather than completing, why —
-        an aborted feed and a feed cut at ``_SITEMAP_CAP`` both list a knowingly short board.
+        an aborted feed and a feed cut at ``_RSS_CAP`` both list a knowingly short board.
         Reported rather than recorded for the same reason :meth:`_search_job_urls` reports
         (ADR-0053)."""
         response = self._fetch(  # retry seam, as in `_fetch_sitemap`
@@ -302,8 +306,8 @@ class SuccessFactorsScraper(BaseScraper):
             for chunk in response.iter_content():
                 chunks.append(chunk)
                 size += len(chunk)
-                if size >= _SITEMAP_CAP:
-                    cut_short = _cap_reason("RSS feed")
+                if size >= _RSS_CAP:
+                    cut_short = _cap_reason("RSS feed", _RSS_CAP)
                     break
         except http.RequestsError:
             # Server-side abort: scrape the links that did arrive, and say so. No total to
@@ -345,7 +349,7 @@ class SuccessFactorsScraper(BaseScraper):
             for chunk in response.iter_content():
                 chunks.append(chunk)
                 size += len(chunk)
-                if size >= _SITEMAP_CAP:
+                if size >= _RSS_CAP:
                     break
         except http.RequestsError:
             pass  # keep whatever arrived — partial coverage still saves detail fetches
@@ -579,10 +583,10 @@ class SuccessFactorsScraper(BaseScraper):
         return None
 
 
-def _cap_reason(what: str) -> str:
-    """Why a stream that ran into ``_SITEMAP_CAP`` left the board short (ADR-0053)."""
+def _cap_reason(what: str, cap: int) -> str:
+    """Why a stream that ran into its read ``cap`` left the board short (ADR-0053)."""
     return (
-        f"the {what} hit the {_SITEMAP_CAP // (1024 * 1024)} MB read cap — "
+        f"the {what} hit the {cap // (1024 * 1024)} MB read cap — "
         "postings past it were not listed"
     )
 
