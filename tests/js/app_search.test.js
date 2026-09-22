@@ -438,6 +438,20 @@ test('a dismissed row is marked, not dropped — the server\'s own count stays t
   t.dismissed.delete('a');
 });
 
+test('the "N hidden" note counts the page on screen, not every row drawn this session', async () => {
+  // The recount on hide went over every row ever drawn — both lists, every page — so hiding one
+  // row on page 2 after three on page 1 read "4 hidden" with one hidden row in view.
+  const { t, nodes } = loadApp(url => (qs(url).page === '2' ? [job('p2a'), job('p2b')]
+    : [job('p1a'), job('p1b'), job('p1c')]));
+  await t.go();
+  for (const id of ['p1a', 'p1b', 'p1c']) t.dismiss(id);
+  assert.ok(nodes.hidden.innerHTML.startsWith('3 hidden'));
+  await t.goToPage(2);
+  t.dismiss('p2a');
+  assert.ok(nodes.hidden.innerHTML.startsWith('1 hidden'), 'the note says: ' + nodes.hidden.innerHTML);
+  for (const id of ['p1a', 'p1b', 'p1c', 'p2a']) t.dismissed.delete(id);
+});
+
 // ── The bracket's cross-currency labels (ADR-0117) ───────────────────────────────────────────
 
 /** The rate table as index() puts it on CFG — the same object `headstart.fx.table()` returns. */
