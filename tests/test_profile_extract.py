@@ -87,6 +87,35 @@ def test_scrub_removes_years_and_salary_from_the_query_only():
     assert out["years"] == 7  # the fact keeps what the sentence must not
 
 
+@pytest.mark.parametrize(
+    "hostile",
+    [
+        "1" + " " * 30_000 + "x",  # digit, then a whitespace run split two ways
+        "1" * 30_000 + "x",  # a digit run every start position re-scans
+        "a" + " " * 30_000 + "x",  # a whitespace run the comma tidy re-scans
+    ],
+    ids=["digit-then-spaces", "digit-run", "spaces"],
+)
+def test_scrub_stays_linear_on_hostile_runs(monkeypatch, hostile):
+    # POST /profile hands a raw request body to scrub_query, and `re` holds the GIL while it
+    # matches — a quadratic pattern there stalls every request the Space is serving. The
+    # prefix bound is lifted here so this measures the patterns alone; the old ones took
+    # ~1-13s on these inputs.
+    import time
+
+    monkeypatch.setattr(pe, "_MAX_SCRUB_CHARS", 10**9, raising=False)
+    started = time.perf_counter()
+    pe.scrub_query(hostile)
+    assert time.perf_counter() - started < 0.5
+
+
+def test_scrub_reads_only_a_bounded_prefix():
+    # The second guard, independent of the patterns: an unbounded body buys no regex time.
+    assert pe.scrub_query("backend engineer" + " " * 5_000 + "rust") == (
+        "backend engineer"
+    )
+
+
 def test_query_that_scrubs_to_nothing_raises_empty_extraction():
     with pytest.raises(pe.EmptyExtraction):
         pe.extract(_RESUME, ask=_reply(query="10+ years, $200k salary"))
