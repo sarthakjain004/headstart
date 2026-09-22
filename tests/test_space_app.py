@@ -786,6 +786,49 @@ def test_parse_cap_is_lifetime_and_survives_delete(sets_app, hub, monkeypatch):
     )
 
 
+@pytest.mark.parametrize("unreadable", ["hub-down", "corrupt"])
+def test_delete_removes_a_profile_it_cannot_read(
+    sets_app, hub, monkeypatch, unreadable
+):
+    # `get_profile` answers None for an unreadable record as well as an absent one; a delete
+    # gated on it answered {"ok": true} and left the record stored.
+    import headstart.alerts.store as st
+
+    client = _signed_in(sets_app, monkeypatch)
+    client.post("/profile", json={"query": "backend engineer"}, base_url=_HTTPS)
+    path = f"profiles/{sets_app.subscription_id('dev@example.com')}.json"
+    if unreadable == "corrupt":
+        hub[path] = b"not json"
+    else:
+        real_read = st._read
+
+        def flaky(repo, name, token):
+            if name == path:
+                raise OSError("Hub timed out")
+            return real_read(repo, name, token)
+
+        monkeypatch.setattr(st, "_read", flaky)
+
+    r = client.delete("/profile", base_url=_HTTPS)
+
+    assert r.status_code == 200 and path not in hub
+
+
+def test_delete_never_reports_ok_when_it_cannot_tell(sets_app, hub, monkeypatch):
+    import headstart.alerts.store as st
+
+    client = _signed_in(sets_app, monkeypatch)
+    client.post("/profile", json={"query": "backend engineer"}, base_url=_HTTPS)
+
+    def down(*args, **kwargs):
+        raise OSError("Hub timed out")
+
+    monkeypatch.setattr(st, "_list_files", down)
+    monkeypatch.setattr(st, "_read", down)
+
+    assert client.delete("/profile", base_url=_HTTPS).status_code != 200
+
+
 def test_failed_extraction_still_spends_a_read(sets_app, hub, monkeypatch):
     # The router answered garbage — the call was made, so it counts (spend bound, ADR-0041)
     client = _signed_in(sets_app, monkeypatch)

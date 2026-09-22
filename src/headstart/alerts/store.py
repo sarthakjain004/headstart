@@ -1106,11 +1106,17 @@ class Store:
         )
 
     def remove_profile(self, account: str) -> None:
-        """Delete the career record. The parse-counter file deliberately survives —
-        deleting must not reset the lifetime cap (ADR-0041)."""
+        """Delete the career record, if there is one. The parse-counter file deliberately
+        survives — deleting must not reset the lifetime cap (ADR-0041).
+
+        Presence comes from the listing, as :meth:`parses_used` decides it, never from
+        :meth:`get_profile`: that answers None for an unreadable record too, and a delete
+        gated on it reported success while the record stayed. A listing that fails raises."""
         if not _ID.fullmatch(account):
             return
-        _delete(self._repo, f"{PROFILE_PREFIX}{account}.json", self._token)
+        path = f"{PROFILE_PREFIX}{account}.json"
+        if path in _list_files(self._repo, self._token):
+            _delete(self._repo, path, self._token)
 
     def parses_used(self, account: str) -> int:
         """How many Résumé reads this Account has spent — the ADR-0041 cap's state.

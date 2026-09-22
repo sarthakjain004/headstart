@@ -595,9 +595,7 @@ def delete_profile():
     if not gate:
         return jsonify({"error": "profiles are not configured"}), 503
     email, store = gate
-    account = subscription_id(email)
-    if store.get_profile(account):
-        store.remove_profile(account)
+    store.remove_profile(subscription_id(email))
     return jsonify({"ok": True})
 
 
