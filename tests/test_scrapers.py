@@ -1,6 +1,7 @@
 import json
 import logging
 import xml.etree.ElementTree as ET
+from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
 from typing import ClassVar
@@ -4437,7 +4438,7 @@ def test_join_parse():
     assert j.id == "join:indie-solutions:16244456"
     assert j.ats == "join"
     assert j.title  # non-empty
-    assert j.location  # present
+    assert j.location == "Berlin, Germany"
     assert j.department == "Electrical Engineering"
     assert j.employment_type == "Employee"
     assert j.url.startswith("https://join.com/companies/indie-solutions/")
@@ -4449,6 +4450,14 @@ def test_join_parse():
     # salaryAmountFrom/salaryAmountTo/salaryFrequency are on the LISTING item itself (real fixture
     # job 16244456: 7,500,000/9,000,000 minor-unit EUR, PER_YEAR) — divided by 100 into major units.
     assert j.salary == "75000-90000 EUR"
+
+
+def test_join_location_uses_the_city_objects_city_and_country_names():
+    raw = deepcopy(_load("join_indie-solutions.json"))
+    raw["items"][0]["city"]["countryName"] = "City-country"
+    raw["items"][0]["country"]["name"] = "Wrong top-level country"
+    job = get_scraper("join", "indie-solutions", "indie").parse(raw, SCRAPED_AT)[0]
+    assert job.location == "Berlin, City-country"
 
 
 def test_join_salary_field_present_and_populated():
