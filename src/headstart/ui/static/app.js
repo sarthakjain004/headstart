@@ -1043,7 +1043,9 @@ async function postAndReloadSets(url, body, returnResponse){
     r = await fetch(url, { method: 'POST', headers: {'Content-Type': 'application/json'},
                            body: JSON.stringify(body) });
   }catch(e){}
-  mySets = null; await loadSets();
+  // A refusal changed nothing, so there is nothing to reload — and the reload's un-awaited set
+  // re-run overwrote the refusal the caller then showed in #matches-msg.
+  if (!r || r.ok){ mySets = null; await loadSets(); }
   return returnResponse ? r : null;
 }
 
