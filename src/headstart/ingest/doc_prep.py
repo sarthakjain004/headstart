@@ -264,14 +264,19 @@ def build_doc(job: dict) -> str:
 # full, 33 None -> full), zero regressions (no record lost a value or had an already-resolved
 # min/max change). On top of the v13 bump at `ea577fff`.
 # v15: the 2026-09-22 bug-hunt fixes, all one PR on top of the v14 bump at `90a6fc64` (full list:
-# `git log 90a6fc64..ab2d6c19 -- src/headstart/salary.py src/headstart/experience.py
+# `git log 90a6fc64..8ff90732 -- src/headstart/salary.py src/headstart/experience.py
 # src/headstart/remote.py` on that PR's branch; the commits by subject, in case it lands squashed:
 # "Read £/€/₹ and per-side symbols in generic salary fields", "Map HK$/S$/A$/AU$/NZ$/US$ salary
 # symbols to their currency", "Treat 'not a fully remote position' as a negation", "Refuse 'up to
 # USD X' ceilings instead of storing them as floors", "Convert month-denominated experience fields
 # to whole years", "Stop reading a preceding HR acronym or MO state code as a period", "Read a
 # one-digit comma tail as a decimal in salary numbers", "Lower the INR salary ceiling to 3 crore",
-# "Ignore period hints cut from a word at the window edge"). Each changes what `extract()` returns
+# "Ignore period hints cut from a word at the window edge", and after its first review: "Read a
+# bare $ as USD in generic salary fields, as Tier 2 does" (840 field rows gain USD), "Count a
+# trailing HR/MO as a period only when it touches the figure" (0 rows on the snapshot), "Keep a
+# k/L figure's fraction instead of rounding it away first" (46 rows gain their exact value),
+# "Read contracted negations like "isn't fully remote" as negations" (1 row)). Each changes what
+# `extract()` returns
 # for raw input already stored. Measured old vs new on the 2026-09-15 LanceDB snapshot (459,291
 # rows, 7 days stale — not the live table), per ADR-0066: ~790 salary answers move (329 ceilings
 # recovered, ~480 currencies corrected, None->value and misread->None both in the tens, every
