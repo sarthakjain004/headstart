@@ -2119,6 +2119,9 @@
             docListPaint();
           });
         }
+        /* Whether or not it was on the account: an edit still queued to go up would put it
+           there at the next heartbeat, and back into this browser with the answer. */
+        if (sync) sync.drop(id);
         repository.remove(id);
         if (doc() && doc().id === id) {
           const next = repository.list()[0];
