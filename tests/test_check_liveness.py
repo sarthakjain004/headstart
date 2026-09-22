@@ -644,3 +644,43 @@ def test_a_quota_403_rotation_does_not_report_itself_as_a_429(cl, egress):
     assert egress.walled_statuses == [403], (
         "a 403 wall must be recorded as a 403, not as someone else's 429"
     )
+
+
+def test_an_unknown_reprobe_keeps_a_live_verdict(cl, tmp_path, monkeypatch):
+    """ADR-0177: an inconclusive re-probe of a `live` Board must not overwrite it. `unknown` leaves
+    the Scrapable set and `index prune` then evicts every row of the Board, with no grace period —
+    a 429 breaker once turned all of workable UNKNOWN in one run. A Board never seen live still
+    records `unknown`."""
+    pool, ledger = tmp_path / "pool", tmp_path / "ledger"
+    pool.mkdir()
+    (pool / "greenhouse.csv").write_text(
+        "tenant,url\nstripe,https://boards.greenhouse.io/stripe\n"
+        "newco,https://boards.greenhouse.io/newco\n",
+        encoding="utf-8",
+    )
+    live = cl.liveness.Verdict(
+        "greenhouse",
+        "stripe",
+        "https://boards.greenhouse.io/stripe",
+        "live",
+        300,
+        "2026-01-01",
+    )
+    cl.liveness.write(ledger / "greenhouse.csv", [live])
+    monkeypatch.setitem(cl.PROBES, "greenhouse", lambda tenant, url: (cl.UNKNOWN, None))
+    monkeypatch.setattr(cl, "PASSES", [(1, 1)])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "check_liveness",
+            "--dir",
+            str(pool),
+            "--ledger-dir",
+            str(ledger),
+            "greenhouse",
+        ],
+    )
+    cl.main()
+    after = cl.liveness.load(ledger / "greenhouse.csv")
+    assert after["stripe"] == live
+    assert after["newco"].status == cl.UNKNOWN
