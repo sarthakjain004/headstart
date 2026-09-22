@@ -4,6 +4,7 @@
 [![pipeline](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml)
 [![ADRs](https://img.shields.io/badge/ADRs-164-blue)](./docs/adr/)
 [![Python](https://img.shields.io/badge/python-3.12+-blue)](./pyproject.toml)
+[![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue)](./LICENSE)
 
 ### Every opening. Straight from the source.
 
@@ -488,3 +489,6 @@ python -m headstart.ingest.index sync            # incremental add/evict into th
   semantics and every ATS's job-link correctness against the live Space. It fails the run on a
   dead link, a wrong-shaped or wrong-job link, or an ATS with no shape registered; bot walls stay
   advisory.
+- **License:** [GNU AGPL v3](./LICENSE). A network service built on a modified version of this
+  code must also make its modified source available to its users — see the license for the exact
+  terms.
