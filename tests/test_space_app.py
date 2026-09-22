@@ -1832,6 +1832,26 @@ def test_trends_epochs_are_not_narrowed_by_ats(epochs_trends_app):
     assert len(d["epochs"]) == 2
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "data/state/role_trends.parquet",
+        "data/state/trends_epochs.csv",
+        "data/state/hot_boards.json",
+    ],
+)
+def test_the_index_pull_fetches_every_state_file_the_app_reads(app, monkeypatch, path):
+    # The fixtures above write these files straight into the state dir, and the stubbed
+    # snapshot_download ignores its patterns — so a file the pull never fetches still passed
+    # here while production served `epochs: []`.
+    from fnmatch import fnmatch
+
+    seen = {}
+    monkeypatch.setattr(app, "snapshot_download", lambda *a, **k: seen.update(k))
+    app._pull_index()
+    assert any(fnmatch(path, pattern) for pattern in seen["allow_patterns"])
+
+
 # ── The trust surfaces (ADR-0112, ADR-0113) ────────────────────────────────────────────
 # These assert *claims*, not markup. Each one is a sentence the product makes to a stranger
 # who has no way to check it from inside the page; a refactor that drops one should fail
