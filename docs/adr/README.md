@@ -177,3 +177,4 @@ supersedes it and note the supersession in both.
 | [0175](0175-a-pyjamahr-board-is-its-company-slug-discovered-from-the-vendors-sitemap.md) | A PyjamaHR Board is its company slug, discovered from the vendor's own jobs sitemap | 2026-09-22 |
 | [0176](0176-resume-derivation-sweeps-across-pipeline-runs.md) | Resume derivation sweeps across pipeline runs | 2026-09-22 |
 | [0177](0177-an-unknown-reprobe-keeps-a-live-verdict.md) | An `unknown` re-probe keeps a `live` verdict | 2026-09-23 |
+| [0178](0178-salary-sort-is-stated-in-one-currency.md) | The salary sort is stated in one currency | 2026-09-23 |
