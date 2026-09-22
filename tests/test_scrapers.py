@@ -1874,13 +1874,17 @@ def _darwinbox_curl_wall(monkeypatch):
 class _FakeDarwinboxPage:
     """browser_http._Page's surface, answering the darwinbox API from canned pages."""
 
-    def __init__(self, pages):
+    def __init__(self, pages, job_counts=None):
         self.pages = pages
         self.posted = []
+        self.job_counts = job_counts
 
     def post_json(self, path, body):
         self.posted.append(body)
-        return {"data": self.pages[body["page"] - 1]}
+        envelope = {"data": self.pages[body["page"] - 1]}
+        if self.job_counts is not None:
+            envelope["job_counts"] = self.job_counts
+        return envelope
 
     def get_json(self, path):
         return {"message": {"company": {"new_careers": True}}}
@@ -1940,6 +1944,28 @@ def test_darwinbox_browser_route_paginates_full_pages(monkeypatch):
     raw = get_scraper("darwinbox", "licious", "Licious").fetch_raw()
     assert len(raw) == db._PAGE_SIZE + 1
     assert [b["page"] for b in fake.posted] == [1, 2]
+
+
+def test_darwinbox_browser_route_marks_a_measured_shortfall(monkeypatch):
+    """The walled path checks `job_counts` too — a walled Board never reaches the curl loop's
+    own check at all, so it needs its own (issue #549)."""
+    from contextlib import contextmanager
+
+    import headstart.browser_http as bh
+
+    _darwinbox_curl_wall(monkeypatch)
+    fake = _FakeDarwinboxPage([[{"id": "only"}]], job_counts=10)
+
+    @contextmanager
+    def _origin(page_url):
+        yield fake
+
+    monkeypatch.setattr(bh, "origin", _origin)
+    scraper = get_scraper("darwinbox", "licious", "Licious")
+    raw = scraper.fetch_raw()
+
+    assert len(raw) == 1
+    assert scraper.truncated and "job_counts=10" in scraper.truncated
 
 
 def test_darwinbox_no_wall_no_browser_raises_the_last_error(monkeypatch):
@@ -8871,6 +8897,46 @@ def test_darwinbox_marks_its_page_cap(monkeypatch):
 
     assert len(jobs) == db._PAGE_SIZE * 99
     assert s.truncated and "99-page cap" in s.truncated
+
+
+def test_darwinbox_marks_a_measured_shortfall_against_job_counts(monkeypatch):
+    """A natural short-page end isn't proof the board is exhausted if the envelope's own
+    `job_counts` says otherwise — issue #549, live-confirmed 2026-09-22 (module docstring):
+    stable across a real multi-page board including its own terminal short page."""
+    from headstart.scrapers import darwinbox as db
+
+    s = db.DarwinboxScraper("acme")
+
+    def _alljobs(host, page):
+        s._job_counts = 10
+        return [{"id": 1}]  # a short page, but job_counts says the board isn't done
+
+    monkeypatch.setattr(s, "_alljobs", _alljobs)
+    monkeypatch.setattr(s, "_portal_is_v2", lambda host: True)
+    jobs = s.fetch_raw()
+
+    assert len(jobs) == 1
+    assert s.truncated and "job_counts=10" in s.truncated
+
+
+def test_darwinbox_does_not_mark_a_board_whose_job_counts_matches(monkeypatch):
+    """The healthy case: `job_counts` agrees with what the natural short-page end collected, so
+    nothing fires — the other direction of ADR-0053 (a wrongly-marked Board is exempt from
+    eviction indefinitely)."""
+    from headstart.scrapers import darwinbox as db
+
+    s = db.DarwinboxScraper("acme")
+
+    def _alljobs(host, page):
+        s._job_counts = 2
+        return [{"id": 1}, {"id": 2}]
+
+    monkeypatch.setattr(s, "_alljobs", _alljobs)
+    monkeypatch.setattr(s, "_portal_is_v2", lambda host: True)
+    jobs = s.fetch_raw()
+
+    assert len(jobs) == 2
+    assert s.truncated is None
 
 
 def test_successfactors_does_not_mark_a_board_whose_pages_all_arrived(monkeypatch):
