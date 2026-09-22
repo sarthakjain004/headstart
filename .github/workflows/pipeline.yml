@@ -814,20 +814,16 @@ jobs:
         # refresh costs one run of staleness, which is the status quo it is fixing, whereas
         # failing here would drop the run's scrape and evictions too.
         #
-        # timeout-minutes: a version bump makes `update_meta` re-derive every row instead of just
-        # resyncing facts — measured 2026-09-15 at ~224 rows/s (a 805,160-row store still 800,000
-        # rows in at 59m35s), against ~53,000 rows/s on an ordinary run. That sweep now fans out
-        # across a process pool, but ubuntu-latest's real, imperfect parallelism and the corpus's
-        # continued growth both cut into any measured speedup — 35 min assumes only a ~2x win
-        # over the observed single-core hour, not the ~4 vCPUs nominally available. Re-measure
-        # against the next real sweep rather than trusting this projection indefinitely. Without
-        # its own cap this step can consume the whole job's `timeout-minutes` and take
-        # `sync`/`prune`/`role_trends`/the upload down with it — `continue-on-error` only helps
-        # once *this* step can time out on its own first.
+        # ADR-0176: spend at most 600s dispatching sweep work, then finish the cheap fact/queue
+        # pass and publish row-version checkpoints. Later runs resume unfinished rows. Already
+        # running batches may finish after this SOFT budget; 35 min remains the hang detector,
+        # covering input loading, draining workers and writing the complete aligned metadata.
+        # A hard runner shutdown before publication loses this run's progress, but not the
+        # checkpoints previous runs published. The temp rewrite is outside the uploaded store.
         if: needs.scrape-plan.outputs.run == 'true'
         continue-on-error: true
         timeout-minutes: 35
-        run: python -m headstart.ingest.update_meta
+        run: python -m headstart.ingest.update_meta --sweep-budget-seconds 600
       - name: Sync the jobs table
         # `--scraped-boards` explicitly, because it has no default (ADR-0161): the file rides
         # `data/state` through the HF dataset, so a default would let any checkout holding a
