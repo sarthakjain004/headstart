@@ -46,6 +46,13 @@ row lacks it, which is why ``embed_plan`` has had to guess from the ATS — over
 degraded set by ~9x. See :func:`has_description_for`: written once, from evidence where there is
 any and from the same inference where there is none, so the guess stops being re-made every run.
 
+Version sweeps have a ten-minute soft budget (ADR-0176). Each processed row carries its own
+``_derivations_version`` so a later run can finish the sweep even after rows move during an
+embedding upgrade. Facts and queued descriptions continue to refresh after the budget expires;
+the global watermark advances only when no row remains unswept. Progress survives once the
+normal publication uploads the rewritten metadata. A runner lost before publication still
+retries from the last published checkpoint.
+
 The rewrite preserves **row order and count**, because ``meta.jsonl`` is row-aligned with
 ``embeddings.f32`` and ``index._load_store`` hard-errors on drift. It is written to a temp file and
 renamed, so a kill mid-write leaves the previous store intact.
@@ -58,9 +65,10 @@ import json
 import os
 from collections import Counter
 from collections.abc import Iterator
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from contextlib import nullcontext
 from pathlib import Path
+from time import monotonic
 from typing import Any, NamedTuple
 
 from headstart import log
@@ -90,9 +98,12 @@ _JOBS = REPO_ROOT / "data" / "jobs" / "tech"
 _DESCRIPTIONS = REPO_ROOT / "data" / "descriptions"
 _WATERMARK = REPO_ROOT / "data" / "state" / "derivations.json"
 
-#: Row batch size for `refresh`'s fan-out — also the progress-log cadence, unchanged from before
-#: parallelism so a sweep's log still reads "50000 rows refreshed" at the same milestones.
-_SWEEP_CHUNK_ROWS = 50_000
+#: Small batches bound process-transfer memory and spread expensive descriptions across workers.
+#: Progress remains every 50,000 written rows, independently of dispatch size.
+_SWEEP_CHUNK_ROWS = 1_000
+_PROGRESS_ROWS = 50_000
+_ROW_VERSION = "_derivations_version"
+_SWEEP_BUDGET_SECONDS = 600
 
 #: Identity: what a row *is*, never re-observed, so it can never be rewritten onto another Job.
 _IDENTITY = ("id", "ats")
@@ -431,6 +442,7 @@ def _chunk_args(
     sweep: bool,
     pending: set[str],
     detail_pass: frozenset[str],
+    deadline: float | None = None,
 ) -> Iterator[_ChunkArgs]:
     """Pair each row batch with only the `facts`/`descriptions`/`pending` entries it needs."""
     for batch in batches:
@@ -443,7 +455,7 @@ def _chunk_args(
                 if descriptions
                 else {}
             ),
-            sweep=sweep,
+            sweep=sweep and (deadline is None or monotonic() < deadline),
             pending=pending & ids if pending else set(),
             detail_pass=detail_pass,
         )
@@ -462,6 +474,7 @@ class _ChunkResult(NamedTuple):
     exp_delta: Counter[str]
     sal_delta: Counter[str]
     country_delta: Counter[str]
+    unswept: int
 
 
 def _refresh_chunk(args: _ChunkArgs) -> _ChunkResult:
@@ -475,14 +488,19 @@ def _refresh_chunk(args: _ChunkArgs) -> _ChunkResult:
     exp_delta: Counter[str] = Counter()
     sal_delta: Counter[str] = Counter()
     country_delta: Counter[str] = Counter()
+    unswept = 0
     for meta in args.rows:
+        sweep_row = args.sweep and meta.get(_ROW_VERSION, 0) < DERIVATIONS_VERSION
         row, fact_changed, derived_changed = refresh_row(
             meta,
             args.facts.get(meta["id"]),
             args.descriptions,
-            args.sweep,
+            sweep_row,
             rederive=meta["id"] in args.pending,
         )
+        if sweep_row:
+            row[_ROW_VERSION] = DERIVATIONS_VERSION
+        unswept += row.get(_ROW_VERSION, 0) < DERIVATIONS_VERSION
         fact_hits += fact_changed
         derived_hits += derived_changed
         # `meta` is untouched (refresh_row copies), so it is the genuine "before".
@@ -518,7 +536,46 @@ def _refresh_chunk(args: _ChunkArgs) -> _ChunkResult:
         exp_delta,
         sal_delta,
         country_delta,
+        unswept,
     )
+
+
+def _parallel_chunks(
+    pool: ProcessPoolExecutor, args: Iterator[_ChunkArgs], workers: int
+) -> Iterator[_ChunkResult]:
+    """Keep at most `workers` batches submitted but not yet written.
+
+    Executor.map eagerly consumes its input on the pipeline's Python 3.12.
+    Its pending arguments and completed results can retain the entire metadata
+    store while a slow early batch blocks the writer. Observe completion order,
+    but emit in source order because metadata is aligned with the vector file.
+    Completed batches count toward the bound until the writer consumes them.
+    """
+    indexed = enumerate(args)
+    pending = {}
+    ready = {}
+    next_write = 0
+
+    def submit_one():
+        item = next(indexed, None)
+        if item is not None:
+            index, chunk_args = item
+            pending[pool.submit(_refresh_chunk, chunk_args)] = index
+
+    try:
+        for _ in range(workers):
+            submit_one()
+        while pending:
+            future = next(as_completed(pending))
+            ready[pending.pop(future)] = future.result()
+            del future
+            while next_write in ready:
+                yield ready.pop(next_write)
+                next_write += 1
+                submit_one()
+    finally:
+        for future in pending:
+            future.cancel()
 
 
 def refresh(
@@ -527,7 +584,10 @@ def refresh(
     descriptions_dir: Path,
     watermark: Path,
     pending_rederive: Path | None = None,
+    sweep_budget_seconds: float = _SWEEP_BUDGET_SECONDS,
 ) -> int:
+    if not 0 <= sweep_budget_seconds < float("inf"):
+        raise ValueError("sweep budget must be finite and nonnegative")
     meta_path = store / "meta.jsonl"
     if not meta_path.exists():
         _log.info("no store yet — nothing to refresh")
@@ -561,11 +621,15 @@ def refresh(
     )
 
     detail_pass = registry.detail_pass_atses()
-    tmp = meta_path.with_suffix(".jsonl.refresh")
+    # Outside the uploaded store: even SIGKILL must not leave a partial file
+    # where the workflow's folder upload could publish it.
+    tmp = store.parent / f".{store.name}-meta.jsonl.refresh"
     rows = fact_hits = derived_hits = backfilled = 0
     exp_delta: Counter[str] = Counter()
     sal_delta: Counter[str] = Counter()
     country_delta: Counter[str] = Counter()
+    unswept = 0
+    deadline = monotonic() + sweep_budget_seconds if sweep else None
     # A sweep runs the full cascade on every row instead of a cheap fact-sync — measured ~230x
     # slower per row on the 2026-09-15 nightly (805,160 rows: ~15s fact-only vs. a sweep still not
     # done at 800,000 rows after 59 minutes). `refresh_row` is pure, so a sweep fans the store out
@@ -581,10 +645,16 @@ def refresh(
         with tmp.open("w", encoding="utf-8") as out, pool_cm as pool:
             batches = _row_batches(meta_path, _SWEEP_CHUNK_ROWS)
             args_iter = _chunk_args(
-                batches, facts, descriptions, sweep, pending, detail_pass
+                batches,
+                facts,
+                descriptions,
+                sweep and bool(descriptions),
+                pending,
+                detail_pass,
+                deadline,
             )
             chunk_results = (
-                pool.map(_refresh_chunk, args_iter)
+                _parallel_chunks(pool, args_iter, workers)
                 if pool
                 else map(_refresh_chunk, args_iter)
             )
@@ -598,12 +668,13 @@ def refresh(
                 exp_delta.update(chunk.exp_delta)
                 sal_delta.update(chunk.sal_delta)
                 country_delta.update(chunk.country_delta)
-                if rows % _SWEEP_CHUNK_ROWS == 0:
+                unswept += chunk.unswept
+                if rows % _PROGRESS_ROWS == 0:
                     _log.info(f"  {rows} rows refreshed")
         tmp.replace(meta_path)
     except BaseException:
-        # The merge job uploads `data/embeddings/jobs` wholesale and without `--delete`, so a
-        # half-written temp file left behind here would be published to HF and stay there.
+        # Caught failures clean up immediately. A hard kill can leave this file
+        # behind, but it is outside the directory the workflow publishes.
         tmp.unlink(missing_ok=True)
         raise
     _log.info(
@@ -630,6 +701,12 @@ def refresh(
         _log.warning(
             "sweep found no held descriptions — the store is missing, not empty; leaving the "
             f"watermark at v{stored_version} so the next run retries"
+        )
+    elif sweep and unswept:
+        _log.info(
+            f"sweep checkpoint: {rows - unswept} of {rows} rows at v{DERIVATIONS_VERSION}; "
+            f"{unswept} remain after the {sweep_budget_seconds:g}s soft budget — "
+            f"leaving watermark at v{stored_version}; next run resumes"
         )
     elif sweep:
         write_watermark(watermark, DERIVATIONS_VERSION)
@@ -659,6 +736,13 @@ def main() -> int:
     parser.add_argument("--descriptions", type=Path, default=_DESCRIPTIONS)
     parser.add_argument("--watermark", type=Path, default=_WATERMARK)
     parser.add_argument(
+        "--sweep-budget-seconds",
+        type=float,
+        default=_SWEEP_BUDGET_SECONDS,
+        help="soft time budget for version sweeps; unfinished rows resume next run "
+        "while facts and queued descriptions still refresh (default: 600)",
+    )
+    parser.add_argument(
         "--pending-rederive",
         type=Path,
         default=PENDING_REDERIVE_PATH,
@@ -672,6 +756,7 @@ def main() -> int:
         args.descriptions,
         args.watermark,
         args.pending_rederive,
+        args.sweep_budget_seconds,
     )
 
 
