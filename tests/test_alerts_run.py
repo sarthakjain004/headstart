@@ -497,6 +497,44 @@ def test_main_builds_its_config_from_transports_not_a_name_list(monkeypatch):
     assert seen.get("SLACK_WEBHOOK_URL") == "https://hooks.example"
 
 
+def test_an_empty_space_url_falls_back_to_the_default(monkeypatch):
+    # alerts.yml always exports `SPACE_URL: ${{ vars.SPACE_URL }}`, which is "" when the
+    # variable is unset — docs/email-alerts.md calls it optional, defaulting to the Space.
+    class _Repo:
+        def __init__(self, *a, **k):
+            pass
+
+        def invites(self):
+            return [Invite("ada@example.com", "backend engineer")]
+
+        def get(self, sub_id):
+            return None
+
+        def opted_out(self, sub_id):
+            return False
+
+        def put(self, sub):
+            pass
+
+        def accounts_with_sets(self):
+            return frozenset()
+
+        def all(self):
+            return []
+
+    seen = []
+    monkeypatch.setenv("SUBSCRIBERS_REPO", "repo")
+    monkeypatch.setenv("SUBSCRIBERS_TOKEN", "tok")
+    monkeypatch.setenv("SPACE_URL", "")
+    monkeypatch.setattr(run, "Store", _Repo)
+    monkeypatch.setattr(
+        run, "send_one", lambda sub, store, space, config: seen.append(space) or 0
+    )
+
+    assert run.main() == 0
+    assert seen == ["https://imposeidon-headstart-search.hf.space"]
+
+
 def test_a_dead_space_costs_one_annotation_not_one_per_subscription(
     monkeypatch, caplog
 ):
