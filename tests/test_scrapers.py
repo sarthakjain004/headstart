@@ -9172,6 +9172,15 @@ _RESOLVE_ROWS = [
         "https://jobs.lever.co/picklerobot",
     ),
     (
+        # The title is the bare name — equal to the SSR payload's `companyDetails.name` on 757
+        # of 757 live tenants — and here genuinely different from the slug, not a re-casing.
+        "pyjamahr",
+        "8byte",
+        "Octa Byte AI Pvt Ltd",
+        "Octa Byte AI Pvt Ltd",
+        "https://jobs.pyjamahr.com/8byte",
+    ),
+    (
         "ripplehire",
         "tatasteel",
         "Tata Steel Ltd Careers | Latest jobs at Tata Steel Ltd",
