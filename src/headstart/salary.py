@@ -120,8 +120,22 @@ _CURRENCY_CODE = re.compile(rf"\b({_CURRENCY_CODES})\b", re.IGNORECASE)
 # of that specific pattern (a label's own filler, say) happened to consume it too, which is real
 # for some phrasings and not others. Folding the prefix into the shared symbol fragment itself
 # means every caller captures it reliably, not by accident of surrounding text — see
-# `_guess_currency`'s own handling of a `sym` value longer than one character.
-_SYM = r"(?:(?:CA|C)?\$|[£€₹])"
+# `_guess_currency`'s own handling of a `sym` value longer than one character. The other dollar
+# prefixes joined later ("HK$", "S$", "A$", "NZ$" were being captured as a bare "$" and served as
+# USD — HK$370,000 as a $370k job); the lookbehind keeps a letter-glued prefix from being carved
+# out of a longer one ("US$" is not "S$").
+_SYM = r"(?:(?<![A-Za-z])(?:CA|C|HK|SG|S|AU|A|NZ|US)\$|\$|[£€₹])"
+_DOLLAR_PREFIX = {
+    "CA": "CAD",
+    "C": "CAD",
+    "HK": "HKD",
+    "SG": "SGD",
+    "S": "SGD",
+    "AU": "AUD",
+    "A": "AUD",
+    "NZ": "NZD",
+    "US": "USD",
+}
 # The optional symbol after the dash lets a free-text field state one per side ("$85,000 -
 # $135,000", zoho): without it the range failed and `_SINGLE_NUM` silently kept only the floor.
 _RANGE = re.compile(
@@ -959,10 +973,9 @@ _STRONG_PERIOD_HINT = re.compile(
 
 def _guess_currency(sym: str | None, code_context: str) -> str | None:
     if sym and sym.endswith("$") and sym != "$":
-        return (
-            "CAD"  # "CA$"/"C$" — see _SYM's own docstring for why this must be checked
-        )
-        # against `sym` itself, not searched for separately in the surrounding match text.
+        # "CA$"/"HK$"/... — see _SYM's own docstring for why this must be checked against `sym`
+        # itself, not searched for separately in the surrounding match text.
+        return _DOLLAR_PREFIX[sym[:-1].upper()]
     if sym and sym != "$":
         return _CURRENCY_SYM.get(sym)
     code_m = _CURRENCY_CODE.search(code_context)
