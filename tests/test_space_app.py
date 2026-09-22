@@ -572,6 +572,23 @@ def test_unsubscribe_clears_the_emailing_flag(sets_app, hub, monkeypatch):
     assert sub_path not in hub
 
 
+def test_a_non_ascii_unsubscribe_token_is_a_404_not_a_500(sets_app, hub, monkeypatch):
+    # compare_digest raises TypeError on a non-ASCII str, so the query-string token has to
+    # be compared as bytes — as _service_caller already does for the bearer token.
+    import json as _json
+
+    hub["subscriptions/allowlist.json"] = b'{"allowed": ["dev@example.com"]}'
+    client = _signed_in(sets_app, monkeypatch)
+    made = client.post("/sets", json={"name": "a", "query": "qa"}, base_url=_HTTPS).json
+    client.post(f"/sets/{made['id']}/email", json={"on": True}, base_url=_HTTPS)
+    sub_path = f"subscriptions/{sets_app.subscription_id('dev@example.com')}.json"
+    sub = _json.loads(hub[sub_path])
+
+    r = client.get(f"/unsubscribe?id={sub['id']}&token=%C3%A9")
+
+    assert r.status_code == 404 and sub_path in hub
+
+
 def test_subscribe_refuses_while_sets_are_live(sets_app, hub, monkeypatch):
     client = _signed_in(sets_app, monkeypatch)
     r = client.post(

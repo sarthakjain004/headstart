@@ -662,7 +662,8 @@ def unsubscribe():
         if (
             sub
             and sub.unsubscribe_token
-            and hmac.compare_digest(sub.unsubscribe_token, token)
+            # bytes: compare_digest raises TypeError on a non-ASCII str (see _service_caller)
+            and hmac.compare_digest(sub.unsubscribe_token.encode(), token.encode())
         ):
             store.remove(sub.id)
             # The Subscription id IS the sets namespace for this address, so an unsubscribe
