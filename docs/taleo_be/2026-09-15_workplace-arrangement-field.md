@@ -28,16 +28,17 @@ keyword search over label *names* alone (the first pass's approach) missed a rea
 different label spellings, two different value vocabularies — no other spelling appeared across
 the sample:
 
-| Tenant | Label (as `_labels()` keys it) | Values seen |
+| Tenant | Label (as the page renders it) | Values seen |
 | --- | --- | --- |
-| 1199SEIU Funds (`org=NBF1199`) | `"Workplace Arrangement:"` — **with** the trailing colon | Hybrid (7/8 sampled jobs), In-Office (1/8) |
+| 1199SEIU Funds (`org=NBF1199`) | `"Workplace Arrangement:"` — **with** a trailing colon | Hybrid (7/8 sampled jobs), In-Office (1/8) |
 | Covestic (`org=COVESTIC2`) | `"Location Type"` — no colon | Onsite (5/6), Remote (1/6) |
 
-The colon matters: `_field()` matches names literally (no punctuation normalization), so a lookup
-list of `"Workplace Arrangement"` alone would silently miss NBF1199's real label — confirmed live
-by probing `_field(labels, "Workplace Arrangement")` (`None`) vs.
-`_field(labels, "Workplace Arrangement:")` (`"Hybrid"`) against the same fetched page. The scraper
-therefore looks up both spellings, plus `"Location Type"`.
+**Update 2026-09-23:** the colon no longer matters. When this note was written, `_field()`
+matched names literally, so the scraper looked up `"Workplace Arrangement:"` colon and all, and a
+colonless lookup returned `None` on NBF1199's page. The same literal matching also hid
+`"Employment Type: "` on NBF1199 and `"Location:"` on ARKASTAT2. `_labels()` now strips a trailing
+colon from every label key, so the scraper looks up `"Workplace Arrangement"` and
+`"Location Type"`, and both colon spellings resolve.
 
 No tenant in the sample used "Hybrid" as a `Location Type` value or "Remote"/"Onsite" as a
 `Workplace Arrangement` value — the two fields' vocabularies didn't overlap in what was observed —
