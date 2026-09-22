@@ -127,6 +127,11 @@ def handle(
     if command == "stop":
         if sub:
             store.remove(sub.id)
+        # A chat an Invite also routes to keeps receiving through the Invite unless its
+        # address-keyed record is opted out too — /stop has to stop everything this chat gets.
+        invite = _invite_for(chat_id, store)
+        if invite:
+            store.remove(subscription_id(invite.email))
         return [(chat_id, "Stopped. Send /start to set it up again.")]
     return [(chat_id, MASTER_HELP if is_master else HELP)]
 
