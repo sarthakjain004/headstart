@@ -101,6 +101,14 @@ class RipplingScraper(BaseScraper):
         # item's `department` carries `{id, label}` (measured live 2026-09-22, 76/76 postings
         # on 3 boards) and `_department_of` reads that directly, so the detail fallback below
         # exists only for the rare listing item missing the key entirely.
+        #
+        # Gained/lost through the gate itself, measured live 2026-09-22 across 156 postings on
+        # 13 boards (10fitness, aalo-atomics and 11 others): 0 gained, 0 lost — title alone
+        # already agreed with `is_tech`'s department-aware verdict on every sampled posting.
+        # This fix's measured value is `Job.department` itself, always None before this change
+        # and now correctly populated (served field + the post-detail `filter_tech` pass, which
+        # reads `Job.department` independently of this pre-detail gate) — a small board sample
+        # finding no gate-level swing is expected, not evidence the fix does nothing.
         wanted = self.tech_detail_wanted(
             items, lambda it: it.get("name"), _department_of
         )

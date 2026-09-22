@@ -910,6 +910,68 @@ def test_workable_parse():
     assert j.description and "</" not in j.description  # populated, HTML-stripped
 
 
+def test_workable_multi_location_rows_collapse_into_one_job():
+    """Real zyte shape (shortcode 6DCFF04CD6, measured live 2026-09-22): a multi-location
+    posting is 3 listing rows sharing one shortcode — identical url/description, differing only
+    in location. Without grouping, the harvest's within-board first-wins dedupe kept only the
+    first row's location and silently dropped the other two."""
+    raw = {
+        "name": "Zyte",
+        "jobs": [
+            {
+                "shortcode": "6DCFF04CD6",
+                "title": "Backend Engineer",
+                "city": "Sao Paulo",
+                "state": "Sao Paulo",
+                "country": "Brazil",
+                "url": "https://apply.workable.com/zyte/j/6DCFF04CD6/",
+                "description": "Build things.",
+                "department": "Engineering",
+            },
+            {
+                "shortcode": "6DCFF04CD6",
+                "title": "Backend Engineer",
+                "city": "Montevideo",
+                "state": "Montevideo Department",
+                "country": "Uruguay",
+                "url": "https://apply.workable.com/zyte/j/6DCFF04CD6/",
+                "description": "Build things.",
+                "department": "Engineering",
+            },
+            {
+                "shortcode": "6DCFF04CD6",
+                "title": "Backend Engineer",
+                "city": "Buenos Aires",
+                "state": "Buenos Aires",
+                "country": "Argentina",
+                "url": "https://apply.workable.com/zyte/j/6DCFF04CD6/",
+                "description": "Build things.",
+                "department": "Engineering",
+            },
+            {
+                "shortcode": "OTHERJOB01",
+                "title": "Support Engineer",
+                "city": "Remote",
+                "state": "",
+                "country": "",
+                "url": "https://apply.workable.com/zyte/j/OTHERJOB01/",
+                "description": "Help customers.",
+                "department": "Support",
+            },
+        ],
+    }
+    jobs = get_scraper("workable", "zyte", "Zyte").parse(raw, SCRAPED_AT)
+    assert len(jobs) == 2  # 4 rows, one shortcode grouped -> one Job
+    multi = next(j for j in jobs if j.id == "workable:zyte:6DCFF04CD6")
+    assert multi.location == (
+        "Sao Paulo, Sao Paulo, Brazil; "
+        "Montevideo, Montevideo Department, Uruguay; "
+        "Buenos Aires, Buenos Aires, Argentina"
+    )
+    single = next(j for j in jobs if j.id == "workable:zyte:OTHERJOB01")
+    assert single.location == "Remote"
+
+
 def test_smartrecruiters_parse():
     jobs = get_scraper("smartrecruiters", "freshworks", "Freshworks").parse(
         _load("smartrecruiters_freshworks.json"), SCRAPED_AT

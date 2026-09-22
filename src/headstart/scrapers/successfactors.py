@@ -305,6 +305,15 @@ class SuccessFactorsScraper(BaseScraper):
         # elsewhere (jobs.sap.com's own feed is 16 MB at ~30 KB/s — reading it just for a
         # department label on a tenant whose `/search/` already works would cost ~9 minutes/run
         # for nothing `/search/` doesn't already answer cheaply).
+        #
+        # Scope check, live 2026-09-22: `apply.careers.hsbc.com`, `aramarkcareers.com`,
+        # `basf.jobs` and `ace1950.jobs2web.com` — the four tenants a prior pass measured
+        # `g:job_function` coverage on directly against their RSS feed — all currently serve a
+        # plain **urlset** at `/sitemap.xml`, not RSS, so none of them reach `rss-stream` today
+        # and this fix does not recover their department right now. Whether that reflects a
+        # since-changed sitemap mode on those tenants or a different original measurement
+        # surface is unknown; only `jobs.tetrapak.com` (module docstring's own `rss-stream`
+        # example) was directly confirmed live to benefit — see :meth:`_rss_job_urls`.
         job_functions: dict[str, str] = {}
         if listed and sitemap_cut_short:
             self.mark_truncated(sitemap_cut_short)
