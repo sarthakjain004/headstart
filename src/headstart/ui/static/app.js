@@ -471,6 +471,10 @@ async function fetchPage(){
   const p = new URLSearchParams({ q, k: PAGE_SIZE, page });
   for (const [key, value] of Object.entries(currentFilters())) p.set(key, value);
   if (el('sort').value !== 'rel') p.set('sort', el('sort').value);
+  // A salary sort is stated in one currency — the picker's — even with no bound set, which is
+  // why this is not in currentFilters(): there the currency means "the bracket is counted in".
+  if (el('sort').value === 'salary' && el('salcur') && !p.has('salary_currency'))
+    p.set('salary_currency', el('salcur').value);
   // Deliberately NOT part of currentFilters(): a Saved Set serializes that, and freezing "only
   // my companies" into a stored Set would pin it to the list as it was on the day it was saved.
   if (el('mine') && el('mine').checked) p.set('mine', '1');
@@ -591,12 +595,16 @@ function drawCount(shown, facets){
 const SORT_NOTES = {
   seen:    ['most recently added first', 'newest among your best matches — not a global date sort'],
   posted:  ['newest by the employer’s date first', 'newest among your best matches — not a global date sort'],
-  salary:  ['highest stated salary first — jobs with none come last',
-            'best-paid among your best matches — not a global salary sort'],
+  // Functions of the picker's currency: salary is stored in each employer's own, so the server
+  // lists that currency's jobs first on a browse and converts the rest on a ranked page.
+  salary:  [c => `highest ${c} salary first, then other currencies grouped by currency — jobs with none come last`,
+            c => `best-paid among your best matches, other currencies converted to ${c} — not a global salary sort`],
 };
 function drawSortNote(){
   const note = SORT_NOTES[el('sort').value];
-  el('sortnote').textContent = !note ? '' : note[el('q').value.trim() ? 1 : 0];
+  const text = !note ? '' : note[el('q').value.trim() ? 1 : 0];
+  el('sortnote').textContent = typeof text === 'function'
+    ? text(el('salcur') ? el('salcur').value : 'USD') : text;
 }
 
 // When a search returns nothing, name the one filter that costs the most rather than telling

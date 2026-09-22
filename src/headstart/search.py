@@ -1221,6 +1221,19 @@ class JobSearch:
             sort = None  # same dark-until-migrated rule as the filters above
         if sort == "min_salary_annual" and not self.has_min_salary_annual:
             sort = None  # likewise: the ADR-0082 columns arrive by migration
+        # Salary is stored in the employer's own currency (ADR-0082), so ordering the raw
+        # column ranked ₹40,00,000 above $300,000 — the first 400 rows of a salary sort were
+        # all INR. The sort is stated in ONE currency, resolved and whitelisted exactly like the
+        # bracket's; a table with no such currency keeps the raw ordering it always had.
+        sort_currency = None
+        if sort == "min_salary_annual":
+            sort_currency = (
+                filters.salary_currency
+                if filters.salary_currency in self.currencies
+                else SALARY_DEFAULT_CURRENCY
+            )
+            if sort_currency not in self.currencies:
+                sort_currency = None
         # `is None`, not `or`: the old route's `int(raw or 20)` gave k=0 → 1 row, and an
         # `or` on the parsed int would silently turn k=0 into the default 20 instead. Same
         # reasoning for `page`, new in ADR-0074: page=1 is the default, not a falsy no-op.
@@ -1312,14 +1325,21 @@ class JobSearch:
             # in its own type — `""` for the date columns, -inf for a numeric one — which puts
             # rows that have no value last either way.
             missing = float("-inf") if sort in _NUMERIC_SORTS else ""
-            window.sort(
-                key=lambda r: (
-                    missing if r.get(sort) is None else r.get(sort),
-                    r.get("id") or "",
-                ),
-                reverse=True,
-            )
+            rates = ((fx.table() or {}).get("rates") or {}) if sort_currency else {}
+
+            def key(r: dict) -> tuple:
+                value, currency = r.get(sort), r.get("salary_currency")
+                if sort_currency and value is not None and currency != sort_currency:
+                    # Restated in the sort's currency with the ADR-0117 rates. A currency with
+                    # no rate cannot be compared, so it joins the unpriced rows rather than
+                    # being taken 1:1 — the silent wrong answer `fx` exists to refuse.
+                    value = fx.convert(float(value), currency, sort_currency, rates)
+                return (missing if value is None else value, r.get("id") or "")
+
+            window.sort(key=key, reverse=True)
             rows = window[offset : offset + k]
+        elif sort_currency:
+            rows = self._salary_browse(where, sort_currency, k, offset)
         else:
             if sort:
                 # No query, so no ranking to protect: LanceDB can order the whole table. Same
@@ -1365,6 +1385,59 @@ class JobSearch:
                 BROWSE_CACHE_SIZE,
             )
         return result
+
+    def _salary_browse(
+        self, where: str | None, currency: str, k: int, offset: int
+    ) -> list[dict]:
+        """One page of a salary-sorted browse, stated in ``currency``.
+
+        LanceDB can only ORDER BY a stored column, and salary is stored in each employer's own
+        currency, so the whole table cannot be ordered across currencies. The page is cut from
+        two segments instead: ``currency``'s Jobs in true salary order, then every other Job
+        grouped by currency — each group in its own true order — with the unpriced last. The
+        result SET is exactly the filter's, so the facet total beside it still describes it;
+        scoping to ``currency`` alone emptied an India browse sorted in USD.
+
+        ``currency`` is already whitelisted against :attr:`currencies`, like the bracket's.
+        """
+        own = f"salary_currency = '{currency}'"
+        rest = f"(salary_currency IS NULL OR salary_currency <> '{currency}')"
+        salary = {
+            "column_name": "min_salary_annual",
+            "ascending": False,
+            "nulls_first": False,
+        }
+        by_id = {"column_name": "id", "ascending": True}
+        n_own = self._table.count_rows(filter=with_extra(where, own))
+
+        def segment(clause: str, ordering: list[dict], limit: int, skip: int) -> list:
+            if limit <= 0:
+                return []
+            return (
+                self._table.search()
+                .where(clause, prefilter=True)
+                .select([*self.projection])
+                .order_by(ordering)
+                .limit(limit)
+                .offset(skip)
+                .to_list()
+            )
+
+        rows = segment(
+            with_extra(where, own), [salary, by_id], min(k, n_own - offset), offset
+        )
+        by_currency = {
+            "column_name": "salary_currency",
+            "ascending": True,
+            "nulls_first": False,
+        }
+        rows += segment(
+            with_extra(where, rest),
+            [by_currency, salary, by_id],
+            k - len(rows),
+            max(0, offset - n_own),
+        )
+        return rows
 
     def warm(self) -> None:
         """Preload default responses plus one semantic pass every fresh process serves first."""
