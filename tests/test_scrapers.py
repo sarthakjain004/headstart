@@ -801,48 +801,61 @@ def test_keka_salary_no_scientific_notation_for_large_amounts():
     )
 
 
-def _keka_stub_get(portal, page="", jobs="[]"):
-    """Stub BaseScraper._get, dispatching on the requested URL (careerportalinfo / careers page /
-    embedjobs) so KekaScraper.fetch_raw can be exercised without network."""
+def _keka_stub_get(body):
+    """Stub BaseScraper._get for the one-request listing path."""
 
     def _get(self, url=None):
         target = url or self.url()
-        if "careerportalinfo" in target:
-            return portal
-        if "embedjobs" in target:
-            return jobs
-        if target.endswith("/careers"):
-            return page
-        raise AssertionError(f"unexpected GET {target}")
+        assert target.endswith("/careers/api/jobs/default/active"), (
+            f"unexpected GET {target}"
+        )
+        return body
 
     return _get
 
 
-def test_keka_uuid_from_portal_background(monkeypatch):
-    # the common case: the UUID rides in careersBackgroundPath
-    portal = '{"careersBackgroundPath":"/ats/documents/7e2f830e-7500-440f-992f-5013e438f8b4/bg.png"}'
+def test_keka_reads_the_jobs_array_in_one_request(monkeypatch):
     s = get_scraper("keka", "acme", "Acme")
-    monkeypatch.setattr(
-        type(s), "_get", _keka_stub_get(portal, jobs='[{"id":1,"title":"Eng"}]')
-    )
-    raw = s.fetch_raw()
-    assert [j["id"] for j in raw] == [1]
-    assert s._tenant == "7e2f830e-7500-440f-992f-5013e438f8b4"
+    assert s.url() == "https://acme.keka.com/careers/api/jobs/default/active"
+    calls: list[str] = []
+
+    def _get(self, url=None):
+        calls.append(url or self.url())
+        return '[{"id":1,"title":"Eng"}]'
+
+    monkeypatch.setattr(type(s), "_get", _get)
+    assert [j["id"] for j in s.fetch_raw()] == [1]
+    assert len(calls) == 1, "the listing must not need a second lookup"
 
 
-def test_keka_uuid_falls_back_to_careers_page(monkeypatch):
-    # background-less portal: no UUID in careerportalinfo, but the /careers page carries it
-    portal = '{"careersBackgroundPath":"","name":"Aggne"}'
-    page = "<html>...96d9c896-b9c8-40c0-bdf3-1b764db423a4...</html>"
-    s = get_scraper("keka", "aggne", "Aggne")
-    monkeypatch.setattr(
-        type(s),
-        "_get",
-        _keka_stub_get(portal, page=page, jobs='[{"id":2,"title":"Dev"}]'),
-    )
-    raw = s.fetch_raw()
-    assert [j["id"] for j in raw] == [2]
-    assert s._tenant == "96d9c896-b9c8-40c0-bdf3-1b764db423a4"
+def test_keka_board_without_an_org_uuid_still_reads(monkeypatch):
+    """The regression this endpoint exists for.
+
+    23 of 150 sampled Hiring Boards (2026-09-22) are background-less portals whose `/careers`
+    page is a shell with no uuid in it, so the old careerportalinfo -> /careers -> embedjobs path
+    found no uuid and returned an empty list for a Board that was serving jobs.
+
+    The stub deliberately answers **all three** URLs, exactly as such a Board does: an empty
+    `careersBackgroundPath`, a uuid-less `/careers` shell, and a populated active-jobs array. The
+    old two-step path walks the first two, finds no uuid and drops the Board; this asserts the
+    jobs arrive anyway. A stub that served only the new endpoint would fail against the old code
+    on an unexpected-URL assertion instead of on the drop, and so would pin nothing.
+    """
+
+    def _get(self, url=None):
+        # Most specific first: the active-jobs URL also contains "/careers".
+        target = url or self.url()
+        if target.endswith("/careers/api/jobs/default/active"):
+            return '[{"id":7,"title":"SDE"},{"id":8,"title":"QA"}]'
+        if target.endswith("careerportalinfo"):
+            return '{"careersBackgroundPath":"","name":"Inoptra"}'
+        if target.endswith("/careers"):
+            return "<html><body><div id='app'></div></body></html>"
+        raise AssertionError(f"unexpected GET {target}")
+
+    s = get_scraper("keka", "inoptra", "Inoptra")
+    monkeypatch.setattr(type(s), "_get", _get)
+    assert [j["id"] for j in s.fetch_raw()] == [7, 8]
 
 
 def test_keka_invalid_tenant_yields_no_jobs(monkeypatch):
@@ -854,13 +867,11 @@ def test_keka_invalid_tenant_yields_no_jobs(monkeypatch):
     assert s.fetch_raw() == []
 
 
-def test_keka_no_uuid_anywhere_yields_no_jobs(monkeypatch):
-    # background-less portal whose /careers page also omits the UUID (JS-loaded) -> unreadable
-    s = get_scraper("keka", "anblicks", "Anblicks")
+def test_keka_forbidden_access_yields_no_jobs(monkeypatch):
+    # a disabled portal renders "Forbidden Access" HTML, also at HTTP 200
+    s = get_scraper("keka", "off", "Off")
     monkeypatch.setattr(
-        type(s),
-        "_get",
-        _keka_stub_get('{"careersBackgroundPath":""}', page="<html>no id</html>"),
+        type(s), "_get", _keka_stub_get("<html><title>Forbidden Access</title></html>")
     )
     assert s.fetch_raw() == []
 
@@ -9196,8 +9207,7 @@ def test_every_wired_scraper_resolves_its_company(
 
     Ashby and eightfold were the only two pinned for several rounds, and a stray rename of
     `RippleHireScraper.board_page` then reached the branch and turned ripplehire resolution off
-    with the whole suite green. The URL is asserted too — for keka it is also the page
-    `_tenant_uuid` fetches, and the two must not drift apart.
+    with the whole suite green. The URL is asserted too.
     """
     from headstart import http
 
