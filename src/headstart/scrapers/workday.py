@@ -563,6 +563,11 @@ class WorkdayScraper(BaseScraper):
         instance = self._instance or match.group("instance")
         return match.group("company"), instance, match.group("site")
 
+    @property
+    def _requested_instance(self) -> str:
+        """The ``wdN`` a request goes to: the resolved one if migrated, else the slug's own."""
+        return self._parts()[1]
+
     def _resolve_instance(self) -> None:
         """Point this scrape at the data center currently serving the tenant.
 
@@ -703,7 +708,9 @@ class WorkdayScraper(BaseScraper):
         try:
             payload = response.json()
         except ValueError as exc:
-            diagnostic, transient = _listing_diagnostic(response, self._parts()[1])
+            diagnostic, transient = _listing_diagnostic(
+                response, self._requested_instance
+            )
             if transient:
                 _log.info(
                     f"{self.board_key()}: {diagnostic}; retrying once via direct egress"
@@ -717,7 +724,9 @@ class WorkdayScraper(BaseScraper):
                 try:
                     payload = response.json()
                 except ValueError as retry_exc:
-                    diagnostic, _ = _listing_diagnostic(response, self._parts()[1])
+                    diagnostic, _ = _listing_diagnostic(
+                        response, self._requested_instance
+                    )
                     classification, _ = _listing_class(
                         response, _listing_body(response)
                     )
@@ -807,7 +816,9 @@ class WorkdayScraper(BaseScraper):
         try:
             payload = response.json()
         except ValueError as exc:
-            diagnostic, transient = _listing_diagnostic(response, self._parts()[1])
+            diagnostic, transient = _listing_diagnostic(
+                response, self._requested_instance
+            )
             if transient:
                 _log.info(
                     f"{self.board_key()}: {diagnostic}; retrying once via direct egress"
@@ -819,7 +830,9 @@ class WorkdayScraper(BaseScraper):
                 try:
                     payload = response.json()
                 except ValueError as retry_exc:
-                    diagnostic, _ = _listing_diagnostic(response, self._parts()[1])
+                    diagnostic, _ = _listing_diagnostic(
+                        response, self._requested_instance
+                    )
                     classification, _ = _listing_class(
                         response, _listing_body(response)
                     )
