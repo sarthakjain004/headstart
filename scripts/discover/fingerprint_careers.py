@@ -44,15 +44,20 @@ Signals, cheapest first, and each recorded as the `signal` column so the writeup
 
 Run:
     python scripts/discover/fingerprint_careers.py scan   SEED.csv OUT.csv [--workers 8]
+    python scripts/discover/fingerprint_careers.py indeed INDEED.jsonl OUT.csv [--workers 8]
     python scripts/discover/fingerprint_careers.py verify OUT.csv               # confirm the hits
 
 `scan` streams one line per company and appends to OUT.csv as it goes, so it resumes: a re-run
 skips domains already recorded and a run killed mid-sweep costs only the company in flight.
 
-`verify` exists because a host string in a JS bundle is a claim, not a board. It re-derives the
-board URL from each hit and fetches it — the clean-JSON APIs by their real endpoint (shapes taken
-from `src/headstart/scrapers/*.py`), everything else by a plain GET reported with status and size.
-Believe a row after `verify` says `jobs=N`, not before.
+`indeed` is a narrow input adapter for an Indeed harvest's full apply URLs. Its host is evidence,
+not a Board: it records a detected ATS separately from a scrapable candidate and preserves a
+short-link's path where that path identifies the tenant. It never writes a liveness ledger.
+
+`verify` derives canonical `board_key()` identities and calls the read-only ATS probes from
+`scripts/validate/check_liveness.py`, once per distinct Board. It writes live/dead/unknown to a
+separate CSV. It never writes ledgers; aliases and canonical landing still go through the normal
+liveness workflow. Providers lacking a liveness probe remain explicitly unverified.
 
 Needs dnspython for the CNAME stage (not a base dependency; CI installs base deps only). Without
 it that stage is skipped and every other signal still runs.
@@ -62,28 +67,47 @@ from __future__ import annotations
 
 import argparse
 import csv
+import importlib.util
 import json
 import re
 import sys
 import threading
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 
+import certifi
 from curl_cffi import requests as _requests
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "scripts/discover"))
+from fingerprint_deep import (
+    api_signatures,
+    browser_page,
+    certificate_career_hosts,
+    certificate_names,
+    public_domain,
+)
+from fingerprint_job_evidence import check_jobs
+
+from headstart.board_identity import board_key, lower_key
+from headstart.config import CompanyRef, load_active_companies
 from headstart.scrapers import registry
 
 try:
     import dns.resolver
 
+    _DNS_EMPTY_ERRORS = (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN)
     _DNS = dns.resolver.Resolver()
     _DNS.lifetime = 4.0
     _DNS.timeout = 2.0
 except Exception:  # noqa: BLE001
     _DNS = None
+    _DNS_EMPTY_ERRORS = ()
 
 UA = "headstart/0.1"
 PAGE_CAP = 900_000
@@ -107,6 +131,10 @@ SUB = HOST + r"([a-z0-9][a-z0-9-]{1,60})\."
 # route, but not a per-company board), "diy" (a form/doc, i.e. genuinely no ATS). Only "ats"
 # counts toward the resolution headline; the other two are reported separately on purpose.
 PATTERNS: dict[str, tuple[str, list[str]]] = {
+    "radancy": (
+        "ats",
+        [r"(?:[a-z0-9.-]+\.)?talentbrew\.com\b", r"(?:[a-z0-9.-]+\.)?radancy\.com\b"],
+    ),
     # ---------- supported ----------
     "greenhouse": (
         "ats",
@@ -156,7 +184,9 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
             HOST
             + r"([a-z0-9-]+)\.(wd\d+)\.myworkdayjobs\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?([a-zA-Z0-9_-]+)",
             HOST
-            + r"([a-z0-9-]+)\.(wd\d+)\.myworkdaysite\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?([a-zA-Z0-9_-]+)",
+            + r"(wd\d+)\.myworkdaysite\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?(?:recruiting|wday/cxs)/([a-z0-9_-]+)/([a-zA-Z0-9_-]+)",
+            HOST
+            + r"([a-z0-9-]+)\.(wd\d+)\.myworkdayjobs\.com/wday/cxs/[^/\s]+/([a-zA-Z0-9_-]+)",
         ],
     ),
     "workable": (
@@ -177,7 +207,7 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
     "oracle": (
         "ats",
         [
-            HOST + r"([a-z0-9-]+)\.fa\.(?:ocs|em\d|us\d|ca\d|eu\d)\.oraclecloud\.com",
+            HOST + r"([a-z0-9-]+\.fa\.(?:ocs|em\d|us\d|ca\d|eu\d)\.oraclecloud\.com)",
             r"oraclecloud\.com/hcmUI/CandidateExperience",
         ],
     ),
@@ -212,13 +242,18 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
         [SUB + r"zwayam\.com", SUB + r"openings\.co", r"public\.zwayam\.com"],
     ),
     # ---------- NOT supported: global ----------
-    "icims": ("ats", [SUB + r"icims\.com"]),
+    # Both scrapers are host-keyed.  Capturing only the first provider label would turn
+    # `1-bp.icims.com` into `1-bp`, a string no scraper can use.
+    "icims": ("ats", [HOST + r"([a-z0-9][a-z0-9-]{1,60}\.icims\.com)"]),
     "taleo": ("ats", [SUB + r"taleo\.net"]),
     "jobvite": ("ats", [r"jobs\.jobvite\.com/([a-zA-Z0-9_-]+)", SUB + r"jobvite\.com"]),
     "bamboohr": ("ats", [SUB + r"bamboohr\.(?:com|co\.uk)"]),
     "breezy": ("ats", [SUB + r"breezy\.hr"]),
     "jazzhr": ("ats", [SUB + r"applytojob\.com"]),
-    "phenom": ("ats", [SUB + r"phenompeople\.com"]),
+    "phenom": (
+        "ats",
+        [HOST + r"([a-z0-9][a-z0-9.-]{1,60}\.phenompeople\.com)"],
+    ),
     "avature": ("ats", [SUB + r"avature\.net"]),
     "cornerstone": ("ats", [SUB + r"csod\.com"]),
     "comeet": ("ats", [r"comeet\.com/jobs/([a-zA-Z0-9_.-]+)", SUB + r"comeet\.co"]),
@@ -244,7 +279,14 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
         [SUB + r"peoplestrong\.com", SUB + r"altone\.io", SUB + r"peoplestrong\.in"],
     ),
     "turbohire": ("ats", [SUB + r"turbohire\.co"]),
-    "pyjamahr": ("ats", [SUB + r"pyjamahr\.com", r"api\.pyjamahr\.com"]),
+    "pyjamahr": (
+        "ats",
+        [
+            r"jobs\.pyjamahr\.com/([a-zA-Z0-9_-]+)",
+            SUB + r"pyjamahr\.com",
+            r"api\.pyjamahr\.com",
+        ],
+    ),
     "skillate": ("ats", [SUB + r"skillate\.com"]),
     "kula": ("ats", [r"careers\.kula\.ai/([a-zA-Z0-9_-]+)"]),
     "param": ("ats", [HOST + r"([a-z0-9][a-z0-9-]{1,60}\.app\.param\.ai)"]),
@@ -417,7 +459,7 @@ BLOCK = {
 }
 # SmartRecruiters board ids keep their capitals (8,736 of 12,644 ledger tenants carry them), so
 # lower-casing would mint a second, non-matching row for a board we already hold.
-CASE_SENSITIVE = {"smartrecruiters"}
+CASE_SENSITIVE = {"smartrecruiters", "pyjamahr"}
 
 # Each provider's own registrable domains, so scanning the provider's own site (or a company that
 # IS the provider — zoho.com is in this very seed) doesn't self-match its infra as a tenant board.
@@ -467,6 +509,10 @@ PROVIDER_DOMAINS = {
 # The CNAME sweep's zones. A careers-ish label CNAMEing into one of these is decisive — the
 # company has pointed DNS at that provider — and costs one UDP query, no HTTP.
 CNAME_ZONES = {
+    "talentbrew.com": "radancy",
+    "radancy.com": "radancy",
+    "jibeapply.com": "icims",
+    "phenompeople.net": "phenom",
     "myworkdayjobs.com": "workday",
     "myworkdaysite.com": "workday",
     "myworkdaycdn.com": "workday",
@@ -564,6 +610,16 @@ LINKISH = re.compile(
     r"life[-_ ]?at|vacanc|openings|opportunit",
     re.IGNORECASE,
 )
+SOCIAL_DOMAINS = frozenset(
+    {
+        "instagram.com",
+        "facebook.com",
+        "twitter.com",
+        "x.com",
+        "youtube.com",
+        "linkedin.com",
+    }
+)
 HREF = re.compile(
     r"""(?:href|src|data-href|content)\s*=\s*["']([^"'>\s]{1,400})["']""", re.IGNORECASE
 )
@@ -651,11 +707,11 @@ SLUG_PROBES = {
 }
 
 # ATSes whose scraper slug is the **company's own** careers hostname, not a label in the
-# provider's namespace (successfactors.py: "Slug = the vanity host"; zwayam.py slug_from() is
-# `host_of(url)`). For these the tenant is the host we asked about, never the CNAME target — a
-# target like `15544.jobs2web.com` or `blackbuck.cluster3.openings.co` is provider infrastructure
-# and is not a slug any scraper here can use.
-VANITY_HOST_ATS = frozenset({"successfactors", "zwayam"})
+# provider's namespace.  A CNAME target such as `15544.jobs2web.com` proves SuccessFactors but
+# cannot be scraped; the queried host can.  The same contract is explicit in the Phenom and
+# iCIMS scrapers, which each call their slug the board host.  This is deliberately a per-scraper
+# shape table rather than an inference from provider DNS.
+QUERY_HOST_ATS = frozenset({"successfactors", "zwayam", "phenom", "icims"})
 # zoho's slug is a full host as well, but a matched `*.zohorecruit.*` host is already correct —
 # only the vanity-domain fingerprint (which captures nothing) needs the evidence host instead.
 HOST_SLUG_ATS = frozenset({"zoho"})
@@ -663,24 +719,95 @@ HOST_SLUG_ATS = frozenset({"zoho"})
 # careers host"; eightfold and personio the same), so the CNAME target *is* the right answer.
 PROVIDER_HOST_ATS = frozenset({"oracle", "eightfold", "personio"})
 
+# A provider can be conclusively detected while still not yielding a tenant the scraper can use.
+# Workday needs the path from a careers URL, and `ext.teamtailor.com` is Teamtailor infrastructure
+# rather than a company label.  These detections must never be presented as candidate Boards.
+TEAMTAILOR_INFRA = frozenset({"ext", "www", "jobs", "careers"})
+# These providers use a provider-subdomain slug and no path. A CNAME target is usable only after
+# its provider suffix is stripped; every other CNAME zone is detection-only until URL/page
+# evidence supplies the shape its scraper expects.
+CNAME_LABEL_ATS = frozenset(
+    {
+        "bamboohr",
+        "breezy",
+        "darwinbox",
+        "freshteam",
+        "keka",
+        "recruitee",
+        "sensehq",
+        "teamtailor",
+        "trakstar",
+        "workable",
+    }
+)
+
+# Bump when a probe gains a materially new signal.  Resume skips only a row from this exact
+# channel set, and never suppresses an unreachable result.
+CHANNELS = "apply-url+cname-chain+http+robots+sitemap+jsbundle+slugprobe:v4"
+if _DNS is None:
+    CHANNELS += ":no-dns"
+CHANNELS += ":psl-v1"
+
+
+def channels_for(deep: bool) -> str:
+    return CHANNELS + (":cert+api+browser-v2" if deep else "")
+
+
 FIELDS = [
+    "job_evidence",
+    "matched_apply_urls",
+    "certificate_hosts",
     "company",
     "domain",
+    "input_kind",
+    "input_id",
+    "apply_url",
+    "employer_key",
+    "employer_keys",
+    "sample_apply_urls",
+    "jobs",
+    "channels",
     "status",
     "ats",
     "kind",
     "supported",
     "tenant",
+    "board_key",
+    "candidate",
     "signal",
     "evidence_url",
     "other_hits",
     "pages_ok",
     "pages_err",
     "note",
+    "verification",
+    "verify_url",
+    "verify_detail",
 ]
+
+
+@dataclass(frozen=True, slots=True)
+class HostSeed:
+    """One deduplicated, evidence-preserving apply-host input."""
+
+    company: str
+    host: str
+    input_id: str
+    apply_url: str
+    employer_key: str
+    jobs: int
+    employer_keys: tuple[str, ...] = ()
+    sample_apply_urls: tuple[str, ...] = ()
+
 
 _local = threading.local()
 _print_lock = threading.Lock()
+_post_banned: set[str] = set()
+
+
+@lru_cache(maxsize=8192)
+def _post_host_gate(host: str):
+    return threading.BoundedSemaphore(2)
 
 
 def session():
@@ -698,30 +825,38 @@ def session():
 
 
 def reg_domain(host: str) -> str:
-    """Crude registered domain, with the common two-part-TLD case (`foo.co.in`) handled."""
-    parts = host.lower().split("//")[-1].split("/")[0].split(":")[0].split(".")
-    if len(parts) >= 3 and parts[-2] in {"co", "com", "net", "org", "gov", "ac"}:
-        return ".".join(parts[-3:])
-    return ".".join(parts[-2:]) if len(parts) >= 2 else host.lower()
+    """Registrable domain from the packaged PSL, including private hosting suffixes."""
+    return public_domain(host)
 
 
-def scan(text: str, self_domain: str) -> list[tuple[str, str, str]]:
-    """Every ATS/jobboard/diy reference in `text`, as (ats, kind, tenant).
+def scan(
+    text: str, self_domain: str, *, allow_provider_host: bool = False
+) -> list[tuple[str, str, str, int]]:
+    """Every ATS/jobboard/diy reference in `text`, as (ats, kind, tenant, hits).
 
     Self-referential matches are dropped: a company that IS a provider (zoho.com sits in this very
     seed) otherwise matches its own infra subdomains as if they were a tenant board.
     """
     rd = reg_domain(self_domain)
     hits: list[tuple[str, str, str]] = []
-    seen: set[tuple[str, str]] = set()
+    counts: Counter[tuple[str, str, str]] = Counter()
     for ats, (kind, pats) in PATTERNS.items():
-        if rd in PROVIDER_DOMAINS.get(ats, set()):
+        if not allow_provider_host and rd in PROVIDER_DOMAINS.get(ats, set()):
             continue
         for p in pats:
-            for m in re.finditer(p, text, re.IGNORECASE):
+            for m in re.finditer(
+                HOST + "(?:" + p + r")(?![a-z0-9_.-])", text, re.IGNORECASE
+            ):
                 if ats == "workday" and m.lastindex and m.lastindex >= 3:
                     co, pod, site = m.group(1).lower(), m.group(2).lower(), m.group(3)
-                    if site.lower() in BLOCK or LOCALE.match(site):
+                    if ".myworkdaysite.com/" in m.group(0).lower():
+                        co, pod = pod, co
+                    if site.lower() in {
+                        "job",
+                        "jobs",
+                        "wday",
+                        "recruiting",
+                    } or LOCALE.match(site):
                         continue
                     # The Workday scraper's slug IS the full board URL (workday.py slug_from), so
                     # emitting "{co}/{site}" would drop the pod and be unusable downstream.
@@ -737,14 +872,14 @@ def scan(text: str, self_domain: str) -> list[tuple[str, str, str]]:
                         if (
                             not (3 <= len(tok) <= 60)
                             or lo in BLOCK
-                            or lo.split(".")[0] in BLOCK
+                            or ("." not in tok and lo.split(".")[0] in BLOCK)
                         ):
                             continue
-                key = (ats, tok)
-                if key not in seen:
-                    seen.add(key)
+                key = (ats, kind, tok)
+                if key not in counts:
                     hits.append((ats, kind, tok))
-    return hits
+                counts[key] += 1
+    return [(ats, kind, tok, counts[(ats, kind, tok)]) for ats, kind, tok in hits]
 
 
 def get(url: str, cap: int = PAGE_CAP) -> tuple[str, str, str]:
@@ -769,14 +904,61 @@ def get(url: str, cap: int = PAGE_CAP) -> tuple[str, str, str]:
     return body, final, ""
 
 
-def cname_chain(host: str) -> list[str]:
-    """The CNAME targets for `host` ([] if none, or if dnspython isn't installed)."""
+def post_json(url: str, headers: dict, body) -> tuple[dict | None, str]:
+    """One bounded public listing POST; stop shared-API probing after a throttle response."""
+    host = urlsplit(url).hostname or ""
+    with _post_host_gate(host):
+        if host in _post_banned:
+            return None, "throttled"
+        try:
+            kwargs = {"json": body} if isinstance(body, dict) else {"data": body}
+            response = session().post(
+                url, headers=headers, timeout=7, verify=certifi.where(), **kwargs
+            )
+            if response.status_code == 429 or (
+                host == "public.zwayam.com" and response.status_code == 403
+            ):
+                _post_banned.add(host)
+            if response.status_code != 200:
+                return None, f"http{response.status_code}"
+            data = response.json()
+            return (data, "") if isinstance(data, dict) else (None, "not-object")
+        except Exception as exc:  # noqa: BLE001
+            return None, type(exc).__name__
+
+
+def cname_chain(host: str, depth: int = 4) -> list[str]:
+    """Follow CNAMEs from `host`, with bounded loop-safe traversal.
+
+    A resolver lookup returns only the current hop on several DNS stacks.  A provider zone may be
+    reached only after an intermediate CDN name, so returning one answer is not a chain walk.
+    """
     if _DNS is None:
         return []
-    try:
-        return [str(r.target).rstrip(".").lower() for r in _DNS.resolve(host, "CNAME")]
-    except Exception:  # noqa: BLE001
-        return []
+    found: list[str] = []
+    pending = [(host.lower().rstrip("."), 0)]
+    seen = {pending[0][0]}
+    while pending:
+        current, level = pending.pop(0)
+        if level >= depth:
+            continue
+        try:
+            targets = [
+                str(r.target).rstrip(".").lower()
+                for r in _DNS.resolve(current, "CNAME")
+            ]
+        except _DNS_EMPTY_ERRORS:
+            targets = []
+        except Exception:  # noqa: BLE001
+            _local.dns_errors = getattr(_local, "dns_errors", 0) + 1
+            targets = []
+        for target in targets:
+            if target in seen:
+                continue
+            seen.add(target)
+            found.append(target)
+            pending.append((target, level + 1))
+    return found
 
 
 def candidate_slugs(name: str, domain: str) -> list[str]:
@@ -859,93 +1041,222 @@ def slug_confirms(ats: str, slug: str, payload, company: str) -> tuple[bool, str
 
 
 def normalise_tenant(ats: str, tenant: str, evidence: str) -> str:
-    """Rewrite a matched token into the string that ATS's *scraper* actually keys on.
+    """Return the slug the named scraper can use, or ``""`` if evidence lacks one.
 
-    Two shapes of hit produce a token no scraper could use, and both were live on this seed:
-
-    * A CNAME into a **vanity-host ATS**. `jobs.chargebee.com CNAME 15544.jobs2web.com` proves
-      SuccessFactors, but successfactors.py's slug is the vanity host, so the answer is
-      `jobs.chargebee.com` — `15544.jobs2web.com` is SAP's shared RMK infrastructure. Same for
-      zwayam, whose slug_from() is `host_of(url)`: BlackBuck's board is `careers.blackbuck.com`,
-      not the `blackbuck.cluster3.openings.co` its DNS points at.
-    * A **page** match on the same class of ATS, where the regex captured a provider-internal
-      label rather than the board. Practo, Coforge and Tiger Analytics each matched an
-      `impl.zwayam.com` reference inside their own Zwayam-served careers page; the board is the
-      page's own host (`careers.practo.com`, which CLAUDE.md independently confirms).
-
-    Everything else is returned untouched — including :data:`PROVIDER_HOST_ATS`, where the full
-    provider host *is* the slug (oracle.py: "the slug is the careers host").
+    Detection and candidate construction are intentionally separate: a provider CNAME can be
+    conclusive while still lacking Workday's site path or a Teamtailor company label.  Returning an
+    empty string makes that state explicit instead of minting a plausible-but-broken Board.
     """
     if not evidence:
         return tenant
+    if " API " in evidence:
+        return tenant
+    source_host = evidence.split(" CNAME ")[0].lower() if " CNAME " in evidence else ""
+    if ats in QUERY_HOST_ATS and source_host:
+        return source_host
+    if ats in QUERY_HOST_ATS:
+        # An explicit board link on a corporate homepage retains its provider host. Vendor
+        # assets (e.g. cdn.phenompeople.com) only fingerprint the page serving the careers UI.
+        if "." in tenant and tenant.split(".")[0] not in {
+            "cdn",
+            "assets",
+            "static",
+            "api",
+            "www",
+            "rmkcdn",
+            "public",
+        }:
+            return tenant
+        return urlsplit(evidence).hostname or ""
+    if ats in CNAME_LABEL_ATS and (" CNAME " in evidence or "." in tenant):
+        matched = _zone_match(tenant)
+        if not matched:
+            return ""
+        zone, _provider = matched
+        label = tenant.removesuffix("." + zone)
+        if "." in label or label in BLOCK or label in TEAMTAILOR_INFRA:
+            return ""
+        return label
+    if " CNAME " in evidence:
+        return tenant if ats in PROVIDER_HOST_ATS | HOST_SLUG_ATS else ""
     if ats in HOST_SLUG_ATS:
         return (
             tenant if "." in tenant else (urlsplit(evidence).netloc.lower() or tenant)
         )
-    if ats not in VANITY_HOST_ATS:
-        return tenant
-    # A CNAME evidence string is "{queried host} CNAME {target}"; anything else is a URL.
-    host = (
-        evidence.split(" CNAME ")[0]
-        if " CNAME " in evidence
-        else urlsplit(evidence).netloc
-    )
-    return host.lower() or tenant
+    if ats == "workday":
+        return tenant if tenant.startswith("http") else ""
+    if ats == "pyjamahr":
+        return tenant if "." not in tenant and not tenant.startswith("http") else ""
+    if ats == "teamtailor" and tenant in TEAMTAILOR_INFRA:
+        return ""
+    return tenant
+
+
+def candidate_identity(ats: str, tenant: str, company: str) -> tuple[str, str]:
+    """Build a candidate's real Board key without claiming it is live.
+
+    This crosses the same `board_key()` seam as the pipeline.  A malformed slug or an unsupported
+    ATS is therefore visible in the artifact rather than becoming a hand-written ledger row.
+    """
+    if not ats:
+        return "", ""
+    if ats not in SUPPORTED:
+        return "", "unsupported"
+    if not tenant:
+        return "", "detected-needs-url-evidence"
+    try:
+        return board_key(CompanyRef(ats, tenant, company or None)), "unverified"
+    except Exception as exc:  # noqa: BLE001
+        return "", f"board-key-error:{type(exc).__name__}"
+
+
+def _zone_match(host: str) -> tuple[str, str] | None:
+    h = host.lower().rstrip(".")
+    matches = [
+        (len(zone), zone, ats)
+        for zone, ats in CNAME_ZONES.items()
+        if h == zone or h.endswith("." + zone)
+    ]
+    _length, zone, ats = max(matches, default=(0, "", None))
+    return (zone, ats) if ats else None
 
 
 def zone_of(host: str) -> str | None:
-    h = host.lower().rstrip(".")
-    for zone, ats in CNAME_ZONES.items():
-        if h == zone or h.endswith("." + zone):
-            return ats
-    return None
+    matched = _zone_match(host)
+    return matched[1] if matched else None
 
 
-def probe(company: str, domain: str) -> dict:
-    """Resolve one company. Signals run cheapest-first and stop at the first that names an ATS."""
+def cname_hits(
+    host: str, self_domain: str, *, allow_provider_host: bool = False
+) -> list[tuple[str, str, str, str, str, int]]:
+    """Classify `host` itself and every bounded CNAME target.
+
+    A host inside a provider zone (`anaqua.bamboohr.com`) is already a positive signal even when
+    it has no CNAME record.  The raw host is also retained as the source in a CNAME evidence
+    string, letting :func:`normalise_tenant` distinguish host-keyed scrapers from provider hosts.
+    """
+    host = host.lower().rstrip(".")
+    targets = cname_chain(host)
+    chain = " -> ".join(targets)
+    evidence = f"{host} CNAME {chain}" if chain else f"https://{host}/"
+    out: list[tuple[str, str, str, str, str, int]] = []
+    for candidate in [host, *targets]:
+        ats = zone_of(candidate)
+        if not ats or (
+            not allow_provider_host
+            and reg_domain(self_domain) in PROVIDER_DOMAINS.get(ats, set())
+        ):
+            continue
+        kind = PATTERNS.get(ats, ("ats", []))[0]
+        out.append((ats, kind, candidate, "cname", evidence, 1))
+    return out
+
+
+def probe(
+    company: str,
+    domain: str,
+    *,
+    cname_hosts: tuple[str, ...] = (),
+    initial_urls: tuple[str, ...] = (),
+    generated_career_hosts: bool = True,
+    deep: bool = False,
+) -> dict:
+    """Resolve one company from a company domain or supplied careers host.
+
+    ``scan`` supplies the former and synthesises careers labels.  ``indeed`` supplies the latter:
+    its apply URL is scanned first and the concrete host, not `careers.<host>`, is DNS-probed.
+    Both routes share every later evidence rung and one candidate-construction seam.
+    """
     domain = re.sub(r"^https?://", "", domain.strip().lower()).strip("/")
     hits: list[
-        tuple[str, str, str, str, str]
-    ] = []  # (ats, kind, tenant, signal, evidence)
+        tuple[str, str, str, str, str, int]
+    ] = []  # (ats, kind, tenant, signal, evidence, hit_count)
     ok = err = 0
     notes: list[str] = []
+    _local.dns_errors = 0
+    cert_hosts: list[str] = []
+    observed_pages: list[tuple[str, str]] = []
+    render_target: str | None = None
+
+    def scan_here(text):
+        return scan(text, domain, allow_provider_host=not generated_career_hosts)
 
     def record(found, signal, evidence):
-        for ats, kind, tok in found:
-            hits.append((ats, kind, tok, signal, evidence))
+        for ats, kind, tok, count in found:
+            hits.append((ats, kind, tok, signal, evidence, count))
 
-    def has_ats() -> bool:
-        return any(h[1] == "ats" for h in hits)
-
-    # --- 1. CNAME sweep: one UDP query per careers-ish label, no HTTP, decisive when it fires.
-    rd = reg_domain(domain)
-    for label in CNAME_LABELS:
-        host = f"{label}.{domain}"
-        for target in cname_chain(host):
-            ats = zone_of(target)
-            # A provider probing itself is not a tenant: keka.com is in this very seed, and
-            # `careers.keka.com` CNAMEs to `cin02.hr.keka.com` — which mine_keka.py documents as
-            # the *wildcard* pod every unknown label lands on, i.e. the opposite of a board.
-            if not ats or rd in PROVIDER_DOMAINS.get(ats, set()):
+    def has_candidate() -> bool:
+        for ats, kind, token, _signal, evidence, _count in hits:
+            if kind != "ats":
                 continue
-            kind = PATTERNS.get(ats, ("ats", []))[0]
-            hits.append((ats, kind, target, "cname", f"{host} CNAME {target}"))
-        if has_ats():
+            _key, state = candidate_identity(
+                ats, normalise_tenant(ats, token, evidence), company
+            )
+            if state == "unverified":
+                return True
+        return False
+
+    def fetch_and_record(
+        url: str, signal: str, cap: int = PAGE_CAP
+    ) -> tuple[str, str, str]:
+        """Keep failure evidence scannable without letting it settle a negative result."""
+        nonlocal ok, err, render_target
+        body, final, error = get(url, cap=cap)
+        if reg_domain(urlsplit(final).hostname or "") in SOCIAL_DOMAINS:
+            # Social pages contain platform-wide third-party URLs unrelated to this employer.
+            return "", final, "social-page"
+        if body or final != url:
+            record(scan_here(final + "\n" + body), signal, final)
+            if len(observed_pages) < 4:
+                observed_pages.append((body, final))
+        if error:
+            err += 1
+        elif body:
+            ok += 1
+            if signal == "apply-url" and render_target is None:
+                render_target = final
+        else:
+            err += 1
+        return body, final, error
+
+    # --- 1. Scan supplied URLs without fetching; provider paths often carry the whole identity.
+    for url in initial_urls:
+        record(scan_here(url), "apply-url", url)
+
+    # --- 2. CNAME sweep: test the supplied host itself, then bounded targets.
+    rd = reg_domain(domain)
+    hosts = cname_hosts or tuple(f"{label}.{domain}" for label in CNAME_LABELS)
+    for host in hosts:
+        if has_candidate():
+            break
+        hits.extend(
+            cname_hits(host, rd, allow_provider_host=not generated_career_hosts)
+        )
+        if has_candidate():
             break
 
-    # --- 2. apex page: scan it, and harvest careers-ish links off it.
-    body, final, e = get(f"https://{domain}/")
+    if _local.dns_errors:
+        err += _local.dns_errors
+        notes.append(f"dns-failures:{_local.dns_errors}")
+
+    # Fetch only while identity is missing. This also follows Greenhouse short links.
+    for url in initial_urls:
+        if has_candidate():
+            break
+        fetch_and_record(url, "apply-url")
+
+    # --- 3. apex page: scan it, and harvest careers-ish links off it.
+    body, final, e = ("", f"https://{domain}/", "")
+    if not has_candidate():
+        body, final, e = fetch_and_record(f"https://{domain}/", "homepage")
     if e:
         notes.append(f"root:{e}")
-    if body:
-        ok += 1
-        record(scan(final + "\n" + body, domain), "homepage", final)
-    else:
-        err += 1
     links = [
         urljoin(final or f"https://{domain}/", m.group(1))
         for m in HREF.finditer(body or "")
         if LINKISH.search(m.group(1))
+        and reg_domain(urlsplit(urljoin(final, m.group(1))).hostname or "")
+        not in SOCIAL_DOMAINS
     ]
     # dedupe, keep order: a nav bar repeats the same careers link a dozen times
     seen_l: set[str] = set()
@@ -957,37 +1268,41 @@ def probe(company: str, domain: str) -> dict:
             ordered.append(u)
     # A harvested link that IS an ATS host resolves the company without another fetch.
     if ordered:
-        record(scan("\n".join(ordered), domain), "homepage", ordered[0])
+        for link in ordered:
+            record(scan_here(link), "homepage", link)
 
-    # --- 3. careers hosts + harvested links + the standard paths, until something matches.
+    # --- 4. careers hosts + harvested links + the standard paths, until something matches.
     # The queue grows as it drains: a careers *landing* page is very often marketing, with the
     # actual board one hop further in ("/company/careers/" -> "/company/careers/open-positions/",
     # which is where Postman's Greenhouse board lives). So careers-ish links found on a careers
     # page are appended too — bounded to SECOND_HOP so a link-farm footer can't run away with it.
-    candidates = [f"https://careers.{domain}/", f"https://jobs.{domain}/"]
+    candidates = (
+        [f"https://careers.{domain}/", f"https://jobs.{domain}/"]
+        if generated_career_hosts
+        else []
+    )
     candidates += ordered[:4]
     candidates += [f"https://{domain}{p}" for p in CAREERS_PATHS[:6]]
     tried: set[str] = {f"https://{domain}"}
     best_careers_page: tuple[str, str] | None = None
     second_hop = 0
     while candidates:
-        if has_ats():
+        if has_candidate():
             break
         url = candidates.pop(0)
         key = url.split("#")[0].rstrip("/")
         if key in tried:
             continue
         tried.add(key)
-        body, final, e = get(url)
+        body, final, _e = fetch_and_record(url, "page")
         if not body:
-            err += 1
             continue
-        ok += 1
         # The final URL matters as much as the body: careers.acme.com often 301s onto the ATS.
         offsite = reg_domain(urlsplit(final).netloc) != reg_domain(domain)
-        record(scan(final, domain), "redirect" if offsite else "page", final)
-        record(scan(body, domain), "page", final)
-        if best_careers_page is None:
+        # Re-record redirect evidence with its stronger signal; page evidence is already retained.
+        if offsite:
+            record(scan_here(final), "redirect", final)
+        if best_careers_page is None and not _e:
             best_careers_page = (body, final)
         if second_hop < SECOND_HOP and re.search(
             r"career|job|hiring|opening", final, re.IGNORECASE
@@ -996,6 +1311,8 @@ def probe(company: str, domain: str) -> dict:
                 nxt = urljoin(final, m.group(1))
                 if not LINKISH.search(m.group(1)) or not nxt.startswith("http"):
                     continue
+                if reg_domain(urlsplit(nxt).hostname or "") in SOCIAL_DOMAINS:
+                    continue
                 if nxt.split("#")[0].rstrip("/") in tried or nxt in candidates:
                     continue
                 candidates.append(nxt)
@@ -1003,23 +1320,20 @@ def probe(company: str, domain: str) -> dict:
                 if second_hop >= SECOND_HOP:
                     break
 
-    # --- 4. robots.txt / sitemap.xml — these routinely name the ATS host outright.
+    # --- 5. robots.txt / sitemap.xml — these routinely name the ATS host outright.
     for path, signal, cap in (
         ("/robots.txt", "robots", 200_000),
         ("/sitemap.xml", "sitemap", 400_000),
     ):
-        if has_ats():
+        if has_candidate():
             break
-        b, f, e = get(f"https://{domain}{path}", cap=cap)
+        b, _f, _e = fetch_and_record(f"https://{domain}{path}", signal, cap=cap)
         if not b:
-            err += 1
             continue
-        ok += 1
-        record(scan(b, domain), signal, f)
 
-    # --- 5. last rung: the SPA's own JS bundle. Only for companies still unresolved, capped at 3
+    # --- 6. last rung: the SPA's own JS bundle. Only for companies still unresolved, capped at 3
     # same-origin scripts, because this is the expensive signal (bundles run to megabytes).
-    if not has_ats() and best_careers_page:
+    if not has_candidate() and best_careers_page:
         body, final = best_careers_page
         srcs = [urljoin(final, m.group(1)) for m in SCRIPT_SRC.finditer(body)]
         srcs = [u for u in srcs if reg_domain(urlsplit(u).netloc) == reg_domain(domain)]
@@ -1029,16 +1343,55 @@ def probe(company: str, domain: str) -> dict:
             )
         )
         for u in srcs[:3]:
-            js, jf, e = get(u, cap=BUNDLE_CAP)
+            js, _jf, _e = fetch_and_record(u, "jsbundle", cap=BUNDLE_CAP)
             if not js:
-                err += 1
                 continue
-            ok += 1
-            record(scan(js, domain), "jsbundle", jf)
-            if has_ats():
+            if has_candidate():
                 break
 
-    # --- 6. slug probe: ask the clean-JSON boards directly whether this company has one.
+    # Opt-in deep pass: each channel has its own fixed network/resource bound. Certificate
+    # siblings from other companies are retained as seeds, never attributed to this employer.
+    if deep and not has_candidate():
+        cert_hosts, cert_error = certificate_names(domain)
+        if cert_error:
+            err += 1
+            notes.append(f"certificate:{cert_error}")
+        for host in (
+            certificate_career_hosts(domain, cert_hosts) if not zone_of(domain) else []
+        ):
+            hits.extend(cname_hits(host, rd, allow_provider_host=True))
+            if has_candidate():
+                break
+            fetch_and_record(f"https://{host}/", "certificate")
+            if has_candidate():
+                break
+
+    if deep and not has_candidate():
+        target = render_target or (best_careers_page or ("", f"https://{domain}/"))[1]
+        api_host = urlsplit(target).hostname or domain
+        api_hits, errors = api_signatures(
+            api_host, "\n".join(b for b, _u in observed_pages), get, post_json
+        )
+        for ats_name, token, endpoint in api_hits:
+            hits.append(
+                (ats_name, "ats", token, "api", f"{api_host} API {endpoint}", 1)
+            )
+        err += sum(e not in {"http404", "http410"} for e in errors)
+        if errors:
+            notes.append("api-errors:" + ",".join(sorted(set(errors))))
+
+    if deep and not has_candidate():
+        target = render_target or (best_careers_page or ("", f"https://{domain}/"))[1]
+        rendered, final, urls, browser_error = browser_page(target)
+        if reg_domain(urlsplit(final).hostname or "") not in SOCIAL_DOMAINS:
+            record(scan_here(rendered + "\n" + "\n".join(urls)), "browser", final)
+        if browser_error:
+            err += 1
+            notes.append(f"browser:{browser_error}")
+        elif rendered:
+            ok += 1
+
+    # --- 7. slug probe: ask the clean-JSON boards directly whether this company has one.
     # This is the stage whose absence made the first pass' number wrong, not just incomplete —
     # `boards-api.greenhouse.io/v1/boards/postman/jobs` returns 63 live jobs, and Postman was
     # still recorded opaque. No amount of page-scanning finds a board a company never links to
@@ -1046,11 +1399,11 @@ def probe(company: str, domain: str) -> dict:
     # It is the LAST stage on purpose: it infers a slug rather than observing a link, so a
     # namesake board on a shared ATS would be a false positive. `signal=slugprobe` keeps those
     # rows separable from the observed ones, and `jobs>0` is required.
-    if not has_ats():
+    if not has_candidate():
         for ats, (tmpl, count) in SLUG_PROBES.items():
             for slug in candidate_slugs(company, domain):
                 body, final, e = get(tmpl.format(s=slug), cap=2_000_000)
-                if not body:
+                if not body or e:
                     err += 1
                     continue
                 ok += 1
@@ -1066,26 +1419,42 @@ def probe(company: str, domain: str) -> dict:
                     notes.append(f"rejected {ats}:{slug} ({said})")
                     continue
                 notes.append(said)
-                hits.append((ats, "ats", slug, "slugprobe", final))
-            if has_ats():
+                hits.append((ats, "ats", slug, "slugprobe", final, 1))
+            if has_candidate():
                 break
 
     # --- settle. Signal precedence picks the primary hit; kind picks the bucket.
     order = {
-        "cname": 0,
-        "redirect": 1,
-        "page": 2,
-        "homepage": 3,
-        "robots": 4,
-        "sitemap": 5,
-        "jsbundle": 6,
-        "slugprobe": 7,
+        "apply-url": 0,
+        "cname": 1,
+        "redirect": 2,
+        "page": 3,
+        "homepage": 4,
+        "robots": 5,
+        "sitemap": 6,
+        "jsbundle": 7,
+        "slugprobe": 8,
+        "certificate": 5,
+        "api": 2,
+        "browser": 7,
     }
     ats, kind, tok, signal, ev = "", "", "", "", ""
     for want, state in (("ats", "resolved"), ("jobboard", "jobboard"), ("diy", "diy")):
         pool = [h for h in hits if h[1] == want]
         if pool:
-            ats, kind, tok, signal, ev = min(pool, key=lambda h: order.get(h[3], 9))
+            if want == "ats":
+                usable = [
+                    hit
+                    for hit in pool
+                    if candidate_identity(
+                        hit[0], normalise_tenant(hit[0], hit[2], hit[4]), company
+                    )[1]
+                    == "unverified"
+                ]
+                pool = usable or pool
+            ats, kind, tok, signal, ev, _count = min(
+                pool, key=lambda h: (order.get(h[3], 9), -h[5])
+            )
             status = state
             break
     else:
@@ -1093,40 +1462,241 @@ def probe(company: str, domain: str) -> dict:
         # `unreachable` says only that we never saw the site, and must never be counted as one.
         status = "none" if ok else "unreachable"
     tok = normalise_tenant(ats, tok, ev)
+    key, candidate = candidate_identity(ats, tok, company)
+    if kind != "ats":
+        key, candidate = "", ""
+    elif signal == "slugprobe" and key:
+        # A provider's self-declared company name is not proof of corporate ownership. This
+        # caught a public Recruitee board calling itself Google during the unknown-host sweep.
+        candidate = "inferred-needs-affiliation"
     others = sorted(
-        {f"{a}:{t}" for a, _k, t, _s, _e in hits} - ({f"{ats}:{tok}"} if ats else set())
+        {f"{a}:{t}" for a, _k, t, _s, _e, _n in hits}
+        - ({f"{ats}:{tok}"} if ats else set())
     )
     return {
+        "certificate_hosts": "|".join(cert_hosts),
         "company": company,
         "domain": domain,
+        "input_kind": "domain",
+        "input_id": domain,
+        "apply_url": "",
+        "employer_key": "",
+        "employer_keys": "",
+        "sample_apply_urls": "",
+        "jobs": "",
+        "channels": channels_for(deep),
         "status": status,
         "ats": ats,
         "kind": kind,
         "supported": ("yes" if ats in SUPPORTED else "no") if kind == "ats" else "",
         "tenant": tok,
+        "board_key": key,
+        "candidate": candidate,
         "signal": signal,
         "evidence_url": ev,
         "other_hits": " ".join(others[:8]),
         "pages_ok": ok,
         "pages_err": err,
-        "note": ";".join(notes[:3]),
+        "note": ";".join(notes[:8]),
+        "verification": "",
+        "verify_url": "",
+        "verify_detail": "",
     }
 
 
-def cmd_scan(args) -> None:
-    with Path(args.seed).open(encoding="utf-8") as fh:
-        rows = [r for r in csv.reader(fh) if len(r) >= 2]
+def probe_host(seed: HostSeed, *, deep: bool = False) -> dict:
+    """Fingerprint a supplied careers host while preserving its full apply URL evidence."""
+    row = probe(
+        seed.company,
+        seed.host,
+        cname_hosts=(seed.host,),
+        initial_urls=seed.sample_apply_urls
+        or ((seed.apply_url,) if seed.apply_url else ()),
+        generated_career_hosts=False,
+        deep=deep,
+    )
+    row |= {
+        "input_kind": "indeed",
+        "input_id": seed.input_id,
+        "apply_url": seed.apply_url,
+        "employer_key": seed.employer_key,
+        "employer_keys": "|".join(seed.employer_keys),
+        "sample_apply_urls": "|".join(seed.sample_apply_urls),
+        "jobs": seed.jobs,
+    }
+    if len(seed.employer_keys) > 1 and seed.input_id == seed.host and row["board_key"]:
+        # Old host-only snapshots can mix unrelated employers behind redirect wrappers.
+        # Preserve detection evidence, but never assign all their postings to the first board.
+        row["candidate"] = "ambiguous-employers"
+    return row
+
+
+# A shared URL host has no tenant identity, but these paths do.  Keeping each path lets a Greenhouse
+# short-link follow reveal its target and lets `jobs.pyjamahr.com/{slug}` retain the company slug.
+PATH_IDENTITY_HOSTS = frozenset(
+    {
+        "api.ashbyhq.com",
+        "jobs.ashbyhq.com",
+        "boards.greenhouse.io",
+        "job-boards.greenhouse.io",
+        "boards.eu.greenhouse.io",
+        "job-boards.eu.greenhouse.io",
+        "jobs.lever.co",
+        "jobs.eu.lever.co",
+        "apply.workable.com",
+        "grnh.se",
+        "jobs.pyjamahr.com",
+        "jobs.smartrecruiters.com",
+        "careers.smartrecruiters.com",
+    }
+)
+
+
+def indeed_seeds(path: Path, include_resolved: bool = False) -> list[HostSeed]:
+    """Group an Indeed JSONL harvest into stable, evidence-carrying careers-host probes."""
+    grouped: dict[str, dict] = {}
+    with path.open(encoding="utf-8") as fh:
+        for line in fh:
+            try:
+                job = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if (
+                not include_resolved
+                and job.get("_ats") != "vanity"
+                and (job.get("_ats_slug") or job.get("_apply_host") != "grnh.se")
+            ):
+                continue
+            recruit = job.get("recruit") if isinstance(job.get("recruit"), dict) else {}
+            apply_url = str(recruit.get("viewJobUrl") or "").strip()
+            supplied_host = (
+                str(job.get("_apply_host") or "").strip().lower().rstrip(".")
+            )
+            host = (urlsplit(apply_url).hostname or supplied_host).lower().rstrip(".")
+            if not host:
+                continue
+            employer = (
+                job.get("employer") if isinstance(job.get("employer"), dict) else {}
+            )
+            source = job.get("source") if isinstance(job.get("source"), dict) else {}
+            company = str(employer.get("name") or source.get("name") or host).strip()
+            employer_key = str(employer.get("key") or "").strip()
+            input_id = apply_url if host in PATH_IDENTITY_HOSTS and apply_url else host
+            if employer_key and host not in PATH_IDENTITY_HOSTS:
+                input_id = f"{host}#employer={employer_key}"
+            if apply_url and (
+                host in PATH_IDENTITY_HOSTS
+                or host.endswith((".myworkdayjobs.com", ".myworkdaysite.com"))
+            ):
+                # Shared providers group by Board, not by job URL or provider host. Short links
+                # remain URL-scoped until the redirect reveals their identity.
+                for ats, kind, token, _count in scan(
+                    apply_url, host, allow_provider_host=True
+                ):
+                    if kind != "ats":
+                        continue
+                    key, state = candidate_identity(
+                        ats, normalise_tenant(ats, token, apply_url), company
+                    )
+                    if state == "unverified":
+                        input_id = key
+                        break
+            item = grouped.setdefault(
+                input_id,
+                {
+                    "company": company,
+                    "host": host,
+                    "input_id": input_id,
+                    "apply_url": apply_url,
+                    "employer_key": employer_key,
+                    "jobs": 0,
+                    "employer_keys": set(),
+                    "sample_apply_urls": [],
+                },
+            )
+            item["jobs"] += 1
+            if employer_key:
+                item["employer_keys"].add(employer_key)
+            if (
+                apply_url
+                and len(item["sample_apply_urls"]) < 8
+                and apply_url not in item["sample_apply_urls"]
+            ):
+                item["sample_apply_urls"].append(apply_url)
+    return [
+        HostSeed(
+            company=item["company"],
+            host=item["host"],
+            input_id=item["input_id"],
+            apply_url=item["apply_url"],
+            employer_key=item["employer_key"],
+            jobs=item["jobs"],
+            employer_keys=tuple(sorted(item["employer_keys"])),
+            sample_apply_urls=tuple(item["sample_apply_urls"]),
+        )
+        for item in sorted(grouped.values(), key=lambda s: s["input_id"])
+    ]
+
+
+def _old_rows(out: Path) -> dict[str, dict]:
+    if not out.exists():
+        return {}
+    with out.open(encoding="utf-8", newline="") as fh:
+        reader = csv.DictReader(fh)
+        if reader.fieldnames != FIELDS:
+            raise ValueError(
+                f"{out} has an older fingerprint schema; choose a new output path rather than "
+                "appending incompatible rows"
+            )
+        return {r["input_id"]: r for r in reader if r.get("input_id")}
+
+
+def _error_row(seed: HostSeed, input_kind: str, exc: Exception) -> dict:
+    row = dict.fromkeys(FIELDS, "")
+    row |= {
+        "company": seed.company,
+        "domain": seed.host,
+        "input_kind": input_kind,
+        "input_id": seed.input_id,
+        "apply_url": seed.apply_url,
+        "employer_key": seed.employer_key,
+        "employer_keys": "|".join(seed.employer_keys),
+        "sample_apply_urls": "|".join(seed.sample_apply_urls),
+        "jobs": seed.jobs or "",
+        "channels": CHANNELS,
+        "status": "unreachable",
+        "pages_ok": 0,
+        "pages_err": 1,
+        "note": f"probe:{type(exc).__name__}",
+    }
+    return row
+
+
+def _run_scan(args, seeds: list[HostSeed], input_kind: str, runner) -> None:
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    done: set[str] = set()
-    if out.exists():
-        with out.open(encoding="utf-8") as fh:
-            done = {r["domain"] for r in csv.DictReader(fh)}
+    old = _old_rows(out)
+    # A growing harvest changes a host's job count without changing its DNS or board identity.
+    # `jobs` is provenance, never a reason to append a duplicate probe result.
     todo = [
-        (c, d) for c, d in ((r[0].strip(), r[1].strip()) for r in rows) if d not in done
+        seed
+        for seed in seeds
+        if not (
+            (prior := old.get(seed.input_id))
+            and prior.get("input_kind") == input_kind
+            and prior.get("channels") == channels_for(getattr(args, "deep", False))
+            and prior.get("status") != "unreachable"
+            and not (
+                prior.get("candidate") != "unverified"
+                and int(prior.get("pages_err") or 0)
+            )
+            and set(seed.sample_apply_urls).issubset(
+                set(prior.get("sample_apply_urls", "").split("|"))
+            )
+        )
     ]
     print(
-        f"{len(rows)} seeded, {len(done)} already done, {len(todo)} to probe",
+        f"{len(seeds)} seeded, {len(seeds) - len(todo)} current, {len(todo)} to probe",
         flush=True,
     )
     fresh = not out.exists()
@@ -1135,24 +1705,26 @@ def cmd_scan(args) -> None:
         if fresh:
             w.writeheader()
             fh.flush()
-        n = 0
+        pending = {s.input_id for s in todo}
+        for seed in seeds:
+            if seed.input_id in pending:
+                continue
+            prior = old[seed.input_id]
+            metadata = {
+                "jobs": str(seed.jobs),
+                "employer_keys": "|".join(seed.employer_keys),
+            }
+            if any(prior.get(k) != v for k, v in metadata.items()):
+                w.writerow(prior | metadata)
+        fh.flush()
         with ThreadPoolExecutor(max_workers=args.workers) as pool:
-            futs = {pool.submit(probe, c, d): (c, d) for c, d in todo}
-            for fut in as_completed(futs):
-                c, d = futs[fut]
+            futs = {pool.submit(runner, seed): seed for seed in todo}
+            for n, fut in enumerate(as_completed(futs), 1):
+                seed = futs[fut]
                 try:
                     row = fut.result()
                 except Exception as exc:  # noqa: BLE001
-                    row = dict.fromkeys(FIELDS, "")
-                    row |= {
-                        "company": c,
-                        "domain": d,
-                        "status": "unreachable",
-                        "pages_ok": 0,
-                        "pages_err": 1,
-                        "note": f"probe:{type(exc).__name__}",
-                    }
-                n += 1
+                    row = _error_row(seed, input_kind, exc)
                 w.writerow(row)
                 fh.flush()
                 with _print_lock:
@@ -1165,161 +1737,245 @@ def cmd_scan(args) -> None:
                     )
 
 
-# --- verify -------------------------------------------------------------------------------
-# A host string in a JS bundle is a claim, not a board. These are the real endpoints, taken from
-# each scraper's own url() construction; anything without one falls back to a plain GET whose
-# status and size are reported so a human can judge it.
-# `verify` is deliberately WIDER than SLUG_PROBES: probing needs a board that publishes its
-# owner's name (or a namesake sails through), but confirming a board we already have *observed*
-# evidence for only needs the job feed. So ashby/lever/freshteam/rippling belong here even though
-# they are barred from stage 6.
-VERIFY = {
-    "greenhouse": (
-        "https://boards-api.greenhouse.io/v1/boards/{s}/jobs",
-        lambda d: len(d.get("jobs", [])),
-    ),
-    "lever": (
-        "https://api.lever.co/v0/postings/{s}?mode=json",
-        lambda d: len(d) if isinstance(d, list) else 0,
-    ),
-    "ashby": (
-        "https://api.ashbyhq.com/posting-api/job-board/{s}",
-        lambda d: len(d.get("jobs", [])),
-    ),
-    "smartrecruiters": (
-        "https://api.smartrecruiters.com/v1/companies/{s}/postings",
-        lambda d: d.get("totalFound", 0) if isinstance(d, dict) else 0,
-    ),
-    "workable": (
-        "https://apply.workable.com/api/v1/widget/accounts/{s}?details=true",
-        lambda d: len(d.get("jobs", [])) if isinstance(d, dict) else 0,
-    ),
-    "recruitee": (
-        "https://{s}.recruitee.com/api/offers/",
-        lambda d: len(d.get("offers", [])) if isinstance(d, dict) else 0,
-    ),
-    "freshteam": (
-        "https://{s}.freshteam.com/hire/widgets/jobs.json",
-        lambda d: len(d) if isinstance(d, list) else 0,
-    ),
-    "rippling": (
-        "https://api.rippling.com/platform/api/ats/v1/board/{s}/jobs",
-        lambda d: len(d) if isinstance(d, list) else 0,
-    ),
-    "teamtailor": (
-        "https://{s}.teamtailor.com/jobs.json",
-        lambda d: len(d) if isinstance(d, list) else len(d.get("jobs", [])),
-    ),
-    "sensehq": (
-        "https://{s}.sensehq.com/careers/api/jobs",
-        lambda d: len(d) if isinstance(d, list) else len(d.get("jobs", [])),
-    ),
-    "pyjamahr": (
-        "https://api.pyjamahr.com/api/career/jobs/?company_uuid={s}",
-        lambda d: len(d.get("results", [])),
-    ),
-}
-PAGE_VERIFY = {
-    "workday": "{t}",  # the Workday tenant IS the board URL
-    "darwinbox": "https://{t}.darwinbox.in/ms/candidate/careers",
-    "keka": "https://{t}.keka.com/careers/",
-    "zwayam": "https://{t}/",
-    "peoplestrong": "https://{t}.peoplestrong.com/",
-    "icims": "https://{t}.icims.com/jobs/search",
-    "phenom": "https://{t}.phenompeople.com/",
-    "eightfold": "https://{t}/careers",
-    "trakstar": "https://{t}.hire.trakstar.com/",
-    "ripplehire": "https://{t}.ripplehire.com/candidate/careers",
-    "turbohire": "https://{t}.turbohire.co/",
-    "jobvite": "https://jobs.jobvite.com/{t}",
-    "bamboohr": "https://{t}.bamboohr.com/careers",
-    "breezy": "https://{t}.breezy.hr/",
-    "jazzhr": "https://{t}.applytojob.com/apply",
-    "zoho": "https://{t}.zohorecruit.com/jobs/Careers",
-    "taleo": "https://{t}.taleo.net/careersection/",
-    "kula": "https://careers.kula.ai/{t}",
-    "gem": "https://jobs.gem.com/{t}",
-    "dover": "https://app.dover.io/{t}",
-    "adrenalin": "https://{t}.myadrenalin.com/",
-    "oracle": "https://{t}.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience",
-    "successfactors": "https://{t}.successfactors.com/",
-    "hrone": "https://{t}.hrone.cloud/",
-    "zinghr": "https://{t}.zinghr.com/",
-    "skillate": "https://{t}.skillate.com/",
-    "jobsoid": "https://{t}.jobsoid.com/",
-    "recruiterflow": "https://{t}.recruiterflow.com/",
-}
+def cmd_scan(args) -> None:
+    with Path(args.seed).open(encoding="utf-8") as fh:
+        rows = [r for r in csv.reader(fh) if len(r) >= 2]
+    seeds = [
+        HostSeed(c.strip(), d.strip(), d.strip(), "", "", 0)
+        for c, d in rows
+        if c.strip() and d.strip()
+    ]
+    _run_scan(
+        args,
+        seeds,
+        "domain",
+        lambda seed: probe(seed.company, seed.host, deep=args.deep),
+    )
 
 
-def _verify_darwinbox(tenant: str) -> str:
-    """Darwinbox's board is a POST, not a page. The careers URL only serves an SPA shell (~1.2KB,
-    zero job words), so a GET reports nothing about whether the board exists — this hits the same
-    `alljobs` endpoint DarwinboxScraper does."""
-    host = tenant if "." in tenant else f"{tenant}.darwinbox.in"
-    body = {"companyId": "main", "page": 1, "sort_option": "new", "limit": 50}
-    try:
-        r = session().post(
-            f"https://{host}/ms/candidateapi/job/alljobs?companyId=main",
-            json=body,
-            timeout=TIMEOUT,
-            verify=False,
-            headers={"User-Agent": UA, "Accept": "application/json"},
+def cmd_indeed(args) -> None:
+    if _DNS is None:
+        print(
+            "WARNING: dnspython missing; DNS channel disabled. Install dnspython for full coverage.",
+            file=sys.stderr,
         )
-        return f"jobs={len(r.json().get('data') or [])}"
-    except Exception as exc:  # noqa: BLE001
-        return f"ERR {type(exc).__name__}"
+    seeds = indeed_seeds(Path(args.harvest), include_resolved=args.include_resolved)
+    seeds.sort(key=lambda seed: (-seed.jobs, seed.input_id))
+    _run_scan(args, seeds, "indeed", lambda seed: probe_host(seed, deep=args.deep))
+
+
+def cmd_certificates(args) -> None:
+    """Enumerate sibling-host seeds from known career boards, without assigning their ATS."""
+    with Path(args.seed).open() as fh:
+        hosts = sorted(
+            {row[-1].strip() for row in csv.reader(fh) if row and row[-1].strip()}
+        )
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with out.open("w", newline="") as fh:
+        writer = csv.DictWriter(
+            fh, fieldnames=["source_host", "candidate_host", "evidence", "error"]
+        )
+        writer.writeheader()
+        with ThreadPoolExecutor(max_workers=min(args.workers, 4)) as pool:
+            futures = {pool.submit(certificate_names, host): host for host in hosts}
+            for future in as_completed(futures):
+                host = futures[future]
+                names, error = future.result()
+                for name in names or [""]:
+                    writer.writerow(
+                        {
+                            "source_host": host,
+                            "candidate_host": name,
+                            "evidence": "tls-san-seed-only",
+                            "error": error,
+                        }
+                    )
+                fh.flush()
+
+
+# --- verify -------------------------------------------------------------------------------
+# The scraper itself is the URL authority.  `cmd_verify` below builds the scraper instead of
+# duplicating per-provider endpoint templates that inevitably drift as a scraper evolves.
+
+
+@lru_cache(maxsize=1)
+def liveness_probes():
+    """Reuse the provider-aware read-only probes; never call the ledger-writing runner."""
+    spec = importlib.util.spec_from_file_location(
+        "fingerprint_liveness", ROOT / "scripts/validate/check_liveness.py"
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.PROBES
 
 
 def cmd_verify(args) -> None:
-    with Path(args.results).open(encoding="utf-8") as fh:
-        rows = [
-            r for r in csv.DictReader(fh) if r["status"] == "resolved" and r["tenant"]
-        ]
+    with Path(args.results).open(encoding="utf-8", newline="") as fh:
+        reader = csv.DictReader(fh)
+        extras = {"certificate_hosts", "job_evidence", "matched_apply_urls"}
+        if not reader.fieldnames or [
+            f for f in reader.fieldnames if f not in extras
+        ] != [f for f in FIELDS if f not in extras]:
+            raise ValueError("verify requires a current fingerprint CSV")
+        rows = list(
+            {row["input_id"]: row for row in reader if row.get("input_id")}.values()
+        )
     if args.ats:
         keep = set(args.ats.split(","))
         rows = [r for r in rows if r["ats"] in keep]
-    print(f"verifying {len(rows)} resolved rows", flush=True)
+    live = {
+        lower_key(board_key(company))
+        for company in load_active_companies(
+            ROOT / "data/validate/liveness", min_jobs=0
+        )
+    }
+    print(f"verifying {len(rows)} fingerprint rows", flush=True)
+    probes = liveness_probes()
+    source_urls: dict[tuple[str, str], set[str]] = {}
+    if getattr(args, "harvest", None):
+        wanted = {row["domain"] for row in rows}
+        with Path(args.harvest).open() as fh:
+            for line in fh:
+                try:
+                    job = json.loads(line)
+                except ValueError:
+                    continue
+                url = (job.get("recruit") or {}).get("viewJobUrl") or ""
+                host = urlsplit(url).hostname
+                if host in wanted:
+                    employer = str((job.get("employer") or {}).get("key") or "")
+                    source_urls.setdefault((host, employer), set()).add(url)
 
-    def one(r):
-        ats, t = r["ats"], r["tenant"]
-        if ats == "darwinbox":
-            return r, t, _verify_darwinbox(t)
-        if ats in VERIFY and "." not in t:
-            url, count = VERIFY[ats]
-            body, final, e = get(url.format(s=t), cap=3_000_000)
-            if not body:
-                return r, url.format(s=t), f"ERR {e}"
-            try:
-                return (
-                    r,
-                    final,
-                    f"jobs={count(json.loads(body))}" + (f" [{e}]" if e else ""),
-                )
-            except Exception:  # noqa: BLE001
-                return r, final, f"unparsable ({e or 'ok'}, {len(body)}B)"
-        # A tenant that is already a host or a URL is fetched as-is. Formatting it into a
-        # template appends the provider domain a second time (`15544.jobs2web.com.
-        # successfactors.com`) and every such check DNS-fails, which reads as a dead board.
-        if t.startswith("http") or "." in t:
-            url = t if t.startswith("http") else f"https://{t}/"
-        elif ats in PAGE_VERIFY:
-            url = PAGE_VERIFY[ats].format(t=t)
-        else:
-            return r, "", "no verifier"
-        body, final, e = get(url)
-        if not body:
-            return r, url, f"ERR {e}"
-        hint = len(re.findall(r"(?i)\b(job|position|opening|vacanc)", body))
-        return r, final, f"{e or 'http200'} {len(body)}B jobwords={hint}"
-
-    with ThreadPoolExecutor(max_workers=args.workers) as pool:
-        for fut in as_completed([pool.submit(one, r) for r in rows]):
-            r, url, verdict = fut.result()
-            print(
-                f"  {r['company'][:24]:24} {r['ats']:16} {r['tenant'][:42]:42} "
-                f"{verdict:30} {url[:64]}",
-                flush=True,
+    def one(row: dict) -> dict:
+        row = dict(row)
+        row["job_evidence"] = "not-checked"
+        row["matched_apply_urls"] = ""
+        if (
+            row.get("input_kind") == "indeed"
+            and row.get("input_id") == row.get("domain")
+            and len([k for k in row.get("employer_keys", "").split("|") if k]) > 1
+        ):
+            row["candidate"] = "ambiguous-employers"
+        if row.get("candidate") != "unverified" or not row.get("board_key"):
+            row["verification"] = "not-a-candidate"
+            return row
+        if lower_key(row["board_key"]) in live and not getattr(
+            args, "recheck_known", False
+        ):
+            row["candidate"] = "known-live"
+            row["verification"] = "known-live"
+            return row
+        try:
+            scraper = registry.get_scraper(row["ats"], row["tenant"], row["company"])
+            row["verify_url"] = (
+                row["tenant"]
+                if row["tenant"].startswith("https://")
+                else scraper.board_page() or scraper.url()
             )
+            if row["ats"] not in probes:
+                row["verification"] = "no-liveness-probe"
+                return row
+            verdict, jobs = probes[row["ats"]](row["tenant"], row["verify_url"])
+        except Exception as exc:  # noqa: BLE001
+            row["verification"] = f"listing-unreachable:{type(exc).__name__}"
+            return row
+        row["verify_detail"] = f"jobs={jobs}" if jobs is not None else ""
+        row["verification"] = verdict
+        return row
+
+    def eligible(row):
+        mixed = (
+            row.get("input_kind") == "indeed"
+            and row.get("input_id") == row.get("domain")
+            and len([k for k in row.get("employer_keys", "").split("|") if k]) > 1
+        )
+        return (
+            row.get("candidate") == "unverified" and row.get("board_key") and not mixed
+        )
+
+    def one_group(group):
+        # Liveness and listing payloads are shared per Board; job matches remain per input.
+        first = next((r for r in group if eligible(r)), group[0])
+        result = one(first)
+        cache = {}
+
+        def cached_get(url, cap=PAGE_CAP):
+            key = ("GET", url, cap)
+            if key not in cache:
+                cache[key] = get(url, cap=cap)
+            return cache[key]
+
+        def cached_post(url, headers, body):
+            key = (
+                "POST",
+                url,
+                json.dumps(headers, sort_keys=True),
+                json.dumps(body, sort_keys=True) if isinstance(body, dict) else body,
+            )
+            if key not in cache:
+                cache[key] = post_json(url, headers, body)
+            return cache[key]
+
+        checked = []
+        for original in group:
+            if not eligible(original):
+                checked.append(one(original))
+                continue
+            row = original | {
+                k: result[k]
+                for k in (
+                    "verification",
+                    "verify_url",
+                    "verify_detail",
+                    "candidate",
+                    "job_evidence",
+                    "matched_apply_urls",
+                )
+            }
+            if row["verification"] in {"live", "known-live"}:
+                urls = {u for u in row.get("sample_apply_urls", "").split("|") if u}
+                if getattr(args, "harvest", None):
+                    urls = source_urls.get(
+                        (row["domain"], row.get("employer_key", "")), set()
+                    )
+                row["job_evidence"], matches = check_jobs(
+                    row["ats"], row["tenant"], urls, cached_get, cached_post
+                )
+                row["matched_apply_urls"] = "|".join(matches)
+            checked.append(row)
+        return checked
+
+    out = (
+        Path(args.out) if args.out else Path(args.results).with_suffix(".verified.csv")
+    )
+    with out.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=FIELDS)
+        writer.writeheader()
+        grouped: dict[str, list[dict]] = {}
+        for row in rows:
+            grouped.setdefault(
+                lower_key(row["board_key"]) or row["input_id"], []
+            ).append(row)
+        with ThreadPoolExecutor(max_workers=args.workers) as pool:
+            futures = {
+                pool.submit(one_group, group): group for group in grouped.values()
+            }
+            for n, future in enumerate(as_completed(futures), 1):
+                checked = future.result()
+                for row in checked:
+                    writer.writerow(row)
+                fh.flush()
+                print(
+                    f"  [{n}/{len(rows)}] {row['company'][:24]:24} {row['ats']:16} "
+                    f"{row['tenant'][:42]:42} {row['verification']}",
+                    flush=True,
+                )
+    print(
+        f"wrote {out}; live candidates still require canonical alias checks and ledger landing",
+        flush=True,
+    )
 
 
 def main() -> None:
@@ -1329,10 +1985,48 @@ def main() -> None:
     s.add_argument("seed")
     s.add_argument("out")
     s.add_argument("--workers", type=int, default=8)
+    s.add_argument(
+        "--deep",
+        action="store_true",
+        help="add bounded certificate, API and browser fallbacks",
+    )
     s.set_defaults(fn=cmd_scan)
-    v = sub.add_parser("verify", help="confirm resolved rows against the real board")
+    i = sub.add_parser(
+        "indeed", help="fingerprint raw apply hosts from an Indeed harvest JSONL"
+    )
+    i.add_argument("harvest")
+    i.add_argument("out")
+    i.add_argument("--include-resolved", action="store_true")
+    i.add_argument("--workers", type=int, default=8)
+    i.add_argument(
+        "--deep",
+        action="store_true",
+        help="add bounded certificate, API and browser fallbacks",
+    )
+    i.set_defaults(fn=cmd_indeed)
+    c = sub.add_parser(
+        "certificates",
+        help="read known career hosts' TLS SAN rosters as unclassified seeds",
+    )
+    c.add_argument("seed", help="host-per-line or company,host CSV")
+    c.add_argument("out")
+    c.add_argument("--workers", type=int, default=4)
+    c.set_defaults(fn=cmd_certificates)
+    v = sub.add_parser(
+        "verify", help="persist Board-key and scraper-route verification"
+    )
     v.add_argument("results")
+    v.add_argument("--out", help="verification CSV (default: RESULTS.verified.csv)")
     v.add_argument("--ats", default="", help="comma-separated ATS filter")
+    v.add_argument(
+        "--harvest",
+        help="reconcile same-job URLs from this Indeed JSONL against bounded API listings",
+    )
+    v.add_argument(
+        "--recheck-known",
+        action="store_true",
+        help="also probe candidates already marked live in the ledger",
+    )
     v.add_argument("--workers", type=int, default=8)
     v.set_defaults(fn=cmd_verify)
     args = ap.parse_args()
