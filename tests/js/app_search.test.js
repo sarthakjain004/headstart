@@ -56,10 +56,12 @@ const job = (id, extra) => ({
 function loadApp(respond, cfg = {}) {
   const nodes = {};
   const fetches = [];
+  // Recorded, like an element's: the capped-row controls are one delegated document listener.
+  const docHandlers = {};
   const ctx = {
     document: {
       getElementById: id => (nodes[id] ||= fakeEl()),
-      addEventListener() {},
+      addEventListener(type, fn) { (docHandlers[type] ||= []).push(fn); },
       querySelector: () => null,
       querySelectorAll: () => [],
     },
@@ -80,7 +82,7 @@ function loadApp(respond, cfg = {}) {
     + ' salStop, SALARY_STOPS, stops: () => SALARY_STOPS, sync: syncSalarySlider, slide: salSlide,'
     + ' dismiss: dismissRow, dismissed };';
   vm.runInNewContext(src, ctx);
-  return { nodes, fetches, t: ctx.__t, ctx };
+  return { nodes, fetches, t: ctx.__t, ctx, docHandlers };
 }
 
 /** The server's Keyword-filter scope map as index() puts it on CFG (ADR-0104). */
@@ -574,4 +576,35 @@ test('the hide control is drawn on the Search list only', async () => {
   await t.go();
   assert.ok(nodes.results.innerHTML.includes('data-dismiss='));
   assert.ok(!t.jobCard(job('a'), 0, false).includes('data-dismiss='));
+});
+
+test('hiding a company from a Matches card takes it off the Matches list', async () => {
+  // The one delegated handler always re-ran the Search list, which is not the one on screen:
+  // the company just hidden stayed in Matches until the tab was opened again.
+  const hidden = new Set();
+  const row = (co, title) => job('greenhouse:' + co + ':1', { company: co, title });
+  const { nodes, t, ctx, docHandlers } = loadApp(url => {
+    if (url === '/sets') return [{ id: 's1', name: 'Backend', query: 'backend' }];
+    if (!url.startsWith('/search?')) return [];
+    return [row('spamco', 'SPAMCO_JOB'), row('goodco', 'GOODCO_JOB')]
+      .filter(r => !hidden.has(r.id.slice(0, r.id.lastIndexOf(':'))));
+  });
+  const base = ctx.fetch;
+  ctx.fetch = (url, init) => {
+    if (url !== '/companies' || !init) return base(url);
+    hidden.add(JSON.parse(init.body).board);
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ followed: [], hidden: [...hidden] }) });
+  };
+  await t.loadSets();
+  await new Promise(r => setTimeout(r, 0));
+  assert.ok(nodes['matches-results'].innerHTML.includes('SPAMCO_JOB'));
+
+  ctx.location.hash = '#matches';
+  const button = { disabled: false, dataset: { hideCompany: 'greenhouse:spamco' } };
+  const target = { closest: sel => (sel === '[data-hide-company]' ? button : null) };
+  for (const handler of docHandlers.click) await handler({ target });
+  await new Promise(r => setTimeout(r, 0));
+  assert.ok(!nodes['matches-results'].innerHTML.includes('SPAMCO_JOB'),
+    'the company just hidden is still listed on Matches');
+  assert.ok(nodes['matches-results'].innerHTML.includes('GOODCO_JOB'));
 });
