@@ -390,6 +390,10 @@
        was queued for this id is in the copy just kept aside; pushed, it carried the old `rev`,
        was refused again, and kept a second "(this device)" copy of the account's own words. */
     if (this._dirty && this._dirty.id === stored.id) { this._dirty = null; this._clearTimer(); }
+    /* The adopt's flush can also have SAVED that outgoing document under the account copy's id,
+       so a reload would open the local words at the old `rev`. They are in `mine`; put the
+       account's back. */
+    this._save(stored);
     this._onChange();
     return null;
   };
