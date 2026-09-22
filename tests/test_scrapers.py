@@ -7939,6 +7939,19 @@ def test_workday_unknown_listing_body_raises_with_bounded_diagnostics_without_re
     assert scraper.telemetry["listing_page_losses"] == 1
 
 
+def test_workday_listing_diagnostic_names_the_instance_actually_requested(monkeypatch):
+    """ADR-0140's diagnostic records the Workday instance. `_instance` is only the migration
+    override — None on every tenant that never moved — so reading it logged `instance=None` on
+    all 25 production recurrences; the instance requested is the one `_parts()` resolves."""
+    from headstart.scrapers.workday import UnexpectedListingResponse, WorkdayScraper
+
+    monkeypatch.setattr(http, "fetch", lambda *a, **k: _NonJsonListing("unknown"))
+    scraper = WorkdayScraper("https://acme.wd5.myworkdayjobs.com/ext")
+
+    with pytest.raises(UnexpectedListingResponse, match="instance=wd5 "):
+        scraper._post({}, 0, raise_gone=True)
+
+
 def test_workday_listing_diagnostic_redacts_a_bearer_credential():
     from headstart.scrapers.workday import _listing_diagnostic
 
