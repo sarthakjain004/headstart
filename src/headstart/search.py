@@ -1223,7 +1223,7 @@ class JobSearch:
             sort = None  # likewise: the ADR-0082 columns arrive by migration
         # Salary is stored in the employer's own currency (ADR-0082), so ordering the raw
         # column ranked ₹40,00,000 above $300,000 — the first 400 rows of a salary sort were
-        # all INR. The sort is stated in ONE currency, resolved and whitelisted exactly like the
+        # all INR (ADR-0178). The sort is stated in ONE currency, resolved and whitelisted exactly like the
         # bracket's; a table with no such currency keeps the raw ordering it always had.
         sort_currency = None
         if sort == "min_salary_annual":
