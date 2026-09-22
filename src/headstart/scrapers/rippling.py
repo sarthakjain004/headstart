@@ -36,12 +36,21 @@ def _department_of(record: dict[str, Any]) -> str | None:
     return dept or None
 
 
-def _location(item: dict) -> str | None:
-    wl = item.get("workLocation") or {}
-    if isinstance(wl, dict) and wl.get("label"):
-        return wl["label"]
-    wls = (item.get("_detail") or {}).get("workLocations") or []
-    return wls[0] if wls else None
+def _location(rows: list[dict], detail: dict) -> str | None:
+    """Every place a posting names, ``; ``-joined in first-seen order.
+
+    A multi-location posting is listed once per work location: rows sharing one ``uuid`` and
+    differing only in ``workLocation`` (measured live 2026-09-23 across 25 Boards: 141 of 143
+    multi-row postings; the other 2 repeat a row exactly). The detail's ``workLocations`` names
+    the same places (136/143; the other 7 spell a state differently), so it is read only when no
+    row states a label.
+    """
+    labels = [
+        wl["label"]
+        for wl in (row.get("workLocation") for row in rows)
+        if isinstance(wl, dict) and wl.get("label")
+    ]
+    return "; ".join(dict.fromkeys(labels or detail.get("workLocations") or [])) or None
 
 
 def _employment_type(detail: dict) -> str | None:
@@ -112,6 +121,8 @@ class RipplingScraper(BaseScraper):
         wanted = self.tech_detail_wanted(
             items, lambda it: it.get("name"), _department_of
         )
+        # One detail per posting, not one per location row — `parse` merges a posting's rows.
+        wanted = list({it.get("uuid"): it for it in wanted}.values())
         # Fill each posting's detail concurrently (bounded); a failed fetch leaves ``_detail`` {}.
         if self.async_fanout_enabled():
             details = self.fan_out_async(
@@ -179,10 +190,17 @@ class RipplingScraper(BaseScraper):
         return self._extract_detail(resp)
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
-        jobs: list[Job] = []
+        # A multi-location posting is N rows sharing one `uuid` (see `_location`) — grouped so it
+        # serves as one Job with every location, rather than colliding down to one row's in the
+        # harvest's within-Board first-wins dedupe. Only one row of a group carries the detail.
+        by_uuid: dict[str, list[dict]] = {}
         for it in raw:
-            detail = it.get("_detail") or {}
-            location = _location(it)
+            by_uuid.setdefault(it["uuid"], []).append(it)
+        jobs: list[Job] = []
+        for rows in by_uuid.values():
+            it = rows[0]
+            detail = next((r["_detail"] for r in rows if r.get("_detail")), {})
+            location = _location(rows, detail)
             dept = _department_of(it) or _department_of(detail)
             jobs.append(
                 Job(
