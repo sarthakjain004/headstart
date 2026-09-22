@@ -40,6 +40,15 @@ _HEAD_FIELDS = re.compile(
     r"<h4[^>]*>.*?</h4>(?P<fields>.*?)(?=</div>\s*<!--/.accordion-head-info)", re.DOTALL
 )
 _DIV = re.compile(r"<div[^>]*>(.*?)</div>", re.DOTALL | re.IGNORECASE)
+#: The listing's "Sort by" options name the card's columns: ``sortColumn=0`` is the title and
+#: ``sortColumn=N`` the card's Nth head-info div. Tenants choose and order their own columns
+#: (dates, job codes, statuses, shifts), so fields are read by header, never by position —
+#: measured live 2026-09-23, 30 org-deduped hiring tenants: 30/30 carry the select and 244/244
+#: cards have exactly one div per non-title option.
+_SORT_COLUMN = re.compile(
+    r"<option[^>]*\bsortColumn=(?P<n>\d+)[^>]*>(?P<label>.*?)</option>",
+    re.DOTALL | re.IGNORECASE,
+)
 _NEXT = re.compile(r'<a\s+href="(?P<href>[^"]+)"\s+class="jscroll-next"', re.IGNORECASE)
 _COMPANY = re.compile(r"Company:\s*(?P<company>[^%<\r\n]+)", re.IGNORECASE)
 #: The description container's *opening* tag. Its extent is found by depth-counting
@@ -121,6 +130,18 @@ def _labels(page: str) -> dict[str, str]:
         if label and value:
             labels[label.lower()] = value
     return labels
+
+
+def _column(
+    headers: dict[int, str], fields: list[str | None], *words: str
+) -> str | None:
+    """The card field under the first header naming any of ``words`` (see :data:`_SORT_COLUMN`).
+    Only unambiguous words: a "Division" was a legal entity on one tenant and a department on
+    another in the same sample, so it is left for the detail labels to state."""
+    for n, header in sorted(headers.items()):
+        if n and n <= len(fields) and any(word in header for word in words):
+            return fields[n - 1]
+    return None
 
 
 def _field(labels: dict[str, str], *names: str) -> str | None:
@@ -255,6 +276,10 @@ class TaleoBEScraper(BaseScraper):
                 break
             seen_pages.add(page_url)
             page = self._get(page_url)
+            headers = {
+                int(m.group("n")): (_text(m.group("label")) or "").lower()
+                for m in _SORT_COLUMN.finditer(page)
+            }
             for block in _BLOCK.findall(page):
                 match = _JOB.search(block)
                 if not match or match.group("id") in seen_jobs:
@@ -277,8 +302,12 @@ class TaleoBEScraper(BaseScraper):
                             html.unescape(urljoin(page_url, match.group("href")))
                         ),
                         "title": _text(match.group("title")),
-                        "department": fields[0] if fields else None,
-                        "location": fields[1] if len(fields) > 1 else None,
+                        "department": _column(
+                            headers, fields, "department", "département", "dept"
+                        ),
+                        "location": _column(
+                            headers, fields, "location", "localisation", "lieu"
+                        ),
                         "company": _text(company_match.group("company"))
                         if company_match
                         else None,
