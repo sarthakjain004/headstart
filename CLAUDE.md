@@ -114,8 +114,8 @@ sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` 
   **Greenhouse** (2: Groww on the EU pod `job-boards.eu.greenhouse.io`, HighRadius embed-only).
 
 **New providers — endpoints VERIFIED live 2026-07-21** (full protocols: PLAN.md §4b + `artifacts/research_*.md`):
-- **PyjamaHR** ✅ DONE (2026-09-22) — `scrapers/pyjamahr.py`, wired through liveness (759 live /
-  682 hiring Boards, 8,894 postings, `data/validate/liveness/pyjamahr.csv`). **Slug = the company
+- **PyjamaHR** ✅ DONE (2026-09-22) — `scrapers/pyjamahr.py`, wired through liveness (767 live /
+  683 hiring Boards, 8,895 postings, `data/validate/liveness/pyjamahr.csv`). **Slug = the company
   slug**, the path segment of `jobs.pyjamahr.com/{slug}` — not the `company_uuid` this entry used to
   key on. The API takes `?company_slug=` on both endpoints (the board's own route builds its calls
   with it), so the slug is the URL, the API key and the discovery key at once; the uuid is never
@@ -125,7 +125,9 @@ sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` 
   (7,801 URLs, 680 tenants), read by `scripts/discover/mine_pyjamahr.py`; a `path`-style
   `wayback_feeder` entry adds the 77 tenants whose postings are not in it (78 slugs; one is a
   non-tenant path the prober killed), and the `cc_miner`
-  pattern found 22 on the newest crawl, 2 of them new (both live, nothing open). **An unknown slug is not
+  pattern swept every Common Crawl index of the last three years (33, `CC-MAIN-2023-40`..`2026-39`):
+  161 tenants, 10 new to the pool, all live, one hiring — CC's count went flat at 136 before
+  `CC-MAIN-2025-05`, so older indexes hold nothing further. **An unknown slug is not
   an error** — the listing answers 200 `count: 0`, byte-identical to a live empty Board — so the
   prober settles a zero off the board page (200 live, real 404 dead). **`published_internally`
   rows are served by the API and hidden by the board** (112 of 8,897, 39 tenants); the scraper

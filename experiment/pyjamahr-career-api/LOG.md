@@ -54,7 +54,13 @@ the decisions are ADR-0175. This log is the run record.
   validity filter admits and the prober correctly kills off the board page's 404), **682 hiring,
   8,894 postings**. Then `CC_ONLY_ATS=pyjamahr cc_miner.py` on `CC-MAIN-2026-39` (1 page): 22
   tenants, 2 new to the pool (`actgrants`, `allstarconsulting1`), both probed live with 0 jobs →
-  final ledger **760 rows: 759 live, 1 dead, 682 hiring, 8,894 postings**.
+  ledger **760 rows: 759 live, 1 dead, 682 hiring, 8,894 postings**.
+- **Three-year CC sweep** (`cc_sweep.sh`: every index from `CC-MAIN-2023-40` to `2026-39`, 33 in
+  all, newest first, 90 s back-off on throttle). 30 completed in the first pass; `2026-39`,
+  `2026-34` and `2026-30` were throttled six times each and completed on a later retry. 161
+  tenants in total; the running count was flat at 136 for every index before `CC-MAIN-2025-05`.
+  10 new to the pool, probed live, one hiring (`sponsorcloud-llc`, 1 job) → final ledger **768
+  rows: 767 live, 1 dead, 683 hiring, 8,895 postings**.
 - **Code review (two-axis).** Standards found the detail pass took no ADR-0166 tech gate — it
   is the exact case (title + department on the listing) and now takes it; also a duplicated UA
   literal, `_amount` naming years, and a 77/78 Wayback figure drift. Spec found `_experience`

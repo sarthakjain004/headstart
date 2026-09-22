@@ -89,13 +89,16 @@ first path segments, three of them assets (`images`, `&`, `rawjsfromfile.js`) an
 64 are also in the sitemap; **77 are not**, and all 77 answered a live board page — 3 of them
 hiring, 128 postings between them. Union: 757.
 
-Common Crawl's newest index (`CC-MAIN-2026-39`, one page for this host) names 22 tenants, 2 of
-them in neither the sitemap nor Wayback — both live, both with nothing open. So the vendor's
+Common Crawl's newest index (`CC-MAIN-2026-39`, one page for this host) names 22 tenants;
+every index of the last three years together (33, `CC-MAIN-2023-40`..`2026-39`, 3 of them
+re-run after CC throttled the first pass) names 161, of which 10 are in neither the sitemap nor
+Wayback — all live, one hiring. The running total went flat at 136 before `CC-MAIN-2025-05`, so
+older indexes hold nothing further. So the vendor's
 sitemap states what is live today, Wayback and Common Crawl cover what was live before, and
 all three are wired: `scripts/discover/mine_pyjamahr.py` reads the sitemap,
 `wayback_feeder.ATS_HOSTS` gains a `path` entry and `cc_miner.ATS_PATTERNS` a `slug` entry for
 `jobs.pyjamahr.com`. Run through those tools rather than this census, the roster landed as
-**760 ledger rows: 759 live, 1 dead, 682 hiring, 8,894 postings** — the one dead row is
+**768 ledger rows: 767 live, 1 dead, 683 hiring, 8,895 postings** — the one dead row is
 `images`, a path the Wayback feeder's validity filter admits (it is a legal slug) and the prober
 kills off the board page's 404, which is the dead branch of §4 doing its job on the first day.
 
