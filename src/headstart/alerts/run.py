@@ -226,17 +226,8 @@ def telegram_subscriptions(store: Store) -> list[Subscription]:
 
     A record with no Query yet — approved but hasn't sent `/q` — is skipped by `main` the
     same way an Invite with no Query is.
-
-    A bot record whose chat an Invite already routes to is skipped too: the Invite delivers
-    there, and a record made before the bot recognised Invite chats (or the master's own `/q`)
-    would otherwise send every alert twice.
     """
-    invited = {i.telegram for i in store.invites() if i.telegram}
-    return [
-        sub
-        for sub in store.all()
-        if sub.telegram and not sub.email and sub.telegram not in invited
-    ]
+    return [sub for sub in store.all() if sub.telegram and not sub.email]
 
 
 def main() -> int:
@@ -269,6 +260,11 @@ def main() -> int:
 
     sent = failed = skipped = 0
     email_not_enabled: list[str] = []
+    # Chats an Invite delivered to this run. A bot record for one of them (made before the bot
+    # recognised Invite chats, or the master's own /q) would send every Digest twice — but only
+    # an Invite that actually resolved to a Query covers the chat, so one with none yet never
+    # silences it. Invites run first, so the set is complete before any bot record is reached.
+    covered: set[str] = set()
     for item in (*invites, *chats):
         # An Invite still has to be resolved to a Subscription, and may create one; a
         # record the bot made is already the thing to deliver. Resolution reads and may
@@ -286,6 +282,12 @@ def main() -> int:
                 _log.info(f"{sub_id}: no query set yet - skipped")
                 skipped += 1
                 continue
+            if not from_allowlist and sub.telegram in covered:
+                _log.info(f"{sub_id}: its chat's Invite already delivers - skipped")
+                skipped += 1
+                continue
+            if from_allowlist and item.telegram:
+                covered.add(item.telegram)
             count = send_one(sub, store, space, config)
         except TransportUnset as exc:
             # Not a failure: this is the dark-until-configured state the feature is built

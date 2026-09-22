@@ -390,6 +390,21 @@ def test_an_invited_chat_can_stop_its_alerts(invited):
     assert run.subscription_for(invite, store, frozenset()) is None
 
 
+def test_a_chat_with_a_record_and_an_invite_stops_both(invited):
+    # Pass 2: a chat with its own bot record AND an Invite was `known`, so /stop removed only the
+    # chat record while the Invite kept delivering.
+    from headstart.alerts import run
+
+    store, invite = invited
+    store.put(Subscription.for_chat(ADA, "backend"), reenable=True)
+
+    replies = bot.handle(_update(ADA, "/stop"), Registry(master=MASTER), store)
+
+    assert "Stopped" in replies[0][1]
+    assert store.get(chat_subscription_id(ADA)) is None
+    assert run.subscription_for(invite, store, frozenset()) is None
+
+
 @pytest.mark.parametrize("command", ["/q infra", "/status"])
 def test_an_invited_chat_is_told_the_owner_manages_its_search(invited, command):
     store, _ = invited
