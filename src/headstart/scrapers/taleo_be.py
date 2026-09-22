@@ -407,11 +407,13 @@ class TaleoBEScraper(BaseScraper):
         return jobs
 
     def _salary_field(self, raw: dict[str, str]) -> str | None:
+        # ICANN labels its bounds "Targeted Base Salary Low/High"; ASPENGOV "Pay Range (Min/Max)".
         low = next(
             (
                 value
                 for name, value in raw.items()
-                if "salary" in name and "low" in name
+                if ("salary" in name or "pay range" in name)
+                and re.search(r"\b(low|min|minimum)\b", name)
             ),
             None,
         )
@@ -419,7 +421,8 @@ class TaleoBEScraper(BaseScraper):
             (
                 value
                 for name, value in raw.items()
-                if "salary" in name and "high" in name
+                if ("salary" in name or "pay range" in name)
+                and re.search(r"\b(high|max|maximum)\b", name)
             ),
             None,
         )

@@ -250,6 +250,14 @@ def test_salary_bounds_drop_their_bonus_tail_before_joining():
     assert (span.min_annual, span.max_annual) == (40_000, 55_000)
 
 
+def test_pay_range_min_and_max_labels_are_joined():
+    """ASPENGOV states its bounds as "Pay Range (Min):" / "Pay Range (Max):" (live 2026-09-23),
+    which neither the salary low/high pair nor the single-value fallback read."""
+    scraper = TaleoBEScraper(URL, "ICANN")
+    labels = {"pay range (max)": "27.93", "pay range (min)": "19.14"}
+    assert scraper._salary_field(labels) == "19.14 - 27.93"
+
+
 def test_custom_field_labels_match_despite_their_trailing_colon(monkeypatch):
     """NBF1199 rid=11231 renders "Employment Type: " in a custom-field cell (live 2026-09-22)."""
     scraper = TaleoBEScraper(URL, "ICANN")
