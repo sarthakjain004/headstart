@@ -145,6 +145,26 @@ def test_negation_flips_a_bare_remote_mention_to_no_effect():
     )  # unchanged
 
 
+def test_a_qualified_negation_is_not_read_as_fully_remote():
+    # Real, served remote=True (greenhouse:rushdownstudios, Saratoga Springs, NY): "fully
+    # remote" matched inside its own denial, since the negation only knew "not remote".
+    assert (
+        extract(
+            False,
+            "on a hybrid basis (e.g., Tuesday-Thursday). This is not a fully remote position.",
+        )
+        is False
+    )
+    for text in (
+        "This role is not fully remote.",
+        "This position is not 100% remote.",
+        "Not eligible for full remote work.",
+        "No fully remote candidates.",
+        "Hybrid schedule (NO fully remote option available)",
+    ):
+        assert extract(None, text) is None, text
+
+
 # --- the "work from anywhere" perk-vs-policy ambiguity --------------------------------------
 
 
