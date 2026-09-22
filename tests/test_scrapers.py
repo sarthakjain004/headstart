@@ -7931,6 +7931,86 @@ def test_workday_async_structured_http_error_after_retry_is_not_recovered(monkey
     assert scraper.telemetry["listing_page_losses"] == 1
 
 
+# Workday's own 455-byte Tomcat page, what 20 of the 25 production listing failures in runs
+# 35737647801/35733082366 settled on (status=500 content_type=text/html).
+_TOMCAT_500 = (
+    "<!doctype html><html><head><title>HTTP Status 500 – Internal Server Error</title>"
+    "</head><body><h1>HTTP Status 500 – Internal Server Error</h1></body></html>"
+)
+
+
+def test_workday_html_500_mid_crawl_is_one_lost_page_not_a_failed_board(monkeypatch):
+    """ADR-0140 made an unrecognised *2xx* body a Board failure; it did not repeal ADR-0076 for
+    an error status that happens to carry an HTML page. Parsing before the status turned one
+    settled 500 page into `UnexpectedListingResponse` — not a `RequestsError`, so `_paginate`
+    let it escape and `fetch_raw` discarded every posting already read. Drives the real
+    `_exhaust` -> `_paginate_async` -> `_post_async`, faking only the transport."""
+    from headstart.scrapers.workday import WorkdayScraper
+
+    def page(offset):
+        return _Status(
+            payload={
+                "total": 100,
+                "jobPostings": [{"bulletFields": [f"R{offset}"]}],
+                "facets": [],
+            }
+        )
+
+    async def fetch_async(session, method, url, **kw):
+        offset = kw["json"]["offset"]
+        if offset == 40:
+            return _NonJsonListing(_TOMCAT_500, status_code=500)
+        return page(offset)
+
+    monkeypatch.setattr(http, "fetch", lambda method, url, **kw: page(0))
+    monkeypatch.setattr(http, "fetch_async", fetch_async)
+    scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+    absorbed = []
+    scraper._exhaust({}, absorbed.extend, depth=0)
+
+    assert sorted(p["bulletFields"][0] for p in absorbed) == [
+        "R0",
+        "R20",
+        "R60",
+        "R80",
+    ]
+    assert "1 of 5 page(s) failed mid-crawl" in scraper.truncated
+    assert scraper.telemetry["listing_loss_causes"] == {"HTTP 500": 1}
+
+
+@pytest.mark.parametrize(
+    "responses",
+    [
+        pytest.param(lambda: [_NonJsonListing(_TOMCAT_500, status_code=500)], id="500"),
+        pytest.param(
+            lambda: [
+                _NonJsonListing(
+                    "<html><title>Just a moment...</title></html>", status_code=429
+                )
+                for _ in range(2)
+            ],
+            id="429-challenge-twice",
+        ),
+    ],
+)
+def test_workday_html_error_status_raises_as_an_http_error(monkeypatch, responses):
+    """The sync `_post` too — every slice's first page, which `_exhaust`'s slice loop drops as a
+    truncation only if it is a `RequestsError`. A challenge still earns its one direct retry
+    (ADR-0140); what the persisting error status raises afterwards is the status."""
+    from headstart.scrapers.workday import WorkdayScraper
+
+    outcomes = responses()
+    calls = len(outcomes)
+    monkeypatch.setattr(http, "fetch", lambda *a, **k: outcomes.pop(0))
+    scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+
+    with pytest.raises(http.RequestsError):
+        scraper._post({"jobFamilyGroup": ["x"]}, 0, raise_gone=True)
+    assert outcomes == []
+    assert scraper.telemetry["listing_fetch_calls"] == calls
+    assert scraper.telemetry["listing_page_losses"] == 1
+
+
 def test_workday_async_challenge_retries_once_and_recovers(monkeypatch):
     """Concurrent pagination uses the same classification and bounded retry contract."""
     import asyncio
