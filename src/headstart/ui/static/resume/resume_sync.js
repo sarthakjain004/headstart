@@ -92,6 +92,8 @@
     this._timer = null;
     this._lastPush = 0;      // ms, 0 = never
     this._inflight = null;   // one push at a time; a second would race itself
+    this._pushing = null;    // the document that push carries
+    this._dropped = new Set();   // ids deleted while their push was in flight
     this._error = '';
   }
 
@@ -192,6 +194,8 @@
    *  dirty, the next coarse event PUT it onto the slot `forget` had just emptied — which accepts
    *  any revision — and `_settle`, finding no local copy, saved it back into this browser too. */
   Sync.prototype.drop = function (id) {
+    /* A push already out outlives the delete; its answer is dealt with in `_settle`. */
+    if (this._pushing && this._pushing.id === id) this._dropped.add(id);
     if (!this._dirty || this._dirty.id !== id) return;
     this._dirty = null;
     this._clearTimer();
@@ -281,18 +285,31 @@
       return this._inflight;
     }
     const candidate = Object.assign({}, doc, { rev: (doc.rev || 0) + 1 });
+    this._pushing = doc;
     this._inflight = this._call('/resumes/' + encodeURIComponent(doc.id), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(candidate),
     }).then(result => {
       self._inflight = null;
+      self._pushing = null;
       return self._settle(doc, candidate, result, reason);
-    }, () => { self._inflight = null; self._dirty = doc; return null; });
+    }, () => {
+      self._inflight = null;
+      self._pushing = null;
+      if (!self._dropped.delete(doc.id)) self._dirty = doc;
+      return null;
+    });
     return this._inflight;
   };
 
   Sync.prototype._settle = function (doc, candidate, result, reason) {
+    /* Deleted while this push was out. Nothing is saved back — `_current` would fall back to
+       the payload — and a PUT that may have landed after the DELETE is taken off again. */
+    if (this._dropped.delete(doc.id)) {
+      if (result.status === 200 || result.state === 'unreachable') this.forget(doc.id);
+      return null;
+    }
     this._error = '';
     if (result.state === 'signed-out') {
       /* Not an error and not a retry loop: the session expired, the browser copy is untouched,

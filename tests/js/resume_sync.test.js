@@ -523,6 +523,29 @@ test('switching off lands on the document as it stands NOW, not on the one the s
   });
 });
 
+test('a document deleted while its push is in flight stays deleted, here and on the account', () => {
+  /* The push outlives the delete. Its answer found no local copy, so `_current` fell back to the
+     payload and saved it back into this browser; and the server may apply the PUT after the
+     DELETE, which leaves the résumé on the Account the user just removed it from. */
+  const doc = aDoc({ rev: 1 });
+  const { sync, repository, wire } = loadSync({
+    docs: [doc], answers: [{ status: 200, body: { ok: true, rev: 2 } }, { status: 200, body: { ok: true } }],
+  });
+  sync.note(doc);
+  const pushing = sync.flush('tab hidden');
+  sync.forget(doc.id);              // what the editor's delete does, in its order
+  sync.drop(doc.id);
+  repository.remove(doc.id);
+  return pushing.then(settled).then(() => {
+    assert.equal(repository.get(doc.id), null, 'the deleted résumé was saved back into this browser');
+    const last = wire.calls[wire.calls.length - 1];
+    assert.equal(last.method, 'DELETE', 'a PUT that landed after the DELETE was left on the account');
+    assert.equal(last.url, '/resumes/' + doc.id);
+    return sync.flush('tab hidden');
+  }).then(() => assert.equal(wire.calls.filter(c => c.method === 'PUT').length, 1,
+    'the deleted résumé was queued to go up again'));
+});
+
 test('a 404 on the way off counts as gone — the record is not there, which is what was asked', () => {
   const doc = aDoc({ sync: true, rev: 4 });
   const { sync, repository } = loadSync({
