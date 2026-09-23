@@ -42,8 +42,9 @@ A closed or unknown req is a 200 with no posting on it — counted as a ``no pos
 **Dead versus empty is xml.php's status**: 404 for an unknown or departed tenant (51 of 51 had a
 404 Board page too), 200 with no ``<job>`` for a live Board with nothing open (16). A 404 raises
 here, so it reads as a failed Board rather than an empty one. The one Board too large to read,
-``heartlandbehavior`` (3,036 reqs), answers 500 after ~104 s server-side; its ledger row is UNKNOWN,
-so it is never scheduled.
+``heartlandbehavior``, answers 500 after ~104 s server-side; its ledger rows are UNKNOWN, so it is
+never scheduled. Its 16 ``state=`` slices read whole (4,558 reqs) and hold 0 tech postings, so no
+split walker exists for it (ADR-0182).
 
 Not mapped: ``experience`` and ``employment_type`` (no native field; tenant-custom labels appear on
 at most 3 of 510 pages); ``remote`` has no field either (a ``Workplace Type:`` label on 1 tenant
@@ -54,7 +55,6 @@ detail pages, all 200 — and the host is User-Agent-agnostic.
 
 from __future__ import annotations
 
-import codecs
 import html
 import re
 from email.utils import parsedate_to_datetime
@@ -79,15 +79,8 @@ _FIELD = re.compile(
 )
 
 
-def _cp1252_byte(err: UnicodeDecodeError) -> tuple[str, int]:
-    """Read one byte UTF-8 rejected as the cp1252 character it is."""
-    return err.object[err.start : err.start + 1].decode(
-        "cp1252", "replace"
-    ), err.start + 1
-
-
-codecs.register_error("hrm_cp1252", _cp1252_byte)
-
+#: A byte UTF-8 rejected, as `surrogateescape` hands it back.
+_ESCAPED = re.compile("[\udc80-\udcff]")
 #: C1 controls: a cp1252 byte stored as Latin-1 and re-encoded to UTF-8 (`C2 96` for an en dash).
 _C1 = re.compile("[\x80-\x9f]")
 
@@ -99,7 +92,13 @@ def decode_hrm_bytes(body: bytes) -> str:
     a C1 control left behind is mapped through cp1252 too. Over 174 hiring feeds this left 0 of
     16,676 titles and departments broken, against 174 with mojibake from a whole-document
     UTF-8-else-cp1252 decode and 116 with C1 controls from the per-byte fallback alone."""
-    text = body.decode("utf-8", "hrm_cp1252")
+    # `surrogateescape` is a built-in handler: each byte UTF-8 rejects comes back as a lone
+    # surrogate (U+DC80-U+DCFF), which is then read as the cp1252 byte it is. Nothing is
+    # registered, so importing this module leaves the process's codec state alone.
+    text = _ESCAPED.sub(
+        lambda m: bytes([ord(m.group()) - 0xDC00]).decode("cp1252", "replace"),
+        body.decode("utf-8", "surrogateescape"),
+    )
     return _C1.sub(lambda m: bytes([ord(m.group())]).decode("cp1252", "replace"), text)
 
 

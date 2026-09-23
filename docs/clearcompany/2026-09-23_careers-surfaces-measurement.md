@@ -59,9 +59,9 @@ It covers 176 hiring Boards and 6,377 postings.
    `city=` and `dept=` parameters: on `kingarthurbaking`, `state=VT` returned only its 11 Norwich
    and White River Junction rows, `state=VA` its 3 Alexandria rows, and `state=NC` none. On
    `heartlandbehavior`, `state=KS` returned 1,149 rows / 437 reqs in 16 s and `state=NE` 3,821
-   rows / 1,284 reqs in 51 s (its board lists 16 states). `is_tech(title, department)` keeps
-   **0 of those 1,721 reqs**, so splitting that Board by state is left as a follow-up rather than
-   built. Its sibling labels (`kansasbehavior`, `ncbehavior`, `georgiabehavior`, `bkbehavior`,
+   rows / 1,284 reqs in 51 s. Reading all 16 states its board offers (3-12 s each, none failed)
+   gives **4,558 distinct reqs, and `is_tech(title, department)` keeps 0 of them**, so the state
+   split is not built (ADR-0182). Its sibling labels (`kansasbehavior`, `ncbehavior`, `georgiabehavior`, `bkbehavior`,
    `aba360`, `cbsupports`) time out the same way and sit UNKNOWN in the ledger.
 5. **A filter, not an address.** xml.php accepts `cust_sort1={division}`. An unknown value answers
    **200 with 0 jobs**. The scraper never sends it: the bare URL is the whole tenant (division

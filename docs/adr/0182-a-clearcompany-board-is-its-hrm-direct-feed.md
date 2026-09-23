@@ -74,19 +74,23 @@ subdomain label, from either vendor host.
 
 - **One account is too large for the feed.** `heartlandbehavior` (3,036 reqs on its rendered
   Board) answers xml.php with a 500 after ~104 s, twice, and its sibling labels time out the same
-  way; their ledger rows are UNKNOWN, so they are never scheduled. xml.php does honour the
-  Board's own `state=`/`city=`/`dept=` filters (`state=NE` read 1,284 of heartland's reqs in
-  51 s), so splitting it by state would work. It is not built: the KS and NE slices together hold
-  1,721 reqs and `is_tech` keeps 0 of them. A follow-up if that account ever matters.
+  way. xml.php does honour the Board's own `state=`/`city=`/`dept=` filters, so the account *can*
+  be read by splitting it: all 16 states its board offers were read on 2026-09-23 (3-12 s each,
+  none failed), giving **4,558 distinct reqs, of which `is_tech` keeps 0**. **Decision:** the
+  state split is not built, and the account's labels stay UNKNOWN and unscheduled — a split
+  walker, its truncation handling and its tests would buy no tech Job. Revisit if a re-count ever
+  finds more than ~20 tech postings there.
 - **Most multi-label accounts are one Board.** xml.php returns the whole account from every label
   it owns, and req ids are platform-wide, so labels sharing a req are one account. Over the
   ledger's 1,304 hiring Boards, 1,881 label pairs share reqs — all identically — forming 131
   accounts over 453 labels; 322 duplicates would have re-served 30,209 of the ledger's 61,043
   postings. They are buried in `data/validate/aliases/clearcompany.csv` with signal
   `shared-reqs`, keeping per account a label whose board does not redirect to a division (the
-  account-level site), else the lowest default-division id, alphabetical on a tie. The cost is
-  the brand: each label's `<company>` names its own division, so every posting of an account
-  carries the kept label's brand. The file is written by `scripts/validate/clearcompany_shared_accounts.py`
+  account-level site), else the lowest default-division id, alphabetical on a tie.
+  **Known limitation — the brand.** Each label's `<company>` names its own division (over the
+  same 9 reqs `chicagosteel` says Chicago Steel and `wirtzcorp` says Chicago Blackhawks), so for
+  all 131 accounts / 453 labels every posting carries the kept label's brand, not the division
+  that posted it. Recovering it would need a per-req division lookup the feed does not state. The file is written by `scripts/validate/clearcompany_shared_accounts.py`
   (re-run after every ledger refresh), not by `dedupe_boards.py`: that resolves by redirect,
   finds nothing here, and so refuses `--apply` for this ATS rather than erase the file. It is
   the first *pairwise* alias signal, which `board_aliases.py`'s grouping never had to handle.

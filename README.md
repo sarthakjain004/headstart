@@ -182,7 +182,7 @@ flowchart TB
     subgraph P["② Ingest &nbsp;·&nbsp; GitHub Actions, back-to-back &nbsp;·&nbsp; ADR-0025 / ADR-0026"]
         direction LR
         P1["<b>scrape-plan</b><br/>1 VM<br/>pick a board slice, LPT pack"]
-        P2["<b>scrape</b><br/>≤15 VMs · 60m budget<br/>34 enabled scrapers → fragments"]
+        P2["<b>scrape</b><br/>≤15 VMs · 60m budget<br/>40 enabled scrapers → fragments"]
         P3["<b>join</b><br/>1 VM<br/>union · tech-filter · descriptions<br/>ledgers · plan embed"]
         P4["<b>embed</b><br/>≤15 VMs · 180m budget<br/>nomic on CPU → fragments"]
         P5["<b>merge</b><br/>1 VM · single writer<br/>concat · meta refresh · sync · prune · trends · hot · index"]
@@ -399,7 +399,7 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
 ## Layout
 
 - `src/headstart/` — shared library, used by both the pipeline and the curated feed: `models.py`
-  (Job + normalization), `scrapers/` (35 per-ATS + `base`/`registry`), `http.py` (the pooled
+  (Job + normalization), `scrapers/` (41 per-ATS + `base`/`registry`), `http.py` (the pooled
   reliable-fetch seam), `config.py`, `harvest.py` (the scrape engine), `liveness.py`, `corpus.py`,
   `tech_filter.py` (ADR-0017), `experience.py`, `salary.py` (ADR-0082), `geo.py`, `remote.py`,
   `company_name.py` (ADR-0114), `search.py` (shared embed/search constants + filter builder),
