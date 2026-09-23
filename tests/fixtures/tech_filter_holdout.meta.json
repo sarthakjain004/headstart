@@ -1,0 +1,10 @@
+{
+  "population": {
+    "kept": 137505,
+    "dropped": 420075
+  },
+  "seed": 20260924,
+  "draw_filter_commit": "6a1b3630",
+  "harvest": "experiment/indeed-harvest/artifacts/indeed_jobs_v3.jsonl (679,687 rows, 2026-09-23)",
+  "labelled": "2026-09-23, two blind labellers with title-echo alignment (800/800), 783 agreed, 17 settled by hand"
+}
