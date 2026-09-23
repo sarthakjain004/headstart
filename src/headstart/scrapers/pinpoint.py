@@ -191,13 +191,12 @@ class PinpointScraper(BaseScraper):
 
     def fetch_raw(self) -> Any:
         # An empty answer is asked once more: the listing sometimes returns a spurious
-        # `{"data":[]}` for a Board that has postings (12 of 6,030 fetches over 670 hiring Boards,
-        # as often at concurrency 4 as at 16, each Board answering with its postings on its other
-        # fetches), and a Board read as empty puts every one of its Jobs one absence from eviction
-        # (ADR-0083). A real empty Board costs 11 bytes to confirm.
-        listed = json.loads(self._get()).get("data") or []
-        if not listed:
-            listed = json.loads(self._get()).get("data") or []
+        # `{"data":[]}` for a Board that has postings (12 of 6,030 fetches — three passes over the
+        # 670 Boards the ledger listed with postings at the time, as often at concurrency 4 as at
+        # 16, each Board answering with its postings on its other fetches), and a Board read as
+        # empty puts every one of its Jobs one absence from eviction (ADR-0083). A real empty
+        # Board costs 11 bytes to confirm.
+        listed = self._listing() or self._listing()
         wanted = self.tech_detail_wanted(listed, _title, _department)
         uuids = [_uuid(i) for i in wanted]
         details: dict[str, dict] = {}
@@ -211,6 +210,9 @@ class PinpointScraper(BaseScraper):
             self.report_detail_gaps(fetched, "posting pages")
             details = {u: d for u, d in zip(uuids, fetched) if d}
         return {"data": listed, "details": details}
+
+    def _listing(self) -> list[dict]:
+        return json.loads(self._get()).get("data") or []
 
     def _page_fields(self, uuid: str) -> dict[str, Any] | None:
         try:

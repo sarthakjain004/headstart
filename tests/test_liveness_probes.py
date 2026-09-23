@@ -733,3 +733,16 @@ def test_pinpoint_an_empty_listing_is_asked_again_before_it_is_believed(monkeypa
     monkeypatch.setattr(cl, "_fetch", _fetch)
     assert cl.p_pinpoint("jec", "") == (cl.LIVE, 1)
     assert asked == [_PATH]
+
+
+def test_pinpoint_a_failed_re_ask_of_an_empty_listing_is_unknown(monkeypatch):
+    """The second ask settles nothing if it fails: a 503 or an open breaker is no verdict."""
+    for second in (SimpleNamespace(status_code=503, content=b"", headers={}), None):
+        answers = [
+            SimpleNamespace(status_code=200, content=b'{"data":[]}', headers={}),
+            second,
+        ]
+        monkeypatch.setattr(
+            cl, "_fetch", lambda method, url, _a=answers, **kw: _a.pop(0)
+        )
+        assert cl.p_pinpoint("acme", "") == (cl.UNKNOWN, None)
