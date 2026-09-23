@@ -66,6 +66,11 @@ discovery landing (#576) moved five more. Board totals belong in README and CONT
   `{customer}.icims.com` hosts are vendor infrastructure (`docs/icims/`) or recruiter logins
   (#576). A vanity career site on Jibe, iCIMS's own career-site layer, is not a tenant: resolve it
   to its `*.icims.com` host through the site's `/api/jobs` `apply_url`, and land that.
+- **ClearCompany: re-run `scripts/validate/clearcompany_shared_accounts.py` after landing rows.**
+  Every label an HRM Direct account owns serves that whole account's feed, so a new label is often
+  a second name for a Board already held (131 accounts spanned 453 labels on 2026-09-23). The
+  script rewrites `data/validate/aliases/clearcompany.csv`; `dedupe_boards.py` finds none of these
+  and refuses `--apply` for this ATS (ADR-0182).
 - **SuccessFactors holds RMK sites only.** `p_successfactors` accepts any `<urlset>`, so a corporate
   site or a Radancy career front probes `live`, and the scraper reads it as 0 jobs or as page titles
   ("Working at TUI"). Before landing a host, confirm a `/job/` page from its sitemap (urlset, RSS or
@@ -84,8 +89,9 @@ Evidence for the first three is in `docs/discovery/2026-09-23_indeed-sweep-landi
   read. Each Jibe site serves `/api/jobs` JSON and allows crawling at `crawl-delay: 5`. Needs a
   decision on reading a front whose backing tenant opts out.
 - **The unsupported ATSes the Indeed sweep resolved most companies to**, most first:
-  ClearCompany, Pinpoint, ADP, Hireology, Cornerstone, Recruiterflow, Avature. (Breezy led that
-  count and is now built, #579; its companies are a landing still to do.)
+  Pinpoint, ADP, Hireology, Cornerstone, Recruiterflow, Avature. (Breezy led that count and
+  ClearCompany followed; both are now built, #579 and #582, and their companies are a landing
+  still to do.)
 - **SenseHQ** — the scraper is registered but has no ledger and no liveness probe, so none of its
   Boards can land.
 - **TurboHire** — token flow: `/api/token/noauth` (needs Referer), then `POST

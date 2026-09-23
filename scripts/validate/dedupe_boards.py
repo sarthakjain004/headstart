@@ -109,6 +109,15 @@ def main() -> int:
             "probed. Run the full scan to apply."
         )
 
+    # The same trap from another side: an alias ledger this script did not write. ClearCompany's
+    # rows come from `clearcompany_shared_accounts.py` (signal `shared-reqs`, ADR-0182) and no
+    # redirect finds them, so an --apply here would replace every row with nothing.
+    if args.apply and args.ats == "clearcompany":
+        raise SystemExit(
+            "clearcompany's alias ledger is written by clearcompany_shared_accounts.py; "
+            "--apply here would erase it (ADR-0182)."
+        )
+
     scraper_cls = SCRAPERS.get(args.ats)
     if scraper_cls is None:
         raise SystemExit(f"no scraper for ats {args.ats!r}")

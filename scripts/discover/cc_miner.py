@@ -165,6 +165,13 @@ ATS_PATTERNS = {
         "kind": "label",
         "patterns": [r"([a-z0-9][a-z0-9-]*)\.breezy\.hr"],
     },
+    "clearcompany": {
+        # The Board is `{slug}.hrmdirect.com`; `{slug}.clearcompany.com` is the same tenant's app
+        # host under the same label, so both are label sources (docs/clearcompany/).
+        "targets": ["hrmdirect.com", "clearcompany.com"],
+        "kind": "label",
+        "patterns": [r"([a-z0-9][a-z0-9-]*)\.(?:hrmdirect|clearcompany)\.com"],
+    },
     "darwinbox": {
         "targets": ["darwinbox.in", "darwinbox.com"],
         "kind": "label",

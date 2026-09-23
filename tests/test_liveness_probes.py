@@ -467,6 +467,56 @@ def test_a_neighbours_success_cannot_undo_the_easing(monkeypatch):
     assert gate.spacing > eased_to, "and the next 429 keeps easing from where it was"
 
 
+# --- clearcompany: xml.php's status settles it; a req repeats once per location -------------
+
+
+def test_clearcompany_counts_distinct_reqs_not_rows(monkeypatch):
+    """xml.php emits one row per req per location: the Fisher Phillips fixture is 14 rows over 2
+    reqs, and the ledger counts postings."""
+    body = (
+        _ROOT / "tests" / "fixtures" / "clearcompany_fisherphillips.xml"
+    ).read_bytes()
+    calls: list[str] = []
+    monkeypatch.setattr(
+        cl, "_get", lambda url, headers=None: calls.append(url) or (200, body)
+    )
+    assert cl.p_clearcompany("fisherphillips", "") == (cl.LIVE, 2)
+    assert calls == ["https://fisherphillips.hrmdirect.com/employment/xml.php"]
+
+
+def test_clearcompany_an_empty_feed_is_a_live_empty_board(monkeypatch):
+    """16 of 244 measured tenants: a 200 `<source>` with no `<job>` — live, nothing open."""
+    empty = (
+        b'<?xml version="1.0" encoding="UTF-8"?>\n<source>\n<publisher>HRM Direct</publisher>\n'
+        b"<publisherurl>http:www.hrmdirect.com</publisherurl>\n</source>\n "
+    )
+    monkeypatch.setattr(cl, "_get", lambda url, headers=None: (200, empty))
+    assert cl.p_clearcompany("absorblms", "") == (cl.LIVE, 0)
+
+
+def test_clearcompany_a_404_is_dead(monkeypatch):
+    """Unknown and departed tenants alike: 51 of 51 xml.php 404s had a 404 Board page too."""
+    monkeypatch.setattr(cl, "_get", lambda url, headers=None: (404, b"Not Found"))
+    assert cl.p_clearcompany("defymedia", "") == (cl.DEAD, None)
+
+
+@pytest.mark.parametrize(
+    "status, body",
+    [
+        (None, b""),  # a refused connection or a timeout: nothing was learned
+        (
+            "dns",
+            b"",
+        ),  # the wildcard answers nearly every label; this is the local resolver
+        (500, b""),  # heartlandbehavior's xml.php gives up server-side after ~104 s
+        (200, b"<html>maintenance</html>"),  # a 200 that is not the feed
+    ],
+)
+def test_clearcompany_inconclusive_answers_stay_unknown(monkeypatch, status, body):
+    monkeypatch.setattr(cl, "_get", lambda url, headers=None: (status, body))
+    assert cl.p_clearcompany("heartlandbehavior", "") == (cl.UNKNOWN, None)
+
+
 # --- pyjamahr: an unknown slug answers 200 with count 0, so the board page settles a zero ------
 
 
