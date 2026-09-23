@@ -101,8 +101,9 @@ def _chunks(size: int, chunk: int) -> list[tuple[int, int, int]]:
     """``(index, start, end_exclusive)`` at ABSOLUTE offsets — never relative to progress.
 
     Absolute boundaries are what make a cancelled run resumable: chunk *i* always covers the
-    same byte range, so a chunk file's own length is enough to say how much of it is done,
-    with no manifest to write, corrupt, or fall out of sync with the disk.
+    same byte range, so a chunk file's own length is enough to say how much of it is done.
+    The one thing a length cannot say is which chunk size carved it, so that single number is
+    recorded beside the chunks (``_record_chunk_size``) — see ADR-0085's amendment.
     """
     return [
         (i, off, min(off + chunk, size)) for i, off in enumerate(range(0, size, chunk))
@@ -119,47 +120,60 @@ def _chunk_size_marker(dest: pathlib.Path) -> pathlib.Path:
     return dest.with_name(f"{dest.name}.chunksize")
 
 
-def _claim_chunk_size(
-    dest: pathlib.Path, plan: list[tuple[int, int, int]], chunk: int
-) -> None:
-    """Refuse to resume ``dest`` under a different chunk size than it was started with.
+def _check_recorded_chunk_size(dest: pathlib.Path, chunk: int) -> bool:
+    """Whether ``dest``'s transfer recorded its chunk size; refuse if it recorded another.
 
     Chunk boundaries are absolute, so a resume with a different --chunk-mb would carve the
-    same bytes at different offsets and silently assemble a corrupt file. The size is recorded
-    beside the chunks when a transfer starts, and compared on every resume. It used to be
-    inferred from the chunk files instead, which cannot tell a chunk carved at another size
-    from one that is merely SHORT — a fetch that ran out of retries, the ordinary thing a
-    resume exists for — so it refused those too (2026-09-23: a 2.9 GB pull, one 28,311,552-byte
-    chunk, the same --chunk-mb both runs). A short chunk is topped up by ``fetch_chunk``.
+    same bytes at different offsets and silently assemble a corrupt file. A transfer records
+    its size before it writes a byte, so a resume compares that instead of inferring it from
+    the chunk files — which cannot tell a chunk carved at another size from one that is merely
+    SHORT (a fetch that ran out of retries, the ordinary thing a resume exists for). With a
+    record, a short chunk is topped up by ``fetch_chunk``.
     """
     marker = _chunk_size_marker(dest)
-    if marker.exists():
-        started = int(marker.read_text())
-        if started != chunk:
+    if not marker.exists():
+        return False
+    recorded = marker.read_text().strip()
+    if not recorded.isdigit():
+        raise SystemExit(
+            f"{marker} is unreadable ({recorded!r}); delete {dest.name}.c* and "
+            f"{marker.name} to start the file over."
+        )
+    if int(recorded) != chunk:
+        raise SystemExit(
+            f"{dest.name} was started with --chunk-mb {int(recorded) / 1e6:g}; re-run with "
+            f"that, or delete {dest.name}.c* to start the file over."
+        )
+    return True
+
+
+def _check_unrecorded_chunks(
+    dest: pathlib.Path, plan: list[tuple[int, int, int]]
+) -> None:
+    """The size check for chunks left by a transfer that predates the chunk-size record.
+
+    Only the chunk sizes say anything then, and they cannot separate "short" from "carved at
+    another size", so every complete non-final chunk must be exactly its planned length. A
+    short one is refused with the file to delete — guessing either way can splice bytes at
+    the wrong offsets, which a review of this guard showed with a real `.part` recovery.
+    """
+    for i, lo, hi in plan[:-1]:
+        cf = _chunk_path(dest, i)
+        if cf.exists() and cf.stat().st_size not in (0, hi - lo):
             raise SystemExit(
-                f"{dest.name} was started with --chunk-mb {started // 1_000_000}; re-run with "
-                f"that, or delete {dest.name}.c* and {marker.name} to start the file over."
+                f"chunk {i} is {cf.stat().st_size:,} bytes but --chunk-mb implies {hi - lo:,}, "
+                f"and this transfer predates the chunk-size record, so a short chunk and one "
+                f"carved at another size look the same. If --chunk-mb is unchanged, delete "
+                f"{cf.name} and re-run; otherwise delete {dest.name}.c* to start over."
             )
-        return
-    # Chunks with no marker come from a transfer started before it existed, so only their
-    # sizes say anything. A chunk LONGER than `chunk` was carved at another size. A shorter
-    # one is either cut short or carved smaller, and one chunk of exactly `chunk` bytes
-    # settles which: no transfer at a smaller size can have written it. Without that proof,
-    # refuse rather than guess.
-    sizes = [
-        (i, _chunk_path(dest, i).stat().st_size, hi - lo)
-        for i, lo, hi in plan[:-1]
-        if _chunk_path(dest, i).exists()
-    ]
-    proven = any(have == want for _, have, want in sizes)
-    for i, have, want in sizes:
-        if have > want or (0 < have < want and not proven):
-            raise SystemExit(
-                f"chunk {i} is {have:,} bytes but --chunk-mb implies {want:,}. "
-                f"A part-finished transfer cannot change chunk size; re-run without --chunk-mb, "
-                f"or delete {dest.name}.c* to start the file over."
-            )
-    marker.write_text(str(chunk))
+
+
+def _record_chunk_size(dest: pathlib.Path, chunk: int) -> None:
+    """Record the chunk size atomically: a kill mid-write must never leave an empty record."""
+    marker = _chunk_size_marker(dest)
+    tmp = marker.with_name(marker.name + ".tmp")
+    tmp.write_text(str(chunk))
+    tmp.rename(marker)
 
 
 def _on_disk(dest: pathlib.Path, plan: list[tuple[int, int, int]]) -> int:
@@ -216,10 +230,15 @@ def fetch_big(
         f"big: {path}  ({size / 1e6:,.0f} MB, {chunk / 1e6:.0f} MB chunks)", flush=True
     )
     plan = _chunks(size, chunk)
-    # Before the concat recovery, which carves at the same absolute offsets.
-    _claim_chunk_size(dest, plan, chunk)
+    # The record is checked before the concat recovery, which carves at the same offsets. An
+    # unrecorded transfer keeps the order it always had — recover, then check the sizes — so
+    # the chunks the recovery carved are checked too.
+    recorded = _check_recorded_chunk_size(dest, chunk)
     if joined.exists():
         _recover_partial_concat(joined, dest, chunk)
+    if not recorded:
+        _check_unrecorded_chunks(dest, plan)
+        _record_chunk_size(dest, chunk)
 
     def fetch_chunk(spec: tuple[int, int, int]) -> int:
         i, lo, hi = spec
