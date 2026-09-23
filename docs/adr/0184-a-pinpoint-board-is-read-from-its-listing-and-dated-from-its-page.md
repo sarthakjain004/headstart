@@ -4,8 +4,9 @@
 
 ## Context
 
-Pinpoint (`{slug}.pinpointhq.com`) was the strongest tech share of the candidate ATSes evaluated
-in `experiment/ats-scraper-candidates/LOG.md` (14.6% on an older filter). A third-party
+Pinpoint (`{slug}.pinpointhq.com`) was the strongest tech share of the candidate ATSes in a
+20-ATS evaluation of a third-party scraper library's dataset (14.6% of 11,272 jobs, on an older
+tech filter). A third-party
 implementation (kalil0321/ats-scrapers) and its 406-slug seed list existed. Measuring before
 building (2026-09-23; `docs/pinpoint/2026-09-23_postings-api-measurement.md`) confirmed its
 endpoint and falsified several of its assumptions. Most importantly, the `first_published_at`
@@ -53,6 +54,13 @@ date it reads does not exist on any of 13,419 listing rows.
      here: `kharon` 404s a browser on `/` while its postings render.
    - Empty: `/` decides. A 200 is **live** 0. A 404, or a redirect to another ATS or a company
      site, is **dead**.
+
+   This rule goes beyond the standing decisions the build started from, and the coordinator
+   signed it off on 2026-09-23 on one principle: serving postings whose links a user cannot open
+   is worse than not serving them. Measured kills: **20 Boards with postings (1,273 postings)**
+   whose postings 404 a browser (17 Boards, 1,200 postings) or redirect to a page that is not
+   the posting (3 Boards, 73 postings); and **387 empty Boards** whose `/` returns 404 (282) or
+   redirects off the platform (105).
 
    `pinpointhq.com` is a spanning gate at 16 in flight. A 256-wide burst across tenants drew
    connection refusals that then held against every tenant for minutes. Paced load up to 50 req/s

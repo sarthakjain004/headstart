@@ -152,9 +152,11 @@ def _fetching_scraper(
     monkeypatch, listing: dict, page=_page
 ) -> tuple[PinpointScraper, list]:
     """A scraper whose `_get` serves `listing` for the Board URL and whose `_fetch` serves
-    `page()` for any posting, recording every URL asked for and each page's `Accept`."""
+    `page()` for any posting, recording every URL asked for; each page's `Accept` lands in
+    `accepts`."""
     scraper = _scraper()
     requested: list[str] = []
+    accepts: list[str] = []
 
     def fake_get(url=None):
         url = url or scraper.url()
@@ -163,7 +165,7 @@ def _fetching_scraper(
 
     def fake_fetch(method, url, **kw):
         requested.append(url)
-        scraper.page_accepts = kw["headers"]["Accept"]
+        accepts.append(kw["headers"]["Accept"])
         return SimpleNamespace(text=page(), raise_for_status=lambda: None)
 
     monkeypatch.setattr(scraper, "_get", fake_get)
@@ -173,6 +175,7 @@ def _fetching_scraper(
         "fan_out_async",
         lambda items, fn, **kw: [scraper._page_fields(i) for i in items],
     )
+    scraper.accepts = accepts
     return scraper, requested
 
 
@@ -182,7 +185,7 @@ def test_the_page_is_asked_for_as_html(monkeypatch):
     impulsespace). `text/html` answers the page."""
     scraper, _ = _fetching_scraper(monkeypatch, {"data": [_listing()["data"][0]]})
     scraper.fetch_raw()
-    assert scraper.page_accepts == "text/html"
+    assert scraper.accepts == ["text/html"]
 
 
 def test_posted_at_and_country_come_from_the_posting_page(monkeypatch):

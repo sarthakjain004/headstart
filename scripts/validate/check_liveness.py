@@ -1512,27 +1512,32 @@ def p_pinpoint(t, u):
       render, asked as a browser asks (`text/html`) they can 404 or redirect away. So a Board
       with postings is settled on its **first and last postings' pages**, the links a user would
       click — two, because one posting can close between the listing and its page (`freeagent`
-      flipped dead once that way and re-probed live 3 of 3); it is live if either lands. Of
-      692 such Boards: 514 render it (live); 158 301 it to their vanity host at the same path,
-      which serves it (live); 17 answer 404 (1,200 postings, `10kbi-23` alone 638 — dead); 3
-      redirect it to a company page that is not the posting (`10kai` -> `/our-programmes/`, 73
-      postings — dead). `/` is the wrong page to ask here: `kharon` 404s a browser on `/`
+      flipped dead once that way and re-probed live 3 of 3); it is live if either lands. Asking
+      each of the 692 such Boards for its *first* posting only (the measurement this rule was
+      built on): 514 render it; 158 301 it to their vanity host at the same path, which serves
+      it; 17 answer 404 (1,200 postings, `10kbi-23` alone 638); 3 redirect it to a company page
+      that is not the posting (`10kai` -> `/our-programmes/`, 73 postings); 1 unparseable. `/` is the wrong page to ask here: `kharon` 404s a browser on `/`
       while its postings render.
-    * An empty Board has no posting to ask about, so `/` decides: of 534, 145 render (live,
+    * An empty Board has no posting to ask about, so `/` decides: of 534 asked, 145 render (live,
       nothing open), 282 are 404 and 105 redirect to the tenant's own or another ATS's site
-      (greenhouse, linkedin) — nothing is published here, so both are dead.
+      (greenhouse, linkedin) — nothing is published here, so both are dead; 2 timed out or
+      answered unparseably.
 
     `pinpointhq.com` is a spanning gate (`_SPANNING`): the refusals it answers overload with span
     tenants and persist for minutes.
     """
     base = f"https://{t.lower()}.pinpointhq.com"
-    try:
-        listing = _fetch(
+
+    def ask_listing():
+        return _fetch(
             "GET",
             f"{base}/postings.json",
             headers={"User-Agent": UA},
             allow_redirects=False,
         )
+
+    try:
+        listing = ask_listing()
         if listing is None:  # breaker open -> transient
             _note("breaker-open")
             return UNKNOWN, None
@@ -1549,12 +1554,7 @@ def p_pinpoint(t, u):
         if listing.content.replace(b" ", b"") == b'{"data":[]}':
             # A spurious empty answer for a Board with postings (12 of 6,030 fetches) would send
             # this to `/`, where a vanity host's redirect reads as dead (`jec`, once). Ask again.
-            listing = _fetch(
-                "GET",
-                f"{base}/postings.json",
-                headers={"User-Agent": UA},
-                allow_redirects=False,
-            )
+            listing = ask_listing()
             if listing is None or listing.status_code != 200:
                 _note(
                     "breaker-open" if listing is None else f"http-{listing.status_code}"
@@ -1579,7 +1579,7 @@ def p_pinpoint(t, u):
     return DEAD, None
 
 
-def _pinpoint_lands(base, path, posting):
+def _pinpoint_lands(base, path, has_postings):
     """Does a browser asking for `path` get the page? True / False / None when it can't be told.
 
     Asked as `text/html` without following redirects. A redirect lands only for a posting, and
@@ -1600,7 +1600,7 @@ def _pinpoint_lands(base, path, posting):
     if page.status_code in (404, 410):
         return False
     if page.status_code in (301, 302, 303, 307, 308):
-        return posting and (page.headers.get("location") or "").endswith(path)
+        return has_postings and (page.headers.get("location") or "").endswith(path)
     _note(f"http-{page.status_code}")
     return None
 

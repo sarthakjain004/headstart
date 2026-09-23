@@ -28,7 +28,8 @@ following redirects.
    Native posting ids: numeric `id` (13,419 distinct, no duplicates, no `:`), and a UUID in the
    posting URL — `/en/postings/{uuid}` on 13,419 of 13,419 rows. Only the UUID addresses a page
    (`/en/postings/{numeric id}` answers 404), so the UUID is the native id.
-2. **Discovery spellings.** Pool, seed list, Wayback and Common Crawl all yield the bare label;
+2. **Discovery spellings.** Pool, seed list and Wayback all yield the bare label (Common Crawl was
+   not measured, because the index server was unreachable on 2026-09-23);
    `slug_from` lowercases it (the seed list and one listing URL spell `Cinven`).
 
 ## Listing
@@ -76,9 +77,11 @@ following redirects.
    | | 301 to the vanity host, same path (which serves it) | 158 |
    | | **404** | **17** (1,200 postings) |
    | | 302 to a company page that is not the posting | 3 (73 postings) |
+   | | unparseable listing | 1 |
    | 534 empty — `/` | 200 | 145 |
    | | 404 | 282 |
    | | 301/302 off-platform (greenhouse, linkedin, company sites) | 105 |
+   | | timed out or unparseable | 2 |
 
    The 17 include `10kbi-23` (638 postings): its postings are in the JSON and a bare request
    renders them, but a user clicking the link gets "404 Not Found | Pinpoint". The 3 include
