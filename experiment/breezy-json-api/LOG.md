@@ -171,3 +171,17 @@ request to `fathom.breezy.hr/json`). The repo already keys the provider as `bree
   request with an empty reply (curl 52) on 2026-09-23, from this machine and the orchestrator's,
   so a `cc_miner.py` sweep would return zero while looking like "nothing found". It was not run;
   the `ATS_PATTERNS["breezy"]` entry is wired for a later sweep. This is not a count of zero.
+- **Wayback sweep** (`wayback_pages.py breezy`, run under the shared discovery lock): 194 CDX
+  pages, 9,828 labels (16 `%2F`-glued rows pruned by the feeder). `merge_wayback_into_tenants.py`:
+  +5,413 new to the pool, 4,415 re-tagged → pool 10,207 (all `[a-z0-9-]` labels).
+- **Liveness over the grown pool** (TTL skips the 4,794 already probed): 10,207 rows → 5,156 live,
+  5,038 dead, 13 unknown; 2,907 hiring, 47,193 postings. Wayback-only: 5,413 rows, 1,280 live, 734
+  hiring, 8,927 postings. The 13 unknown are vendor infrastructure hosts (`assets-cdn`,
+  `avatar-cdn`, `gallery-cdn`, `static-cdn` → 200 488-byte HTML; `hirelearning` → 301
+  `breezy.hr/blog`; `resources` → 301 `help.breezy.hr`; `test-app`, `test-sys` → 302 `/signin`;
+  `test-onboarding-app` → 200 HTML; `job-queue-console`, `test-onboarding`, `test-onboarding-cmp`,
+  `test-status` → no answer) — left UNKNOWN, since no real tenant gave any of those.
+- **Checks**: 10,207 rows = 10,207 unique `board_key`s, 0 mixed-case; spot check (seed 12) live
+  `sacramento-business-brokers` 1, `ing-creatives-marketing-department` 1, `synergy` 0,
+  `mobo-shop` 0, `darwins` 2 — each equal to a fresh fetch; dead `sana-benefits`, `acretrader`,
+  `roche-pharmaceutical-company`, `wave-3-consultants`, `maropost` — each 404.

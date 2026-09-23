@@ -211,7 +211,13 @@ They are left as separate Boards (ADR-0181).
 
 `breezy.hr/sitemap.xml` (2,640 URLs) lists marketing pages only, and `*.breezy.hr` sits behind
 CloudFront with no tenant roster found. The pool is the existing `harvest` list (4,794), the
-upstream seed list (0 new) and a Wayback CDX sweep of `breezy.hr` (`sub` style). **Common Crawl
+upstream seed list (0 new) and a Wayback CDX sweep of `breezy.hr` (`sub` style: 194 CDX pages,
+9,828 labels, **5,413 new to the pool**, 4,415 re-confirming it). The prober settled the 10,207 at
+5,156 live, 5,038 dead and 13 unknown — the unknowns are Breezy's own infrastructure hosts
+(`assets-cdn`, `gallery-cdn`, `test-app`, `resources`, …: a CDN's HTML, a 301 to `breezy.hr/blog`
+or `help.breezy.hr`, a 302 to `/signin`, or a timeout), none a tenant, left UNKNOWN rather than
+killed on a response no real tenant was seen to give. The Wayback-only tenants add 1,280 live, 734
+hiring, 8,927 postings. **Common Crawl
 was not measured:** `index.commoncrawl.org` returned an empty reply (curl 52) to every request on
 2026-09-23, so its contribution is unknown, not zero; `cc_miner.ATS_PATTERNS["breezy"]` (`label`
 kind) is wired for a later sweep.

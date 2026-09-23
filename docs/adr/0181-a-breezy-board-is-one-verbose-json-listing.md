@@ -75,7 +75,10 @@ widening the shared list — a shared-parser change, with its own bounds and a
 **Enabled on arrival.** ADR-0158's bar is ~2 MB of fetched storage per tech Job. Breezy's is
 **~0.06 MB**: the 2,174 hiring Boards' verbose listings are 216.9 MB for 38,314 postings
 (5,660 B each), and `tech_filter.is_tech(name, department)` keeps 3,502 of them (9.1%) —
-216.9 MB / 3,502 ≈ 0.062 MB, about 32x under the bar.
+216.9 MB / 3,502 ≈ 0.062 MB, about 32x under the bar. The committed ledger, after the Wayback sweep grew the pool to
+10,207, holds 2,907 Hiring Boards and 47,193 postings: at the same 5,660 B a posting and 9.1% tech
+that is ~267 MB for ~4,300 tech Jobs — the same ~0.06 MB, since the ratio does not depend on the
+pool's size.
 
 **No gate is seeded.** No rate limit was found: the census ran each tenant once at up to 64
 concurrent (94 req/s) with zero refusals, and one tenant served 113 req/s at 128 concurrent. The
