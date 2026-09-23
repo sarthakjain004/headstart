@@ -179,3 +179,4 @@ supersedes it and note the supersession in both.
 | [0177](0177-an-unknown-reprobe-keeps-a-live-verdict.md) | An `unknown` re-probe keeps a `live` verdict | 2026-09-23 |
 | [0178](0178-salary-sort-is-stated-in-one-currency.md) | The salary sort is stated in one currency | 2026-09-23 |
 | [0179](0179-the-tech-filter-stays-english-and-its-trade-vetoes-stand-down-for-infrastructure.md) | The tech filter stays English, and its trade vetoes stand down for infrastructure | 2026-09-23 |
+| [0184](0184-a-pinpoint-board-is-read-from-its-listing-and-dated-from-its-page.md) | A Pinpoint Board is read from its listing and dated from its posting pages | 2026-09-23 |

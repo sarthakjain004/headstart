@@ -19,7 +19,7 @@ Not from a feed employers had to opt in to. Not from a list ranked by who paid.
 
 ### It costs nothing to run. All of it.
 
-Discovery. 39 scrapers. Embeddings. Vector search. Email and Telegram alerts.
+Discovery. 40 scrapers. Embeddings. Vector search. Email and Telegram alerts.
 
 Fork it, add your tokens, and the whole pipeline is yours — running on free tiers, end to
 end. No card. No trial. Not a stripped tier of something else: the same code that serves the
@@ -33,9 +33,9 @@ Semantic search over local embeddings, with the structured filters — years, sa
 employment type — left exactly where they belong: under your control, not inferred from a
 sentence.
 
-### 38 boards. One shape.
+### 40 boards. One shape.
 
-Greenhouse, Workday, Lever, Ashby, iCIMS, Oracle, Taleo, BambooHR, Phenom, and 29 more.
+Greenhouse, Workday, Lever, Ashby, iCIMS, Oracle, Taleo, BambooHR, Phenom, and 31 more.
 HeadStart finds which companies host boards on which ATS, checks that each board is alive,
 and normalizes every posting into a single `Job`. You never learn an ATS's name.
 
@@ -93,16 +93,16 @@ unparseable input with a 400 rather than silently ignoring it.
 
 ## ATS coverage
 
-**39 scrapers**, selected from a registry by the `ats` key: `amazon`, `apple`, `ashby`,
+**40 scrapers**, selected from a registry by the `ats` key: `amazon`, `apple`, `ashby`,
 `bamboohr`, `bytedance`, `darwinbox`, `eightfold`, `freshteam`, `gem`, `google`, `greenhouse`,
 `icims`, `jazzhr`, `jobvite`, `join`, `keka`, `lever`, `meta`, `oracle`, `personio`, `phenom`,
-`pyjamahr`, `recruitee`, `ripplehire`, `rippling`, `sensehq`, `smartrecruiters`, `successfactors`,
+`pinpoint`, `pyjamahr`, `recruitee`, `ripplehire`, `rippling`, `sensehq`, `smartrecruiters`, `successfactors`,
 `taleo_be`, `taleo_enterprise`, `teamtailor`, `tesla`, `tiktok`, `trakstar`, `uber`, `workable`,
 `workday`, `zoho`, `zwayam`. All but `join` are active: `join`'s boards run ~1 tech job in ~10k (German-SMB
 listings, almost entirely non-tech), pure noise for a tech-only index, so `registry.DISABLED_ATS`
 skips it — the scraper class and tests stay intact, and re-enabling it is a one-line change.
 
-Eight of the 38 — `amazon`, `apple`, `bytedance`, `google`, `meta`, `tesla`, `tiktok`, `uber`
+Eight of the 40 — `amazon`, `apple`, `bytedance`, `google`, `meta`, `tesla`, `tiktok`, `uber`
 (ADR-0139) — are **Single source scrapers**: each company's own in-house careers system, not a
 multi-tenant platform, so there's no discovery step and each carries a fixed, hand-entered slug
 rather than a crawled tenant roster. `phenom` is a career-site skin over other ATSes rather than a
@@ -114,15 +114,15 @@ Each scraper reads a Board and normalizes its raw postings into `Job` records; a
 through one pooled, thread-local `curl_cffi` client that impersonates Chrome, so the same stack
 serves plain JSON APIs and TLS-fingerprinted (Cloudflare / DataDome) boards alike (ADR-0002). A
 Board's `company` name is read off the board page itself where the ATS makes that possible
-(`ashby`, `eightfold`, `gem`, `jobvite`, `keka`, `lever`, `phenom`, `ripplehire`,
+(`ashby`, `eightfold`, `gem`, `jobvite`, `keka`, `lever`, `phenom`, `pinpoint`, `ripplehire`,
 `taleo_enterprise` — ADR-0114). The eight **Single source scrapers** above need no page fetch for
 it: one fixed company each, so the name is declared as `BaseScraper.COMPANY` and always served.
 Every *other* ATS serves the **ATS slug** in that field instead, so a row's `company` may be
 either — four served rows in five carry a slug rather than a name, which is why `CompanyPrefs` is
 keyed by **board_key** and never by company name.
 
-The liveness pipeline has probed **257,761 ledger rows**: 153,213 live, 88,457 dead, 16,091 unknown
-— rows, not boards; they collapse to 146,581 Unique Boards once duplicate spellings of the same
+The liveness pipeline has probed **259,226 ledger rows**: 154,032 live, 89,101 dead, 16,093 unknown
+— rows, not boards; they collapse to 147,400 Unique Boards once duplicate spellings of the same
 board are folded together (`CONTEXT.md` §Counting Boards).
 
 ## What this optimises for
@@ -174,7 +174,7 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>153,213 live rows of 257,761<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>154,032 live rows of 259,226<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
@@ -272,18 +272,18 @@ table in lockstep with the committed ledger:
 
 | | boards | |
 | --- | ---: | --- |
-| live rows in the ledger | 153,213 | a row, not a board — 6,632 of them are duplicate spellings |
+| live rows in the ledger | 154,032 | a row, not a board — 6,632 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −25,488 | all of it `join` |
-| − `config.EXCLUDED_BOARDS` | −46 | vendor test/sandbox boards, confirmed by reading their postings |
+| − `config.EXCLUDED_BOARDS` | −52 | vendor test/sandbox boards, confirmed by reading their postings |
 | − alias ledger | −78 | one company, two hostnames sharing one board (ADR-0111) |
 | − case-variant dedupe | −6,630 | `company/External` and `company/external` are one board (ADR-0023) |
 | − `config.PARKED_BOARDS` | −7 | real boards withheld for now — five for scrape cost, two for near-duplicate spam |
-| = **Scrapable Board** | **120,964** | |
+| = **Scrapable Board** | **121,777** | |
 
-That order matters: excluding before deduping reads −46 and −6,630, deduping first reads −44,
-because two excluded boards were themselves duplicates. Both land on 120,964.
+That order matters: excluding before deduping reads −52 and −6,630, deduping first reads −50,
+because two excluded boards were themselves duplicates. Both land on 121,777.
 
-Of those, **78,494 are currently hiring** — the 42,470 live-but-empty boards are skipped as having
+Of those, **79,162 are currently hiring** — the 42,615 live-but-empty boards are skipped as having
 nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
 sticky measure of tech-job yield) and a random exploration tail drawn from everything else, so
 newly-productive boards can never starve and eviction keeps working on boards outside the head.
