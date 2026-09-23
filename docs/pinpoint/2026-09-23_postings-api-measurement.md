@@ -1,16 +1,16 @@
 # Pinpoint — postings API measurement (2026-09-23)
 
 Step 2 of the `add-ats-scraper` skill: every question in `measurement.md`, answered against the
-live hosts on 2026-09-23 with its sample size. Probe scripts and raw captures:
-`experiment/pinpoint-postings-api/` (`LOG.md`, `probe_*.py`, `field_census.py`, `artifacts/`).
+live hosts on 2026-09-23 with its sample size. The probe scripts and raw captures are kept
+locally (not committed); every number a reader needs is inlined here.
 
 **Samples.** The *census*: `/postings.json` for all 555 slugs in the pool ∪ the upstream seed list
-(550 answered 200, 433 hiring, **13,419 postings**), saved whole under `artifacts/listings/`. The
+(550 answered 200, 433 hiring, **13,419 postings**), each listing saved whole. The
 *page sample*: 76 posting pages from 40 random hiring Boards, each fetched twice 5 s apart. The
 *Wayback set*: 904 slugs the Wayback sweep found that the census did not have, probed on
-`/postings.json` and `/` with redirects off. The *ledger pass*: all 1,465 pool slugs through
-`check_liveness.p_pinpoint`, then every Board asked as a browser asks (`probe_hiring_html.py`,
-`probe_empty_roots.py`).
+`/postings.json` and `/` with redirects off. The *browser-view pass*: over the final 1,465-slug
+pool, every Board's first posting (or, for an empty Board, `/`) asked as a browser asks, without
+following redirects.
 
 ## Identity
 
@@ -21,7 +21,7 @@ live hosts on 2026-09-23 with its sample size. Probe scripts and raw captures:
    or locale parameter that selects between postings (`/fr/postings/{uuid}` answers 404; `/en/`
    is the only locale served on 76 of 76 sampled pages). **Vanity hosts:** on 29 of 433 census
    Boards the listing's `url` names a vanity host (`careers.dazn.com`, `jobs.butlins.com`, …),
-   and asked as a browser, **160 of 691 hiring Boards** 301 both `/` and every posting to their
+   and asked as a browser, **158 of 692 Boards with postings** 301 each posting to their
    vanity host at the same path, which serves the same posting (admgroup followed to 200 with
    JSON-LD; 5 of 5 vanity Boards served the same page on the vendor host to a bare request). So
    every link is built on the vendor host, and a browser following it lands on the posting.
@@ -65,28 +65,46 @@ live hosts on 2026-09-23 with its sample size. Probe scripts and raw captures:
    Boards in the census, asked with `Accept: */*`). Two Wayback tenants (`betashares`,
    `goenumerate`) answer the listing with 200 `{"data":[]}` but their board page with a 404.
 
-   **The board page content-negotiates, and the browser's answer is the one that matters.** The
-   JSON is served whether or not the tenant publishes a careers site. Asked with `Accept: */*`
-   (curl, python-requests) `/` renders; asked as a browser asks (`text/html`, which is what
-   `curl_cffi`'s Chrome impersonation sends) it can be a 404 or a redirect off the platform:
+   **The pages content-negotiate, and the browser's answer is the one that matters.** The JSON
+   is served whether or not a user can open the postings. Asked with `Accept: */*` (curl,
+   python-requests) the pages render; asked as a browser asks (`text/html`, which is also what
+   `curl_cffi`'s Chrome impersonation sends) they can 404 or redirect away:
 
-   | Boards | asked as a browser, `/` answers | count |
+   | Boards | asked as a browser, redirects off | count |
    | --- | --- | ---: |
-   | 691 hiring | 200 | 513 |
-   | | 301/302 to the vanity host (postings follow, same path) | 160 |
-   | | **404 — and every posting 404s too** | **17** (1,224 postings) |
-   | 534 empty | 200 | 145 |
+   | 692 with postings — first posting's page | 200 | 514 |
+   | | 301 to the vanity host, same path (which serves it) | 158 |
+   | | **404** | **17** (1,200 postings) |
+   | | 302 to a company page that is not the posting | 3 (73 postings) |
+   | 534 empty — `/` | 200 | 145 |
    | | 404 | 282 |
    | | 301/302 off-platform (greenhouse, linkedin, company sites) | 105 |
 
-   The 17 hiring Boards include `10kbi-23` (638 postings): its postings are in the JSON and a
-   bare request renders them, but a user clicking the link gets "404 Not Found | Pinpoint". So
-   the rule is: listing 404 → dead; listing 301 to another label → dead (item 9); otherwise ask
-   `/` as a browser, without following redirects — 200 → live with the listing's count; 404 →
-   dead; a redirect → live when the listing has postings (the vanity case), dead when it is empty
-   (nothing is published here, and the target is often another ATS). Spot check after the ledger
-   pass: 5 live and 5 dead rows re-asked by hand all agreed with the ledger (one dead row,
-   `smithsonian-sandbox`, is dead by `is_nonprod`'s convention, not by its answer).
+   The 17 include `10kbi-23` (638 postings): its postings are in the JSON and a bare request
+   renders them, but a user clicking the link gets "404 Not Found | Pinpoint". The 3 include
+   `10kai`, whose postings 302 to `10000internsfoundation.com/our-programmes/`. `/` is the wrong
+   page for a Board with postings: `kharon` 404s a browser on `/` while its postings render.
+
+   **The listing itself can answer a spurious empty.** Fetching all 670 hiring Boards' listings
+   3 times each, three passes (concurrency 16, 4, 16), gave 12 of 6,030 answers of `{"data":[]}` —
+   5, 3 and 4, so not a load effect — for Boards that answered with postings on their other
+   fetches (same etag as any empty Board, so it is not a
+   stale cache variant). One of those sent an earlier probe to `/` and wrote a live vanity-host
+   Board (`jec`) dead.
+
+   So the rule is:
+   - listing 404 → dead
+   - listing 301 to another label → dead (item 9)
+   - an empty listing is asked once more before it is believed
+   - with postings, the first and last postings' pages are asked as a browser. The Board is live
+     if either lands: a 200, or a redirect that keeps the posting's path. Two are asked because
+     one posting can close between the listing and its page: `freeagent` flipped dead once that
+     way, and re-probed live 3 of 3.
+   - empty, `/` decides: 200 → live 0; a 404 or any redirect → dead.
+
+   A spot check after the ledger pass re-asked 5 live and 5 dead rows by hand, and all agreed
+   with the ledger. One dead row, `smithsonian-sandbox`, is dead by `is_nonprod`'s convention,
+   not by its answer.
 9. **A departed or renamed tenant 301s to another tenant.** 63 slugs (5 census, 58 Wayback)
    answer `/postings.json` with a 301 to `https://{other}.pinpointhq.com/postings.json` — all 63 to
    a pinpointhq label, none to a marketing site. 57 of the 63 targets are already live slugs;
@@ -174,8 +192,9 @@ live hosts on 2026-09-23 with its sample size. Probe scripts and raw captures:
     connection refusals and 71 timeouts, and a deliberate burst of **256 concurrent requests over
     800 distinct tenants drew 34 refusals — after which the refusal held against every tenant**:
     the next 800 at concurrency 64 got 627 refusals, at 16 got 715, clearing after a few minutes
-    (`artifacts/spanning_*.txt`). Paced load is clean: 5, 10, 25 and 50 listing req/s across
-    distinct tenants for 60–120 s each (zero refusals, `artifacts/paced_*rps.txt`), and 10
+    Paced load is clean: 5, 10, 25 and 50 listing req/s across distinct tenants for 60–120 s
+    each (600, 1,200, 3,000 and 3,000 requests, zero refusals once the earlier wall had
+    cleared), and 10
     posting pages/s for 120 s. The wall was seen once more, briefly (~1 min), after a gated
     pass; its exact trigger is not pinned down. So `pinpointhq.com` is a spanning gate in
     `check_liveness.py` (`_SPANNING` + `_GATES`, 16 in flight — the gated passes drew no
@@ -218,15 +237,15 @@ live hosts on 2026-09-23 with its sample size. Probe scripts and raw captures:
 
 ## Ledger and cost (2026-09-23)
 
-`data/validate/liveness/pinpoint.csv`: **1,465 rows — 819 live, 644 dead, 2 unknown** (`sl`, a
+`data/validate/liveness/pinpoint.csv`: **1,465 rows — 817 live, 646 dead, 2 unknown** (`sl`, a
 vendor host answering 204, and `trust`, an unparseable body). After `config.EXCLUDED_BOARDS`:
-**813 Scrapable Boards, 668 Hiring Boards, 18,364 postings**; 109 distinct job counts; the
-largest Board is trilongroup (931). Every row is a bare lowercase label, so there is one
+**811 Scrapable Boards, 666 Hiring Boards, 18,345 postings**; 115 distinct job counts; the
+largest Board is trilongroup (929). Every row is a bare lowercase label, so there is one
 spelling per Board; renamed labels are dead rather than duplicates.
 
-Re-fetching every Hiring Board's listing (`ledger_tech_yield.py`): 18,333 postings in 139.4 MB,
-of which `is_tech(title, department)` keeps **2,205 (12.0%)**. A full walk costs the listings
-plus a page per tech posting: 139.4 MB + 2,205 × 131.9 KB (290.8 MB) = **~430 MB for 2,205 tech
+Re-fetching every Hiring Board's listing: 18,342 postings in 140.1 MB,
+of which `is_tech(title, department)` keeps **2,212 (12.1%)**. A full walk costs the listings
+plus a page per tech posting: 140.1 MB + 2,212 × 131.9 KB (291.7 MB) = **~432 MB for 2,212 tech
 Jobs, ~195 KB per tech Job** — about a tenth of ADR-0158's ~2 MB bar. Pinpoint lands active.
 
 ## Vendor test tenants

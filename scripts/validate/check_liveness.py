@@ -1497,7 +1497,7 @@ _PINPOINT_RENAMED = re.compile(
 
 
 def p_pinpoint(t, u):
-    """The listing without following redirects, then the board page asked the way a browser asks.
+    """The listing without following redirects, then one page asked the way a browser asks.
 
     Measured 2026-09-23 over the 1,465-slug pool
     (`docs/pinpoint/2026-09-23_postings-api-measurement.md`):
@@ -1507,21 +1507,25 @@ def p_pinpoint(t, u):
       63 of 63 redirects, none anywhere else. Followed, it would read as a second live row for a
       Board the target label already is (57 of the 63 targets are live slugs), so the old label
       is dead. A redirect anywhere else has never been seen and stays UNKNOWN.
-    * The listing's count is not the whole answer: the JSON is served whether or not the tenant
-      publishes a careers site, and the board page **content-negotiates** — asked with
-      `Accept: */*` it renders, asked as a browser asks (`text/html`) it can answer 404. 17 hiring
-      Boards (1,224 postings) list postings in the JSON yet 404 a browser on `/` and on every
-      posting, so a link we served would be dead: DEAD. Of 534 empty Boards, 145 render (live,
-      nothing open), 282 are 404 and 105 redirect to the tenant's own or another ATS's site.
-    * A redirect of `/` on a Board with postings is its vanity host (160 of 691 hiring Boards;
-      each posting 301s to the same path there, which serves it): LIVE. On an empty Board it
-      points anywhere (greenhouse, linkedin, a company site) and nothing is published here: DEAD.
+    * The listing's count is not the whole answer: the JSON is served whether or not a user can
+      open the postings, and the pages **content-negotiate** — asked with `Accept: */*` they
+      render, asked as a browser asks (`text/html`) they can 404 or redirect away. So a Board
+      with postings is settled on its **first and last postings' pages**, the links a user would
+      click — two, because one posting can close between the listing and its page (`freeagent`
+      flipped dead once that way and re-probed live 3 of 3); it is live if either lands. Of
+      692 such Boards: 514 render it (live); 158 301 it to their vanity host at the same path,
+      which serves it (live); 17 answer 404 (1,200 postings, `10kbi-23` alone 638 — dead); 3
+      redirect it to a company page that is not the posting (`10kai` -> `/our-programmes/`, 73
+      postings — dead). `/` is the wrong page to ask here: `kharon` 404s a browser on `/`
+      while its postings render.
+    * An empty Board has no posting to ask about, so `/` decides: of 534, 145 render (live,
+      nothing open), 282 are 404 and 105 redirect to the tenant's own or another ATS's site
+      (greenhouse, linkedin) — nothing is published here, so both are dead.
 
     `pinpointhq.com` is a spanning gate (`_SPANNING`): the refusals it answers overload with span
     tenants and persist for minutes.
     """
-    slug = t.lower()
-    base = f"https://{slug}.pinpointhq.com"
+    base = f"https://{t.lower()}.pinpointhq.com"
     try:
         listing = _fetch(
             "GET",
@@ -1529,49 +1533,76 @@ def p_pinpoint(t, u):
             headers={"User-Agent": UA},
             allow_redirects=False,
         )
-        if listing is None or listing.status_code != 200:
-            page = None
-        else:
-            page = _fetch(
+        if listing is None:  # breaker open -> transient
+            _note("breaker-open")
+            return UNKNOWN, None
+        if listing.status_code in (301, 302, 303, 307, 308):
+            if _PINPOINT_RENAMED.match(listing.headers.get("location") or ""):
+                return DEAD, None
+            _note(f"redirect-{listing.status_code}")
+            return UNKNOWN, None
+        if listing.status_code in (404, 410):
+            return DEAD, None
+        if listing.status_code != 200:
+            _note(f"http-{listing.status_code}")
+            return UNKNOWN, None
+        if listing.content.replace(b" ", b"") == b'{"data":[]}':
+            # A spurious empty answer for a Board with postings (12 of 6,030 fetches) would send
+            # this to `/`, where a vanity host's redirect reads as dead (`jec`, once). Ask again.
+            listing = _fetch(
                 "GET",
-                f"{base}/",
-                headers={"User-Agent": UA, "Accept": "text/html"},
+                f"{base}/postings.json",
+                headers={"User-Agent": UA},
                 allow_redirects=False,
             )
+            if listing is None or listing.status_code != 200:
+                _note(
+                    "breaker-open" if listing is None else f"http-{listing.status_code}"
+                )
+                return UNKNOWN, None
+        try:
+            postings = json.loads(listing.content)["data"]
+            paths = [p["path"] for p in (postings[:1] + postings[1:][-1:])] or ["/"]
+        except (ValueError, KeyError, TypeError):
+            _note("body-unparseable")
+            return UNKNOWN, None
+        lands = [_pinpoint_lands(base, path, bool(postings)) for path in paths]
     except http.RequestsError as e:
         if _is_dns(e):
             return DEAD, None
         _note(_net_reason(e))
         return UNKNOWN, None
-    if listing is None:  # breaker open -> transient
-        _note("breaker-open")
+    if True in lands:
+        return LIVE, len(postings)
+    if None in lands:
         return UNKNOWN, None
-    if listing.status_code in (301, 302, 303, 307, 308):
-        if _PINPOINT_RENAMED.match(listing.headers.get("location") or ""):
-            return DEAD, None
-        _note(f"redirect-{listing.status_code}")
-        return UNKNOWN, None
-    if listing.status_code in (404, 410):
-        return DEAD, None
-    if listing.status_code != 200:
-        _note(f"http-{listing.status_code}")
-        return UNKNOWN, None
-    try:
-        n = len(json.loads(listing.content)["data"])
-    except (ValueError, KeyError, TypeError):
-        _note("body-unparseable")
-        return UNKNOWN, None
+    return DEAD, None
+
+
+def _pinpoint_lands(base, path, posting):
+    """Does a browser asking for `path` get the page? True / False / None when it can't be told.
+
+    Asked as `text/html` without following redirects. A redirect lands only for a posting, and
+    only when it keeps the posting's path (the vanity host serves the same page); an empty
+    Board's `/` redirecting anywhere is a site published elsewhere.
+    """
+    page = _fetch(
+        "GET",
+        f"{base}{path}",
+        headers={"User-Agent": UA, "Accept": "text/html"},
+        allow_redirects=False,
+    )
     if page is None:
         _note("breaker-open")
-        return UNKNOWN, None
+        return None
     if page.status_code == 200:
-        return LIVE, n
+        return True
     if page.status_code in (404, 410):
-        return DEAD, None
+        return False
     if page.status_code in (301, 302, 303, 307, 308):
-        return (LIVE, n) if n else (DEAD, None)
+        return posting and (page.headers.get("location") or "").endswith(path)
     _note(f"http-{page.status_code}")
-    return UNKNOWN, None
+    return None
 
 
 def p_pyjamahr(t, u):

@@ -16,8 +16,8 @@ date it reads does not exist on any of 13,419 listing rows.
 1. **The slug is the lowercased subdomain label.** There is one host and no regional pod. The
    board is case-insensitive (`CINVEN` serves `cinven`), and the seed list spells one tenant
    `Cinven`, so `slug_from` lowercases. The native id is the posting UUID: the listing's numeric
-   `id` addresses no page. Links are built on the vendor host. 160 of 691 hiring Boards send a
-   browser from there to their vanity host at the same path, which serves the posting.
+   `id` addresses no page. Links are built on the vendor host. 158 of 692 Boards with postings
+   send a browser from there to their vanity host at the same path, which serves the posting.
 
 2. **The listing is the Board.** `GET /postings.json` returns every posting in one array, with no
    pagination, no parameters and no stated total. It matched the tenant's own sitemap on the
@@ -34,42 +34,51 @@ date it reads does not exist on any of 13,419 listing rows.
 
 4. **The ADR-0166 tech gate runs before the page pass, as an exact site.** `title` and
    `job.department.name` are listing fields on 13,419 of 13,419 rows, and the page overrides
-   neither. At 12.0% tech it spares seven of every eight page fetches.
+   neither. At 12.1% tech it spares seven of every eight page fetches. On the rare spurious empty
+   listing (12 of 6,030 fetches returned `{"data":[]}` for a Board with postings), the scraper
+   asks once more, because a Board read as empty puts all of its Jobs one absence from eviction.
 
-5. **Liveness asks the board page the way a browser does.** The JSON is served whether or not a
-   careers site is published. `/` content-negotiates: it renders for `Accept: */*`, but for
-   `text/html` it can 404 or redirect off the platform. 17 hiring Boards (1,224 postings) list
-   postings that 404 for every browser. So `p_pinpoint` rules:
+5. **Liveness asks what a user's click would get.** The JSON is served whether or not a user can
+   open the postings, and the pages content-negotiate: they render for `Accept: */*`, but for
+   `text/html` (a browser) they can 404 or redirect away. 17 Boards with postings (1,200
+   postings) 404 a browser, and 3 more (73 postings) redirect their postings to a company page. So
+   `p_pinpoint` rules:
    - A listing 404 is **dead**.
    - A listing 301 to another `{label}.pinpointhq.com` (a renamed tenant) is **dead**.
-   - Otherwise `/` is asked as `text/html`, without following redirects:
-     - 200 is **live** with the listing's count.
-     - 404 is **dead**.
-     - A redirect is **live** on a Board with postings (its vanity host) and **dead** on an empty
-       one, whose target is usually another ATS or a company site.
+   - An empty listing is asked once more before it is believed.
+   - With postings, the first and last postings' pages are asked as `text/html` without following
+     redirects. Two are asked because one posting can close between the listing and its page. The
+     Board is **live** with the listing's count if either lands: a 200, or a redirect that keeps
+     the posting's path (the vanity host, 158 Boards). Otherwise it is **dead**. `/` is not asked
+     here: `kharon` 404s a browser on `/` while its postings render.
+   - Empty: `/` decides. A 200 is **live** 0. A 404, or a redirect to another ATS or a company
+     site, is **dead**.
 
    `pinpointhq.com` is a spanning gate at 16 in flight. A 256-wide burst across tenants drew
    connection refusals that then held against every tenant for minutes. Paced load up to 50 req/s
    was clean.
 
-6. **It ships active.** The committed ledger holds 1,465 rows: 819 live, 644 dead, 2 unknown.
-   After six confirmed test tenants go into `config.EXCLUDED_BOARDS`, 668 Hiring Boards remain,
-   with 18,364 postings. A full walk is 139.4 MB of listings plus 2,205 tech pages × 131.9 KB
-   (290.8 MB). That is **~430 MB for 2,205 tech Jobs, ~195 KB per tech Job**, about a tenth of
+6. **It ships active.** The committed ledger holds 1,465 rows: 817 live, 646 dead, 2 unknown.
+   After six confirmed test tenants go into `config.EXCLUDED_BOARDS`, 666 Hiring Boards remain,
+   with 18,345 postings. A full walk is 140.1 MB of listings plus 2,212 tech pages × 131.9 KB
+   (291.7 MB). That is **~432 MB for 2,212 tech Jobs, ~195 KB per tech Job**, about a tenth of
    ADR-0158's ~2 MB bar.
 
 ## Alternatives considered
 
 - **Listing only, no page pass.** At ~63 KB per tech Job it is cheaper still, and every field but
-  the date and country arrives with the listing. Rejected because Pinpoint Jobs would have had no
+  the date and country arrives with the listing (140.1 MB / 2,212). Rejected because Pinpoint Jobs would have had no
   `posted_at` at all, so they could never sort or filter by date. The page pass costs ~0.29 GB per
   full walk and stays far under the bar.
 - **Page pass only for postings not yet described (ADR-0048).** Rejected: after the first run it
   fetches nothing, and `posted_at` goes blank (Decision §3).
 - **`<lastmod>` from the tenant sitemap as the date.** One extra request per Board instead of one
   per tech posting. Rejected: it is a modification date (wrong on 36 of 76).
-- **Liveness on `Accept: */*` alone, as the census first measured.** Rejected: it calls 17 Boards
-  live whose links are dead to users, and it would call their 1,224 postings servable.
+- **Liveness on `Accept: */*` alone, as the census first measured.** Rejected: it calls 20 Boards
+  live whose links are dead to users, and it would call their 1,273 postings servable.
+- **Liveness on `/` asked as a browser** (this PR's first version). Rejected: `/` and the postings
+  disagree. `kharon` 404s on `/` while its postings render, and `10kai` answers `/` with a 302 to
+  its programme page, like any vanity host.
 
 ## Consequences
 

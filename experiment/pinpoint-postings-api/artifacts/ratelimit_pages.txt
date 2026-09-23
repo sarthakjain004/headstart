@@ -1,6 +1,0 @@
-pages conc=1 n=16 3.1 req/s p50=0.28s p95=0.37s {200: 16}
-pages conc=4 n=16 9.3 req/s p50=0.32s p95=0.77s {200: 16}
-pages conc=16 n=32 25.7 req/s p50=0.38s p95=0.86s {200: 32}
-pages conc=32 n=64 59.0 req/s p50=0.33s p95=0.78s {200: 64}
-pages conc=64 n=128 106.7 req/s p50=0.35s p95=0.82s {200: 128}
-pages conc=128 n=175 15.0 req/s p50=0.65s p95=1.52s {200: 175}

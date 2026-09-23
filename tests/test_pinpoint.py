@@ -305,3 +305,84 @@ def test_the_company_name_is_the_board_page_title():
         )
         is None
     )
+
+
+def test_location_skips_only_whole_repeats_not_substrings():
+    """A place is dropped only when it repeats a whole part already written — "Indiana" is not a
+    repeat of "Indianapolis", nor "Bath" of "Bathgate Office"."""
+    row = dict(
+        _listing()["data"][0],
+        location={
+            "name": "Indianapolis",
+            "city": "Indianapolis",
+            "province": "Indiana",
+        },
+    )
+    (job,) = _scraper().parse({"data": [row], "details": {}}, SCRAPED_AT)
+    assert job.location == "Indianapolis, Indiana"
+    row["location"] = {
+        "name": "Bathgate Office",
+        "city": "Bath",
+        "province": "Somerset",
+    }
+    (job,) = _scraper().parse({"data": [row], "details": {}}, SCRAPED_AT)
+    assert job.location == "Bathgate Office, Bath, Somerset"
+
+
+def test_the_gate_reads_the_same_title_and_department_parse_emits(monkeypatch):
+    """ADR-0166's exactness holds only if the gate and `parse` read the same strings; both strip
+    the tenant's stray whitespace ("Assistant Engineer ", "Access ")."""
+    seen: list[tuple] = []
+    monkeypatch.setattr(
+        "headstart.scrapers.base.is_tech", lambda t, d: seen.append((t, d)) or False
+    )
+    monkeypatch.delenv("HEADSTART_TECH_GATE", raising=False)
+    scraper, _ = _fetching_scraper(monkeypatch, _listing())
+    scraper.have_details = frozenset()
+    raw = scraper.fetch_raw()
+    emitted = [(j.title, j.department) for j in scraper.parse(raw, SCRAPED_AT)]
+    assert seen == emitted
+
+
+def test_the_async_page_path_asks_for_html_and_reads_the_page(monkeypatch):
+    """The multiplexed path is the default in the pipeline (ADR-0016); it must send the same
+    `Accept` and read the same fields as the thread path."""
+    import asyncio
+
+    scraper = _scraper()
+    sent: dict = {}
+
+    async def fake_fetch_async(session, method, url, **kw):
+        sent.update(url=url, accept=kw["headers"]["Accept"])
+        return SimpleNamespace(text=_page(), raise_for_status=lambda: None)
+
+    monkeypatch.setattr(scraper, "_fetch_async", fake_fetch_async)
+    fields = asyncio.run(scraper._page_fields_async(None, ENGINEER))
+    assert sent == {"url": scraper.job_url(ENGINEER), "accept": "text/html"}
+    assert fields == {
+        "posted_at": "2026-08-25T18:11:43+01:00",
+        "country": "United States",
+    }
+
+
+def test_an_empty_listing_is_asked_again_before_it_is_believed(monkeypatch):
+    """The listing sometimes answers a Board that has postings with a spurious `{"data":[]}`
+    (12 of 6,030 fetches over 670 hiring Boards, as often at concurrency 4 as at 16; each Board
+    answered with postings on its other fetches). An empty Board costs 11 bytes, so an empty
+    answer is asked once more."""
+    answers = [{"data": []}, {"data": [_listing()["data"][0]]}]
+    scraper, requested = _fetching_scraper(monkeypatch, {"data": []})
+    monkeypatch.setattr(
+        scraper,
+        "_get",
+        lambda url=None: requested.append("listing") or json.dumps(answers.pop(0)),
+    )
+    raw = scraper.fetch_raw()
+    assert requested[:2] == ["listing", "listing"]
+    assert len(raw["data"]) == 1
+
+
+def test_a_board_that_is_empty_twice_is_empty(monkeypatch):
+    scraper, requested = _fetching_scraper(monkeypatch, {"data": []})
+    assert scraper.fetch_raw() == {"data": [], "details": {}}
+    assert requested == [scraper.url(), scraper.url()]
