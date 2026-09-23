@@ -86,6 +86,23 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # "Auto_Engineer-1_User3", and one site is named "Candidate Experience Site_031219".
         # Left in the ledger as `live` because it genuinely is; it just is not an employer.
         "oracle:eubt.fa.us6.oraclecloud.com",
+        # Cornerstone's own demo and partner-services sandbox corps, confirmed by reading their
+        # listings on 2026-09-23 rather than from the slug: `awavedemo` and `demohk` both open on
+        # "Template 1" / "Sales Associate" / "Training Manager, Italy" and date to 2018-2020;
+        # `pservsmartdreamers` posts "job title Bogdan trei" and "job title Bogdan unu-trei";
+        # `pservsqeptech` posts "This is a VIC Job"; `demokcmo` dates to 2017-2018; `demojk` opens
+        # the same generic postings ("L&D Director", "Sales Director") in all of CN, JP, KR, US,
+        # MX, BR, ES, FR, GB, NL, SE, DE and IT at once, naming no employer; `maestrademo` posts
+        # template copies ("Analista de Sistemas - copy", "Analista financeiro - Orçamentos - 4")
+        # dated 2013-2026. All seven are `live` in the ledger, 379 postings between them, none an
+        # employer's.
+        "cornerstone:awavedemo",  # 56 postings
+        "cornerstone:demohk",  # 55 postings
+        "cornerstone:demojk",  # 47 postings
+        "cornerstone:demokcmo",  # 47 postings
+        "cornerstone:maestrademo",  # 45 postings
+        "cornerstone:pservsmartdreamers",  # 60 postings
+        "cornerstone:pservsqeptech",  # 69 postings
         # `eczy-test.fa.us2.oraclecloud.com` was once kept despite its "-test" slug, for want of
         # content: it reported TotalJobsCount 4,947 while serving zero rows. It serves them now,
         # 23 of 24 sampled also open on `eczy` (2026-09-23), and is dead by ADR-0034's Oracle

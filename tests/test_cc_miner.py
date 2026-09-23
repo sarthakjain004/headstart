@@ -203,3 +203,15 @@ def test_label_extraction_reads_the_subdomain_and_drops_vendor_hosts(miner):
     )
     assert sorted(hits) == ["acme", "globex"]
     assert hits["acme"] == "https://Acme.bamboohr.com/careers/12"
+
+
+def test_cornerstone_pattern_keeps_career_site_urls_and_skips_the_lms(miner):
+    """`{corp}.csod.com` hosts the vendor's LMS on the same label; only the recruiting career
+    site names a Board, and an encoded share link must not capture `2f`."""
+    pattern = re.compile(miner.ATS_PATTERNS["cornerstone"]["patterns"][0])
+    hits = lambda u: [m.group(1).lower() for m in pattern.finditer(u)]
+    assert hits("https://AAK.csod.com/ux/ats/careersite/4/home?c=aak") == ["aak"]
+    assert hits("https://aak.csod.com/LMS/default.aspx") == []
+    assert hits(
+        "https://x.com/?u=https%3A%2F%2Fbbb.csod.com%2Fux%2Fats%2Fcareersite%2F1"
+    ) == ["bbb"]

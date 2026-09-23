@@ -1,0 +1,700 @@
+{
+ "ama-assn": {
+  "home": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta name=\"viewport\" content=\"width=device-width, height=device-height, initial-scale=1.0, minimum-scale=1.0\">\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\" /><meta name=\"robots\" content=\"noindex\" /><link href=\"/player-career-site/1.25.6/node_modules/player-core-ui/assets/normalize.css\" id=\"player-normalize\" rel=\"stylesheet\" type=\"text/css\" /><link href=\"/player-career-site/1.25.6/node_modules/player-core-ui/assets/csod-icons.css\" id=\"player-icons\" rel=\"stylesheet\" type=\"text/css\" /><link href=\"/player-career-site/1.25.6/pages/home.styles.css\" id=\"player-page-styles\" rel=\"stylesheet\" type=\"text/css\" /><link href=\"/player-theming/1.0.13/theme.css?baseColor=%23452663\" id=\"player-theming\" rel=\"stylesheet\" type=\"text/css\" /></head>\n<body> \n<div id=\"cs-root\"></div><script type=\"text/javascript\">var csodPlayerRouteInfo={ \n\t\t\t\t\t\t\t\t\"package\": \"career-site\",\n\t\t\t\t\t\t\t\t\"page\": \"home\",\n\t\t\t\t\t\t\t\t\"cid\": \"1\",\n\t\t\t\t\t\t\t\t\"routeInfo\": {\n  \"_rest_\": \"?c=ama-assn\"\n} };</script><script type=\"text/javascript\">var csodGoogleMapsClientApi = {\"key\": \"AIzaSyDrTorpg6_LzW-5R_idZeAvi_HhCksQRJo\",\"isPremium\": \"False\"};</script><script type=\"text/javascript\">var csodFacebookAppId = \"237871519593593\";</script><script type=\"text/javascript\">function extendSession(handler) {\n                                                    if (typeof handler !== 'undefined')\n                                                        handler();\n                                                    else {\n                                                        var getImg = new Image();\n\t\t\t\t\t\t\t\t\t\t\t\t\t    var src = '/core/GetImage.aspx' + '?filename=1pt.gif';\n\t\t\t\t\t\t\t\t\t\t\t\t\t    if (src.indexOf('?') > -1)\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t    src += '&';\n\t\t\t\t\t\t\t\t\t\t\t\t\t    else\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t    src += '?';\n\t\t\t\t\t\t\t\t\t\t\t\t\t    src += 't=' + (new Date()).getTime().toString();\n\t\t\t\t\t\t\t\t\t\t\t\t\t    getImg.src = src;\n                                                    }\n\t\t\t\t\t\t\t\t\t\t\t\t} </script><script type=\"text/javascript\" src=\"/player-career-site/1.25.6/pages/home.js\"></script><script type=\"text/javascript\">if(!csod.context  || !csod.context.token)  csod.context={\"corp\":\"ama-assn\",\"user\":-100,\"cultureID\":1,\"cultureName\":\"en-US\",\"timezone\":1,\"localizationVersion\":\"63924760693\",\"package\":\"career-site\",\"page\":\"home\",\"basePath\":\"/player-career-site/1.25.6/\",\"serviceBase\":\"/\",\"applicationBase\":\"/\",\"playerBase\":\"/\",\"home\":\"/ui/home\",\"endpoints\":{\"cloud\":\"https://us.api.csod.com/\",\"api\":\"/\"},\"token\":\"eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJjb3JwIjoiYW1hLWFzc24iLCJzdWIiOi0xMDAsImF1ZCI6ImZpeHR1cmUtc2Vzc2lvbi1hbWEtYXNzbiIsImV4cCI6IjIwMjYwOTIzMTUwMDAwMDAwIn0.fixture\",\"debug\":false,\"log\":{\"level\":\"Warn\",\"batchSize\":5,\"service\":{\"contentSize\":1048576,\"responseTime\":2001},\"page\":{\"loadTime\":5000}},\"correlation\":\"c36e601c-b42a-4c75-af78-43d14d5913df\",\"version\":\"1.25.6\",\"tracking\":null,\"theming\":{\"primary\":\"452663\"},\"trackerSettings\":{\"anonymizePortalName\":false,\"vendorAPIKeys\":{\"amplitude\":\"a328ec1895b18ee52643ef53449b6ecb\"}},\"isTrackerProxyEnabled\":false,\"trackWithAmplitude\":false,\"officeUser\":null};</script><script type=\"text/javascript\" id=\"player-page-controls\" src=\"/player-career-site/1.25.6/pages/home.controls.js\"></script><script type=\"text/javascript\">csod.player.initialize(csod.context);</script></body>\n</html>\n",
+  "careersites": {
+   "1": {
+    "status": 200,
+    "body": {
+     "status": 0,
+     "timestamp": "2026-09-23T14:53:33.2504503Z",
+     "data": {
+      "id": 1,
+      "active": false,
+      "header": {
+       "isAdvanced": true,
+       "html": "<img style=\"width: 180px; height: 78px; margin-top: 10px; margin-left: 20px;\" src=\"/clientimg/ama-assn/careersite/AMA_sig_RGB.png\">",
+       "imagePath": "",
+       "color": null
+      },
+      "footer": {
+       "isAdvanced": true,
+       "html": "<table style=\"margin-left: 20px;\"><tbody><tr><td><p><font size=\"2\">If you experience technical difficulty completing the AMA's application for employment contact </font></p><p><font size=\"2\"></font><a href=\"mailto:Placement@ama-assn.org\"><font size=\"2\">Placement@ama-assn.org</font></a></p></td></tr></tbody></table><p>&nbsp;</p>\r\n\r\n<table style=\"margin-left: 20px;\"><tbody><tr><td><p><font size=\"1\">© 2015 American Medical Association. All rights reserved.</font></p></td></tr></tbody></table>",
+       "imagePath": "",
+       "color": null
+      },
+      "allowedLanguages": [
+       {
+        "cultureId": 1,
+        "displayTitle": "English (US)"
+       }
+      ],
+      "bannerImagePath": "",
+      "bannerHtml": null,
+      "customBodyHtml": null,
+      "currentLanguage": {
+       "cultureId": 1,
+       "cultureName": "en-US",
+       "isRightToLeft": false
+      },
+      "jobDetailsBannerImagePath": "",
+      "allowSEO": false,
+      "isJobAlertsEnabled": false,
+      "jobPostingSEOLogoPath": "",
+      "customFields": [],
+      "defaultCultureId": 1,
+      "anonymousUserId": -100,
+      "gtmContainerId": null,
+      "isLandingPageURLEnabled": false
+     }
+    }
+   },
+   "2": {
+    "status": 200,
+    "body": {
+     "status": 0,
+     "timestamp": "2026-09-23T14:53:33.6135644Z",
+     "data": {
+      "id": 2,
+      "active": true,
+      "header": {
+       "isAdvanced": true,
+       "html": "<img style=\"width: 180px; height: 78px; margin-top: 10px; margin-bottom: 20px; margin-left: 20px\" src=\"/clientimg/ama-assn/careersite/AMA_sig_RGB.png\"><br>",
+       "imagePath": "",
+       "color": null
+      },
+      "footer": {
+       "isAdvanced": true,
+       "html": "<table style=\"margin-left: 20px\"><tbody><tr><td><p><font size=\"2\">The AMA is dedicated to working with and providing reasonable\naccommodations to individuals with disabilities. If you require reasonable accommodation because of a\ndisability in completing any part of the employment process, please e-mail <strong><a>accommodationrequest@ama-assn.org</a> </strong>or call&nbsp;&nbsp;<strong>(312) 464-4734 </strong>to help us understand the nature of your request and\nprovide us your contact information.</font></p></td></tr><tr><td>&nbsp;<p><font size=\"2\"><strong>Equal Employment Opportunity&nbsp;Statement</strong><br> AMA is an equal opportunity employer. The Equal Employment Opportunity (EEO)  Commission provides </font><a href=\"http://www1.eeoc.gov/employers/upload/eeoc_self_print_poster.pdf\" target=\"_blank\"><font size=\"2\"> EEO laws</font></a><font size=\"2\"><img title=\"PDF File\" style=\"margin-left: 3px; vertical-align: middle\" alt=\"PDF FIle\" src=\"http://www.ama-assn.org/resources/images/icons/ico-pdf.png\"> and the </font><a href=\"https://www.dol.gov/ofccp/regs/compliance/posters/pdf/OFCCP_EEO_Supplement_Final_JRF_QA_508c.pdf\" target=\"_blank\"><font size=\"2\"> EEO poster supplement</font></a><font size=\"2\"><img title=\"PDF File\" style=\"margin-left: 3px; vertical-align: middle\" alt=\"PDF FIle\" src=\"http://www.ama-assn.org/resources/images/icons/ico-pdf.png\"> to explain employee’s rights in the workplace. </font></p></td></tr></tbody></table><p>&nbsp;</p>\n\n<table style=\"margin-left: 20px\"><tbody><tr><td><font size=\"1\">© 2015 American Medical Association. All rights reserved.</font></td></tr></tbody></table>",
+       "imagePath": "",
+       "color": null
+      },
+      "allowedLanguages": [
+       {
+        "cultureId": 1,
+        "displayTitle": "English (US)"
+       }
+      ],
+      "bannerImagePath": "/clientimg/ama-assn/careersite/banner/150296applicanttrackerheader3_045d28ad-f8fc-41d5-a2ed-c0cc9703fdd0.jpg",
+      "bannerHtml": "<p style=\"text-align: center\"><span style=\"font-family: Arial\"><font size=\"7\"><span style=\"color: #FFFFFF\">Careers at the AMA</span></font></span></p><p>&nbsp;</p><p><a href=\"https://www.youtube.com/watch?v=kEgMpTRj2sQ\" target=\"_blank\" rel=\"noopener\"><span style=\"color: #FFFFFF\">Click here to view a video about working at the AMA</span></a></p>",
+      "customBodyHtml": "",
+      "currentLanguage": {
+       "cultureId": 1,
+       "cultureName": "en-US",
+       "isRightToLeft": false
+      },
+      "jobDetailsBannerImagePath": "/clientimg/ama-assn/logo/12-2-2014 5-46-59 PM_31b4a6ba-37e0-4072-a44c-e1b82faaaad2.jpg",
+      "allowSEO": true,
+      "isJobAlertsEnabled": true,
+      "jobPostingSEOLogoPath": "/clientimg/ama-assn/logo/12-2-2014 5-46-59 PM_31b4a6ba-37e0-4072-a44c-e1b82faaaad2.jpg",
+      "customFields": [],
+      "defaultCultureId": 1,
+      "anonymousUserId": -101,
+      "gtmContainerId": null,
+      "isLandingPageURLEnabled": false
+     }
+    }
+   },
+   "3": {
+    "status": 200,
+    "body": {
+     "status": 0,
+     "timestamp": "2026-09-23T14:53:34.3127458Z",
+     "data": {
+      "id": 3,
+      "active": true,
+      "header": {
+       "isAdvanced": true,
+       "html": "",
+       "imagePath": "",
+       "color": null
+      },
+      "footer": {
+       "isAdvanced": true,
+       "html": "<table style=\"margin-left: 20px;\"><tbody><tr><td><p><font size=\"2\">If you experience technical difficulty completing the AMA's application for employment contact </font></p><p><font size=\"2\"></font><a href=\"mailto:Placement@ama-assn.org\"><font size=\"2\">Placement@ama-assn.org</font></a></p></td></tr></tbody></table><p>&nbsp;</p>\r\n\r\n<table style=\"margin-left: 20px;\"><tbody><tr><td><p><font size=\"1\">© 2015 American Medical Association. All rights reserved.</font></p></td></tr></tbody></table>",
+       "imagePath": "",
+       "color": null
+      },
+      "allowedLanguages": [
+       {
+        "cultureId": 1,
+        "displayTitle": "English (US)"
+       }
+      ],
+      "bannerImagePath": "",
+      "bannerHtml": null,
+      "customBodyHtml": null,
+      "currentLanguage": {
+       "cultureId": 1,
+       "cultureName": "en-US",
+       "isRightToLeft": false
+      },
+      "jobDetailsBannerImagePath": "",
+      "allowSEO": false,
+      "isJobAlertsEnabled": false,
+      "jobPostingSEOLogoPath": "",
+      "customFields": [],
+      "defaultCultureId": 1,
+      "anonymousUserId": -102,
+      "gtmContainerId": null,
+      "isLandingPageURLEnabled": false
+     }
+    }
+   },
+   "4": {
+    "status": 200,
+    "body": {
+     "status": 0,
+     "timestamp": "2026-09-23T14:53:35.0315602Z",
+     "data": {
+      "id": 4,
+      "active": false,
+      "header": {
+       "isAdvanced": true,
+       "html": "",
+       "imagePath": "",
+       "color": null
+      },
+      "footer": {
+       "isAdvanced": true,
+       "html": "<table style=\"margin-left: 20px;\"><tbody><tr><td><p><font size=\"2\">If you experience technical difficulty completing the AMA's application for employment contact </font></p><p><font size=\"2\"></font><a href=\"mailto:Placement@ama-assn.org\"><font size=\"2\">Placement@ama-assn.org</font></a></p></td></tr></tbody></table><p>&nbsp;</p>\r\n\r\n<table style=\"margin-left: 20px;\"><tbody><tr><td><p><font size=\"1\">© 2015 American Medical Association. All rights reserved.</font></p></td></tr></tbody></table>",
+       "imagePath": "",
+       "color": null
+      },
+      "allowedLanguages": [
+       {
+        "cultureId": 1,
+        "displayTitle": "English (US)"
+       }
+      ],
+      "bannerImagePath": "",
+      "bannerHtml": null,
+      "customBodyHtml": null,
+      "currentLanguage": {
+       "cultureId": 1,
+       "cultureName": "en-US",
+       "isRightToLeft": false
+      },
+      "jobDetailsBannerImagePath": "",
+      "allowSEO": false,
+      "isJobAlertsEnabled": false,
+      "jobPostingSEOLogoPath": "",
+      "customFields": [],
+      "defaultCultureId": 1,
+      "anonymousUserId": -103,
+      "gtmContainerId": null,
+      "isLandingPageURLEnabled": false
+     }
+    }
+   },
+   "5": {
+    "status": 404,
+    "body": {
+     "status": 2,
+     "timestamp": "2026-09-23T14:53:35.7331848Z",
+     "correlationId": "65df0e9e-e530-4f7a-aa16-f17a8f7c7704",
+     "error": {
+      "code": 40,
+      "message": "Resource not found"
+     }
+    }
+   }
+  },
+  "search": {
+   "2": {
+    "status": "Success",
+    "timestamp": "2026-09-23T14:53:36.5669499Z",
+    "data": {
+     "totalCount": 3,
+     "requisitions": [
+      {
+       "requisitionId": 4144,
+       "postingEffectiveDate": "9/10/2026",
+       "postingExpirationDate": "-",
+       "displayJobTitle": "SR. ACCOUNT EXECUTIVE",
+       "locations": [
+        {
+         "city": "Chicago",
+         "state": "IL",
+         "country": "US"
+        }
+       ],
+       "externalDescription": "See JD"
+      },
+      {
+       "requisitionId": 4125,
+       "postingEffectiveDate": "8/27/2026",
+       "postingExpirationDate": "-",
+       "displayJobTitle": "Sr. Software Engineer, Platform (Hybrid)",
+       "locations": [
+        {
+         "city": "Chicago",
+         "state": "IL",
+         "country": "US"
+        }
+       ],
+       "externalDescription": "SEE jd"
+      },
+      {
+       "requisitionId": 4070,
+       "postingEffectiveDate": "7/14/2026",
+       "postingExpirationDate": "-",
+       "displayJobTitle": "Data Platform Lead (Hybrid)",
+       "locations": [
+        {
+         "city": "Chicago",
+         "state": "IL",
+         "country": "US"
+        }
+       ],
+       "externalDescription": "see JD"
+      }
+     ],
+     "filters": [],
+     "customFieldFilters": []
+    }
+   },
+   "3": {
+    "status": "Success",
+    "timestamp": "2026-09-23T14:53:37.502149Z",
+    "data": {
+     "totalCount": 2,
+     "requisitions": [
+      {
+       "requisitionId": 4152,
+       "postingEffectiveDate": "9/18/2026",
+       "postingExpirationDate": "-",
+       "displayJobTitle": "Sr. Policy Analyst (Hybrid)",
+       "locations": [
+        {
+         "city": "Washington",
+         "state": "DC",
+         "country": "US"
+        }
+       ],
+       "externalDescription": "JD"
+      },
+      {
+       "requisitionId": 4070,
+       "postingEffectiveDate": "8/28/2026",
+       "postingExpirationDate": "-",
+       "displayJobTitle": "Data Platform Lead (Hybrid)",
+       "locations": [
+        {
+         "city": "Chicago",
+         "state": "IL",
+         "country": "US"
+        }
+       ],
+       "externalDescription": "see JD"
+      }
+     ],
+     "filters": [],
+     "customFieldFilters": []
+    }
+   }
+  },
+  "ads": {
+   "2/4144": "{\r\n  \"status\": 200,\r\n  \"timeStamp\": \"2026-09-23T14:53:41+0000\",\r\n  \"totalRecords\": 1,\r\n  \"data\": [\r\n    {\r\n      \"actions\": [],\r\n      \"items\": [\r\n        {\r\n          \"fields\": {\r\n            \"id\": 4144,\r\n            \"reqId\": \"req4144\",\r\n            \"title\": \"SR. ACCOUNT EXECUTIVE\",\r\n            \"location\": \"Headquarters\",\r\n            \"ad\": \"<p style=\\\"text-align: left\\\"><strong>Sr. Account Executive (Remote)<br>Chicago, IL&nbsp;</strong><br><br>The American Medical Association (AMA) is the nation's largest professional Association of physicians and a non-profit organization. We are a unifying voice and powerful ally for America's physicians, the patients they care for, and the promise of a healthier nation. To be part of the AMA is to be part of our Mission to promote the art and science of medicine and the betterment of public health.&nbsp;&nbsp;<br><br>At AMA, our mission to improve the health of the nation starts with our people. We foster an inclusive, people-first culture where every employee is empowered to perform at their best. Together, we advance meaningful change in health care and the communities we serve.&nbsp;&nbsp;<br><br>We encourage and support professional development for our employees, and we are dedicated to social responsibility. We invite you to learn more about us and we look forward to getting to know you.&nbsp;<br><br>We have an opportunity at our corporate offices in Chicago for a&nbsp;Sr. Account Executive (Remote)&nbsp;on our Insurance team. <br><br>This role serves as a key liaison for AMAI in the large employer group marketplace. This role manages assigned institutional client and broker relationships and works closely with the AMAI Institutional Relationship Manager, AMA and AMAI colleagues, insurance carrier partners, employee benefit brokers, distribution partners, and institutional clients to support the sale, implementation, and ongoing positioning of AMAI insurance products. The position is responsible for communicating AMAI’s value proposition, coordinating implementation activities, and strengthening relationships with stakeholders across institutional client organizations.<br><br><strong>RESPONSIBILITIES:&nbsp;</strong><br>Institutional Coverage Implementation: 45%<br>· Partner with the Institutional Relationship Manager to drive implementation of AMAI insurance products for institutional clients, including programs such as the AMA-sponsored Teaching Hospital program and offerings such as group long-term disability, short-term disability, term life insurance, accidental death and dismemberment, and related products and services<br>· Serve as an implementation liaison among AMA/AMAI, insurance carrier partners, distribution partners, employee benefit brokers, and institutional clients to coordinate the activities required to activate coverage and place it in force<br>· Develop and manage key relationships with internal teams, carrier partners, distribution partners, and institutional clients, including executive-level decision makers<br>· Provide educational information, onboarding materials, key contact details, and related resources to introduce AMAI programs and products to institutional clients and their employees, helping them understand and use available offerings when needed<br><br>Institutional Group Sales: 35%<br>· Identify, develop, and maintain distribution channels that effectively support sales of AMAI’s value offering<br>· Independently develop and pursue sales opportunities for assigned clients and support additional opportunities through insurance companies, AMA staff, GME directors, brokers, and other referral sources<br>· Promote AMAI’s value offering across distribution channels, ensuring messaging aligns with the priorities of distribution partners and the institutional clients they serve<br>· Coordinate with carrier and distribution partners to secure, prepare, review, and present proposals and quotes to brokers, institutional clients, and relevant decision makers<br>· Use approved promotional materials to communicate the benefits of AMAI solutions to distribution partners and their clients<br>· Accountable for achieving assigned sales results, including clients sold, premium generated, and revenue earned, while maintaining accurate client contact information and sales-cycle progress in Salesforce<br>· Educate, train, and support channel partners to strengthen their ability to position, promote, and sell AMAI offerings<br>· Represent AMAI at industry conferences, client meetings, and related events to promote AMAI’s value proposition<br><br>Program Development: 20%<br>· Support team efforts to develop, document, and continuously improve processes for promoting, quoting, selling, and implementing coverage associated with AMAI’s value offerings<br>· Collaborate with carriers and channel partners to identify opportunities to streamline implementation processes and improve the experience for all stakeholders<br>· Recommend updates, refinements, or new sales materials, including talking points, frequently asked questions, objection-handling responses, competitive positioning resources, and other tools that communicate AMAI’s advantages<br>· Manage day-to-day sales activities for assigned clients and support additional opportunities led by the Institutional Relationship Manager<br>· Routinely share market intelligence, customer insights, and trend information with team members and the Institutional Relationship Manager to help improve overall results<br><br>May include other responsibilities as assigned.<br><br><strong>REQUIREMENTS:&nbsp;</strong><br>1. Education: Bachelor's degree preferred or equivalent work experience and HS diploma/equivalent education required (P1-P4/M1-M2)<br>2. Years of experience: 5+ years business-to-business sales, product development, business development, or marketing experience, preferably with emphasis in the medical, insurance, or employee benefits marketplace<br>3. Must be licensed and appointed in accordance with applicable insurance laws and regulations in the state(s) of operation, as defined by the agency<br>4. Demonstrated selling skills, including strong presentation, persuasion, negotiation, and executive-influence capabilities<br>5. Proven ability to identify client needs, negotiate effectively, and close large institutional sales opportunities<br>6. Goal-oriented professional with a demonstrated track record of achieving sales targets and revenue objectives<br>7. Strong written communication skills, including the ability to create, compose, and edit letters, proposals, contract documents, and sales materials<br>8. Excellent interpersonal and verbal communication skills, with a proven ability to build relationships with clients, partners, and internal stakeholders<br>9. Ability to maintain accurate reporting and customer relationship management records<br>10. Proficiency with Microsoft Office and Salesforce software<br>11. Travel required<br><br>The American Medical Association is&nbsp;located&nbsp;at 330 N. Wabash Avenue, Chicago, IL 60611 and is convenient to all public transportation in Chicago.&nbsp;&nbsp;<br><br>This role is an exempt position, and the salary range for this position is $94,676 - $125,368. This is the lowest to highest salary we believe we would pay for this role at the time of this posting. An employee’s pay within the salary range will be determined by a variety of factors including but not limited to business consideration and geographical location, as well as candidate qualifications, such as skills, education, and experience. Employees are also eligible to participate in an incentive plan. To learn more about the American Medical Association’s benefits offerings,&nbsp;please click here.&nbsp;<br><br>We are an equal opportunity employer, committed to diversity in our workforce.&nbsp;&nbsp;All qualified applicants will receive consideration for employment.&nbsp;&nbsp;As an EOE/AA employer, the American Medical Association will not discriminate in its employment practices due to an applicant’s race, color, religion, sex, age, national origin, sexual orientation, gender identity and veteran or disability status.&nbsp;<br><strong><br><span style=\\\"white-space: pre\\\">\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t</span>THE AMA IS COMMITTED TO IMPROVING THE HEALTH OF THE NATION</strong></p>\",\r\n            \"description\": \"See JD\"\r\n          },\r\n          \"actions\": []\r\n        }\r\n      ]\r\n    }\r\n  ]\r\n}",
+   "2/4125": "{\r\n  \"status\": 200,\r\n  \"timeStamp\": \"2026-09-23T14:53:44+0000\",\r\n  \"totalRecords\": 1,\r\n  \"data\": [\r\n    {\r\n      \"actions\": [],\r\n      \"items\": [\r\n        {\r\n          \"fields\": {\r\n            \"id\": 4125,\r\n            \"reqId\": \"req4125\",\r\n            \"title\": \"Sr. Software Engineer, Platform (Hybrid)\",\r\n            \"location\": \"Headquarters\",\r\n            \"ad\": \"<p>Sr. Software Engineer, Platform&nbsp;</p><p>Chicago, IL (Hybrid)&nbsp;<br><br>The American Medical Association (AMA) is the nation's largest professional Association of physicians and a non-profit organization. We are a unifying voice and powerful ally for America's physicians, the patients they care for, and the promise of a healthier nation.  To be part of the AMA is to be part of our Mission to promote the art and science of medicine and the betterment of public health. &nbsp;<br><br>At AMA, our mission to improve the health of the nation starts with our people. We foster an inclusive, people-first culture where every employee is empowered to perform at their best. Together, we advance meaningful change in health care and the communities we serve. &nbsp;<br><br>We encourage and support professional development for our employees, and we are dedicated to social responsibility. We invite you to learn more about us and we look forward to getting to know you. &nbsp;<br><br>We have an opportunity at our corporate offices in Chicago for a Sr. Software Engineer, Platform on our  Health Solutions team. This is a hybrid position reporting into our Chicago, IL office, requiring 3 days a week in the office.&nbsp;&nbsp;</p><p>As a Sr. Software Engineer, Platform you will play a critical role in improving the stability, observability, scalability, and delivery of AMA’s Physician Professional Data, credentialing products portfolio, and commercial products and systems. This role enhances AWS infrastructure, monitoring capabilities, CI/CD pipelines, infrastructure automation, release processes, developer tooling, and approved AI-assisted engineering capabilities to enable efficient software development.&nbsp; The role partners with engineering, product, data, security, and AMA IT to support secure and reliable software delivery. This role also follows established enterprise review and approval processes for technologies and related standards, collaborating with IT, OGC, and Risk Management to ensure alignment with enterprise architecture, security, and data and AI strategy.</p><p>RESPONSIBILITIES:&nbsp;</p><p><strong>Platform Engineering - 55%&nbsp;</strong></p><ul><li>Implement and maintain observability and monitoring tools, primarily using Dynatrace for performance profiling and application monitoring.&nbsp;</li><li>Improve the modularity, consistency, and scalability of code infrastructure.&nbsp;</li><li>Develop and maintain CI/CD capabilities using Bitbucket pipelines and related delivery tooling.&nbsp;</li><li>Standardize branching, build, release, and deployment strategies across repositories.&nbsp;</li><li>Maintain and improve Terraform stacks for efficient infrastructure-as-code practices.&nbsp;</li><li>Develop and maintain release and stability dashboards that provide actionable insights into system performance and reliability.&nbsp;</li><li>Support and improve code-release processes to ensure repeatable and reliable deployment cycles.&nbsp;</li><li>Define and implement standards for stability and observability across DataLabs projects.&nbsp;</li><li>Partner with engineering teams to identify platform improvements that reduce development friction and improve delivery outcomes.&nbsp;</li></ul><p><strong>AI-Assisted Engineering Enablement - 20%&nbsp;</strong></p><ul><li>Partner with engineering teams to identify and prioritize AI-assisted use cases across coding, testing, documentation, troubleshooting, code review, operational support, and knowledge discovery.&nbsp;</li><li>Evaluate AI development tools and capabilities based on engineering value, usability, security, reliability, maintainability, and supportability.&nbsp;</li><li>Develop reusable guidance, examples, and integration patterns, and share knowledge by coaching engineers on effective and responsible use of AI-assisted development capabilities.&nbsp;</li><li>Help integrate approved AI capabilities into existing development tools and engineering workflows.&nbsp;</li><li>Implement approved practices for data handling, access, generated-output validation, human review, and traceability.&nbsp;</li><li>Work with security, architecture, and engineering stakeholders to identify risks and define appropriate controls for AI-assisted workflows.&nbsp;</li><li>Gather adoption data and engineering feedback to evaluate whether AI-enabled workflows improve delivery speed, software quality, and developer experience.&nbsp;</li><li>Document successful use cases, known limitations, and recommended implementation patterns.&nbsp;</li><li>Monitor emerging AI development capabilities and evaluate opportunities aligned with Health Solutions engineering needs.&nbsp;</li></ul><p><strong>Cloud Infrastructure - 25%&nbsp;</strong></p><ul><li>Collaborate with engineering teams to analyze the current state of infrastructure and develop improvement strategies.&nbsp;</li><li>Define technology and infrastructure requirements for product-development assets, including cloud-computing needs.&nbsp;</li><li>Identify opportunities to adopt new technologies and integrate with additional systems.&nbsp;</li><li>Collaborate with AMA IT teams and vendors to select, design, and implement infrastructure.&nbsp;</li><li>Evaluate the infrastructure and integration requirements associated with approved AI-assisted development capabilities.&nbsp;</li><li>Ensure new platform and AI enablement capabilities can be monitored, maintained, and supported within existing engineering operations.&nbsp;<br><br>May include other responsibilities as assigned.&nbsp;</li></ul><p>REQUIREMENTS:&nbsp;</p><ol><li>Bachelor's degree in Computer Science or Engineering preferred or equivalent work experience and HS diploma/equivalent education required.&nbsp;</li><li>5+ years of experience in platform engineering, cloud engineering, software infrastructure, or a related field.&nbsp;</li><li>Proven experience with AWS services, including Lambda and ECS Fargate, with optional familiarity with RDS, DynamoDB, and DocumentDB.&nbsp;</li><li>Experience improving development tooling, release processes, or engineering workflows.&nbsp;</li><li>Analytical skills to evaluate code and platform infrastructure and make data-driven decisions.&nbsp;</li><li>Self-starter with a demonstrated ability to learn and apply new technologies.&nbsp;</li><li>Excellent problem-solving capabilities and the ability to work independently or within a team.&nbsp;</li><li>Strong communication and coaching skills, with the ability to articulate complex technical issues and help teams adopt emerging capabilities effectively.&nbsp;</li><li>Proactive approach to identifying problems, improvement opportunities, and performance bottlenecks.&nbsp;</li><li>Experience introducing, evaluating, or supporting AI-assisted development tools within engineering teams.&nbsp;</li><li>Ability to assess AI use cases in terms of technical value, implementation risk, security, reliability, and measurable outcomes.&nbsp;</li><li>Experience creating technical standards, reusable implementation guidance, or enablement materials for other engineers.&nbsp;</li><li>Understanding of the need for data controls, generated-output validation, human review, and operational visibility within AI-assisted workflows.&nbsp;</li></ol><p>Additional Technical Background&nbsp;</p><ol><li>Experience operating a full AWS stack, including serverless capabilities and the deployment and scaling of applications on AWS.&nbsp;</li><li>Familiarity with the Atlassian toolset used for day-to-day work organization, including Jira, Bitbucket, and Confluence.&nbsp;</li><li>Experience supporting engineering teams through the adoption of new development tools, practices, or platform capabilities.&nbsp;</li><li>Familiarity with AI coding assistants, model APIs, or similar AI-enabled development capabilities is preferred.&nbsp;</li><li>Proficiency in Python, Java, Bash, or similar languages used for platform automation and systems integration.&nbsp;</li><li>Solid understanding and practical knowledge of CI/CD methodologies, particularly Bitbucket pipelines.&nbsp;</li><li>Experience with observability and monitoring tools such as Dynatrace or similar systems.&nbsp;</li><li>Strong background in infrastructure as code, preferably Terraform.&nbsp;</li></ol><p>The American Medical Association is located at 330 N. Wabash Avenue, Chicago, IL 60611 and is convenient to all public transportation in Chicago. &nbsp;<br><br>This role is an exempt position, and the salary range for this position is $115,500 -$151,000. This is the lowest to highest salary we believe we would pay for this role at the time of this posting. An employee’s pay within the salary range will be determined by a variety of factors including but not limited to business consideration and geographical location, as well as candidate qualifications, such as skills, education, and experience. Employees are also eligible to participate in an incentive plan. To learn more about the American Medical Association’s benefits offerings, please click here.  &nbsp;<br><br>We are an equal opportunity employer, committed to diversity in our workforce.  All qualified applicants will receive consideration for employment.  As an EOE/AA employer, the American Medical Association will not discriminate in its employment practices due to an applicant’s race, color, religion, sex, age, national origin, sexual orientation, gender identity and veteran or disability status.&nbsp;</p><p style=\\\"text-align: center\\\"><strong>THE AMA IS COMMITTED TO IMPROVING THE HEALTH OF THE NATION</strong></p>\",\r\n            \"description\": \"SEE jd\"\r\n          },\r\n          \"actions\": []\r\n        }\r\n      ]\r\n    }\r\n  ]\r\n}",
+   "2/4070": "{\r\n  \"status\": 200,\r\n  \"timeStamp\": \"2026-09-23T14:53:52+0000\",\r\n  \"totalRecords\": 1,\r\n  \"data\": [\r\n    {\r\n      \"actions\": [],\r\n      \"items\": [\r\n        {\r\n          \"fields\": {\r\n            \"id\": 4070,\r\n            \"reqId\": \"req4070\",\r\n            \"title\": \"Data Platform Lead (Hybrid)\",\r\n            \"location\": \"Headquarters\",\r\n            \"ad\": \"<div style=\\\"margin: 0; padding: 0; font-family: &quot;Segoe UI&quot;, &quot;Segoe UI Web&quot;, Arial, Verdana, sans-serif\\\"><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"font-family: &quot;Times New Roman&quot;; font-weight: bold; color: #000000\\\"><font size=\\\"2\\\">Data Platform Lead (Hybrid)</font></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"margin: 0; padding: 0; font-weight: bold; line-height: 19.425px\\\"><font size=\\\"2\\\">Chicago, IL</font></span></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\"><br></font></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\"><font size=\\\"2\\\">The American Medical Association (AMA) is the nation's largest professional Association of physicians and a non-profit organization. We are a unifying voice and powerful ally for America's physicians, the patients they care for, and the promise of a healthier nation. To be part of the AMA is to be part of our Mission to promote the art and science of medicine and the betterment of public health.&nbsp;</font></span></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\"><br></font></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\"><font size=\\\"2\\\">At AMA, our mission to improve the health of the nation starts with our people. We foster an inclusive, people-first culture where every employee is empowered to perform at their best. Together, we advance meaningful change in health care and the communities we serve.</font></span></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\"><br></font></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\"><font size=\\\"2\\\">We encourage and support professional development for our employees, and we are dedicated to social responsibility. We invite you to learn more about us and we look forward to getting to know you.</font></span></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\"><br></font></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span size=\\\"2\\\"><font size=\\\"2\\\"><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\">We have an opportunity at our corporate offices in Chicago for a </span><span style=\\\"margin: 0; padding: 0; font-weight: bold; line-height: 19.425px\\\">Data Platform Lead (Hybrid) </span><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\">on our Information Technology team. This is a hybrid position reporting into our Chicago, IL office, requiring 3 d</span><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\">ays a week in the office.&nbsp;</span></font></span></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\"><br></font></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\"><font size=\\\"2\\\">This role will serve\\nas the platform owner for AMA’s new enterprise Databricks data platform,\\nleading its architecture, engineering, and day-to-day operation in support of\\nAMA’s mission to promote the art and science of medicine and the betterment of\\npublic health. This role is responsible for the secure, reliable, performant,\\nand cost-effective operation of the platform. This role translates enterprise\\ndata platform strategy and governance frameworks into technical implementation,\\nand partners across IT, security, and federated business-unit engineering teams\\nto enable responsible data and AI usage. This role serves as the primary\\ntechnical authority for AMA’s lakehouse environment. This role is accountable\\nfor platform capabilities, standards, and operations</font></span></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\"><font size=\\\"2\\\">&nbsp;</font></span></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"margin: 0; padding: 0; font-weight: bold; line-height: 19.425px\\\"><font size=\\\"2\\\">RESPONSIBILITIES:</font></span></span></p></div></div><div style=\\\"margin: 0; padding: 0; font-family: &quot;Segoe UI&quot;, &quot;Segoe UI Web&quot;, Arial, Verdana, sans-serif\\\"><p><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><b><font size=\\\"2\\\">Platform Strategy &amp; Roadmap Execution</font></b></span></p> <ul><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Serve as the platform owner for AMA’s enterprise Databricks lakehouse, accountable for its technical direction, delivery, and operational health. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Translate the enterprise data platform strategy and multi-year roadmap into an actionable technical delivery plan and engineering backlog. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Define and maintain the platform’s technical architecture, including workspace topology (development, staging, production), Delta Lake design, and Unity Catalog structure. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Maintain a prioritized platform engineering backlog using agile delivery methods, balancing new capability development, technical debt remediation, and operational work. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Evaluate emerging Databricks and data ecosystem capabilities and recommend adoption where they advance reliability, cost efficiency, or business value. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Contribute to platform budget planning and forecasting, and provide technical input into platform-related procurement and vendor management.</font></span></li></ul> <p><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><b><font size=\\\"2\\\">Platform Architecture &amp; Engineering Delivery</font></b></span></p> <ul><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Owns platform prioritization and backlog, including intake and sequencing of requests from business units and engineering teams. Own the technical onboarding of new data sources and business-unit workloads onto the platform. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Collaborate with Sr Data Engineer to lead the design, build, and operation of data ingestion, transformation, and delivery pipelines across batch and streaming workloads. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Ensure adherence engineering standards for data modeling, code quality, version control, testing, and CI/CD across the platform. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Design and maintain self-service analytics capabilities and reusable data products that reduce duplicated effort across business units. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Provide and operate shared MLOps platform capabilities (e.g., model registry, deployment frameworks), enabling data science and engineering teams to operationalize models.</font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Develop and maintain platform documentation, runbooks, and standard operating procedures.</font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Serve as the final decision authority on platform architecture and engineering standards; provide design approvals and guardrails for data engineering teams.</font></span></li></ul> <p><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><b><font size=\\\"2\\\">Platform Reliability &amp; Governance Implementation</font></b></span></p> <ul><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Contribute to the reliability, performance, scalability, and security of the enterprise data platform, in partnership with the Director II and both IT and federated business-unit engineering teams. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Define and operate observability tooling and monitoring practices for platform health, cost optimization, model performance, data quality, and governance compliance; drive continuous improvement initiatives. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Drive cloud cost optimization through cluster configuration, capacity planning, storage management, and cost allocation across business units. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Implement platform security controls, including encryption, access management, and audit logging, in alignment with IT Security policy and HIPAA and other regulatory requirements</font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Define, configure, and enforce platform-level governance controls (e.g., Unity Catalog, access policies, lineage tooling, data quality monitoring, validation, and issue-escalation processes).</font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Partner with the Data Governance Lead to translate Enterprise Data Office policies into platform configuration and automated enforcement. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Implement technical controls supporting AI governance, including model lifecycle management, monitoring, and drift detection. </font></span></li></ul>      </div><div style=\\\"margin: 0; padding: 0; font-family: &quot;Segoe UI&quot;, &quot;Segoe UI Web&quot;, Arial, Verdana, sans-serif\\\"><span style=\\\"font-family: &quot;Times New Roman&quot;\\\"><span size=\\\"2\\\" style=\\\"color: #000000\\\"><font size=\\\"2\\\">&nbsp;</font></span></span></div><div style=\\\"margin: 0; padding: 0; font-family: &quot;Segoe UI&quot;, &quot;Segoe UI Web&quot;, Arial, Verdana, sans-serif\\\"><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"margin: 0; padding: 0; font-weight: bold; line-height: 19.425px\\\"><font size=\\\"2\\\">May include other responsibilities as assigned&nbsp;</font></span></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\"><font size=\\\"2\\\">&nbsp;</font></span></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"margin: 0; padding: 0; font-weight: bold; line-height: 19.425px\\\"><font size=\\\"2\\\">REQUIREMENTS:</font></span></span></p></div></div><ol><li style=\\\"margin: 12pt 0 0; line-height: normal\\\"><span size=\\\"2\\\" style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Bachelor’s degree in computer science, engineering, information systems, or related field preferred or equivalent work experience and HS diploma/equivalent education required</font></span></li><li style=\\\"margin: 12pt 0 0; line-height: normal\\\"><span size=\\\"2\\\" style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">7+ years of experience in data engineering, data platform engineering, or data architecture required.</font></span></li><li><span size=\\\"2\\\" style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Proven experience designing, building, and operating a large-scale data platform, preferably built on modern lakehouse architectures (Databricks preferred) </font></span></li><li><span size=\\\"2\\\" style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Proven expertise with Delta Lake, Unity Catalog, Apache Spark, and SQL-based transformation frameworks (dbt or equivalent) </font></span></li><li><span size=\\\"2\\\" style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Experience owning platform reliability, performance tuning, observability, and cloud cost optimization </font></span></li><li><span size=\\\"2\\\" style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Proven experience implementing data governance controls, including access, data quality, metadata, and lineage, within a data platform </font></span></li><li><span size=\\\"2\\\" style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Working knowledge of AI/ML workflows, MLOps practices, and model lifecycle management </font></span></li><li><span size=\\\"2\\\" style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Experience operating within a regulated data environment (healthcare / HIPAA, financial services, or similar) preferred </font></span></li><li><span size=\\\"2\\\" style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Demonstrated success leading technical teams and collaborating across engineering, security, and business disciplines </font></span></li><li><span size=\\\"2\\\" style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Strong ability to influence, negotiate, and drive alignment across stakeholders without direct authority </font></span></li><li style=\\\"margin-bottom: 0; line-height: normal\\\"><span size=\\\"2\\\" style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Ability to balance innovation and delivery speed with operational reliability, cost efficiency, and regulatory requirements</font></span></li></ol><p style=\\\"margin: 0; padding: 0; font-family: &quot;Segoe UI&quot;, &quot;Segoe UI Web&quot;, Arial, Verdana, sans-serif\\\"><span style=\\\"font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"color: #000000\\\"><font size=\\\"2\\\">&nbsp;</font></span></span></p><div style=\\\"margin: 0; padding: 0; font-family: &quot;Segoe UI&quot;, &quot;Segoe UI Web&quot;, Arial, Verdana, sans-serif\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\"><font size=\\\"2\\\">The American Medical Association is located at 330 N. Wabash Avenue, Chicago, IL 60611 and is convenient to all public transportation in Chicago.&nbsp;</font></span></span></p></div><div style=\\\"margin: 0; padding: 0; font-family: &quot;Segoe UI&quot;, &quot;Segoe UI Web&quot;, Arial, Verdana, sans-serif\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\">&nbsp;</p></div><div style=\\\"margin: 0; padding: 0; font-family: &quot;Segoe UI&quot;, &quot;Segoe UI Web&quot;, Arial, Verdana, sans-serif\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\"><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\"><span style=\\\"margin: 0; padding: 0\\\">This role is an exempt position, and the salary range for this position is $138,464.50 - $181,123.60.&nbsp; This is the lowest to highest salary we believe we would pay for this role at the time of this posting. An employee’s </span><span style=\\\"margin: 0; padding: 0\\\">pay within the salary range will be determined by a variety of factors including but not limited to business consideration and geographical location, as well as candidate qualifications, such as skills, education, and experience. Employees are also eligible to participate in an incentive plan. To learn more about the American Medical Association’s benefits offerings, </span></span><a rel=\\\"noreferrer noopener\\\" style=\\\"margin: 0; padding: 0; text-decoration: none\\\"><span style=\\\"margin: 0; padding: 0; text-decoration: underline; line-height: 19.425px\\\"><span style=\\\"margin: 0; padding: 0\\\">please click here.</span></span></a><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\">&nbsp;</span><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\">&nbsp;</span></font></span></p></div><div style=\\\"margin: 0; padding: 0; font-family: &quot;Segoe UI&quot;, &quot;Segoe UI Web&quot;, Arial, Verdana, sans-serif\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\"><br></font></span></p></div><div style=\\\"margin: 0; padding: 0; font-family: &quot;Segoe UI&quot;, &quot;Segoe UI Web&quot;, Arial, Verdana, sans-serif\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\"><font size=\\\"2\\\">We are an equal opportunity employer, committed to diversity in our workforce.&nbsp; All qualified applicants will receive consideration for employment.&nbsp; As an EOE/AA employer, the American Medical Association will not discriminate in its employment practices due to an applicant’s race, color, religion, sex, age, national origin, sexual orientation, gender identity and veteran or disability status.</font></span></span></p></div><div style=\\\"margin: 0; padding: 0; font-family: &quot;Segoe UI&quot;, &quot;Segoe UI Web&quot;, Arial, Verdana, sans-serif\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0; text-align: center\\\"><span style=\\\"margin: 0; padding: 0; font-family: &quot;Times New Roman&quot;; font-weight: bold; line-height: 19.425px\\\"><font size=\\\"2\\\"><span style=\\\"color: #000000\\\">THE AMA IS COMMITTED TO IMPROVING THE HEALTH OF THE NATION</span></font></span></p></div>\",\r\n            \"description\": \"see JD\"\r\n          },\r\n          \"actions\": []\r\n        }\r\n      ]\r\n    }\r\n  ]\r\n}",
+   "3/4152": "{\r\n  \"status\": 200,\r\n  \"timeStamp\": \"2026-09-23T14:53:54+0000\",\r\n  \"totalRecords\": 1,\r\n  \"data\": [\r\n    {\r\n      \"actions\": [],\r\n      \"items\": [\r\n        {\r\n          \"fields\": {\r\n            \"id\": 4152,\r\n            \"reqId\": \"req4152\",\r\n            \"title\": \"Sr. Policy Analyst (Hybrid)\",\r\n            \"location\": \"AMA Washington, D.C. Office\",\r\n            \"ad\": \"<p><strong>Sr. Policy Analyst (Hybrid)<br></strong>Washington, D.C</p><p>The American Medical Association (AMA) is the nation's largest professional Association of physicians and a non-profit organization. We are a unifying voice and powerful ally for America's physicians, the patients they care for, and the promise of a healthier nation. To be part of the AMA is to be part of our Mission to promote the art and science of medicine and the betterment of public health.<br><br>At AMA, our mission to improve the health of the nation starts with our people. We foster an inclusive, people-first culture where every employee is empowered to perform at their best. Together, we advance meaningful change in health care and the communities we serve.<br><br>We encourage and support professional development for our employees, and we are dedicated to social responsibility. We invite you to learn more about us and we look forward to getting to know you.<br><br>We have an opportunity at our corporate offices in Washington D.C. for a <strong>Sr. Policy Analyst</strong> (Hybrid) on our <strong>Digital Health &amp; AI</strong>&nbsp;team. This is a hybrid position reporting into our Washington, DC office, requiring 3 days a week in the office. 25 Massachusetts Avenue, NW, Washington, DC 20001-7400 USA.</p><p>Provide expertise and support on policy work related to Digital Health and AI. This role is responsible for supporting the research and development of policies that advance the understanding of Digital Health and AI among physicians. This role collaborates with internal business units and external partners on Digital Health and AI policy initiatives.</p><p>This role requires working knowledge and\\n experience in their job discipline with broadened capabilities. Performs a\\n range of assignments related to the job discipline and uses prescribed\\n guidelines or policies in analyzing situations. This role receives a moderate\\n level of guidance and direction and continues to build knowledge of the AMA\\n Mission and processes. </p><p><strong>RESPONSIBILITIES:</strong></p><p><strong>AMA Policy Development and Research: 60%</strong></p><ul><li>Support the development of AMA policy positions\\n     on digital health and AI, including research and analysis to inform new\\n     policy recommendations and strategies.</li><li>Draft\\n     and contribute to policy reports, reviews, summaries, comment letters, and\\n     presentation materials.</li><li>Prepare\\n     correspondence and briefing materials for Senior Management and AMA\\n     offices on key digital health and AI issues.</li><li>Monitor\\n     state and federal legislative and regulatory developments in digital\\n     health and AI and prepare summaries and analysis of their implications for\\n     physicians.</li><li>Contribute\\n     to the development of educational and communications resources and events<strong>.</strong></li></ul><p><strong>Internal and\\n External Relationships: 40%</strong></p><ul><li>Collaborate with internal business units to help\\n     maintain effective relationships with relevant entities, including\\n     Sections and Federation societies, in support of shared digital health and\\n     AI priorities.</li><li>Coordinate\\n     with internal business units such as Advocacy and Enterprise\\n     Communications to help ensure consistent messaging to stakeholders.</li><li>Support\\n     the planning and logistics of convenings, briefings, conferences, and\\n     presentations related to digital health policy.</li><li>Help\\n     build and maintain relationships with external stakeholders including\\n     medical specialty societies, industry groups, and coalitions.</li><li>Assist in the day-to-day management of AMA\\ncoalitions, including coordination and correspondence.</li></ul><p><strong>May include other responsibilities as assigned.</strong></p><p><strong>REQUIREMENTS:</strong></p><ol><li>Bachelor's degree required, master's degree strongly preferred </li><li>5+ years of experience in  healthcare policy analysis in an academic, government, corporate, or  non-profit setting required.</li><li>Demonstrated  ability to work with diverse stakeholders and help synthesize multiple  viewpoints into recommendations.</li><li>Experience in people management preferred.</li><li>Familiarity with digital health\\n     and AI trends in the healthcare industry strongly preferred.</li><li>Strong research and analytical\\n     skills, with the ability to translate complex issues into clear,\\n     well-organized written materials for varying audiences.</li><li>Solid organizational and\\n     communication skills, with experience supporting multi-stakeholder\\n     projects or coordination.</li><li>Strong critical thinking skills\\n     to support policy analysis and recommendations.</li><li>Strong interpersonal skills,\\n     with the ability to work effectively with people across disciplines,\\n     backgrounds, and levels of expertise.</li><li>Comfortable representing the AMA\\n     in a professional capacity as needed.</li><li>Politically savvy.</li><li>Some travel may be required</li></ol><p>This role is an exempt position, and the salary range for this position is $91,555 - $121,311. This is the lowest to highest salary we believe we would pay for this role at the time of this posting. An employee’s pay within the salary range will be determined by a variety of factors including but not limited to business consideration and geographical location, as well as candidate qualifications, such as skills, education, and experience. Employees are also eligible to participate in an incentive plan. To learn more about the American Medical Association’s benefits offerings, please click here.<br><br>The AMA offers competitive salaries, including an incentive plan and excellent benefits. Our office is a business casual environment, and we respect work-life balance.&nbsp; The American Medical Association is located near Union Station and the Capitol in Washington D.C.<br><br>We are an equal opportunity employer, committed to diversity in our workforce.&nbsp;&nbsp;All qualified applicants will receive consideration for employment.&nbsp;&nbsp;As an EOE/AA employer, the American Medical Association will not discriminate in its employment practices due to an applicant’s race, color, religion, sex, age, national origin, sexual orientation, gender identity and veteran or disability status<strong>.</strong></p><p style=\\\"text-align: center\\\"><strong><br>THE AMA IS COMMITTED TO IMPROVING THE HEALTH OF THE NATION</strong></p>\",\r\n            \"description\": \"JD\"\r\n          },\r\n          \"actions\": []\r\n        }\r\n      ]\r\n    }\r\n  ]\r\n}",
+   "3/4070": "{\r\n  \"status\": 200,\r\n  \"timeStamp\": \"2026-09-23T14:53:56+0000\",\r\n  \"totalRecords\": 1,\r\n  \"data\": [\r\n    {\r\n      \"actions\": [],\r\n      \"items\": [\r\n        {\r\n          \"fields\": {\r\n            \"id\": 4070,\r\n            \"reqId\": \"req4070\",\r\n            \"title\": \"Data Platform Lead (Hybrid)\",\r\n            \"location\": \"Headquarters\",\r\n            \"ad\": \"<div style=\\\"margin: 0; padding: 0; font-family: &quot;Segoe UI&quot;, &quot;Segoe UI Web&quot;, Arial, Verdana, sans-serif\\\"><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"font-family: &quot;Times New Roman&quot;; font-weight: bold; color: #000000\\\"><font size=\\\"2\\\">Data Platform Lead (Hybrid)</font></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"margin: 0; padding: 0; font-weight: bold; line-height: 19.425px\\\"><font size=\\\"2\\\">Chicago, IL</font></span></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\"><br></font></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\"><font size=\\\"2\\\">The American Medical Association (AMA) is the nation's largest professional Association of physicians and a non-profit organization. We are a unifying voice and powerful ally for America's physicians, the patients they care for, and the promise of a healthier nation. To be part of the AMA is to be part of our Mission to promote the art and science of medicine and the betterment of public health.&nbsp;</font></span></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\"><br></font></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\"><font size=\\\"2\\\">At AMA, our mission to improve the health of the nation starts with our people. We foster an inclusive, people-first culture where every employee is empowered to perform at their best. Together, we advance meaningful change in health care and the communities we serve.</font></span></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\"><br></font></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\"><font size=\\\"2\\\">We encourage and support professional development for our employees, and we are dedicated to social responsibility. We invite you to learn more about us and we look forward to getting to know you.</font></span></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\"><br></font></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span size=\\\"2\\\"><font size=\\\"2\\\"><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\">We have an opportunity at our corporate offices in Chicago for a </span><span style=\\\"margin: 0; padding: 0; font-weight: bold; line-height: 19.425px\\\">Data Platform Lead (Hybrid) </span><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\">on our Information Technology team. This is a hybrid position reporting into our Chicago, IL office, requiring 3 d</span><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\">ays a week in the office.&nbsp;</span></font></span></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\"><br></font></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\"><font size=\\\"2\\\">This role will serve\\nas the platform owner for AMA’s new enterprise Databricks data platform,\\nleading its architecture, engineering, and day-to-day operation in support of\\nAMA’s mission to promote the art and science of medicine and the betterment of\\npublic health. This role is responsible for the secure, reliable, performant,\\nand cost-effective operation of the platform. This role translates enterprise\\ndata platform strategy and governance frameworks into technical implementation,\\nand partners across IT, security, and federated business-unit engineering teams\\nto enable responsible data and AI usage. This role serves as the primary\\ntechnical authority for AMA’s lakehouse environment. This role is accountable\\nfor platform capabilities, standards, and operations</font></span></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\"><font size=\\\"2\\\">&nbsp;</font></span></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"margin: 0; padding: 0; font-weight: bold; line-height: 19.425px\\\"><font size=\\\"2\\\">RESPONSIBILITIES:</font></span></span></p></div></div><div style=\\\"margin: 0; padding: 0; font-family: &quot;Segoe UI&quot;, &quot;Segoe UI Web&quot;, Arial, Verdana, sans-serif\\\"><p><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><b><font size=\\\"2\\\">Platform Strategy &amp; Roadmap Execution</font></b></span></p> <ul><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Serve as the platform owner for AMA’s enterprise Databricks lakehouse, accountable for its technical direction, delivery, and operational health. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Translate the enterprise data platform strategy and multi-year roadmap into an actionable technical delivery plan and engineering backlog. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Define and maintain the platform’s technical architecture, including workspace topology (development, staging, production), Delta Lake design, and Unity Catalog structure. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Maintain a prioritized platform engineering backlog using agile delivery methods, balancing new capability development, technical debt remediation, and operational work. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Evaluate emerging Databricks and data ecosystem capabilities and recommend adoption where they advance reliability, cost efficiency, or business value. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Contribute to platform budget planning and forecasting, and provide technical input into platform-related procurement and vendor management.</font></span></li></ul> <p><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><b><font size=\\\"2\\\">Platform Architecture &amp; Engineering Delivery</font></b></span></p> <ul><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Owns platform prioritization and backlog, including intake and sequencing of requests from business units and engineering teams. Own the technical onboarding of new data sources and business-unit workloads onto the platform. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Collaborate with Sr Data Engineer to lead the design, build, and operation of data ingestion, transformation, and delivery pipelines across batch and streaming workloads. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Ensure adherence engineering standards for data modeling, code quality, version control, testing, and CI/CD across the platform. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Design and maintain self-service analytics capabilities and reusable data products that reduce duplicated effort across business units. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Provide and operate shared MLOps platform capabilities (e.g., model registry, deployment frameworks), enabling data science and engineering teams to operationalize models.</font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Develop and maintain platform documentation, runbooks, and standard operating procedures.</font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Serve as the final decision authority on platform architecture and engineering standards; provide design approvals and guardrails for data engineering teams.</font></span></li></ul> <p><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><b><font size=\\\"2\\\">Platform Reliability &amp; Governance Implementation</font></b></span></p> <ul><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Contribute to the reliability, performance, scalability, and security of the enterprise data platform, in partnership with the Director II and both IT and federated business-unit engineering teams. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Define and operate observability tooling and monitoring practices for platform health, cost optimization, model performance, data quality, and governance compliance; drive continuous improvement initiatives. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Drive cloud cost optimization through cluster configuration, capacity planning, storage management, and cost allocation across business units. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Implement platform security controls, including encryption, access management, and audit logging, in alignment with IT Security policy and HIPAA and other regulatory requirements</font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Define, configure, and enforce platform-level governance controls (e.g., Unity Catalog, access policies, lineage tooling, data quality monitoring, validation, and issue-escalation processes).</font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Partner with the Data Governance Lead to translate Enterprise Data Office policies into platform configuration and automated enforcement. </font></span></li><li><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Implement technical controls supporting AI governance, including model lifecycle management, monitoring, and drift detection. </font></span></li></ul>      </div><div style=\\\"margin: 0; padding: 0; font-family: &quot;Segoe UI&quot;, &quot;Segoe UI Web&quot;, Arial, Verdana, sans-serif\\\"><span style=\\\"font-family: &quot;Times New Roman&quot;\\\"><span size=\\\"2\\\" style=\\\"color: #000000\\\"><font size=\\\"2\\\">&nbsp;</font></span></span></div><div style=\\\"margin: 0; padding: 0; font-family: &quot;Segoe UI&quot;, &quot;Segoe UI Web&quot;, Arial, Verdana, sans-serif\\\"><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"margin: 0; padding: 0; font-weight: bold; line-height: 19.425px\\\"><font size=\\\"2\\\">May include other responsibilities as assigned&nbsp;</font></span></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\"><font size=\\\"2\\\">&nbsp;</font></span></span></p></div><div style=\\\"margin: 0; padding: 0\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"margin: 0; padding: 0; font-weight: bold; line-height: 19.425px\\\"><font size=\\\"2\\\">REQUIREMENTS:</font></span></span></p></div></div><ol><li style=\\\"margin: 12pt 0 0; line-height: normal\\\"><span size=\\\"2\\\" style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Bachelor’s degree in computer science, engineering, information systems, or related field preferred or equivalent work experience and HS diploma/equivalent education required</font></span></li><li style=\\\"margin: 12pt 0 0; line-height: normal\\\"><span size=\\\"2\\\" style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">7+ years of experience in data engineering, data platform engineering, or data architecture required.</font></span></li><li><span size=\\\"2\\\" style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Proven experience designing, building, and operating a large-scale data platform, preferably built on modern lakehouse architectures (Databricks preferred) </font></span></li><li><span size=\\\"2\\\" style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Proven expertise with Delta Lake, Unity Catalog, Apache Spark, and SQL-based transformation frameworks (dbt or equivalent) </font></span></li><li><span size=\\\"2\\\" style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Experience owning platform reliability, performance tuning, observability, and cloud cost optimization </font></span></li><li><span size=\\\"2\\\" style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Proven experience implementing data governance controls, including access, data quality, metadata, and lineage, within a data platform </font></span></li><li><span size=\\\"2\\\" style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Working knowledge of AI/ML workflows, MLOps practices, and model lifecycle management </font></span></li><li><span size=\\\"2\\\" style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Experience operating within a regulated data environment (healthcare / HIPAA, financial services, or similar) preferred </font></span></li><li><span size=\\\"2\\\" style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Demonstrated success leading technical teams and collaborating across engineering, security, and business disciplines </font></span></li><li><span size=\\\"2\\\" style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Strong ability to influence, negotiate, and drive alignment across stakeholders without direct authority </font></span></li><li style=\\\"margin-bottom: 0; line-height: normal\\\"><span size=\\\"2\\\" style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\">Ability to balance innovation and delivery speed with operational reliability, cost efficiency, and regulatory requirements</font></span></li></ol><p style=\\\"margin: 0; padding: 0; font-family: &quot;Segoe UI&quot;, &quot;Segoe UI Web&quot;, Arial, Verdana, sans-serif\\\"><span style=\\\"font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"color: #000000\\\"><font size=\\\"2\\\">&nbsp;</font></span></span></p><div style=\\\"margin: 0; padding: 0; font-family: &quot;Segoe UI&quot;, &quot;Segoe UI Web&quot;, Arial, Verdana, sans-serif\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\"><font size=\\\"2\\\">The American Medical Association is located at 330 N. Wabash Avenue, Chicago, IL 60611 and is convenient to all public transportation in Chicago.&nbsp;</font></span></span></p></div><div style=\\\"margin: 0; padding: 0; font-family: &quot;Segoe UI&quot;, &quot;Segoe UI Web&quot;, Arial, Verdana, sans-serif\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\">&nbsp;</p></div><div style=\\\"margin: 0; padding: 0; font-family: &quot;Segoe UI&quot;, &quot;Segoe UI Web&quot;, Arial, Verdana, sans-serif\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\"><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\"><span style=\\\"margin: 0; padding: 0\\\">This role is an exempt position, and the salary range for this position is $138,464.50 - $181,123.60.&nbsp; This is the lowest to highest salary we believe we would pay for this role at the time of this posting. An employee’s </span><span style=\\\"margin: 0; padding: 0\\\">pay within the salary range will be determined by a variety of factors including but not limited to business consideration and geographical location, as well as candidate qualifications, such as skills, education, and experience. Employees are also eligible to participate in an incentive plan. To learn more about the American Medical Association’s benefits offerings, </span></span><a rel=\\\"noreferrer noopener\\\" style=\\\"margin: 0; padding: 0; text-decoration: none\\\"><span style=\\\"margin: 0; padding: 0; text-decoration: underline; line-height: 19.425px\\\"><span style=\\\"margin: 0; padding: 0\\\">please click here.</span></span></a><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\">&nbsp;</span><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\">&nbsp;</span></font></span></p></div><div style=\\\"margin: 0; padding: 0; font-family: &quot;Segoe UI&quot;, &quot;Segoe UI Web&quot;, Arial, Verdana, sans-serif\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><font size=\\\"2\\\"><br></font></span></p></div><div style=\\\"margin: 0; padding: 0; font-family: &quot;Segoe UI&quot;, &quot;Segoe UI Web&quot;, Arial, Verdana, sans-serif\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0\\\"><span style=\\\"color: #000000; font-family: &quot;Times New Roman&quot;\\\"><span style=\\\"margin: 0; padding: 0; line-height: 19.425px\\\"><font size=\\\"2\\\">We are an equal opportunity employer, committed to diversity in our workforce.&nbsp; All qualified applicants will receive consideration for employment.&nbsp; As an EOE/AA employer, the American Medical Association will not discriminate in its employment practices due to an applicant’s race, color, religion, sex, age, national origin, sexual orientation, gender identity and veteran or disability status.</font></span></span></p></div><div style=\\\"margin: 0; padding: 0; font-family: &quot;Segoe UI&quot;, &quot;Segoe UI Web&quot;, Arial, Verdana, sans-serif\\\"><p style=\\\"color: #000000; background-color: rgba(0, 0, 0, 0); margin: 0; padding: 0; text-align: center\\\"><span style=\\\"margin: 0; padding: 0; font-family: &quot;Times New Roman&quot;; font-weight: bold; line-height: 19.425px\\\"><font size=\\\"2\\\"><span style=\\\"color: #000000\\\">THE AMA IS COMMITTED TO IMPROVING THE HEALTH OF THE NATION</span></font></span></p></div>\",\r\n            \"description\": \"see JD\"\r\n          },\r\n          \"actions\": []\r\n        }\r\n      ]\r\n    }\r\n  ]\r\n}"
+  }
+ },
+ "eckesgranini": {
+  "home": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta name=\"viewport\" content=\"width=device-width, height=device-height, initial-scale=1.0, minimum-scale=1.0\">\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\" /><meta name=\"robots\" content=\"noindex\" /><link href=\"/player-career-site/1.25.6/node_modules/player-core-ui/assets/normalize.css\" id=\"player-normalize\" rel=\"stylesheet\" type=\"text/css\" /><link href=\"/player-career-site/1.25.6/node_modules/player-core-ui/assets/csod-icons.css\" id=\"player-icons\" rel=\"stylesheet\" type=\"text/css\" /><link href=\"/player-career-site/1.25.6/pages/home.styles.css\" id=\"player-page-styles\" rel=\"stylesheet\" type=\"text/css\" /><link href=\"/player-theming/1.0.13/theme.css?baseColor=%23005F32\" id=\"player-theming\" rel=\"stylesheet\" type=\"text/css\" /></head>\n<body> \n<div id=\"cs-root\"></div><script type=\"text/javascript\">var csodPlayerRouteInfo={ \n\t\t\t\t\t\t\t\t\"package\": \"career-site\",\n\t\t\t\t\t\t\t\t\"page\": \"home\",\n\t\t\t\t\t\t\t\t\"cid\": \"1\",\n\t\t\t\t\t\t\t\t\"routeInfo\": {\n  \"_rest_\": \"?c=eckesgranini\"\n} };</script><script type=\"text/javascript\">var csodGoogleMapsClientApi = {\"key\": \"AIzaSyDrTorpg6_LzW-5R_idZeAvi_HhCksQRJo\",\"isPremium\": \"False\"};</script><script type=\"text/javascript\">var csodFacebookAppId = \"237871519593593\";</script><script type=\"text/javascript\">function extendSession(handler) {\n                                                    if (typeof handler !== 'undefined')\n                                                        handler();\n                                                    else {\n                                                        var getImg = new Image();\n\t\t\t\t\t\t\t\t\t\t\t\t\t    var src = '/core/GetImage.aspx' + '?filename=1pt.gif';\n\t\t\t\t\t\t\t\t\t\t\t\t\t    if (src.indexOf('?') > -1)\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t    src += '&';\n\t\t\t\t\t\t\t\t\t\t\t\t\t    else\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t    src += '?';\n\t\t\t\t\t\t\t\t\t\t\t\t\t    src += 't=' + (new Date()).getTime().toString();\n\t\t\t\t\t\t\t\t\t\t\t\t\t    getImg.src = src;\n                                                    }\n\t\t\t\t\t\t\t\t\t\t\t\t} </script><script type=\"text/javascript\" src=\"/player-career-site/1.25.6/pages/home.js\"></script><script type=\"text/javascript\">if(!csod.context  || !csod.context.token)  csod.context={\"corp\":\"eckesgranini\",\"user\":-100,\"cultureID\":1,\"cultureName\":\"en-US\",\"timezone\":1,\"localizationVersion\":\"63924760693\",\"package\":\"career-site\",\"page\":\"home\",\"basePath\":\"/player-career-site/1.25.6/\",\"serviceBase\":\"/\",\"applicationBase\":\"/\",\"playerBase\":\"/\",\"home\":\"/ui/home\",\"endpoints\":{\"cloud\":\"https://eu-fra.api.csod.com/\",\"api\":\"/\"},\"token\":\"eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJjb3JwIjoiZWNrZXNncmFuaW5pIiwic3ViIjotMTAwLCJhdWQiOiJmaXh0dXJlLXNlc3Npb24tZWNrZXNncmFuaW5pIiwiZXhwIjoiMjAyNjA5MjMxNTAwMDAwMDAifQ.fixture\",\"debug\":false,\"log\":{\"level\":\"Warn\",\"batchSize\":5,\"service\":{\"contentSize\":1048576,\"responseTime\":2001},\"page\":{\"loadTime\":5000}},\"correlation\":\"629d3264-0379-40b7-a04f-04590b0092f8\",\"version\":\"1.25.6\",\"tracking\":null,\"theming\":{\"primary\":\"005F32\"},\"trackerSettings\":{\"anonymizePortalName\":false,\"vendorAPIKeys\":{\"amplitude\":\"a328ec1895b18ee52643ef53449b6ecb\"}},\"isTrackerProxyEnabled\":false,\"trackWithAmplitude\":false,\"officeUser\":null};</script><script type=\"text/javascript\" id=\"player-page-controls\" src=\"/player-career-site/1.25.6/pages/home.controls.js\"></script><script type=\"text/javascript\">csod.player.initialize(csod.context);</script></body>\n</html>\n",
+  "careersites": {
+   "1": {
+    "status": 200,
+    "body": {
+     "status": 0,
+     "timestamp": "2026-09-23T14:54:23.7333706Z",
+     "data": {
+      "id": 1,
+      "active": true,
+      "header": {
+       "isAdvanced": true,
+       "html": "<script>\r\n  function redirectToCareerSite () {\r\n    try {\r\n      console.log(\"URL: \" + window.location.href);\r\n\r\n      const currentUrl = new URL(window.location.href);\r\n      const host = currentUrl.hostname.toLowerCase();\r\n      \r\n      const path = currentUrl.pathname.toLowerCase();\r\n      const params = currentUrl.search;\r\n      const targetBase = \"https://www.eckes-granini.com/jobs\";\r\n\r\n      const requisitionMatch = path.match(/requisition\\/(\\d+)/);\r\n      if (requisitionMatch && !path.includes(\"application\")) {\r\n        const reqId = requisitionMatch[1];\r\n        console.log(\"Redirect: \" + `${targetBase}/job/req${reqId}${params}`);\r\n        window.location.replace(`${targetBase}/job/req${reqId}${params}`);\r\n        return;\r\n      }\r\n\r\n      if (path.includes(\"jobdetails.aspx\")) {\r\n        const jobId = currentUrl.searchParams.get(\"id\");\r\n        if (jobId) {\r\n          console.log(\"Redirect: \" + `${targetBase}/job/req${jobId}${params}`);\r\n          window.location.replace(`${targetBase}/job/req${jobId}${params}`);\r\n          return;\r\n        }\r\n      }\r\n\r\n      if (path.includes(\"search.aspx\") || path.includes(\"home\")) {\r\n        console.log(\"Redirect: \" + targetBase);\r\n        window.location.replace(targetBase);\r\n        return;\r\n      }\r\n    } catch (err) {\r\n      console.error(\"Redirect script error:\", err);\r\n    }\r\n  }\r\n\r\n  redirectToCareerSite();\r\n  window.addEventListener(\"load\", function () {\r\n    redirectToCareerSite();    \r\n  });\r\n</script>",
+       "imagePath": "",
+       "color": null
+      },
+      "footer": {
+       "isAdvanced": true,
+       "html": "<hr size=\"30\" color=\"#183058\">",
+       "imagePath": "",
+       "color": null
+      },
+      "allowedLanguages": [
+       {
+        "cultureId": 1,
+        "displayTitle": "English (US)"
+       },
+       {
+        "cultureId": 4,
+        "displayTitle": "German (Germany)"
+       }
+      ],
+      "bannerImagePath": "",
+      "bannerHtml": "",
+      "customBodyHtml": "",
+      "currentLanguage": {
+       "cultureId": 1,
+       "cultureName": "en-US",
+       "isRightToLeft": false
+      },
+      "jobDetailsBannerImagePath": "",
+      "allowSEO": false,
+      "isJobAlertsEnabled": false,
+      "jobPostingSEOLogoPath": "",
+      "customFields": [],
+      "defaultCultureId": 1,
+      "anonymousUserId": -100,
+      "gtmContainerId": null,
+      "isLandingPageURLEnabled": false
+     }
+    }
+   },
+   "2": {
+    "status": 200,
+    "body": {
+     "status": 0,
+     "timestamp": "2026-09-23T14:54:24.327706Z",
+     "data": {
+      "id": 2,
+      "active": false,
+      "header": {
+       "isAdvanced": true,
+       "html": "<link href=\"https://acceleratecomplex.csod.com/content/eckesgranini/publications/10/search_assets/css/search.css?6\" rel=\"stylesheet\" type=\"text/css\" media=\"all\"> \r\n<style>\r\nimg {\r\nborder: 0px;\t\r\n}\r\n</style>\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n<table style=\"width: 100%;\"><tbody><tr><td style=\"padding-top: 20px; padding-bottom: 20px; padding-left: 20px; background-color: rgb(255, 255, 255);\"> <img style=\"width: 234px; height: 34px;\" src=\"/clientimg/eckesgranini/careersite/Your-Logo.jpg\" border=\"0\"></td></tr><tr><td style=\"background-color: rgb(42, 151, 202);\">&nbsp;</td></tr></tbody></table>",
+       "imagePath": "",
+       "color": null
+      },
+      "footer": {
+       "isAdvanced": true,
+       "html": "<br>",
+       "imagePath": "",
+       "color": null
+      },
+      "allowedLanguages": [
+       {
+        "cultureId": 1,
+        "displayTitle": "English (US)"
+       }
+      ],
+      "bannerImagePath": "",
+      "bannerHtml": "",
+      "customBodyHtml": "",
+      "currentLanguage": {
+       "cultureId": 1,
+       "cultureName": "en-US",
+       "isRightToLeft": false
+      },
+      "jobDetailsBannerImagePath": "",
+      "allowSEO": false,
+      "isJobAlertsEnabled": false,
+      "jobPostingSEOLogoPath": "",
+      "customFields": [],
+      "defaultCultureId": 1,
+      "anonymousUserId": -101,
+      "gtmContainerId": null,
+      "isLandingPageURLEnabled": false
+     }
+    }
+   },
+   "3": {
+    "status": 200,
+    "body": {
+     "status": 0,
+     "timestamp": "2026-09-23T14:54:24.5904263Z",
+     "data": {
+      "id": 3,
+      "active": false,
+      "header": {
+       "isAdvanced": true,
+       "html": "<link href=\"https://acceleratecomplex.csod.com/content/eckesgranini/publications/10/search_assets/css/search.css?9\" rel=\"stylesheet\" type=\"text/css\" media=\"all\"> \r\n<style>\r\nimg {\r\nborder: 0px;\t\r\n}\r\n</style>\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n<table style=\"width: 100%;\"><tbody><tr><td style=\"padding-top: 20px; padding-bottom: 20px; padding-left: 20px; background-color: rgb(255, 255, 255);\"> <img style=\"width: 234px; height: 34px;\" src=\"/clientimg/eckesgranini/careersite/Your-Logo.jpg\" border=\"0\"></td></tr><tr><td style=\"background-color: rgb(42, 151, 202);\">&nbsp;</td></tr></tbody></table>",
+       "imagePath": "",
+       "color": null
+      },
+      "footer": {
+       "isAdvanced": true,
+       "html": "<br>",
+       "imagePath": "",
+       "color": null
+      },
+      "allowedLanguages": [
+       {
+        "cultureId": 1,
+        "displayTitle": "English (US)"
+       },
+       {
+        "cultureId": 2,
+        "displayTitle": "English (UK)"
+       }
+      ],
+      "bannerImagePath": "",
+      "bannerHtml": "",
+      "customBodyHtml": "",
+      "currentLanguage": {
+       "cultureId": 1,
+       "cultureName": "en-US",
+       "isRightToLeft": false
+      },
+      "jobDetailsBannerImagePath": "",
+      "allowSEO": false,
+      "isJobAlertsEnabled": false,
+      "jobPostingSEOLogoPath": "",
+      "customFields": [],
+      "defaultCultureId": 1,
+      "anonymousUserId": -102,
+      "gtmContainerId": null,
+      "isLandingPageURLEnabled": false
+     }
+    }
+   },
+   "4": {
+    "status": 404,
+    "body": {
+     "status": 2,
+     "timestamp": "2026-09-23T14:54:25.1745938Z",
+     "correlationId": "0d1e3f69-8b5b-482c-a183-93e2b539181a",
+     "error": {
+      "code": 40,
+      "message": "Resource not found"
+     }
+    }
+   }
+  },
+  "search": {
+   "1": {
+    "status": "Success",
+    "timestamp": "2026-09-23T14:54:25.8082039Z",
+    "data": {
+     "totalCount": 1,
+     "requisitions": [
+      {
+       "requisitionId": 102,
+       "postingEffectiveDate": "6/9/2026",
+       "postingExpirationDate": "-",
+       "displayJobTitle": "Gebietsverkaufsleiter Retail (m/w/d) - Wittenberge",
+       "locations": [
+        {
+         "country": "DE"
+        }
+       ],
+       "externalDescription": " Verantwortung für die Umsetzung der Unternehmensprioritäten am Point of Sale Betreuung des definierten Kundenuniversums Mitwirkung beim Ausbau der Marktposition unserer Produkte durch: Umsetzung von Listungen in Distribution Aktive Begleitung und Umsetzung von Neuprodukteinführungen Führen von Jahresgesprächen inkl. Vor- u. Nachbereitung mit MBU Aufbau und Pflege tragfähiger Kundenbeziehungen Ausbau der Stammplatzierungen effiziente Umsetzung von Durchgängen, Promotions, Zweit- und Drittplatzierungen sowie von kundenindividuellen Maßnahmen in Zusammenarbeit mit Trade- und Shopper Marketing "
+      }
+     ],
+     "filters": [],
+     "customFieldFilters": []
+    }
+   }
+  },
+  "ads": {
+   "1/102": "{\r\n  \"status\": 200,\r\n  \"timeStamp\": \"2026-09-23T14:54:31+0000\",\r\n  \"totalRecords\": 1,\r\n  \"data\": [\r\n    {\r\n      \"actions\": [],\r\n      \"items\": [\r\n        {\r\n          \"fields\": {\r\n            \"id\": 102,\r\n            \"reqId\": \"req102\",\r\n            \"title\": \"Gebietsverkaufsleiter Retail (m/w/d) - Wittenberge\",\r\n            \"location\": \"Field Sales\",\r\n            \"ad\": \"\",\r\n            \"description\": \"Verantwortung für die Umsetzung der Unternehmensprioritäten am Point of SaleBetreuung des definierten KundenuniversumsMitwirkung beim Ausbau der Marktposition unserer Produkte durch:Umsetzung von Listungen in DistributionAktive Begleitung und Umsetzung von NeuprodukteinführungenFühren von Jahresgesprächen inkl. Vor- u. Nachbereitung mit MBUAufbau und Pflege tragfähiger KundenbeziehungenAusbau der Stammplatzierungeneffiziente Umsetzung von Durchgängen, Promotions, Zweit- und Drittplatzierungen sowie von kundenindividuellen Maßnahmen in Zusammenarbeit mit Trade- und Shopper Marketing\"\r\n          },\r\n          \"actions\": []\r\n        }\r\n      ]\r\n    }\r\n  ]\r\n}"
+  }
+ },
+ "aak": {
+  "home": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta name=\"viewport\" content=\"width=device-width, height=device-height, initial-scale=1.0, minimum-scale=1.0\">\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\" /><meta name=\"robots\" content=\"noindex\" /><link href=\"/player-career-site/1.25.6/node_modules/player-core-ui/assets/normalize.css\" id=\"player-normalize\" rel=\"stylesheet\" type=\"text/css\" /><link href=\"/player-career-site/1.25.6/node_modules/player-core-ui/assets/csod-icons.css\" id=\"player-icons\" rel=\"stylesheet\" type=\"text/css\" /><link href=\"/player-career-site/1.25.6/pages/home.styles.css\" id=\"player-page-styles\" rel=\"stylesheet\" type=\"text/css\" /><link href=\"/player-theming/1.0.13/theme.css?baseColor=%230078c3\" id=\"player-theming\" rel=\"stylesheet\" type=\"text/css\" /></head>\n<body> \n<div id=\"cs-root\"></div><script type=\"text/javascript\">var csodPlayerRouteInfo={ \n\t\t\t\t\t\t\t\t\"package\": \"career-site\",\n\t\t\t\t\t\t\t\t\"page\": \"home\",\n\t\t\t\t\t\t\t\t\"cid\": \"1\",\n\t\t\t\t\t\t\t\t\"routeInfo\": {\n  \"_rest_\": \"?c=aak\"\n} };</script><script type=\"text/javascript\">var csodGoogleMapsClientApi = {\"key\": \"AIzaSyDrTorpg6_LzW-5R_idZeAvi_HhCksQRJo\",\"isPremium\": \"False\"};</script><script type=\"text/javascript\">var csodFacebookAppId = \"237871519593593\";</script><script type=\"text/javascript\">function extendSession(handler) {\n                                                    if (typeof handler !== 'undefined')\n                                                        handler();\n                                                    else {\n                                                        var getImg = new Image();\n\t\t\t\t\t\t\t\t\t\t\t\t\t    var src = '/core/GetImage.aspx' + '?filename=1pt.gif';\n\t\t\t\t\t\t\t\t\t\t\t\t\t    if (src.indexOf('?') > -1)\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t    src += '&';\n\t\t\t\t\t\t\t\t\t\t\t\t\t    else\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t    src += '?';\n\t\t\t\t\t\t\t\t\t\t\t\t\t    src += 't=' + (new Date()).getTime().toString();\n\t\t\t\t\t\t\t\t\t\t\t\t\t    getImg.src = src;\n                                                    }\n\t\t\t\t\t\t\t\t\t\t\t\t} </script><script type=\"text/javascript\" src=\"/player-career-site/1.25.6/pages/home.js\"></script><script type=\"text/javascript\">if(!csod.context  || !csod.context.token)  csod.context={\"corp\":\"aak\",\"user\":-100,\"cultureID\":1,\"cultureName\":\"en-US\",\"timezone\":1,\"localizationVersion\":\"63924760693\",\"package\":\"career-site\",\"page\":\"home\",\"basePath\":\"/player-career-site/1.25.6/\",\"serviceBase\":\"/\",\"applicationBase\":\"/\",\"playerBase\":\"/\",\"home\":\"/ui/home\",\"endpoints\":{\"cloud\":\"https://eu-fra.api.csod.com/\",\"api\":\"/\"},\"token\":\"eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJjb3JwIjoiYWFrIiwic3ViIjotMTAwLCJhdWQiOiJmaXh0dXJlLXNlc3Npb24tYWFrIiwiZXhwIjoiMjAyNjA5MjMxNTAwMDAwMDAifQ.fixture\",\"debug\":false,\"log\":{\"level\":\"Warn\",\"batchSize\":5,\"service\":{\"contentSize\":1048576,\"responseTime\":2001},\"page\":{\"loadTime\":5000}},\"correlation\":\"c7d10fdb-03c9-4d8e-8bd5-eb80e66cab5e\",\"version\":\"1.25.6\",\"tracking\":null,\"theming\":{\"primary\":\"0078c3\"},\"trackerSettings\":{\"anonymizePortalName\":false,\"vendorAPIKeys\":{\"amplitude\":\"a328ec1895b18ee52643ef53449b6ecb\"}},\"isTrackerProxyEnabled\":false,\"trackWithAmplitude\":false,\"officeUser\":null};</script><script type=\"text/javascript\" id=\"player-page-controls\" src=\"/player-career-site/1.25.6/pages/home.controls.js\"></script><script type=\"text/javascript\">csod.player.initialize(csod.context);</script></body>\n</html>\n",
+  "careersites": {
+   "1": {
+    "status": 200,
+    "body": {
+     "status": 0,
+     "timestamp": "2026-09-23T14:54:33.6532219Z",
+     "data": {
+      "id": 1,
+      "active": false,
+      "header": {
+       "isAdvanced": false,
+       "html": null,
+       "imagePath": "/clientimg/aak/logo/CSOD_9d361d2b-1cfe-4612-b9c0-dee45e362328.png",
+       "color": "#FFFFFF"
+      },
+      "footer": {
+       "isAdvanced": false,
+       "html": null,
+       "imagePath": "/clientimg/aak/logo/csod_logo_navy_e297111f-fed0-4b1b-9efb-8f3c504fa5e4.png",
+       "color": "#EBEBEB"
+      },
+      "allowedLanguages": [
+       {
+        "cultureId": 1,
+        "displayTitle": "English (US)"
+       }
+      ],
+      "bannerImagePath": "",
+      "bannerHtml": "",
+      "customBodyHtml": "",
+      "currentLanguage": {
+       "cultureId": 1,
+       "cultureName": "en-US",
+       "isRightToLeft": false
+      },
+      "jobDetailsBannerImagePath": "",
+      "allowSEO": false,
+      "isJobAlertsEnabled": false,
+      "jobPostingSEOLogoPath": "",
+      "customFields": [],
+      "defaultCultureId": 1,
+      "anonymousUserId": -100,
+      "gtmContainerId": null,
+      "isLandingPageURLEnabled": false
+     }
+    }
+   },
+   "2": {
+    "status": 200,
+    "body": {
+     "status": 0,
+     "timestamp": "2026-09-23T14:54:33.9036603Z",
+     "data": {
+      "id": 2,
+      "active": true,
+      "header": {
+       "isAdvanced": false,
+       "html": null,
+       "imagePath": "/clientimg/aak/logo/Cornerstone_AAKlogoBLUEheader_7f8bfdbc-3aa4-4739-9961-9514d70f3555.png",
+       "color": "#FFFFFF"
+      },
+      "footer": {
+       "isAdvanced": false,
+       "html": null,
+       "imagePath": "/clientimg/aak/logo/Cornerstone_AAKlogoWHITEfooter_e2765af5-a43f-48fb-a751-efdfecaf0c2e.png",
+       "color": "#00264E"
+      },
+      "allowedLanguages": [
+       {
+        "cultureId": 1,
+        "displayTitle": "English (US)"
+       }
+      ],
+      "bannerImagePath": "/clientimg/aak/careersite/banner/AAK_blue3_c44a2612-1289-4ced-980f-5d1ecce1773a.png",
+      "bannerHtml": "",
+      "customBodyHtml": "",
+      "currentLanguage": {
+       "cultureId": 1,
+       "cultureName": "en-US",
+       "isRightToLeft": false
+      },
+      "jobDetailsBannerImagePath": "/clientimg/aak/logo/Cornerstonebanner_c8e88e56-57ad-4560-a87e-ffec1a9acd93.png",
+      "allowSEO": true,
+      "isJobAlertsEnabled": true,
+      "jobPostingSEOLogoPath": "/clientimg/aak/logo/AAK_LOGO_BLUE_RGB_a9b6a12f-1d42-406e-98b5-e35ad74ba8b6.png",
+      "customFields": [],
+      "defaultCultureId": 1,
+      "anonymousUserId": -101,
+      "gtmContainerId": null,
+      "isLandingPageURLEnabled": false
+     }
+    }
+   },
+   "3": {
+    "status": 200,
+    "body": {
+     "status": 0,
+     "timestamp": "2026-09-23T14:54:34.2216268Z",
+     "data": {
+      "id": 3,
+      "active": false,
+      "header": {
+       "isAdvanced": true,
+       "html": "<link href=\"https://acceleratecomplex.csod.com/content/aak/publications/10/search_assets/css/search.css?9\" rel=\"stylesheet\" type=\"text/css\" media=\"all\"> \r\n<style>\r\nimg {\r\nborder: 0px;\t\r\n}\r\n</style>\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n<table style=\"width: 100%;\"><tbody><tr><td style=\"padding-top: 20px; padding-bottom: 20px; padding-left: 20px; background-color: rgb(255, 255, 255);\"> <img style=\"width: 234px; height: 34px;\" src=\"/clientimg/aak/careersite/Your-Logo.jpg\" border=\"0\"></td></tr><tr><td style=\"background-color: rgb(42, 151, 202);\">&nbsp;</td></tr></tbody></table>",
+       "imagePath": "",
+       "color": null
+      },
+      "footer": {
+       "isAdvanced": true,
+       "html": "<br>",
+       "imagePath": "",
+       "color": null
+      },
+      "allowedLanguages": [
+       {
+        "cultureId": 1,
+        "displayTitle": "English (US)"
+       },
+       {
+        "cultureId": 2,
+        "displayTitle": "English (UK)"
+       }
+      ],
+      "bannerImagePath": "",
+      "bannerHtml": "",
+      "customBodyHtml": "",
+      "currentLanguage": {
+       "cultureId": 1,
+       "cultureName": "en-US",
+       "isRightToLeft": false
+      },
+      "jobDetailsBannerImagePath": "",
+      "allowSEO": false,
+      "isJobAlertsEnabled": false,
+      "jobPostingSEOLogoPath": "",
+      "customFields": [],
+      "defaultCultureId": 1,
+      "anonymousUserId": -102,
+      "gtmContainerId": null,
+      "isLandingPageURLEnabled": false
+     }
+    }
+   },
+   "4": {
+    "status": 404,
+    "body": {
+     "status": 2,
+     "timestamp": "2026-09-23T14:54:34.7442735Z",
+     "correlationId": "ddfb1bb9-ccb9-46eb-aa48-42b27589de5a",
+     "error": {
+      "code": 40,
+      "message": "Resource not found"
+     }
+    }
+   }
+  },
+  "search": {
+   "2": {
+    "status": "Success",
+    "timestamp": "2026-09-23T14:54:35.3367367Z",
+    "data": {
+     "totalCount": 1,
+     "requisitions": [
+      {
+       "requisitionId": 5327,
+       "postingEffectiveDate": "6/10/2026",
+       "postingExpirationDate": "-",
+       "displayJobTitle": "Global OpEx Deployment Lead",
+       "locations": [
+        {
+         "city": "Jundiaí, São Paulo",
+         "country": "BR"
+        },
+        {
+         "city": "Zhangjiagang",
+         "state": "Jiangsu Province",
+         "country": "CN"
+        },
+        {
+         "city": "Aarhus C",
+         "country": "DK"
+        },
+        {
+         "city": "Karlshamn",
+         "country": "SE"
+        },
+        {
+         "city": "Hull",
+         "country": "GB"
+        }
+       ],
+       "externalDescription": "see JD"
+      }
+     ],
+     "filters": [],
+     "customFieldFilters": []
+    }
+   }
+  },
+  "ads": {
+   "2/5327": "{\r\n  \"status\": 200,\r\n  \"timeStamp\": \"2026-09-23T14:54:58+0000\",\r\n  \"totalRecords\": 1,\r\n  \"data\": [\r\n    {\r\n      \"actions\": [],\r\n      \"items\": [\r\n        {\r\n          \"fields\": {\r\n            \"id\": 5327,\r\n            \"reqId\": \"req5327\",\r\n            \"title\": \"Global OpEx Deployment Lead\",\r\n            \"location\": \"Karlshamn\",\r\n            \"ad\": \"<p><font size=\\\"5\\\"><strong>Global OpEx Deployment Lead</strong> </font><br><font size=\\\"4\\\">Our story goes\\r\\nback more than 150 years, to the chilly southern coast of Scandinavia. From our\\r\\nearly success in Sweden and Denmark, we’ve grown into the world’s leading\\r\\nspecialist producer of plant-based oils, employing more than 4,000 people across\\r\\nthe globe.</font><br><br><font size=\\\"4\\\"> We work with our customers to make the products you love even better. The oils\\r\\nwe produce go into making your chocolate extra-creamy or putting the crunch\\r\\ninto your croissant. And it’s not just food — we work across industries to make\\r\\nproducts that are higher quality, healthier and better for the planet.</font><br><br><font size=\\\"4\\\"> Everything we do is about Making Better Happen™.</font><br><font size=\\\"5\\\"></font></p><p><font size=\\\"5\\\">AAK Locations</font><br><font size=\\\"4\\\">This position is based in one of\\r\\nour locations: </font><span style=\\\"font-size: large;\\\">Jundiaí (BR), Zhangjiagang (CN), Aarhus (DK),\\r\\nKarlshamn (SE), Louisville (US) OR Hull (GB)</span></p><p ><font size=\\\"5\\\"> About the role</font><br><font size=\\\"4\\\">Are you passionate\\r\\nabout driving transformation and building a culture of continuous improvement?\\r\\nAs Global Operational Excellence Deployment Lead, you will play a key role in\\r\\nbringing AAK's Operational Excellence vision to life across our global manufacturing\\r\\nnetwork and value chain functions. Acting as the bridge between strategy and\\r\\nexecution, you will help embed sustainable ways of working that deliver\\r\\nmeasurable business results and lasting capability growth.</font><br><font size=\\\"4\\\">Partnering with\\r\\nleaders and teams across Operations, Supply Chain, Maintenance, Quality,\\r\\nEngineering, Procurement, Commercial, R&amp;D, and Go-to-Market functions, you\\r\\nwill coach, challenge, and inspire the organization to strengthen\\r\\nproblem-solving capabilities, improve performance, and drive meaningful,\\r\\nsustainable change.</font><br><br><font size=\\\"5\\\"> Responsibilities</font><br><font size=\\\"4\\\">- Lead the deployment and embedding of AAK's global Operational Excellence roadmap across assigned production sites and value chain functions, ensuring consistent adoption of OWOW and OWOZ frameworks, standards, and ways of working.</font><br><font size=\\\"4\\\">- Develop and execute maturity-based deployment roadmaps aligned with site readiness and business priorities, conducting capability assessments, identifying gaps, and co-creating improvement plans with site and functional leaders.</font><br><font size=\\\"4\\\">- Provide coaching, facilitation, and capability building to leaders across Operations, Supply Chain, Maintenance, Quality, Engineering, Procurement, Commercial, R&amp;D, and Go-to-Market functions, strengthening leadership effectiveness, problem-solving capabilities, and end-to-end performance.</font><br><font size=\\\"4\\\">- Act as the key link between global strategy and local execution, driving governance routines, performance management, cross-functional alignment, and the sustainable implementation of Operational Excellence methodologies while proactively addressing deployment risks and capability gaps.</font><br><font size=\\\"4\\\">- Partner with Global OpEx Specialists and stakeholders to deploy new standards, methodologies, and tools, while capturing and sharing best practices and field insights to continuously improve AAK's global OpEx framework and transformation journey.</font><br><br><font size=\\\"5\\\">About you</font><br><font size=\\\"4\\\">- Bachelor's degree in Engineering, Operations Management, Supply Chain, Manufacturing, or a related field; Master's degree is an advantage.</font><br><font size=\\\"4\\\">- 10+ years of experience in Operational Excellence, Continuous Improvement, manufacturing, or supply chain operations, including multi-site deployment and transformation experience in complex operational environments.</font><br><font size=\\\"4\\\">Proven track record of leading cross-functional Operational Excellence transformations, with strong expertise in Lean, TPM, Six Sigma, Daily Management Systems (DMS), structured problem solving, and preferably TRACC or comparable OpEx frameworks.</font><br><font size=\\\"4\\\">- Exceptional coaching, facilitation, stakeholder management, and influencing skills, with the ability to develop leaders at all levels, drive alignment across matrix organizations, and achieve sustainable adoption without formal authority.</font><br><font size=\\\"4\\\">- Analytical, execution-focused, and hands-on, with experience designing deployment roadmaps, conducting maturity assessments, translating insights into measurable actions, and working effectively with both frontline teams and senior leaders in global, multicultural environments.</font></p><p><font size=\\\"4\\\">-&nbsp;</font><span style=\\\"font-size: large;\\\">Fluent in English; additional languages are an advantage.</span></p><p><font size=\\\"4\\\"></font></p><p><font size=\\\"5\\\">Contact and information</font><br><font size=\\\"4\\\">Please apply through our career portal. For further information about\\r\\nthe position, please contact Sr Talent Acquisition Specialist: Conor Kelly: conor.kelly@aak.com &nbsp;</font><br><br><font size=\\\"5\\\">About AAK</font><br><font size=\\\"4\\\">Everything\\r\\nAAK does is about Making Better Happen™. We specialize in plant-based oils that\\r\\nare the value-adding ingredients in many of the products people love to\\r\\nconsume. We make these products better tasting, healthier, and more\\r\\nsustainable. At the heart of AAK’s offer is Customer Co-Development, combining\\r\\nour desire to understand what better means for each customer, with the unique\\r\\nflexibility of our production assets, and deep knowledge of many products and\\r\\nindustries, including Chocolate and confectionery, Bakery, Dairy, Plant-based\\r\\nFoods, Special Nutrition, Foodservice and Personal Care. Our 4,000 employees\\r\\nsupport our close collaboration with customers through 25 regional sales\\r\\noffices, 15 dedicated Customer Innovation Centers, and the support of more than\\r\\n20 production facilities. Listed on Nasdaq Stockholm and with our headquarters\\r\\nin Malmö, Sweden, AAK has been Making Better Happen™ for more than 150 years.</font><br><br><font size=\\\"4\\\">AAK prohibits discrimination\\r\\nbased on race, color, sex, sexual orientation, age, national origin, physical\\r\\nor mental disability, religion, veteran status, and any other class of\\r\\nindividuals protected from discrimination under state or federal law in any aspect\\r\\nof the access to, admission, or treatment of students in its programs and\\r\\nactivities, or employment and application for employment.</font></p>\",\r\n            \"description\": \"see JD\"\r\n          },\r\n          \"actions\": []\r\n        }\r\n      ]\r\n    }\r\n  ]\r\n}"
+  }
+ }
+}
