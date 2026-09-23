@@ -114,6 +114,54 @@ def _chunk_path(dest: pathlib.Path, i: int) -> pathlib.Path:
     return dest.with_name(f"{dest.name}.c{i:04d}")
 
 
+def _chunk_size_marker(dest: pathlib.Path) -> pathlib.Path:
+    """Where the chunk size a transfer of ``dest`` was started with is recorded."""
+    return dest.with_name(f"{dest.name}.chunksize")
+
+
+def _claim_chunk_size(
+    dest: pathlib.Path, plan: list[tuple[int, int, int]], chunk: int
+) -> None:
+    """Refuse to resume ``dest`` under a different chunk size than it was started with.
+
+    Chunk boundaries are absolute, so a resume with a different --chunk-mb would carve the
+    same bytes at different offsets and silently assemble a corrupt file. The size is recorded
+    beside the chunks when a transfer starts, and compared on every resume. It used to be
+    inferred from the chunk files instead, which cannot tell a chunk carved at another size
+    from one that is merely SHORT — a fetch that ran out of retries, the ordinary thing a
+    resume exists for — so it refused those too (2026-09-23: a 2.9 GB pull, one 28,311,552-byte
+    chunk, the same --chunk-mb both runs). A short chunk is topped up by ``fetch_chunk``.
+    """
+    marker = _chunk_size_marker(dest)
+    if marker.exists():
+        started = int(marker.read_text())
+        if started != chunk:
+            raise SystemExit(
+                f"{dest.name} was started with --chunk-mb {started // 1_000_000}; re-run with "
+                f"that, or delete {dest.name}.c* and {marker.name} to start the file over."
+            )
+        return
+    # Chunks with no marker come from a transfer started before it existed, so only their
+    # sizes say anything. A chunk LONGER than `chunk` was carved at another size. A shorter
+    # one is either cut short or carved smaller, and one chunk of exactly `chunk` bytes
+    # settles which: no transfer at a smaller size can have written it. Without that proof,
+    # refuse rather than guess.
+    sizes = [
+        (i, _chunk_path(dest, i).stat().st_size, hi - lo)
+        for i, lo, hi in plan[:-1]
+        if _chunk_path(dest, i).exists()
+    ]
+    proven = any(have == want for _, have, want in sizes)
+    for i, have, want in sizes:
+        if have > want or (0 < have < want and not proven):
+            raise SystemExit(
+                f"chunk {i} is {have:,} bytes but --chunk-mb implies {want:,}. "
+                f"A part-finished transfer cannot change chunk size; re-run without --chunk-mb, "
+                f"or delete {dest.name}.c* to start the file over."
+            )
+    marker.write_text(str(chunk))
+
+
 def _on_disk(dest: pathlib.Path, plan: list[tuple[int, int, int]]) -> int:
     """Bytes of ``dest`` currently held across its chunk files."""
     return sum(
@@ -167,22 +215,11 @@ def fetch_big(
     print(
         f"big: {path}  ({size / 1e6:,.0f} MB, {chunk / 1e6:.0f} MB chunks)", flush=True
     )
+    plan = _chunks(size, chunk)
+    # Before the concat recovery, which carves at the same absolute offsets.
+    _claim_chunk_size(dest, plan, chunk)
     if joined.exists():
         _recover_partial_concat(joined, dest, chunk)
-
-    plan = _chunks(size, chunk)
-
-    # Chunk boundaries are absolute, so a resume with a different --chunk-mb would carve the
-    # same bytes at different offsets and silently assemble a corrupt file. Refuse instead: any
-    # complete non-final chunk on disk must be exactly `chunk` bytes.
-    for i, lo, hi in plan[:-1]:
-        cf = _chunk_path(dest, i)
-        if cf.exists() and cf.stat().st_size not in (0, hi - lo):
-            raise SystemExit(
-                f"chunk {i} is {cf.stat().st_size:,} bytes but --chunk-mb implies {hi - lo:,}. "
-                f"A part-finished transfer cannot change chunk size; re-run without --chunk-mb, "
-                f"or delete {dest.name}.c* to start the file over."
-            )
 
     def fetch_chunk(spec: tuple[int, int, int]) -> int:
         i, lo, hi = spec
@@ -257,6 +294,7 @@ def fetch_big(
         # a decode error that says nothing about the download.
         raise SystemExit(f"SIZE MISMATCH {path}: {landed:,} on disk != {size:,} remote")
     joined.rename(dest)
+    _chunk_size_marker(dest).unlink(missing_ok=True)
     print(f"  complete: {path}", flush=True)
 
 
