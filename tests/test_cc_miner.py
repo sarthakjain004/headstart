@@ -25,6 +25,7 @@ from __future__ import annotations
 import importlib.util
 import pathlib
 import re
+import sys
 
 import pytest
 
@@ -36,6 +37,7 @@ _SRC = (
 @pytest.fixture(scope="module")
 def miner():
     """`cc_miner` is a script, not an installed module, so load it from its path."""
+    sys.path.insert(0, str(_SRC.parent))  # for its sibling import, `cc_data_host`
     spec = importlib.util.spec_from_file_location("cc_miner", _SRC)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -180,3 +182,24 @@ def test_taleo_enterprise_preserves_section_slug_casing(miner):
         "https://acme.taleo.net/careersection/NHC_FG_CS",
         "https://acme.taleo.net/careersection/NHC_FG_CS",
     )
+
+
+def test_label_extraction_reads_the_subdomain_and_drops_vendor_hosts(miner):
+    """The data-host path feeds raw capture URLs through `extract_tenants`; a label ATS keeps the
+    subdomain, lowercased, and `BLOCK` drops the vendor's own `www`."""
+    spec = miner.ATS_PATTERNS["bamboohr"]
+    pats = [re.compile(p, re.IGNORECASE) for p in spec["patterns"]]
+    hits: dict[str, str] = {}
+    miner.extract_tenants(
+        spec,
+        pats,
+        [
+            "https://Acme.bamboohr.com/careers/12",
+            "https://www.bamboohr.com/pricing",
+            "https://acme.bamboohr.com/jobs/",
+            "https://globex.bamboohr.com/",
+        ],
+        hits,
+    )
+    assert sorted(hits) == ["acme", "globex"]
+    assert hits["acme"] == "https://Acme.bamboohr.com/careers/12"

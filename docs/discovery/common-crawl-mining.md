@@ -69,7 +69,8 @@ The crawl list comes from [`collinfo.json`](https://index.commoncrawl.org/collin
 
 ### The tool
 
-[`cc_miner.py`](../scripts/discover/cc_miner.py) — stdlib + `curl`, fully resumable:
+[`cc_miner.py`](../scripts/discover/cc_miner.py) — `curl`, plus `cc_data_host.py` for the data-host
+fallback below (which needs `curl_cffi` and `headstart.spare_egress`), fully resumable:
 
 - reads the crawl list and the set of already-finished crawls
   ([`data/discover/cc_miner_checkpoint.txt`](../data/discover/cc_miner_checkpoint.txt));
@@ -165,14 +166,32 @@ com,ashbyhq,jobs)/ 20260614013756<TAB>cdx-00036.gz<TAB>515211635<TAB>215470<TAB>
 
 Sorted order is the whole trick: binary-search it with ~25 range GETs of 16 KB (~20s over a
 101 MB file), then range-GET just the `cdx-NNNNN.gz` blocks it points at and gunzip them.
-`scripts/discover/mine_ashby.py` (`_cc_blocks` / `commoncrawl_s3`) implements this and is the
-pattern to copy.
+[`cc_data_host.py`](../scripts/discover/cc_data_host.py) implements this for any ATS, keyed on
+the SURT range a CDX `matchType=domain` target covers (`hrmdirect.com` -> `[com,hrmdirect),
+com,hrmdirect-)`, the host and every subdomain). `cc_miner.py` falls back to it when
+`collinfo.json` is unreachable, and `CC_DATA_HOST=1` goes there directly:
+
+```
+CC_DATA_HOST=1 CC_ONLY_ATS=ashby python -u scripts/discover/cc_miner.py CC-MAIN-2026-39
+```
+
+The crawl list comes from the data host too (`crawl-data/index.html`). Its checkpoint key is one
+per crawl and target (`{crawl}|{target}|data`), so a crawl already mined through the API is read
+again, harmlessly, on the fallback. A 429 or 503 from it moves
+the requests to the spare egress (`headstart.spare_egress`, WARP) and back to direct after five
+minutes; a ~1,640-request sweep on 2026-09-23 met none.
 
 **The one bug to avoid: `cluster.idx` is sparse, so the block holding your host normally
 *starts at a key below it*.** Selecting only lines whose key is `>= prefix` therefore misses the
 block that actually contains the data — often returning nothing at all and looking like "this
 host isn't in this crawl". You must also carry the **last line whose key sorts before the
 prefix**. For `com,ashbyhq,` the covering block began at `com,ashbyhq,academy)/`.
+
+**And start every read of `cluster.idx` on a line boundary.** `mine_ashby.py`'s first version read
+its window from 1 KB before the last sub-prefix line, so the window began with a torn line. When
+that torn tail parses as a key sorting past the prefix (a line cut to `z\t18100\t…` reads as
+key `z`), the scan ends before it starts and the crawl reads as "no blocks". A sibling mine hit
+this on 14 of 33 Pinpoint crawls on 2026-09-23.
 
 The 2008–2012 tail (4 crawls) was deliberately skipped: counts had been frozen since the
 2016 crawls (every ATS we track postdates them), so they add nothing. The data shows it —
