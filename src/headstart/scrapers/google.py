@@ -169,7 +169,7 @@ def _posted_at(pair: Any) -> str | None:
     Verified not fabricated (2026-09-11): re-fetching the same page ~10s later left one job's
     triple unchanged, and across the 20 jobs on one page the values ranged from 2026-04-13 to
     2026-09-11 rather than all reading "now" — the ICIMS trap this checks for
-    (`datePosted` fabricated on 22% of its boards, CLAUDE.md's ATS-provider notes). Uses the
+    (`datePosted` fabricated on 22% of its boards, `icims.py`'s module docstring). Uses the
     earliest of the three timestamp fields present on a job (index 12, "created"), which is
     always <= the other two on every job sampled.
     """

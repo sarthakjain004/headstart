@@ -47,7 +47,7 @@ and an ADR number no one else holds.
 Write every existing claim about this ATS into `experiment/{ats}-{surface}/LOG.md`, one line
 each, to be confirmed or killed in step 2:
 
-- `CLAUDE.md`'s ATS TODO list and `experiment/ats-scraper-candidates/LOG.md` (tech %, pool size).
+- `CLAUDE.md`'s build list and `experiment/ats-scraper-candidates/LOG.md` (tech %, pool size).
 - Upstream implementations: `kalil0321/ats-scrapers` (`src/ats_scrapers/scrapers/{ats}.py`,
   seed list `ats-companies/{ats}.csv`, MIT) first, then `gh search code` / `gh search repos`.
   Record each endpoint, parameter and hardcoded constant.
@@ -73,7 +73,7 @@ locally.
 others lost), the dead-versus-empty rule, the tech-gate verdict, the rate-limit knee and the
 discovery plan — or, if the ATS is unbuildable (login wall, per-tenant auth, no public surface),
 the evidence for a **dead end**. A dead end ships as a docs-only PR: the measurement doc plus a
-dead-end line in `CLAUDE.md`'s TODO list.
+dead-end line in `CLAUDE.md`'s build list.
 
 ## 3. Build the tenant pool
 
@@ -129,7 +129,7 @@ disabled, or its cost is within 2x of the bar either way.
 
 Per [wiring.md](wiring.md#docs): one ADR carrying every choice a reader would otherwise
 re-litigate (slug identity, surface, dead-versus-empty rule, tech gate, enable decision); the
-✅ DONE entry in `CLAUDE.md`'s TODO list; `README.md`'s scraper count and list; every Board
+ATS's line removed from `CLAUDE.md`'s build list; `README.md`'s scraper count and list; every Board
 figure in `README.md` and `CONTEXT.md` recomputed; CONTEXT.md's Detail-pass entry. Then invoke
 `verify-search-filters` in this PR (CLAUDE.md requires it): `URL_SHAPES` is generated from
 `url_shape` (ADR-0157), so its coverage gate passes now. Its live-row checks can only see rows the

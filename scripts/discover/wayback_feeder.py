@@ -422,7 +422,7 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
 #             the belief its Boards were keyed by an opaque UUID — they are keyed by a path slug
 #             on one shared host, so it is a `path` entry above.
 #   greythr, qandle, beehive, taleo, HirePro, iSmartRecruit, Recruit CRM, Ceipal — verified dead
-#             ends (CLAUDE.md's ATS-expansion TODO); the retired PowerShell feeder still swept
+#             ends (CLAUDE.md's build list); the retired PowerShell feeder still swept
 #             qandle and beehive.
 # An ATS with no scraper yet (turbohire, peoplestrong, jobsoid, …) can still be swept ad hoc:
 # `--domain HOST --style sub` bypasses this table.
