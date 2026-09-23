@@ -7,9 +7,11 @@ is a sanity check (some non-tech creep is *allowed*, so it holds only clearly no
 
 from __future__ import annotations
 
+import csv
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import pytest
 
@@ -591,7 +593,7 @@ def test_a_non_software_department_still_vetoes_a_generic_title():
 
 def test_the_version_counter_moved_with_the_line():
     """`role_trends` reads this to tell "we changed who counts" from "the market moved"."""
-    assert TECH_FILTER_VERSION == 3, (
+    assert TECH_FILTER_VERSION == 4, (
         "bump this and its comment together — the comment carries the commit range and the "
         "measured effect, and a bump without one is what CLAUDE.md's DERIVATIONS_VERSION rule "
         "exists to stop"
@@ -734,3 +736,427 @@ def test_the_platform_arm_still_matches_a_plural_role_word(title):
 )
 def test_the_narrowed_patterns_do_not_fire_on_their_near_misses(title):
     assert is_tech(title) is False
+
+
+# --- TECH_FILTER_VERSION 4: boundaries, spellings and the "…engineer" trades ------------------
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        # `_` is a word character, so `\b` never fired beside it
+        "IN_Senior Associate_Azure Devops_Bengaluru",
+        "Application Developer_5",
+        # a level glued to the acronym
+        "SDE3",
+        "SDE2, Amazon",
+        # plurals and abbreviations of the role word
+        "PHP Developers",
+        "Engineers – .NET & React",
+        "Software Engr II",
+        "Senior Software Engg - Systems",
+        "Delv Senior Software Eng",
+        "SW Engineer",
+        "iOS Dev",
+        "Java Lead",
+        "Lead Dev",
+        "Systems Development Engineer, AWS Hardware",
+        # families with no signal before
+        "DevSecOps Specialist",
+        "Cyber Manager - Cloud DevSecOps",
+        "IT Project Manager",
+        "IT Site Engineer - Japan",
+        "Senior Cybersecurity Incident Responder",
+        "Cybersecurity Consultant - IAM / Saviynt Specialist",
+        "Principal Analyst Cyber Security Defense Center",
+        "Quant Researcher",
+        "Computer Scientist",
+        "Test Lead",
+        "Oracle-ERP Tester",
+        "Research Scientist, AI",
+        "Citrix Administrator / Consultant",
+        "System and Application Administrator",
+        "MES Engineer",
+        "Process Mining Developer",
+        "Data Mining Engineer",
+    ],
+)
+def test_version_4_titles_are_kept(title):
+    assert is_tech(title) is True, f"RECALL VIOLATION: tech job dropped -> {title!r}"
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Hardware Test and Validation Engineer",
+        "Manufacturing Software Support Engineer",
+        "Embedded Hardware Engineer",
+    ],
+)
+def test_a_setting_word_does_not_veto_software_work(title):
+    """`hardware`/`manufacturing` name where the code runs when the title also names the work."""
+    assert is_tech(title) is True
+
+
+@pytest.mark.parametrize("title", ["Hardware Engineer", "Manufacturing Engineer"])
+def test_a_setting_word_still_vetoes_on_its_own(title):
+    assert is_tech(title) is False
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Site Engineer",
+        "MEP Engineer",
+        "QA/QC Engineer",
+        "Senior Highway Engineer",
+        "Business Developer",
+        "Business Development Engineer",
+        "Front End Manager",
+        "Front End Lead Clerk",
+        "CNC Programmer",
+        "JD/LLM – Tax Analyst",
+        "Mechanical Engineering Manager",
+        "Mechanical Engineering Manager, Air Handling Systems",
+    ],
+)
+def test_version_4_trades_are_refused(title):
+    assert is_tech(title) is False, f"non-tech kept -> {title!r}"
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        # the vetoes and exclusions above must not reach the software roles sharing their words
+        "Site Reliability Engineer",
+        "Web Site Developer",
+        "Frontend Lead",
+        "Front End Developer",
+        "Software/ Electrical Engineering Manager",
+        "CNC Programmer / Software Developer",
+        "Engineering Manager",
+        "LLM Engineer",
+    ],
+)
+def test_version_4_exclusions_do_not_reach_their_software_neighbours(title):
+    assert is_tech(title) is True, f"RECALL VIOLATION: tech job dropped -> {title!r}"
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        # `cyber` names the market these roles sell to, and "AI Specialist" is the crowdwork
+        # labelling role ADR-0087 keeps out — neither may become a strong signal
+        "Business Development Representative - Cybersecurity",
+        "Marketing Specialist - Cybersecurity",
+        "Legal AI Specialist - Litigation",
+        "Field Applications Engineer",
+    ],
+)
+def test_version_4_domain_words_stay_qualified(title):
+    assert not tech_filter._STRONG.search(title), title
+
+
+def test_a_set_aside_trade_goes_to_rule_4_and_its_guards():
+    """Rule 4's own guards keep the trades out; a technical department keeps a front-end manager.
+
+    "Frontend Manager" on a streaming platform's board is a software role (review of #573).
+    """
+    assert is_tech("CNC Programmer", department="Engineering") is False
+    assert is_tech("Mechanical Engineering Manager", department="Engineering") is False
+    assert is_tech("Front End Manager", department="Retail, Store Ops") is False
+    assert is_tech("Front End Manager", department="Technology") is True
+
+
+@pytest.mark.parametrize(
+    "title,department",
+    [
+        # review of #573: v3 kept each of these and the first cut of v4 dropped them
+        ("Frontend Manager", ""),
+        ("Front End Manager - React", ""),
+        ("Mechanical Engineering Manager - Software", ""),
+        ("Process Engineering Manager - Automation Software", ""),
+        ("Industrial Engineering Manager - MES", ""),
+        ("Civil Engineering Manager - GIS", ""),
+        ("CNC Programmer - CAM Software", ""),
+        ("Software, Electrical Engineering Manager", ""),
+        ("Site Engineer - Fiber", ""),
+        ("Site Engineer - 5G RAN", ""),
+        ("Field Site Engineer - Wireless", ""),
+        ("Site Engineer - Mission Critical", ""),
+        ("Site Engineer", "DCO"),
+        ("Business Development Engineer, AWS", ""),
+        # glued levels beyond SDE
+        ("Developer3", ""),
+        ("SRE2", ""),
+        ("DevOps3", ""),
+    ],
+)
+def test_version_4_review_losses_are_kept(title, department):
+    assert is_tech(title, department or None) is True, title
+
+
+@pytest.mark.parametrize(
+    "title",
+    ["Business Dev Manager", "Biz Dev Lead", "Web Lead", "Game Lead", "Mobile Lead"],
+)
+def test_version_4_dev_and_lead_arms_stay_tied_to_a_discipline(title):
+    assert not tech_filter._STRONG.search(title), title
+
+
+def test_a_law_degree_is_not_a_language_model():
+    assert is_tech("LLM Tax Associate") is False
+    assert is_tech("JD/LLM – Tax Analyst") is False
+    assert is_tech("LLM Engineer") is True
+
+
+# --- the labelled evaluation set -------------------------------------------------------------
+#
+# 971 English titles (+ department) from our own data, not a third-party corpus: 400 drawn from
+# the served table, 300 the version-3 gate dropped from the pre-filter snapshot, and 300 whose
+# verdict version 4 changed. Each was labelled blind by two independent labellers (973 of
+# the 1,000 sampled rows agreed, before 29 non-English rows were dropped) and the 27 disagreements settled by hand; `ambiguous` rows are kept for reference
+# and scored by neither test. Stratified, so these are regression gates, not population rates.
+
+_EVAL = Path(__file__).parent / "fixtures" / "tech_filter_eval.tsv"
+
+# Tech titles the gate is known to drop. A new miss fails the recall test; fixing one of these
+# does not (the failure message still names it, so the list can be pruned).
+_KNOWN_MISSES = {
+    # "Consultant" beside "Gen-AI" is also the crowdwork labelling role ADR-0087 keeps out.
+    "IA- Consultant-Gen-AI/Agentic AI",
+}
+
+# Non-tech titles the gate keeps today — the recall-biased "…engineer" creep (field service,
+# process and quality engineers). A change may lower this; raising it needs a reason.
+_FALSE_POSITIVE_CEILING = 86
+
+
+def _eval_rows(label: str) -> list[tuple[str, str]]:
+    with _EVAL.open(encoding="utf-8", newline="") as fh:
+        return [
+            (row["title"], row["department"])
+            for row in csv.DictReader(fh, delimiter="\t")
+            if row["label"] == label
+        ]
+
+
+def test_the_labelled_set_keeps_every_tech_title_but_the_known_misses():
+    tech = _eval_rows("tech")
+    assert len(tech) == 345
+    missed = {title for title, dept in tech if not is_tech(title, dept or None)}
+    assert missed <= _KNOWN_MISSES, (
+        f"new misses: {sorted(missed - _KNOWN_MISSES)}; "
+        f"(fixed, can be dropped from _KNOWN_MISSES: {sorted(_KNOWN_MISSES - missed)})"
+    )
+
+
+def test_the_labelled_set_admits_no_more_non_tech_than_before():
+    non_tech = _eval_rows("not_tech")
+    assert len(non_tech) == 540
+    kept = [title for title, dept in non_tech if is_tech(title, dept or None)]
+    assert len(kept) <= _FALSE_POSITIVE_CEILING, kept
+
+
+@pytest.mark.parametrize(
+    "title,department",
+    [
+        ("JD Edwards CNC Administrator", "Information Technology"),
+        ("JDE CNC Admin - Long term Contract", "Information Technology"),
+        ("CNC/JD Edward Admin", "Information Technology"),
+        ("Edwards CNC", "IT Services"),
+    ],
+)
+def test_jd_edwards_cnc_is_the_erp_not_the_machine_shop(title, department):
+    """Review of #573: putting `cnc` in `_NON_TECH_ROLE` first dropped these, measured."""
+    assert is_tech(title, department) is True
+
+
+def test_a_machine_shop_title_in_a_mislabelled_it_department_is_refused():
+    assert is_tech("CNC Turner", department="Information Technology") is False
+
+
+# --- critique of version 4 (6/10): bugs, overrides, siblings, recall groups -------------------
+
+
+@pytest.mark.parametrize(
+    "title,department",
+    [
+        # regex bugs
+        (".NET Lead", ""),
+        ("Sr.Net Lead", ""),
+        ("Senior Member Technical Staff", ""),
+        ("SMTS, Silicon Validation", ""),
+        ("Analyst, Identity Access Management", ""),
+        ("SOC L3 Analyst", ""),
+        ("CSOC Analyst", ""),
+        ("IT & Cybersecurity Support Technician", ""),
+        ("IT Infrastructure & Network Lead", ""),
+        ("Chief Technology Officer", ""),
+        ("LLM Program Manager", ""),
+        ("Research Intern – Reinforcement Learning", "AI Research"),
+        # the lower-risk groups from the Indeed rejects
+        ("Kubernetes L3 Lead", ""),
+        ("Snowflake Admin", ""),
+        ("Mainframe SME", ""),
+        ("Production Support Analyst", ""),
+        ("L2 Application Support Engineer", ""),
+        ("Threat Intelligence Analyst", ""),
+        ("Vulnerability Management Specialist", ""),
+        ("Cloud Consultant", ""),
+        ("Splunk Administrator", ""),
+        ("AI Team Lead", ""),
+        ("Application Development Specialist", ""),
+        ("Technical Delivery Manager", ""),
+        # glued words and compounds the per-word-start matching must still reach
+        ("SeniorSolution Architect - Public Sector", ""),
+        ("Tier 1Technical Support Analyst (Hybrid)", ""),
+        ("Outsystems Architect", ""),
+        ("Senior GPU Memory Subsystem Architect", ""),
+        ("CIAM Architect", ""),
+        ("Masterdata Analyst III", ""),
+        ("Hybrid and Multicloud Architect", ""),
+        # the served-table read of the new vetoes: each of these was dropped by a first cut
+        ("Rails Application Developer", ""),
+        ("SD3 - Principal Engineer - Ruby & Rails (RoR) Application Development", ""),
+        ("Lead Systems RMA Engineer --Air Traffic Control", ""),
+        ("Epic Bridges EDI Developer", ""),
+        ("Principal AI/ ML Robotics Engineer - Environmental Perception", ""),
+        ("Senior Communications Engineer, Rail Systems, Seattle WA", ""),
+        ("Lead Engineer - SW Design - RAIL", ""),
+        ("LabVIEW Quality Engineer", "Aerospace"),
+        ("PLM Administrator, Configuration Management", "Mechanical Engineering"),
+        ("Senior Solutions Consultant", "Sales - Sales Engineering"),
+        (
+            "PC Technician - Edmonton",
+            "Admin (Office, Sales, IT, Customs, Central Dispatch, etc.)",
+        ),
+        (
+            "Sr. Specialist - L1 Integration Testing",
+            "Vehicle Software & Electrical Engineering",
+        ),
+        ("IT Project Leader", "Manufacturing Engineering"),
+        ("Front End Team Member", ""),
+        ("Staff Design Quality Engineer (Software/Electrical)", ""),
+    ],
+)
+def test_version_4_critique_keeps(title, department):
+    assert is_tech(title, department or None) is True, f"RECALL VIOLATION -> {title!r}"
+
+
+@pytest.mark.parametrize(
+    "title,department",
+    [
+        # strong arms no longer override the sales/insurance/discipline vetoes
+        ("Sales Engineer – AI", ""),
+        ("Civil Engineer – ML", ""),
+        ("Cyber Sales Manager", ""),
+        ("Cybersecurity Sales Director", ""),
+        ("Cyber Claims Specialist", ""),
+        ("AI Lead Generation & Outreach Executive", ""),
+        # rule 0's rescue reads code words only
+        ("CNC Programmer/Tool & Die Maker", ""),
+        ("Manufacturing Engineering Manager - Automation", ""),
+        # highway's siblings
+        ("Bridge Engineer", ""),
+        ("Traffic Engineer", ""),
+        ("Water Resources Engineer", ""),
+        ("Transportation Engineer", ""),
+        ("Environmental Engineer", ""),
+        ("Substation Engineer", ""),
+        ("Railway Engineer", ""),
+        ("Facilities Engineer", ""),
+        ("Supplier Quality Engineer", ""),
+        # rule 4 reads a non-software discipline in the department
+        ("Intern", "Building Engineering"),
+        ("Intern", "Electrical Engineering"),
+        # accidental v3 substring hits the per-word-start matching retires
+        ("Geotechnical Project Manager", ""),
+        ("Assoc Analyst Procurement", ""),
+        ("Property Tax Protest Analyst", ""),
+        ("Looking for Mechanical Engineer or Automobile Engineer", "Engineering"),
+    ],
+)
+def test_version_4_critique_refuses(title, department):
+    assert is_tech(title, department or None) is False, f"non-tech kept -> {title!r}"
+
+
+# --- the blind hold-out ------------------------------------------------------------------------
+#
+# 800 English Indeed titles drawn at random AFTER version 4 was final — 500 it drops, 300 it
+# keeps, none already in the labelled set above — and labelled blind by two labellers whose every
+# output line echoed its title (a first pass had drifted a row out of alignment; this one
+# verified 800/800). 783 agreed; the 17 disagreements were settled by hand. Weighted back to the
+# 557,580-row population it puts recall at ~84.7% (77.6-89.7%) and precision at ~81.1%
+# (docs/tech-filter/2026-09-23_spellings-and-trades.md).
+#
+# Nothing was tuned on it, and the titles are deliberately not listed here: its value is being an
+# honest measurement. These tests only stop it getting worse. A change that lowers either count
+# may lower the ceiling with it; one that raises either needs a reason, not a new ceiling.
+
+_HOLDOUT = Path(__file__).parent / "fixtures" / "tech_filter_holdout.tsv"
+_HOLDOUT_MISS_CEILING = 22  # tech titles dropped, of 241
+_HOLDOUT_FALSE_POSITIVE_CEILING = 51  # non-tech titles kept, of 487
+
+
+def _holdout(label: str) -> list[str]:
+    with _HOLDOUT.open(encoding="utf-8", newline="") as fh:
+        return [
+            r["title"]
+            for r in csv.DictReader(fh, delimiter="\t")
+            if r["label"] == label
+        ]
+
+
+def test_the_hold_out_drops_no_more_tech_than_it_did():
+    missed = [t for t in _holdout("tech") if not is_tech(t)]
+    assert len(missed) <= _HOLDOUT_MISS_CEILING, missed
+
+
+def test_the_hold_out_keeps_no_more_non_tech_than_it_did():
+    kept = [t for t in _holdout("not_tech") if is_tech(t)]
+    assert len(kept) <= _HOLDOUT_FALSE_POSITIVE_CEILING, kept
+
+
+# --- review of #573, second round ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "title,department",
+    [
+        ("Assoc Analyst, Ai", "Systems Technical Support"),
+        ("Pre-Sales Consultant — Enterprise Cybersecurity", ""),
+        ("Rail Systems Developer", ""),
+        ("Traffic Simulation Developer", ""),
+        ("Ruby on Rail UI Engineer", "Information Technology"),
+        ("SoC Power Architect, Devices and Services, Silicon", ""),
+        # a department of just "Security" holds infosec at a software company
+        ("Senior Information Protection Manager", "Security"),
+        ("Security Researcher", "Security"),
+        ("Incident Manager - Detection & Response", "Security"),
+    ],
+)
+def test_second_review_keeps(title, department):
+    assert is_tech(title, department or None) is True, f"RECALL VIOLATION -> {title!r}"
+
+
+@pytest.mark.parametrize(
+    "title,department",
+    [
+        # the reverse cyber arm respects the sales/insurance exclusion too
+        ("Sales Engineer – Cybersecurity", ""),
+        ("Consultant – Cyber Insurance", ""),
+        ("Business Development Manager - Developer Focused", ""),
+        ("Senior Sales Engineer, AI", ""),
+        # physical-security titles under a bare "Security" department
+        ("Event Security | Part-Time | PPG Paints Arena", "Security"),
+        ("Correctional Officer", "Security"),
+        ("Security Supervisor", "Security"),
+        # `technology`/`technical`/`infrastructure` no longer spare a trade veto
+        ("MEP Engineer", "MEP Building Technology"),
+        ("Supplier Quality Engineer", "Engineering & Technology"),
+        ("Intern", "Facilities Engineering"),
+    ],
+)
+def test_second_review_refuses(title, department):
+    assert is_tech(title, department or None) is False, f"non-tech kept -> {title!r}"

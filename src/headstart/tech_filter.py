@@ -10,10 +10,19 @@ see ``scripts/filter/verify_tech.py``, the reasoning gate that samples the dropp
 
 Precedence (first match wins):
 
+  0. a phrase that trips a strong signal but
+     names another trade ("CNC Programmer",
+     "Front End Manager") is set aside before
+     rules 1-3; what is left is judged on its
+     own, and a remainder naming software
+     work ("… - MES") is tech               -> tech, or on to rules 1-5
   1. a strong, unambiguous software signal  -> tech      (overrides any disqualifier)
   2. a generic role token (engineer/developer/…) *with* a non-software qualifier (mechanical,
      sales, civil, …) in the title, or in a
-     department that names a discipline       -> not tech
+     department that names a discipline, or a
+     construction trade (site, MEP, QA/QC,
+     highway) with no IT/network/software word
+     in the title or department              -> not tech
   3. a generic role token alone              -> tech      (recall: keep the ambiguous ones)
   4. a clearly-technical department, unless
      it names a hiring function, or means
@@ -21,7 +30,9 @@ Precedence (first match wins):
      title names a different profession       -> tech      (recall booster for vague titles)
   5. otherwise                               -> not tech
 
-**Rules 1-3 read the title; only rule 4 reads the department.** Until 2026-09-17 rules 1 and 2 ran
+**Rules 1-3 read the title; rule 4 reads the department.** Two narrow exceptions: rule 2's
+discipline veto also reads a department that names a discipline, and its trade veto stands down
+when the department names infrastructure work (`DC Ops`, `IT`). Until 2026-09-17 rules 1 and 2 ran
 over ``title + department``, so a department could settle a title question — "Software development"
 contains "software dev", so a Content Creator in it scored a strong software signal. The department
 has one rule, and that is where its guards live.
@@ -60,7 +71,18 @@ from pathlib import Path
 # Net **+1.62%** on the 332,383-posting pre-filter snapshot, 67,506 -> 68,600: **+1,094 in, 0 out**,
 # so unlike version 2 this one is purely additive and the composition moves exactly as far as the
 # total. See docs/tech-filter/2026-09-21_the-families-still-outside-the-gate.md.
-TECH_FILTER_VERSION = 3
+# 4 (2026-09-23, `git log da0565b7..f6811db8 -- src/headstart/tech_filter.py`): English spellings
+# and families the gate could not see (`_` as a separator, glued levels, plurals, Engr/Engg/Dev,
+# DevSecOps, IT/cyber/IAM/SOC/support/stack-word families, most found in the Indeed harvest's
+# rejects), and the "…engineer" trades it admitted in bulk (site, MEP, QA/QC, highway and its
+# siblings, business developer, the retail front end, CNC, discipline engineering managers),
+# each veto standing down where the title or department names IT or software work; physical-
+# security titles under a bare "Security" department. Two-sided: on the served table (v654,
+# 514,163 rows) **-17,294 out, +1 in**, every lost title read by hand; on the 332,383-posting
+# pre-filter snapshot 68,600 -> 69,192, **+1,852 in, -1,260 out**. A blind 800-title hold-out
+# puts recall at ~84.6% and precision at ~82.0%. See
+# docs/tech-filter/2026-09-23_spellings-and-trades.md.
+TECH_FILTER_VERSION = 4
 
 # 1. Strong, software-specific signals. A match here means tech regardless of any disqualifier.
 _STRONG_TERMS = [
@@ -90,18 +112,18 @@ _STRONG_TERMS = [
     r"site reliability",
     r"platform engineer",
     r"infrastructure engineer",
-    r"cloud (engineer|architect|developer)",
+    r"(multi|hybrid)?[\s-]?cloud (engineer|architect|developer)",
     r"(security|appsec) engineer",
     r"application security",
-    r"(qa|test) (engineer|automation)",
-    r"quality engineer",
+    r"([lfs]?qa|test) (engineer|automation)",
     r"\bsdet\b",
     r"automation engineer",
     r"embedded (software|engineer|developer|systems)",
     r"\bfirmware\b",
     (
-        r"(software|systems?|solutions?|technical|technology|cloud|data|security|platform"
-        r"|enterprise|integration|application|infrastructure|network|devops|ai|ml|iam|api"
+        r"(software|(sub|eco)?systems?|solutions?|technical|technology|cloud|data|security|c?iam"
+        r"|platform"
+        r"|enterprise|integration|application|infrastructure|network|devops|ai|ml|api"
         r"|java|\.net|dotnet|python|salesforce|servicenow|sap|azure|aws|oracle|mobile|frontend"
         r"|backend|full[\s-]?stack) architect"
     ),
@@ -114,19 +136,21 @@ _STRONG_TERMS = [
     # `systems?`, not `systems`: "System Administrator" and "System Engineer" are the commoner
     # singular spellings and were falling through — measured on a jobvite board serving
     # "IT System Administrator (TS/SCI with Polygraph)", a cleared sysadmin role, as non-tech.
-    r"(systems?|network|database|devops|cloud|linux) (administrator|admin|engineer)",
+    r"((sub)?systems?|network|database|devops|cloud|linux) (administrator|admin|engineer)",
     r"engineering manager",
-    r"(director|vp|vice president|head) of (engineering|ai|ml|data|software|platform|infrastructure|technology|security)",
+    r"(director|s?vp|vice president|head) of (engineering|ai|ml|data|software|platform|infrastructure|technology|security)",
     r"\bcto\b",
+    r"\bchief (technology|information|technical|digital|information security) officer\b",
+    r"\bciso\b",
     r"tech(nical)? lead",
-    r"(ai|ml|data|software|cloud|security|systems|chief|principal|staff) technologist",
+    r"(ai|ml|data|software|cloud|security|cyber\w*|systems|chief|principal|staff) technologist",
     r"developer (advocate|relations)",
     r"\bdevrel\b",
     r"(react|angular|vue|node|python|java|golang|rust|kubernetes) (developer|engineer)",
     # Roles whose title names the discipline without using "engineer"/"developer" — these were
     # reaching the index only because their *department* said "Technology", which is what makes
     # them invisible to a pre-detail gate (ADR-0166).
-    r"(penetration|software|automation|qa|game|performance) tester",
+    r"(penetration|software|automation|[lfs]?qa|(video)?game|performance) tester",
     r"\bpentest(er)?\b",
     r"scrum master",
     r"(systems?|business systems|technical|data|security|soc|cyber|network|application) analyst",
@@ -152,15 +176,18 @@ _STRONG_TERMS = [
     # role word is routinely plural ("ServiceNow Developers", "Workday Consultants"): a bare
     # closing `\b` drops both, and the adjacent form this replaces had no closing boundary,
     # so tightening it without the `s?` would have been a recall regression.
+    # `peoplesoft`/`zendesk`/`aem` and the `admin` spelling: version 4, from the labelled set
+    # ("NetSuite Admin", "Consultant Zendesk", "Sr. PeopleSoft 9.2 Functional Lead", "AEM Lead").
     (
         r"\b(salesforce|servicenow|sharepoint|sap|abap|apex|workday|netsuite|oracle"
-        r"|dynamics)\b"
-        r".{0,24}\b(developer|administrator|consultant|analyst|specialist|architect|lead)s?\b"
+        r"|dynamics|peoplesoft|zendesk|aem)\b"
+        r".{0,24}\b(developer|administrator|admin|consultant|analyst|specialist|architect"
+        r"|lead)s?\b"
     ),
     (
-        r"\b(developer|administrator|consultant|analyst|specialist|architect|lead)s?\b"
+        r"\b(developer|administrator|admin|consultant|analyst|specialist|architect|lead)s?\b"
         r".{0,24}\b(salesforce|servicenow|sharepoint|sap|abap|apex|workday|netsuite|oracle"
-        r"|dynamics)\b"
+        r"|dynamics|peoplesoft|zendesk|aem)\b"
     ),
     r"\b(etl|rpa|middleware|integration) (developer|specialist|consultant|lead)\b",
     r"database (administrator|analyst|specialist|developer)",
@@ -169,7 +196,10 @@ _STRONG_TERMS = [
     # its own, so nothing in this list covered it. Since rules 1-2 read the title only (ADR-0166)
     # it had no department left to rescue it either: 124 rows, on boards whose departments read
     # Modeling, Research, Inference, Technical Staff.
-    r"member of (the )?technical staff",
+    # Also the spellings without "of" and the initialism ("Senior Member Technical Staff",
+    # "SMTS"), qualified so a bare "MTS" (a company, a test-systems vendor) does not count.
+    r"member,?\s+(of\s+)?(the\s+)?technical\s+staff",
+    r"\b(s|sr|senior|principal|lead)\s?mts\b|\b[sp]mts\b",
     # Qualified so "Forward Deployed Creative" stays out. It has to be a strong signal rather
     # than a generic one because these sit under a Sales/GTM department, which rule 2 vetoes on.
     r"forward[- ]deployed (software |ai )?engineer",
@@ -205,11 +235,229 @@ _STRONG_TERMS = [
     r"\bqa (analyst|lead|manager)s?\b",
     r"test analyst",
     r"manual tester",
+    # --- version 4 ------------------------------------------------------------------------
+    # `\bdevops\b` cannot match inside "devsecops", so "DevSecOps Specialist" had no signal.
+    r"\bdevsecops\b",
+    # Abbreviated role words. A bare `eng`/`dev` is never enough — "ENG/SPA" is a language pair
+    # and "Business Dev" is sales — so each is tied to a word that names the discipline:
+    # "Software Engr II", "SW Eng", "iOS Dev", "Java Lead", "Dev Lead".
+    (
+        r"\b(software|sw|systems?|data|ml|ai|qa|test|devops|cloud|platform|firmware|backend"
+        r"|frontend|app) (engr|engg|eng)s?\b"
+    ),
+    r"\bsw (engineer|developer|dev|design|development|test\w*|architect\w*|lead)s?\b",
+    # Spellings the per-word-start matching no longer reaches mid-word (v3 matched "ml
+    # architect" inside "AIML Architect", "ai architect" inside "CCAI Architect").
+    r"\b(aiml|ccai|genai|conversational ai) (architect|engineer|developer|consultant)s?\b",
+    r"\bmeta ?data (engineer|scientist|architect|analyst)s?\b",
+    r"\b(mar|ed|fin|ad|reg|legal|insur)tech (lead|manager|engineer|developer|specialist)s?\b",
+    r"\bcyber\w* (architecture|engineering|operations|governance)\b",
+    r"\b(pc|desktop|computer|it) technicians?\b",
+    r"\bplm (administrator|admin|developer|architect|consultant|engineer)s?\b",
+    r"\bmask design",
+    # From the critique's riskier groups, only the forms whose samples read as tech: AI/ML
+    # *directly* before the role ("AI Lead", "Artificial Intelligence Team Lead", "AI Principal
+    # Architect") — not "AI Strategy/Transformation/GTM …", which are consulting and sales —
+    # and the IT spellings of development/delivery leads. Bare "QA" is not added: its sample
+    # was mostly food, pharma, lab and call-centre QA.
+    (
+        r"\b(ai|ml|ai/ml|gen ?ai|artificial intelligence|machine learning)\s+(team\s+)?"
+        r"(principal\s+|senior\s+|chief\s+)?(lead|architect|intern|internship)s?\b"
+        r"(?! generation)"
+    ),
+    r"\bapp(lication)?s? development\b",
+    r"\btechnical (delivery (manager|lead)|team lead)s?\b",
+    r"\bsoftware (expert|team lead|delivery manager|development (manager|lead))s?\b",
+    r"\bmaster ?data (analyst|specialist|engineer|lead|manager|management)s?\b",
+    r"\bsr\.net (devs?|lead|developer|engineer)s?\b",
+    r"\b(analyst|specialist|engineer|administrator|support)\W+(systems\W+)?it\s*$",
+    (
+        r"\b(ios|android|java|python|php|react|node|dotnet|backend|frontend"
+        r"|full[\s-]?stack|golang|kotlin|scala|ruby|c\+\+|c#) (devs?|lead)\b"
+    ),
+    # `web`/`mobile`/`game` name a setting as often as a discipline, so only `dev` follows them:
+    # "Web Lead" and "Game Lead" are not strong signals.
+    r"\b(web|mobile|game|unity) devs?\b",
+    r"(?<!business )(?<!biz )\bdev (lead|manager|team lead)\b",
+    # "Lead Dev", "Senior Dev" — but not a fundraising "Senior Dev Officer" or "Dev Director".
+    (
+        r"\b(lead|senior|sr|junior|jr|principal|staff) devs?\b(?! (officer|director|associate"
+        r"|coordinator|rep|representative))"
+    ),
+    r"(software|systems?|application) development engineer",
+    # IT roles with a word between `IT` and the role ("IT Project Manager"), which the
+    # adjacent-only `\b(it|ict)[\s/-]+(manager|…)` arm above cannot express.
+    (
+        r"\bit (project|program|service|infrastructure|systems?|security|operations|support|asset|site"
+        r"|field"
+        r"|delivery|change|release|business|risk|audit|compliance|governance) (manager|lead"
+        r"|coordinator|analyst|specialist|engineer|consultant|partner|director|officer|owner"
+        r"|administrator|auditor|leader)s?\b"
+    ),
+    # IT support under its ITIL name — the same role `help[\s-]?desk` already keeps.
+    r"\bservice[\s-]?desk\b",
+    # Security roles named for the domain rather than an engineer/analyst title, qualified by
+    # that domain word — bare "Security Consultant" is also a physical-security trade. `cyber`
+    # needs a practitioner's role word after it: on its own it also names the *market* a sales,
+    # marketing or support role serves ("Business Development Representative - Cybersecurity",
+    # "Marketing Specialist - Cybersecurity", "Cybersecurity Customer Experts"). The reverse
+    # order is admitted only for the unambiguous role words.
+    # The gap may not cross a sales or insurance word: "Cyber Sales Manager", "Cybersecurity
+    # Sales Director" and "Cyber Claims Specialist" sell or insure it (critique of v4, 33 rows).
+    (
+        r"\bcyber\w*(?:(?!(?<!pre-)(?<!pre )sales|claims|underwrit|insurance|broker|marketing|account exec"
+        r"|business develop|recruit).){0,30}\b(engineer|analyst|architect|consultant|responder"
+        r"|tester|researcher|hunter|auditor|specialist|manager|lead|advisor|officer|operator"
+        r"|director)s?\b"
+    ),
+    # The reverse order gets the forward arm's sales/insurance exclusion too ("Sales Engineer –
+    # Cybersecurity", "Consultant – Cyber Insurance"; review of #573).
+    (
+        r"^(?!.*(?<!pre-)(?<!pre )\b(sales|claims|underwrit|insurance|broker|marketing)).*?"
+        r"\b(analyst|engineer|architect|consultant)s?\b.{0,20}\bcyber"
+    ),
+    # "Assoc Analyst, Ai" (Canon; evaluates AI/ML models) — v3 kept it only through a
+    # substring hit that word-start matching retired.
+    r"\b(analyst|scientist)s?,\s*(ai|ml|ai/ml)\s*$",
+    (
+        r"\b(information|network|cloud|application|data|it|ot|product) security (consultant|specialist"
+        r"|manager|architect|lead|advisor|officer|expert)s?\b"
+    ),
+    r"\bred team\b",
+    (
+        r"\b(identity (and|&) access|iam|pam) (engineer|consultant|specialist|analyst|architect"
+        r"|manager|lead)"
+    ),
+    r"\bquant(itative)? (developer|researcher|engineer|dev)s?\b",
+    r"computer scientist",
+    r"\bkernel (engineer|developer|hacker)",
+    r"\btest (lead|manager|architect)s?\b",
+    (
+        r"\b(erp|uat|etl|sap|oracle|api|web|mobile|functional|selenium|automation|regression"
+        r"|integration)\b.{0,6}\btesters?\b"
+    ),
+    # "Research Scientist, AI" — the reverse order of the `(ai|ml) … scientist` arm above.
+    # Not `engineer`: a strong arm overrides every veto, and "Sales Engineer – AI" or "Civil
+    # Engineer – ML" are the vetoed trades. A bare "Engineer – AI" still passes as generic.
+    r"\b(scientist|researcher)s?\b.{0,20}\b(ai|ml|machine learning|nlp|llms?|genai)\b",
+    r"reinforcement learning",
+    # Not `specialist`/`consultant`: "Legal AI Specialist", "Equity Research AI Specialist" are
+    # the crowdwork labelling roles ADR-0087 keeps out, under an "AI Training" department.
+    r"\b(ai|ml|ai/ml|genai|gen ai|agentic ai)[\s/&,-]*(architect|developer)s?\b",
+    # `application` takes only the admin words: "Field Applications Engineer" is hardware presales.
+    r"\bapplications? (administrator|admin)s?\b",
+    (
+        r"\b(server|windows|unix|m365|middleware|storage|backup|vmware|citrix|active directory"
+        r"|exchange|sharepoint) (administrator|admin|engineer)s?\b"
+    ),
+    r"\b(system|systems|application) and (application|network|database) administrator",
+    # Manufacturing Execution Systems and process/data mining are software; the `manufacturing`
+    # and `mining` vetoes used to drop them.
+    r"\bmes (engineer|developer|analyst|consultant|specialist|administrator|lead|architect)s?\b",
+    r"manufacturing execution system",
+    r"\b(data|process|text) mining\b",
+    # JD Edwards is an ERP: every JDE title is enterprise-platform work, "CNC" ones included.
+    r"\b(jd ?edwards?|jde)\b",
+    # "Quality engineer" is generic since v4 (it kept 5,565 manufacturing/supplier QE rows as a
+    # strong signal); beside software, data or test work it is the QA role and stays strong.
+    r"\b(software|data|analytics|systems?|test|qa)\b.{0,20}\bquality engineer",
+    r"\bquality engineer\b.{0,20}\b(software|data|analytics)\b",
+    # --- from the Indeed harvest's English rejects (critique of v4) ------------------------
+    # IT spelled out, in reverse order, or before `&`/an early-career word.
+    r"\binformation technology\b",
+    r"\b(head|director|vp|vice president|chief)\W+(of\W+)?(it|information technology)\b",
+    r"\bit (intern|internship|executive|head|trainee|associate|infrastructure|and)\b|\bit &",
+    # Support tiers for software, not machines.
+    r"\b(applications?|app|production|prod)[\s-]+support\b",
+    (
+        r"\b(l[1-3]|level ?[1-3]|tier ?[1-3])[\s-]+(application |technical |tech |it |production )?"
+        r"support\b"
+    ),
+    r"\btech support\b",
+    # A named stack or platform beside a non-developer role ("Kubernetes L3 Lead", "Snowflake
+    # Admin", "Mainframe SME"). A lookbehind rather than `\b`, which cannot precede ".NET".
+    (
+        r"(?<![\w.])(\.net|dot ?net|node\.?js|react(\.?js| native)?|angular|kubernetes|k8s"
+        r"|terraform|snowflake|databricks|hadoop|mainframe|pega|guidewire|linux|unix|aws|azure"
+        r"|gcp|google cloud|mulesoft|informatica|d365|s/?4 ?hana|java|python|golang|php|mern"
+        r"|out ?systems|mendix|appian"
+        r"|mean stack)\b.{0,25}\b(lead|admin|administrator|architect|specialist|consultant"
+        r"|intern|internship|trainee|sme|subject matter expert|expert|support|analyst)s?\b"
+    ),
+    r"(?<!\w)\.net (devs?|lead|developer|engineer)s?\b",
+    # Security families named for the practice rather than a role.
+    (
+        r"\b(threat (intel\w*|hunt\w*|analyst|detection)|vulnerabilit\w* (manage\w*|analyst"
+        r"|assessment|specialist|engineer)|malware|incident respon\w*|siem|secops"
+        r"|infrastructure security|endpoint security|email security|cloud security|dlp analyst"
+        r"|grc (analyst|specialist|lead|manager)|identity (and |& )?access|forensic\w* (analyst"
+        r"|examiner|investigator)|ethical hack\w*)\b"
+    ),
+    r"\biam\b.{0,20}\b(analyst|engineer|consultant|specialist|architect|lead|manager)",
+    (
+        r"\bcloud (consultant|specialist|operations|ops|support|administrator|admin|analyst|lead"
+        r"|technician|associate)s?\b"
+    ),
+    (
+        r"\bsys ?admin|\bdb ?admin|\b(hadoop|snowflake|kubernetes|k8s|databricks|office ?365"
+        r"|o365|m365|ms365|splunk|jira|atlassian|okta|intune|sccm|citrix|vmware|websphere"
+        r"|weblogic|tomcat|jboss|ab ?initio) (admin|administrator|engineer|consultant"
+        r"|specialist)s?\b|\bplatform (administrator|administration|admin)\b"
+    ),
+    # From the labelled evaluation set's misses (tests/fixtures/tech_filter_eval.tsv).
+    # One SOC arm: "(SOC) Analyst", "SOC L3 Analyst", "CSOC Analyst" — not the physical "GSOC".
+    r"\(?\b(c|cyber )?soc\b\)?.{0,8}\b(analyst|specialist|manager|engineer|architect|lead)",
+    r"\b(analyst|manager|lead|engineer)s?\b.{0,15}\bsoc\b",
+    r"\bdfir\b",
+    # Only `technician`: "Data Center Engineer/Operations" is as often the building's mechanical
+    # and electrical plant ("Mechanical Field Engineer — Data Center Operations").
+    r"\bdata ?cent(er|re) technicians?\b",
+    r"\b(software|etl|automation|manual|api|performance|mobile|regression) testing\b",
+    r"\b(consultant|developer|analyst)s?\b.{0,15}\b(power ?bi|tableau|looker|qlik)\b",
+    r"\bweb development\b",
 ]
-_STRONG = re.compile("|".join(_STRONG_TERMS), re.IGNORECASE)
+# Tried only where a word starts. Python's `re` walks every alternative at every character, so
+# the lookbehind — one cheap test per position — cuts the list's cost ~3x (10.5s -> 3.3s over
+# 150k titles), which is what version 4's longer list had cost on top of version 3's.
+# A word also starts where two are glued without a space ("SeniorSolution Architect", "Tier
+# 1Technical Support", "GenAI Technologist"): a lowercase letter or digit, then a capital. The
+# inline `(?-i:…)` keeps that test case-sensitive inside the case-insensitive pattern.
+_STRONG = re.compile(
+    r"(?:(?<![a-z0-9])|(?-i:(?<=[a-z0-9])(?=[A-Z])))(?:"
+    + "|".join(_STRONG_TERMS)
+    + ")",
+    re.IGNORECASE,
+)
+
+# 0.  Phrases that trip a strong signal while naming a different trade: the retail "Front End
+#     Manager", the machinist's "CNC Programmer", a law "JD/LLM", and "Mechanical Engineering
+#     Manager". They are set aside before rules 1-3 read the title, so a real signal elsewhere in
+#     the title still counts ("CNC Programmer / Software Developer"), and so does software work
+#     named beside the trade ("Industrial Engineering Manager - MES"). A title with neither goes
+#     on to rule 4, whose own guards keep the trades out (`cnc` is in `_NON_TECH_ROLE`, the
+#     disciplines in `_NON_SOFTWARE`) while a technical department can still keep a front-end
+#     manager: "Frontend Manager" at a streaming platform is a software role.
+_STRONG_NOT = re.compile(
+    # A separator is required: the unspaced "Frontend Manager" is the software spelling.
+    # Not `team member`/`associate`: both also title front-end developers ("Front End Team
+    # Member" at a software firm is a React role), and v3 kept every such row.
+    r"\bfront[\s-]end (manager|clerk|supervisor|cashier|attendant|service|lead clerk"
+    r"|coordinator|host)s?\b"
+    r"|\bcnc\b[\s/-]*(programmer|machinist)s?"
+    r"|\bj\.?d\.?\W+ll\.?m\b|\bll\.?m\.?\s+(tax|law|candidate|graduate)"
+    # Not after `&`, `/`, `,` or `and`: a joint title ("Firmware & Electrical Engineering
+    # Manager", "Software, Electrical Engineering Manager") names software work in its other half.
+    r"|(?<![&/,] )(?<![&/,])(?<!\band )\b(mechanical|civil|electrical|chemical|structural"
+    r"|manufacturing|industrial|mep|hvac|facilities|facility|construction|process)"
+    r" engineering manager",
+    re.IGNORECASE,
+)
 
 # 2. Generic role tokens — ambiguous on their own; tech unless a non-software qualifier is present.
-_GENERIC = re.compile(r"\b(engineer|engineering|developer|programmer)\b", re.IGNORECASE)
+#    Plurals ("PHP Developers", "Engineers – .NET & React") and `engr`/`engg` are the same word.
+_GENERIC = re.compile(
+    r"\b(engineers?|engineering|developers?|programmers?|engrs?|engg)\b", re.IGNORECASE
+)
 
 # 3. Non-software qualifiers that turn a generic "…engineer" into a non-tech role. Kept to the
 #    unambiguous non-software engineering disciplines + sales.
@@ -239,6 +487,97 @@ _NON_SOFTWARE = re.compile(
 #     this filter already classifies non-tech when the title says so ("Sales Engineer"), so there
 #     the department corroborates rather than misleads.
 _ORG_NOT_ROLE = re.compile(r"\bhardware\b", re.IGNORECASE)
+
+# 3c. Of the `_NON_SOFTWARE` words, the ones that more often name the *setting* than the
+#     discipline: a "Hardware Test and Validation Engineer" or a "Manufacturing Software Support
+#     Engineer" writes code for hardware or a factory. In a title that also names software work
+#     (`_SOFTWARE_WORK`) they no longer veto; on their own ("Hardware Engineer") they still do.
+_SETTING_NOT_ROLE = re.compile(r"\b(hardware|manufacturing|mining)\b", re.IGNORECASE)
+
+# 3d. Vetoes for the construction and plant trades the "…engineer" token admits in bulk: "Site
+#     Engineer", "MEP Engineer", "QA/QC Engineer", "Highway Engineer" and its siblings, supplier
+#     quality, and the business developer. Rule 2 reads them from the title only — the same words
+#     name software orgs often enough ("Site Operations", "Business Development") that a
+#     department carrying them says nothing about a titled role. Rule 4 reads them from the
+#     department too (see `_dept_names_another_discipline`), where the title is vague.
+_TRADE_TITLE = re.compile(
+    r"\bsite (engineer|engineering)|\bmep\b|\bqa\s*/\s*qc\b|\bqc\s*/\s*qa\b"
+    r"|\bhighways?\b|\bbridges?\b|(?<!air )\btraffic\b|\b(waste)?water\b|\btransportation\b"
+    r"|\benvironmental\b|\bsubstations?\b|\brail(way|road)?s?\b(?<!\brails)|\bdrainage\b"
+    r"|\bfacilit(y|ies)\b|\bsupplier quality\b"
+    r"|\bbusiness developers?\b|\bbusiness development (engineer|manager|representative"
+    r"|executive|associate|lead|director|specialist)",
+    re.IGNORECASE,
+)
+
+# 3e. Words that name software or infrastructure work, and so make vetoes stand down. Three
+#     strengths, one vocabulary:
+#       `_CODE_WORK`     — the work is code. Keeps a rule-0 title whose remainder names it, and
+#                          lifts rule 2's department veto for a titled role.
+#       `_SOFTWARE_WORK` — code, plus test/validation/automation/tools. Lifts the 3c setting
+#                          vetoes ("Hardware Test and Validation Engineer").
+#       `_INFRA_CONTEXT` — code, plus IT, network, telecom, data-center, data/AI, enterprise
+#                          platforms, integration, communications, cyber. Read over title and
+#                          department; lifts the 3d trade vetoes and rule 4's department veto.
+#     `_INFRA_CONTEXT` grew by reading every served row version 4 drops (6,865 titles, 2026-09-23):
+#     each word is there because a real tech job carrying it would otherwise have been lost —
+#     Oracle's "Site Engineer II" in `DC Ops` (dc ops), "Site Engineer - IP Network" (network),
+#     an Epic "Bridges EDI Developer" (epic/edi), "Senior Communications Engineer, Rail Systems"
+#     (communications), a Blue Origin "Systems Integration Engineer" (integration), "Senior
+#     Solution Engineer (SLED & Water Treatment)" at a security vendor (solutions). The breadth
+#     is the recall-first trade: it also spares some trade rows ("Water Solutions Engineer").
+_CODE_WORDS = r"software|sw|firmware|embedded|mes|gis|react|angular|vue|javascript|typescript|labview"
+# Rule 0's rescue reads only the code words: `tools`/`test`/`automation` beside a trade are the
+# trade's own ("CNC Programmer/Tool & Die Maker", "Manufacturing Engineering Manager -
+# Automation"; critique of v4: 7 of the 9 rows the wider list rescued were not tech).
+_CODE_WORK = re.compile(rf"\b({_CODE_WORDS})\b", re.IGNORECASE)
+# The 3c setting vetoes also stand down for test and validation work on hardware.
+_SOFTWARE_WORK = re.compile(
+    rf"\b({_CODE_WORDS}|validation|verification|test|automation|tools?)\b",
+    re.IGNORECASE,
+)
+_INFRA_CONTEXT = re.compile(
+    rf"\b({_CODE_WORDS}|automation|it|ict|network\w*|telecom\w*|rf|bts|radio|wireless|5g|ran"
+    r"|fib(er|re)|optical|scada|signall?ing|data ?cent(er|re)s?|dc ops|dco|mission critical"
+    r"|server\w*|information technology|ruby|api|cloud|aws|azure|gcp|ai|ml|sap|oracle"
+    r"|salesforce|servicenow|data|analytics|digitali[sz]ation|edi|hl7|epic|interfaces?|s?d?-?wan"
+    r"|lan|developer experience|a?iot|plm|teamcenter|windchill|image processing|signal processing"
+    r"|verification|communications?|solutions?|hpc|integration|crm|cyber\w*|cabling|osp|towers"
+    r"|informatics|web)\b",
+    re.IGNORECASE,
+)
+
+# 3f. Rule 4's department veto. A department naming another discipline ("Building Engineering",
+#     "Electrical Engineering") or a trade says what a vague title is — except for `sales`
+#     (software presales sits in "Sales Engineering") and `bridge` (a company name as often as a
+#     structure), which it ignores.
+_DEPT_NOT_A_VETO = re.compile(r"\b(sales|bridges?)\b", re.IGNORECASE)
+_DEV_ROLE = re.compile(r"(?<!business )\b(developers?|programmers?)\b", re.IGNORECASE)
+_INFOSEC_WORD = re.compile(
+    r"\b(information|technical|cyber\w*|privacy|data|digital|it)\b", re.IGNORECASE
+)
+_BUILT_ENV_DEPT = re.compile(r"\b(building|construction)\b", re.IGNORECASE)
+# Physical-security titles, refused under a department of just "Security". The department is
+# not vetoed outright — at a software company it holds the infosec team ("Security Researcher",
+# "Incident Manager - Detection & Response") — but these titles never are infosec.
+_PHYSICAL_SECURITY_TITLE = re.compile(
+    r"\b(officers?|patrol|correctional|police|sergeant|lieutenant|event (security|staff)"
+    r"|public safety|surveillance|cctv|screener|lifeguard|host|guest|protective|protection"
+    r"|investigat\w*|parking|ranger|marina|patient|dining|security (supervisor|agent|associate"
+    r"|attendant|guard)|supervisor security|facility security|building (security|supervisor))\b",
+    re.IGNORECASE,
+)
+
+
+def _dept_names_another_discipline(dept: str) -> bool:
+    """Whether a department names a non-software discipline or trade (3f)."""
+    kept = _DEPT_NOT_A_VETO.sub(" ", dept)
+    return bool(
+        _NON_SOFTWARE.search(_ORG_NOT_ROLE.sub(" ", kept))
+        or _TRADE_TITLE.search(kept)
+        or _BUILT_ENV_DEPT.search(dept)
+    )
+
 
 # 4. Departments that clearly denote software/tech — a recall booster for otherwise-vague titles.
 _TECH_DEPT = re.compile(
@@ -331,9 +670,17 @@ _NON_TECH_ROLE = re.compile(
     # `Technician - Software` and `Technician - Network Operations`, and was brittle anyway —
     # it needed spaces and an ASCII hyphen, so `Technician-HVAC` and `Technician – HVAC` missed.
     r"|plumber|painter|carpenter|electrician|welder|machinist"
+    # `cnc` is the machine shop — except in JD Edwards, where "CNC" is the ERP's own system
+    # administration layer ("JD Edwards CNC Administrator", "Edwards CNC" in `IT Services`).
+    r"|(?<!edwards )(?<!jde )cnc"
     r")\b",
     re.IGNORECASE,
 )
+
+
+# A level glued to a role word ("SDE3", "Developer3", "SRE2") leaves no `\b` between them.
+# Spaced apart here; `web` is excluded because "Web3" is itself a signal.
+_GLUED_LEVEL = re.compile(r"(?<=[a-z]{3})(?<!web)(?=[1-9]\b)", re.IGNORECASE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -347,7 +694,9 @@ class Verdict:
 def classify(title: str | None, department: str | None = None) -> Verdict:
     """Decide whether a job is a software/tech role, with the reason (recall-biased; see module doc)."""
     dept = (department or "").strip()
-    title_text = (title or "").strip()
+    # `_` is a word character to `\b`, so every pattern here was blind to a title that uses it
+    # as a separator: "IN_Senior Associate_Azure Devops_…", "Application Developer_5".
+    title_text = _GLUED_LEVEL.sub(" ", (title or "").replace("_", " ")).strip()
     # Rules 1 and 2 read the **title**, not the title and department concatenated. Reading both
     # let a department decide a title question: "Software development" contains "software dev",
     # so `Content Creator` in it scored a strong software signal, and `Engineering & Facilities`
@@ -356,21 +705,61 @@ def classify(title: str | None, department: str | None = None) -> Verdict:
     # bypassed those guards. Measured over a 489,661-posting pre-filter sample of 2026-09-17 (4 of run 35193130454's 15
     # scrape fragments),
     # **~8,900** postings were reaching the index on a department-only rule-1/2 match.
-    if _STRONG.search(title_text):
+    signal_text = _STRONG_NOT.sub(" ", title_text)
+    if _STRONG.search(signal_text):
         return Verdict(True, "strong-software-signal")
-    if _GENERIC.search(title_text):
+    if _GENERIC.search(signal_text):
         # A department vetoes only through a discipline that names the role; strip the org-only
         # words first, so "Hardware and Mechanical Engineering" still vetoes on `mechanical`.
-        if _NON_SOFTWARE.search(title_text) or _NON_SOFTWARE.search(
-            _ORG_NOT_ROLE.sub(" ", dept)
+        title_veto = (
+            _SETTING_NOT_ROLE.sub(" ", signal_text)
+            if _SOFTWARE_WORK.search(signal_text)
+            else signal_text
+        )
+        if (
+            _NON_SOFTWARE.search(title_veto)
+            or (
+                _TRADE_TITLE.search(signal_text)
+                and not _INFRA_CONTEXT.search(f"{signal_text} {dept}")
+                # A developer or programmer is writing software whatever the sector ("Traffic
+                # Simulation Developer", "Rail Systems Developer"; review of #573) — but a
+                # "Business Developer" is the vetoed sales role itself.
+                and not (
+                    _DEV_ROLE.search(signal_text)
+                    and not re.search(r"\bbusiness develop", signal_text, re.IGNORECASE)
+                )
+            )
+            or (
+                _NON_SOFTWARE.search(_ORG_NOT_ROLE.sub(" ", dept))
+                # A title naming code is software work whatever org it sits in: "LabVIEW
+                # Quality Engineer" in `Aerospace`.
+                and not _CODE_WORK.search(signal_text)
+            )
         ):
             return Verdict(False, "generic-token-but-non-software")
         return Verdict(True, "generic-tech-token")
+    if signal_text != title_text and _CODE_WORK.search(signal_text):
+        # Rule 0 set a trade aside, and what is left names software work beside it:
+        # "Industrial Engineering Manager - MES", "CNC Programmer - CAM Software".
+        return Verdict(True, "software-work-beside-a-trade")
     if (
         dept
         and _TECH_DEPT.search(dept)
         and not _HIRING_DEPT.search(dept)
         and not _NOT_TECH_DEPT.search(dept)
+        # 3f: a department naming another discipline or trade says what a vague title is —
+        # unless the title or department itself names IT or software work ("IT Project Leader"
+        # in `Manufacturing Engineering`, anything in "Vehicle Software & Electrical Eng.").
+        and (
+            not _dept_names_another_discipline(dept)
+            or _INFRA_CONTEXT.search(f"{title_text} {dept}")
+        )
+        and not (
+            re.fullmatch(r"\W*security\W*", dept, re.IGNORECASE)
+            and _PHYSICAL_SECURITY_TITLE.search(title_text)
+            # "Information Protection Manager", "Technical Privacy Investigator" are infosec.
+            and not _INFOSEC_WORD.search(title_text)
+        )
         and not _NON_TECH_ROLE.search(title_text)
         # ADR-0068's veto, which rule 4 now has to apply itself. While rules 1-2 read
         # `title + department`, a non-software title always tripped rule 2's generic token off
