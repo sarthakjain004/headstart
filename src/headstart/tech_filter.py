@@ -71,14 +71,16 @@ from pathlib import Path
 # Net **+1.62%** on the 332,383-posting pre-filter snapshot, 67,506 -> 68,600: **+1,094 in, 0 out**,
 # so unlike version 2 this one is purely additive and the composition moves exactly as far as the
 # total. See docs/tech-filter/2026-09-21_the-families-still-outside-the-gate.md.
-# 4 (2026-09-23): the English spellings and families the gate could not see — `_` as a separator,
-# "SDE3", plurals, Engr/Engg/Eng/Dev tied to a discipline word, DevSecOps, IT roles with a word
-# before the role, cyber/IAM/quant/test-lead families — and the "…engineer" trades it admitted in
-# bulk: site, MEP, QA/QC, highway, business developer, the retail "Front End Manager", "CNC
-# Programmer" and "Mechanical Engineering Manager". Two-sided, so read both halves: on the served
-# table (v654, 514,163 rows) **-2,527 out, +1 in**, every one of the 1,556 lost titles read by
-# hand and none a software or IT role; on the 332,383-posting pre-filter snapshot 68,600 ->
-# 69,571, **+1,163 in, -192 out**. See docs/tech-filter/2026-09-23_spellings-and-trades.md.
+# 4 (2026-09-23, `git log da0565b7..0723622c -- src/headstart/tech_filter.py`): the English
+# spellings and families the gate could not see — `_` as a separator, glued levels ("SDE3"),
+# plurals, Engr/Engg/Eng/Dev tied to a discipline word, DevSecOps, IT roles with a word before the
+# role, cyber/IAM/SOC/quant/test-lead families, JD Edwards — and the "…engineer" trades it
+# admitted in bulk: site, MEP, QA/QC, highway, business developer, the retail "Front End
+# Manager", "CNC Programmer" and "Mechanical Engineering Manager". Two-sided, so read both
+# halves: on the served table (v654, 514,163 rows) **-2,525 out, +1 in**, every one of the 1,553
+# lost titles read by hand and none a software or IT role; on the 332,383-posting pre-filter
+# snapshot 68,600 -> 69,568, **+1,163 in, -195 out**. See
+# docs/tech-filter/2026-09-23_spellings-and-trades.md.
 TECH_FILTER_VERSION = 4
 
 # 1. Strong, software-specific signals. A match here means tech regardless of any disqualifier.

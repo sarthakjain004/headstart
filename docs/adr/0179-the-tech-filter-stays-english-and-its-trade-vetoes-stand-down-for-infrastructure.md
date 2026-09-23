@@ -31,15 +31,26 @@ a multilingual role vocabulary.
    those words: Oracle's "Site Engineer II" in `DC Ops`, "Site Engineer - IP Network",
    "Software QA/QC Engineer", and a "QA/QC Engineer" in `IT`.
 4. **A phrase that trips a strong signal while naming another trade is set aside before the
-   signal is read** (`_STRONG_NOT`). A title with nothing left is refused without a department
-   rescue, while a real signal elsewhere in the title still counts. Joint titles are exempt
-   ("Firmware & Electrical Engineering Manager").
+   signal is read** (`_STRONG_NOT`, rule 0). A real signal elsewhere in the title still counts,
+   and so does software work named beside the trade ("Industrial Engineering Manager - MES").
+   A title with neither goes on to rule 4, whose own guards keep the trades out. Joint titles
+   are exempt ("Firmware & Electrical Engineering Manager").
+
+   The first cut refused such a title outright. Review measured the cost: that dropped
+   RakutenTV's "Frontend Manager", a software role at a streaming platform, and "JD Edwards CNC
+   Administrator", where CNC is the ERP's own admin layer. Rule 4's guards do the same job
+   without those losses.
+5. **Project, service and process engineers are not vetoed,** although the critique asked for
+   it. Measured on the served table, each veto would drop 3,500–6,000 rows, including about 140
+   unique titles that name systems, software or digital work ("Security Service Engineer",
+   "Control Systems Project Engineer", "Digital Process Engineer"). That is too much recall risk
+   for a recall-first gate.
 
 ## Consequences
 
-- On the served table (v654, 514,163 rows) the change removes 2,527 rows and adds 1. All 1,556
+- On the served table (v654, 514,163 rows) the change removes 2,525 rows and adds 1. All 1,553
   lost titles were read by hand, and none is a software or IT role. On the 332,383-posting
-  pre-filter snapshot it adds 1,163 and removes 192. Detail:
+  pre-filter snapshot it adds 1,163 and removes 195. Detail:
   `docs/tech-filter/2026-09-23_spellings-and-trades.md`.
 - Non-English tech jobs stay out of the feed and trends as well as the index. If multilingual
   retrieval is ever added, this gate has to be widened in the same change, or those jobs will
