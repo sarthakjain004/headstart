@@ -136,8 +136,11 @@ render stage still running (these counts grow as it resolves more):
 | Recruiterflow | 77 |
 | Avature | 63 |
 
-Breezy was built the same day (#579), after this snapshot was staged, so its 418 companies are a
-landing still to do rather than a scraper to build.
+Breezy was built the same day (#579), after this snapshot was staged. Its 418 companies landed
+separately: the sweep had recorded every one under Breezy's CDN host `assets-cdn`, so their tenants
+were re-derived from the `{slug}.breezy.hr` apply URLs (405 labels; 6 companies carried only CDN or
+`feed.breezy.hr` links and have none). 348 were already in `breezy.csv`; the other 57 were added,
+all hiring.
 
 SenseHQ has a registered scraper but no ledger and no liveness probe, so the 12 SenseHQ Boards the
 sweep found cannot land.
@@ -150,7 +153,6 @@ sweep found cannot land.
     doesn't read.
   - `jobs.ascension.org`: 0 postings at the root.
   - Royal Enfield and Cadila Pharma: backing ATS unresolved.
-- **Breezy:** land the sweep's Breezy Boards (418 companies) now that `breezy.csv` exists.
 - **4 iCIMS candidates** found after the iCIMS resolution ran.
 - **Textron:** replace `tabbu` with the `textron` umbrella section.
 - **`p_successfactors` and `confirm_successfactors_boards.py` should both check RMK assets.** The
