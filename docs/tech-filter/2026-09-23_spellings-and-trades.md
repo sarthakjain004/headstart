@@ -36,11 +36,14 @@ Non-English titles also fell through. That gap is deliberately left open: the ga
   - The vetoed titles are site, MEP, QA/QC and highway engineers, and business developers.
   - Each stands down when the title or department names IT, network, telecom, data-center,
     SCADA, software, automation or test work (`_INFRA_CONTEXT`).
-- **`_STRONG_NOT`:**
+- **`_STRONG_NOT` (rule 0):**
   - It sets aside a phrase that trips a strong signal while naming another trade: the retail
-    "Front End Manager", "CNC Programmer", a law "JD/LLM", and "Mechanical Engineering Manager".
+    "Front End Manager" (spaced; the unspaced "Frontend" is the software spelling), "CNC
+    Programmer", a law "JD/LLM" or "LLM Tax…", and "Mechanical Engineering Manager".
   - Joint titles are exempt ("Firmware & Electrical Engineering Manager").
-  - A title with nothing left is refused without department rescue.
+  - A remainder naming software work is kept ("Industrial Engineering Manager - MES").
+  - Anything else goes to rule 4, whose guards keep the trades out (`cnc` is in `_NON_TECH_ROLE`,
+    except after "JD Edwards", where CNC is the ERP's admin layer).
 
 ## Measured
 
@@ -48,33 +51,37 @@ Three corpora, old (`origin/main`) vs. new verdict on every row:
 
 | corpus | rows | kept before | kept after | in | out |
 |---|---|---|---|---|---|
-| served LanceDB table (v654) | 514,163 | 513,389 | 510,863 | +1 | −2,527 |
-| pre-filter snapshot (`data/jobs/*.jsonl`, July) | 332,383 | 68,600 | 69,571 | +1,163 | −192 |
-| Indeed harvest (secondary, not tuned on) | 679,687 | 160,294 | 162,503 | +4,409 | −2,200 |
+| served LanceDB table (v654) | 514,163 | 513,389 | 510,865 | +1 | −2,525 |
+| pre-filter snapshot (`data/jobs/*.jsonl`, July) | 332,383 | 68,600 | 69,568 | +1,163 | −195 |
+| Indeed harvest (secondary, not tuned on) | 679,687 | 160,294 | 162,522 | +4,422 | −2,194 |
 
-**Every served row that flips to dropped was read by hand: 1,556 unique titles.** No software or
+**Every served row that flips to dropped was read by hand: 1,553 unique titles.** No software or
 IT role survives in that set. By family:
 - business developer 496 rows;
-- site engineer 479;
+- site engineer 477;
 - highway 451;
-- the discipline "…Engineering Manager" titles 381;
-- CNC programmer 260;
-- MEP 177;
+- the discipline "…Engineering Manager" titles 370;
+- CNC 277 (programmers, plus turners and operators in mislabelled IT departments);
+- MEP 173;
 - QA/QC 129;
-- the retail front end 123;
+- the retail front end 121;
 - JD/LLM 1;
 - 30 others, mostly underscore-separated titles whose now-visible words say what they are
   ("Registered Nurse_Montana", "Admin Assistant_Sacramento CA").
 
 Rows are counted in the first family whose words they match, in the order above.
 
-Reading the losses found six real tech jobs, and each got a fix before these figures were taken:
+Reading the losses, and then the code review, found real tech jobs the first cut dropped. Each
+got a fix and a test before these figures were taken:
 - Oracle's `DC Ops` "Site Engineer I/II/III" and "Site Engineer - IP Network" / "-SCADA";
 - "Software QA/QC Engineer" and a "QA/QC Engineer" in `IT`;
 - "Firmware & Electrical Engineering Manager";
 - "IT Site Engineer - Japan";
 - "IT Security Auditor";
-- "Service Desk Analyst".
+- "Service Desk Analyst";
+- RakutenTV's "Frontend Manager", and a front-end manager in a technical department;
+- "JD Edwards CNC Administrator" and "JDE CNC Consultant";
+- the telecom and data-center site engineers (fiber, 5G/RAN, wireless, mission-critical, `DCO`).
 
 The served table can only show losses, because it holds only rows the old gate kept. The gains
 are the pre-filter snapshot's +1,163. The largest are "Senior Software Engg - Systems" (62) and
@@ -89,7 +96,8 @@ from our own data:
 - 300 that version 3 dropped from the snapshot;
 - 300 whose verdict version 4 changed.
 
-Two labellers labelled every row blind to the gate. They agreed on 97.3%, and the 27
+Two labellers labelled every row blind to the gate. They agreed on 973 of the 1,000 sampled rows
+(97.3%, before 29 non-English rows were dropped), and the 27
 disagreements were settled by hand: plain product managers, hardware validation and
 customer-support engineers are `ambiguous` and unscored. 29 non-English rows were removed.
 
@@ -99,7 +107,10 @@ customer-support engineers are `ambiguous` and unscored. 29 non-English rows wer
 | version 4 | 344 (99.7%) | 86 |
 
 The sample is stratified toward dropped and changed rows, so these are regression gates, not
-population rates. `test_the_labelled_set_keeps_every_tech_title_but_the_known_misses` fails on
+population rates. They are also **in-sample**: 300 rows were drawn from titles version 4 changed,
+and seven strong patterns (plus a widened platform arm) were then added for the set's own
+misses. Before those, version 4 scored 333/345 (96.5%). The 99.7% is what the gate now
+protects, not an estimate of recall on unseen titles. `test_the_labelled_set_keeps_every_tech_title_but_the_known_misses` fails on
 any new miss. It also fails when a known miss gets fixed, so the list only shrinks on purpose.
 Both tests fail against version 3, as they should.
 
@@ -107,6 +118,12 @@ The remaining false positives are the recall-biased "…engineer" creep: field s
 quality and commissioning engineers. That is the trade ADR-0017 accepts.
 
 ## Not done
+
+- **Project, service and process engineer vetoes** (asked for by the critique). Measured on the
+  served table, each would drop 3,500–6,000 rows, about 140 unique titles of them naming systems,
+  software or digital work ("Security Service Engineer", "Control Systems Project Engineer",
+  "Digital Process Engineer"). That is too much recall risk.
+- **PLC programmer** stays tech: PLC programming is controls code, and the gate is recall-first.
 
 - **Non-English vocabulary:** left out by decision (ADR-0179).
 - **Crowdwork "AI Trainer" gig titles:** unchanged. Stripping them would have dropped 59 pre-filter
