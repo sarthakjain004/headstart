@@ -361,6 +361,10 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
         "fa.oraclecloud.com",
     ),
     "personio": _with_style("sub", "jobs.personio.com", "jobs.personio.de"),
+    # One host: every tenant is `{slug}.pinpointhq.com`, the label `pinpoint.py` keys the
+    # listing on. The vendor's own hosts (`www`, `app`, …) answer 404 on `/postings.json` and
+    # the prober kills them.
+    "pinpoint": _with_style("sub", "pinpointhq.com"),
     # `path` style: every tenant is one segment on the shared board host, exactly the slug
     # `pyjamahr.py` keys the API with. The vendor's own cross-tenant jobs sitemap
     # (`scripts/discover/mine_pyjamahr.py`) is the primary roster; this sweep adds the tenants

@@ -10322,6 +10322,14 @@ _RESOLVE_ROWS = [
         "https://careers.zelis.com/us/en",
     ),
     (
+        # Every board titles itself "Jobs at {Name} | {Name} Careers" (40 of 40 sampled).
+        "pinpoint",
+        "jed",
+        "Jobs at The Jed Foundation | The Jed Foundation Careers",
+        "The Jed Foundation",
+        "https://jed.pinpointhq.com/",
+    ),
+    (
         "lever",
         "picklerobot",
         "Pickle Robot Company",
