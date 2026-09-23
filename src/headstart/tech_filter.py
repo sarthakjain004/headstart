@@ -12,8 +12,10 @@ Precedence (first match wins):
 
   0. a phrase that trips a strong signal but
      names another trade ("CNC Programmer",
-     "Front End Manager") is set aside; a
-     title left with no signal is not tech   -> not tech  (no department rescue)
+     "Front End Manager") is set aside before
+     rules 1-3; what is left is judged on its
+     own, and a remainder naming software
+     work ("… - MES") is tech               -> tech, or on to rules 1-5
   1. a strong, unambiguous software signal  -> tech      (overrides any disqualifier)
   2. a generic role token (engineer/developer/…) *with* a non-software qualifier (mechanical,
      sales, civil, …) in the title, or in a
@@ -28,7 +30,9 @@ Precedence (first match wins):
      title names a different profession       -> tech      (recall booster for vague titles)
   5. otherwise                               -> not tech
 
-**Rules 1-3 read the title; only rule 4 reads the department.** Until 2026-09-17 rules 1 and 2 ran
+**Rules 1-3 read the title; rule 4 reads the department.** Two narrow exceptions: rule 2's
+discipline veto also reads a department that names a discipline, and its trade veto stands down
+when the department names infrastructure work (`DC Ops`, `IT`). Until 2026-09-17 rules 1 and 2 ran
 over ``title + department``, so a department could settle a title question — "Software development"
 contains "software dev", so a Content Creator in it scored a strong software signal. The department
 has one rule, and that is where its guards live.
@@ -224,9 +228,6 @@ _STRONG_TERMS = [
     r"test analyst",
     r"manual tester",
     # --- version 4 ------------------------------------------------------------------------
-    # A level glued to the acronym ("SDE3", "SDE2, Amazon", "SWE2") — `\b(swe|sde|sdet)\b`
-    # above needs a boundary the digit removes.
-    r"\b(swe|sde|sdet)[1-9]\b",
     # `\bdevops\b` cannot match inside "devsecops", so "DevSecOps Specialist" had no signal.
     r"\bdevsecops\b",
     # Abbreviated role words. A bare `eng`/`dev` is never enough — "ENG/SPA" is a language pair
@@ -238,14 +239,17 @@ _STRONG_TERMS = [
     ),
     r"\bsw (engineer|developer|dev)s?\b",
     (
-        r"\b(ios|android|java|python|php|react|node|\.net|dotnet|web|mobile|game|unity|backend"
-        r"|frontend|full[\s-]?stack|golang|kotlin|scala|ruby|c\+\+|c#) (devs?|lead)\b"
+        r"\b(ios|android|java|python|php|react|node|\.net|dotnet|backend|frontend"
+        r"|full[\s-]?stack|golang|kotlin|scala|ruby|c\+\+|c#) (devs?|lead)\b"
     ),
-    r"\bdev (lead|manager|team lead)\b",
+    # `web`/`mobile`/`game` name a setting as often as a discipline, so only `dev` follows them:
+    # "Web Lead" and "Game Lead" are not strong signals.
+    r"\b(web|mobile|game|unity) devs?\b",
+    r"(?<!business )(?<!biz )\bdev (lead|manager|team lead)\b",
     # "Lead Dev", "Senior Dev" — but not a fundraising "Senior Dev Officer" or "Dev Director".
     (
         r"\b(lead|senior|sr|junior|jr|principal|staff) devs?\b(?! (officer|director|associate"
-        r"|coordinator|rep|representative|manager))"
+        r"|coordinator|rep|representative))"
     ),
     r"(software|systems?|application) development engineer",
     # IT roles with a word between `IT` and the role ("IT Project Manager"), which the
@@ -304,6 +308,8 @@ _STRONG_TERMS = [
     r"\bmes (engineer|developer|analyst|consultant|specialist|administrator|lead|architect)s?\b",
     r"manufacturing execution system",
     r"\b(data|process|text) mining\b",
+    # JD Edwards is an ERP: every JDE title is enterprise-platform work, "CNC" ones included.
+    r"\b(jd ?edwards?|jde)\b",
     # From the labelled evaluation set's misses (tests/fixtures/tech_filter_eval.tsv).
     r"\(?\bsoc\b\)?\s*(analyst|specialist|manager|engineer|architect|lead)",
     r"\b(analyst|manager|lead|engineer)s?\b.{0,15}\bsoc\b",
@@ -317,21 +323,23 @@ _STRONG_TERMS = [
 ]
 _STRONG = re.compile("|".join(_STRONG_TERMS), re.IGNORECASE)
 
-# 1b. Phrases that trip a strong signal while naming a different trade: the retail "Front End
+# 0.  Phrases that trip a strong signal while naming a different trade: the retail "Front End
 #     Manager", the machinist's "CNC Programmer", a law "JD/LLM", and "Mechanical Engineering
-#     Manager". They are removed before rules 1-3 read the title, so a real signal elsewhere in
-#     the same title still counts ("CNC Programmer / Software Developer" stays tech), and a title
-#     with nothing else left is refused outright — rule 4's department rescue must not bring back
-#     a title that already says which trade it is.
+#     Manager". They are set aside before rules 1-3 read the title, so a real signal elsewhere in
+#     the title still counts ("CNC Programmer / Software Developer"), and so does software work
+#     named beside the trade ("Industrial Engineering Manager - MES"). A title with neither goes
+#     on to rule 4, whose own guards keep the trades out (`cnc` is in `_NON_TECH_ROLE`, the
+#     disciplines in `_NON_SOFTWARE`) while a technical department can still keep a front-end
+#     manager: "Frontend Manager" at a streaming platform is a software role.
 _STRONG_NOT = re.compile(
-    r"\bfront[\s-]?end (manager|clerk|supervisor|associate|cashier|team member|attendant"
+    # A separator is required: the unspaced "Frontend Manager" is the software spelling.
+    r"\bfront[\s-]end (manager|clerk|supervisor|associate|cashier|team member|attendant"
     r"|service|lead clerk|coordinator|host)s?\b"
     r"|\bcnc\b[\s/-]*(programmer|machinist)s?"
-    r"|\bj\.?d\.?\W+ll\.?m\b"
-    # Not after `&`, `/` or `and`: a joint title ("Firmware & Electrical Engineering Manager",
-    # "Software/ Electrical Engineering Manager") names software work in its other half, and
-    # stripping the phrase left that half with no signal of its own.
-    r"|(?<![&/] )(?<![&/])(?<!\band )\b(mechanical|civil|electrical|chemical|structural"
+    r"|\bj\.?d\.?\W+ll\.?m\b|\bll\.?m\.?\s+(tax|law|candidate|program|graduate)"
+    # Not after `&`, `/`, `,` or `and`: a joint title ("Firmware & Electrical Engineering
+    # Manager", "Software, Electrical Engineering Manager") names software work in its other half.
+    r"|(?<![&/,] )(?<![&/,])(?<!\band )\b(mechanical|civil|electrical|chemical|structural"
     r"|manufacturing|industrial|mep|hvac|facilities|facility|construction|process)"
     r" engineering manager",
     re.IGNORECASE,
@@ -361,39 +369,6 @@ _NON_SOFTWARE = re.compile(
     re.IGNORECASE,
 )
 
-# 3a. Of those, the words that more often name the *setting* than the discipline: a
-#     "Hardware Test and Validation Engineer" or a "Manufacturing Software Support Engineer" writes
-#     code for hardware or a factory. In a title that also names software work they no longer veto;
-#     on their own ("Hardware Engineer", "Manufacturing Engineer") they still do.
-_SETTING_NOT_ROLE = re.compile(r"\b(hardware|manufacturing|mining)\b", re.IGNORECASE)
-_SOFTWARE_WORK = re.compile(
-    r"\b(software|firmware|embedded|validation|verification|test|automation|tools?|mes)\b",
-    re.IGNORECASE,
-)
-
-# 3c. Title-only vetoes for the construction and plant trades the "…engineer" token admits in
-#     bulk: "Site Engineer", "MEP Engineer", "QA/QC Engineer", "Highway Engineer". Title-only
-#     because the same words name software orgs often enough ("Site Operations", "Business
-#     Development") that a department carrying them says nothing about the role.
-_TRADE_TITLE = re.compile(
-    r"\bsite (engineer|engineering)|\bmep\b|\bqa\s*/\s*qc\b|\bqc\s*/\s*qa\b|\bhighways?\b"
-    r"|\bbusiness developers?\b|\bbusiness development (engineer|manager|representative"
-    r"|executive|associate|lead|director|specialist)",
-    re.IGNORECASE,
-)
-
-# 3d. …but those same trade words also name infrastructure work: Oracle's "Site Engineer II" in
-#     `DC Ops`, "Site Engineer - IP Network", "Site Engineer-SCADA", "Software QA/QC Engineer",
-#     a "QA/QC Engineer" in `IT`. Measured over the served table, every real tech job the
-#     vetoes above would have dropped named one of these words in its title or department, so
-#     where one is present the veto stands down and the title keeps the verdict it had before.
-_INFRA_CONTEXT = re.compile(
-    r"\b(it|network\w*|telecom\w*|rf|bts|radio|scada|signall?ing|data ?cent(er|re)s?|dc ops"
-    r"|server\w*|technology|technical|infrastructure|software|firmware|embedded|automation|test"
-    r"|api|cloud|ict)\b",
-    re.IGNORECASE,
-)
-
 # 3b. Non-software words that name the ORG rather than the role, and so must not veto from a
 #     department. A hardware org employs the engineers whose work is code — RTL design, design
 #     verification, physical design are all HDL/EDA, i.e. software by any reading — so "Hardware
@@ -404,6 +379,44 @@ _INFRA_CONTEXT = re.compile(
 #     this filter already classifies non-tech when the title says so ("Sales Engineer"), so there
 #     the department corroborates rather than misleads.
 _ORG_NOT_ROLE = re.compile(r"\bhardware\b", re.IGNORECASE)
+
+# 3c. Of the `_NON_SOFTWARE` words, the ones that more often name the *setting* than the
+#     discipline: a "Hardware Test and Validation Engineer" or a "Manufacturing Software Support
+#     Engineer" writes code for hardware or a factory. In a title that also names software work
+#     (`_SOFTWARE_WORK`) they no longer veto; on their own ("Hardware Engineer") they still do.
+_SETTING_NOT_ROLE = re.compile(r"\b(hardware|manufacturing|mining)\b", re.IGNORECASE)
+
+# 3d. Title-only vetoes for the construction and plant trades the "…engineer" token admits in
+#     bulk: "Site Engineer", "MEP Engineer", "QA/QC Engineer", "Highway Engineer", and the
+#     business developer. Title-only because the same words name software orgs often enough
+#     ("Site Operations", "Business Development") that a department carrying them says nothing.
+_TRADE_TITLE = re.compile(
+    r"\bsite (engineer|engineering)|\bmep\b|\bqa\s*/\s*qc\b|\bqc\s*/\s*qa\b"
+    r"|\bhighways?\b"
+    r"|\bbusiness developers?\b|\bbusiness development (engineer|manager|representative"
+    r"|executive|associate|lead|director|specialist)",
+    re.IGNORECASE,
+)
+
+# 3e. Words that name software or infrastructure work, and so make the vetoes above stand down.
+#     One list, two strengths. The narrow half (`_SOFTWARE_WORK`) says the work itself is code;
+#     it lifts the 3c setting vetoes and keeps a rule-0 title whose remainder names it. The whole list
+#     (`_INFRA_CONTEXT`, read over title *and* department) adds the IT, network, telecom and
+#     data-center words, and lifts the 3d trade vetoes. Measured over the served table, every real
+#     tech job the 3d vetoes would have dropped carried one of these: Oracle's "Site Engineer II"
+#     in `DC Ops`, "Site Engineer - IP Network", "Software QA/QC Engineer", a "QA/QC Engineer" in
+#     `IT` — so where one is present the title keeps the verdict it had before version 4.
+_SOFTWARE_WORK_WORDS = (
+    r"software|firmware|embedded|validation|verification|test|automation|tools?|mes|gis"
+    r"|react|angular|vue|javascript|typescript"
+)
+_SOFTWARE_WORK = re.compile(rf"\b({_SOFTWARE_WORK_WORDS})\b", re.IGNORECASE)
+_INFRA_CONTEXT = re.compile(
+    rf"\b({_SOFTWARE_WORK_WORDS}|it|ict|network\w*|telecom\w*|rf|bts|radio|wireless|5g|ran"
+    r"|fib(er|re)|optical|scada|signall?ing|data ?cent(er|re)s?|dc ops|dco|mission critical"
+    r"|server\w*|technology|technical|infrastructure|api|cloud|aws|azure|gcp)\b",
+    re.IGNORECASE,
+)
 
 # 4. Departments that clearly denote software/tech — a recall booster for otherwise-vague titles.
 _TECH_DEPT = re.compile(
@@ -496,9 +509,17 @@ _NON_TECH_ROLE = re.compile(
     # `Technician - Software` and `Technician - Network Operations`, and was brittle anyway —
     # it needed spaces and an ASCII hyphen, so `Technician-HVAC` and `Technician – HVAC` missed.
     r"|plumber|painter|carpenter|electrician|welder|machinist"
+    # `cnc` is the machine shop — except in JD Edwards, where "CNC" is the ERP's own system
+    # administration layer ("JD Edwards CNC Administrator", "Edwards CNC" in `IT Services`).
+    r"|(?<!edwards )(?<!jde )cnc"
     r")\b",
     re.IGNORECASE,
 )
+
+
+# A level glued to a role word ("SDE3", "Developer3", "SRE2") leaves no `\b` between them.
+# Spaced apart here; `web` is excluded because "Web3" is itself a signal.
+_GLUED_LEVEL = re.compile(r"(?<=[a-z]{3})(?<!web)(?=[1-9]\b)", re.IGNORECASE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -514,7 +535,7 @@ def classify(title: str | None, department: str | None = None) -> Verdict:
     dept = (department or "").strip()
     # `_` is a word character to `\b`, so every pattern here was blind to a title that uses it
     # as a separator: "IN_Senior Associate_Azure Devops_…", "Application Developer_5".
-    title_text = (title or "").replace("_", " ").strip()
+    title_text = _GLUED_LEVEL.sub(" ", (title or "").replace("_", " ")).strip()
     # Rules 1 and 2 read the **title**, not the title and department concatenated. Reading both
     # let a department decide a title question: "Software development" contains "software dev",
     # so `Content Creator` in it scored a strong software signal, and `Engineering & Facilities`
@@ -544,8 +565,10 @@ def classify(title: str | None, department: str | None = None) -> Verdict:
         ):
             return Verdict(False, "generic-token-but-non-software")
         return Verdict(True, "generic-tech-token")
-    if signal_text != title_text:
-        return Verdict(False, "strong-signal-names-another-trade")
+    if signal_text != title_text and _SOFTWARE_WORK.search(signal_text):
+        # Rule 0 set a trade aside, and what is left names software work beside it:
+        # "Industrial Engineering Manager - MES", "CNC Programmer - CAM Software".
+        return Verdict(True, "software-work-beside-a-trade")
     if (
         dept
         and _TECH_DEPT.search(dept)
