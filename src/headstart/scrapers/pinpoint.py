@@ -29,19 +29,27 @@ would blank ``posted_at`` on every run after the first. The skip it does take is
 fetches (~132 KB each).
 
 **Identity.** A posting's UUID (the last segment of its ``url``) is the native id: it is the only
-id that addresses a page, ``/en/postings/{numeric id}`` answers 404. 29 of 433 hiring Boards run a
-vanity host and the listing's ``url`` names it, but the same path on the vendor host serves the
-same page (5 of 5 checked), so every link is built on the vendor host.
+id that addresses a page, ``/en/postings/{numeric id}`` answers 404. 160 of 691 hiring Boards send a
+browser from each posting to their vanity host at the same path, and 29 of 433 name that host in
+the listing's ``url``; the vendor-host link lands on the posting either way, so every link is built
+on the vendor host.
 
 **Remote is stated.** ``workplace_type`` is populated on 100% (onsite 9,282 / hybrid 2,738 /
 remote 1,399), and 919 of the remote rows name only a city, so it wins over any location guess.
 Hybrid is ``None``.
 
-**Dead versus empty lives in the prober, not here.** An unknown slug is a real 404 and raises
-through ``_get`` as a Board failure; a live empty Board is 200 ``{"data": []}`` and parses to no
-Jobs. A renamed tenant 301s to another label, which ``check_liveness.p_pinpoint`` records dead.
+**The page content-negotiates.** Asked with ``BaseScraper._get``'s ``Accept: application/json,
+text/html`` it answers 406 (192 of 192 pages on one Board), so pages are asked for as
+``text/html``. A tenant can also switch its careers site off for browsers while the JSON still
+lists postings (17 hiring Boards answer a browser 404 on every posting); that is a dead Board, and
+``check_liveness.p_pinpoint`` settles it, as it does an unknown slug (a real 404) and a renamed one
+(a 301 to another label). Here, an unknown slug raises through ``_get`` as a Board failure and a
+live empty Board (200 ``{"data": []}``) parses to no Jobs.
 
-No rate limit was found (to 128 concurrent, zero non-200s) and the host is User-Agent-agnostic.
+**The origin walls connections, not requests.** Paced load ran clean to 50 listing req/s across
+tenants, but a 256-wide burst drew connection refusals that then held against every tenant for
+minutes. The page pass therefore stays at 16 workers over the async path, one connection per
+Board. The host is User-Agent-agnostic.
 """
 
 from __future__ import annotations

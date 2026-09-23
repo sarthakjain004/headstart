@@ -312,6 +312,13 @@ _SPANNING = (
     # re-probed next run, whereas `dead` settles for DEAD_TTL_DAYS, so the failure this prevents
     # is the durable one. Full measurement: docs/jazzhr/2026-09-16_full-pool-measurement.md.
     "applytojob.com",
+    # pinpointhq.com: every tenant is `{slug}.pinpointhq.com`, one origin. Measured 2026-09-23: a
+    # burst of 256 concurrent requests over 800 distinct tenants drew 34 connection refusals, and
+    # the refusal then held — the next 800 at concurrency 64 got 627, at 16 got 715 — clearing
+    # after a few minutes. An ungated whole-pool pass (1,465 tenants at the default worker count)
+    # drew 46 refusals and 71 timeouts. Paced, it is clean: 5, 10, 25 and 50 req/s for 60-120 s
+    # each, zero refusals.
+    "pinpointhq.com",
 )
 _GATES = {
     # host: (max in-flight, seconds between request starts)
@@ -333,6 +340,10 @@ _GATES = {
     # ceiling — 350 distinct tenants at concurrency 200 came back clean — so this is sized for the
     # sustained whole-pool case, not for the wall. No spacing: the clean pass used none.
     "applytojob.com": _HostGate(16, 0.0, "applytojob.com"),
+    # pinpointhq.com: sized like applytojob.com above. Paced load across distinct tenants ran clean
+    # at 50 req/s for 60 s, but a 256-wide burst drew connection refusals that then held against
+    # every tenant for minutes (see `_SPANNING`).
+    "pinpointhq.com": _HostGate(16, 0.0, "pinpointhq.com"),
     # `jobs.jobvite.com` has no entry on purpose: one fixed host rather than a subdomain per
     # tenant, so the auto-gate below already keys it exactly, and it drew zero refusals even at
     # 432. A seeded gate for it would be configuration with no measurement behind it.
@@ -1486,63 +1497,80 @@ _PINPOINT_RENAMED = re.compile(
 
 
 def p_pinpoint(t, u):
-    """The Board's own listing, asked WITHOUT following redirects, then its page only for a zero.
+    """The listing without following redirects, then the board page asked the way a browser asks.
 
-    Measured 2026-09-23 on the 555-slug census plus 904 Wayback slugs
+    Measured 2026-09-23 over the 1,465-slug pool
     (`docs/pinpoint/2026-09-23_postings-api-measurement.md`):
 
-    * 200 with postings is a live Board — the count is the array's length, the whole Board.
-    * A slug that never existed is a real **404** (the vendor's 11,684-byte page; 168 of 169
-      Wayback 404s).
-    * A renamed tenant **301s to another `{label}.pinpointhq.com/postings.json`** — 63 of 63
-      redirects, none anywhere else. Followed, it would read as a second live row for a Board the
-      target label already is (57 of the 63 targets are live slugs), so the old label is dead.
-      A redirect anywhere else has never been seen and stays UNKNOWN.
-    * 200 `{"data": []}` is a live empty Board (117 of 117 census Boards answer `/` with 200) —
-      except where the careers site is switched off, which answers `/` with 404 (2 Wayback
-      tenants). So a zero is settled by the board page.
+    * A slug that never existed is a real **404** on the listing (the vendor's 11,684-byte page).
+    * A renamed tenant **301s the listing to another `{label}.pinpointhq.com/postings.json`** —
+      63 of 63 redirects, none anywhere else. Followed, it would read as a second live row for a
+      Board the target label already is (57 of the 63 targets are live slugs), so the old label
+      is dead. A redirect anywhere else has never been seen and stays UNKNOWN.
+    * The listing's count is not the whole answer: the JSON is served whether or not the tenant
+      publishes a careers site, and the board page **content-negotiates** — asked with
+      `Accept: */*` it renders, asked as a browser asks (`text/html`) it can answer 404. 17 hiring
+      Boards (1,224 postings) list postings in the JSON yet 404 a browser on `/` and on every
+      posting, so a link we served would be dead: DEAD. Of 534 empty Boards, 145 render (live,
+      nothing open), 282 are 404 and 105 redirect to the tenant's own or another ATS's site.
+    * A redirect of `/` on a Board with postings is its vanity host (160 of 691 hiring Boards;
+      each posting 301s to the same path there, which serves it): LIVE. On an empty Board it
+      points anywhere (greenhouse, linkedin, a company site) and nothing is published here: DEAD.
 
-    No rate limit was found (to 128 concurrent across tenants, zero non-200s), so the host is not
-    seeded in `_GATES`; the auto-gate covers a wall that appears later.
+    `pinpointhq.com` is a spanning gate (`_SPANNING`): the refusals it answers overload with span
+    tenants and persist for minutes.
     """
     slug = t.lower()
+    base = f"https://{slug}.pinpointhq.com"
     try:
-        r = _fetch(
+        listing = _fetch(
             "GET",
-            f"https://{slug}.pinpointhq.com/postings.json",
+            f"{base}/postings.json",
             headers={"User-Agent": UA},
             allow_redirects=False,
         )
+        if listing is None or listing.status_code != 200:
+            page = None
+        else:
+            page = _fetch(
+                "GET",
+                f"{base}/",
+                headers={"User-Agent": UA, "Accept": "text/html"},
+                allow_redirects=False,
+            )
     except http.RequestsError as e:
         if _is_dns(e):
             return DEAD, None
         _note(_net_reason(e))
         return UNKNOWN, None
-    if r is None:  # breaker open -> transient
+    if listing is None:  # breaker open -> transient
         _note("breaker-open")
         return UNKNOWN, None
-    if r.status_code in (301, 302, 303, 307, 308):
-        if _PINPOINT_RENAMED.match(r.headers.get("location") or ""):
+    if listing.status_code in (301, 302, 303, 307, 308):
+        if _PINPOINT_RENAMED.match(listing.headers.get("location") or ""):
             return DEAD, None
-        _note(f"redirect-{r.status_code}")
+        _note(f"redirect-{listing.status_code}")
         return UNKNOWN, None
-    if r.status_code in (404, 410):
+    if listing.status_code in (404, 410):
         return DEAD, None
-    if r.status_code != 200:
-        _note(f"http-{r.status_code}")
+    if listing.status_code != 200:
+        _note(f"http-{listing.status_code}")
         return UNKNOWN, None
     try:
-        n = len(json.loads(r.content)["data"])
+        n = len(json.loads(listing.content)["data"])
     except (ValueError, KeyError, TypeError):
         _note("body-unparseable")
         return UNKNOWN, None
-    if n:
+    if page is None:
+        _note("breaker-open")
+        return UNKNOWN, None
+    if page.status_code == 200:
         return LIVE, n
-    status, _ = _get(f"https://{slug}.pinpointhq.com/")
-    if status == 200:
-        return LIVE, 0
-    if status == "dns" or status in (404, 410):
+    if page.status_code in (404, 410):
         return DEAD, None
+    if page.status_code in (301, 302, 303, 307, 308):
+        return (LIVE, n) if n else (DEAD, None)
+    _note(f"http-{page.status_code}")
     return UNKNOWN, None
 
 
