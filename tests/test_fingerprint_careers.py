@@ -77,6 +77,10 @@ def test_per_ats_shape_rules_refuse_unusable_provider_evidence():
         == "anaqua"
     )
     assert (
+        fp.normalise_tenant("breezy", "fathom.breezy.hr", "https://fathom.breezy.hr/")
+        == "fathom"
+    )
+    assert (
         fp.normalise_tenant(
             "workday", "acme.wd1.myworkdayjobs.com", "https://acme.com/"
         )
@@ -385,6 +389,7 @@ def test_provider_url_roundtrips_and_dns_fast_path(monkeypatch):
         ("https://apply.workable.com/acme/j/1", "workable:acme"),
         ("https://acme.teamtailor.com/jobs/1", "teamtailor:acme"),
         ("https://anaqua.bamboohr.com/careers/1", "bamboohr:anaqua"),
+        ("https://fathom.breezy.hr/p/1b0072dc3e0a-manager", "breezy:fathom"),
         (
             "https://chevron.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX",
             "oracle:chevron.fa.us2.oraclecloud.com",

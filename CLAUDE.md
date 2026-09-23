@@ -190,6 +190,32 @@ sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` 
   zero non-200s). No company-name page title (`/careers` is a client-rendered SPA shell, like
   darwinbox/freshteam) — `self.company` stays the slug. Full measurement:
   `docs/bamboohr/2026-09-16_widget-and-detail-api-measurement.md`.
+- **Breezy HR** ✅ DONE (2026-09-23, #579) — `scrapers/breezy.py`, wired through liveness (5,156
+  live / 2,907 hiring Boards, 47,193 postings, `data/validate/liveness/breezy.csv`; pool of 10,207:
+  the 4,794 `harvest` list plus a full Wayback CDX sweep of `breezy.hr`, +5,413 new, 734 of them
+  hiring; Common Crawl **not measured** — `index.commoncrawl.org` was unreachable on the day).
+  Slug = the subdomain label of `{slug}.breezy.hr`, one host (`company.friendly_id` equals it on
+  2,174/2,174 hiring Boards of the pre-Wayback census; the field figures below are from that
+  census of 4,794 tenants and 38,314 postings). **One request per Board, no
+  detail pass:** the undocumented `GET /json?verbose=true` adds each posting's `description`,
+  whose text equals the detail page's (180/180 with JSON-LD, 24/24 without) — upstream
+  (`kalil0321/ats-scrapers`) fetches every detail page for it. No pagination (the 2,760-posting
+  Board is one 8.1 MB response). **Dead is a 404** "Career portal not found" (917 of 4,794 pool
+  tenants), empty is `[]` (1,703); no tenant redirected, though upstream expects a 302. **A DNS
+  failure is UNKNOWN, not DEAD:** `*.breezy.hr` is a wildcard record, and the prober's 432
+  workers make the local resolver fail — the first pass wrote 41 Boards dead that the census had
+  just read live.
+  `remote` is `location.is_remote` (matched the page's JSON-LD 103/103; `remote_details` is stale
+  on 307 rows), hybrid → None. `employment_type` keys on `type.id` (`type.name` is localised).
+  `company` is each posting's `company.name` — no board-page fetch. Salary: every stated one
+  (19,167) is one template (`$25 – $30 / hour`, `$20+`, `$18`, `Up to $N`), re-spelt as
+  `LO-HI CODE UNIT` for `_field_range_currency_interval` (96.4% read vs `_field_generic`'s
+  33.8%); `Up to` and biweekly yield none. **A bare `$` is named by country** (US → USD 141/141,
+  CA → CAD 179/188, else none) — the user's scoped exception to `_symbol_currency`, ADR-0181. No
+  rate limit found (94 req/s across tenants, 113 req/s on one, zero refusals); UA-agnostic. 9.1%
+  tech; ~0.06 MB fetched per tech Job, so enabled on arrival (ADR-0158's bar is ~2 MB). One
+  account can run several portals serving the same posting ids (191 extra rows, 0.5%, left as
+  separate Boards). Measurement: `docs/breezy/2026-09-23_json-api-measurement.md`.
 - **Gem** ✅ DONE (2026-09-16) — `scrapers/gem.py`, wired through liveness (1,019 live / 601 hiring
   boards in `data/validate/liveness/gem.csv`). Not India-sourced: found by reading a third-party
   scraper library's own full-dataset snapshot and measuring tech share (38.9% of a 3,542-job
