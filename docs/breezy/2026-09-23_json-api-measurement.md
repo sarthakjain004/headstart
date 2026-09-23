@@ -5,10 +5,9 @@ hosts. The upstream implementation this repo would otherwise have adapted
 (`kalil0321/ats-scrapers`, `scrapers/breezy.py`, MIT) had the listing endpoint right and three
 things wrong: it fetches every posting's detail page for a description the listing already
 carries, it expects a departed tenant to 302 to the marketing site (it 404s), and it throttles
-itself against a cross-tenant 403 wall that 5,700 requests up to 113 req/s did not find. The run
-record is `experiment/breezy-json-api/LOG.md` (hypotheses H1–H13 and every probe), the per-tenant
-table `experiment/breezy-json-api/artifacts/2026-09-23_pool_census.csv`. The decisions are
-ADR-0181.
+itself against a cross-tenant 403 wall that 5,700 requests up to 113 req/s did not find. The raw
+captures, the per-tenant census table and the probe scripts are kept locally, not committed;
+every number a reader needs is stated here. The decisions are ADR-0181.
 
 Sample: **the whole existing pool, 4,794 tenants**, each fetched once — 3,877 live, 2,174 hiring,
 **38,314 postings** — plus 204 detail pages (description), 90 Boards' sitemaps and portal pages

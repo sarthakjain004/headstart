@@ -1,6 +1,0 @@
-conc 4: 250 req in 25.4s = 9.8 req/s, p50 0.35s p95 0.61s, other-status 0
-conc 8: 250 req in 13.1s = 19.1 req/s, p50 0.36s p95 0.69s, other-status 0
-conc 16: 250 req in 7.0s = 35.7 req/s, p50 0.38s p95 0.77s, other-status 0
-conc 32: 250 req in 3.8s = 66.0 req/s, p50 0.41s p95 0.70s, other-status 0
-conc 64: 250 req in 2.7s = 93.9 req/s, p50 0.53s p95 0.87s, other-status 0
-conc 16: 3544 req in 101.2s = 35.0 req/s, p50 0.40s p95 0.76s, other-status 0
