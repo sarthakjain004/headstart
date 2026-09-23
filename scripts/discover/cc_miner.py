@@ -30,9 +30,15 @@ Robust to CC's aggressive rate-limiting, same discipline as before:
 Output: ``data/discover/cc_ats_tenants.csv`` with ``ats,tenant,url`` (the feeder contract in
 CONTEXT.md; ``url`` is a representative capture the resolve/scrape steps can read the slug back from).
 
+When ``index.commoncrawl.org`` is unreachable (it refuses an IP under sweep load, and on
+2026-09-23 refused everyone), the miner reads the same index files off ``data.commoncrawl.org``
+instead (``cc_data_host.py``), one crawl at a time as before. ``CC_DATA_HOST=1`` goes there
+directly rather than first spending the API's retries.
+
 Usage: python -u scripts/discover/cc_miner.py [crawl-id]   (run from repo root)
        CC_ONLY_ATS=eightfold python -u scripts/discover/cc_miner.py   (restrict to one ATS)
        CC_PACE=2.5 python -u scripts/discover/cc_miner.py   (slower request pacing to dodge blocks)
+       CC_DATA_HOST=1 CC_ONLY_ATS=ashby python -u scripts/discover/cc_miner.py CC-MAIN-2026-39
 """
 
 import collections
@@ -44,6 +50,8 @@ import subprocess
 import sys
 import time
 import urllib.parse
+
+import cc_data_host
 
 CRAWL_ARG = sys.argv[1] if len(sys.argv) > 1 else None
 CSV = "data/discover/cc_ats_tenants.csv"
@@ -444,11 +452,18 @@ def curl(url, attempts=6):
 
 
 def resolve_crawl(requested):
-    """Resolve (crawl_id, cdx_api). Default = the newest crawl (June 2026 right now)."""
+    """Resolve (crawl_id, cdx_api). Default = the newest crawl.
+
+    ``cdx_api`` is None when the crawl is to be read off the data host instead of the API.
+    """
+    if os.environ.get("CC_DATA_HOST") == "1":
+        return _data_host_crawl(requested), None
     body, ok = curl(CC_COLLINFO)
     if not ok or not body.strip():
-        print("[miner] collinfo unreachable -> exiting (wrapper retries)", flush=True)
-        sys.exit(3)
+        print(
+            "[miner] collinfo unreachable -> reading the data host instead", flush=True
+        )
+        return _data_host_crawl(requested), None
     crawls = json.loads(body)
     if requested:
         for c in crawls:
@@ -456,6 +471,16 @@ def resolve_crawl(requested):
                 return c["id"], c["cdx-api"]
         sys.exit(f"[miner] crawl {requested!r} not in collinfo")
     return crawls[0]["id"], crawls[0]["cdx-api"]  # newest first
+
+
+def _data_host_crawl(requested):
+    if requested:
+        return requested
+    newest = cc_data_host.crawl_ids()
+    if not newest:
+        print("[miner] data host crawl list unreachable -> exiting", flush=True)
+        sys.exit(3)
+    return newest[0]
 
 
 def num_pages(cdx, target):
@@ -549,22 +574,58 @@ def query_target(cdx, ats, spec, target, done, tenants, crawl):
         )
         if not ok:
             return False
+        urls = []
         for line in body.splitlines():
             try:
-                u = json.loads(line)["url"]
+                urls.append(json.loads(line)["url"])
             except Exception:  # noqa: BLE001, S112
                 continue
-            for pat in pats:
-                for m in pat.finditer(u):
-                    result = tenant_from(spec["kind"], m)
-                    if result:
-                        tenant, url_hint = result
-                        tenants[ats].setdefault(tenant, url_hint or u)
-        done.add(key)
-        write_csv(tenants)
-        with open(DONE, "w", encoding="utf-8") as f:
-            f.write("\n".join(sorted(done)))
+        extract(spec, pats, urls, tenants[ats])
+        _checkpoint(key, done, tenants)
     return True
+
+
+def query_target_data_host(crawl, ats, spec, target, done, tenants):
+    """`query_target` off data.commoncrawl.org: one checkpoint key per (crawl, target), no pages.
+
+    Returns False when the lookup failed, leaving the key unmarked so a later run retries it.
+    """
+    key = f"{crawl}|{target}|data"
+    if key in done:
+        return True
+    urls = cc_data_host.capture_urls(crawl, target)
+    if urls is None:
+        return False
+    pats = [re.compile(p, re.IGNORECASE) for p in spec["patterns"]]
+    found = {}
+    extract(spec, pats, urls, found)
+    new = found.keys() - tenants[ats].keys()
+    for tenant, url in found.items():
+        tenants[ats].setdefault(tenant, url)
+    print(
+        f"    {crawl} {target}: {len(urls)} captures, {len(found)} tenants, +{len(new)} new",
+        flush=True,
+    )
+    _checkpoint(key, done, tenants)
+    return True
+
+
+def extract(spec, pats, urls, hits):
+    """Add each tenant the patterns find in `urls` to `hits` (tenant -> url), first url wins."""
+    for u in urls:
+        for pat in pats:
+            for m in pat.finditer(u):
+                result = tenant_from(spec["kind"], m)
+                if result:
+                    tenant, url_hint = result
+                    hits.setdefault(tenant, url_hint or u)
+
+
+def _checkpoint(key, done, tenants):
+    done.add(key)
+    write_csv(tenants)
+    with open(DONE, "w", encoding="utf-8") as f:
+        f.write("\n".join(sorted(done)))
 
 
 def write_csv(tenants):
@@ -602,7 +663,7 @@ def main():
     crawl, cdx = resolve_crawl(CRAWL_ARG)
     tenants, done = load_existing()
     print(
-        f"mining {crawl} ({cdx.split('/')[-1]}) | {len(specs)} ATS(es)"
+        f"mining {crawl} ({cdx.split('/')[-1] if cdx else 'data host'}) | {len(specs)} ATS(es)"
         + (f" [CC_ONLY_ATS={only}]" if only else "")
         + f" | {sum(len(v) for v in tenants.values())} tenants known | {len(done)} pages done",
         flush=True,
@@ -610,7 +671,10 @@ def main():
 
     for ats, spec in specs.items():
         for target in spec["targets"]:
-            ok = query_target(cdx, ats, spec, target, done, tenants, crawl)
+            if cdx:
+                ok = query_target(cdx, ats, spec, target, done, tenants, crawl)
+            else:
+                ok = query_target_data_host(crawl, ats, spec, target, done, tenants)
             if not ok:
                 print(
                     f"[{ats}] {target} INCOMPLETE (throttled) -> exiting to wait",

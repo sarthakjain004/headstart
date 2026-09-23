@@ -25,6 +25,7 @@ from __future__ import annotations
 import importlib.util
 import pathlib
 import re
+import sys
 
 import pytest
 
@@ -36,6 +37,7 @@ _SRC = (
 @pytest.fixture(scope="module")
 def miner():
     """`cc_miner` is a script, not an installed module, so load it from its path."""
+    sys.path.insert(0, str(_SRC.parent))  # for its sibling import, `cc_data_host`
     spec = importlib.util.spec_from_file_location("cc_miner", _SRC)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
