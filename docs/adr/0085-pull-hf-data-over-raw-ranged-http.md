@@ -50,13 +50,31 @@ Aggregate gain is sub-linear in connection count, so the default is 6–8, not 3
 ### 2. Absolute chunk boundaries, so cancellation is free
 
 Chunk *i* always covers the same byte range regardless of what has landed, so a chunk file's own
-length is sufficient to say how much of it is done. There is no manifest to write, corrupt, or
-let drift out of step with the disk — which is precisely the bookkeeping `huggingface_hub` got
-wrong in failure 3.
+length is sufficient to say how much of it is done. No per-chunk progress manifest is kept —
+which is precisely the bookkeeping `huggingface_hub` got wrong in failure 3. The one exception is
+the chunk size itself (see the 2026-09-23 amendment below).
 
 Because the boundaries are absolute, **a resume with a different `--chunk-mb` would carve the
 same bytes at different offsets and silently assemble a corrupt file.** A guard refuses that
 rather than trusting the operator to remember.
+
+**Amended 2026-09-23: the chunk size is recorded, not inferred.** The guard first inferred the
+chunk size from the chunk files' lengths. A length cannot tell a chunk carved at another size
+from one that is merely *short*, meaning a fetch that ran out of retries, which is the ordinary
+thing a resume exists for. So the guard refused those too: a 2.9 GB pull stalled over one
+28,311,552-byte chunk, with the same `--chunk-mb` on both runs.
+
+A transfer now writes its chunk size to `{file}.chunksize` (temp file, then rename) before it
+writes a byte. A resume compares against that record, and a short chunk is simply topped up. The
+record is deleted once the file lands.
+
+A transfer started before the record existed keeps the length check, and it keeps running that
+check *after* the concat recovery below. Review of #574 showed why the order matters: run first,
+stale chunks from a smaller chunk size assembled a corrupt file of exactly the right length, and
+the final size check could not see it. Guessing "short" from lengths is refused for the same
+reason, and the error names the one chunk file to delete when `--chunk-mb` is unchanged. Unlike
+a progress manifest, this record is one number fixed for the transfer's life, so it cannot drift
+out of step with the disk.
 
 ### 3. `.tmp`-then-rename, because a short file is worse than a missing one
 
