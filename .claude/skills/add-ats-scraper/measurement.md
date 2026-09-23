@@ -26,10 +26,16 @@ disk under `experiment/{ats}-{surface}/` so the numbers can be re-derived.
 
 ## Listing
 
-3. **Which listing surfaces exist?** Check the JSON API the board's own page calls, `robots.txt`
-   (it names surfaces — Zoho's RSS feed was found there after a thorough probe missed it),
-   `sitemap.xml`, RSS, and server-rendered HTML. Pick cheapest-complete, and say why the others
-   lost.
+3. **Where does the public Board really live?** Open a real tenant's careers page in a browser
+   and follow one job link to where it lands. The Board can sit on another product's domain:
+   ClearCompany's lands on HRM Direct (`{slug}.hrmdirect.com`), which neither upstream
+   implementation had found.
+3a. **Which listing surfaces does it have?** The JSON the board's own page calls — and probe its
+   parameters for undocumented flags (Breezy's `/json?verbose=true` adds the full description
+   the plain listing lacks); `robots.txt` (it names surfaces — Zoho's RSS feed was found there
+   after a thorough probe missed it); `sitemap.xml`, RSS, and server-rendered HTML. Pick the
+   cheapest complete surface `robots.txt` allows, and say why the others lost (icims reads only
+   its sitemap: the Boards whose HTML walk 403'd were exactly the ones serving `Disallow: /`).
 4. **How does it paginate, and what terminates the walk?** Does the stated total match the rows
    served on every Board you measured? Does `hasMore`/`next` tell the truth (oracle's `hasMore`
    was false on a 248-posting Board)? Is there a page-size clamp (phenom silently clamps `size`
@@ -62,7 +68,8 @@ disk under `experiment/{ats}-{surface}/` so the numbers can be re-derived.
 10. **Is there a per-Job detail request, and what does it add?** Tabulate, per `Job` field, the
     share of postings that carry it on the listing versus the detail, across many Boards.
 11. **What does the detail need?** A tenant key, a header, a query flag (icims' detail without
-    `in_iframe=1` returns an 80 KB wrapper with no JSON-LD — a silent empty, not an error)?
+    `in_iframe=1` returns an 80 KB wrapper with no JSON-LD — a silent empty, not an error)? What
+    charset does it arrive in (443 of 510 HRM Direct pages were cp1252, not UTF-8)?
 11b. **Is there a token?** For a token scraped from the page (csod embeds a per-corp JWT in
     `csod.context.token`, with an API host on a regional pod such as `eu-fra.api.csod.com`):
     its lifetime, whether it is per tenant or per site, what an expired one returns (a 401, or a
@@ -90,9 +97,10 @@ disk under `experiment/{ats}-{surface}/` so the numbers can be re-derived.
     substrings (`full`, `part`, `contract`/`freelance`, `intern` but not `international`;
     `permanent` counts as full-time unless it says `part`), so "FT" or "Temporary" reach no
     filter until mapped to a label.
-17. **Location.** How many places can one posting name, and where does each live? Join every
-    one ("; "); a posting cut to its first location fails the location filter everywhere else
-    (workable, uber, amazon and keka shipped that, fixed in #561/#564).
+17. **Location.** How many places can one posting name, and where does each live — a list, or
+    the same posting repeated once per place (ClearCompany's `xml.php`)? Join every one ("; ");
+    a posting cut to its first location fails the location filter everywhere else (workable,
+    uber, amazon and keka shipped that, fixed in #561/#564).
 17a. **Department.** Which field states it, on which surface, and on what share of postings? It
     feeds the tech filter's rule 4, which promotes a vague title on a technical department;
     rippling and successfactors shipped it unpopulated and smartrecruiters null on 54.7% of
