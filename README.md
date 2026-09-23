@@ -19,7 +19,7 @@ Not from a feed employers had to opt in to. Not from a list ranked by who paid.
 
 ### It costs nothing to run. All of it.
 
-Discovery. 39 scrapers. Embeddings. Vector search. Email and Telegram alerts.
+Discovery. 40 scrapers. Embeddings. Vector search. Email and Telegram alerts.
 
 Fork it, add your tokens, and the whole pipeline is yours — running on free tiers, end to
 end. No card. No trial. Not a stripped tier of something else: the same code that serves the
@@ -93,8 +93,8 @@ unparseable input with a 400 rather than silently ignoring it.
 
 ## ATS coverage
 
-**39 scrapers**, selected from a registry by the `ats` key: `amazon`, `apple`, `ashby`,
-`bamboohr`, `bytedance`, `darwinbox`, `eightfold`, `freshteam`, `gem`, `google`, `greenhouse`,
+**40 scrapers**, selected from a registry by the `ats` key: `amazon`, `apple`, `ashby`,
+`bamboohr`, `breezy`, `bytedance`, `darwinbox`, `eightfold`, `freshteam`, `gem`, `google`, `greenhouse`,
 `icims`, `jazzhr`, `jobvite`, `join`, `keka`, `lever`, `meta`, `oracle`, `personio`, `phenom`,
 `pyjamahr`, `recruitee`, `ripplehire`, `rippling`, `sensehq`, `smartrecruiters`, `successfactors`,
 `taleo_be`, `taleo_enterprise`, `teamtailor`, `tesla`, `tiktok`, `trakstar`, `uber`, `workable`,
@@ -102,7 +102,7 @@ unparseable input with a 400 rather than silently ignoring it.
 listings, almost entirely non-tech), pure noise for a tech-only index, so `registry.DISABLED_ATS`
 skips it — the scraper class and tests stay intact, and re-enabling it is a one-line change.
 
-Eight of the 38 — `amazon`, `apple`, `bytedance`, `google`, `meta`, `tesla`, `tiktok`, `uber`
+Eight of the 40 — `amazon`, `apple`, `bytedance`, `google`, `meta`, `tesla`, `tiktok`, `uber`
 (ADR-0139) — are **Single source scrapers**: each company's own in-house careers system, not a
 multi-tenant platform, so there's no discovery step and each carries a fixed, hand-entered slug
 rather than a crawled tenant roster. `phenom` is a career-site skin over other ATSes rather than a
@@ -115,7 +115,8 @@ through one pooled, thread-local `curl_cffi` client that impersonates Chrome, so
 serves plain JSON APIs and TLS-fingerprinted (Cloudflare / DataDome) boards alike (ADR-0002). A
 Board's `company` name is read off the board page itself where the ATS makes that possible
 (`ashby`, `eightfold`, `gem`, `jobvite`, `keka`, `lever`, `phenom`, `ripplehire`,
-`taleo_enterprise` — ADR-0114). The eight **Single source scrapers** above need no page fetch for
+`taleo_enterprise` — ADR-0114); `breezy` needs no page for it, because every posting in its
+listing carries the employer's own `company.name`. The eight **Single source scrapers** above need no page fetch for
 it: one fixed company each, so the name is declared as `BaseScraper.COMPANY` and always served.
 Every *other* ATS serves the **ATS slug** in that field instead, so a row's `company` may be
 either — four served rows in five carry a slug rather than a name, which is why `CompanyPrefs` is
