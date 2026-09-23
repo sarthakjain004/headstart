@@ -69,8 +69,8 @@ The crawl list comes from [`collinfo.json`](https://index.commoncrawl.org/collin
 
 ### The tool
 
-[`cc_miner.py`](../scripts/discover/cc_miner.py) — stdlib + `curl` (the data-host fallback below
-adds `curl_cffi` and `headstart.spare_egress`), fully resumable:
+[`cc_miner.py`](../scripts/discover/cc_miner.py) — `curl`, plus `cc_data_host.py` for the data-host
+fallback below (which needs `curl_cffi` and `headstart.spare_egress`), fully resumable:
 
 - reads the crawl list and the set of already-finished crawls
   ([`data/discover/cc_miner_checkpoint.txt`](../data/discover/cc_miner_checkpoint.txt));
@@ -175,7 +175,9 @@ com,hrmdirect-)`, the host and every subdomain). `cc_miner.py` falls back to it 
 CC_DATA_HOST=1 CC_ONLY_ATS=ashby python -u scripts/discover/cc_miner.py CC-MAIN-2026-39
 ```
 
-The crawl list comes from the data host too (`crawl-data/index.html`). A 429 or 503 from it moves
+The crawl list comes from the data host too (`crawl-data/index.html`). Its checkpoint key is one
+per crawl and target (`{crawl}|{target}|data`), so a crawl already mined through the API is read
+again, harmlessly, on the fallback. A 429 or 503 from it moves
 the requests to the spare egress (`headstart.spare_egress`, WARP) and back to direct after five
 minutes; a ~1,640-request sweep on 2026-09-23 met none.
 

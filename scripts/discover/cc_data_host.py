@@ -82,9 +82,8 @@ def _get(url: str, *, start: int | None = None, end: int | None = None, tries: i
             # A Range GET must come back 206: a 200 would be the whole ~100 MB file.
             if r.status_code == (200 if start is None else 206):
                 return r
-            if (
-                r.status_code == 404
-            ):  # no such crawl or file: retrying will not change it
+            # No such crawl or file: retrying will not change it.
+            if r.status_code == 404:
                 return None
             if r.status_code in (429, 503):
                 if proxy:
@@ -97,7 +96,8 @@ def _get(url: str, *, start: int | None = None, end: int | None = None, tries: i
                 _proxy_until = time.monotonic() + PROXY_HOLD
         except Exception:  # noqa: BLE001, S110
             pass
-        time.sleep(min(3 * 2**attempt, 45))
+        if attempt < tries - 1:
+            time.sleep(min(3 * 2**attempt, 45))
     return None
 
 
@@ -111,7 +111,7 @@ def _seek_key(url: str, size: int, pos: int) -> tuple[int, bytes] | None:
     if off == 0 and pos != 0:
         return None
     line = chunk[off:].split(b"\n")[0]
-    return (pos + off, line.split(b" ", 1)[0]) if line else None
+    return (pos + off, _key(line)) if line else None
 
 
 def _key(line: bytes) -> bytes:
@@ -220,8 +220,15 @@ def capture_urls(crawl_id: str, target: str) -> list[str] | None:
         r = _get(base + fname, start=off, end=off + length - 1)
         if r is None:
             return None
+        try:
+            text = gzip.decompress(r.content)
+        except (
+            OSError,
+            EOFError,
+        ):  # a truncated block: retry the crawl, don't crash the run
+            return None
         urls = []
-        for line in gzip.decompress(r.content).split(b"\n"):
+        for line in text.split(b"\n"):
             key, _, rest = line.partition(b" ")
             if not (lo <= key < hi):
                 continue
@@ -236,6 +243,7 @@ def capture_urls(crawl_id: str, target: str) -> list[str] | None:
         for fut in as_completed([ex.submit(fetch, b) for b in blocks]):
             got = fut.result()
             if got is None:
+                ex.shutdown(cancel_futures=True)
                 return None
             urls += got
     return urls

@@ -14,7 +14,8 @@ pick another (``python -u scripts/discover/cc_miner.py CC-MAIN-2026-21``).
 Robust to CC's aggressive rate-limiting, same discipline as before:
   * ``curl --fail``-style classification: a 200 with empty body / a 404 is a real no-match (ok);
     a 403/429/5xx/timeout is a block (not data), retried, and on persistent block the run exits
-    cleanly (exit 0) so a wrapper can wait it out and relaunch.
+    cleanly (exit 0) so a wrapper can wait it out and relaunch. An unreachable ``collinfo.json``
+    no longer exits: the run moves to the data host (below).
   * Resumable + incremental: each ``(crawl, target, page)`` is checkpointed only when it fully
     succeeds, and the CSV is rewritten after every completed page — a throttled page is retried
     next run, never silently recorded as empty.
@@ -474,13 +475,13 @@ def resolve_crawl(requested):
 
 
 def _data_host_crawl(requested):
-    if requested:
-        return requested
-    newest = cc_data_host.crawl_ids()
-    if not newest:
+    crawls = cc_data_host.crawl_ids()
+    if not crawls:
         print("[miner] data host crawl list unreachable -> exiting", flush=True)
         sys.exit(3)
-    return newest[0]
+    if requested and requested not in crawls:
+        sys.exit(f"[miner] crawl {requested!r} not on the data host")
+    return requested or crawls[0]
 
 
 def num_pages(cdx, target):
