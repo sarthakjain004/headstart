@@ -249,6 +249,32 @@ sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` 
   skip means a steady-state Board fetches none at all, so the name silently reverted to the slug
   on every run after the first.
   Measurements: `docs/phenom/2026-09-16_widgets-api-measurement.md`.
+- **Pinpoint** ✅ DONE (2026-09-23) — `scrapers/pinpoint.py`, wired through liveness (819 live /
+  668 hiring Boards, 18,364 postings once six confirmed test tenants are excluded, in
+  `data/validate/liveness/pinpoint.csv`; ADR-0184,
+  `docs/pinpoint/2026-09-23_postings-api-measurement.md`). **Slug = the lowercased subdomain
+  label** of `{slug}.pinpointhq.com`, and the native id is the posting UUID. The numeric `id`
+  addresses no page. The pool is 1,465 tenants: harvest, the kalil0321 seed list, a full Wayback
+  sweep (+904 new) and 6 rename targets. **Common Crawl was not measured**:
+  `index.commoncrawl.org` was unreachable all day. `GET /postings.json` is the whole Board in one
+  array, with the full body in four HTML sections and no cap. Four measured traps are wired into
+  the code:
+  - **The listing has no date on any of 13,419 rows.** Upstream's `first_published_at` does not
+    exist. `datePosted` (and the country) live only in the posting page's JSON-LD, so the page is
+    fetched, tech-gated as an exact site. ADR-0048's skip is declined, because a description-store
+    hit says nothing about the date.
+  - **The page answers 406 to the shared `_get`'s `Accept: application/json, text/html`**, so it
+    is asked for as `text/html`.
+  - **The board page content-negotiates.** It renders for `Accept: */*`, but 17 hiring Boards
+    (1,224 postings) 404 a browser on every posting. So the prober asks `/` as `text/html` without
+    redirects. A redirect is live on a Board with postings (160 vanity hosts) and dead on an empty
+    one. A listing 301 to another label is a renamed tenant, and is dead.
+  - **The origin walls connections IP-wide.** A 256-wide burst drew refusals that held against
+    every tenant for minutes, while paced load up to 50 req/s was clean. So `pinpointhq.com` is a
+    spanning gate at 16.
+
+  12.0% tech, ~195 KB fetched per tech Job, so it is active. The company name is the board
+  `<title>` (`Jobs at {Name} | …`, 38 of 40 resolve).
 - **PeopleStrong** (201 hosts, still no scraper — Angular SPA XHR), **Jobsoid** (`{slug}.jobsoid.com/api/v1/jobs`, S, low yield) — opportunistic.
 - **Taleo Business Edition** ✅ DONE (2026-09-13, #452) — `scrapers/taleo_be.py`, wired through
   liveness (533 live / 1,760 rows in `data/validate/liveness/taleo_be.csv`, plus 55
