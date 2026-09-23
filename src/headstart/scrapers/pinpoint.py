@@ -2,9 +2,11 @@
 
 A Board is one tenant subdomain, and its **lowercased label** is the slug: DNS and the board are
 case-insensitive (``CINVEN`` serves ``cinven``), and the seed list spells one tenant ``Cinven``.
-There is one host and no regional pod. Everything below was measured 2026-09-23 — a census of
-``/postings.json`` on all 555 pool and seed slugs (550 live, 433 hiring, 13,419 postings), 76
-posting pages from 40 Boards, ~1,450 rate-limit requests — and is written up in
+There is one host and no regional pod. Everything below was measured 2026-09-23 — a first census
+of ``/postings.json`` on the 555 pool and seed slugs (550 answering, 433 with postings, 13,419
+postings; the field shares below are over those rows), 76 posting pages from 40 Boards, a
+browser-view pass over the final 1,465-slug pool, and the paced and burst load tests — and is
+written up in
 ``docs/pinpoint/2026-09-23_postings-api-measurement.md`` (ADR-0184).
 
 **The listing is the Board, whole, in one call.** ``GET /postings.json`` is the board page's own
@@ -25,14 +27,15 @@ is a detail-pass ATS for two fields, and it declines ADR-0048's skip of the alre
 the description comes from the listing, so a store hit says nothing about the date, and skipping
 would blank ``posted_at`` on every run after the first. The skip it does take is the tech gate
 (ADR-0166), as an **exact** site: ``title`` and ``job.department.name`` are listing fields on
-13,419 of 13,419 rows and the page overrides neither. At 12.9% tech that spares ~87% of the page
-fetches (~132 KB each).
+13,419 of 13,419 rows and the page overrides neither, and both read them through ``_title`` and
+``_department``. Over the committed ledger's 666 Hiring Boards (18,342 postings on re-fetch),
+12.1% are tech, so the gate spares ~88% of the page fetches (~132 KB each).
 
 **Identity.** A posting's UUID (the last segment of its ``url``) is the native id: it is the only
-id that addresses a page, ``/en/postings/{numeric id}`` answers 404. 160 of 691 hiring Boards send a
-browser from each posting to their vanity host at the same path, and 29 of 433 name that host in
-the listing's ``url``; the vendor-host link lands on the posting either way, so every link is built
-on the vendor host.
+id that addresses a page, ``/en/postings/{numeric id}`` answers 404. 158 of 692 Boards with
+postings send a browser from each posting to their vanity host at the same path, and 29 of the
+census's 433 name that host in the listing's ``url``; the vendor-host link lands on the posting
+either way, so every link is built on the vendor host.
 
 **Remote is stated.** ``workplace_type`` is populated on 100% (onsite 9,282 / hybrid 2,738 /
 remote 1,399), and 919 of the remote rows name only a city, so it wins over any location guess.
@@ -41,7 +44,8 @@ Hybrid is ``None``.
 **The page content-negotiates.** Asked with ``BaseScraper._get``'s ``Accept: application/json,
 text/html`` it answers 406 (192 of 192 pages on one Board), so pages are asked for as
 ``text/html``. A tenant can also switch its careers site off for browsers while the JSON still
-lists postings (17 hiring Boards answer a browser 404 on every posting); that is a dead Board, and
+lists postings (17 Boards answer a browser 404 on their postings, 3 redirect them to a company
+page); that is a dead Board, and
 ``check_liveness.p_pinpoint`` settles it, as it does an unknown slug (a real 404) and a renamed one
 (a 301 to another label). Here, an unknown slug raises through ``_get`` as a Board failure and a
 live empty Board (200 ``{"data": []}``) parses to no Jobs.
@@ -83,17 +87,32 @@ def _description(item: dict) -> str | None:
 
 
 def _location(item: dict, country: str | None = None) -> str | None:
-    """`location.name`, then `city`, `province` and the page's country, each only when what
-    precedes it does not already contain it (case-insensitively). `name` leads because it is the
-    tenant's own label, often a site name (\"GM Tech\", \"Shipboard\") that the structured
-    fields do not repeat; there is one location per posting on every row measured."""
+    """`location.name`, then `city`, `province` and the page's country, each skipped only when it
+    repeats a whole comma-separated part already written (case-insensitively) — "Denver" after
+    "Denver, CO", never "Indiana" after "Indianapolis". `name` leads because it is the tenant's
+    own label, often a site name ("GM Tech", "Shipboard") that the structured fields do not
+    repeat; there is one location per posting on every row measured."""
     place = item.get("location") or {}
     parts: list[str] = []
+    seen: set[str] = set()
     for value in (place.get("name"), place.get("city"), place.get("province"), country):
         value = (value or "").strip()
-        if value and value.lower() not in ", ".join(parts).lower():
+        if value and value.lower() not in seen:
             parts.append(value)
+            seen.update(p.strip().lower() for p in value.split(","))
     return ", ".join(parts) or None
+
+
+def _title(item: dict) -> str:
+    """The listing's `title`, stripped. Read by the tech gate and by `parse` alike, so the gate
+    asks `is_tech` exactly what `filter_tech` will (ADR-0166)."""
+    return (item.get("title") or "").strip()
+
+
+def _department(item: dict) -> str | None:
+    """`job.department.name` (13,419 of 13,419 rows), stripped; shared by the gate and `parse`."""
+    name = ((item.get("job") or {}).get("department") or {}).get("name")
+    return (name or "").strip() or None
 
 
 #: `workplace_type` -> `Job.remote`, on 100% of rows. Hybrid is not remote (ashby's rule).
@@ -117,7 +136,7 @@ def _uuid(item: dict) -> str:
     return (item.get("url") or "").rstrip("/").rsplit("/", 1)[-1]
 
 
-def _page_fields(page: str) -> dict[str, Any] | None:
+def _ld_fields(page: str) -> dict[str, Any] | None:
     """`posted_at` and `country` from a posting page's JSON-LD `JobPosting`, or None when the
     page carries none (a counted detail gap, not an error)."""
     for match in _LD_BLOCK.finditer(page):
@@ -171,12 +190,15 @@ class PinpointScraper(BaseScraper):
         return f"https://{self.slug}.pinpointhq.com/en/postings/{uuid}"
 
     def fetch_raw(self) -> Any:
+        # An empty answer is asked once more: the listing sometimes returns a spurious
+        # `{"data":[]}` for a Board that has postings (12 of 6,030 fetches over 670 hiring Boards,
+        # as often at concurrency 4 as at 16, each Board answering with its postings on its other
+        # fetches), and a Board read as empty puts every one of its Jobs one absence from eviction
+        # (ADR-0083). A real empty Board costs 11 bytes to confirm.
         listed = json.loads(self._get()).get("data") or []
-        wanted = self.tech_detail_wanted(
-            listed,
-            lambda i: i.get("title"),
-            lambda i: ((i.get("job") or {}).get("department") or {}).get("name"),
-        )
+        if not listed:
+            listed = json.loads(self._get()).get("data") or []
+        wanted = self.tech_detail_wanted(listed, _title, _department)
         uuids = [_uuid(i) for i in wanted]
         details: dict[str, dict] = {}
         if uuids:
@@ -215,7 +237,7 @@ class PinpointScraper(BaseScraper):
         return self._fields_or_loss(page)
 
     def _fields_or_loss(self, page: str) -> dict[str, Any] | None:
-        fields = _page_fields(page)
+        fields = _ld_fields(page)
         if fields is None:
             self.note_detail_loss("no JSON-LD on a 200")
         return fields
@@ -231,10 +253,10 @@ class PinpointScraper(BaseScraper):
                     id=self.job_id(uuid),
                     ats=self.ats,
                     company=self.company,
-                    title=item["title"].strip(),
+                    title=_title(item),
                     location=_location(item, page.get("country")),
                     remote=_REMOTE.get(item.get("workplace_type") or ""),
-                    department=item["job"]["department"]["name"].strip(),
+                    department=_department(item),
                     url=self.job_url(uuid),
                     posted_at=page.get("posted_at"),
                     scraped_at=scraped_at,
