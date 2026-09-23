@@ -69,7 +69,8 @@ The crawl list comes from [`collinfo.json`](https://index.commoncrawl.org/collin
 
 ### The tool
 
-[`cc_miner.py`](../scripts/discover/cc_miner.py) — stdlib + `curl`, fully resumable:
+[`cc_miner.py`](../scripts/discover/cc_miner.py) — stdlib + `curl` (the data-host fallback below
+adds `curl_cffi` and `headstart.spare_egress`), fully resumable:
 
 - reads the crawl list and the set of already-finished crawls
   ([`data/discover/cc_miner_checkpoint.txt`](../data/discover/cc_miner_checkpoint.txt));

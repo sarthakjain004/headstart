@@ -580,7 +580,7 @@ def query_target(cdx, ats, spec, target, done, tenants, crawl):
                 urls.append(json.loads(line)["url"])
             except Exception:  # noqa: BLE001, S112
                 continue
-        extract(spec, pats, urls, tenants[ats])
+        extract_tenants(spec, pats, urls, tenants[ats])
         _checkpoint(key, done, tenants)
     return True
 
@@ -598,7 +598,7 @@ def query_target_data_host(crawl, ats, spec, target, done, tenants):
         return False
     pats = [re.compile(p, re.IGNORECASE) for p in spec["patterns"]]
     found = {}
-    extract(spec, pats, urls, found)
+    extract_tenants(spec, pats, urls, found)
     new = found.keys() - tenants[ats].keys()
     for tenant, url in found.items():
         tenants[ats].setdefault(tenant, url)
@@ -610,7 +610,7 @@ def query_target_data_host(crawl, ats, spec, target, done, tenants):
     return True
 
 
-def extract(spec, pats, urls, hits):
+def extract_tenants(spec, pats, urls, hits):
     """Add each tenant the patterns find in `urls` to `hits` (tenant -> url), first url wins."""
     for u in urls:
         for pat in pats:

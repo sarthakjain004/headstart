@@ -21,7 +21,7 @@ import gzip
 import json
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from curl_cffi import requests
 
@@ -69,7 +69,7 @@ def _get(url: str, *, start: int | None = None, end: int | None = None, tries: i
     """One GET (a Range GET when bounds are given). The response, or None after `tries`.
 
     429/503 are the data host saying slow down: move to the spare egress, and rotate it if it is
-    already the route that was refused. Any other failure backs off and retries on the same route.
+    already the route that was refused. Every failure, those included, backs off before retrying.
     """
     global _proxy_until
     headers = {"User-Agent": UA}
@@ -79,8 +79,13 @@ def _get(url: str, *, start: int | None = None, end: int | None = None, tries: i
         proxy = spare_egress.proxy_url() if time.monotonic() < _proxy_until else None
         try:
             r = requests.get(url, timeout=90, headers=headers, proxy=proxy)
-            if r.status_code in (200, 206):
+            # A Range GET must come back 206: a 200 would be the whole ~100 MB file.
+            if r.status_code == (200 if start is None else 206):
                 return r
+            if (
+                r.status_code == 404
+            ):  # no such crawl or file: retrying will not change it
+                return None
             if r.status_code in (429, 503):
                 if proxy:
                     spare_egress.rotate()
@@ -90,7 +95,6 @@ def _get(url: str, *, start: int | None = None, end: int | None = None, tries: i
                         flush=True,
                     )
                 _proxy_until = time.monotonic() + PROXY_HOLD
-                continue
         except Exception:  # noqa: BLE001, S110
             pass
         time.sleep(min(3 * 2**attempt, 45))
@@ -227,8 +231,11 @@ def capture_urls(crawl_id: str, target: str) -> list[str] | None:
                 continue
         return urls
 
+    urls: list[str] = []
     with ThreadPoolExecutor(max_workers=WORKERS) as ex:
-        results = list(ex.map(fetch, blocks))
-    if any(r is None for r in results):
-        return None
-    return [u for r in results for u in r]
+        for fut in as_completed([ex.submit(fetch, b) for b in blocks]):
+            got = fut.result()
+            if got is None:
+                return None
+            urls += got
+    return urls

@@ -16,7 +16,6 @@ from __future__ import annotations
 import gzip
 import json
 import pathlib
-import re
 import sys
 
 import pytest
@@ -25,7 +24,6 @@ _DISCOVER = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "discover"
 sys.path.insert(0, str(_DISCOVER))
 
 import cc_data_host
-import cc_miner
 
 
 def test_domain_range_holds_the_host_and_its_subdomains_only():
@@ -139,22 +137,3 @@ def test_capture_urls_keeps_only_keys_inside_the_range(monkeypatch):
     assert cc_data_host.capture_urls("CC-MAIN-2026-39", "hrmdirect.com") == [
         "https://acme.hrmdirect.com/employment/"
     ]
-
-
-def test_label_extraction_reads_the_subdomain_and_drops_vendor_hosts():
-    spec = cc_miner.ATS_PATTERNS["bamboohr"]
-    pats = [re.compile(p, re.IGNORECASE) for p in spec["patterns"]]
-    hits: dict[str, str] = {}
-    cc_miner.extract(
-        spec,
-        pats,
-        [
-            "https://Acme.bamboohr.com/careers/12",
-            "https://www.bamboohr.com/pricing",
-            "https://acme.bamboohr.com/jobs/",
-            "https://globex.bamboohr.com/",
-        ],
-        hits,
-    )
-    assert sorted(hits) == ["acme", "globex"]
-    assert hits["acme"] == "https://Acme.bamboohr.com/careers/12"

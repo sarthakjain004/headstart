@@ -212,28 +212,9 @@ def wayback(seen: set[str], done: set[str]) -> None:
 
 
 def _known_crawl_ids() -> list[str]:
-    """Crawl ids for the S3 fallback, when collinfo.json's host is blocked.
-
-    collinfo.json is authoritative and used whenever it is reachable; this is only the offline
-    substitute. Crawl ids are immutable historical facts, and a wrong guess is harmless — an id
-    that does not exist simply has no cluster.idx, so `_cc_blocks` returns nothing after one HEAD.
-    Unioned with whatever ids the local cc_miner checkpoint has already seen.
-    """
-    static = [
-        f"CC-MAIN-{y}-{w:02d}"
-        for y, weeks in (
-            (2022, (5, 21, 27, 33, 40, 49)),
-            (2023, (6, 14, 23, 40, 50)),
-            (2024, (10, 18, 22, 26, 30, 33, 38, 42, 46, 51)),
-            (2025, (5, 8, 13, 18, 21, 26, 30, 33, 38, 43, 47, 51)),
-            (2026, (4, 8, 12, 17, 21, 25)),
-        )
-        for w in weeks
-    ]
-    ckpt = ROOT / "data" / "discover" / "cc_miner_checkpoint.txt"
-    if ckpt.exists():
-        static += re.findall(r"CC-MAIN-\d{4}-\d{2}", ckpt.read_text(encoding="utf-8"))
-    return sorted({c for c in static if c >= CC_SINCE}, reverse=True)
+    """Crawl ids for the S3 fallback, when collinfo.json's host is blocked: the data host's own
+    crawl list, newest first, back to `CC_SINCE`."""
+    return cc_data_host.crawl_ids(CC_SINCE)
 
 
 def commoncrawl_s3(seen: set[str], done: set[str], crawls: list[dict]) -> None:
