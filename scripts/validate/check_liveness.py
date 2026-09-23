@@ -1480,6 +1480,72 @@ def _pyjamahr_count(body):
     return count if isinstance(count, int) else None
 
 
+_PINPOINT_RENAMED = re.compile(
+    r"^https://[a-z0-9-]+\.pinpointhq\.com/postings\.json$", re.IGNORECASE
+)
+
+
+def p_pinpoint(t, u):
+    """The Board's own listing, asked WITHOUT following redirects, then its page only for a zero.
+
+    Measured 2026-09-23 on the 555-slug census plus 904 Wayback slugs
+    (`docs/pinpoint/2026-09-23_postings-api-measurement.md`):
+
+    * 200 with postings is a live Board — the count is the array's length, the whole Board.
+    * A slug that never existed is a real **404** (the vendor's 11,684-byte page; 168 of 169
+      Wayback 404s).
+    * A renamed tenant **301s to another `{label}.pinpointhq.com/postings.json`** — 63 of 63
+      redirects, none anywhere else. Followed, it would read as a second live row for a Board the
+      target label already is (57 of the 63 targets are live slugs), so the old label is dead.
+      A redirect anywhere else has never been seen and stays UNKNOWN.
+    * 200 `{"data": []}` is a live empty Board (117 of 117 census Boards answer `/` with 200) —
+      except where the careers site is switched off, which answers `/` with 404 (2 Wayback
+      tenants). So a zero is settled by the board page.
+
+    No rate limit was found (to 128 concurrent across tenants, zero non-200s), so the host is not
+    seeded in `_GATES`; the auto-gate covers a wall that appears later.
+    """
+    slug = t.lower()
+    try:
+        r = _fetch(
+            "GET",
+            f"https://{slug}.pinpointhq.com/postings.json",
+            headers={"User-Agent": UA},
+            allow_redirects=False,
+        )
+    except http.RequestsError as e:
+        if _is_dns(e):
+            return DEAD, None
+        _note(_net_reason(e))
+        return UNKNOWN, None
+    if r is None:  # breaker open -> transient
+        _note("breaker-open")
+        return UNKNOWN, None
+    if r.status_code in (301, 302, 303, 307, 308):
+        if _PINPOINT_RENAMED.match(r.headers.get("location") or ""):
+            return DEAD, None
+        _note(f"redirect-{r.status_code}")
+        return UNKNOWN, None
+    if r.status_code in (404, 410):
+        return DEAD, None
+    if r.status_code != 200:
+        _note(f"http-{r.status_code}")
+        return UNKNOWN, None
+    try:
+        n = len(json.loads(r.content)["data"])
+    except (ValueError, KeyError, TypeError):
+        _note("body-unparseable")
+        return UNKNOWN, None
+    if n:
+        return LIVE, n
+    status, _ = _get(f"https://{slug}.pinpointhq.com/")
+    if status == 200:
+        return LIVE, 0
+    if status == "dns" or status in (404, 410):
+        return DEAD, None
+    return UNKNOWN, None
+
+
 def p_pyjamahr(t, u):
     # Two questions, cheapest first. The listing (`limit=1`, a ~200-byte envelope) says how many
     # postings the Board has, and a non-zero count is proof of a tenant. A zero is NOT proof of
@@ -2043,6 +2109,7 @@ PROBES = {
     "jobvite": p_jobvite,
     "oracle": p_oracle,
     "phenom": p_phenom,
+    "pinpoint": p_pinpoint,
     "pyjamahr": p_pyjamahr,
     "taleo_be": p_taleo_be,
     "taleo_enterprise": p_taleo_enterprise,
