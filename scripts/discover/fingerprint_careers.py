@@ -271,7 +271,9 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
     "getro": ("ats", [SUB + r"getro\.com", r"jobs\.getro\.com"]),
     "gem": ("ats", [r"jobs\.gem\.com/([a-zA-Z0-9_-]+)"]),
     "hireology": ("ats", [SUB + r"hireology\.com"]),
-    "clearcompany": ("ats", [SUB + r"clearcompany\.com"]),
+    # The public Board is `{slug}.hrmdirect.com` (HRM Direct, ClearCompany's career site); the
+    # same label keys the tenant's `{slug}.clearcompany.com` app (docs/clearcompany/).
+    "clearcompany": ("ats", [SUB + r"hrmdirect\.com", SUB + r"clearcompany\.com"]),
     "adp": ("ats", [r"workforcenow\.adp\.com", r"recruiting\.adp\.com"]),
     "ukg": ("ats", [SUB + r"ultipro\.com"]),
     "occupop": ("ats", [SUB + r"occupop\.com"]),
@@ -590,6 +592,8 @@ CNAME_ZONES = {
     "phenompeople.com": "phenom",
     "bamboohr.com": "bamboohr",
     "breezy.hr": "breezy",
+    "hrmdirect.com": "clearcompany",
+    "clearcompany.com": "clearcompany",
     "applytojob.com": "jazzhr",
     "avature.net": "avature",
     "csod.com": "cornerstone",
@@ -774,6 +778,7 @@ CNAME_LABEL_ATS = frozenset(
     {
         "bamboohr",
         "breezy",
+        "clearcompany",
         "darwinbox",
         "freshteam",
         "keka",

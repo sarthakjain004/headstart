@@ -72,6 +72,10 @@ from headstart import (  # needs src on sys.path first
 from headstart.models import (  # one host rule, shared with the scrapers
     host_of,
 )
+from headstart.scrapers.clearcompany import (  # feed decode + req grouping, single source
+    decode_hrm_bytes,
+    feed_reqs,
+)
 from headstart.scrapers.jobvite import (  # board url + counter parse, single source
     JobviteScraper,
     total_of,
@@ -1307,6 +1311,31 @@ def p_breezy(t, u):
     return LIVE, len(rows)
 
 
+def p_clearcompany(t, u):
+    # ClearCompany's public Board is HRM Direct, and its whole-account feed `xml.php` settles the
+    # verdict in one request (measured 2026-09-23, docs/clearcompany/): 404 for an unknown or
+    # departed tenant (51 of 51 in the sample also had a 404 Board page; 2,473 of the ledger's
+    # 2,474 dead rows re-read 404), and 200 with a `<source>` for every live Board, with no
+    # `<job>` when nothing is open. ClearCompany's own JSON feed cannot make this call: it answers
+    # 200 for 48 of those 51 dead tenants, 14 of them with postings. The count is distinct reqs,
+    # not rows — a req repeats once per location (434 of 6,377). Everything else stays UNKNOWN,
+    # including a refused connection (126 of 256 in one unexplained cross-tenant burst) and the
+    # 500 the largest account's feed returns after ~104 s. So does a DNS failure: `*.hrmdirect.com`
+    # answers almost any label (the one real NXDOMAIN in the pool is the vendor's `preview`), and
+    # under a wide pass the local resolver fails first — breezy's wildcard wrote 41 live Boards
+    # dead that way (`p_breezy`).
+    status, body = _get(f"https://{t}.hrmdirect.com/employment/xml.php")
+    if status == 404:
+        return DEAD, None
+    if status != 200:
+        return UNKNOWN, None
+    text = decode_hrm_bytes(body)
+    if "<source>" not in text:
+        _note("body-unparseable")
+        return UNKNOWN, None
+    return LIVE, len(feed_reqs(text))
+
+
 def p_keka(t, u):
     # The careers SPA's own job call (read off cdn.keka.com/careers/v/2026/scripts/app/app.min.js:
     # `$.ajax('/api/jobs/${apiPortalName}/active')`, apiPortalName defaulting to "default"). It
@@ -2199,6 +2228,7 @@ PROBES = {
     "ashby": p_ashby,
     "bamboohr": p_bamboohr,
     "breezy": p_breezy,
+    "clearcompany": p_clearcompany,
     "recruitee": p_recruitee,
     "workable": p_workable,
     "zoho": p_zoho,
