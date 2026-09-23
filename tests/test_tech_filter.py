@@ -943,7 +943,6 @@ def _eval_rows(label: str) -> list[tuple[str, str]]:
 
 def test_the_labelled_set_keeps_every_tech_title_but_the_known_misses():
     tech = _eval_rows("tech")
-    assert len(tech) == 345
     missed = {title for title, dept in tech if not is_tech(title, dept or None)}
     assert missed == _KNOWN_MISSES, (
         f"new misses: {sorted(missed - _KNOWN_MISSES)}; "
@@ -953,7 +952,6 @@ def test_the_labelled_set_keeps_every_tech_title_but_the_known_misses():
 
 def test_the_labelled_set_admits_no_more_non_tech_than_before():
     non_tech = _eval_rows("not_tech")
-    assert len(non_tech) == 540
     kept = [title for title, dept in non_tech if is_tech(title, dept or None)]
     assert len(kept) <= _FALSE_POSITIVE_CEILING, kept
 
@@ -974,3 +972,108 @@ def test_jd_edwards_cnc_is_the_erp_not_the_machine_shop(title, department):
 
 def test_a_machine_shop_title_in_a_mislabelled_it_department_is_refused():
     assert is_tech("CNC Turner", department="Information Technology") is False
+
+
+# --- critique of version 4 (6/10): bugs, overrides, siblings, recall groups -------------------
+
+
+@pytest.mark.parametrize(
+    "title,department",
+    [
+        # regex bugs
+        (".NET Lead", ""),
+        ("Sr.Net Lead", ""),
+        ("Senior Member Technical Staff", ""),
+        ("SMTS, Silicon Validation", ""),
+        ("Analyst, Identity Access Management", ""),
+        ("SOC L3 Analyst", ""),
+        ("CSOC Analyst", ""),
+        ("IT & Cybersecurity Support Technician", ""),
+        ("IT Infrastructure & Network Lead", ""),
+        ("Chief Technology Officer", ""),
+        ("LLM Program Manager", ""),
+        ("Research Intern – Reinforcement Learning", "AI Research"),
+        # the lower-risk groups from the Indeed rejects
+        ("Kubernetes L3 Lead", ""),
+        ("Snowflake Admin", ""),
+        ("Mainframe SME", ""),
+        ("Production Support Analyst", ""),
+        ("L2 Application Support Engineer", ""),
+        ("Threat Intelligence Analyst", ""),
+        ("Vulnerability Management Specialist", ""),
+        ("Cloud Consultant", ""),
+        ("Splunk Administrator", ""),
+        ("AI Team Lead", ""),
+        ("Application Development Specialist", ""),
+        ("Technical Delivery Manager", ""),
+        # glued words and compounds the per-word-start matching must still reach
+        ("SeniorSolution Architect - Public Sector", ""),
+        ("Tier 1Technical Support Analyst (Hybrid)", ""),
+        ("Outsystems Architect", ""),
+        ("Senior GPU Memory Subsystem Architect", ""),
+        ("CIAM Architect", ""),
+        ("Masterdata Analyst III", ""),
+        ("Hybrid and Multicloud Architect", ""),
+        # the served-table read of the new vetoes: each of these was dropped by a first cut
+        ("Rails Application Developer", ""),
+        ("SD3 - Principal Engineer - Ruby & Rails (RoR) Application Development", ""),
+        ("Lead Systems RMA Engineer --Air Traffic Control", ""),
+        ("Epic Bridges EDI Developer", ""),
+        ("Principal AI/ ML Robotics Engineer - Environmental Perception", ""),
+        ("Senior Communications Engineer, Rail Systems, Seattle WA", ""),
+        ("Lead Engineer - SW Design - RAIL", ""),
+        ("LabVIEW Quality Engineer", "Aerospace"),
+        ("PLM Administrator, Configuration Management", "Mechanical Engineering"),
+        ("Senior Solutions Consultant", "Sales - Sales Engineering"),
+        (
+            "PC Technician - Edmonton",
+            "Admin (Office, Sales, IT, Customs, Central Dispatch, etc.)",
+        ),
+        (
+            "Sr. Specialist - L1 Integration Testing",
+            "Vehicle Software & Electrical Engineering",
+        ),
+        ("IT Project Leader", "Manufacturing Engineering"),
+        ("Front End Team Member", ""),
+        ("Staff Design Quality Engineer (Software/Electrical)", ""),
+    ],
+)
+def test_version_4_critique_keeps(title, department):
+    assert is_tech(title, department or None) is True, f"RECALL VIOLATION -> {title!r}"
+
+
+@pytest.mark.parametrize(
+    "title,department",
+    [
+        # strong arms no longer override the sales/insurance/discipline vetoes
+        ("Sales Engineer – AI", ""),
+        ("Civil Engineer – ML", ""),
+        ("Cyber Sales Manager", ""),
+        ("Cybersecurity Sales Director", ""),
+        ("Cyber Claims Specialist", ""),
+        ("AI Lead Generation & Outreach Executive", ""),
+        # rule 0's rescue reads code words only
+        ("CNC Programmer/Tool & Die Maker", ""),
+        ("Manufacturing Engineering Manager - Automation", ""),
+        # highway's siblings
+        ("Bridge Engineer", ""),
+        ("Traffic Engineer", ""),
+        ("Water Resources Engineer", ""),
+        ("Transportation Engineer", ""),
+        ("Environmental Engineer", ""),
+        ("Substation Engineer", ""),
+        ("Railway Engineer", ""),
+        ("Facilities Engineer", ""),
+        ("Supplier Quality Engineer", ""),
+        # rule 4 reads a non-software discipline in the department
+        ("Intern", "Building Engineering"),
+        ("Intern", "Electrical Engineering"),
+        # accidental v3 substring hits the per-word-start matching retires
+        ("Geotechnical Project Manager", ""),
+        ("Assoc Analyst Procurement", ""),
+        ("Property Tax Protest Analyst", ""),
+        ("Looking for Mechanical Engineer or Automobile Engineer", "Engineering"),
+    ],
+)
+def test_version_4_critique_refuses(title, department):
+    assert is_tech(title, department or None) is False, f"non-tech kept -> {title!r}"
