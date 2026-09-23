@@ -1256,7 +1256,9 @@ def p_breezy(t, u):
     redirects are not followed (a followed one would read as that site's 200) and a 3xx stays
     UNKNOWN until one is seen. ``verbose`` is left off: the count needs no descriptions, and they
     are ~83% of the listing's bytes. No rate limit was found (up to 94 req/s across tenants, zero
-    refusals), so no gate is seeded; the auto-gate covers a wall that appears later.
+    refusals), so no gate is seeded. That leaves a platform-wide wall ungated: the auto-gate keys the
+    exact host and every Board is its own host, so only a `_SPANNING` entry would pace one. It fails
+    safe meanwhile — a 403 or 429 reads UNKNOWN, never DEAD.
 
     **A DNS failure is not a dead tenant here.** ``*.breezy.hr`` is a wildcard record — an
     invented label resolves and gets the 404 — so no tenant is ever NXDOMAIN. What does fail to

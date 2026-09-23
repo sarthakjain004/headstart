@@ -89,7 +89,7 @@ _PERIODS: dict[str | None, str] = {
 #:
 #: Known limit (ADR-0181): the shared parser names only the codes in `salary._CURRENCY_CODES`, so
 #: the 15 here outside it (PHP, TWD, PKR, ZAR, …; 103 of 19,167 salaries) still reach `extract`
-#: as currency None — correctly annualised, but unpriced, like a bare `$` outside the US and
+#: as currency None — annualised, but unpriced, like a bare `$` outside the US and
 #: Canada. The code is emitted anyway, so widening that shared list is all it would take.
 _SYMBOLS: dict[str, str] = {
     "£": "GBP",

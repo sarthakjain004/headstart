@@ -66,8 +66,8 @@ RD$ DOP, …), except `kr` (SEK or DKK), which names none.
 **Known limit: most of those codes do not survive extraction.** `_field_range_currency_interval`
 reads the code through `salary._CURRENCY_CODES`, which names eleven (USD, EUR, GBP, INR, CAD, AUD,
 HKD, SEK, PLN, CHF, AED). The 15 mapped codes outside it — PHP, TWD, PKR, ZAR, CNY, THB, DOP, SAR,
-VND, KWD, UAH, JPY, ILS, BRL, KES — are on 103 of 19,167 salaries: 66 reach `extract` correctly
-annualised but with currency None (unpriced, as a bare `$` outside the US and Canada is), and 37
+VND, KWD, UAH, JPY, ILS, BRL, KES — are on 103 of 19,167 salaries: 66 reach `extract` annualised
+(see the rounding note below) but with currency None (unpriced, as a bare `$` outside the US and Canada is), and 37
 are declined by the USD-shaped plausibility bound. The scraper still emits the ISO code, so
 widening the shared list — a shared-parser change, with its own bounds and a
 `DERIVATIONS_VERSION` bump — is all it would take. It is left out of this ADR's scope.
@@ -83,7 +83,10 @@ pool's size.
 **No gate is seeded.** No rate limit was found: the census ran each tenant once at up to 64
 concurrent (94 req/s) with zero refusals, and one tenant served 113 req/s at 128 concurrent. The
 upstream's 403 wall did not reproduce, so neither `_SPANNING` nor `_QUOTA_403` gets an entry
-without a measurement to stand on; the auto-gate covers a wall that appears later.
+without a measurement to stand on. The auto-gate does **not** cover a platform-wide wall — it keys
+the exact host, and every Breezy Board is its own host — so a wall that appears later is ungated
+until a `_SPANNING` entry is measured into place; it fails safe meanwhile, since a 403 or 429
+reads UNKNOWN, never DEAD.
 
 ## Alternatives considered
 
@@ -110,6 +113,12 @@ without a measurement to stand on; the auto-gate covers a wall that appears late
   or failed; there is no stated total, so a silently short response cannot be detected — none
   was seen.
 - `Job.salary` for breezy is our own `LO-HI CODE UNIT` spelling, not the provider's string.
+- The shared `salary._num` rounds each figure to a whole unit before annualising, so the 1,200 of
+  8,205 hourly salaries that carry cents are off by up to ±$1,040 a year (`$19.50 – $22.75 / hour`
+  reads 41,600–47,840, not 40,560–47,320). A shared-parser fix with its own `DERIVATIONS_VERSION`
+  bump, deferred.
+- `Rp` (1 posting) is left unmapped on purpose: it was never checked against a page, and IDR is
+  outside `_CURRENCY_CODES`, so mapping it would change nothing that `extract` returns.
 - `sandbox` (a real Virginia organisation, 3 postings) stays dead under ADR-0034's name rule;
   an exception there is keyed by tenant string across every ATS, which is not worth 3 postings.
 - If the Canadian USD share grows, or a country other than the US proves reliably USD, the

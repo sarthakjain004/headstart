@@ -16,9 +16,11 @@ Every assertion pins something measured in `docs/breezy/2026-09-23_json-api-meas
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from headstart import employment_type
+from headstart.scrapers.breezy import BreezyScraper
 from headstart.scrapers.registry import get_scraper
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -152,3 +154,15 @@ def test_a_ceiling_alone_a_biweekly_period_and_an_unknown_shape_state_no_salary(
     assert _salary("$2,000 – $2,500 / biweekly", "US") is None
     assert _salary("Competitive", "US") is None
     assert _salary("kr30,000 – kr40,000 / month", "SE") == "30000-40000 MONTH"
+
+
+def test_url_shape_matches_every_link_the_scraper_builds():
+    """`verify_filters.URL_SHAPES` is generated from `url_shape` (ADR-0157), so it must match what
+    `job_url()` emits — here on every fixture row, underscored `friendly_id`s included (3 of
+    38,314 measured carry one)."""
+    shape = re.compile(BreezyScraper.url_shape)
+    for slug in (SSG, GACC):
+        for job in _jobs(slug).values():
+            assert shape.fullmatch(job.url), job.url
+    underscored = BreezyScraper("acme").job_url("86f8d21aa9c8-middle-python_engineer")
+    assert shape.fullmatch(underscored)

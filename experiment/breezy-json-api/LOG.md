@@ -185,3 +185,6 @@ request to `fathom.breezy.hr/json`). The repo already keys the provider as `bree
   `sacramento-business-brokers` 1, `ing-creatives-marketing-department` 1, `synergy` 0,
   `mobo-shop` 0, `darwins` 2 — each equal to a fresh fetch; dead `sana-benefits`, `acretrader`,
   `roche-pharmaceutical-company`, `wave-3-consultants`, `maropost` — each 404.
+- **Remote check re-run for its capture** (`remote_flag_vs_jsonld.py`, same seed, output now in
+  `artifacts/2026-09-23_remote_flag_vs_jsonld.log`): identical to the first run — flag true →
+  TELECOMMUTE 46/46 with JSON-LD, flag false or absent → none 57/57 (12/12 of the flagless class).
