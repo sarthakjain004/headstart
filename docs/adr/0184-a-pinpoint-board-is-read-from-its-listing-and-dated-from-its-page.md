@@ -66,16 +66,16 @@ date it reads does not exist on any of 13,419 listing rows.
    connection refusals that then held against every tenant for minutes. Paced load up to 50 req/s
    was clean.
 
-6. **It ships active.** The committed ledger holds 1,465 rows: 817 live, 646 dead, 2 unknown.
-   After six confirmed test tenants go into `config.EXCLUDED_BOARDS`, 666 Hiring Boards remain,
-   with 18,345 postings. A full walk is 140.1 MB of listings plus 2,212 tech pages × 131.9 KB
-   (291.7 MB). That is **~432 MB for 2,212 tech Jobs, ~195 KB per tech Job**, about a tenth of
+6. **It ships active.** The committed ledger holds 1,477 rows: 827 live, 648 dead, 2 unknown.
+   After six confirmed test tenants go into `config.EXCLUDED_BOARDS`, 674 Hiring Boards remain,
+   with 18,449 postings. A full walk is 140.7 MB of listings plus 2,234 tech pages × 131.9 KB
+   (294.7 MB). That is **~435 MB for 2,234 tech Jobs, ~195 KB per tech Job**, about a tenth of
    ADR-0158's ~2 MB bar.
 
 ## Alternatives considered
 
 - **Listing only, no page pass.** At ~63 KB per tech Job it is cheaper still, and every field but
-  the date and country arrives with the listing (140.1 MB / 2,212). Rejected because Pinpoint Jobs would have had no
+  the date and country arrives with the listing (140.7 MB / 2,234). Rejected because Pinpoint Jobs would have had no
   `posted_at` at all, so they could never sort or filter by date. The page pass costs ~0.29 GB per
   full walk and stays far under the bar.
 - **Page pass only for postings not yet described (ADR-0048).** Rejected: after the first run it
@@ -93,10 +93,14 @@ date it reads does not exist on any of 13,419 listing rows.
 - Pinpoint joins the exact-gate list in CONTEXT.md's **Detail pass** entry.
 - The date and country depend on one extra request per tech posting. A failed page is a counted
   detail gap; the Job still ships, undated.
-- Common Crawl was **not measured**: `index.commoncrawl.org` was unreachable for the whole
-  discovery slot on 2026-09-23. The pool comes from the harvest, the seed list, a full Wayback
-  sweep (+904 new tenants) and 6 redirect targets. The `cc_miner` pattern is wired, so a later
-  sweep needs no code.
+- The pool is 1,477 tenants from five sources: the harvest, the seed list, a full Wayback sweep
+  (+904 new), 6 redirect targets, and Common Crawl (+12 new).
+  - Common Crawl covered all 33 crawls since `CC-MAIN-2023-40`: 710 labels, 698 already held.
+    It was read from `data.commoncrawl.org`'s index files, because the index API was unreachable
+    all day on 2026-09-23.
+  - Its yield is three spikes (`2025-47` +207, `2025-43` +131, `2025-38` +79) against 0–6 per
+    crawl from `2025-33` back to `2024-22`.
+  - The 12 new labels hold 10 live Boards, 8 of them hiring (104 postings).
 - The connection wall's exact trigger is not pinned down. It was seen after the 256-wide burst
   and once, briefly, after a gated pass. If a scrape shard meets it, the listing fails as a Board
   failure, which evicts nothing, and pages fail as detail gaps.

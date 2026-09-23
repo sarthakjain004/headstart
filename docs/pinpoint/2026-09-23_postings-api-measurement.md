@@ -28,8 +28,7 @@ following redirects.
    Native posting ids: numeric `id` (13,419 distinct, no duplicates, no `:`), and a UUID in the
    posting URL — `/en/postings/{uuid}` on 13,419 of 13,419 rows. Only the UUID addresses a page
    (`/en/postings/{numeric id}` answers 404), so the UUID is the native id.
-2. **Discovery spellings.** Pool, seed list and Wayback all yield the bare label (Common Crawl was
-   not measured, because the index server was unreachable on 2026-09-23);
+2. **Discovery spellings.** Pool, seed list, Wayback and Common Crawl all yield the bare label;
    `slug_from` lowercases it (the seed list and one listing URL spell `Cinven`).
 
 ## Listing
@@ -227,28 +226,35 @@ following redirects.
 - **Wayback** (`wayback_pages.py pinpoint`, 47 CDX pages): 1,416 slugs, **904 not in the pool or
   seed** — 672 of them live, 259 hiring, 6,233 postings on first probe. Wayback nearly doubles the
   provider, as it did for iCIMS.
-- Common Crawl: **not measured, because the index server was unreachable on 2026-09-23.**
-  `index.commoncrawl.org` returned an empty reply (curl 52) on every request, including `/` and
-  `collinfo.json`, for the whole slot, while `data.commoncrawl.org` answered 200. The sweep
-  logged "collinfo unreachable" on every index and was stopped; its zero is an outage, not a
-  finding. The `cc_miner` pattern is wired, so a later sweep needs no code.
+- Common Crawl: **every crawl since `CC-MAIN-2023-40`, 33 in all**, read from
+  `data.commoncrawl.org`'s index files. The index API at `index.commoncrawl.org` returned an empty
+  reply (curl 52) on every request all day on 2026-09-23, so `cc_miner`'s sweep could not run.
+  - It yields **710 unique labels, 698 of them already in the pool and 12 new**. Probed: 10 live,
+    8 of those hiring with 104 postings between them. `app` (vendor) and `esco-consultants` are
+    dead, and `prepaypower-old` is live but empty.
+  - The yield is three spikes: `2025-47` +207, `2025-43` +131 and `2025-38` +79 new against newer
+    crawls. Every crawl from `2025-33` back to `2024-22` adds 0–6.
+  - The `cc_miner` pattern is also wired, so a sweep through the index API needs no code once the
+    server is back.
 - Redirect targets: the 6 labels renamed tenants 301 to that were not yet held.
-- **Pool: 1,465 tenants** — Wayback-only 904, harvest+Wayback+seed 364, harvest+Wayback 128,
-  harvest-only 21, harvest+seed 20, Wayback+seed 20, redirect targets 6, seed-only 2.
+- **Pool: 1,477 tenants.** The first 1,465 came from Wayback only (904),
+  harvest+Wayback+seed (364), harvest+Wayback (128), harvest only (21), harvest+seed (20),
+  Wayback+seed (20), redirect targets (6) and seed only (2). Common Crawl then re-tagged 698 of
+  them and added 12.
 - Vendor roster: none found (the per-tenant sitemap is per tenant; there is no cross-tenant
   sitemap on `www.pinpointhq.com` that names boards).
 
 ## Ledger and cost (2026-09-23)
 
-`data/validate/liveness/pinpoint.csv`: **1,465 rows — 817 live, 646 dead, 2 unknown** (`sl`, a
+`data/validate/liveness/pinpoint.csv`: **1,477 rows — 827 live, 648 dead, 2 unknown** (`sl`, a
 vendor host answering 204, and `trust`, an unparseable body). After `config.EXCLUDED_BOARDS`:
-**811 Scrapable Boards, 666 Hiring Boards, 18,345 postings**; 115 distinct job counts; the
+**821 Scrapable Boards, 674 Hiring Boards, 18,449 postings**; 115 distinct job counts; the
 largest Board is trilongroup (929). Every row is a bare lowercase label, so there is one
 spelling per Board; renamed labels are dead rather than duplicates.
 
-Re-fetching every Hiring Board's listing: 18,342 postings in 140.1 MB,
-of which `is_tech(title, department)` keeps **2,212 (12.1%)**. A full walk costs the listings
-plus a page per tech posting: 140.1 MB + 2,212 × 131.9 KB (291.7 MB) = **~432 MB for 2,212 tech
+Re-fetching every Hiring Board's listing: 18,425 postings in 140.7 MB,
+of which `is_tech(title, department)` keeps **2,234 (12.1%)**. A full walk costs the listings
+plus a page per tech posting: 140.7 MB + 2,234 × 131.9 KB (294.7 MB) = **~435 MB for 2,234 tech
 Jobs, ~195 KB per tech Job** — about a tenth of ADR-0158's ~2 MB bar. Pinpoint lands active.
 
 ## Vendor test tenants
