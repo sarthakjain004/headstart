@@ -1,6 +1,6 @@
 """Seed 11, 120 random hiring Boards, <=2 postings each: compares html_to_text of listing description vs the detail's
 JSON-LD description and the page's <div class="description">, and inspects pages with no JSON-LD."""
-import json,collections,random,re,sys
+import json,collections,random,re
 from headstart.models import html_to_text
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from curl_cffi import requests

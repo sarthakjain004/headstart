@@ -85,7 +85,7 @@ request to `fathom.breezy.hr/json`). The repo already keys the provider as `bree
   have no JSON-LD (pool/"general interest" postings) and every line of the listing text is on
   the page, 24 / 24. Raw HTML differs by a few attributes (listing ≥ detail on all 133 raw
   diffs), never in text. H3 killed: no detail pass is needed.
-- **No hidden or missing rows** (`json_vs_sitemap_vs_portal.py`, the 10 largest + 60 random hiring + 20 random
+- **No hidden or missing rows** (`json_vs_sitemap_vs_root.py`, the 10 largest + 60 random hiring + 20 random
   empty Boards): the page root and the sitemap never list an id the JSON lacks (0 on 90 Boards).
   The JSON lists ids the sitemap omits on 28 Boards (the no-JSON-LD postings) and the root omits
   on 2 — those pages all answer 200 with the posting. Largest Board

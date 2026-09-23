@@ -1,5 +1,5 @@
 """The no-JSON-LD pages from description_listing_vs_detail: is every line of the listing's description text on the page?"""
-import json,sys
+import json
 from headstart.models import html_to_text
 from curl_cffi import requests
 import os
@@ -13,5 +13,5 @@ for r in res:
     page=html_to_text(requests.get(x['url'],headers={'User-Agent':'headstart/0.1'},timeout=30).text)
     lines=[l.strip() for l in (html_to_text(x['description']) or '').splitlines() if l.strip()]
     hit=sum(1 for l in lines if l in page); n+=1; full+= hit==len(lines)
-    if hit!=len(lines): print(r['slug'],hit,len(lines))
+    print(r['slug'],hit,len(lines),flush=True)
 print('all lines on page:',full,'/',n)

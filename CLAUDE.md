@@ -195,7 +195,8 @@ sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` 
   the 4,794 `harvest` list plus a full Wayback CDX sweep of `breezy.hr`, +5,413 new, 734 of them
   hiring; Common Crawl **not measured** — `index.commoncrawl.org` was unreachable on the day).
   Slug = the subdomain label of `{slug}.breezy.hr`, one host (`company.friendly_id` equals it on
-  2,174/2,174 hiring Boards). **One request per Board, no
+  2,174/2,174 hiring Boards of the pre-Wayback census; the field figures below are from that
+  census of 4,794 tenants and 38,314 postings). **One request per Board, no
   detail pass:** the undocumented `GET /json?verbose=true` adds each posting's `description`,
   whose text equals the detail page's (180/180 with JSON-LD, 24/24 without) — upstream
   (`kalil0321/ats-scrapers`) fetches every detail page for it. No pagination (the 2,760-posting

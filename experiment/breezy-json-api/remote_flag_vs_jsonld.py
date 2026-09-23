@@ -1,3 +1,5 @@
+"""12 random postings per (location.is_remote, remote_details.value) class from the census: does the
+posting page's JSON-LD `jobLocationType` agree with the listing's remote flag? Prints per posting."""
 import json,collections,random,re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from curl_cffi import requests
