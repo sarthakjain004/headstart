@@ -1,0 +1,44 @@
+postings 13419
+id                                        13419 100.0%
+compensation_visible                      13419 100.0%
+description                               13419 100.0%
+employment_type                           13419 100.0%
+employment_type_text                      13419 100.0%
+key_responsibilities                      13419 100.0%
+key_responsibilities_header               13419 100.0%
+title                                     13419 100.0%
+url                                       13419 100.0%
+path                                      13419 100.0%
+workplace_type                            13419 100.0%
+workplace_type_text                       13419 100.0%
+job                                       13419 100.0%
+location                                  13419 100.0%
+skills_knowledge_expertise_header         12043  89.7%
+skills_knowledge_expertise                11496  85.7%
+benefits_header                           11124  82.9%
+benefits                                   9696  72.3%
+compensation                               6854  51.1%
+compensation_currency                      6417  47.8%
+compensation_minimum                       6416  47.8%
+compensation_maximum                       6416  47.8%
+compensation_frequency                     6415  47.8%
+reporting_to                               4933  36.8%
+deadline_at                                1464  10.9%
+  job.id                                  13419 100.0%
+  job.department                          13419 100.0%
+  location.id                             13419 100.0%
+  location.name                           13419 100.0%
+  location.city                           12780  95.2%
+  location.province                       12407  92.5%
+  job.requisition_id                       9805  73.1%
+  location.postal_code                     7542  56.2%
+  job.division                             7171  53.4%
+  location.street_address                  6731  50.2%
+  job.structure_custom_group_one           6658  49.6%
+compensation_currency [(None, 7002), ('USD', 4376), ('GBP', 1480), ('CAD', 171), ('EUR', 129), ('PHP', 120), ('AUD', 24), ('INR', 19), ('NZD', 13), ('MYR', 11), ('PKR', 8), ('RON', 8), ('PLN', 7), ('QAR', 7), ('IDR', 5), ('CZK', 4), ('BRL', 4), ('EGP', 4), ('BDT', 3), ('THB', 3)]
+compensation_frequency [(None, 7004), ('year', 3233), ('hour', 2781), ('month', 342), ('week', 33), ('day', 16), ('two_weeks', 10)]
+compensation_visible [(True, 7001), (False, 6418)]
+employment_type [('full_time', 6492), ('permanent_full_time', 2391), ('part_time', 1292), ('contract', 741), ('permanent', 568), ('fixed_term_contract', 532), ('temporary', 191), ('contract_temp', 190), ('permanent_part_time', 188), ('flexible', 187), ('internship', 175), ('fixed_term_full_time', 175), ('seasonal_full_time', 83), ('seasonal_part_time', 60), ('freelance', 60), ('fixed_term_part_time', 33), ('apprentice', 23), ('zero_hours', 22), ('programme', 9), ('volunteer', 3)]
+employment_type_text [('Full Time', 6492), ('Permanent - Full Time', 2391), ('Part Time', 1292), ('Contract', 741), ('Permanent', 568), ('Fixed Term Contract', 532), ('Temporary', 191), ('Contract / Temp', 190), ('Permanent - Part Time', 188), ('Flexible', 187), ('Internship', 175), ('Fixed Term - Full Time', 175), ('Seasonal - Full Time', 83), ('Seasonal - Part Time', 60), ('Freelance', 60), ('Fixed Term - Part Time', 33), ('Apprentice', 23), ('Zero Hours', 22), ('Programme', 9), ('Volunteer', 3)]
+workplace_type [('onsite', 9282), ('hybrid', 2738), ('remote', 1399)]
+workplace_type_text [('Onsite', 9282), ('Hybrid', 2738), ('Fully remote', 1399)]

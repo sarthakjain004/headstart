@@ -1,0 +1,6 @@
+many conc=1 n=16 1.1 req/s p50=0.88s p95=1.26s {200: 16}
+many conc=4 n=16 3.8 req/s p50=0.82s p95=1.78s {200: 16}
+many conc=16 n=32 13.1 req/s p50=0.80s p95=1.52s {200: 32}
+many conc=32 n=64 14.0 req/s p50=0.79s p95=1.80s {200: 64}
+many conc=64 n=128 27.2 req/s p50=0.96s p95=2.17s {200: 128}
+many conc=128 n=256 26.1 req/s p50=1.17s p95=3.86s {200: 256}

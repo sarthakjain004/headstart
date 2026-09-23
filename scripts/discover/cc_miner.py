@@ -253,6 +253,11 @@ ATS_PATTERNS = {
         "kind": "host",
         "patterns": [r"([a-z0-9][a-z0-9-]*\.jobs\.personio\.(?:com|de))"],
     },
+    "pinpoint": {
+        "targets": ["pinpointhq.com"],
+        "kind": "label",
+        "patterns": [r"([a-z0-9][a-z0-9-]*)\.pinpointhq\.com"],
+    },
     "workday": {
         "targets": ["myworkdayjobs.com"],
         "kind": "workday",

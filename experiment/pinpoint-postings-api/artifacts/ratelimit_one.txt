@@ -1,0 +1,6 @@
+one conc=1 n=16 1.5 req/s p50=0.31s p95=2.38s {200: 16}
+one conc=4 n=16 8.6 req/s p50=0.30s p95=0.99s {200: 16}
+one conc=16 n=32 24.5 req/s p50=0.34s p95=1.08s {200: 32}
+one conc=32 n=64 22.1 req/s p50=0.38s p95=1.18s {200: 64}
+one conc=64 n=128 51.3 req/s p50=0.69s p95=1.22s {200: 128}
+one conc=128 n=256 60.8 req/s p50=0.73s p95=1.83s {200: 256}
