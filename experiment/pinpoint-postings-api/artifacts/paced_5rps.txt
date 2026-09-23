@@ -1,0 +1,12 @@
+rate=5.0 t=   0s {'ok': 50}
+rate=5.0 t=  10s {'ok': 50}
+rate=5.0 t=  20s {'ok': 43, 'refused': 7}
+rate=5.0 t=  30s {'ok': 44, 'refused': 6}
+rate=5.0 t=  40s {'ok': 49, 'refused': 1}
+rate=5.0 t=  50s {'ok': 50}
+rate=5.0 t=  60s {'ok': 50}
+rate=5.0 t=  70s {'ok': 50}
+rate=5.0 t=  80s {'ok': 50}
+rate=5.0 t=  90s {'ok': 50}
+rate=5.0 t= 100s {'ok': 50}
+rate=5.0 t= 110s {'ok': 50}

@@ -535,12 +535,21 @@ def test_pyjamahr_inconclusive_answers_stay_unknown(monkeypatch):
     assert cl.p_pyjamahr("acme", "") == (cl.UNKNOWN, None)
 
 
-# --- pinpoint: redirects are read, not followed; a zero is settled by the board page -----------
+# --- pinpoint: redirects are read, not followed; the board page asked as a browser decides ------
 
 
-def _pinpoint_fetch(status, body=b"", location=""):
+def _pinpoint_fetch(listing, root=(200, "")):
+    """`_fetch` keyed on path: `/postings.json` answers `listing` (status, body, location), `/`
+    answers `root` (status, location). Both must be asked without following redirects, and `/`
+    as a browser asks (`Accept: text/html`)."""
+
     def _fetch(method, url, **kw):
         assert kw.get("allow_redirects") is False
+        if url.endswith("/postings.json"):
+            status, body, location = listing
+        else:
+            assert kw["headers"]["Accept"] == "text/html"
+            (status, location), body = root, b"<html></html>"
         return SimpleNamespace(
             status_code=status, content=body, headers={"location": location}
         )
@@ -548,51 +557,93 @@ def _pinpoint_fetch(status, body=b"", location=""):
     return _fetch
 
 
-def test_pinpoint_a_listing_with_postings_is_live_with_its_length(monkeypatch):
-    monkeypatch.setattr(cl, "_fetch", _pinpoint_fetch(200, b'{"data": [{}, {}, {}]}'))
-    monkeypatch.setattr(cl, "_get", _stub_get(500, b""))  # never reached
+def test_pinpoint_a_listing_with_postings_and_a_board_page_is_live(monkeypatch):
+    monkeypatch.setattr(
+        cl, "_fetch", _pinpoint_fetch((200, b'{"data": [{}, {}, {}]}', ""))
+    )
     assert cl.p_pinpoint("zincwork", "https://zincwork.pinpointhq.com") == (cl.LIVE, 3)
 
 
-def test_pinpoint_a_renamed_tenant_redirecting_to_another_label_is_dead(monkeypatch):
-    """63 of 63 redirects measured went to another `{label}.pinpointhq.com/postings.json`; 57 of
-    their targets are already live slugs, so following one would duplicate a Board."""
+def test_pinpoint_a_board_redirecting_browsers_to_its_vanity_host_is_live(monkeypatch):
+    """160 of 691 hiring Boards send a browser from `/` and from each posting to their own host
+    (`careers.admgroup.com`), same path, which serves the same posting."""
     monkeypatch.setattr(
         cl,
         "_fetch",
-        _pinpoint_fetch(301, location="https://cfc.pinpointhq.com/postings.json"),
+        _pinpoint_fetch(
+            (200, b'{"data": [{}]}', ""), (301, "https://careers.admgroup.com/")
+        ),
+    )
+    assert cl.p_pinpoint("admgroup", "") == (cl.LIVE, 1)
+
+
+def test_pinpoint_a_board_that_404s_to_a_browser_is_dead_even_with_postings(
+    monkeypatch,
+):
+    """17 hiring Boards (1,224 postings; `10kbi-23` alone 638) list postings in the JSON but
+    answer a browser 404 on `/` and on every posting — the careers site is switched off, and
+    a link we served would be a dead one."""
+    monkeypatch.setattr(
+        cl, "_fetch", _pinpoint_fetch((200, b'{"data": [{}]}', ""), (404, ""))
+    )
+    assert cl.p_pinpoint("10kbi-23", "") == (cl.DEAD, None)
+
+
+def test_pinpoint_an_empty_board_is_live_only_where_it_renders(monkeypatch):
+    """Of 534 empty Boards asked as a browser: 145 render (live, nothing open), 282 are 404
+    and 105 redirect off to the tenant's own or another ATS's site (greenhouse, linkedin) —
+    no Board is published here."""
+    empty = (200, b'{"data":[]}', "")
+    monkeypatch.setattr(cl, "_fetch", _pinpoint_fetch(empty, (200, "")))
+    assert cl.p_pinpoint("gain-careers", "") == (cl.LIVE, 0)
+    monkeypatch.setattr(cl, "_fetch", _pinpoint_fetch(empty, (404, "")))
+    assert cl.p_pinpoint("10kbi-2021", "") == (cl.DEAD, None)
+    monkeypatch.setattr(
+        cl, "_fetch", _pinpoint_fetch(empty, (301, "https://jobs.1840andco.com/"))
+    )
+    assert cl.p_pinpoint("1840andco", "") == (cl.DEAD, None)
+
+
+def test_pinpoint_a_renamed_tenant_redirecting_to_another_label_is_dead(monkeypatch):
+    """63 of 63 listing redirects measured went to another
+    `{label}.pinpointhq.com/postings.json`; 57 of their targets are already live slugs, so
+    following one would duplicate a Board."""
+    monkeypatch.setattr(
+        cl,
+        "_fetch",
+        _pinpoint_fetch((301, b"", "https://cfc.pinpointhq.com/postings.json")),
     )
     assert cl.p_pinpoint("cfcunderwriting", "") == (cl.DEAD, None)
 
 
-def test_pinpoint_a_redirect_anywhere_else_is_unknown(monkeypatch):
+def test_pinpoint_a_listing_redirect_anywhere_else_is_unknown(monkeypatch):
     monkeypatch.setattr(
-        cl, "_fetch", _pinpoint_fetch(302, location="https://www.pinpointhq.com/")
+        cl, "_fetch", _pinpoint_fetch((302, b"", "https://www.pinpointhq.com/"))
     )
     assert cl.p_pinpoint("acme", "") == (cl.UNKNOWN, None)
 
 
 def test_pinpoint_an_unknown_slug_is_a_404_and_dead(monkeypatch):
-    monkeypatch.setattr(cl, "_fetch", _pinpoint_fetch(404, b"<html>404</html>"))
+    monkeypatch.setattr(cl, "_fetch", _pinpoint_fetch((404, b"<html>404</html>", "")))
     assert cl.p_pinpoint("zzqqnotatenant8127", "") == (cl.DEAD, None)
 
 
-def test_pinpoint_an_empty_listing_is_settled_by_the_board_page(monkeypatch):
-    """117 of 117 empty census Boards answer `/` with 200; 2 Wayback tenants with the careers
-    site switched off answer it with 404."""
-    monkeypatch.setattr(cl, "_fetch", _pinpoint_fetch(200, b'{"data":[]}'))
-    monkeypatch.setattr(cl, "_get", _stub_get(200, b"<html></html>"))
-    assert cl.p_pinpoint("gain-careers", "") == (cl.LIVE, 0)
-    monkeypatch.setattr(cl, "_get", _stub_get(404, b"<html></html>"))
-    assert cl.p_pinpoint("betashares", "") == (cl.DEAD, None)
-    monkeypatch.setattr(cl, "_get", _stub_get(503, b""))
+def test_pinpoint_inconclusive_answers_stay_unknown(monkeypatch):
+    listing = (200, b'{"data": [{}]}', "")
+    monkeypatch.setattr(cl, "_fetch", _pinpoint_fetch(listing, (503, "")))
     assert cl.p_pinpoint("acme", "") == (cl.UNKNOWN, None)
-
-
-def test_pinpoint_an_unparseable_or_failed_listing_is_unknown(monkeypatch):
-    monkeypatch.setattr(cl, "_fetch", _pinpoint_fetch(200, b"<html>checkpoint</html>"))
+    monkeypatch.setattr(
+        cl, "_fetch", _pinpoint_fetch((200, b"<html>checkpoint</html>", ""))
+    )
     assert cl.p_pinpoint("acme", "") == (cl.UNKNOWN, None)
-    monkeypatch.setattr(cl, "_fetch", _pinpoint_fetch(503))
+    monkeypatch.setattr(cl, "_fetch", _pinpoint_fetch((503, b"", "")))
     assert cl.p_pinpoint("acme", "") == (cl.UNKNOWN, None)
     monkeypatch.setattr(cl, "_fetch", lambda *a, **k: None)  # breaker open
     assert cl.p_pinpoint("acme", "") == (cl.UNKNOWN, None)
+
+
+def test_pinpoint_boards_share_one_gate():
+    """A burst of 256 concurrent connections across distinct tenants drew connection refusals
+    that then held for minutes against every tenant, so the gate spans the domain."""
+    assert cl._gate_key("zincwork.pinpointhq.com") == "pinpointhq.com"
+    assert "pinpointhq.com" in cl._GATES

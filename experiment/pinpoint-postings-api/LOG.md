@@ -67,7 +67,18 @@ kalil0321/ats-scrapers `scrapers/pinpoint.py` + `tests/test_pinpoint.py`, seed l
   occurs on any of 13,419 rows.
 - H13 C: slug = lowercase subdomain label; case-insensitive (`CINVEN` = `cinven`).
 - Wayback: 1,416 slugs, 904 new; 672 live / 259 hiring / 6,233 postings among the new.
-- Rate limit: none found (≈1,450 requests, zero non-200s; pages knee ~64 concurrent).
+- Rate limit: the first ramps (≈1,450 requests to 128 concurrent) were clean, but a 256-wide
+  burst across tenants drew connection refusals that then held for minutes against every
+  tenant (`artifacts/spanning_*.txt`); paced 5–50 req/s is clean (`artifacts/paced_*`). Gated
+  in the prober as a spanning host at 16.
+- Build-time finding: the posting page answers **406** to `Accept: application/json, text/html`
+  (the shared `_get`); `text/html` works. And asked as a browser, `/` 404s on 17 hiring Boards
+  (1,224 postings) whose postings 404 too, and redirects 160 to their vanity host
+  (`artifacts/hiring_html.csv`, `artifacts/empty_roots.csv`).
+- Common Crawl: **not measured** — `index.commoncrawl.org` gave an empty reply on every request
+  on 2026-09-23 (the sweep's zero is that outage, not a finding).
+- Ledger: 1,465 rows, 819 live / 644 dead / 2 unknown; 668 Hiring Boards, 18,364 postings after
+  six test tenants were excluded; 12.0% tech; ~195 KB fetched per tech Job.
 
 `artifacts/listings/` (98 MB, one saved listing per live census Board) is not committed; re-derive
 it with `python3 probe_population.py <seed csv>`.
