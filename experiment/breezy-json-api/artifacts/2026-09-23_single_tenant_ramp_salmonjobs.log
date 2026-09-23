@@ -1,0 +1,12 @@
+listing conc 1: 64 req 2.4 req/s p50 0.39s p95 0.54s statuses {200: 64} bytes 600769
+listing conc 4: 64 req 9.6 req/s p50 0.39s p95 0.54s statuses {200: 64} bytes 600769
+listing conc 16: 64 req 28.3 req/s p50 0.41s p95 0.83s statuses {200: 64} bytes 600769
+listing conc 32: 64 req 34.1 req/s p50 0.53s p95 1.37s statuses {200: 64} bytes 600769
+listing conc 64: 64 req 42.2 req/s p50 0.57s p95 0.77s statuses {200: 64} bytes 600769
+listing conc 128: 256 req 113.4 req/s p50 0.71s p95 1.22s statuses {200: 256} bytes 600769
+detail conc 1: 64 req 1.3 req/s p50 0.74s p95 1.12s statuses {200: 64} bytes 18014
+detail conc 4: 64 req 4.7 req/s p50 0.79s p95 1.06s statuses {200: 64} bytes 18012
+detail conc 16: 64 req 12.5 req/s p50 0.82s p95 1.94s statuses {200: 64} bytes 18013
+detail conc 32: 64 req 16.8 req/s p50 0.91s p95 1.83s statuses {200: 64} bytes 18014
+detail conc 64: 64 req 35.0 req/s p50 0.87s p95 1.33s statuses {200: 64} bytes 18014
+detail conc 128: 256 req 109.4 req/s p50 0.86s p95 1.38s statuses {200: 256} bytes 18013
