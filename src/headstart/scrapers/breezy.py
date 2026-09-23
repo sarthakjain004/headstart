@@ -86,6 +86,11 @@ _PERIODS: dict[str | None, str] = {
 #: Salary symbol -> ISO code, each checked against the posting page's JSON-LD
 #: `baseSalary.currency` (499 postings, 2026-09-23; every sampled one agreed). A symbol not here
 #: — `kr` (SEK or DKK), `Rp` (never checked) or anything unseen — states no currency.
+#:
+#: Known limit (ADR-0181): the shared parser names only the codes in `salary._CURRENCY_CODES`, so
+#: the 15 here outside it (PHP, TWD, PKR, ZAR, …; 103 of 19,167 salaries) still reach `extract`
+#: as currency None — correctly annualised, but unpriced, like a bare `$` outside the US and
+#: Canada. The code is emitted anyway, so widening that shared list is all it would take.
 _SYMBOLS: dict[str, str] = {
     "£": "GBP",
     "€": "EUR",
@@ -118,9 +123,9 @@ _SYMBOLS: dict[str, str] = {
 _DOLLAR_BY_COUNTRY: dict[str, str] = {"US": "USD", "CA": "CAD"}
 
 
-def _currency(symbol: str, row: dict) -> str | None:
+def _currency(symbol: str, country: str | None) -> str | None:
+    """The ISO code a salary symbol names, a bare `$` by the posting's country code."""
     if symbol == "$":
-        country = ((row.get("location") or {}).get("country") or {}).get("id")
         return _DOLLAR_BY_COUNTRY.get(country or "")
     return _SYMBOLS.get(symbol)
 
@@ -129,7 +134,8 @@ def _location(row: dict) -> str | None:
     """The primary place, then every other place in `locations`, "; "-joined without repeats —
     the multi-place form workday and pyjamahr use, so the substring location filter matches each
     of them. `locations` names 2-5 places on 2,017 of 38,314 postings; the primary is not among
-    them on 828 of the 35,344 rows that list any, and `locations` is empty on 2,969."""
+    them on 828 of the 35,344 rows that list any, and `locations` is empty on 2,970 (one of which
+    has no primary either)."""
     places: list[str] = []
     for place in [row.get("location"), *(row.get("locations") or [])]:
         name = ((place or {}).get("name") or "").strip()
@@ -144,8 +150,10 @@ def _remote(row: dict, location: str | None) -> bool | None:
     The flag is what the posting page publishes: true → JSON-LD `TELECOMMUTE` on 46 of 46 pages,
     false or absent → none on 57 of 57. `remote_details` is not trusted on its own — it still
     says remote, remote-location or hybrid on 307 rows whose flag is false. The flag is absent on
-    2,194 rows, which fall back to the location text; within one posting the per-place flags
-    never disagree (0 of 38,314), so the primary speaks for all of them.
+    2,194 rows, which fall back to the location text — it names "remote" on none of them, so the
+    fallback answers False there, as the 12 of those checked against their pages do (among the 57
+    above); it only speaks if a flagless row ever says "Remote". Within one posting the
+    per-place flags never disagree (0 of 38,314), so the primary speaks for all of them.
     """
     primary = row.get("location") or {}
     flag = primary.get("is_remote")
@@ -217,5 +225,10 @@ class BreezyScraper(BaseScraper):
             figures = lo
         else:
             figures = f"{lo}-{lo}"
-        parts = (figures, _currency(m.group("sym"), raw), _PERIODS[m.group("period")])
+        country = ((raw.get("location") or {}).get("country") or {}).get("id")
+        parts = (
+            figures,
+            _currency(m.group("sym"), country),
+            _PERIODS[m.group("period")],
+        )
         return " ".join(part for part in parts if part)

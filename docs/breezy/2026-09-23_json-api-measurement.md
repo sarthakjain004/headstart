@@ -151,7 +151,9 @@ Over the census, `extract` reads **18,483 of 19,167 (96.4%)** against the generi
 (33.8%) on the raw strings. The 40 rows the generic parser read and this does not are all its
 misreads (a PKR or PHP monthly figure read as an annual floor, a tenant's "$80,000 – $100,000 /
 hour" read as annual); the 352 yearly strings that do not parse are tenant errors ("$20 – $23 /
-year") the plausibility floor rejects; `Up to` (37) and biweekly (161) are withheld.
+year") the plausibility floor rejects; `Up to` (37) and biweekly (161) are withheld. Of the 18,483, 66 carry an ISO code the shared parser does not
+name (PHP, TWD, PKR, ZAR, …) and so come out with currency None; 37 more such rows are declined
+(ADR-0181's known limit).
 
 **Q16 — experience and employment type.** No experience field: upstream's `experience`,
 `category`, `education`, `tags` are on 0 of 38,314 rows. `type.id`: fullTime 25,626, contract
@@ -162,7 +164,8 @@ id was observed.
 
 **Q17 — location.** `locations[]` holds 0 / 1 / 2 / 3 / 4 / 5 places on 2,970 / 33,327 / 882 / 356 /
 220 / 559 rows; each carries a ready `name` ("Trail, BC"). `location` is the primary, one of
-`locations` by name on 34,516 / 35,344, and the only place on the 2,969 rows with no `locations`.
+`locations` by name on 34,516 / 35,344, and the only place on 2,969 of the 2,970 rows with no `locations` (the other has no
+primary either).
 
 **Q17a — department.** `department`, on 20,407 / 38,314 (53.3%), on the listing.
 

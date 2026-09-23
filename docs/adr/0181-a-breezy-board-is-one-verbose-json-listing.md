@@ -63,6 +63,15 @@ on the 9 Canadian postings paid in USD** (~5%); the other-country USD rate (87%)
 Every other symbol maps to the one currency it named on every sampled page (£ GBP, € EUR, ₹ INR,
 RD$ DOP, …), except `kr` (SEK or DKK), which names none.
 
+**Known limit: most of those codes do not survive extraction.** `_field_range_currency_interval`
+reads the code through `salary._CURRENCY_CODES`, which names eleven (USD, EUR, GBP, INR, CAD, AUD,
+HKD, SEK, PLN, CHF, AED). The 15 mapped codes outside it — PHP, TWD, PKR, ZAR, CNY, THB, DOP, SAR,
+VND, KWD, UAH, JPY, ILS, BRL, KES — are on 103 of 19,167 salaries: 66 reach `extract` correctly
+annualised but with currency None (unpriced, as a bare `$` outside the US and Canada is), and 37
+are declined by the USD-shaped plausibility bound. The scraper still emits the ISO code, so
+widening the shared list — a shared-parser change, with its own bounds and a
+`DERIVATIONS_VERSION` bump — is all it would take. It is left out of this ADR's scope.
+
 **Enabled on arrival.** ADR-0158's bar is ~2 MB of fetched storage per tech Job. Breezy's is
 **~0.06 MB**: the 2,174 hiring Boards' verbose listings are 216.9 MB for 38,314 postings
 (5,660 B each), and `tech_filter.is_tech(name, department)` keeps 3,502 of them (9.1%) —

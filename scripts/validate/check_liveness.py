@@ -1261,8 +1261,9 @@ def p_breezy(t, u):
     **A DNS failure is not a dead tenant here.** ``*.breezy.hr`` is a wildcard record — an
     invented label resolves and gets the 404 — so no tenant is ever NXDOMAIN. What does fail to
     resolve is the local resolver under this prober's 432 workers, every Board being its own
-    hostname: the first pass wrote 41 live Boards (``kimmel-associates``, 445 postings) as dead
-    that way, and a replay at 432-wide against 1,500 live Boards drew 100 curl code-6 errors.
+    hostname: the first pass wrote 41 Boards the census had just read live
+    (``kimmel-associates``, 445 postings) as dead that way, and a replay at 432-wide against
+    1,500 live-verdict Boards drew 100 curl code-6 errors.
     So it is UNKNOWN, retried on the next pass, like any other network failure.
     """
     try:

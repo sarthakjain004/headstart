@@ -1,10 +1,11 @@
-"""The no-JSON-LD pages from desc_check2: is every line of the listing's description text on the page?"""
+"""The no-JSON-LD pages from description_listing_vs_detail: is every line of the listing's description text on the page?"""
 import json,sys
-sys.path.insert(0,'/Users/sarthakjain/Projects/HeadStart/.claude/worktrees/add-breezy-scraper/src')
 from headstart.models import html_to_text
 from curl_cffi import requests
-R={(r['slug']):r for r in map(json.loads,open('2026-09-23_pool_census_ramp.jsonl')) if r['status']==200}
-res=json.load(open('desc_check2.json'))
+import os
+CENSUS = os.environ.get('BREEZY_CENSUS', 'artifacts/2026-09-23_pool_census_ramp.jsonl')  # 227 MB ramp.py capture, kept out of git
+R={(r['slug']):r for r in map(json.loads,open(CENSUS)) if r['status']==200}
+res=json.load(open('artifacts/2026-09-23_desc_listing_vs_detail.json'))
 full=0;n=0
 for r in res:
     if r.get('ld') is not False: continue

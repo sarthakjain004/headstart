@@ -1,7 +1,9 @@
 import json,collections,random,re
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from curl_cffi import requests
-R=[json.loads(l) for l in open('2026-09-23_pool_census_ramp.jsonl')]
+import os
+CENSUS = os.environ.get('BREEZY_CENSUS', 'artifacts/2026-09-23_pool_census_ramp.jsonl')  # 227 MB ramp.py capture, kept out of git
+R=[json.loads(l) for l in open(CENSUS)]
 rows=[(r['slug'],x) for r in R if r['status']==200 for x in r['rows']]
 cls=collections.defaultdict(list)
 for s,x in rows:
@@ -19,5 +21,7 @@ out={}
 with ThreadPoolExecutor(8) as ex:
     for k,v in cls.items():
         smp=random.sample(v,min(12,len(v)))
-        out[str(k)]=collections.Counter(str(r) for r in ex.map(ld,smp))
+        out[str(k)]=collections.Counter()
+        for fu in as_completed([ex.submit(ld,x) for x in smp]):
+            out[str(k)][str(fu.result())]+=1; print(k, fu.result(), flush=True)
 for k,v in out.items(): print(k,dict(v))

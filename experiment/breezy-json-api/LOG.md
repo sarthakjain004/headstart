@@ -61,7 +61,8 @@ request to `fathom.breezy.hr/json`). The repo already keys the provider as `bree
   917 404, zero of anything else** — no 3xx, no 403, no 5xx, no timeout. Every 200 was
   `application/json` and a list; every 404 the same 3,265-byte "Career portal not found" page;
   every empty Board exactly 2 bytes (`[]`). 38,314 postings, mean 17.6 / p50 4 / p90 29 per
-  hiring Board. The 227 MB raw capture stays in the session scratchpad; the per-tenant table is
+  hiring Board. The 227 MB raw capture is kept out of git (the probe scripts read it from
+  `$BREEZY_CENSUS`, default `artifacts/2026-09-23_pool_census_ramp.jsonl`); the per-tenant table is
   `artifacts/2026-09-23_pool_census.csv`.
 - **The census doubled as the cross-tenant ramp** (`artifacts/2026-09-23_pool_census_ramp.log`):
   250 tenants each at conc 4 / 8 / 16 / 32 / 64 → 9.8 / 19.1 / 35.7 / 66.0 / 93.9 req/s, p50
@@ -78,18 +79,18 @@ request to `fathom.breezy.hr/json`). The repo already keys the provider as `bree
   (114 of them image- or empty-tag-only, no text). Upstream's `category`/`experience`/`education`/
   `tags` (H7) appear on 0 rows. `id` is 12 or 14 hex chars, never contains `:`; no duplicate id
   within a Board; `url` == `https://{slug}.breezy.hr/p/{friendly_id}` on 38,314 / 38,314.
-- **Description = the page's** (`desc_check2.py`/`desc_check3.py`, 204 postings over 120 random
+- **Description = the page's** (`description_listing_vs_detail.py`/`description_lines_on_page.py`, 204 postings over 120 random
   hiring Boards): `html_to_text` of the listing's `description` equals `html_to_text` of the
   detail page's JSON-LD `description` on 180 / 180 pages that carry JSON-LD; the other 24 pages
   have no JSON-LD (pool/"general interest" postings) and every line of the listing text is on
   the page, 24 / 24. Raw HTML differs by a few attributes (listing ≥ detail on all 133 raw
   diffs), never in text. H3 killed: no detail pass is needed.
-- **No hidden or missing rows** (`hidden_check.py`, the 10 largest + 60 random hiring + 20 random
+- **No hidden or missing rows** (`json_vs_sitemap_vs_portal.py`, the 10 largest + 60 random hiring + 20 random
   empty Boards): the page root and the sitemap never list an id the JSON lacks (0 on 90 Boards).
   The JSON lists ids the sitemap omits on 28 Boards (the no-JSON-LD postings) and the root omits
   on 2 — those pages all answer 200 with the posting. Largest Board
   `american-logistics-authority`: JSON 2,760 = root 2,760, one response. No pagination (H2 holds).
-- **Remote** (`remote_check.py`, 12 per class against the page's JSON-LD `jobLocationType`):
+- **Remote** (`remote_flag_vs_jsonld.py`, 12 per class against the page's JSON-LD `jobLocationType`):
   `location.is_remote` is what the page publishes — True → TELECOMMUTE 46/46 with JSON-LD, False or
   absent → none 57/57, including `remote_details` stale at "remote"/"remote-location"/"hybrid" on
   307 rows whose `is_remote` is False. `remote_details.value == "hybrid"` with `is_remote` True on
@@ -107,7 +108,7 @@ request to `fathom.breezy.hr/json`). The repo already keys the provider as `bree
   (equal 68, earlier 112) — the listing date is the latest publish, not the first.
 - **Salary**: 19,167 strings, 87 templated shapes, all `{sym}{n}[ – {sym}{n}| +][ / period]` or
   `Up to {sym}{n} / period`; periods hour / year / week / month / biweekly / day. Currency by
-  symbol vs the detail JSON-LD `baseSalary.currency` (`currency_check.py`, 499 postings): bare `$`
+  symbol vs the detail JSON-LD `baseSalary.currency` (`salary_symbol_vs_jsonld.py`, 499 postings): bare `$`
   is USD on 141 / 141 US postings, CAD on 179 / 188 Canadian (USD 9), USD on 41 / 47 elsewhere
   (MXN 2, SGD 1, COP 1, none 2). Every other symbol names one code except `kr` (SEK 3, DKK 1,
   by country).

@@ -1,9 +1,11 @@
 """JSON listing ids vs the tenant's sitemap.xml `/p/` ids and the portal root page's `/p/` links.
 Largest 10 Boards plus 60 random hiring Boards and 20 random live-empty Boards."""
 import json,random,re,collections
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from curl_cffi import requests
-R=[json.loads(l) for l in open('2026-09-23_pool_census_ramp.jsonl')]
+import os
+CENSUS = os.environ.get('BREEZY_CENSUS', 'artifacts/2026-09-23_pool_census_ramp.jsonl')  # 227 MB ramp.py capture, kept out of git
+R=[json.loads(l) for l in open(CENSUS)]
 hire=sorted([r for r in R if r['status']==200 and r['rows']],key=lambda r:-r['n'])
 empty=[r for r in R if r['status']==200 and not r['rows']]
 random.seed(4)
@@ -20,8 +22,11 @@ def one(r):
                 json_not_sitemap=len(jid-ids(sm)),sitemap_not_json=len(ids(sm)-jid),
                 json_not_root=len(jid-ids(root)),root_not_json=len(ids(root)-jid),
                 census=r['n'])
-with ThreadPoolExecutor(8) as ex: res=list(ex.map(one,smp))
-json.dump(res,open('hidden_check.json','w'),indent=0)
+res=[]
+with ThreadPoolExecutor(8) as ex:
+    for fu in as_completed([ex.submit(one,t) for t in smp]):
+        res.append(fu.result()); print(res[-1], flush=True)
+json.dump(res,open('artifacts/2026-09-23_json_vs_sitemap_vs_root.json','w'),indent=0)
 for x in res[:10]: print(x)
 agree=collections.Counter((x['json_not_sitemap']==0 and x['sitemap_not_json']==0, x['json_not_root']==0 and x['root_not_json']==0) for x in res); print(agree)
 for x in res[10:]:

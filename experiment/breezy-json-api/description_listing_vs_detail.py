@@ -1,11 +1,12 @@
-"""Same sample as desc_check.py; compares html_to_text of listing description vs the detail's
+"""Seed 11, 120 random hiring Boards, <=2 postings each: compares html_to_text of listing description vs the detail's
 JSON-LD description and the page's <div class="description">, and inspects pages with no JSON-LD."""
 import json,collections,random,re,sys
-sys.path.insert(0,'/Users/sarthakjain/Projects/HeadStart/.claude/worktrees/add-breezy-scraper/src')
 from headstart.models import html_to_text
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from curl_cffi import requests
-R=[json.loads(l) for l in open('2026-09-23_pool_census_ramp.jsonl')]
+import os
+CENSUS = os.environ.get('BREEZY_CENSUS', 'artifacts/2026-09-23_pool_census_ramp.jsonl')  # 227 MB ramp.py capture, kept out of git
+R=[json.loads(l) for l in open(CENSUS)]
 boards=[r for r in R if r['status']==200 and r['rows']]
 random.seed(11); bs=random.sample(boards,120)
 smp=[]
@@ -31,8 +32,11 @@ def one(t):
             return rec
     rec['ld']=False; rec['title']=re.findall(r'<title>(.*?)</title>',h)[:1]; rec['has_desc_div']='class="description"' in h
     return rec
-with ThreadPoolExecutor(8) as ex: res=list(ex.map(one,smp))
-json.dump(res,open('desc_check2.json','w'))
+res=[]
+with ThreadPoolExecutor(8) as ex:
+    for fu in as_completed([ex.submit(one,t) for t in smp]):
+        res.append(fu.result()); print(res[-1], flush=True)
+json.dump(res,open('artifacts/2026-09-23_desc_listing_vs_detail.json','w'))
 print(len(res), collections.Counter((r['status'],r.get('ld'),r.get('text_eq')) for r in res))
 for r in res:
     if r.get('ld') and not r['text_eq']: print(r['slug'],r['la'],r['lb'],r.get('ratio'),r.get('ops'))

@@ -74,7 +74,7 @@ def test_company_department_and_date_come_straight_from_the_row():
 def test_every_place_a_posting_names_is_joined_primary_first():
     """`locations` holds 2-5 places on 2,017 of 38,314 postings; cutting to the primary would fail
     the location filter everywhere else. The primary leads, and is kept even when `locations`
-    does not name it (828 of the 35,344 rows that list places) or is empty (2,969 rows)."""
+    does not name it (828 of the 35,344 rows that list places) or is empty (2,970 rows)."""
     ssg = _jobs(SSG)
     assert ssg["65fef260f81c"].location == "Hermosillo, MX; Santiago, DO; Colon, PA"
     assert ssg["bcf5df2f3a94"].location == "Canada; Toronto, ON; NB, CA"
