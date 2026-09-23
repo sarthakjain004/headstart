@@ -535,6 +535,72 @@ def test_pyjamahr_inconclusive_answers_stay_unknown(monkeypatch):
     assert cl.p_pyjamahr("acme", "") == (cl.UNKNOWN, None)
 
 
+# --- breezy: the listing's status settles it, redirects not followed ------------------------------
+
+
+def _breezy_fetch(status, content=b"", calls=None, raises=None):
+    def _fetch(method, url, **kw):
+        if calls is not None:
+            calls.append((url, kw))
+        if raises is not None:
+            raise raises
+        return _Resp(status, content=content)
+
+    return _fetch
+
+
+def test_breezy_a_listing_is_live_with_its_length_in_one_request(monkeypatch):
+    """The plain `/json` (no `verbose`: the count needs no descriptions), asked without following
+    redirects. 2,174 of the 4,794 pool tenants answered a non-empty list."""
+    calls: list = []
+    monkeypatch.setattr(
+        cl, "_fetch", _breezy_fetch(200, b'[{"id": "a"}, {"id": "b"}]', calls)
+    )
+    assert cl.p_breezy("fathom", "fathom.breezy.hr") == (cl.LIVE, 2)
+    [(url, kw)] = calls
+    assert url == "https://fathom.breezy.hr/json"
+    assert kw["allow_redirects"] is False
+
+
+def test_breezy_an_empty_list_is_a_live_board_hiring_nobody(monkeypatch):
+    """Measured: 1,703 tenants answer exactly `[]`."""
+    monkeypatch.setattr(cl, "_fetch", _breezy_fetch(200, b"[]"))
+    assert cl.p_breezy("arduino", "") == (cl.LIVE, 0)
+
+
+def test_breezy_a_404_is_dead(monkeypatch):
+    """917 tenants, and an invented label, answer the same 3,265-byte "Career portal not found"."""
+    monkeypatch.setattr(cl, "_fetch", _breezy_fetch(404, b"<html>not found</html>"))
+    assert cl.p_breezy("inngest", "") == (cl.DEAD, None)
+
+
+def test_breezy_anything_unmeasured_stays_unknown(monkeypatch):
+    # No tenant redirected in the census, so a redirect is news, not a verdict.
+    monkeypatch.setattr(cl, "_fetch", _breezy_fetch(302))
+    assert cl.p_breezy("acme", "") == (cl.UNKNOWN, None)
+    # A 200 that is not a JSON list is not a count of zero.
+    monkeypatch.setattr(cl, "_fetch", _breezy_fetch(200, b"<html>checkpoint</html>"))
+    assert cl.p_breezy("acme", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(cl, "_fetch", _breezy_fetch(503))
+    assert cl.p_breezy("acme", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(cl, "_fetch", lambda *a, **k: None)  # breaker open
+    assert cl.p_breezy("acme", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(
+        cl, "_fetch", _breezy_fetch(0, raises=cl.http.RequestsError("timed out"))
+    )
+    assert cl.p_breezy("acme", "") == (cl.UNKNOWN, None)
+
+
+def test_breezy_a_dns_failure_is_unknown_because_every_label_resolves(monkeypatch):
+    """`*.breezy.hr` is a wildcard record, so curl's code 6 on a Board host is the local resolver
+    failing under 432 workers — 41 Boards read live an hour earlier were written dead that way —
+    not a gone tenant."""
+    dns = cl.http.RequestsError("Could not resolve host", code=cl._DNS_ERR)
+    assert cl._is_dns(dns)
+    monkeypatch.setattr(cl, "_fetch", _breezy_fetch(0, raises=dns))
+    assert cl.p_breezy("kimmel-associates", "") == (cl.UNKNOWN, None)
+
+
 # --- pinpoint: the listing, then a page asked the way a browser asks, redirects never followed ----
 
 _PATH = "/en/postings/0f0cd77d-d352-43b5-b536-4cc87f2a5e82"

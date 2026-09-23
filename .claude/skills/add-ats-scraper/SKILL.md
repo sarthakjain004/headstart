@@ -47,11 +47,11 @@ and an ADR number no one else holds.
 Write every existing claim about this ATS into `experiment/{ats}-{surface}/LOG.md`, one line
 each, to be confirmed or killed in step 2:
 
-- `CLAUDE.md`'s ATS TODO list and `experiment/ats-scraper-candidates/LOG.md` (tech %, pool size).
+- `CLAUDE.md`'s build list and `experiment/ats-scraper-candidates/LOG.md` (tech %, pool size).
 - Upstream implementations: `kalil0321/ats-scrapers` (`src/ats_scrapers/scrapers/{ats}.py`,
   seed list `ats-companies/{ats}.csv`, MIT) first, then `gh search code` / `gh search repos`.
   Record each endpoint, parameter and hardcoded constant.
-- The ATS's public docs, and `robots.txt` and `sitemap.xml` on a real tenant.
+- The ATS's public developer or help docs.
 
 **Done when** the LOG lists every candidate surface (listing, detail, discovery) and every
 upstream constant or assumption as an open hypothesis.
@@ -61,7 +61,10 @@ upstream constant or assumption as an open hypothesis.
 Answer every question in [measurement.md](measurement.md) against real tenants, sampling **both
 sides** of each discriminator (live and dead, empty and full, small and the largest Board you can
 find). Raw captures go in `experiment/{ats}-{surface}/artifacts/`; the write-up is
-`docs/{ats}/{YYYY-MM-DD}_{surface}-measurement.md`.
+`docs/{ats}/{YYYY-MM-DD}_{surface}-measurement.md`. The experiment folder is the build's local
+notebook and stays out of git (the user's call: in the repo it is noise), so the write-up stands
+alone — every number a reader needs is inline, and the scripts and captures are named as kept
+locally.
 
 **Done when** every question in measurement.md has a number and a sample size, or an explicit
 "not measurable, because …".
@@ -70,7 +73,7 @@ find). Raw captures go in `experiment/{ats}-{surface}/artifacts/`; the write-up 
 others lost), the dead-versus-empty rule, the tech-gate verdict, the rate-limit knee and the
 discovery plan — or, if the ATS is unbuildable (login wall, per-tenant auth, no public surface),
 the evidence for a **dead end**. A dead end ships as a docs-only PR: the measurement doc plus a
-dead-end line in `CLAUDE.md`'s TODO list.
+dead-end line in `CLAUDE.md`'s build list.
 
 ## 3. Build the tenant pool
 
@@ -116,9 +119,8 @@ Estimate the pool's storage cost per tech Job: Hiring Boards × postings × byte
 fetched, divided by the tech Jobs it yields (`headstart.tech_filter.is_tech(title, department)`
 over a real sample; `scripts/validate/ats_tech_yield.py` is title-only and handles four ATSes).
 The accepted bar is ADR-0158's jazzhr: ~10.7 GB for ~5,100 tech Jobs, about **2 MB per tech
-Job**. At or under it the ATS lands active;
-over it, it lands in `DISABLED_ATS` with the arithmetic in the comment, as jazzhr and jobvite
-first did.
+Job**. At or under it the ATS lands active; over it, it lands in `DISABLED_ATS` with the
+arithmetic in the comment, as jazzhr and jobvite first did.
 
 **Done when** the decision and its arithmetic are in the ADR. **Checkpoint** if the ATS lands
 disabled, or its cost is within 2x of the bar either way.
@@ -127,7 +129,7 @@ disabled, or its cost is within 2x of the bar either way.
 
 Per [wiring.md](wiring.md#docs): one ADR carrying every choice a reader would otherwise
 re-litigate (slug identity, surface, dead-versus-empty rule, tech gate, enable decision); the
-✅ DONE entry in `CLAUDE.md`'s TODO list; `README.md`'s scraper count and list; every Board
+ATS's line removed from `CLAUDE.md`'s build list; `README.md`'s scraper count and list; every Board
 figure in `README.md` and `CONTEXT.md` recomputed; CONTEXT.md's Detail-pass entry. Then invoke
 `verify-search-filters` in this PR (CLAUDE.md requires it): `URL_SHAPES` is generated from
 `url_shape` (ADR-0157), so its coverage gate passes now. Its live-row checks can only see rows the
@@ -139,10 +141,9 @@ command you ran.
 
 ## 8. Ship
 
-Commit (≤50 words, `Co-Authored-By` trailer), push, open the PR. Invoke the `code-review` skill
-against the merge-base, apply or explicitly defer each finding, then invoke it **again** — the
-second round reviews the first round's fixes. Check every review claim about host behaviour
-against the live host. Pipeline data moves only through the pipeline's own schedule: leave
+Commit, push, open the PR. Invoke the `code-review` skill against the merge-base, apply or
+explicitly defer each finding, then invoke it **again** — the second round reviews the first
+round's fixes. Pipeline data moves only through the pipeline's own schedule: leave
 `pipeline.yml`, `deploy-space.yml` and `bench-tech-gate.yml` undispatched.
 
 Merge **alone**. Immediately before `gh pr merge --squash`, fetch `origin/main`; if it moved,

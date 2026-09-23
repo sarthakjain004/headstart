@@ -264,6 +264,10 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     # `matchType=domain` sweep filtered to `/careers` paths found 307 distinct
     # `*.bamboohr.com` hosts and nothing on a second domain.
     "bamboohr": _with_style("sub", "bamboohr.com"),
+    # One host, `{slug}.breezy.hr` — the label is the slug `breezy.py` keys on. No regional pod:
+    # an invented label and a departed tenant both answer the same 404 portal page on this
+    # domain (docs/breezy/2026-09-23_json-api-measurement.md).
+    "breezy": _with_style("sub", "breezy.hr"),
     "darwinbox": _with_style("sub", "darwinbox.in", "darwinbox.com"),
     # `host` style: this ATS's slug is the whole board host, not the label — `eightfold.py`
     # builds `https://{slug}/careers`, and every one of the ledger's 109 live boards is stored
@@ -422,7 +426,7 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
 #             the belief its Boards were keyed by an opaque UUID — they are keyed by a path slug
 #             on one shared host, so it is a `path` entry above.
 #   greythr, qandle, beehive, taleo, HirePro, iSmartRecruit, Recruit CRM, Ceipal — verified dead
-#             ends (CLAUDE.md's ATS-expansion TODO); the retired PowerShell feeder still swept
+#             ends (CLAUDE.md's build list); the retired PowerShell feeder still swept
 #             qandle and beehive.
 # An ATS with no scraper yet (turbohire, peoplestrong, jobsoid, …) can still be swept ad hoc:
 # `--domain HOST --style sub` bypasses this table.

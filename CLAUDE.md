@@ -35,286 +35,71 @@ HeadStart surfaces job openings read directly from company ATS boards.
   that would *infer* filters from one free-text paragraph is **deferred** — don't build query
   understanding while the constraints come from explicit controls.
 
-## TODO: ATS providers to add support for
+## ATS coverage: what to build next
 
-**Evidence-ranked from host-mining** (2026-07-21; counts = deduped India tenant *hosts* from the
-Common-Crawl + Wayback feeders in `data/scratch/india_ats_hosts.txt` — much stronger signal than
-per-company web research). Full research, endpoint probes, and provenance:
-`experiment/ats-provider-expansion/PLAN.md`.
-- **Freshteam** ✅ DONE (2026-07-21, #45) — `scrapers/freshteam.py`, wired through liveness (818
-  live / 579 hiring boards in `data/validate/liveness/freshteam.csv`). Widget caps at 1000/tenant.
-- **SuccessFactors** ✅ DONE (2026-07-21) — `scrapers/successfactors.py` (RMK only), wired through
-  liveness (26 live boards, `data/validate/liveness/successfactors.csv`). Slug = the vanity host.
-  Three listing surfaces, cheapest-first: `/sitemap.xml` urlset of `/job/{id}/` (most tenants) →
-  `/search/?startrow=N` HTML pages (RSS-sitemap tenants whose search works, e.g. SAP) → the patient
-  full RSS stream (Voith/Tetra Pak, whose `/search/` is CSB-rendered). Fields come from a per-job
-  detail pass — JSON-LD `JobPosting` on classic pages, schema.org `<meta itemprop>` microdata +
-  `joblayouttoken` label spans on CSB-rendered ones (Wipro/LTIMindtree/Cipla). **CSB-only tenants
-  (Ericsson-class, DWR-RPC) remain the known gap** — their sitemap isn't RMK-shaped, so liveness
-  marks them `dead` and they're skipped, never mis-scraped.
+Built providers are listed in README §"ATS coverage". What each one's scraper had to learn lives in
+its module docstring, its measurement doc under `docs/{ats}/` and its ADR; its Boards live in
+`data/validate/liveness/{ats}.csv`; discovery playbooks live in `docs/discovery/`
+(`shared-cert-tenant-rosters.md` is the general one). **Don't keep a built provider's Board counts
+in this file.** Nothing checks them here, so every ledger change can move them. This section used
+to carry ✅ DONE entries with live/hiring figures for twelve providers: on 2026-09-23 three were
+already wrong (the SuccessFactors entry quoted 26; its ledger held 2,214 Live rows), and one
+discovery landing (#576) moved five more. Board totals belong in README and CONTEXT.md, where
+`tests/test_board_counts.py` checks them.
 
-- **iCIMS** ✅ DONE (2026-09-08) — `scrapers/icims.py`, wired through liveness (4,164 live /
-  3,061 hiring boards in `data/validate/liveness/icims.csv`, 282,778 jobs reachable — the roster
-  came from `wayback_pages.py icims`, whose full 1,716-page sweep found 20,344 tenants against the
-  6,430 an earlier partial CDX dump had; running the feeder rather than trusting that dump is what
-  doubled the provider). Slug = the
-  board host. **One surface only: `/sitemap.xml`.** The paginated `/jobs/search` HTML is
-  deliberately not implemented — on 380 boards `robots.txt` predicted sitemap availability
-  perfectly, and the boards returning 403 were *exactly* the boards serving `Disallow: /`, so the
-  HTML walk would only ever crawl tenants that opted out. That also deletes pagination, per-tenant
-  page size and the unreliable "Page N of M" string. Three measured traps are wired into the code
-  rather than documented. **`datePosted` is fabricated on 22% of boards** and real on the rest —
-  measured over 54 random hiring boards, two fetches 3.5s apart: 12 move by the elapsed time
-  (`now - 2y`), 42 state a stable date. The two split cleanly on the millisecond field (42/42 real
-  end `.000Z`, 0/12 fabricated do), so `posted_at` prefers the board's own date via `_stated_date`
-  and falls back to the sitemap's `<lastmod>` only where it fabricates. Do **not** revert to
-  lastmod-only: that was the first version of this scraper, generalised from a single board, and
-  it served dates up to 2,437 days late. (`validThrough` is fabricated everywhere and stays out of
-  `_LD_KEEP`.) `baseSalary` puts min/max **directly on the node** (a spec-correct parser reads
-  every one as null) and never states `unitText`, so the period is inferred from magnitude and
-  emitted as the `hourly`/`yearly` spelling `salary.extract()` can actually read — and a node with
-  a **ceiling but no floor is refused**, because no spelling makes `extract` read a lone figure as
-  a maximum and emitting one serves a job's ceiling as its floor. A detail fetch missing
-  `in_iframe=1` returns an 80 KB branded wrapper with **no JSON-LD at all** — a silent empty, not
-  an error. No JSON API exists (a
-  browser HAR shows 6 XHR calls, all third-party). No rate limit found (conc 16 / 15.2 req/s, flat
-  latency, zero non-200s) and UA-agnostic. Discovery is wired into both `cc_miner.py` and
-  `wayback_feeder.py`; the URL-format census and the discriminator (every one of the
-  ledger's 4,164 live rows has a hyphen in its tenant label, and the vendor's own ~120
-  infrastructure hosts are mostly single words) are in `docs/icims/`. The ledger holds tenant
-  hosts only: `careers.icims.com`, `www.icims.com` and the `*.i.icims.com` archival mirrors are
-  filtered out by that same rule, all of them `jobs=0`.
-- **Oracle Recruiting Cloud (HCM)** ✅ DONE (2026-09-08) — `scrapers/oracle.py`, wired through
-  liveness (1,099 live / 991 hiring boards in `data/validate/liveness/oracle.csv`, 316,834
-  postings once Oracle's own 78,431-posting load-test instance is excluded). Slug = the tenant's
-  pod host. The scraper existed since early on but had **no ledger and no tests**, so it had never
-  run: `load_active_companies` globs the ledger dir, and there was no `oracle.csv` to glob. Two
-  defects that shipped with it are fixed here, both measured (`docs/oracle/`). `siteNumber` is a
-  **filter, not an address** — the hardcoded `CX_1` default was wrong for 929 of 1,331 hiring
-  boards and wrong *silently* (a bad site still answers 200 with a well-formed envelope), while
-  omitting it returns the host's whole set, the exact union of every site, verified on 596 hosts
-  with zero counter-examples. And the listing is nearly empty: `LegalEmployer`, `Department`,
-  `JobFunction`, `JobType` are **0.0%** non-null across 15,189 requisitions, and
-  `ShortDescriptionStr` is present on 44.4% and **hard-capped at exactly 1,000 chars**. The real
-  body (`ExternalDescriptionStr`, 93.1%, p50 4,138, no cap) is reachable *only* from
-  `recruitingCEJobRequisitionDetails?finder=ById;Id="{id}"` — `expand=all` on the listing never
-  includes it — so this is a detail-pass ATS. `hasMore` **lies** (false on a 248-posting board),
-  so `TotalJobsCount` is the terminator; `limit` clamps to 200. No rate limit found in 6,351
-  requests (sustained 77 req/s), and conc=32 is the knee — 128 is slower. Company names are still
-  the slug: `recruitingCESites` (664/670 hosts) returns them, but at ADR-0114's quality bar that
-  needs its own pass.
+### Landing rules the ledgers' code does not enforce
 
-**Highest ROI first — fingerprinter gaps, ZERO new scraper** (already-supported ATSes whose board
-sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` mining — 79% of the
-316 were opaque to no-JS curl, so these are a lower bound):
-- **Darwinbox — 11 curated companies** (CarDekho, Licious, Emeritus, Pixxel, FarEye, Happiest Minds
-  `smileshrms`, Vymo `vymopeopleconnect`, LEAD `myleadschool`, …). **Top ROI** — the scraper exists;
-  only a careers-page/redirect tenant scan is missing. Same fix lifts **Keka** (6: VWO, Open,
-  Eka.care, AccioJob, Inito), **Workday** (3: BrowserStack, Fractal, Sprinklr — non-derivable pod),
-  **Greenhouse** (2: Groww on the EU pod `job-boards.eu.greenhouse.io`, HighRadius embed-only).
+- **Decide "new" by `board_key`, and land in the ledger's own spelling.** `check_liveness.py` keys
+  a ledger on the raw `tenant` string, so a Board already held under another spelling lands as a
+  second row. Match candidates through each scraper's `slug_from(tenant, url)` and `board_key` (the
+  identity `load_active_companies` uses), and write new rows in that ledger's majority form:
+  Workday keys a Board as `{co}.wdN.myworkdayjobs.com/{site}`, Personio and Zoho as a bare label,
+  Taleo BE as `ORG:CWS@host/path`. `url` is the Board's public URL, never the probe's endpoint.
+- **Phenom carries only skins whose backing Board we do not already hold.** Phenom is a career-site
+  skin over Workday, SuccessFactors, Taleo and others, and `index_plan.evict_duplicate` groups
+  within a Board, so a skin over a Board we already scrape would serve every posting twice under
+  two ATS labels. Resolve the backing Board on the tenant's **registrable domain**, not only its
+  `applyUrl` — SuccessFactors rarely states one, and an `applyUrl`-only pass let four collisions
+  through. Then **measure** each collision: a held row that reads 0 today is stale, and the Phenom
+  Board is the live one (`careers.ucb.com`). Widen past this gate only if cross-ATS dedup is built.
+- **iCIMS holds tenant hosts only.** Every live row has a hyphen in its tenant label; single-word
+  `{customer}.icims.com` hosts are vendor infrastructure (`docs/icims/`) or recruiter logins
+  (#576). A vanity career site on Jibe, iCIMS's own career-site layer, is not a tenant: resolve it
+  to its `*.icims.com` host through the site's `/api/jobs` `apply_url`, and land that.
+- **SuccessFactors holds RMK sites only.** `p_successfactors` accepts any `<urlset>`, so a corporate
+  site or a Radancy career front probes `live`, and the scraper reads it as 0 jobs or as page titles
+  ("Working at TUI"). Before landing a host, confirm a `/job/` page from its sitemap (urlset, RSS or
+  index) carries RMK's own assets, `rmkcdn` or `j2w` — a bare "successfactors" string also appears
+  on Radancy's apply links. `scripts/validate/confirm_successfactors_boards.py`'s URL-shape test is
+  not enough on its own: it confirms Radancy fronts as `rmk` (4 of 4 tried). Method and
+  measurements: `docs/discovery/2026-09-23_indeed-sweep-landing.md`. CSB-only tenants
+  (Ericsson-class, DWR-RPC) remain the known gap.
 
-**New providers — endpoints VERIFIED live 2026-07-21** (full protocols: PLAN.md §4b + `artifacts/research_*.md`):
-- **PyjamaHR** ✅ DONE (2026-09-22) — `scrapers/pyjamahr.py`, wired through liveness (767 live /
-  683 hiring Boards, 8,895 postings, `data/validate/liveness/pyjamahr.csv`). **Slug = the company
-  slug**, the path segment of `jobs.pyjamahr.com/{slug}` — not the `company_uuid` this entry used to
-  key on. The API takes `?company_slug=` on both endpoints (the board's own route builds its calls
-  with it), so the slug is the URL, the API key and the discovery key at once; the uuid is never
-  fetched. Four measured facts are wired into the code rather than documented (ADR-0175,
-  `docs/pyjamahr/2026-09-22_career-api-measurement.md`). **The roster is published by the vendor:**
-  `jobs.pyjamahr.com/sitemap-jobs.xml` lists every posting on the platform across every tenant
-  (7,801 URLs, 680 tenants), read by `scripts/discover/mine_pyjamahr.py`; a `path`-style
-  `wayback_feeder` entry adds the 77 tenants whose postings are not in it (78 slugs; one is a
-  non-tenant path the prober killed), and the `cc_miner`
-  pattern swept every Common Crawl index of the last three years (33, `CC-MAIN-2023-40`..`2026-39`):
-  161 tenants, 10 new to the pool, all live, one hiring — CC's count went flat at 136 before
-  `CC-MAIN-2025-05`, so older indexes hold nothing further. **An unknown slug is not
-  an error** — the listing answers 200 `count: 0`, byte-identical to a live empty Board — so the
-  prober settles a zero off the board page (200 live, real 404 dead). **`published_internally`
-  rows are served by the API and hidden by the board** (112 of 8,897, 39 tenants); the scraper
-  drops them, all four public implementations found on GitHub serve them. **The detail's `remote`
-  boolean is false on every posting**, including the 102 REMOTE ones; `workplace_type` is the
-  answer and never disagrees with the location (0 of 7,674 ON_SITE/HYBRID rows name a remote one).
-  The listing is one call: the undocumented `limit` parameter has no ceiling (`999999999` returns
-  the 643-row Board whole) while `page_size` is ignored; `next` is still followed. Description,
-  `job_type`, salary and `created_at` are detail-only, so the ADR-0048 skip is not taken (oracle's
-  reason: it would blank three fields) — the ADR-0166 tech gate is, as an exact site (`title` and
-  `department_name` are listing fields the detail never overrides). Salary bounds appear iff
-  `is_salary_visible` (1,236/1,236 visible, 0/505 hidden), periods ANNUAL/MONTHLY/HOURLY, currency
-  INR 91%. No rate limit found in ~3,800 requests (84 req/s at conc 32, zero non-200s; the prober
-  ran 680 Boards in 3.8 s at 432 workers); UA-agnostic. Company name is the board page `<title>`,
-  equal to `companyDetails.name` on 757/757 — 723 resolve through a catch-all
-  `company_name.PATTERNS["pyjamahr"]`. ~25% tech by the post-hoc gate; India is 78% of rows.
-- **Eightfold** — M, best discoverability (`{slug}.eightfold.ai` sweep → `/careers/sitemap.xml` → JSON-LD; the `/api/apply/v2/jobs` XHR is 403-hardened). Qualcomm/NVIDIA/Micron/Vodafone GCCs, ~75-89% tech.
-- **TurboHire** — M, token flow: `/api/token/noauth` (needs Referer) → `POST /api/careerpagev2/filteredjobs?orgId={GUID}`. 72 hosts; unlocks Cleartrip/Flipkart, Ola.
-- **Zwayam / Naukri Talent Cloud** ✅ DONE (2026-08-27, #320) — `scrapers/zwayam.py`, wired through
-  liveness (757 live / 224 hiring boards in `data/validate/liveness/zwayam.csv`). Slug = the board
-  hostname. Four things the original research got wrong, each measured live before building:
-  `companyId` is **ignored by the search** (so the listing walk is one call per page, not two per
-  board — the *real* numeric id matters only for the per-job detail POST that supplies every new
-  Job's description, since the listing's own text can be silently truncated); `Origin`/`Referer`
-  are **ignored** too, so `domain` alone is the key; a **non-stock** `User-Agent` is required and a
-  missing one **hangs** rather than returning empty (`curl` and `python-requests` defaults both
-  time out; this repo's own UA is fine, so it is not a browser check); and `.openings.co` hosts
-  are **live** — 643 of the 757 boards are there. Only `{slug}.zwayam.com` is genuinely dead.
-  There is also **no reproducible rate limit** (~2,160 requests at up to 94 req/s, zero non-200s).
-  Job links are **per-frontend-generation** — Angular `{base}jobview/`, Next.js `/job-view/`
-  (wrong spelling hard-404s), old shell `/#!/job-view/` — detected from one homepage GET per
-  board (`zwayam.py` module docstring has the classified split across all 224 hiring boards).
-  Discovery is the real cost and has its own playbook:
-  `docs/discovery/zwayam-tenant-discovery.md` (the shared-TLS-cert roster and the tenant-directory
-  endpoint carry it) plus the generalisable
-  `docs/discovery/shared-cert-tenant-rosters.md`.
-- **BambooHR** ✅ DONE (2026-09-16) — `scrapers/bamboohr.py`, wired through liveness (16,255 live
-  / 10,425 hiring boards, 68,819 jobs reachable, in `data/validate/liveness/bamboohr.csv`; pool of
-  25,840 candidate tenants from a third-party seed list (kalil0321/ats-scrapers,
-  `ats-companies/bamboohr.csv`, 5,632 rows) unioned with a fresh Common Crawl sweep (+992) and a
-  full Wayback CDX sweep (+19,216 net new — the dominant source once run to completion). Picked
-  from a 20-ATS evaluation (`experiment/ats-scraper-candidates/LOG.md`): best
-  volume×tech-purity of the candidates measured (19,365 jobs sampled, 13.8% tech, 2,745
-  companies). Slug = the board subdomain label, one host only (`{slug}.bamboohr.com`, verified
-  against Wayback CDX — no regional pod). Two surfaces: `GET /jobs/embed2.php` (static
-  server-rendered HTML listing, **no pagination parameter and none needed** — the highest-volume
-  tenant found, 158 jobs, came back whole in one response) and `GET /careers/{id}/detail` (a
-  clean JSON XHR, no auth) for description/compensation/date/experience/canonical location. A
-  dead tenant's widget is a 200 with an **empty body**; a live one (jobs or not) always serves the
-  `BambooHR-ATS-board` wrapper — the liveness prober and the scraper both key on that, not the
-  status code. Two things measured false against the third-party implementation this was adapted
-  from (kalil0321/ats-scrapers, same attribution convention as Phenom): `locationType == "2"` is
-  **Hybrid, not remote** (9.3% of 1,508 sampled jobs — upstream reads it as `remote=True`;
-  `Job.remote` resolves Hybrid to `None`, matching `ashby.py`/`workday.py`'s existing convention),
-  and its 25,000-char description cap is the **upstream's own choice**, not BambooHR's (2.1% of
-  sampled descriptions exceed it, up to 41,214 chars) — not reproduced here. `minimumExperience`
-  is a real, 97.9%-populated native seniority-tier field upstream never reads at all, now mapped
-  to `Job.experience`. `compensation` is free-text prose (`_field_generic` handles it; no
-  dedicated Tier-1 parser). No rate limit found (up to 128 concurrent detail fetches, 122 req/s,
-  zero non-200s). No company-name page title (`/careers` is a client-rendered SPA shell, like
-  darwinbox/freshteam) — `self.company` stays the slug. Full measurement:
-  `docs/bamboohr/2026-09-16_widget-and-detail-api-measurement.md`.
-- **Gem** ✅ DONE (2026-09-16) — `scrapers/gem.py`, wired through liveness (1,019 live / 601 hiring
-  boards in `data/validate/liveness/gem.csv`). Not India-sourced: found by reading a third-party
-  scraper library's own full-dataset snapshot and measuring tech share (38.9% of a 3,542-job
-  sample, the highest of ~20 candidate ATSes evaluated that way — Gem is mostly startup/scale-up
-  recruiting CRM). Slug = the board's path segment on one fixed host (`jobs.gem.com/{slug}`, same
-  shape as `ashby`/`rippling`). One GraphQL batch endpoint, `POST
-  /api/public/graphql/batch`: `JobBoardList` lists a board (**no pagination in the schema at
-  all** — verified against the largest live board, 300 postings, with no truncation and no
-  separate total field to detect one against), `ExternalJobPostingQuery` reads one posting's
-  detail, batched. Upstream's `DETAIL_BATCH_SIZE = 20` is **not a measured limit** — batches up to
-  1,000 ops succeed (8.0s), 2,000 fails with HTTP 500, so this ships at 100. No rate limit found to
-  conc 128 (159 req/s, zero non-200s). **A live board and a nonexistent one both answer 200 with an
-  empty job list** — the board page (200 vs 404) is what actually tells them apart, which is why
-  the liveness probe checks it first. `posted_at` uses `firstPublishedTsSec` only:
-  `startDateTs` (upstream's fallback) is a future-publish timestamp that is structurally
-  unreachable through the public listing and was 0/159 populated in the measured sample.
-  `remote` reads the native `job.locationType` (100% populated), which disagreed with the
-  per-location `isRemote` flag on 9.0% of a 3,533-posting sample — titles confirm `locationType`
-  is the one telling the truth. `compensationHtml` is machine-templated on 132/136 (97%) of the
-  postings that state one, even wrapped in prose — a dedicated Tier-1 `salary._field_gem` parser
-  was built because the existing generic Tier-1 parser cannot read Gem's own "$X – $Y" shape (a
-  currency symbol precedes *both* numbers) and silently drops the ceiling. Full measurement:
-  `docs/gem/2026-09-16_graphql-api-measurement.md`.
-- **Phenom** ✅ DONE (2026-09-16) — `scrapers/phenom.py`, wired through liveness (16 live boards,
-  19,078 jobs, `data/validate/liveness/phenom.csv`). Slug = the board host. One endpoint,
-  `POST /widgets`, discriminated by `ddoKey`: `refineSearch` lists, `jobDetail` reads one posting
-  (34 KB of JSON against the job page's 652 KB — 19x cheaper, and both carry the full body).
-  **The ledger is deliberately 17 of the 91 reachable tenants, not all of them.** Phenom is a
-  career-site *skin*: `jobDetail.ats` says Workday on 68 tenants, SuccessFactors on 10, Taleo on 3,
-  and resolving each tenant's backing board from its `applyUrl` puts **75 of 91 — 136,660 of
-  155,738 postings — on Boards we already hold**. `index_plan.evict_duplicate` groups within a
-  Board, so those would serve twice under two ATS labels with nothing to catch them; the pool
-  (`data/ats-tenants-merged/phenom.csv`) therefore carries only the 16 whose backing board we do
-  not have. Widen it only if cross-ATS dedup is ever built. **Resolve that gate on the tenant's
-  registrable domain, not its `applyUrl`** — the first pass used `applyUrl`, which SuccessFactors
-  mostly does not state, and four SF-backed collisions reached the ledger before a domain-join
-  caught them. Then *measure* each collision rather than acting on the name: of those four only
-  `kuehne-nagel` was a real duplicate, and `careers.ucb.com` was the opposite case — its
-  SuccessFactors row is stale (re-probed live: 0 jobs) and the Phenom board is the live one. **The India rationale this entry used
-  to carry is void** — Mastercard and Adobe are both Workday-backed and already covered.
-  Four measured traps are wired into the code rather than documented: **no CSRF/session/Referer is
-  needed** (a bare client gets 200 — the upstream `kalil0321/ats-scrapers` implementation spends a
-  request per Board proving otherwise); **`size` clamps to 500** silently above it; **the listing
-  has no `description` key at all**, only a ~350-char `descriptionTeaser` against the detail's
-  5,121, so upstream's `item["description"] or teaser` would serve blurbs *and* mark the Job
-  described; and reading **stops at `from + size >= 10000`** where `totalHits` itself comes back
-  **0**, so a walk re-reading the total calls a 19,649-posting Board finished at 9,500 (5 seed
-  tenants are over that wall; none of them ship in this ledger, so that arm is exercised by tests
-  rather than in production — the largest Board here is `careers.dhl.com` at ~9.4k). A shortfall
-  *inside* the window goes to `mark_truncated_unless_negligible` instead (ADR-0121). The job URL is `/{cc}/{lang}/job/{id}` and
-  **`cc` is not always `us`** — 30 of 91 are `global`/`ca`/`amer`/`gb`/`na`, and a wrong one does
-  not 404, it 200s and redirects to the landing page, so the prefix is derived per Board from that
-  redirect rather than hardcoded. No rate limit found in 360 requests; conc 16 is the knee.
-  Company name comes from the landing-page `<title>` via new `company_name.PATTERNS["phenom"]`,
-  **not** from `jobDetail.companyName`: that field is per-posting and names a subsidiary
-  (`careers.dhl.com` returns "Blue Dart Express Limited" on a DHL board), and ADR-0048's detail
-  skip means a steady-state Board fetches none at all, so the name silently reverted to the slug
-  on every run after the first.
-  Measurements: `docs/phenom/2026-09-16_widgets-api-measurement.md`.
-- **Pinpoint** ✅ DONE (2026-09-23, #580) — `scrapers/pinpoint.py`, wired through liveness (817 live /
-  666 hiring Boards, 18,345 postings once six confirmed test tenants are excluded, in
-  `data/validate/liveness/pinpoint.csv`; ADR-0184,
-  `docs/pinpoint/2026-09-23_postings-api-measurement.md`). **Slug = the lowercased subdomain
-  label** of `{slug}.pinpointhq.com`, and the native id is the posting UUID. The numeric `id`
-  addresses no page. The pool is 1,465 tenants: harvest, the kalil0321 seed list, a full Wayback
-  sweep (+904 new) and 6 rename targets. **Common Crawl was not measured**:
-  `index.commoncrawl.org` was unreachable all day. `GET /postings.json` is the whole Board in one
-  array, with the full body in four HTML sections and no cap. Five measured traps are wired into
-  the code:
-  - **The listing has no date on any of 13,419 rows.** Upstream's `first_published_at` does not
-    exist. `datePosted` (and the country) live only in the posting page's JSON-LD, so the page is
-    fetched, tech-gated as an exact site. ADR-0048's skip is declined, because a description-store
-    hit says nothing about the date.
-  - **The page answers 406 to the shared `_get`'s `Accept: application/json, text/html`**, so it
-    is asked for as `text/html`.
-  - **The pages content-negotiate.** They render for `Accept: */*`, but 17 Boards (1,200
-    postings) 404 a browser on their postings, and 3 redirect them to a company page. So the
-    prober asks the first and last postings as `text/html` without redirects. A redirect that
-    keeps the posting's path is a vanity host (158 Boards), and counts as live. An empty Board is
-    settled on `/`. A listing 301 to another label is a renamed tenant, and is dead.
-  - **The listing can answer a spurious `{"data":[]}`** for a Board with postings (12 of 6,030
-    fetches). Both the scraper and the prober ask again before believing it.
-  - **The origin walls connections IP-wide.** A 256-wide burst drew refusals that held against
-    every tenant for minutes, while paced load up to 50 req/s was clean. So `pinpointhq.com` is a
-    spanning gate at 16.
+### To build, by evidence
 
-  12.1% tech, ~195 KB fetched per tech Job, so it is active. The company name is the board
-  `<title>` (`Jobs at {Name} | …`, 38 of 40 resolve).
-- **PeopleStrong** (201 hosts, still no scraper — Angular SPA XHR), **Jobsoid** (`{slug}.jobsoid.com/api/v1/jobs`, S, low yield) — opportunistic.
-- **Taleo Business Edition** ✅ DONE (2026-09-13, #452) — `scrapers/taleo_be.py`, wired through
-  liveness (533 live / 1,760 rows in `data/validate/liveness/taleo_be.csv`, plus 55
-  redirect-backed rows in `data/validate/aliases/taleo_be.csv`). Session-backed pagination: page 2's
-  URL carries no `org`/`cws` of its own, so the page-1 session cookie is required to resolve it — see
-  `docs/taleo_be/2026-09-13_tbe-surface-measurement.md`.
-- **Taleo Enterprise** ✅ DONE (2026-09-13, #453) — `scrapers/taleo_enterprise.py`, wired through
-  liveness (556 live / 7,442 rows in `data/validate/liveness/taleo_enterprise.csv`). A different
-  platform from Taleo Business Edition (`{tenant}.taleo.net/careersection/...` vs.
-  `{tenant}.tbe.taleo.net/.../ats/careers/v2/searchResults`). Listing pagination reads
-  `totalCount` once from page 1 as a page-count upper bound, not authoritative evidence of missing
-  requisitions — a complete D.R. Horton walk (every declared page, no repeated ids) still landed 2
-  short of Oracle's own stale total. See `docs/taleo_enterprise/2026-09-13_career-section-api-measurement.md`
-  and `experiment/taleo-enterprise-rate-limit/LOG.md` for the pagination and rate-limit measurements.
-  Both scrapers reverse a prior "do not build" verdict that was India-scoped, not global — see
-  [ADR-0144](adr/0144-oracle-taleo-was-a-dead-end-only-for-india.md).
-- Verified **dead-ends** (do not build): greythr/qandle/beehive (login-only HRMS), HirePro,
-  iSmartRecruit, Recruit CRM/Ceipal.
+Evidence for the first three is in `docs/discovery/2026-09-23_indeed-sweep-landing.md`.
 
-Single-company unlocks (web research; a manual slug, not worth a scraper each):
-- **Trakstar Hire** (`{slug}.hire.trakstar.com`) — ShareChat, MediBuddy, Exotel, Drip Capital (4).
-- **Skillate** (`{slug}.skillate.com`) — Zetwerk, Ola, Pristyn Care (3).
-- **SenseHQ** (`{slug}.sensehq.com/careers`) — Zetwerk, Capillary (2).
-- **Param.ai** (`{slug}.app.param.ai/jobs/`) — ~~Practo~~. Practo is on **Zwayam**
-  (`careers.practo.com`, 29 jobs, verified 2026-08-27 by two independent channels), so this
-  entry has no company left behind it until another one is found.
-- **Kula** (`careers.kula.ai/{slug}`) — Rocketlane.
-- **CareerSiteManager** (`{slug}.careersitemanager.com`) — Ecom Express.
-- **ainterviews.com / recruiteecdn** (Recruitee white-label) — Lenskart (`hiring.lenskart.com`).
-
-NB: **Workable** and **Recruitee** are now in the slug-probe (`ATS_PROBES`).
-
-Also a known miss *class* (not an ATS gap): **non-derivable slugs** — the board is on a clean ATS
-but the slug is a parent/legal/brand variant the name→slug derivation can't guess: Dream11 →
-`lever:dreamsports`, Zomato → `smartrecruiters:Zomato1`, Razorpay →
-`greenhouse:razorpaysoftwareprivatelimited`. These need the careers-page embed scan (or a manual
-slug), not slug derivation.
+- **Jibe.** 271 employers found by the Indeed sweep list 145,555 open jobs on Jibe sites, and 99.7%
+  of them sit on iCIMS tenants that serve `Disallow: /`, which the sitemap-only iCIMS scraper cannot
+  read. Each Jibe site serves `/api/jobs` JSON and allows crawling at `crawl-delay: 5`. Needs a
+  decision on reading a front whose backing tenant opts out.
+- **The unsupported ATSes the Indeed sweep resolved most companies to**, most first:
+  ClearCompany, ADP, Hireology, Cornerstone, Recruiterflow, Avature. (Breezy led that count and
+  is now built, #579, as is Pinpoint, #580; their companies are a landing still to do.)
+- **SenseHQ** — the scraper is registered but has no ledger and no liveness probe, so none of its
+  Boards can land.
+- **TurboHire** — token flow: `/api/token/noauth` (needs Referer), then `POST
+  /api/careerpagev2/filteredjobs?orgId={GUID}` (verified live 2026-07-21; Cleartrip, Flipkart, Ola).
+- **PeopleStrong** (Angular SPA XHR) and **Jobsoid** (`{slug}.jobsoid.com/api/v1/jobs`, low yield)
+  — opportunistic.
+- Single-company unlocks, a manual slug each rather than a scraper: Skillate
+  (`{slug}.skillate.com` — Zetwerk, Ola, Pristyn Care), Kula (`careers.kula.ai/{slug}` —
+  Rocketlane), CareerSiteManager (`{slug}.careersitemanager.com` — Ecom Express), and Recruitee's
+  white label `ainterviews.com`/`recruiteecdn` (Lenskart, `hiring.lenskart.com`).
+- Verified **dead ends** (do not build): greythr, qandle and beehive (login-only HRMS), HirePro,
+  iSmartRecruit, Recruit CRM/Ceipal. A dead-end verdict carries the scope it was measured in:
+  Oracle and Taleo were dead ends only for India, and both are built
+  ([ADR-0144](docs/adr/0144-oracle-taleo-was-a-dead-end-only-for-india.md)).
 
 ## Tactical Rules
 
@@ -408,13 +193,9 @@ build it.
 These guidelines are working if: fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 
 ## Git Conventions
-- **Do add a `Co-Authored-By` trailer to agent-authored commit messages.** This bullet said
-  the opposite until 2026-09-09, and practice had already left it behind: 39 `Co-Authored-By`
-  lines across the last 30 commits on `main`. A rule its own history contradicts that heavily
-  is a defect, not a standard — and this one was actively costing decisions, because a
-  session-level instruction mandates the trailer while this file forbade it: #390 merged
-  carrying it and #391 merged without, from the same information. Don't re-tighten it from
-  memory.
+- **Do add a `Co-Authored-By` trailer to agent-authored commit messages.** A session-level
+  instruction mandates it. Until 2026-09-09 this file forbade it, and the contradiction split
+  identical PRs (#390 carried it, #391 did not). Don't re-tighten it from memory.
 - Do NOT add "Generated with Claude Code" (or any similar attribution line) to PR descriptions.
 - Keep commit messages to a maximum of 50 words.
 - **Run the `code-review` skill on every code-changing PR before it merges** (the two-axis
@@ -438,8 +219,9 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   prior session's evidence. If a specific host genuinely looks blocked, rate-limited, or gives a
   response that doesn't smell like the real thing, don't guess past it — the pipeline's
   `workflow_dispatch` (manual trigger) can get a real answer from inside Actions instead. But treat
-  that as a deliberate, asked-for decision, not a default fallback: a full run rewrites ~1.86 GB of
-  LFS data, and storage is this workflow's own documented binding cost constraint.
+  that as a deliberate, asked-for decision, not a default fallback: a full run commits new LanceDB
+  and state data to HF, and HF storage is the binding cost (the 100 GB quota filled on 2026-09-18,
+  ADR-0168).
 
 ## Repo Conventions
 - **The back-to-back ingest run lives in `src/headstart/ingest/` — not in `scripts/`** (ADR-0028).
@@ -453,31 +235,30 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   stage's Board-count snapshot and delta ledger). `index compact` is a subcommand of the
   same module but is **not** part of this run — it moved to the `cleanup-index` workflow, because
   rewriting the whole table once per run is what the storage budget cannot afford.
-  One more entry point is not a stage but opens three of them: `state_fetch` (ADR-0030) pulls each
-  stage's slice of HF state in `scrape-plan`, `join` and `merge`, or aborts. Another publishes
-  inside one: `index_publish` commits the LanceDB table and its ADR-0083 grace set in a single
-  HF commit in `merge`'s upload step, so the two can never disagree. And one runs at the
+  Five more entry points are not stages. `state_fetch` (ADR-0030) pulls each stage's slice of HF
+  state in `scrape-plan`, `join` and `merge`, or aborts. `state_witness` (ADR-0095) publishes which
+  state directories exist, so an empty fetch can be told apart from a first run. `state_guard`
+  (ADR-0129) refuses a write to HF state that another workflow changed since it was read — `merge`
+  and `cleanup-index` both record and verify through it. Another publishes inside a stage:
+  `index_publish` commits the LanceDB table and its ADR-0083 grace set in a single HF commit in
+  `merge`'s upload step, so the two can never disagree. And one runs at the
   end of `merge` without being a stage either: `reclaim_storage` (ADR-0168) deletes the orphaned
   LFS blobs and verifies the quota actually fell — squashing history only makes them eligible for
   HF's collection, which is how the 100 GB quota filled on 2026-09-18.
   If you change what the pipeline runs, change it there and update `.github/workflows/pipeline.yml`
   to match. Don't add a pipeline stage to `scripts/`. Helper modules used *only* by the pipeline
-  live there too (`binpack`, `board_failures`, `board_operator`, `derived_meta`, `doc_prep`,
-  `index_plan`,
-  `observability`, `role_assignments`, `shard_plan`, `shard_speedup`, `trends_epochs`) — with
-  one deliberate exception: `alerts/run.py` imports `observability.named_sample` to bound its
-  post-loop summary, which keeps one sampling contract
-  rather than two spellings of it. The stricter rule below still holds: alerts is not the feed.
-  Logic
-  the curated-feed path (`python -m headstart` → `headstart.harvest`) also reaches stays in
-  `headstart` proper
-  (`harvest`, `board_cost`, `board_priority`, `corpus`) so the feed never imports from `ingest`.
+  live there too (`binpack`, `board_failures`, `board_freshness`, `board_operator`,
+  `derived_meta`, `doc_prep`, `index_plan`, `observability`, `role_assignments`, `shard_plan`,
+  `shard_speedup`, `trends_epochs`). Logic the curated-feed path (`python -m headstart` →
+  `headstart.harvest`) also reaches stays in `headstart` proper (`harvest`, `board_cost`,
+  `board_priority`, `corpus`), so the feed never imports from `ingest`.
 - `scripts/` is for everything *outside* that run — R&D, discovery, and one-off ops tooling —
   organized by stage: `discover/` (find ATS tenants), `merge/` (union/dedupe lists), `validate/`
   (liveness), `resolve/` (company → ats:slug), `scrape/` (one-off/local pulls), `fetch/` (pull HF
   data down — distinct from `scrape/`, which pulls from ATS hosts), `eval/`, `enrich/`,
   `filter/` (verification), `embed/` (local index tools), `bench/` (performance
-  measurement), `ui/`. Whenever you add a script, put it
+  measurement), `runlog/` (pipeline run-log analysers), `state/` (one-off HF state migrations),
+  `alerts/` (alert dry runs), `ui/`. Whenever you add a script, put it
   in the folder that fits its stage — and if none fits, create a new clearly-named stage subfolder
   rather than dropping it loose in `scripts/`. Keep `scripts/` itself free of stray top-level scripts.
 - **The README documents the served-table schema — keep it in lockstep with `_schema()`.** README
@@ -489,8 +270,10 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   against `_schema()`. The `[dev]` extra includes the index runtime and CI checks those imports
   before pytest, so the schema checks run in quality CI. Run them locally with `[dev]` before
   opening a schema PR. When you touch that section, re-check the example rows against
-  real data rather than editing them from memory: `curl "https://imposeidon-headstart-search.hf.space/search?q=backend+engineer&k=2"`
-  returns live rows, and `data/jobs/tech/*.jsonl` has the fields the API projection omits.
+  real data rather than editing them from memory. The Space's `/search` needs a signed-in session
+  (it answers `{"error":"sign in first"}` without one, 2026-09-23), so read the served table itself
+  (`scripts/fetch/pull_lancedb.py`); `data/jobs/tech/*.jsonl` has the fields the API projection
+  omits.
 - **"How many Boards do we have" has five defensible answers — use the names, not a number.**
   CONTEXT.md §Counting Boards binds each to exactly one figure: **Ledger row** (a CSV line),
   **Live row** (still a row — 6,632 are duplicate spellings), **Unique Board** (deduped),
@@ -524,8 +307,9 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   self-describing name — never dump loose into a catch-all or a generic name. Match the kind
   of output to its home: pipeline data under `data/` (job output under `data/jobs/`),
   experiment/R&D captures (screenshots, HTML dumps, recon JSON) under `experiment/<topic>/`
-  with a tracked `LOG.md` and the captures in an `artifacts/` subdir, prose analysis under
-  `docs/`. Name files so the date/source/meaning is obvious at a glance (e.g.
+  with a `LOG.md` and the captures in an `artifacts/` subdir — kept local and **not committed**
+  (gitignored; decided 2026-09-23, since committed experiments are noise in the repo) — and prose
+  analysis under `docs/`, which must stand alone without them. Name files so the date/source/meaning is obvious at a glance (e.g.
   `2026-06-21_datadome-slider_warp.png`), not `out.json` or `test2.html`. If no existing
   folder fits, create a clearly-named one rather than misfiling.
 - **When a task needs data and the freshness isn't specified, use the freshest data available.**
@@ -551,9 +335,9 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
       allow_patterns=['data/state/*'])"          # widen the patterns as needed
   ```
 
-  Cheap reads that answer most questions without pulling the ~1.5 GB of vectors: `HfApi()
-  .repo_info(..., files_metadata=True)` for file sizes, `data/embeddings/jobs/manifest.json`
-  for the store's `count`, `data/state/board_priority.csv` (~1 MB) for the board ledger.
+  Cheap reads that answer most questions without pulling the ~3.7 GB of vectors (2026-09-23):
+  `HfApi().repo_info(..., files_metadata=True)` for file sizes, `data/embeddings/jobs/manifest.json`
+  for the store's `count`, `data/state/board_priority.csv` (~2 MB) for the board ledger.
   **Exception:** `data/validate/liveness/` is committed to git, so the repo is authoritative for
   it — do not look for it on HF. See `docs/agents/deployment.md`.
   **`data/jobs/` is gitignored but NOT on HF at all** (verified 2026-08-19: zero `data/jobs/*`
@@ -576,12 +360,13 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
     0.16 MB/s against 2.17 MB/s aggregated across four concurrent ranged GETs; raising
     `HF_HUB_DOWNLOAD_TIMEOUT` to 300s made the hangs *longer*, not rarer.
   - `--check` reports what is missing without fetching, and `snapshot_download` is still right
-    for the small slices above (`data/state/*` is ~1 MB).
+    for the small slices above (`data/state/*` is ~40 MB).
 
 ### Adding or changing a scraper: run the filter harness first
 
-**Before any new ATS scraper's jobs ship — in the same PR that adds the scraper — run the
-`verify-search-filters` skill.** A new ATS is invisible to the harness until someone teaches it:
+Build a new ATS with the `add-ats-scraper` skill; it carries this step and the rest of the
+procedure. **Before any new ATS scraper's jobs ship — in the same PR that adds the scraper — run
+the `verify-search-filters` skill.** A new ATS is invisible to the harness until someone teaches it:
 its job-URL shape must be added to `scripts/eval/verify_filters.py`'s `URL_SHAPES` (derived from
 the scraper's `url=` construction and verified against the ATS's real routing, not assumed), and
 the harness must run clean, including its coverage gate (`atses_without_shape` empty). This rule
@@ -703,6 +488,10 @@ parts that matter. This was learned on `code-review`: its two axes exist as two 
 parallel sub-agents* so neither pollutes the other, and a hand-rolled single-agent imitation
 quietly merged them. If a skill fits the task, invoke it and follow it as written; if it doesn't
 quite fit, say so rather than approximating it.
+
+This repo's own skills: `add-ats-scraper` (measure, build, probe, discover and ship a new ATS),
+`ats-gap-search` (one agent per ATS to close its Board-discovery gap) and `verify-search-filters`
+(the search-filter harness a new ATS must pass).
 
 ### Issue tracker
 
