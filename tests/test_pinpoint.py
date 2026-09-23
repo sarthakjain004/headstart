@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 from headstart import company_name, http, salary
 from headstart.scrapers.pinpoint import PinpointScraper
@@ -150,24 +151,38 @@ def test_a_free_text_salary_passes_through_verbatim():
 def _fetching_scraper(
     monkeypatch, listing: dict, page=_page
 ) -> tuple[PinpointScraper, list]:
-    """A scraper whose `_get` serves `listing` for the Board URL and `page()` for any posting."""
+    """A scraper whose `_get` serves `listing` for the Board URL and whose `_fetch` serves
+    `page()` for any posting, recording every URL asked for and each page's `Accept`."""
     scraper = _scraper()
     requested: list[str] = []
 
     def fake_get(url=None):
         url = url or scraper.url()
         requested.append(url)
-        if url == scraper.url():
-            return json.dumps(listing)
-        return page()
+        return json.dumps(listing)
+
+    def fake_fetch(method, url, **kw):
+        requested.append(url)
+        scraper.page_accepts = kw["headers"]["Accept"]
+        return SimpleNamespace(text=page(), raise_for_status=lambda: None)
 
     monkeypatch.setattr(scraper, "_get", fake_get)
+    monkeypatch.setattr(scraper, "_fetch", fake_fetch)
     monkeypatch.setattr(
         scraper,
         "fan_out_async",
         lambda items, fn, **kw: [scraper._page_fields(i) for i in items],
     )
     return scraper, requested
+
+
+def test_the_page_is_asked_for_as_html(monkeypatch):
+    """The posting page content-negotiates: `Accept: application/json, text/html` — what the
+    shared `_get` sends — answers **406** with a 52-byte JSON error, on every page (192 of 192 on
+    impulsespace). `text/html` answers the page."""
+    scraper, _ = _fetching_scraper(monkeypatch, {"data": [_listing()["data"][0]]})
+    scraper.fetch_raw()
+    assert scraper.page_accepts == "text/html"
 
 
 def test_posted_at_and_country_come_from_the_posting_page(monkeypatch):

@@ -52,7 +52,7 @@ from typing import Any
 
 from headstart import http
 from headstart.models import Job, html_to_text
-from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper
 
 _LD_BLOCK = re.compile(
     r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
@@ -125,6 +125,14 @@ def _page_fields(page: str) -> dict[str, Any] | None:
     return None
 
 
+#: The posting page content-negotiates on `Accept`: the shared `_get`'s
+#: "application/json, text/html" answers 406 with a 52-byte JSON error on every page (192 of
+#: 192 on impulsespace), where "text/html" answers the page. The listing answers either way.
+_PAGE_REQUEST: dict[str, Any] = {
+    "headers": {"User-Agent": USER_AGENT, "Accept": "text/html"},
+    "timeout": 30,
+}
+
 #: Concurrent page fetches. Posting pages of one Board ran clean to 64 (106.7 req/s, zero
 #: non-200s) and slowed at 128; `harvest` scrapes Boards concurrently, so peak in-flight is the
 #: product, and 16 is what icims, zwayam, oracle and pyjamahr run.
@@ -176,7 +184,9 @@ class PinpointScraper(BaseScraper):
 
     def _page_fields(self, uuid: str) -> dict[str, Any] | None:
         try:
-            page = self._get(self.job_url(uuid))
+            response = self._fetch("GET", self.job_url(uuid), **_PAGE_REQUEST)
+            response.raise_for_status()
+            page = response.text
         except http.RequestsError as exc:
             self.note_detail_exception(exc)
             return None
@@ -186,7 +196,11 @@ class PinpointScraper(BaseScraper):
         self, session: Any, uuid: str
     ) -> dict[str, Any] | None:
         try:
-            page = await self._get_async(session, self.job_url(uuid))
+            response = await self._fetch_async(
+                session, "GET", self.job_url(uuid), **_PAGE_REQUEST
+            )
+            response.raise_for_status()
+            page = response.text
         except http.RequestsError as exc:
             self.note_detail_exception(exc)
             return None
