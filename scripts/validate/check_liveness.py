@@ -1256,6 +1256,57 @@ def p_bamboohr(t, u):
     return LIVE, len(set(re.findall(r"bhrPositionID_(\d+)", text)))
 
 
+def p_breezy(t, u):
+    """One GET of the Board's plain ``/json`` listing, redirects NOT followed.
+
+    The status settles it — measured 2026-09-23 on every one of the 4,794 pool tenants
+    (``docs/breezy/2026-09-23_json-api-measurement.md``): a JSON list is a live Board (2,174
+    non-empty, 1,703 exactly ``[]``), and a 404 is a departed tenant (917, each the same 3,265-byte
+    "Career portal not found" page an invented label also gets). Nothing else came back — no 3xx,
+    no 403, no 5xx. Upstream expects a departed tenant to 302 to the marketing site; none did, so
+    redirects are not followed (a followed one would read as that site's 200) and a 3xx stays
+    UNKNOWN until one is seen. ``verbose`` is left off: the count needs no descriptions, and they
+    are ~83% of the listing's bytes. No rate limit was found (up to 94 req/s across tenants, zero
+    refusals), so no gate is seeded. That leaves a platform-wide wall ungated: the auto-gate keys the
+    exact host and every Board is its own host, so only a `_SPANNING` entry would pace one. It fails
+    safe meanwhile — a 403 or 429 reads UNKNOWN, never DEAD.
+
+    **A DNS failure is not a dead tenant here.** ``*.breezy.hr`` is a wildcard record — an
+    invented label resolves and gets the 404 — so no tenant is ever NXDOMAIN. What does fail to
+    resolve is the local resolver under this prober's 432 workers, every Board being its own
+    hostname: the first pass wrote 41 Boards the census had just read live
+    (``kimmel-associates``, 445 postings) as dead that way, and a replay at 432-wide against
+    1,500 live-verdict Boards drew 100 curl code-6 errors.
+    So it is UNKNOWN, retried on the next pass, like any other network failure.
+    """
+    try:
+        r = _fetch(
+            "GET",
+            f"https://{t}.breezy.hr/json",
+            headers={"User-Agent": UA, "Accept": "application/json"},
+            allow_redirects=False,
+        )
+    except http.RequestsError as e:
+        _note("dns" if _is_dns(e) else _net_reason(e))
+        return UNKNOWN, None
+    if r is None:  # breaker open -> transient
+        _note("breaker-open")
+        return UNKNOWN, None
+    if r.status_code in (404, 410):
+        return DEAD, None
+    if r.status_code != 200:
+        _note(f"http-{r.status_code}")
+        return UNKNOWN, None
+    try:
+        rows = json.loads(r.content)
+    except ValueError:
+        rows = None
+    if not isinstance(rows, list):
+        _note("body-unparseable")
+        return UNKNOWN, None
+    return LIVE, len(rows)
+
+
 def p_keka(t, u):
     # The careers SPA's own job call (read off cdn.keka.com/careers/v/2026/scripts/app/app.min.js:
     # `$.ajax('/api/jobs/${apiPortalName}/active')`, apiPortalName defaulting to "default"). It
@@ -2147,6 +2198,7 @@ PROBES = {
     "lever": p_lever,
     "ashby": p_ashby,
     "bamboohr": p_bamboohr,
+    "breezy": p_breezy,
     "recruitee": p_recruitee,
     "workable": p_workable,
     "zoho": p_zoho,

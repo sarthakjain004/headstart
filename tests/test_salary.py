@@ -387,6 +387,45 @@ def test_field_range_currency_interval_rippling_structured_tier():
     )
 
 
+def test_breezy_salary_round_trips_every_period_through_extract():
+    # Real strings from the 2026-09-23 census (docs/breezy/2026-09-23_json-api-measurement.md):
+    # Breezy states `$25 – $30 / hour` and friends, which `_field_generic` cannot read — `/ hour`
+    # and `/ week` are not among its phrase markers, so every hourly figure fell to the
+    # plausibility floor as an annual one. breezy.py re-spells each as RANGE CODE UNIT, the
+    # structured shape `_field_range_currency_interval` reads.
+    from headstart.scrapers.breezy import BreezyScraper
+
+    def via_scraper(raw: str, country: str = "US") -> SalarySpan | None:
+        row = {"salary": raw, "location": {"country": {"id": country}}}
+        field = BreezyScraper("any")._salary_field(row)
+        return extract(field, None, ats="breezy")
+
+    assert via_scraper("$25 – $30 / hour") == SalarySpan(
+        25 * 2080, 30 * 2080, "USD", "field"
+    )
+    assert via_scraper("$1,500 – $2,000 / week") == SalarySpan(
+        1500 * 52, 2000 * 52, "USD", "field"
+    )
+    assert via_scraper("$6,000 – $8,000 / month") == SalarySpan(
+        72000, 96000, "USD", "field"
+    )
+    assert via_scraper("$100,000 – $150,000 / year") == SalarySpan(
+        100000, 150000, "USD", "field"
+    )
+    assert via_scraper("$150 – $170 / day") == SalarySpan(
+        150 * 260, 170 * 260, "USD", "field"
+    )
+    # No period stated (90 of 19,167): annual, the parser's default.
+    assert via_scraper("$75,000 – $85,000") == SalarySpan(75000, 85000, "USD", "field")
+    # A floor keeps no ceiling; an exact figure keeps it as both bounds.
+    assert via_scraper("$20+ / hour", "CA") == SalarySpan(
+        20 * 2080, None, "CAD", "field"
+    )
+    assert via_scraper("$18 / hour", "CA") == SalarySpan(
+        18 * 2080, 18 * 2080, "CAD", "field"
+    )
+
+
 def test_field_range_currency_interval_smartrecruiters_structured_tier():
     # Real, direct API inspection (2026-08-25,
     # experiment/location-audit-2026-08-25/smartrecruiters.md): the posting-detail response's

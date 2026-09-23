@@ -9,6 +9,7 @@ from headstart.scrapers.apple import AppleScraper
 from headstart.scrapers.ashby import AshbyScraper
 from headstart.scrapers.bamboohr import BambooHRScraper
 from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.breezy import BreezyScraper
 from headstart.scrapers.bytedance import ByteDanceScraper
 from headstart.scrapers.darwinbox import DarwinboxScraper
 from headstart.scrapers.eightfold import EightfoldScraper
@@ -76,6 +77,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         ZwayamScraper,
         ICIMSScraper,
         BambooHRScraper,
+        BreezyScraper,
         PhenomScraper,
         PinpointScraper,
         PyjamaHRScraper,

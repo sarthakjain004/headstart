@@ -7,8 +7,8 @@ scrapes ~60 ATS platforms and publishes a daily hosted snapshot (no auth) at
 platforms HeadStart has no scraper for. Rather than sampling those platforms live ourselves,
 this reads their already-scraped, full per-ATS job data and applies HeadStart's own gates —
 `headstart.tech_filter.is_tech` and `headstart.geo.classify` — to see what fraction would
-actually be tech roles and how much of that is India, the two numbers CLAUDE.md's TODO list
-uses to prioritize the next scraper to build.
+actually be tech roles and how much of that is India, two numbers for weighing the next scraper
+to build (CLAUDE.md's build list).
 
 This is a full-population read (today's whole published slice per ATS), not a sample: no
 probe-size caveat applies to the tech%/India% numbers themselves. What IS a caveat: this is a
