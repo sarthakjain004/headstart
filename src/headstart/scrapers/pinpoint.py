@@ -28,7 +28,7 @@ the description comes from the listing, so a store hit says nothing about the da
 would blank ``posted_at`` on every run after the first. The skip it does take is the tech gate
 (ADR-0166), as an **exact** site: ``title`` and ``job.department.name`` are listing fields on
 13,419 of 13,419 rows and the page overrides neither, and both read them through ``_title`` and
-``_department``. Over the committed ledger's 666 Hiring Boards (18,342 postings on re-fetch),
+``_department``. Over the committed ledger's 674 Hiring Boards (18,425 postings on re-fetch),
 12.1% are tech, so the gate spares ~88% of the page fetches (~132 KB each).
 
 **Identity.** A posting's UUID (the last segment of its ``url``) is the native id: it is the only
