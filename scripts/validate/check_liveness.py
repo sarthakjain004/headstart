@@ -1257,6 +1257,13 @@ def p_breezy(t, u):
     UNKNOWN until one is seen. ``verbose`` is left off: the count needs no descriptions, and they
     are ~83% of the listing's bytes. No rate limit was found (up to 94 req/s across tenants, zero
     refusals), so no gate is seeded; the auto-gate covers a wall that appears later.
+
+    **A DNS failure is not a dead tenant here.** ``*.breezy.hr`` is a wildcard record — an
+    invented label resolves and gets the 404 — so no tenant is ever NXDOMAIN. What does fail to
+    resolve is the local resolver under this prober's 432 workers, every Board being its own
+    hostname: the first pass wrote 41 live Boards (``kimmel-associates``, 445 postings) as dead
+    that way, and a replay at 432-wide against 1,500 live Boards drew 100 curl code-6 errors.
+    So it is UNKNOWN, retried on the next pass, like any other network failure.
     """
     try:
         r = _fetch(
@@ -1266,9 +1273,7 @@ def p_breezy(t, u):
             allow_redirects=False,
         )
     except http.RequestsError as e:
-        if _is_dns(e):
-            return DEAD, None
-        _note(_net_reason(e))
+        _note("dns" if _is_dns(e) else _net_reason(e))
         return UNKNOWN, None
     if r is None:  # breaker open -> transient
         _note("breaker-open")

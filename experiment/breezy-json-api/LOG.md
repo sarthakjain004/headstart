@@ -125,3 +125,41 @@ request to `fathom.breezy.hr/json`). The repo already keys the provider as `bree
 - **Discovery started**: `wayback_feeder.ATS_HOSTS["breezy"]` (`sub`, `breezy.hr`) and
   `cc_miner.ATS_PATTERNS["breezy"]` (`label`) added; `wayback_pages.py breezy` queued behind the
   shared discovery lock.
+
+## 2026-09-23 — scraper, liveness pass, ledger
+
+- **Scraper over the census** (every captured row through `BreezyScraper.parse`): 38,314 Jobs;
+  location 38,312, remote stated 37,317 (True 5,258 / False 32,059 / hybrid None 997), department
+  20,407, description text 38,200, salary emitted 18,969 of 19,167 stated. Of those,
+  `salary.extract(field, None, ats="breezy")` reads 18,483 (96.4% of stated) against 6,484
+  (33.8%) the generic parser read off the raw strings. The 40 rows the generic parser read and
+  this does not are all its misreads (a PKR/PHP monthly figure read as an annual floor, a
+  tenant's "$80,000 – $100,000 / hour" read as annual); the 352 yearly strings that do not parse
+  are tenant labelling errors ("$20 – $23 / year") the plausibility floor rejects.
+- **`verify_scraper.py breezy 20`**: 20 pool tenants, 17 reachable, 7 hiring, 94 jobs, 94 with a
+  description, 3 dead (404).
+- **Largest Board through `fetch()`** (`american-logistics-authority`): 2,760 Jobs, every field
+  but department/experience populated, salary on 2,543 and parsed on 2,521.
+- **First liveness pass wrote 41 live Boards as dead.** `check_liveness.py` runs 432 workers,
+  every Board is its own hostname, and the local resolver fails under that: the pass logged
+  `connect-refused` and timeouts (github.com refused connections from this machine at the same
+  moment), and `p_breezy` read curl's code 6 as NXDOMAIN → DEAD. The 41 were alphabetical
+  clusters (`kimmel-associates` 445 postings, `nexo` 24, …) and all answered 200 on a re-fetch.
+  Replay (`burst_404.py`, 1,500 live Boards at 432-wide,
+  `artifacts/2026-09-23_burst_432_live_boards.jsonl`): 1,379 200, **100 DNSError**, 21 timeouts,
+  zero 404. `*.breezy.hr` is a wildcard record (an invented label resolves to the same
+  CloudFront addresses), so no tenant is ever NXDOMAIN — `p_breezy` now reads a DNS failure as
+  UNKNOWN. The forced re-probe: 4,794 settled, 0 unknown after four passes.
+- **Ledger** `data/validate/liveness/breezy.csv`: 4,794 rows, 3,876 live, 918 dead, 2,173
+  hiring, 38,266 postings. Against the census an hour earlier the only disagreement is
+  `sandbox` (a real Virginia org, 3 postings), killed before any probe by ADR-0034's nonprod
+  name rule — left as is.
+- **Duplicate checks**: 4,794 rows = 4,794 unique `board_key`s; no redirects (0 3xx in the
+  census), no casing variants. One Breezy company can run several portals under different
+  labels, and the same posting id is then served on each: 190 ids on 26 Boards (e.g.
+  `lumio-dental` / `lumio-dental-practice-locations`, 62), 191 extra rows of 38,314 (0.5%), 7 of
+  them tech. Not collapsed: each is a separate Board with its own URLs, and `evict_duplicate`
+  groups within a Board.
+- **Spot check** (random, seed 8): live `ct-united-fc` 12, `grill-hero` 0,
+  `gustav-technologies-inc` 0, `bond-pro-inc` 2, `coeur-d-alene-resort` 63 — each equal to a
+  fresh fetch; dead `seabound`, `amitruck`, `beek`, `casa`, `dozens` — each 404.

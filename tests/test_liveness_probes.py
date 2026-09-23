@@ -589,3 +589,12 @@ def test_breezy_anything_unmeasured_stays_unknown(monkeypatch):
         cl, "_fetch", _breezy_fetch(0, raises=cl.http.RequestsError("timed out"))
     )
     assert cl.p_breezy("acme", "") == (cl.UNKNOWN, None)
+
+
+def test_breezy_a_dns_failure_is_unknown_because_every_label_resolves(monkeypatch):
+    """`*.breezy.hr` is a wildcard record, so curl's code 6 on a Board host is the local resolver
+    failing under 432 workers — 41 live Boards were written dead that way — not a gone tenant."""
+    dns = cl.http.RequestsError("Could not resolve host", code=cl._DNS_ERR)
+    assert cl._is_dns(dns)
+    monkeypatch.setattr(cl, "_fetch", _breezy_fetch(0, raises=dns))
+    assert cl.p_breezy("kimmel-associates", "") == (cl.UNKNOWN, None)
