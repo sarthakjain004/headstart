@@ -521,8 +521,9 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   self-describing name — never dump loose into a catch-all or a generic name. Match the kind
   of output to its home: pipeline data under `data/` (job output under `data/jobs/`),
   experiment/R&D captures (screenshots, HTML dumps, recon JSON) under `experiment/<topic>/`
-  with a tracked `LOG.md` and the captures in an `artifacts/` subdir, prose analysis under
-  `docs/`. Name files so the date/source/meaning is obvious at a glance (e.g.
+  with a `LOG.md` and the captures in an `artifacts/` subdir — kept local and **not committed**
+  (gitignored; decided 2026-09-23, since committed experiments are noise in the repo) — and prose
+  analysis under `docs/`, which must stand alone without them. Name files so the date/source/meaning is obvious at a glance (e.g.
   `2026-06-21_datadome-slider_warp.png`), not `out.json` or `test2.html`. If no existing
   folder fits, create a clearly-named one rather than misfiling.
 - **When a task needs data and the freshness isn't specified, use the freshest data available.**

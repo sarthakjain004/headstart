@@ -61,8 +61,10 @@ upstream constant or assumption as an open hypothesis.
 Answer every question in [measurement.md](measurement.md) against real tenants, sampling **both
 sides** of each discriminator (live and dead, empty and full, small and the largest Board you can
 find). Raw captures go in `experiment/{ats}-{surface}/artifacts/`; the write-up is
-`docs/{ats}/{YYYY-MM-DD}_{surface}-measurement.md`. `experiment/` is gitignored, so commit the
-LOG, the probe scripts and the small captures with `git add -f`.
+`docs/{ats}/{YYYY-MM-DD}_{surface}-measurement.md`. The experiment folder is the build's local
+notebook and stays out of git (the user's call: in the repo it is noise), so the write-up stands
+alone — every number a reader needs is inline, and the scripts and captures are named as kept
+locally.
 
 **Done when** every question in measurement.md has a number and a sample size, or an explicit
 "not measurable, because …".
