@@ -51,7 +51,7 @@ each, to be confirmed or killed in step 2:
 - Upstream implementations: `kalil0321/ats-scrapers` (`src/ats_scrapers/scrapers/{ats}.py`,
   seed list `ats-companies/{ats}.csv`, MIT) first, then `gh search code` / `gh search repos`.
   Record each endpoint, parameter and hardcoded constant.
-- The ATS's public docs, and `robots.txt` and `sitemap.xml` on a real tenant.
+- The ATS's public developer or help docs.
 
 **Done when** the LOG lists every candidate surface (listing, detail, discovery) and every
 upstream constant or assumption as an open hypothesis.
@@ -61,7 +61,8 @@ upstream constant or assumption as an open hypothesis.
 Answer every question in [measurement.md](measurement.md) against real tenants, sampling **both
 sides** of each discriminator (live and dead, empty and full, small and the largest Board you can
 find). Raw captures go in `experiment/{ats}-{surface}/artifacts/`; the write-up is
-`docs/{ats}/{YYYY-MM-DD}_{surface}-measurement.md`.
+`docs/{ats}/{YYYY-MM-DD}_{surface}-measurement.md`. `experiment/` is gitignored, so commit the
+LOG, the probe scripts and the small captures with `git add -f`.
 
 **Done when** every question in measurement.md has a number and a sample size, or an explicit
 "not measurable, because …".
@@ -116,9 +117,8 @@ Estimate the pool's storage cost per tech Job: Hiring Boards × postings × byte
 fetched, divided by the tech Jobs it yields (`headstart.tech_filter.is_tech(title, department)`
 over a real sample; `scripts/validate/ats_tech_yield.py` is title-only and handles four ATSes).
 The accepted bar is ADR-0158's jazzhr: ~10.7 GB for ~5,100 tech Jobs, about **2 MB per tech
-Job**. At or under it the ATS lands active;
-over it, it lands in `DISABLED_ATS` with the arithmetic in the comment, as jazzhr and jobvite
-first did.
+Job**. At or under it the ATS lands active; over it, it lands in `DISABLED_ATS` with the
+arithmetic in the comment, as jazzhr and jobvite first did.
 
 **Done when** the decision and its arithmetic are in the ADR. **Checkpoint** if the ATS lands
 disabled, or its cost is within 2x of the bar either way.
@@ -139,10 +139,9 @@ command you ran.
 
 ## 8. Ship
 
-Commit (≤50 words, `Co-Authored-By` trailer), push, open the PR. Invoke the `code-review` skill
-against the merge-base, apply or explicitly defer each finding, then invoke it **again** — the
-second round reviews the first round's fixes. Check every review claim about host behaviour
-against the live host. Pipeline data moves only through the pipeline's own schedule: leave
+Commit, push, open the PR. Invoke the `code-review` skill against the merge-base, apply or
+explicitly defer each finding, then invoke it **again** — the second round reviews the first
+round's fixes. Pipeline data moves only through the pipeline's own schedule: leave
 `pipeline.yml`, `deploy-space.yml` and `bench-tech-gate.yml` undispatched.
 
 Merge **alone**. Immediately before `gh pr merge --squash`, fetch `origin/main`; if it moved,
