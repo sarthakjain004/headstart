@@ -533,3 +533,66 @@ def test_pyjamahr_inconclusive_answers_stay_unknown(monkeypatch):
         cl, "_get", _pyjamahr_get(200, b'{"count": 0, "results": []}', 503)
     )
     assert cl.p_pyjamahr("acme", "") == (cl.UNKNOWN, None)
+
+
+# --- pinpoint: redirects are read, not followed; a zero is settled by the board page -----------
+
+
+def _pinpoint_fetch(status, body=b"", location=""):
+    def _fetch(method, url, **kw):
+        assert kw.get("allow_redirects") is False
+        return SimpleNamespace(
+            status_code=status, content=body, headers={"location": location}
+        )
+
+    return _fetch
+
+
+def test_pinpoint_a_listing_with_postings_is_live_with_its_length(monkeypatch):
+    monkeypatch.setattr(cl, "_fetch", _pinpoint_fetch(200, b'{"data": [{}, {}, {}]}'))
+    monkeypatch.setattr(cl, "_get", _stub_get(500, b""))  # never reached
+    assert cl.p_pinpoint("zincwork", "https://zincwork.pinpointhq.com") == (cl.LIVE, 3)
+
+
+def test_pinpoint_a_renamed_tenant_redirecting_to_another_label_is_dead(monkeypatch):
+    """63 of 63 redirects measured went to another `{label}.pinpointhq.com/postings.json`; 57 of
+    their targets are already live slugs, so following one would duplicate a Board."""
+    monkeypatch.setattr(
+        cl,
+        "_fetch",
+        _pinpoint_fetch(301, location="https://cfc.pinpointhq.com/postings.json"),
+    )
+    assert cl.p_pinpoint("cfcunderwriting", "") == (cl.DEAD, None)
+
+
+def test_pinpoint_a_redirect_anywhere_else_is_unknown(monkeypatch):
+    monkeypatch.setattr(
+        cl, "_fetch", _pinpoint_fetch(302, location="https://www.pinpointhq.com/")
+    )
+    assert cl.p_pinpoint("acme", "") == (cl.UNKNOWN, None)
+
+
+def test_pinpoint_an_unknown_slug_is_a_404_and_dead(monkeypatch):
+    monkeypatch.setattr(cl, "_fetch", _pinpoint_fetch(404, b"<html>404</html>"))
+    assert cl.p_pinpoint("zzqqnotatenant8127", "") == (cl.DEAD, None)
+
+
+def test_pinpoint_an_empty_listing_is_settled_by_the_board_page(monkeypatch):
+    """117 of 117 empty census Boards answer `/` with 200; 2 Wayback tenants with the careers
+    site switched off answer it with 404."""
+    monkeypatch.setattr(cl, "_fetch", _pinpoint_fetch(200, b'{"data":[]}'))
+    monkeypatch.setattr(cl, "_get", _stub_get(200, b"<html></html>"))
+    assert cl.p_pinpoint("gain-careers", "") == (cl.LIVE, 0)
+    monkeypatch.setattr(cl, "_get", _stub_get(404, b"<html></html>"))
+    assert cl.p_pinpoint("betashares", "") == (cl.DEAD, None)
+    monkeypatch.setattr(cl, "_get", _stub_get(503, b""))
+    assert cl.p_pinpoint("acme", "") == (cl.UNKNOWN, None)
+
+
+def test_pinpoint_an_unparseable_or_failed_listing_is_unknown(monkeypatch):
+    monkeypatch.setattr(cl, "_fetch", _pinpoint_fetch(200, b"<html>checkpoint</html>"))
+    assert cl.p_pinpoint("acme", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(cl, "_fetch", _pinpoint_fetch(503))
+    assert cl.p_pinpoint("acme", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(cl, "_fetch", lambda *a, **k: None)  # breaker open
+    assert cl.p_pinpoint("acme", "") == (cl.UNKNOWN, None)
