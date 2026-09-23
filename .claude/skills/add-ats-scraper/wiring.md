@@ -148,8 +148,8 @@ jobvite's `jvauto`).
   **Relates to:** …`, then Context / Decision / Alternatives considered / Consequences), plus its
   line in `docs/adr/README.md`.
 - `docs/{ats}/{date}_{surface}-measurement.md` — the step-2 answers with sample sizes and the
-  commands that produced them; `experiment/{ats}-{surface}/LOG.md` with the raw captures in
-  `artifacts/`.
+  commands that produced them, standing alone. `experiment/{ats}-{surface}/` (LOG, probe
+  scripts, captures) stays local and uncommitted.
 - `CLAUDE.md` TODO list: the ✅ DONE entry — date, PR, module, ledger figures (live / hiring
   Boards, postings), slug identity, and each measured trap wired into the code.
 - `README.md` §"ATS coverage": the scraper count — `**N scrapers**`, the intro line's "N
