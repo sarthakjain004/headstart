@@ -516,6 +516,13 @@ _FIELD_PARSERS = {
     "keka": _field_keka,
     "darwinbox": _field_darwinbox,
     "gem": _field_gem,
+    # breezy: "25-30 USD HOUR" / "20 CAD HOUR" / "75000-85000 USD" — breezy.py's own
+    # `_salary_field()` re-spells the listing's templated "$25 – $30 / hour" as RANGE CODE UNIT.
+    # Registered because the bare unit words (HOUR/DAY/WEEK/MONTH) are what this parser annualises
+    # and `_field_generic` does not: on the raw string it read every hourly, weekly and monthly
+    # figure as annual (docs/breezy/2026-09-23_json-api-measurement.md). A new key, so no stored
+    # row changes and no DERIVATIONS_VERSION bump.
+    "breezy": _field_range_currency_interval,
 }
 
 

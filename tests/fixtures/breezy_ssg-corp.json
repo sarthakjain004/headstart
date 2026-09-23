@@ -1,0 +1,576 @@
+[
+ {
+  "id": "65fef260f81c",
+  "friendly_id": "65fef260f81c-net-developer",
+  "name": ".NET Developer",
+  "url": "https://ssg-corp.breezy.hr/p/65fef260f81c-net-developer",
+  "published_date": "2026-09-11T20:45:39.068Z",
+  "type": {
+   "id": "fullTime",
+   "name": "Full-Time"
+  },
+  "location": {
+   "country": {
+    "name": "Mexico",
+    "id": "MX"
+   },
+   "city": "Hermosillo",
+   "primary": true,
+   "is_remote": true,
+   "remote_details": {
+    "value": "remote-location",
+    "label": "Fully remote, within chosen location(s)"
+   },
+   "name": "Hermosillo, MX",
+   "id": "0439f970e2dd"
+  },
+  "department": "Staff",
+  "salary": "",
+  "company": {
+   "name": "Support Services Group",
+   "logo_url": null,
+   "friendly_id": "ssg-corp",
+   "isMultipleLocationsEnabled": true
+  },
+  "locations": [
+   {
+    "country": {
+     "name": "Dominican Republic",
+     "id": "DO"
+    },
+    "city": "Santiago",
+    "primary": false,
+    "is_remote": true,
+    "name": "Santiago, DO",
+    "id": "780509683308",
+    "remote_details": {
+     "value": "remote-location",
+     "label": "Fully remote, within chosen location(s)"
+    }
+   },
+   {
+    "country": {
+     "name": "Mexico",
+     "id": "MX"
+    },
+    "city": "Hermosillo",
+    "primary": true,
+    "is_remote": true,
+    "remote_details": {
+     "value": "remote-location",
+     "label": "Fully remote, within chosen location(s)"
+    },
+    "name": "Hermosillo, MX",
+    "id": "0439f970e2dd"
+   },
+   {
+    "country": {
+     "name": "Panama",
+     "id": "PA"
+    },
+    "city": "Colon",
+    "primary": false,
+    "is_remote": true,
+    "remote_details": {
+     "value": "remote-location",
+     "label": "Fully remote, within chosen location(s)"
+    },
+    "name": "Colon, PA",
+    "id": "b00176d7bbdb"
+   }
+  ],
+  "description": "<p><strong>*This position is remote within the&nbsp;Dominican Republic, Panama and Mexico.</strong></p>\n<p><strong>*This position requires intermediate - advanced spoken English level (B2+).<br></strong></p>\n<p><strong>*If you're interested in the position, please apply with your resume in English.<br></strong></p>\n<p><strong><br></strong></p>\n<p><strong>Support Services Group</strong> is a leading U.S.-based global provider of high-touch omnichannel outsource contact center solutions.</p>\n<p>Founded in 1998, our award-winning customer experience (CX) solutions have created exceptional outcomes for more than 50 of the world’s top brands and their customers.</p>\n<p>We are an ambitious team of game changers who thrive on solving complex problems.</p>\n<p></p>\n<p><strong>About the Role:</strong></p>\n<p><strong>.NET Backend Developer</strong> with a strong foundation in building scalable, secure, and maintainable server-side applications using Microsoft technologies. Specializing in C#, ASP.NET Core, and API development, with deep knowledge of software design patterns, system integration.</p>\n<p></p>\n<p><strong>Key Responsibilities:</strong></p>\n<ul>  <li>Design,      develop, and maintain scalable and secure backend services using C# and      .NET/.NET Core.</li>  <li>Build      and document RESTful APIs for internal and      external consumption.</li>  <li>Implement      data access layers using Entity Framework Core.</li>  <li>Write      clean, maintainable, and testable code following best practices and design      patterns (Decorators, Commands)</li>  <li>Participate      in code reviews, provide constructive feedback, and ensure adherence to      coding standards</li>  <li>Troubleshoot,      debug, and resolve application issues in production and development      environments</li>  <li>Integrate      with third-party APIs and services, ensuring reliability and performance</li>  <li>Contribute      to the architecture and design of microservices and distributed systems</li>  <li>Maintain      CI/CD pipelines and support automated deployment processes</li>  <li>Keep      up-to-date with emerging backend technologies and recommend improvements</li> </ul>\n<p><strong><br></strong></p>\n<p><strong>Required Qualifications:</strong></p>\n<ul>  <li>Bachelor’s      degree in Computer Science, Software Engineering, or a related field.</li>  <li>5+      years of professional experience developing backend applications with C#      and .NET/.NET Core</li>  <li>Strong      expertise in ASP.NET Core, Web API, and Entity Framework Core</li>  <li>Experience      with RESTful API design, versioning, and documentation (e.g.,      Swagger/OpenAPI).</li>  <li>Solid      understanding of object-oriented programming (OOP) and SOLID principles</li>  <li>Familiarity      with unit testing frameworks (e.g., xUnit, NUnit) and mocking libraries.</li>  <li>Experience      with asynchronous programming, dependency injection, and middleware</li>  <li>Knowledge      of authentication/authorization concepts, including JWT, OAuth2, and      OpenID Connect.</li>  <li>Comfortable      working with&nbsp; CI/CD pipelines, and      DevOps tools (e.g., Azure DevOps)</li>  <li>Understanding      of microservices, message queues (e.g., RabbitMQ, Azure Service Bus), and      distributed systems</li> </ul>\n<p><strong><br></strong></p>\n<p><strong>Good To have:</strong></p>\n<ul>  <li>Exposure      to Domain-Driven Design (DDD) and event-driven architectures.</li>  <li>Familiarity      with version control systems like Azure Devops.</li></ul>\n<p></p>\n<p><strong>PHYSICAL REQUIREMENTS:</strong></p>\n<p>The physical requirements described here are representative of those that must be met by an employee to successfully&nbsp;perform the essential functions of the job.</p>\n<p>While performing the duties of this job, the employee is regularly required to sit; use hands to manipulate objects, tools or&nbsp;controls; reach with hands and arms; and talk and hear. Specific vision abilities required by this job include close vision,&nbsp;distance vision, peripheral vision, depth perception and the ability to adjust focus.</p>\n<p>Noise level in the work environment is&nbsp;usually quiet</p>\n<p></p>\n<p><strong>Support Services Group</strong> is a CX solutions company who creates amazing experiences for the world’s best brands and their customers. We’re an ambitious team of innovators, risk-takers, and game-changers: the kind of folks who thrive on solving complex problems.</p>"
+ },
+ {
+  "id": "5958b9530413",
+  "friendly_id": "5958b9530413-cebu-international-csr-voice-property-community-management-account",
+  "name": "CEBU International CSR | Voice | Property & Community Management Account",
+  "url": "https://ssg-corp.breezy.hr/p/5958b9530413-cebu-international-csr-voice-property-community-management-account",
+  "published_date": "2026-09-23T13:13:00.545Z",
+  "type": {
+   "id": "fullTime",
+   "name": "Full-Time"
+  },
+  "location": {
+   "country": {
+    "name": "Philippines",
+    "id": "PH"
+   },
+   "city": "Cebu City",
+   "primary": true,
+   "is_remote": false,
+   "name": "Cebu City, PH",
+   "id": "5b35ed15bc75"
+  },
+  "department": null,
+  "salary": "",
+  "company": {
+   "name": "Support Services Group",
+   "logo_url": null,
+   "friendly_id": "ssg-corp",
+   "isMultipleLocationsEnabled": true
+  },
+  "locations": [
+   {
+    "country": {
+     "name": "Philippines",
+     "id": "PH"
+    },
+    "city": "Cebu City",
+    "primary": true,
+    "is_remote": false,
+    "name": "Cebu City, PH",
+    "id": "5b35ed15bc75"
+   }
+  ],
+  "description": "<h2>About the Call Center Representative Position</h2>\n<p>We’re seeking a personable, customer service-oriented individual to join our team as a Call Center Representative. As the primary link between our company and both current and potential clients, you’ll be responsible for providing top-notch assistance to those reaching out to us over the phone.</p>\n<p>In addition to having excellent customer service skills, you’ll also need to be detail-oriented and able to find solutions in a timely, efficient manner.</p>\n<h2>Call Center Representative Responsibilities</h2>\n<ul>\n\t<li>Handle inbound and outbound client calls in a timely manner</li>\n\t<li>Follow company’s call center scripts</li>\n\t<li>Respond to customer needs efficiently and accurately, whether troubleshooting a problem, fielding a complaint, or assisting with other issues</li>\n\t<li>Work with the client to verify or clarify information</li>\n\t<li>Diffuse angry or upset clients as needed</li>\n\t<li>Build relationships with customers based on trust and reliability&nbsp;</li>\n\t<li>Record all conversations in CRM software, leaving accurate notes in case the client calls back and needs further assistance</li>\n\t<li>Make sales or recommend additional services and products to customers</li>\n\t<li>Attend all necessary training as needed</li>\n</ul>\n<h2>Call Center Representative Requirements</h2>\n<ul><li>At least Senior High School Graduate (SHS).</li><li>Good communication skills in English.</li><li>Basic computer navigation and typing skills.</li><li>Willing to learn and receive training.</li><li>Positive attitude and strong customer service orientation.</li><li>Ability to follow instructions and company procedures.</li><li>Comfortable working in a fast-paced environment.</li><li>Willing to work onsite and/or on a shifting schedule, if required.</li><li>Ability to handle customer inquiries professionally and courteously.</li><li>No prior call center experience required; fresh graduates and career starters are welcome to apply.</li></ul>\n<ul>\n\t</ul>\n<p></p>"
+ },
+ {
+  "id": "16bd33721adf",
+  "friendly_id": "16bd33721adf-cr-retention-sales-specialist",
+  "name": "CR Retention / Sales Specialist",
+  "url": "https://ssg-corp.breezy.hr/p/16bd33721adf-cr-retention-sales-specialist",
+  "published_date": "2026-05-07T21:19:18.300Z",
+  "type": {
+   "id": "fullTime",
+   "name": "Full-Time"
+  },
+  "location": {
+   "country": {
+    "name": "Costa Rica",
+    "id": "CR"
+   },
+   "city": "Heredia (Eurocenter)",
+   "primary": true,
+   "is_remote": false,
+   "name": "Heredia (Eurocenter), CR",
+   "id": "2232913b3608"
+  },
+  "department": null,
+  "salary": "$5.00 – $6.50 / hour",
+  "company": {
+   "name": "Support Services Group",
+   "logo_url": null,
+   "friendly_id": "ssg-corp",
+   "isMultipleLocationsEnabled": true
+  },
+  "locations": [
+   {
+    "country": {
+     "name": "Costa Rica",
+     "id": "CR"
+    },
+    "city": "Heredia (Eurocenter)",
+    "primary": true,
+    "is_remote": false,
+    "name": "Heredia (Eurocenter), CR",
+    "id": "2232913b3608"
+   }
+  ],
+  "description": "<h3><strong>Join Our Talent Pool for BPO Sales Roles</strong></h3>\n<p>Are you a motivated, results-driven individual with experience in <strong>BPO sales</strong>? If you know how to close deals, handle objections, and hit performance targets, we want to connect with you.</p>\n<p>We’re building a <strong>sales-focused talent pool</strong> for future openings. If you meet the requirements and are passionate about delivering results, apply now and be among the first considered for our next class.</p>\n<h3><strong>What You’ll Do</strong></h3>\n<p>As a <strong>Sales Representative</strong>, your responsibilities may include:</p>\n<ul>\n<li>\n<p>Making <strong>inbound and outbound calls</strong> to potential or existing customers</p>\n</li>\n<li>\n<p>Promoting and selling <strong>products</strong>, <strong>services</strong>, or <strong>upgrades</strong> based on customer needs</p>\n</li>\n<li>\n<p>Explaining features, pricing, terms, and promotions clearly and professionally</p>\n</li>\n<li>\n<p>Handling objections and closing sales using persuasive, customer-first approaches</p>\n</li>\n<li>\n<p>Recording customer information and interactions in <strong>CRM tools</strong></p>\n</li>\n<li>\n<p>Meeting and exceeding <strong>sales targets</strong>, <strong>conversion goals</strong>, and <strong>call quality metrics</strong></p>\n</li>\n<li>\n<p>Collaborating with your team and supervisors to continuously improve performance</p>\n</li>\n</ul>\n<h3><strong>Who We’re Looking For</strong></h3>\n<p>To qualify for this role, you must have:</p>\n<ul>\n<li>\n<p><strong>At least 6 months of sales experience</strong> in a <strong>BPO or call center environment</strong></p>\n</li>\n<li>\n<p>Proven ability to meet or exceed <strong>sales quotas</strong> or <strong>commission-based goals</strong></p>\n</li>\n<li>\n<p>Strong verbal communication skills and persuasive selling techniques</p>\n</li>\n<li>\n<p>Fluency in <strong>English</strong> (spoken and written – B2 level or higher)</p>\n</li>\n<li>\n<p>Comfort working in fast-paced, high-volume environments</p>\n</li>\n<li>\n<p>A high school diploma or equivalent</p>\n</li>\n<li>\n<p>Experience using <strong>CRM systems</strong>, <strong>scripts</strong>, and productivity tools</p>\n</li>\n</ul>\n<h3><strong>Preferred Experience</strong></h3>\n<ul>\n<li>\n<p>Previous roles in <strong>telemarketing</strong>, <strong>upselling</strong>, <strong>retention</strong>, or <strong>cross-selling</strong></p>\n</li>\n<li>\n<p>Familiarity with platforms like <strong>Salesforce</strong>, <strong>Zendesk</strong>, or <strong>Five9</strong></p>\n</li>\n<li>\n<p>Experience handling <strong>cold calls</strong>, <strong>warm leads</strong>, or <strong>contract renewals</strong></p>\n</li>\n</ul>\n<h3><strong>Top Skills for Success</strong></h3>\n<ul>\n<li>\n<p>Confidence, resilience, and a goal-oriented mindset</p>\n</li>\n<li>\n<p>Excellent <strong>communication</strong>, <strong>persuasion</strong>, and <strong>negotiation</strong> skills</p>\n</li>\n<li>\n<p>Ability to manage <strong>rejections</strong> while staying focused on targets</p>\n</li>\n<li>\n<p>Strong <strong>typing</strong>, <strong>multitasking</strong>, and <strong>time management</strong> skills</p>\n</li>\n<li>\n<p>Willingness to follow scripts while maintaining a natural and engaging tone</p>\n</li>\n</ul>\n<h3><strong>Why Join Our Talent Network?</strong></h3>\n<p>This is your chance to be one of the first considered for upcoming <strong>sales classes</strong> in a company that values performance, professional development, and growth potential. If you're looking to take your <strong>BPO sales career</strong> to the next level, we want to hear from you.</p>"
+ },
+ {
+  "id": "26d87665a903",
+  "friendly_id": "26d87665a903-customer-service-representative",
+  "name": "Customer Service Representative",
+  "url": "https://ssg-corp.breezy.hr/p/26d87665a903-customer-service-representative",
+  "published_date": "2026-07-02T19:39:50.210Z",
+  "type": {
+   "id": "temporary",
+   "name": "Temporary"
+  },
+  "location": {
+   "country": {
+    "name": "Canada",
+    "id": "CA"
+   },
+   "state": {
+    "id": "ON",
+    "name": "Ontario"
+   },
+   "city": "Toronto",
+   "primary": true,
+   "is_remote": false,
+   "remote_details": {
+    "value": "remote-location",
+    "label": "Fully remote, within chosen location(s)"
+   },
+   "name": "Toronto, ON",
+   "id": "d7362b3324ab"
+  },
+  "department": "Customer Service",
+  "salary": "$19.35+ / hour",
+  "company": {
+   "name": "Support Services Group",
+   "logo_url": null,
+   "friendly_id": "ssg-corp",
+   "isMultipleLocationsEnabled": true
+  },
+  "locations": [
+   {
+    "country": {
+     "name": "Canada",
+     "id": "CA"
+    },
+    "state": {
+     "id": "ON",
+     "name": "Ontario"
+    },
+    "city": "Toronto",
+    "primary": true,
+    "is_remote": false,
+    "remote_details": {
+     "value": "remote-location",
+     "label": "Fully remote, within chosen location(s)"
+    },
+    "name": "Toronto, ON",
+    "id": "d7362b3324ab"
+   }
+  ],
+  "description": "<h2>About the Call Center Representative Position</h2>\n<p>We’re seeking a personable, customer service oriented individual to join our team as a Seasonal Call Center Representative. As the primary link between our company and both current and potential clients, you’ll be responsible for providing top-notch assistance to those reaching out to us over the phone.</p>\n<p>In addition to having excellent customer service skills, you’ll also need to be detail-oriented and able to find solutions in a timely, efficient manner.</p>\n<h2>Call Center Representative Responsibilities</h2>\n<ul>\n\t<li>Handle inbound and outbound client calls in a timely manner</li>\n\t<li>Follow company’s call center scripts</li>\n\t<li>Respond to customer needs efficiently and accurately, whether troubleshooting a problem, fielding a complaint, or assisting with other issues</li>\n\t<li>Work with the client to verify or clarify information</li>\n\t<li>Diffuse angry or upset clients as needed</li>\n\t<li>Build relationships with customers based on trust and reliability&nbsp;</li>\n\t<li>Record all conversations in CRM software, leaving accurate notes in case the client calls back and needs further assistance</li>\n\t<li>Make sales or recommend additional services and products to customers</li>\n\t<li>Attend all necessary training as needed</li>\n</ul>\n<h2>Call Center Representative Requirements</h2>\n<ul>\n\t<li>Must be able to speak French and English&nbsp;</li><li>Previous experience in a customer service role, preferably as a Call Center Representative</li>\n\t<li>High school diploma/GED preferred</li>\n\t<li>Exceptional customer service skills</li>\n\t<li>Excellent organizational and multitasking skills</li>\n\t<li>Superb verbal communication skills</li>\n\t<li>Proficiency with computers, particularly CRM software and Microsoft Office Suite</li>\n\t<li>Quick and accurate typing skills</li>\n\t<li>Strong critical thinking and decision making skills</li>\n\t<li>Bilingual speakers preferred</li>\n</ul>\n<p>Salary - $19.35</p>\n<p>We use Artificial Intelligence (AI) in the screening process</p>\n<p>Seasonal contract to go through December 2026</p>"
+ },
+ {
+  "id": "e75cea4657ad",
+  "friendly_id": "e75cea4657ad-dr-customer-care",
+  "name": "DR Customer Care",
+  "url": "https://ssg-corp.breezy.hr/p/e75cea4657ad-dr-customer-care",
+  "published_date": "2026-09-04T14:27:20.317Z",
+  "type": {
+   "id": "fullTime",
+   "name": "Full-Time"
+  },
+  "location": {
+   "country": {
+    "name": "Dominican Republic",
+    "id": "DO"
+   },
+   "city": "Santiago",
+   "primary": true,
+   "is_remote": false,
+   "name": "Santiago, DO",
+   "id": "2378284dac3a"
+  },
+  "department": null,
+  "salary": "RD$210 – RD$300 / hour",
+  "company": {
+   "name": "Support Services Group",
+   "logo_url": null,
+   "friendly_id": "ssg-corp",
+   "isMultipleLocationsEnabled": true
+  },
+  "locations": [
+   {
+    "country": {
+     "name": "Dominican Republic",
+     "id": "DO"
+    },
+    "city": "Santiago",
+    "primary": true,
+    "is_remote": false,
+    "name": "Santiago, DO",
+    "id": "2378284dac3a"
+   }
+  ],
+  "description": "<p>Location: Santiago de los Caballeros, Dominican Republic.<br><br><strong>Join Our Talent Network for Customer Service Roles</strong></p>\n<p>If you’ve ever worked in a <strong>call center</strong>, <strong>retail store</strong>, <strong>pharmacy</strong>, <strong>bank</strong>, or any job where people asked you for help — we want to hear from you.</p>\n<p>We’re building a <strong>talent pool</strong> for upcoming <strong>customer service opportunities</strong>. If you’re comfortable talking to clients, solving problems, and staying calm under pressure, this might be the right fit for you.</p>\n<h3><strong>What You’ll Do</strong></h3>\n<p>As a <strong>Customer Service Representative</strong>, your role may include:</p>\n<ul>\n<li>\n<p>Answering inbound or outbound calls, chats, or emails from customers</p>\n</li>\n<li>\n<p>Following scripts to deliver consistent, high-quality service</p>\n</li>\n<li>\n<p>Resolving questions related to products, billing, or technical support</p>\n</li>\n<li>\n<p>Recording all customer interactions using CRM tools</p>\n</li>\n<li>\n<p>Handling complaints and de-escalating issues with empathy</p>\n</li>\n<li>\n<p>Verifying and clarifying information with customers</p>\n</li>\n<li>\n<p>Promoting additional products or services when appropriate</p>\n</li>\n<li>\n<p>Contributing to a team-focused, goal-driven environment</p>\n</li>\n</ul>\n<h3><strong>What We’re Looking For</strong></h3>\n<p>We value real-world experience. If you’ve worked in customer-facing roles and enjoy helping others, we encourage you to apply. Ideal candidates have:</p>\n<ul>\n<li>\n<p>Experience in customer service, retail, sales, or BPO/call center environments</p>\n</li>\n<li>\n<p>Job titles like agente, asistente, CSR, vendedora, or promotora</p>\n</li>\n<li>\n<p>Worked for companies like Teleperformance, Synergies, UNO, CCD, VoiceTeam, SSG, or similar</p>\n</li>\n<li>\n<p>Strong communication skills in both spoken and written English</p>\n</li>\n</ul>\n<h3><strong>What You Bring</strong></h3>\n<ul>\n<li>\n<p>Excellent communication, listening, and problem-solving skills</p>\n</li>\n<li>\n<p>Typing speed and multitasking ability</p>\n</li>\n<li>\n<p>Basic knowledge of Microsoft Office and CRM platforms (like Zendesk, Salesforce, or Five9)</p>\n</li>\n<li>\n<p>Ability to stay calm and professional under pressure</p>\n</li>\n<li>\n<p>Strong attention to detail and organizational skills</p>\n</li>\n<li>\n<p>Flexibility to work inbound or outbound roles and follow scripts while staying natural</p>\n</li>\n</ul>\n<h3><strong>Nice to Have</strong></h3>\n<ul>\n<li>\n<p>Experience resolving technical issues, billing questions, or handling escalations</p>\n</li>\n<li>\n<p>Ability to upsell or promote additional services</p>\n</li>\n<li>\n<p>Supportive of team goals and open to training and feedback</p>\n</li>\n</ul>\n<h3><strong>Your Experience Matters</strong></h3>\n<p>We know that great service skills don’t always show up on paper. If you’ve been the person others count on — at work, with customers, or in high-pressure situations — we believe you have something valuable to offer.</p>\n<p>Join our talent network and be considered for future roles as they open.</p>"
+ },
+ {
+  "id": "7f4877e9f32f",
+  "friendly_id": "7f4877e9f32f-elite-outbound-healthcare",
+  "name": "Elite Outbound Healthcare",
+  "url": "https://ssg-corp.breezy.hr/p/7f4877e9f32f-elite-outbound-healthcare",
+  "published_date": "2026-09-21T13:50:13.071Z",
+  "type": {
+   "id": "fullTime",
+   "name": "Full-Time"
+  },
+  "location": {
+   "country": {
+    "name": "United States",
+    "id": "US"
+   },
+   "state": {
+    "id": "TX",
+    "name": "Texas"
+   },
+   "city": "Waco",
+   "primary": true,
+   "streetAddress": {
+    "location": "601 Texas Central Pkwy, Waco, TX 76712, USA",
+    "components": [
+     {
+      "long_name": "601",
+      "short_name": "601",
+      "types": [
+       "street_number"
+      ]
+     },
+     {
+      "long_name": "Texas Central Parkway",
+      "short_name": "Texas Central Pkwy",
+      "types": [
+       "route"
+      ]
+     },
+     {
+      "long_name": "West Waco",
+      "short_name": "West Waco",
+      "types": [
+       "neighborhood",
+       "political"
+      ]
+     },
+     {
+      "long_name": "Waco",
+      "short_name": "Waco",
+      "types": [
+       "locality",
+       "political"
+      ]
+     },
+     {
+      "long_name": "McLennan County",
+      "short_name": "McLennan County",
+      "types": [
+       "administrative_area_level_2",
+       "political"
+      ]
+     },
+     {
+      "long_name": "Texas",
+      "short_name": "TX",
+      "types": [
+       "administrative_area_level_1",
+       "political"
+      ]
+     },
+     {
+      "long_name": "United States",
+      "short_name": "US",
+      "types": [
+       "country",
+       "political"
+      ]
+     },
+     {
+      "long_name": "76712",
+      "short_name": "76712",
+      "types": [
+       "postal_code"
+      ]
+     }
+    ]
+   },
+   "is_remote": false,
+   "name": "Waco, TX",
+   "id": "a8740884ad32"
+  },
+  "department": null,
+  "salary": "$19 – $20 / hour",
+  "company": {
+   "name": "Support Services Group",
+   "logo_url": null,
+   "friendly_id": "ssg-corp",
+   "isMultipleLocationsEnabled": true
+  },
+  "locations": [
+   {
+    "country": {
+     "name": "United States",
+     "id": "US"
+    },
+    "state": {
+     "id": "TX",
+     "name": "Texas"
+    },
+    "city": "Waco",
+    "primary": true,
+    "streetAddress": {
+     "location": "601 Texas Central Pkwy, Waco, TX 76712, USA",
+     "components": [
+      {
+       "long_name": "601",
+       "short_name": "601",
+       "types": [
+        "street_number"
+       ]
+      },
+      {
+       "long_name": "Texas Central Parkway",
+       "short_name": "Texas Central Pkwy",
+       "types": [
+        "route"
+       ]
+      },
+      {
+       "long_name": "West Waco",
+       "short_name": "West Waco",
+       "types": [
+        "neighborhood",
+        "political"
+       ]
+      },
+      {
+       "long_name": "Waco",
+       "short_name": "Waco",
+       "types": [
+        "locality",
+        "political"
+       ]
+      },
+      {
+       "long_name": "McLennan County",
+       "short_name": "McLennan County",
+       "types": [
+        "administrative_area_level_2",
+        "political"
+       ]
+      },
+      {
+       "long_name": "Texas",
+       "short_name": "TX",
+       "types": [
+        "administrative_area_level_1",
+        "political"
+       ]
+      },
+      {
+       "long_name": "United States",
+       "short_name": "US",
+       "types": [
+        "country",
+        "political"
+       ]
+      },
+      {
+       "long_name": "76712",
+       "short_name": "76712",
+       "types": [
+        "postal_code"
+       ]
+      }
+     ]
+    },
+    "is_remote": false,
+    "name": "Waco, TX",
+    "id": "a8740884ad32"
+   }
+  ],
+  "description": "<h2>About the Call Center Representative Position</h2>\n<p>We are seeking a highly motivated people to join our growing team. In this role, you will connect with healthcare facilities and medical practices to schedule appointments and introductory meetings for our Elite healthcare program. This is an ONSITE position only&nbsp;</p>\n<p>The ideal candidate has prior call center experience, strong communication skills, and the ability to build rapport quickly while confidently explaining program benefits and securing appointments.</p>\n<h2>Key Responsibilities</h2>\n<ul>\n\t<li>Conduct outbound calls to healthcare centers, clinics, and medical practices to schedule appointments for the Elite program.</li><li>Engage decision-makers professionally and effectively to introduce the program and secure meetings</li><li>Build and maintain positive relationships with healthcare professionals and administrative staff.</li><li>Accurately document call outcomes, appointment details, and customer interactions in company systems.</li><li>Follow established outreach processes and meet daily activity and appointment-setting goals</li><li>Handle objections professionally and confidently while maintaining a consultative approach.</li><li>Coordinate scheduling and appointment details with internal teams.</li><li>Maintain a thorough understanding of the Elite program and its value to healthcare organizations.</li><li>Ensure all communications meet quality, compliance, and customer service standards.</li>\n</ul>\n<h2>Qualifications &amp; Skills</h2>\n<p>Required<br>\n</p>\n<ul>\n<li>\nMinimum 1 year of call center experience.\n<br>\n</li><li>\nStrong verbal and written communication skills.\n<br>\n</li><li>\nPrevious experience in outbound calling, appointment setting, customer service, or sales.\n<br>\n</li><li>\nComfortable speaking with healthcare professionals and business decision-makers.\n<br>\n</li><li>\nAbility to build rapport quickly and maintain a professional demeanor.\n<br>\n</li><li>\nStrong organizational skills and attention to detail.\n<br>\n</li><li>\nProficiency with computer applications, CRM systems, and Microsoft Office.\n<br>\n</li><li>\nAbility to work independently while meeting performance goals.</li>\n</ul>\n<h3>Preferred</h3>\n<ul>\n<li>\nHealthcare industry experience or familiarity with medical offices, clinics, hospitals, or healthcare administration.\n</li>\n<li>\nExperience in appointment setting, lead generation, business development, or inside sales.\n</li>\n<li>\nKnowledge of healthcare terminology and workflows.</li></ul>\n<h2>What Success Looks Like</h2>\n<ul>\n<li>\nConsistently achieving goals.\n</li>\n<li>\nMaintaining high-quality customer interactions and professionalism.\n</li>\n<li>\nAccurately documenting outreach activities and outcomes.\n</li>\n<li>\nDemonstrating strong attendance, reliability, and accountability.\n</li>\n<li>\nContributing to the growth and success of the Elite program through effective engagement with healthcare organizations.</li></ul>"
+ },
+ {
+  "id": "bcf5df2f3a94",
+  "friendly_id": "bcf5df2f3a94-french-customer-service-representative",
+  "name": "French Customer Service Representative",
+  "url": "https://ssg-corp.breezy.hr/p/bcf5df2f3a94-french-customer-service-representative",
+  "published_date": "2026-09-03T19:16:17.973Z",
+  "type": {
+   "id": "fullTime",
+   "name": "Full-Time"
+  },
+  "location": {
+   "country": {
+    "name": "Canada",
+    "id": "CA"
+   },
+   "state": {
+    "id": "NB",
+    "name": "New Brunswick"
+   },
+   "primary": true,
+   "is_remote": false,
+   "name": "Canada"
+  },
+  "department": "Customer Service",
+  "salary": "$19.35+ / hour",
+  "company": {
+   "name": "Support Services Group",
+   "logo_url": null,
+   "friendly_id": "ssg-corp",
+   "isMultipleLocationsEnabled": true
+  },
+  "locations": [
+   {
+    "country": {
+     "name": "Canada",
+     "id": "CA"
+    },
+    "state": {
+     "id": "ON",
+     "name": "Ontario"
+    },
+    "city": "Toronto",
+    "primary": false,
+    "is_remote": false,
+    "name": "Toronto, ON",
+    "id": "6a7cca5d501a"
+   },
+   {
+    "country": {
+     "name": "Canada",
+     "id": "CA"
+    },
+    "state": {
+     "id": "NB",
+     "name": "New Brunswick"
+    },
+    "primary": true,
+    "is_remote": false,
+    "name": "NB, CA",
+    "id": "79332e31907f"
+   }
+  ],
+  "description": "<h2>About the Call Center Representative Position</h2>\n<p>We’re seeking a personable, customer service oriented individual to join our team as a Call Center Representative. As the primary link between our company and both current and potential clients, you’ll be responsible for providing top-notch assistance to those reaching out to us over the phone.</p>\n<p>In addition to having excellent customer service skills, you’ll also need to be detail-oriented and able to find solutions in a timely, efficient manner.</p>\n<h2>Call Center Representative Responsibilities</h2>\n<ul>\n\t<li>Handle inbound and outbound client calls in a timely manner</li>\n\t<li>Follow company’s call center scripts</li>\n\t<li>Respond to customer needs efficiently and accurately, whether troubleshooting a problem, fielding a complaint, or assisting with other issues</li>\n\t<li>Work with the client to verify or clarify information</li>\n\t<li>Diffuse angry or upset clients as needed</li>\n\t<li>Build relationships with customers based on trust and reliability&nbsp;</li>\n\t<li>Record all conversations in CRM software, leaving accurate notes in case the client calls back and needs further assistance</li>\n\t<li>Make sales or recommend additional services and products to customers</li>\n\t<li>Attend all necessary training as needed</li>\n</ul>\n<h2>Call Center Representative Requirements</h2>\n<ul>\n\t<li>Must be able to speak French and English&nbsp;</li><li>Previous experience in a customer service role, preferably as a Call Center Representative</li>\n\t<li>High school diploma/GED preferred</li>\n\t<li>Exceptional customer service skills</li>\n\t<li>Excellent organizational and multitasking skills</li>\n\t<li>Superb verbal communication skills</li>\n\t<li>Proficiency with computers, particularly CRM software and Microsoft Office Suite</li>\n\t<li>Quick and accurate typing skills</li>\n\t<li>Strong critical thinking and decision making skills</li>\n\t<li>Bilingual speakers preferred</li>\n</ul>\n<p>Salary - $19.00</p>\n<p>We use Artificial Intelligence (AI) in the screening process</p>"
+ },
+ {
+  "id": "5a4de9273eb1",
+  "friendly_id": "5a4de9273eb1-jr-network-and-security-administrator",
+  "name": "Jr Network and Security Administrator",
+  "url": "https://ssg-corp.breezy.hr/p/5a4de9273eb1-jr-network-and-security-administrator",
+  "published_date": "2026-09-16T16:41:43.618Z",
+  "type": {
+   "id": "fullTime",
+   "name": "Full-Time"
+  },
+  "location": {
+   "country": {
+    "name": "Mexico",
+    "id": "MX"
+   },
+   "city": "Hermosillo",
+   "primary": true,
+   "is_remote": true,
+   "name": "Hermosillo, MX",
+   "id": "fc2fd111ec4e",
+   "remote_details": {
+    "value": "hybrid",
+    "label": "Hybrid (Some remote, some in person)"
+   }
+  },
+  "department": "Staff",
+  "salary": "",
+  "company": {
+   "name": "Support Services Group",
+   "logo_url": null,
+   "friendly_id": "ssg-corp",
+   "isMultipleLocationsEnabled": true
+  },
+  "locations": [
+   {
+    "country": {
+     "name": "Mexico",
+     "id": "MX"
+    },
+    "city": "Hermosillo",
+    "primary": true,
+    "is_remote": true,
+    "name": "Hermosillo, MX",
+    "id": "fc2fd111ec4e",
+    "remote_details": {
+     "value": "hybrid",
+     "label": "Hybrid (Some remote, some in person)"
+    }
+   }
+  ],
+  "description": "<h1>Junior Network &amp; Security Administrator</h1>\n<p><strong>Location:</strong> Hermosillo, Sonora, Mexico<br><strong>Department:</strong> Network &amp; Security<br><strong>Reports to:</strong> Network &amp; Security Manager<br><strong>Employment Type:</strong> Full-Time<br><strong>Work Arrangement:</strong> Hybrid (80%&nbsp;remote)</p>\n<h2>About the Role</h2>\n<p>Support Services Group is looking for a motivated and detail-oriented <strong>Junior Network &amp; Security Administrator</strong> to join our Network &amp; Security team in a fast-paced BPO environment.</p>\n<p>In this role, you will support the day-to-day operations of our global enterprise network, troubleshoot connectivity issues, assist with firewall and switching operations, and help maintain the security, stability, and reliability of our infrastructure.</p>\n<p>This is an excellent opportunity for a networking professional looking to develop hands-on experience with enterprise-grade network and security technologies.</p>\n<h2>Key Responsibilities</h2>\n<h3>Network Operations &amp; Troubleshooting</h3>\n<ul><li>Troubleshoot and resolve network-related incidents, including connectivity issues, performance degradation, and application access failures.</li><li>Perform root-cause analysis and document findings for recurring incidents.</li><li>Assist in maintaining stable and highly available network services across multiple global sites.</li></ul>\n<h3>Monitoring &amp; Observability</h3>\n<ul><li>Monitor network devices, applications, and infrastructure health using the <strong>SolarWinds Observability Platform</strong>.</li><li>Respond to alerts and take corrective action as needed.</li><li>Review monitoring dashboards to identify potential risks or developing issues.</li></ul>\n<h3>Firewall &amp; Security Operations</h3>\n<ul><li>Assist with the management and maintenance of <strong>Palo Alto Networks firewalls</strong>, including software upgrades and configuration changes.</li><li>Assist with firewall rule creation, optimization, and maintenance of security policies.</li><li>Support the onboarding of new user groups and implementation of segmented security policies based on business requirements.</li><li>Maintain visibility and governance over sanctioned and unsanctioned applications across departments.</li></ul>\n<h3>Switching &amp; Infrastructure Maintenance</h3>\n<ul><li>Perform software upgrades and basic configuration changes on <strong>Cisco switches</strong> across offices and data centers.</li><li>Assist with VLAN assignments and port configurations.</li><li>Maintain accurate network documentation and configuration records.</li></ul>\n<h3>Security Compliance &amp; Best Practices</h3>\n<ul><li>Follow established change management procedures and internal security policies.</li><li>Contribute to maintaining least-privilege access, application control, and overall security hygiene.</li><li>Support the implementation of network and security best practices.</li></ul>\n<h3>Documentation &amp; Collaboration</h3>\n<ul><li>Maintain accurate network diagrams, inventory records, and configuration documentation.</li><li>Collaborate with IT, Security, and Operations teams to support business initiatives and new deployments.</li><li>Clearly document troubleshooting steps, findings, and resolutions.</li></ul>\n<h2>Required Qualifications</h2>\n<ul><li><strong>1–2 years of experience</strong> in Network Administration, Network Engineering, Security Engineering, or a related field; strong internship or hands-on lab experience may also be considered.</li><li>Basic understanding of networking protocols and concepts, including <strong>TCP/IP, DNS, DHCP, VLANs, and routing fundamentals</strong>.</li><li>Familiarity with firewalls, preferably <strong>Palo Alto Networks</strong>.</li><li>Experience with network switches, preferably <strong>Cisco</strong>.</li><li>Ability to read and interpret monitoring tools such as <strong>SolarWinds</strong> or similar platforms.</li><li>Strong analytical and troubleshooting skills.</li><li>Ability to work in a <strong>24/7 BPO environment</strong>, including occasional off-hours maintenance windows.</li></ul>\n<h2>Preferred Skills</h2>\n<ul><li>Experience with <strong>PAN-OS, Panorama, Cisco IOS, or Cisco NX-OS</strong>.</li><li>Basic knowledge of application control, URL filtering, and enterprise security policies.</li><li>Exposure to <strong>ITIL</strong> or formal change management processes.</li><li>Relevant certifications such as <strong>CCNA, PCNSA, Network+, or Security+</strong> are a plus.</li></ul>\n<h2>Soft Skills</h2>\n<ul><li>Strong communication and documentation skills.</li><li>Ability to work independently and collaboratively as part of a team.</li><li>Detail-oriented and proactive approach to problem-solving.</li><li>Customer-focused mindset with the ability to effectively support internal stakeholders.</li><li>Willingness to learn and develop technical skills in a fast-paced environment.</li></ul>\n<h2>Why Join Us?</h2>\n<ul><li>Opportunity to grow within a <strong>global BPO enterprise network and security team</strong>.</li><li>Hands-on experience with enterprise-grade firewalls, switches, and monitoring platforms.</li><li>Collaborative work environment with continuous learning and training opportunities.</li><li>Opportunity to develop your career in <strong>network and security administration</strong>.</li></ul>"
+ }
+]

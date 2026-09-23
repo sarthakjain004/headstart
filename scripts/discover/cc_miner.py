@@ -159,6 +159,12 @@ ATS_PATTERNS = {
         "kind": "label",
         "patterns": [r"([a-z0-9][a-z0-9-]*)\.bamboohr\.com"],
     },
+    "breezy": {
+        # One host, the slug is the subdomain label (`{slug}.breezy.hr`), as for bamboohr.
+        "targets": ["breezy.hr"],
+        "kind": "label",
+        "patterns": [r"([a-z0-9][a-z0-9-]*)\.breezy\.hr"],
+    },
     "darwinbox": {
         "targets": ["darwinbox.in", "darwinbox.com"],
         "kind": "label",
