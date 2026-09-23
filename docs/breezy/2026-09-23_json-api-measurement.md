@@ -208,5 +208,7 @@ They are left as separate Boards (ADR-0181).
 
 `breezy.hr/sitemap.xml` (2,640 URLs) lists marketing pages only, and `*.breezy.hr` sits behind
 CloudFront with no tenant roster found. The pool is the existing `harvest` list (4,794), the
-upstream seed list (0 new), a Wayback CDX sweep of `breezy.hr` (`sub` style) and a Common Crawl
-sweep (`label` kind) over the last three years of indexes.
+upstream seed list (0 new) and a Wayback CDX sweep of `breezy.hr` (`sub` style). **Common Crawl
+was not measured:** `index.commoncrawl.org` returned an empty reply (curl 52) to every request on
+2026-09-23, so its contribution is unknown, not zero; `cc_miner.ATS_PATTERNS["breezy"]` (`label`
+kind) is wired for a later sweep.

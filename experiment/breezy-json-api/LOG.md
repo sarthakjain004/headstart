@@ -163,3 +163,10 @@ request to `fathom.breezy.hr/json`). The repo already keys the provider as `bree
 - **Spot check** (random, seed 8): live `ct-united-fc` 12, `grill-hero` 0,
   `gustav-technologies-inc` 0, `bond-pro-inc` 2, `coeur-d-alene-resort` 63 — each equal to a
   fresh fetch; dead `seabound`, `amitruck`, `beek`, `casa`, `dozens` — each 404.
+
+## 2026-09-23 — discovery
+
+- **Common Crawl: not measured — index unreachable.** `index.commoncrawl.org` answered every
+  request with an empty reply (curl 52) on 2026-09-23, from this machine and the orchestrator's,
+  so a `cc_miner.py` sweep would return zero while looking like "nothing found". It was not run;
+  the `ATS_PATTERNS["breezy"]` entry is wired for a later sweep. This is not a count of zero.
