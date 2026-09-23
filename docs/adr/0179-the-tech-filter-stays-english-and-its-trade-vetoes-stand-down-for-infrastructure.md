@@ -31,7 +31,7 @@ a multilingual role vocabulary.
    software, data, AI/ML, an enterprise platform, integration, communications or cyber work.
 
    Every real tech job these vetoes would otherwise have dropped carried one of those words, and
-   the list grew until that held. It was measured over the served table by reading all 6,865
+   the list grew until that held. It was measured over the served table by reading all 7,263
    lost titles: Oracle's "Site Engineer II" in `DC Ops`, "Site Engineer - IP Network", "Software
    QA/QC Engineer", an Epic "Bridges EDI Developer", "Senior Communications Engineer, Rail
    Systems".
@@ -59,18 +59,20 @@ a multilingual role vocabulary.
    the counts rising, and the titles are not listed there.
 7. **The strong list is tried only where a word starts**, including a lowercase/uppercase join.
    Python's `re` walks every alternative at every character, and version 4's longer list cost
-   2.4x; this is back to version 3's speed. It retires v3's accidental substring hits
+   2.4x; this brings it back to within about 8% of version 3's speed. It retires v3's accidental
+   substring hits
    ("Geotechnical Project Manager" as "technical project manager"). Where a v3 substring hit was
    a real tech job ("Multicloud Architect", "OutSystems Architect", "GPU Memory Subsystem
    Architect"), it is restored as an explicit spelling.
 
 ## Consequences
 
-- **Served table** (v654, 514,163 rows): the change removes 16,293 rows and adds 1. All 6,865
+- **Served table** (v654, 514,163 rows): the change removes 17,294 rows and adds 1. All 7,263
   lost titles were read, and every real tech job found among them was restored before the final
   figures.
-- **Pre-filter snapshot:** +1,852 in, −1,136 out.
-- **Blind hold-out:** recall is about 84.7% (77.6–89.7%) and precision about 81.1%.
+- **Pre-filter snapshot:** +1,852 in, −1,260 out.
+- **Blind hold-out** (row-weighted): recall is about 84.6%, or 66.1% if every ambiguous title
+  counts as tech, and precision is about 82.0%.
 - Detail: `docs/tech-filter/2026-09-23_spellings-and-trades.md`.
 - Non-English tech jobs stay out of the feed and trends as well as the index. If multilingual
   retrieval is ever added, this gate has to be widened in the same change, or those jobs will
