@@ -1077,3 +1077,40 @@ def test_version_4_critique_keeps(title, department):
 )
 def test_version_4_critique_refuses(title, department):
     assert is_tech(title, department or None) is False, f"non-tech kept -> {title!r}"
+
+
+# --- the blind hold-out ------------------------------------------------------------------------
+#
+# 800 English Indeed titles drawn at random AFTER version 4 was final — 500 it drops, 300 it
+# keeps, none already in the labelled set above — and labelled blind by two labellers whose every
+# output line echoed its title (a first pass had drifted a row out of alignment; this one
+# verified 800/800). 783 agreed; the 17 disagreements were settled by hand. Weighted back to the
+# 557,580-row population it puts recall at ~84.7% (77.6-89.7%) and precision at ~81.1%
+# (docs/tech-filter/2026-09-23_spellings-and-trades.md).
+#
+# Nothing was tuned on it, and the titles are deliberately not listed here: its value is being an
+# honest measurement. These tests only stop it getting worse. A change that lowers either count
+# may lower the ceiling with it; one that raises either needs a reason, not a new ceiling.
+
+_HOLDOUT = Path(__file__).parent / "fixtures" / "tech_filter_holdout.tsv"
+_HOLDOUT_MISS_CEILING = 22  # tech titles dropped, of 241
+_HOLDOUT_FALSE_POSITIVE_CEILING = 51  # non-tech titles kept, of 487
+
+
+def _holdout(label: str) -> list[str]:
+    with _HOLDOUT.open(encoding="utf-8", newline="") as fh:
+        return [
+            r["title"]
+            for r in csv.DictReader(fh, delimiter="\t")
+            if r["label"] == label
+        ]
+
+
+def test_the_hold_out_drops_no_more_tech_than_it_did():
+    missed = [t for t in _holdout("tech") if not is_tech(t)]
+    assert len(missed) <= _HOLDOUT_MISS_CEILING, missed
+
+
+def test_the_hold_out_keeps_no_more_non_tech_than_it_did():
+    kept = [t for t in _holdout("not_tech") if is_tech(t)]
+    assert len(kept) <= _HOLDOUT_FALSE_POSITIVE_CEILING, kept
