@@ -49,6 +49,21 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # `jobvite._MAX_PAGES` (10,000 at 50 a page = 200), whose comment calls the cap "not
         # a cap anyone is expected to reach".
         "jobvite:jvauto",
+        # Pinpoint's test and demo tenants, each confirmed live with postings on 2026-09-23 by
+        # reading its board title and posting titles rather than its slug. `hooli` (the sitcom
+        # company) is the vendor's own: "Elvin new test", "Anca's test", "SUP-7257 Canadian
+        # account number". `acme` titles itself "ACME candidate 1" and posts "Test Job 1..3";
+        # `developers-test` is "Developer Acme"; `integration-testing` is "Integration Testing";
+        # `joe-testing` is "Joe's Test Platform" ("Test Job - do not apply"); `myinterviewdemo`
+        # is an integration partner's demo board ("test create job", "Test public workflow",
+        # "Simon Test 03.09.2026"). The `*-sandbox` tenants need no entry: `is_nonprod` already
+        # settles them dead.
+        "pinpoint:acme",
+        "pinpoint:developers-test",
+        "pinpoint:hooli",
+        "pinpoint:integration-testing",
+        "pinpoint:joe-testing",
+        "pinpoint:myinterviewdemo",
         # Zwayam's own demo/QA tenants, confirmed by reading their board content on 2026-08-27
         # rather than inferred from the slug — the same bar the darwinbox entries below were held
         # to. `testcompany.cluster3` is the worst of them and the reason this entry exists: it is

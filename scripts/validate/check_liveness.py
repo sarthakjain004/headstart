@@ -316,6 +316,13 @@ _SPANNING = (
     # re-probed next run, whereas `dead` settles for DEAD_TTL_DAYS, so the failure this prevents
     # is the durable one. Full measurement: docs/jazzhr/2026-09-16_full-pool-measurement.md.
     "applytojob.com",
+    # pinpointhq.com: every tenant is `{slug}.pinpointhq.com`, one origin. Measured 2026-09-23: a
+    # burst of 256 concurrent requests over 800 distinct tenants drew 34 connection refusals, and
+    # the refusal then held — the next 800 at concurrency 64 got 627, at 16 got 715 — clearing
+    # after a few minutes. An ungated whole-pool pass (1,465 tenants at the default worker count)
+    # drew 46 refusals and 71 timeouts. Paced, it is clean: 5, 10, 25 and 50 req/s for 60-120 s
+    # each, zero refusals.
+    "pinpointhq.com",
 )
 _GATES = {
     # host: (max in-flight, seconds between request starts)
@@ -337,6 +344,10 @@ _GATES = {
     # ceiling — 350 distinct tenants at concurrency 200 came back clean — so this is sized for the
     # sustained whole-pool case, not for the wall. No spacing: the clean pass used none.
     "applytojob.com": _HostGate(16, 0.0, "applytojob.com"),
+    # pinpointhq.com: sized like applytojob.com above. Paced load across distinct tenants ran clean
+    # at 50 req/s for 60 s, but a 256-wide burst drew connection refusals that then held against
+    # every tenant for minutes (see `_SPANNING`).
+    "pinpointhq.com": _HostGate(16, 0.0, "pinpointhq.com"),
     # `jobs.jobvite.com` has no entry on purpose: one fixed host rather than a subdomain per
     # tenant, so the auto-gate below already keys it exactly, and it drew zero refusals even at
     # 432. A seeded gate for it would be configuration with no measurement behind it.
@@ -1560,6 +1571,120 @@ def _pyjamahr_count(body):
     return count if isinstance(count, int) else None
 
 
+_PINPOINT_RENAMED = re.compile(
+    r"^https://[a-z0-9-]+\.pinpointhq\.com/postings\.json$", re.IGNORECASE
+)
+
+
+def p_pinpoint(t, u):
+    """The listing without following redirects, then one page asked the way a browser asks.
+
+    Measured 2026-09-23 over the 1,465-slug pool
+    (`docs/pinpoint/2026-09-23_postings-api-measurement.md`):
+
+    * A slug that never existed is a real **404** on the listing (the vendor's 11,684-byte page).
+    * A renamed tenant **301s the listing to another `{label}.pinpointhq.com/postings.json`** —
+      63 of 63 redirects, none anywhere else. Followed, it would read as a second live row for a
+      Board the target label already is (57 of the 63 targets are live slugs), so the old label
+      is dead. A redirect anywhere else has never been seen and stays UNKNOWN.
+    * The listing's count is not the whole answer: the JSON is served whether or not a user can
+      open the postings, and the pages **content-negotiate** — asked with `Accept: */*` they
+      render, asked as a browser asks (`text/html`) they can 404 or redirect away. So a Board
+      with postings is settled on its **first and last postings' pages**, the links a user would
+      click — two, because one posting can close between the listing and its page (`freeagent`
+      flipped dead once that way and re-probed live 3 of 3); it is live if either lands. Asking
+      each of the 692 such Boards for its *first* posting only (the measurement this rule was
+      built on): 514 render it; 158 301 it to their vanity host at the same path, which serves
+      it; 17 answer 404 (1,200 postings, `10kbi-23` alone 638); 3 redirect it to a company page
+      that is not the posting (`10kai` -> `/our-programmes/`, 73 postings); 1 unparseable. `/` is the wrong page to ask here: `kharon` 404s a browser on `/`
+      while its postings render.
+    * An empty Board has no posting to ask about, so `/` decides: of 534 asked, 145 render (live,
+      nothing open), 282 are 404 and 105 redirect to the tenant's own or another ATS's site
+      (greenhouse, linkedin) — nothing is published here, so both are dead; 2 timed out or
+      answered unparseably.
+
+    `pinpointhq.com` is a spanning gate (`_SPANNING`): the refusals it answers overload with span
+    tenants and persist for minutes.
+    """
+    base = f"https://{t.lower()}.pinpointhq.com"
+
+    def ask_listing():
+        return _fetch(
+            "GET",
+            f"{base}/postings.json",
+            headers={"User-Agent": UA},
+            allow_redirects=False,
+        )
+
+    try:
+        listing = ask_listing()
+        if listing is None:  # breaker open -> transient
+            _note("breaker-open")
+            return UNKNOWN, None
+        if listing.status_code in (301, 302, 303, 307, 308):
+            if _PINPOINT_RENAMED.match(listing.headers.get("location") or ""):
+                return DEAD, None
+            _note(f"redirect-{listing.status_code}")
+            return UNKNOWN, None
+        if listing.status_code in (404, 410):
+            return DEAD, None
+        if listing.status_code != 200:
+            _note(f"http-{listing.status_code}")
+            return UNKNOWN, None
+        if listing.content.replace(b" ", b"") == b'{"data":[]}':
+            # A spurious empty answer for a Board with postings (12 of 6,030 fetches) would send
+            # this to `/`, where a vanity host's redirect reads as dead (`jec`, once). Ask again.
+            listing = ask_listing()
+            if listing is None or listing.status_code != 200:
+                _note(
+                    "breaker-open" if listing is None else f"http-{listing.status_code}"
+                )
+                return UNKNOWN, None
+        try:
+            postings = json.loads(listing.content)["data"]
+            paths = [p["path"] for p in (postings[:1] + postings[1:][-1:])] or ["/"]
+        except (ValueError, KeyError, TypeError):
+            _note("body-unparseable")
+            return UNKNOWN, None
+        lands = [_pinpoint_lands(base, path, bool(postings)) for path in paths]
+    except http.RequestsError as e:
+        if _is_dns(e):
+            return DEAD, None
+        _note(_net_reason(e))
+        return UNKNOWN, None
+    if True in lands:
+        return LIVE, len(postings)
+    if None in lands:
+        return UNKNOWN, None
+    return DEAD, None
+
+
+def _pinpoint_lands(base, path, has_postings):
+    """Does a browser asking for `path` get the page? True / False / None when it can't be told.
+
+    Asked as `text/html` without following redirects. A redirect lands only for a posting, and
+    only when it keeps the posting's path (the vanity host serves the same page); an empty
+    Board's `/` redirecting anywhere is a site published elsewhere.
+    """
+    page = _fetch(
+        "GET",
+        f"{base}{path}",
+        headers={"User-Agent": UA, "Accept": "text/html"},
+        allow_redirects=False,
+    )
+    if page is None:
+        _note("breaker-open")
+        return None
+    if page.status_code == 200:
+        return True
+    if page.status_code in (404, 410):
+        return False
+    if page.status_code in (301, 302, 303, 307, 308):
+        return has_postings and (page.headers.get("location") or "").endswith(path)
+    _note(f"http-{page.status_code}")
+    return None
+
+
 def p_pyjamahr(t, u):
     # Two questions, cheapest first. The listing (`limit=1`, a ~200-byte envelope) says how many
     # postings the Board has, and a non-zero count is proof of a tenant. A zero is NOT proof of
@@ -2125,6 +2250,7 @@ PROBES = {
     "jobvite": p_jobvite,
     "oracle": p_oracle,
     "phenom": p_phenom,
+    "pinpoint": p_pinpoint,
     "pyjamahr": p_pyjamahr,
     "taleo_be": p_taleo_be,
     "taleo_enterprise": p_taleo_enterprise,
