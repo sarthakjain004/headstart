@@ -1,0 +1,137 @@
+# Measurement checklist
+
+Every question gets a number and a sample size, drawn from **both sides** of whatever the answer
+keys on. Each question names the build it cost when it was assumed instead of measured.
+
+Tools: `curl -sS -D- -A 'headstart/0.1'` for single requests; `headstart.http.fetch` (curl_cffi,
+Chrome TLS) when a host walls plain curl; `headstart.browser_http` or a real browser's HAR when
+the board is a client-rendered SPA and you need to see its XHRs. Write every probe script to
+disk under `experiment/{ats}-{surface}/` so the numbers can be re-derived.
+
+## Identity
+
+1. **What is a Board's slug?** A subdomain label, a path segment, a host, a URL, a numeric id? Is
+   it case-sensitive? Is there more than one host or regional pod for the same tenant
+   (`*.eu.`, `*.de`)? Does one tenant run several sites (csod `careersite/{n}`, Workday sites,
+   Oracle `siteNumber`) — is the Board the tenant or the site? Is the key in a query string
+   (ADP's `cid`/`ccId`)? The slug is the URL, the API key and the discovery key at once when you
+   can make it so (pyjamahr's uuid turned out to be a detour — the API took the path slug).
+   A compound slug follows workday's `slug_from`/`board_key` override (`workday.py`).
+   Board keys compare case-folded (`config.py`), so two slugs differing only in case are one
+   Board; and `board_identity.board_of` splits a Job id on its last `:`, so measure whether
+   native ids ever contain one.
+2. **Which slug spellings does discovery produce**, and does `slug_from(tenant, url)` normalise
+   all of them to one? Tenant-key proliferation (#220) and stale casing pairs (#226) both came
+   from a discovery source emitting a second spelling of one Board.
+
+## Listing
+
+3. **Which listing surfaces exist?** Check the JSON API the board's own page calls, `robots.txt`
+   (it names surfaces — Zoho's RSS feed was found there after a thorough probe missed it),
+   `sitemap.xml`, RSS, and server-rendered HTML. Pick cheapest-complete, and say why the others
+   lost.
+4. **How does it paginate, and what terminates the walk?** Does the stated total match the rows
+   served on every Board you measured? Does `hasMore`/`next` tell the truth (oracle's `hasMore`
+   was false on a 248-posting Board)? Is there a page-size clamp (phenom silently clamps `size`
+   at 500) or a hard window (phenom stops at `from + size >= 10000`, with the total reading 0
+   past it)? Measure on the **largest** Board you can find, not a typical one.
+5. **Is any parameter a filter rather than an address?** A wrong filter value can still answer
+   200 with a well-formed empty envelope (oracle's hardcoded `siteNumber=CX_1` was wrong for 929
+   of 1,331 Boards, silently).
+6. **Does the listing carry the description, and is it truncated?** Compare listing text length
+   against the detail's on the same postings (oracle's listing capped at exactly 1,000 chars;
+   phenom's listing has only a ~350-char teaser).
+7. **Are rows returned that the public board hides?** Compare the API's rows against what the
+   board page renders (pyjamahr's `published_internally`: 112 rows the board filters out).
+
+## Dead versus empty
+
+8. **What does an unknown slug return, and what does a live Board with zero openings return?**
+   If both are `200` with an empty list (pyjamahr, gem, bamboohr — an empty body), find the
+   request that tells them apart — usually the board page's 404 — and measure it on real dead
+   tenants from the pool, not on an invented slug alone. `GET /` returning 200 proves nothing: 9
+   of 12 Boards already known dead answered it with 200 (#160).
+9. **Where does a departed tenant go?** A redirect to the vendor's marketing site, a parked
+   page, a 410? That is the dead verdict the prober keys on. The prober's `_get` follows
+   redirects, so a redirect-dead tenant reads as a 200 of marketing HTML — `body-unparseable`,
+   UNKNOWN forever — unless the probe asks with `_fetch(..., allow_redirects=False)` and reads
+   `Location` (`_sr_board_host` in `check_liveness.py` is the model).
+
+## Detail
+
+10. **Is there a per-Job detail request, and what does it add?** Tabulate, per `Job` field, the
+    share of postings that carry it on the listing versus the detail, across many Boards.
+11. **What does the detail need?** A tenant key, a header, a query flag (icims' detail without
+    `in_iframe=1` returns an 80 KB wrapper with no JSON-LD — a silent empty, not an error)?
+11b. **Is there a token?** For a token scraped from the page (csod embeds a per-corp JWT in
+    `csod.context.token`, with an API host on a regional pod such as `eu-fra.api.csod.com`):
+    its lifetime, whether it is per tenant or per site, what an expired one returns (a 401, or a
+    200 empty), and which host the API calls go to — gate and rate-limit on that host.
+12. **Can the tech gate run before the detail?** Does the listing state `title` and
+    `department`, and does the detail override either? Exact, approximation (measure the recall
+    loss on real tech postings) or no gate — CONTEXT.md's Detail-pass entry lists every
+    scraper's verdict and why.
+
+## Fields
+
+13. **Dates.** Is `posted_at` real? Fetch the same postings twice, seconds apart: a date that
+    moves by the elapsed time is fabricated (icims fabricated it on 22% of Boards; a
+    lastmod-only fallback served dates up to 2,437 days late). Check `validThrough`-style fields
+    against postings still listed.
+14. **Remote.** Which field states it, and does it agree with the location text? Measure the
+    disagreement rate; a native boolean can be dead (pyjamahr's `remote` was false on all 102
+    REMOTE postings). Hybrid is not remote (`Job.remote = None`, ashby's rule).
+15. **Salary.** What shape does the string take, which period and currency does it state, and
+    does `salary.extract(field, None, ats="{ats}")` read it correctly? A lone ceiling must not be
+    served as a floor. A shape the generic parser misreads needs a `_field_{ats}` parser.
+16. **Experience and employment type.** Is there a native field, how populated is it, and what
+    are its observed values (bamboohr's `minimumExperience`: 97.9% populated, unread upstream)?
+    Run `employment_type.flags(v)` on every observed employment-type value: the filter matches
+    substrings (`full`, `part`, `contract`/`freelance`, `intern` but not `international`;
+    `permanent` counts as full-time unless it says `part`), so "FT" or "Temporary" reach no
+    filter until mapped to a label.
+17. **Location.** How many places can one posting name, and where does each live? Join every
+    one ("; "); a posting cut to its first location fails the location filter everywhere else
+    (workable, uber, amazon and keka shipped that, fixed in #561/#564).
+17a. **Department.** Which field states it, on which surface, and on what share of postings? It
+    feeds the tech filter's rule 4, which promotes a vague title on a technical department;
+    rippling and successfactors shipped it unpopulated and smartrecruiters null on 54.7% of
+    postings (#561/#564), so their gate ran on the title alone.
+18. **Company name.** Does any surface name the employer — the board page `<title>`, an API
+    field? Check it names the employer and not a subsidiary or the vendor (phenom's per-posting
+    `companyName` named Blue Dart on a DHL Board). If nothing does, the slug stays the name —
+    which is acceptable for a readable label and not for an opaque one: `load_active_companies`
+    passes the ledger's `tenant` as the name, so a GUID slug (ADP's `cid`) displays as a GUID.
+    An opaque slug with no name surface is a **checkpoint**.
+
+## Operating limits
+
+19. **Rate limit.** Ramp concurrency (1, 4, 16, 32, 64, 128) on one tenant and record req/s,
+    latency and every non-200; find the knee and ship below it. Then ramp **across many
+    tenants at once**: a shared edge meters the whole platform (upstream Breezy reports 403s at
+    ~14 req/s across tenants; jazzhr's Cloudflare zone did the same). Refusals that span tenants
+    need a `_SPANNING` + `_GATES` entry in `check_liveness.py` — an ungated jazzhr pass wrote
+    2,740 `dead` rows, and 6 of 10 spot-checked were still live (#463). A bare 403 quota is a
+    different mechanism: it reaches no gate unless its host is in `_QUOTA_403` (keyed by
+    `_gate_key`; zwayam is the precedent). One fixed API host (ADP's `workforcenow.adp.com`) needs
+    no `_SPANNING` entry — the auto-gate already keys it exactly. A status code does not imply its
+    mechanism: freshteam's "429s" were 502s from a down origin.
+20. **User-Agent.** Does `headstart/0.1` (the shared `USER_AGENT`) get 200? Do bare curl and
+    python-requests defaults behave differently (zwayam hangs on them rather than failing)?
+    Measure with curl: `-A 'headstart/0.1'`, no `-A`, and `-A python-requests/2.32`.
+21. **Response size.** Bytes per listing page and per detail — step 6's cost estimate needs them.
+
+## Population
+
+22. **Tech share and volume.** Over a real sample of postings: rows per Hiring Board, and the
+    share `headstart.tech_filter.is_tech(title, department)` keeps
+    (`scripts/validate/ats_tech_yield.py` if it handles the ATS).
+23. **Language.** Roughly what share is non-English? The index is English-only; a mostly
+    non-English ATS is scraped but its rows are held out of the index.
+24. **Overlap with Boards already held.** Is this ATS a skin over another one this repo already
+    scrapes (phenom: 75 of 91 tenants were backed by Workday/SuccessFactors Boards we held)?
+    Resolve each tenant's backing Board and join on registrable domain, then measure each
+    collision before dropping it. For vanity-host tenants, once the ledger exists,
+    `scripts/validate/cross_ats_duplicates.py` does the join and `dedupe_boards.py --ats {ats}`
+    finds same-ATS aliases (ADR-0111); both need the slug to be a host, so they find nothing
+    for a vendor-subdomain label.
