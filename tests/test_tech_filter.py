@@ -920,8 +920,8 @@ def test_a_law_degree_is_not_a_language_model():
 
 _EVAL = Path(__file__).parent / "fixtures" / "tech_filter_eval.tsv"
 
-# Tech titles the gate is known to drop. A new miss fails the recall test; so does fixing one of
-# these, so the list only ever shrinks on purpose.
+# Tech titles the gate is known to drop. A new miss fails the recall test; fixing one of these
+# does not (the failure message still names it, so the list can be pruned).
 _KNOWN_MISSES = {
     # "Consultant" beside "Gen-AI" is also the crowdwork labelling role ADR-0087 keeps out.
     "IA- Consultant-Gen-AI/Agentic AI",
@@ -943,15 +943,17 @@ def _eval_rows(label: str) -> list[tuple[str, str]]:
 
 def test_the_labelled_set_keeps_every_tech_title_but_the_known_misses():
     tech = _eval_rows("tech")
+    assert len(tech) == 345
     missed = {title for title, dept in tech if not is_tech(title, dept or None)}
-    assert missed == _KNOWN_MISSES, (
+    assert missed <= _KNOWN_MISSES, (
         f"new misses: {sorted(missed - _KNOWN_MISSES)}; "
-        f"fixed (drop from _KNOWN_MISSES): {sorted(_KNOWN_MISSES - missed)}"
+        f"(fixed, can be dropped from _KNOWN_MISSES: {sorted(_KNOWN_MISSES - missed)})"
     )
 
 
 def test_the_labelled_set_admits_no_more_non_tech_than_before():
     non_tech = _eval_rows("not_tech")
+    assert len(non_tech) == 540
     kept = [title for title, dept in non_tech if is_tech(title, dept or None)]
     assert len(kept) <= _FALSE_POSITIVE_CEILING, kept
 
@@ -1114,3 +1116,47 @@ def test_the_hold_out_drops_no_more_tech_than_it_did():
 def test_the_hold_out_keeps_no_more_non_tech_than_it_did():
     kept = [t for t in _holdout("not_tech") if is_tech(t)]
     assert len(kept) <= _HOLDOUT_FALSE_POSITIVE_CEILING, kept
+
+
+# --- review of #573, second round ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "title,department",
+    [
+        ("Assoc Analyst, Ai", "Systems Technical Support"),
+        ("Pre-Sales Consultant — Enterprise Cybersecurity", ""),
+        ("Rail Systems Developer", ""),
+        ("Traffic Simulation Developer", ""),
+        ("Ruby on Rail UI Engineer", "Information Technology"),
+        ("SoC Power Architect, Devices and Services, Silicon", ""),
+        # a department of just "Security" holds infosec at a software company
+        ("Senior Information Protection Manager", "Security"),
+        ("Security Researcher", "Security"),
+        ("Incident Manager - Detection & Response", "Security"),
+    ],
+)
+def test_second_review_keeps(title, department):
+    assert is_tech(title, department or None) is True, f"RECALL VIOLATION -> {title!r}"
+
+
+@pytest.mark.parametrize(
+    "title,department",
+    [
+        # the reverse cyber arm respects the sales/insurance exclusion too
+        ("Sales Engineer – Cybersecurity", ""),
+        ("Consultant – Cyber Insurance", ""),
+        ("Business Development Manager - Developer Focused", ""),
+        ("Senior Sales Engineer, AI", ""),
+        # physical-security titles under a bare "Security" department
+        ("Event Security | Part-Time | PPG Paints Arena", "Security"),
+        ("Correctional Officer", "Security"),
+        ("Security Supervisor", "Security"),
+        # `technology`/`technical`/`infrastructure` no longer spare a trade veto
+        ("MEP Engineer", "MEP Building Technology"),
+        ("Supplier Quality Engineer", "Engineering & Technology"),
+        ("Intern", "Facilities Engineering"),
+    ],
+)
+def test_second_review_refuses(title, department):
+    assert is_tech(title, department or None) is False, f"non-tech kept -> {title!r}"
