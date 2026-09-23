@@ -118,8 +118,11 @@ never disagrees (0 rows).
 top five `$N – $N / hour` 6,175, `/ year` 5,903, `/ week` 2,736, `$N+ / hour` 1,058, `$N / hour`
 646. The forms are a range `{sym}{lo} – {sym}{hi}`, a floor `{sym}{n}+`, an exact `{sym}{n}`, and a
 ceiling `Up to {sym}{n}` (37 rows); ranges are 16,079 and floors 1,732. Periods: `/ hour` 8,205,
-`/ year` 6,682, `/ week` 2,824, `/ month` 1,108, `/ biweekly` 161, `/ day` 97, none 90. `salary._field_generic` misreads it: `/ hour` and `/ week` are
-not among its phrase markers, so hourly and weekly figures read as annual.
+`/ year` 6,682, `/ week` 2,824, `/ month` 1,108, `/ biweekly` 161, `/ day` 97, none 90.
+`salary.from_field(s, ats="breezy")` today (no parser registered, so `_field_generic`) reads only
+the yearly shape: `/ hour`, `/ week` and `/ month` match none of its phrase markers, so
+`$25 – $30 / hour`, `$1,500 – $2,000 / week` and `$3,000 – $4,000 / month` read as annual and the
+plausibility floor returns None; `$100,000 – $150,000 / year` parses with currency None.
 
 Currency, symbol against the detail's JSON-LD `baseSalary.currency` on 499 postings: a bare `$`
 is USD on 141 / 141 US postings, **CAD on 179 / 188 Canadian ones** (USD 9), and USD on 41 / 47
