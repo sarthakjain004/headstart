@@ -65,6 +65,11 @@ empty) neither the portal page nor the sitemap lists an id the JSON lacks (0 / 9
 happens: the sitemap omits postings on 28 Boards and the portal page on 2, and every one of those
 postings' pages answers 200 with the posting — they are public, merely unlisted.
 
+A job link built from `friendly_id` lands on the posting: 20 of 20 random postings (20 Boards)
+answered 200 with the posting's title in `<title>`, no redirect. An id the Board does not hold
+302s to the portal root (`Location: /`), so a closed posting's link lands on the Board, not an
+error page.
+
 ## Dead versus empty
 
 **Q8/Q9.** Settled by the listing's status alone, on the whole pool:
@@ -80,6 +85,14 @@ An invented slug gets the byte-identical 404 on `/json`, `/json?verbose=true` an
 "302 to `https://breezy.hr/`" (H4) appeared on none of 4,794 tenants, so there is no
 redirect-dead case to read off `Location`; the prober still asks without following redirects,
 so a 3xx that appears later reads as UNKNOWN rather than as the marketing site's 200.
+
+**A DNS failure is not a dead tenant.** `*.breezy.hr` is a wildcard record — the invented label
+resolves to the same CloudFront addresses as `fathom` — so no tenant is ever NXDOMAIN. The
+liveness prober's 432 workers each resolve a different hostname, and the local resolver fails
+under that: the first pass wrote 41 live Boards dead (in alphabetical clusters, including
+`kimmel-associates` with 445 postings), every one of which answered 200 on a re-fetch. A replay
+at 432-wide against 1,500 live Boards drew 1,379 200s, **100 DNS errors** (curl code 6), 21
+timeouts and zero 404s. `p_breezy` reads a DNS failure as UNKNOWN.
 
 ## Detail
 
@@ -131,6 +144,15 @@ elsewhere (MXN 2, SGD 1, COP 1, unstated 2). Every other symbol names one curren
 ₪ ILS, R$ BRL, Ksh KES, and the Arabic-script dirham/riyal/dinar), except `kr` (SEK 3, DKK 1 — by
 country).
 
+What shipped (ADR-0181): `_salary_field` re-spells the template as `LO-HI CODE UNIT`, `breezy` is
+registered with `_field_range_currency_interval`, and a bare `$` is USD in the US, CAD in Canada
+and none elsewhere (the user's choice; 17,501 US / 704 Canadian / 236 other postings carry one).
+Over the census, `extract` reads **18,483 of 19,167 (96.4%)** against the generic parser's 6,484
+(33.8%) on the raw strings. The 40 rows the generic parser read and this does not are all its
+misreads (a PKR or PHP monthly figure read as an annual floor, a tenant's "$80,000 – $100,000 /
+hour" read as annual); the 352 yearly strings that do not parse are tenant errors ("$20 – $23 /
+year") the plausibility floor rejects; `Up to` (37) and biweekly (161) are withheld.
+
 **Q16 — experience and employment type.** No experience field: upstream's `experience`,
 `category`, `education`, `tags` are on 0 of 38,314 rows. `type.id`: fullTime 25,626, contract
 5,501, partTime 5,026, other 1,658, temporary 503 — `type.name` is the same value localised
@@ -176,6 +198,11 @@ rows (Ukrainian 31, Spanish 22, German 14, French 11); 90.2% on 600 random tech 
 and nothing on the listing names a backing ATS. `cross_ats_duplicates.py` and `dedupe_boards.py`
 key on host slugs and find nothing for a vendor-subdomain label, so a company that is also a
 tenant elsewhere is not measured here.
+
+Within Breezy, one account can run several portals under different labels, and a posting is then
+served on each with the same id and its own URL: 190 ids on 26 Boards (`lumio-dental` /
+`lumio-dental-practice-locations` share 62), **191 extra rows of 38,314 (0.5%), 7 of them tech**.
+They are left as separate Boards (ADR-0181).
 
 ## Discovery
 
