@@ -19,7 +19,7 @@ Not from a feed employers had to opt in to. Not from a list ranked by who paid.
 
 ### It costs nothing to run. All of it.
 
-Discovery. 40 scrapers. Embeddings. Vector search. Email and Telegram alerts.
+Discovery. 41 scrapers. Embeddings. Vector search. Email and Telegram alerts.
 
 Fork it, add your tokens, and the whole pipeline is yours — running on free tiers, end to
 end. No card. No trial. Not a stripped tier of something else: the same code that serves the
@@ -93,8 +93,8 @@ unparseable input with a 400 rather than silently ignoring it.
 
 ## ATS coverage
 
-**40 scrapers**, selected from a registry by the `ats` key: `amazon`, `apple`, `ashby`,
-`bamboohr`, `breezy`, `bytedance`, `darwinbox`, `eightfold`, `freshteam`, `gem`, `google`, `greenhouse`,
+**41 scrapers**, selected from a registry by the `ats` key: `amazon`, `apple`, `ashby`,
+`bamboohr`, `breezy`, `bytedance`, `clearcompany`, `darwinbox`, `eightfold`, `freshteam`, `gem`, `google`, `greenhouse`,
 `icims`, `jazzhr`, `jobvite`, `join`, `keka`, `lever`, `meta`, `oracle`, `personio`, `phenom`,
 `pyjamahr`, `recruitee`, `ripplehire`, `rippling`, `sensehq`, `smartrecruiters`, `successfactors`,
 `taleo_be`, `taleo_enterprise`, `teamtailor`, `tesla`, `tiktok`, `trakstar`, `uber`, `workable`,
@@ -102,7 +102,7 @@ unparseable input with a 400 rather than silently ignoring it.
 listings, almost entirely non-tech), pure noise for a tech-only index, so `registry.DISABLED_ATS`
 skips it — the scraper class and tests stay intact, and re-enabling it is a one-line change.
 
-Eight of the 40 — `amazon`, `apple`, `bytedance`, `google`, `meta`, `tesla`, `tiktok`, `uber`
+Eight of the 41 — `amazon`, `apple`, `bytedance`, `google`, `meta`, `tesla`, `tiktok`, `uber`
 (ADR-0139) — are **Single source scrapers**: each company's own in-house careers system, not a
 multi-tenant platform, so there's no discovery step and each carries a fixed, hand-entered slug
 rather than a crawled tenant roster. `phenom` is a career-site skin over other ATSes rather than a
@@ -122,8 +122,8 @@ Every *other* ATS serves the **ATS slug** in that field instead, so a row's `com
 either — four served rows in five carry a slug rather than a name, which is why `CompanyPrefs` is
 keyed by **board_key** and never by company name.
 
-The liveness pipeline has probed **269,366 ledger rows**: 159,476 live, 93,765 dead, 16,125 unknown
-— rows, not boards; they collapse to 152,844 Unique Boards once duplicate spellings of the same
+The liveness pipeline has probed **273,547 ledger rows**: 161,155 live, 96,239 dead, 16,153 unknown
+— rows, not boards; they collapse to 154,523 Unique Boards once duplicate spellings of the same
 board are folded together (`CONTEXT.md` §Counting Boards).
 
 ## What this optimises for
@@ -175,14 +175,14 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>159,476 live rows of 269,366<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>161,155 live rows of 273,547<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
     subgraph P["② Ingest &nbsp;·&nbsp; GitHub Actions, back-to-back &nbsp;·&nbsp; ADR-0025 / ADR-0026"]
         direction LR
         P1["<b>scrape-plan</b><br/>1 VM<br/>pick a board slice, LPT pack"]
-        P2["<b>scrape</b><br/>≤15 VMs · 60m budget<br/>34 enabled scrapers → fragments"]
+        P2["<b>scrape</b><br/>≤15 VMs · 60m budget<br/>40 enabled scrapers → fragments"]
         P3["<b>join</b><br/>1 VM<br/>union · tech-filter · descriptions<br/>ledgers · plan embed"]
         P4["<b>embed</b><br/>≤15 VMs · 180m budget<br/>nomic on CPU → fragments"]
         P5["<b>merge</b><br/>1 VM · single writer<br/>concat · meta refresh · sync · prune · trends · hot · index"]
@@ -273,18 +273,18 @@ table in lockstep with the committed ledger:
 
 | | boards | |
 | --- | ---: | --- |
-| live rows in the ledger | 159,476 | a row, not a board — 6,632 of them are duplicate spellings |
+| live rows in the ledger | 161,155 | a row, not a board — 6,632 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −25,488 | all of it `join` |
 | − `config.EXCLUDED_BOARDS` | −46 | vendor test/sandbox boards, confirmed by reading their postings |
-| − alias ledger | −78 | one company, two hostnames sharing one board (ADR-0111) |
+| − alias ledger | −400 | one board reached under a second hostname or label (ADR-0111, ADR-0182) |
 | − case-variant dedupe | −6,630 | `company/External` and `company/external` are one board (ADR-0023) |
 | − `config.PARKED_BOARDS` | −7 | real boards withheld for now — five for scrape cost, two for near-duplicate spam |
-| = **Scrapable Board** | **127,227** | |
+| = **Scrapable Board** | **128,584** | |
 
 That order matters: excluding before deduping reads −46 and −6,630, deduping first reads −44,
-because two excluded boards were themselves duplicates. Both land on 127,227.
+because two excluded boards were themselves duplicates. Both land on 128,584.
 
-Of those, **82,492 are currently hiring** — the 44,735 live-but-empty boards are skipped as having
+Of those, **83,474 are currently hiring** — the 45,110 live-but-empty boards are skipped as having
 nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
 sticky measure of tech-job yield) and a random exploration tail drawn from everything else, so
 newly-productive boards can never starve and eviction keeps working on boards outside the head.
@@ -399,7 +399,7 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
 ## Layout
 
 - `src/headstart/` — shared library, used by both the pipeline and the curated feed: `models.py`
-  (Job + normalization), `scrapers/` (35 per-ATS + `base`/`registry`), `http.py` (the pooled
+  (Job + normalization), `scrapers/` (41 per-ATS + `base`/`registry`), `http.py` (the pooled
   reliable-fetch seam), `config.py`, `harvest.py` (the scrape engine), `liveness.py`, `corpus.py`,
   `tech_filter.py` (ADR-0017), `experience.py`, `salary.py` (ADR-0082), `geo.py`, `remote.py`,
   `company_name.py` (ADR-0114), `search.py` (shared embed/search constants + filter builder),
