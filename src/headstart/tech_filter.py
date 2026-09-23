@@ -71,15 +71,15 @@ from pathlib import Path
 # Net **+1.62%** on the 332,383-posting pre-filter snapshot, 67,506 -> 68,600: **+1,094 in, 0 out**,
 # so unlike version 2 this one is purely additive and the composition moves exactly as far as the
 # total. See docs/tech-filter/2026-09-21_the-families-still-outside-the-gate.md.
-# 4 (2026-09-23, `git log da0565b7..0723622c -- src/headstart/tech_filter.py`): the English
-# spellings and families the gate could not see — `_` as a separator, glued levels ("SDE3"),
-# plurals, Engr/Engg/Eng/Dev tied to a discipline word, DevSecOps, IT roles with a word before the
-# role, cyber/IAM/SOC/quant/test-lead families, JD Edwards — and the "…engineer" trades it
-# admitted in bulk: site, MEP, QA/QC, highway, business developer, the retail "Front End
-# Manager", "CNC Programmer" and "Mechanical Engineering Manager". Two-sided, so read both
-# halves: on the served table (v654, 514,163 rows) **-2,525 out, +1 in**, every one of the 1,553
-# lost titles read by hand and none a software or IT role; on the 332,383-posting pre-filter
-# snapshot 68,600 -> 69,568, **+1,163 in, -195 out**. See
+# 4 (2026-09-23, `git log da0565b7..6a1b3630 -- src/headstart/tech_filter.py`): English spellings
+# and families the gate could not see (`_` as a separator, glued levels, plurals, Engr/Engg/Dev,
+# DevSecOps, IT/cyber/IAM/SOC/support/stack-word families, most found in the Indeed harvest's
+# rejects), and the "…engineer" trades it admitted in bulk (site, MEP, QA/QC, highway and its
+# siblings, business developer, the retail front end, CNC, discipline engineering managers),
+# each veto standing down where the title or department names IT or software work. Two-sided:
+# on the served table (v654, 514,163 rows) **-16,293 out, +1 in**, every lost title read by hand;
+# on the 332,383-posting pre-filter snapshot 68,600 -> 69,316, **+1,852 in, -1,136 out**. A blind
+# 800-title hold-out puts recall at ~84.7% and precision at ~81.1%. See
 # docs/tech-filter/2026-09-23_spellings-and-trades.md.
 TECH_FILTER_VERSION = 4
 
