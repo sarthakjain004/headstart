@@ -94,6 +94,29 @@ def test_per_ats_shape_rules_refuse_unusable_provider_evidence():
         )
         == "https://acme.wd1.myworkdayjobs.com/Careers"
     )
+    # ClearCompany's Board is HRM Direct; both vendor hosts reduce to the one label.
+    assert (
+        fp.normalise_tenant(
+            "clearcompany",
+            "kingarthurbaking.hrmdirect.com",
+            "careers.kingarthurbaking.com CNAME kingarthurbaking.hrmdirect.com",
+        )
+        == "kingarthurbaking"
+    )
+    assert (
+        fp.normalise_tenant(
+            "clearcompany",
+            "istate.clearcompany.com",
+            "https://istate.clearcompany.com/",
+        )
+        == "istate"
+    )
+    assert (
+        fp.normalise_tenant(
+            "clearcompany", "www.hrmdirect.com", "https://www.hrmdirect.com/"
+        )
+        == ""
+    )
     assert (
         fp.normalise_tenant("pyjamahr", "acme", "https://jobs.pyjamahr.com/acme")
         == "acme"
@@ -390,6 +413,10 @@ def test_provider_url_roundtrips_and_dns_fast_path(monkeypatch):
         ("https://acme.teamtailor.com/jobs/1", "teamtailor:acme"),
         ("https://anaqua.bamboohr.com/careers/1", "bamboohr:anaqua"),
         ("https://fathom.breezy.hr/p/1b0072dc3e0a-manager", "breezy:fathom"),
+        (
+            "https://kingarthurbaking.hrmdirect.com/employment/job-opening.php?req=3813473",
+            "clearcompany:kingarthurbaking",
+        ),
         (
             "https://chevron.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX",
             "oracle:chevron.fa.us2.oraclecloud.com",

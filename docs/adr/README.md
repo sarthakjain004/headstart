@@ -180,3 +180,4 @@ supersedes it and note the supersession in both.
 | [0178](0178-salary-sort-is-stated-in-one-currency.md) | The salary sort is stated in one currency | 2026-09-23 |
 | [0179](0179-the-tech-filter-stays-english-and-its-trade-vetoes-stand-down-for-infrastructure.md) | The tech filter stays English, and its trade vetoes stand down for infrastructure | 2026-09-23 |
 | [0181](0181-a-breezy-board-is-one-verbose-json-listing.md) | A Breezy HR Board is one verbose JSON listing, and a bare `$` is named by country | 2026-09-23 |
+| [0182](0182-a-clearcompany-board-is-its-hrm-direct-feed.md) | A ClearCompany Board is its HRM Direct feed, not a clearcompany.com surface | 2026-09-23 |

@@ -268,6 +268,11 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     # an invented label and a departed tenant both answer the same 404 portal page on this
     # domain (docs/breezy/2026-09-23_json-api-measurement.md).
     "breezy": _with_style("sub", "breezy.hr"),
+    # The public Board is `{slug}.hrmdirect.com` (ClearCompany's HRM Direct career site); the
+    # same label also keys ClearCompany's own `{slug}.clearcompany.com` app, so both hosts are
+    # label sources for one slug — 53 of 60 labels seen only on clearcompany.com in one Common
+    # Crawl index had a hiring hrmdirect Board (docs/clearcompany/).
+    "clearcompany": _with_style("sub", "hrmdirect.com", "clearcompany.com"),
     "darwinbox": _with_style("sub", "darwinbox.in", "darwinbox.com"),
     # `host` style: this ATS's slug is the whole board host, not the label — `eightfold.py`
     # builds `https://{slug}/careers`, and every one of the ledger's 109 live boards is stored
