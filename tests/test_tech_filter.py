@@ -857,18 +857,65 @@ def test_version_4_domain_words_stay_qualified(title):
     assert not tech_filter._STRONG.search(title), title
 
 
-def test_a_stripped_trade_is_not_rescued_by_its_department():
-    """The title already says which trade it is, so rule 4 must not bring it back."""
+def test_a_set_aside_trade_goes_to_rule_4_and_its_guards():
+    """Rule 4's own guards keep the trades out; a technical department keeps a front-end manager.
+
+    "Frontend Manager" on a streaming platform's board is a software role (review of #573).
+    """
     assert is_tech("CNC Programmer", department="Engineering") is False
-    assert is_tech("Front End Manager", department="Technology") is False
+    assert is_tech("Mechanical Engineering Manager", department="Engineering") is False
+    assert is_tech("Front End Manager", department="Retail, Store Ops") is False
+    assert is_tech("Front End Manager", department="Technology") is True
+
+
+@pytest.mark.parametrize(
+    "title,department",
+    [
+        # review of #573: v3 kept each of these and the first cut of v4 dropped them
+        ("Frontend Manager", ""),
+        ("Front End Manager - React", ""),
+        ("Mechanical Engineering Manager - Software", ""),
+        ("Process Engineering Manager - Automation Software", ""),
+        ("Industrial Engineering Manager - MES", ""),
+        ("Civil Engineering Manager - GIS", ""),
+        ("CNC Programmer - CAM Software", ""),
+        ("Software, Electrical Engineering Manager", ""),
+        ("Site Engineer - Fiber", ""),
+        ("Site Engineer - 5G RAN", ""),
+        ("Field Site Engineer - Wireless", ""),
+        ("Site Engineer - Mission Critical", ""),
+        ("Site Engineer", "DCO"),
+        ("Business Development Engineer, AWS", ""),
+        # glued levels beyond SDE
+        ("Developer3", ""),
+        ("SRE2", ""),
+        ("DevOps3", ""),
+    ],
+)
+def test_version_4_review_losses_are_kept(title, department):
+    assert is_tech(title, department or None) is True, title
+
+
+@pytest.mark.parametrize(
+    "title",
+    ["Business Dev Manager", "Biz Dev Lead", "Web Lead", "Game Lead", "Mobile Lead"],
+)
+def test_version_4_dev_and_lead_arms_stay_tied_to_a_discipline(title):
+    assert not tech_filter._STRONG.search(title), title
+
+
+def test_a_law_degree_is_not_a_language_model():
+    assert is_tech("LLM Tax Associate") is False
+    assert is_tech("JD/LLM – Tax Analyst") is False
+    assert is_tech("LLM Engineer") is True
 
 
 # --- the labelled evaluation set -------------------------------------------------------------
 #
 # 971 English titles (+ department) from our own data, not a third-party corpus: 400 drawn from
 # the served table, 300 the version-3 gate dropped from the pre-filter snapshot, and 300 whose
-# verdict version 4 changed. Each was labelled blind by two independent labellers (97.3%
-# agreement) and the 27 disagreements settled by hand; `ambiguous` rows are kept for reference
+# verdict version 4 changed. Each was labelled blind by two independent labellers (973 of
+# the 1,000 sampled rows agreed, before 29 non-English rows were dropped) and the 27 disagreements settled by hand; `ambiguous` rows are kept for reference
 # and scored by neither test. Stratified, so these are regression gates, not population rates.
 
 _EVAL = Path(__file__).parent / "fixtures" / "tech_filter_eval.tsv"
@@ -909,3 +956,21 @@ def test_the_labelled_set_admits_no_more_non_tech_than_before():
     assert len(non_tech) == 540
     kept = [title for title, dept in non_tech if is_tech(title, dept or None)]
     assert len(kept) <= _FALSE_POSITIVE_CEILING, kept
+
+
+@pytest.mark.parametrize(
+    "title,department",
+    [
+        ("JD Edwards CNC Administrator", "Information Technology"),
+        ("JDE CNC Admin - Long term Contract", "Information Technology"),
+        ("CNC/JD Edward Admin", "Information Technology"),
+        ("Edwards CNC", "IT Services"),
+    ],
+)
+def test_jd_edwards_cnc_is_the_erp_not_the_machine_shop(title, department):
+    """Review of #573: putting `cnc` in `_NON_TECH_ROLE` first dropped these, measured."""
+    assert is_tech(title, department) is True
+
+
+def test_a_machine_shop_title_in_a_mislabelled_it_department_is_refused():
+    assert is_tech("CNC Turner", department="Information Technology") is False
