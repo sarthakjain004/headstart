@@ -94,6 +94,7 @@ from fingerprint_deep import (
     public_domain,
 )
 from fingerprint_job_evidence import check_jobs
+from wayback_feeder import ADP_HOST, ADP_PAGE_PATH, extract
 
 from headstart.board_identity import board_key, lower_key
 from headstart.config import CompanyRef, load_active_companies
@@ -274,7 +275,18 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
     # The public Board is `{slug}.hrmdirect.com` (HRM Direct, ClearCompany's career site); the
     # same label keys the tenant's `{slug}.clearcompany.com` app (docs/clearcompany/).
     "clearcompany": ("ats", [SUB + r"hrmdirect\.com", SUB + r"clearcompany\.com"]),
-    "adp": ("ats", [r"workforcenow\.adp\.com", r"recruiting\.adp\.com"]),
+    # ADP Workforce Now: the Board is `cid` + `ccId` in the career-center page's query (adp.py);
+    # `scan` reads them out of the captured query. ADP Recruiting Management is a different
+    # platform (its own host, path slug and API) with no scraper, so it is its own key.
+    "adp": (
+        "ats",
+        [
+            re.escape(f"{ADP_HOST}/{ADP_PAGE_PATH}") + r"\?([^\s\"'<>\\]+)",
+            # Any other mention still detects the ATS, with no Board to name.
+            re.escape(ADP_HOST) + f"(?!/{re.escape(ADP_PAGE_PATH)}\\?)",
+        ],
+    ),
+    "adp_recruiting": ("ats", [r"recruiting\.adp\.com", r"myjobs\.adp\.com"]),
     "ukg": ("ats", [SUB + r"ultipro\.com"]),
     "occupop": ("ats", [SUB + r"occupop\.com"]),
     "hrcloud": ("ats", [SUB + r"hrcloud\.com"]),
@@ -914,6 +926,20 @@ def scan(
                     # The Workday scraper's slug IS the full board URL (workday.py slug_from), so
                     # emitting "{co}/{site}" would drop the pod and be unusable downstream.
                     tok = f"https://{co}.{pod}.myworkdayjobs.com/{site}"
+                elif ats == "adp":
+                    # The whole query is captured; only `cid` + `ccId` name the Board, the same
+                    # reading every other ADP discovery source makes (`wayback_feeder.extract`).
+                    got = (
+                        extract(
+                            f"https://{ADP_HOST}/{ADP_PAGE_PATH}?"
+                            + html.unescape(m.group(1)),
+                            ADP_HOST,
+                            "adp",
+                        )
+                        if m.lastindex
+                        else None
+                    )
+                    tok = got[0] if got else ""
                 else:
                     raw = (m.group(1) if m.lastindex else "") or ""
                     tok = raw if ats in CASE_SENSITIVE else raw.lower()

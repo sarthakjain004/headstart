@@ -16,7 +16,8 @@ change marks)
 ## Context
 
 A Workday Board is one *site*, keyed `workday:{company}/{site}`. Workday calls the `{company}`
-part the **tenant**, and a tenant with several sites posts one requisition to several of them.
+part the **tenant** (CONTEXT.md's **Tenant**, ADR-0185), and a tenant with several sites posts one
+requisition to several of them.
 `index_plan.plan_prune` grouped duplicates on `(lowercased Board, native id)` — built for
 case-variant spellings of one Board (ADR-0023) — so each site's copy was served.
 

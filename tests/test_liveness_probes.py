@@ -866,6 +866,128 @@ def test_pinpoint_a_failed_re_ask_of_an_empty_listing_is_unknown(monkeypatch):
         assert cl.p_pinpoint("acme", "") == (cl.UNKNOWN, None)
 
 
+# --- adp: content-links says dead-or-published and which languages; the listings count ---------
+
+_ADP = "7d58836c-11dd-4415-9de0-63b918b88652/19000101_000001"
+_ADP_URL = (
+    "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html"
+    "?cid=7d58836c-11dd-4415-9de0-63b918b88652&ccId=19000101_000001"
+)
+
+
+def _adp_links(published=True, locales=("en_US",)) -> bytes:
+    import json
+
+    return json.dumps(
+        {
+            "contentLinks": [],
+            "meta": {
+                "customFieldGroup": {
+                    "indicatorFields": [
+                        {
+                            "indicatorValue": published,
+                            "nameCode": {"codeValue": "PublishedIndicator"},
+                        }
+                    ],
+                    "stringFields": [
+                        {"stringValue": loc, "nameCode": {"codeValue": "Locale"}}
+                        for loc in locales
+                    ],
+                }
+            },
+        }
+    ).encode()
+
+
+def _adp_get(links_status, links_body=b"", totals=None, calls=None):
+    """`_get` for adp: content-links, then one `$top=1` listing per language."""
+
+    def _get(url, headers=None):
+        if calls is not None:
+            calls.append(url)
+        if "content-links" in url:
+            return links_status, links_body
+        lang = url.split("lang=")[1].split("&")[0]
+        n = (totals or {}).get(lang)
+        body = (
+            b'{"jobRequisitions":[]}'
+            if n is None
+            else f'{{"jobRequisitions":[{{}}],"meta":{{"totalNumber":{n}}}}}'.encode()
+        )
+        return 200, body
+
+    return _get
+
+
+def test_adp_counts_postings_across_every_language_the_center_lists(monkeypatch):
+    """`lang` is a filter, so an `en_CA` center reads empty under `en_US`; the count is the sum
+    over the center's own languages (Lifemark: 460 en_CA, 17 fr_CA)."""
+    calls: list[str] = []
+    monkeypatch.setattr(
+        cl,
+        "_get",
+        _adp_get(
+            200,
+            _adp_links(locales=("en_CA", "fr_CA")),
+            {"en_CA": 460, "fr_CA": 17},
+            calls,
+        ),
+    )
+    assert cl.p_adp(_ADP, _ADP_URL) == (cl.LIVE, 477)
+    assert len(calls) == 3 and "%24top=1" in calls[1]
+
+
+def test_adp_a_published_center_with_nothing_open_is_live_and_empty(monkeypatch):
+    monkeypatch.setattr(cl, "_get", _adp_get(200, _adp_links(), {}))
+    assert cl.p_adp(_ADP, _ADP_URL) == (cl.LIVE, 0)
+
+
+def test_adp_an_unknown_client_is_dead(monkeypatch):
+    """A `cid` ADP does not know is a 404 openresty page — the one response measured on it."""
+    monkeypatch.setattr(cl, "_get", _adp_get(404, b"<html>404 Not Found</html>"))
+    assert cl.p_adp(_ADP, _ADP_URL) == (cl.DEAD, None)
+
+
+def test_adp_an_unpublished_career_center_is_dead(monkeypatch):
+    """A `ccId` the client does not have answers 200 with `PublishedIndicator` false; its
+    listing is otherwise byte-identical to an empty center's."""
+    calls: list[str] = []
+    monkeypatch.setattr(
+        cl, "_get", _adp_get(200, _adp_links(published=False), calls=calls)
+    )
+    assert cl.p_adp(_ADP, _ADP_URL) == (cl.DEAD, None)
+    assert len(calls) == 1
+
+
+def test_adp_a_refused_or_unreadable_answer_is_unknown(monkeypatch):
+    monkeypatch.setattr(
+        cl, "_get", _adp_get(429, b"Request blockedExceeded requests limit.")
+    )
+    assert cl.p_adp(_ADP, _ADP_URL) == (cl.UNKNOWN, None)
+    monkeypatch.setattr(cl, "_get", _adp_get(200, b"<html>not json</html>"))
+    assert cl.p_adp(_ADP, _ADP_URL) == (cl.UNKNOWN, None)
+
+
+def test_adp_host_is_seeded_at_the_scrapers_pace():
+    gate = cl._GATES["workforcenow.adp.com"]
+    assert gate.spacing == 0.4
+
+
+def test_adp_a_listing_404_after_a_published_center_is_unknown_and_noted(monkeypatch):
+    """`_get` notes every non-200 except 404/410, which settle DEAD elsewhere; here the center
+    is published, so the listing's 404 is unexplained and must still leave a reason."""
+
+    def _get(url, headers=None):
+        if "content-links" in url:
+            return 200, _adp_links()
+        return 404, b"<html>404</html>"
+
+    monkeypatch.setattr(cl, "_get", _get)
+    cl._reasons.clear()
+    assert cl.p_adp(_ADP, _ADP_URL) == (cl.UNKNOWN, None)
+    assert any(reason == "listing-http-404" for _, reason in cl._reasons)
+
+
 # --- cornerstone: the scraper's own walk through `_fetch` ----------------------------------------
 
 _CSOD = json.loads(
@@ -955,3 +1077,28 @@ def test_cornerstone_inconclusive_answers_stay_unknown(monkeypatch):
         lambda method, url, **kw: _CsodResponse(200, "<html>no context</html>"),
     )
     assert cl.p_cornerstone("ama-assn", "") == (cl.UNKNOWN, None)
+
+
+def test_adp_a_dns_failure_is_unknown_not_dead(monkeypatch):
+    """Every ADP Board is on one fixed host, so a resolver failure names no dead tenant."""
+    monkeypatch.setattr(cl, "_get", _adp_get("dns"))
+    assert cl.p_adp(_ADP, _ADP_URL) == (cl.UNKNOWN, None)
+
+
+def test_adp_a_center_closed_to_external_candidates_is_dead(monkeypatch):
+    """The listing answers 403 "Job listing is not allowed for external candidates." for a
+    center its client keeps internal: nothing on it is public."""
+
+    def _get(url, headers=None):
+        if "content-links" in url:
+            return 200, _adp_links()
+        return 403, b"Job listing is not allowed for external candidates."
+
+    monkeypatch.setattr(cl, "_get", _get)
+    assert cl.p_adp(_ADP, _ADP_URL) == (cl.DEAD, None)
+
+
+def test_adp_an_adp_side_500_is_unknown(monkeypatch):
+    """32 of 40 sampled first-pass unknowns were a 500 on both calls — re-probed, never buried."""
+    monkeypatch.setattr(cl, "_get", _adp_get(500, b'{"status":500}'))
+    assert cl.p_adp(_ADP, _ADP_URL) == (cl.UNKNOWN, None)
