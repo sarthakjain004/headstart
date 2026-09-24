@@ -128,7 +128,7 @@ BACKING: dict[str, tuple[str, ...]] = {
     "worley.eightfold.ai": (
         "taleo_enterprise:https://worleyparsons.taleo.net/careersection/ext",
     ),
-    # Second Eightfold sites of one company (#154), formerly `_EIGHTFOLD_ALIAS_LOSERS`.
+    # Second Eightfold sites of one company (#154), also `_EIGHTFOLD_ALIAS_LOSERS`.
     "nvidia.eightfold.ai": ("eightfold:jobs.nvidia.com",),
     "qualcomm.eightfold.ai": ("eightfold:careers.qualcomm.com",),
     "micron.eightfold.ai": ("eightfold:careers.micron.com",),
@@ -150,7 +150,7 @@ class Posting:
 def aliases(
     backing: Mapping[str, Sequence[str]],
     listings: Mapping[str, Sequence[Posting] | None],
-    scrapable: Collection[str],
+    eligible: Collection[str],
     on_refused: Callable[[str, str], None] = lambda board, why: None,
 ) -> dict[str, tuple[str, ...]]:
     """``{buried Board: the Boards it is buried onto}``, keys as in ``backing``.
@@ -169,7 +169,7 @@ def aliases(
         for board in ready:
             partners = pending.pop(board)
             final = tuple(dict.fromkeys(f for p in partners for f in out.get(p, (p,))))
-            why = _refusal(board, final, listings, scrapable)
+            why = _refusal(board, final, listings, eligible)
             if why is None:
                 out[board] = final
             else:
@@ -181,10 +181,10 @@ def _refusal(
     board: str,
     partners: Sequence[str],
     listings: Mapping[str, Sequence[Posting] | None],
-    scrapable: Collection[str],
+    eligible: Collection[str],
 ) -> str | None:
     """Why ``board`` is not buried onto ``partners``, or None when it is."""
-    if missing := [p for p in partners if p not in scrapable]:
+    if missing := [p for p in partners if p not in eligible]:
         return f"not Scrapable: {', '.join(missing)}"
     if unread := [p for p in partners if listings.get(p) is None]:
         return f"unread: {', '.join(unread)}"
@@ -213,13 +213,13 @@ def write_aliases(
     """Read every Board ``backing`` names through ``read(ats, slug)``, bury what ``aliases``
     elects, and replace the alias ledger beside ``liveness_dir``. A read that fails returns None
     and earns no verdict."""
-    backing = {f"{ATS}:{b}": tuple(ps) for b, ps in backing.items()}
+    keyed = {f"{ATS}:{b}": tuple(ps) for b, ps in backing.items()}
     companies = {
         b.lowercase_identity: b for b in scrapable_boards.load(liveness_dir, min_jobs=0)
     }
     # A backing Board must be Scrapable; the ledger this run replaces does not count against it.
     eligible = set(companies) | _buried_by(liveness_dir)
-    boards = sorted(set(backing) | {p for ps in backing.values() for p in ps})
+    boards = sorted(set(keyed) | {p for ps in keyed.values() for p in ps})
     where = {}
     for key in boards:
         ats, slug = key.split(":", 1)
@@ -238,7 +238,7 @@ def write_aliases(
             said = "unread" if posts is None else f"{len(posts)} postings"
             print(f"  [{n}/{len(futures)}] {key}: {said}", flush=True)
     buried = aliases(
-        backing,
+        keyed,
         listings,
         eligible,
         lambda board, why: print(f"  keep {board}: {why}", flush=True),
@@ -249,7 +249,7 @@ def write_aliases(
         for p in partners
     ]
     board_aliases.write(board_aliases.path_for(liveness_dir, ATS), rows)
-    print(f"buried {len(buried)} of {len(backing)} Eightfold Boards", flush=True)
+    print(f"buried {len(buried)} of {len(keyed)} Eightfold Boards", flush=True)
     return rows
 
 
