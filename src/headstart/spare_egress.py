@@ -43,6 +43,11 @@ probe once and every later caller degrades in a lock-and-return.
 all of them return None and leave the caller on its direct route, which is exactly the behaviour we
 have today. The fallback is worth having only if its absence costs nothing.
 
+**The daemon sits behind a port** (ADR-0195). Every operation that leaves the process — a
+``warp-cli`` or service-manager command, the SOCKS5 handshake, the trace read — is reached only
+through :class:`EgressDaemon`, whose real adapter is :class:`WarpDaemon`. Tests run on
+:class:`InMemoryEgressDaemon`, installed for the whole suite by ``tests/conftest.py``.
+
 Registration is deliberately *not* done here — ``pipeline.yml`` installs and registers ``warp-cli``
 before the scrape, so the in-process path is the three cheap calls below rather than a licence
 negotiation on the critical path. An unregistered client simply fails to connect and degrades.
@@ -96,13 +101,18 @@ import sys
 import threading
 import time
 from collections import Counter, defaultdict
+from typing import Protocol
 
 from curl_cffi import requests as _rq
 
 from headstart import log
 
 __all__ = [
+    "EgressDaemon",
+    "InMemoryEgressDaemon",
+    "WarpDaemon",
     "egress_ips",
+    "generation",
     "mark_walled",
     "note_routed",
     "note_settled",
@@ -111,11 +121,13 @@ __all__ = [
     "proxy_url",
     "report",
     "reset",
+    "riding_the_tunnel",
     "rotate",
     "rotation_causes",
     "rotations",
     "stream_width",
     "traffic",
+    "use_daemon",
     "wait_deadline",
     "walled_groups",
 ]
@@ -275,7 +287,7 @@ def proxy_url() -> str | None:
         if _resolved:
             return _proxy
         started = time.monotonic()
-        _proxy = _connect()
+        _proxy = _daemon.dial()
         _resolved = True
         took = time.monotonic() - started
         connected = _proxy
@@ -916,18 +928,10 @@ def rotate(board: str | None = None, *, deadline: float | None = None) -> bool:
         # turned Workday's fanned-out listing pages into `curl: (56)` losses (see `_DRAIN_CAP`).
         _drain(_DRAIN_CAP)
         try:
-            if not _restart_daemon():
+            if not _daemon.restart():
                 _rotations["failed"] += 1
                 return False
-            # `systemctl restart` returns once the *unit* is back, but warp-svc needs a moment to
-            # come up and reconnect. Re-arming immediately means all three calls land on a daemon
-            # that is not listening yet, fail silently, and the handshake wait below then burns its
-            # whole deadline for nothing. The sibling project sleeps here for the same reason.
-            time.sleep(_RESTART_SETTLE)
-            _run("mode", "proxy")
-            _run("proxy", "port", str(_PORT))
-            _run("connect")
-            if not _await_socks5():
+            if not _daemon.reconnect():
                 # Do NOT pin the process to the direct route. Clearing `_resolved` alongside
                 # `_proxy` is what lets a later caller re-dial; leaving it set would make one bad
                 # rotation permanent, which is strictly worse than never having rotated.
@@ -999,11 +1003,7 @@ def _observe_egress_ip() -> None:
     if not proxy:
         return
     try:
-        body = _rq.get(
-            _TRACE_URL,
-            proxies={"http": proxy, "https": proxy},
-            timeout=_TRACE_TIMEOUT,
-        ).text
+        body = _daemon.read_trace(proxy)
     except Exception:  # noqa: BLE001 — telemetry must never fail a rotation
         with _rotation_lock:
             _egress_ips["unreadable"] += 1
@@ -1164,6 +1164,120 @@ def _restart_daemon() -> bool:
         )
         return _reregister()
     return True
+
+
+# --- the daemon, behind a port (ADR-0195) ---------------------------------------------------------
+# Everything above that shells out, opens a socket or reads the trace endpoint is reached from the
+# policy in this module only through `_daemon`, one object with four operations. `WarpDaemon` is the
+# real one; `InMemoryEgressDaemon` touches nothing outside the process, and `tests/conftest.py`
+# installs one for every test, so no test can restart the machine's own WARP daemon by forgetting a
+# stub — which `tests/test_http.py` did, once, until an autouse stub on `rotate` papered over it
+# (pid 96855 -> 97119 during one test run).
+
+
+class EgressDaemon(Protocol):
+    """What the spare-egress policy needs from the thing that supplies egress addresses.
+
+    None of the four raises except :meth:`read_trace`, whose caller treats any exception as an
+    unreadable trace; the other three report failure as None or False and log their own detail.
+    """
+
+    def dial(self) -> str | None:
+        """Bring the proxy up; its URL, or None when it cannot be raised."""
+        ...
+
+    def restart(self) -> bool:
+        """Move to a new egress address. True once the move was made, whatever it cost."""
+        ...
+
+    def reconnect(self) -> bool:
+        """After :meth:`restart`, bring the proxy back on the same port. True once it answers."""
+        ...
+
+    def read_trace(self, proxy: str) -> str:
+        """The body of Cloudflare's trace endpoint, read through ``proxy``."""
+        ...
+
+
+class WarpDaemon:
+    """The real :class:`EgressDaemon`: Cloudflare WARP, driven through ``warp-cli`` and the service
+    manager. Its implementation is this module's private OS functions (`_connect`,
+    `_restart_daemon`, `_reregister`, `_await_socks5`), which nothing else here calls."""
+
+    def dial(self) -> str | None:
+        return _connect()
+
+    def restart(self) -> bool:
+        return _restart_daemon()
+
+    def reconnect(self) -> bool:
+        # `systemctl restart` returns once the *unit* is back, but warp-svc needs a moment to come
+        # up and reconnect. Re-arming immediately means all three calls land on a daemon that is
+        # not listening yet, fail silently, and the handshake wait below then burns its whole
+        # deadline for nothing. The sibling project sleeps here for the same reason.
+        time.sleep(_RESTART_SETTLE)
+        _run("mode", "proxy")
+        _run("proxy", "port", str(_PORT))
+        _run("connect")
+        return _await_socks5()
+
+    def read_trace(self, proxy: str) -> str:
+        return _rq.get(
+            _TRACE_URL,
+            proxies={"http": proxy, "https": proxy},
+            timeout=_TRACE_TIMEOUT,
+        ).text
+
+
+class InMemoryEgressDaemon:
+    """An :class:`EgressDaemon` that never leaves the process, for tests.
+
+    The default is a machine with no WARP at all — what CI's test job is — so nothing dials,
+    rotates or traces. A test that wants a working daemon names the proxy it should hand out and
+    the trace it should read back. ``calls`` records each operation by name, in order.
+    """
+
+    def __init__(
+        self,
+        proxy: str | None = None,
+        *,
+        restart_succeeds: bool = False,
+        reconnect_succeeds: bool = False,
+        trace: str | None = None,
+    ) -> None:
+        self.proxy = proxy
+        self.restart_succeeds = restart_succeeds
+        self.reconnect_succeeds = reconnect_succeeds
+        self.trace = trace
+        self.calls: list[str] = []
+
+    def dial(self) -> str | None:
+        self.calls.append("dial")
+        return self.proxy
+
+    def restart(self) -> bool:
+        self.calls.append("restart")
+        return self.restart_succeeds
+
+    def reconnect(self) -> bool:
+        self.calls.append("reconnect")
+        return self.reconnect_succeeds
+
+    def read_trace(self, proxy: str) -> str:
+        self.calls.append("read_trace")
+        if self.trace is None:
+            raise OSError("no trace endpoint in memory")
+        return self.trace
+
+
+_daemon: EgressDaemon = WarpDaemon()
+
+
+def use_daemon(daemon: EgressDaemon) -> EgressDaemon:
+    """Route every daemon operation through ``daemon`` from now on; return the one it replaces."""
+    global _daemon
+    previous, _daemon = _daemon, daemon
+    return previous
 
 
 def rotations() -> Counter[str]:
