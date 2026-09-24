@@ -523,6 +523,12 @@ _FIELD_PARSERS = {
     # figure as annual (docs/breezy/2026-09-23_json-api-measurement.md). A new key, so no stored
     # row changes and no DERIVATIONS_VERSION bump.
     "breezy": _field_range_currency_interval,
+    # jibe: "13.66-19.16 HOUR" / "1538.46-1538.46 USD WEEK" — jibe.py's own `_salary_field()`
+    # spells the listing's `salary_min_value`/`salary_max_value`/`salary_value` and
+    # `salary_frequency` (HOURLY/WEEKLY/YEARLY) as RANGE CODE UNIT, for the bare unit words this
+    # parser annualises (docs/jibe/2026-09-24_api-jobs-measurement.md). A new key, so no stored row
+    # changes and no DERIVATIONS_VERSION bump.
+    "jibe": _field_range_currency_interval,
 }
 
 

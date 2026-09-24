@@ -205,6 +205,31 @@ def test_label_extraction_reads_the_subdomain_and_drops_vendor_hosts(miner):
     assert hits["acme"] == "https://Acme.bamboohr.com/careers/12"
 
 
+def test_jibe_reads_a_single_label_client_and_nothing_deeper(miner):
+    """A Jibe Board is the client label of `{client}.jibeapply.com`. A vanity host's CNAME
+    target and a `*.staging` test host sit under the same zone but are not client labels, so
+    they must capture nothing, not their last label."""
+    spec = miner.ATS_PATTERNS["jibe"]
+    pats = [re.compile(p, re.IGNORECASE) for p in spec["patterns"]]
+    hits: dict[str, str] = {}
+    miner.extract_tenants(
+        spec,
+        pats,
+        [
+            "https://Costco.jibeapply.com/jobs/123?lang=en-us",
+            "https://uhs.jibeapply.com/",
+            "https://careers.rm.com.jibeapply.com/jobs",
+            "https://uhs.staging.jibeapply.com/jobs",
+            "https://staging.jibeapply.com/",
+            "https://www.jibeapply.com/",
+            "https://x.example.com/?next=https%3A%2F%2Fpetsmart.jibeapply.com%2Fjobs",
+            "https://acme.jibeapply.com.evil.example/",
+        ],
+        hits,
+    )
+    assert sorted(hits) == ["costco", "petsmart", "uhs"]
+
+
 def test_cornerstone_pattern_keeps_career_site_urls_and_skips_the_lms(miner):
     """`{corp}.csod.com` hosts the vendor's LMS on the same label; only the recruiting career
     site names a Board, and an encoded share link must not capture `2f`."""

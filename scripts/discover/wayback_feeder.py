@@ -318,6 +318,10 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     # costs one `probe_icims.py` request and lands as a dead ledger row, so the error is bounded
     # and self-correcting rather than silent.
     "icims": _with_style("host", "icims.com"),
+    # One host, `{client}.jibeapply.com`: the label is the client id `jibe.py` keys on. A vanity
+    # host's CNAME target (`careers.rm.com.jibeapply.com`) has dots in its label, and the
+    # `"." in label` guard in `extract` drops it rather than minting a slug.
+    "jibe": _with_style("sub", "jibeapply.com"),
     # `kekahire.com` is a real alias domain, deliberately NOT swept: the ledger holds 1,820 Keka
     # rows and zero on it, and an 18-tenant sample found 16 already known and the other 2 dead.
     # It was added once because the alias machinery made it a one-word change; that is not a

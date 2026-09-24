@@ -866,6 +866,108 @@ def test_pinpoint_a_failed_re_ask_of_an_empty_listing_is_unknown(monkeypatch):
         assert cl.p_pinpoint("acme", "") == (cl.UNKNOWN, None)
 
 
+# --- jibe: DNS settles dead, robots.txt is read first, the listing's totalCount is the count -----
+
+_JIBE_ALLOW = "User-agent: *\nAllow: /\nSitemap: http://x/sitemap.xml\ncrawl-delay: 5\n"
+_JIBE_DISALLOW = (
+    "User-agent: *\nDisallow: /\nSitemap: http://x/sitemap.xml\ncrawl-delay: 5\n"
+)
+
+
+def _jibe(monkeypatch, robots, api=None):
+    """`_fetch` keyed on path; `robots`/`api` are (status, body) or an exception. Records calls
+    and the sleep between them."""
+    calls: list[str] = []
+    monkeypatch.setattr(cl.time, "sleep", lambda s: calls.append(f"sleep {s}"))
+
+    def fake(method, url, **kw):
+        calls.append(url)
+        answer = robots if url.endswith("/robots.txt") else api
+        if isinstance(answer, Exception):
+            raise answer
+        status, body = answer
+        return SimpleNamespace(status_code=status, text=body)
+
+    monkeypatch.setattr(cl, "_fetch", fake)
+    return calls
+
+
+def test_jibe_an_unresolvable_label_is_dead_once_public_dns_agrees(monkeypatch):
+    """No A record for an unknown label (`zzzzqqq`, 101 pool labels) — but only a public
+    resolver's answer counts: the macOS resolver said "no such host" for live `uhs` under load."""
+    calls = _jibe(
+        monkeypatch, cl.http.RequestsError("Could not resolve host", code=cl._DNS_ERR)
+    )
+    asked = []
+    monkeypatch.setattr(cl, "_jibe_has_no_a_record", lambda h: asked.append(h) or True)
+    assert cl.p_jibe("att", "https://att.jibeapply.com") == (cl.DEAD, None)
+    assert calls == ["https://att.jibeapply.com/robots.txt"]
+    assert asked == ["att.jibeapply.com"]
+
+
+def test_jibe_a_local_dns_failure_public_dns_contradicts_is_unknown(monkeypatch):
+    _jibe(
+        monkeypatch, cl.http.RequestsError("Could not resolve host", code=cl._DNS_ERR)
+    )
+    monkeypatch.setattr(cl, "_jibe_has_no_a_record", lambda h: False)
+    assert cl.p_jibe("uhs", "https://uhs.jibeapply.com") == (cl.UNKNOWN, None)
+
+
+def test_jibe_a_live_board_is_counted_after_the_crawl_delay(monkeypatch):
+    calls = _jibe(
+        monkeypatch, (200, _JIBE_ALLOW), (200, '{"jobs":[],"totalCount":20093}')
+    )
+    assert cl.p_jibe("costco", "https://costco.jibeapply.com") == (cl.LIVE, 20093)
+    assert calls == [
+        "https://costco.jibeapply.com/robots.txt",
+        "sleep 5.0",
+        "https://costco.jibeapply.com/api/jobs?page=1&limit=1&internal=false",
+    ]
+
+
+def test_jibe_an_empty_board_is_live_with_zero(monkeypatch):
+    """254 clients answer `totalCount: 0` — live, nothing open."""
+    _jibe(monkeypatch, (200, _JIBE_ALLOW), (200, '{"jobs":[],"totalCount":0}'))
+    assert cl.p_jibe("arco", "https://arco.jibeapply.com") == (cl.LIVE, 0)
+
+
+def test_jibe_a_disallowing_host_is_never_read(monkeypatch):
+    """carrefour serves `Disallow: /`: UNKNOWN, and no listing request is made."""
+    calls = _jibe(monkeypatch, (200, _JIBE_DISALLOW), (200, '{"totalCount":930}'))
+    assert cl.p_jibe("carrefour", "https://carrefour.jibeapply.com") == (
+        cl.UNKNOWN,
+        None,
+    )
+    assert calls == ["https://carrefour.jibeapply.com/robots.txt"]
+
+
+def test_jibe_an_unreachable_robots_file_is_unknown(monkeypatch):
+    """RFC 9309: a 5xx robots.txt permits nothing (`uri` answers 500)."""
+    calls = _jibe(monkeypatch, (500, "Internal Server Error"))
+    assert cl.p_jibe("uri", "https://uri.jibeapply.com") == (cl.UNKNOWN, None)
+    assert len(calls) == 1
+
+
+def test_jibe_a_listing_404_is_unknown_not_dead(monkeypatch):
+    """21 resolving labels answer the listing with 404 (dycom's board lives under `/dycom/`)."""
+    _jibe(
+        monkeypatch,
+        (200, _JIBE_ALLOW),
+        (404, '{"data":{"error":"An unexpected error occurred"}}'),
+    )
+    assert cl.p_jibe("dycom", "https://dycom.jibeapply.com") == (cl.UNKNOWN, None)
+
+
+def test_jibe_a_non_json_listing_is_unknown(monkeypatch):
+    """fedex answers the listing with an Okta SSO form."""
+    _jibe(
+        monkeypatch,
+        (200, _JIBE_ALLOW),
+        (200, "<html><form action='https://purpleid.okta.com'>"),
+    )
+    assert cl.p_jibe("fedex", "https://fedex.jibeapply.com") == (cl.UNKNOWN, None)
+
+
 # --- cornerstone: the scraper's own walk through `_fetch` ----------------------------------------
 
 _CSOD = json.loads(

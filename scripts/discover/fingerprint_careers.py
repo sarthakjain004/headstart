@@ -242,6 +242,10 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
         "ats",
         [SUB + r"zwayam\.com", SUB + r"openings\.co", r"public\.zwayam\.com"],
     ),
+    # A Jibe Board is its client id, the single label of `{client}.jibeapply.com`. SUB's
+    # lookbehind keeps a vanity CNAME target (`careers.rm.com.jibeapply.com`) from yielding
+    # its last label: no match can start mid-host, and `careers.` is not followed by the zone.
+    "jibe": ("ats", [SUB + r"jibeapply\.com"]),
     # ---------- NOT supported: global ----------
     # Both scrapers are host-keyed.  Capturing only the first provider label would turn
     # `1-bp.icims.com` into `1-bp`, a string no scraper can use.
@@ -619,6 +623,10 @@ CNAME_ZONES = {
     "ultipro.com": "ukg",
     "jobscore.com": "jobscore",
 }
+# Zones whose *single-label* hosts are a different ATS's Board than the zone's CNAME targets.
+# `{client}.jibeapply.com` is a Jibe client's own host, while a vanity host CNAMEs to a dotted
+# `careers.rm.com.jibeapply.com`, which stays with `CNAME_ZONES` above. `zone_of` checks here first.
+DIRECT_LABEL_ZONES = {"jibeapply.com": "jibe"}
 CNAME_LABELS = (
     "careers",
     "jobs",
@@ -776,6 +784,7 @@ CNAME_LABEL_ATS = frozenset(
         "clearcompany",
         "darwinbox",
         "freshteam",
+        "jibe",
         "keka",
         "recruitee",
         "sensehq",
@@ -1175,6 +1184,11 @@ def _zone_match(host: str) -> tuple[str, str] | None:
 
 
 def zone_of(host: str) -> str | None:
+    h = host.lower().rstrip(".")
+    for zone, ats in DIRECT_LABEL_ZONES.items():
+        label = h.removesuffix("." + zone)
+        if label != h and "." not in label:
+            return ats
     matched = _zone_match(host)
     return matched[1] if matched else None
 

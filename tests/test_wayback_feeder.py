@@ -688,6 +688,20 @@ def test_workdaysite_reads_the_cxs_route_like_the_other_domain_does():
     )
 
 
+def test_jibe_keys_on_the_client_label_and_drops_vanity_cname_targets():
+    """`{client}.jibeapply.com` is the Board; a vanity CNAME target is not a client label."""
+    assert wf.ATS_HOSTS["jibe"] == (("jibeapply.com", "sub"),)
+    assert wf.extract(
+        "https://Costco.jibeapply.com/jobs/123?lang=en-us", "jibeapply.com", "sub"
+    ) == ("costco", "https://costco.jibeapply.com")
+    for url in (
+        "https://careers.rm.com.jibeapply.com/jobs",  # vanity CNAME target
+        "https://uhs.staging.jibeapply.com/jobs",  # test host
+        "https://www.jibeapply.com/",  # vendor site
+    ):
+        assert wf.extract(url, "jibeapply.com", "sub") is None
+
+
 def test_keka_alias_domain_is_deliberately_not_swept():
     """Measured yield was zero, so it stays out — rule 2, not an oversight."""
     assert "kekahire.com" not in dict(wf.ATS_HOSTS["keka"])

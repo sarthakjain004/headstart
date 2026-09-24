@@ -182,6 +182,7 @@ supersedes it and note the supersession in both.
 | [0182](0182-a-clearcompany-board-is-its-hrm-direct-feed.md) | A ClearCompany Board is its HRM Direct feed, not a clearcompany.com surface | 2026-09-23 |
 | [0183](0183-a-cornerstone-board-is-the-tenant-read-across-every-career-site.md) | A Cornerstone Board is the tenant, read across every career site | 2026-09-23 |
 | [0184](0184-a-pinpoint-board-is-read-from-its-listing-and-dated-from-its-page.md) | A Pinpoint Board is read from its listing and dated from its posting pages | 2026-09-23 |
+| [0185](0185-a-jibe-board-is-a-client-read-under-its-own-robots-rules.md) | A Jibe Board is a client, read under its own robots.txt, minus what iCIMS already serves | 2026-09-24 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*
