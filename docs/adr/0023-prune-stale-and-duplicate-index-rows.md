@@ -8,7 +8,7 @@
   requisition's duplicate group is its tenant, not its Board, and sync refuses the copies too
 - Amended by: [ADR-0219](0219-a-boards-row-is-elected-on-evidence-its-key-is-kept.md) — the
   representative keeps the lex-min key but is fetched from the newest live row carrying it, and a
-  Board whose newest verified row is `dead` is not scraped
+  Board with a `dead` row newer than its newest `live` row is not scraped
 - Builds on [ADR-0014](0014-search-index-ingestion-and-freshness.md) (board-scoped incremental
   sync) and [ADR-0020](0020-free-tier-deployment.md) (the state round-trip the Space serves)
 

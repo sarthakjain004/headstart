@@ -77,7 +77,7 @@ def _counts() -> dict[str, int]:
     rows = _ledger_rows()
     unique = _elected_boards(rows)
     # Two things separate Live row from Unique Board: duplicate spellings of one Board, and Boards
-    # whose newest verified row is `dead` (ADR-0219). The docs quote them apart.
+    # with a `dead` row newer than their newest `live` row (ADR-0219). The docs quote them apart.
     live_groups = {c.lowercase_identity for c, v in rows if v.status == liveness.LIVE}
     # Boards buried as another Board's duplicate (ADR-0111). A stage of the funnel that neither
     # `EXCLUDED_BOARDS` nor the case-variant dedupe accounts for: it is keyed on evidence from
@@ -102,6 +102,7 @@ def _counts() -> dict[str, int]:
         for c, v in enabled_rows
         if v.status == liveness.LIVE and is_excluded(c.ats, c.slug)
     ]
+    # Every status is kept here, unlike the list above: the election reads `dead` rows too.
     exclude_first_kept = [
         (c, v)
         for c, v in enabled_rows
@@ -116,7 +117,7 @@ def _counts() -> dict[str, int]:
         "unknown": by_status.get("unknown", 0),
         "Unique Board": len(unique),
         "duplicate_spellings": by_status.get("live", 0) - len(live_groups),
-        "outvoted": len(live_groups) - len(unique),
+        "newer_dead": len(live_groups) - len(unique),
         "disabled": len(unique) - len(enabled),
         "excluded_after_dedupe": len(enabled) - len(kept),
         "aliased": len(kept) - len(unaliased),
@@ -124,7 +125,7 @@ def _counts() -> dict[str, int]:
         # above. Both are real; each doc must be checked in the order it actually states.
         "excluded_before_dedupe": len(exclude_first_excluded),
         "dedupe_after_exclude": len(kept_live) - len(kept_groups),
-        "outvoted_after_exclude": len(kept_groups)
+        "newer_dead_after_exclude": len(kept_groups)
         - len(_elected_boards(exclude_first_kept)),
         "parked": sum(1 for c in unaliased if c.lowercase_identity in PARKED_BOARDS),
         "Scrapable Board": len(load(LEDGER, min_jobs=0)),
@@ -242,7 +243,7 @@ def test_the_readme_funnel_agrees_with_the_ledger() -> None:
         truth["excluded_before_dedupe"],
         truth["aliased"],
         truth["dedupe_after_exclude"],
-        truth["outvoted_after_exclude"],
+        truth["newer_dead_after_exclude"],
         truth["parked"],
     ]
     assert deltas == expected, (
@@ -284,13 +285,13 @@ def test_every_derived_figure_is_current_at_every_site_that_quotes_it() -> None:
         ("README.md", r"collapse to ([\d,]+) Unique Boards", (truth["Unique Board"],)),
         (
             "README.md",
-            r"and the ([\d,]+) whose newest row is `dead` are dropped",
-            (truth["outvoted"],),
+            r"and the ([\d,]+) with a `dead` row newer than their newest `live` row are dropped",
+            (truth["newer_dead"],),
         ),
         (
             "CONTEXT.md",
-            r"less the ([\d,]+) Boards whose newest verified row is `dead`",
-            (truth["outvoted"],),
+            r"less the ([\d,]+) Boards with a `dead` row newer than their newest `live` row",
+            (truth["newer_dead"],),
         ),
         ("CONTEXT.md", r"because ([\d,]+) live rows are duplicate spellings", (dupes,)),
         (

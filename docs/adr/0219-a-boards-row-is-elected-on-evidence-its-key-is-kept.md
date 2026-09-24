@@ -109,6 +109,9 @@ in the prober: write the data centre that answered into the row's url. It is not
 
 ## Consequences
 
+- `min_jobs` reads the job count on the key row, not on the newest live row. A Board whose key row
+  counts 0 while a newer row in another casing counts jobs would leave Hiring on stale evidence;
+  the committed ledger has 0 such groups today (checked 2026-09-25).
 - `index prune` evicts the 4 dropped Boards' rows, since `live_keep_set` reads `load`.
 - CONTEXT.md and the README separate the two things between Live row and Unique Board: 6,632
   duplicate spellings and 4 Boards outvoted by a newer `dead` row. The README funnel gains the

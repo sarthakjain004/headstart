@@ -133,7 +133,7 @@ is why `CompanyPrefs` is keyed by **board_key** and never by company name.
 
 The liveness pipeline has probed **304,519 ledger rows**: 187,173 live, 100,453 dead, 16,893 unknown
 — rows, not boards; they collapse to 180,537 Unique Boards once duplicate spellings of the same
-board are folded together and the 4 whose newest row is `dead` are dropped (`CONTEXT.md` §Counting
+board are folded together and the 4 with a `dead` row newer than their newest `live` row are dropped (`CONTEXT.md` §Counting
 Boards).
 
 ## What this optimises for

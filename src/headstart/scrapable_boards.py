@@ -9,7 +9,7 @@
    ``ats:slug``);
 3. a Board buried as another's duplicate in the alias ledger (ADR-0111, on the lowercased slug);
 4. the election (:func:`_elect`, ADR-0023 as amended by ADR-0219): rows naming one Board, compared
-   case-insensitively, collapse to one; a Board whose newest verified row is ``dead`` drops out;
+   case-insensitively, collapse to one; a Board with a ``dead`` row newer than its newest ``live`` row drops out;
 5. under ``min_jobs``, on the elected row's count;
 6. a Board in ``config.PARKED_BOARDS``, on the lowercased identity the election collapsed on.
 
@@ -67,6 +67,11 @@ class ScrapableBoard(CompanyRef):
 
 #: One ledger row read as the Board it names: the unit :func:`_elect` groups and chooses among.
 Row = tuple[ScrapableBoard, liveness.Verdict]
+
+
+def _verdict_of(row: Row) -> liveness.Verdict:
+    _board, verdict = row
+    return verdict
 
 
 def is_excluded(ats: str, slug: str) -> bool:
@@ -187,5 +192,5 @@ def _elect(
         key = min(b.identity for b, _ in live)
         carriers = [(b, v) for b, v in live if b.identity == key]
         # `max` keeps the first of equal dates, and `rows` is in ledger order.
-        elected.append(max(carriers, key=lambda row: row[1].checked_at))
+        elected.append(max(carriers, key=lambda row: _verdict_of(row).checked_at))
     return elected
