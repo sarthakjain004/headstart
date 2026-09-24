@@ -6,6 +6,7 @@ import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
 from headstart import fanout_stats, http
+from headstart.scrapers import base
 from headstart.scrapers.base import (
     DEFAULT_REQUEST_HEADERS,
     BaseScraper,
@@ -682,6 +683,91 @@ def test_run_detail_pass_labels_every_loss_on_either_transport(
         and request.kwargs["timeout"] == 30
         for request in fetcher.requests
     )
+
+
+class _Clock:
+    """A monotonic clock the detail routes advance, so the stall window is measured in fetches."""
+
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+
+def _stalling_route(clock, step):
+    def route(method, url, kwargs):
+        clock.now += step
+        return _detail_route(method, url, kwargs)
+
+    return route
+
+
+@pytest.mark.parametrize("async_fanout", ["1", "0"])
+def test_run_detail_pass_breaks_off_when_no_detail_succeeds_for_the_stall_window(
+    monkeypatch, async_fanout
+):
+    """Run 36003741124: `oracle:egud`'s detail pass ran 56 min after its listing and the shard's
+    budget killed it. Once nothing has succeeded for the window, the rest is skipped, labelled."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
+    clock = _Clock()
+    monkeypatch.setattr(base, "_detail_clock", clock)
+    scraper = _DetailStub("x", fetcher=FakeFetcher(_stalling_route(clock, 400.0)))
+    scraper.detail_workers = 1
+    rows = [{"id": "refused"} for _ in range(4)]
+
+    details = scraper.run_detail_pass(
+        rows, key_of=lambda row: row.get("id"), what="pages", concurrency=1
+    )
+
+    assert details.missing == 4
+    assert scraper.detail_losses == {
+        "RequestException": 2,
+        base.DETAIL_STALLED: 2,
+    }
+    assert scraper.telemetry["detail_stalled"] == 2
+    assert scraper.telemetry["detail_attempted"] == 2  # skipped items formed no request
+
+
+@pytest.mark.parametrize("async_fanout", ["1", "0"])
+def test_run_detail_pass_keeps_going_while_details_still_succeed(
+    monkeypatch, async_fanout
+):
+    """A slow pass that is still landing details is not a stall: `oracle:ejwl` legitimately
+    spends ~26 min, and a wall-clock cap would cut it where this does not."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
+    clock = _Clock()
+    monkeypatch.setattr(base, "_detail_clock", clock)
+    scraper = _DetailStub("x", fetcher=FakeFetcher(_stalling_route(clock, 400.0)))
+    scraper.detail_workers = 1
+    rows = [{"id": i} for i in ("refused", "ok", "refused", "refused")]
+
+    scraper.run_detail_pass(
+        rows, key_of=lambda row: row.get("id"), what="pages", concurrency=1
+    )
+
+    assert base.DETAIL_STALLED not in scraper.detail_losses
+    assert scraper.telemetry["detail_stalled"] == 0
+
+
+def test_run_detail_pass_bounds_a_detail_that_never_returns(monkeypatch):
+    """Every request carries a timeout, but a multiplexed stream can still hang past it; one
+    stuck item must not hold the whole pass, and so the whole shard, open."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "1")
+    monkeypatch.setattr(base, "_DETAIL_ITEM_TIMEOUT_S", 0.05)
+    scraper = _DetailStub("x", fetcher=FakeFetcher(_detail_route))
+
+    async def never(session, item):
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(scraper, "_fetch_detail_outcome_async", never)
+
+    details = scraper.run_detail_pass(
+        [{"id": "ok"}], key_of=lambda row: row.get("id"), what="pages"
+    )
+
+    assert details.missing == 1
+    assert scraper.detail_losses == {base.DETAIL_TIMED_OUT: 1}
 
 
 def test_run_detail_pass_gates_on_the_listing_and_skips_held_details(monkeypatch):

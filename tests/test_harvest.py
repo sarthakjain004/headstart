@@ -296,6 +296,25 @@ def test_cost_is_recorded_under_board_key_not_the_url_slug(monkeypatch, tmp_path
     assert set(rows) == {"workday:accenture/careers"}
 
 
+def test_a_board_whose_detail_pass_stalled_writes_no_cost(monkeypatch, tmp_path):
+    """ADR-0209: time spent while the origin landed nothing is not what the Board costs. Recording
+    it prices a healthy Board out through the value gate for 14 days (`oracle:egud`, 2026-09-24),
+    so the stalled Board keeps its previous row and the healthy one is costed as usual."""
+    stalled = FakeScraper([make_job("x:s:1")])
+    stalled.telemetry = {"detail_stalled": 3}
+
+    monkeypatch.setattr(
+        harvest,
+        "get_scraper",
+        lambda ats, slug, *a, **k: stalled if slug == "stalled" else FakeScraper(),
+    )
+    scrape_all(
+        [CompanyRef("x", "stalled", "S"), CompanyRef("x", "healthy", "H")],
+        jobs_dir=tmp_path,
+    )
+    assert set(read_shard_rows(tmp_path / harvest.COST_FILENAME)) == {"x:healthy"}
+
+
 def test_resume_still_journals_the_url_the_shard_actually_fetched(
     monkeypatch, tmp_path
 ):
