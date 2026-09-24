@@ -8613,7 +8613,15 @@ def test_workday_html_500_mid_crawl_is_one_lost_page_not_a_failed_board(monkeypa
             return _NonJsonListing(_TOMCAT_500, status_code=500)
         return page(offset)
 
-    monkeypatch.setattr(http, "fetch", lambda method, url, **kw: page(0))
+    def fetch(
+        method, url, **kw
+    ):  # the second pass (ADR-0076 amendment) fails the page again
+        offset = kw["json"]["offset"]
+        if offset == 40:
+            return _NonJsonListing(_TOMCAT_500, status_code=500)
+        return page(offset)
+
+    monkeypatch.setattr(http, "fetch", fetch)
     monkeypatch.setattr(http, "fetch_async", fetch_async)
     scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
     absorbed = []
@@ -8626,7 +8634,102 @@ def test_workday_html_500_mid_crawl_is_one_lost_page_not_a_failed_board(monkeypa
         "R80",
     ]
     assert "1 of 5 page(s) failed mid-crawl" in scraper.truncated
-    assert scraper.telemetry["listing_loss_causes"] == {"HTTP 500": 1}
+    assert scraper.telemetry["listing_loss_causes"] == {"HTTP 500": 2}
+
+
+def _second_pass_scraper(monkeypatch, answer):
+    from headstart.scrapers.workday import WorkdayScraper
+
+    asked = []
+    scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+
+    def post(applied, offset, **_):
+        asked.append(offset)
+        return answer
+
+    monkeypatch.setattr(scraper, "_post", post)
+    return scraper, asked
+
+
+def test_workday_second_pass_stops_at_its_per_board_budget(monkeypatch):
+    """Five lost pages are asked again; six are an origin failing and none are. The budget is
+    the Board's, and a slice needing more than is left is skipped whole, not asked in part."""
+    from collections import Counter
+
+    from headstart.scrapers.workday import _SECOND_PASS_MAX
+
+    assert _SECOND_PASS_MAX == 5
+    page = {"jobPostings": [{"bulletFields": ["R"]}]}
+
+    scraper, asked = _second_pass_scraper(monkeypatch, page)
+    six = {offset: "HTTP 500" for offset in range(20, 140, 20)}
+    assert scraper._second_pass({}, six, [].extend, Counter({"HTTP 500": 6})) == 0
+    assert asked == []
+
+    scraper, asked = _second_pass_scraper(monkeypatch, page)
+    five = dict(list(six.items())[:5])
+    assert scraper._second_pass({}, five, [].extend, Counter({"HTTP 500": 5})) == 5
+    assert asked == list(five)
+
+    scraper, asked = _second_pass_scraper(monkeypatch, page)
+    three = {20: "HTTP 500", 40: "HTTP 500", 60: "HTTP 500"}
+    assert scraper._second_pass({}, three, [].extend, Counter({"HTTP 500": 3})) == 3
+    # a second slice losing three more is past what is left of the Board's five
+    assert scraper._second_pass({}, three, [].extend, Counter({"HTTP 500": 3})) == 0
+    assert asked == [20, 40, 60]
+
+
+def test_workday_a_page_that_404s_on_the_second_pass_is_labelled_a_404(monkeypatch):
+    """Still lost, and the truncation reason names why it is lost now, not why it was first."""
+    from collections import Counter
+
+    scraper, _ = _second_pass_scraper(monkeypatch, None)
+    classes = Counter({"HTTP 500": 1})
+    assert scraper._second_pass({}, {40: "HTTP 500"}, [].extend, classes) == 0
+    assert classes == Counter({"404 mid-crawl": 1})
+
+
+def test_workday_a_page_lost_mid_crawl_is_tried_once_more_after_the_fan_out(
+    monkeypatch,
+):
+    """Pipeline runs 35971969417..35998606646: 71 of 132 scope exclusions were Workday Boards that
+    lost 1-2 pages to a ConnectionError or HTTP 500 and were never asked again, so the whole
+    Board left eviction scope. A page that answers on the second pass is read, and the Board
+    stays authoritative."""
+    from headstart.scrapers.workday import WorkdayScraper
+
+    def page(offset):
+        return _Status(
+            payload={
+                "total": 100,
+                "jobPostings": [{"bulletFields": [f"R{offset}"]}],
+                "facets": [],
+            }
+        )
+
+    async def fetch_async(session, method, url, **kw):
+        offset = kw["json"]["offset"]
+        if offset == 40:
+            return _NonJsonListing(_TOMCAT_500, status_code=500)
+        return page(offset)
+
+    monkeypatch.setattr(
+        http, "fetch", lambda method, url, **kw: page(kw["json"]["offset"])
+    )
+    monkeypatch.setattr(http, "fetch_async", fetch_async)
+    scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+    absorbed = []
+    scraper._exhaust({}, absorbed.extend, depth=0)
+
+    assert sorted(p["bulletFields"][0] for p in absorbed) == [
+        "R0",
+        "R20",
+        "R40",
+        "R60",
+        "R80",
+    ]
+    assert scraper.truncated is None
+    assert scraper.telemetry["listing_second_pass_recovered"] == 1
 
 
 @pytest.mark.parametrize(
