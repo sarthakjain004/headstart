@@ -711,8 +711,9 @@ class BaseScraper(ABC):
         scraper states what it found. The expected shape is a bare string carrying whatever the
         native field states — a number or range, a currency code, and a period — space-separated,
         e.g. Lever's ``_salary_field`` returns ``"50000-70000 USD per-year-salary"`` from
-        ``salaryRange``. An ATS with no calibrated ``salary.py`` parser still reaches
-        ``_field_generic``, so any reasonable "AMOUNT[-AMOUNT] [CURRENCY] [PERIOD]" spelling is
+        ``salaryRange``. Build that shape with ``headstart.salary.to_field``, the encoder paired
+        with ``from_field`` (ADR-0197), rather than by hand. An ATS with no calibrated
+        ``salary.py`` parser still reaches ``_field_generic``, so any reasonable "AMOUNT[-AMOUNT] [CURRENCY] [PERIOD]" spelling is
         safe to emit even without adding a dedicated Tier-1 parser for it.
 
         ``raw`` is deliberately loose: every ATS's raw per-job record shape differs, so each

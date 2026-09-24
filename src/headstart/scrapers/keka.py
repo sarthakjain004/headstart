@@ -64,6 +64,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from headstart import salary
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
@@ -105,11 +106,10 @@ def _format_num(v: float) -> str:
     return f"{v:f}".rstrip("0").rstrip(".") or "0"
 
 
-#: salaryPeriod -> the phrase word `headstart.salary._period_multiplier` recognizes, so
-#: `_field_keka` annualizes the figure before the plausibility bounds are checked. See
+#: salaryPeriod -> the phrase word `headstart.salary.from_field` recognizes for keka, so it
+#: annualizes the figure before the plausibility bounds are checked. See
 #: `KekaScraper._salary_field`'s docstring for the live re-measurement behind this map. Period 4
-#: (Annual) needs no word: `_period_multiplier`'s default, with no period phrase present, is
-#: already annual.
+#: (Annual) needs no word: with no period phrase present, `from_field` already reads annual.
 _PERIOD_WORDS = {1: "hourly", 3: "monthly"}
 
 
@@ -211,10 +211,10 @@ class KekaScraper(BaseScraper):
         lo, hi = raw.get("minimum") or None, raw.get("maximum") or None
         if not lo and not hi:
             return None
-        span = (
-            f"{_format_num(lo)}-{_format_num(hi)}"
-            if lo and hi
-            else _format_num(lo or hi)
-        )
         period = _PERIOD_WORDS.get(raw.get("salaryPeriod"))
-        return " ".join(str(x) for x in (span, raw.get("currency"), period) if x)
+        return salary.to_field(
+            _format_num(lo or hi),
+            _format_num(hi) if lo and hi else None,
+            raw.get("currency"),
+            period,
+        )

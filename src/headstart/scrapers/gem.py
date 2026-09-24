@@ -90,15 +90,13 @@ domain.
 
 **Salary: `compensationHtml` is machine-templated on the large majority of tenants that state one at
 all**, unlike Phenom's own tenant-private free text. Sampled 899 postings across all 377 live boards:
-136 (15.1%) carry a `compensationHtml`, and 132 of those (97%) fit one dedicated Tier-1 parser
-(`salary._field_gem`) even when the template is wrapped in a longer prose paragraph — verified
+136 (15.1%) carry a `compensationHtml`, and 132 of those (97%) fit the Tier-1 parser
+`salary.from_field` keeps for gem even when the template is wrapped in a longer prose paragraph — verified
 directly against the real text, not just counted. The 4 declines are tenants whose own figure reads
 as implausible if annualized (e.g. "$100 – $200 per year", clearly a mislabeled hourly rate) and are
 correctly rejected by the shared plausibility bounds rather than silently mis-annualized. Currency
-symbols observed: `$`, `CA$`/`C$`, `A$`, `€`, `£`, `₹` — all mapped explicitly rather than guessed,
-since a bare `$`-ending multi-char symbol cannot be assumed to be CAD the way the shared Tier-2
-`_guess_currency` does (that heuristic is right for Tier 2's narrower observed evidence, wrong here
-once `A$` is real).
+symbols observed: `$`, `CA$`/`C$`, `A$`, `€`, `£`, `₹` — each named by salary.py's one symbol map
+(ADR-0197), so `A$` reads AUD rather than being assumed CAD.
 
 ``alias_key`` is not overridden: Gem's slug is a path segment on one shared host, the identical shape
 `ashby.py` and `rippling.py` already leave on the base class default. That default safely degrades to
@@ -382,7 +380,7 @@ class GemScraper(BaseScraper):
 
     def _salary_field(self, raw: Any) -> str | None:
         """``compensationHtml`` is HTML, not the plain string every other ATS's ``_salary_field``
-        returns — strip it the same way ``description`` is stripped, so ``salary._field_gem``
+        returns — strip it the same way ``description`` is stripped, so ``salary.from_field``
         (Tier 1) reads clean text. ``None`` when this Job carries no detail (never fetched, or the
         detail pass lost it) or the detail states no compensation field at all."""
         return html_to_text((raw or {}).get("compensationHtml"))

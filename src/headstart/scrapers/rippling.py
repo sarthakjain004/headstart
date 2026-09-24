@@ -13,7 +13,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
-from headstart import http
+from headstart import http, salary
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -272,10 +272,10 @@ class RipplingScraper(BaseScraper):
             return None
         lo = min(los)
         hi = max(his) if his else None
-        span = (
-            f"{_format_amount(lo)}-{_format_amount(hi)}"
-            if hi is not None
-            else _format_amount(lo)
-        )
         currency, frequency = unit
-        return " ".join(str(x) for x in (span, currency, frequency) if x)
+        return salary.to_field(
+            _format_amount(lo),
+            _format_amount(hi) if hi is not None else None,
+            currency,
+            frequency,
+        )

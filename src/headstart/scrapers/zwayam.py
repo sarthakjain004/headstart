@@ -118,7 +118,7 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import quote
 
-from headstart import http, log
+from headstart import http, log, salary
 from headstart.models import Job, host_of, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -750,10 +750,8 @@ class ZwayamScraper(BaseScraper):
         lo = _amount(raw.get("minJobSalary"))
         hi = _amount(raw.get("maxJobSalary"))
         currency = (raw.get("currencyType") or "").strip() or _DEFAULT_CURRENCY
-        if lo and hi:
-            return f"{lo}-{hi} {currency}"
         if lo:
-            return f"{lo} {currency}"
+            return salary.to_field(lo, hi or None, currency)
         if hi:
             # Ceiling-only (10 of 5,079 rows) must not be emitted *bare*: `salary.extract` reads
             # a lone figure as a floor (measured: "200000 INR" -> min_annual=200000), so a job

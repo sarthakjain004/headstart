@@ -45,7 +45,7 @@ import json
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from headstart import http
+from headstart import http, salary
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
@@ -195,7 +195,9 @@ class TeamtailorScraper(BaseScraper):
         lo, hi = val.get("minValue"), val.get("maxValue")
         if not lo and not hi:
             return None
-        span = f"{lo}-{hi}" if lo and hi else str(lo or hi)
-        return " ".join(
-            str(x) for x in (span, base.get("currency"), val.get("unitText")) if x
+        return salary.to_field(
+            lo or hi,
+            hi if lo and hi else None,
+            base.get("currency"),
+            val.get("unitText"),
         )
