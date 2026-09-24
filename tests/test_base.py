@@ -11,7 +11,6 @@ from headstart.scrapers.base import (
     BaseScraper,
     DetailLost,
     DetailRequest,
-    DetailUnattempted,
 )
 
 
@@ -618,7 +617,7 @@ class _DetailStub(_StubScraper):
 
     def detail_request(self, row):
         if not row.get("id"):
-            raise DetailUnattempted("no job id")
+            raise DetailLost("no job id")
         return DetailRequest(f"https://example.invalid/detail/{row['id']}")
 
     def read_detail(self, row, response):

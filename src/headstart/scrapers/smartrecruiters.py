@@ -58,8 +58,8 @@ from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import (
     USER_AGENT,
     BaseScraper,
+    DetailLost,
     DetailRequest,
-    DetailUnattempted,
 )
 
 _DETAIL_WORKERS = 8
@@ -183,7 +183,7 @@ class SmartRecruitersScraper(BaseScraper):
     def detail_request(self, posting: dict[str, Any]) -> DetailRequest:
         posting_id = posting.get("id")
         if not posting_id:
-            raise DetailUnattempted("no posting id")
+            raise DetailLost("no posting id")
         return DetailRequest(
             f"https://api.smartrecruiters.com/v1/companies/{self.slug}/postings/{posting_id}",
             headers={"User-Agent": USER_AGENT, "Accept": "application/json"},

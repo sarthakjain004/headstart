@@ -1,8 +1,10 @@
 # ADR-0195: A Scraper states its detail request once, and the base runs the Detail pass
 
-**Status:** accepted · **Date:** 2026-09-24 · **Completes:**
+**Status:** accepted · **Date:** 2026-09-24 · **Takes up:**
 [ADR-0003](0003-fan-out-detail-fetch.md) (whose Consequences deferred "folding in the per-item GET
-guard and removing the side-channel") · **Keeps:** [ADR-0015](0015-async-multiplexed-fan-out.md),
+guard and removing the side-channel": the GET guard is folded in here; the `_detail` side-channel
+goes Scraper by Scraper where its `parse` can read the returned mapping instead) · **Keeps:**
+[ADR-0015](0015-async-multiplexed-fan-out.md),
 [ADR-0016](0016-async-fan-out-default.md), [ADR-0048](0048-skip-details-we-already-hold.md),
 [ADR-0166](0166-gate-the-detail-pass-on-the-tech-filter.md),
 [ADR-0167](0167-a-scraper-may-decline-the-multiplexed-path.md) exactly as decided
@@ -16,10 +18,11 @@ transports. Mapped across `src/headstart/scrapers/` on 2026-09-24 (26 Scrapers w
 `has_detail_pass`, 27 call sites):
 
 - **22 Scrapers write every detail request twice**, a sync function for the thread pool and an
-  async twin for the multiplexed session, ~540 lines between them. Three pairs had already
-  drifted: eightfold sent its `Referer` on the sync path only, workday's sync path cleared the
-  process-global cookie jar where its async path cleared the pass's own session, and adp's async
-  pacer dropped `tries` and `**kwargs`.
+  async twin for the multiplexed session, ~540 lines between them. Two pairs had already
+  drifted: eightfold sends its `Referer` on the sync path only, and adp's async pacer dropped
+  `tries` and `**kwargs`. A third looks like drift and is not: workday's two paths clear
+  different cookie jars on a 400, but each clears the jar its own transport rides — the thread's
+  pooled session, or the pass's `AsyncSession`.
 - **Pairing results back to items is done five ways** — a dict-zip (11 sites), `dict(zip)` keeping
   Nones (2), positional zips (7), in-place mutation (3) and `attach_details` (3).
 - **8 Scrapers leave a parse failure unlabelled**: they catch only `http.RequestsError`, so a
@@ -38,10 +41,12 @@ everything else.
 
 - **`detail_request(item) -> DetailRequest`** — the request as data: `url`, `method`, `headers`
   (default: the headers `_get` sends, `DEFAULT_REQUEST_HEADERS`), `timeout` (30) and `options`
-  for any further fetch keyword (`json=`, `data=`, `retry_on=`, `marks_wall=`). Raise
-  `DetailUnattempted(cause)` when no request can be formed.
+  for any further fetch keyword (`json=`, `data=`, `allow_redirects=`, `retry_on=`,
+  `marks_wall=`). Raise
+  `DetailLost(cause)` when no request can be formed; raised there it is counted unattempted.
 - **`read_detail(item, response)`** — the detail out of a 200, or raise `DetailLost(cause)`.
-  Only ever handed a 200.
+  Only ever handed a 200: any other status is a loss labelled `HTTP {status}`, where a Scraper
+  calling `raise_for_status` used to let a non-200 2xx through to its reader.
 - **`run_detail_pass(items, *, key_of, what, title_of=None, department_of=None,
   skip_held=False, concurrency=None) -> FetchedDetails`** — arms the ADR-0166 gate when
   `title_of` is given, the ADR-0048 skip when `skip_held` is, sends each request on the
@@ -52,7 +57,7 @@ everything else.
 - **`fetch_detail(item)`** — the per-item step on the thread transport, public for samplers
   (`scripts/enrich/salary_sample.py`) that fetch a handful of details without a whole pass.
 - The thread transport records `fanout_stats` itself (with its own lock), so a Board on it keeps
-  its `concurrency {ats} details @N` line and apple's hand-written copy can go.
+  its `concurrency {ats} details @N` line; apple's hand-written copy goes when apple moves.
 - `concurrency=` pins the multiplexed width over every other source, for the one host whose
   politeness bound must not be widened even by the operator (trakstar under DataDome, ADR-0016).
 
@@ -66,7 +71,14 @@ requests, so the fan-out unit is not the Job).
 
 The Scrapers move in waves so each change stays reviewable: this change lands the seam with
 pyjamahr, smartrecruiters and clearcompany (one per twin shape), and the rest follow in their
-own changes.
+own changes. Four parts of the interface have no caller among those three and land now anyway,
+each with a named first caller in the next wave, because the waves run in parallel and would
+otherwise each re-add them to `base.py` at once: `skip_held` (apple, phenom, zwayam, eightfold),
+`concurrency=` (trakstar), `DetailRequest.method`/`options` (phenom and zwayam POST a body) and
+`FetchedDetails.missing` (icims, jobvite, meta and eightfold's sitemap pass truncate on it).
+
+adp's async pacer now takes the same `tries` and `**kwargs` as its sync one, which ends that
+drift while adp stays on the primitives.
 
 ## Consequences
 

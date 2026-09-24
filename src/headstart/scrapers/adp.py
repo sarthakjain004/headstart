@@ -298,8 +298,12 @@ class ADPScraper(BaseScraper):
             self.pacer.rest(_WINDOW_S)
         raise _RateLimited(url)
 
-    async def _paced_get_async(self, session: Any, url: str) -> Any:
-        for _ in range(_TRIES):
+    async def _paced_get_async(
+        self, session: Any, url: str, *, tries: int = _TRIES, **kwargs: Any
+    ) -> Any:
+        """:meth:`_paced_get` over the multiplexed session — the same ``tries`` and ``**kwargs``,
+        so the two paths cannot ask differently (ADR-0195)."""
+        for _ in range(tries):
             await self.pacer.wait_async()
             response = await self._fetch_async(
                 session,
@@ -308,6 +312,7 @@ class ADPScraper(BaseScraper):
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 timeout=30,
                 retry_on=_RETRY_ON,
+                **kwargs,
             )
             if response.status_code != 429:
                 response.raise_for_status()
@@ -391,6 +396,9 @@ class ADPScraper(BaseScraper):
             if self.needs_detail(_ext_id(r))
         ]
         details: dict[str, dict] = {}
+        # Composed from the primitives, not `run_detail_pass` (ADR-0195): each request waits on a
+        # process-wide pacer and a 429 rests every Board through the window, so the transport
+        # itself carries policy a request description cannot state.
         if wanted:
             if self.async_fanout_enabled():
                 fetched = self.fan_out_async(wanted, self._detail_async)

@@ -1,4 +1,6 @@
-"""One test double for the Fetcher seam (ADR-0153), shared instead of re-written per test file.
+"""The shared test double for the Fetcher seam (ADR-0153) — what new tests inject instead of writing
+another. The older per-file fakes (test_fetcher, test_bamboohr, test_jibe, test_cornerstone) move
+onto it with ADR-0199's change.
 
 A Scraper built with ``fetcher=FakeFetcher(route)`` sends every request — listing, detail, sync or
 multiplexed — through ``route(method, url, kwargs)``, which returns a :class:`FakeResponse` or an

@@ -69,7 +69,7 @@ import json
 from typing import Any
 
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import BaseScraper, DetailRequest
+from headstart.scrapers.base import BaseScraper, DetailLost, DetailRequest
 
 _API = "https://api.pyjamahr.com/api/career/jobs/"
 _BOARD = "https://jobs.pyjamahr.com"
@@ -223,7 +223,7 @@ class PyjamaHRScraper(BaseScraper):
         # three derived fields, but the Job is still listed and still emitted, so the Board's
         # list is whole (ADR-0053 is about the list, not the fields).
         details = self.run_detail_pass(
-            [row for row in _public(listed) if row.get("id") is not None],
+            _public(listed),
             key_of=lambda row: str(row["id"]),
             what="detail payloads",
             title_of=lambda row: row.get("title"),
@@ -235,6 +235,8 @@ class PyjamaHRScraper(BaseScraper):
         # The company key is required here too: without it, or with another tenant's, the
         # endpoint answers 404 `{"detail": "Not found."}` — the same body a posting that closed
         # between the listing and this call returns.
+        if row.get("id") is None:
+            raise DetailLost("no job id")
         return DetailRequest(f"{_API}{row['id']}/?company_slug={self.slug}")
 
     def read_detail(self, row: dict, response: Any) -> dict:

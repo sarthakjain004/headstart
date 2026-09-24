@@ -91,6 +91,10 @@ _R = TypeVar("_R")
 #: must not mean different things on different ATSes.
 MIN_AUTHORITATIVE_SHARE = 0.99
 
+#: The thread-pool width :meth:`BaseScraper.fan_out` and the Detail pass's thread path use when a
+#: Scraper declares no :attr:`~BaseScraper.detail_workers` of its own.
+_DEFAULT_DETAIL_WORKERS = 8
+
 # Default HTTP/2 multiplexing width (concurrent streams per host) for fan_out_async — 100 is around
 # the common server MAX_CONCURRENT_STREAMS. Override per-call, via HEADSTART_H2_STREAMS, or
 # run_scrapers --streams N. Read at call time (below) so a CLI flag can set the env before the scrape.
@@ -175,8 +179,8 @@ class DetailRequest:
     existed every Scraper wrote each detail request twice, once per transport, and three pairs had
     already drifted apart (a header sent on one path only, a retry argument dropped on the other).
 
-    ``options`` carries any further keyword for the fetch seam (``json=``, ``data=``,
-    ``allow_redirects=``, ``retry_on=``, ``marks_wall=``) unchanged.
+    ``options`` carries any further keyword for the fetch seam unchanged — ``json=``, ``data=``,
+    ``allow_redirects=``, ``retry_on=``, ``marks_wall=``.
     """
 
     url: str
@@ -190,20 +194,17 @@ class DetailLost(Exception):
     """One Job's detail is lost, and ``cause`` names what lost it — the label
     :meth:`BaseScraper.report_detail_gaps` prints (ADR-0088's discipline).
 
-    Raised from :meth:`BaseScraper.read_detail` for a response that arrived but carries no detail
-    (``"no JSON-LD on a 200"``, ``"no posting"``). Transport failures and non-200 statuses are
-    labelled by :meth:`BaseScraper.run_detail_pass` itself and never need raising.
+    Where it is raised decides how it is counted. From :meth:`BaseScraper.detail_request` it means
+    no request could be formed (a listing row with no native id) and is counted *unattempted*, so
+    ``detail_attempted`` stays a count of requests actually made. From
+    :meth:`BaseScraper.read_detail` it means a response arrived but carries no detail (``"no
+    JSON-LD on a 200"``, ``"no posting"``). Transport failures and non-200 statuses are labelled by
+    :meth:`BaseScraper.run_detail_pass` itself and never need raising.
     """
 
     def __init__(self, cause: str) -> None:
         super().__init__(cause)
         self.cause = cause
-
-
-class DetailUnattempted(DetailLost):
-    """Raised from :meth:`BaseScraper.detail_request` when no request can be formed for a Job (a
-    listing row with no native id), so ``detail_attempted`` telemetry stays a count of requests
-    actually made."""
 
 
 class FetchedDetails(dict[str, Any]):
@@ -881,7 +882,7 @@ class BaseScraper(ABC):
         items: Sequence[_T],
         fn: Callable[[_T], _R],
         *,
-        workers: int = 8,
+        workers: int = _DEFAULT_DETAIL_WORKERS,
         default: _R | None = None,
     ) -> list[_R | None]:
         """Apply ``fn`` to each item across a bounded thread pool, isolating per-item failures.
@@ -993,8 +994,8 @@ class BaseScraper(ABC):
         """The request that fetches ``item``'s detail — the one place a Scraper states it, for
         :meth:`run_detail_pass` to send on either transport (ADR-0195).
 
-        Raise :class:`DetailUnattempted` when no request can be formed. Only a Scraper that calls
-        :meth:`run_detail_pass` implements this.
+        Raise :class:`DetailLost` when no request can be formed; it is counted unattempted. Only a
+        Scraper that calls :meth:`run_detail_pass` implements this.
         """
         raise NotImplementedError(f"{type(self).__name__} has no detail_request")
 
@@ -1013,7 +1014,7 @@ class BaseScraper(ABC):
         self,
         items: Sequence[_T],
         *,
-        key_of: Callable[[_T], str],
+        key_of: Callable[[_T], str | None],
         what: str,
         title_of: Callable[[_T], str | None] | None = None,
         department_of: Callable[[_T], str | None] | None = None,
@@ -1037,7 +1038,8 @@ class BaseScraper(ABC):
           one :meth:`report_detail_gaps` line titled ``what``.
 
         ``key_of`` gives an item's native id: the key of the returned mapping, and what
-        :meth:`needs_detail` is asked about. ``concurrency`` pins the multiplexed width over
+        :meth:`needs_detail` is asked about. It may answer None for a row with no id, which is
+        never held and never keyed — its :meth:`detail_request` says why it was not fetched. ``concurrency`` pins the multiplexed width over
         every other source, for a host whose politeness bound must not be widened even by the
         operator (Trakstar under DataDome, ADR-0016); leave it None otherwise.
         """
@@ -1045,21 +1047,27 @@ class BaseScraper(ABC):
         if title_of is not None:
             wanted = self.tech_detail_wanted(wanted, title_of, department_of)
         if skip_held:
-            wanted = [item for item in wanted if self.needs_detail(key_of(item))]
+            wanted = [
+                item
+                for item in wanted
+                if (native_id := key_of(item)) is None or self.needs_detail(native_id)
+            ]
         if self.async_fanout_enabled():
             results = self.fan_out_async(
                 wanted, self._fetch_detail_async, concurrency=concurrency
             )
         else:
             results = self._fan_out_timed(
-                wanted, self.fetch_detail, self.detail_workers or 8
+                wanted,
+                self.fetch_detail,
+                self.detail_workers or _DEFAULT_DETAIL_WORKERS,
             )
         missing = self.report_detail_gaps(results, what)
         return FetchedDetails(
             {
-                key_of(item): detail
+                native_id: detail
                 for item, detail in zip(wanted, results)
-                if detail is not None
+                if detail is not None and (native_id := key_of(item)) is not None
             },
             missing,
         )
@@ -1130,7 +1138,7 @@ class BaseScraper(ABC):
         try:
             return self.detail_request(item)
         except DetailLost as lost:
-            self._note_lost(lost)
+            self.note_detail_unattempted(lost.cause)
             return None
 
     def _read_detail_labelled(self, item: Any, response: Any) -> Any:
@@ -1140,16 +1148,10 @@ class BaseScraper(ABC):
         try:
             return self.read_detail(item, response)
         except DetailLost as lost:
-            self._note_lost(lost)
+            self.note_detail_loss(lost.cause)
         except Exception as exc:  # noqa: BLE001 - an unreadable body is a labelled loss
             self.note_detail_exception(exc)
         return None
-
-    def _note_lost(self, lost: DetailLost) -> None:
-        if isinstance(lost, DetailUnattempted):
-            self.note_detail_unattempted(lost.cause)
-        else:
-            self.note_detail_loss(lost.cause)
 
     def report_detail_gaps(self, results: Sequence[Any], what: str) -> int:
         """Log how many of a detail pass's results came back empty (None) — the gaps behind
