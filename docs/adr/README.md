@@ -178,6 +178,7 @@ supersedes it and note the supersession in both.
 | [0177](0177-an-unknown-reprobe-keeps-a-live-verdict.md) | An `unknown` re-probe keeps a `live` verdict | 2026-09-23 |
 | [0178](0178-salary-sort-is-stated-in-one-currency.md) | The salary sort is stated in one currency | 2026-09-23 |
 | [0179](0179-the-tech-filter-stays-english-and-its-trade-vetoes-stand-down-for-infrastructure.md) | The tech filter stays English, and its trade vetoes stand down for infrastructure | 2026-09-23 |
+| [0180](0180-an-adp-board-is-a-career-center-read-in-every-language-at-one-paced-budget.md) | An ADP Board is a career center, read in every language it posts in, at one paced budget | 2026-09-23 |
 | [0181](0181-a-breezy-board-is-one-verbose-json-listing.md) | A Breezy HR Board is one verbose JSON listing, and a bare `$` is named by country | 2026-09-23 |
 | [0182](0182-a-clearcompany-board-is-its-hrm-direct-feed.md) | A ClearCompany Board is its HRM Direct feed, not a clearcompany.com surface | 2026-09-23 |
 | [0183](0183-a-cornerstone-board-is-the-tenant-read-across-every-career-site.md) | A Cornerstone Board is the tenant, read across every career site | 2026-09-23 |

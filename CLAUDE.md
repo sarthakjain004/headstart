@@ -89,9 +89,15 @@ Evidence for the first three is in `docs/discovery/2026-09-23_indeed-sweep-landi
   read. Each Jibe site serves `/api/jobs` JSON and allows crawling at `crawl-delay: 5`. Needs a
   decision on reading a front whose backing tenant opts out.
 - **The unsupported ATSes the Indeed sweep resolved most companies to**, most first:
-  ADP, Hireology, Recruiterflow, Avature. (Breezy led that count; it, ClearCompany, Pinpoint and
+  Hireology, Recruiterflow, Avature. (Breezy led that count; it, ClearCompany, Pinpoint and
   Cornerstone are now built, #579, #582, #580 and #584, and the sweep's companies on all four are
-  landed.)
+  landed. ADP Workforce Now is built too, #585, ADR-0180; the sweep's ADP companies are a landing
+  still to do.)
+- **ADP Recruiting Management** (`myjobs.adp.com/{slug}`, `recruiting.adp.com`) — a different
+  platform from Workforce Now: its listing
+  (`my.adp.com/myadp_prefix/mycareer/public/staffing/v1/job-requisitions/apply-custom-filters`)
+  wants an `orgoid` header, which `/public/staffing/v1/career-site/{slug}` supplies, and a
+  posting-channel id not yet found (`docs/adp/2026-09-23_careercenter-measurement.md`).
 - **SenseHQ** — the scraper is registered but has no ledger and no liveness probe, so none of its
   Boards can land.
 - **TurboHire** — token flow: `/api/token/noauth` (needs Referer), then `POST
