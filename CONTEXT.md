@@ -52,6 +52,10 @@ called in the UI. Neither is a value a row can hold; a row holds a lens figure a
 A Board an Account has chosen to see more or less of, held as a `CompanyPrefs` record keyed by **board_key** — never by company name, which four served rows in five do not carry. Hidden Boards are excluded from every search; followed ones are what the "only companies I follow" control narrows to. The two lists are disjoint by construction, and they are Account state rather than a Search filter, so a **Saved Set** never freezes them.
 _Avoid_: "blocked" or "muted" — a hidden Board is still scraped, still indexed and still served to everyone else; only this Account stops seeing it.
 
+**Company directory** (ADR-0185):
+The list of companies the Trends tab can be filtered to, each naming the **Board**s it owns — `data/state/company_directory.json`, written by `ingest/company_directory`. Two Boards are one company when they are one ATS tenant (Workday sites, Taleo career sections, Taleo Business Edition `cws` sites, casing duplicates) or share a curated alias, never because their names match: measured, a matching name joined different startups across four ATSes. It holds names and no counts, so it is byte-identical run to run until a Board's name or tech presence changes.
+_Avoid_: reading a company's Boards as additive — one tenant's Boards can list the same requisitions, so summing them overcounts until the index deduplicates across Boards.
+
 **Careers page**:
 A company's own web page that links to or embeds its Board; the input to careers-page discovery, distinct from the Board itself.
 

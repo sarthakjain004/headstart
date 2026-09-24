@@ -183,3 +183,4 @@ supersedes it and note the supersession in both.
 | [0182](0182-a-clearcompany-board-is-its-hrm-direct-feed.md) | A ClearCompany Board is its HRM Direct feed, not a clearcompany.com surface | 2026-09-23 |
 | [0183](0183-a-cornerstone-board-is-the-tenant-read-across-every-career-site.md) | A Cornerstone Board is the tenant, read across every career site | 2026-09-23 |
 | [0184](0184-a-pinpoint-board-is-read-from-its-listing-and-dated-from-its-page.md) | A Pinpoint Board is read from its listing and dated from its posting pages | 2026-09-23 |
+| [0185](0185-trends-narrow-to-companies-picked-from-a-directory-of-boards.md) | Trends narrow to companies picked from a directory of Boards | 2026-09-24 |
