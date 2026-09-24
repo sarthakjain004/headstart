@@ -1,7 +1,8 @@
 """ADP Recruiting Management career-site scraper (``myjobs.adp.com/{slug}/cx``).
 
-A different platform from Workforce Now (``adp.py``): its own SPA host, its own API host and its
-own Board identity. A Board is one **career site**, addressed by the path word of its public URL,
+ADP Recruiting Management and ADP Workforce Now (``adp.py``) are two separate ADP products, not a
+product and its sub-product: each has its own SPA host, its own API host and its own Board
+identity. A Board is one **career site**, addressed by the path word of its public URL,
 ``myjobs.adp.com/{slug}/cx``. That slug keys the site's public record,
 ``myjobs.adp.com/public/staffing/v1/career-site/{slug}``, which answers case-insensitively (the
 record's own ``domain`` is lowercase on 681 of 681 sites), so the slug is lowercased.
@@ -34,8 +35,9 @@ every ``requisitionLocations`` entry. Without ``$select`` it omits all of those.
 
 **The walk.** ``$skip`` is 0-based; ``count`` equalled the rows served on 606 of 606 Boards. A page
 past about 1 MB answers 502 (a 1,009,319 B page passed; 100-row pages of 11-12 KB rows failed), so
-pages are 50 rows (the largest Board-mean row is 14.2 KB) and a 502 halves the page. Progress is
-counted in unique ``reqId`` s: 3 of 606 Boards served one posting twice across pages mid-walk.
+pages are 50 rows (the largest Board-mean row is 14.2 KB) and a 502 halves the page, down to 5.
+Pages are asked in ``reqId`` order and progress is counted in unique ``reqId`` s: unordered, 3 of
+606 Boards served one posting twice across pages mid-walk and so lost another (`listing_url`).
 
 **The detail** (``…/job-requisitions/search-meta/{reqId}``, same token) adds pay: the tenant's
 ``compensationDetails`` string or the pay-transparency min/max amounts. Over 300 tech postings on
@@ -54,10 +56,11 @@ sites all answered 200, bar 2 read timeouts. The User-Agent does not matter.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 from urllib.parse import quote, urlencode
 
-from headstart import company_name, http
+from headstart import company_name, employment_type, http
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -87,6 +90,9 @@ _RETRY_ON = http.TRANSIENT - {502}
 _COMPENSATION = "RTiReqExtended_compensationDetails"
 _PAY_MIN = "RTiReqExtended_payTransparencyMinSalary"
 _PAY_MAX = "RTiReqExtended_payTransparencyMaxSalary"
+#: A whole-word "FT"/"PT" (or "F/T", "P/T") in a `workLevelCode` (see `_employment_type`).
+_FULL = re.compile(r"(?<![A-Za-z])(?:FT|F/T)(?![A-Za-z])")
+_PART = re.compile(r"(?<![A-Za-z])(?:PT|P/T)(?![A-Za-z])")
 
 
 def site_url(slug: str) -> str:
@@ -95,8 +101,15 @@ def site_url(slug: str) -> str:
 
 
 def listing_url(skip: int, top: int) -> str:
-    """One page of the listing the token names, with the fields `parse` reads."""
-    query = urlencode({"$select": _SELECT, "$top": top, "$skip": skip}, quote_via=quote)
+    """One page of the listing the token names, with the fields `parse` reads, in `reqId` order.
+
+    The order is what keeps a walk whole. Over 6 walks each way across three Boards whose
+    postings move mid-walk (`lifewisecareers`, `burgerking`, `stevemaddenretailcareers`), the
+    unordered walk lost 9 postings and the `reqId`-ordered one lost 1."""
+    query = urlencode(
+        {"$select": _SELECT, "$orderby": "reqId", "$top": top, "$skip": skip},
+        quote_via=quote,
+    )
     return f"{_LISTING}?{query}"
 
 
@@ -114,6 +127,11 @@ def request_headers(token: str | None = None) -> dict[str, str]:
     return headers
 
 
+def _location_name(loc: dict) -> str:
+    """A location's own name ("Remote", "Flowerama Store #432"), which the site does not render."""
+    return ((loc.get("nameCode") or {}).get("longName") or "").strip()
+
+
 def _address(loc: dict) -> str:
     """One location as the site renders it: "City, State, Country", blanks dropped — or the
     location's own name where the address is empty (24 of 83,190 locations)."""
@@ -124,7 +142,7 @@ def _address(loc: dict) -> str:
         ((addr.get("country") or {}).get("longName") or "").strip(),
     ]
     text = ", ".join(p for p in parts if p)
-    return text or ((loc.get("nameCode") or {}).get("longName") or "").strip()
+    return text or _location_name(loc)
 
 
 def _location(row: dict) -> str | None:
@@ -141,10 +159,7 @@ def _remote(row: dict, location: str | None) -> bool | None:
     """The location guess, over the address and each location's own name: a tenant's "Remote"
     location can carry a real address ("Work from home, Virginia, United States"
     under the name "Remote"). There is no remote field."""
-    names = [
-        ((loc.get("nameCode") or {}).get("longName") or "")
-        for loc in row.get("requisitionLocations") or []
-    ]
+    names = [_location_name(loc) for loc in row.get("requisitionLocations") or []]
     return is_remote("; ".join(p for p in [location, *names] if p) or None)
 
 
@@ -165,6 +180,22 @@ def _description(row: dict) -> str | None:
     if quals and quals not in desc:
         desc = f"{desc}\n\n{quals}" if desc else quals
     return desc or None
+
+
+def _employment_type(row: dict) -> str | None:
+    """`workLevelCode` as stated, labelled where it only abbreviates. "FT" and "PT" reach no
+    `employment_type` filter (it matches "full", "part", ...), so a value that reaches none and
+    names one of them whole gets the label in front: "Part-time (PT 129 or Less Hours)". That is
+    645 of 77,242 rows ("PT 129 or Less Hours" 340, "FT" 95, ...). Everything else — "Variable",
+    "PRN", "Seasonal", "Temporary" — stays as stated, as it does on every other scraper."""
+    value = (row.get("workLevelCode") or "").strip()
+    if not value or any(employment_type.flags(value).values()):
+        return value or None
+    if _FULL.search(value):
+        return f"Full-time ({value})"
+    if _PART.search(value):
+        return f"Part-time ({value})"
+    return value
 
 
 def _custom(detail: dict, kind: str) -> dict[str, dict]:
@@ -206,27 +237,27 @@ class ADPRecruitingScraper(BaseScraper):
     def job_url(self, req_id: str) -> str:
         return f"{_SITE_HOST}/{self.slug}/cx/job-details?reqId={req_id}"
 
-    def _json(self, url: str, token: str | None = None) -> Any:
-        response = self._fetch("GET", url, headers=request_headers(token), timeout=60)
+    def _json(self, url: str, token: str | None = None, **kwargs: Any) -> Any:
+        response = self._fetch(
+            "GET", url, headers=request_headers(token), timeout=60, **kwargs
+        )
         response.raise_for_status()
         return json.loads(response.text)
 
-    def _page(self, token: str, skip: int, top: int) -> Any:
+    def _page(self, token: str, skip: int, top: int) -> dict | None:
         """One listing page, or None when the host answered 502 for its size."""
-        response = self._fetch(
-            "GET",
-            listing_url(skip, top),
-            headers=request_headers(token),
-            timeout=60,
-            retry_on=_RETRY_ON,
-        )
-        if response.status_code == 502:
-            return None
-        response.raise_for_status()
-        return json.loads(response.text)
+        try:
+            return self._json(listing_url(skip, top), token, retry_on=_RETRY_ON)
+        except http.RequestsError as exc:
+            if getattr(getattr(exc, "response", None), "status_code", None) == 502:
+                return None
+            raise
 
     def _walk(self, token: str) -> list[dict]:
-        """Every listing row: 0-based `$skip` until `count` unique `reqId`s are read."""
+        """Every listing row: 0-based `$skip` until `count` unique `reqId`s are read.
+
+        A 502 halves the page, down to `_MIN_PAGE`; the next page asks `_PAGE` again, because one
+        oversized row should not slow the rest of the Board to a crawl."""
         rows: list[dict] = []
         seen: set[str] = set()
         total: int | None = None
@@ -235,7 +266,7 @@ class ADPRecruitingScraper(BaseScraper):
             data = self._page(token, skip, top)
             if data is None:
                 if top > _MIN_PAGE:
-                    top //= 2
+                    top = max(top // 2, _MIN_PAGE)
                     continue
                 self.mark_truncated(
                     f"a {top}-row page at $skip={skip} still answered 502 at {len(seen)} of "
@@ -251,10 +282,12 @@ class ADPRecruitingScraper(BaseScraper):
             if not page or len(seen) >= total:
                 break
             skip += len(page)
+            top = _PAGE
         else:
             self.mark_truncated(
                 f"hit the {_MAX_PAGES}-page cap at {len(seen)} of {total} postings"
             )
+            return rows
         if total and len(seen) < total:
             self.mark_truncated_unless_negligible(
                 len(seen),
@@ -292,10 +325,13 @@ class ADPRecruitingScraper(BaseScraper):
             details = {i: d for i, d in zip(ids, fetched) if d}
         return {"rows": rows, "details": details}
 
-    @staticmethod
-    def _detail_of(body: Any) -> dict | None:
+    def _detail_of(self, body: Any) -> dict | None:
+        """The one requisition a detail answers, or None (noted) for an empty envelope."""
         found = body.get("jobRequisitions") or []
-        return found[0] if found else None
+        if not found:
+            self.note_detail_loss("no jobRequisitions on a 200")
+            return None
+        return found[0]
 
     def _detail(self, token: str, req_id: str) -> dict | None:
         try:
@@ -304,10 +340,7 @@ class ADPRecruitingScraper(BaseScraper):
             # A posting closed since the listing answers 400 "Bad Request".
             self.note_detail_exception(exc)
             return None
-        detail = self._detail_of(body)
-        if detail is None:
-            self.note_detail_loss("no jobRequisitions on a 200")
-        return detail
+        return self._detail_of(body)
 
     async def _detail_async(self, session: Any, token: str, req_id: str) -> dict | None:
         try:
@@ -322,10 +355,7 @@ class ADPRecruitingScraper(BaseScraper):
         except http.RequestsError as exc:
             self.note_detail_exception(exc)
             return None
-        detail = self._detail_of(json.loads(response.text))
-        if detail is None:
-            self.note_detail_loss("no jobRequisitions on a 200")
-        return detail
+        return self._detail_of(json.loads(response.text))
 
     def resolve_company(self) -> None:
         """The employer, from the site record's ``clientName`` — already fetched for the token,
@@ -357,7 +387,7 @@ class ADPRecruitingScraper(BaseScraper):
                     posted_at=row.get("postingDate") or None,
                     scraped_at=scraped_at,
                     description=_description(row),
-                    employment_type=(row.get("workLevelCode") or "").strip() or None,
+                    employment_type=_employment_type(row),
                     salary=self._salary_field(details.get(req_id)),
                 )
             )

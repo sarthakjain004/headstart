@@ -238,4 +238,6 @@ platform: an Angular SPA whose site config is `myjobs.adp.com/public/staffing/v1
 `my.adp.com/myadp_prefix/mycareer/public/staffing/v1/job-requisitions/apply-custom-filters` — `400
 Missing orgoid header`, then `postingChannelId not found` with `orgoid` set; three guesses at the
 channel id failed. Different host, slug and API. 549 distinct `myjobs.adp.com/{slug}` slugs appear
-in local harvested data.
+in local harvested data. *Since built* as `adp_recruiting` (ADR-0191,
+`docs/adp_recruiting/2026-09-24_myjobs-measurement.md`): the channel is the site record's
+`myJobsToken`, sent as a `myjobstoken` header.

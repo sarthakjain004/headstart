@@ -1960,6 +1960,8 @@ def p_adp_recruiting(t, u):
     if status == 400 and any(gone in body for gone in _ADP_RECRUITING_GONE):
         return DEAD, None
     if status != 200:
+        if status in (404, 410):  # `_get` notes every other non-200 itself; neither was seen
+            _note(f"site-http-{status}")
         return UNKNOWN, None
     try:
         site = json.loads(body)
@@ -1977,6 +1979,8 @@ def p_adp_recruiting(t, u):
         headers=_adp_recruiting.request_headers(token),
     )
     if status != 200:
+        if status in (404, 410):
+            _note(f"listing-http-{status}")
         return UNKNOWN, None
     try:
         return LIVE, int(json.loads(body)["count"])

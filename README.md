@@ -96,6 +96,8 @@ unparseable input with a 400 rather than silently ignoring it.
 `workday`, `zoho`, `zwayam`. All but `join` are active: `join`'s boards run ~1 tech job in ~10k (German-SMB
 listings, almost entirely non-tech), pure noise for a tech-only index, so `registry.DISABLED_ATS`
 skips it — the scraper class and tests stay intact, and re-enabling it is a one-line change.
+`adp` and `adp_recruiting` are two separate ADP products, ADP Workforce Now and ADP Recruiting
+Management, each with its own host, API and Board identity.
 
 Eight of the 46 — `amazon`, `apple`, `bytedance`, `google`, `meta`, `tesla`, `tiktok`, `uber`
 (ADR-0139) — are **Single source scrapers**: each company's own in-house careers system, not a
@@ -114,10 +116,10 @@ serves plain JSON APIs and TLS-fingerprinted (Cloudflare / DataDome) boards alik
 Board's `company` name is read off the board page itself where the ATS makes that possible
 (`ashby`, `eightfold`, `gem`, `jibe`, `jobvite`, `keka`, `lever`, `phenom`, `pinpoint`, `ripplehire`,
 `taleo_enterprise` — ADR-0114); `breezy` needs no page for it, because every posting in its
-listing carries the employer's own `company.name`, and `adp` reads its client name out of the
-career center's `client-features` JSON (ADR-0180), since its page title is the literal
-"Recruitment"; `adp_recruiting` reads `clientName` off the career-site record it already fetches
-for its token (ADR-0191). The eight **Single source scrapers** above need no page fetch for
+listing carries the employer's own `company.name`, `adp` (ADP Workforce Now) reads its client
+name out of the career center's `client-features` JSON (ADR-0180), since its page title is the
+literal "Recruitment", and `adp_recruiting` (ADP Recruiting Management, a separate ADP product)
+reads `clientName` off the career-site record it already fetches for its token (ADR-0191). The eight **Single source scrapers** above need no page fetch for
 it: one fixed company each, so the name is declared as `BaseScraper.COMPANY` and always served.
 Every *other* ATS serves the **ATS slug** in that field instead, so a row's `company` may be
 either — four served rows in five carry a slug rather than a name, which is why `CompanyPrefs` is

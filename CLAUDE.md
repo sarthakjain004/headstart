@@ -79,6 +79,13 @@ discovery landing (#576) moved five more. Board totals belong in README and CONT
   a second name for a Board already held (131 accounts spanned 453 labels on 2026-09-23). The
   script rewrites `data/validate/aliases/clearcompany.csv`; `dedupe_boards.py` finds none of these
   and refuses `--apply` for this ATS (ADR-0182).
+- **ADP Recruiting Management: re-run `scripts/validate/adp_recruiting_subset_sites.py` after every
+  refresh of its ledger.** One client (`orgoid`) often runs several career sites, and a site can
+  list exactly what a sibling does (`gnc` and `generalnutritioncenter`, 751 each). A site whose
+  postings another site of the same client already lists is buried in
+  `data/validate/aliases/adp_recruiting.csv` (131 of 990 live sites on 2026-09-24). The script
+  re-walks every live site and rewrites the file, and `dedupe_boards.py` refuses `--apply` for this
+  ATS (ADR-0191).
 - **Taleo Enterprise: re-run `scripts/validate/taleo_enterprise_subset_sections.py` after every
   refresh of its ledger.** A tenant's career sections often list the same requisitions (HDR's 15
   sections listed the same 2,282 on 2026-09-24), so a section whose reqs another section of the

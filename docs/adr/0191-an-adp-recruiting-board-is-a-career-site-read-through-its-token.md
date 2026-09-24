@@ -4,9 +4,9 @@
 
 ## Context
 
-ADP runs two recruiting platforms. Workforce Now (`adp`, ADR-0180) serves career centers on
-`workforcenow.adp.com`. **ADP Recruiting Management** is the enterprise product: an Angular SPA on
-`myjobs.adp.com/{slug}/cx`, backed by an API on `my.adp.com`. The first attempt at it
+ADP sells two separate recruiting products. ADP Workforce Now (`adp`, ADR-0180) serves career
+centers on `workforcenow.adp.com`. **ADP Recruiting Management** is the enterprise product: an
+Angular SPA on `myjobs.adp.com/{slug}/cx`, backed by an API on `my.adp.com`. The first attempt at it
 (ADR-0180's measurement doc) was stopped by a 400 `postingChannelId not found` and filed it under
 the fingerprinter's unsupported key `adp_recruiting`. Three open-source clients document a working
 flow: `amikai/openings-mcp` (`internal/provider/adp_myjobs/`), `Masterjx9/OpenPostings`
@@ -24,9 +24,18 @@ upstream's `adp_myjobs`. A Board is the path word of `myjobs.adp.com/{slug}/cx`.
 (`/public/staffing/v1/career-site/{slug}`) answers any casing, and its own `domain` is lowercase
 on 681 of 681 sites, so `slug_from` lowercases. An org can run several sites (85 `orgoid`s held
 267 of 606 hiring sites). Each site is its own Board, because the token scopes the listing to one
-site. Across external sites of one org, 2.9% of rows repeat, and 47 of those are tech. That
-overlap is accepted, as ADR-0180 accepted Workforce Now's cross-center overlap, rather than built
-a subset-alias ledger for.
+site. Across external sites of one org in the 606-site dump, 2.9% of rows repeat (47 of them
+tech), and some sites list exactly what a sibling does (`gnc` and `generalnutritioncenter`, 753
+each). `index_plan.evict_duplicate` groups only within a Board, so each would serve twice. So a
+site whose whole posting set is non-empty and contained in another site of the same `orgoid` is
+buried in `data/validate/aliases/adp_recruiting.csv` under Taleo Enterprise's `subset-reqs`
+signal (ADR-0186). `scripts/validate/adp_recruiting_subset_sites.py` walks every live site and
+elects through `board_aliases.bury_contained`, the election Taleo Enterprise's script now shares.
+On 2026-09-24 it buried 131 of 990 live sites, holding 3,601 of 87,181 postings, onto 41 kept
+sites. `clientName` is per client, so a buried site's postings keep their company name. Sites
+that only partly overlap both stay, as ADP Workforce Now's overlapping career centers do
+(ADR-0180). No `index_plan.DEDUP_VERSION` bump: no row of this ATS is served yet, so no served
+duplicate changes (ADR-0188).
 
 **2. The listing is read through the site's token, with its description.** The site record
 carries `myJobsToken`. The listing (`…/job-requisitions/apply-custom-filters`) answers 400
@@ -35,9 +44,13 @@ the plain `job-requisitions` endpoint with only `orgoid`, is refused. It serves 
 requisition set: 284 postings where the site lists 109, including postings no external site
 shows. With `$select`, the listing carries the description (99.8% of 77,242 rows). The detail's
 description equalled it on 291 of 300 and was never longer. Pages are 50 rows at a 0-based
-`$skip`. A page past about 1 MB answers 502, so a 502 halves the page. The walk ends at `count`
-unique `reqId`s. A shortfall goes through `mark_truncated_unless_negligible`, and a page still
-refused at 5 rows through `mark_truncated`.
+`$skip`, asked in `$orderby=reqId` order: over 6 walks each way across the three Boards whose
+postings moved mid-walk, unordered walks lost 9 postings and ordered ones 1. A page past about
+1 MB answers 502, so a 502 halves the page, down to 5 rows, and the next page asks 50 again. The
+walk ends at `count` unique `reqId`s. A shortfall goes through `mark_truncated_unless_negligible`,
+and a 5-row page still refused, or the 1,000-page cap, through `mark_truncated`. `workLevelCode`
+is served as stated, except that a value no employment-type filter reaches and that names "FT"
+or "PT" whole is labelled: "Part-time (PT 129 or Less Hours)" (645 of 77,242 rows).
 
 **3. Every request states `Accept-Language: en-US`, and the scraper reads the default view.**
 The header is a filter, not a preference. The SPA sends `en-US` whatever the browser's locale, and
@@ -91,11 +104,14 @@ ADR-0158's bar is ~2 MB.
 
 - **Upstream's key `adp_myjobs`.** Rejected. The repo's fingerprinter, its test and ADR-0180
   already name this platform `adp_recruiting`, and the skill's first rule is to keep the key the
-  repo uses.
+  repo uses. `adp` stays ADP Workforce Now's key; the two keys name two separate products, not a
+  product and its sub-product.
 - **freehire's `orgoid`-only listing, which needs no token.** Rejected. It reads the org's
   requisitions rather than the site's (284 against 109), so it would serve postings no public
   site shows.
-- **A per-site cross-language union** (ADR-0180's shape). Deferred, per §3.
+- **A per-site cross-language union** (ADP Workforce Now's shape, ADR-0180). Deferred, per §3.
+- **Serving sites that another site of the same client contains.** Rejected, per §1: each of
+  their postings would serve twice.
 - **Scraping employee-only sites.** Rejected, per §4.
 - **No detail pass.** Rejected. It would leave salary empty on the ~11% of tech postings where
   only the detail states one, at a cost of 2,504 requests a sweep.
@@ -107,7 +123,9 @@ ADR-0158's bar is ~2 MB.
   861 of them hiring with 87,181 postings.
 - `wayback_feeder.ATS_HOSTS`, `cc_miner.ATS_PATTERNS` and the fingerprinter now emit the
   lowercased site slug. A legacy `recruiting.adp.com` link still detects the ATS with no Board.
+- The alias ledger must be re-derived after every refresh of the liveness ledger
+  (`scripts/validate/adp_recruiting_subset_sites.py`); `dedupe_boards.py` refuses `--apply` for
+  this ATS, because it would erase the file.
 - Follow-ups: the non-default-language postings (§3); the filter harness's live run
   (`verify-search-filters`), which waits on a refreshed session cookie and a pipeline run that
-  serves these rows; the ~625 rows whose `workLevelCode` is an abbreviation ("FT", "PT 129 or
-  Less Hours"), which reach no employment-type filter as stated.
+  serves these rows.

@@ -158,7 +158,9 @@ whole ledger.
   Rejected: a different platform — its own host, a path slug, and a listing
   (`my.adp.com/…/job-requisitions/apply-custom-filters`) that needs an `orgoid` header and a
   posting-channel id not yet found. Recorded as a follow-up; the fingerprinter now files it under
-  its own key, `adp_recruiting`, rather than as a Workforce Now Board.
+  its own key, `adp_recruiting`, rather than as a Workforce Now Board. *Since built* (ADR-0191):
+  ADP Recruiting Management is its own scraper, `adp_recruiting`, and the missing channel id is
+  the career-site record's `myJobsToken`, sent as a `myjobstoken` header.
 
 ## Consequences
 

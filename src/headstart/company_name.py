@@ -121,7 +121,8 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     # field and passes it through `from_title` for the guards below, so the pattern is the bare
     # catch-all pyjamahr's is: the value is a field, not a wrapped slogan.
     "adp": (re.compile(r"^(?P<name>.+)$"),),
-    # adp_recruiting: a field again, not a title. The SPA's title is "Career Site" on every site;
+    # adp_recruiting (ADP Recruiting Management, a separate product from ADP Workforce Now's
+    # `adp` above): a field again, not a title. The SPA's title is "Career Site" on every site;
     # the site record it fetches for its token states `clientName` (681 of 681 sites,
     # 2026-09-24), which `ADPRecruitingScraper` passes through here for the guards below.
     "adp_recruiting": (re.compile(r"^(?P<name>.+)$"),),
@@ -258,7 +259,8 @@ _VENDOR_ALIASES: dict[str, frozenset[str]] = {
     # No ADP-named client was seen in 125 `ClientName`s; kept as the same precaution as
     # taleo_enterprise's — the vendor runs its own payroll on its own platform.
     "adp": frozenset({"adp", "automaticdataprocessing"}),
-    # Empty on purpose: `clientName` is ADP's client record, not a page that can fall back to
+    # ADP Recruiting Management. Empty on purpose: `clientName` is ADP's client record, not a
+    # page that can fall back to
     # the vendor's branding, and ADP is a real client here — `apply` (909 postings) and
     # `adpinternalcareers` both state "ADP" (2 of 681 sites, 2026-09-24).
     "adp_recruiting": frozenset(),

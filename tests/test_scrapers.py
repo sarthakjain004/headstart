@@ -10406,9 +10406,11 @@ def test_every_wired_scraper_resolves_its_company(
 #: listing pass (`TaleoEnterpriseScraper._last_title`) — so `_company` reads that shell
 #: directly instead, covered by `tests/test_taleo_enterprise.py`. It still needs the same
 #: vendor-alias coverage as every other wired ATS.
-#: adp has no page naming the employer either — its title is the literal "Recruitment" — so
+#: adp (ADP Workforce Now) has no page naming the employer either — its title is the literal
+#: "Recruitment" — so
 #: `ADPScraper.resolve_company` reads `ClientName` out of the `client-features` JSON instead,
-#: covered by `tests/test_adp.py`. adp_recruiting reads `clientName` off the site record it
+#: covered by `tests/test_adp.py`. adp_recruiting (ADP Recruiting Management, a separate
+#: product) reads `clientName` off the site record it
 #: already fetched for its token, covered by `tests/test_adp_recruiting.py`.
 _NO_BOARD_PAGE = {"taleo_enterprise", "adp", "adp_recruiting"}
 

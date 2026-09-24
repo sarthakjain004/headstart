@@ -644,6 +644,19 @@ def test_adp_recruiting_an_employee_only_site_is_dead(monkeypatch):
     assert cl.p_adp_recruiting("taherinternal", "") == (cl.DEAD, None)
 
 
+def test_adp_recruiting_a_404_is_unknown_and_noted_on_either_request(monkeypatch):
+    """`_get` notes every non-200 but 404/410, so the probe notes those itself."""
+    notes: list[str] = []
+    monkeypatch.setattr(cl, "_note", notes.append)
+    monkeypatch.setattr(cl, "_get", _adp_rm_get(404, b""))
+    assert cl.p_adp_recruiting("churchmutual", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(
+        cl, "_get", _adp_rm_get(200, _ADP_RM["site_churchmutual"], (410, b""))
+    )
+    assert cl.p_adp_recruiting("churchmutual", "") == (cl.UNKNOWN, None)
+    assert notes == ["site-http-404", "listing-http-410"]
+
+
 @pytest.mark.parametrize(
     "site_status, site_body, listing",
     [

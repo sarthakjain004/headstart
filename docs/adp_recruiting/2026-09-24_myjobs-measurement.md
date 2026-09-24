@@ -79,8 +79,10 @@ hypotheses. Two of them were wrong in ways that matter (the `orgoid`-only listin
   the rows served on 606 of 606 hiring sites. 603 of 606 served no `reqId` twice. On the other 3,
   one posting moved across pages mid-walk, so progress is counted in unique ids. A walk of the
   largest site, `lifewisecareers` (5,777), read 5,777 rows and 5,776 unique ids unordered, and
-  5,777 unique ids under `$orderby=postingDate desc` or `reqId`. `$skip=count` returns an empty
-  page.
+  5,777 unique ids under `$orderby=postingDate desc` or `reqId`. Re-measured after review, with
+  each of those three sites walked twice unordered and twice under `$orderby=reqId`: the 6
+  unordered walks lost 0, 3, 1, 2, 2 and 1 postings (9), and the 6 ordered walks lost 0, 0, 0, 0,
+  1 and 0 (1). The scraper asks in `reqId` order. `$skip=count` returns an empty page.
 - **A page past about 1 MB answers 502 (Q4).** `$top` has no clamp: 1,000 rows came back as one
   694,697 B page on `lifewisecareers`, where rows are small. But 100-row pages failed with 502 on
   the sites whose rows run to 11-12 KB. `brcoffeejobs` passed at 90 rows (1,009,319 B) and failed
@@ -146,9 +148,11 @@ hypotheses. Two of them were wrong in ways that matter (the `orgoid`-only listin
   plausibility floor refuses an hourly figure. `compensationDetails` passes through as stated.
 - **Employment type (Q16).** `workLevelCode` takes 183 distinct values: "Full-time" 33,624,
   "Part-time" 17,323, "Full Time" 4,650 and so on. 7,718 rows reach no `employment_type` filter.
-  Most of those are "Variable" (4,149), none (1,375), "PRN" or "Seasonal". Only ~570 are
-  abbreviations such as "FT" or "PT 129 or Less Hours". They are served as stated. There is no
-  experience field.
+  Most of those are "Variable" (4,149), none (1,375), "PRN" or "Seasonal", which stay as stated,
+  as they do on every other scraper. 645 rows name "FT" or "PT" whole ("PT 129 or Less Hours" 340,
+  "FT" 95, "PT (17-29 hours/week)" 72, "FT (min 35 hours/week)" 71, "Regular FT" 33, ...). The
+  scraper labels those, as "Part-time (PT 129 or Less Hours)", so the filter reaches them. There
+  is no experience field.
 - **Location (Q17).** `requisitionLocations` holds every place. 773 rows have none, 73,880 have
   one, and 2,589 (3.4%) have two or more (up to 9+). `workLocations` and `postingLocations` were
   empty on 77,242 of 77,242. Each place is rendered as the site renders it, "City, State,
@@ -175,7 +179,7 @@ hypotheses. Two of them were wrong in ways that matter (the `orgoid`-only listin
   - Across 30 sites, listing: 1,500 at c=64, 1,498 answered 200 and 2 read timeouts (60 s).
   - The 692-slug census, the 606-site dump and a 300-detail pass at c=8 to c=16 were all clean.
 
-  Workforce Now's F5 budget (200 per 60 s) does not apply here. This is a different edge
+  ADP Workforce Now's F5 budget (200 per 60 s) does not apply here. This is a different edge
   (CloudFront and AWS API Gateway on `myjobs.adp.com`, `my.adp.com`).
 - **User-Agent (Q20).** `headstart/0.1`, curl's default and `python-requests/2.32` all answered
   200.
@@ -231,3 +235,13 @@ so the cross-hostname and casing duplicate mechanisms cannot occur. A spot check
 (`midcocareers` 49, `tnacareers` 16, `webbankcareers` 2, `hygeiadairy` 0,
 `tpghotelsandresorts` 0) and 5 dead rows (4 "not found", including `fr-ca` and a font file, and
 `southshoretransport` "not active") against the host agreed on all 10.
+
+## Sites another site of the same client contains
+
+`scripts/validate/adp_recruiting_subset_sites.py` walked all 990 live sites (0 unreadable) and
+grouped them by `orgoid`. It buried 131 sites, holding 3,601 of 87,181 postings, onto 41 kept
+sites in `data/validate/aliases/adp_recruiting.csv` (signal `subset-reqs`, ADR-0186's rule). Each
+buried site's whole posting set is contained in a kept site of the same client. For example,
+`gnc` (751) is buried onto `generalnutritioncenter` (751, the same ids). `clientName` was
+identical across every site of the 98 multi-site clients in the census, so a buried site's
+postings keep their company name. Sites that only partly overlap both stay.

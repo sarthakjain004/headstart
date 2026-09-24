@@ -212,7 +212,8 @@ class _Resp:
         if self.status_code >= 400:
             from headstart import http
 
-            raise http.RequestsError(f"HTTP {self.status_code}")
+            # The shape curl_cffi raises: the settled response rides on the exception.
+            raise http.RequestsError(f"HTTP {self.status_code}", response=self)
 
 
 class _FakeADP:
@@ -270,20 +271,44 @@ def test_the_walk_is_zero_based_until_the_stated_count_with_the_sites_token(
 
 
 def test_a_page_too_big_for_the_host_is_asked_again_smaller(monkeypatch):
-    """A page past ~1 MB answers 502; the walk halves the page rather than retrying it."""
+    """A page past ~1 MB answers 502; the walk halves the page rather than retrying it, and
+    asks the full page size again for the next page."""
     fake = _FakeADP(_church_pages(), too_big=10)
     raw = _wired(monkeypatch, fake, page=20).fetch_raw()
     assert len(raw["rows"]) == 19
     tops = [c[1]["$top"] for c in fake.calls if c[0].endswith("apply-custom-filters")]
-    assert tops == ["20", "10", "10"]
+    assert tops == ["20", "10", "20", "10"]
 
 
 def test_a_page_still_refused_at_the_floor_truncates_the_board(monkeypatch):
+    """Halving stops at `_MIN_PAGE` (5): 10 -> 5, and a 5-row page still refused gives up."""
     fake = _FakeADP(_church_pages(), too_big=1)
     scraper = _wired(monkeypatch, fake, page=10)
     raw = scraper.fetch_raw()
     assert raw["rows"] == []
-    assert scraper.truncated and "502" in scraper.truncated
+    tops = [c[1]["$top"] for c in fake.calls if c[0].endswith("apply-custom-filters")]
+    assert tops == ["10", "5"]
+    assert scraper.truncated and "a 5-row page" in scraper.truncated
+
+
+def test_the_page_cap_truncates_once_with_its_own_reason(monkeypatch):
+    fake = _FakeADP(_church_pages())
+    scraper = _wired(monkeypatch, fake)
+    monkeypatch.setattr(adp_recruiting, "_MAX_PAGES", 1)
+    raw = scraper.fetch_raw()
+    assert len(raw["rows"]) == 10
+    assert scraper.truncated == "hit the 1-page cap at 10 of 19 postings"
+
+
+def test_a_site_record_with_no_token_is_an_unreadable_board(monkeypatch, caplog):
+    scraper = get_scraper("adp_recruiting", "churchmutual", "churchmutual")
+    record = {
+        k: v for k, v in FIXTURES["site_churchmutual"].items() if k != "myJobsToken"
+    }
+    monkeypatch.setattr(scraper, "_fetch", lambda *a, **k: _Resp(200, record))
+    with caplog.at_level("INFO"):
+        assert scraper.fetch_raw() == {"rows": [], "details": {}}
+    assert "expected a site record with a myJobsToken" in caplog.text
 
 
 def test_a_walk_short_of_the_stated_count_is_marked_truncated(monkeypatch):
@@ -297,6 +322,47 @@ def test_a_walk_short_of_the_stated_count_is_marked_truncated(monkeypatch):
     raw = scraper.fetch_raw()
     assert len(raw["rows"]) == 10
     assert scraper.truncated and "read 10 of 19" in scraper.truncated
+
+
+def test_the_async_detail_pass_reads_the_same_fields(monkeypatch):
+    """The default fan-out is the multiplexed one; it asks with the token and reads the pay."""
+    import asyncio
+
+    scraper = get_scraper("adp_recruiting", "churchmutual", "churchmutual")
+    seen: list[dict] = []
+
+    async def fetch_async(session, method, url, **kwargs):
+        seen.append(kwargs["headers"])
+        if url.endswith("/5001222115706"):
+            return _Resp(200, FIXTURES["churchmutual_detail_5001222115706"])
+        return _Resp(400, FIXTURES["detail_closed"])
+
+    monkeypatch.setattr(scraper, "_fetch_async", fetch_async)
+    found = asyncio.run(scraper._detail_async(None, TOKEN, "5001222115706"))
+    closed = asyncio.run(scraper._detail_async(None, TOKEN, "5009999999900"))
+    assert scraper._salary_field(found) == "107,000 to 160,400"
+    assert closed is None and scraper.detail_losses == {"HTTP 400": 1}
+    assert all(h["myjobstoken"] == TOKEN for h in seen)
+    assert all(h["Accept-Language"] == "en-US" for h in seen)
+
+
+def test_an_abbreviated_work_level_is_labelled_for_the_filter():
+    from headstart import employment_type
+
+    cases = {
+        "PT 129 or Less Hours": "Part-time (PT 129 or Less Hours)",
+        "FT": "Full-time (FT)",
+        "Regular FT": "Full-time (Regular FT)",
+        "Full-time": "Full-time",
+        "Variable": "Variable",
+        "Software": "Software",  # no whole-word FT/PT
+    }
+    for stated, served in cases.items():
+        (job,) = _jobs(
+            {"rows": [{**ROWS[0], "workLevelCode": stated}], "details": {}}
+        ).values()
+        assert job.employment_type == served
+    assert employment_type.flags("Part-time (PT 129 or Less Hours)")["is_part_time"]
 
 
 def test_a_posting_served_twice_across_pages_counts_once(monkeypatch):
