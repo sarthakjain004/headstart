@@ -162,13 +162,13 @@ def test_canonical_location_handles_a_missing_or_non_dict_value():
 # FakeFetcher (ADR-0153, ADR-0199) answers rather than the network.
 
 
-def _widget_answering(text: str) -> FakeFetcher:
+def _widget_fetcher(text: str) -> FakeFetcher:
     """Every request gets the same 200 widget body."""
     return FakeFetcher(lambda _method, _url, _kwargs: FakeResponse(200, text))
 
 
 def test_fetch_raw_treats_a_dead_tenants_empty_body_as_an_unread_board():
-    scraper = BambooHRScraper("gone", fetcher=_widget_answering(""))
+    scraper = BambooHRScraper("gone", fetcher=_widget_fetcher(""))
     assert scraper.fetch_raw() == {"page": "", "details": {}}
 
 
@@ -177,7 +177,7 @@ def test_fetch_raw_reads_a_live_but_jobless_tenants_blank_state():
         '<div class="BambooHR-ATS-board"><div class="BambooHR-ATS-blankState">'
         "We currently have no open positions.</div></div>"
     )
-    scraper = BambooHRScraper("empty-board", fetcher=_widget_answering(blank))
+    scraper = BambooHRScraper("empty-board", fetcher=_widget_fetcher(blank))
     assert scraper.fetch_raw() == {"page": blank, "details": {}, "departments": {}}
 
 
@@ -193,7 +193,7 @@ def test_fetch_raw_treats_changed_row_markup_as_an_unread_board_not_an_empty_one
         '<li data-position-id="331">bhrPositionID_331 moved to a data attribute</li>'
         "</div>"
     )
-    scraper = BambooHRScraper("drifted", fetcher=_widget_answering(drifted))
+    scraper = BambooHRScraper("drifted", fetcher=_widget_fetcher(drifted))
     assert scraper.fetch_raw() == {"page": "", "details": {}}
 
 
@@ -204,7 +204,7 @@ def test_fetch_raw_still_reads_a_genuinely_empty_but_well_formed_board():
         '<div class="BambooHR-ATS-board"><div class="BambooHR-ATS-blankState">'
         "We currently have no open positions.</div></div>"
     )
-    scraper = BambooHRScraper("empty-board", fetcher=_widget_answering(blank))
+    scraper = BambooHRScraper("empty-board", fetcher=_widget_fetcher(blank))
     assert scraper.fetch_raw() == {"page": blank, "details": {}, "departments": {}}
 
 

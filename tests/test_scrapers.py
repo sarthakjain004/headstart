@@ -3518,7 +3518,7 @@ def _trakstar_feed_fetcher(status: int, feed: str = ""):
     """The shared fake, answering acme's feed request with ``status``/``feed``."""
     from fake_fetcher import FakeFetcher, FakeResponse
 
-    return FakeFetcher(lambda method, url, _kwargs: FakeResponse(status, feed))
+    return FakeFetcher(lambda _method, _url, _kwargs: FakeResponse(status, feed))
 
 
 def test_trakstar_fetch_via_feed_returns_none_when_feed_unavailable():

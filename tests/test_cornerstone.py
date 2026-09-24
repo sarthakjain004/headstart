@@ -137,7 +137,7 @@ def _searched_sites(fake: _FakeCsod) -> list[int]:
 
 
 def _walked_sites(fake: _FakeCsod) -> list[int]:
-    return [int(u.rsplit("/", 1)[1]) for u in fake.urls() if "/careersites/" in u]
+    return [int(url.rsplit("/", 1)[1]) for url in fake.urls() if "/careersites/" in url]
 
 
 def test_inactive_sites_are_walked_but_not_searched():
@@ -210,9 +210,9 @@ def test_the_description_is_the_job_ad_not_the_listing_fragment():
 def test_the_job_ad_is_fetched_from_the_site_the_posting_was_seen_on():
     _, fake, _ = _scrape("ama-assn")
     ads = sorted(
-        u.split("/CareerSite/")[1].split("?")[0]
-        for u in fake.urls()
-        if "/JobRequisitions/" in u
+        url.split("/CareerSite/")[1].split("?")[0]
+        for url in fake.urls()
+        if "/JobRequisitions/" in url
     )
     assert ads == [
         "2/JobRequisitions/4070",
@@ -289,9 +289,9 @@ def test_an_html_escaped_title_is_unescaped():
 
 def _ad_fetches(fake: _FakeCsod) -> list[str]:
     return sorted(
-        u.split("JobRequisitions/")[1].split("?")[0]
-        for u in fake.urls()
-        if "/JobRequisitions/" in u
+        url.split("JobRequisitions/")[1].split("?")[0]
+        for url in fake.urls()
+        if "/JobRequisitions/" in url
     )
 
 
@@ -319,7 +319,7 @@ def test_the_tech_gate_and_the_description_store_skip_job_ads(monkeypatch):
 
 
 def _home_fetches(fake: _FakeCsod) -> int:
-    return sum(1 for u in fake.urls() if "/home?c=" in u)
+    return sum(1 for url in fake.urls() if "/home?c=" in url)
 
 
 def test_an_expired_token_is_refreshed_once_and_the_request_retried():
@@ -335,11 +335,11 @@ def test_an_expired_token_is_refreshed_once_and_the_request_retried():
 
 def test_a_401_that_survives_the_refresh_fails_the_board():
     fake = _FakeCsod("ama-assn", _boards()["ama-assn"])
-    recorded = fake.route
+    tenant_route = fake.route
     fake.route = lambda method, url, kwargs: (
         _csod_response(401, "")
         if "rec-job-search" in url
-        else recorded(method, url, kwargs)
+        else tenant_route(method, url, kwargs)
     )
     scraper = CornerstoneScraper("ama-assn", fetcher=fake)
     with pytest.raises(http.RequestsError):
@@ -352,7 +352,7 @@ def test_a_corp_with_no_career_site_reads_as_no_jobs():
     jobs, fake, _ = _scrape("ama-assn", home_status={1: 302, 2: 302, 3: 302})
     assert jobs == []
     assert _home_fetches(fake) == 3
-    assert not [u for u in fake.urls() if "/careersites/" in u]
+    assert not [url for url in fake.urls() if "/careersites/" in url]
 
 
 def test_the_token_is_read_from_the_next_site_when_site_1_redirects():

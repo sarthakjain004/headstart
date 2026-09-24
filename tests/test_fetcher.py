@@ -23,6 +23,9 @@ every registered Scraper takes the fetcher ``get_scraper`` is given.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
+
+# `FakeBrowserFetcher.fetch` takes a `json=` keyword, which shadows the module inside it.
 from json import dumps as json_text
 from typing import Any, Self
 
@@ -35,6 +38,7 @@ from headstart.scrapers.darwinbox import DarwinboxScraper
 from headstart.scrapers.greenhouse import GreenhouseScraper
 from headstart.scrapers.icims import ICIMSScraper
 from headstart.scrapers.registry import SCRAPERS, get_scraper
+from headstart.scrapers.workday import _PAGE_LIMIT
 
 SCRAPED_AT = "2026-01-01T00:00:00+00:00"
 
@@ -47,7 +51,7 @@ def _fetcher_answering(
     return FakeFetcher(lambda method, url, _kwargs: responses[(method, url)])
 
 
-def _method_and_url(fake: FakeFetcher) -> list[tuple[str, str]]:
+def _methods_and_urls(fake: FakeFetcher) -> list[tuple[str, str]]:
     return [(request.method, request.url) for request in fake.requests]
 
 
@@ -76,7 +80,7 @@ def test_greenhouse_fetch_raw_uses_the_injected_fetcher() -> None:
     jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
 
     # the seam, not a global, answered this
-    assert _method_and_url(fake) == [("GET", url)]
+    assert _methods_and_urls(fake) == [("GET", url)]
     assert len(jobs) == 1
     assert jobs[0].id == "greenhouse:acme:42"
     assert jobs[0].title == "Backend Engineer"
@@ -123,7 +127,7 @@ def test_icims_fetch_raw_uses_the_injected_fetcher_for_listing_and_detail() -> N
     scraper = ICIMSScraper(host, "Acme", fetcher=fake)
     jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
 
-    assert sorted(_method_and_url(fake)) == sorted(
+    assert sorted(_methods_and_urls(fake)) == sorted(
         [("GET", sitemap_url), ("GET", detail_url)]
     )
     assert len(jobs) == 1
@@ -190,7 +194,7 @@ def test_darwinbox_fetch_raw_uses_the_injected_fetcher_when_unwalled() -> None:
     scraper = DarwinboxScraper("acme", "Acme", fetcher=fake)
     jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
 
-    assert ("POST", url) in _method_and_url(fake)
+    assert ("POST", url) in _methods_and_urls(fake)
     assert len(jobs) == 1
     assert jobs[0].id == "darwinbox:acme:abc123"
     assert jobs[0].title == "Backend Engineer"
@@ -220,8 +224,8 @@ def test_darwinbox_wall_escalates_to_the_injected_browser_fetcher() -> None:
     jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
 
     # both curl attempts happened first (the wall is discovered, not assumed) ...
-    assert ("POST", in_url) in _method_and_url(fake_http)
-    assert ("POST", com_url) in _method_and_url(fake_http)
+    assert ("POST", in_url) in _methods_and_urls(fake_http)
+    assert ("POST", com_url) in _methods_and_urls(fake_http)
     # ... then the escalation navigated the walled TLD's careers page, not the other one.
     assert (
         "navigate",
@@ -237,8 +241,9 @@ def test_darwinbox_wall_escalates_to_the_injected_browser_fetcher() -> None:
 
 @pytest.mark.parametrize("ats", sorted(SCRAPERS))
 def test_get_scraper_hands_its_fetcher_to_every_scraper(ats: str) -> None:
-    """Seven `__init__` overrides once dropped `fetcher`, so a fake reached two of nine."""
-    fake = FakeFetcher(lambda method, url, _kwargs: FakeResponse(404))
+    """`get_scraper` once took no fetcher, and seven of the nine `__init__` overrides dropped
+    one passed to the constructor directly."""
+    fake = FakeFetcher(lambda _method, _url, _kwargs: FakeResponse(404))
     scraper = get_scraper(ats, "acme/careers", "Acme", fetcher=fake)
     assert scraper._fetcher is fake
 
@@ -262,43 +267,59 @@ _WORKDAY_BOARD = "https://acme.wd1.myworkdayjobs.com/External"
 _WORKDAY_LISTING = "https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/External/jobs"
 _WORKDAY_POSTINGS = [
     {"title": f"Backend Engineer {n}", "externalPath": f"/job/Remote/Backend_R{n}"}
-    for n in range(21)  # one page past `_PAGE_LIMIT`, so page 2 rides `_post_async`
+    for n in range(
+        _PAGE_LIMIT + 1
+    )  # one page past the limit: page 2 rides `_post_async`
 ]
 
 
-def _workday_route(stale_cookie_jar: FakeFetcher | None = None) -> Route:
-    """A 21-posting Board. With ``stale_cookie_jar``, every listing page answers ADR-0103's 400
-    until that fetcher's cookies have been cleared."""
+def _workday_board(method: str, url: str, kwargs: dict[str, Any]) -> FakeResponse:
+    """A healthy Board of `_WORKDAY_POSTINGS`: the listing pages them, every detail answers."""
+    if url == _WORKDAY_LISTING:
+        offset, limit = kwargs["json"]["offset"], kwargs["json"]["limit"]
+        page = _WORKDAY_POSTINGS[offset : offset + limit]
+        total = len(_WORKDAY_POSTINGS)
+        return FakeResponse(200, json.dumps({"total": total, "jobPostings": page}))
+    info = {"title": "Backend Engineer", "jobDescription": f"<p>{url}</p>"}
+    return FakeResponse(200, json.dumps({"jobPostingInfo": info}))
+
+
+def _stale_cookie_until_cleared(
+    fake: FakeFetcher, stale: Callable[[str, dict[str, Any]], bool]
+) -> Route:
+    """`_workday_board`, except that a request `stale` picks answers ADR-0103's stale-cookie 400
+    until `fake`'s cookies have been cleared."""
 
     def route(method: str, url: str, kwargs: dict[str, Any]) -> FakeResponse:
-        if url == _WORKDAY_LISTING:
-            offset, limit = kwargs["json"]["offset"], kwargs["json"]["limit"]
-            if (
-                limit == 20  # a listing page, not the limit-1 instance probe
-                and stale_cookie_jar
-                and not stale_cookie_jar.cookie_clears
-            ):
-                return FakeResponse(400, '{"errorCode": "S22"}')
-            page = _WORKDAY_POSTINGS[offset : offset + limit]
-            return FakeResponse(200, json.dumps({"total": 21, "jobPostings": page}))
-        info = {"title": "Backend Engineer", "jobDescription": f"<p>{url}</p>"}
-        return FakeResponse(200, json.dumps({"jobPostingInfo": info}))
+        if not fake.cookie_clears and stale(method, kwargs):
+            return FakeResponse(400, '{"errorCode": "S22"}')
+        return _workday_board(method, url, kwargs)
 
     return route
+
+
+def _is_listing_page(method: str, kwargs: dict[str, Any]) -> bool:
+    return method == "POST" and kwargs["json"]["limit"] == _PAGE_LIMIT  # not the probe
+
+
+def _is_detail(method: str, _kwargs: dict[str, Any]) -> bool:
+    return method == "GET"
 
 
 def test_workday_listing_pages_reach_the_injected_fetcher_with_their_egress_kwargs(
     seam_bypass_fails: None,
 ) -> None:
-    fake = FakeFetcher(_workday_route())
+    fake = FakeFetcher(_workday_board)
     scraper = get_scraper("workday", _WORKDAY_BOARD, "Acme", fetcher=fake)
 
     jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
 
-    assert len(jobs) == 21 and all(job.description for job in jobs)
+    assert len(jobs) == len(_WORKDAY_POSTINGS)
+    assert all(job.description for job in jobs)
     listing = [request for request in fake.requests if request.url == _WORKDAY_LISTING]
     # the instance probe (limit 1), then page 1 (sync `_post`) and page 2 (`_post_async`)
-    assert [request.kwargs["json"]["offset"] for request in listing] == [0, 0, 20]
+    offsets = [request.kwargs["json"]["offset"] for request in listing]
+    assert offsets == [0, 0, _PAGE_LIMIT]
     for request in listing[1:]:
         assert request.method == "POST"
         sent_without_body = {
@@ -346,14 +367,32 @@ def test_workday_listing_400_clears_the_injected_fetchers_cookies(
     seam_bypass_fails: None,
 ) -> None:
     """ADR-0103's stale-cookie reset reaches the fetcher's jar, not the module global's."""
-    fake = FakeFetcher(_workday_route())
-    fake.route = _workday_route(stale_cookie_jar=fake)
+    fake = FakeFetcher(_workday_board)
+    fake.route = _stale_cookie_until_cleared(fake, _is_listing_page)
     scraper = get_scraper("workday", _WORKDAY_BOARD, "Acme", fetcher=fake)
 
     jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
 
-    assert len(jobs) == 21
+    assert len(jobs) == len(_WORKDAY_POSTINGS)
     assert fake.cookie_clears == [None]  # the whole jar, once
+
+
+def test_workday_sync_detail_400_clears_the_injected_fetchers_cookies(
+    seam_bypass_fails: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The sync detail pass (`HEADSTART_ASYNC_FANOUT=0`) resets the same jar on a detail 400.
+    Its worker threads can each see a 400 before the first reset lands, so the count may exceed
+    one; every reset is still the whole jar, through the fetcher."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    fake = FakeFetcher(_workday_board)
+    fake.route = _stale_cookie_until_cleared(fake, _is_detail)
+    scraper = get_scraper("workday", _WORKDAY_BOARD, "Acme", fetcher=fake)
+
+    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+
+    assert len(jobs) == len(_WORKDAY_POSTINGS)
+    assert all(job.description for job in jobs)  # every stale detail was recovered
+    assert fake.cookie_clears and set(fake.cookie_clears) == {None}
 
 
 # --- trakstar: the RSS feed rides the same fetcher as the rest of the Board ------------------
