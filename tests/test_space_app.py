@@ -797,6 +797,50 @@ def test_parse_fills_the_profile_and_spends_a_read(sets_app, hub, monkeypatch):
     assert r.json["parses_left"] == sets_app.MAX_PARSES - 1
 
 
+def test_a_second_parse_waits_out_the_first_rather_than_racing_the_cap(
+    sets_app, hub, monkeypatch
+):
+    # The counter is read before the router call and written after it, and the server is
+    # threaded — so without a guard, parallel parses all read the same count and all pass the
+    # cap, each spending a router call. One read in flight per Account closes that window.
+    import json as _json
+    import threading
+
+    entered, release = threading.Event(), threading.Event()
+    calls = []
+
+    def ask(prompt):
+        calls.append(prompt)
+        if len(calls) == 1:
+            entered.set()
+            release.wait(5)
+        return _json.dumps(_EXTRACTION)
+
+    first, second = _signed_in(sets_app, monkeypatch), _signed_in(sets_app, monkeypatch)
+    monkeypatch.setattr(sets_app.llm_router, "ask", ask)
+    results = {}
+    t = threading.Thread(
+        target=lambda: results.setdefault(
+            "first",
+            first.post("/profile/parse", json={"text": "r"}, base_url=_HTTPS),
+        )
+    )
+    t.start()
+    assert entered.wait(5)
+    r = second.post("/profile/parse", json={"text": "r"}, base_url=_HTTPS)
+    release.set()
+    t.join(5)
+    assert r.status_code == 429
+    assert len(calls) == 1  # the refused read never reached the router
+    assert results["first"].status_code == 200
+    assert results["first"].json["parses_left"] == sets_app.MAX_PARSES - 1
+    # …and once the first read finishes, the Account can read again.
+    assert (
+        second.post("/profile/parse", json={"text": "r"}, base_url=_HTTPS).status_code
+        == 200
+    )
+
+
 def test_parse_cap_is_lifetime_and_survives_delete(sets_app, hub, monkeypatch):
     client = _signed_in(sets_app, monkeypatch)
     _router_answers(sets_app, monkeypatch)
