@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write Workday's company-name cache: one resolved name per Board (ADR-0210).
+"""Write Workday's company-name cache: one resolved name per Board (ADR-0216).
 
 `WorkdayScraper.resolve_company` reads `data/validate/company_names/workday.csv` before it spends a
 request, so a Board on file keeps the same name from run to run. This script is what fills it. Per

@@ -4,7 +4,7 @@
 [ADR-0172](0172-a-single-source-scraper-declares-its-company.md) (on the Context's opening premise:
 `__init__` now does `self.COMPANY or company or slug`, so a Single source scraper's declared name
 outranks the caller-supplied one this ADR's fallback assumed);
-[ADR-0210](0210-a-workday-board-is-named-by-its-postings-legal-entities.md) (Workday's detail does
+[ADR-0216](0216-a-workday-board-is-named-by-its-postings-legal-entities.md) (Workday's detail does
 carry a name, `hiringOrganization`, and Workday Boards are now named from it) · **Relates to:** ADR-0031 (the filter compiler that
 serves `company`), ADR-0007 (the typed Job projection), ADR-0063 (the spare egress this request
 deliberately cannot wall), ADR-0034 (the vendor-Board blocklist that already removes placeholder

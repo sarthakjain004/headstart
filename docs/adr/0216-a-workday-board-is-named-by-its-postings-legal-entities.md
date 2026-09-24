@@ -1,7 +1,7 @@
-# ADR-0210: A Workday Board is named by its postings' legal entities, checked against its own page
+# ADR-0216: A Workday Board is named by its postings' legal entities, checked against its own page
 
 **Status:** accepted · **Date:** 2026-09-25 · **Builds on:**
-[ADR-0209](0209-a-board-is-named-by-a-curated-stated-or-humanised-name-never-its-slug.md) (the
+[ADR-0212](0212-a-board-is-named-by-a-curated-stated-or-humanised-name-never-its-slug.md) (the
 curated → stated → humanised order this fills the "stated" step of, for Workday) · **Relates to:**
 [ADR-0114](0114-a-board-states-its-company-name-in-its-page-title.md) (why Workday had no stated
 name), [ADR-0099](0099-a-404d-workday-detail-falls-back-to-the-public-pages-json-ld.md) (the JSON-LD page
@@ -48,11 +48,11 @@ cache new Boards automatically, but needs plumbing across three stages, a first 
 from whatever tech postings one run saw, and nobody reviews it. A committed file is reviewed in a
 diff before any user sees a name, and the one-off script reads every posting type, not only tech.
 
-**Curation fills what the cascade cannot.** `config/company_names.csv` (ADR-0209) gains an entry,
+**Curation fills what the cascade cannot.** `config/company_names.csv` (ADR-0212) gains an entry,
 with evidence read from the Board's own og tags, sidebar logo alt, approot and posting text, for
 every residue Board that states its name somewhere, and for Boards of 50+ rows the cascade named
 partially or wrongly ("PPD" for Thermo Fisher Scientific, "Pennsylvania" for Penn State, "GE" for
-GE Vernova). A Board whose own pages state no name gets no entry; ADR-0209's humanised tenant
+GE Vernova). A Board whose own pages state no name gets no entry; ADR-0212's humanised tenant
 serves it.
 
 ## Measurements (live, 2026-09-24/25)
@@ -65,14 +65,18 @@ serves it.
   ("CHG" for CHG Healthcare, "Rangers" for Texas Rangers), 1 wrong (Sparus named after its
   subsidiary Southern Cross), 15 unnamed. Of the 105 named: 89.5% correct, 9.5% partial, 1% wrong.
 - **After curation and the cache**, counted as served Boards (the served table spells some sites
-  two ways, `/External` and `/external`; both files are keyed case-insensitively, one row per
-  spelling-folded Board): 537 served Boards (21,983 rows) take a curated name, 3,575 (74,120 rows)
-  the cached cascade answer, and 63 (231 rows) are left to the humanised fallback. The 3,605 named
-  served Boards fold to 3,394 cache keys.
+  two ways, `/External` and `/external`; both files match keys case-insensitively, one row per
+  folded Board): 544 served Boards (22,236 rows) take a curated name, 3,568 (73,867 rows) the
+  cached cascade answer, and 63 (231 rows) are left to the humanised fallback. The cache holds
+  3,358 keys: the 3,394 folded Boards the cascade named, less the 36 a curated row overrides.
 
 ## Consequences
 
 - One extra GET per uncached Workday Board per run, one attempt, never walls the host.
 - A cached name goes stale if a company renames; `--all` re-reads every Hiring Board.
+- An uncached Board's live answer can move between runs: the pipeline's detail pass fetches only
+  tech-gated postings, so the vote sees a different subset each run, and can differ from what the
+  script (which reads every posting type) later writes. Re-running the script after a landing
+  closes it; nothing in the pipeline fills the cache.
 - A leading number that is part of a brand ("2020 Companies", "407 ETR") reads as an entity code;
   both are curated. Widen `_CODE` only on a measured population.

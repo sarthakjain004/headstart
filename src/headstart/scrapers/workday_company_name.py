@@ -1,4 +1,4 @@
-"""A Workday Board's company name, voted from its postings' legal entities (ADR-0210).
+"""A Workday Board's company name, voted from its postings' legal entities (ADR-0216).
 
 Workday names no company in its listing, and its board page is a client-rendered shell whose
 ``og:title`` is the company on well under half the Boards that carry one ("Careers", "Job
@@ -30,7 +30,7 @@ separator, no 60-character sentence.
 
 Measured live over all 4,175 affected Boards (2026-09-24): 86% named. Of a seeded random 120 read
 by hand, 89.5% of the named ones were correct, 9.5% partial ("CHG" for CHG Healthcare) and 1% wrong
-(ADR-0210).
+(ADR-0216).
 
 **Per site, never per tenant.** A tenant's sites often host different companies —
 ``volarisgroup`` runs a site per acquired business, ``humana``'s ``centerwell`` site hires for

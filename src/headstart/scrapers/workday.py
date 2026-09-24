@@ -181,7 +181,7 @@ def _extract_page_detail(response: Any) -> dict[str, Any] | None:
         "startDate": posting.get("datePosted"),
         "remoteType": posting.get("jobLocationType"),
         "timeType": _SCHEMA_EMPLOYMENT.get(employment, employment),
-        # The same legal entity the CXS detail states, for the Board's name (ADR-0210).
+        # The same legal entity the CXS detail states, for the Board's name (ADR-0216).
         "hiringOrganization": _organization_name(posting.get("hiringOrganization")),
     }
 
@@ -995,7 +995,7 @@ class WorkdayScraper(BaseScraper):
             "additionalLocations": info.get("additionalLocations"),
             "country": country.get("descriptor") if isinstance(country, dict) else None,
             "remoteType": info.get("remoteType"),
-            # Beside `jobPostingInfo`, not inside it: the posting's legal entity (ADR-0210).
+            # Beside `jobPostingInfo`, not inside it: the posting's legal entity (ADR-0216).
             "hiringOrganization": _organization_name(payload.get("hiringOrganization")),
         }
 
@@ -1574,11 +1574,11 @@ class WorkdayScraper(BaseScraper):
 
         A curated name never reaches here: `BaseScraper.fetch` applies it and skips this call. A
         name in the cascade's committed cache (`workday_company_name.resolved_name`) wins next and costs
-        no request; it is what keeps a Board's name the same from run to run (ADR-0210).
+        no request; it is what keeps a Board's name the same from run to run (ADR-0216).
         Otherwise one GET of the board page — one attempt that can never wall the host, as the
         base method's — feeds `workday_company_name.board_name` with the `hiringOrganization` values
         the detail pass already fetched. A Board that yields no name keeps the one it had, which
-        `company_name.settled` then humanises (ADR-0209).
+        `company_name.settled` then humanises (ADR-0212).
         """
         cached = workday_company_name.resolved_name(self.board_key())
         if cached:

@@ -2794,7 +2794,7 @@ def test_workday_names_a_board_from_the_json_ld_fallback_too():
 @pytest.mark.usefixtures("no_names_on_file")
 def test_workday_falls_back_to_the_humanised_tenant_when_nothing_names_the_board():
     """An office is not an employer, and the page says nothing: the ledger's identifier is never
-    served, and the policy's humanised tenant is (ADR-0209)."""
+    served, and the policy's humanised tenant is (ADR-0212)."""
     from headstart.scrapers.workday import WorkdayScraper
 
     slug, route = _workday_board(
@@ -2843,7 +2843,9 @@ def test_workday_curated_name_outranks_the_cascade_and_its_cache(monkeypatch, tm
     from headstart.scrapers.workday import WorkdayScraper
 
     key = "workday:humana/Humana_External_Career_Site"
-    monkeypatch.setattr(company_name, "curated_names", lambda: {key: "Humana Inc."})
+    monkeypatch.setattr(
+        company_name, "curated_names", lambda: {key.lower(): "Humana Inc."}
+    )
     monkeypatch.setattr(
         workday_company_name,
         "RESOLVED_NAMES",
