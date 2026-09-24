@@ -1843,6 +1843,9 @@ def index():
             # The most Boards one Search hand-off may name, so the Trends tab can say so
             # rather than send a request the route refuses.
             "max_scoped_boards": search.MAX_SCOPED_BOARDS,
+            # Whether a Trends category can hand over as its exact Jobs, and up to how many.
+            "family_handoff": _FAMILY_IDS is not None,
+            "max_family_ids": search.MAX_FAMILY_IDS,
         },
         njobs=f"{_table.count_rows():,}",
         atses=capabilities.atses,

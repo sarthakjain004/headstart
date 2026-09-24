@@ -22,6 +22,7 @@ from headstart import facets, fx, geo
 from headstart.alerts.store import MAX_COMPANIES, CompanyPrefs
 from headstart.embedding_conventions import PROD_TABLE, load_encoder
 from headstart.search import (
+    MAX_FAMILY_IDS,
     MAX_SCOPED_BOARDS,
     JobSearch,
     load_family_ids,
@@ -89,6 +90,9 @@ def index():
             "fx": fx.table(),
             # The Trends tab's hand-off cap, shared with the Space (ADR-0042 mirror).
             "max_scoped_boards": MAX_SCOPED_BOARDS,
+            # Whether a Trends category can hand over as its exact Jobs, and up to how many.
+            "family_handoff": _FAMILY_IDS is not None,
+            "max_family_ids": MAX_FAMILY_IDS,
         },
         # The Data tab links out to the public repo (ADR-0113). Hardcoded here rather than
         # imported: this file is the local dev renderer and shares no config with the Space.

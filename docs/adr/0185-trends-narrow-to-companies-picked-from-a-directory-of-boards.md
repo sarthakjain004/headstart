@@ -494,3 +494,25 @@ build:
     hold.
   - JPMorgan's display name arrives with the next pipeline run.
   - Paytm's two entries stay apart.
+
+Its code review tightened the round:
+
+- **The Space tells the page what the category hand-off can do.** `CFG.family_handoff` is off
+  with no assignment snapshot. `CFG.max_family_ids` is 5,000, and a larger request is refused
+  rather than widened. Past either, and in a watched-roles view, which counts titles across
+  categories, the category's name ranks the jobs instead, and the pill claims no filter.
+- **Lookups are cheap.** Assignment ids are held sorted and found per Board by bisection, not
+  by scanning a family's list per request.
+- **Consistent readings.**
+  - "Too new" is judged by each company's own counting date.
+  - Arrows and "flat" are judged on the figure as printed.
+  - The table's counting column is in openings in every unit, and a hiring percentage carries
+    its openings ("+1.0% (+19)").
+  - A one-company drill is titled for its category.
+- **Also in this round:** any company holding an Eightfold Board has duplicate removal taken out
+  of its line (#649 drops an Eightfold-only entry's mirrored rows in one run). On a phone, the
+  tooltip under the chart wraps names.
+- **Known limits.** Endpoints carry no noise guard beyond the marked steps: one thin last run
+  can move a tile. A duplicate-removal epoch names no ATS, so an Eightfold pick also has a
+  Workday- or Taleo-only duplicate-removal run taken out, which costs it one run of ordinary
+  change.

@@ -77,7 +77,8 @@ function loadApp(fetchImpl) {
       // stub's exact color is irrelevant to every test here; only the structural HTML is asserted.
       documentElement: { getAttribute: () => null, setAttribute() {} },
     },
-    window: { addEventListener() {}, location: { hash: '' } },
+    // app.js reads its config off `window.CFG`, so tests set flags there.
+    window: { addEventListener() {}, location: { hash: '' }, CFG: {} },
     location: { hash: '' },
     console, CFG: {}, URLSearchParams, Date, Math, isNaN, setTimeout, clearTimeout,
     // loadTrends cancels its own previous request, so app.js does not evaluate without this.
@@ -1602,7 +1603,7 @@ test('the table names what its change leaves out, and the counting changes add u
   nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });   // no failed load showing
   t.table(true);
   const html = nodes['trends-table'].innerHTML;
-  assert.match(html, /Change, hiring only<\/th><th scope="col">Counting changes<\/th><th scope="col">Start, as counted/);
+  assert.match(html, /Change, hiring only<\/th><th scope="col">Counting changes, openings<\/th><th scope="col">Start, as counted/);
   assert.match(html, /\+254 openings/);
 });
 
@@ -1619,10 +1620,22 @@ test('a drilled category hands over to Search as that category', () => {
   const { t, ctx, nodes } = loadApp();
   t.setPicks([{ ...ACME, boardKeys: ['greenhouse:acme'] }]);
   t.set({ ...picked({}), family_label: 'AI / Machine Learning' }, 'ai-ml');
+  ctx.window.CFG.family_handoff = true; ctx.window.CFG.max_family_ids = 5000;
   nodes['trends-co-roles'].fire('click');
   const hash = new URLSearchParams(ctx.location.hash.split('?')[1]);
   same(hash.getAll('board'), ['greenhouse:acme']);
   assert.equal(hash.get('family'), 'ai-ml');
-  assert.equal(hash.get('area'), 'AI / Machine Learning');
+  assert.equal(hash.get('family_label'), 'AI / Machine Learning');
   assert.equal(hash.get('q'), null, 'the category is the filter, not a query');
+});
+
+test('without the Space’s category filter, the category ranks the jobs and no pill claims it', () => {
+  const { t, ctx, nodes } = loadApp();
+  t.setPicks([{ ...ACME, boardKeys: ['greenhouse:acme'] }]);
+  t.set({ ...picked({}), family_label: 'Software Engineering (general)' }, 'software-engineering');
+  ctx.window.CFG.family_handoff = false;
+  nodes['trends-co-roles'].fire('click');
+  const hash = new URLSearchParams(ctx.location.hash.split('?')[1]);
+  assert.equal(hash.get('family'), null);
+  assert.equal(hash.get('q'), 'Software Engineering');
 });
