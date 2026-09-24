@@ -53,8 +53,8 @@ A Board an Account has chosen to see more or less of, held as a `CompanyPrefs` r
 _Avoid_: "blocked" or "muted" — a hidden Board is still scraped, still indexed and still served to everyone else; only this Account stops seeing it.
 
 **Company directory** (ADR-0185):
-The list of companies the Trends tab can be filtered to, each naming the **Board**s it owns — `data/state/company_directory.json`, written by `ingest/company_directory`. Two Boards are one company when they are one ATS tenant (Workday sites, Taleo career sections, Taleo Business Edition `cws` sites, casing duplicates) or share a curated alias, never because their names match: measured, a matching name joined different startups across four ATSes. It holds names and no counts, so it is byte-identical run to run until a Board's name or tech presence changes.
-_Avoid_: reading a company's Boards as additive — one tenant's Boards can list the same requisitions, so summing them overcounts until the index deduplicates across Boards.
+The list of companies the Trends tab can be filtered to, each naming the **Board**s it owns — `data/state/company_directory.json`, written by `ingest/company_directory` from every Board the ADR-0143 delta ledger has counted. An entry is a **Company** only as far as the data proves it: two Boards join when they sit on one ATS account (a Workday `{company}`'s sites, a Taleo host's career sections, a Taleo Business Edition `org`'s sites, casing duplicates) or share a curated alias, never because their names match — measured, a matching name joined different startups across four ATSes. So one employer on two ATSes with no alias is two entries under one name. It holds names and Boards, no counts; counts come from the delta ledger.
+_Avoid_: reading an entry's Boards as additive — one Company's Boards can list the same requisitions (Taleo sections, Workday sites, Lockheed's mirrored Eightfold Board), so summing them overcounts until the index removes the copies.
 
 **Careers page**:
 A company's own web page that links to or embeds its Board; the input to careers-page discovery, distinct from the Board itself.
