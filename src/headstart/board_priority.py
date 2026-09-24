@@ -38,6 +38,15 @@ GAP_FRAC = (
 PRUNE_BELOW = 0.05  # decayed rows below this drop out (~3 zero-tech scrapes)
 
 
+def key_for(board: ScrapableBoard | str) -> str:
+    """This Board's key in the ledger: its identity exactly as its scraper cases it (ADR-0192).
+
+    A key passes through unchanged. Not case-folded: a folded lookup would score 102 Scrapable
+    Boards the verbatim one misses (HF state, 2026-09-24), which would change the slice.
+    """
+    return board if isinstance(board, str) else board.identity
+
+
 @dataclass(frozen=True, slots=True)
 class BoardPriority:
     score: float
@@ -123,17 +132,24 @@ def _gap_picks(
     keeps the makespan risk away from the first runs. Within a class, the Board holding the most
     unsettled Jobs goes first, so each slot repairs as many rows as it can.
     """
-    from headstart.board_description_gap import key_for
+    from headstart import board_description_gap
     from headstart.scrapers.registry import detail_pass_atses
 
     detail_pass = detail_pass_atses()
     candidates = [
-        c for c in boards if key_for(c) in unsettled and c.identity not in taken
+        c
+        for c in boards
+        if board_description_gap.key_for(c) in unsettled and c.identity not in taken
     ]
     # `False < True`, so listing-only sorts ahead of detail-pass. An ATS missing from the registry
     # cannot be scraped at all, so where it lands is moot — it is treated as the expensive class
     # rather than special-cased.
-    candidates.sort(key=lambda c: (c.ats in detail_pass, -unsettled[key_for(c)]))
+    candidates.sort(
+        key=lambda c: (
+            c.ats in detail_pass,
+            -unsettled[board_description_gap.key_for(c)],
+        )
+    )
     return candidates[:slots]
 
 
@@ -165,7 +181,7 @@ def pick_boards(
     shuffled = list(boards)
     rng.shuffle(shuffled)
 
-    # `ScrapableBoard.identity` (`board_identity`), not `f"{ats}:{slug}"`. The ledger is written
+    # `key_for` (the Board's `board_identity`), not `f"{ats}:{slug}"`. The ledger is written
     # by `update_ledgers priority` from `board_identity.board_of(job_id)`, which yields the
     # **board_key** shape — and Workday and
     # Personio override `board_key()` (a Workday slug is a whole careers URL, a Personio slug the
@@ -177,17 +193,17 @@ def pick_boards(
     # rides HF, so treat this as indicative) 4,611 of them held a row — 3,784 Workday, 827
     # Personio — every one scoring 0.0 whatever it had earned, reachable only through the random
     # exploration tail. No board loses a score from this change; 4,611 regain one.
-    known = [c for c in shuffled if scores.get(c.identity, 0.0) > 0.0]
+    known = [c for c in shuffled if scores.get(key_for(c), 0.0) > 0.0]
     # Sorting an empty list is a no-op, so the bootstrap case (no ledger yet) falls through the
     # same path rather than returning early. It has to: the gap quota is reserved out of the
     # exploration slots, and an early return skipped it entirely whenever nothing was scored —
     # which is exactly the state a fresh or lost priority ledger leaves behind.
     known.sort(
-        key=lambda c: scores[c.identity], reverse=True
+        key=lambda c: scores[key_for(c)], reverse=True
     )  # stable: shuffle breaks ties
 
     if not max_boards or max_boards >= len(boards):
-        rest = [c for c in shuffled if scores.get(c.identity, 0.0) <= 0.0]
+        rest = [c for c in shuffled if scores.get(key_for(c), 0.0) <= 0.0]
         return known + rest
 
     head = known[: max_boards - round(max_boards * explore_frac)]

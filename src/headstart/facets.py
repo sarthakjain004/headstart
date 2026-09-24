@@ -29,8 +29,8 @@ counts — see ADR-0024's 2026-09-06 amendment, which cut that clause from 267 `
 :class:`ThreadPoolExecutor` because LanceDB's counting happens in Rust with the GIL released, so
 the wall cost is roughly the slowest count rather than their sum.
 
-Exposed as one function, :func:`counts`, which takes the parsed :class:`headstart.search.
-SearchFilters` and the table's :class:`headstart.search.IndexCapabilities` (ADR-0149) and returns
+Exposed as one function, :func:`counts`, which takes the parsed :class:`headstart.search_filter_compiler.
+SearchFilters` and the table's :class:`headstart.search_filter_compiler.IndexCapabilities` (ADR-0149) and returns
 every number the UI needs. Splitting the two is what keeps the per-option rebuild below cheap to
 reason about: every one of the ~46 counts varies only ``filters``, through
 :func:`dataclasses.replace`, while ``capabilities`` — the ATS/currency whitelists and which
@@ -45,7 +45,7 @@ from dataclasses import replace
 from typing import Any
 
 from headstart import employment_type_filter, experience_filter, salary_known_filter
-from headstart.search import (
+from headstart.search_filter_compiler import (
     KEYWORD_DEFAULT_SCOPE,
     KEYWORD_SCOPES,
     IndexCapabilities,

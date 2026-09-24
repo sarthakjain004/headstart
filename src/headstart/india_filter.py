@@ -5,7 +5,7 @@ itself, a region, or a city. Only the whole-country case is materialized — ``c
 replaces the ~3 KB ``regexp_like`` alternation :func:`headstart.geo.where` builds — and a city or
 region keeps the gazetteer clause, whatever the table carries. The column, the value the index
 writes (:func:`country`, filled through ``ingest.derived_meta``, since the embedding store's meta
-carries it), and the clause :func:`headstart.search.build_filter` compiles live here. The matching
+carries it), and the clause :func:`headstart.search_filter_compiler.build_filter` compiles live here. The matching
 itself stays in :mod:`headstart.geo`, where ``where`` and ``classify`` read the same constants.
 """
 

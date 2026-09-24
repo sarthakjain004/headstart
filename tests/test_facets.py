@@ -15,7 +15,11 @@ from pathlib import Path
 import pytest
 
 from headstart import facets
-from headstart.search import IndexCapabilities, SearchFilters, build_filter
+from headstart.search_filter_compiler import (
+    IndexCapabilities,
+    SearchFilters,
+    build_filter,
+)
 
 
 class _CountingTable:
@@ -424,3 +428,24 @@ def test_the_account_clause_narrows_the_blocking_answer_too():
     )
     assert out["total"] == 0
     assert out["blocking"] == "ats"
+
+
+def test_facets_never_imports_the_serving_path():
+    """`search.py` imports this module at the top (ADR-0194), so an import back would be a cycle.
+
+    Both compile through `headstart.search_filter_compiler`, so the counts and the ranked list they
+    describe still share one compiler. That shared compiler is what the old deferred import in
+    `JobSearch.facets` protected, and reaching it no longer means importing `search`.
+    """
+    import ast
+
+    tree = ast.parse(Path(facets.__file__).read_text(encoding="utf-8"))
+    imported = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported |= {alias.name for alias in node.names}
+        elif isinstance(node, ast.ImportFrom):
+            imported.add(node.module)
+            if node.module == "headstart":
+                imported |= {f"headstart.{alias.name}" for alias in node.names}
+    assert "headstart.search" not in imported
