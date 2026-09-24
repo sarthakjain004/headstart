@@ -100,3 +100,9 @@ docs/discovery/technique-ranking.md
 deploy/hf-space/headstart/
 deploy/hf-space/config/
 .DS_Store
+
+# Public-launch checklist — local working notes on readying the repo to share. Lives locally only.
+docs/launch/
+
+# Recruiting-contact research notes — kept local, out of the public repo.
+docs/hr-contacts/

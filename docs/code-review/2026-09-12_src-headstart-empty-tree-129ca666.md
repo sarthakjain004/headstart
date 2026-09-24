@@ -104,7 +104,7 @@ omissions and historical Digest ceiling were excluded.
 Completed Python command, run from the pinned snapshot with the repository venv:
 
 ```bash
-/Users/sarthakjain/Projects/HeadStart/.venv/bin/python -m pytest -q --disable-warnings --tb=short \
+.venv/bin/python -m pytest -q --disable-warnings --tb=short \
   -k 'not test_oracle_pages_past_the_first_200 and not test_oracle_stops_on_a_short_page_when_no_total_is_given'
 ```
 
