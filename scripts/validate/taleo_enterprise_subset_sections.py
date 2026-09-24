@@ -9,7 +9,8 @@ tenant's sections serve some or all of the tenant's requisitions under one tenan
 The signal is containment. A section whose full requisition set — every role, not only tech — is
 non-empty and contained in the set of another section of the same tenant (the section URL's host)
 is buried onto a maximal section, which lists every req the buried one does, so no req is lost and
-the kept section's own job URLs are the ones served. The rules, all in `burials`:
+the kept section's own job URLs are the ones served. The rules, all in `burials` (which delegates to
+`board_aliases.bury_contained`):
 
 - **Chains collapse to the top.** A ⊂ B ⊂ C buries A and B onto C.
 - **Mirrors keep one**, the lowest section URL, so the same sets always elect the same section.
@@ -31,7 +32,6 @@ alias file, so re-run it after every refresh of `data/validate/liveness/taleo_en
 from __future__ import annotations
 
 import sys
-from collections import defaultdict
 from collections.abc import Callable, Collection, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
@@ -54,25 +54,12 @@ _WORKERS = 16
 def burials(reqs_by_section: Mapping[str, Collection[str]]) -> dict[str, str]:
     """``{buried section: kept section}`` for every section another one of its tenant contains.
 
-    ``reqs_by_section`` maps a section's canonical URL to its full requisition ids. Pure, and deterministic in
-    its input alone: neither the mapping's order nor a previous run changes the answer."""
-    tenants: dict[str, dict[str, frozenset[str]]] = defaultdict(dict)
-    for section, ids in reqs_by_section.items():
-        if ids:
-            tenants[urlsplit(section).hostname][section] = frozenset(ids)
-    buried = {}
-    for sections in tenants.values():
-        kept: dict[frozenset[str], str] = {}  # one elected section per maximal set
-        for section in sorted(sections):
-            if not any(sections[section] < other for other in sections.values()):
-                kept.setdefault(sections[section], section)
-        for section, own in sections.items():
-            if kept.get(own) != section:
-                buried[section] = min(
-                    (keep for ids, keep in kept.items() if own <= ids),
-                    key=lambda keep: (-len(sections[keep]), keep),
-                )
-    return buried
+    ``reqs_by_section`` maps a section's canonical URL to its full requisition ids; the tenant is
+    the URL's host. The election is `board_aliases.bury_contained`, shared with ADP Recruiting
+    Management's (ADR-0202)."""
+    return board_aliases.bury_contained(
+        reqs_by_section, lambda section: urlsplit(section).hostname
+    )
 
 
 def write_aliases(

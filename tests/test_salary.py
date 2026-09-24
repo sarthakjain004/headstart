@@ -1885,3 +1885,13 @@ def test_a_word_cut_at_the_period_window_edge_is_not_a_hint():
     assert from_description(
         "Base Salary Range: $108,000-$148,500 How We Protect What Matters Most: 1. We offer"
     ) == SalarySpan(108_000, 148_500, "USD", "regex")
+
+
+def test_adp_recruiting_pay_transparency_amounts_read_annual_and_refuse_hourly():
+    # `ADPRecruitingScraper._salary_field` emits the pay-transparency pair with no period, as
+    # "40000-141700 USD" (Follett, 2026-09-24): the annual default reads it, and the plausibility
+    # floor refuses an hourly-scale pair rather than serving it 2,080x too low.
+    assert from_field("40000-141700 USD", "adp_recruiting") == SalarySpan(
+        40_000, 141_700, "USD", "field"
+    )
+    assert from_field("20-25 USD", "adp_recruiting") is None

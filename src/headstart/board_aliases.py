@@ -20,9 +20,11 @@ matches (``A`` is ``B``, ``B`` is ``C``) is a connected-components pass, and it 
 the HTTP client follows the whole redirect chain, so ``A -> B -> C`` already resolves ``A``'s key
 straight to ``C``. The transitive step happens in the transport. A future *pairwise* signal — id-set
 overlap between two independently-served Boards, which is what Eightfold's aliases need — would
-bring union-find back. The two pairwise signals shipping, ClearCompany's ``shared-reqs`` (ADR-0182)
-and Taleo Enterprise's ``subset-reqs`` (ADR-0186), are clustered and elected outside this module
-and only loaded here, so the grouping here is still never pairwise. A new signal changes which
+bring union-find back. The two pairwise signals shipping are ClearCompany's ``shared-reqs``
+(ADR-0182) and ``subset-reqs``, written for Taleo Enterprise (ADR-0186) and ADP Recruiting
+Management (ADR-0202). ``shared-reqs`` is clustered outside this module; ``subset-reqs``' election
+is :func:`bury_contained`, a containment test within one account rather than a union-find. So the
+grouping :func:`resolve` does is still never pairwise. A new signal changes which
 served rows count as duplicates, so it bumps ``index_plan.DEDUP_VERSION`` in the same change
 (ADR-0188).
 
@@ -37,7 +39,7 @@ from __future__ import annotations
 
 import csv
 from collections import defaultdict
-from collections.abc import Collection, Iterable, Mapping
+from collections.abc import Callable, Collection, Iterable, Mapping
 from dataclasses import astuple, dataclass
 from pathlib import Path
 
@@ -170,6 +172,44 @@ def aliases_of(resolution: Resolution, ats: str, checked_at: str) -> list[Alias]
         for c in resolution.clusters
         for duplicate in c.duplicates
     ]
+
+
+def bury_contained(
+    ids_by_board: Mapping[str, Collection[str]], group_of: Callable[[str], str]
+) -> dict[str, str]:
+    """``{buried Board: kept Board}`` for every Board another Board of its group contains.
+
+    The ``subset-reqs`` election (ADR-0186), shared by every ATS that writes it. ``ids_by_board``
+    maps a Board to its full posting ids and ``group_of`` names the account a Board belongs to (a
+    Taleo tenant host, an ADP Recruiting Management `orgoid`); only Boards of one group are
+    compared. Pure, and deterministic in its input alone: neither the mapping's order nor a
+    previous run changes the answer.
+
+    - **Chains collapse to the top.** A ⊂ B ⊂ C buries A and B onto C.
+    - **Mirrors keep one**, the lowest Board key, so the same sets always elect the same Board.
+    - **A Board under several maximal Boards** goes to the largest, then the lowest key.
+    - **Two maximal Boards that overlap both stay.** Burying either would hide the ids only it
+      lists.
+    - **An empty Board is never buried.** The empty set is a subset of everything, so it is no
+      evidence, and an empty Board can post an id nobody else lists tomorrow.
+    """
+    groups: dict[str, dict[str, frozenset[str]]] = defaultdict(dict)
+    for board, ids in ids_by_board.items():
+        if ids:
+            groups[group_of(board)][board] = frozenset(ids)
+    buried = {}
+    for boards in groups.values():
+        kept: dict[frozenset[str], str] = {}  # one elected Board per maximal set
+        for board in sorted(boards):
+            if not any(boards[board] < other for other in boards.values()):
+                kept.setdefault(boards[board], board)
+        for board, own in boards.items():
+            if kept.get(own) != board:
+                buried[board] = min(
+                    (keep for ids, keep in kept.items() if own <= ids),
+                    key=lambda keep: (-len(boards[keep]), keep),
+                )
+    return buried
 
 
 def path_for(liveness_dir: str | Path, ats: str) -> Path:
