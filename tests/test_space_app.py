@@ -342,6 +342,17 @@ def test_bad_credential_is_401(auth_app, monkeypatch):
     assert r.status_code == 401
 
 
+def test_privacy_policy_is_public_and_linked_from_the_door(auth_app):
+    # Google's OAuth consent screen needs a privacy-policy URL a stranger can open, so the
+    # wall must not gate it. It points at the one canonical copy in the repository.
+    client = auth_app.app.test_client()
+    r = client.get("/privacy")
+    assert r.status_code == 302
+    assert r.headers["Location"] == f"{auth_app._REPO}/blob/main/PRIVACY.md"
+    assert (Path(__file__).resolve().parents[1] / "PRIVACY.md").is_file()
+    assert b'href="/privacy"' in client.get("/").data
+
+
 def test_unsubscribe_stays_reachable_signed_out(auth_app):
     # The wall must never break a mailed link: /unsubscribe answers its own 503 here
     # (alerts unconfigured in this fixture), not the wall's 401.
@@ -795,6 +806,57 @@ def test_parse_fills_the_profile_and_spends_a_read(sets_app, hub, monkeypatch):
     assert r.json["query"] == "backend engineer, Python"
     assert r.json["skills"] == "Python, Go"  # lists land as one editable line
     assert r.json["parses_left"] == sets_app.MAX_PARSES - 1
+
+
+def test_a_second_parse_waits_out_the_first_rather_than_racing_the_cap(
+    sets_app, hub, monkeypatch
+):
+    # Pins the in-flight guard above `parse_resume` (`_PARSING`): while one Account's read is
+    # inside the router, a second read for the same Account is refused before it spends a
+    # router call, and a different Account is not held up.
+    import json as _json
+    import threading
+
+    entered, release = threading.Event(), threading.Event()
+    calls = []
+
+    def ask(prompt):
+        calls.append(prompt)
+        if len(calls) == 1:
+            entered.set()
+            release.wait(5)
+        return _json.dumps(_EXTRACTION)
+
+    first, second = _signed_in(sets_app, monkeypatch), _signed_in(sets_app, monkeypatch)
+    other = _signed_in(sets_app, monkeypatch, email="ada@example.com")
+    monkeypatch.setattr(sets_app.llm_router, "ask", ask)
+    results = {}
+
+    def first_read():
+        results["first"] = first.post(
+            "/profile/parse", json={"text": "r"}, base_url=_HTTPS
+        )
+
+    t = threading.Thread(target=first_read)
+    t.start()
+    assert entered.wait(5)
+    r = second.post("/profile/parse", json={"text": "r"}, base_url=_HTTPS)
+    elsewhere = other.post("/profile/parse", json={"text": "r"}, base_url=_HTTPS)
+    release.set()
+    t.join(5)
+    assert not t.is_alive()
+    assert r.status_code == 429
+    assert elsewhere.status_code == 200
+    assert (
+        len(calls) == 2
+    )  # the first read and the other Account's — never the refused one
+    assert results["first"].status_code == 200
+    assert results["first"].json["parses_left"] == sets_app.MAX_PARSES - 1
+    # …and once the first read finishes, the Account can read again.
+    assert (
+        second.post("/profile/parse", json={"text": "r"}, base_url=_HTTPS).status_code
+        == 200
+    )
 
 
 def test_parse_cap_is_lifetime_and_survives_delete(sets_app, hub, monkeypatch):

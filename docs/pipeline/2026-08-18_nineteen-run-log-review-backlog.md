@@ -155,5 +155,6 @@ Each item is marked **measured** (a number taken from the logs or a live probe) 
   `workday:company/site`) while `scrape_plan` looks scores up as `f"{c.ats}:{c.slug}"` — and a
   Workday slug is the **whole careers URL**. If that is right, no Workday board has ever matched its
   own priority score. Worth 20 minutes to confirm.
-- [ ] **H5. `scripts/eval/judge_pool.py:93` still constructs `Anthropic()` directly**, bypassing the
+- [x] **H5. An eval-harness script still constructs `Anthropic()` directly**, bypassing the
   llm-router. Already named as a known exception in CLAUDE.md; listed here so it isn't forgotten.
+  *(Closed 2026-09-24: the script was removed with the rest of the ADR-0011 harness.)*

@@ -19,7 +19,7 @@ supersedes it and note the supersession in both.
 | [0008](0008-local-lancedb-vector-store.md) | Local LanceDB for the query-time vector store (cloud later) | 2026-06-28 |
 | [0009](0009-experience-extraction.md) | Years-of-experience extraction: a tiered deterministic cascade | 2026-06-29 |
 | [0010](0010-feed-from-jsonl.md) | Dashboard feed built from the per-board `.jsonl`, not an in-memory copy | 2026-06-29 |
-| [0011](0011-retrieval-eval-harness.md) | Retrieval-eval harness: a validated LLM judge and graded nDCG | 2026-07-01 |
+| [0011](0011-retrieval-eval-harness.md) | Retrieval-eval harness: a validated LLM judge and graded nDCG (withdrawn 2026-09-24) | 2026-07-01 |
 | [0012](0012-liveness-ledger.md) | Liveness state as a TTL'd ledger keyed by `(ats, tenant)` | 2026-07-02 |
 | [0013](0013-experience-plausibility-guards.md) | Experience plausibility guards: fix Tier 1, defer the Tier 2 anchor | 2026-07-03 |
 | [0014](0014-search-index-ingestion-and-freshness.md) | Search-index ingestion: real corpus, scrape-diff eviction, incremental LanceDB | 2026-07-03 |
@@ -45,7 +45,6 @@ supersedes it and note the supersession in both.
 | [0034](0034-nonprod-boards-dead-by-convention.md) | Non-production boards are dead by convention | 2026-08-02 |
 | [0035](0035-email-job-alerts.md) | Email job alerts — invite-only, Google-verified, one Digest per run | 2026-08-05 |
 | [0036](0036-fetch-hf-state-without-xet.md) | Fetch HF state over the plain path, not Xet | 2026-08-05 |
-| [0037](0037-sidecorpus-three-surface-scrape.md) | Sidecorpus is scraped through three surfaces, behind a real browser | 2026-08-05 |
 | [0038](0038-telegram-alerts-and-pluggable-transports.md) | Telegram alerts — one Digest, pluggable transports, enrolment by approval | 2026-08-06 |
 | [0039](0039-pipeline-logging.md) | Pipeline logging through one stdlib seam (`headstart.log`) | 2026-08-10 |
 | [0040](0040-role-trend-ledger.md) | Role-trend ledger: frozen embedding centroids × experience bands | 2026-08-10 |
@@ -184,3 +183,6 @@ supersedes it and note the supersession in both.
 | [0183](0183-a-cornerstone-board-is-the-tenant-read-across-every-career-site.md) | A Cornerstone Board is the tenant, read across every career site | 2026-09-23 |
 | [0184](0184-a-pinpoint-board-is-read-from-its-listing-and-dated-from-its-page.md) | A Pinpoint Board is read from its listing and dated from its posting pages | 2026-09-23 |
 | [0185](0185-trends-narrow-to-companies-picked-from-a-directory-of-boards.md) | Trends narrow to companies picked from a directory of Boards | 2026-09-24 |
+
+*ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
+reused.*

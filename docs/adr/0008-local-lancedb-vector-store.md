@@ -8,8 +8,8 @@
 The embedding store (`embeddings.f32` + `meta.jsonl`) is enough for a brute-force numpy probe, but
 the search design is **filter-then-rank**: hard-filter on the typed metadata (ADR-0007 — `remote`,
 `employment_type`) and rank the survivors by vector similarity. It must also scale from today's
-6,360 Sidecorpus vectors to the eventual ~3.3M-Job corpus. We want a **local, embedded** store now;
-cloud storage is deferred because it carries real cost/investment.
+6,360 side-corpus vectors (ADR-0005) to the eventual ~3.3M-Job corpus. We want a **local, embedded**
+store now; cloud storage is deferred because it carries real cost/investment.
 
 ## Decision
 
@@ -21,8 +21,9 @@ one `pip install` with no server, and is Apache-2.0. The cloud path is a clean e
 a rewrite: the underlying Lance format runs directly on object storage (S3), so "explore cloud
 later" becomes a config change.
 
-Ingest: `scripts/embed/build_index.py` loads the store into the table. Query:
-`scripts/embed/search_sidecorpus.py` pre-filters on metadata then ranks by cosine.
+Ingest: a loader script loads the store into the table. Query: a search script pre-filters on
+metadata then ranks by cosine. (Both were side-corpus-only scripts, since removed; the production
+path is `headstart.ingest.index` and `headstart.search`, ADR-0014/ADR-0019.)
 
 ## Rejected alternatives
 
@@ -42,3 +43,6 @@ B1's typed metadata pays off directly: `remote` is a filterable bool column, `em
 filterable string. Filtering on `experience` / `salary` still waits on the enrichment component
 (they remain raw strings). `data/lancedb/` is regenerable from the embedding store, so it is
 gitignored. Moving to cloud storage is a future, separate ADR.
+
+*(Amended 2026-09-24: the names of the original side-corpus and its scripts were removed from this
+record by the owner's decision, along with that corpus; the decision above is unchanged.)*

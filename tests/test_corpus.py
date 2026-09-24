@@ -28,22 +28,6 @@ def test_iter_jobs_jsonl_dir_dedups_by_id(tmp_path):
     assert [j["id"] for j in got] == ["greenhouse:a:1", "lever:b:9"]
 
 
-def test_iter_jobs_sidecorpus_csv_maps_columns(tmp_path):
-    csv_path = tmp_path / "sidecorpus.csv"
-    csv_path.write_text(
-        "id,ats,company,title,remote,years_experience,job_type,compensation,description\n"
-        "sidecorpus:x:1,sidecorpus,Acme,Backend Eng,true,5+,full-time,$120k,Build things\n",
-        encoding="utf-8",
-    )
-    (job,) = list(iter_jobs(csv_path))
-    assert job["id"] == "sidecorpus:x:1"
-    assert job["remote"] is True  # "true" -> canonical bool
-    assert job["experience"] == "5+"  # years_experience -> experience
-    assert job["employment_type"] == "full-time"  # job_type -> employment_type
-    assert job["salary"] == "$120k"  # compensation -> salary
-    assert job["description"] == "Build things"
-
-
 def test_iter_jobs_rejects_unknown_source(tmp_path):
     bad = tmp_path / "corpus.txt"
     bad.write_text("nope", encoding="utf-8")

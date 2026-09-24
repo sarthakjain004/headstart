@@ -6,24 +6,24 @@
 ## Context
 
 Each embedding carries structured fields beside it for the filter half of search (ADR-0006). But
-the embed pipeline reads the raw `data/jobs/sidecorpus.csv`, whose one-off scraper emits
+the embed pipeline reads the raw side-corpus CSV (ADR-0005), whose one-off scraper emits
 **non-canonical column names** (`job_type`, `years_experience`, `compensation`, `currency`) and
 untyped strings (`remote` is the text `"True"`). Meanwhile the 18 real ATS scrapers already build
 canonical `Job` records — 15 set `employment_type`, 9 `experience`, 4 `salary`, and `remote` is a
-real `bool` — and emit them as JSONL. So Sidecorpus is the lone source that drifts from the project's
+real `bool` — and emit them as JSONL. So that CSV is the lone source that drifts from the project's
 ATS-agnostic `Job` vocabulary, and the metadata inherited that drift, untyped.
 
 ## Decision
 
 The search metadata is a **typed projection of the canonical `Job`** — the filterable subset of
 `Job` fields, with real types, written beside each vector. A `to_meta(row)` adapter next to the
-Sidecorpus reader maps its raw columns onto `Job` vocabulary and types the clean fields:
+CSV reader maps its raw columns onto `Job` vocabulary and types the clean fields:
 
 - `remote` `"True"`/`"False"` → real **bool** (`None` if blank).
 - `job_type` → **`employment_type`** (values kept; already a clean enum).
 - `years_experience` → **`experience`**, left as the **raw string** (`"3+"`).
 - `compensation` → **`salary`**, left as the **raw string** (the range carries its currency symbol).
-- redundant `currency` is **dropped** (Sidecorpus derives it from the compensation symbol).
+- redundant `currency` is **dropped** (the source derives it from the compensation symbol).
 - `id`, `ats`, `company`, `title`, `location`, `department`, `url`, `posted_at` pass through as strings.
 
 **Scope (B1) stops at deterministic typing.** The messy `experience` and `salary` stay raw strings
@@ -31,12 +31,12 @@ here; turning `"3+"` into a number and parsing salary ranges is the separate ext
 component (regex + LLM), not this change.
 
 **The adapter is temporary.** Canonical sources (the ATS JSONL) need no mapping — they're already
-`Job`-shaped. `to_meta` exists only until the Sidecorpus scraper is updated to emit canonical fields
+`Job`-shaped. `to_meta` exists only until the CSV's scraper is updated to emit canonical fields
 directly, at which point it collapses to near-identity.
 
 ## Rejected alternatives
 
-- **Keep Sidecorpus's raw column names.** Each new source would carry its own dialect, so the filter
+- **Keep the CSV's raw column names.** Each new source would carry its own dialect, so the filter
   logic would need per-source field maps forever — defeating the entire purpose of the `Job` model.
 - **Parse salary/years to numbers now.** That is the enrichment component (LLM-shaped, its own ADR);
   folding it into B1 conflates a 10-line typing fix with a corpus-wide extraction problem.
@@ -45,5 +45,8 @@ directly, at which point it collapses to near-identity.
 
 The metadata is source-agnostic and immediately filterable on the typed fields (`remote == true`,
 `employment_type == "full-time"`). Filtering on `experience`/`salary` waits on the enrichment
-component. Implemented as `to_meta` in `scripts/embed/embed_sidecorpus.py`; existing
-`data/embeddings/sidecorpus/meta.jsonl` must be regenerated to pick up the new shape.
+component. Implemented as `to_meta` in the side-corpus's embed script; its existing
+`meta.jsonl` under `data/embeddings/` must be regenerated to pick up the new shape.
+
+*(Amended 2026-09-24: the names of the original side-corpus and its scripts were removed from this
+record by the owner's decision, along with that corpus; the decision above is unchanged.)*

@@ -181,8 +181,9 @@ Concurrency holds to width 6 with no pass-rate loss.
 Two findings change the implementation:
 
 * **Headless is a flat block, not a raised challenge rate.** One leg fell back to headless and
-  took 403 on all six Boards while headful on a sibling runner read all six. ADR-0037's note
-  understates this: production must be headful under `xvfb-run`.
+  took 403 on all six Boards while headful on a sibling runner read all six. An earlier ADR's
+  note (since removed) that headless merely raises the challenge rate understates this:
+  production must be headful under `xvfb-run`.
 * **The click is an Angular-router requirement, not a Cloudflare one.** It genuinely fires the
   XHR, but dropping it costs nothing against the wall — and blocking every subresource including
   Cloudflare's own Turnstile `api.js` also costs nothing, which is what takes a Board from 20.6 s

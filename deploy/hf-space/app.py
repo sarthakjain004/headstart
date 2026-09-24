@@ -15,6 +15,7 @@ import csv
 import hmac
 import json
 import os
+import threading
 import time
 from collections import Counter, defaultdict
 from dataclasses import replace
@@ -22,7 +23,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import lancedb
-from flask import Flask, jsonify, render_template, request, session
+from flask import Flask, jsonify, redirect, render_template, request, session
 from huggingface_hub import snapshot_download
 
 import headstart  # only for headstart.__file__, to locate ui/ beside this package (ADR-0153)
@@ -334,13 +335,15 @@ app.config.update(
 
 # Paths that must answer signed out: the door itself, and the unsubscribe link every Digest
 # already delivered carries — a session wall must never break a mailed link. `/me` answers
-# from the caller's own cookie, so it can only tell you what you sent.
-_PUBLIC_PATHS = {"/", "/auth/google", "/me", "/unsubscribe"}
+# from the caller's own cookie, so it can only tell you what you sent. `/privacy` is the URL
+# Google's OAuth consent screen points strangers at before they have an Account.
+_PUBLIC_PATHS = {"/", "/auth/google", "/me", "/unsubscribe", "/privacy"}
 
 # The public repository, named once *for the Space*. Both trust surfaces (ADR-0112's door,
-# ADR-0113's Data tab) link into it, and "check it yourself" is the claim they both rest on,
-# so a rename must not leave half of one page's links dead. `scripts/ui/serve.py` necessarily
-# keeps its own copy — it is the local renderer and shares no config with this module.
+# ADR-0113's Data tab) and the `/privacy` redirect link into it, and "check it yourself" is the
+# claim they rest on, so a rename must not leave half of one page's links dead.
+# `scripts/ui/serve.py` necessarily keeps its own copy — it is the local renderer and shares no
+# config with this module — and PRIVACY.md names the URL in prose.
 _REPO = "https://github.com/sarthakjain004/headstart"
 
 # The door's freshness window (ADR-0112). Seven days rather than 24 hours: a single day's
@@ -543,6 +546,14 @@ def save_profile():
     return jsonify(_profile_out(updated, used))
 
 
+# Accounts with a parse in flight. The cap check reads the counter before the router call and
+# writes it after, and `app.run` serves requests on threads — so parallel parses would all read
+# the same count and all pass the cap, each spending a router call. One read per Account at a
+# time closes that window; the Space is a single process, so an in-process set is authoritative.
+_PARSING: set[str] = set()
+_PARSING_LOCK = threading.Lock()
+
+
 @app.route("/profile/parse", methods=["POST"])
 def parse_resume():
     """Paste a Résumé, get the stored Profile it implies — one LLM call (ADR-0041).
@@ -557,6 +568,21 @@ def parse_resume():
         return jsonify({"error": "profiles are not configured"}), 503
     email, store = gate
     account = subscription_id(email)
+    with _PARSING_LOCK:
+        if account in _PARSING:
+            return jsonify(
+                {"error": "a résumé read is already running — wait for it"}
+            ), 429
+        _PARSING.add(account)
+    try:
+        return _run_resume_read(email, store, account)
+    finally:
+        with _PARSING_LOCK:
+            _PARSING.discard(account)
+
+
+def _run_resume_read(email: str, store: Store, account: str):
+    """The parse itself, run while this Account holds its slot in `_PARSING`."""
     used = _parses(store, account)
     if used is None:
         return jsonify({"error": "profile is temporarily unavailable — try again"}), 503
@@ -1357,6 +1383,12 @@ def _fx_converts(currencies: list[str]) -> bool:
     """
     rates = (fx.table() or {}).get("rates") or {}
     return len([c for c in currencies if c in rates]) > 1
+
+
+@app.route("/privacy")
+def privacy():
+    """The privacy policy — one canonical copy, `PRIVACY.md` in the repository."""
+    return redirect(f"{_REPO}/blob/main/PRIVACY.md")
 
 
 @app.route("/")

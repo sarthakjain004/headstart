@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml)
 [![pipeline](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml)
-[![ADRs](https://img.shields.io/badge/ADRs-166-blue)](./docs/adr/)
+[![ADRs](https://img.shields.io/badge/ADRs-172-blue)](./docs/adr/)
 [![Python](https://img.shields.io/badge/python-3.12+-blue)](./pyproject.toml)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue)](./LICENSE)
 
@@ -12,7 +12,7 @@
 
 Not from a feed employers had to opt in to. Not from a list ranked by who paid.
 
-**[Search the index](https://imposeidon-headstart-search.hf.space)** ·
+**[Search the index](https://imposeidon-headstart-search.hf.space)** (free; Google sign-in) ·
 **[Read the decisions](./docs/adr/)**
 
 ---
@@ -33,23 +33,24 @@ Semantic search over local embeddings, with the structured filters — years, sa
 employment type — left exactly where they belong: under your control, not inferred from a
 sentence.
 
-### 38 boards. One shape.
+### 34 ATSes. One shape.
 
-Greenhouse, Workday, Lever, Ashby, iCIMS, Oracle, Taleo, BambooHR, Phenom, and 29 more.
+Greenhouse, Workday, Lever, Ashby, iCIMS, Oracle, Taleo, BambooHR, Phenom, and 24 more, plus eight
+companies' own career sites.
 HeadStart finds which companies host boards on which ATS, checks that each board is alive,
 and normalizes every posting into a single `Job`. You never learn an ATS's name.
 
 ### Everything above is measured.
 
-And every limit ships next to the result it qualifies. 166 ADRs record the options that lost,
+And every limit ships next to the result it qualifies. 172 ADRs record the options that lost,
 not just the one that won. When a later measurement contradicts an earlier one, the ADR is
 amended in place rather than quietly edited.
 
 ---
 
-It serves three ways: the **AI semantic-search layer** above, a static **dashboard** built
-from a curated feed, and **job alerts** — saved searches delivered by email or Telegram to
-signed-in accounts. Everything runs on free tiers (see *What this optimises for*, below).
+It serves two ways: the **AI semantic-search layer** above, and **job alerts** — saved
+searches delivered by email or Telegram to signed-in accounts. Everything runs on free tiers
+(see *What this optimises for*, below).
 
 ## Why
 
@@ -79,12 +80,6 @@ unparseable input with a 400 rather than silently ignoring it.
 - **Freshness:** the index is reconciled incrementally, never rebuilt. New postings are added,
   closed ones are evicted, and metadata already in the table gets corrected as fresher scrapes
   arrive — so a fix reaches rows indexed long ago, not only new ones (ADR-0014, ADR-0061, ADR-0062).
-- **Ranking quality is measured, not asserted** (ADR-0011): a five-stage harness pools the
-  search's top hits per query, grades each `(query, job)` pair with an LLM judge validated against
-  hand labels (quadratic-weighted Cohen's **κ ≈ 0.64**, "substantial"), then scores with `ranx` →
-  **nDCG@10 = 0.90** on a held-out benchmark corpus. Two honest limits ship with the score: it's a
-  single-system pool, so it measures how well the search orders its own picks rather than
-  corpus-wide recall; and the benchmark is kept deliberately distinct from the production corpus.
 - **Signed in:** the full UI sits behind Google sign-in (`SECRET_KEY` + `GOOGLE_CLIENT_ID`,
   ADR-0042). Signing in unlocks three per-account tabs: **Matches** (saved searches, one of which
   can become an email Subscription), **Saved** (starred jobs), and **Profile** (paste a résumé;
@@ -122,8 +117,8 @@ Every *other* ATS serves the **ATS slug** in that field instead, so a row's `com
 either — four served rows in five carry a slug rather than a name, which is why `CompanyPrefs` is
 keyed by **board_key** and never by company name.
 
-The liveness pipeline has probed **278,370 ledger rows**: 162,809 live, 99,293 dead, 16,268 unknown
-— rows, not boards; they collapse to 156,177 Unique Boards once duplicate spellings of the same
+The liveness pipeline has probed **278,507 ledger rows**: 162,941 live, 99,298 dead, 16,268 unknown
+— rows, not boards; they collapse to 156,309 Unique Boards once duplicate spellings of the same
 board are folded together (`CONTEXT.md` §Counting Boards).
 
 ## What this optimises for
@@ -136,15 +131,14 @@ hitting the host, not by reading code. This is a rule with a scar behind it: a "
 to tell dead from empty" guard looked obviously correct and died on contact, because 9 of 12 boards
 the ledger already called dead answered `GET /` with 200. Findings carry their sample size.
 
-**Record the rejected options, not just the chosen one.** 166 ADRs, **109** carrying a heading that
+**Record the rejected options, not just the chosen one.** 172 ADRs, **114** carrying a heading that
 weighs alternatives (`grep -lEi '^#{2,3} .*(alternativ|options? (considered|rejected)|rejected)'
 docs/adr/`). When a later measurement contradicts an earlier one the ADR is amended or superseded
-in place rather than quietly edited — **53** name an `Amends:` / `Supersedes:` relationship in
+in place rather than quietly edited — **57** name an `Amends:` / `Supersedes:` relationship in
 their header — so the reasoning stays auditable even when it turns out to be wrong.
 
-**Publish the limits next to the result.** The retrieval score ships with the two reasons not to
-over-trust it. Coverage tables say what is excluded and why. A number without its caveat is
-treated as a defect.
+**Publish the limits next to the result.** Coverage tables say what is excluded and why. A number
+without its caveat is treated as a defect.
 
 **Degrade where degrading is possible.** A missing binary, an unregistered client, a walled
 origin: the spare egress returns "not available" and leaves the caller on the path it already had,
@@ -175,7 +169,7 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>162,809 live rows of 278,370<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>162,941 live rows of 278,507<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
@@ -273,18 +267,18 @@ table in lockstep with the committed ledger:
 
 | | boards | |
 | --- | ---: | --- |
-| live rows in the ledger | 162,809 | a row, not a board — 6,632 of them are duplicate spellings |
+| live rows in the ledger | 162,941 | a row, not a board — 6,632 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −25,488 | all of it `join` |
 | − `config.EXCLUDED_BOARDS` | −59 | vendor test/sandbox boards, confirmed by reading their postings |
-| − alias ledger | −412 | one board reached under a second hostname or label (ADR-0111, ADR-0182) |
+| − alias ledger | −447 | one board reached under a second hostname or label (ADR-0111, ADR-0182) |
 | − case-variant dedupe | −6,630 | `company/External` and `company/external` are one board (ADR-0023) |
 | − `config.PARKED_BOARDS` | −7 | real boards withheld for now — five for scrape cost, two for near-duplicate spam |
-| = **Scrapable Board** | **130,213** | |
+| = **Scrapable Board** | **130,310** | |
 
 That order matters: excluding before deduping reads −59 and −6,630, deduping first reads −57,
-because two excluded boards were themselves duplicates. Both land on 130,213.
+because two excluded boards were themselves duplicates. Both land on 130,310.
 
-Of those, **84,768 are currently hiring** — the 45,445 live-but-empty boards are skipped as having
+Of those, **84,865 are currently hiring** — the 45,445 live-but-empty boards are skipped as having
 nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
 sticky measure of tech-job yield) and a random exploration tail drawn from everything else, so
 newly-productive boards can never starve and eviction keeps working on boards outside the head.
@@ -446,6 +440,10 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
 
 ## Development
 
+New here? `README.md` is the tour, [`CONTEXT.md`](./CONTEXT.md) is the glossary, and
+[`CLAUDE.md`](./CLAUDE.md) (symlinked as `AGENTS.md`) holds the working rules the coding agents on
+this repo follow. [`CONTRIBUTING.md`](./CONTRIBUTING.md) covers how to send a change.
+
 Requires Python 3.12+.
 
 ```bash
@@ -478,9 +476,37 @@ python -m headstart.ingest.embed_run --resume   # embed the English tech corpus
 python -m headstart.ingest.index sync            # incremental add/evict into the LanceDB `jobs` table
 ```
 
+## Run your own
+
+The pipeline, the Space and the alerts are driven by GitHub Actions and two private Hugging Face
+datasets (the index, and a separate one for Accounts and Subscriptions). A fork needs its own
+datasets, its own Space and these settings. One caveat: Hugging Face now puts creating a new
+Docker Space behind its paid PRO plan (`deploy-space.yml` targets an existing Space for that
+reason), so a fork's Space may not be free.
+
+| Where | Name | What for |
+|---|---|---|
+| Actions secret | `HF_TOKEN` | write access to your dataset and Space (every pipeline stage, `deploy-space`) |
+| Actions secret | `SUBSCRIBERS_TOKEN`, variable `SUBSCRIBERS_REPO` | the private dataset holding Accounts and Subscriptions |
+| Actions secret | `ALERTS_TOKEN` | lets the digest run call the Space's `/search`; set the same value on the Space |
+| Actions secret | `RESEND_API_KEY`, variable `ALERTS_SENDER` | email digests ([`docs/email-alerts.md`](./docs/email-alerts.md)) |
+| Actions secret | `TELEGRAM_BOT_TOKEN` | Telegram alerts ([`docs/telegram-alerts.md`](./docs/telegram-alerts.md)) |
+| Actions variable | `SPACE_URL` | the public URL of your Space |
+| Space secret | `HF_TOKEN`, `HF_DATASET` | read access to the index dataset; `HF_DATASET` defaults to this project's own (`deploy/hf-space/app.py`) |
+| Space secret | `SECRET_KEY`, `GOOGLE_CLIENT_ID` | session signing and Google sign-in; both unset = no sign-in wall |
+| Space secret | `SUBSCRIBERS_REPO`, `SUBSCRIBERS_TOKEN` | with sign-in on, turn on Accounts: saved searches, starred jobs, Profile, alerts |
+| Space secret | `LLM_ROUTER_BASE`, `LLM_ROUTER_MODEL`, `LITELLM_MASTER_KEY` | an OpenAI-compatible endpoint for résumé parsing (optional; unset = that one feature answers 503). `start.sh` can instead open an SSH tunnel to a private router (`OCI_SSH_KEY`, `LLM_ROUTER_SSH`) |
+
+Every alert and account feature is inert until its secrets are set. The dataset and Space ids are
+written into the workflows as `HF_DATASET` / `HF_SPACE` (`pipeline.yml`, `cleanup-index.yml`,
+`cluster-roles.yml`, `diff-role-assignments.yml`, `reclaim-dataset-storage.yml`), as `repo_id`
+in `deploy-space.yml`, and as `HF_DATASET`'s default in `deploy/hf-space/app.py`; point those at
+your own. The auth model and failure modes are in
+[`docs/agents/deployment.md`](./docs/agents/deployment.md).
+
 ## More
 
-- **Design decisions:** [`docs/adr/`](./docs/adr/) — 166 numbered ADRs (the option picked, the
+- **Design decisions:** [`docs/adr/`](./docs/adr/) — 172 numbered ADRs (the option picked, the
   ones rejected, and why).
 - **Domain glossary:** [`CONTEXT.md`](./CONTEXT.md) — the ubiquitous language (ATS, Board, Slug,
   Job, Discovery, Liveness, Feed, Doc, Bucket, GitHub VM…).

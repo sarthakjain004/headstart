@@ -235,11 +235,10 @@ it deterministically. Semantic search helps *grow the seed*, not map the tenant.
 **Stage 1 — seed of Indian tech employers (not "all companies").** The full
 [MCA register](https://www.data.gov.in/catalog/company-master-data) is 2–3M active entities,
 almost all dormant / tiny / non-tech — wrong altitude, and resolving it is mostly dead ends.
-Seed instead from companies that actually hire engineers online:
-[Sidecorpus/AngelList India](https://sidecorpus.com/startups/location/india) (~5,900 actively
-recruiting), the Startup India registry, Tracxn, NASSCOM members, YC's India companies, GCC
-(Global Capability Center) lists, or a Diffbot KG query filtered to India + software (which
-returns firmographics *and* the website domain stage 2 needs). Order of magnitude: thousands
+Seed instead from companies that actually hire engineers online: the Startup India registry,
+Tracxn, NASSCOM members, YC's India companies, GCC (Global Capability Center) lists, or a
+Diffbot KG query filtered to India + software (which returns firmographics *and* the website
+domain stage 2 needs). Order of magnitude: thousands
 to low tens of thousands — tractable.
 
 A starter seed lives in [`config/seed_india.csv`](../config/seed_india.csv)
@@ -271,4 +270,4 @@ it.
 - [6 ATS platforms with public APIs](https://fantastic.jobs/article/ats-with-api), [Greenhouse Job Board API](https://developers.greenhouse.io/job-board.html), [SmartRecruiters Posting API](https://developers.smartrecruiters.com/docs/posting-api)
 - CT mechanism: [wildcard blind spot](https://inventivehq.com/blog/subdomain-discovery-using-certificate-transparency-logs), [subdomain-via-CT guide](https://sidxparab.gitbook.io/subdomain-enumeration-guide/passive-enumeration/certificate-logs)
 - CT per-provider results verified by live Cert Spotter queries on 2026-06-15.
-- India: [MCA Company Master Data](https://www.data.gov.in/catalog/company-master-data), [Sidecorpus India](https://sidecorpus.com/startups/location/india), [best ATS in India](https://asanify.com/blog/human-resources/best-applicant-tracking-system-india-2025/); [Freshteam sunset (renewals end 2026-03-07)](https://www.peoplematters.in/news/business/freshworks-to-end-freshteam-hr-product-stop-renewals-from-march-2026-47939).
+- India: [MCA Company Master Data](https://www.data.gov.in/catalog/company-master-data), [best ATS in India](https://asanify.com/blog/human-resources/best-applicant-tracking-system-india-2025/); [Freshteam sunset (renewals end 2026-03-07)](https://www.peoplematters.in/news/business/freshworks-to-end-freshteam-hr-product-stop-renewals-from-march-2026-47939).

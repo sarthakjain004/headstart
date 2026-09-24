@@ -76,16 +76,7 @@ QUERIES = (
 # place per ATS that declares its job-URL shape, and this dict just reads it. The scraper
 # module itself carries the reasoning/measurement comment for its own shape; this file no
 # longer duplicates it.
-#
-# `sidecorpus` is the one manual entry: it is not a `headstart.scrapers` ATS (the sidecorpus
-# corpus is built by the standalone `run_sidecorpus*.py` scripts, never through the scraper
-# registry), so it has no `BaseScraper` subclass to declare a shape on. Verified against all
-# 6,462 rows of `data/jobs/sidecorpus.csv` (zero non-matching); sidecorpus was served with NO
-# shape entry until 2026-08-05 - the same class of gap the coverage gate below was added to
-# catch.
-URL_SHAPES: dict[str, str] = {ats: cls.url_shape for ats, cls in SCRAPERS.items()} | {
-    "sidecorpus": r"https://sidecorpus\.com/jobs/\d+(-[\w-]+)?"
-}
+URL_SHAPES: dict[str, str] = {ats: cls.url_shape for ats, cls in SCRAPERS.items()}
 
 
 def _session_cookie(path: Path) -> str:

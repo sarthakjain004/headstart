@@ -90,8 +90,8 @@ Evidence for the first three is in `docs/discovery/2026-09-23_indeed-sweep-landi
   decision on reading a front whose backing tenant opts out.
 - **The unsupported ATSes the Indeed sweep resolved most companies to**, most first:
   ADP, Hireology, Recruiterflow, Avature. (Breezy led that count; it, ClearCompany, Pinpoint and
-  Cornerstone are now built, #579, #582, #580 and #584. Breezy's companies are landed;
-  ClearCompany's, Pinpoint's and Cornerstone's are a landing still to do.)
+  Cornerstone are now built, #579, #582, #580 and #584, and the sweep's companies on all four are
+  landed.)
 - **SenseHQ** — the scraper is registered but has no ledger and no liveness probe, so none of its
   Boards can land.
 - **TurboHire** — token flow: `/api/token/noauth` (needs Referer), then `POST
@@ -304,8 +304,6 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   (deliberately untracked: it names private infrastructure and this repo is public).
   A remote caller that gates its own startup on the tunnel must degrade rather than die: bring the
   app up regardless and fail that one endpoint, so a router outage never takes down the product.
-  **Known exception to migrate:** `scripts/eval/judge_pool.py:93` still constructs `Anthropic()`
-  against the default base URL — pre-existing, predates this rule.
 - Output must stream incrementally — never buffer until the program ends. Print per-item as
   work completes and flush (Python: `print(..., flush=True)` / `-u`; write results to a file
   progressively). A long batch that prints only at the end is forbidden: one slow item stalls
@@ -375,8 +373,9 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
 Build a new ATS with the `add-ats-scraper` skill; it carries this step and the rest of the
 procedure. **Before any new ATS scraper's jobs ship — in the same PR that adds the scraper — run
 the `verify-search-filters` skill.** A new ATS is invisible to the harness until someone teaches it:
-its job-URL shape must be added to `scripts/eval/verify_filters.py`'s `URL_SHAPES` (derived from
-the scraper's `url=` construction and verified against the ATS's real routing, not assumed), and
+its job-URL shape must be declared as the scraper class's `url_shape` (derived from the scraper's
+`url=` construction and verified against the ATS's real routing, not assumed —
+`verify_filters.py`'s `URL_SHAPES` is built from it, ADR-0157), and
 the harness must run clean, including its coverage gate (`atses_without_shape` empty). This rule
 exists because eightfold, freshteam and successfactors all shipped serving jobs no check ever
 looked at, and the gap surfaced as a user-visible bad result rather than a red run.

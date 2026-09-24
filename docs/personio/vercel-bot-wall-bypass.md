@@ -223,9 +223,8 @@ after, and not proportionate for a personal project's public-data aggregation.
   action, not BotID).
 
 Legality note: this only concerns Personio's already-public job listings for a personal
-job-search aggregator — the same framing `docs/sidecorpus/cloudflare-bypass.md` already
-documents. Fetching public data for personal/research use is generally fine; keep respecting
-rate limits and the host's ToS, and never touch anything behind an actual login.
+job-search aggregator. Fetching public data for personal/research use is generally fine; keep
+respecting rate limits and the host's ToS, and never touch anything behind an actual login.
 
 ## Sources
 
