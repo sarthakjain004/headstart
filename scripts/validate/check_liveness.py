@@ -72,6 +72,9 @@ from headstart import (  # needs src on sys.path first
 from headstart.models import (  # one host rule, shared with the scrapers
     host_of,
 )
+from headstart.scrapers import (
+    jibe as _jibe,  # robots.txt rule + crawl delay, single source
+)
 from headstart.scrapers.adp import (  # request shapes + envelope parsers, single source
     is_published,
     languages_of,
@@ -1785,6 +1788,90 @@ def p_pyjamahr(t, u):
     return UNKNOWN, None
 
 
+def _jibe_get(url, follow=False):
+    """(status, body) for one request to a Jibe client host, redirects left unfollowed so no
+    request reaches a host whose robots.txt was not read — except robots.txt's own (`follow`),
+    which RFC 9309 asks a crawler to follow. "dns" when the label does not resolve."""
+    try:
+        r = _fetch(
+            "GET",
+            url,
+            headers={"User-Agent": UA},
+            allow_redirects=follow,
+            max_redirects=5,
+        )
+    except http.RequestsError as e:
+        if _is_dns(e):
+            return "dns", ""
+        _note(_net_reason(e))
+        return None, ""
+    if r is None:
+        _note("breaker-open")
+        return None, ""
+    return r.status_code, r.text
+
+
+def _jibe_has_no_a_record(hostname):
+    """True when a public resolver — the first of 1.1.1.1 and 8.8.8.8 that answers at all — says
+    `hostname` has no A record: an unknown Jibe label answers NOERROR with an empty answer, not
+    NXDOMAIN, on both alike. Neither answering is not an answer: False, so the Board stays
+    UNKNOWN."""
+    import dns.exception
+    import dns.resolver
+
+    for nameserver in ("1.1.1.1", "8.8.8.8"):
+        resolver = dns.resolver.Resolver(configure=False)
+        resolver.nameservers, resolver.lifetime = [nameserver], 5
+        try:
+            resolver.resolve(hostname, "A")
+            return False
+        except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+            return True
+        except (dns.resolver.NoNameservers, dns.exception.Timeout):
+            continue
+    _note("dns-unconfirmed")
+    return False
+
+
+def p_jibe(t, u):
+    # The Board is the client, read at `{client}.jibeapply.com`; `jibeapply.com` has no wildcard
+    # DNS, so a label that does not resolve is a departed or invented client (101 of 1,244 pool
+    # labels; `zzzzqqq`). robots.txt is read first and honoured (ADR-0189): a disallowing host
+    # (carrefour) and an unreachable file are UNKNOWN, never read. The listing follows at the
+    # host's `crawl-delay: 5`, and its `totalCount` is the count — it counts one row per
+    # (requisition, language), so it can exceed the postings the scraper keeps. A 404 there is not
+    # a departed client: 21 resolving labels answer it (dycom's board lives under `/dycom/`), so it
+    # is UNKNOWN too. Measured 2026-09-24, docs/jibe/2026-09-24_api-jobs-measurement.md.
+    hostname = _jibe.JibeScraper(_jibe.JibeScraper.slug_from(t, u)).host
+    host = f"https://{hostname}"
+    status, body = _jibe_get(f"{host}/robots.txt", follow=True)
+    if status == "dns":
+        # Only a public resolver's "no A record" is dead: the macOS system resolver answered "no
+        # such host" for live clients (uhs) under a 64-thread sweep on 2026-09-24.
+        if _jibe_has_no_a_record(hostname):
+            return DEAD, None
+        return UNKNOWN, None
+    verdict = _jibe.robots_verdict(status, body, _jibe.API_PATH, UA)
+    if verdict != _jibe.ALLOW:
+        _note(
+            "robots-unreachable" if verdict == _jibe.UNREACHABLE else "robots-disallow"
+        )
+        return UNKNOWN, None
+    time.sleep(_jibe.CRAWL_DELAY)
+    status, body = _jibe_get(f"{host}{_jibe.API_PATH}?page=1&limit=1&internal=false")
+    if status != 200:
+        _note(f"http-{status}")
+        return UNKNOWN, None
+    try:
+        total = json.loads(body).get("totalCount")
+    except (ValueError, AttributeError):
+        total = None
+    if not isinstance(total, int):
+        _note("body-unparseable")
+        return UNKNOWN, None
+    return LIVE, total
+
+
 _SF_PROBE_CAP = 256 * 1024  # capped stream: RMK RSS feeds trickle at ~30 KB/s
 
 
@@ -2370,6 +2457,7 @@ PROBES = {
     "successfactors": p_successfactors,
     "zwayam": p_zwayam,
     "jazzhr": p_jazzhr,
+    "jibe": p_jibe,
     "jobvite": p_jobvite,
     "oracle": p_oracle,
     "phenom": p_phenom,
