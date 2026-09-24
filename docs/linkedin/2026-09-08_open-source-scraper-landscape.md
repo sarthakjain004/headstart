@@ -3,7 +3,7 @@
 Read-only static analysis, 2026-09-08. No scraper was run, no request was sent to linkedin.com, no
 dependency installed. Every claim below is either a code citation or a quote from a repo's own
 README / issue tracker. Repos live in
-`/Users/sarthakjain/Projects/HeadStart/experiment/linkedin-jobs/repos/`; paths in citations are
+`experiment/linkedin-jobs/repos/` (local clones, not committed); paths in citations are
 relative to that directory.
 
 Clones arrived at depth 1; I ran `git fetch --unshallow` against **github.com** (not linkedin.com)

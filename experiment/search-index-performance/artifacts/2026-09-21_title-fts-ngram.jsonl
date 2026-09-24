@@ -1,3 +1,0 @@
-{"median_ms": 10.55, "returned": 20, "returned_outside_substring_set": 0, "semantic_note": "FTS returns a BM25-ranked top-k, not a boolean row filter", "substring_matches": 599, "term": "kubernetes"}
-{"median_ms": 110.12, "returned": 20, "returned_outside_substring_set": 0, "semantic_note": "FTS returns a BM25-ranked top-k, not a boolean row filter", "substring_matches": 310474, "term": "engineer"}
-{"median_ms": 1.72, "returned": 20, "returned_outside_substring_set": 0, "semantic_note": "FTS returns a BM25-ranked top-k, not a boolean row filter", "substring_matches": 1836, "term": "c++"}
