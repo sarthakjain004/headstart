@@ -43,6 +43,7 @@ function fakeEl() {
     attrs: {},
     setAttribute(k, v) { this.attrs[k] = String(v); },
     getAttribute(k) { return this.attrs[k] ?? null; },
+    removeAttribute(k) { delete this.attrs[k]; },
     // Recorded, not swallowed: the ATS picker's own handler is registered this way, and the
     // racing tests below drive the control the bug report names rather than calling the
     // loader behind it. `fire` is the harness's stand-in for dispatchEvent.
@@ -96,6 +97,11 @@ function loadApp(fetchImpl) {
     + ' colorSlot: name => seriesColorAssignment.get(name), setUnit: setUnit,'
     + ' load: loadTrends,'
     + ' data: () => trendData,'
+    + ' picks: () => trendPicks, setPicks: p => { trendPicks = p; topSplit.stale = true; },'
+    + ' top: () => topSplit.chosen, selectSplit: trendSplitSelect, readHash: readTrendHash,'
+    + ' suggest: suggestCompanies, choose: chooseCo, options: () => coOptions,'
+    + ' follow: boards => { myCompanies = { followed: boards, hidden: [] }; },'
+    + ' followed: followedOption, openTrend: openCompanyTrend, chartedAndOther,'
     + ' set: (d, drill) => { trendData = d; trendDrill = drill || null; } };'
     // Repaints are counted at the global binding, which is what loadTrends' own `drawTrends()`
     // call resolves — so this counts the real paints, not a copy of them.
@@ -726,4 +732,286 @@ test('a delta carries its sign in the number, not only in the arrow', () => {
   assert.notEqual(t.deltaText(-0.282), t.deltaText(0.282));
   assert.match(t.deltaText(-22), /↓ −22\.0%/);
   assert.match(t.deltaText(118.2), /↑ \+118\.2%/);
+});
+
+/* ---- Companies (ADR-0185): the picker, its request, and the views a pick adds. ---- */
+
+const STAMPS = ['2026-09-13T00:00:00+00:00', '2026-09-20T00:00:00+00:00'];
+/** A top-level answer under picks. `sizes` are each family's openings at both stamps. */
+function picked(sizes, companies) {
+  return {
+    version: 2, metric: 'stock', split_by: 'family', stamps: STAMPS,
+    totals: [1000, 1000], non_tech: [10, 10], watch_parents: [],
+    series: Object.entries(sizes).map(([name, [a, b]]) => ({ name, label: name, points: [a, b], latest: b })),
+    companies: companies || [{ key: 'greenhouse:acme', label: 'Acme' }],
+    company_totals: {}, history_start: STAMPS[0], epochs: [],
+  };
+}
+/** A fetch that answers every request with `body` and records the params asked for. */
+function answering(ctx, body, status = 200) {
+  const asked = [];
+  ctx.fetch = url => {
+    asked.push(new URLSearchParams(String(url).split('?')[1] || ''));
+    return Promise.resolve({ ok: status === 200, status,
+      json: () => Promise.resolve(typeof body === 'function' ? body(asked.length) : body) });
+  };
+  return asked;
+}
+
+test('picks go to /trends as repeated company params', async () => {
+  const { t, ctx } = loadApp();
+  const asked = answering(ctx, picked({ a: [50, 60], b: [40, 45] }));
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }, { key: 'lever:beta', label: 'Beta' }]);
+  await t.load(null);
+  assert.deepEqual(asked[0].getAll('company'), ['greenhouse:acme', 'lever:beta']);
+  assert.equal(asked[0].get('split'), null, 'Category is the Space default, not a split');
+});
+
+test('the Space names a pick that arrived by key alone', async () => {
+  const { t, ctx, nodes } = loadApp();
+  answering(ctx, picked({ a: [50, 60], b: [40, 45] }, [{ key: 'workday:acme/site1', label: 'Acme Corp' }]));
+  t.setPicks([{ key: 'workday:acme/site2', label: null }]);
+  await t.load(null);
+  assert.deepEqual(t.picks(), [{ key: 'workday:acme/site1', label: 'Acme Corp' }]);
+  assert.ok(nodes['trends-co-chips'].innerHTML.includes('Acme Corp'));
+});
+
+test('a small pick opens on one Total line, the sum of its categories', async () => {
+  const { t, ctx, nodes } = loadApp();
+  answering(ctx, picked({ a: [3, 4], b: [2, 2], c: [1, null] }));
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
+  await t.load(null);
+  const s = t.data().series;
+  assert.equal(s.length, 1);
+  assert.equal(s[0].name, '__total__');
+  assert.deepEqual(s[0].points, [6, 6]);
+  assert.equal(s[0].latest, 6);
+  assert.ok(!nodes['trends-legend'].innerHTML.includes('role="button"'),
+    'a Total row opens nothing, so it must not be a button');
+  assert.ok(!nodes['trends-kpi'].innerHTML.includes('Categories tracked'));
+});
+
+test('a pick with two indexable categories opens on them', async () => {
+  const { t, ctx } = loadApp();
+  answering(ctx, picked({ a: [50, 60], b: [5, 9], c: [1, 1] }));
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
+  await t.load(null);
+  assert.equal(t.data().series.length, 3);
+});
+
+test('switching Total to Category redraws without a request, and the choice sticks', async () => {
+  const { t, ctx } = loadApp();
+  const asked = answering(ctx, picked({ a: [3, 4], b: [2, 2] }));
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
+  await t.load(null);
+  t.selectSplit('families');
+  assert.equal(asked.length, 1);
+  assert.equal(t.data().series.length, 2);
+  await t.load(null);
+  assert.equal(t.data().series.length, 2, 'a refetch must not overrule the reader');
+});
+
+test('Company asks the Space for one line per pick', async () => {
+  const { t, ctx } = loadApp();
+  const asked = answering(ctx, picked({ a: [50, 60], b: [40, 45] },
+    [{ key: 'greenhouse:acme', label: 'Acme' }, { key: 'lever:beta', label: 'Beta' }]));
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }, { key: 'lever:beta', label: 'Beta' }]);
+  await t.load(null);
+  t.selectSplit('company');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(asked[1].get('split'), 'company');
+});
+
+test('Company falls back when the picks shrink below two', async () => {
+  const { t, ctx } = loadApp();
+  const asked = answering(ctx, picked({ a: [50, 60], b: [40, 45] }));
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }, { key: 'lever:beta', label: 'Beta' }]);
+  t.selectSplit('company');
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
+  await t.load(null);
+  assert.equal(asked[asked.length - 1].get('split'), null);
+  assert.equal(t.top(), 'auto');
+});
+
+test('a company line under Share divides by its own company, not every pick', async () => {
+  const { t, ctx } = loadApp();
+  answering(ctx, {
+    ...picked({}), split_by: 'company', totals: [1000, 1000],
+    series: [{ name: 'greenhouse:acme', label: 'Acme', points: [50, 60], latest: 60 }],
+    company_totals: { 'greenhouse:acme': [100, 200] },
+  });
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }, { key: 'lever:beta', label: 'Beta' }]);
+  await t.load(null);
+  t.setUnit('share', false);
+  assert.deepEqual(t.seriesValues(t.data().series[0]), [50, 30]);
+});
+
+test('a company line opens nothing when clicked', async () => {
+  const { t, ctx, fetches } = loadApp();
+  answering(ctx, { ...picked({}), split_by: 'company',
+    series: [{ name: 'greenhouse:acme', label: 'Acme', points: [50, 60], latest: 60 }] });
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }, { key: 'lever:beta', label: 'Beta' }]);
+  await t.load(null);
+  const before = fetches.length;
+  t.click('greenhouse:acme');
+  assert.equal(fetches.length, before);
+});
+
+test('a pick the directory does not hold is dropped with a sentence, and the rest still draw', async () => {
+  const { t, ctx, nodes } = loadApp();
+  const asked = [];
+  ctx.fetch = url => {
+    const q = new URLSearchParams(String(url).split('?')[1]);
+    asked.push(q);
+    return Promise.resolve(q.getAll('company').includes('workday:ghost')
+      ? { ok: false, status: 400, json: () => Promise.resolve({ error: 'unknown company: workday:ghost' }) }
+      : { ok: true, status: 200, json: () => Promise.resolve(picked({ a: [50, 60], b: [40, 45] })) });
+  };
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }, { key: 'workday:ghost', label: 'Ghost' }]);
+  await t.load(null);
+  assert.deepEqual(asked[1].getAll('company'), ['greenhouse:acme']);
+  assert.match(nodes['trends-co-note'].textContent, /No trend for Ghost yet/);
+  assert.equal(nodes['trends-error'].hidden, true);
+});
+
+test('a Space with no directory drops every pick and draws the whole index', async () => {
+  const { t, ctx, nodes } = loadApp();
+  const asked = [];
+  ctx.fetch = url => {
+    const q = new URLSearchParams(String(url).split('?')[1] || '');
+    asked.push(q);
+    return Promise.resolve(q.getAll('company').length
+      ? { ok: false, status: 503, json: () => Promise.resolve({ error: 'no company directory' }) }
+      : { ok: true, status: 200, json: () => Promise.resolve(fixture()) });
+  };
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
+  await t.load(null);
+  assert.equal(asked.length, 2);
+  assert.deepEqual(t.picks(), []);
+  assert.match(nodes['trends-co-note'].textContent, /aren’t available/);
+});
+
+test('a 400 about something other than a pick is an error, never a retry loop', async () => {
+  const { t, ctx, nodes } = loadApp();
+  const asked = answering(ctx, { error: 'since/until/base must be ISO-8601' }, 400);
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
+  await t.load(null);
+  assert.equal(asked.length, 1);
+  assert.equal(nodes['trends-error'].hidden, false);
+});
+
+test('the chart says where a company history starts', async () => {
+  const { t, ctx, nodes } = loadApp();
+  answering(ctx, picked({ a: [50, 60], b: [40, 45] }));
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
+  await t.load(null);
+  assert.match(nodes['trends-empty'].textContent, /Company history starts Sep 13/);
+});
+
+test('suggestions leave out what is picked and show openings and Boards', async () => {
+  const { t, ctx, nodes } = loadApp();
+  const c = (key, label, openings, boards) => ({ key, label, openings, boards, atses: ['workday'] });
+  answering(ctx, { companies: [c('workday:acme', 'Acme', 9214, 3), c('lever:beta', 'Beta', 1, 1)] });
+  t.setPicks([{ key: 'lever:beta', label: 'Beta' }]);
+  await t.suggest('ac');
+  assert.equal(t.options().length, 1);
+  assert.match(nodes['trends-co-list'].innerHTML, /9,214 tech openings · 3 boards · workday/);
+  assert.equal(nodes['trends-co-list'].hidden, false);
+});
+
+test('no suggestion is said in the status line, not as an option', async () => {
+  const { t, ctx, nodes } = loadApp();
+  answering(ctx, { companies: [] });
+  await t.suggest('zzz');
+  assert.equal(t.options().length, 0);
+  assert.equal(nodes['trends-co-list'].hidden, true);
+  assert.match(nodes['trends-co-note'].textContent, /No company matches “zzz”/);
+});
+
+test('the follow list is one option that adds every followed company not already picked', async () => {
+  const { t } = loadApp();
+  t.follow(['greenhouse:acme', 'lever:beta']);
+  t.setPicks([{ key: 'Greenhouse:Acme', label: 'Acme' }]);
+  const [option] = t.followed();
+  assert.deepEqual(option.followed, ['lever:beta'], 'casing differs between Board keys');
+  t.follow([]);
+  assert.deepEqual(t.followed(), [], 'nothing followed, nothing offered');
+});
+
+test('a link replaces the picks through the hash, labelled by the name it showed', () => {
+  const { t, ctx } = loadApp();
+  t.openTrend('workday:acme/site1', 'Acme');
+  assert.equal(ctx.location.hash, '#trends?company=workday%3Aacme%2Fsite1');
+  assert.equal(t.readHash(), true);
+  assert.deepEqual(t.picks(), [{ key: 'workday:acme/site1', label: 'Acme' }]);
+  assert.equal(t.readHash(), false, 'the same hash again changes nothing');
+});
+
+test('a bare #trends keeps the picks — it is the tab strip, not a request to clear them', () => {
+  const { t, ctx } = loadApp();
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
+  ctx.location.hash = '#trends';
+  assert.equal(t.readHash(), false);
+  assert.equal(t.picks().length, 1);
+});
+
+test('a shared link carries the breakdown the reader chose', () => {
+  const { t, ctx } = loadApp();
+  ctx.location.hash = '#trends?company=a&company=b&by=company';
+  t.readHash();
+  assert.equal(t.top(), 'company');
+  ctx.location.hash = '#trends?by=total';
+  t.readHash();
+  assert.equal(t.top(), 'auto', 'a breakdown with no company to break down means nothing');
+});
+
+test('Share leaves a top-level Company split, where every line would read 100%', async () => {
+  const { t, ctx, nodes } = loadApp();
+  const two = [{ key: 'greenhouse:acme', label: 'Acme' }, { key: 'lever:beta', label: 'Beta' }];
+  answering(ctx, { ...picked({}, two), split_by: 'company',
+    series: [{ name: 'greenhouse:acme', label: 'Acme', points: [50, 60], latest: 60 }] });
+  t.setUnit('share', false);
+  t.setPicks(two);
+  t.selectSplit('company');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.notEqual(t.data().series[0].name, undefined);
+  assert.equal(nodes['trends-unit-static'].hidden, false);
+  assert.match(nodes['trends-unit-static'].textContent, /always 100%/);
+});
+
+test('picks keep the order they were added in, though the Space answers sorted by key', async () => {
+  const { t, ctx } = loadApp();
+  answering(ctx, picked({ a: [50, 60], b: [40, 45] },
+    [{ key: 'a:first', label: 'A' }, { key: 'z:last', label: 'Z' }, { key: 'm:canonical', label: 'M' }]));
+  t.setPicks([{ key: 'z:last', label: null }, { key: 'm:alias', label: null }, { key: 'a:first', label: null }]);
+  await t.load(null);
+  assert.deepEqual(t.picks().map(p => p.key), ['z:last', 'a:first', 'm:canonical'],
+    'a pick made by another Board of its company goes last, under the directory key');
+});
+
+test('a 503 for missing trend data keeps the picks and says trends did not load', async () => {
+  const { t, ctx, nodes } = loadApp();
+  const asked = answering(ctx, { error: 'no trend data yet' }, 503);
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
+  await t.load(null);
+  assert.equal(asked.length, 1, 'no retry into the same 503');
+  assert.equal(t.picks().length, 1);
+  assert.equal(nodes['trends-error'].hidden, false);
+});
+
+test('past eight picks, Company folds the rest into Other, a share of their own totals', async () => {
+  const { t, ctx } = loadApp();
+  const keys = Array.from({ length: 10 }, (_, i) => `greenhouse:c${i}`);
+  answering(ctx, { ...picked({}, keys.map(key => ({ key, label: key }))), split_by: 'company',
+    totals: [10000, 10000],
+    series: keys.map((key, i) => ({ name: key, label: key, points: [100 - i, 100 - i], latest: 100 - i })),
+    company_totals: Object.fromEntries(keys.map(key => [key, [200, 200]])) });
+  t.setPicks(keys.map(key => ({ key, label: key })));
+  await t.load('ai-ml');   // inside a drill, where Share stays on under Company
+  t.setUnit('share', false);
+  const { other } = t.chartedAndOther(t.data());
+  assert.match(other.label, /Other \(2 smaller companies\)/);
+  // c8 + c9 = 92 + 91 openings, over their own two totals of 200: 45.75%, not 183 of 10,000
+  assert.deepEqual(t.seriesValues(other), [45.75, 45.75]);
 });
