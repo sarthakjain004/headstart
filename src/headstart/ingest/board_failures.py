@@ -40,7 +40,12 @@ import csv
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
+
+from headstart.board_identity import lower_key
+
+if TYPE_CHECKING:
+    from headstart.scrapable_boards import ScrapableBoard
 
 # Consecutive gone-runs before a Board leaves the scrape slice. Five rather than two because a
 # Board only ages when it is actually scraped, and the exploration tail re-selects a given Board
@@ -79,6 +84,18 @@ class Failure(NamedTuple):
     @property
     def quarantined(self) -> bool:
         return self.strikes >= QUARANTINE_AT
+
+
+def key_for(board: ScrapableBoard | str) -> str:
+    """The form a Board is compared in against this ledger: its identity, or a key it is handed,
+    lowercased (ADR-0192).
+
+    Rows are stored as :func:`~headstart.board_identity.board_key_of` spells them, and
+    :func:`update` pairs them verbatim with ``board_of`` keys from the same run. Only the planner's
+    quarantine test folds, because the liveness ledger's casing and a Job id's need not agree
+    (ADR-0049).
+    """
+    return lower_key(board) if isinstance(board, str) else board.lowercase_identity
 
 
 def is_gone(reason: str) -> bool:

@@ -145,3 +145,12 @@ def test_a_re_probe_that_answers_clears_the_quarantine():
     }
     rows = bf.update(rows, {}, {"greenhouse:b"}, "2026-09-16T00:00:00+00:00")
     assert rows == {}
+
+
+def test_key_for_lowercases_a_board_and_a_stored_key_alike():
+    """ADR-0192: rows keep `board_key_of`'s casing; the quarantine test compares folded."""
+    from headstart.scrapable_boards import ScrapableBoard
+
+    board = ScrapableBoard("workday", "https://Acme.wd1.myworkdayjobs.com/External")
+    assert bf.key_for(board) == bf.key_for("workday:Acme/External")
+    assert bf.key_for(board) == "workday:acme/external"
