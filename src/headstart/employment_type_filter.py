@@ -7,7 +7,7 @@ bitmap index can serve the filter without lowercasing and scanning every row.
 
 Everything the filter restated across modules lives here once: the canonical values and their
 Facet labels, the four ``is_*`` columns, the Python verdict the index writes, the SQL an old
-table is migrated with, and the clause :func:`headstart.search.build_filter` compiles.
+table is migrated with, and the clause :func:`headstart.search_filters.build_filter` compiles.
 """
 
 from __future__ import annotations

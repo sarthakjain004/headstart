@@ -190,6 +190,7 @@ supersedes it and note the supersession in both.
 | [0189](0189-a-jibe-board-is-a-client-read-under-its-own-robots-rules.md) | A Jibe Board is a client, read under its own robots.txt, minus what iCIMS already serves | 2026-09-24 |
 | [0190](0190-the-embedding-store-keeps-only-served-and-scraped-jobs.md) | The embedding store keeps only served and just-scraped Jobs | 2026-09-24 |
 | [0193](0193-one-module-per-materialized-search-filter.md) | One module per materialized Search filter | 2026-09-24 |
+| [0194](0194-job-search-absorbs-what-its-adapters-copy.md) | JobSearch absorbs what its adapters copy | 2026-09-24 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

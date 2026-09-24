@@ -59,6 +59,11 @@ from headstart.alerts.store import (
     subscription_id,
 )
 from headstart.board_identity import ats_of
+from headstart.search_filters import (
+    KEYWORD_DEFAULT_SCOPE,
+    keyword_scope_options,
+    request_account_clause,
+)
 
 DATASET = os.environ.get("HF_DATASET", "imPoseidon/headstart-index")
 _STATE = Path("/app/state")
@@ -489,7 +494,7 @@ def _company_where(args) -> str | None:
         return None
     email, store = gate
     prefs = store.get_companies(subscription_id(email))
-    return search.request_account_clause(args, prefs.followed, prefs.hidden)
+    return request_account_clause(args, prefs.followed, prefs.hidden)
 
 
 @app.route("/search")
@@ -1632,7 +1637,7 @@ def index():
             new_days=_DOOR_NEW_HOURS // 24,
             repo=_REPO,
         )
-    scopes = search.keyword_scope_options()  # the Keyword filter's one map (ADR-0104)
+    scopes = keyword_scope_options()  # the Keyword filter's one map (ADR-0104)
     return render_template(
         "base.html",
         # the one blob the static JS reads (window.CFG); everything else is template-side
@@ -1642,7 +1647,7 @@ def index():
             # disclaimer", plus the default the JS omits from a request — both read off the
             # same map the <select> below is rendered from, so the three cannot drift apart.
             "keyword_scopes": {value: needs for value, _, needs in scopes},
-            "keyword_default_scope": search.KEYWORD_DEFAULT_SCOPE,
+            "keyword_default_scope": KEYWORD_DEFAULT_SCOPE,
             # A no-query browse orders by `first_seen` only when the column exists; without
             # it the fallback is `id`, which is not a date at all. The line naming what the
             # user is looking at must not claim "newest first" on the second one.
@@ -1662,7 +1667,7 @@ def index():
         # table carries the description column yet — description-bearing scopes are disabled
         # until it does
         keyword_scopes=scopes,
-        keyword_default_scope=search.KEYWORD_DEFAULT_SCOPE,
+        keyword_default_scope=KEYWORD_DEFAULT_SCOPE,
         has_description=_searcher.capabilities.has_description,
         # the "Highest salary" sort option — dark until the ADR-0082 columns exist on the
         # served table, the same rule `run` applies to the value the control would send

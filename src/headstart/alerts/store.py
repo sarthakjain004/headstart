@@ -85,7 +85,7 @@ MAX_PARSES = 3  # Résumé parses per Account, lifetime — bounds router spend 
 # honouring both would fight. `posted_within` is kept: it filters `posted_at` (when the
 # employer posted), an independent constraint the user set and expects to survive.
 #
-# A hand-curated subset of `headstart.search.SearchFilters`'s field names (ADR-0149), not
+# A hand-curated subset of `headstart.search_filters.SearchFilters`'s field names (ADR-0149), not
 # imported from it: this module ships flat into the Space (deploy-space.yml) beside `search.py`,
 # but the alerts run also calls it standalone over HTTP against a *deployed* Space that may be a
 # different commit — so a shared Python object couldn't guarantee the two agree at request time
@@ -1049,7 +1049,7 @@ class Store:
         the filters on with no list to fill them — would hide everything instead.
 
         One case is not open at all: with ``mine=1`` an empty follow list compiles to ``false``
-        (see :func:`headstart.search.account_clause`), so a record that failed to load *does*
+        (see :func:`headstart.search_filters.account_clause`), so a record that failed to load *does*
         produce an empty page on that one view. That is deliberate there — silently widening
         "only my companies" to the whole index would be worse — but it means this method's
         failure is not invisible on every path.

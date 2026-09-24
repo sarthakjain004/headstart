@@ -15,7 +15,7 @@ from flask import Flask, jsonify, render_template, request
 from playwright.sync_api import expect, sync_playwright
 from werkzeug.serving import make_server
 
-from headstart.search import KEYWORD_DEFAULT_SCOPE, keyword_scope_options
+from headstart.search_filters import KEYWORD_DEFAULT_SCOPE, keyword_scope_options
 
 ROOT = Path(__file__).resolve().parents[2]
 

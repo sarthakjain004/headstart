@@ -21,9 +21,9 @@ import headstart
 from headstart import facets, fx, geo
 from headstart.alerts.store import MAX_COMPANIES, CompanyPrefs
 from headstart.embedding_conventions import PROD_TABLE, load_encoder
-from headstart.search import (
+from headstart.search import JobSearch
+from headstart.search_filters import (
     KEYWORD_DEFAULT_SCOPE,
-    JobSearch,
     keyword_scope_options,
     request_account_clause,
 )
