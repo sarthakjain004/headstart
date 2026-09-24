@@ -11,7 +11,10 @@ can widen or narrow which jobs enter the served index at all
 that looks exactly like a hiring trend, and today nothing tells a reader "we changed how we
 count" from "conditions changed".
 
-This module stamps those four values each tick and appends a row to
+A fifth, :data:`headstart.ingest.index_plan.DEDUP_VERSION` (ADR-0188), marks a change to which
+served rows count as duplicates: that removes rows that were served before, in one tick.
+
+This module stamps those five values each tick and appends a row to
 ``data/state/trends_epochs.csv`` only when at least one differs from the last recorded row — so
 every row in the file is already a real methodology boundary, not a per-tick sample, and the
 Space can draw a marker at each one. ``family_map_fingerprint`` is a content hash rather than a
@@ -31,7 +34,26 @@ _COLUMNS = (
     "family_map_fingerprint",
     "tech_filter_version",
     "derivations_version",
+    "dedup_version",
 )
+# The header before ``dedup_version`` existed (ADR-0188). Its rows are real boundaries the Space
+# still marks, so a file in this shape is upgraded in place rather than rebuilt as corrupt, each
+# old row taking the version the rules had when the column was added. A fixed value, never the
+# live constant: a bump that lands before the first upgrading tick must still read as a boundary.
+_BEFORE_DEDUP = _COLUMNS[:-1]
+_DEDUP_VERSION_AT_ADDITION = "1"
+
+
+def _upgrade_before_dedup(path: Path) -> None:
+    """Rewrite a file from before ``dedup_version`` in the current shape, in place."""
+    with path.open(encoding="utf-8", newline="") as fh:
+        rows = list(csv.reader(fh))
+    if not rows or tuple(rows[0]) != _BEFORE_DEDUP:
+        return
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(_COLUMNS)
+        writer.writerows([*row, _DEDUP_VERSION_AT_ADDITION] for row in rows[1:])
 
 
 def _read_state(path: Path) -> tuple[tuple[str, ...] | None, bool]:
@@ -63,10 +85,11 @@ def append_if_changed(
     family_map_fingerprint: str,
     tech_filter_version: int,
     derivations_version: int,
+    dedup_version: int,
 ) -> bool:
     """Append one row when this tick's stamp differs from the last recorded one.
 
-    Returns whether it wrote. The comparison is over the four definition values only, never
+    Returns whether it wrote. The comparison is over the five definition values only, never
     ``ts`` — an unchanged run writes nothing, keeping the file at one row per real boundary
     rather than one row per tick.
     """
@@ -75,7 +98,10 @@ def append_if_changed(
         family_map_fingerprint,
         str(tech_filter_version),
         str(derivations_version),
+        str(dedup_version),
     )
+    if path.exists():
+        _upgrade_before_dedup(path)
     previous, rebuild = _read_state(path)
     if previous is not None and previous[1:] == current:
         return False

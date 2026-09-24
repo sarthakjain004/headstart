@@ -46,6 +46,14 @@ from headstart.corpus import iter_jobs
 
 _log = log.get(__name__, __spec__)
 
+#: The version of the rules that decide which served rows are duplicates of each other (ADR-0188).
+#: A change to them removes rows that were served before, all in the tick it first runs, and the
+#: Trends chart would draw that as a hiring drop; ``role_trends`` stamps this into the
+#: ADR-0164 epoch ledger so the chart marks it instead. Bump it in the change that alters which
+#: rows count as duplicates: a new grouping in :func:`plan_prune`, a new alias signal, a new
+#: parking rule. Don't bump it for a routine alias-ledger rewrite that applies an existing rule.
+DEDUP_VERSION = 1
+
 
 @dataclass(frozen=True, slots=True)
 class SyncPlan:

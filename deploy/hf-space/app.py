@@ -239,6 +239,7 @@ _EPOCH_LABELS = (
     ("family_map_fingerprint", "role family map edited"),
     ("tech_filter_version", "tech filter changed"),
     ("derivations_version", "experience/salary extraction changed"),
+    ("dedup_version", "duplicate removal changed"),
 )
 
 
@@ -256,7 +257,10 @@ def _load_epochs(path: Path) -> list[dict]:
     for previous, row in zip([None, *rows], rows):
         if previous is None:
             continue
-        changed = [label for key, label in _EPOCH_LABELS if row[key] != previous[key]]
+        # .get: a file from before a column existed lacks it until the next tick upgrades it
+        changed = [
+            label for key, label in _EPOCH_LABELS if row.get(key) != previous.get(key)
+        ]
         if changed:
             out.append({"ts": row["ts"], "changed": changed})
     return out
