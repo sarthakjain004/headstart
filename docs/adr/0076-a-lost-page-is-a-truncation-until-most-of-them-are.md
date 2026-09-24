@@ -2,7 +2,8 @@
 
 **Status:** accepted · **Date:** 2026-08-20 · **Amends:**
 [ADR-0058](0058-consecutive-gone-quarantine.md) (whose "a listing error must raise" rule this
-narrows to the *first* page) · **Relates to:**
+narrows to the *first* page) · **Amended:** 2026-09-25 (Workday's second pass, at the end) ·
+**Relates to:**
 [ADR-0053](0053-scope-eviction-on-scrape-outcome.md) (the truncation channel this uses),
 [ADR-0047](0047-pace-against-the-origin.md) (the fan-out that made this bite)
 
@@ -98,3 +99,26 @@ that total, the crawl fails instead.**
 - A mid-crawl **410** majority still re-raises as gone text and takes one strike (of five). It did
   before this change too, on a single page rather than a majority — narrowed, not introduced, and
   left alone rather than rewriting the status text the ledger depends on.
+
+## Amendment, 2026-09-25: Workday asks a lost page once more before counting it
+
+Runs `35971969417`-`35998606646` (2026-09-24) had 132 ADR-0053 scope exclusions, and 71 of them
+(54%) were Workday Boards like `workday:aia/External` ("1 of 51 page(s) failed mid-crawl
+(ConnectionError x1)") and `workday:globalhr/REC_RTX_Ext_Gateway` ("2 of 242 page(s) ... HTTP 500
+x2"). Each lost page had spent its retry ladder inside a few seconds of the fan-out, and was never
+asked again. So one transient failure took a whole Board out of eviction scope for the run, and
+left its unsettled descriptions in the ADR-0062 gap ledger.
+
+`WorkdayScraper._paginate` now makes a second pass after the fan-out. It asks again, one page at
+a time through the sync `_post` and its own retry ladder, for every page lost to a request error.
+A 404 is not asked again, because mid-crawl it means the listing moved on. A page that answers is
+read, and its loss comes back off the count that decides between keeping the list, truncating
+it, and failing the crawl. The pass runs only when at most `_SECOND_PASS_MAX` (5) pages were
+lost: the exclusions it targets lost one or two, and a Board that lost many is an origin failing,
+where a sequential pass would only spend the shard's budget.
+
+A recovered page still shows in the `listing_loss_causes` events, which count failures as they
+happened. `listing_second_pass_recovered` and an INFO line ("N of M page(s) lost mid-crawl
+answered a second pass") say it came back. How many exclusions the pass removes is not measured
+yet. The next runs' `scope-excluded Board: workday:... page(s) failed mid-crawl` count, against
+the 71 in five runs above, is the yardstick.
