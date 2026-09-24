@@ -83,10 +83,11 @@ opaque argument, and a fake ignores it.
    fetcher.
 4. Workday's listing POST, sync and async, and Trakstar's feed go through the Scraper's fetcher,
    with the same request kwargs as before.
-5. **One shared test fake, `tests/fake_fetcher.py`.** `FakeFetcher(route)` sends every request,
-   sync or async, to `route(method, url, kwargs)`, which returns a `FakeResponse` or an exception.
-   It records each request as a `FakeRequest(method, url, kwargs)` and each cookie reset in
-   `cookie_clears`. Migrated to it:
+5. **One shared test fake, `tests/fake_fetcher.py`**, the module ADR-0201's change created.
+   `FakeFetcher(route)` sends every request, sync or async, to `route(method, url, kwargs)`, which
+   returns a `FakeResponse` or an exception, and records each request as a
+   `FakeRequest(method, url, kwargs)`. This change adds `clear_cookies`, which records each reset
+   in `cookie_clears`. Migrated to it:
    - the `test_fetcher.py` fake, which becomes a dict-backed route;
    - the `test_bamboohr.py` fake, which becomes a route that answers every request the same way;
    - the `test_cornerstone.py` fake, where `_FakeCsod` is now a `FakeFetcher` whose four
