@@ -1541,7 +1541,9 @@ def _row_shapes():
                 shape = _row_shape(tenant, url)
                 if shape not in seen:
                     seen.add(shape)
-                    cases.append(pytest.param(ats, tenant, url, id=f"{ats}-ledger-{shape}"))
+                    cases.append(
+                        pytest.param(ats, tenant, url, id=f"{ats}-ledger-{shape}")
+                    )
                 if host is None:
                     host = _host_the_scraper_reads(ats, tenant, url)
         for name, tenant, url in (
@@ -1573,7 +1575,10 @@ def _first_host_asked(monkeypatch, ats, tenant, url):
     )
     try:
         cl.PROBES[ats](tenant, url)
-    except (_Asked, ValueError):  # ValueError: the row names no Board its Scraper can read
+    except (
+        _Asked,
+        ValueError,
+    ):  # ValueError: the row names no Board its Scraper can read
         pass
     return urllib.parse.urlsplit(asked[0]).hostname if asked else None
 
@@ -1589,7 +1594,9 @@ def _host_the_scraper_reads(ats, tenant, url):
             target = search_request(company_from_row(ats, tenant, url).slug)[0]
         else:
             target = _scraper_url(ats, tenant, url)
-    except ValueError:  # e.g. 3,042 workday rows are a bare company name with no careers URL
+    except (
+        ValueError
+    ):  # e.g. 3,042 workday rows are a bare company name with no careers URL
         return None
     return urllib.parse.urlsplit(target).hostname
 

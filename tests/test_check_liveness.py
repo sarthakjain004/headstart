@@ -716,6 +716,9 @@ def test_an_oracle_pool_row_lands_under_the_pod_host_its_scraper_reads(
     )
     cl.main()
     after = cl.liveness.load(ledger / "oracle.csv")
-    assert sorted(after) == ["bun.fa.em2.oraclecloud.com", "cygl.fa.us2.oraclecloud.com"]
+    assert sorted(after) == [
+        "bun.fa.em2.oraclecloud.com",
+        "cygl.fa.us2.oraclecloud.com",
+    ]
     assert {v.url for v in after.values()} == {f"https://{t}" for t in after}
     assert sorted(probed) == sorted(after)
