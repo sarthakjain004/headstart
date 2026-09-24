@@ -38,7 +38,7 @@ all local, no embedding API needed.
   for this slice, and `jina-v3` is CC-BY-NC (non-commercial), a license landmine. Revisit `bge-m3` when the
   global/Zoho corpus lands.
 - **`gte-large-en-v1.5`** — a viable higher-quality long-context English alternative (8192 ctx, 1024-dim,
-  ~434M). Kept as the **upgrade path** if the eval harness shows nomic's ranking is too dull. Speed is a
+  ~434M). Kept as the **upgrade path** if a retrieval benchmark shows nomic's ranking is too dull (ADR-0011's harness was withdrawn on 2026-09-24, so a benchmark would have to be rebuilt first). Speed is a
   non-factor on the M5 Pro, so the call is quality-vs-flexibility; nomic wins now on Matryoshka, open data,
   and a leaner index.
 - **API models** (OpenAI `text-embedding-3`, Voyage) — unnecessary cost and data egress when local is free
