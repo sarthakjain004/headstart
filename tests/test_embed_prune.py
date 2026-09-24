@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("lancedb")  # [embed] extra — not installed in CI's quality job
+pytest.importorskip("lancedb")  # the index runtime, which the [dev] extra installs
 pytest.importorskip("numpy")
 
 import lancedb

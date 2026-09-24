@@ -1,7 +1,7 @@
 # ADR-0190: The embedding store keeps only served and just-scraped Jobs
 
-**Status:** accepted · **Date:** 2026-09-24 · **Relates to:**
-[ADR-0025](0025-parallelize-nightly-pipeline.md) (the append-only merge),
+**Status:** accepted · **Date:** 2026-09-24 · **Amends:**
+[ADR-0025](0025-parallelize-nightly-pipeline.md) (the append-only merge) · **Relates to:**
 [ADR-0050](0050-persist-descriptions-across-runs.md) (the one removal the store already had),
 [ADR-0168](0168-delete-the-orphaned-blobs-dont-ask-for-them-to-be-collected.md) (the per-run
 blob churn this shrinks)
@@ -16,10 +16,15 @@ grew (issue #600). On 2026-09-24 the dataset held 1,020,676 vectors (`embeddings
 search could return. Every merge job downloads the store whole and re-uploads it whole, the join
 downloads `meta.jsonl`, and `update_meta`'s sweeps and the gap ledger scan every row.
 
-The retention was deliberate, but its one benefit is that `sync` re-adds a returning Job from its
-retained vector for free. Five runs that day (35971969417 … 35998606646) added 699, 6,625, 3,439,
-1,936 and 1,731 listings while merging 558, 6,478, 3,353, 1,893 and 1,581 new vectors, so at most
-141, 147, 86, 43 and 150 adds a run reused a retained vector.
+The issue also names LanceDB's download. The table's own dead weight — soft-deleted rows and
+superseded index files — is already reclaimed by `cleanup-index`, which rebuilds it daily with
+`index compact` and uploads with `--delete "*"`, so it is out of scope here.
+
+No ADR decided to retain these vectors; it followed from ADR-0025's append-only merge. Its one
+benefit is that `sync` re-adds a returning Job from its retained vector for free. Five runs that
+day (35971969417 … 35998606646) added 699, 6,625, 3,439, 1,936 and 1,731 listings while merging
+558, 6,478, 3,353, 1,893 and 1,581 new vectors, so at most 141, 147, 86, 43 and 150 adds a run
+reused a retained vector.
 
 ## Decision
 
@@ -34,7 +39,10 @@ corpus, and drops the rest, rewriting meta and vectors in lockstep with `embed_m
   count that disagrees with the base record the last writer left (`check_base`), so a
   rolled-back table cannot shrink the store.
 - **Never fatal in the pipeline.** The step is `continue-on-error`. It writes through tmp files,
-  so a failure leaves the store as it was, and a larger store must not block publication.
+  which the store's upload excludes, so a failure before the swap leaves the store as it was, and
+  a larger store must not block publication.
+- **Skipped without the corpus.** A merge whose corpus did not arrive prunes nothing that run,
+  because the ids it must keep are missing.
 
 ## Alternatives considered
 
@@ -53,4 +61,5 @@ corpus, and drops the rest, rewriting meta and vectors in lockstep with `embed_m
 - A Job evicted and later seen again is re-embedded: about 40–150 Docs a run at the rates above,
   a few CPU-minutes spread across the embed shards.
 - The store is no longer an archive of every vector ever embedded. It still backs every served
-  row, which is the only use any stage makes of it.
+  row, which is all the pipeline reads it for. The manual `cluster-roles` refit also fits its
+  centroids from the whole store, and from now on sees only served and just-scraped Jobs.

@@ -420,8 +420,8 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
   as `python -m headstart.ingest.<module>` (ADR-0028): `scrape_plan`, `scrape_run`, `scrape_join`,
   `filter_tech`, `update_descriptions` (ADR-0050), `update_ledgers`
   (`priority`/`cost`/`failures`/`gap`), `embed_plan`, `embed_run`, `embed_merge`, `update_meta`
-  (ADR-0061), `index` (`sync` and `prune`), `embed_prune` (ADR-0190), `role_trends` (ADR-0040), then `index refresh-indexes`
-  immediately before LanceDB publication. `.github/workflows/pipeline.yml` runs exactly these —
+  (ADR-0061), `index` (`sync` and `prune`), `embed_prune` (ADR-0190), `role_trends` (ADR-0040),
+  then `index refresh-indexes` immediately before LanceDB publication. `.github/workflows/pipeline.yml` runs exactly these —
   every publication refreshes Search indexes over its fresh Jobs (ADR-0174); `index compact` is a
   subcommand of the same module but belongs to `cleanup-index`, not this run. Its pipeline-only helpers live here too:
   `binpack.py` (LPT packing), `doc_prep.py`, `index_plan.py`, `shard_plan.py`, `shard_speedup.py`,

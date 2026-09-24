@@ -34,7 +34,7 @@ from headstart import log
 from headstart.board_identity import ats_of
 from headstart.corpus import iter_jobs
 from headstart.ingest import REPO_ROOT, observability
-from headstart.ingest.embed_merge import evict_ids
+from headstart.ingest.embed_merge import _FLOAT_BYTES, _dim_from_manifest, evict_ids
 from headstart.ingest.index import _all_ids, check_base
 from headstart.search import PROD_TABLE
 
@@ -105,17 +105,20 @@ def main() -> int:
         _log.info("dry-run — pass --apply to rewrite the store")
         return 0
 
-    manifest = json.loads(manifest_path.read_text())
-    dim = int(manifest["dim"])
+    dim = _dim_from_manifest(store)
     dropped = evict_ids(meta_path, vec_path, dim, drop)
-    remaining = len(stored) - dropped
-    if vec_path.stat().st_size != remaining * dim * 4:
+    # Counted from the rewritten meta, not `len(stored) - dropped`: `evict_ids` also counts any
+    # vector rows past the last meta line as dropped, so the subtraction would come out short.
+    with meta_path.open(encoding="utf-8") as fh:
+        remaining = sum(1 for line in fh if line.strip())
+    manifest = json.loads(manifest_path.read_text())
+    manifest["count"] = remaining
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    if vec_path.stat().st_size != remaining * dim * _FLOAT_BYTES:
         log.fail(
             _log,
             f"store inconsistent after prune: {vec_path.stat().st_size} bytes for {remaining} rows",
         )
-    manifest["count"] = remaining
-    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     _log.info(
         f"done: dropped {dropped} vectors; store now holds {remaining} -> {store}"
     )
