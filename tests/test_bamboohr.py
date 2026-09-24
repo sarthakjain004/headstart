@@ -15,6 +15,8 @@ import json
 import pathlib
 from typing import Any
 
+from fake_fetcher import FakeFetcher, FakeResponse
+
 from headstart.scrapers.bamboohr import (
     BambooHRScraper,
     _canonical_location,
@@ -156,32 +158,17 @@ def test_canonical_location_handles_a_missing_or_non_dict_value():
 
 # --- fetch_raw(): dead vs. live-but-empty, from the same HTTP 200 ---------------------------
 # See the module docstring's measurement: a dead tenant's widget is a 200 with an EMPTY body,
-# while a live tenant (jobs or not) always serves the BambooHR-ATS-board wrapper. FakeFetcher
-# mirrors tests/test_fetcher.py's pattern (ADR-0153) rather than hitting the network.
+# while a live tenant (jobs or not) always serves the BambooHR-ATS-board wrapper. The shared
+# FakeFetcher (ADR-0153, ADR-0199) answers rather than the network.
 
 
-class _FakeResponse:
-    def __init__(self, text: str = "") -> None:
-        self.status_code = 200
-        self.text = text
-
-    def raise_for_status(self) -> None:
-        pass
-
-
-class _FakeFetcher:
-    def __init__(self, text: str) -> None:
-        self._text = text
-
-    def fetch(self, method: str, url: str, **_kwargs: Any) -> _FakeResponse:
-        return _FakeResponse(self._text)
-
-    async def fetch_async(self, session: Any, method: str, url: str, **kwargs: Any):
-        return self.fetch(method, url, **kwargs)
+def _widget_fetcher(text: str) -> FakeFetcher:
+    """Every request gets the same 200 widget body."""
+    return FakeFetcher(lambda _method, _url, _kwargs: FakeResponse(200, text))
 
 
 def test_fetch_raw_treats_a_dead_tenants_empty_body_as_an_unread_board():
-    scraper = BambooHRScraper("gone", fetcher=_FakeFetcher(""))
+    scraper = BambooHRScraper("gone", fetcher=_widget_fetcher(""))
     assert scraper.fetch_raw() == {"page": "", "details": {}}
 
 
@@ -190,7 +177,7 @@ def test_fetch_raw_reads_a_live_but_jobless_tenants_blank_state():
         '<div class="BambooHR-ATS-board"><div class="BambooHR-ATS-blankState">'
         "We currently have no open positions.</div></div>"
     )
-    scraper = BambooHRScraper("empty-board", fetcher=_FakeFetcher(blank))
+    scraper = BambooHRScraper("empty-board", fetcher=_widget_fetcher(blank))
     assert scraper.fetch_raw() == {"page": blank, "details": {}, "departments": {}}
 
 
@@ -206,7 +193,7 @@ def test_fetch_raw_treats_changed_row_markup_as_an_unread_board_not_an_empty_one
         '<li data-position-id="331">bhrPositionID_331 moved to a data attribute</li>'
         "</div>"
     )
-    scraper = BambooHRScraper("drifted", fetcher=_FakeFetcher(drifted))
+    scraper = BambooHRScraper("drifted", fetcher=_widget_fetcher(drifted))
     assert scraper.fetch_raw() == {"page": "", "details": {}}
 
 
@@ -217,7 +204,7 @@ def test_fetch_raw_still_reads_a_genuinely_empty_but_well_formed_board():
         '<div class="BambooHR-ATS-board"><div class="BambooHR-ATS-blankState">'
         "We currently have no open positions.</div></div>"
     )
-    scraper = BambooHRScraper("empty-board", fetcher=_FakeFetcher(blank))
+    scraper = BambooHRScraper("empty-board", fetcher=_widget_fetcher(blank))
     assert scraper.fetch_raw() == {"page": blank, "details": {}, "departments": {}}
 
 

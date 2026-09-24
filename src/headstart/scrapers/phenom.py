@@ -42,6 +42,7 @@ import re
 from typing import Any, ClassVar
 
 from headstart import http
+from headstart.fetcher import Fetcher
 from headstart.models import Job, host_of, html_to_text
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -101,8 +102,10 @@ class PhenomScraper(BaseScraper):
     detail_workers = _DETAIL_WORKERS
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
-    def __init__(self, slug: str, company: str | None = None) -> None:
-        super().__init__(slug, company)
+    def __init__(
+        self, slug: str, company: str | None = None, fetcher: Fetcher | None = None
+    ) -> None:
+        super().__init__(slug, company, fetcher)
         # Resolved by `fetch_raw` before anything needs it; `job_url` renders whichever prefix the
         # Board turned out to use, and falls back to the probe prefix for a Board never fetched
         # (the liveness prober builds a scraper and reads `url()` without calling `fetch_raw`).

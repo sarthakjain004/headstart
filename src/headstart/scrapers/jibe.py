@@ -72,6 +72,7 @@ from typing import Any
 from urllib.parse import urlencode, urljoin, urlsplit
 
 from headstart import http, salary
+from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -218,7 +219,9 @@ class JibeScraper(BaseScraper):
     # 151,619 rows, else digits and hyphens or letters (Oracle, Cadient ids).
     url_shape = r"https://[a-z0-9-]+\.jibeapply\.com/jobs/[A-Za-z0-9-]+"
 
-    def __init__(self, slug: str, company: str | None = None, fetcher=None) -> None:
+    def __init__(
+        self, slug: str, company: str | None = None, fetcher: Fetcher | None = None
+    ) -> None:
         super().__init__(slug, company, fetcher)
         self._last_request: float | None = None
         # This Board's robots.txt answer (status, body), read once, before any other request.

@@ -43,6 +43,7 @@ import json
 from typing import Any
 
 from headstart import http
+from headstart.fetcher import Fetcher
 from headstart.models import Job, host_of, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
@@ -126,8 +127,10 @@ class OracleScraper(BaseScraper):
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
     egress_fallback_on = frozenset({429})
 
-    def __init__(self, slug: str, company: str | None = None) -> None:
-        super().__init__(slug, company)
+    def __init__(
+        self, slug: str, company: str | None = None, fetcher: Fetcher | None = None
+    ) -> None:
+        super().__init__(slug, company, fetcher)
         self._offset = (
             0  # advanced by `fetch_raw`; `url()` renders whatever page it is on
         )

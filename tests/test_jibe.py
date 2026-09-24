@@ -22,6 +22,7 @@ from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
+from fake_fetcher import FakeFetcher, FakeResponse
 
 from headstart import http, salary
 from headstart.scrapers import jibe
@@ -191,41 +192,31 @@ class _Clock:
         self.now += max(seconds, 0)
 
 
-class _Fetcher:
-    """Answers by (host, path) from `routes`; a route value is a list consumed one per request
-    (the last one repeats) or a callable of the parsed query. Records (time, url) per request."""
+class _ClockedFetcher(FakeFetcher):
+    """The shared fake, answering by (host, path) from `routes`; a route value is a list consumed
+    one per request (the last one repeats) or a callable of the parsed query, and an answer is a
+    `(status, body)` or an exception to raise. Specialised only to stamp each request with the
+    fake clock: the crawl-delay tests read the gaps in `log` as (time, url)."""
 
     def __init__(self, routes: dict, clock: _Clock) -> None:
+        super().__init__(self._answer)
         self.routes, self.clock, self.log = routes, clock, []
 
     def fetch(self, method, url, **kwargs):
-        parts = urlsplit(url)
         self.log.append((self.clock.now, url))
+        return super().fetch(method, url, **kwargs)
+
+    def _answer(self, method, url, kwargs):
+        parts = urlsplit(url)
         route = self.routes[(parts.hostname, parts.path)]
         if callable(route):
             answer = route({k: v[0] for k, v in parse_qs(parts.query).items()})
         else:
             answer = route.pop(0) if len(route) > 1 else route[0]
         if isinstance(answer, Exception):
-            raise answer
+            return answer
         status, body = answer
-        text = body if isinstance(body, str) else json.dumps(body)
-
-        def raise_for_status():
-            if status >= 400:
-                raise RuntimeError(f"HTTP {status}")
-
-        return SimpleNamespace(
-            status_code=status,
-            text=text,
-            json=lambda: json.loads(text),
-            headers={},
-            raise_for_status=raise_for_status,
-            url=url,
-        )
-
-    async def fetch_async(self, *args, **kwargs):  # pragma: no cover - not used by jibe
-        raise AssertionError
+        return FakeResponse(status, body if isinstance(body, str) else json.dumps(body))
 
 
 def _page(rows, total):
@@ -242,7 +233,7 @@ def clock(monkeypatch):
 
 
 def _scraper(routes, clock, slug="rmeducation"):
-    fetcher = _Fetcher(routes, clock)
+    fetcher = _ClockedFetcher(routes, clock)
     return JibeScraper(slug, fetcher=fetcher), fetcher
 
 
