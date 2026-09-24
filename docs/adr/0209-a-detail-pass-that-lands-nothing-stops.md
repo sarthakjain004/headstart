@@ -89,3 +89,12 @@ a Board that stopped answering.
   treats details as load-bearing, the Board is unauthoritative that run (ADR-0053).
 - egud's current 3,465 s row was written before this and stands until the gate's 14-day re-check.
   This ADR stops the next one; it does not rewrite the ledger.
+- **Skipping the cost row has costs of its own.** A Board whose first-ever measurement stalls
+  stays costed from its ATS median, and a Board that stalls on every run is never re-costed. Its
+  last row stands, or its re-check re-admits it, and it burns 17-25 min of shard time each run with
+  no ledger signal. That is the "packer never learns" shape ADR-0064 exists to prevent. The run's
+  jobs count and `errored` bit, which feed the ADR-0145 veto, are dropped with the row too. This
+  ADR accepts that on the evidence: one stall in the seven runs measured, and transient. The signal
+  a chronic staller would leave is `scrape_join`'s per-ATS loss-cause line: `skipped after the
+  detail pass stalled xN on M Board(s)` on run after run. If that appears, a stall streak in the
+  cost ledger is the next step.
