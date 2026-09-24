@@ -159,7 +159,6 @@ def test_zoho_parse_fills_description_from_details():
     raw = {
         "page": _page(records),
         "details": {"1": {"id": "1", "Job_Description": "<p>5+ years of Python</p>"}},
-        "unavailable": frozenset(),
     }
     jobs = get_scraper("zoho", "acme.zohorecruit.com").parse(raw, SCRAPED_AT)
     assert jobs[0].description == "5+ years of Python"
@@ -271,7 +270,7 @@ def test_zoho_falls_back_to_listing_when_detail_fetch_missing():
             "Industry": "Technology",
         }
     ]
-    raw = {"page": _page(records), "details": {}, "unavailable": frozenset()}
+    raw = {"page": _page(records), "details": {}}
     jobs = get_scraper("zoho", "acme.zohorecruit.com").parse(raw, SCRAPED_AT)
     j = jobs[0]
     assert j.posted_at == "2026-01-01"

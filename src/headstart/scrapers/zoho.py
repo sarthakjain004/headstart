@@ -293,7 +293,7 @@ class ZohoScraper(BaseScraper):
         page, details, unavailable = (
             (raw, {}, frozenset())
             if isinstance(raw, str)
-            else (raw["page"], raw["details"], raw["unavailable"])
+            else (raw["page"], raw["details"], raw.get("unavailable", frozenset()))
         )
         records = self._records(page)
         if not records:
