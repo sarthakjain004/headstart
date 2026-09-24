@@ -70,7 +70,7 @@ Jobvite-hosted surface; the destination renders its listing client-side and serv
 
 **Fields come from a per-job detail pass** (ADR-0050), which is where every field except the id
 lives. Most pages carry a schema.org ``JobPosting`` JSON-LD block; some tenants' templates emit
-none at all (nutanix), so ``_fetch_posting`` falls back to the rendered ``jv-header`` /
+none at all (nutanix), so ``_posting_of`` falls back to the rendered ``jv-header`` /
 ``jv-job-detail-meta`` / ``jv-job-detail-description`` blocks — the same shape trakstar needed for
 the same reason (#179). ``hiringOrganization`` is polymorphic: a bare string on most tenants, an
 ``{"@type":"Organization","name":…}`` object on others, so both are read. ``baseSalary`` is a
@@ -99,7 +99,7 @@ from typing import Any
 
 from headstart import http, log
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 from headstart.scrapers.job_posting_jsonld import find_job_posting
 
 _log = log.get(__name__)
@@ -232,18 +232,18 @@ class JobviteScraper(BaseScraper):
         ids = self._listing_ids()
         if not ids:
             return {"ids": [], "postings": {}}
-        # Multiplexed by default (ADR-0016); HEADSTART_ASYNC_FANOUT=0 falls back to threads.
-        if self.async_fanout_enabled():
-            fetched = self.fan_out_async(ids, self._posting_async)
-        else:
-            fetched = self.fan_out(ids, self._fetch_posting, workers=_DETAIL_WORKERS)
-        missing = self.report_detail_gaps(fetched, "detail pages")
-        if missing:
+        # No tech gate and no ADR-0048 skip: the listing states ids alone (module docstring).
+        postings = self.run_detail_pass(
+            ids, key_of=lambda job_id: job_id, what="detail pages"
+        )
+        if postings.missing:
             # Load-bearing detail pass: the listing carries no title, so `parse` cannot build a
             # Job without the page and drops it. That is a short list for a reason `harvest`
             # cannot see, which is exactly what ADR-0053 exists to travel alongside it.
-            self.mark_truncated(f"{missing}/{len(ids)} detail pages could not be read")
-        return {"ids": ids, "postings": dict(zip(ids, fetched))}
+            self.mark_truncated(
+                f"{postings.missing}/{len(ids)} detail pages could not be read"
+            )
+        return {"ids": ids, "postings": postings}
 
     def _page(self, url: str) -> str:
         """GET one board page, refusing to follow a redirect.
@@ -347,48 +347,22 @@ class JobviteScraper(BaseScraper):
                 posting["_location"] = segments[1]
         return posting
 
-    def _fetch_posting(self, job_id: str) -> dict | None:
-        """GET one detail page and return its posting (None on failure). Sync path."""
-        try:
-            response = self._fetch(
-                "GET",
-                self.job_url(job_id),
-                headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
-                timeout=30,
-            )
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return self._read_posting(response)
+    def detail_request(self, job_id: str) -> DetailRequest:
+        return DetailRequest(
+            self.job_url(job_id),
+            headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
+        )
 
-    async def _posting_async(self, session: Any, job_id: str) -> dict | None:
-        """Same as :meth:`_fetch_posting` over the shared multiplexed ``AsyncSession``."""
-        try:
-            response = await self._fetch_async(
-                session,
-                "GET",
-                self.job_url(job_id),
-                headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
-                timeout=30,
-            )
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return self._read_posting(response)
-
-    def _read_posting(self, response: Any) -> dict | None:
-        """One detail page's posting, with a ``None`` labelled by what lost it.
+    def read_detail(self, job_id: str, response: Any) -> dict:
+        """One detail page's posting, or a loss named for a page that carries none.
 
         Load-bearing here — the listing carries no title, so a lost page is a dropped Job and a
         marked truncation — which makes "refused" versus "arrived and did not parse" the
         difference between waiting out an origin and fixing a parser.
         """
-        if response.status_code != 200:
-            self.note_detail_loss(f"HTTP {response.status_code}")
-            return None
         posting = self._posting_of(response.text)
         if posting is None:
-            self.note_detail_loss("no posting on a 200")
+            raise DetailLost("no posting on a 200")
         return posting
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:

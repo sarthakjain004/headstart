@@ -16,6 +16,9 @@ import json
 import pathlib
 import re
 
+import pytest
+from fake_fetcher import FakeFetcher, FakeResponse
+
 from headstart.salary import extract
 from headstart.scrapers.icims import (
     _LD_KEEP,
@@ -368,6 +371,42 @@ def test_slug_from_normalises_a_deep_link_to_the_host() -> None:
 
 def test_url_is_the_sitemap() -> None:
     assert get_scraper("icims", _HOST).url() == f"https://{_HOST}/sitemap.xml"
+
+
+# --- the detail pass -----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("async_fanout", ["1", "0"])
+def test_fetch_raw_reads_every_listed_page_and_names_each_loss(
+    monkeypatch, async_fanout
+) -> None:
+    """The Detail pass over the fixture Board on either transport: every listed page is asked
+    for with `in_iframe=1`, a page that arrives as the branded wrapper and a page that 404s are
+    each a named loss, and a lost page marks the Board truncated, since the page is the Job."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
+    rows = _sitemap_rows(_FIXTURE["sitemap_xml"])
+    gone_id = next(job_id for job_id, _, _ in rows if job_id not in _FIXTURE["pages"])
+
+    def route(method, url, kwargs):
+        if url == f"https://{_HOST}/sitemap.xml":
+            return FakeResponse(text=_FIXTURE["sitemap_xml"])
+        job_id = url.split("/jobs/", 1)[1].split("/", 1)[0]
+        if job_id == gone_id:
+            return FakeResponse(404)
+        return FakeResponse(
+            text=_FIXTURE["pages"].get(job_id, _FIXTURE["wrapper_page"])
+        )
+
+    fetcher = FakeFetcher(route)
+    scraper = get_scraper("icims", _HOST, fetcher=fetcher)
+
+    raw = scraper.fetch_raw()
+
+    assert sorted(fetcher.urls()[1:]) == sorted(_detail_url(url) for _, url, _ in rows)
+    assert {item["id"] for item in raw if item["fields"]} == set(_FIXTURE["pages"])
+    assert scraper.detail_losses == {"no JSON-LD on a 200": 4, "HTTP 404": 1}
+    assert scraper.truncated.startswith("5/7 job pages unreadable")
+    assert len(scraper.parse(raw, _SCRAPED_AT)) == 2
 
 
 def _ld_page(node: dict) -> str:

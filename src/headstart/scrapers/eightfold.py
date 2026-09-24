@@ -42,11 +42,11 @@ from __future__ import annotations
 import re
 import urllib.parse
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, NamedTuple
 
 from headstart import http, log
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 from headstart.scrapers.job_posting_jsonld import (
     find_job_posting,
     job_location_text,
@@ -102,6 +102,14 @@ _REMOTE_OPTION = {
 }
 
 
+class _PcsxPosition(NamedTuple):
+    """One PCSX search position with the ``domain`` its ``position_details`` request names — an
+    item of the API surface's Detail pass. The sitemap fallback's items are its job-page URLs."""
+
+    group_id: str
+    position: dict[str, Any]
+
+
 class EightfoldScraper(BaseScraper):
     """Eightfold AI scraper — ``slug`` is the board host."""
 
@@ -155,14 +163,22 @@ class EightfoldScraper(BaseScraper):
         return self._fetch(
             "GET",
             url or self.url(),
-            headers={
-                "User-Agent": USER_AGENT,
-                "Accept": accept,
-                "Referer": f"https://{self.slug}/careers",
-            },
+            headers=self._headers(accept),
             timeout=30,
             marks_wall=marks_wall,
         )
+
+    def _headers(self, accept: str) -> dict[str, str]:
+        """What every Eightfold request sends, the careers-page Referer included — on both
+        Detail-pass transports, where the multiplexed copy of each detail request used to drop it
+        (ADR-0201). Measured 2026-09-24 over one ``AsyncSession``: 90 of 90 ``position_details``
+        on three Boards and 80 of 80 job pages on four answered identically with and without it.
+        """
+        return {
+            "User-Agent": USER_AGENT,
+            "Accept": accept,
+            "Referer": f"https://{self.slug}/careers",
+        }
 
     # --- shared entry -------------------------------------------------------------------------
 
@@ -457,111 +473,91 @@ class EightfoldScraper(BaseScraper):
         respecting one — and it costs nothing: every sharded run ships the list (`scrape_run`
         reads it whenever ``--assignment`` is set; the five runs of 2026-09-16 logged
         `detail skip-list: 671,630 / 671,833 / 672,468 Job details already held`)."""
-        tech = self.tech_detail_wanted(
-            positions, lambda p: p.get("name"), _department_of
+        descriptions = self.run_detail_pass(
+            [_PcsxPosition(group_id, position) for position in positions],
+            key_of=lambda pcsx_position: str(pcsx_position.position.get("id")),
+            what="descriptions",
+            title_of=lambda pcsx_position: pcsx_position.position.get("name"),
+            department_of=lambda pcsx_position: _department_of(pcsx_position.position),
+            skip_held=True,
         )
-        wanted = [str(p.get("id")) for p in tech if self.needs_detail(str(p.get("id")))]
-        if self.async_fanout_enabled():
-            fetched = self.fan_out_async(
-                wanted,
-                lambda session, pid: self._description_async(session, group_id, pid),
-            )
-        else:
-            fetched = self.fan_out(
-                wanted,
-                lambda pid: self._description(group_id, pid),
-                workers=_DETAIL_WORKERS,
-            )
-        self.report_detail_gaps(fetched, "descriptions")
-        if len(wanted) < len(tech):
-            # Only the held-detail half: the tech half has its own line now, from the seam
-            # (`tech_detail_wanted`). Saying it in both double-counted every Board for anything
-            # grepping these, which is the defect `_report_detail_losses` exists to avoid.
+        # Only the held-detail half: the tech half has its own line, from the gate
+        # (`tech_detail_wanted`), and saying it in both double-counted every Board for anything
+        # grepping these. Read back off the pass's own counters, since both skips happen inside
+        # it: what it requested, against what the gate let through.
+        requested = self.telemetry["detail_jobs"]
+        tech = len(positions) - self.telemetry.get("tech_gated_details", 0)
+        if requested < tech:
             _log.info(
-                f"{self.board_key()}: fetched {len(wanted)}/{len(tech)} descriptions "
-                f"({len(tech) - len(wanted)} already held)"
+                f"{self.board_key()}: fetched {requested}/{tech} descriptions "
+                f"({tech - requested} already held)"
             )
-        # Re-align to `positions`: the fan-out covered only the subset still needing a detail, so
-        # zipping it against the full list would pair descriptions with the wrong Jobs.
-        by_id = dict(zip(wanted, fetched))
-        descs = [by_id.get(str(p.get("id"))) for p in positions]
         records = []
-        for pos, desc in zip(positions, descs):
-            position_id = str(pos.get("id"))
+        for position in positions:
+            position_id = str(position.get("id"))
             records.append(
                 {
                     "id": position_id,
-                    "url": self.job_url(position_id, pos.get("positionUrl")),
+                    "url": self.job_url(position_id, position.get("positionUrl")),
                     "fields": {
-                        "title": pos.get("name"),
-                        "description": desc or None,
+                        "title": position.get("name"),
+                        "description": descriptions.get(position_id) or None,
                         "location": _first_location(
-                            pos.get("locations"), pos.get("standardizedLocations")
+                            position.get("locations"),
+                            position.get("standardizedLocations"),
                         ),
-                        "posted_at": _ts_to_iso(pos.get("postedTs")),
+                        "posted_at": _ts_to_iso(position.get("postedTs")),
                         "employment_type": None,  # not exposed by the PCSX API
-                        "department": _department_of(pos),
-                        "remote": _remote_from(pos.get("workLocationOption")),
+                        "department": _department_of(position),
+                        "remote": _remote_from(position.get("workLocationOption")),
                     },
                 }
             )
         return records
 
-    def _description(self, group_id: str, position_id: str) -> str | None:
-        try:
-            r = self._get(self._details_url(group_id, position_id))
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return self._read_description(r)
+    def detail_request(self, item: _PcsxPosition | str) -> DetailRequest:
+        """A PCSX position's ``position_details``, or, on the sitemap fallback, whose items are
+        job-page URLs, the page itself — each with the headers :meth:`_get` sends."""
+        if isinstance(item, str):
+            return DetailRequest(item, headers=self._headers("text/html"))
+        return DetailRequest(
+            self._details_url(item.group_id, str(item.position.get("id"))),
+            headers=self._headers("application/json"),
+        )
 
-    async def _description_async(
-        self, session: Any, group_id: str, position_id: str
-    ) -> str | None:
-        try:
-            r = await self._fetch_async(
-                session,
-                "GET",
-                self._details_url(group_id, position_id),
-                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-                timeout=30,
-            )
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return self._read_description(r)
-
-    def _read_description(self, response: Any) -> str | None:
-        """One ``position_details`` response's text, with a ``None`` labelled by what lost it.
+    def read_detail(
+        self, item: _PcsxPosition | str, response: Any
+    ) -> str | dict[str, Any]:
+        """A position's description text, or a job page's JobPosting fields.
 
         This ATS's edge answers a spent per-origin budget with 403/405/429 (ADR-0063) and its API
-        can answer 200 with a body that will not parse; both arrive here as ``None``, and the
-        bare gap count reads them as the same fact. ``""`` is not a loss — see
+        can answer 200 with a body that will not parse; the label on each loss is what tells the
+        two apart. A ``position_details`` answer with no description is ``""``, not a loss — see
         :func:`_description_of` on why an empty description means only that the request
-        completed.
+        completed. On the sitemap fallback the page *is* the Job, and that fallback is taken
+        exactly when the API is refusing us — the run where "was it refused or was it
+        unreadable?" is the whole question.
         """
-        if response.status_code != 200:
-            self.note_detail_loss(f"HTTP {response.status_code}")
-            return None
-        text = _description_of(response)
-        if text is None:
-            self.note_detail_loss("unparseable body on a 200")
-        return text
+        if isinstance(item, str):
+            fields = _jobposting(response.text)
+            if fields is None:
+                raise DetailLost("no JobPosting JSON-LD on a 200")
+            return fields
+        description = _description_of(response)
+        if description is None:
+            raise DetailLost("unparseable body on a 200")
+        return description
 
     # --- fallback 2: sitemap -> per-job JSON-LD -----------------------------------------------
 
     def _sitemap_records(self) -> list[dict[str, Any]]:
         listed = self._job_urls()
-        if self.async_fanout_enabled():
-            fields = self.fan_out_async(
-                listed,
-                lambda session, u: self._jsonld_async(session, u),
-            )
-        else:
-            fields = self.fan_out(
-                listed, lambda u: self._jsonld(u), workers=_DETAIL_WORKERS
-            )
-        lost = self.report_detail_gaps(fields, "detail fields")
+        # Keyed by the page's own URL, not its position id: `_job_urls` dedupes URLs, and two
+        # URLs naming one position each keep the page they were read from.
+        pages = self.run_detail_pass(
+            listed, key_of=lambda job_url: job_url, what="detail fields"
+        )
+        lost = pages.missing
         if lost:
             # On this surface the per-job page *is* the Job — `parse` drops the ones that did
             # not arrive — so the list is knowingly short and must say so or `index sync` reads
@@ -576,11 +572,11 @@ class EightfoldScraper(BaseScraper):
             )
         return [
             {
-                "id": _sitemap_position_id(u),
-                "url": u,
-                "fields": f,
+                "id": _sitemap_position_id(job_url),
+                "url": job_url,
+                "fields": pages.get(job_url),
             }
-            for u, f in zip(listed, fields)
+            for job_url in listed
         ]
 
     def _job_urls(self) -> list[str]:
@@ -623,43 +619,6 @@ class EightfoldScraper(BaseScraper):
                     "its postings were not listed"
                 )
         return _dedupe(found)
-
-    def _jsonld(self, job_url: str) -> dict[str, Any] | None:
-        try:
-            r = self._get(job_url, accept="text/html")
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return self._read_jsonld(r)
-
-    async def _jsonld_async(self, session: Any, job_url: str) -> dict[str, Any] | None:
-        try:
-            r = await self._fetch_async(
-                session,
-                "GET",
-                job_url,
-                headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
-                timeout=30,
-            )
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return self._read_jsonld(r)
-
-    def _read_jsonld(self, response: Any) -> dict[str, Any] | None:
-        """One job page's JobPosting fields, with a ``None`` labelled by what lost it.
-
-        It matters most on this surface: the page *is* the Job here, so every loss is also a
-        truncation, and this fallback is taken exactly when the API is refusing us — the run
-        where "was it refused or was it unreadable?" is the whole question.
-        """
-        if response.status_code != 200:
-            self.note_detail_loss(f"HTTP {response.status_code}")
-            return None
-        fields = _jobposting(response.text)
-        if fields is None:
-            self.note_detail_loss("no JobPosting JSON-LD on a 200")
-        return fields
 
     # --- shared parse -------------------------------------------------------------------------
 
