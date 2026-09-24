@@ -59,8 +59,11 @@ For the daemon:
 
 - `http._retry_policy` is a generator holding the whole loop. It yields `_ResolveRoute`,
   `_SendRequest`, `_RotateEgress` and `_BackOff`; a `RequestsError` from the send is thrown back
-  into it, and it returns the settled response or re-raises. `fetch` drives it with
-  `proxy_for`, `session().request`, `_rotate_for` and `time.sleep`; `fetch_async` with
+  into it, and it ends by yielding `_Settled` with the response, or re-raises. It yields its result
+  rather than returning it so no driver catches `StopIteration`: a first draft did, around its
+  whole loop, and so turned a `StopIteration` raised by the session into a returned value.
+  `fetch` drives it with `proxy_for`, `session().request`, `_rotate_for` and `time.sleep`;
+  `fetch_async` with
   `proxy_for_async`, the caller's `AsyncSession`, `asyncio.to_thread(_rotate_for, …,
   wait_deadline())` and `asyncio.sleep`. Neither driver decides anything.
 - `generation` and `riding_the_tunnel` join `spare_egress.__all__`, so the module's declared

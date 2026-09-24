@@ -1241,13 +1241,13 @@ class InMemoryEgressDaemon:
         self,
         proxy: str | None = None,
         *,
-        restarts: bool = False,
-        reconnects: bool = False,
+        restart_succeeds: bool = False,
+        reconnect_succeeds: bool = False,
         trace: str | None = None,
     ) -> None:
         self.proxy = proxy
-        self.restarts = restarts
-        self.reconnects = reconnects
+        self.restart_succeeds = restart_succeeds
+        self.reconnect_succeeds = reconnect_succeeds
         self.trace = trace
         self.calls: list[str] = []
 
@@ -1257,11 +1257,11 @@ class InMemoryEgressDaemon:
 
     def restart(self) -> bool:
         self.calls.append("restart")
-        return self.restarts
+        return self.restart_succeeds
 
     def reconnect(self) -> bool:
         self.calls.append("reconnect")
-        return self.reconnects
+        return self.reconnect_succeeds
 
     def read_trace(self, proxy: str) -> str:
         self.calls.append("read_trace")

@@ -708,7 +708,7 @@ def test_both_paths_drive_one_policy_to_the_same_egress_decisions(monkeypatch):
     """
     outcomes = [429, _err(None), 429, 200]
 
-    def _run(drive_async):
+    def _drive_the_ladder(through_async):
         http.spare_egress.reset()
         recorded = []
         routes = iter([None] + ["socks5h://127.0.0.1:40000"] * 3)
@@ -731,26 +731,51 @@ def test_both_paths_drive_one_policy_to_the_same_egress_decisions(monkeypatch):
             monkeypatch.setattr(
                 http.spare_egress,
                 name,
-                lambda *a, _name=name: recorded.append((_name, *a)),
+                lambda *arguments, _name=name: recorded.append((_name, *arguments)),
             )
-        monkeypatch.setattr(http, "_note_retry", lambda *a: recorded.append(a) or 0.0)
-        kwargs = {
+        monkeypatch.setattr(
+            http,
+            "_note_retry",
+            lambda *arguments: recorded.append(arguments) or 0.0,
+        )
+        fetch_options = {
             "attempts": 4,
             "egress_group": "workday",
             "egress_on": frozenset({429}),
             "egress_board": "workday:acme/careers",
         }
-        if drive_async:
+        if through_async:
             session, calls = _astub(monkeypatch, list(outcomes))
-            response = asyncio.run(http.fetch_async(session, "GET", "u", **kwargs))
+            response = asyncio.run(
+                http.fetch_async(session, "GET", "u", **fetch_options)
+            )
         else:
             calls = _stub(monkeypatch, list(outcomes))
-            response = http.fetch("GET", "u", **kwargs)
+            response = http.fetch("GET", "u", **fetch_options)
         return response.status_code, _proxied(calls), recorded
 
-    sync_run, async_run = _run(drive_async=False), _run(drive_async=True)
-    assert sync_run[0] == 200 and ("rotate", "workday:acme/careers") in sync_run[2]
-    assert sync_run == async_run
+    sync_status, sync_routes, sync_calls = _drive_the_ladder(through_async=False)
+    assert sync_status == 200
+    assert ("rotate", "workday:acme/careers") in sync_calls
+    assert _drive_the_ladder(through_async=True) == (
+        sync_status,
+        sync_routes,
+        sync_calls,
+    )
+
+
+def test_a_stop_iteration_from_the_session_is_raised_not_returned(monkeypatch):
+    """The drivers never catch `StopIteration`. A first draft ended the policy with a `return` and
+    caught `StopIteration` around the whole driver loop — which also caught one raised by the
+    session itself and returned its argument as though it were the response."""
+
+    class _Session:
+        def request(self, method, url, **kwargs):
+            raise StopIteration("not a response")
+
+    monkeypatch.setattr(http, "session", lambda: _Session())
+    with pytest.raises(StopIteration):
+        http.fetch("GET", "u")
 
 
 # --- a connection we severed ourselves is not the request's fault ---------------------------------

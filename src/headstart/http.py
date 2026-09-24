@@ -290,7 +290,7 @@ def _severed_by_our_rotation(proxied: bool, before: int, earned: int) -> int:
 # calls they awaited — and the async one had already drifted once (it resolved its route through
 # the blocking `proxy_for`, ADR-0063's 2026-09-05 amendment). The loop now lives here once, as a
 # generator that decides and never does I/O: it yields each thing it needs done, as one of the
-# four steps below, and the caller sends back the result. `fetch` drives it with blocking calls,
+# four steps below, sends back the result, and ends by yielding the response it settled on. `fetch` drives it with blocking calls,
 # `fetch_async` with awaited ones, so the two can differ only in *how* a step runs, never in which
 # step comes next, how many attempts a request gets, or what it tells `spare_egress` (ADR-0195).
 
@@ -322,6 +322,16 @@ class _BackOff(NamedTuple):
     seconds: float
 
 
+class _Settled(NamedTuple):
+    """The final step: return ``response`` to the caller.
+
+    Yielded rather than returned, so a driver never has to catch ``StopIteration`` — a catch that
+    would also have swallowed one raised by the driver's own I/O and turned it into a return value.
+    """
+
+    response: Any
+
+
 def _retry_policy(
     method: str,
     url: str,
@@ -336,8 +346,8 @@ def _retry_policy(
     """The retry-and-egress decisions for one request, as a generator of steps.
 
     Yields :class:`_ResolveRoute`, :class:`_SendRequest`, :class:`_RotateEgress` and
-    :class:`_BackOff`; returns the settled response, or raises the ``RequestsError`` that never
-    settled. Every rule :func:`fetch`'s docstring states lives here — the retry budget, earned
+    :class:`_BackOff`, then either :class:`_Settled` with the response or raises the
+    ``RequestsError`` that never settled. Every rule :func:`fetch`'s docstring states lives here — the retry budget, earned
     attempts, the wall marking and every egress count — so both drivers share them by construction.
     """
     budget, attempt, proxied = attempts, 0, False
@@ -397,7 +407,7 @@ def _retry_policy(
             continue
         if proxied and egress_group is not None:
             spare_egress.note_settled(egress_group, response.status_code, egress_on)
-        return response
+        yield _Settled(response)
     raise AssertionError(
         "unreachable: the final attempt returns or raises"
     )  # pragma: no cover
@@ -453,28 +463,26 @@ def fetch(
         egress_board=egress_board,
         retry_on=retry_on,
     )
-    try:
-        step = next(policy)
-        while True:
-            if isinstance(step, _ResolveRoute):
-                step = policy.send(spare_egress.proxy_for(step.group))
-            elif isinstance(step, _SendRequest):
-                try:
-                    # Only a proxied request is on the tunnel, so only that one makes a rotation
-                    # wait.
-                    with spare_egress.riding_the_tunnel(step.proxy):
-                        response = session().request(method, url, **step.kwargs)
-                except RequestsError as exc:
-                    step = policy.throw(exc)
-                else:
-                    step = policy.send(response)
-            elif isinstance(step, _RotateEgress):
-                step = policy.send(_rotate_for(step.board, step.earned))
+    step = next(policy)
+    while True:
+        if isinstance(step, _ResolveRoute):
+            step = policy.send(spare_egress.proxy_for(step.group))
+        elif isinstance(step, _SendRequest):
+            try:
+                # Only a proxied request is on the tunnel, so only that one makes a rotation wait.
+                with spare_egress.riding_the_tunnel(step.proxy):
+                    response = session().request(method, url, **step.kwargs)
+            except RequestsError as exc:
+                step = policy.throw(exc)
             else:
-                time.sleep(step.seconds)
-                step = policy.send(None)
-    except StopIteration as settled:
-        return settled.value
+                step = policy.send(response)
+        elif isinstance(step, _RotateEgress):
+            step = policy.send(_rotate_for(step.board, step.earned))
+        elif isinstance(step, _BackOff):
+            time.sleep(step.seconds)
+            step = policy.send(None)
+        else:
+            return step.response
 
 
 async def fetch_async(
@@ -529,37 +537,36 @@ async def fetch_async(
         egress_board=egress_board,
         retry_on=retry_on,
     )
-    try:
-        step = next(policy)
-        while True:
-            if isinstance(step, _ResolveRoute):
-                # Async twin, not `proxy_for`: the sync one blocks on the rotation gate, and
-                # blocking the loop here froze the very requests a drain waits on, so the drain
-                # always timed out and restarted through them (see `spare_egress.proxy_for_async`).
-                step = policy.send(await spare_egress.proxy_for_async(step.group))
-            elif isinstance(step, _SendRequest):
-                try:
-                    with spare_egress.riding_the_tunnel(step.proxy):
-                        response = await session.request(method, url, **step.kwargs)
-                except RequestsError as exc:
-                    step = policy.throw(exc)
-                else:
-                    step = policy.send(response)
-            elif isinstance(step, _RotateEgress):
-                # The deadline starts here, on the loop, not inside `rotate` — otherwise time
-                # spent queueing for an executor thread would not count against the wait cap.
-                earned = await asyncio.to_thread(
-                    _rotate_for,
-                    step.board,
-                    step.earned,
-                    spare_egress.wait_deadline(),
-                )
-                step = policy.send(earned)
+    step = next(policy)
+    while True:
+        if isinstance(step, _ResolveRoute):
+            # Async twin, not `proxy_for`: the sync one blocks on the rotation gate, and blocking
+            # the loop here froze the very requests a drain waits on, so the drain always timed
+            # out and restarted through them (see `spare_egress.proxy_for_async`).
+            step = policy.send(await spare_egress.proxy_for_async(step.group))
+        elif isinstance(step, _SendRequest):
+            try:
+                with spare_egress.riding_the_tunnel(step.proxy):
+                    response = await session.request(method, url, **step.kwargs)
+            except RequestsError as exc:
+                step = policy.throw(exc)
             else:
-                await asyncio.sleep(step.seconds)
-                step = policy.send(None)
-    except StopIteration as settled:
-        return settled.value
+                step = policy.send(response)
+        elif isinstance(step, _RotateEgress):
+            # The deadline starts here, on the loop, not inside `rotate` — otherwise time spent
+            # queueing for an executor thread would not count against the wait cap.
+            earned = await asyncio.to_thread(
+                _rotate_for,
+                step.board,
+                step.earned,
+                spare_egress.wait_deadline(),
+            )
+            step = policy.send(earned)
+        elif isinstance(step, _BackOff):
+            await asyncio.sleep(step.seconds)
+            step = policy.send(None)
+        else:
+            return step.response
 
 
 class HTTPFetcher:

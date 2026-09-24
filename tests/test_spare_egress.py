@@ -163,21 +163,21 @@ def test_failure_is_cached_too(monkeypatch):
 # --- the daemon port (ADR-0195) ------------------------------------------------------------------
 
 
-def _leaving_the_process_fails(monkeypatch):
+def _refuse_leaving_the_process(monkeypatch):
     """Make every way out of the process fail the test: a command, a socket, or the trace."""
 
-    def _refuse(*a, **kw):
+    def _fail_the_test(*args, **kwargs):
         pytest.fail("reached past the in-memory daemon")
 
-    monkeypatch.setattr(spare_egress.subprocess, "run", _refuse)
-    monkeypatch.setattr(spare_egress.socket, "socket", _refuse)
-    monkeypatch.setattr(spare_egress._rq, "get", _refuse)
+    monkeypatch.setattr(spare_egress.subprocess, "run", _fail_the_test)
+    monkeypatch.setattr(spare_egress.socket, "socket", _fail_the_test)
+    monkeypatch.setattr(spare_egress._rq, "get", _fail_the_test)
 
 
 def test_every_test_starts_on_an_in_memory_daemon_with_no_warp_behind_it(monkeypatch):
     """`tests/conftest.py`'s default: the machine CI's test job is, where nothing can be dialled,
     so a walled group stays direct and a rotation earns nothing — without a command being run."""
-    _leaving_the_process_fails(monkeypatch)
+    _refuse_leaving_the_process(monkeypatch)
     monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.0)
     spare_egress.mark_walled("workday", 429)
 
@@ -189,12 +189,12 @@ def test_every_test_starts_on_an_in_memory_daemon_with_no_warp_behind_it(monkeyp
 def test_the_policy_reaches_the_daemon_only_through_the_port(monkeypatch, caplog):
     """A dial, a rotation and both address observations, with every OS lever refused: what the
     policy needs from the outside world is exactly the port's four operations, in this order."""
-    _leaving_the_process_fails(monkeypatch)
+    _refuse_leaving_the_process(monkeypatch)
     monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.0)
     daemon = spare_egress.InMemoryEgressDaemon(
         "socks5h://127.0.0.1:40000",
-        restarts=True,
-        reconnects=True,
+        restart_succeeds=True,
+        reconnect_succeeds=True,
         trace="ip=203.0.113.7\ncolo=SJC\nwarp=on\n",
     )
     spare_egress.use_daemon(daemon)
@@ -212,10 +212,10 @@ def test_the_policy_reaches_the_daemon_only_through_the_port(monkeypatch, caplog
 def test_a_daemon_that_restarts_but_does_not_come_back_re_arms_the_dial(monkeypatch):
     """The in-memory twin of `test_a_failed_rotation_does_not_pin_the_process_to_the_direct_route`:
     the rule belongs to the policy, so it holds whichever daemon is behind the port."""
-    _leaving_the_process_fails(monkeypatch)
+    _refuse_leaving_the_process(monkeypatch)
     monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.0)
     daemon = spare_egress.InMemoryEgressDaemon(
-        "socks5h://127.0.0.1:40000", restarts=True, reconnects=False
+        "socks5h://127.0.0.1:40000", restart_succeeds=True, reconnect_succeeds=False
     )
     spare_egress.use_daemon(daemon)
     spare_egress.mark_walled("workday", 429)
