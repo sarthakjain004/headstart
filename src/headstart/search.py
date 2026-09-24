@@ -1,11 +1,8 @@
-"""Shared conventions for the embed/search layer (ADR-0005, ADR-0008) — and, since
-ADR-0042, the one serving-path search implementation both UIs run.
+"""The one serving-path search implementation both UIs run (ADR-0042), and its where-clause builders.
 
-The model id, the load-bearing task prefixes, the LanceDB table name, the encoder factory,
-and the where-clause builders live here once. The embed/search scripts import the
-conventions instead of re-declaring their own copies, so a mismatched prefix or model id
-can't drift into one script and silently degrade ranking (ADR-0005 warns a wrong prefix
-throws no error), and every caller escapes filter input the same way.
+The where-clause builders live here once, so every caller escapes filter input the same way.
+The embedding conventions it shares with the pipeline — model id, task prefixes, table name,
+encoder — live in :mod:`headstart.embedding_conventions` (ADR-0194).
 
 :func:`build_filter` is the **reference product filter** — the full Search-filter vocabulary
 the UIs expose, previously duplicated in the Space app.
@@ -15,9 +12,6 @@ encoder and the open ``jobs`` table, ``run(args)`` takes a request's query-strin
 and returns projected result rows. Both the HF Space app and the local dev server are thin
 adapters over it — the Space image installs ``headstart`` as a real package (ADR-0153), so
 this module imports ``fx`` and the Search-filter modules the same way everywhere.
-
-Only the encoder helpers need torch/sentence-transformers; they import lazily so the
-constants and the filter builders stay importable (and unit-testable) without the ML stack.
 """
 
 from __future__ import annotations
@@ -40,35 +34,13 @@ from headstart import (
     posted_date_guard,
     salary_known_filter,
 )
+from headstart.embedding_conventions import encode_query
 
 # In the Space nothing calls `setup()` (ADR-0153's app.py boots straight into serving), which
 # is why the one boot line below is a WARNING — `logging.lastResort` carries WARNING and above
 # to stderr with no handler configured, and a served table quietly ignoring whole filters is an
 # anomaly by ADR-0039's own definition.
 _log = log.get(__name__)
-
-MODEL = "nomic-ai/nomic-embed-text-v1.5"
-DOC_PREFIX = "search_document: "  # index time (ADR-0005)
-QUERY_PREFIX = "search_query: "  # query time (ADR-0005)
-PROD_TABLE = "jobs"  # the product's tech corpus (ADR-0019)
-
-
-def load_encoder() -> Any:
-    """The nomic bi-encoder, on the Apple GPU (MPS, fp16) when available else CPU."""
-    import torch
-    from sentence_transformers import SentenceTransformer
-
-    device = "mps" if torch.backends.mps.is_available() else "cpu"
-    model = SentenceTransformer(MODEL, trust_remote_code=True, device=device)
-    return model.half() if device == "mps" else model
-
-
-def encode_query(model: Any, text: str) -> Any:
-    """Encode one search query: query prefix, L2-normalized, float32 — ready for cosine search."""
-    return model.encode([QUERY_PREFIX + text], normalize_embeddings=True)[0].astype(
-        "float32"
-    )
-
 
 # ---- the product search path (ADR-0042) ----
 # Everything below moved from the Space app, which had become the de-facto reference while
@@ -394,6 +366,18 @@ def account_clause(
     if hidden:
         clauses.append(board_clause(hidden, exclude=True))
     return " AND ".join(c for c in clauses if c) or None
+
+
+def request_account_clause(
+    args: Mapping[str, str], followed: Collection[str], hidden: Collection[str]
+) -> str | None:
+    """:func:`account_clause` for one request, ``mine`` read off its query string (ADR-0171).
+
+    Both apps call this with their own Account's lists — the Space from the signed-in Account's
+    stored record, the local renderer from its one in-memory record — so the query-string rule
+    for ``mine`` is written once, beside the clause it switches, rather than in each app.
+    """
+    return account_clause(followed, hidden, mine=args.get("mine") in ("1", "true"))
 
 
 def _keyword_terms(kw: str) -> list[str]:
@@ -875,6 +859,24 @@ def _warn_unknown_filters(
         )
 
 
+def _result_row(row: Mapping[str, Any], query: str) -> dict[str, Any]:
+    """One served result: every :data:`RESULT_COLUMNS` value, plus ``score`` after the id.
+
+    Built from that one tuple rather than a hand-written dict beside it (ADR-0194), so the
+    projection the query asks for and the fields the response carries cannot drift apart. A
+    column the table lacks comes back None. ``id`` is the star identity —
+    ``{ats}:{slug}:{native_id}``. ``url`` is rewritten at serve time (temporary; see
+    :func:`_canonical_url`).
+    """
+    result: dict[str, Any] = {}
+    for column in RESULT_COLUMNS:
+        result[column] = row.get(column)
+        if column == "id":
+            result["score"] = round(1 - row["_distance"], 3) if query else None
+    result["url"] = _canonical_url(row.get("ats"), row.get("url"), row.get("id"))
+    return result
+
+
 class JobSearch:
     """The serving-path search behind one method: parse → filter → rank → project.
 
@@ -891,12 +893,11 @@ class JobSearch:
     ``None`` rather than a number that would imply a relevance this ranking never computed.
     Filters and pagination apply identically either way.
 
-    The two facts the UI templates need — :attr:`atses` for the Board dropdown and
-    :attr:`has_first_seen` for the "first seen" control — are attributes, not methods, so a
-    template context can carry them straight through. :attr:`capabilities` (ADR-0149) bundles
-    those and the other runtime facts into one :class:`IndexCapabilities` for
-    :func:`build_filter` and :func:`headstart.facets.counts`; the capability attributes stay
-    directly settable, since templates and tests both read and monkeypatch them one at a time.
+    The table's runtime facts live in one place, :attr:`capabilities` — an
+    :class:`IndexCapabilities` (ADR-0149) learned once here, handed as-is to :func:`build_filter`
+    and :func:`headstart.facets.counts`, and read field by field by the UI adapters for the
+    Board dropdown, the "first seen" control and the rest (ADR-0194). A test that needs a
+    different table swaps the whole object with :func:`dataclasses.replace`.
     """
 
     def __init__(self, model: Any, table: Any, *, max_k: int = 100, max_page: int = 20):
@@ -904,38 +905,58 @@ class JobSearch:
         self._table = table
         self.max_k = max_k
         self.max_page = max_page
-        # the ATSes actually present in the index — feeds the dropdown and the whitelist
-        self.atses = sorted(
-            {
-                r["ats"]
-                for r in table.search().select(["ats"]).limit(1_000_000).to_list()
-            }
-        )
+        names = table.schema.names
         # `first_seen` only appears on the first pipeline run after ADR-0031; filtering on
         # a column the table lacks errors every query, so the feature stays dark until then.
-        self.has_first_seen = "first_seen" in table.schema.names
+        has_first_seen = "first_seen" in names
         # Same reasoning for the ADR-0082 salary columns, added by the same class of
         # idempotent migration (`index.py`'s `_salary_fields`) — a table that hasn't synced
         # since would error on `has_salary=true` rather than just not supporting it yet.
-        self.has_min_salary_annual = "min_salary_annual" in table.schema.names
+        has_min_salary_annual = "min_salary_annual" in names
         # The Keyword filter's description scope (ADR-0104), same dark-until-migrated rule: the
         # column arrives with the first `index sync` after that ADR, and the UI disables the
         # scope until it does rather than 500ing on it.
-        self.has_description = "description" in table.schema.names
+        has_description = "description" in names
         # The materialized India-filter column (ADR-0138), same rule again: until a table has
         # synced since, `build_filter` falls back to `geo.where("india")`'s slower-but-correct
         # regex alternation rather than erroring on a column that isn't there yet.
-        self.has_country = india_filter.has_column(table.schema.names)
-        # The employment-type booleans are an optional acceleration layer. A pre-migration
-        # table keeps the raw LIKE clauses above, so this can never disable the filter.
-        self.has_employment_type_flags = employment_type_filter.has_flags(
-            table.schema.names
-        )
-        self.has_description_stored = "description_stored" in table.schema.names
-        self.has_salary_known = salary_known_filter.has_flags(table.schema.names)
-        self.has_posted_at_comparable = posted_date_guard.has_flags(table.schema.names)
-        self.has_experience_filter_flags = experience_filter.has_flags(
-            table.schema.names
+        has_country = india_filter.has_column(names)
+        self.capabilities = IndexCapabilities(
+            # the ATSes actually present in the index — feeds the dropdown and the whitelist
+            atses=sorted(
+                {
+                    r["ats"]
+                    for r in table.search().select(["ats"]).limit(1_000_000).to_list()
+                }
+            ),
+            has_first_seen=has_first_seen,
+            has_min_salary_annual=has_min_salary_annual,
+            # The currency whitelist for the ADR-0082 salary bracket, learned the same way and
+            # for the same reason as `atses`: it lands in a where-clause, so it is matched against
+            # what the table holds rather than interpolated from the query string.
+            currencies=(
+                sorted(
+                    {
+                        r["salary_currency"]
+                        for r in table.search()
+                        .select(["salary_currency"])
+                        .limit(1_000_000)
+                        .to_list()
+                        if r.get("salary_currency")
+                    }
+                )
+                if has_min_salary_annual
+                else []
+            ),
+            has_description=has_description,
+            has_country=has_country,
+            # The materialized verdicts (ADR-0173) are an optional acceleration layer: a
+            # pre-migration table keeps each filter's raw clause, so none can disable a filter.
+            has_employment_type_flags=employment_type_filter.has_flags(names),
+            has_description_stored="description_stored" in names,
+            has_salary_known=salary_known_filter.has_flags(names),
+            has_posted_at_comparable=posted_date_guard.has_flags(names),
+            has_experience_filter_flags=experience_filter.has_flags(names),
         )
         list_indices = getattr(table, "list_indices", None)
         self.has_vector_index = bool(
@@ -943,24 +964,7 @@ class JobSearch:
         )
         #: :data:`RESULT_COLUMNS` narrowed to what this table actually has — see that constant
         #: for why the intersection is mandatory rather than defensive.
-        self.projection = tuple(c for c in RESULT_COLUMNS if c in table.schema.names)
-        # The currency whitelist for the ADR-0082 salary bracket, learned the same way and for
-        # the same reason as `atses`: it lands in a where-clause, so it is matched against what
-        # the table holds rather than interpolated from the query string.
-        self.currencies = (
-            sorted(
-                {
-                    r["salary_currency"]
-                    for r in table.search()
-                    .select(["salary_currency"])
-                    .limit(1_000_000)
-                    .to_list()
-                    if r.get("salary_currency")
-                }
-            )
-            if self.has_min_salary_annual
-            else []
-        )
+        self.projection = tuple(c for c in RESULT_COLUMNS if c in names)
         # The Data tab's coverage counts (ADR-0113), filled on first use. Not counted here:
         # boot is the one moment a cold Space has a visitor waiting on it, and nobody has
         # asked for the tab yet.
@@ -993,10 +997,10 @@ class JobSearch:
         dark = [
             column
             for column, live in (
-                ("first_seen", self.has_first_seen),
-                ("min_salary_annual", self.has_min_salary_annual),
-                ("description", self.has_description),
-                (india_filter.COLUMN, self.has_country),
+                ("first_seen", has_first_seen),
+                ("min_salary_annual", has_min_salary_annual),
+                ("description", has_description),
+                (india_filter.COLUMN, has_country),
             )
             if not live
         ]
@@ -1008,28 +1012,15 @@ class JobSearch:
             )
 
     @property
-    def capabilities(self) -> IndexCapabilities:
-        """This table's :class:`IndexCapabilities` (ADR-0149) — the attributes above,
-        bundled for :func:`build_filter` and :func:`headstart.facets.counts`.
+    def salary_bracket_converts(self) -> bool:
+        """Whether a salary bracket can actually cross a currency boundary on this table.
 
-        A property, not a field set once and cached: the individual attributes stay
-        directly settable (the UI templates read them one at a time, and the test suite
-        monkeypatches them the same way), and this just re-packs whatever they currently hold
-        on every access — free, since it costs attribute reads and no table I/O.
+        Two served currencies must both carry a rate; with fewer, `build_filter` compiles the
+        single-currency clause and any copy promising conversion would be describing nothing.
+        Read on every access, like the rate table it consults (ADR-0117).
         """
-        return IndexCapabilities(
-            atses=self.atses,
-            has_first_seen=self.has_first_seen,
-            has_min_salary_annual=self.has_min_salary_annual,
-            currencies=self.currencies,
-            has_description=self.has_description,
-            has_country=self.has_country,
-            has_employment_type_flags=self.has_employment_type_flags,
-            has_description_stored=self.has_description_stored,
-            has_salary_known=self.has_salary_known,
-            has_posted_at_comparable=self.has_posted_at_comparable,
-            has_experience_filter_flags=self.has_experience_filter_flags,
-        )
+        rates = (fx.table() or {}).get("rates") or {}
+        return len([c for c in self.capabilities.currencies if c in rates]) > 1
 
     def parse_filters(self, args: Mapping[str, str]) -> SearchFilters:
         """The :class:`SearchFilters` one request asks for, parsed exactly once.
@@ -1052,7 +1043,7 @@ class JobSearch:
         etype = (args.get("etype") or "").strip() or None
         # The one place a request is parsed, and so the one place a dropped filter can be
         # reported without `facets.counts` repeating it once per option — see the helper.
-        _warn_unknown_filters(ats, etype, self.atses)
+        _warn_unknown_filters(ats, etype, self.capabilities.atses)
         return SearchFilters(
             remote=args.get("remote") == "true",
             max_years=_int("max_years"),
@@ -1158,9 +1149,9 @@ class JobSearch:
         # Whitelisted to a column name, never taken from the query string — this reaches an
         # ORDER BY. An unknown value is no sort at all, which is the existing behaviour.
         sort = SORT_COLUMNS.get((args.get("sort") or "").strip())
-        if sort == "first_seen" and not self.has_first_seen:
+        if sort == "first_seen" and not self.capabilities.has_first_seen:
             sort = None  # same dark-until-migrated rule as the filters above
-        if sort == "min_salary_annual" and not self.has_min_salary_annual:
+        if sort == "min_salary_annual" and not self.capabilities.has_min_salary_annual:
             sort = None  # likewise: the ADR-0082 columns arrive by migration
         # Salary is stored in the employer's own currency (ADR-0082), so ordering the raw
         # column ranked ₹40,00,000 above $300,000 — the first 400 rows of a salary sort were
@@ -1170,10 +1161,10 @@ class JobSearch:
         if sort == "min_salary_annual":
             sort_currency = (
                 filters.salary_currency
-                if filters.salary_currency in self.currencies
+                if filters.salary_currency in self.capabilities.currencies
                 else SALARY_DEFAULT_CURRENCY
             )
-            if sort_currency not in self.currencies:
+            if sort_currency not in self.capabilities.currencies:
                 sort_currency = None
         # `is None`, not `or`: the old route's `int(raw or 20)` gave k=0 → 1 row, and an
         # `or` on the parsed int would silently turn k=0 into the default 20 instead. Same
@@ -1237,7 +1228,7 @@ class JobSearch:
                         "nulls_first": False,
                     }
                 ]
-                if self.has_first_seen
+                if self.capabilities.has_first_seen
                 else []
             )
             ordering.append({"column_name": "id", "ascending": True})
@@ -1293,30 +1284,7 @@ class JobSearch:
                 )
             rows = search.limit(k).offset(offset).to_list()
 
-        result = [
-            {
-                "id": r.get("id"),  # the star identity — {ats}:{slug}:{native_id}
-                "score": round(1 - r["_distance"], 3) if query else None,
-                "title": r["title"],
-                "company": r["company"],
-                "location": r.get("location"),
-                "remote": r["remote"],
-                "employment_type": r.get("employment_type"),
-                "min_years": r.get("min_years"),
-                "salary": r.get("salary"),
-                "min_salary_annual": r.get("min_salary_annual"),
-                "max_salary_annual": r.get("max_salary_annual"),
-                "salary_currency": r.get("salary_currency"),
-                "salary_source": r.get("salary_source"),
-                "ats": r.get("ats"),
-                "posted_at": r.get("posted_at"),
-                "first_seen": r.get("first_seen"),
-                "url": _canonical_url(
-                    r.get("ats"), r.get("url"), r.get("id")
-                ),  # temporary; see _canonical_url
-            }
-            for r in rows
-        ]
+        result = [_result_row(r, query) for r in rows]
         if not query:
             _cache_put(
                 self._browse_cache,
@@ -1417,7 +1385,7 @@ class JobSearch:
 
         One :meth:`count_rows` — measured at 4–6 ms in `headstart.facets`.
         """
-        if not self.has_first_seen:
+        if not self.capabilities.has_first_seen:
             return None
         return self._table.count_rows(
             filter=build_filter(SearchFilters(seen_within=hours), self.capabilities)
@@ -1456,18 +1424,18 @@ class JobSearch:
             fields = {
                 "posted_at": "posted_at IS NOT NULL AND posted_at != ''",
                 "first_seen": "first_seen IS NOT NULL AND first_seen != ''"
-                if self.has_first_seen
+                if self.capabilities.has_first_seen
                 else None,
-                "salary": salary_known_filter.clause(self.has_salary_known)
-                if self.has_min_salary_annual
+                "salary": salary_known_filter.clause(self.capabilities.has_salary_known)
+                if self.capabilities.has_min_salary_annual
                 else None,
                 "min_years": "min_years IS NOT NULL",
                 "description": (
                     "description_stored = true"
-                    if self.has_description_stored
+                    if self.capabilities.has_description_stored
                     else "description IS NOT NULL AND description != ''"
                 )
-                if self.has_description
+                if self.capabilities.has_description
                 else None,
             }
             self._coverage = {

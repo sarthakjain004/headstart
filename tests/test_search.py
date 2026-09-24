@@ -522,8 +522,8 @@ def test_warm_uses_the_same_normalized_key_as_the_first_browser_request(monkeypa
 
 def test_startup_scan_learns_atses_and_first_seen():
     searcher, _ = _searcher()
-    assert searcher.atses == ["darwinbox"]
-    assert searcher.has_first_seen is True
+    assert searcher.capabilities.atses == ["darwinbox"]
+    assert searcher.capabilities.has_first_seen is True
 
 
 def test_empty_query_browses_instead_of_searching_and_never_touches_the_model():
@@ -674,21 +674,23 @@ def test_keyword_scope_alone_is_nulled_so_it_can_never_be_the_blocking_filter():
 
 def test_keyword_description_scope_is_learned_from_the_schema():
     searcher, table = _searcher()
-    assert searcher.has_description == ("description" in table.schema.names)
+    assert searcher.capabilities.has_description == (
+        "description" in table.schema.names
+    )
     table.schema = types.SimpleNamespace(
         names=["ats", "title"]
     )  # no description column
-    assert JobSearch(_Model(), table).has_description is False
+    assert JobSearch(_Model(), table).capabilities.has_description is False
 
 
 def test_has_country_is_learned_from_the_schema():
     """ADR-0138, the same dark-until-migrated rule `has_description` follows above."""
     searcher, table = _searcher()
-    assert searcher.has_country == ("country" in table.schema.names)
+    assert searcher.capabilities.has_country == ("country" in table.schema.names)
     table.schema = types.SimpleNamespace(names=["ats", "title"])  # no country column
-    assert JobSearch(_Model(), table).has_country is False
+    assert JobSearch(_Model(), table).capabilities.has_country is False
     table.schema = types.SimpleNamespace(names=["ats", "title", "country"])
-    assert JobSearch(_Model(), table).has_country is True
+    assert JobSearch(_Model(), table).capabilities.has_country is True
 
 
 def test_posted_at_shape_guard_prefers_the_materialized_flag():
@@ -716,11 +718,11 @@ def test_employment_type_flags_are_used_only_after_the_whole_migration_lands():
             "is_internship",
         ]
     )
-    assert JobSearch(_Model(), table).has_employment_type_flags is True
+    assert JobSearch(_Model(), table).capabilities.has_employment_type_flags is True
     table.schema = types.SimpleNamespace(
         names=["ats", "title", "is_full_time", "is_part_time", "is_contract"]
     )
-    assert JobSearch(_Model(), table).has_employment_type_flags is False
+    assert JobSearch(_Model(), table).capabilities.has_employment_type_flags is False
 
 
 def test_ann_tuning_is_applied_only_when_the_table_has_a_vector_index():

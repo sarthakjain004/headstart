@@ -21,8 +21,8 @@ from __future__ import annotations
 
 import re
 
+from headstart.embedding_conventions import DOC_PREFIX
 from headstart.ingest.derived_meta import derive
-from headstart.search import DOC_PREFIX
 
 _MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]+\)")  # [text](url) -> text
 # Emphasis / heading / quote markers (keep `_`: tech terms). A `#` right after a letter is kept
