@@ -22,7 +22,7 @@ from pathlib import Path
 import lancedb
 import numpy as np
 
-from headstart.search import PROD_TABLE
+from headstart.embedding_conventions import PROD_TABLE
 
 _ROOT = Path(__file__).resolve().parents[2]
 _STORE = _ROOT / "data" / "embeddings" / "jobs"

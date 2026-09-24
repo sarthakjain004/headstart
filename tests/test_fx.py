@@ -208,3 +208,10 @@ def test_a_dropped_rate_names_the_currency_it_silences(tmp_path, caplog):
     assert "falls back to one currency" not in message, (
         "a dropped rate is a partial loss; borrowing the whole-table line would overstate it"
     )
+
+
+def test_as_of_is_the_rate_tables_date_or_none(monkeypatch):
+    monkeypatch.setattr(fx, "table", lambda: {"as_of": "2024-06-01", "rates": {}})
+    assert fx.as_of() == "2024-06-01"
+    monkeypatch.setattr(fx, "table", lambda: None)
+    assert fx.as_of() is None

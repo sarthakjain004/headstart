@@ -97,6 +97,7 @@ from headstart import (
 )
 from headstart.board_identity import ats_of, lower_key
 from headstart.corpus import iter_jobs
+from headstart.embedding_conventions import PROD_TABLE
 from headstart.ingest import (
     PENDING_UPGRADES_PATH,
     REPO_ROOT,
@@ -121,7 +122,6 @@ from headstart.ingest.index_plan import (
     workday_site_jobs,
 )
 from headstart.ingest.update_descriptions import read_store
-from headstart.search import PROD_TABLE
 
 _log = log.get(__name__, __spec__)
 

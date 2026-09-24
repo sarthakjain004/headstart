@@ -32,6 +32,7 @@ from headstart import log
 from headstart.board_identity import board_of
 from headstart.board_priority import load_scores
 from headstart.corpus import iter_jobs
+from headstart.embedding_conventions import MODEL
 from headstart.ingest import PENDING_UPGRADES_PATH, REPO_ROOT, observability, shard_plan
 from headstart.ingest.binpack import (
     lpt_pack,
@@ -44,7 +45,6 @@ from headstart.ingest.doc_prep import (
     is_english,
     to_meta,
 )
-from headstart.search import MODEL
 
 _log = log.get(__name__, __spec__)
 
