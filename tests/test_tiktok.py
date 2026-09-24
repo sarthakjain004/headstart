@@ -8,7 +8,7 @@ of date, matching what was measured across the wider 100-row sample: this API ha
 field at all, so `posted_at` is always None here (asserted below rather than assumed).
 
 What TikTok shares with ByteDance — the walk, the envelope check, the parse rules — is tested once
-per brand in `test_supplier_search.py` (ADR-0198); this file keeps TikTok's identity and its real
+per Board in `test_supplier_search.py` (ADR-0198); this file keeps TikTok's identity and its real
 postings.
 """
 

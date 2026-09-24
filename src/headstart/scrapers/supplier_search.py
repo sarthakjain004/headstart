@@ -12,7 +12,7 @@ careers sites are read from ByteDance's own recruiting backend, the ``supplier``
 1,420) and ``jobs.bytedance.com`` answers ``website-path: tiktok`` with TikTok's (count 4,301); a
 request without the header, or with ``bytedance``, is HTTP 400 ``invalid request`` on both. A
 malformed field names the same Go struct on both hosts (``BizListJobPostReq``). ADR-0139 still
-holds: each brand keeps its own ``ats``, registry entry, ledger row, ``COMPANY``, ``url_shape`` and
+holds: each Board keeps its own ``ats``, registry entry, ledger row, ``COMPANY``, ``url_shape`` and
 ``slug``. Beyond that identity, a subclass states only its host, its ``website-path`` value and
 its public links.
 
@@ -29,13 +29,14 @@ otherwise read as the empty page a finished Board serves, so ``code`` is checked
 and anything but 0 — a missing ``code`` included — keeps the postings already read and marks the
 rest unread rather than raising, which would drop them for the run.
 
-**The walk steps by the rows each page returned and ends on an empty page or at ``count``.** No
-page short of the limit was seen before the last one in a full walk of either Board, and
-``count`` never moved within a walk. A short page mid-walk therefore neither ends the walk nor
-opens a gap after it. The backend serves nothing once ``offset + limit`` passes 10,000: it
-answers 0 rows and reports ``count`` as 10,000, even for a request that overlaps real rows. So no
-request crosses :data:`_RESULT_WINDOW`, and a walk that reaches it is marked truncated whatever
-``count`` says.
+**Each page is asked for at the number of rows already read, and the walk ends on an empty page,
+at ``count``, on a non-zero ``code`` or at the result window.** So a short page mid-walk neither
+ends the walk nor opens a gap after it, which keeps the walk whole under a silent clamp. None was
+seen live: a full walk of either Board had no page short of the limit before the last one, and
+``count`` never moved within a walk. The backend serves nothing once ``offset + limit`` passes
+10,000: it answers 0 rows and reports ``count`` as 10,000, even for a request that overlaps real
+rows. So no request crosses :data:`_RESULT_WINDOW`, and a walk that reaches it is marked truncated
+whatever ``count`` says.
 
 **The listing is the whole Job, with no posted date.** ``description`` and ``requirement`` are on
 every row, in full (0 of 100 sampled ByteDance rows truncated or tagged, 2026-09-11), so there is
@@ -55,8 +56,8 @@ from headstart.scrapers.base import USER_AGENT, BaseScraper
 #: Both hosts served ``limit=1,000`` un-clamped (measured 2026-09-24). Paged anyway: an un-clamped
 #: limit today is not a contract, and the walk below survives a silent clamp.
 _PAGE_SIZE = 200
-#: The last row the backend serves: past ``offset + limit = 10,000`` it answers 0 rows and a
-#: ``count`` of 10,000 (measured 2026-09-24). A walk that reaches it did not see the Board end.
+#: How many rows the backend serves: past ``offset + limit = 10,000`` it answers 0 rows and a
+#: ``count`` of 10,000 (measured 2026-09-24). A walk that reads them all did not see the Board end.
 _RESULT_WINDOW = 10_000
 
 
@@ -64,9 +65,9 @@ class SupplierSearchScraper(BaseScraper):
     """A Board read from the ``supplier`` search API. A subclass sets :attr:`search_url` and
     :attr:`website_path`, plus the identity every Single source scraper states (ADR-0139)."""
 
-    #: This brand's own search endpoint.
+    #: This Board's own host's search endpoint.
     search_url: str
-    #: The header value that selects this brand's Board on the shared backend.
+    #: The header value that selects this Board on the shared backend.
     website_path: str
 
     def alias_key(self) -> str | None:
@@ -93,8 +94,8 @@ class SupplierSearchScraper(BaseScraper):
     def fetch_raw(self) -> Any:
         posts: list[dict] = []
         total = 0
-        offset = 0
-        while offset < _RESULT_WINDOW:
+        while len(posts) < _RESULT_WINDOW:
+            offset = len(posts)
             # Never ask across the window: such a request answers 0 rows, which reads as the end.
             envelope = self._search_page(
                 offset, min(_PAGE_SIZE, _RESULT_WINDOW - offset)
@@ -111,11 +112,10 @@ class SupplierSearchScraper(BaseScraper):
             batch = data.get("job_post_list") or []
             total = data.get("count") or total
             posts.extend(batch)
-            offset += len(batch)
-            if not batch or (total and offset >= total):
+            if not batch or (total and len(posts) >= total):
                 break
         # Near the window `count` itself may read 10,000, so reaching it is a verdict of its own.
-        if offset >= _RESULT_WINDOW:
+        if len(posts) >= _RESULT_WINDOW:
             self.mark_truncated(
                 f"reached the {_RESULT_WINDOW:,}-row result window at {len(posts)} of "
                 f"{total or 'unknown'} postings — the rest is unreadable, not absent"

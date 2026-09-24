@@ -90,6 +90,10 @@ scraper still pages at a fixed size (`_PAGE_SIZE = 200`) rather than requesting 
 an un-clamped limit measured today is not a contract, and every other paginated scraper in this
 repo (icims, oracle, eightfold) makes the same call for the same reason.
 
+*(2026-09-24, ADR-0198: the backend has a 10,000-row result window. Past `offset + limit =
+10,000` it answers 0 rows and reports `count` as 10,000, not the real total. The shared walk never
+asks past that window, and it marks a Board that reaches it as truncated.)*
+
 ## 4. The listing carries the full description — no detail pass
 
 Every posting in `job_post_list` already has full `description` and `requirement` text. Sampled

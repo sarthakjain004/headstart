@@ -19,8 +19,8 @@ downloading those bundles and reading the minified API client (module ``61215`` 
 
 **The Board is ``website-path: en``.** Without the header the host answers HTTP 400 ``invalid
 request``, as it does for ``cn`` (2026-09-11) and ``bytedance`` (2026-09-24); ``en`` is the app's
-own default when no locale cookie is set. No auth cookie, Origin header, or Referer is needed; a bare ``curl`` with this
-repo's own User-Agent gets the same 200 a browser does.
+own default when no locale cookie is set. No auth cookie, Origin header, or Referer is needed; a
+bare ``curl`` with this repo's own User-Agent gets the same 200 a browser does.
 
 **One call reads the whole global board — no region looping.** With no location filter, the API
 returns every posting regardless of country: the same unfiltered query's first page alone spanned
@@ -28,10 +28,10 @@ the US, Singapore, Malaysia, Thailand, the UAE, Hong Kong, the UK, Mexico and So
 ``data.count`` was **1,395** at measurement time and matched the number of ids returned exactly
 once every page had been read.
 
-**A ``GET /api/v1/public/supplier/job/posts/{id}`` route exists but is unused.** It is in the bundle's route table
-(``JOB_DETAIL = "/job/posts/"``); probed live with a few plausible bodies, it answered
-``{"code":-9000002,...,"message":"params is invalid"}`` on a 200. Every listed row already carries
-the description it would add.
+**A ``GET /api/v1/public/supplier/job/posts/{id}`` route exists but is unused.** It is in the
+bundle's route table (``JOB_DETAIL = "/job/posts/"``); probed live with a few plausible bodies, it
+answered ``{"code":-9000002,...,"message":"params is invalid"}`` on a 200. Every listed row
+already carries the description it would add.
 
 **No rate limit found.** 15 sequential POST requests (10 at limit=10, 5 at limit=100, spanning
 offsets 0-590) all returned 200, ~2.3-4.3s each — server-side latency, not throttling; no 429s, no

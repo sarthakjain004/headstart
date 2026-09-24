@@ -50,9 +50,12 @@ normally.
 | `recruit_type.en_name` | `"Intern"` / `"Regular"` (employment type) | 100% |
 | `job_category.en_name` | department (`"Operations"`, `"Machine learning"`, `"R&D"`, …) | 100% |
 | `city_info` | nested `{en_name, parent: {en_name, parent: {...}}}` (city → region → country) | 100% |
-| `job_subject.en_name` | campus-cohort label ("PhD Graduates - 2027 Start"), not a team (re-read 2026-09-22) | 35% |
+| `job_subject.en_name` | narrower team/family label | 35% |
 | `job_post_info` (salary, level, expiry) | object, every sub-field | **0%** — null on every sampled row |
 | `department_info`, `tag_list`, `vacancies`, `process_type`, `channel_online_status` | — | **0%** — null on every sampled row |
+
+*(Re-read 2026-09-22, ADR-0198: `job_subject` is a campus-cohort label ("PhD Graduates - 2027
+Start"), not a team, so it never stands in for `department`.)*
 
 **No date field of any kind exists in this payload.** The reference scraper reads
 `publish_time`/`post_time` keys; neither appears in any of the 100 sampled rows, nor in
@@ -74,7 +77,8 @@ across repeated calls (12 requests, same value every time).
 Only `website-path: tiktok` is required. The reference scraper's own docstring claims
 `Origin`/`Referer` are required too ("otherwise the endpoint refuses with 400") — that is not what
 this host does today; this scraper still sends them since they cost nothing, but they are
-confirmed non-load-bearing.
+confirmed non-load-bearing. *(2026-09-24, ADR-0198: re-measured as non-load-bearing, and the
+shared scraper no longer sends them.)*
 
 A **wrong** `website-path` value is also rejected: `website-path: bytedance` against this same
 host returns HTTP 400 (see the ByteDance check below), so the header is validated against a fixed
@@ -115,7 +119,8 @@ page came back under 100 in either sweep, so the "a short page is not always the
 oracle.py's own docstring warns about (which this scraper's terminator does *not* independently
 guard against) has no live evidence against this ATS today — worth re-checking if a future sweep
 ever disagrees with itself. *(2026-09-24, ADR-0198: the shared walk no longer stops on a short
-page. It steps by the rows each page returned and ends only on an empty page or at `count`.)*
+page. It asks for each page at the number of rows already read, and it ends on an empty page, at
+`count`, on a non-zero `code` or at the backend's 10,000-row result window.)*
 
 **A different failure mode does have live evidence, and the scraper's first version missed it.**
 Probing a handful of malformed requests (not part of the ordinary crawl) found one that returns

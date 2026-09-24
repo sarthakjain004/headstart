@@ -6,7 +6,7 @@ three levels of its parent chain (city/state/country), chosen to exercise the lo
 Measurements behind every assertion are in `docs/bytedance/2026-09-11_api-measurement.md`.
 
 What ByteDance shares with TikTok — the walk, the envelope check, the parse rules — is tested once
-per brand in `test_supplier_search.py` (ADR-0198); this file keeps ByteDance's identity and its
+per Board in `test_supplier_search.py` (ADR-0198); this file keeps ByteDance's identity and its
 real postings.
 """
 

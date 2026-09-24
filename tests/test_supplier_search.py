@@ -1,7 +1,7 @@
 """Tests for `headstart.scrapers.supplier_search`, the implementation `tiktok` and `bytedance`
 share (ADR-0198).
 
-Every test runs once per brand, through that brand's own scraper class and a fake `Fetcher`
+Every test runs once per Board, through that Board's own scraper class and a fake `Fetcher`
 standing in for the backend — so what is pinned is each Board's behaviour, not a private helper.
 The envelopes mirror what both hosts answered live on 2026-09-24.
 """
@@ -16,13 +16,10 @@ from headstart.models import html_to_text
 from headstart.scrapers.bytedance import ByteDanceScraper
 from headstart.scrapers.tiktok import TikTokScraper
 
-BRANDS = [
+BOARDS = [
     pytest.param(TikTokScraper, "lifeattiktok.com", id="tiktok"),
     pytest.param(ByteDanceScraper, "jobs.bytedance.com", id="bytedance"),
 ]
-SCRAPED_AT = "2026-01-01T00:00:00+00:00"
-
-
 RESULT_WINDOW = 10_000
 
 
@@ -77,7 +74,7 @@ class _SupplierSearchBackend:
         raise AssertionError("the supplier search API has no detail pass")
 
 
-def _scraper(scraper_class, slug, answer):
+def _scraper_with_backend(scraper_class, slug, answer):
     backend = _SupplierSearchBackend(answer)
     return scraper_class(slug, fetcher=backend), backend
 
@@ -104,12 +101,12 @@ def _scraper(scraper_class, slug, answer):
         ),
     ],
 )
-def test_each_brand_posts_its_own_board_selector_to_its_own_host(
+def test_each_board_posts_its_own_selector_to_its_own_host(
     scraper_class, slug, search_url, website_path
 ):
     # One backend: the `website-path` header, not the host, picks the Board (ADR-0198), and
-    # these are the two values measured live to select each brand's Board.
-    scraper, backend = _scraper(
+    # these are the two values measured live to select each Board.
+    scraper, backend = _scraper_with_backend(
         scraper_class, slug, _paged_board_answer(_postings(3), count=3)
     )
     scraper.fetch_raw()
@@ -125,9 +122,9 @@ def test_each_brand_posts_its_own_board_selector_to_its_own_host(
 # --------------------------------------------------------------------------- the walk
 
 
-@pytest.mark.parametrize("scraper_class,slug", BRANDS)
+@pytest.mark.parametrize("scraper_class,slug", BOARDS)
 def test_the_walk_reads_every_page_until_the_stated_count(scraper_class, slug):
-    scraper, backend = _scraper(
+    scraper, backend = _scraper_with_backend(
         scraper_class, slug, _paged_board_answer(_postings(450), count=450)
     )
     posts = scraper.fetch_raw()
@@ -136,7 +133,7 @@ def test_the_walk_reads_every_page_until_the_stated_count(scraper_class, slug):
     assert scraper.truncated is None
 
 
-@pytest.mark.parametrize("scraper_class,slug", BRANDS)
+@pytest.mark.parametrize("scraper_class,slug", BOARDS)
 def test_a_short_page_mid_walk_neither_ends_the_walk_nor_leaves_a_gap(
     scraper_class, slug
 ):
@@ -149,16 +146,16 @@ def test_a_short_page_mid_walk_neither_ends_the_walk_nor_leaves_a_gap(
         page = postings[offset : offset + (150 if offset == 0 else limit)]
         return 200, {"code": 0, "data": {"job_post_list": page, "count": 450}}
 
-    scraper, backend = _scraper(scraper_class, slug, clamped_first_page)
+    scraper, backend = _scraper_with_backend(scraper_class, slug, clamped_first_page)
     posts = scraper.fetch_raw()
     assert [request.body["offset"] for request in backend.requests] == [0, 150, 350]
     assert [post["id"] for post in posts] == [post["id"] for post in postings]
     assert scraper.truncated is None
 
 
-@pytest.mark.parametrize("scraper_class,slug", BRANDS)
+@pytest.mark.parametrize("scraper_class,slug", BOARDS)
 def test_an_empty_page_ends_the_walk_when_no_count_is_stated(scraper_class, slug):
-    scraper, backend = _scraper(
+    scraper, backend = _scraper_with_backend(
         scraper_class, slug, _paged_board_answer(_postings(250), count=0)
     )
     posts = scraper.fetch_raw()
@@ -167,9 +164,9 @@ def test_an_empty_page_ends_the_walk_when_no_count_is_stated(scraper_class, slug
     assert scraper.truncated is None
 
 
-@pytest.mark.parametrize("scraper_class,slug", BRANDS)
+@pytest.mark.parametrize("scraper_class,slug", BOARDS)
 def test_a_board_short_of_its_own_count_is_marked_truncated(scraper_class, slug):
-    scraper, _ = _scraper(
+    scraper, _ = _scraper_with_backend(
         scraper_class, slug, _paged_board_answer(_postings(200), count=300)
     )
     posts = scraper.fetch_raw()
@@ -177,11 +174,11 @@ def test_a_board_short_of_its_own_count_is_marked_truncated(scraper_class, slug)
     assert "200 of 300" in scraper.truncated
 
 
-@pytest.mark.parametrize("scraper_class,slug", BRANDS)
+@pytest.mark.parametrize("scraper_class,slug", BOARDS)
 def test_a_negligible_shortfall_stays_authoritative(scraper_class, slug):
     # 991 of 1,000 is at/above `MIN_AUTHORITATIVE_SHARE` (ADR-0121): the 9 missing ids are left
     # to ADR-0083's grace period instead.
-    scraper, _ = _scraper(
+    scraper, _ = _scraper_with_backend(
         scraper_class, slug, _paged_board_answer(_postings(991), count=1000)
     )
     scraper.fetch_raw()
@@ -196,11 +193,11 @@ def test_a_negligible_shortfall_stays_authoritative(scraper_class, slug):
         pytest.param(RESULT_WINDOW, id="count-stops-at-the-window"),
     ],
 )
-@pytest.mark.parametrize("scraper_class,slug", BRANDS)
+@pytest.mark.parametrize("scraper_class,slug", BOARDS)
 def test_reaching_the_result_window_marks_truncated(scraper_class, slug, stated_count):
     # The backend serves nothing past offset + limit = 10,000 (measured 2026-09-24): a walk that
     # gets there did not see the Board end, whatever `count` says.
-    scraper, backend = _scraper(
+    scraper, backend = _scraper_with_backend(
         scraper_class, slug, _paged_board_answer(_postings(12_000), count=stated_count)
     )
     posts = scraper.fetch_raw()
@@ -209,13 +206,13 @@ def test_reaching_the_result_window_marks_truncated(scraper_class, slug, stated_
     assert "result window" in scraper.truncated
 
 
-@pytest.mark.parametrize("scraper_class,slug", BRANDS)
+@pytest.mark.parametrize("scraper_class,slug", BOARDS)
 def test_a_clamped_walk_reads_up_to_the_window_without_asking_across_it(
     scraper_class, slug
 ):
     # Pages clamped to 150 rows leave offsets off the 200 grid; a request crossing 10,000 would
     # answer 0 rows and end the walk 50 rows short with nothing said.
-    scraper, backend = _scraper(
+    scraper, backend = _scraper_with_backend(
         scraper_class,
         slug,
         _paged_board_answer(_postings(12_000), count=12_000, clamp=150),
@@ -235,7 +232,7 @@ def test_a_clamped_walk_reads_up_to_the_window_without_asking_across_it(
 # --------------------------------------------------------------------------- the envelope
 
 
-@pytest.mark.parametrize("scraper_class,slug", BRANDS)
+@pytest.mark.parametrize("scraper_class,slug", BOARDS)
 def test_a_nonzero_code_on_http_200_keeps_what_was_read_and_marks_truncated(
     scraper_class, slug
 ):
@@ -251,26 +248,28 @@ def test_a_nonzero_code_on_http_200_keeps_what_was_read_and_marks_truncated(
             "data": {"job_post_list": postings[:limit], "count": 500},
         }
 
-    scraper, _ = _scraper(scraper_class, slug, fails_on_the_second_page)
+    scraper, _ = _scraper_with_backend(scraper_class, slug, fails_on_the_second_page)
     posts = scraper.fetch_raw()
     assert len(posts) == 200
     assert "code -4000001 (System error) at offset 200" in scraper.truncated
     assert "200 postings read so far" in scraper.truncated
 
 
-@pytest.mark.parametrize("scraper_class,slug", BRANDS)
+@pytest.mark.parametrize("scraper_class,slug", BOARDS)
 def test_an_envelope_without_a_code_is_not_read_as_success(scraper_class, slug):
-    scraper, _ = _scraper(
+    scraper, _ = _scraper_with_backend(
         scraper_class, slug, lambda offset, limit: (200, {"data": None})
     )
     assert scraper.fetch_raw() == []
     assert "code None" in scraper.truncated
 
 
-@pytest.mark.parametrize("scraper_class,slug", BRANDS)
+@pytest.mark.parametrize("scraper_class,slug", BOARDS)
 def test_an_http_error_raises(scraper_class, slug):
     # A missing or unknown `website-path` is HTTP 400 `invalid request`, no JSON body.
-    scraper, _ = _scraper(scraper_class, slug, lambda offset, limit: (400, None))
+    scraper, _ = _scraper_with_backend(
+        scraper_class, slug, lambda offset, limit: (400, None)
+    )
     with pytest.raises(RuntimeError, match="HTTP 400"):
         scraper.fetch_raw()
 
@@ -278,15 +277,17 @@ def test_an_http_error_raises(scraper_class, slug):
 # --------------------------------------------------------------------------- parse
 
 
-def _parse_one(scraper_class, slug, posting: dict):
-    scraper, _ = _scraper(scraper_class, slug, _paged_board_answer([posting], count=1))
+def _fetch_one_job(scraper_class, slug, posting: dict):
+    scraper, _ = _scraper_with_backend(
+        scraper_class, slug, _paged_board_answer([posting], count=1)
+    )
     (job,) = scraper.fetch()
     return job
 
 
-@pytest.mark.parametrize("scraper_class,slug", BRANDS)
-def test_a_posting_parses_to_one_job_on_its_brands_board(scraper_class, slug):
-    job = _parse_one(
+@pytest.mark.parametrize("scraper_class,slug", BOARDS)
+def test_a_posting_parses_to_one_job_on_its_board(scraper_class, slug):
+    job = _fetch_one_job(
         scraper_class,
         slug,
         {
@@ -320,9 +321,9 @@ def test_a_posting_parses_to_one_job_on_its_brands_board(scraper_class, slug):
     assert job.posted_at is None  # no date field exists anywhere in this API
 
 
-@pytest.mark.parametrize("scraper_class,slug", BRANDS)
+@pytest.mark.parametrize("scraper_class,slug", BOARDS)
 def test_a_posting_without_an_id_or_a_title_is_dropped(scraper_class, slug):
-    scraper, _ = _scraper(
+    scraper, _ = _scraper_with_backend(
         scraper_class,
         slug,
         _paged_board_answer(
@@ -338,9 +339,9 @@ def test_a_posting_without_an_id_or_a_title_is_dropped(scraper_class, slug):
 
 
 @pytest.mark.parametrize("city_info", [None, {}], ids=["null", "empty"])
-@pytest.mark.parametrize("scraper_class,slug", BRANDS)
+@pytest.mark.parametrize("scraper_class,slug", BOARDS)
 def test_missing_optional_fields_parse_to_none(scraper_class, slug, city_info):
-    job = _parse_one(
+    job = _fetch_one_job(
         scraper_class,
         slug,
         {
@@ -361,9 +362,9 @@ def test_missing_optional_fields_parse_to_none(scraper_class, slug, city_info):
     assert job.description is None
 
 
-@pytest.mark.parametrize("scraper_class,slug", BRANDS)
+@pytest.mark.parametrize("scraper_class,slug", BOARDS)
 def test_i18n_name_stands_in_for_a_missing_or_blank_en_name(scraper_class, slug):
-    job = _parse_one(
+    job = _fetch_one_job(
         scraper_class,
         slug,
         {
@@ -377,6 +378,25 @@ def test_i18n_name_stands_in_for_a_missing_or_blank_en_name(scraper_class, slug)
     assert job.department == "Operations"
     assert job.employment_type == "Intern"
     assert job.location == "Seattle, Washington"
+
+
+@pytest.mark.parametrize("scraper_class,slug", BOARDS)
+def test_every_label_is_stripped(scraper_class, slug):
+    job = _fetch_one_job(
+        scraper_class,
+        slug,
+        {
+            "id": "6",
+            "title": "Posting",
+            "job_category": {"en_name": " R&D "},
+            "recruit_type": {"en_name": "Regular\n"},
+            "city_info": {"en_name": " Singapore", "parent": {"en_name": "Singapore "}},
+        },
+    )
+    assert job.department == "R&D"
+    assert job.employment_type == "Regular"
+    # Stripped before the repeat check, so padding cannot make one place read as two.
+    assert job.location == "Singapore"
 
 
 @pytest.mark.parametrize(
@@ -394,26 +414,28 @@ def test_i18n_name_stands_in_for_a_missing_or_blank_en_name(scraper_class, slug)
         ),
     ],
 )
-@pytest.mark.parametrize("scraper_class,slug", BRANDS)
+@pytest.mark.parametrize("scraper_class,slug", BOARDS)
 def test_location_names_each_place_once(scraper_class, slug, chain, expected):
     city_info = None
     for name in reversed(chain):
         city_info = {"en_name": name, "parent": city_info}
-    job = _parse_one(
+    job = _fetch_one_job(
         scraper_class, slug, {"id": "5", "title": "Posting", "city_info": city_info}
     )
     assert job.location == expected
 
 
-@pytest.mark.parametrize("scraper_class,slug", BRANDS)
+@pytest.mark.parametrize("scraper_class,slug", BOARDS)
 def test_a_single_source_board_is_its_own_alias(scraper_class, slug):
     # ADR-0139: no sibling Board to alias against, so no redirect probe is made either.
-    scraper, backend = _scraper(scraper_class, slug, _paged_board_answer([], count=0))
+    scraper, backend = _scraper_with_backend(
+        scraper_class, slug, _paged_board_answer([], count=0)
+    )
     assert scraper.alias_key() == slug
     assert backend.requests == []
 
 
-@pytest.mark.parametrize("scraper_class,slug", BRANDS)
+@pytest.mark.parametrize("scraper_class,slug", BOARDS)
 def test_the_listing_is_the_whole_job(scraper_class, slug):
     # `description` and `requirement` are on every listed row: no detail pass to make.
     assert scraper_class.has_detail_pass is False

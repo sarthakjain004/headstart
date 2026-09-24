@@ -94,8 +94,9 @@ For each difference:
   Marking truncated keeps those postings, and `update_ledgers` treats the Board exactly as it treats
   a raised one ("truncated or raised", ADR-0053). `tiktok.py`'s `if code:` let a missing `code`
   through as success, so that half of its rule is not kept.
-- **Next offset: `+= len(batch)`, and a short page does not end the walk.** The walk ends only on an
-  empty page or at `offset >= count`. No mid-walk short page was measured on either Board, so the
+- **Next offset: the number of rows already read (TikTok's `+= len(batch)`), and a short page does
+  not end the walk.** The walk ends on an empty page, at `count`, on a non-zero `code` or at the
+  result window below. No mid-walk short page was measured on either Board, so the
   two copies read the same rows today. Under a silent clamp or a transient short page, this is the
   only one of the three rules that neither skips rows (`+= _PAGE_SIZE`) nor stops early (TikTok's
   short-page stop). A walk that still ends short of `count` is reported by
@@ -119,7 +120,10 @@ reaches row 10,000 is marked truncated whatever `count` says, because `count` it
 10,000 there. A Board of exactly 10,000 postings would therefore be marked truncated when it is
 complete. That is the conservative error, and the largest Board today is 4,301. The window also
 holds under a silent clamp: pages of 50 still walk to row 10,000, where a page cap would stop at
-2,500.
+2,500. The cost is that nothing bounds the number of requests any more, only the rows. Under a
+clamp to 10 rows, TikTok's 4,298 postings would take about 430 requests, 15 to 30 minutes at the 2
+to 4 seconds a ByteDance request took on 2026-09-11. Both hosts served 1,000 rows unclamped, so
+this is hypothetical today.
 
 ## Proof that no Job changed
 
@@ -134,10 +138,9 @@ Jobs were compared field by field, ignoring `scraped_at`.
 The *before* run's raw postings were also parsed again with the new code. Every one of the 5,721
 Jobs came out identical. Neither run was truncated.
 
-After the review changes (the result window replaced the page caps), the merge-base classes and
-the merged ones ran back to back against the live Boards. TikTok had shrunk to 4,298 by then, and
-both read those 4,298; both read ByteDance's 1,420. No id appeared on one side only, and no Job
-differed.
+After each review round (the result window replaced the page caps), the merge-base classes and
+the merged ones ran back to back against the live Boards. On the last run both sides read the same
+4,298 TikTok and 1,421 ByteDance postings. No id appeared on one side only, and no Job differed.
 
 ## Alternatives considered
 
@@ -156,9 +159,12 @@ differed.
 - A Board past 10,000 postings is marked truncated at the window, not read short in silence. That
   holds whether `count` states its real total or stops at 10,000; the second case is unmeasured,
   and it is why reaching the window is a verdict of its own. Neither Board is within twice that
-  size: the largest today is TikTok, at 4,301.
-- A non-zero `code` on ByteDance is now an INFO truncation line instead of the traceback `harvest`
-  prints for an unexpected exception. The Board's authority is decided the same way either way.
+  size: the largest today is TikTok, at 4,301. A Board that stayed past the window would be
+  scope-excluded on every run (ADR-0053), which has no drain, so its closed postings would be
+  served indefinitely. The old page caps behaved the same way.
+- A non-zero `code` on ByteDance is now an INFO truncation line. Before, it raised an unexpected
+  exception, and `harvest` prints a traceback only for the first of those in a run (`log.FirstOnly`)
+  and an INFO line for each later one. The Board's authority is decided the same way either way.
 - `tiktok.py`'s claim of "separate request shapes" and `bytedance.py`'s "`accept-language` is
   required" and "reconsider as one scraper" are gone from the docstrings. The 2026-09-11 measurement
   docs now carry a note pointing here.
