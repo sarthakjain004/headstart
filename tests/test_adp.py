@@ -543,8 +543,9 @@ def test_the_vendor_name_is_never_served_as_the_employer():
 
     assert company_name.from_title("adp", "ADP", COX) is None
     assert company_name.from_title("adp", "Automatic Data Processing", COX) is None
+    # a real client's all-caps legal name, title-cased (ADR-0209)
     assert (
-        company_name.from_title("adp", "2LIFE COMMUNITIES", COX) == "2LIFE COMMUNITIES"
+        company_name.from_title("adp", "2LIFE COMMUNITIES", COX) == "2Life Communities"
     )
 
 

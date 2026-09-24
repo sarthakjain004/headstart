@@ -329,6 +329,39 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "smartrecruiters:piqc",
         "smartrecruiters:rebeccajdemo",
         "smartrecruiters:rhaegalsandbox",
+        # Found by the 2026-09-24 company-name research (ADR-0209) and re-read live through each
+        # Board's own scraper on 2026-09-25. BambooHR: `implementation` names itself
+        # "Implementation - BLOCKING DOMAIN" (og:site_name) and serves 3 stock postings dated
+        # 2019 ("IT Security Engineer" in "Mayfaird, London, City of", "Software Engineer",
+        # "Account Executive"); `whitmansandbox` ("Whitman Sandbox") serves the same three plus
+        # "Best job ever" and "Test job 2" in "Walla Walla, WA, Aruba".
+        "bamboohr:implementation",
+        "bamboohr:whitmansandbox",
+        # Gem integration sandboxes, each serving the same 6 stock postings (CFO, Data Scientist,
+        # Enterprise Account Executive, Senior Software Engineer, Senior Technical Recruiter,
+        # Software Engineering Intern) under a company named `ats_sandbox_yello.co`,
+        # `ats_sandbox_colorblastventures.com`, `integration_sandbox_brighthire.ai` or
+        # `sandbox_schonfeld.com`. Schonfeld's real Boards are separate ledger rows.
+        "gem:atssandboxcolorblastventures-com",
+        "gem:atssandboxyello-co",
+        "gem:integrationsandboxbrighthire-ai",
+        "gem:sandboxschonfeld-com",
+        # Jobvite: `halogen-customer-support` is a support team's test tenant, 59 postings:
+        # "Beni - Requisition A", "BL Test Req", "BLBLTest", "BL - Test Approval notes",
+        # "CM Agency req", five bare "Accountant"s.
+        "jobvite:halogen-customer-support",
+        # SAP's own SuccessFactors demo tenants ("BestRun", bestrunsap.com on ace1950/59/61/62's
+        # home pages): all eight serve the same demo requisitions ("Engineer II", "Scheduler",
+        # "Project Execution Lead", "Руководство и планирование", "(SB)" copies) at SAP's demo
+        # cost-centre locations ("San Francisco (0300-0003)", "Berlin 1010 0001").
+        "successfactors:ace1950.jobs2web.com",
+        "successfactors:ace1954.jobs2web.com",
+        "successfactors:ace1955.jobs2web.com",
+        "successfactors:ace1958.jobs2web.com",
+        "successfactors:ace1959.jobs2web.com",
+        "successfactors:ace1960.jobs2web.com",
+        "successfactors:ace1961.jobs2web.com",
+        "successfactors:ace1962.jobs2web.com",
         # Zoho (careers page's embedded jobs): `zohocorp2.zohorecruit.com` is Zoho's own QA
         # tenant. Its company name carries an XSS probe (`Zoho India ''>>"">>"> ... <img src=x
         # onerror=alert(100)>`), as do 3 of its 28 titles; the rest read "Java Developer CRM Deal

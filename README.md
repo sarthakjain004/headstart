@@ -122,9 +122,12 @@ literal "Recruitment", and `adp_recruiting` (ADP Recruiting Management, a separa
 reads `clientName` off the career-site record it already fetches for its token (ADR-0202). The
 eight **Single source scrapers** above need no page fetch for
 it: one fixed company each, so the name is declared as `BaseScraper.COMPANY` and always served.
-Every *other* ATS serves the **ATS slug** in that field instead, so a row's `company` may be
-either — four served rows in five carry a slug rather than a name, which is why `CompanyPrefs` is
-keyed by **board_key** and never by company name.
+No Board is served under its **ATS slug** (ADR-0209). A hand-curated name in
+`config/company_names.csv` overrides every source; an all-caps legal name is title-cased; and a
+Board no source names is served under its humanised tenant (`nvidia.wd5.myworkdayjobs.com/…` is
+"Nvidia", `careers-gd-ais.icims.com` is "GD AIS"), or under no name at all where that tenant is only
+a vendor's code (Oracle's pods, ADP's GUIDs). A name is a display value, never an identity, which
+is why `CompanyPrefs` is keyed by **board_key** and never by company name.
 
 The liveness pipeline has probed **304,983 ledger rows**: 187,173 live, 100,917 dead, 16,893 unknown
 — rows, not boards; they collapse to 180,541 Unique Boards once duplicate spellings of the same
@@ -280,16 +283,16 @@ table in lockstep with the committed ledger:
 | --- | ---: | --- |
 | live rows in the ledger | 187,173 | a row, not a board — 6,632 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −25,488 | all of it `join` |
-| − `config.EXCLUDED_BOARDS` | −90 | vendor test/sandbox/demo boards and one historical feed, confirmed by reading their postings |
+| − `config.EXCLUDED_BOARDS` | −105 | vendor test/sandbox/demo boards and one historical feed, confirmed by reading their postings |
 | − alias ledger | −900 | one board under a second hostname or label, a career section or career site another of the same tenant already covers, or an Eightfold career site its backing ATS board already serves (ADR-0111, ADR-0182, ADR-0186, ADR-0202, ADR-0205) |
 | − case-variant dedupe | −6,630 | `company/External` and `company/external` are one board (ADR-0023) |
 | − `config.PARKED_BOARDS` | −13 | real boards withheld for now — five for scrape cost, two for near-duplicate spam, six Jibe clients whose every posting is on a Workday or Oracle board already held |
-| = **Scrapable Board** | **154,052** | |
+| = **Scrapable Board** | **154,037** | |
 
-That order matters: excluding before deduping reads −90 and −6,630, deduping first reads −88,
-because two excluded boards were themselves duplicates. Both land on 154,052.
+That order matters: excluding before deduping reads −105 and −6,630, deduping first reads −103,
+because two excluded boards were themselves duplicates. Both land on 154,037.
 
-Of those, **101,502 are currently hiring** — the 52,550 live-but-empty boards are skipped as having
+Of those, **101,487 are currently hiring** — the 52,550 live-but-empty boards are skipped as having
 nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
 sticky measure of tech-job yield) and a random exploration tail drawn from everything else, so
 newly-productive boards can never starve and eviction keeps working on boards outside the head.
@@ -308,7 +311,7 @@ fails if this table drifts from it.
 | --- | --- | --- |
 | `id` | string | `{ats}:{slug}:{native_id}` — the Board key is everything before the last `:` |
 | `ats` | string | `greenhouse`, `workday`, `ashby`, `darwinbox`, … |
-| `company` | string | the company's name where its Board states one (see *ATS coverage*, above); otherwise the ATS slug |
+| `company` | string | the company's name: a curated one, else the one its Board states, else its humanised tenant; empty where the tenant is only a code (see *ATS coverage*, above; ADR-0209) |
 | `title` | string | embedded, with the description |
 | `description` | string | the Job's description text, so the Keyword filter can match inside it (ADR-0104). **Nullable** — null on rows indexed before the column existed and on Jobs whose detail pass found nothing. Stored, not served: the API omits it |
 | `description_stored` | bool | whether this row carries `description`; materialized and bitmap-indexed so coverage does not scan the text column (ADR-0173) |
@@ -408,7 +411,7 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
   reliable-fetch seam), `config.py`, `scrapable_boards.py` (which Boards a run may scrape,
   ADR-0191), `harvest.py` (the scrape engine), `liveness.py`, `corpus.py`,
   `tech_filter.py` (ADR-0017), `experience.py`, `salary.py` (ADR-0082), `geo.py`, `remote.py`,
-  `company_name.py` (ADR-0114), `search.py` (shared embed/search constants + filter builder),
+  `company_name.py` (ADR-0114, ADR-0209), `search.py` (shared embed/search constants + filter builder),
   `facets.py` (ADR-0084), `board_priority.py` (ADR-0022), `board_cost.py` (measured scrape
   seconds, ADR-0027), `board_aliases.py`, `board_identity.py`, `board_description_gap.py`,
   `roles.py`, `profile_extract.py`, `fx.py`, `fetcher.py`, `fanout_stats.py`; plus

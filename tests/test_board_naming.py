@@ -1,4 +1,4 @@
-"""Naming a Board: a stated company or alias wins, and a slug is tidied without inventing."""
+"""Naming a Board: a stated company or alias wins, and a slug is humanised without inventing."""
 
 from __future__ import annotations
 
@@ -19,11 +19,11 @@ from headstart.ingest import board_naming
         ("", "workday:micron/External", "Micron"),
         ("", "icims:jobs-bylight.icims.com", "Bylight"),
         # Taleo Enterprise's slug is a whole URL; it used to tidy to "Https:".
-        ("", "taleo_enterprise:https://hdr.taleo.net/careersection/ex", "Hdr"),
+        ("", "taleo_enterprise:https://hdr.taleo.net/careersection/ex", "HDR"),
         # SuccessFactors rows carry the host's first label as the company; it names the host.
         ("www", "successfactors:www.afuturewithus.com", "Afuturewithus"),
         ("apply", "successfactors:apply.careers.hsbc.com", "Hsbc"),
-        ("join", "successfactors:join.cnh.com", "Cnh"),
+        ("join", "successfactors:join.cnh.com", "CNH"),
         ("opportunities", "successfactors:opportunities.vodafone.com", "Vodafone"),
         # A Workday site name in the company column is cased, but it is not the company.
         ("EXTERNAL_CAREERS", "workday:boeing/EXTERNAL_CAREERS", "Boeing"),
@@ -34,8 +34,8 @@ from headstart.ingest import board_naming
         # A cased name equal to the whole slug is still the Board's own spelling.
         ("AbhiBus", "smartrecruiters:AbhiBus", "AbhiBus"),
         # A host label that names the company is not a board word, so it stays.
-        ("sap", "successfactors:jobs.sap.com", "Sap"),
-        ("six-group", "successfactors:careers.six-group.com", "Six Group"),
+        ("sap", "successfactors:jobs.sap.com", "SAP"),
+        ("six-group", "successfactors:careers.six-group.com", "SIX Group"),
         # Taleo Business Edition: the ledger spelling is not a name, and the pod is not a company.
         (
             "GATEWAYVENT:77@phg.tbe.taleo.net/phg01",
@@ -45,7 +45,7 @@ from headstart.ingest import board_naming
         (
             "",
             "taleo_be:https://phh.tbe.taleo.net/phh03/ats/careers/v2/searchResults?org=ACME&cws=1",
-            "Acme",
+            "ACME",
         ),
         # The ATS's own title for a site is not the employer; the host names it instead.
         (
@@ -70,7 +70,7 @@ def test_display_name(company: str, board: str, expected: str) -> None:
 
 
 def test_derivation_never_invents_an_expansion() -> None:
-    """The *derivation* only tidies. An unaliased `swa` stays "Swa", never "Southwest Airlines".
+    """The *derivation* only spells. An unaliased `swa` is "SWA", never "Southwest Airlines".
 
     Expanding an abbreviation is human input, and it arrives as an explicit DISPLAY_ALIASES
     entry (below) rather than as a guess the code makes from three letters.

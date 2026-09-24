@@ -455,8 +455,8 @@ def test_the_scraper_declares_a_detail_pass():
 def test_the_company_name_is_the_board_page_title():
     """The `<title>` is the bare name — equal to the SSR payload's `companyDetails.name` on 757
     of 757 live tenants — so the shared resolver reads it through a catch-all, and its shared
-    refusals still hold: a separator, a hostname, or a title that is the slug itself keep the
-    slug."""
+    refusals still hold: a separator or a title that is the slug itself names nothing. A name
+    written as a domain is the company's own (ADR-0209)."""
     assert _scraper().board_page() == f"https://jobs.pyjamahr.com/{SLUG}"
     assert company_name.from_title("pyjamahr", "Octa Byte AI Pvt Ltd", "8byte") == (
         "Octa Byte AI Pvt Ltd"
@@ -464,7 +464,7 @@ def test_the_company_name_is_the_board_page_title():
     assert company_name.from_title("pyjamahr", "RealPage | Rexera", "rexera") is None
     assert (
         company_name.from_title("pyjamahr", "aainacareers.com", "aainacareerscom")
-        is None
+        == "aainacareers.com"
     )
     assert company_name.from_title("pyjamahr", "smallcase", "smallcase") is None
 

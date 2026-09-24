@@ -5,7 +5,7 @@ ADR-0143 Board-delta ledger, which is keyed by **board_key**, while a person typ
 name, so something has to join the two. This stage writes that join as a static file the Space
 serves, `data/state/company_directory.json`:
 
-    {"companies": [{"name": "Hpe",
+    {"companies": [{"name": "HPE",
                     "boards": ["workday:hpe/ACJobSite", "workday:hpe/Jobsathpe"]}, ...]}
 
 It runs in the pipeline rather than the Space because the naming rules live in `board_naming`,
@@ -154,8 +154,11 @@ def companies(boards: set[str], names: dict[str, str]) -> list[dict]:
     for board in boards:
         clusters[root(board)].append(board)
     entries = [
-        {"name": _company_name(cluster, names), "boards": sorted(cluster)}
+        {"name": name, "boards": sorted(cluster)}
         for cluster in clusters.values()
+        # A company nobody can name cannot be picked by name: its tenant is only a code and no
+        # source states one (ADR-0209). Its Boards still count toward the Total breakdown.
+        if (name := _company_name(cluster, names))
     ]
     # Sorted so the same Boards always write the same file.
     entries.sort(key=lambda c: (c["name"].lower(), c["boards"][0]))

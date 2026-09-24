@@ -322,7 +322,8 @@ def test_a_client_that_disallows_the_listing_is_not_read(clock):
     scraper, fetcher = _scraper(routes, clock)
     assert scraper.fetch() == []
     assert [urlsplit(url).path for _, url in fetcher.log] == ["/robots.txt"]
-    assert scraper.company == "rmeducation"
+    # no name was read, so the Board is its humanised slug (ADR-0209)
+    assert scraper.company == "Rmeducation"
 
 
 def test_an_unreachable_client_robots_fails_the_board(clock):
@@ -497,7 +498,7 @@ def test_a_board_without_a_state_facet_is_split_by_category(clock, monkeypatch):
 
 def test_a_redirect_off_the_client_host_is_not_followed(clock):
     """regiscorp's board page redirects to `www.regiscorp.com/careers`, a host whose robots.txt
-    this Board never read: the redirect is left unfollowed and the slug stays the name."""
+    this Board never read: the redirect is left unfollowed and the humanised slug is the name."""
     routes = _routes(
         [_page([_row("3713")], 1)], icims={RM_TENANT: (200, ICIMS_DISALLOW)}
     )
@@ -512,7 +513,7 @@ def test_a_redirect_off_the_client_host_is_not_followed(clock):
     fetcher.fetch = lambda m, url, **kw: (
         off_host if url.endswith("/jobs") else real(m, url, **kw)
     )
-    assert scraper.fetch()[0].company == "rmeducation"
+    assert scraper.fetch()[0].company == "Rmeducation"
     assert not any("regiscorp" in url for _, url in fetcher.log)
 
 

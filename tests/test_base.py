@@ -5,7 +5,8 @@ import logging
 import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
-from headstart import fanout_stats, http
+from headstart import company_name, fanout_stats, http
+from headstart.models import Job
 from headstart.scrapers.base import (
     DEFAULT_REQUEST_HEADERS,
     BaseScraper,
@@ -850,3 +851,82 @@ def test_a_detail_without_description_is_kept_but_counted_as_a_gap(
     assert scraper.detail_losses == {"no description on the page": 2}, (
         "the sampler's per-item path labels the loss too"
     )
+
+
+class _NamingScraper(_StubScraper):
+    """Two postings: one stating a company per posting, one falling back to ``self.company``."""
+
+    stated: str | None = None
+    board_title: str | None = None
+
+    def fetch_raw(self):
+        return [{"id": "1", "company": self.stated}, {"id": "2"}]
+
+    def resolve_company(self):
+        if self.board_title:
+            self.company = self.board_title
+
+    def parse(self, raw, scraped_at):
+        return [
+            Job(
+                id=self.job_id(row["id"]),
+                ats=self.ats,
+                company=row.get("company") or self.company,
+                title="Engineer",
+                location=None,
+                remote=None,
+                department=None,
+                url=self.job_url(row["id"]),
+                posted_at=None,
+                scraped_at=scraped_at,
+            )
+            for row in raw
+        ]
+
+
+def _companies(scraper):
+    return [job.company for job in scraper.fetch()]
+
+
+def test_a_board_no_source_names_is_served_under_its_humanised_tenant(monkeypatch):
+    """ADR-0209: the slug is never served. It was, on 232,533 of 520,566 rows of table v121."""
+    monkeypatch.setattr(company_name, "curated_names", dict)
+    assert _companies(_NamingScraper("careers-gd-ais.icims.com")) == ["GD AIS"] * 2
+    # the ledger's name is the slug's spelling, and just as much an identifier
+    assert _companies(_NamingScraper("acme-corp", "acme-corp")) == ["Acme Corp"] * 2
+    # a tenant that is only a code is served as no company rather than as the code
+    assert _companies(_NamingScraper("37053934")) == ["", ""]
+
+
+def test_a_name_stated_during_the_fetch_is_served_as_stated(monkeypatch):
+    monkeypatch.setattr(company_name, "curated_names", dict)
+    titled = _NamingScraper("acme")
+    titled.board_title = "Acme Robotics"
+    assert _companies(titled) == ["Acme Robotics"] * 2
+    # a posting's own field stays as the company typed it, even where it equals the slug
+    fielded = _NamingScraper("sunday")
+    fielded.stated = "sunday"
+    assert _companies(fielded) == ["sunday", "Sunday"]
+    # ...bar an all-caps legal name, which is title-cased from any source
+    legal = _NamingScraper("impronics")
+    legal.stated = "IMPRONICS DIGITECH PRIVATE LIMITED"
+    assert _companies(legal) == ["Impronics Digitech Private Limited", "Impronics"]
+
+
+def test_a_padded_posting_company_falls_back_to_the_boards_name(monkeypatch):
+    """rippling's `agora` states "   ": truthy, so ``field or self.company`` served it, empty."""
+    monkeypatch.setattr(company_name, "curated_names", dict)
+    padded = _NamingScraper("agora")
+    padded.stated = "   "
+    assert _companies(padded) == ["Agora"] * 2
+
+
+def test_a_curated_name_overrides_every_source_and_skips_the_title_fetch(monkeypatch):
+    monkeypatch.setattr(company_name, "curated_names", lambda: {"stub:gmv": "GMV"})
+    scraper = _NamingScraper("gmv")
+    scraper.stated = "GMV Innovating Solutions S.L."
+    scraper.board_title = "Career site"
+    assert _companies(scraper) == ["GMV"] * 2
+    unfetched = _NamingScraper("gmv")
+    unfetched.resolve_company = lambda: pytest.fail("a curated Board fetched its title")
+    assert _companies(unfetched) == ["GMV"] * 2

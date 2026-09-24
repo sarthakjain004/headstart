@@ -1,4 +1,4 @@
-"""The company name a Board states in its page ``<title>``, when it states one at all.
+"""The company name a Board is served under: one it states, a curated one, or its humanised tenant.
 
 `BaseScraper.__init__` does ``self.company = company or slug``, so a Board whose ledger row
 carries no name serves its **slug** as the company. Measured on the served table 2026-09-07:
@@ -31,10 +31,11 @@ pinpoint          ``Jobs at {Name} | {Name} Careers``                 38 of 40
 ================  =================================================  =================
 
 **gem** is the lowest-yield row of the wrapper-matching ATSes, and the gap between "matches the
-wrapper" (~95%) and "yields a name" (63%) is almost entirely the hostname guard, not a bad pattern:
+wrapper" (~95%) and "yields a name" (63%) was almost entirely a hostname guard, not a bad pattern:
 many Gem tenants are early-stage startups whose brand IS their domain (``agenta.ai Careers``,
-``11x.ai Careers``, ``basalt.health Careers``), and `from_title`'s existing rule correctly declines
-those rather than serving a bare domain as a company name.
+``11x.ai Careers``, ``basalt.health Careers``). ADR-0209 dropped that guard, because a domain the
+company states is its name; only a URL (a scheme, or a leading ``www.``) is still refused. The 63%
+predates that change.
 
 Keka is the odd row and worth reading twice: only about one Board in eight serves a ``<title>`` at
 all (the rest render it client-side), but where one exists the wrapper is as uniform as
@@ -76,10 +77,17 @@ Mellanox Technologies, Ltd.", "IN01 NVIDIA Graphics Bengaluru" and "2100 NVIDIA 
 postings. A name we invent is worse than a slug we admit to.
 
 Every rule below rejects a shape that was actually observed. A title this cannot read leaves the
-Board on its slug, which is exactly today's behaviour.
+Board unnamed, and `settled` then serves its `humanised` tenant rather than the raw slug (ADR-0209).
+
+**ADR-0209 makes this module the whole naming policy, not only the title reader.** In order: a
+hand-curated name (`curated`, from ``config/company_names.csv``) overrides every source; a page
+title's brand outranks a structured legal name (`brand_first`); a field's name is taken as the
+company typed it (`from_field`); an all-caps legal name is title-cased (`title_cased`); and a Board
+no source names is served under its humanised tenant (`humanised`), never its slug, and under no
+name at all where that tenant is only a code (Oracle's pods, ADP's GUIDs).
 
 **The floor is narrower than "never worse", and saying so matters.** What these rules guarantee is
-that a slug is never replaced by a *non-name* — a slogan fragment, a hostname, the ATS vendor, a
+that a slug is never replaced by a *non-name* — a slogan fragment, a URL, the ATS vendor, a
 demo placeholder. They cannot guarantee the name a Board states is the one a user would search
 for: `ripplehire:ltimindtree` titles itself "LTM Careers | …" and becomes **"LTM"**, and a parent
 or acquiring entity can displace a familiar brand (`keka:abcoffee` -> "Brewbay Innovations",
@@ -92,10 +100,29 @@ repaired twice (see `_PAGE_LABEL`), so treat it as a claim under test, not a pro
 
 from __future__ import annotations
 
+import csv
+import functools
 import html
 import re
+from pathlib import Path
 
-__all__ = ["from_title", "looks_like_slug", "title_of"]
+from headstart.board_identity import tenant
+
+__all__ = [
+    "brand_first",
+    "curated",
+    "curated_names",
+    "from_field",
+    "from_title",
+    "humanised",
+    "humanised_text",
+    "is_identifier",
+    "looks_like_slug",
+    "settled",
+    "tidy",
+    "title_cased",
+    "title_of",
+]
 
 #: Per ATS, the wrapper its board title puts around the company name. Anchored, so a title
 #: without the expected shape falls through to ``None`` rather than being mangled into one.
@@ -164,8 +191,8 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     # `from_title`, 723 of those 757 resolve. Of the 34 that keep their slug, 25 are titles that
     # *are* the slug ("smallcase", "volopay" — nothing to upgrade), 5 carry a separator
     # ("RealPage | Rexera", "Ana Reis - Headhunter"), 3 are written as hostnames
-    # ("aainacareers.com") and one is a page label ("Careers at AiFA Labs"); the slug is the
-    # floor this module promises, and every refusal here lands on it.
+    # ("aainacareers.com", which ADR-0209 now takes as stated) and one is a page label ("Careers
+    # at AiFA Labs"). A refusal leaves the Board to its humanised tenant.
     "pyjamahr": (re.compile(r"^(?P<name>.+)$"),),
     # pinpoint: every board titles itself "Jobs at {Name} | {Name} Careers" (40 of 40 sampled
     # 2026-09-23). The name is read from the first clause, which ends at the pipe; the spacing
@@ -368,11 +395,9 @@ def from_title(ats: str, title: str | None, slug: str) -> str | None:
         return None
     if any(separator in text for separator in _SEPARATORS) or _PAGE_LABEL.search(text):
         return None
-    # A hostname — "webfx.com" — but only when written like one. The `text == text.lower()` guard
-    # is what spares "Character.AI": it short-circuits, so nothing mixed-case ever reaches the
-    # regex and the regex's own case-sensitivity decides nothing. The guard also earns its place
-    # on a lowercase TLD, where "Sprout.ai" would otherwise be read as a domain.
-    if text == text.lower() and re.fullmatch(r"[\w.-]+\.[a-z]{2,}", text):
+    # A domain-shaped name is a name when the company states it ("11x.ai", "incident.io"), so it
+    # is taken (ADR-0209). A URL is not: lever served "https://www.azuga.com/" as a title.
+    if _is_url(text):
         return None
     # Only an EXACT echo is worthless. Case and spacing are the whole point — "aida" becomes
     # "Aida", "1password" becomes "1Password" — so normalising before this comparison rejects
@@ -384,4 +409,333 @@ def from_title(ats: str, title: str | None, slug: str) -> str | None:
         return None
     if _PLACEHOLDER.search(text):
         return None
-    return text
+    return title_cased(text)
+
+
+def _is_url(text: str) -> bool:
+    """A URL rather than a name: it carries a scheme or opens on ``www.`` (ADR-0209)."""
+    return "://" in text or text.lower().startswith("www.")
+
+
+def from_field(ats: str, value: str | None) -> str | None:
+    """The company name a structured field states, or None when it states nothing usable.
+
+    For a name the ATS hands over as data — Greenhouse's ``company_name``, SmartRecruiters'
+    ``company.name`` — not a title that has to be unwrapped. Such a name is what the company typed,
+    so the guards `from_title` needs against page copy do not apply: "commercetools" and "sunday"
+    are refused neither for equalling the slug nor for being lowercase, and "incident.io" is not
+    read as a hostname (ADR-0209). Padding is not a name, which is the bug ``value or fallback``
+    had: rippling's ``agora`` states "   ", which is truthy.
+    """
+    text = html.unescape(value or "").strip()
+    if not text or _is_url(text):
+        return None
+    if re.sub(r"[^a-z]", "", text.lower()) in _VENDOR_ALIASES.get(ats, frozenset()):
+        return None
+    return title_cased(text)
+
+
+def brand_first(brand: str | None, legal: str | None) -> str | None:
+    """The brand a Board's page states, else its structured legal name (ADR-0209).
+
+    Both arrive already checked (`from_title`, `from_field`). A page title carries the name the
+    company shows a job seeker ("Klipboard"), where a structured field often carries the entity
+    that signs the contract ("KERRIDGE COMMERCIAL SYSTEMS CORP"), so the brand wins whenever both
+    exist.
+    """
+    return brand or legal
+
+
+#: How a short token of an all-caps name is spelled once the name is title-cased. Any other token
+#: of four letters or fewer stays uppercase, because in an all-caps legal name it is far more often
+#: an acronym ("SS", "IIFL", "ZIM", "QA") than a word. Legal forms and joining words are here
+#: because they are always words; the rest are the short English words the 186 converted names in
+#: the 2026-09-24 research samples (keka, zwayam, darwinbox and the field ATSes) carried.
+_SHORT_WORDS: dict[str, str] = {
+    **{w: w.capitalize() for w in ("ltd", "pvt", "inc", "co", "corp")},
+    **{w: w.upper() for w in ("llc", "llp", "plc")},
+    "gmbh": "GmbH",
+    **{w: w for w in ("and", "of", "at", "the", "for", "in", "on", "to")},
+    **{
+        w: w.capitalize()
+        for w in (
+            "aero", "apps", "avid", "axis", "bank", "deck", "food", "hair", "jobs", "labs",
+            "life", "lift", "one", "site", "skin", "web",
+        )
+    },
+}  # fmt: skip
+
+#: A run of letters, keeping an apostrophe's tail with it so "MACY'S" reads "Macy's", not "Macy'S".
+_LETTERS = re.compile(r"[^\W\d_]+(?:'[^\W\d_]+)?")
+
+
+def _letter_count(word: str) -> int:
+    """Letters that have a case: a script without one ("クオリティー") is neither caps nor a word."""
+    return sum(char.upper() != char.lower() for char in word)
+
+
+def title_cased(name: str) -> str:
+    """``name`` title-cased when it is an all-caps legal name, else unchanged (ADR-0209).
+
+    Converts only a name that is entirely uppercase, has more than one word, and has a word
+    longer than four letters: "IMPRONICS DIGITECH PRIVATE LIMITED" becomes "Impronics Digitech
+    Private Limited", while "HCL", "BMW" and "CRISIL" stay as the company writes them. A word of
+    four letters or fewer keeps its capitals unless `_SHORT_WORDS` knows it as a word, so
+    "SS SUPPLY CHAIN SOLUTION PVT. LTD." reads "SS Supply Chain Solution Pvt. Ltd.".
+    """
+    words = name.split()
+    if name != name.upper() or name == name.lower() or len(words) < 2:
+        return name
+    if not any(_letter_count(word) > 4 for word in words):
+        return name
+    out = []
+    for position, word in enumerate(words):
+        if _letter_count(word) > 4:
+            out.append(_LETTERS.sub(lambda m: m.group().capitalize(), word))
+            continue
+        cased = _LETTERS.sub(
+            lambda m: _SHORT_WORDS.get(m.group().lower(), m.group()), word
+        )
+        # A joining word opens a name capitalised: "THE HI-TECH …" is "The Hi-Tech …".
+        out.append(cased[:1].upper() + cased[1:] if position == 0 else cased)
+    return " ".join(out)
+
+
+_CURATED_FILE = "company_names.csv"
+
+
+@functools.cache
+def curated_names() -> dict[str, str]:
+    """``board_key -> name`` from the committed map, `config/company_names.csv` (ADR-0209).
+
+    Looked for beside this module and then in every ancestor's ``config/``, as `fx` finds its
+    rate table: a repo checkout and an installed package lay the file out differently. Lines
+    opening with ``#`` are comments. Absent, it is an empty map and every Board is named from
+    its own sources.
+    """
+    here = Path(__file__).resolve()
+    for path in (
+        here.parent / _CURATED_FILE,
+        *(ancestor / "config" / _CURATED_FILE for ancestor in here.parents),
+    ):
+        if path.is_file():
+            with path.open(encoding="utf-8") as handle:
+                rows = csv.DictReader(
+                    line for line in handle if not line.startswith("#")
+                )
+                return {row["board_key"]: row["name"].strip() for row in rows}
+    return {}
+
+
+def curated(board_key: str) -> str | None:
+    """The hand-curated name for this Board, which overrides every other source, else None.
+
+    Matched case-insensitively, because a ledger's casing and a fresh ``board_key()`` need not
+    agree (ADR-0049).
+    """
+    wanted = board_key.lower()
+    return next(
+        (name for key, name in curated_names().items() if key.lower() == wanted), None
+    )
+
+
+#: Host labels that name the *board* rather than the company, and so are never the answer.
+#: Vendor labels and TLDs sit here too: `micron.wd5.myworkdayjobs.com` and
+#: `lockheed.jobs.hr.cloud.sap` both have to reduce to their first real word. Its few legal
+#: words are not `company_match._LEGAL`, which says why the two lists stay apart.
+LABEL_NOISE = frozenset(
+    {
+        "www",
+        "careers",
+        "career",
+        "jobs",
+        "job",
+        "apply",
+        "join",
+        "opportunities",
+        "hire",
+        "hiring",
+        "talent",
+        "work",
+        "working",
+        "recruiting",
+        "recruitment",
+        "internal",
+        "internaljobs",
+        "external",
+        "search",
+        "inc",
+        "ltd",
+        "llc",
+        "corp",
+        "group",
+        "global",
+        "en",
+        "us",
+        # vendor hosts and the public suffixes behind them
+        "myworkdayjobs",
+        "icims",
+        "eightfold",
+        "zohorecruit",
+        "openings",
+        "taleo",
+        "tbe",
+        "oraclecloud",
+        "ocs",
+        "fa",
+        "sap",
+        "cloud",
+        "hr",
+        "wd",
+        "smartrecruiters",
+        "successfactors",
+        "com",
+        "net",
+        "org",
+        "io",
+        "co",
+        "ai",
+        "in",
+        "eu",
+        "uk",
+        "de",
+        "ca",
+    }
+)
+_WD_POD = re.compile(r"^wd\d+$")  # micron.wd5.myworkdayjobs.com
+# Taleo Enterprise's slug is a whole URL.
+SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*://", re.IGNORECASE)
+
+#: Words that name the board at the edge of a hyphenated slug: `apexanalytix-careers`,
+#: `codvo-team`, `careers-at-aifa-labs`. Stripped only at the ends, and only while a word remains.
+_EDGE_WORDS = frozenset({"careers", "career", "jobs", "job", "team", "hiring", "at"})
+
+
+def tidy(text: str) -> str | None:
+    """The company a slug or host names, or None when every label of a host is noise.
+
+    Picking the *first non-noise label* rather than the registrable domain is deliberate, and
+    both conventions appear in the data: `careers-inc.nttdata.com` puts the company second,
+    while `lockheed.jobs.hr.cloud.sap` puts it first. Taking the label before the public suffix
+    reads the latter as "Cloud"; taking the first label reads the former as "Careers-Inc".
+    """
+    # Taleo Enterprise's slug is a whole URL; split on "/" first, it tidied to "Https:".
+    head = SCHEME.sub("", text).split("/", 1)[0]
+    if "." not in head:
+        return head or None
+    labels = [
+        label
+        for label in head.split(".")
+        if label and label not in LABEL_NOISE and not _WD_POD.match(label)
+    ]
+    # A prefixed label still carries the company after its noise word (`careers-inc` ->
+    # `inc`, dropped above; `jobs-bylight` -> `bylight`).
+    for label in labels:
+        parts = [p for p in label.split("-") if p and p not in LABEL_NOISE]
+        if parts:
+            return "-".join(parts)
+    return labels[0] if labels else None
+
+
+def humanised_text(text: str) -> str:
+    """A slug-shaped ``text`` spelled as a name: words split, edges trimmed, each word cased.
+
+    A lowercase word of three letters or fewer is read as an acronym ("hpe" -> "HPE", "gmv" ->
+    "GMV"), and a longer one is capitalised ("nvidia" -> "Nvidia"). A mixed-case word keeps its
+    capitals ("TecTammina"), an all-caps one of five letters or more is capitalised, and the
+    result goes through `title_cased`. A trailing number
+    is a disambiguator, not a name (`werecruiters-1`, `evrocab-1692891239`), so it goes too.
+    """
+    words = [word for word in re.split(r"[-_\s]+", text) if word]
+    while len(words) > 1 and words[0].lower() in _EDGE_WORDS:
+        words.pop(0)
+    while len(words) > 1 and (words[-1].lower() in _EDGE_WORDS or words[-1].isdigit()):
+        words.pop()
+    cased = []
+    for word in words:
+        if word == word.upper() and _letter_count(word) > 4:
+            # An identifier's capitals are not the company's spelling: Taleo Business Edition's
+            # org `GATEWAYVENT` reads "Gatewayvent".
+            cased.append(word.capitalize())
+        elif word != word.lower():
+            cased.append(word[:1].upper() + word[1:])
+        elif word in _SHORT_WORDS:
+            cased.append(_SHORT_WORDS[word])
+        elif _letter_count(word) <= 3:
+            cased.append(word.upper())
+        else:
+            cased.append(word[:1].upper() + word[1:])
+    if cased:
+        cased[0] = cased[0][:1].upper() + cased[0][1:]
+    return title_cased(" ".join(cased))
+
+
+#: ATSes whose tenant is a code the vendor generated, never the employer's name, and whose host
+#: is the vendor's own (`oraclecloud.com`, `workforcenow.adp.com`), so no host label can name the
+#: employer either. Oracle's first label is its pod: of the oracle ledger's 1,683 live rows
+#: (2026-09-25) 833 are four letters (`eeho`), 209 six (`ibqbjb`), 560 `fa-{pod}-saasfa…prod1`,
+#: and of the other 81 about half put a name before the pod (`utulsa-ibvjjb`) and half another
+#: code (`ia-erp-iaedkf`, `hcdtgccprod-iayeqy`). Telling those halves apart is a guess, so the
+#: whole ATS is unnamed here. ADP's slug is a client GUID and its career-center id.
+_CODE_TENANTS = frozenset({"oracle", "adp"})
+
+
+def _is_code(word: str) -> bool:
+    """A generated identifier rather than a word: all digits, or digits in two or more runs.
+
+    One run is still a name ("good2grow", "A3logics", "Covestic2"); two is a code ("G94W9A",
+    a GUID's "1fee41c0cca3").
+    """
+    return word.isdigit() or len(re.findall(r"\d+", word)) >= 2
+
+
+def humanised(board_key: str) -> str:
+    """The name a Board with no stated name is shown under: its tenant, humanised (ADR-0209).
+
+    Never the raw slug. `workday:nvidia/NVIDIAExternalCareerSite` is "Nvidia", and
+    `icims:careers-gd-ais.icims.com` is "GD AIS": the tenant (`board_identity.tenant`), its board
+    and vendor labels dropped (`tidy`), spelled as words (`humanised_text`).
+
+    Empty where that would only spell a code: an ATS in `_CODE_TENANTS`, or a tenant whose every
+    word `_is_code`. An empty company is shown as no company, which is better than a code that
+    reads as one (ADR-0209).
+    """
+    if board_key.split(":", 1)[0] in _CODE_TENANTS:
+        return ""
+    core = tenant(board_key)
+    name = humanised_text(tidy(core) or core) or core
+    return "" if all(_is_code(word) for word in name.split()) else name
+
+
+def is_identifier(name: str, board_key: str) -> bool:
+    """Whether ``name`` is one of this Board's own identifiers rather than a company's name.
+
+    Lowercase identifier text ("wipro", "careers.persistent.com"), anything written as a path or
+    an address (Workday's ledger `nvidia.wd5.myworkdayjobs.com/nvidia…`, Taleo Business
+    Edition's `COVESTIC2:40@phf…`), or exactly a piece of the key (SuccessFactors' `hcltech`,
+    SmartRecruiters' `TecTammina`).
+    """
+    text = name.strip()
+    if looks_like_slug(text) or "://" in text:
+        return True
+    if not re.search(r"\s", text) and re.search(r"[/@]", text):
+        return True
+    slug = board_key.split(":", 1)[-1]
+    return text in {slug, tenant(board_key), *re.split(r"[/.:@?=&]", slug)}
+
+
+def settled(name: str, unresolved: str, board_key: str) -> str:
+    """The company this Board's Jobs are served under, once its sources have had their say.
+
+    ``unresolved`` is what the scraper held before any source ran: its declared ``COMPANY``, or
+    the ledger's name or slug. A curated name overrides everything; a name a source stated during
+    the fetch is kept, and so is an unresolved one that is really a name (a declared
+    ``COMPANY``, the curated feed's "Stripe"); a Board's own identifier becomes its `humanised`
+    tenant, never the raw slug (ADR-0209).
+    """
+    named = curated(board_key)
+    if named:
+        return named
+    if name.strip() and (name != unresolved or not is_identifier(name, board_key)):
+        return name
+    return humanised(board_key)
