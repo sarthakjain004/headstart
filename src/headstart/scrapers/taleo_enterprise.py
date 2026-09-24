@@ -19,13 +19,14 @@ from __future__ import annotations
 import json
 import math
 import re
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import unquote, urlencode, urlsplit, urlunsplit
 
 from headstart import company_name, salary
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 
 _PORTAL = re.compile(r"portalNo:\s*'?(\d+)")
 _TITLE_TAG = re.compile(r"<title[^>]*>(.*?)</title>", re.DOTALL | re.IGNORECASE)
@@ -245,6 +246,14 @@ class TaleoEnterpriseScraper(BaseScraper):
     url_shape = r"https://[^/]+\.taleo\.net/careersection/[^/]+/jobdetail\.ftl\?lang=[^&]+&job=[^&]+"
     detail_workers = _DETAIL_WORKERS
     has_detail_pass = True
+    #: The thread path, measured faster (ADR-0167). Interleaved A/B of the Detail pass at width 16,
+    #: 2026-09-24, two rounds on each of four Boards (items/s, multiplexed vs threads): aarcorp/1
+    #: 17.2 vs 27.9 and 19.5 vs 30.3; baesystems/1 36.9 vs 57.6 and 5.6 vs 58.9; cfopitt
+    #: pitt_staff_external 21.2 vs 28.7 and 8.0 vs 5.5; ccsd/3 (7 items) 3.4 vs 3.3 and 0.2 vs
+    #: 4.7. Threads won 6 of 8 pairs; zero non-200s on either transport. Three pairs caught the
+    #: ~30 s single-request tail the 2026-09-13 width ladder found (twice on the multiplexed
+    #: path, once on threads); of the five it missed, threads won four and one was a tie.
+    async_fanout = False
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -404,28 +413,37 @@ class TaleoEnterpriseScraper(BaseScraper):
             self.telemetry["unique_jobs"] = len(seen)
         return listed
 
-    def _detail(self, url: str) -> dict[str, str | None] | None:
-        try:
-            return _parse_detail_page(self._get(url))
-        except Exception as exc:  # noqa: BLE001 - listing survives one detail failure
-            self.note_detail_exception(exc)
-            return None
+    def detail_request(self, item: dict[str, Any]) -> DetailRequest:
+        return DetailRequest(item["url"])
+
+    def read_detail(self, item: dict[str, Any], response: Any) -> dict[str, str | None]:
+        detail = _parse_detail_page(response.text)
+        if detail is None:
+            raise DetailLost("no labelled requisition fields on a 200")
+        return detail
+
+    def report_detail_gaps(self, results: Sequence[Any], what: str) -> int:
+        """The gap line counts descriptions. A page whose fields parse but carry no description
+        is counted as the gap it is, yet :meth:`read_detail` still returns it: its other fields
+        (location, department, salary) are real and `parse` prefers them to the listing's."""
+        described_details: list[dict[str, str | None] | None] = []
+        for detail in results:
+            if detail is not None and not detail.get("description"):
+                self.note_detail_loss("no description on the requisition")
+                detail = None
+            described_details.append(detail)
+        return super().report_detail_gaps(described_details, what)
 
     def fetch_raw(self) -> Any:
         shell = self._get()
         self.company = _company(shell, self.slug) or self.company
         listed = self._listing(shell)
-        details = self.fan_out(
-            listed, lambda item: self._detail(item["url"]), workers=self.detail_workers
+        # No tech gate: measured to lose tech postings here (ADR-0166, #510). No held-description
+        # skip either: the detail page also supplies the fields `parse` prefers to the listing's.
+        details = self.run_detail_pass(
+            listed, key_of=lambda item: item["id"], what="detail pages"
         )
-        self.report_detail_gaps(
-            [
-                detail if detail and detail.get("description") else None
-                for detail in details
-            ],
-            "detail pages",
-        )
-        return list(zip(listed, details))
+        return [(item, details.get(item["id"])) for item in listed]
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
