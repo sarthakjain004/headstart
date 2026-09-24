@@ -78,6 +78,16 @@ _REMOTE_CODE = "ORA_REMOTE"
 _ON_SITE_CODE = "ORA_ON_SITE"
 
 
+def is_pod_host(slug: str) -> bool:
+    """Whether a slug is an Oracle pod host, the only spelling the ledger holds a Board under.
+
+    Every row of ``data/validate/liveness/oracle.csv`` is one (4,102 of 4,102 on 2026-09-25). A
+    pool row whose slug is not — a bare company name (``akamai``) or a vanity careers host
+    (``www.coherent.com``) — names no Board this scraper can read, and lands in no ledger (#627).
+    """
+    return slug.lower().endswith(".oraclecloud.com")
+
+
 def _remote(listed: dict, detail: dict, location: str | None) -> bool | None:
     """Whether this posting is remote: the tenant's own answer where unambiguous, else the
     location guess.

@@ -692,14 +692,15 @@ def test_an_oracle_pool_row_lands_under_the_pod_host_its_scraper_reads(
     """#627: the harvest writes Oracle pool rows as a bare label (`bun`) with the pod host only in
     `url`. Keyed on the raw tenant, each landed as a second ledger row beside the host row that
     already holds its Board — 439 of them. A row lands in the ledger's own spelling (tenant the pod
-    host, url `https://{host}`), once per Board, and a bare company name whose `url` names no host
-    is no Board at all."""
+    host, url `https://{host}`), once per Board, and a row naming no pod host — a bare company name
+    (`akamai`), a vanity careers site — is no Board at all."""
     pool, ledger = tmp_path / "pool", tmp_path / "ledger"
     pool.mkdir()
     host = "bun.fa.em2.oraclecloud.com"
     (pool / "oracle.csv").write_text(
         f"tenant,url\nakamai,\nbun,{host}\n{host},https://{host}\n"
-        "cygl,https://cygl.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1\n",
+        "cygl,https://cygl.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1\n"
+        "cx_1,https://www.coherent.com/careers\n",
         encoding="utf-8",
     )
     probed = []

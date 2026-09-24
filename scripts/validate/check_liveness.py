@@ -104,6 +104,9 @@ from headstart.scrapers.lever import (
 from headstart.scrapers.lever import (
     GLOBAL_API_HOST as _LEVER_GLOBAL_API_HOST,
 )
+from headstart.scrapers.oracle import (  # the pod-host spelling, single source
+    is_pod_host,
+)
 from headstart.scrapers.registry import (  # the row-to-Board funnel, per ATS
     SCRAPERS,
     company_from_row,
@@ -1168,20 +1171,19 @@ def _slug_of(ats, tenant, url):
     return company_from_row(ats, tenant, url).slug
 
 
-def _in_ledger_spelling(ats, rows):
+def _respell_pool_rows(ats, rows):
     """Oracle pool rows respelled as the ledger holds a Board: tenant the pod host its Scraper
     reads, url `https://{host}`, one row per host (#627).
 
     The harvest writes a bare label (`bun`) with the host only in `url`, and the ledger is keyed on
-    the raw tenant, so each such row landed beside the host row already holding its Board: 439 of
-    464 did. A bare company name whose `url` names no host (`akamai`) names no Board, and is
-    dropped."""
+    the raw tenant, so 439 such rows had landed beside the host row already holding their Board.
+    A row whose slug is no pod host names no Board and is dropped (`oracle.is_pod_host`)."""
     if ats != "oracle":
         return rows
     by_host = {}
     for r in rows:
         host = _slug_of(ats, r["tenant"], r["url"])
-        if "." in host:
+        if is_pod_host(host):
             by_host.setdefault(host, {**r, "tenant": host, "url": f"https://{host}"})
     return list(by_host.values())
 
@@ -2666,7 +2668,7 @@ def main():
             continue
         ledger = liveness.load(ledger_dir / f"{ats}.csv")
         verdicts[ats] = ledger
-        rows = _in_ledger_spelling(
+        rows = _respell_pool_rows(
             ats, list(csv.DictReader(csvf.open(encoding="utf-8")))
         )
         todo = [

@@ -19,15 +19,16 @@ def test_an_oracle_row_is_folded_under_the_pod_host_its_scraper_reads(
 ):
     """#627: the harvest's Oracle slug is a bare label (`bun`) with the pod host only in `url`,
     while the pool and the ledger hold a Board under that host. Folded as-is, all 464 such rows
-    landed beside the host row, and 439 of them duplicated a Board already held. A company name
-    with no host in its `url` (`akamai`) names no Board and is not folded."""
+    landed beside the host row, and 439 of them duplicated a Board already held. A row naming no
+    pod host — a company name with no `url` (`akamai`), a vanity careers site — is not folded."""
     byp, merged = tmp_path / "by-provider", tmp_path / "ats-tenants-merged"
     byp.mkdir()
     merged.mkdir()
     host = "bun.fa.em2.oraclecloud.com"
     (byp / "oracle.csv").write_text(
         f"slug,url,n_sources,sources\nakamai,,1,x\nbun,{host},1,x\n"
-        "cygl,https://cygl.fa.us2.oraclecloud.com/hcmUI/CandidateExperience,1,x\n",
+        "cygl,https://cygl.fa.us2.oraclecloud.com/hcmUI/CandidateExperience,1,x\n"
+        "cx_1,https://www.coherent.com/careers,1,x\n",
         encoding="utf-8",
     )
     (merged / "oracle.csv").write_text(

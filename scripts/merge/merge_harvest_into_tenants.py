@@ -20,6 +20,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
+from headstart.scrapers.oracle import is_pod_host
 from headstart.scrapers.registry import company_from_row
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -63,9 +64,9 @@ def main() -> int:
                 if t and ats == "oracle":
                     # The harvest's slug is a bare label (`bun`); the pool and ledger hold an
                     # Oracle Board under the pod host its Scraper reads, so a label landed as a
-                    # second row beside it (#627). A name with no host in `url` names no Board.
+                    # second row beside it (#627). A row naming no pod host names no Board.
                     t = company_from_row(ats, t, url).slug.lower()
-                    if "." not in t:
+                    if not is_pod_host(t):
                         continue
                 if t:
                     bucket.setdefault(t, url)

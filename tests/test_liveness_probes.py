@@ -7,6 +7,7 @@ seam. Covers p_zoho's soft-404 classification: Zoho serves a 200 "Page does not 
 
 from __future__ import annotations
 
+import csv
 import html
 import importlib.util
 import json
@@ -1529,9 +1530,7 @@ def _row_shapes():
     from the host its Scraper reads — bare label with the host in `url`, host, full URL — so a
     shape stays covered after a cleanup deletes it from the ledger. Oracle's bare-label rows
     (`bun`, url `bun.fa.em2.oraclecloud.com`) were probed at `https://bun/`, which the scraper
-    never reads, and all 441 were written dead (#627)."""
-    import csv
-
+    never reads, and all 464 were written dead (#627)."""
     cases = []
     for ats in sorted(cl.PROBES):
         seen, host = set(), None
