@@ -1,4 +1,6 @@
-from headstart.experience_filter import CEILINGS, column, flags
+import sqlite3
+
+from headstart.experience_filter import CEILINGS, MIGRATION_SQL, clause, column, flags
 
 
 def test_flags_keep_unknown_experience_eligible():
@@ -15,8 +17,6 @@ def test_flags_match_each_offered_ceiling_independently():
 
 
 def test_clause_uses_a_flag_only_for_an_offered_ceiling_on_a_migrated_table():
-    from headstart.experience_filter import clause
-
     assert clause(5, True) == "experience_at_most_5 = true"
     assert clause(3, True) == "(min_years <= 3 OR min_years IS NULL)"
     assert clause(5, False) == "(min_years <= 5 OR min_years IS NULL)"
@@ -24,10 +24,6 @@ def test_clause_uses_a_flag_only_for_an_offered_ceiling_on_a_migrated_table():
 
 def test_migration_sql_agrees_with_the_python_flags():
     """Old tables are migrated with the SQL and new rows get `flags`; one verdict either way."""
-    import sqlite3
-
-    from headstart.experience_filter import MIGRATION_SQL
-
     db = sqlite3.connect(":memory:")
     for min_years in (None, 0, 1, 2, 5, 9, 10, 11):
         for name, sql in MIGRATION_SQL.items():

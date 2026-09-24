@@ -26,11 +26,14 @@ def column(ceiling: int) -> str:
 
 COLUMNS = tuple(column(ceiling) for ceiling in CEILINGS)
 
+
+def _raw_sql(ceiling: int) -> str:
+    """The verdict computed from ``min_years`` itself; unknown experience stays eligible."""
+    return f"min_years <= {ceiling} OR min_years IS NULL"
+
+
 #: The SQL each flag column is computed with on a table that predates it (ADR-0173).
-MIGRATION_SQL = {
-    column(ceiling): f"min_years <= {ceiling} OR min_years IS NULL"
-    for ceiling in CEILINGS
-}
+MIGRATION_SQL = {column(ceiling): _raw_sql(ceiling) for ceiling in CEILINGS}
 
 
 def flags(min_years: int | None) -> dict[str, bool]:
@@ -54,5 +57,5 @@ def clause(max_years: int, materialized: bool) -> str:
     return (
         f"{column(max_years)} = true"
         if materialized and max_years in CEILINGS
-        else f"(min_years <= {max_years} OR min_years IS NULL)"
+        else f"({_raw_sql(max_years)})"
     )

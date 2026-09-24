@@ -869,7 +869,7 @@ def _warn_unknown_filters(
     """
     if ats and ats not in atses:
         _log.warning("filter dropped: ats %.40r is not in this table", ats)
-    if etype and etype not in employment_type_filter.FILTERS:
+    if etype and etype not in employment_type_filter.RULES:
         _log.warning(
             "filter dropped: employment_type %.40r is not a known value", etype
         )

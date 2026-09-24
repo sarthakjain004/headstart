@@ -10,7 +10,7 @@ from pathlib import Path
 
 import lancedb
 
-from headstart.employment_type_filter import FILTERS
+from headstart.employment_type_filter import RULES
 
 
 def _set_fingerprint(table, where: str) -> tuple[int, str]:
@@ -38,7 +38,7 @@ def main() -> int:
     dest.parent.mkdir(parents=True, exist_ok=True)
     clean = True
     with dest.open("w", encoding="utf-8") as out:
-        for name, rule in FILTERS.items():
+        for name, rule in RULES.items():
             raw = rule.raw_clause()
             old_count, old_fingerprint = _set_fingerprint(table, raw)
             new_count, new_fingerprint = _set_fingerprint(

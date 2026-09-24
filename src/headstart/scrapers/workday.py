@@ -132,7 +132,7 @@ def _listing_diagnostic(response: Any, instance: str) -> tuple[str, bool]:
 # schema.org's closed ``employmentType`` vocabulary, in the wording Workday's own ``timeType``
 # uses where the two overlap ("Full time" on every CXS detail measured) so a recovered posting is
 # indistinguishable from a CXS one downstream. Values beyond the enum pass through: the filter
-# vocabulary matches by substring (`employment_type_filter.FILTERS`), so an unmapped-but-real value still
+# vocabulary matches by substring (`employment_type_filter.RULES`), so an unmapped-but-real value still
 # beats the None it replaces, while OTHER maps to None because it carries nothing.
 _SCHEMA_EMPLOYMENT = {
     "FULL_TIME": "Full time",

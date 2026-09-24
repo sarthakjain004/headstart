@@ -48,7 +48,7 @@ currency is exact rather than guessed: `datePosted` is the same ISO date `startD
 `jobLocationType` ("TELECOMMUTE") already maps through `_remote_from`'s existing patterns
 verbatim; and `employmentType` is schema.org's closed enum, mapped onto Workday's own
 `timeType` wording (`_SCHEMA_EMPLOYMENT`) — the substring-matching filter vocabulary
-(`employment_type_filter.FILTERS`) accepts either form, so the map is for display consistency, not
+(`employment_type_filter.RULES`) accepts either form, so the map is for display consistency, not
 correctness. Locations stay out: the listing's `locationsText` already fills them, and
 reformatting the JSON-LD address would be guesswork on top of it.
 

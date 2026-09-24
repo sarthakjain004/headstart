@@ -13,6 +13,9 @@ from collections.abc import Collection
 
 COLUMN = "salary_known"
 
+#: The Facet's one option, as ``(value, label)`` — a switch, so "off" is no row at all.
+FACET_OPTIONS = ((True, "Shows salary"),)
+
 #: The SQL the flag column is computed with on a table that predates it (ADR-0173).
 MIGRATION_SQL = {COLUMN: "min_salary_annual IS NOT NULL"}
 

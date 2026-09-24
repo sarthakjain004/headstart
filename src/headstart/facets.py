@@ -44,7 +44,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from typing import Any
 
-from headstart import employment_type_filter, experience_filter
+from headstart import employment_type_filter, experience_filter, salary_known_filter
 from headstart.search import (
     KEYWORD_DEFAULT_SCOPE,
     KEYWORD_SCOPES,
@@ -140,13 +140,14 @@ def counts(
             add("seen_within", h, label, seen_within=h)
     for d, label in POSTED_OPTIONS:
         add("posted_within", d, label, posted_within=d)
-    for y, label in experience_filter.FACET_OPTIONS:
-        add("max_years", y, label, max_years=y)
+    for ceiling, label in experience_filter.FACET_OPTIONS:
+        add("max_years", ceiling, label, max_years=ceiling)
     for value, label in employment_type_filter.FACET_OPTIONS:
         add("etype", value, label, etype=value)
     add("remote", True, "Remote only", remote=True)
     if capabilities.has_min_salary_annual:
-        add("has_salary", True, "Shows salary", has_salary=True)
+        for value, label in salary_known_filter.FACET_OPTIONS:
+            add("has_salary", value, label, has_salary=value)
     for a in capabilities.atses:
         add("ats", a, a, ats=a)
 

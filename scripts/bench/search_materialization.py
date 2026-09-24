@@ -16,7 +16,7 @@ import numpy as np
 from lancedb.index import Bitmap, BTree, Fm
 
 from headstart import fx
-from headstart.employment_type_filter import FILTERS as EMPLOYMENT_TYPE_FILTERS
+from headstart.employment_type_filter import RULES as EMPLOYMENT_TYPE_RULES
 from headstart.search import RESULT_COLUMNS
 
 
@@ -40,10 +40,10 @@ PROFILES = {
     },
     "full_time": {
         "transforms": {
-            "is_full_time": EMPLOYMENT_TYPE_FILTERS["full-time"].raw_clause(),
+            "is_full_time": EMPLOYMENT_TYPE_RULES["full-time"].raw_clause(),
         },
         "indexes": (("is_full_time", Bitmap()),),
-        "old": EMPLOYMENT_TYPE_FILTERS["full-time"].raw_clause(),
+        "old": EMPLOYMENT_TYPE_RULES["full-time"].raw_clause(),
         "new": "is_full_time = true",
     },
     "title": {

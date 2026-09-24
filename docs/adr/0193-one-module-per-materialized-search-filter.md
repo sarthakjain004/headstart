@@ -55,12 +55,19 @@ The members share one set of names: `COLUMN`/`COLUMNS`, `flags(raw)`, `MIGRATION
 them.
 
 `employment_type` was renamed so the five modules share a shape. The old name also read as the
-raw column, which stays untouched for display. `posted_date_guard` breaks the `_filter` suffix on
+raw column, which stays untouched for display. With the rename, its per-value `EmploymentTypeFilter`
+became `EmploymentTypeRule` and `FILTERS` became `RULES`, so that nothing inside the filter's
+module is also called a filter. The `_filter` suffix sits beside `tech_filter`. That module is the
+ingest-side **Tech filter**, a different CONTEXT term, and `experience_filter` already shared the
+suffix with it. `posted_date_guard` breaks the `_filter` suffix on
 purpose: the materialized part of the posted-date filters is only their shape guard. The date
 clauses stay in `search.py`, where they share `_ago`/`_next_day` with the `first_seen` clauses.
 Moving those as well would have made `search.py` and the new module import each other.
 
 ### Forks settled without the owner, and why
+
+The owner authorised this refactor and asked for design forks to be settled by measurement or,
+failing that, by the smallest interface, then recorded here.
 
 - **No registry object or protocol class.** A tuple of modules that `index.py` iterated over looked
   tidier, but it breaks on order. The schema interleaves the flag columns with the raw ones, and
@@ -68,14 +75,10 @@ Moving those as well would have made `search.py` and the new module import each 
   list the filters in a different order too. Iterating would have changed the physical column
   order a migration writes and the order indexes are built. `index.py` names each module at its
   existing position instead, which also keeps the interface smallest.
-- **The index type stays in `index.py`.** `Bitmap()` is a LanceDB config object, so a filter
-  module would have to import LanceDB, or carry a string that `index.py` maps back. The module
-  owns the column list, and `index.py` builds one bitmap spec per column in the same order as
-  before.
 - **Country's value is written through `derived_meta`, not `_served_meta`.** `country` reaches the
   table through the embedding store's meta and `update_meta`'s sweep (ADR-0138), not as a
-  served-only flag. `country_meta` now takes the column name and value from `india_filter`, and
-  `geo.where`/`geo.classify` stay in `headstart.geo`, which owns the gazetteer both of them read.
+  served-only flag. `country_meta` and `update_meta`'s sweep now take the column name, and
+  `country_meta` the value, from `india_filter`. `geo.where`/`geo.classify` stay in `headstart.geo`, which owns the gazetteer both of them read.
 - **`description_stored` stays where it was.** It is the Keyword filter's coverage presence flag
   (ADR-0104), not a Search filter; only the coverage counts read it
   (`facets._with_description`, `JobSearch.coverage`).
@@ -86,6 +89,12 @@ Moving those as well would have made `search.py` and the new module import each 
   form as the other three.
 
 ### Rejected
+
+- **Each module owning its bitmap index spec.** `Bitmap()` is a LanceDB config object, so a
+  filter module would have to import LanceDB, or carry an index-type string that `index.py` maps
+  back to the object. `search.py` imports these modules and must stay importable without LanceDB.
+  Each module owns its column list instead, and `index.py` builds one bitmap spec per column in
+  the order it used before.
 
 - **Pointing `scripts/eval/verify_filters.py`'s `_etype_ok` at `employment_type_filter`.** The
   harness is an oracle run against the deployed Space. Sharing the product's predicate would make

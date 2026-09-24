@@ -16,7 +16,7 @@ from collections.abc import Collection
 from typing import NamedTuple
 
 
-class EmploymentTypeFilter(NamedTuple):
+class EmploymentTypeRule(NamedTuple):
     column: str
     #: The Facet's label for this canonical value.
     label: str
@@ -48,37 +48,37 @@ class EmploymentTypeFilter(NamedTuple):
         return clause
 
 
-FILTERS = {
+RULES = {
     # "permanent" is contract duration, not hours: Recruitee's "parttime_permanent" and
     # Personio's "permanent / part-time" are part-time jobs. Every "permanent" value carrying
     # "part" but not "full" in a 228k-row corpus (2026-07) was one of those, so "part" vetoes it.
-    "full-time": EmploymentTypeFilter(
+    "full-time": EmploymentTypeRule(
         "is_full_time",
         "Full-time",
         ("full",),
         includes_unless=(("permanent", "part"),),
     ),
-    "part-time": EmploymentTypeFilter("is_part_time", "Part-time", ("part",)),
-    "contract": EmploymentTypeFilter(
+    "part-time": EmploymentTypeRule("is_part_time", "Part-time", ("part",)),
+    "contract": EmploymentTypeRule(
         "is_contract", "Contract", ("contract", "freelance")
     ),
-    "internship": EmploymentTypeFilter(
+    "internship": EmploymentTypeRule(
         "is_internship", "Internship", ("intern",), ("international",)
     ),
 }
 
-COLUMNS = tuple(rule.column for rule in FILTERS.values())
+COLUMNS = tuple(rule.column for rule in RULES.values())
 
-#: The Facet's options, as ``(canonical value, label)``, in :data:`FILTERS` order.
-FACET_OPTIONS = tuple((value, rule.label) for value, rule in FILTERS.items())
+#: The Facet's options, as ``(canonical value, label)``, in :data:`RULES` order.
+FACET_OPTIONS = tuple((value, rule.label) for value, rule in RULES.items())
 
 #: The SQL each flag column is computed with on a table that predates it (ADR-0173).
-MIGRATION_SQL = {rule.column: rule.raw_clause() for rule in FILTERS.values()}
+MIGRATION_SQL = {rule.column: rule.raw_clause() for rule in RULES.values()}
 
 
 def flags(value: str | None) -> dict[str, bool]:
     """The four served boolean columns for one raw employment-type value."""
-    return {rule.column: rule.matches(value) for rule in FILTERS.values()}
+    return {rule.column: rule.matches(value) for rule in RULES.values()}
 
 
 def has_flags(schema_names: Collection[str]) -> bool:
@@ -91,7 +91,7 @@ def clause(etype: str | None, materialized: bool) -> str | None:
 
     ``materialized`` is :func:`has_flags` of the open table, carried by ``IndexCapabilities``.
     """
-    rule = FILTERS.get(etype) if etype else None
+    rule = RULES.get(etype) if etype else None
     if rule is None:
         return None
     return f"{rule.column} = true" if materialized else rule.raw_clause()
