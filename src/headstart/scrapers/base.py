@@ -729,7 +729,7 @@ class BaseScraper(ABC):
 
     @cached_property
     def board_fetcher(self) -> BoardFetcher:
-        """This Board's fetcher: the injected transport, bound to the Board's spare-egress opt-in
+        """This Board's fetcher: the injected fetcher, bound to the Board's spare-egress opt-in
         and its attribution, so every request made through it carries both (ADR-0204).
 
         Routing (``egress_group``/``egress_on``) is empty for every scraper that leaves
@@ -747,7 +747,7 @@ class BaseScraper(ABC):
         """
         return BoardFetcher(
             self._fetcher,
-            board=self.board_key(),
+            board_key=self.board_key(),
             egress_group=self.ats if self.egress_fallback_on else None,
             wall_statuses=self.egress_fallback_on,
         )

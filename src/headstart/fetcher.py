@@ -28,7 +28,10 @@ Three capabilities, not one artificially merged shape:
   says why).
 
 A scraper never calls its ``Fetcher`` directly: :class:`BoardFetcher` binds it to the Board, so
-every request carries the Board's spare-egress opt-in and attribution (ADR-0204).
+every request carries the Board's spare-egress opt-in and attribution (ADR-0204). That binding is
+passed as keyword arguments, which is why ``BrowserFetcher`` — whose ``fetch`` takes ``json`` only
+and refuses everything else — no longer matches this protocol's ``fetch(**kwargs)``: no
+``BoardFetcher`` ever wraps it, and darwinbox calls it directly for the walled path.
 """
 
 from __future__ import annotations
@@ -74,16 +77,16 @@ class BoardFetcher:
 
     def __init__(
         self,
-        transport: Fetcher,
+        inner_fetcher: Fetcher,
         *,
-        board: str,
+        board_key: str,
         egress_group: str | None,
         wall_statuses: frozenset[int],
     ) -> None:
-        self.transport = transport
-        self.board = board
-        self.egress_group = egress_group
-        self.wall_statuses = wall_statuses
+        self._inner_fetcher = inner_fetcher
+        self._board_key = board_key
+        self._egress_group = egress_group
+        self._wall_statuses = wall_statuses
 
     def egress_binding(self, *, marks_wall: bool = True) -> dict[str, Any]:
         """The keyword arguments :meth:`fetch` adds to every request it forwards.
@@ -93,12 +96,12 @@ class BoardFetcher:
         what walls it — for a request whose non-200 means something other than "this IP is
         refused" (Eightfold's API-availability probe, ADR-0063). Dropping the routing too would
         send it over the spent IP on exactly the shard the fallback exists to rescue."""
-        if self.egress_group is None:
-            return {"egress_board": self.board}
+        if self._egress_group is None:
+            return {"egress_board": self._board_key}
         return {
-            "egress_group": self.egress_group,
-            "egress_on": self.wall_statuses if marks_wall else frozenset(),
-            "egress_board": self.board,
+            "egress_group": self._egress_group,
+            "egress_on": self._wall_statuses if marks_wall else frozenset(),
+            "egress_board": self._board_key,
         }
 
     def fetch(
@@ -110,14 +113,14 @@ class BoardFetcher:
         direct: bool = False,
         **kwargs: Any,
     ) -> Any:
-        """One request through the transport, carrying this Board's egress binding.
+        """One request through the inner fetcher, carrying this Board's egress binding.
 
         ``direct=True`` sends it with no binding at all — the shard's own route, no group and no
         attribution: Workday's listing retrying once off a spare egress that handed back a
         non-JSON page, and :meth:`BaseScraper.alias_key`'s redirect probe, which never carried
         one."""
         binding = {} if direct else self.egress_binding(marks_wall=marks_wall)
-        return self.transport.fetch(method, url, **binding, **kwargs)
+        return self._inner_fetcher.fetch(method, url, **binding, **kwargs)
 
     async def fetch_async(
         self,
@@ -131,15 +134,15 @@ class BoardFetcher:
     ) -> Any:
         """The multiplexed counterpart to :meth:`fetch`, over a caller-supplied session."""
         binding = {} if direct else self.egress_binding(marks_wall=marks_wall)
-        return await self.transport.fetch_async(
+        return await self._inner_fetcher.fetch_async(
             session, method, url, **binding, **kwargs
         )
 
     def stream_width(self, ceiling: int) -> int:
         """How wide this Board's fan-out may go now, at most ``ceiling``: narrowed once its
         egress group has walled (:func:`headstart.spare_egress.stream_width`, #195)."""
-        return spare_egress.stream_width(self.egress_group, ceiling)
+        return spare_egress.stream_width(self._egress_group, ceiling)
 
     def clear_cookies(self, domain: str | None = None) -> None:
-        """Clear the transport's cookies (:meth:`Fetcher.clear_cookies`)."""
-        self.transport.clear_cookies(domain)
+        """Clear the inner fetcher's cookies (:meth:`Fetcher.clear_cookies`)."""
+        self._inner_fetcher.clear_cookies(domain)

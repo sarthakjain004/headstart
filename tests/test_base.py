@@ -274,10 +274,10 @@ def test_egress_is_inert_unless_the_scraper_opts_in():
 def test_egress_opt_in_keys_on_the_ats_not_the_board():
     # per-Board marking would make each of a shard's Boards spend its own attempts rediscovering
     # a wall the first one already proved (the metering is per origin, across tenants)
-    kwargs = _WalledScraper("acme").board_fetcher.egress_binding()
-    other = _WalledScraper("other-board").board_fetcher.egress_binding()
-    assert kwargs["egress_group"] == other["egress_group"] == "walled"
-    assert kwargs["egress_on"] == other["egress_on"] == frozenset({403, 405})
+    binding = _WalledScraper("acme").board_fetcher.egress_binding()
+    other_binding = _WalledScraper("other-board").board_fetcher.egress_binding()
+    assert binding["egress_group"] == other_binding["egress_group"] == "walled"
+    assert binding["egress_on"] == other_binding["egress_on"] == frozenset({403, 405})
 
 
 def test_the_board_rides_along_for_attribution_only():
@@ -317,7 +317,7 @@ def test_fetch_threads_egress_kwargs_into_http_fetch(monkeypatch):
 
 
 def test_fetch_marks_wall_false_drops_only_the_marking(monkeypatch):
-    """`marks_wall=False` passes straight through to `_egress`: the request still carries
+    """`marks_wall=False` passes straight through to the Board fetcher's binding: the request still carries
     `egress_group`/`egress_board` (still routed once walled) but `egress_on` is emptied, so this
     call's own failures can never be what walls the ATS."""
     captured = {}
