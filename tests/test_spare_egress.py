@@ -6,7 +6,9 @@ nothing beyond the Boards it was already going to lose. So the assertions are mo
 None, raised nothing" — plus the two behaviours that would be actively harmful to get wrong:
 picking VPN mode over proxy mode, and handing out a proxy before the tunnel is up.
 
-`subprocess` is stubbed throughout; nothing here dials Cloudflare.
+`subprocess` is stubbed throughout; nothing here dials Cloudflare. The tests that drive the real
+daemon's commands install `WarpDaemon` only after stubbing them (`_stub`, `_rotating`,
+`_flapping`); every other test runs on the in-memory daemon `tests/conftest.py` installs.
 """
 
 import subprocess
@@ -77,6 +79,8 @@ def _stub(monkeypatch, handler, ready=lambda: True):
     # _CONNECT_TIMEOUT of wall clock in every test (it took the suite from 6s to 66s).
     monkeypatch.setattr(spare_egress, "_socks5_ready", lambda *a, **k: ready())
     _canned_trace(monkeypatch)
+    # Stubbed above, so the real daemon is safe to drive.
+    spare_egress.use_daemon(spare_egress.WarpDaemon())
     return calls
 
 
@@ -154,6 +158,72 @@ def test_failure_is_cached_too(monkeypatch):
     probed = len(calls)
     assert spare_egress.proxy_url() is None
     assert len(calls) == probed
+
+
+# --- the daemon port (ADR-0195) ------------------------------------------------------------------
+
+
+def _leaving_the_process_fails(monkeypatch):
+    """Make every way out of the process fail the test: a command, a socket, or the trace."""
+
+    def _refuse(*a, **kw):
+        pytest.fail("reached past the in-memory daemon")
+
+    monkeypatch.setattr(spare_egress.subprocess, "run", _refuse)
+    monkeypatch.setattr(spare_egress.socket, "socket", _refuse)
+    monkeypatch.setattr(spare_egress._rq, "get", _refuse)
+
+
+def test_every_test_starts_on_an_in_memory_daemon_with_no_warp_behind_it(monkeypatch):
+    """`tests/conftest.py`'s default: the machine CI's test job is, where nothing can be dialled,
+    so a walled group stays direct and a rotation earns nothing — without a command being run."""
+    _leaving_the_process_fails(monkeypatch)
+    monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.0)
+    spare_egress.mark_walled("workday", 429)
+
+    assert spare_egress.proxy_for("workday") is None
+    assert spare_egress.rotate("workday:acme/careers") is False
+    assert spare_egress.rotations()["failed"] == 1
+
+
+def test_the_policy_reaches_the_daemon_only_through_the_port(monkeypatch, caplog):
+    """A dial, a rotation and both address observations, with every OS lever refused: what the
+    policy needs from the outside world is exactly the port's four operations, in this order."""
+    _leaving_the_process_fails(monkeypatch)
+    monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.0)
+    daemon = spare_egress.InMemoryEgressDaemon(
+        "socks5h://127.0.0.1:40000",
+        restarts=True,
+        reconnects=True,
+        trace="ip=203.0.113.7\ncolo=SJC\nwarp=on\n",
+    )
+    spare_egress.use_daemon(daemon)
+    spare_egress.mark_walled("workday", 429)
+
+    with caplog.at_level("INFO"):
+        assert spare_egress.proxy_for("workday") == "socks5h://127.0.0.1:40000"
+        assert spare_egress.rotate("workday:acme/careers") is True
+
+    assert daemon.calls == ["dial", "read_trace", "restart", "reconnect", "read_trace"]
+    assert spare_egress.generation() == 1
+    assert "203.0.113.7 via SJC (SAME as before)" in caplog.text
+
+
+def test_a_daemon_that_restarts_but_does_not_come_back_re_arms_the_dial(monkeypatch):
+    """The in-memory twin of `test_a_failed_rotation_does_not_pin_the_process_to_the_direct_route`:
+    the rule belongs to the policy, so it holds whichever daemon is behind the port."""
+    _leaving_the_process_fails(monkeypatch)
+    monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.0)
+    daemon = spare_egress.InMemoryEgressDaemon(
+        "socks5h://127.0.0.1:40000", restarts=True, reconnects=False
+    )
+    spare_egress.use_daemon(daemon)
+    spare_egress.mark_walled("workday", 429)
+    spare_egress.proxy_for("workday")
+
+    assert spare_egress.rotate() is False
+    spare_egress.proxy_for("workday")
+    assert daemon.calls.count("dial") == 2  # a later caller re-dials
 
 
 # --- observability -------------------------------------------------------------------------------
@@ -360,6 +430,8 @@ def _rotating(monkeypatch, *, restart_ok=True, reregister_ok=True, comes_back=Tr
     monkeypatch.setattr(spare_egress, "_socks5_ready", lambda: comes_back)
     monkeypatch.setattr(spare_egress, "_CONNECT_TIMEOUT", 0.01)
     _canned_trace(monkeypatch)
+    # Stubbed above, so the real daemon is safe to drive.
+    spare_egress.use_daemon(spare_egress.WarpDaemon())
     return calls
 
 
@@ -956,6 +1028,8 @@ def _flapping(monkeypatch, *, warp="on"):
         text = f"fl=123abc\nip=203.0.113.7\ncolo=SJC\nts=1\nwarp={warp}\n"
 
     monkeypatch.setattr(spare_egress._rq, "get", lambda *a, **kw: _Trace())
+    # Stubbed above, so the real daemon is safe to drive.
+    spare_egress.use_daemon(spare_egress.WarpDaemon())
 
 
 def test_a_flapping_tunnel_costs_one_annotation_not_one_per_walled_request(
