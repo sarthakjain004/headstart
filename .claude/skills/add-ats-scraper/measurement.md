@@ -13,13 +13,16 @@ disk under `experiment/{ats}-{surface}/` so the numbers can be re-derived.
 1. **What is a Board's slug?** A subdomain label, a path segment, a host, a URL, a numeric id? Is
    it case-sensitive? Is there more than one host or regional pod for the same tenant
    (`*.eu.`, `*.de`)? Does one tenant run several sites (csod `careersite/{n}`, Workday sites,
-   Oracle `siteNumber`) — is the Board the tenant or the site? Is the key in a query string
+   Oracle `siteNumber`) — is the Board the tenant or the site? Sum the per-site counts against
+   the tenant-wide union: csod's were 58,083 against 42,534, so per-site Boards would have served
+   15,549 rows twice. Is the key in a query string
    (ADP's `cid`/`ccId`)? The slug is the URL, the API key and the discovery key at once when you
    can make it so (pyjamahr's uuid turned out to be a detour — the API took the path slug).
    A compound slug follows workday's `slug_from`/`board_key` override (`workday.py`).
    Board keys compare case-folded (`config.py`), so two slugs differing only in case are one
    Board; and `board_identity.board_of` splits a Job id on its last `:`, so measure whether
-   native ids ever contain one.
+   native ids ever contain one (upstream ADP keyed on `itemID`, which does on 8 of 2,069 rows;
+   the all-digit `ExternalJobID` does not).
 2. **Which slug spellings does discovery produce**, and does `slug_from(tenant, url)` normalise
    all of them to one? Tenant-key proliferation (#220) and stale casing pairs (#226) both came
    from a discovery source emitting a second spelling of one Board.
@@ -36,14 +39,18 @@ disk under `experiment/{ats}-{surface}/` so the numbers can be re-derived.
    after a thorough probe missed it); `sitemap.xml`, RSS, and server-rendered HTML. Pick the
    cheapest complete surface `robots.txt` allows, and say why the others lost (icims reads only
    its sitemap: the Boards whose HTML walk 403'd were exactly the ones serving `Disallow: /`).
+   Ask each surface the way a browser does: pages can negotiate on `Accept` (Pinpoint's posting
+   pages answer a JSON `Accept` with 406).
 4. **How does it paginate, and what terminates the walk?** Does the stated total match the rows
    served on every Board you measured? Does `hasMore`/`next` tell the truth (oracle's `hasMore`
    was false on a 248-posting Board)? Is there a page-size clamp (phenom silently clamps `size`
    at 500) or a hard window (phenom stops at `from + size >= 10000`, with the total reading 0
-   past it)? Measure on the **largest** Board you can find, not a typical one.
+   past it)? Where does the offset start (ADP's `$skip` counts from 1; upstream's 0 read a row
+   twice)? Measure on the **largest** Board you can find, not a typical one.
 5. **Is any parameter a filter rather than an address?** A wrong filter value can still answer
    200 with a well-formed empty envelope (oracle's hardcoded `siteNumber=CX_1` was wrong for 929
-   of 1,331 Boards, silently).
+   of 1,331 Boards, silently; ADP's `lang` returns an empty list with no total for a language
+   the center doesn't post in — Lifemark reads 0 under `en_US` and 460 under `en_CA`).
 6. **Does the listing carry the description, and is it truncated?** Compare listing text length
    against the detail's on the same postings (oracle's listing capped at exactly 1,000 chars;
    phenom's listing has only a ~350-char teaser).
@@ -56,7 +63,13 @@ disk under `experiment/{ats}-{surface}/` so the numbers can be re-derived.
    If both are `200` with an empty list (pyjamahr, gem, bamboohr — an empty body), find the
    request that tells them apart — usually the board page's 404 — and measure it on real dead
    tenants from the pool, not on an invented slug alone. `GET /` returning 200 proves nothing: 9
-   of 12 Boards already known dead answered it with 200 (#160).
+   of 12 Boards already known dead answered it with 200 (#160). On a wildcard DNS zone
+   (`*.breezy.hr`) no tenant is ever unresolvable, so a DNS failure is the resolver, never a
+   verdict: at 432 prober workers it wrote 41 live Breezy Boards dead. Re-ask before believing an
+   empty listing — Pinpoint's came back spuriously empty on 12 of 6,030 fetches.
+8a. **What does a user's click reach?** A listing can name postings whose links 404 or redirect
+   off-platform: 20 Pinpoint Boards (1,273 postings) did. Where that happens, probe liveness on
+   a posting URL — what the user would actually open — rather than on the board root.
 9. **Where does a departed tenant go?** A redirect to the vendor's marketing site, a parked
    page, a 410? That is the dead verdict the prober keys on. The prober's `_get` follows
    redirects, so a redirect-dead tenant reads as a 200 of marketing HTML — `body-unparseable`,
@@ -69,11 +82,14 @@ disk under `experiment/{ats}-{surface}/` so the numbers can be re-derived.
     share of postings that carry it on the listing versus the detail, across many Boards.
 11. **What does the detail need?** A tenant key, a header, a query flag (icims' detail without
     `in_iframe=1` returns an 80 KB wrapper with no JSON-LD — a silent empty, not an error)? What
-    charset does it arrive in (443 of 510 HRM Direct pages were cp1252, not UTF-8)?
+    charset does it arrive in (443 of 510 HRM Direct pages were cp1252, not UTF-8, and some feeds
+    mix cp1252, UTF-8 and double-encoded bytes in one document)?
 11b. **Is there a token?** For a token scraped from the page (csod embeds a per-corp JWT in
     `csod.context.token`, with an API host on a regional pod such as `eu-fra.api.csod.com`):
     its lifetime, whether it is per tenant or per site, what an expired one returns (a 401, or a
-    200 empty), and which host the API calls go to — gate and rate-limit on that host.
+    200 empty), and which host the API calls go to — gate and rate-limit on that host. Does a
+    second host want it as a cookie too (csod's US pods: `ASP.NET_SessionId={jwt.aud}` on the
+    tenant host, 14 of 14 401 without it and 40 of 40 200 with it)?
 12. **Can the tech gate run before the detail?** Does the listing state `title` and
     `department`, and does the detail override either? Exact, approximation (measure the recall
     loss on real tech postings) or no gate — CONTEXT.md's Detail-pass entry lists every
@@ -107,14 +123,22 @@ disk under `experiment/{ats}-{surface}/` so the numbers can be re-derived.
     postings (#561/#564), so their gate ran on the title alone.
 18. **Company name.** Does any surface name the employer — the board page `<title>`, an API
     field? Check it names the employer and not a subsidiary or the vendor (phenom's per-posting
-    `companyName` named Blue Dart on a DHL Board). If nothing does, the slug stays the name —
+    `companyName` named Blue Dart on a DHL Board). An applicant always sees the employer, so
+    before concluding no surface names it, capture every XHR and asset the rendered page loads,
+    every field of the detail (nested too) and the apply flow's first step: ADP's name was in a
+    `client-features` call (`ClientName`, 120 of 120 centers) after its first survey found none.
+    A per-posting field on a page the steady-state scrape never fetches is not a Board-level
+    name. If nothing does, the slug stays the name —
     which is acceptable for a readable label and not for an opaque one: `load_active_companies`
     passes the ledger's `tenant` as the name, so a GUID slug (ADP's `cid`) displays as a GUID.
     An opaque slug with no name surface is a **checkpoint**.
 
 ## Operating limits
 
-19. **Rate limit.** Ramp concurrency (1, 4, 16, 32, 64, 128) on one tenant and record req/s,
+19. **Rate limit — measure it first**, before any parallel probe: ADP allows 200 requests per
+    fixed 60-second window across every tenant, so a parallel census trips it within seconds, and
+    its scraper paces through one process-wide throttle (`harvest` reads Boards concurrently).
+    Ramp concurrency (1, 4, 16, 32, 64, 128) on one tenant and record req/s,
     latency and every non-200; find the knee and ship below it. Then ramp **across many
     tenants at once**: a shared edge meters the whole platform (upstream Breezy reports 403s at
     ~14 req/s across tenants; jazzhr's Cloudflare zone did the same). Refusals that span tenants
