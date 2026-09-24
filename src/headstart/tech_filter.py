@@ -443,6 +443,12 @@ _STRONG_NOT = re.compile(
     # Member" at a software firm is a React role), and v3 kept every such row.
     r"\bfront[\s-]end (manager|clerk|supervisor|cashier|attendant|service|lead clerk"
     r"|coordinator|host)s?\b"
+    # The cashier on either side of "front end", as a retailer titles it: "Cashier (Front End)"
+    # and "Cashier Assistant (Front End)" were 1,213 of Costco's rows (live 2026-09-24), and
+    # "Front End Associate/Cashier" names the same role. Adjacent only, so a software title that
+    # merely mentions a cashier system ("Front End Developer - Cashier Systems") keeps its signal.
+    r"|\bcashier(s|\s+assistants?)?\s*[(/,–-]?\s*front[\s-]end\b\)?"
+    r"|\bfront[\s-]end([\s/-]+associates?)?[\s/-]+cashiers?\b"
     r"|\bcnc\b[\s/-]*(programmer|machinist)s?"
     r"|\bj\.?d\.?\W+ll\.?m\b|\bll\.?m\.?\s+(tax|law|candidate|graduate)"
     # Not after `&`, `/`, `,` or `and`: a joint title ("Firmware & Electrical Engineering

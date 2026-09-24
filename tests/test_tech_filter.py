@@ -857,6 +857,34 @@ def test_version_4_domain_words_stay_qualified(title):
     assert not tech_filter._STRONG.search(title), title
 
 
+@pytest.mark.parametrize(
+    "title",
+    [
+        # jibe:costco, live 2026-09-24: the only two titles of 2,500 the gate kept, 1,213 rows
+        "Cashier (Front End)",
+        "Cashier Assistant (Front End)",
+        "Cashier - Front End",
+        "Front End Associate/Cashier -Retail - Lead Cashier",
+    ],
+)
+def test_version_5_a_cashier_on_the_front_end_is_refused(title):
+    assert is_tech(title) is False, f"non-tech kept -> {title!r}"
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Front End Developer",
+        "Front End Team Member",
+        "Software Engineer (Front End)",
+        "Front End Developer - Cashier Systems",
+        "Cashier Systems Engineer (Front End)",
+    ],
+)
+def test_version_5_cashier_veto_does_not_reach_software_titles(title):
+    assert is_tech(title) is True, f"RECALL VIOLATION: tech job dropped -> {title!r}"
+
+
 def test_a_set_aside_trade_goes_to_rule_4_and_its_guards():
     """Rule 4's own guards keep the trades out; a technical department keeps a front-end manager.
 
