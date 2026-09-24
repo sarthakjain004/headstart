@@ -182,8 +182,14 @@ class ICIMSScraper(BaseScraper):
             # list is what `index sync` reads as a delisting (ADR-0053). This is also where a
             # dropped `in_iframe=1` would surface: the wrapper page parses to None, so the whole
             # Board reports 100% gaps instead of silently returning nothing.
-            self.mark_truncated(
-                f"{lost}/{len(listed)} job pages unreadable — those Jobs are listed but unbuilt"
+            # The sitemap states the Board's whole set, so the loss is measured: a negligible one
+            # is left to ADR-0083's grace period (ADR-0121), while a total failure like the
+            # wrapper trap clears no threshold and still truncates. Measured 2026-09-24:
+            # `securitycareers-alliedbarton` lost its eviction scope over 1/9199 pages.
+            self.mark_truncated_unless_negligible(
+                len(listed) - lost,
+                len(listed),
+                f"{lost}/{len(listed)} job pages unreadable — those Jobs are listed but unbuilt",
             )
         return [
             {
