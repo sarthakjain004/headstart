@@ -258,7 +258,7 @@ def _fetch_rippling(scraper: BaseScraper) -> list[Job]:
     ``fetch_raw()``, which bakes the FULL per-posting detail fan-out into that same call — every
     job on the board, not a capped subset. It's the *fan-out*, not the listing, that makes calling
     ``fetch_raw()`` directly unsafe for a sampling pass here. Detail-fetches only the first
-    :data:`_DETAIL_FETCH_CAP` postings via the scraper's own ``_detail()``, then parses just
+    :data:`_DETAIL_FETCH_CAP` postings via the scraper's own ``fetch_detail``, then parses just
     those, mirroring workday's/smartrecruiters' capped shape rather than zoho's uncapped one."""
     data = json.loads(scraper._get())
     items = (
@@ -268,7 +268,7 @@ def _fetch_rippling(scraper: BaseScraper) -> list[Job]:
     )
     sample = items[:_DETAIL_FETCH_CAP]
     for item in sample:
-        item["_detail"] = scraper._detail(item.get("uuid")) or {}
+        item["_detail"] = scraper.fetch_detail(item) or {}
     return scraper.parse(sample, datetime.now(UTC).isoformat())
 
 

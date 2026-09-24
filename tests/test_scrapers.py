@@ -12,6 +12,7 @@ from fake_fetcher import FakeFetcher, FakeResponse
 from headstart import http
 from headstart.scrapers.personio import PersonioScraper
 from headstart.scrapers.registry import get_scraper
+from headstart.scrapers.rippling import RipplingScraper
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 SCRAPED_AT = "2026-01-01T00:00:00+00:00"
@@ -4535,6 +4536,62 @@ def test_join_parse():
     assert j.salary == "75000-90000 EUR"
 
 
+@pytest.mark.parametrize("async_fanout_switch", ["1", "0"])
+def test_join_fetch_raw_keys_each_description_by_its_posting_id(
+    monkeypatch, async_fanout_switch
+):
+    """Each description arrives keyed by its posting's id, whichever transport carries it; a
+    body-less 200 and a listing row with no id are both named losses, and a body-less posting
+    still ships as a Job."""
+    from headstart.scrapers.join import JoinScraper
+
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout_switch)
+    careers_page = (
+        '<script id="__NEXT_DATA__" type="application/json">'
+        + json.dumps({"props": {"pageProps": {"initialState": {"company": {"id": 7}}}}})
+        + "</script>"
+    )
+    listed = [
+        {"id": 11, "idParam": "11-a", "title": "Engineer"},
+        {"id": 12, "idParam": "12-b", "title": "Analyst"},
+        {"idParam": "no-id", "title": "No id"},
+    ]
+    detail_by_id = {
+        "11": {"description": "<p>Build.</p>"},
+        "12": {"intro": None, "tasks": None},
+    }
+
+    def route(method, url, kwargs):
+        if url == "https://join.com/companies/acme":
+            return FakeResponse(text=careers_page)
+        if url.startswith("https://join.com/api/public/companies/7/jobs"):
+            page = {"items": listed, "pagination": {"pageCount": 1}}
+            return FakeResponse(text=json.dumps(page))
+        posting_id = url.removeprefix("https://join.com/api/public/jobs/").split("?")[0]
+        return FakeResponse(text=json.dumps(detail_by_id[posting_id]))
+
+    fetcher = FakeFetcher(route)
+    scraper = JoinScraper("acme", fetcher=fetcher)
+    raw = scraper.fetch_raw()
+
+    assert raw["descriptions"] == {"11": "<p>Build.</p>"}
+    assert scraper.detail_losses == {"no description on a 200": 1, "no job id": 1}
+    detail_requests = [
+        request for request in fetcher.requests if "/api/public/jobs/" in request.url
+    ]
+    assert sorted(request.url for request in detail_requests) == [
+        "https://join.com/api/public/jobs/11?locale=en",
+        "https://join.com/api/public/jobs/12?locale=en",
+    ]
+    assert {request.kwargs["headers"]["Accept"] for request in detail_requests} == {
+        "application/json"
+    }
+    raw_with_ids = {**raw, "items": raw["items"][:2]}  # `parse` needs an id for a Job
+    jobs = {job.title: job for job in scraper.parse(raw_with_ids, SCRAPED_AT)}
+    assert jobs["Engineer"].description == "Build."
+    assert jobs["Analyst"].description is None
+
+
 def test_join_location_uses_the_city_objects_city_and_country_names():
     raw = deepcopy(_load("join_indie-solutions.json"))
     raw["items"][0]["city"]["countryName"] = "City-country"
@@ -4822,30 +4879,75 @@ def test_rippling_merges_a_postings_location_rows_into_one_job():
     assert jobs[0].description == "Sell."
 
 
-def test_rippling_fetches_one_detail_per_posting_not_per_location_row(monkeypatch):
-    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
-    scraper = get_scraper("rippling", "acme")
-    rows = _rippling_multi_location_rows()
+_RIPPLING_ACME_LISTING = "https://api.rippling.com/platform/api/ats/v1/board/acme/jobs"
 
-    class _Resp:
-        status_code = 200
 
-        @staticmethod
-        def raise_for_status():
-            return None
+def _rippling_board(
+    listed: list[dict], record_by_uuid: dict[str, dict]
+) -> tuple[RipplingScraper, FakeFetcher]:
+    """The `acme` Board answering ``listed`` as its listing and each posting's detail GET from
+    ``record_by_uuid`` (a 404 for any other uuid)."""
 
-        @staticmethod
-        def json():
-            return rows
+    def route(method: str, url: str, kwargs: dict) -> FakeResponse:
+        if url == _RIPPLING_ACME_LISTING:
+            return FakeResponse(text=json.dumps(listed))
+        uuid = url.removeprefix(f"{_RIPPLING_ACME_LISTING}/")
+        if uuid not in record_by_uuid:
+            return FakeResponse(404)
+        return FakeResponse(text=json.dumps(record_by_uuid[uuid]))
 
-    monkeypatch.setattr(scraper._fetcher, "fetch", lambda *a, **k: _Resp())
-    fetched: list[str] = []
-    monkeypatch.setattr(
-        scraper, "_detail", lambda uuid: fetched.append(uuid) or {"createdOn": "x"}
+    fetcher = FakeFetcher(route)
+    return RipplingScraper("acme", fetcher=fetcher), fetcher
+
+
+@pytest.mark.parametrize("async_fanout_switch", ["1", "0"])
+def test_rippling_fetches_one_detail_per_posting_not_per_location_row(
+    monkeypatch, async_fanout_switch
+):
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout_switch)
+    uuid = "94486f41-6474-446a-b67a-c164e11354ea"
+    scraper, fetcher = _rippling_board(
+        _rippling_multi_location_rows(), {uuid: {"createdOn": "x"}}
     )
     jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
-    assert fetched == ["94486f41-6474-446a-b67a-c164e11354ea"]
+    assert fetcher.urls() == [
+        _RIPPLING_ACME_LISTING,
+        f"{_RIPPLING_ACME_LISTING}/{uuid}",
+    ]
+    assert fetcher.requests[1].kwargs["headers"]["Accept"] == "application/json"
     assert [j.posted_at for j in jobs] == ["x"]
+
+
+def test_rippling_labels_an_empty_record_and_a_row_with_no_uuid():
+    """A 200 carrying an empty record and a listing row with no uuid are both named losses; the
+    row with no uuid is never requested."""
+    listed = [{"uuid": "a1", "name": "Engineer"}, {"name": "No uuid"}]
+    scraper, fetcher = _rippling_board(listed, {"a1": {}})
+    raw = scraper.fetch_raw()
+    assert fetcher.urls() == [_RIPPLING_ACME_LISTING, f"{_RIPPLING_ACME_LISTING}/a1"]
+    assert scraper.detail_losses == {"empty record on a 200": 1, "no job uuid": 1}
+    assert scraper.telemetry["detail_attempted"] == 1
+    assert [row["_detail"] for row in raw] == [{}, {}]
+
+
+def test_rippling_gates_each_location_row_before_merging_a_posting():
+    """The gate asks every location row, and the posting is fetched if any row passes — so a
+    posting whose last row alone would be gated out is still described. The detail hangs on the
+    row the merge kept, and `tech_gated_details` counts rows."""
+    uuid = "b2"
+    listed = [
+        {"uuid": uuid, "name": "Backend Engineer", "workLocation": {"label": "Pune"}},
+        {"uuid": uuid, "name": "Receptionist", "workLocation": {"label": "Delhi"}},
+    ]
+    scraper, fetcher = _rippling_board(listed, {uuid: {"createdOn": "x"}})
+    scraper.have_details = frozenset()  # arms the gate
+    raw = scraper.fetch_raw()
+    assert fetcher.urls() == [
+        _RIPPLING_ACME_LISTING,
+        f"{_RIPPLING_ACME_LISTING}/{uuid}",
+    ]
+    assert [row["_detail"] for row in raw] == [{"createdOn": "x"}, {}]
+    assert scraper.telemetry["tech_gated_details"] == 1
 
 
 def test_unknown_ats_raises():
@@ -9392,20 +9494,24 @@ def _oracle_reqs(start: int, n: int) -> list[dict]:
     return [{"Id": str(start + i), "Title": f"Engineer {start + i}"} for i in range(n)]
 
 
-def test_oracle_pages_past_the_first_200(monkeypatch):
+def test_oracle_pages_past_the_first_200():
     """The live shape: 299 across a full page and a short one. Both must arrive."""
-    pages = [
-        _oracle_page(_oracle_reqs(0, 200), 299),
-        _oracle_page(_oracle_reqs(200, 99), 299),
-    ]
+    from headstart.scrapers.oracle import OracleScraper
+
+    page_by_offset = {
+        0: _oracle_page(_oracle_reqs(0, 200), 299),
+        200: _oracle_page(_oracle_reqs(200, 99), 299),
+    }
     seen: list[int] = []
-    s = get_scraper("oracle", "acme.fa.ocs.oraclecloud.com", "Acme")
 
-    def _get(self, url=None):
-        seen.append(self._offset)
-        return pages[len(seen) - 1]
+    def route(method, url, kwargs):
+        if "/recruitingCEJobRequisitions?" not in url:
+            return FakeResponse(404)  # the Detail pass is not under test here
+        offset = int(url.split("offset=")[1])
+        seen.append(offset)
+        return FakeResponse(text=page_by_offset[offset])
 
-    monkeypatch.setattr(type(s), "_get", _get)
+    s = OracleScraper("acme.fa.ocs.oraclecloud.com", "Acme", fetcher=FakeFetcher(route))
     jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
 
     assert seen == [0, 200]  # the offset really advanced
@@ -10743,8 +10849,6 @@ def test_rippling_gates_details_and_reads_a_dict_department_like_parse_does(
     `parse` unpacks the dict. The gate must unpack it the same way or it classifies on a
     different string than `filter_tech` gets."""
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
-    scraper = get_scraper("rippling", "acme")
-    scraper.have_details = frozenset()
     items = [
         {
             "uuid": "1",
@@ -10757,29 +10861,13 @@ def test_rippling_gates_details_and_reads_a_dict_department_like_parse_does(
             "department": {"id": "Front Desk", "label": "Front Desk"},
         },
     ]
-
-    class _Resp:
-        status_code = 200
-
-        @staticmethod
-        def raise_for_status():
-            return None
-
-        @staticmethod
-        def json():
-            return items
-
-    monkeypatch.setattr(scraper._fetcher, "fetch", lambda *a, **k: _Resp())
-    fetched: list[str] = []
-
-    def _detail(uuid):
-        fetched.append(uuid)
-        return {"description": f"body {uuid}"}
-
-    monkeypatch.setattr(scraper, "_detail", _detail)
+    scraper, fetcher = _rippling_board(
+        items, {uuid: {"description": f"body {uuid}"} for uuid in ("1", "2")}
+    )
+    scraper.have_details = frozenset()
     raw = scraper.fetch_raw()
 
-    assert fetched == ["1"], (
+    assert fetcher.urls()[1:] == [f"{_RIPPLING_ACME_LISTING}/1"], (
         "a vague title is rescued by its department — the gate must see through the dict"
     )
     assert {it["uuid"]: it["_detail"] for it in raw} == {
@@ -10790,9 +10878,9 @@ def test_rippling_gates_details_and_reads_a_dict_department_like_parse_does(
 
 def test_apple_gates_details_on_the_listing_title_and_team(monkeypatch):
     """apple's accessors are `postingTitle` and `team.teamName` — the two `parse` reads."""
+    from headstart.scrapers.apple import AppleScraper
+
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
-    scraper = get_scraper("apple", "jobs.apple.com")
-    scraper.have_details = frozenset()
     items = [
         {"id": "1", "postingTitle": "Housekeeper", "team": {"teamName": "Facilities"}},
         {
@@ -10807,15 +10895,24 @@ def test_apple_gates_details_on_the_listing_title_and_team(monkeypatch):
             "team": {"teamName": "Information Technology"},
         },
     ]
-    monkeypatch.setattr(scraper, "_listing", lambda: items)
-    fetched: list[str] = []
-    monkeypatch.setattr(
-        scraper, "_detail", lambda i: fetched.append(i) or {"description": f"body {i}"}
-    )
+
+    def route(method, url, kwargs):
+        if method == "POST":
+            page = {"searchResults": items, "totalRecords": len(items)}
+            return FakeResponse(text=json.dumps({"res": page}))
+        job_number = url.rsplit("/", 1)[1]
+        return FakeResponse(
+            text=json.dumps({"res": {"description": f"body {job_number}"}})
+        )
+
+    fetcher = FakeFetcher(route)
+    scraper = AppleScraper("jobs.apple.com", fetcher=fetcher)
+    scraper.have_details = frozenset()
 
     raw = scraper.fetch_raw()
 
-    assert sorted(fetched) == ["2", "3"]
+    fetched = sorted(url.rsplit("/", 1)[1] for url in fetcher.urls()[1:])
+    assert fetched == ["2", "3"]
     assert set(raw["details"]) == {"2", "3"}
 
 
@@ -10965,6 +11062,8 @@ def test_phenom_gate_reads_the_listing_title_and_category_not_the_teaser(monkeyp
     proves the department: its `category` rescues a title the gate would otherwise drop, and the
     `jobFamilyGroup` sitting beside it would not. The gate runs before `needs_detail`, so the
     second row also shows the two skips composing."""
+    from headstart.scrapers.phenom import PhenomScraper
+
     listed = [
         {
             "jobId": "1",
@@ -10981,21 +11080,23 @@ def test_phenom_gate_reads_the_listing_title_and_category_not_the_teaser(monkeyp
         },
         {"jobId": "4", "title": "Data Engineer", "category": "Engineering"},
     ]
+
+    def route(method, url, kwargs):
+        posting_id = kwargs["json"]["jobId"]
+        job = {"description": f"body {posting_id}"}
+        return FakeResponse(text=json.dumps({"jobDetail": {"data": {"job": job}}}))
+
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
-    scraper = get_scraper("phenom", "careers.acme.com")
+    fetcher = FakeFetcher(route)
+    scraper = PhenomScraper("careers.acme.com", fetcher=fetcher)
     # id 4's text is already stored
     scraper.have_details = {"phenom:careers.acme.com:4"}
     monkeypatch.setattr(scraper, "_prefix", lambda: ("us", "en"))
     monkeypatch.setattr(scraper, "_listing", lambda: listed)
-    fetched: list[str] = []
-    monkeypatch.setattr(
-        scraper,
-        "_detail",
-        lambda jid: fetched.append(jid) or {"description": f"body {jid}"},
-    )
 
     raw = scraper.fetch_raw()
 
+    fetched = sorted(request.kwargs["json"]["jobId"] for request in fetcher.requests)
     assert fetched == ["2", "3"], (
         "1's teaser names engineering — reading it as the title would keep it; 3's "
         "jobFamilyGroup says Facilities — reading it as the department would drop it"
