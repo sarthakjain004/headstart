@@ -92,7 +92,8 @@ otherwise each re-add them to `base.py` at once: `skip_held` (apple, phenom, zwa
 - A listing row with no native id is now a counted, labelled loss (`no posting id`, `no job id`)
   where pyjamahr used to drop it before the pass without a word.
 - Measured live before merging, on the change's final code: the three migrated Scrapers on three
-  real Boards each (235 Jobs) read byte-identical Jobs from `origin/main` and from this change,
-  except 11 pyjamahr `posted_at` values. Each of those is the same instant with a different UTC offset, and the
-  baseline code itself returns `-05:00` and then `+05:30` for one posting on consecutive calls,
-  so the API varies the offset, not this change.
+  real Boards each (235 Jobs) read the same Jobs from `origin/main` and from this change. Every
+  differing value is a pyjamahr `posted_at` naming the same instant with a different UTC offset —
+  11 on one pair of runs, 60 on the next, 0 of them a different instant — and the baseline code
+  alone returns `-05:00` and then `+05:30` for one posting on consecutive calls, so the API
+  varies the offset, not this change.
