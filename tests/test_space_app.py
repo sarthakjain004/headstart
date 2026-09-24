@@ -2234,6 +2234,33 @@ def test_trends_epochs_name_a_dedup_change(epochs_trends_app, tmp_path):
     ]
 
 
+def test_trends_epochs_name_a_title_rules_change(epochs_trends_app, tmp_path):
+    """ADR-0215: title rules decide most rows' families, so their arrival, and any later rule
+    edit, moves Jobs between families in one tick and must be marked like a family-map edit.
+    The upgraded file gives every row before them the fingerprint ``none``."""
+    stamp = {
+        "centroid_version": "2",
+        "family_map_fingerprint": "aaa",
+        "tech_filter_version": "2",
+        "derivations_version": "13",
+        "dedup_version": "1",
+    }
+    path = _write_epochs(
+        tmp_path,
+        [
+            {"ts": _T1, **stamp, "family_rules_fingerprint": "none"},
+            {"ts": _T2, **stamp, "family_rules_fingerprint": "3b5cc5d9183c"},
+        ],
+    )
+    assert epochs_trends_app._load_epochs(path) == [
+        {
+            "ts": _T2,
+            "changed": ["role family title rules changed"],
+            "fields": ["family_rules_fingerprint"],
+        }
+    ]
+
+
 def test_trends_epochs_load_a_file_from_before_dedup_version(
     epochs_trends_app, tmp_path
 ):

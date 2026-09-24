@@ -29,7 +29,7 @@ import lancedb
 
 from headstart import roles, tech_filter
 from headstart.embedding_conventions import PROD_TABLE
-from headstart.ingest import index_plan, role_trends
+from headstart.ingest import index_plan, role_family_rules, role_trends
 from headstart.ingest.doc_prep import DERIVATIONS_VERSION
 
 _DIM = 4
@@ -55,17 +55,29 @@ def _table(db_dir: Path, rows: list[dict]) -> None:
     )
 
 
+# Every other family a title rule can name (ADR-0215): the map must define each, or
+# `role_family_rules.check_families` refuses to run.
+_RULE_ONLY_FAMILIES = sorted(
+    role_family_rules.FAMILIES - {"software-engineering", "data-science"}
+)
+
+
 def _centroids(store: Path, families_path: Path) -> None:
-    """Three orthogonal clusters + the curated map: 0,1 are tech families, 2 is non-tech."""
-    centroids = np.eye(3, _DIM, dtype=np.float32)
+    """Three orthogonal clusters + the curated map: 0,1 are tech families, 2 is non-tech.
+
+    Each family only a title rule reaches gets a zero centroid of its own, which no test vector
+    can be nearest to, so the vector-driven cases still land in clusters 0-2."""
+    k = 3 + len(_RULE_ONLY_FAMILIES)
+    centroids = np.zeros((k, _DIM), dtype=np.float32)
+    centroids[:3] = np.eye(3, _DIM, dtype=np.float32)
     roles.save(
         store,
         centroids,
         {
             "version": 1,
-            "k": 3,
+            "k": k,
             "dim": _DIM,
-            "clusters": [{"id": i, "label": f"raw {i}"} for i in range(3)],
+            "clusters": [{"id": i, "label": f"raw {i}"} for i in range(k)],
         },
     )
     families_path.parent.mkdir(parents=True, exist_ok=True)
@@ -76,6 +88,10 @@ def _centroids(store: Path, families_path: Path) -> None:
                 "families": [
                     {"name": "software-engineering", "clusters": [0]},
                     {"name": "data-science", "clusters": [1]},
+                    *(
+                        {"name": name, "clusters": [3 + i]}
+                        for i, name in enumerate(_RULE_ONLY_FAMILIES)
+                    ),
                 ],
                 "non_tech": {"clusters": [2]},
             }
@@ -212,12 +228,14 @@ def test_a_tick_records_one_epoch_row_then_stays_quiet_while_unchanged(
         tech_filter_version,
         derivations_version,
         dedup_version,
+        family_rules_fingerprint,
     ) = rows[1]
-    assert centroid_version == "1"
+    assert centroid_version == "1"  # the fit's own version, not the series version
     assert fingerprint  # a real hash, not asserting its exact value
     assert tech_filter_version == str(tech_filter.TECH_FILTER_VERSION)
     assert derivations_version == str(DERIVATIONS_VERSION)
     assert dedup_version == str(index_plan.DEDUP_VERSION)
+    assert family_rules_fingerprint == role_family_rules.fingerprint()
 
     _run(tmp_path, monkeypatch)  # nothing about the taxonomy or the code changed
     rows_again = list(csv.reader(epochs.open(encoding="utf-8", newline="")))
@@ -518,6 +536,50 @@ def test_watch_role_counts_by_title_regardless_of_cluster(tmp_path, monkeypatch)
     # the watched rows still count in their assigned families — the watchlist observes, never moves
     assert rows[("stock", "software-engineering", "mid")] == 2
     assert rows[("stock", "data-science", "senior")] == 1
+
+
+def test_title_rules_decide_before_the_centroid_and_watch_roles_count_tech_only(
+    tmp_path, monkeypatch
+):
+    """ADR-0215: a title rule outranks the nearest centroid in both directions (a tech title on a
+    non-tech vector, a non-tech title on a tech vector), a title no rule decides falls back to
+    the centroid, a watch role skips a row that ended up non-tech, and every ledger row carries
+    the series version rather than the bare centroid version."""
+    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    _watchlist(
+        tmp_path,
+        [
+            {
+                "name": "frontend",
+                "label": "Frontend",
+                "parent": "web-development",
+                "match": ["\\bfront[\\s-]?end\\b"],
+            }
+        ],
+    )
+    x = [1.0, 0.0, 0.0, 0.0]  # cluster 0 -> software-engineering
+    y = [0.0, 1.0, 0.0, 0.0]  # cluster 1 -> data-science
+    z = [0.0, 0.0, 1.0, 0.0]  # cluster 2 -> non-tech
+    _table(
+        tmp_path / "db",
+        [
+            {"id": "a", "title": "Senior Data Engineer", "vector": x},
+            {"id": "b", "title": "Frontend Engineer", "vector": z},
+            {"id": "c", "title": "Front End Clerk", "vector": x},
+            {"id": "d", "title": "Engineer II", "vector": y},
+        ],
+    )
+    ledger = _run(tmp_path, monkeypatch)
+
+    written = _rows(ledger)
+    rows = {(r["metric"], r["family"]): r["count"] for r in written}
+    assert rows[("stock", "data-engineering")] == 1  # the title, not cluster 0
+    assert rows[("stock", "web-development")] == 1  # the title, not non-tech cluster 2
+    assert rows[("stock", "data-science")] == 1  # no rule: cluster 1 decides
+    assert ("stock", "software-engineering") not in rows
+    assert rows[("stock", "non-tech")] == 1  # the clerk, by a negative rule
+    assert rows[("stock", "watch:frontend")] == 1  # the engineer; the clerk is not tech
+    assert {r["version"] for r in written} == {role_trends.series_version(1)}
 
 
 def test_watchlist_with_unknown_parent_errors_visibly(tmp_path, monkeypatch, caplog):

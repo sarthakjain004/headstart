@@ -7,7 +7,10 @@ be watched by title pattern · **Amended by:** [ADR-0052](0052-watch-the-large-d
 per run, tiny forever" below no longer describes the ledger · **Amended by:**
 [ADR-0120](0120-the-trends-ledger-is-parquet-not-csv.md) — the ledger is stored as
 `data/state/role_trends.parquet`, not CSV; the deferred retention policy stays deferred, because
-at 50.3x compression the file no longer needs one
+at 50.3x compression the file no longer needs one · **Amended by:**
+[ADR-0215](0215-a-title-rule-decides-a-role-family-before-the-centroid.md) — title rules decide a
+row's family first and the nearest centroid only where no rule does; the ledger's `version` is a
+series version that a new rules generation re-bases, as a refit does
 
 ## Context
 

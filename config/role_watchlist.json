@@ -1,10 +1,10 @@
 {
-  "_comment": "Curated watch roles for the trends ledger (ADR-0051, amended by ADR-0052): roles worth their own trend line inside a family's drill. Matched on TITLE patterns (case-insensitive regex, so \\bSRE\\b-style capitals are cosmetic), so membership is explainable per Job and survives a centroid refit. `parent` is the role_families.json family whose drill the role appears under; headstart.roles.load_watchlist validates it exists. ADR-0051 scoped this to roles too small to earn a centroid; ADR-0052 widened it to the large domain roles too (backend, frontend, ...), which k-means cannot separate at any practical k because it splits SWE by seniority and phrasing rather than by domain. Watch roles RE-COUNT Jobs already counted in their family, corpus-wide by title rather than within the parent family - they are an overlay, never a partition, and are excluded from the share denominator. The `-by-title` suffix disambiguates the four roles whose concept ALSO exists as a top-level family (qa-test, security-engineering, devops, sre-platform): same idea, different population, so they must not share a name. Keep patterns precise: a loose pattern quietly inflates a series forever. Keep each parent within app.js's CHART_MAX (8) - beyond it a role greys out instead of plotting; tests/test_role_watchlist_config.py reads that constant so the two cannot drift.",
+  "_comment": "Curated watch roles for the trends ledger (ADR-0051, amended by ADR-0052): roles worth their own trend line inside a family's drill. Matched on TITLE patterns (case-insensitive regex, so \\bSRE\\b-style capitals are cosmetic), so membership is explainable per Job and survives a centroid refit. `parent` is the role_families.json family whose drill the role appears under; headstart.roles.load_watchlist validates it exists. Since ADR-0215 each parent is the family most of the role's rows land in once title rules decide families (fullstack and frontend 73%/82% web-development, fde 69% software-engineering, each -by-title role its concept family), so a drill's 'tracked role inside X' caption describes most of the line. ADR-0051 scoped this to roles too small to earn a centroid; ADR-0052 widened it to the large domain roles too (backend, frontend, ...), which k-means cannot separate at any practical k because it splits SWE by seniority and phrasing rather than by domain. Watch roles RE-COUNT Jobs already counted in their family, corpus-wide by title rather than within the parent family - they are an overlay, never a partition, and are excluded from the share denominator. The `-by-title` suffix disambiguates the four roles whose concept ALSO exists as a top-level family (qa-test, security-engineering, devops, sre-platform): same idea, different population, so they must not share a name. Keep patterns precise: a loose pattern quietly inflates a series forever. Keep each parent within app.js's CHART_MAX (8) - beyond it a role greys out instead of plotting; tests/test_role_watchlist_config.py reads that constant so the two cannot drift.",
   "roles": [
     {
       "name": "fullstack",
       "label": "Full Stack",
-      "parent": "software-engineering",
+      "parent": "web-development",
       "match": [
         "\\bfull[\\s-]?stack\\b"
       ]
@@ -20,7 +20,7 @@
     {
       "name": "devops-by-title",
       "label": "DevOps / SRE (by title)",
-      "parent": "software-engineering",
+      "parent": "devops",
       "match": [
         "\\bdevops\\b",
         "\\bsite reliability\\b",
@@ -30,7 +30,7 @@
     {
       "name": "qa-by-title",
       "label": "QA (by title)",
-      "parent": "software-engineering",
+      "parent": "qa-test",
       "match": [
         "\\bQA\\b",
         "\\bSDET\\b",
@@ -43,7 +43,7 @@
     {
       "name": "frontend",
       "label": "Frontend",
-      "parent": "software-engineering",
+      "parent": "web-development",
       "match": [
         "\\bfront[\\s-]?end\\b"
       ]
@@ -51,7 +51,7 @@
     {
       "name": "security-by-title",
       "label": "Security (by title)",
-      "parent": "software-engineering",
+      "parent": "security-engineering",
       "match": [
         "\\bsecurity engineer",
         "\\bappsec\\b",
@@ -62,7 +62,7 @@
     {
       "name": "platform-by-title",
       "label": "Platform (by title)",
-      "parent": "software-engineering",
+      "parent": "sre-platform",
       "match": [
         "\\bplatform engineer",
         "\\bplatform developer"
@@ -71,7 +71,7 @@
     {
       "name": "fde",
       "label": "Forward Deployed Engineer",
-      "parent": "ai-ml",
+      "parent": "software-engineering",
       "match": [
         "forward[ -]deployed",
         "\\bFDE\\b"

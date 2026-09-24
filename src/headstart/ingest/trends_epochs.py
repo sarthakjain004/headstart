@@ -12,7 +12,10 @@ that looks exactly like a hiring trend, and today nothing tells a reader "we cha
 count" from "conditions changed".
 
 A fifth, :data:`headstart.ingest.index_plan.DEDUP_VERSION` (ADR-0188), marks a change to which
-served rows count as duplicates: that removes rows that were served before, in one tick.
+served rows count as duplicates: that removes rows that were served before, in one tick. A sixth,
+:func:`headstart.ingest.role_family_rules.fingerprint` (ADR-0215), marks an edit to the title
+rules that decide most rows' families before a centroid is consulted — a content hash, like the
+family map's.
 
 This module stamps those values each tick and appends a row to
 ``data/state/trends_epochs.csv`` only when at least one differs from the last recorded row — so
@@ -35,31 +38,40 @@ _COLUMNS = (
     "tech_filter_version",
     "derivations_version",
     "dedup_version",
+    "family_rules_fingerprint",
 )
-# The header before ``dedup_version`` existed (ADR-0188). Its rows are real boundaries the Space
-# still marks, so a file in this shape is upgraded in place rather than rebuilt as corrupt, each
-# old row taking the version the rules had when the column was added. A fixed value, never the
-# live constant: a bump that lands before the first upgrading tick must still read as a boundary.
-_HEADER_WITHOUT_DEDUP_VERSION = _COLUMNS[:-1]
+# What an old row takes for a column added after it was written. A fixed value, never the live
+# one: a change that lands before the first upgrading tick must still read as a boundary.
+# The dedup rules' version when their column was added (ADR-0188); no title rules existed
+# before theirs was (ADR-0215).
 _DEDUP_VERSION_AT_ADDITION = "1"
+_FAMILY_RULES_AT_ADDITION = "none"
+# Headers from before a column existed, each with the values its rows take for the columns it
+# lacks. Their rows are real boundaries the Space still marks, so a file in one of these shapes is
+# upgraded in place rather than rebuilt as corrupt.
+_OLDER_HEADERS = {
+    _COLUMNS[:-2]: (_DEDUP_VERSION_AT_ADDITION, _FAMILY_RULES_AT_ADDITION),
+    _COLUMNS[:-1]: (_FAMILY_RULES_AT_ADDITION,),
+}
 
 
-def _add_dedup_version_column_if_missing(path: Path) -> None:
-    """Rewrite a file from before ``dedup_version`` in the current shape; leave any other alone.
+def _add_missing_columns(path: Path) -> None:
+    """Rewrite a file from before a column existed in the current shape; leave any other alone.
 
     Written beside it and renamed over it, so a crash mid-write leaves the old file whole rather
     than a truncated one the merge stage's upload would publish — and the staged file is removed
     on failure, because that upload takes all of ``data/state`` and would publish it too."""
     with path.open(encoding="utf-8", newline="") as fh:
         rows = [row for row in csv.reader(fh) if row]
-    if not rows or tuple(rows[0]) != _HEADER_WITHOUT_DEDUP_VERSION:
+    fill = _OLDER_HEADERS.get(tuple(rows[0])) if rows else None
+    if fill is None:
         return
     staged = path.with_suffix(path.suffix + ".tmp")
     try:
         with staged.open("w", encoding="utf-8", newline="") as fh:
             writer = csv.writer(fh)
             writer.writerow(_COLUMNS)
-            writer.writerows([*row, _DEDUP_VERSION_AT_ADDITION] for row in rows[1:])
+            writer.writerows([*row, *fill] for row in rows[1:])
         staged.replace(path)
     finally:
         staged.unlink(missing_ok=True)
@@ -70,8 +82,8 @@ def _read_state(path: Path) -> tuple[tuple[str, ...] | None, bool]:
 
     A missing or empty file has nothing recorded and needs no rebuild — the ordinary first-run
     case. A file whose header doesn't match the current shape is corrupt, or predates this
-    module's shape (except the pre-``dedup_version`` header, which
-    :func:`_add_dedup_version_column_if_missing` upgrades before this reads it):
+    module's shape (except an older header, which :func:`_add_missing_columns` upgrades before
+    this reads it):
     :func:`append_if_changed` truncates and starts over rather than appending
     beneath it, so a corrupt file heals itself on the next tick instead of permanently reading as
     "nothing to compare against" and writing a row on every run forever.
@@ -97,6 +109,7 @@ def append_if_changed(
     tech_filter_version: int,
     derivations_version: int,
     dedup_version: int,
+    family_rules_fingerprint: str,
 ) -> bool:
     """Append one row when this tick's stamp differs from the last recorded one.
 
@@ -110,9 +123,10 @@ def append_if_changed(
         str(tech_filter_version),
         str(derivations_version),
         str(dedup_version),
+        family_rules_fingerprint,
     )
     if path.exists():
-        _add_dedup_version_column_if_missing(path)
+        _add_missing_columns(path)
     previous, rebuild = _read_state(path)
     if previous is not None and previous[1:] == current:
         return False
