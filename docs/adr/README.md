@@ -197,6 +197,7 @@ supersedes it and note the supersession in both.
 | [0196](0196-a-job-pages-json-ld-job-posting-is-read-by-one-reader.md) | A job page's JSON-LD JobPosting is read by one reader | 2026-09-24 |
 | [0197](0197-salary-owns-the-field-codec-and-one-currency-symbol-resolver.md) | `salary.py` owns the salary field codec and one currency-symbol resolver | 2026-09-24 |
 | [0198](0198-tiktok-and-bytedance-share-one-scraper-and-keep-two-ats-values.md) | TikTok and ByteDance share one scraper and keep two `ats` values | 2026-09-24 |
+| [0200](0200-a-board-scraped-empty-is-in-the-eviction-scope.md) | A Board scraped empty is in the eviction scope | 2026-09-24 |
 | [0199](0199-the-fetcher-seam-reaches-every-scraper.md) | The Fetcher seam reaches every Scraper | 2026-09-24 |
 | [0201](0201-a-scraper-states-its-detail-request-once-and-the-base-runs-the-pass.md) | A Scraper states its detail request once, and the base runs the Detail pass | 2026-09-24 |
 | [0202](0202-an-adp-recruiting-board-is-a-career-site-read-through-its-token.md) | An ADP Recruiting Management Board is a career site, read through its token in the default language | 2026-09-24 |
