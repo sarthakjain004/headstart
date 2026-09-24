@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml)
 [![pipeline](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml)
-[![ADRs](https://img.shields.io/badge/ADRs-166-blue)](./docs/adr/)
+[![ADRs](https://img.shields.io/badge/ADRs-173-blue)](./docs/adr/)
 [![Python](https://img.shields.io/badge/python-3.12+-blue)](./pyproject.toml)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue)](./LICENSE)
 
@@ -12,7 +12,7 @@
 
 Not from a feed employers had to opt in to. Not from a list ranked by who paid.
 
-**[Search the index](https://imposeidon-headstart-search.hf.space)** ·
+**[Search the index](https://imposeidon-headstart-search.hf.space)** (free; Google sign-in) ·
 **[Read the decisions](./docs/adr/)**
 
 ---
@@ -33,23 +33,22 @@ Semantic search over local embeddings, with the structured filters — years, sa
 employment type — left exactly where they belong: under your control, not inferred from a
 sentence.
 
-### 38 boards. One shape.
+### 42 ATSes. One shape.
 
-Greenhouse, Workday, Lever, Ashby, iCIMS, Oracle, Taleo, BambooHR, Phenom, and 29 more.
+Greenhouse, Workday, Lever, Ashby, iCIMS, Oracle, Taleo, BambooHR, Phenom, and 33 more.
 HeadStart finds which companies host boards on which ATS, checks that each board is alive,
 and normalizes every posting into a single `Job`. You never learn an ATS's name.
 
 ### Everything above is measured.
 
-And every limit ships next to the result it qualifies. 166 ADRs record the options that lost,
+And every limit ships next to the result it qualifies. 173 ADRs record the options that lost,
 not just the one that won. When a later measurement contradicts an earlier one, the ADR is
 amended in place rather than quietly edited.
 
 ---
 
-It serves three ways: the **AI semantic-search layer** above, a static **dashboard** built
-from a curated feed, and **job alerts** — saved searches delivered by email or Telegram to
-signed-in accounts. Everything runs on free tiers (see *What this optimises for*, below).
+It serves two ways: the **AI semantic-search layer** above, and **job alerts** — saved
+searches delivered by email or Telegram to signed-in accounts. Everything runs on free tiers (see *What this optimises for*, below).
 
 ## Why
 
@@ -136,10 +135,10 @@ hitting the host, not by reading code. This is a rule with a scar behind it: a "
 to tell dead from empty" guard looked obviously correct and died on contact, because 9 of 12 boards
 the ledger already called dead answered `GET /` with 200. Findings carry their sample size.
 
-**Record the rejected options, not just the chosen one.** 166 ADRs, **109** carrying a heading that
+**Record the rejected options, not just the chosen one.** 173 ADRs, **115** carrying a heading that
 weighs alternatives (`grep -lEi '^#{2,3} .*(alternativ|options? (considered|rejected)|rejected)'
 docs/adr/`). When a later measurement contradicts an earlier one the ADR is amended or superseded
-in place rather than quietly edited — **53** name an `Amends:` / `Supersedes:` relationship in
+in place rather than quietly edited — **57** name an `Amends:` / `Supersedes:` relationship in
 their header — so the reasoning stays auditable even when it turns out to be wrong.
 
 **Publish the limits next to the result.** The retrieval score ships with the two reasons not to
@@ -446,6 +445,10 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
 
 ## Development
 
+New here? `README.md` is the tour, [`CONTEXT.md`](./CONTEXT.md) is the glossary, and
+[`CLAUDE.md`](./CLAUDE.md) (symlinked as `AGENTS.md`) holds the working rules the coding agents on
+this repo follow. [`CONTRIBUTING.md`](./CONTRIBUTING.md) covers how to send a change.
+
 Requires Python 3.12+.
 
 ```bash
@@ -478,9 +481,31 @@ python -m headstart.ingest.embed_run --resume   # embed the English tech corpus
 python -m headstart.ingest.index sync            # incremental add/evict into the LanceDB `jobs` table
 ```
 
+## Run your own
+
+The pipeline, the Space and the alerts are all driven by GitHub Actions and one private Hugging
+Face dataset, so a fork needs its own dataset, its own Space and these settings:
+
+| Where | Name | What for |
+|---|---|---|
+| Actions secret | `HF_TOKEN` | write access to your dataset and Space (every pipeline stage, `deploy-space`) |
+| Actions secret | `SUBSCRIBERS_TOKEN`, variable `SUBSCRIBERS_REPO` | the private dataset holding Accounts and Subscriptions |
+| Actions secret | `ALERTS_TOKEN` | lets the digest run call the Space's `/search`; set the same value on the Space |
+| Actions secret | `RESEND_API_KEY`, variable `ALERTS_SENDER` | email digests ([`docs/email-alerts.md`](./docs/email-alerts.md)) |
+| Actions secret | `TELEGRAM_BOT_TOKEN` | Telegram alerts ([`docs/telegram-alerts.md`](./docs/telegram-alerts.md)) |
+| Actions variable | `SPACE_URL` | the public URL of your Space |
+| Space secret | `SECRET_KEY`, `GOOGLE_CLIENT_ID` | session signing and Google sign-in (unset = no sign-in wall, no Account features) |
+| Space secret | `LLM_ROUTER_BASE`, `LLM_ROUTER_MODEL` | an OpenAI-compatible endpoint for résumé parsing (optional) |
+
+Every alert and account feature is inert until its secrets are set. The dataset and Space ids are
+written into the workflows as `HF_DATASET` / `HF_SPACE` (`pipeline.yml`, `cleanup-index.yml`,
+`cluster-roles.yml`, `diff-role-assignments.yml`, `reclaim-dataset-storage.yml`) and as `repo_id`
+in `deploy-space.yml`; point those at your own. The auth model and failure modes are in
+[`docs/agents/deployment.md`](./docs/agents/deployment.md).
+
 ## More
 
-- **Design decisions:** [`docs/adr/`](./docs/adr/) — 166 numbered ADRs (the option picked, the
+- **Design decisions:** [`docs/adr/`](./docs/adr/) — 173 numbered ADRs (the option picked, the
   ones rejected, and why).
 - **Domain glossary:** [`CONTEXT.md`](./CONTEXT.md) — the ubiquitous language (ATS, Board, Slug,
   Job, Discovery, Liveness, Feed, Doc, Bucket, GitHub VM…).

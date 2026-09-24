@@ -1,0 +1,20 @@
+name: Missing company or ATS
+description: A company's openings aren't showing up, or an ATS isn't supported yet.
+labels: [enhancement, needs-triage]
+body:
+  - type: input
+    id: careers
+    attributes:
+      label: Careers page URL
+      description: The company's own careers page or job board.
+    validations:
+      required: true
+  - type: input
+    id: ats
+    attributes:
+      label: ATS (if you know it)
+      placeholder: e.g. workday, lever, ashby
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else

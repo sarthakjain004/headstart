@@ -1,0 +1,23 @@
+name: Bug report
+description: Something in the search, the alerts or the pipeline is wrong.
+labels: [bug, needs-triage]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: The search query and filters, or the job link, or the command you ran.
+    validations:
+      required: true
+  - type: input
+    id: ats
+    attributes:
+      label: ATS or company (if relevant)
+      placeholder: e.g. greenhouse / stripe
