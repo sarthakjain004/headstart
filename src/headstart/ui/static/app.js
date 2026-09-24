@@ -1600,8 +1600,12 @@ function readTrendHash(){
   trendUnit = ['share', 'count', 'change'].includes(q.get('unit')) ? q.get('unit') : 'change';
   trendMetric = q.get('metric') === 'new' ? 'new' : 'stock';
   trendCoverage = q.get('coverage') === 'comparable' ? 'comparable' : 'all';
-  ['trends-since', 'trends-until'].forEach(id => { if (el(id)) el(id).value = ''; });
-  setRangePreset(['7', '30', '90'].includes(q.get('days')) ? q.get('days') : 'all');
+  // A custom range is not in the link, so it survives a Back unless the link names a preset.
+  const days = ['7', '30', '90'].includes(q.get('days')) ? q.get('days') : 'all';
+  if (days !== trendDays){
+    ['trends-since', 'trends-until'].forEach(id => { if (el(id)) el(id).value = ''; });
+    setRangePreset(days);
+  }
   syncSeg('trends-metric', 'metric', trendMetric);
   syncSeg('trends-coverage', 'coverage', trendCoverage);
   return { family: q.get('family') || null };
@@ -1684,22 +1688,15 @@ function pickScope(){
 function companyNote(d){
   if (!trendPicks.length || !d.series.length) return '';
   const parts = [];
-  const since = d.counted_since || {};
-  const dated = trendPicks.filter(p => since[p.key]);
-  if (trendCoverage !== 'comparable' && dated.length){
-    const same = dated.every(p => since[p.key] === since[dated[0].key]);
-    const who = dated.length === 1 ? (dated[0].label || 'this company')
-      : same ? 'these companies' : null;
-    parts.push(who
-      ? `HeadStart has counted ${who} since ${stampLabel(since[dated[0].key], true)}; there is nothing before that.`
-      : 'HeadStart has counted ' + dated.map(p => `${p.label || 'a company'} since ${stampLabel(since[p.key], true)}`).join(', ')
-        + '; there is nothing before those dates.');
+  if (trendCoverage !== 'comparable'){
+    const counted = datedPicks(d.counted_since, 'since');
+    if (counted) parts.push(`HeadStart has counted ${counted}; there is nothing before that.`);
   }
   // Under New, every Board's first week is held out by the Space (its backlog reads as new), so
-  // the line begins a week after counting did and must say why.
-  if (trendMetric === 'new' && d.new_counted_from)
-    parts.push(`New openings count from ${stampLabel(d.new_counted_from, true)}: a board's first week reads its whole backlog as new, so none counts before then.`);
-  const notes = stepNotes(d);
+  // a line begins a week after counting did and must say why.
+  const fresh = trendMetric === 'new' && datedPicks(d.new_counted_from, 'from');
+  if (fresh) parts.push(`New openings count for ${fresh}: a board's first week reads its whole backlog as new, so none counts before then.`);
+  const notes = notesOf(d);
   if (notes.some(n => n.found))
     parts.push('A solid grey vertical line marks openings that joined the count at once — boards found later, or a company counted from a later date — not hiring.');
   if (notes.some(n => n.withhold))
@@ -1726,8 +1723,10 @@ const DEDUP_ATSES = ['taleo_enterprise', 'workday'];
 function stepNotes(d){
   const notes = [];
   const picked = trendPicks.length > 0;
-  const touched = trendPicks.some(p => (p.boardKeys || []).length > 1
-    && (p.atses || []).some(a => DEDUP_ATSES.includes(a)));
+  // Duplicate removal parks copies among one Tenant's Boards, so a pick it can touch holds two
+  // or more Boards on one of those ATSes — not one there and one elsewhere.
+  const touched = trendPicks.some(p => DEDUP_ATSES.some(a =>
+    (p.boardKeys || []).filter(k => k.startsWith(a + ':')).length > 1));
   (d.epochs || []).forEach(e => {
     const i = d.stamps.indexOf(e.ts); if (i < 0) return;
     const fields = e.fields || [];
@@ -1738,20 +1737,34 @@ function stepNotes(d){
   (d.discovered || []).forEach(f => {
     const i = d.stamps.indexOf(f.ts); if (i < 0) return;
     const who = (trendPicks.find(p => p.key === f.company) || {}).label || 'a picked company';
-    notes.push({ i, found: true, withhold: true,
+    notes.push({ i, found: true, withhold: true, company: f.company,
       text: `${f.boards} more board${f.boards === 1 ? '' : 's'} of ${who} found here: `
         + `${f.openings.toLocaleString()} tech opening${f.openings === 1 ? '' : 's'} across the company, already open, arrive at once — not new hiring` });
   });
-  if (trendPicks.length > 1 && VIEWS[viewKind(d)].split !== 'company'){
-    const since = d.counted_since || {};
+  // Not under comparable coverage: a pick counted after the cohort's base has no Boards in it.
+  // Under New a pick joins when its first week ends (`new_counted_from`), not when counted.
+  if (trendPicks.length > 1 && VIEWS[viewKind(d)].split !== 'company' && trendCoverage !== 'comparable'){
+    const since = (trendMetric === 'new' ? d.new_counted_from : d.counted_since) || {};
     trendPicks.forEach(p => {
       const i = since[p.key] ? d.stamps.findIndex(s => s >= since[p.key]) : -1;
       if (i <= 0) return;
-      notes.push({ i, found: true, withhold: true,
+      notes.push({ i, found: true, withhold: true, company: p.key,
         text: `Counting for ${p.label || 'a picked company'} starts here: its openings join these lines at once — not new hiring` });
     });
   }
   return notes;
+}
+
+// Each pick with its date from `dates` (pick key -> ISO stamp): "Acme since Sep 13", "these
+// companies since Sep 13" when they agree, else each named. '' when none is dated.
+function datedPicks(dates, word){
+  const map = dates || {};
+  const dated = trendPicks.filter(p => map[p.key]);
+  if (!dated.length) return '';
+  const on = p => `${word} ${stampLabel(map[p.key], true)}`;
+  if (dated.length === 1) return `${dated[0].label || 'this company'} ${on(dated[0])}`;
+  if (dated.every(p => map[p.key] === map[dated[0].key])) return `these companies ${on(dated[0])}`;
+  return dated.map(p => `${p.label || 'a company'} ${on(p)}`).join(', ');
 }
 
 // "at Stripe" / "at 3 companies": how the text around the chart names what the picks scope.
@@ -1805,7 +1818,10 @@ function setRangePreset(v){
 // unfiltered figure. Answering `null` states once, here, what the request already did.
 function trendAtsSelected(){
   const menu = el('trends-ats-menu'); if (!menu) return null;
-  const boxes = [...menu.querySelectorAll('input[type=checkbox]')];
+  // Only the boxes on show: one a pick narrowed away is no part of the reader's selection, and
+  // sending its unchecked state emptied the chart with nothing on screen to say why.
+  const boxes = [...menu.querySelectorAll('input[type=checkbox]')]
+    .filter(b => !(b.parentElement && b.parentElement.hidden));
   const checked = boxes.filter(b => b.checked).map(b => b.value);
   return checked.length && checked.length !== boxes.length ? checked : null;
 }
@@ -2045,7 +2061,7 @@ function hasIndexBase(s){
 // up-to-3 measured points rather than comparing two single runs — one noisy measurement at
 // either end must not swing the headline number.
 function trendDelta(points, s){
-  const seen = netOfSteps(points.map((v, j) => levelValue(v, j, s))).filter(v => v != null);
+  const seen = netOfSteps(points.map((v, j) => levelValue(v, j, s)), s).filter(v => v != null);
   if (seen.length < 2) return null;
   const k = Math.min(3, Math.floor(seen.length / 2)) || 1;
   const head = seen.slice(0, k).reduce((a, b) => a + b) / k;
@@ -2063,16 +2079,34 @@ function trendDelta(points, s){
 // markers, Google with BAE Systems "+1170.2%" was BAE joining the sum. The plotted lines keep
 // their steps, marked; only the figures beside them are net. With no pick there are no such
 // steps, so the index chart's figures are unchanged.
-function netOfSteps(levels){
-  const steps = new Set(trendData ? stepNotes(trendData).filter(n => n.withhold).map(n => n.i) : []);
+function netOfSteps(levels, s){
+  const steps = new Set(stepsFor(s));
   if (!steps.size) return levels;
-  let factor = 1, last = null;
+  let factor = 1, last = null, pending = false;
   return levels.map((v, j) => {
+    if (steps.has(j)) pending = true;            // a step on a gap lands on the next point
     if (v == null) return null;
-    if (steps.has(j) && last > 0 && v > 0) factor *= last / v;
+    if (pending && last > 0 && v > 0) factor *= last / v;
+    pending = false;
     last = v;
     return v * factor;
   });
+}
+// The indices of the withheld steps that move series `s`. A company's own step (a Board found
+// at it, it joining a sum) moves every line of a summed view but only its own line under a
+// Company breakdown, where cancelling it from another company's line would erase real change.
+// Notes are worked out once per answer (a WeakMap on the data), not once per legend row.
+const notesCache = new WeakMap();
+function notesOf(d){
+  if (!notesCache.has(d)) notesCache.set(d, stepNotes(d));
+  return notesCache.get(d);
+}
+function stepsFor(s){
+  if (!trendData) return [];
+  const perCompany = VIEWS[viewKind(trendData)].split === 'company';
+  return notesOf(trendData)
+    .filter(n => n.withhold && !(perCompany && n.company && s && s.name !== n.company))
+    .map(n => n.i);
 }
 
 // "Aug 12 09:00" from an ISO stamp — enough to anchor the axis without a timezone lecture.
@@ -2410,7 +2444,7 @@ function drawTrends(){
   // Boards of a pick that HeadStart found after its line began (ADR-0185). Each lands its
   // whole backlog at once — openings that were already open — so the step is marked where it
   // lands rather than left to read as hiring, the reason the Hot tab leaves new Boards out.
-  const notes = stepNotes(d);
+  const notes = notesOf(d);
   notes.filter(n => n.found).forEach(n => {
     const fx = x(n.i);
     svg += `<line class="found-marker" x1="${fx.toFixed(1)}" y1="${PAD_T}"
@@ -2517,6 +2551,7 @@ function drawTrends(){
   // conflating the two would read as "the pipeline is broken" rather than "you narrowed it."
   el('trends-empty').textContent = runs === 0
     ? (trendCoverage === 'comparable' && d.ledger_start
+        && (!trendRange().since || trendRange().since < d.ledger_start)
       // Comparable keeps the Boards counted at the window's start, and per-Board counting has
       // a start of its own: a window opening before it has no cohort at all, so "widen" is the
       // wrong advice there.
@@ -2998,18 +3033,24 @@ function drawPicks(){
   if (el('trends-co-q')) el('trends-co-q').placeholder = trendPicks.length ? 'Add another' : 'Add a company';
   if (el('trends-title')) el('trends-title').textContent =
     'Which tech roles are growing' + (pickPhrase() ? ' ' + pickPhrase() : '');
-  // Every pick's Boards at once, within the Space's cap on one hand-off.
+  // Every pick's Boards at once, within the Space's cap on one hand-off (CFG.max_scoped_boards);
+  // past it the link says why rather than vanishing or sending a request the route refuses.
   const boards = trendPicks.flatMap(p => p.boardKeys || []);
-  if (el('trends-co-roles')){
-    el('trends-co-roles').hidden = !trendPicks.length || trendPicks.some(p => !p.boardKeys) || boards.length > 200;
-    el('trends-co-roles').textContent = trendPicks.length > 1 ? 'See their open roles' : 'See its open roles';
+  const roles = el('trends-co-roles');
+  if (roles){
+    const cap = CFG.max_scoped_boards || Infinity;
+    roles.hidden = !trendPicks.length || trendPicks.some(p => !p.boardKeys);
+    roles.disabled = boards.length > cap;
+    roles.textContent = roles.disabled ? `Too many boards to list at once (${boards.length}) — remove a company`
+      : trendPicks.length > 1 ? 'See their open roles' : 'See its open roles';
   }
   // Source offers only the picks' ATSes: one no pick is on answers with an empty chart. Hidden,
   // not unchecked, so clearing the picks gives back exactly the selection there was.
   const on = new Set(trendPicks.flatMap(p => p.atses || []));
-  if (el('trends-ats-menu')) el('trends-ats-menu').querySelectorAll('input[type=checkbox]').forEach(box => {
-    if (box.parentElement) box.parentElement.hidden = on.size > 0 && !on.has(box.value);
-  });
+  const boxes = el('trends-ats-menu') ? [...el('trends-ats-menu').querySelectorAll('input[type=checkbox]')] : [];
+  const narrow = boxes.some(box => on.has(box.value));   // a pick on no listed ATS narrows nothing
+  boxes.forEach(box => { if (box.parentElement) box.parentElement.hidden = narrow && !on.has(box.value); });
+  trendAtsLabel();
 }
 
 function setPicks(picks){

@@ -417,8 +417,6 @@ _OPENINGS = _board_openings(_TREND_DELTAS, _LIVE_VERSION)
 _CANDIDATES = _build_candidates(_COMPANIES, _OPENINGS)
 _BOARD_ARRIVALS = _board_arrivals(_TREND_DELTAS, _LIVE_VERSION)
 _NEW_HOLD = _new_holds(_BOARD_ARRIVALS)
-# The first run a pick's `new` can count at all: the ledger's first tick plus the flow window.
-_NEW_COUNTED_FROM = min(_NEW_HOLD.values(), default=None)
 # The first tick of the Board-delta ledger, before which no per-Board count exists.
 _LEDGER_START = min((ts for ts, _ in _BOARD_ARRIVALS.values()), default=None)
 # Email alerts (ADR-0035) — invite-only, so all three must be set before the panel appears:
@@ -1286,10 +1284,10 @@ def _replay_rows(
     state: Counter[tuple[str, str, str, str, str]] = Counter()
     rows = []
     measurements = set(stamps)
-    # Under a pick, a Board's first week in the ledger reads its whole backlog as `new`, so its
-    # `new` deltas wait out the flow window and are applied once it has passed, when the backlog
-    # has aged out and what lands is real inflow. The Hot tab leaves new Boards out for the same
-    # reason (ADR-0185).
+    # A Board's first week in the ledger reads its whole backlog as `new`, so its `new` deltas
+    # wait out the flow window and are applied once it has passed, when the backlog has aged out
+    # and what lands is real inflow. The Hot tab leaves new Boards out for the same reason
+    # (ADR-0185). Every replay, a pick's or a comparable cohort's, reads the same ledger.
     held: dict[str, list[tuple[tuple[str, str, str, str, str], int]]] = defaultdict(
         list
     )
@@ -1303,11 +1301,7 @@ def _replay_rows(
             if eligible is None or row["board"] in eligible:
                 company = company_of[row["board"]] if company_of else ""
                 key = (company, row["metric"], row["family"], row["band"], row["ats"])
-                if (
-                    company_of
-                    and row["metric"] == "new"
-                    and stamp < _NEW_HOLD.get(row["board"], "")
-                ):
+                if row["metric"] == "new" and stamp < _NEW_HOLD.get(row["board"], ""):
                     held[row["board"]].append((key, row["delta"]))
                     continue
                 state[key] += row["delta"]
@@ -1366,8 +1360,8 @@ def trends():
     can be a share of that company. ``counted_since`` maps each pick to its first counted tick,
     and ``ledger_start`` is the Board-delta ledger's first tick, before which no pick has history.
     Under a pick, a Board counts toward ``new`` only once the flow window has passed since its
-    first tick, so its backlog never reads as a week's hiring; ``new_counted_from`` is the first
-    run that can count any.
+    first tick, so its backlog never reads as a week's hiring; ``new_counted_from`` maps each
+    pick to the first run its ``new`` can count.
     ``discovered`` lists ``{ts, company, boards, openings}``: Boards of a pick found after its
     line began, at the first charted run that counts them. Each is a step of openings that were
     already open, not hiring, so the chart marks it.
@@ -1579,18 +1573,26 @@ def trends():
         if board in _BOARD_ARRIVALS and not (ats and ats_of(board) not in ats)
     }
     began: dict[str, str] = {}
+    new_from: dict[
+        str, str
+    ] = {}  # when each pick's `new` first counts (see _new_holds)
     for board, pick in counted.items():
         ts = _BOARD_ARRIVALS[board][0]
         began[pick] = min(began.get(pick, ts), ts)
+        release = _NEW_HOLD.get(board, ts)
+        new_from[pick] = min(new_from.get(pick, release), release)
     # Boards of a pick found after its line began: each lands its tech openings at once, openings
     # that were already open, so the chart marks the step rather than let it read as hiring. A
     # Board that lands on the charted point where its company's line begins starts that line and
     # is not a step, nor is one that brought no tech openings. None under comparable coverage,
     # which leaves every such Board out of the cohort.
+    # Under `new` a found Board steps the line when its hold ends, not when it arrived.
     found: dict[tuple[str, str], list[int]] = {}
     if coverage != "comparable" and stamps:
         for board, pick in counted.items():
             ts, openings = _BOARD_ARRIVALS[board]
+            if metric == "new":
+                ts = _NEW_HOLD.get(board, ts)
             at = bisect_left(stamps, ts)
             if (
                 openings <= 0
@@ -1628,7 +1630,7 @@ def trends():
         },
         counted_since=began,
         ledger_start=_LEDGER_START,
-        new_counted_from=_NEW_COUNTED_FROM if company_of else None,
+        new_counted_from=new_from,
         discovered=[
             {"ts": ts, "company": pick, "boards": n, "openings": openings}
             for (ts, pick), (n, openings) in sorted(found.items())
@@ -1804,6 +1806,9 @@ def index():
             # cannot disagree with the query that returned it. `None` when the table is
             # unreadable, and the page then converts nothing, exactly as `build_filter` does.
             "fx": fx.table(),
+            # The most Boards one Search hand-off may name, so the Trends tab can say so
+            # rather than send a request the route refuses.
+            "max_scoped_boards": search.MAX_SCOPED_BOARDS,
         },
         njobs=f"{_table.count_rows():,}",
         atses=_searcher.atses,

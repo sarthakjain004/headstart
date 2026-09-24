@@ -108,21 +108,6 @@ def _one_edit(a: str, b: str) -> bool:
     return short[i:] == long_[i + 1 :]
 
 
-#: Trailing words one employer's names differ by across its ATSes ("Micron" on Workday,
-#: "Micron Technology" on Eightfold, 1,949 and 1,887 openings on 2026-09-24). Dropped only to
-#: decide which suggestions are one name, never to match: typing "micron tech" still has to find
-#: the entry that says it.
-_TWIN_TAIL = frozenset({"technology", "technologies", "group", "holdings"})
-
-
-def _twin_key(words: tuple[str, ...]) -> tuple[str, ...]:
-    """``words`` with trailing `_TWIN_TAIL` words dropped, never below one word."""
-    end = len(words)
-    while end > 1 and words[end - 1] in _TWIN_TAIL:
-        end -= 1
-    return words[:end]
-
-
 #: A word naming an ATS customer's test copy of its own site ("Jpmc Dev1", "Nvidia Sandbox2").
 _TEST_TENANT = re.compile(r"(dev|test|uat|sandbox|staging|demo|preprod)\d*")
 
@@ -158,13 +143,14 @@ def suggest(query: str, candidates: list[Candidate], limit: int) -> list[Candida
                 (rank, -candidate.openings, candidate.name, candidate.key, candidate)
             )
     ranked.sort(key=lambda item: item[:4])
-    # Names alike match at a close tier and the ranking puts more openings first within one, so
-    # the entry kept for a name is its largest unless a twin matched the query better.
+    # Equal words match at an equal tier, so the first of each name is its largest. Exactly
+    # equal, not merely close: letting a trailing "Technology" or "Group" differ joined 120
+    # name pairs, nearly all different employers (Affinity / Affinity Group, Blackstone /
+    # Blackstone Technology Group), to catch one mirror (Micron).
     seen: set[tuple[str, ...]] = set()
     kept = []
     for *_, candidate in ranked:
-        key = _twin_key(candidate.words)
-        if key not in seen:
-            seen.add(key)
+        if candidate.words not in seen:
+            seen.add(candidate.words)
             kept.append(candidate)
     return kept[:limit]

@@ -103,7 +103,7 @@ function loadApp(fetchImpl) {
     + ' suggest: suggestCompanies, choose: chooseCo, options: () => coOptions,'
     + ' follow: boards => { myCompanies = { followed: boards, hidden: [] }; },'
     + ' followed: followedOption, openTrend: openCompanyTrend, chartedAndOther,'
-    + ' unit: () => trendUnit, clickUnit: pickUnit, hash: trendHash, pick: setPicks,'
+    + ' unit: () => trendUnit, clickUnit: pickUnit, hash: trendHash, pick: setPicks, netOfSteps,'
     + ' set: (d, drill) => { trendData = d; trendDrill = drill || null; } };'
     // Repaints are counted at the global binding, which is what loadTrends' own `drawTrends()`
     // call resolves — so this counts the real paints, not a copy of them.
@@ -1264,8 +1264,41 @@ test('a small count gets whole-number ticks', () => {
 test('under New, the tab says from when openings count as new', async () => {
   const { t, ctx, nodes } = loadApp();
   t.metricSet('new');
-  answering(ctx, { ...picked({ a: [null, 50], b: [null, 40] }), metric: 'new', new_counted_from: STAMPS[1] });
+  answering(ctx, { ...picked({ a: [null, 50], b: [null, 40] }), metric: 'new',
+    new_counted_from: { 'greenhouse:acme': STAMPS[1] } });
   t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
   await t.load(null);
-  assert.match(nodes['trends-empty'].textContent, /New openings count from Sep 20/);
+  assert.match(nodes['trends-empty'].textContent, /New openings count for Acme from Sep 20/);
+});
+
+
+test('under a Company breakdown, one company’s found Board nets only its own line', async () => {
+  const { t, ctx, nodes } = loadApp();
+  const stamps = ['2026-09-13T00:00:00+00:00', '2026-09-14T00:00:00+00:00',
+                  '2026-09-15T00:00:00+00:00', '2026-09-16T00:00:00+00:00'];
+  const two = [{ key: 'greenhouse:acme', label: 'Acme' }, { key: 'lever:beta', label: 'Beta' }];
+  answering(ctx, { ...picked({}, two), split_by: 'company', stamps, totals: [1e4, 1e4, 1e4, 1e4],
+    non_tech: [0, 0, 0, 0],
+    series: [{ name: 'greenhouse:acme', label: 'Acme', points: [100, 100, 300, 300], latest: 300 },
+             { name: 'lever:beta', label: 'Beta', points: [100, 100, 150, 150], latest: 150 }],
+    discovered: [{ ts: stamps[2], company: 'greenhouse:acme', boards: 3, openings: 200 }] });
+  t.setPicks(two);
+  t.selectSplit('company');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  t.setUnit('count', false);
+  t.draw();
+  const legend = nodes['trends-legend'].innerHTML;
+  assert.match(row(legend, 'greenhouse:acme'), /\+0\.0%|→/, 'Acme’s jump was its found Boards');
+  assert.match(row(legend, 'lever:beta'), /\+50\.0%/, 'Beta’s real growth that run is kept');
+});
+
+test('a step on a gap lands on the line’s next point', () => {
+  const { t, ctx } = loadApp();
+  void ctx;
+  const stamps = ['a', 'b', 'c', 'd'];
+  t.set({ ...picked({}), stamps, series: [], discovered: [],
+    epochs: [{ ts: 'b', changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
+  assert.deepEqual(t.netOfSteps([100, null, 200, 220]), [100, null, 100, 110]);
 });

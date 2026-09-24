@@ -297,10 +297,11 @@ A fresh critique agent scored the next build 5/10. Its measured findings, and wh
   Engineering reads +27.7% instead of +74.7%, and Google with BAE Systems no longer shows
   "+1170.2%". Since the figures are net, movers are named again. The plotted lines keep their
   steps, marked.
-- **Findability.** Suggestions treat names that differ only by a trailing "Technology",
-  "Technologies", "Group" or "Holdings" as one name when keeping the largest (Micron, 1,949 on
-  Workday and 1,887 on Eightfold). Matching is unchanged, so "micron tech" still finds the entry
-  that says it.
+- **Findability.** A first cut treated names that differ only by a trailing "Technology" or
+  "Group" as one name, to fold Micron's two entries (1,949 on Workday, 1,887 on Eightfold). The
+  code review measured it over the directory: it joined 120 name pairs, and nearly all were
+  different employers (Affinity / Affinity Group, Blackstone / Blackstone Technology Group). It
+  was withdrawn. Micron's two entries stay until an alias joins them.
 - **Friction.** A pick closes and clears the list, which covered the filters (both critics).
   "See their open roles" hands every pick's Boards over at once. A tap reads the chart on a
   touch screen. Tables name their first column for the view (Category, Line, Company, Level,
@@ -311,3 +312,18 @@ A fresh critique agent scored the next build 5/10. Its measured findings, and wh
   - Shopify, Goldman Sachs, Flipkart, Swiggy and TCS have no Board. That is discovery work.
   - The Hot tab's "open now" counts a different stock from the trend's tech openings.
   - Search has no role-family filter to carry a drilled category over.
+
+Its code review then tightened the round:
+
+- Netting is per line. Under a Company breakdown, a company's own step (a found Board, its
+  joining a sum) is divided out of that company's line only, so another company's real change
+  in that run survives. A step that falls on a gap in a line lands on its next point.
+- The `new` hold applies to every replay of the ledger, so the comparable index chart is held
+  too. `new_counted_from` is now per pick. Under `new`, a found Board's marker sits at the run
+  it starts counting, not at its arrival.
+- Under comparable coverage, a later pick has no Boards in the cohort, so it is not marked.
+  Duplicate removal withholds only at a pick with two or more Boards on one of its ATSes.
+- The hand-off cap comes from the page (`CFG.max_scoped_boards`). Past it the link says why.
+  Source hides only the ATSes the picks are not on, and hidden boxes are never sent. A custom
+  date range survives Back. The empty-Comparable advice appears only when the window starts
+  before per-Board counting.

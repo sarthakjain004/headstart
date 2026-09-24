@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Final
 
 from headstart import log
+from headstart.board_identity import ats_of
 from headstart.ingest.board_operator import tenant
 
 _log = log.get(__name__)
@@ -185,7 +186,7 @@ def _names_the_board(name: str, board: str) -> bool:
         ledger_spelling
         or _is_site(name, board)
         or _is_noise_label(name, board)
-        or name.strip().casefold() in _VENDOR_TITLES.get(board.split(":", 1)[0], ())
+        or name.strip().casefold() in _VENDOR_TITLES.get(ats_of(board), ())
     )
 
 

@@ -1809,7 +1809,6 @@ def company_trends(trends_app, monkeypatch):
     # No holds by default: the fixture's runs span two days, inside every Board's first week.
     # The hold has its own tests below.
     monkeypatch.setattr(trends_app, "_NEW_HOLD", {})
-    monkeypatch.setattr(trends_app, "_NEW_COUNTED_FROM", None)
     monkeypatch.setattr(
         trends_app, "_LEDGER_START", min(ts for ts, _ in arrivals.values())
     )
@@ -2694,3 +2693,16 @@ def test_every_board_waits_out_the_new_window_from_its_first_tick(trends_app):
     )
     # the first tick's baseline waits too: the ledger's first week reads every backlog as new
     assert holds == {"a": "2026-09-20T00:00:00+00:00", "b": "2026-09-27T06:00:00+00:00"}
+
+
+def test_new_counts_from_each_picks_own_first_week(company_trends, monkeypatch):
+    app_module = company_trends.application.view_functions["trends"].__globals__
+    holds = app_module["_new_holds"](app_module["_BOARD_ARRIVALS"])
+    monkeypatch.setitem(app_module, "_NEW_HOLD", holds)
+    d = company_trends.get(
+        "/trends?company=workday:hpe/a&company=eightfold:citi.eightfold.ai"
+    ).get_json()
+    assert d["new_counted_from"] == {
+        "workday:hpe/a": holds["workday:hpe/a"],
+        "eightfold:citi.eightfold.ai": holds["eightfold:citi.eightfold.ai"],
+    }

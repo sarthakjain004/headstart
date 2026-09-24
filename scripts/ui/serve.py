@@ -22,6 +22,7 @@ from headstart import facets, fx, geo
 from headstart.alerts.store import MAX_COMPANIES, CompanyPrefs
 from headstart.search import (
     KEYWORD_DEFAULT_SCOPE,
+    MAX_SCOPED_BOARDS,
     PROD_TABLE,
     JobSearch,
     account_clause,
@@ -97,6 +98,8 @@ def index():
             # cannot disagree with the query that returned it. `None` when the table is
             # unreadable, and the page then converts nothing, exactly as `build_filter` does.
             "fx": fx.table(),
+            # The Trends tab's hand-off cap, shared with the Space (ADR-0042 mirror).
+            "max_scoped_boards": MAX_SCOPED_BOARDS,
         },
         # The Data tab links out to the public repo (ADR-0113). Hardcoded here rather than
         # imported: this file is the local dev renderer and shares no config with the Space.
