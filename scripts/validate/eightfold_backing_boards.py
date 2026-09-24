@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write Eightfold's alias ledger: career sites whose backing ATS Board already serves them (ADR-0204).
+"""Write Eightfold's alias ledger: career sites whose backing ATS Board already serves them (ADR-0205).
 
 An Eightfold career site is often a front over the company's real ATS — NVIDIA's `jobs.nvidia.com`
 lists the requisitions of its Workday site, Arcadis's lists its Oracle ones — and both Boards are
@@ -22,7 +22,7 @@ when, in `aliases`:
 - **A second Eightfold site of one company follows its winner.** `nvidia.eightfold.ai` serves
   `jobs.nvidia.com`'s postings; it is decided after the winner and buried onto the winner's
   backing Board when the winner is itself buried, else onto the winner. These are
-  `check_liveness`'s hand-frozen `_EIGHTFOLD_ALIAS_LOSERS`, which stays beside them (ADR-0204).
+  `check_liveness`'s hand-frozen `_EIGHTFOLD_ALIAS_LOSERS`, which stays beside them (ADR-0205).
 
 The candidates are `BACKING`, found by content on served index v654 (2026-09-23): pairs of Boards
 on two ATSes sharing exact descriptions. A new front enters by adding it there. Lumen is left out
@@ -217,16 +217,15 @@ def write_aliases(
     companies = {
         b.lowercase_identity: b for b in scrapable_boards.load(liveness_dir, min_jobs=0)
     }
-    scrapable = set(companies) | _buried_by(liveness_dir)
+    # A backing Board must be Scrapable; the ledger this run replaces does not count against it.
+    eligible = set(companies) | _buried_by(liveness_dir)
     boards = sorted(set(backing) | {p for ps in backing.values() for p in ps})
     where = {}
     for key in boards:
         ats, slug = key.split(":", 1)
         if ats == ATS:
-            where[key] = (
-                ATS,
-                slug,
-            )  # read even on a dead row: the former losers are dead
+            # read even on a dead row: the former losers are dead
+            where[key] = (ATS, slug)
         elif key in companies:
             where[key] = (ats, companies[key].slug)
     print(f"{len(where)} of {len(boards)} Boards to read", flush=True)
@@ -241,7 +240,7 @@ def write_aliases(
     buried = aliases(
         backing,
         listings,
-        scrapable,
+        eligible,
         lambda board, why: print(f"  keep {board}: {why}", flush=True),
     )
     rows = [
@@ -255,8 +254,9 @@ def write_aliases(
 
 
 def _buried_by(liveness_dir: Path) -> set[str]:
-    """The live Eightfold Boards the ledger this run replaces buries. They count as Scrapable
-    here: a winner the last run buried must not count against its own second site."""
+    """Eightfold Boards on live rows that the ledger this run replaces buries. Only that ledger
+    keeps them off the Scrapable list, so a winner the last run buried must not count against its
+    own second site."""
     previous = board_aliases.load_for(liveness_dir, ATS)
     return {
         f"{ATS}:{v.tenant}".lower()
@@ -347,7 +347,9 @@ def _successfactors(slug: str) -> list[Posting]:
     if not listed:
         listed = scraper._search_job_urls()[0]
     posts = []
-    for url, _id in listed:
+    for n, (url, _id) in enumerate(listed, 1):
+        if n % 250 == 0:
+            print(f"  successfactors:{slug}: {n}/{len(listed)} job pages", flush=True)
         try:
             r = scraper._fetch(
                 "GET", url, headers={"User-Agent": USER_AGENT}, timeout=60

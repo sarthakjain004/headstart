@@ -10942,7 +10942,7 @@ def test_phenom_gate_reads_the_listing_title_and_category_not_the_teaser(monkeyp
 def test_eightfold_smartapply_to_pcsx_shape_carries_the_requisition_ids():
     """The PCSX search states `atsJobId`/`displayJobId` — the backing ATS's requisition id — and
     SmartApply states the same as `ats_job_id`/`display_job_id` (albemarle `REQ-31366`,
-    2026-09-24). `eightfold_backing_boards.py` matches on them (ADR-0204)."""
+    2026-09-24). `eightfold_backing_boards.py` matches on them (ADR-0205)."""
     from headstart.scrapers.eightfold import _smartapply_to_pcsx_shape
 
     got = _smartapply_to_pcsx_shape(

@@ -1028,7 +1028,7 @@ def is_nonprod(tenant: str, url: str) -> bool:
 # URLs each) and resurrect the duplicate. So the burial has to hold without asking the host —
 # the same pre-probe skip ADR-0034 gives non-prod boards, re-asserted free on every check (#157).
 # The winner named against each is the live tenant it duplicates.
-# The six are also candidates of `eightfold_backing_boards.py` (ADR-0204), which buries each in
+# The six are also candidates of `eightfold_backing_boards.py` (ADR-0205), which buries each in
 # `data/validate/aliases/eightfold.csv` whenever it can read the pair whole, so `_drop_alias_
 # duplicates` above skips them too. This set stays because that verdict needs a read and this one
 # does not: in both runs of 2026-09-24 the writer could not read careers.qualcomm.com whole (a

@@ -1,4 +1,4 @@
-# ADR-0204: An Eightfold career site whose backing ATS Board already serves it is an alias
+# ADR-0205: An Eightfold career site whose backing ATS Board already serves it is an alias
 
 **Status:** accepted · **Date:** 2026-09-24 · **Relates to:** [ADR-0017](0017-tech-role-filter.md) (the tech gate decides what is served), [ADR-0111](0111-duplicate-boards-resolve-the-board-surface.md) (the alias ledger, and the `_EIGHTFOLD_ALIAS_LOSERS` it kept), [ADR-0182](0182-a-clearcompany-board-is-its-hrm-direct-feed.md) and [ADR-0186](0186-a-taleo-section-another-section-already-lists-is-an-alias.md) (the two writers this one follows), [ADR-0187](0187-a-workday-requisition-is-served-once-per-tenant.md) (the Workday requisition id), [ADR-0188](0188-a-dedup-rule-change-is-a-trends-epoch.md) (the Trends epoch)
 
@@ -133,6 +133,10 @@ in its run's slice has not had today's postings added.
 - **Scrapable Board** and **Hiring Board** fall by 3 each (the losers' rows are already dead).
 - **The Trends chart marks the tick:** `backing-reqs` is a new alias signal, so this change bumps
   `index_plan.DEDUP_VERSION` from 3 to 4 (ADR-0188).
+- **Oracle and SuccessFactors backing copies are judged on title alone**, because their listings
+  carry no department while the served row gets one from the detail page or the feed. None of the
+  three buried Boards has such a backing Board; a future one would lean on the 929-posting upper
+  bound above.
 - **The same gap as ADR-0186:** a burial is bounded by how often the writer runs, not by time.
 - **A run takes about 90 minutes**, most of it reading SuccessFactors job pages one at a time
   (sephora's 1,900) — the only way to read their requisition ids.

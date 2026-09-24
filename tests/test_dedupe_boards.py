@@ -2,7 +2,7 @@
 
 It rewrites the whole file from what redirects say, and redirects find none of the rows
 ClearCompany's `shared-reqs` (ADR-0182), Taleo Enterprise's `subset-reqs` (ADR-0186) or
-Eightfold's `backing-reqs` (ADR-0204) signal writes — nor a hand-written row such as Jibe's — so an
+Eightfold's `backing-reqs` (ADR-0205) signal writes — nor a hand-written row such as Jibe's — so an
 apply would replace every one of them with nothing, and report success.
 """
 

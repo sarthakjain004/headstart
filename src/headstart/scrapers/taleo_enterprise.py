@@ -368,7 +368,7 @@ class TaleoEnterpriseScraper(BaseScraper):
                     {
                         "id": job_id,
                         # The requisition number; unused by `parse`, read by
-                        # `eightfold_backing_boards.py` (ADR-0204).
+                        # `eightfold_backing_boards.py` (ADR-0205).
                         "contest_no": record.get("contestNo"),
                         "title": title,
                         "location": locations,

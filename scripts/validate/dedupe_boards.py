@@ -117,7 +117,7 @@ def main() -> int:
         "adp_recruiting": "adp_recruiting_subset_sites.py (ADR-0202)",
         "clearcompany": "clearcompany_shared_accounts.py (ADR-0182)",
         "taleo_enterprise": "taleo_enterprise_subset_sections.py (ADR-0186)",
-        "eightfold": "eightfold_backing_boards.py (ADR-0204)",
+        "eightfold": "eightfold_backing_boards.py (ADR-0205)",
     }
     if args.apply and args.ats in written_elsewhere:
         raise SystemExit(
@@ -125,6 +125,7 @@ def main() -> int:
             "--apply here would erase it."
         )
     # And a row nobody's script writes (Jibe's hand-written `shared-listing`): refuse on content.
+    # The map above stays because it also refuses before its writer has created the file.
     existing = board_aliases.path_for(liveness.dir_for(ROOT), args.ats)
     if args.apply and existing.exists():
         with existing.open(newline="", encoding="utf-8") as fh:

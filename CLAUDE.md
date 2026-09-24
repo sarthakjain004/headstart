@@ -101,7 +101,7 @@ discovery landing (#576) moved five more. Board totals belong in README and CONT
   `data/validate/aliases/eightfold.csv` (signal `backing-reqs`), one row per backing Board. Nothing
   scrapes a buried site, so the script is the only thing that notices when its backing Board drops
   out or it starts posting on its own. Candidates are its `BACKING` table; a new front enters there.
-  `dedupe_boards.py` refuses `--apply` for this ATS (ADR-0204).
+  `dedupe_boards.py` refuses `--apply` for this ATS (ADR-0205).
 - **SuccessFactors holds RMK sites only.** `p_successfactors` accepts any `<urlset>`, so a corporate
   site or a Radancy career front probes `live`, and the scraper reads it as 0 jobs or as page titles
   ("Working at TUI"). Before landing a host, confirm a `/job/` page from its sitemap (urlset, RSS or
