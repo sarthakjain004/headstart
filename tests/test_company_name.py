@@ -92,10 +92,10 @@ def test_a_board_title_yields_the_company_name(ats, title, slug, expected):
         # `from_title` would refuse them and only the pattern gate can be what does. Without
         # such a row, deleting that gate left the whole suite green.
         ("freshteam", "Careers at Red Baton", "redbaton"),
-        ("workday", "Bachem", "sap"),
+        ("oracle", "Bachem", "sap"),
         ("darwinbox", "Tata Motors", "tatamotors"),
         ("greenhouse", "Stripe", "stripe"),
-        ("workday", "Careers at Anything", "pwc"),
+        ("icims", "Careers at Anything", "pwc"),
         # nothing to read
         ("lever", None, "acme"),
         ("lever", "", "acme"),
