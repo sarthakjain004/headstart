@@ -19,6 +19,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
+// Deep equality that is strict on values but not on realms. app.js runs in a vm context, so its
+// arrays carry that context's prototypes and fail `deepStrictEqual` by prototype alone — while
+// the loose `deepEqual` the file used to use treats `[40, 40]` and `[null, null]` as equal on
+// Node 26, which let a wrong netting result pass locally and fail on CI.
+const same = (actual, expected, message) =>
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(actual)), expected, message);
+
 const APP_JS = path.join(__dirname, '..', '..', 'src', 'headstart', 'ui', 'static', 'app.js');
 
 function fakeEl() {
@@ -255,14 +262,14 @@ test('the Other row is inert — clicking it issues no request', () => {
   // `__other__` is not a real family name, so trendClick's findIndex(-1) guard catches it —
   // the SAME guard an unknown/mistyped name relies on, not a special case added for Other.
   t.click('__other__');
-  assert.deepEqual(fetches, []);
+  same(fetches, []);
 });
 
 test('a name past CHART_MAX is still inert if clicked directly (defence in depth)', () => {
   const { t, fetches } = loadApp();
   t.set(fixture(), null);
   t.click('ai-ml');                                 // 9th: real name, but past CHART_MAX
-  assert.deepEqual(fetches, []);
+  same(fetches, []);
 });
 
 test('a charted row does issue a drill request', () => {
@@ -318,7 +325,7 @@ test('an unknown series name is ignored rather than drilled', () => {
   // be "no request was issued". Checking trendSplit would pass either way: 'bands' is both the
   // ignored-click state and the fallback a drilled unknown name would land on.
   t.click('no-such-family');
-  assert.deepEqual(fetches, []);
+  same(fetches, []);
 });
 
 test('a charted category keeps its color slot when a filter reshuffles the ranking', () => {
@@ -377,7 +384,7 @@ test('every box checked selects nothing — the only spelling of "no filter"', (
 test('an unchecked box narrows the selection to what remains checked', () => {
   const { t, nodes } = loadApp();
   fakeAtsMenu(nodes, [['greenhouse', true], ['lever', true], ['workday', false]]);
-  assert.deepEqual(t.atsSelected(), ['greenhouse', 'lever']);
+  same(t.atsSelected(), ['greenhouse', 'lever']);
 });
 
 test('all-checked sends no ats param on the wire', () => {
@@ -442,7 +449,7 @@ test('a narrowed selection is sent as repeated ats params', () => {
   t.set(fixture(), null);
   t.click('software-engineering');
   const params = new URLSearchParams(fetches[0].split('?')[1]);
-  assert.deepEqual(params.getAll('ats'), ['greenhouse', 'lever']);
+  same(params.getAll('ats'), ['greenhouse', 'lever']);
 });
 
 test('the trigger label reads "All ATS" when nothing is excluded', () => {
@@ -690,7 +697,7 @@ test('a series measured at zero early is not indexed off a later point', () => {
   const high = { name: 'high', label: 'high', points: [0, 0, 50, 100], latest: 100 };
   t.set({ ...f, series: [high, ...f.series], stamps: ['1', '2', '3', '4'],
           totals: [100, 100, 100, 100] }, null);
-  assert.deepEqual(t.seriesValues(high), [null, null, null, null],
+  same(t.seriesValues(high), [null, null, null, null],
     'a measured zero is the base, so this series has none — it must not index off the 50');
 });
 
@@ -721,7 +728,7 @@ test('a healthy series indexes its RAW COUNT to 100, not its share', () => {
   t.set({ ...f, series: [ok, ...f.series], stamps: ['1', '2', '3', '4'],
           totals: [100, 150, 200, 300] }, null);
   t.setUnit('change', false);
-  assert.deepEqual(t.seriesValues(ok).map(Math.round), [100, 113, 150, 200],
+  same(t.seriesValues(ok).map(Math.round), [100, 113, 150, 200],
     'the base is the count, so a growing denominator must not move the line');
 });
 
@@ -768,7 +775,7 @@ test('picks go to /trends as repeated company params', async () => {
   const asked = answering(ctx, picked({ a: [50, 60], b: [40, 45] }));
   t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }, { key: 'lever:beta', label: 'Beta' }]);
   await t.load(null);
-  assert.deepEqual(asked[0].getAll('company'), ['greenhouse:acme', 'lever:beta']);
+  same(asked[0].getAll('company'), ['greenhouse:acme', 'lever:beta']);
   assert.equal(asked[0].get('split'), 'company', 'two picks are compared, not summed');
 });
 
@@ -786,7 +793,7 @@ test('the Space names a pick that arrived by key alone', async () => {
     [{ key: 'workday:acme/site1', label: 'Acme Corp', name: 'Acme Corp' }]));
   t.setPicks([{ key: 'workday:acme/site2', label: null }]);
   await t.load(null);
-  assert.deepEqual(t.picks(), [{ key: 'workday:acme/site1', label: 'Acme Corp',
+  same(t.picks(), [{ key: 'workday:acme/site1', label: 'Acme Corp',
     boardKeys: ['workday:acme/site1'], atses: ['workday'] }]);
   assert.ok(nodes['trends-co-chips'].innerHTML.includes('Acme Corp'));
 });
@@ -799,7 +806,7 @@ test('a small pick opens on one Total line, the sum of its categories', async ()
   const s = t.data().series;
   assert.equal(s.length, 1);
   assert.equal(s[0].name, '__total__');
-  assert.deepEqual(s[0].points, [6, 6]);
+  same(s[0].points, [6, 6]);
   assert.equal(s[0].latest, 6);
   assert.ok(!nodes['trends-legend'].innerHTML.includes('role="button"'),
     'a Total row opens nothing, so it must not be a button');
@@ -858,7 +865,7 @@ test('a company line under Share divides by its own company, not every pick', as
   t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }, { key: 'lever:beta', label: 'Beta' }]);
   await t.load(null);
   t.setUnit('share', false);
-  assert.deepEqual(t.seriesValues(t.data().series[0]), [50, 30]);
+  same(t.seriesValues(t.data().series[0]), [50, 30]);
 });
 
 test('a company line opens nothing when clicked', async () => {
@@ -884,7 +891,7 @@ test('a pick the directory does not hold is dropped with a sentence, and the res
   };
   t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }, { key: 'workday:ghost', label: 'Ghost' }]);
   await t.load(null);
-  assert.deepEqual(asked[1].getAll('company'), ['greenhouse:acme']);
+  same(asked[1].getAll('company'), ['greenhouse:acme']);
   assert.match(nodes['trends-co-note'].textContent, /No trend for Ghost yet/);
   assert.equal(nodes['trends-error'].hidden, true);
 });
@@ -902,7 +909,7 @@ test('a Space with no directory drops every pick and draws the whole index', asy
   t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
   await t.load(null);
   assert.equal(asked.length, 2);
-  assert.deepEqual(t.picks(), []);
+  same(t.picks(), []);
   assert.match(nodes['trends-co-note'].textContent, /aren’t available/);
 });
 
@@ -950,9 +957,9 @@ test('the follow list is one option that adds every followed company not already
   t.follow(['greenhouse:acme', 'lever:beta']);
   t.setPicks([{ key: 'Greenhouse:Acme', label: 'Acme' }]);
   const [option] = t.followed();
-  assert.deepEqual(option.followed, ['lever:beta'], 'casing differs between Board keys');
+  same(option.followed, ['lever:beta'], 'casing differs between Board keys');
   t.follow([]);
-  assert.deepEqual(t.followed(), [], 'nothing followed, nothing offered');
+  same(t.followed(), [], 'nothing followed, nothing offered');
 });
 
 test('a link replaces the picks through the hash, labelled by the name it showed', () => {
@@ -960,7 +967,7 @@ test('a link replaces the picks through the hash, labelled by the name it showed
   t.openTrend('workday:acme/site1', 'Acme');
   assert.equal(ctx.location.hash, '#trends?company=workday%3Aacme%2Fsite1');
   assert.ok(t.readHash());
-  assert.deepEqual(t.picks(), [{ key: 'workday:acme/site1', label: 'Acme' }]);
+  same(t.picks(), [{ key: 'workday:acme/site1', label: 'Acme' }]);
   assert.ok(!t.readHash(), 'the same hash again changes nothing');
 });
 
@@ -1003,7 +1010,7 @@ test('picks keep the order they were added in, though the Space answers sorted b
     [{ key: 'a:first', label: 'A' }, { key: 'z:last', label: 'Z' }, { key: 'm:canonical', label: 'M' }]));
   t.setPicks([{ key: 'z:last', label: null }, { key: 'm:alias', label: null }, { key: 'a:first', label: null }]);
   await t.load(null);
-  assert.deepEqual(t.picks().map(p => p.key), ['z:last', 'a:first', 'm:canonical'],
+  same(t.picks().map(p => p.key), ['z:last', 'a:first', 'm:canonical'],
     'a pick made by another Board of its company goes last, under the directory key');
 });
 
@@ -1030,7 +1037,7 @@ test('past eight picks, Company folds the rest into Other, a share of their own 
   const { other } = t.chartedAndOther(t.data());
   assert.match(other.label, /Other \(2 smaller companies\)/);
   // c8 + c9 = 92 + 91 openings, over their own two totals of 200: 45.75%, not 183 of 10,000
-  assert.deepEqual(t.seriesValues(other), [45.75, 45.75]);
+  same(t.seriesValues(other), [45.75, 45.75]);
 });
 
 
@@ -1232,7 +1239,7 @@ test('Enter with nothing highlighted takes the top suggestion', async () => {
   answering(ctx, picked({ a: [50, 60], b: [40, 45] }, [{ key: 'workday:amd', label: 'AMD' }]));
   const input = ctx.document.getElementById('trends-co-q');
   input.listeners.keydown.forEach(fn => fn({ key: 'Enter', preventDefault() {} }));
-  assert.deepEqual(t.picks().map(p => p.key), ['workday:amd']);
+  same(t.picks().map(p => p.key), ['workday:amd']);
 });
 
 test('a held backlog under New says why nothing is new yet, with no empty tiles', async () => {
@@ -1313,7 +1320,7 @@ test('a step on a gap lands on the line’s next point', () => {
     epochs: [{ ts: 'b', changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
   t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
   // Adjusted backwards: the latest value stays real, the history before the step is scaled.
-  assert.deepEqual(t.netOfSteps([100, null, 200, 220]), [200, null, 200, 220]);
+  same(t.netOfSteps([100, null, 200, 220]), [200, null, 200, 220]);
 });
 
 
@@ -1339,8 +1346,8 @@ test('under Change the plotted line is the one its percentage is read from', () 
   t.setUnit('change', false);
   const [acme, beta] = t.data().series;
   // Google's line ended at 117 over a legend reading −0.2%: the found Boards are not drawn now.
-  assert.deepEqual(t.seriesValues(acme), [100, 100, 100, 100]);
-  assert.deepEqual(t.seriesValues(beta), [100, 100, 150, 150], 'another company’s step is not taken out of Beta');
+  same(t.seriesValues(acme), [100, 100, 100, 100]);
+  same(t.seriesValues(beta), [100, 100, 150, 150], 'another company’s step is not taken out of Beta');
 });
 
 test('duplicate removal is taken out only of the pick it can touch', () => {
@@ -1350,9 +1357,9 @@ test('duplicate removal is taken out only of the pick it can touch', () => {
     { epochs: [{ ts: FOUR[2], changed: ['duplicate removal changed'], fields: ['dedup_version'] }] }));
   t.setUnit('change', false);
   const [acme, beta] = t.data().series;
-  assert.deepEqual(t.seriesValues(acme), [100, 100, 100, 100]);
+  same(t.seriesValues(acme), [100, 100, 100, 100]);
   // Beta has one Board: duplicate removal cannot have moved it, so its fall is its own.
-  assert.deepEqual(t.seriesValues(beta), [100, 100, 80, 80]);
+  same(t.seriesValues(beta), [100, 100, 80, 80]);
 });
 
 test('under Count a marked step breaks the line instead of drawing a climb', () => {
@@ -1454,12 +1461,19 @@ test('the mover floor is held to the openings a line really started with', () =>
   assert.match(row(nodes['trends-legend'].innerHTML, 'a'), /↑ \+1 opening</);
 });
 
-test('a step off zero starts the line there rather than staying in it', () => {
+test('a counting change off zero starts the line there; found openings off zero lift it', () => {
   const { t } = loadApp();
   t.setPicks([ACME]);
-  t.set({ ...picked({}), stamps: FOUR, series: [], epochs: [],
+  t.set({ ...picked({}), stamps: FOUR, series: [], discovered: [],
+    epochs: [{ ts: FOUR[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
+  // No ratio off zero, so nothing before the change is a level to adjust.
+  same(t.netOfSteps([0, 0, 40, 40]), [null, null, 40, 40]);
+  const found = loadApp();
+  found.t.setPicks([ACME]);
+  found.t.set({ ...picked({}), stamps: FOUR, series: [], epochs: [],
     discovered: [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 1, openings: 40 }] });
-  assert.deepEqual(t.netOfSteps([0, 0, 40, 42]), [null, null, 40, 42]);
+  // Found openings were open all along: the history is lifted by them.
+  same(found.t.netOfSteps([0, 0, 40, 42]), [40, 40, 40, 42]);
 });
 
 test('a pick the ATS selection drops is told so, even under Comparable', () => {
@@ -1497,7 +1511,7 @@ test('a counting change that lands over two runs is left out whole (Amazon, Sep 
     epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
   const net = t.netOfSteps([9000, 9000, 9308, 8869, 8880]).map(v => Math.round(v));
   // +308 at the change and −439 the run after were one change; only the last +11 is hiring.
-  assert.deepEqual(net, [8869, 8869, 8869, 8869, 8880]);
+  same(net, [8869, 8869, 8869, 8869, 8880]);
 });
 
 test('found openings lift the history rather than scale it, so a sum moves by its parts', () => {
@@ -1506,7 +1520,7 @@ test('found openings lift the history rather than scale it, so a sum moves by it
   t.set({ ...picked({}), stamps: FOUR, series: [], epochs: [],
     discovered: [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 2, openings: 200 }] });
   // Scaled, the +10 of real growth before the find became +28; lifted, it stays +10.
-  assert.deepEqual(t.netOfSteps([100, 110, 310, 320]), [300, 310, 310, 320]);
+  same(t.netOfSteps([100, 110, 310, 320]), [300, 310, 310, 320]);
 });
 
 test('the sentence says how much of the chart’s move was not hiring', () => {
@@ -1539,7 +1553,7 @@ test('Enter before the suggestions arrive picks the top one when they do', async
   input.listeners.keydown.forEach(fn => fn({ key: 'Enter', preventDefault() {} }));
   await new Promise(resolve => setTimeout(resolve, 0));
   await new Promise(resolve => setTimeout(resolve, 0));
-  assert.deepEqual(t.picks().map(p => p.key), ['amazon:jobs']);
+  same(t.picks().map(p => p.key), ['amazon:jobs']);
   assert.equal(input.value, '', 'cleared for the next name, not run on into it');
 });
 
@@ -1560,5 +1574,5 @@ test('a found Board on a whole company line is lifted by its own size, keeping t
   t.setUnit('count', false);
   const acme = t.data().series[0];
   // 200 were found; the other 10 that run were hiring and stay in (by the run's jump, 210).
-  assert.deepEqual(t.netOfSteps(acme.points, acme), [300, 300, 310, 310]);
+  same(t.netOfSteps(acme.points, acme), [300, 300, 310, 310]);
 });

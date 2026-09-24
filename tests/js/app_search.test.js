@@ -10,6 +10,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
+// Deep equality that is strict on values but not on realms. app.js runs in a vm context, so its
+// arrays carry that context's prototypes and fail `deepStrictEqual` by prototype alone — while
+// the loose `deepEqual` the file used to use treats `[40, 40]` and `[null, null]` as equal on
+// Node 26, which let a wrong netting result pass locally and fail on CI.
+const same = (actual, expected, message) =>
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(actual)), expected, message);
+
 const APP_JS = path.join(__dirname, '..', '..', 'src', 'headstart', 'ui', 'static', 'app.js');
 
 function fakeEl() {
@@ -693,7 +700,7 @@ test('a company handed over from Trends or Hot searches its Boards, shown as one
   t.searchCompany(['workday:citi/2', 'workday:citi/3'], 'Citi (workday)');
   await new Promise(resolve => setTimeout(resolve, 0));
   const url = fetches.filter(u => u.startsWith('/search?')).pop();
-  assert.deepEqual(new URLSearchParams(url.split('?')[1]).getAll('board'), ['workday:citi/2', 'workday:citi/3']);
+  same(new URLSearchParams(url.split('?')[1]).getAll('board'), ['workday:citi/2', 'workday:citi/3']);
   assert.equal(nodes['company'].value, '', 'the name filter would narrow the Boards again');
   assert.match(nodes['active'].innerHTML, /<b>Company<\/b> Citi \(workday\)/);
   t.dropFilter('board');
@@ -707,7 +714,7 @@ test('a company hand-off rides in the hash, so a reload keeps it', async () => {
   const { t, ctx, nodes } = loadApp(() => []);
   t.searchCompany(['workday:citi/2'], 'Citi', 'AI / Machine Learning');
   const hash = new URLSearchParams(ctx.location.hash.split('?')[1]);
-  assert.deepEqual(hash.getAll('board'), ['workday:citi/2']);
+  same(hash.getAll('board'), ['workday:citi/2']);
   assert.equal(hash.get('label'), 'Citi');
   assert.equal(nodes['q'].value, 'AI / Machine Learning', 'a drilled category is the query');
   const reload = loadApp(() => []);
@@ -716,7 +723,7 @@ test('a company hand-off rides in the hash, so a reload keeps it', async () => {
   reload.t.go();
   await new Promise(resolve => setTimeout(resolve, 0));
   const url = reload.fetches.filter(u => u.startsWith('/search?')).pop();
-  assert.deepEqual(new URLSearchParams(url.split('?')[1]).getAll('board'), ['workday:citi/2']);
+  same(new URLSearchParams(url.split('?')[1]).getAll('board'), ['workday:citi/2']);
   assert.match(reload.nodes['active'].innerHTML, /<b>Company<\/b> Citi/);
 });
 
