@@ -19,17 +19,23 @@ copy of the reader, and nothing outside `scrapers/` shared one:
 - four copies (eightfold, icims, meta, successfactors) mapped the same six fields the same way —
   the same loop, list-`@type` check, `employmentType` join and `TELECOMMUTE` → remote — in about
   thirty lines each;
-- the rest returned the raw node, and drifted: only trakstar parsed with `strict=False`; jazzhr,
-  trakstar and pinpoint rejected a list `@type`; jazzhr, pinpoint and jobvite rejected a
+- workday and pinpoint mapped fields of their own, and jazzhr, trakstar and jobvite returned the
+  raw node; across all nine the finding drifted: only trakstar parsed with `strict=False`;
+  jazzhr, trakstar and pinpoint rejected a list `@type`; jazzhr, pinpoint and jobvite rejected a
   top-level array; jobvite read only the first block and checked no type at all; none read
   `@graph`.
 
 Turning a `jobLocation`'s PostalAddress into "Locality, Region, Country" was written seven times.
-Two bodies were identical (meta, successfactors); icims also drops iCIMS's `UNAVAILABLE`
-placeholder; eightfold drops a part an earlier part already holds ("Telangana,IN" holds "IN");
-teamtailor did not strip; jobvite dedupes case-insensitively and strips trailing commas, with a
-fallback to its HTML meta line; ashby builds a list of every name, the headline string included,
-across several entries.
+Meta's and successfactors' bodies were the same rule (one took the `jobLocation`, the other the
+node); icims also drops iCIMS's `UNAVAILABLE` placeholder; eightfold drops a part an earlier part
+already holds ("Telangana,IN" holds "IN"); teamtailor reads only a list `jobLocation`, does not
+strip and does not unwrap a `Country` node; jobvite dedupes case-insensitively and strips trailing
+commas, with a fallback to its HTML meta line; ashby builds a list of every name, the headline
+string included, across several entries.
+
+`taleo_be` also reads one JobPosting field, `datePosted`, but by a regex over the raw page rather
+than by parsing a block — its own test page states no `@type` at all — so it is not one of these
+readers and is left as it is.
 
 A fix to one copy reached one scraper. Trakstar's `strict=False` was found because its pages embed
 literal newlines in strings; any other ATS whose pages started doing the same would have silently
@@ -48,10 +54,10 @@ name it. Its interface:
 - `job_posting_fields(node)` — the six fields the four near-identical copies mapped, as a
   `JobPostingFields` TypedDict: `title`, `description`, `location`, `posted_at`,
   `employment_type` (a list joined with ", "), `remote` (True on `TELECOMMUTE`, else None).
-- `place_of(job_location, *, placeholders=(), drop_repeats=False)` — the first Place's
-  "Locality, Region, Country", parts stripped and empties dropped. The two options are exactly the
-  two rules that differed among the copies that could share it: icims passes
-  `placeholders={"UNAVAILABLE"}`, eightfold `drop_repeats=True`.
+- `job_location_text(job_location, *, placeholders=(), drop_repeats=False)` — the first Place's
+  "Locality, Region, Country" (what becomes `Job.location`), parts stripped and empties dropped.
+  The two options are exactly the two rules that differed among the four copies that share it:
+  icims passes `placeholders={"UNAVAILABLE"}`, eightfold `drop_repeats=True`.
 
 What stays in each scraper: icims's field allowlist, its fabricated-date filter and its salary;
 meta's extra description sections; eightfold's `department: None`; workday's choice to skip a
@@ -62,9 +68,9 @@ jazzhr's `Organization` name (read through `jsonld_nodes`); jobvite's HTML fallb
 `_location`, whose case-insensitive, comma-stripping dedupe is a different rule, not an option of
 this one. ashby's `_place_names` is a different function altogether and stays.
 
-Teamtailor reads the same PostalAddress from its JSON feed, not a page, and moved onto
-`place_of`: the code differed (no strip, no `Country` node) but the output did not, on 963 of 963
-feed items across 10 Boards.
+Teamtailor's `_location` stays too. Its output matched `job_location_text` on 963 of 963 items of
+10 live Boards' feeds, but its code differs on shapes that sample never held (a dict
+`jobLocation`, padded parts, a `Country` node), so moving it would change output nobody measured.
 
 ## Evidence: outputs did not change
 
@@ -83,11 +89,24 @@ outputs compared as whole values:
 | trakstar | — | 50 / 0 (10) |
 | pinpoint | 1 / 0 | 50 / 0 (10) |
 | jobvite | — | 50 / 0 (10) |
-| teamtailor (parsed Jobs, from feeds) | 2 / 0 | 963 / 0 (10) |
 
 Live pages were fetched 2026-09-24 from live ledger rows, five per Board, exactly as each
 scraper's detail pass fetches them: 450 job pages and 10 JazzHR listing pages. Every per-scraper
-test passes unchanged, which covers the pages written inline in the tests.
+test passes unchanged.
+
+Then every reader, old and new, was run over all 489 pages at once — the fixtures, the live pages
+of every ATS, and each ld+json page written inline in `tests/` — so that a reader meets shapes its
+own ATS never served. No reader lost a posting, or changed a value it had read from JSON-LD, on
+any of them. Every difference is a page the old copy could not read and the shared one can, and
+each traces to one of the three shapes below: eightfold and jazzhr now read Meta's attributed
+tags (52 pages), every reader but trakstar now reads Trakstar's lenient JSON (45), and jobvite
+now reads JazzHR's JobPosting in a second block (33). SuccessFactors, whose own pages gave its
+reader nothing to read, returned the same fields as before on every JSON-LD page its old copy
+could parse; on the Meta and Trakstar pages it could not, its fields now come from the JSON-LD
+instead of its page-markup fallbacks.
+
+`tests/fixtures/job_posting_jsonld_pages.json` keeps one live page of each of those three shapes,
+and `tests/test_job_posting_jsonld.py` reads a posting from each.
 
 **No recall gain was measured, and none is claimed.** On the live sample, no page used `@graph`,
 a list `@type` or a top-level array; the leniencies that did occur were each already handled by
@@ -110,7 +129,7 @@ sample.
 ## Consequences
 
 - A new page-reading scraper calls `find_job_posting` and `job_posting_fields` rather than
-  writing a tenth copy.
+  writing another copy.
 - A fix to how JSON-LD is found reaches every scraper at once. So does a regression: the table
   above is the measurement to repeat before changing the finder.
 - Job ids, URLs and every served field are unchanged, so no `DERIVATIONS_VERSION` bump and no

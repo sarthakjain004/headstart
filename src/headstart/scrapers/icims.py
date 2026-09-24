@@ -56,8 +56,8 @@ from headstart.models import Job, host_of, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 from headstart.scrapers.job_posting_jsonld import (
     find_job_posting,
+    job_location_text,
     job_posting_fields,
-    place_of,
 )
 
 _log = log.get(__name__)
@@ -350,7 +350,9 @@ def _ld_fields(page: str) -> dict[str, Any] | None:
         # Only the first of a multi-location posting is used (4 of 207 sampled carry more than
         # one), and the literal `UNAVAILABLE` iCIMS writes into unset address parts is dropped
         # rather than shown.
-        "location": place_of(kept.get("jobLocation"), placeholders={"UNAVAILABLE"}),
+        "location": job_location_text(
+            kept.get("jobLocation"), placeholders={"UNAVAILABLE"}
+        ),
         "department": kept.get("occupationalCategory"),
         "salary": _salary(kept.get("baseSalary")),
         "posted_at": _stated_date(kept.get("datePosted")),

@@ -7,7 +7,7 @@ Three things, smallest first:
 - :func:`jsonld_nodes` finds every node of one schema.org type in a page, and
   :func:`find_job_posting` the first ``JobPosting``;
 - :func:`job_posting_fields` maps the fields every such scraper reads the same way;
-- :func:`place_of` turns a ``jobLocation`` into the "Locality, Region, Country" string.
+- :func:`job_location_text` turns a ``jobLocation`` into the "Locality, Region, Country" string.
 
 The finder accepts every shape any one scraper's own copy accepted, save one — Jobvite's took its
 first block whatever its ``@type``, and every one of 25 live Jobvite JSON-LD pages states
@@ -60,10 +60,10 @@ def jsonld_nodes(page: str, schema_type: str) -> Iterator[dict[str, Any]]:
     """
     for block in _JSONLD_BLOCK.findall(page):
         try:
-            data = json.loads(block, strict=False)
+            parsed_block = json.loads(block, strict=False)
         except ValueError:
             continue
-        for node in _flattened(data):
+        for node in _flattened(parsed_block):
             kind = node.get("@type")
             if kind == schema_type or (isinstance(kind, list) and schema_type in kind):
                 yield node
@@ -79,23 +79,23 @@ def job_posting_fields(node: dict[str, Any]) -> JobPostingFields:
 
     A list ``employmentType`` is joined, since each entry is a real type the posting states;
     ``remote`` is True on ``TELECOMMUTE`` and otherwise None — the absence of that value says
-    nothing about whether the job is onsite. ``location`` is :func:`place_of` with no options; a
-    scraper that drops more replaces it.
+    nothing about whether the job is onsite. ``location`` is :func:`job_location_text` with no
+    options; a scraper that drops more replaces it.
     """
     employment = node.get("employmentType")
     if isinstance(employment, list):
-        employment = ", ".join(str(e) for e in employment) or None
+        employment = ", ".join(str(kind) for kind in employment) or None
     return {
         "title": node.get("title"),
         "description": node.get("description"),
-        "location": place_of(node.get("jobLocation")),
+        "location": job_location_text(node.get("jobLocation")),
         "posted_at": node.get("datePosted"),
         "employment_type": employment,
         "remote": True if node.get("jobLocationType") == "TELECOMMUTE" else None,
     }
 
 
-def place_of(
+def job_location_text(
     job_location: Any,
     *,
     placeholders: Collection[str] = (),
@@ -137,9 +137,9 @@ def place_of(
     return ", ".join(parts) or None
 
 
-def _flattened(data: Any) -> Iterator[dict[str, Any]]:
+def _flattened(parsed_block: Any) -> Iterator[dict[str, Any]]:
     """Each node of a parsed block: the block itself or its array's items, then any ``@graph``."""
-    for node in data if isinstance(data, list) else [data]:
+    for node in parsed_block if isinstance(parsed_block, list) else [parsed_block]:
         if not isinstance(node, dict):
             continue
         yield node

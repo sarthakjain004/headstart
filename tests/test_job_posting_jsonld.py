@@ -3,21 +3,28 @@
 Table-driven: each row is one page or node shape and what the reader must make of it. The
 per-scraper tests keep what each scraper chose on its own (iCIMS's allowlist, Meta's description
 sections, Workday's `timeType` mapping); these pin the behaviour every one of them now shares.
+
+`job_posting_jsonld_pages.json` holds three live pages' ld+json tags, verbatim, captured
+2026-09-24: each is a shape only one scraper's own copy read before the copies were merged.
 """
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
 from headstart.scrapers.job_posting_jsonld import (
     find_job_posting,
+    job_location_text,
     job_posting_fields,
     jsonld_nodes,
-    place_of,
 )
 
+REAL_PAGES = json.loads(
+    (Path(__file__).parent / "fixtures" / "job_posting_jsonld_pages.json").read_text()
+)["pages"]
 POSTING = {"@type": "JobPosting", "title": "Backend Engineer"}
 ORGANIZATION = {"@type": "Organization", "name": "Acme"}
 
@@ -99,14 +106,49 @@ def test_find_job_posting(page: str, expected_title: str | None) -> None:
     assert (posting or {}).get("title") == expected_title
 
 
+@pytest.mark.parametrize(
+    ("ats", "expected_title", "shape"),
+    [
+        pytest.param(
+            "trakstar",
+            "Garage Sweeper",
+            "literal newlines inside strings, which strict JSON rejects",
+            id="trakstar",
+        ),
+        pytest.param(
+            "meta",
+            "Research Engineer - FAIR, SGT",
+            'a nonce attribute after type="application/ld+json"',
+            id="meta",
+        ),
+        pytest.param(
+            "jazzhr",
+            "Bathroom Remodeling Subcontractor Crews Wanted",
+            "an Organization block before the JobPosting one",
+            id="jazzhr",
+        ),
+    ],
+)
+def test_find_job_posting_on_real_pages(
+    ats: str, expected_title: str, shape: str
+) -> None:
+    """Each live page carries its ``shape``; the reader must find the posting through it."""
+    posting = find_job_posting(REAL_PAGES[ats]["page"])
+    assert posting is not None, shape
+    assert posting["title"] == expected_title
+
+
 def test_jsonld_nodes_yields_every_node_of_the_type_in_document_order() -> None:
     page = (
         _script(ORGANIZATION)
         + _script({"@graph": [{**POSTING, "title": "A"}, ORGANIZATION]})
         + _script([{**POSTING, "title": "B"}])
     )
-    assert [n["title"] for n in jsonld_nodes(page, "JobPosting")] == ["A", "B"]
-    assert [n["name"] for n in jsonld_nodes(page, "Organization")] == ["Acme", "Acme"]
+    assert [node["title"] for node in jsonld_nodes(page, "JobPosting")] == ["A", "B"]
+    assert [node["name"] for node in jsonld_nodes(page, "Organization")] == [
+        "Acme",
+        "Acme",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -236,5 +278,7 @@ def _place(locality=None, region=None, country=None) -> dict:
         ),
     ],
 )
-def test_place_of(job_location: object, options: dict, expected: str | None) -> None:
-    assert place_of(job_location, **options) == expected
+def test_job_location_text(
+    job_location: object, options: dict, expected: str | None
+) -> None:
+    assert job_location_text(job_location, **options) == expected

@@ -48,7 +48,6 @@ from typing import Any
 from headstart import http
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
-from headstart.scrapers.job_posting_jsonld import place_of
 
 #: Items per page the feed serves. A full page means there is probably another.
 _PAGE_SIZE = 100
@@ -59,6 +58,20 @@ _RSS_NS = {"tt": "https://teamtailor.com/locations"}
 #: resolve an explicit "hybrid" flag: True/False on the unambiguous ends, None (unknown) on the
 #: middle rather than guessing.
 _REMOTE_STATUS = {"fully": True, "none": False, "onsite": False}
+
+
+def _location(jobposting: dict) -> str | None:
+    """Join the first jobLocation's city/region/country from the schema.org block."""
+    locs = jobposting.get("jobLocation") or []
+    if not isinstance(locs, list) or not locs:
+        return None
+    addr = (locs[0] or {}).get("address") or {}
+    parts = (
+        addr.get("addressLocality"),
+        addr.get("addressRegion"),
+        addr.get("addressCountry"),
+    )
+    return ", ".join(p for p in parts if p) or None
 
 
 class TeamtailorScraper(BaseScraper):
@@ -147,7 +160,7 @@ class TeamtailorScraper(BaseScraper):
         jobs: list[Job] = []
         for it in raw.get("items", []):
             jp = it.get("_jobposting") or {}
-            location = place_of(jp.get("jobLocation"))
+            location = _location(jp)
             enriched = enrichment.get(it["id"]) or {}
             jobs.append(
                 Job(

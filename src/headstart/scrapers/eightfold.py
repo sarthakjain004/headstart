@@ -49,8 +49,8 @@ from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 from headstart.scrapers.job_posting_jsonld import (
     find_job_posting,
+    job_location_text,
     job_posting_fields,
-    place_of,
 )
 
 _log = log.get(__name__)
@@ -910,6 +910,6 @@ def _jobposting(page: str) -> dict[str, Any] | None:
         return None
     return {
         **job_posting_fields(node),
-        "location": place_of(node.get("jobLocation"), drop_repeats=True),
+        "location": job_location_text(node.get("jobLocation"), drop_repeats=True),
         "department": None,  # not in the JSON-LD
     }
