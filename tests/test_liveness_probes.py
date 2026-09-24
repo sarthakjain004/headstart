@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import html
 import importlib.util
+import json
 from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from curl_cffi.requests.exceptions import HTTPError as CurlHTTPError
 
 _ROOT = Path(__file__).resolve().parent.parent
 _spec = importlib.util.spec_from_file_location(
@@ -862,3 +864,94 @@ def test_pinpoint_a_failed_re_ask_of_an_empty_listing_is_unknown(monkeypatch):
             cl, "_fetch", lambda method, url, _a=answers, **kw: _a.pop(0)
         )
         assert cl.p_pinpoint("acme", "") == (cl.UNKNOWN, None)
+
+
+# --- cornerstone: the scraper's own walk through `_fetch` ----------------------------------------
+
+_CSOD = json.loads(
+    (_ROOT / "tests" / "fixtures" / "cornerstone_boards.json").read_text(
+        encoding="utf-8"
+    )
+)["ama-assn"]
+
+
+class _CsodResponse:
+    def __init__(self, status, body="", headers=None):
+        self.status_code = status
+        self.text = body if isinstance(body, str) else json.dumps(body)
+        self.content = self.text.encode()
+        self.headers = headers or {}
+
+    def json(self):
+        return json.loads(self.content)
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise CurlHTTPError(f"HTTP {self.status_code}", 0, self)
+
+
+def _csod_fetch(home=200, search_status=200, calls=None):
+    """`_fetch` answering ama-assn's recorded surface (tests/fixtures/cornerstone_boards.json)."""
+
+    def fetch(method, url, **kw):
+        if calls is not None:
+            calls.append((method, url, kw))
+        if "/home?c=" in url:
+            if home == "dns":
+                raise cl.http.RequestsError("Could not resolve host", 6)
+            if home == 302:
+                return _CsodResponse(302, "", {"location": "/ui/error"})
+            return _CsodResponse(200, _CSOD["home"])
+        if "/careersites/" in url:
+            answer = _CSOD["careersites"].get(
+                url.rsplit("/", 1)[1], {"status": 404, "body": {}}
+            )
+            return _CsodResponse(answer["status"], answer["body"])
+        if url.endswith("rec-job-search/external/jobs"):
+            if search_status != 200:
+                return _CsodResponse(search_status, "")
+            page = _CSOD["search"].get(str(kw["json"]["careerSitePageId"]))
+            if page is None or kw["json"]["pageNumber"] > 1:
+                return _CsodResponse(
+                    200, {"data": {"totalCount": 0, "requisitions": []}}
+                )
+            return _CsodResponse(200, page)
+        raise AssertionError(url)
+
+    return fetch
+
+
+def test_cornerstone_counts_the_union_of_a_boards_sites(monkeypatch):
+    """ama-assn lists 3 postings on site 2 and 2 on site 3, one of them on both: 4, not 5."""
+    calls = []
+    monkeypatch.setattr(cl, "_fetch", _csod_fetch(calls=calls))
+    assert cl.p_cornerstone("ama-assn", "https://ama-assn.csod.com") == (cl.LIVE, 4)
+    assert all("timeout" not in kw for _, _, kw in calls)  # `_fetch` sets its own
+
+
+def test_cornerstone_a_host_that_does_not_resolve_is_dead(monkeypatch):
+    monkeypatch.setattr(cl, "_fetch", _csod_fetch(home="dns"))
+    assert cl.p_cornerstone("a2dominion", "") == (cl.DEAD, None)
+
+
+def test_cornerstone_a_corp_with_no_career_site_is_dead(monkeypatch):
+    """Every career-site page on ids 1-3 redirects to `/ui/error` (an LMS-only corp)."""
+    calls = []
+    monkeypatch.setattr(cl, "_fetch", _csod_fetch(home=302, calls=calls))
+    assert cl.p_cornerstone("atlascopco", "") == (cl.DEAD, None)
+    assert len(calls) == 3 and all(
+        kw.get("allow_redirects") is False for _, _, kw in calls
+    )
+
+
+def test_cornerstone_inconclusive_answers_stay_unknown(monkeypatch):
+    monkeypatch.setattr(cl, "_fetch", _csod_fetch(search_status=503))
+    assert cl.p_cornerstone("ama-assn", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(cl, "_fetch", lambda method, url, **kw: None)  # breaker open
+    assert cl.p_cornerstone("ama-assn", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(
+        cl,
+        "_fetch",
+        lambda method, url, **kw: _CsodResponse(200, "<html>no context</html>"),
+    )
+    assert cl.p_cornerstone("ama-assn", "") == (cl.UNKNOWN, None)

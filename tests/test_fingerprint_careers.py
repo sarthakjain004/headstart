@@ -928,3 +928,18 @@ def test_verification_job_evidence_does_not_leak_between_inputs(tmp_path, monkey
         and r["job_evidence"] == "matched-job"
         for r in verified
     )
+
+
+def test_a_cornerstone_career_site_link_yields_the_corp_label_board():
+    """`cornerstone.py` keys a Board on the `{corp}.csod.com` label, the tenant, not per site."""
+    html = (
+        '<a href="https://aswatsoneurope.csod.com/ux/ats/careersite/16/home'
+        '?c=aswatsoneurope">Jobs</a>'
+    )
+    assert fp.scan(html, "aswatson.com") == [
+        ("cornerstone", "ats", "aswatsoneurope", 1)
+    ]
+    assert fp.candidate_identity("cornerstone", "aswatsoneurope", "A.S. Watson") == (
+        "cornerstone:aswatsoneurope",
+        "unverified",
+    )

@@ -12,6 +12,7 @@ from headstart.scrapers.base import BaseScraper
 from headstart.scrapers.breezy import BreezyScraper
 from headstart.scrapers.bytedance import ByteDanceScraper
 from headstart.scrapers.clearcompany import ClearCompanyScraper
+from headstart.scrapers.cornerstone import CornerstoneScraper
 from headstart.scrapers.darwinbox import DarwinboxScraper
 from headstart.scrapers.eightfold import EightfoldScraper
 from headstart.scrapers.freshteam import FreshteamScraper
@@ -88,6 +89,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         TeslaScraper,
         AmazonScraper,
         ByteDanceScraper,
+        CornerstoneScraper,
         AppleScraper,
         UberScraper,
         MetaScraper,

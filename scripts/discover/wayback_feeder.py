@@ -273,6 +273,11 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     # label sources for one slug — 53 of 60 labels seen only on clearcompany.com in one Common
     # Crawl index had a hiring hrmdirect Board (docs/clearcompany/).
     "clearcompany": _with_style("sub", "hrmdirect.com", "clearcompany.com"),
+    # `sub` style: `cornerstone.py`'s slug is the `{corp}.csod.com` label, which equals the
+    # career-site URL's `?c=` corp on 564/564 upstream seed URLs. `csod.com` also hosts the
+    # vendor's LMS on the same labels, so a sweep over-collects corps with no career site —
+    # `p_cornerstone` settles those, the pool is candidate-grade.
+    "cornerstone": _with_style("sub", "csod.com"),
     "darwinbox": _with_style("sub", "darwinbox.in", "darwinbox.com"),
     # `host` style: this ATS's slug is the whole board host, not the label — `eightfold.py`
     # builds `https://{slug}/careers`, and every one of the ledger's 109 live boards is stored

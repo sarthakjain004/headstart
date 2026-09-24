@@ -76,6 +76,9 @@ from headstart.scrapers.clearcompany import (  # feed decode + req grouping, sin
     decode_hrm_bytes,
     feed_reqs,
 )
+from headstart.scrapers.cornerstone import (  # the site walk + token, single source
+    CornerstoneScraper,
+)
 from headstart.scrapers.jobvite import (  # board url + counter parse, single source
     JobviteScraper,
     total_of,
@@ -1242,6 +1245,59 @@ def p_zoho(t, u):
     return (LIVE, count) if count is not None else (UNKNOWN, None)
 
 
+class _BreakerOpen(Exception):
+    """`_fetch` answered None: the host's circuit breaker is open, a transient."""
+
+
+class _GatedFetcher:
+    """A scraper Fetcher (ADR-0153) that sends every request through `_fetch`, so a probe
+    reusing a scraper's own walk still rides this module's gates, breaker and egress. `_fetch`
+    sets `timeout` itself, so the scraper's is dropped."""
+
+    def fetch(self, method, url, **kw):
+        kw.pop("timeout", None)
+        r = _fetch(method, url, **kw)
+        if r is None:
+            raise _BreakerOpen
+        return r
+
+
+def p_cornerstone(t, u):
+    """The Board's whole listing, read by the scraper's own walk (`CornerstoneScraper.listing`).
+
+    A Board is the tenant, but its postings sit on several career sites and one requisition is
+    often on more than one (12,798 of 42,534 postings on 119 of 368 hiring seed tenants), so a
+    count is only honest as the union the scraper builds: summing each site's `totalCount` would
+    have read 58,083. The walk needs the page's JWT, its API pod and the US-pod session cookie,
+    all of which live in the scraper; re-declaring them here is the drift `p_zwayam` warns of.
+
+    DEAD on the two answers measured on real dead tenants (docs/cornerstone/): the host does not
+    resolve (no wildcard DNS — 6 of 404 seed tenants, 15 of a 30-label Wayback sample), or every
+    career-site page on ids 1-3 redirects to `/ui/error` (an LMS-only corp: 12 of that sample,
+    and 5 tenants x ids 1-6). Anything else unexplained is UNKNOWN.
+    """
+    scraper = CornerstoneScraper(
+        CornerstoneScraper.slug_from(t, u), fetcher=_GatedFetcher()
+    )
+    try:
+        rows = scraper.listing()
+    except _BreakerOpen:
+        _note("breaker-open")
+        return UNKNOWN, None
+    except http.RequestsError as e:
+        if _is_dns(e):
+            return DEAD, None
+        status = getattr(getattr(e, "response", None), "status_code", None)
+        _note(f"http-{status}" if status else _net_reason(e))
+        return UNKNOWN, None
+    except (ValueError, KeyError, TypeError):  # a page or body that did not parse
+        _note("body-unparseable")
+        return UNKNOWN, None
+    if rows is None:
+        return DEAD, None
+    return LIVE, len(rows)
+
+
 def p_bamboohr(t, u):
     # Verified live 2026-09-16 (5 fabricated slugs + 3 confirmed-live-but-jobless tenants): a
     # dead tenant's widget answers 200 with an EMPTY body, while a live tenant — jobs or not —
@@ -2229,6 +2285,7 @@ PROBES = {
     "bamboohr": p_bamboohr,
     "breezy": p_breezy,
     "clearcompany": p_clearcompany,
+    "cornerstone": p_cornerstone,
     "recruitee": p_recruitee,
     "workable": p_workable,
     "zoho": p_zoho,
