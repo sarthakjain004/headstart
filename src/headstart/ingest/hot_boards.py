@@ -225,6 +225,8 @@ _LABEL_NOISE = frozenset(
         "jobs",
         "job",
         "apply",
+        "join",
+        "opportunities",
         "hire",
         "hiring",
         "talent",
@@ -274,6 +276,10 @@ _LABEL_NOISE = frozenset(
     }
 )
 _WD_POD = re.compile(r"^wd\d+$")  # micron.wd5.myworkdayjobs.com
+# Taleo Enterprise's slug is a whole URL.
+_SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*://", re.IGNORECASE)
+# The words of a site name: EXTERNAL_CAREERS, CorporateCareers, Maxis-Early-Careers.
+_WORDS = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")
 
 
 #: Hand-written names for Boards whose slug cannot produce one, keyed by board_key.
@@ -305,6 +311,43 @@ DISPLAY_ALIASES: Final[dict[str, str]] = {
 }
 
 
+def stated_name(company: str, board: str) -> str | None:
+    """The name a Board *asserts* — a curated alias or a cased company name — else None.
+
+    None means `display_name` has to derive one from the slug. The company directory reads the
+    difference to name a multi-Board company by its stated spelling ("NVIDIA"), not the tidied
+    slug of whichever Board sorts first ("Nvidia").
+    """
+    alias = DISPLAY_ALIASES.get(board)
+    if alias:
+        return alias
+    stated = (company or "").strip()
+    if stated and stated != stated.lower() and not _is_site(stated, board):
+        return stated  # a real, cased company name — never re-case or trim it
+    return None
+
+
+def _is_site(name: str, board: str) -> bool:
+    """Whether ``name`` is the Board's own site segment, worded as a site rather than a brand.
+
+    A Workday site can land in the company column, cased (Boeing's `EXTERNAL_CAREERS`). The
+    site alone is not the tell: `jiostar/JioStar` and `gresearch/g-research` carry a better
+    name in the site than in the tenant. Measured over the 32,829 named Boards, the sites that
+    are not names are the ones worded like one — `CorporateCareers`, `OCLC_Careers`,
+    `DarktaceExternal` — so a noise word is what decides.
+    """
+    slug = _SCHEME.sub("", board.split(":", 1)[-1])
+    if name.casefold() not in {part.casefold() for part in slug.split("/")[1:]}:
+        return False
+    return any(word.casefold() in _LABEL_NOISE for word in _WORDS.findall(name))
+
+
+def _host(board: str) -> set[str]:
+    """The labels of the slug's host (or its whole first segment, when it has no dots)."""
+    slug = _SCHEME.sub("", board.split(":", 1)[-1])
+    return {label.casefold() for label in slug.split("/", 1)[0].split(".") if label}
+
+
 def display_name(company: str, board: str) -> str:
     """A name a person can read, without inventing one.
 
@@ -325,17 +368,20 @@ def display_name(company: str, board: str) -> str:
     names is worse than one that shows an honest slug. Anything already mixed-case is returned
     untouched, so `CI&T` and `HCLTech` survive.
     """
-    alias = DISPLAY_ALIASES.get(board)
-    if alias:
-        return alias
-    stated = (company or "").strip()
-    if stated and stated != stated.lower():
-        return stated  # a real, cased company name — never re-case or trim it
+    named = stated_name(company, board)
+    if named:
+        return named
     # Everything below tidies a *slug*. The cased-name guard above must not reach it: a slug
     # carries capitals of its own (`micron/External`), and treating those as a company name
     # returned the raw slug, path and all.
-    name = stated or board.split(":", 1)[-1]
-    head = name.split("/", 1)[0]
+    name = (company or "").strip()
+    # A company that is only a piece of the Board's own slug names the board, not the company:
+    # SuccessFactors rows carry their host's first label (`www`, `apply`, `job`), and a
+    # Workday row can carry its site. Tidying the whole slug finds the company instead.
+    if not name or name.casefold() in _host(board) or _is_site(name, board):
+        name = board.split(":", 1)[-1]
+    # Taleo Enterprise's slug is a whole URL; split on "/" first, it tidied to "Https:".
+    head = _SCHEME.sub("", name).split("/", 1)[0]
     if "." in head:
         labels = [
             label

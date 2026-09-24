@@ -213,6 +213,21 @@ def test_rows_carry_their_operator_label() -> None:
         ("", "successfactors:acmeco.jobs.hr.cloud.sap", "Acmeco"),
         ("", "workday:micron/External", "Micron"),
         ("", "icims:jobs-bylight.icims.com", "Bylight"),
+        # Taleo Enterprise's slug is a whole URL; it used to tidy to "Https:".
+        ("", "taleo_enterprise:https://hdr.taleo.net/careersection/ex", "Hdr"),
+        # SuccessFactors rows carry the host's first label as the company; it names the host.
+        ("www", "successfactors:www.afuturewithus.com", "Afuturewithus"),
+        ("apply", "successfactors:apply.careers.hsbc.com", "Hsbc"),
+        ("join", "successfactors:join.cnh.com", "Cnh"),
+        ("opportunities", "successfactors:opportunities.vodafone.com", "Vodafone"),
+        # A Workday site name in the company column is cased, but it is not the company.
+        ("EXTERNAL_CAREERS", "workday:boeing/EXTERNAL_CAREERS", "Boeing"),
+        ("CorporateCareers", "workday:mastercard/CorporateCareers", "Mastercard"),
+        # ...but a site worded as a brand is often the best name there is.
+        ("JioStar", "workday:jiostar/JioStar", "JioStar"),
+        ("g-research", "workday:gresearch/g-research", "G Research"),
+        # A cased name equal to the whole slug is still the Board's own spelling.
+        ("AbhiBus", "smartrecruiters:AbhiBus", "AbhiBus"),
         # A stated, cased name is never re-cased or trimmed.
         ("CI&T", "lever:ciandt", "CI&T"),
         ("Qantas Group", "smartrecruiters:QantasGroup", "Qantas Group"),
