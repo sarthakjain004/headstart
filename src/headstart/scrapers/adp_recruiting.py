@@ -62,7 +62,12 @@ from urllib.parse import quote, urlencode
 
 from headstart import company_name, employment_type_filter, http
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.base import (
+    USER_AGENT,
+    BaseScraper,
+    DetailLost,
+    DetailRequest,
+)
 
 _SITE_HOST = "https://myjobs.adp.com"
 _SITE = f"{_SITE_HOST}/public/staffing/v1/career-site"
@@ -227,6 +232,9 @@ class ADPRecruitingScraper(BaseScraper):
     # chrome with no posting.
     # The slug is `SLUG`; `reqId` is 13 digits on 77,242 of 77,242.
     url_shape = rf"https://myjobs\.adp\.com/{SLUG}/cx/job-details\?reqId=\d+"
+    #: The career site's token, which `fetch_raw` reads off the site record before the Detail
+    #: pass; every detail request carries it, as every listing page does.
+    _site_token: str | None = None
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -317,59 +325,35 @@ class ADPRecruitingScraper(BaseScraper):
 
     def fetch_raw(self) -> Any:
         site, rows, _ = self.read_site()
-        token = site.get("myJobsToken")
+        self._site_token = site.get("myJobsToken")
         # Exact gate: `parse` reads the title and department off this same listing row and the
         # detail overrides neither (300 of 300 titles equal). The description store's skip is
         # declined: the detail is the only source of `salary` (module docstring).
-        wanted = self.tech_detail_wanted(rows, lambda r: r.get("jobTitle"), _department)
-        details: dict[str, dict] = {}
-        if wanted:
-            ids = [r["reqId"] for r in wanted]
-            if self.async_fanout_enabled():
-                fetched = self.fan_out_async(
-                    ids, lambda session, i: self._detail_async(session, token, i)
-                )
-            else:
-                fetched = self.fan_out(
-                    ids,
-                    lambda i: self._detail(token, i),
-                    workers=self.detail_workers,
-                )
-            self.report_detail_gaps(fetched, "detail payloads")
-            details = {i: d for i, d in zip(ids, fetched) if d}
+        details = self.run_detail_pass(
+            rows,
+            key_of=lambda row: row["reqId"],
+            what="detail payloads",
+            title_of=lambda row: row.get("jobTitle"),
+            department_of=_department,
+        )
         return {"rows": rows, "details": details}
 
-    def _detail_of(self, body: Any) -> dict | None:
-        """The one requisition a detail answers, or None (noted) for an empty envelope."""
-        found = body.get("jobRequisitions") or []
+    def detail_request(self, row: dict) -> DetailRequest:
+        # The listing's token, headers and timeout (`_json`): the token names the site's posting
+        # channel, and `Accept-Language` is a filter (module docstring).
+        return DetailRequest(
+            f"{_DETAIL}/{row['reqId']}",
+            headers=request_headers(self._site_token),
+            timeout=60,
+        )
+
+    def read_detail(self, row: dict, response: Any) -> dict:
+        """The one requisition a detail answers. A posting closed since the listing answers 400
+        "Bad Request", which the pass labels ``HTTP 400`` before this is called."""
+        found = json.loads(response.text).get("jobRequisitions") or []
         if not found:
-            self.note_detail_loss("no jobRequisitions on a 200")
-            return None
+            raise DetailLost("no jobRequisitions on a 200")
         return found[0]
-
-    def _detail(self, token: str, req_id: str) -> dict | None:
-        try:
-            body = self._json(f"{_DETAIL}/{req_id}", token)
-        except http.RequestsError as exc:
-            # A posting closed since the listing answers 400 "Bad Request".
-            self.note_detail_exception(exc)
-            return None
-        return self._detail_of(body)
-
-    async def _detail_async(self, session: Any, token: str, req_id: str) -> dict | None:
-        try:
-            response = await self._fetch_async(
-                session,
-                "GET",
-                f"{_DETAIL}/{req_id}",
-                headers=request_headers(token),
-                timeout=60,
-            )
-            response.raise_for_status()
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return self._detail_of(json.loads(response.text))
 
     def _adopt_client_name(self, stated: str | None) -> None:
         """The employer, from the site record's ``clientName`` — already fetched for the token,
