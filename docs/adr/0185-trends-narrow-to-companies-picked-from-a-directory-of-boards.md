@@ -281,3 +281,33 @@ A critique agent used the fixed tab (about 25 journeys, 60 suggestion queries) a
   dates". An empty answer no longer decides the auto breakdown, and Source lists only the
   picks' ATSes. A refusal note clears on the reader's next pick. Enter takes the top
   suggestion. No "−0.0%" mover is named.
+
+## Amendment (2026-09-24): a critic's second round
+
+A fresh critique agent scored the next build 5/10. Its measured findings, and what changed:
+
+- **"New this week" invented collapses at the biggest employers.** Amazon's `new` held at
+  ~8,600 for exactly seven days from the ledger's first tick, then fell to 1,371, and Google's
+  went from 1,690 to 489. The ledger's first week reads every Board's backlog as new, not only a
+  found Board's. The hold now covers every Board from its first tick, the baseline included.
+  `new_counted_from` gives the first run a pick's `new` can count, and the tab says so.
+- **Percentages still carried the marked steps.** A withheld riser tile did not help while the
+  legend printed the same number. Legend, table and tile percentages are now net of the marked
+  steps: each later value is scaled back by the jump the step made. Wipro's Software
+  Engineering reads +27.7% instead of +74.7%, and Google with BAE Systems no longer shows
+  "+1170.2%". Since the figures are net, movers are named again. The plotted lines keep their
+  steps, marked.
+- **Findability.** Suggestions treat names that differ only by a trailing "Technology",
+  "Technologies", "Group" or "Holdings" as one name when keeping the largest (Micron, 1,949 on
+  Workday and 1,887 on Eightfold). Matching is unchanged, so "micron tech" still finds the entry
+  that says it.
+- **Friction.** A pick closes and clears the list, which covered the filters (both critics).
+  "See their open roles" hands every pick's Boards over at once. A tap reads the chart on a
+  touch screen. Tables name their first column for the view (Category, Line, Company, Level,
+  Role). A count axis has whole-number ticks, and "too few to index" replaces "not indexed".
+- **Not fixed here, and why:**
+  - AI labs' Software Engineer titles land in `ai-ml`: Anthropic reads software-engineering 4
+    against 91 such titles. That is the role taxonomy (ADR-0040), not this tab.
+  - Shopify, Goldman Sachs, Flipkart, Swiggy and TCS have no Board. That is discovery work.
+  - The Hot tab's "open now" counts a different stock from the trend's tech openings.
+  - Search has no role-family filter to carry a drilled category over.

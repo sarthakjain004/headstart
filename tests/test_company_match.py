@@ -123,3 +123,19 @@ def test_a_test_tenant_with_no_openings_is_not_offered() -> None:
     assert suggest("nvidia", companies, 5) == []
     assert [c.name for c in suggest("dev", companies, 5)] == ["Dev Partners"]
     assert [c.name for c in suggest("acme", companies, 5)] == ["Acme Studio"]
+
+
+def test_twins_differing_by_a_trailing_technology_are_one_name() -> None:
+    companies = [
+        _company("Micron", 1949, key="workday:micron/External"),
+        _company("Micron Technology", 1887, key="eightfold:careers.micron.com"),
+        _company("Microchip", 255),
+    ]
+    assert [c.key for c in suggest("micro", companies, 5)] == [
+        "workday:micron/External",
+        "greenhouse:microchip",
+    ]
+    # the tail is dropped only to find twins, never to match
+    assert [c.name for c in suggest("micron tech", companies, 5)] == [
+        "Micron Technology"
+    ]

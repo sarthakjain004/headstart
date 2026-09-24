@@ -1077,16 +1077,15 @@ test('a Board found after a company began is marked where its backlog lands', as
   assert.ok(!nodes['trends-kpi'].innerHTML.includes('Biggest'), 'a found Board is no riser');
 });
 
-test('the list stays open after a pick, less the company picked', async () => {
+test('a pick closes and clears the list, keeping the field for the next name', async () => {
   const { t, ctx, nodes } = loadApp();
   const c = (key, label) => ({ key, label, openings: 5, boards: 1, atses: ['icims'] });
   answering(ctx, { companies: [c('icims:apac', 'Apac Atlassian'), c('icims:global', 'Globalcareers Atlassian')] });
   await t.suggest('atlassian');
   answering(ctx, picked({ a: [50, 60], b: [40, 45] }, [{ key: 'icims:apac', label: 'Apac Atlassian' }]));
   t.choose(0);
-  assert.deepEqual(t.options().map(o => o.company.key), ['icims:global']);
-  assert.equal(nodes['trends-co-q'].selected, true, 'typing next replaces the query, not appends to it');
-  assert.equal(nodes['trends-co-q'].getAttribute('aria-activedescendant'), 'co-opt-0', 'Enter picks the next one');
+  assert.equal(nodes['trends-co-list'].hidden, true, 'an open list covered the Date range and Source controls');
+  assert.equal(nodes['trends-co-q'].value, '');
 });
 
 test('a flat indexed line still gets an axis with height', () => {
@@ -1107,7 +1106,8 @@ test('one pick offers its open roles and names itself in the heading', async () 
     [{ key: 'greenhouse:acme', label: 'Acme', name: 'Acme' }, { key: 'lever:beta', label: 'Beta', name: 'Beta' }]));
   t.setPicks([...t.picks(), { key: 'lever:beta', label: 'Beta' }]);
   await t.load(null);
-  assert.equal(nodes['trends-co-roles'].hidden, true, 'Search filters one company at a time');
+  assert.equal(nodes['trends-co-roles'].hidden, false, 'several picks hand over together');
+  assert.equal(nodes['trends-co-roles'].textContent, 'See their open roles');
 });
 
 test('a name with no match says the board may be unread or named otherwise', async () => {
@@ -1232,4 +1232,40 @@ test('a held backlog under New says why nothing is new yet, with no empty tiles'
   await t.load(null);
   assert.match(nodes['trends-empty'].textContent, /Nothing counts as new at Acme yet/);
   assert.equal(nodes['trends-kpi'].hidden, true);
+});
+
+
+test('percentages leave out a marked step; the plotted line keeps it', async () => {
+  const { t, ctx, nodes } = loadApp();
+  // Four runs; a tech-filter change at the third doubles the line. Between steps it grows 10%.
+  const stamps = ['2026-09-13T00:00:00+00:00', '2026-09-14T00:00:00+00:00',
+                  '2026-09-15T00:00:00+00:00', '2026-09-16T00:00:00+00:00'];
+  answering(ctx, { ...picked({ a: [100, 100, 200, 220], b: [100, 100, 100, 100] }),
+    stamps, totals: [1e4, 1e4, 1e4, 1e4], non_tech: [0, 0, 0, 0],
+    series: [{ name: 'a', label: 'A', points: [100, 100, 200, 220], latest: 220 },
+             { name: 'b', label: 'B', points: [100, 100, 100, 100], latest: 100 }],
+    epochs: [{ ts: stamps[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
+  await t.load(null);
+  t.setUnit('count', false);
+  t.draw();
+  // Head and tail average two points each: net 100 → 105 is +5.0%; with the step it read +110.0%.
+  assert.match(row(nodes['trends-legend'].innerHTML, 'a'), /\+5\.0%/, 'the doubling was the filter');
+});
+
+test('a small count gets whole-number ticks', () => {
+  const { t } = loadApp();
+  const axis = t.niceAxis(2, true);
+  assert.ok(axis.ticks.every(v => Number.isInteger(v)), JSON.stringify(axis.ticks));
+  assert.equal(axis.dec, 0);
+});
+
+
+test('under New, the tab says from when openings count as new', async () => {
+  const { t, ctx, nodes } = loadApp();
+  t.metricSet('new');
+  answering(ctx, { ...picked({ a: [null, 50], b: [null, 40] }), metric: 'new', new_counted_from: STAMPS[1] });
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
+  await t.load(null);
+  assert.match(nodes['trends-empty'].textContent, /New openings count from Sep 20/);
 });

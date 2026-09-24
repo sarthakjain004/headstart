@@ -1806,7 +1806,10 @@ def company_trends(trends_app, monkeypatch):
     )
     arrivals = trends_app._board_arrivals(deltas, 2)
     monkeypatch.setattr(trends_app, "_BOARD_ARRIVALS", arrivals)
-    monkeypatch.setattr(trends_app, "_NEW_HOLD", trends_app._new_holds(arrivals))
+    # No holds by default: the fixture's runs span two days, inside every Board's first week.
+    # The hold has its own tests below.
+    monkeypatch.setattr(trends_app, "_NEW_HOLD", {})
+    monkeypatch.setattr(trends_app, "_NEW_COUNTED_FROM", None)
     monkeypatch.setattr(
         trends_app, "_LEDGER_START", min(ts for ts, _ in arrivals.values())
     )
@@ -2670,6 +2673,9 @@ def test_a_found_boards_backlog_waits_out_the_new_window(company_trends, monkeyp
         _delta(_T2, "eightfold:citi.eightfold.ai", 3, metric="new")
     ]
     monkeypatch.setitem(app_module, "_TREND_DELTAS", deltas)
+    monkeypatch.setitem(
+        app_module, "_NEW_HOLD", app_module["_new_holds"](app_module["_BOARD_ARRIVALS"])
+    )
     held = company_trends.get(
         "/trends?company=eightfold:citi.eightfold.ai&metric=new"
     ).get_json()
@@ -2682,8 +2688,9 @@ def test_a_found_boards_backlog_waits_out_the_new_window(company_trends, monkeyp
     assert held["ledger_start"] == _T1
 
 
-def test_new_holds_start_after_the_first_tick_and_last_the_window(trends_app):
+def test_every_board_waits_out_the_new_window_from_its_first_tick(trends_app):
     holds = trends_app._new_holds(
         {"a": ("2026-09-13T00:00:00+00:00", 5), "b": ("2026-09-20T06:00:00+00:00", 3)}
     )
-    assert holds == {"b": "2026-09-27T06:00:00+00:00"}
+    # the first tick's baseline waits too: the ledger's first week reads every backlog as new
+    assert holds == {"a": "2026-09-20T00:00:00+00:00", "b": "2026-09-27T06:00:00+00:00"}
