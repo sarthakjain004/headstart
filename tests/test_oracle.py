@@ -534,3 +534,53 @@ def test_the_tolerated_gap_is_logged_with_both_numbers(caplog):
     assert "served 27 of a stated 600" in logged
     assert scraper.board_key() in logged
     assert scraper.truncated is None
+
+
+# --- the Board's company name ---------------------------------------------------------------
+
+
+def _titled(title: str) -> str:
+    return f"<html><head><title>{title}</title></head></html>"
+
+
+def test_the_board_page_is_the_candidate_experience_root():
+    assert OracleScraper(HOST).board_page() == (
+        f"https://{HOST}/hcmUI/CandidateExperience/"
+    )
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        # titles of Boards serving their host on 2026-09-24
+        ("Ricoh Careers", "Ricoh"),
+        ("Onity External Career Site", "Onity"),
+        ("Safaricom Candidate Experience site", "Safaricom"),
+        (
+            "Pittsburg State University Career Site Minimal",
+            "Pittsburg State University",
+        ),
+        ("Innergex_EN", "Innergex"),
+        ("Linamar Career Site - New", "Linamar"),
+        ("Jobs @ Carmeuse", "Carmeuse"),
+        ("Job Search | Gulf Bank", "Gulf Bank"),
+        ("Allegheny College", "Allegheny College"),
+        ("Oracle", "Oracle"),  # the vendor hires on its own platform
+        # the template writes a JavaScript string
+        (r"Texas Children\'s Careers", "Texas Children's"),
+        (r"Te Herenga Waka—Victoria University of Wellington", None),
+        # page labels, whole or left behind by a wrapper
+        ("Candidate Experience site", None),
+        ("Global Career Site", None),
+        ("Page not found", None),
+        ("All Jobs", None),
+        ("NemoursCareerSite", None),
+        ("Jobs onsemi", None),
+        ("UW Candidate Experience with Application Error Message", None),
+        ("Lazard Career Confidential", None),
+        ("Explore RH Careers", None),
+        ("Chubb External", "Chubb"),
+    ],
+)
+def test_the_company_is_the_default_sites_title(title, expected):
+    assert OracleScraper(HOST).company_from_page(_titled(title)) == expected

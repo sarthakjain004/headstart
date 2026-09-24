@@ -109,6 +109,10 @@ def _company(shell: str, slug: str) -> str | None:
     # get mistaken for the company name on shells with no real logo image at all (e.g.
     # easyjet, hyundaicapital both returned "Create an RSS feed" and the bare placeholder
     # title before this fix).
+    #
+    # What is left once " logo" comes off must still read as a name: `aa010`'s and
+    # `elsewedyelectric`'s images are alt="logo" and `hdr`'s alt="hdr logo", and both served
+    # "logo" and "hdr" as the company until this refused them (2026-09-24).
     ignored = {"access the online help", "close", "collapse this section", "image"}
     for image in _IMG.findall(shell):
         if "logo" not in image.lower():
@@ -116,7 +120,9 @@ def _company(shell: str, slug: str) -> str | None:
         for value in _ATTR.findall(image):
             value = html_to_text(value)
             if value and value.lower() not in ignored and len(value) <= 100:
-                return re.sub(r"\s+logo$", "", value, flags=re.IGNORECASE).strip()
+                name = re.sub(r"(?:^|\s+)logo$", "", value, flags=re.IGNORECASE).strip()
+                if name and not company_name.looks_like_slug(name):
+                    return name
     return None
 
 
