@@ -475,10 +475,10 @@ class EightfoldScraper(BaseScraper):
         `detail skip-list: 671,630 / 671,833 / 672,468 Job details already held`)."""
         descriptions = self.run_detail_pass(
             [_PcsxPosition(group_id, position) for position in positions],
-            key_of=lambda item: str(item.position.get("id")),
+            key_of=lambda pcsx_position: str(pcsx_position.position.get("id")),
             what="descriptions",
-            title_of=lambda item: item.position.get("name"),
-            department_of=lambda item: _department_of(item.position),
+            title_of=lambda pcsx_position: pcsx_position.position.get("name"),
+            department_of=lambda pcsx_position: _department_of(pcsx_position.position),
             skip_held=True,
         )
         # Only the held-detail half: the tech half has its own line, from the gate
@@ -493,22 +493,23 @@ class EightfoldScraper(BaseScraper):
                 f"({tech - requested} already held)"
             )
         records = []
-        for pos in positions:
-            position_id = str(pos.get("id"))
+        for position in positions:
+            position_id = str(position.get("id"))
             records.append(
                 {
                     "id": position_id,
-                    "url": self.job_url(position_id, pos.get("positionUrl")),
+                    "url": self.job_url(position_id, position.get("positionUrl")),
                     "fields": {
-                        "title": pos.get("name"),
+                        "title": position.get("name"),
                         "description": descriptions.get(position_id) or None,
                         "location": _first_location(
-                            pos.get("locations"), pos.get("standardizedLocations")
+                            position.get("locations"),
+                            position.get("standardizedLocations"),
                         ),
-                        "posted_at": _ts_to_iso(pos.get("postedTs")),
+                        "posted_at": _ts_to_iso(position.get("postedTs")),
                         "employment_type": None,  # not exposed by the PCSX API
-                        "department": _department_of(pos),
-                        "remote": _remote_from(pos.get("workLocationOption")),
+                        "department": _department_of(position),
+                        "remote": _remote_from(position.get("workLocationOption")),
                     },
                 }
             )
@@ -551,8 +552,10 @@ class EightfoldScraper(BaseScraper):
 
     def _sitemap_records(self) -> list[dict[str, Any]]:
         listed = self._job_urls()
+        # Keyed by the page's own URL, not its position id: `_job_urls` dedupes URLs, and two
+        # URLs naming one position each keep the page they were read from.
         pages = self.run_detail_pass(
-            listed, key_of=_sitemap_position_id, what="detail fields"
+            listed, key_of=lambda job_url: job_url, what="detail fields"
         )
         lost = pages.missing
         if lost:
@@ -569,11 +572,11 @@ class EightfoldScraper(BaseScraper):
             )
         return [
             {
-                "id": _sitemap_position_id(u),
-                "url": u,
-                "fields": pages.get(_sitemap_position_id(u)),
+                "id": _sitemap_position_id(job_url),
+                "url": job_url,
+                "fields": pages.get(job_url),
             }
-            for u in listed
+            for job_url in listed
         ]
 
     def _job_urls(self) -> list[str]:

@@ -6,8 +6,8 @@ runs: **102 SuccessFactors Boards returned 0 jobs in every one of them**, the wo
 (`careers.te.com`) fetching 2,127 pages over 27 minutes — 97% of its shard's wall clock — and
 building nothing. In one run those Boards listed 56,120 postings and ingested none.
 
-The log could not say why, and that is the gap this fills. ``_job_fields`` maps every outcome onto
-the same ``None``::
+The log could not say why, and that is the gap this fills. ``_job_fields``, the detail reader then,
+mapped every outcome onto the same ``None``::
 
     if response.status_code != 200:
         return None
@@ -115,7 +115,7 @@ def job_urls(slug: str, want: int) -> list[str]:
 
 
 def probe_board(slug: str, urls: list[str], proxy: str | None) -> dict[str, Any]:
-    """Fetch each URL the way `_job_fields` does, but keep apart what it collapses into None."""
+    """Fetch each URL the way the Detail pass does, but keep apart what it collapses into a loss."""
     statuses: Counter[str] = Counter()
     raised: Counter[str] = Counter()
     parsed = unparsed = 0

@@ -36,8 +36,8 @@ from headstart.tech_filter import is_tech
 #: ``headstart/0.1 (job-board)``, ``headstart/0.1 (reader)``, ``curl/8.7.1`` and even
 #: ``python-requests/2.32.3`` all return 200 on the same URL — a denylist entry, not a heuristic.
 #: It cost 102 Boards their whole detail pass: 0 jobs each across five consecutive runs, 56,120
-#: postings listed and none ingested, and the log could not say so because ``_job_fields`` maps a
-#: 403 and an unparseable 200 onto the same ``None``.
+#: postings listed and none ingested, and the log could not say so because its detail reader
+#: mapped a 403 and an unparseable 200 onto the same ``None``.
 #:
 #: **zwayam** rejects any User-Agent carrying a domain or an email — ``(+https://github.com/…)``,
 #: ``(+github.com/…)``, ``(github.com/…)`` and an ``@``-address all fail with ``curl (92) HTTP/2

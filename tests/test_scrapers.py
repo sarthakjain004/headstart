@@ -3617,23 +3617,27 @@ def test_trakstar_fetch_raw_uses_feed_when_capped_and_skips_the_detail_pass():
     description inline)."""
     import headstart.scrapers.trakstar as trakstar_module
 
-    s, fetcher = _trakstar_board(
+    scraper, fetcher = _trakstar_board(
         _trakstar_cards_page(25, total=40), feed=_TRAKSTAR_FEED
     )
 
-    raw = s.fetch_raw()
+    raw = scraper.fetch_raw()
 
     # the capped cards' detail pages were never fetched
     assert _trakstar_job_pages_requested(fetcher) == []
     assert raw == {"feed_items": trakstar_module._feed_items(_TRAKSTAR_FEED)}
-    jobs = s.parse(raw, SCRAPED_AT)
+    jobs = scraper.parse(raw, SCRAPED_AT)
     assert len(jobs) == 2
     assert jobs[0].id == "trakstar:acme:fk0abc1"
-    assert s.truncated is None  # the feed answered in full -- this Board is not short
+    assert (
+        scraper.truncated is None
+    )  # the feed answered in full -- this Board is not short
 
 
 @pytest.mark.parametrize("async_fanout", ["1", "0"])
-def test_trakstar_fetch_raw_skips_feed_when_not_capped(monkeypatch, async_fanout):
+def test_trakstar_uncapped_board_skips_the_feed_and_reads_every_page_four_wide(
+    monkeypatch, async_fanout
+):
     """The 92%+ of Boards under the render cap must cost exactly the one careers-page request
     they always did -- no RSS fetch, since there's nothing the cards are missing -- and the
     detail pass then reads every card's page, on either transport, pinned to its DataDome
@@ -3643,7 +3647,7 @@ def test_trakstar_fetch_raw_skips_feed_when_not_capped(monkeypatch, async_fanout
         '<script type="application/ld+json">{"@type": "JobPosting", '
         '"datePosted": "2026-03-01", "description": "Build it."}</script>'
     )
-    s, fetcher = _trakstar_board(
+    scraper, fetcher = _trakstar_board(
         _trakstar_cards_page(3, total=3),
         feed=_TRAKSTAR_FEED,
         job_pages={"code0": posting, "code1": posting, "code2": posting},
@@ -3651,30 +3655,32 @@ def test_trakstar_fetch_raw_skips_feed_when_not_capped(monkeypatch, async_fanout
     monkeypatch.setenv("HEADSTART_H2_STREAMS", "100")  # the operator cannot widen it
     fanout_stats.reset()
 
-    raw = s.fetch_raw()
+    raw = scraper.fetch_raw()
 
     assert "feed_items" not in raw
     assert not any("/jobfeeds/" in url for url in fetcher.urls())
     assert set(raw["postings"]) == {"code0", "code1", "code2"}
-    assert [job.posted_at for job in s.parse(raw, SCRAPED_AT)] == ["2026-03-01"] * 3
+    assert [job.posted_at for job in scraper.parse(raw, SCRAPED_AT)] == [
+        "2026-03-01"
+    ] * 3
     assert set(fanout_stats.stats()) == {("trakstar details", 4)}
-    assert s.truncated is None
+    assert scraper.truncated is None
 
 
 def test_trakstar_fetch_raw_keeps_html_when_feed_unreachable():
     """sleekr-shaped live case: capped (25 cards, real total higher) but the feed 404s. The
     capped HTML list must still come back -- not an empty Board -- and the Board must be marked
     truncated now that the page's own total makes the shortfall provable, not just suspected."""
-    s, fetcher = _trakstar_board(_trakstar_cards_page(25, total=77))
+    scraper, fetcher = _trakstar_board(_trakstar_cards_page(25, total=77))
 
-    raw = s.fetch_raw()
+    raw = scraper.fetch_raw()
 
     assert "feed_items" not in raw
     assert len(_trakstar_job_pages_requested(fetcher)) == 25
-    jobs = s.parse(raw, SCRAPED_AT)
+    jobs = scraper.parse(raw, SCRAPED_AT)
     assert len(jobs) == 25
-    assert s.truncated is not None
-    assert "unreachable" in s.truncated
+    assert scraper.truncated is not None
+    assert "unreachable" in scraper.truncated
 
 
 def test_trakstar_fetch_raw_does_not_mark_truncated_for_card_count_heuristic_alone():
@@ -3683,13 +3689,13 @@ def test_trakstar_fetch_raw_does_not_mark_truncated_for_card_count_heuristic_alo
     marked truncated -- this is the same ambiguous "reached the cap" signal the pre-fix code
     deliberately declined to mark_truncated for; only the page's own total turns that into
     proof, and this Board never had one."""
-    s, fetcher = _trakstar_board(_trakstar_cards_page(25))  # no total button
+    scraper, fetcher = _trakstar_board(_trakstar_cards_page(25))  # no total button
 
-    raw = s.fetch_raw()
+    raw = scraper.fetch_raw()
 
     assert "feed_items" not in raw
     assert len(_trakstar_job_pages_requested(fetcher)) == 25
-    assert s.truncated is None
+    assert scraper.truncated is None
 
 
 def test_trakstar_feed_location_strips_each_part():
@@ -5795,14 +5801,9 @@ def test_eightfold_first_location_repair_uses_the_index_matched_standardized_ent
     )
 
 
-def test_eightfold_api_records_wires_the_remote_and_location_fixes(monkeypatch):
+def test_eightfold_api_records_wires_the_remote_and_location_fixes():
     """Integration: the fixes reach `_api_records`'s built fields, not just the pure helpers."""
-    from headstart.scrapers.registry import get_scraper
-
-    scraper = get_scraper("eightfold", "acme.eightfold.ai", "Acme")
-    monkeypatch.setattr(
-        scraper, "fan_out_async", lambda items, fn, **kw: [None] * len(items)
-    )
+    scraper, _fetcher = _eightfold_board()
     positions = [
         {
             "id": "1",
@@ -5879,16 +5880,14 @@ def _eightfold_board(*, have_details=None, job_pages=None):
     """An Eightfold scraper behind a fake fetcher: every ``position_details`` answers
     ``desc-{position_id}``, a job page in ``job_pages`` (url -> html) answers as given and any
     other URL is a 404. Returns the scraper and the fake, which records every request."""
-    import urllib.parse
-
     from headstart.scrapers.eightfold import EightfoldScraper
 
     job_pages = job_pages or {}
 
     def route(method, url, kwargs):
-        if "/api/pcsx/position_details?" in url:
-            query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
-            description = f"desc-{query['position_id'][0]}"
+        position_id = _eightfold_position_id_asked_for(url)
+        if position_id is not None:
+            description = f"desc-{position_id}"
             return FakeResponse(
                 text=json.dumps({"data": {"jobDescription": description}})
             )
@@ -5901,13 +5900,20 @@ def _eightfold_board(*, have_details=None, job_pages=None):
     return scraper, fetcher
 
 
-def _eightfold_position_ids_requested(fetcher):
+def _eightfold_position_id_asked_for(url):
+    """The ``position_id`` a ``position_details`` URL asks for; None for any other URL."""
     import urllib.parse
 
+    if "/api/pcsx/position_details?" not in url:
+        return None
+    return urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)["position_id"][0]
+
+
+def _eightfold_position_ids_requested(fetcher):
     return sorted(
-        urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)["position_id"][0]
+        position_id
         for url in fetcher.urls()
-        if "/api/pcsx/position_details?" in url
+        if (position_id := _eightfold_position_id_asked_for(url)) is not None
     )
 
 
@@ -9330,7 +9336,7 @@ def test_eightfold_sitemap_fallback_marks_truncation_when_pages_are_lost(
 
     records = scraper._sitemap_records()
 
-    assert {r["id"]: r["fields"] is None for r in records} == {
+    assert {record["id"]: record["fields"] is None for record in records} == {
         "1": False,
         "2": True,
         "3": False,
@@ -9443,6 +9449,31 @@ def test_successfactors_does_not_mark_a_board_whose_pages_all_arrived(monkeypatc
     scraper.fetch_raw()
 
     assert scraper.truncated is None
+
+
+def test_eightfold_sitemap_fallback_keeps_each_url_with_its_own_page():
+    """`_job_urls` dedupes URLs, not position ids, so one position can be listed twice; each URL
+    keeps the page it was read from rather than sharing whichever of the two arrived."""
+    readable = "https://acme.eightfold.ai/careers/job/7-engineer-pune"
+    unreadable = "https://acme.eightfold.ai/careers/job/7-engineer-remote"
+    posting = (
+        '<script type="application/ld+json">'
+        '{"@type": "JobPosting", "title": "Engineer"}</script>'
+    )
+    listing = "".join(f"<url><loc>{url}</loc></url>" for url in (readable, unreadable))
+    scraper, _fetcher = _eightfold_board(
+        job_pages={
+            "https://acme.eightfold.ai/careers/sitemap.xml": f"<urlset>{listing}</urlset>",
+            readable: posting,
+        }
+    )
+
+    records = scraper._sitemap_records()
+
+    assert {record["url"]: record["fields"] is None for record in records} == {
+        readable: False,
+        unreadable: True,
+    }
 
 
 def test_eightfold_sitemap_fallback_does_not_mark_a_complete_board():

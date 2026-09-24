@@ -170,7 +170,9 @@ def _fetching_scraper(
 
 
 @pytest.mark.parametrize("async_fanout", ["1", "0"])
-def test_the_page_is_asked_for_as_html(monkeypatch, async_fanout):
+def test_the_page_is_asked_for_as_html_and_read_on_either_transport(
+    monkeypatch, async_fanout
+):
     """The posting page content-negotiates: `Accept: application/json, text/html` — what the
     shared `_get` sends — answers **406** with a 52-byte JSON error, on every page (192 of 192 on
     impulsespace). `text/html` answers the page — on either transport."""

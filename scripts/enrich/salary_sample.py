@@ -384,7 +384,7 @@ def _fetch_trakstar(scraper: BaseScraper) -> list[Job]:
     jobs = scraper.parse(
         {"html": html, "postings": postings}, datetime.now(UTC).isoformat()
     )
-    return [j for j in jobs if j.id.split(":", 2)[2] in postings]
+    return [job for job in jobs if job.id.split(":", 2)[2] in postings]
 
 
 def _fetch_eightfold(scraper: BaseScraper) -> list[Job]:
@@ -415,12 +415,12 @@ def _fetch_eightfold(scraper: BaseScraper) -> list[Job]:
             return scraper.parse(records, datetime.now(UTC).isoformat())
     urls = scraper._job_urls()[:_DETAIL_FETCH_CAP]
     records = []
-    for u in urls:
-        fields = scraper.fetch_detail(u)
+    for job_url in urls:
+        fields = scraper.fetch_detail(job_url)
         records.append(
             {
-                "id": _sitemap_position_id(u),
-                "url": u,
+                "id": _sitemap_position_id(job_url),
+                "url": job_url,
                 "fields": fields,
             }
         )
