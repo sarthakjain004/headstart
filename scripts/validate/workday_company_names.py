@@ -94,7 +94,7 @@ def main() -> None:
         OUT.open("a", newline="", encoding="utf-8") as handle,
         ThreadPoolExecutor(_WORKERS) as pool,
     ):
-        writer = csv.DictWriter(handle, FIELDS)
+        writer = csv.DictWriter(handle, FIELDS, lineterminator="\n")
         if new_file:
             writer.writeheader()
         futures = {pool.submit(resolve, b.slug): b for b in boards}
@@ -120,7 +120,7 @@ def main() -> None:
     # The appends above may repeat a Board `--all` re-read; the last row for a key is the newest.
     rows = sorted(_read(OUT).values(), key=lambda row: row["board_key"].lower())
     with OUT.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, FIELDS)
+        writer = csv.DictWriter(handle, FIELDS, lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
     print(
