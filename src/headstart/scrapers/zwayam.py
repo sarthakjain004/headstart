@@ -59,9 +59,9 @@ cut one**.
 The per-job detail endpoint (``jobs-service/v1/jobs/careersite``, JSON POST of ``jobUrl`` + the
 *real numeric* ``companyId``) holds the complete posting in ``longDescription`` (a 6,033-char JD
 was measured behind a listing row with none), so it is fetched for **every row not on the
-ADR-0050 skip-list** and wins over the listing text; the listing fields are the fallback when the
-detail call fails, so a Board whose config call breaks ships its listing text rather than
-nothing. The store bounds the cost: each Job's detail is fetched once in its lifetime (~15 KB a
+ADR-0050 skip-list** and wins over the listing text. The listing fields stand only when the
+detail answers with no text; a failed detail call — or a failed config call, which fails every
+detail on the Board — ships no description, so the next run retries it. The store bounds the cost: each Job's detail is fetched once in its lifetime (~15 KB a
 response, so the first pass over the 22,456-posting corpus moves ~340 MB; steady state is new
 postings only). What the detail holds is the tenant's own paste, junk included — one measured
 posting carries an AI-chat UI's class markup verbatim, and ``html_to_text``'s
@@ -114,13 +114,15 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import quote
 
-from headstart import http, log, salary
+from headstart import log, salary
+from headstart.fetcher import Fetcher
 from headstart.models import Job, host_of, html_to_text, is_remote
-from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 
 _log = log.get(__name__)
 
@@ -191,6 +193,10 @@ _BASE_HREF = re.compile(r"<base\s+href=\"([^\"]*)\"", re.IGNORECASE)
 #: already holds this Job's text and will supply it, which is why the listing's own fields are
 #: never read at parse time.
 _TEXT = "_resolved_description"
+
+
+def _native_id(row: dict) -> str | None:
+    return None if row.get("id") is None else str(row["id"])
 
 
 def _filter_at(start: int) -> str:
@@ -380,8 +386,9 @@ class ZwayamScraper(BaseScraper):
     #:
     #: Carried by `base._fetch`, which all four request sites here go through, so the opt-in is
     #: not inert (the caution above about direct `http.fetch` calls does not apply). Three of the
-    #: four hit the metered API — `_page` (`_API`), `_company_id` (`_CONFIG_API`) and `_detail`
-    #: (`_DETAIL_API`), all on `public.zwayam.com`. The fourth, `_link_base`, GETs the Board's own
+    #: four hit the metered API — `_page` (`_API`), `_company_id` (`_CONFIG_API`) and
+    #: `detail_request` (`_DETAIL_API`, sent by `run_detail_pass` through `_fetch`), all on
+    #: `public.zwayam.com`. The fourth, `_link_base`, GETs the Board's own
     #: customer domain and passes `marks_wall=False` for that reason; see the note there.
     #:
     #: `_DETAIL_API`'s documented UA-rule 403 (above) is a malformed-request 403, not a quota one.
@@ -414,6 +421,28 @@ class ZwayamScraper(BaseScraper):
     #: measurements, and the ADR-0050 skip-list makes the full-corpus pass a one-time cost
     #: anyway. Whatever the width, no async fan-out: multiplexing cannot raise a server ceiling.
     detail_workers = 16
+    #: The thread path, which this pass has always taken. The transport itself is **not**
+    #: measured: ADR-0167 asks for a measurement, and this records why there is none. An
+    #: interleaved A/B at width 16 was tried on 2026-09-24 (impetus.openings.co,
+    #: careers.practo.com), and the per-IP quota (`egress_fallback_on`) walled the detail path on
+    #: both transports within ~15-20 requests. Multiplexed got 21 of 32 details, then 13 of 32,
+    #: before HTTP 403; threads got 15 of 39. So the two are equally correct under the wall, but
+    #: nothing shows which is faster. What is on record is the note on `detail_workers` above: a
+    #: measured ~8-9 responses/s per-IP ceiling, which multiplexing cannot raise. Re-run the A/B
+    #: from a fresh egress before moving this pass off threads. That move must also take
+    #: `_company_id_once_per_board`'s blocking config call out of `detail_request`, which the
+    #: multiplexed path runs inside its event loop.
+    async_fanout = False
+
+    def __init__(
+        self, slug: str, company: str | None = None, fetcher: Fetcher | None = None
+    ) -> None:
+        super().__init__(slug, company, fetcher=fetcher)
+        self._company_id_lock = threading.Lock()
+        # Filled by `_company_id_once_per_board`; a failed config call leaves None and is not
+        # asked again.
+        self._company_id_asked = False
+        self._resolved_company_id: int | None = None
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -489,7 +518,7 @@ class ZwayamScraper(BaseScraper):
                 # says nothing about zwayam's per-IP quota, and marking on it would wall the whole
                 # ATS for the run off one tenant's edge — the exact shape of the personio revert
                 # (#312/#313) that `egress_fallback_on`'s own docstring cites. Routing is kept,
-                # marking is dropped (the eightfold precedent, `base._egress`).
+                # marking is dropped (the eightfold precedent, `BoardFetcher.egress_binding`).
                 marks_wall=False,
                 headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
                 timeout=30,
@@ -547,33 +576,44 @@ class ZwayamScraper(BaseScraper):
             _log.info(f"{self.board_key()}: config call failed ({type(exc).__name__})")
             return None
 
-    def _job_detail(self, company_id: int, job_url: str) -> str | None:
+    def _company_id_once_per_board(self) -> int | None:
+        """:meth:`_company_id`, called once per Board and only once the Detail pass forms its
+        first request — the config call is metered like every other (``egress_fallback_on``), so
+        a Board whose rows are all gated or already held never spends it. Locked because the
+        thread transport (:attr:`async_fanout`) forms requests from several workers at once."""
+        with self._company_id_lock:
+            if not self._company_id_asked:
+                self._resolved_company_id = self._company_id()
+                self._company_id_asked = True
+            return self._resolved_company_id
+
+    def detail_request(self, row: dict) -> DetailRequest:
+        """A JSON POST, unlike the multipart search, carrying the *real* numeric company id."""
+        company_id = self._company_id_once_per_board()
+        if company_id is None:
+            # The config call is per-Board, so its failure fails every detail on the Board — each
+            # a loss like any other failed detail, so each retries next run.
+            raise DetailLost("no company id")
+        return DetailRequest(
+            _DETAIL_API,
+            method="POST",
+            headers={
+                "User-Agent": _DETAIL_USER_AGENT,
+                "Accept": "application/json, text/plain, */*",
+                "Content-Type": "application/json",
+            },
+            options={
+                "json": {"jobUrl": row["jobUrl"].strip(), "companyId": company_id}
+            },
+        )
+
+    def read_detail(self, row: dict, response: Any) -> str:
         """One Job's full posting text — the detail JSON's ``longDescription``, stripped.
 
-        A JSON POST, unlike the multipart search; ``fan_out`` turns any raising call into
-        ``None``, which :meth:`report_detail_gaps` then counts — caught here first so the count
-        also says what it was lost to (:meth:`~BaseScraper.note_detail_loss`).
-        """
-        try:
-            response = self._fetch(
-                "POST",
-                _DETAIL_API,
-                json={"jobUrl": job_url, "companyId": company_id},
-                headers={
-                    "User-Agent": _DETAIL_USER_AGENT,
-                    "Accept": "application/json, text/plain, */*",
-                    "Content-Type": "application/json",
-                },
-                timeout=30,
-            )
-            response.raise_for_status()
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
+        ``""``, never a loss, when the detail JSON carries no ``longDescription``: `fetch_raw`
+        needs the two apart — a loss is transient and must be retried next run, the other is this
+        posting's final answer. A body that is not JSON at all is a loss, labelled by its type."""
         detail = response.json() or {}
-        # `""`, never None, when the endpoint answers with no body: `fan_out` turns a *raising*
-        # call into None, and `fetch_raw` needs the two apart — one is transient and must be
-        # retried next run, the other is this posting's final answer.
         return html_to_text(detail.get("longDescription")) or ""
 
     def fetch_raw(self) -> Any:
@@ -623,49 +663,37 @@ class ZwayamScraper(BaseScraper):
         # listing's own fields can be silently truncated (module docstring), so the detail is
         # the only text trusted as complete. Steady state, `needs_detail` prunes this to the
         # Board's new postings.
-        # Two skips, both on `rows`: the tech gate (ADR-0017) drops what `filter_tech` would
-        # drop anyway, and `needs_detail` (ADR-0048) drops what the description store already
-        # holds. The gate is exact here — `parse` reads `jobTitle` and `departmentName` off this
-        # same listing row and the detail supplies only text — so it cannot cost a Job the
-        # index would have kept.
-        need = [
-            row
-            for row in self.tech_detail_wanted(
-                rows,
-                lambda r: r.get("jobTitle"),
-                lambda r: r.get("departmentName") or r.get("DepartmentName"),
-            )
-            if (row.get("jobUrl") or "").strip()
-            and self.needs_detail(str(row.get("id")))
-        ]
-        if need:
-            company_id = self._company_id()
-            details = (
-                self.fan_out(
-                    need,
-                    lambda row: self._job_detail(company_id, row["jobUrl"].strip()),
-                    workers=self.detail_workers,
-                )
-                if company_id is not None
-                # The config call is per-Board, so its failure fails every detail on the Board.
-                # Recorded as the same None a failed fetch gives, so both retry next run.
-                else [None] * len(need)
-            )
-            self.report_detail_gaps(details, "descriptions")
-            for row, text in zip(need, details):
-                if text:
-                    row[_TEXT] = text
-                elif text == "":
-                    # The detail answered with no body: this posting has no fuller text than the
-                    # listing's, so the listing's is final rather than provisional.
-                    row[_TEXT] = _listing_description(row)
-                # A *failed* detail (None) records nothing, so the Job ships with no description
-                # and `update_descriptions` stores none — leaving `needs_detail` true so the next
-                # run retries it. Falling back to the listing text here would be a one-way door:
-                # the store persists whatever the scrape emits, membership in it *is* the
-                # skip-list, and a skip-listed Job never fetches a detail again — so one
-                # transient failure would freeze text this module measured as possibly
-                # truncated, permanently and invisibly.
+        # Two skips: the tech gate (ADR-0017) drops what `filter_tech` would drop anyway, and
+        # `skip_held` (ADR-0048) drops what the description store already holds. The gate is
+        # exact here — `parse` reads `jobTitle` and `departmentName` off this same listing row
+        # and the detail supplies only text — so it cannot cost a Job the index would have kept.
+        # A row with no `jobUrl` has no detail to ask for, and `parse` drops it anyway.
+        linked = [row for row in rows if (row.get("jobUrl") or "").strip()]
+        texts = self.run_detail_pass(
+            linked,
+            key_of=_native_id,
+            what="descriptions",
+            title_of=lambda row: row.get("jobTitle"),
+            department_of=lambda row: (
+                row.get("departmentName") or row.get("DepartmentName")
+            ),
+            skip_held=True,
+        )
+        for row in linked:
+            text = texts.get(_native_id(row))
+            if text:
+                row[_TEXT] = text
+            elif text == "":
+                # The detail answered with no body: this posting has no fuller text than the
+                # listing's, so the listing's is final rather than provisional.
+                row[_TEXT] = _listing_description(row)
+            # A *failed* detail (absent) records nothing, so the Job ships with no description
+            # and `update_descriptions` stores none — leaving `needs_detail` true so the next
+            # run retries it. Falling back to the listing text here would be a one-way door:
+            # the store persists whatever the scrape emits, membership in it *is* the
+            # skip-list, and a skip-listed Job never fetches a detail again — so one
+            # transient failure would freeze text this module measured as possibly
+            # truncated, permanently and invisibly.
         return {"rows": rows, "link_base": self._link_base() if rows else ""}
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:

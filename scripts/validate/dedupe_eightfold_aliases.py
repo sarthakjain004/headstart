@@ -40,7 +40,8 @@ dead-TTL re-probe (`DEAD_TTL_DAYS`, 90 days), since these hosts genuinely answer
 re-probe flips them back to `live`. `check_liveness.py` now skips the six before spending any
 HTTP (`_EIGHTFOLD_ALIAS_LOSERS`, the shape ADR-0034 uses for non-prod boards). That set is a
 frozen snapshot of the 2026-08-16 run, so re-run this script periodically anyway — it re-verifies
-overlap live — and fold any newly-formed cluster into it.
+overlap live — and add any newly-formed cluster to that set and to `eightfold_backing_boards.py`'s
+`BACKING`, whose alias ledger also buries these six (ADR-0205).
 
     python scripts/validate/dedupe_eightfold_aliases.py
     python scripts/validate/dedupe_eightfold_aliases.py --apply
