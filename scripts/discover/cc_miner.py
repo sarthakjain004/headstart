@@ -249,6 +249,16 @@ ATS_PATTERNS = {
             )
         ],
     },
+    "jibe": {
+        # One host, the slug is the client id: the single label of `{client}.jibeapply.com`.
+        # Anchored to a host boundary like eightfold, so the label must be the host's first: a
+        # vanity CNAME target (`careers.rm.com.jibeapply.com`) and a test host
+        # (`uhs.staging.jibeapply.com`) capture nothing rather than their last label. The
+        # lookahead refuses `jibeapply.com` running on into a longer host.
+        "targets": ["jibeapply.com"],
+        "kind": "label",
+        "patterns": [r"(?://|%2f)([a-z0-9][a-z0-9-]*)\.jibeapply\.com(?![a-z0-9.-])"],
+    },
     "keka": {
         "targets": ["keka.com"],
         "kind": "label",

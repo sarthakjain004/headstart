@@ -1,0 +1,588 @@
+{
+ "_source": "real /api/jobs rows captured 2026-09-24 from 9 client hosts; meta_data, qualifications, responsibilities and hiring_organization_logo removed (unused, and qualifications/responsibilities are inside description)",
+ "jobs": [
+  {
+   "data": {
+    "slug": "5262",
+    "language": "en-us",
+    "languages": [
+     "en-us"
+    ],
+    "req_id": "5262",
+    "title": "Flight Dispatcher",
+    "description": "Job Summary A dispatcher, qualified as per CAR section 705.110, is assigned the responsibility of exercising safe and efficient operational control over Porter Airlines Inc. flights in conjunction with the pilot-in-command. Duties & Responsibilities A Dispatcher, qualified as per CARs section 705.110, is assigned the responsibility of exercising safe and efficient operational control over Porter Airlines flights in conjunction with the Pilot-In-Command, during Type A operations. Responsible for operational Pre-departure Planning and Flight Watch within a prescribed geographic area or assigned flights in accordance with the following: Canadian and foreign government rules and regulations Company flight operations manuals Corporate policies and procedures Timely formulation, amendment and execution of the Operational Flight Plan (OFP) in keeping with safety, regulatory, customer service and corporate fiscal requirements. Authorizing the release of an aircraft to operate in accordance with the terms and conditions established by the OFP Analyzing operational conditions and identifying any opportunities that may benefit or restrict operational capabilities, inclusive of, but not limited to, weather conditions, field conditions, ATC restrictions and aircraft performance Exercising operational control on a co-authority basis with the Pilot-In-Command and for the joint responsibility of the safe and efficient planning and monitoring of a flight Performing operational Flight Watch and determining when changes to the OFP are required or when meteorological conditions may affect the safety or efficiency of flights within a prescribed area or on assigned routes, and communicating those changes to the operating flight crew as required in a timely manner Formulating and implementing the revised OFP when conditions warrant, and communicating revised information to the Pilot-In-Command in a timely manner When requested or operationally required provide the Pilot-In-Command with a thorough and professional flight crew briefing, covering all significant information which may impact the operation of the flight Obtaining up-to-date flight progress information of assigned flights (Flight Watch) and to ensure that the flight tracking system is both current and accurate Communicating to ATC all OFP requirements Initiating Emergency Response procedures Resolving with Maintenance Operations Control (MOC) and the Pilot-In-Command, as required, any conflicts which may be caused by any aircraft dispatch deviation which may limit or impact it’s operational capabilities, and to communicate those operational limitations and their impact to the Duty Officer and respective operating branches as required Actively participate in Porter’s Safety Management System (SMS) including reporting hazards and incidents encountered in daily operations; understand, comply and promote the Company Safety Policy Conducting On The Job Training for the position of Flight Dispatcher under the direction of the Chief Dispatcher, as assigned Behavioural Competencies Concern for Safety: Identifying hazardous or potentially hazardous situations and taking appropriate action to maintain a safe environment for self and others. Teamwork: Working collaboratively with others to achieve organizational goals. Passenger/Customer Service: Providing service excellence to internal and/or external customers (passengers). Initiative: Dealing with situations and issues proactively and persistently, seizing opportunities that arise. Results Focus: Focusing efforts on achieving high quality results consistent with the organization’s standards. Fostering Communication: Listening and communicating openly, honestly, and respectfully with different audiences, promoting dialogue and building consensus. Qualifications Minimum of 2 years’ experience in an airline operations centre Radiotelephone Operator's Restricted Certificate Successful completion of Transport Canada FDMET and FDOPS exams within last 2 years At least 21 years of age per CARs Standard 725.124(21)(r) Working knowledge of CARs 705 or previous Type A (or equivalent) Flight Dispatch experience Aviation College or University Degree is an asset Location Toronto (Billy Bishop Toronto City Airport - YTZ) #LI-Onsite Company Description Since 2006, Porter Airlines has been elevating the experience of economy air travel for every passenger, providing genuine hospitality with style, care and charm. Porter’s fleet of Embraer E195-E2 and De Havilland Dash 8-400 aircraft serves North America, including a coast-to-coast domestic Canadian network, the U.S., Mexico, the Caribbean and Central America. Headquartered in Toronto, Porter is an Official 4 Star Airline® in the World Airline Star Rating®. Visit www.flyporter.com or follow @porterairlines on Instagram, Facebook and X.",
+    "location_name": "YTZ - Toronto Island",
+    "street_address": "BBTCA\n2 Eireann Quay",
+    "city": "Toronto",
+    "state": "Ontario",
+    "country": "Canada",
+    "country_code": "CA",
+    "postal_code": "M5V 1A1",
+    "location_type": "LAT_LNG",
+    "latitude": 43.62879849999999,
+    "longitude": -79.3949684,
+    "categories": [
+     {
+      "name": "System Operations Control (SOC)"
+     }
+    ],
+    "tags1": [
+     "YTZ"
+    ],
+    "tags2": [
+     "YTZ - Toronto Island"
+    ],
+    "tags3": [
+     "Full-Time"
+    ],
+    "promotion_value": 0,
+    "employment_type": "FULL_TIME",
+    "hiring_organization": "Porter Airlines Inc.",
+    "posted_date": "2026-06-17T12:00:00+0000",
+    "apply_url": "https://careers-flyporter.icims.com/jobs/5262/login",
+    "internal": false,
+    "external": false,
+    "searchable": true,
+    "applyable": true,
+    "li_easy_applyable": true,
+    "ats_code": "icims",
+    "isFrontLineAIJob": false,
+    "isApplyFlowJob": false,
+    "update_date": "2026-06-25T17:33:27+0000",
+    "create_date": "2026-06-25T17:33:27+0000",
+    "category": [
+     " System Operations Control (SOC)"
+    ],
+    "full_location": "Toronto, Canada",
+    "short_location": "Toronto, Canada",
+    "multipleLocations": false
+   }
+  },
+  {
+   "data": {
+    "slug": "5262",
+    "language": "fr-ca",
+    "languages": [
+     "fr-ca"
+    ],
+    "req_id": "5262",
+    "title": "Flight Dispatcher",
+    "description": "Résumé du travail A dispatcher, qualified as per CAR section 705.110, is assigned the responsibility of exercising safe and efficient operational control over Porter Airlines Inc. flights in conjunction with the pilot-in-command. Devoirs et responsabilités A Dispatcher, qualified as per CARs section 705.110, is assigned the responsibility of exercising safe and efficient operational control over Porter Airlines flights in conjunction with the Pilot-In-Command, during Type A operations. Responsible for operational Pre-departure Planning and Flight Watch within a prescribed geographic area or assigned flights in accordance with the following: Canadian and foreign government rules and regulations Company flight operations manuals Corporate policies and procedures Timely formulation, amendment and execution of the Operational Flight Plan (OFP) in keeping with safety, regulatory, customer service and corporate fiscal requirements. Authorizing the release of an aircraft to operate in accordance with the terms and conditions established by the OFP Analyzing operational conditions and identifying any opportunities that may benefit or restrict operational capabilities, inclusive of, but not limited to, weather conditions, field conditions, ATC restrictions and aircraft performance Exercising operational control on a co-authority basis with the Pilot-In-Command and for the joint responsibility of the safe and efficient planning and monitoring of a flight Performing operational Flight Watch and determining when changes to the OFP are required or when meteorological conditions may affect the safety or efficiency of flights within a prescribed area or on assigned routes, and communicating those changes to the operating flight crew as required in a timely manner Formulating and implementing the revised OFP when conditions warrant, and communicating revised information to the Pilot-In-Command in a timely manner When requested or operationally required provide the Pilot-In-Command with a thorough and professional flight crew briefing, covering all significant information which may impact the operation of the flight Obtaining up-to-date flight progress information of assigned flights (Flight Watch) and to ensure that the flight tracking system is both current and accurate Communicating to ATC all OFP requirements Initiating Emergency Response procedures Resolving with Maintenance Operations Control (MOC) and the Pilot-In-Command, as required, any conflicts which may be caused by any aircraft dispatch deviation which may limit or impact it’s operational capabilities, and to communicate those operational limitations and their impact to the Duty Officer and respective operating branches as required Actively participate in Porter’s Safety Management System (SMS) including reporting hazards and incidents encountered in daily operations; understand, comply and promote the Company Safety Policy Conducting On The Job Training for the position of Flight Dispatcher under the direction of the Chief Dispatcher, as assigned Compétences comportementales Concern for Safety: Identifying hazardous or potentially hazardous situations and taking appropriate action to maintain a safe environment for self and others. Teamwork: Working collaboratively with others to achieve organizational goals. Passenger/Customer Service: Providing service excellence to internal and/or external customers (passengers). Initiative: Dealing with situations and issues proactively and persistently, seizing opportunities that arise. Results Focus: Focusing efforts on achieving high quality results consistent with the organization’s standards. Fostering Communication: Listening and communicating openly, honestly, and respectfully with different audiences, promoting dialogue and building consensus. Qualifications Minimum of 2 years’ experience in an airline operations centre Radiotelephone Operator's Restricted Certificate Successful completion of Transport Canada FDMET and FDOPS exams within last 2 years At least 21 years of age per CARs Standard 725.124(21)(r) Working knowledge of CARs 705 or previous Type A (or equivalent) Flight Dispatch experience Aviation College or University Degree is an asset Description de l'entreprise Depuis 2006, Porter Airlines améliore l’expérience en classe économique pour chaque passager en s’assurant d’offrir un accueil chaleureux misant sur le style, l’attention et le charme. Son parc aérien d’aéronefs Embraer E195-E2 et De Havilland Dash 8-400 dessert l’Amérique du Nord, y compris le réseau canadien d’un océan à l’autre, les États-Unis, le Mexique, les Caraïbes, et l’Amérique centrale. Porter Airlines, dont le siège social est situé à Toronto, est une compagnie aérienne officielle 4 étoiles dans le Classement mondial des compagnies aériennesMD. Visitez www.flyporter.com/fr-ca/ ou suivez @porterairlines sur Instagram, Facebook et X.",
+    "location_name": "YTZ - Toronto Island",
+    "street_address": "BBTCA\n2 Eireann Quay",
+    "city": "Toronto",
+    "state": "Ontario",
+    "country": "Canada",
+    "country_code": "CA",
+    "postal_code": "M5V 1A1",
+    "location_type": "LAT_LNG",
+    "latitude": 43.6289467,
+    "longitude": -79.3944199,
+    "categories": [
+     {
+      "name": "System Operations Control (SOC)"
+     }
+    ],
+    "tags1": [
+     "YTZ"
+    ],
+    "tags2": [
+     "YTZ - Toronto Island"
+    ],
+    "tags3": [
+     "Temps plein régulier"
+    ],
+    "promotion_value": 0,
+    "employment_type": "FULL_TIME",
+    "hiring_organization": "Porter Airlines Inc.",
+    "posted_date": "2026-06-17T12:00:00+0000",
+    "apply_url": "https://careersfr-flyporter.icims.com/jobs/5262/login",
+    "internal": false,
+    "external": false,
+    "searchable": true,
+    "applyable": true,
+    "li_easy_applyable": true,
+    "ats_code": "icims",
+    "isFrontLineAIJob": false,
+    "isApplyFlowJob": false,
+    "update_date": "2026-06-25T17:33:27+0000",
+    "create_date": "2026-06-25T17:33:27+0000",
+    "category": [
+     " System Operations Control (SOC)"
+    ],
+    "full_location": "Toronto, Canada",
+    "short_location": "Toronto, Canada",
+    "multipleLocations": false
+   }
+  },
+  {
+   "data": {
+    "slug": "3713",
+    "language": "en-us",
+    "languages": [
+     "en-us"
+    ],
+    "client_code": "rmeducation",
+    "req_id": "3713",
+    "title": "Account Manager - UK",
+    "description": "Overview<br><br><div><div style=\"text-align: justify;\"><span style=\"font-size: 10pt; font-family: verdana, geneva;\">Would you like to help enrich the lives of learners around the world? </span></div><div style=\"text-align: justify;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\"> </span></div><div style=\"text-align: justify;\"><p style=\"margin: 0px;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">At TTS we aim to give every child, every day,</span></p><p style=\"margin: 0px;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">a reason to love learning.‌</span></p><p style=\"margin: 0px;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\"> </span></p><p style=\"margin: 0px;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">We're proud to have supplied schools and learning environments across the globe with innovative educational resources for 40 years offering over 50,000 resources, of which 6,000 are our own developed IP!</span></p><p style=\"margin: 0px;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\"> </span></p><p style=\"margin: 0px;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">Our in-house experts collaborate with teachers and educational experts to create unique and innovative resources that engage children and inspire a lifelong love of learning. Every TTS resource provides unlimited learning opportunities and is made to last, making the most of schools’ and nurseries’ limited budgets and ensuring years of classroom use.</span></p><p style=\"margin: 0px;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\"> </span></p><p style=\"margin: 0px;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">TTS is part of the RM Group – a pioneer in the education technology space, and since 2004, we share a vision to improve education outcomes worldwide.</span></p></div><div style=\"text-align: justify;\"> </div><div style=\"text-align: justify;\"><p style=\"margin: 0px;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">At RM, we’ve been pioneers of education technology since 1973. We provide technology and resources to the education sector, supporting over 20 million students and improving educational outcomes worldwide.</span></p><p style=\"margin: 0px;\"> </p><p style=\"margin: 0px;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">What we do helps learners at all stages of their lives, from preschool to higher education and professional qualification; we partner with schools, examination boards, governments, and professional organisations globally to make learning more accessible, more engaging, and more impactful.  </span></p><p style=\"margin: 0px;\"> </p><p style=\"margin: 0px;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">RM operates through three divisions: Assessment (digital assessment and marking solutions), Technology (managed services, hardware, and software for schools), and TTS (educational resources). </span></p></div><div style=\"text-align: justify;\"> </div><div style=\"text-align: justify;\"> </div><div style=\"text-align: justify;\"><p style=\"margin: 0px;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\"><em>Visit our website to find out more:  <a href=\"https://www.tts-group.co.uk/\" target=\"_blank\" rel=\"noopener\">https://www.tts-group.co.uk/</a></em></span></p></div></div><div><p style=\"text-align: justify;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\"> </span></p><h2 style=\"margin-bottom: 0cm; text-align: justify;\"><span style=\"font-family: verdana, geneva; color: windowtext; font-size: 10pt;\">Job Context & Purpose</span></h2><p style=\"margin: 0px; text-align: justify;\"><span style=\"font-family: verdana, geneva; color: black; font-size: 10pt;\">A vital role in supporting the commercial function in a field-based business development team. The role is to be the key contact for customers to reach out to for support with their accounts, enabling the business development team to focus on building new business, whilst you manage and support our existing customer base. </span></p><p style=\"margin: 0px; text-align: justify;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\"><strong> </strong></span></p><h2 style=\"margin-bottom: 0cm; text-align: justify;\"><span style=\"font-family: verdana, geneva; color: windowtext; font-size: 10pt;\">The Role</span></h2><p style=\"margin: 0px; text-align: justify;\"><span style=\"font-family: verdana, geneva; color: black; font-size: 10pt;\">This role will be the link between our business development managers and our key customers. You will be commercially minded and enjoy building long-term client partnerships. You will work closely with the customer service team, working together to manage the needs of our key accounts within our MATS and EY Chains.  </span></p><p style=\"text-align: justify;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\"> </span></p><p style=\"text-align: justify;\"><span style=\"color: #2dc26b; font-size: 10pt; font-family: verdana, geneva;\"><strong><span style=\"color: #000000;\">We encourage early applications as the vacancy may close once the position has been filled or final interviews have been arranged.</span> </strong></span></p></div> <br>Responsibilities<br><br><p style=\"margin: 0px; text-align: justify;\"> </p><p style=\"margin: 0px; text-align: justify;\"> </p><h2 style=\"margin-bottom: 0cm; text-align: justify;\"><span style=\"font-family: verdana, geneva; color: windowtext; font-size: 10pt;\">Main Responsibilities</span></h2><p style=\"margin: 0px; text-align: justify;\"> </p><ol style=\"text-align: justify;\"><li style=\"margin-left: 36pt; font-family: verdana, geneva; font-size: 10pt;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">Manage and develop a portfolio of existing customers to build trust, rapport and maximise repeat business</span></li><li style=\"margin-left: 36pt; font-family: verdana, geneva; font-size: 10pt;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">Support the BDMs on pulling together documentation for MAT and EY Chain agreements, ensuring all details are correct.</span></li><li style=\"margin-left: 36pt; font-family: verdana, geneva; font-size: 10pt;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">Following up warm leads from reports, shows, or inbound calls and make appointments for BDMS with potential customers, helping to build new business. </span></li><li style=\"margin-left: 36pt; font-family: verdana, geneva; font-size: 10pt;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">Data cleansing both new and existing accounts - such as ensuring contact details are fully up to date, credit limits are applied – working closely with customer services and finance. </span></li><li style=\"margin-left: 36pt; font-family: verdana, geneva; font-size: 10pt;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">Working with the educationalist within the team to prepare product lists for customers on request such as room set ups</span></li><li style=\"margin-left: 36pt; font-family: verdana, geneva; font-size: 10pt;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">Managing specific customer price lists alongside customer service, ensuring they are up to date, have obsolete products removed and new added, and pricing is maintained. </span></li><li style=\"margin-left: 36pt; font-family: verdana, geneva; font-size: 10pt;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">Working with customer services to produce quotes on request for key clients for any specific orders – such as a resources for a new classroom. </span></li><li style=\"margin-left: 36pt; font-family: verdana, geneva; font-size: 10pt;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">Working with the customer to ensure any terms of agreement are managed and met, on both the part of TTS and the customer, such as scheduling quarterly reviews, sending out agreed samples, arranging training sessions – in line with agreed activity.</span></li><li style=\"margin-left: 36pt; font-family: verdana, geneva; font-size: 10pt;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">Liaising regularly with your counterpart in customer service to ensure all aspects of the customer needs are met, you are aware of joint approaches/campaigns/promotions and you complement each other’s activity. </span></li></ol><p style=\"margin: 0px; text-align: justify;\"><span style=\"font-family: verdana, geneva; color: black; font-size: 10pt;\">This is an office based role and on occasion to support the team you may need to attend events across the UK</span></p><p style=\"margin: 0px; text-align: justify;\"> </p> <br>Experience<br><br><div><h2 style=\"margin-bottom: 0cm; text-align: justify;\"><span style=\"font-family: verdana, geneva; color: windowtext; font-size: 10pt;\">Skills and Experience</span></h2><ul style=\"text-align: justify;\"><li style=\"margin-left: 72pt; font-family: verdana, geneva; font-size: 10pt;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">Strong relationship manager.</span></li><li style=\"margin-left: 72pt; font-family: verdana, geneva; font-size: 10pt;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">Confident in speaking on the phone/teams and contacting customers</span></li><li style=\"margin-left: 72pt; font-family: verdana, geneva; font-size: 10pt;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">A problem solver – who can quickly and effectively support customers when queries arise. </span></li><li style=\"margin-left: 72pt; font-family: verdana, geneva; font-size: 10pt;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">Organised and efficient. </span></li><li style=\"margin-left: 72pt; font-family: verdana, geneva; font-size: 10pt;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">Approachable and a team player. </span></li></ul><p style=\"margin: 0px; text-align: justify;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\"> </span></p><p style=\"margin: 0px; text-align: justify;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\"> </span></p><p style=\"margin: 0px; text-align: justify;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">You will be:</span></p><ul style=\"text-align: justify;\"><li style=\"margin-left: 72pt; font-family: verdana, geneva; font-size: 10pt;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">Clear and confident communicator</span></li><li style=\"margin-left: 72pt; font-family: verdana, geneva; font-size: 10pt;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">Creative – always looking for new ways of working and supporting our customers</span></li><li style=\"margin-left: 72pt; font-family: verdana, geneva; font-size: 10pt;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">A collaborator – be able to work closely with the rest of the sales and marketing team, customer services and wider TTS teams. </span></li></ul><p style=\"margin-left: 36pt; text-align: justify;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\"> </span></p><p style=\"margin: 0px; text-align: justify;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">You will have:</span></p><ul style=\"text-align: justify;\"><li style=\"margin-left: 54pt; font-family: verdana, geneva; font-size: 10pt;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">A strong alignment to RM's core behaviours: Be Brave, Win Together, Be Curious, Make it Simple and Consider it Done.</span></li></ul></div><div style=\"text-align: justify;\"><p style=\"margin: 0px;\"><span style=\"color: #000000; font-size: 10pt; font-family: verdana, geneva;\"> </span></p></div><div style=\"text-align: justify;\"> </div><div style=\"text-align: justify;\"><p style=\"margin: 0px;\"> </p></div><div style=\"text-align: justify;\"><p style=\"margin: 0px;\"><span style=\"color: #000000; font-size: 10pt; font-family: verdana, geneva;\"> </span></p></div><div style=\"text-align: justify;\"><p style=\"margin: 0px;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\" data-ccp-props=\"{}\"> </span></p><div><p style=\"margin: 0px; text-align: justify;\"><span style=\"font-size: 10pt; font-family: verdana, geneva;\"><strong><span style=\"color: #000000;\"><span data-contrast=\"none\">What’s in it for you?</span> </span></strong></span></p><p style=\"margin: 0px; text-align: justify;\"> </p></div><div style=\"text-align: justify;\"><div><span style=\"font-size: 10pt; font-family: verdana, geneva;\">At TTS we support hybrid working options. As well as your office base, you can spend a proportion of your time working at other locations that suit your role and your life, including home, other offices, customer sites, distribution centres or on the move. We encourage you to discuss arrangements for this role with your potential line manager during the recruitment process.</span></div><div> </div><div><p style=\"text-align: justify;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\">RM is committed to safeguarding and promoting the welfare of children and expects all permanent and temporary staff to share this commitment. This role is exempt from the Rehabilitation of Offenders Act 1974 and all successful candidates will be subject to Disclosure and Barring Service (DBS) checks along with other relevant employment checks. </span></p></div><div> </div><div><span style=\"font-size: 10pt; font-family: verdana, geneva;\">As well as a competitive salary and our core benefits package which includes private medical healthcare, life assurance and a Group Personal Pension Plan with higher contribution levels available. There are lots of voluntary benefits too. You could buy additional annual leave, join our dental plan, sign up for a health assessment, or take part in our cycle to work scheme. You could even earn yourself an extra bonus for successfully recommending a friend or family member for a position within RM.</span></div><div> </div><div><span style=\"font-size: 10pt; font-family: verdana, geneva;\">To better reflect the society that we serve, we’re committed to building a diverse workforce and creating an inclusive and welcoming environment for all. To achieve this, we create teams of talented people from different backgrounds and experiences and strive to be a business where our people can bring their whole selves to work. We also want to make the recruitment process as inclusive as possible for everyone. Should you require additional support with your application or through the interview process, please contact us at <a href=\"mailto:recruitment@rm.com\" target=\"_blank\" rel=\"noopener\">recruitment@rm.com.</a></span></div><div> </div><div> </div><div><span style=\"font-size: 10pt; font-family: verdana, geneva;\">Unfortunately, we are unable to offer visa sponsorship for this role.</span></div><p style=\"margin: 0px;\"> </p></div><div style=\"text-align: justify;\"><p style=\"margin: 0px;\"><span style=\"color: #000000; font-size: 10pt; font-family: verdana, geneva;\"> </span></p></div><div style=\"text-align: justify;\"><p style=\"margin: 0px;\"><span style=\"font-family: verdana, geneva; font-size: 10pt;\" data-ccp-props=\"{}\"> </span></p></div><div style=\"text-align: justify;\"><p style=\"margin: 0px;\"> </p></div><div><p style=\"text-align: justify;\"> </p></div></div><div style=\"text-align: justify;\"><p style=\"margin: 0px;\"> </p></div><div><p style=\"text-align: justify;\"> </p></div>",
+    "location_name": "Hucknall",
+    "city": "Hucknall",
+    "country": "United Kingdom",
+    "country_code": "GB",
+    "location_type": "LAT_LNG",
+    "latitude": 53.03806,
+    "longitude": -1.19556,
+    "categories": [
+     {
+      "name": "Commercial"
+     }
+    ],
+    "department": "",
+    "salary_value": 0,
+    "salary_min_value": 0,
+    "salary_max_value": 0,
+    "hiring_organization": "RM Education Limited",
+    "posted_date": "2026-09-18T12:07:00+0000",
+    "apply_url": "https://careers-rmeducation.icims.com/jobs/3713/login",
+    "internal": false,
+    "external": false,
+    "searchable": true,
+    "applyable": true,
+    "li_easy_applyable": true,
+    "ats_code": "icims",
+    "hiring_flow_name": "iCIMS ATS Hiring Flow",
+    "isFrontLineAIJob": false,
+    "isApplyFlowJob": false,
+    "update_date": "2026-09-18T12:08:15+0000",
+    "create_date": "2026-09-18T12:08:15+0000",
+    "category": [
+     " Commercial"
+    ],
+    "full_location": "Hucknall, United Kingdom",
+    "short_location": "Hucknall, United Kingdom",
+    "multipleLocations": false
+   }
+  },
+  {
+   "data": {
+    "slug": "6496",
+    "language": "en-us",
+    "languages": [
+     "en-us"
+    ],
+    "title": "Family Medicine NP/PA | 4 Day Option | High Earning Potential | Reno, NV | Tahoe Lifestyle",
+    "description": "Join Our Growing Primary Care Team! The Northern Nevada Medical Group (NNMG) is seeking a full-time Nurse Practitioner (NP) or Physician Associate (PA) to provide outpatient primary care in breathtaking Reno, Nevada! This position is perfect for an NP or PA who wants to join a growing group with a team-based atmosphere. Please note: This position is not available for a J1 or H1B visa sponsorship. Quick Facts Employed position Flexibility of schedule for healthy work-life balance Practice in Sparks, Nevada at our Vista clinic or at our new clinic in Plumgate Collaborate with physicians, APPs, and support staff Manage day-to-day clinical responsibilities Document care using Cerner Engaged organizational culture with direct communication to administration Compensation & Benefits Competitive Compensation with a guaranteed base salary in the $125K to $165K range (salary offers will be based on key factors such as related experience and credentials) and a production model for high earning potential Commencement bonus & relocation reimbursement PTO, CME & Licensure Allowance Student loan assistance, 401K matching program and other incentives No State Income Tax Qualifications Active Nevada NP/PA license REQUIRED: Candidates with 1 year of experience (following training) - new graduates will not be accepted for this opportunity About Reno–Tahoe Reno offers: No State Income Tax Four-season climate with 300+ days of sunshine A quick 45‑minute drive to Lake Tahoe World‑class skiing, hiking, mountain biking, and water sports Vibrant and safe neighborhoods with excellent school options Thriving downtown with restaurants, breweries, arts, and year‑round events Access to the University of Nevada, Reno and a growing academic community Easy travel via Reno-Tahoe International Airport About the Northern Nevada Health System & UHS The Northern Nevada Health System is part of Universal Health Services (UHS)—one of the nation’s largest and most respected hospital management companies. UHS has more than 100,000 employees nationwide, a Forbes 500 designation, and a long-standing commitment to team culture, transparency, and supporting families. At UHS, we believe in supporting both your career and personal life. We hire a family. So if your partner, parents, or children are also seeking opportunities in healthcare or elsewhere, let me know—as a family company, we support whole-family placement whenever possible. Interested...? Contact April Heiselt today! April Heiselt, Ph.D. In-House Recruiter Northern Nevada Health System april.heiselt@uhsinc.com (662) 648-9999",
+    "location_name": "Northern Nevada Medical Group",
+    "street_address": "6500 Longley Lane",
+    "city": "Reno",
+    "state": "Nevada",
+    "country": "United States",
+    "country_code": "US",
+    "location_type": "LAT_LNG",
+    "latitude": 39.466104,
+    "longitude": -119.7686301,
+    "categories": [
+     {
+      "name": "Advanced Practice Provider (APP)"
+     }
+    ],
+    "tags4": [
+     "Northern Nevada Medical Group"
+    ],
+    "tags7": [
+     "USD $125,000.00/Yr."
+    ],
+    "tags8": [
+     "USD $165,000.00/Yr."
+    ],
+    "brand": "Northern Nevada Medical Group",
+    "promotion_value": 0,
+    "hiring_organization": "Northern Nevada Medical Group",
+    "apply_url": "https://careers-universalhealthservices.icims.com/jobs/6496/job/login",
+    "internal": false,
+    "external": false,
+    "searchable": true,
+    "applyable": true,
+    "li_easy_applyable": false,
+    "ats_code": "universalhealthservices-prod-7350",
+    "isFrontLineAIJob": false,
+    "isApplyFlowJob": false,
+    "update_date": "2026-09-09T00:02:31+0000",
+    "create_date": "2025-10-15T20:00:33+0000",
+    "category": [
+     " Advanced Practice Provider (APP)"
+    ],
+    "full_location": "Reno, Nevada",
+    "short_location": "Reno, Nevada",
+    "multipleLocations": false
+   }
+  },
+  {
+   "data": {
+    "slug": "104479036723-41447668006",
+    "language": "en-us",
+    "languages": [
+     "en-us"
+    ],
+    "client_code": "petsmart",
+    "req_id": "104479036723-41447668006",
+    "title": "Retail Operations Lead",
+    "description": "<p><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\"><strong><span style=\"font-size:14pt\">PetSmart does Anything for Pets – JOIN OUR TEAM!</span></strong> </span></span></p><p><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\"><strong><span style=\"font-size:14pt\">Retail Operations Lead</span></strong></span></span></p><p><span style=\"color:#000000\"><u><span style=\"font-family:arial,helvetica,sans-serif\"><strong>About Life at PetSmart</strong> </span></u></span></p><p><span style=\"color:rgb(0, 0, 0); font-family:arial,sans-serif; font-size:13.3333px\">Our associates are the heart of Team PetSmart. Together, we're building the best team in retail through our values-based culture, connection, and teamwork. Our goal is to create a culture where associates learn and grow together, thrive as effective teams, and challenge each other to be the best they can be.</span><span style=\"color:#000000\"><span style=\"font-family:arial,sans-serif\"><span style=\"font-size:10.0pt\"> </span></span></span></p><p><span style=\"color:#000000\"><u><span style=\"font-family:arial,helvetica,sans-serif\"><strong>Benefits that benefit you</strong> </span></u></span></p><ul><li><span style=\"color:#000000\"><span style=\"font-family:arial,sans-serif\"><span style=\"font-size:10.0pt\">Paid Weekly</span></span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,sans-serif\"><span style=\"font-size:10.0pt\">Health & Wellness Benefits</span></span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,sans-serif\"><span style=\"font-size:10.0pt\">401k Plan with company match</span></span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,sans-serif\"><span style=\"font-size:10.0pt\">Paid Time off for full-time associates</span></span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,sans-serif\"><span style=\"font-size:10.0pt\">Associate discounts</span></span> </span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,sans-serif\"><span style=\"font-size:10.0pt\">Tuition Assistance</span></span> </span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,sans-serif\"><span style=\"font-size:10.0pt\">Career pathing</span></span> </span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,sans-serif\"><span style=\"font-size:10.0pt\">Development opportunities</span></span> </span></li></ul><p><span style=\"color:#000000\"><strong><u>Job Summary</u></strong></span></p><p><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">PetSmart’s Process Lead (Retail Operations Lead) has shared responsibility to drive operational excellence in our stores while upholding the company’s vision, mission, values, and strategy. This role is responsible for merchandising and inventory management, pet care operations, opening and/or closing the store, overseeing associates, and maintaining a safe and organized environment.  </span></span></p><p><span style=\"color:#000000\"><strong><u>Essential Responsibilities</u></strong></span></p><p><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Job responsibilities include, but are not limited to, the following and may vary depending on store characteristics and needs: </span></span></p><p><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\"><strong>People Leadership:</strong>  </span></span></p><ul><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Support and guide sales associates in merchandise handling, providing training on product knowledge and presentation standards.  </span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Facilitates the associate experience and supports associate development. This includes but is not limited to training, onboarding, mentoring, and coaching for growth as well as providing feedback into associate performance reviews, disciplinary action and promotions. </span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Delegate and validate completion of daily tasks.  </span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Leads and directs associates when acting as the leader on duty. </span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Address and administer associate complaints and grievances. </span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Recognizes and celebrates associates driving overall associate engagement. </span></span></li></ul><p><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\"><strong>Store Operations and Overall Store Experience: </strong> </span></span></p><ul><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Execute merchandise strategies to optimize sales, including receiving of product, product placement, seasonal displays, and promotional setups. </span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Manages inventory levels, conducts regular audits, and analyzes sales trends to make informed recommendations for stock replenishment and markdowns. </span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Assists in maintaining accurate inventory records, conducting regular audits, and addressing discrepancies. </span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Operate point-of-sale (POS) systems and handle cash transactions, ensuring accuracy and compliance with company policies. </span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Maintains store standards and leads a culture of empowerment by ensuring compliance with our Policies and Procedures (P&Ps) and Code of Ethics. </span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Shared responsibility with store opening and closing procedures to ensure we uphold our brand promise. </span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Completes monthly live cycle counts, addresses discrepancies. </span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Responsible for pet care maintenance, commitment standards (cleaning, feeding, providing water, etc.) and caring for new arrival and sick pets. </span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Ensures pet parents have a positive experience with online orders including pick-up in store or ship from store.    </span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Supports the associate and pet parent experience at all levels and ensures pets in our care are safe and healthy.  </span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Responsible for taking immediate action and reports when a sick/injured pet is identified in the store; transport to the vet as needed. </span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Follows company Policies and Procedures to prepare for and receive new store owned pet arrivals. Ensures pets are healthy to move to sales floor after quarantine period. </span></span></li></ul><p><span style=\"color:#000000\"><strong><u>Qualifications</u></strong></span></p><ul><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">2+ years of retail supervisory experience in a customer-focused environment. </span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Full-time availability required, flexibility in schedule, able to work evenings, weekends, and holidays as needed.  </span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Proficiency in computer applications. </span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Strong written and verbal communication skills. </span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Ability to react under pressure and maintain composure.  </span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Strong organizational skills and attention to detail, particularly in maintaining a visually appealing store layout. </span></span></li></ul><p><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\"><strong><u>Supervisory responsibility</u></strong>  </span></span></p><ul><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">No direct reports, however, are expected to guide and support the development of other associates. </span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Provides feedback on associate performance to direct supervisor.  </span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Acts as the Leader when other Leaders are not in the store. This includes supervising associates, assigning tasks and addressing any concerns. </span></span></li></ul><p><span style=\"color:#000000\"><strong><u>Essential physical demands and work environment</u></strong></span></p><ul><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Associate required to stand, walk, climb a ladder, and use hands to handle, feel, hold, write, etc. The associate frequently is required to reach with hands and arms: stoop, kneel, crouch, talk and hear. Specific vision abilities required by this job include depth perception. Reasonable accommodations may be made to enable individuals with disabilities to perform the essential functions. </span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Associate must frequently lift and/or move up to 50 pounds and occasionally team lift and/or move more than 100 pounds. Specific vision abilities required by this job include depth perception. </span></span></li><li><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">While performing the duties of this job, the associate is occasionally exposed to moving mechanical parts, as well as a wet environment with an abundance of pet hair. The noise level is moderate in the work environment; however, associates may be exposed to high levels of noise at times. Exposure to live animals and their handling is common. </span></span></li></ul><p><span style=\"color:#000000\"><u><span style=\"font-family:arial,helvetica,sans-serif\"><strong>Do what you love</strong> </span></u></span></p><p><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">Join us for a chance to make a <strong>meaningful impact</strong> every day. Whether it's helping a customer choose their first fish, celebrating a pet's birthday, or seeing the smile on a pet parent’s face after a fresh groom—you'll create<strong> moments that matter</strong>. At PetSmart, we cherish diversity and the unique perspectives of our 50,000 associates, all united by a passion for pets. </span></span></p><p><span style=\"color:#000000\"><span style=\"font-family:arial,helvetica,sans-serif\">We’re delighted you’re interested in joining our pack and helping us in our commitment to doing Anything for Pets, and the people who love them. We're excited to hear your story and learn more about you! <strong>Apply Now! </strong> </span></span></p><p> </p><p><strong><u><span style=\"color:black\"><span style=\"font-family:arial,sans-serif\"><span style=\"font-size:9.0pt\">PetSmart is an Equal Opportunity Employer</span></span></span></u></strong>  </p><p><span style=\"color:#000000\"><span style=\"font-family:arial,sans-serif\"><span style=\"font-size:9.0pt\">PetSmart provides an equal opportunity for all associates and job applicants without regard to race, color, religion, sex, sexual orientation, gender identity, national origin, disability, veteran status, or other legally protected characteristics. We offer reasonable accommodations to applicants with disabilities throughout our application process, upon request and as required by law.</span></span>        </span></p><p style=\"margin-left:0in; margin-right:0in\"><span style=\"color:#000000\"><span style=\"font-family:arial,sans-serif\"><span style=\"font-size:9.0pt\">This job summary is intended to describe the general nature and level of work associates/leaders assigned to this job perform. It is not intended to include all duties and responsibilities. You will be provided with a copy of a job description for the actual position you are hired into. Exact rate of pay will be based on relevant experience level, training, skills or knowledge and store location. This position is paid on a per hour basis. In no instance will PetSmart pay less than the local minimum wage. This position is also eligible for benefits as described a</span></span></span><span style=\"color:black\"><span style=\"font-family:arial,sans-serif\"><span style=\"font-size:9.0pt\">t </span></span></span><span style=\"font-family:arial,sans-serif\"><span style=\"font-size:9.0pt\"><a href=\"https://benefits.petsmart.com/us/\" target=\"_blank\"><span style=\"color:#0000FF\">https://benefits.petsmart.com/us/</span></a></span></span></p><p><span style=\"color:#000000\"><strong><span style=\"font-family:arial,sans-serif\"><span style=\"font-size:9.0pt\">Applicants must be over the age of 18 (except in Montana or where otherwise required by local or state law)</span></span></strong>   </span></p><p><span style=\"color:#000000\"><span style=\"font-family:arial,sans-serif\"><span style=\"font-size:9.0pt\">For applicants in our Waterloo, San Francisco, or Los Angeles locations: Pursuant to the Waterloo and San Francisco Fair Chance Ordinance, as well as the Los Angeles Fair Chance Initiative for Hiring, we will consider for employment, qualified applicants with arrest and conviction records in a manner consistent with the law.</span></span></span></p><br><br>",
+    "street_address": "3023 Ave Ramon Luis Rivera",
+    "city": "Bayamon",
+    "country": "Puerto Rico",
+    "country_code": "PR",
+    "postal_code": "00957",
+    "location_type": "LAT_LNG",
+    "latitude": 18.3986,
+    "longitude": -66.1557,
+    "categories": [
+     {
+      "name": "Retail Department Manager"
+     }
+    ],
+    "tags1": [
+     "3023 Ave Ramon Luis Rivera"
+    ],
+    "tags2": [
+     "41447668006"
+    ],
+    "tags3": [
+     "2378"
+    ],
+    "tags4": [
+     "Retail Operations Lead"
+    ],
+    "tags5": [
+     "$13.66-$19.16 /HOURLY"
+    ],
+    "salary_currency": "",
+    "salary_frequency": "HOURLY",
+    "salary_value": 0,
+    "salary_min_value": 13.66,
+    "salary_max_value": 19.16,
+    "industry": "",
+    "posted_date": "2025-01-23T00:00:00+0000",
+    "apply_url": "https://cta.cadienttalent.com/index.jsp?SEQ=postingLocationDetails&APPLICATIONNAME=PetSmartPuertoRicoNonReqExt&POSTING_ID=104479036723&LOCATION_ID=41447668006",
+    "internal": false,
+    "external": false,
+    "searchable": true,
+    "applyable": true,
+    "li_easy_applyable": false,
+    "ats_code": "petsmart-puertorico-prod-feed",
+    "isFrontLineAIJob": false,
+    "isApplyFlowJob": false,
+    "update_date": "2026-08-24T17:15:34+0000",
+    "create_date": "2026-06-11T18:15:48+0000",
+    "category": [
+     " Retail Department Manager"
+    ],
+    "full_location": "Bayamon, Puerto Rico",
+    "short_location": "Bayamon, Puerto Rico",
+    "multipleLocations": false
+   }
+  },
+  {
+   "data": {
+    "slug": "P1-6651123-2",
+    "language": "en-us",
+    "languages": [
+     "en-us"
+    ],
+    "req_id": "P1-6651123-2",
+    "title": "Route Sales Associate",
+    "description": "Quick Look Pay: $80,000 Annual Target Location: Brisbane, CA Work Days: Variable schedule, 2 days off per week Start Time: 4:00 AM End Time: When work is completed Minimum Qualifications 21 years of age or older Have a valid driver’s license with proof of insurance and ability to obtain other licensures as required by state law Be able to frequently lift 40 lbs. with or without a reasonable accommodation Bring beloved brands like Lay's, Doritos, and Cheetos to your community and keep shelves stocked for the people who depend on them. What You’ll Do Drive a PepsiCo truck on a route, serving local stores with care Deliver and check in orders with store teams (including collecting proof of delivery when needed) Unload product, stock shelves and displays, and rotate inventory to ensure freshness and quality for consumers Order product and maintain records throughout the day using provided tools (training provided) Build trusted relationships with store managers to grow sales, secure displays, and execute national and local initiatives What to Expect On-the-Job Training: Learn the role through hands-on and classroom training High Energy Workplace: On the go for most of the day in a fast‑paced, hands‑on environment that involves lifting, bending, and moving product throughout your shift Health & Lifestyle Benefits: As a full‑time team member, you’ll be supported with competitive pay, meaningful benefits, and opportunities to grow a long‑term career at PepsiCo. All qualified applicants will receive consideration for employment without regard to race, color, religion, sex, sexual orientation, gender identity, national origin, protected veteran status, or disability status. PepsiCo is an Equal Opportunity Employer: Female / Minority / Disability / Protected Veteran / Sexual Orientation / Gender Identity Our Company will consider for employment qualified applicants with criminal histories in a manner consistent with the requirements of the Fair Credit Reporting Act, and all other applicable laws, including but not limited to, San Francisco Police Code Sections 4901 - 4919, commonly referred to as the San Francisco Fair Chance Ordinance; and Chapter XVII, Article 9 of the Los Angeles Municipal Code, commonly referred to as the Fair Chance Initiative for Hiring Ordinance. If you'd like more information about your EEO rights as an applicant under the law, please download the available [1] EEO is the Law & [2] View the PepsiCo EEO Policy.",
+    "location_name": "CA-Brisbane-151-DC-CA203",
+    "street_address": "151 W Hill Pl",
+    "city": "Brisbane",
+    "state": "CA",
+    "country_code": "US",
+    "postal_code": "94005-1221",
+    "location_type": "LAT_LNG",
+    "latitude": 37.6926231,
+    "longitude": -122.4246632,
+    "categories": [
+     {
+      "name": "Sales & Merchandising"
+     }
+    ],
+    "brand": "Hourly Frontline",
+    "promotion_value": 0,
+    "salary_currency": "USD",
+    "salary_frequency": "WEEKLY",
+    "salary_value": 1538.46,
+    "posted_date": "2026-09-22T00:00:00+0000",
+    "apply_url": "https://olivia.paradox.ai/co/PepsiCo10/Job?job_id=P1-6651123-2&posting_type=1",
+    "internal": false,
+    "external": false,
+    "searchable": true,
+    "applyable": true,
+    "li_easy_applyable": false,
+    "ats_code": "pepsico-prod-paradox",
+    "isFrontLineAIJob": false,
+    "isApplyFlowJob": false,
+    "update_date": "2026-09-22T22:40:31+0000",
+    "create_date": "2026-09-22T22:40:31+0000",
+    "category": [
+     " Sales & Merchandising"
+    ],
+    "full_location": "Brisbane, CA",
+    "short_location": "Brisbane, CA",
+    "multipleLocations": false
+   }
+  },
+  {
+   "data": {
+    "slug": "a0771354",
+    "language": "en-us",
+    "languages": [
+     "en-us"
+    ],
+    "client_code": "smoothieking",
+    "title": "Team Member",
+    "description": "<p>As a brand ambassador, Team Members will help our guests meet their fitness and nutrition goals by assisting them to help select smoothies and retail products that inspire them to live a healthy and active lifestyle! The successful team member will be passionate about the brand and demonstrate willingness to take on new challenges. </p><p>Benefits:</p><ul><li>Employee discount</li><li>Flexible schedule</li></ul><p>Responsibilities:</p><ul><li>Blend delicious tasting smoothies.</li><li>Ensure the Guest purpose is met when smoothies are ordered.</li><li>Greet and engage the Guest to provide a friendly experience</li><li>Properly prep all fruits, vegetables, frozen items, powders, and liquids.</li><li>Perform opening and/or closing duties.</li><li>Perform store checklist tasks.</li><li>Show up on time and ready to work.</li><li>Live and promote the culture, values, and mission of Smoothie King</li></ul><p>Qualifications:</p><ul><li>Energetic and dynamic team members who are excited about health and fitness</li><li>Strong interpersonal and customer service skills</li><li>Food Service experience preferred, but not required</li><li>Ability to connect and communicate with guests, with a “guest comes first” attitude</li></ul><h3>Company Introduction</h3><p>Smoothie King has grown to include over 1,100 units operating in 33 states, the Caymans, Trinidad, and the Republic of Korea.<br>What makes Smoothie King so successful? A genuine commitment to helping people live healthier lives through nutrition. It’s been more than 40 years since <br>Steve invented the nutritious and delicious drink now known as a smoothie. In that time, Smoothie King has expanded its menu to include a wide selection of healthy snacks and high-quality nutritional products. <br>They’re not just good; they’re good for you.</p>",
+    "location_name": "SK1897",
+    "street_address": "108 Spring Branch Rd",
+    "city": "Oxford",
+    "state": "AL",
+    "country": "US",
+    "country_code": "US",
+    "postal_code": "36203",
+    "location_type": "LAT_LNG",
+    "latitude": 33.5815,
+    "longitude": -85.8328,
+    "categories": [
+     {
+      "name": "Franchise"
+     }
+    ],
+    "salary_currency": "USD",
+    "salary_frequency": "HOURLY",
+    "salary_value": 0,
+    "salary_min_value": 0,
+    "salary_max_value": 10,
+    "hiring_organization": "Next Gen Investments",
+    "posted_date": "0026-09-23T00:00:00+0000",
+    "posting_expiry_date": "0026-09-23T00:00:00+0000",
+    "apply_url": "https://www.workstream.us/j/db848c88/smoothie-king/oxford-197385/team-member-a0771354?referer_source=corporate_feed_529",
+    "internal": false,
+    "external": false,
+    "searchable": true,
+    "applyable": true,
+    "li_easy_applyable": false,
+    "ats_code": "smoothieking-prod-workstream",
+    "isFrontLineAIJob": false,
+    "isApplyFlowJob": false,
+    "update_date": "2026-09-23T12:00:52+0000",
+    "create_date": "2026-03-26T04:00:28+0000",
+    "category": [
+     " Franchise"
+    ],
+    "full_location": "Oxford, AL",
+    "short_location": "Oxford, AL",
+    "multipleLocations": false
+   }
+  },
+  {
+   "data": {
+    "slug": "4773",
+    "language": "en-us",
+    "languages": [
+     "en-us"
+    ],
+    "req_id": "4773",
+    "title": "Solicitor or Associate – Professional Negligence",
+    "description": "Why join us? As a result of our continued growth, the DWF Financial and Professional Risks team in Leeds and Manchester are looking for an Solicitor or Associate to work in the team advising insurers and defending professionals in respect of allegations of professional negligence. We are one of the largest defendant professional liability teams outside of London and continue to grow. You would have your own caseload and you will also get to experience working and developing alongside any of the 20+ senior members of the team supporting their files as needs be. The role can be based from Leeds or Manchester, depending upon preferred location, with a minimum of 2 days working in the office. The team are extremely supportive, collaborative and a social bunch. Responsibilities Responsibilities: Under the supervision of partners, to progress the defence of multiple pre-action and litigated claims, including liaising with clients, third parties and opponents. Be responsible for carrying out disclosure review, preparation of costs budgets and instructions to counsel and experts. Legal research including as to liability and the value of claims. Ensure compliance with court deadlines and client requirements. Be responsible for the preparation of court documents including Claim Forms, Defences, Allocation Questionnaires, Lists of Documents, Pre-Trial Checklists, bundles for hearings, Application Notices and others. Carry out reviews of clients' documents, factual and legal analysis and produce first draft reports and advices to clients. Build good working relationships with colleagues and clients. Achieve time recording target of 1,500 chargeable hours in the financial year and engage in various business development initiatives. Manage work-in-progress and debt on allocated files to ensure that invoices are raised and payments are made within agreed terms. Develop technical and commercial knowledge through training and/or supervised working. Demonstrate the firm's Winning Behaviours and committing to its values and CSR agenda. What will help you succeed in this role? Preferred Criteria; Previous experience managing Financial and Professional Risks, Professional Negligence or Professional Indemnity claims is ideal. Ideally, 1-5 years PQE experience of commercial litigation and professional negligence claims. We would also consider NQ Solicitor, Trainee Solicitor or Paralegal's that have the relevant specific experience. At least a 2:1 law degree or a 2:1 non-law degree and PGDL*. Desirable Criteria; Excellent attention to detail and diligence to be able to carefully analyse information. Excellent analytical and problem-solving skills and sound judgments, including review of data and other types of business information, trends and drawing supported conclusion based on the data. Flexibility and adaptability in your attitude and approach and strong organisational skills. Motivation and a demonstrable work ethic. An ability to work proactively and demonstrate initiative, without constant direction, albeit under close supervision. Strong technical skills and a thorough grasp of principles, case law and Civil Procedure Rules. Ability to operate in a collaborative environment yet independently manage a portfolio of claims. Excellent verbal and written communication skills. * If you have not achieved the required standard of academic qualifications, we welcome your application and it will be reviewed in full, considering any relevant mitigating circumstances. What we offer? We are an equal opportunities employer that celebrates diversity, and we are committed to creating an inclusive environment for all. We aim to create a positive experience for all candidates and offer any adjustments or additional support needed. If you're excited about the opportunity but your experience doesn’t align perfectly with all the requirements, please apply anyway. You may be the right candidate for the role or others across the wider team. Our recruitment process upholds the highest standards of fairness and engagement. It includes comprehensive interviews and, at times, a written assessment, an assessment day, or presentation. We aim to create a positive experience for all candidates and offer any adjustments or additional support. About us DWF is a leading global provider of integrated legal and business services. We empower people to be themselves within an inclusive and supportive environment, enabling everyone to achieve their full potential in line with their abilities and career aspirations.",
+    "location_name": "Manchester - Scott Place",
+    "street_address": "1 Scott Place",
+    "city": "Manchester",
+    "country": "United Kingdom",
+    "country_code": "GB",
+    "postal_code": "M33AA",
+    "location_type": "LAT_LNG",
+    "latitude": 53.4795992,
+    "longitude": -2.2490621,
+    "additional_locations": [
+     {
+      "location_name": "Manchester - Scott Place",
+      "street_address": "1 Scott Place",
+      "city": "Manchester",
+      "country": "United Kingdom",
+      "country_code": "GB",
+      "postal_code": "M33AA",
+      "latitude": 53.4795992,
+      "longitude": -2.2490621
+     }
+    ],
+    "categories": [
+     {
+      "name": "Fee Earner"
+     }
+    ],
+    "tags1": [
+     "Full time"
+    ],
+    "tags3": [
+     "DWF Law LLP"
+    ],
+    "tags4": [
+     "275"
+    ],
+    "tags5": [
+     "Global Risks"
+    ],
+    "tags6": [
+     "101"
+    ],
+    "tags7": [
+     "DWF Law LLP"
+    ],
+    "brand": "DWF",
+    "promotion_value": 0,
+    "employment_type": "FULL_TIME",
+    "hiring_organization": "DWF",
+    "source": "DWF",
+    "posted_date": "2026-09-14T15:01:00+0000",
+    "apply_url": "https://careers-dwfgroup.icims.com/jobs/4773/login",
+    "internal": false,
+    "external": false,
+    "searchable": true,
+    "applyable": true,
+    "li_easy_applyable": true,
+    "ats_code": "icims",
+    "isFrontLineAIJob": false,
+    "isApplyFlowJob": false,
+    "update_date": "2026-09-16T19:57:42+0000",
+    "create_date": "2026-09-14T15:07:41+0000",
+    "category": [
+     " Fee Earner"
+    ],
+    "full_location": "Manchester, United Kingdom; Manchester, United Kingdom",
+    "short_location": "Manchester, United Kingdom",
+    "multipleLocations": true
+   }
+  },
+  {
+   "data": {
+    "slug": "134496",
+    "language": "en-us",
+    "languages": [
+     "en-us"
+    ],
+    "req_id": "134496",
+    "title": "Power Electronic Engineer",
+    "description": "Do you want to work with state‑of‑the‑art technologies in a global, innovation‑driven company? Are you passionate about power electronics control, simulation, and electrical energy conversion? We are looking for a Senior Power Electronics Engineer to join our R&D organization and help develop next‑generation energy solutions as well as someone looking to thrive on solving complex design challenges and collaborating across teams to deliver high-performance hardware systems. You will be part of a highly skilled and collaborative team working on advanced power electronics platforms in a modern, flexible working environment. This role offers meaningful technical challenges, continuous learning, and the opportunity to influence future energy conversion technologies. What You Will Do As a Senior Power Electronics Engineer, you will design and develop advanced control solutions for power electronic converters used in critical energy applications. You will play a key role in platform development, simulation, and validation, supporting innovation from concept through product realization. Key responsibilities include: Design and development of power electronics control strategies Modeling and simulation of power electronic converters and systems Control loop design for embedded SoC platforms or rapid control environments Impedance and EMI analysis and simulation Contribution to power electronics platforms for UPS and grid‑supporting products Technical problem‑solving for complex system and product challenges Participation in Lean‑Agile development processes Contribution to innovation initiatives, including invention disclosures and patents Who We’re Looking For BSc or MSc in Electronics Engineering or a related field 3–5+ years of experience in power electronics product development Strong expertise in control design, modeling, and simulation of power electronics Experience with embedded platforms and EMI considerations Broad understanding of electrical engineering and system‑level design Strong collaboration and communication skills in cross‑functional teams What We Offer A modern, flexible work environment with hybrid working options Collaboration with global experts in power electronics and energy management Continuous learning, technical development, and career growth opportunities Competitive compensation and employee benefits A culture focused on innovation, sustainability, inclusion, and well‑being By joining Schneider Electric, you will contribute to redefining energy management and supporting the transition to a more sustainable future—while growing your career in a company recognized globally for its sustainability leadership. Bring your hardware design talent to a team that's ready to welcome you — apply today! At Schneider, we believe that every employee is a talent who deserves equal opportunities. This means you matter. Every individual needs to feel valued, supported, and treated fairly to do their best work. Our Total Rewards is our way of saying: “We see you. We value you”. It’s more than just pay and benefits- it’s a meaningful investment in you. It is designed for you to perform, grow, feel safe, and elevate your potential to shine as an impact maker. For this U.S. based position, the expected pay range is USD 86,400 - USD 129,600 per year. This pay range includes base pay and short-term incentives. The compensation range for this full-time position applies to candidates located within the United States. Our pay ranges are determined by reviewing roles of similar responsibility and level. Within the pay range, individual pay is determined by several factors including performance, knowledge, job-related skills, experience, and relevant education or training. Schneider Electric is there when it matters most to you Our Total Rewards package outlines all the benefits and support you’ll enjoy as part of the Schneider Electric team: Care for Yourself and Your Family. We ensure you feel secure with benefits that help you and your family thrive: medical (with member reward points), dental, vision, and basic life insurance, Benefit Bucks, flexible work arrangements, paid family leaves, well-being programs, 12 holidays per year, and 15 days of paid time off per year. Invest and Plan Your Future. We help you plan and invest for the future with competitive pay and programs including base salary, incentives, company share ownership, and 401(k) with match. Grow Your Skills and Career. We support development through performance discussions, global opportunities, the Schneider Career Hub, and learning platforms like Coursera. Team Up in the Workplace. We encourage collaboration, recognition, sharing your voice, and an inclusive workplace. Support Your Community. We make a difference through volunteer leave, programs with the Schneider Electric Foundation, youth education initiatives, and military leave benefits. If you believe this job posting is not compliant with applicable state pay transparency laws in the U.S., please notify the Company as soon as possible upon discovery by completing this form Job Posting Compliance Form. Looking to make an IMPACT with your career? When you are thinking about joining a new team, culture matters. At Schneider Electric, our values and behaviors are the foundation for creating a great culture to support business success. We believe that our IMPACT values – Inclusion, Mastery, Purpose, Action, Curiosity, Teamwork – starts with us. IMPACT is also your invitation to join Schneider Electric where you can contribute to turning sustainability ambition into actions, no matter what role you play. It is a call to connect your career with the ambition of achieving a more resilient, efficient, and sustainable world. We are looking for IMPACT Makers; exceptional people who turn sustainability ambitions into actions at the intersection of automation, electrification, and digitization. We celebrate IMPACT Makers and believe everyone has the potential to be one. Become an IMPACT Maker with Schneider Electric – apply today! €40 billion global revenue +9% organic growth 150 000+ employees in 100+ countries You must submit an online application to be considered for any position with us. This position will be posted until filled. Schneider Electric aspires to be the most inclusive and caring company in the world, by providing equitable opportunities to everyone, everywhere, and ensuring all employees feel uniquely valued and safe to contribute their best. We mirror the diversity of the communities in which we operate, and ‘inclusion’ is one of our core values. We believe our differences make us stronger as a company and as individuals and we are committed to championing inclusivity in everything we do. At Schneider Electric, we uphold the highest standards of ethics and compliance, and we believe that trust is a foundational value. Our Trust Charter is our Code of Conduct and demonstrates our commitment to ethics, safety, sustainability, quality and cybersecurity, underpinning every aspect of our business and our willingness to behave and respond respectfully and in good faith to all our stakeholders. You can find out more about our Trust Charter here Schneider Electric is an Equal Opportunity Employer. It is our policy to provide equal employment and advancement opportunities in the areas of recruiting, hiring, training, transferring, and promoting all qualified individuals regardless of race, religion, color, gender, disability, national origin, ancestry, age, military status, sexual orientation, marital status, or any other legally protected characteristic or conduct.",
+    "location_name": "United States-Massachusetts-Andover",
+    "city": "Andover",
+    "state": "Massachusetts",
+    "country": "United States",
+    "country_code": "US",
+    "location_type": "LAT_LNG",
+    "latitude": 42.6627301,
+    "longitude": -71.1446897,
+    "categories": [
+     {
+      "name": "Innovation and Technology"
+     }
+    ],
+    "tags": [
+     "Innovation and Technology"
+    ],
+    "tags1": [
+     "Full-Time"
+    ],
+    "tags2": [
+     "Experienced"
+    ],
+    "tags3": [
+     "Full-Time"
+    ],
+    "tags4": [
+     "5"
+    ],
+    "tags5": [
+     "THTT3"
+    ],
+    "tags7": [
+     "Onsite"
+    ],
+    "tags8": [
+     "No"
+    ],
+    "tags9": [
+     "Andover, Massachusetts, United States"
+    ],
+    "promotion_value": 0,
+    "employment_type": "FULL_TIME",
+    "hiring_organization": "Schneider Electric",
+    "posted_date": "September 22, 2026",
+    "apply_url": "https://careers-se.icims.com/jobs/134496/login",
+    "internal": false,
+    "external": false,
+    "searchable": true,
+    "applyable": true,
+    "li_easy_applyable": true,
+    "ats_code": "icims",
+    "isFrontLineAIJob": false,
+    "isApplyFlowJob": false,
+    "update_date": "2026-09-22T23:58:59+0000",
+    "create_date": "2026-09-22T22:45:13+0000",
+    "category": [
+     " Innovation and Technology"
+    ],
+    "full_location": "Andover, Massachusetts",
+    "short_location": "Andover, Massachusetts"
+   }
+  },
+  {
+   "data": {
+    "slug": "5579",
+    "language": "en-us",
+    "languages": [
+     "en-us"
+    ],
+    "req_id": "5579",
+    "title": "Medical Science Liason (Sr.Mgr)",
+    "description": "Overview Job Summary (Primary function) MSL (Medical Science Liaison) is to build and maintain relationships with key external experts (KEEs), acting as a scientific resource and conduit between external experts and internal teams. This role is expected to disseminate scientific data, educate healthcare professionals, and gather insights to feedback to cross-functional Incyte team so that appropriate development of medical strategies will be made. Essential Functions of the Job (Key responsibilities) Serve as a therapeutic area and product expert, delivering accurate, balanced, and up-to-date scientific information in response to unsolicited medical inquiries. Collecting and summarizing medical and scientific insights from external experts to inform internal strategies and research. Educating healthcare professionals about products, disease states, and relevant research. Establishing and maintaining strong relationships with KOLs, researchers, and clinicians. Collaborating with internal teams, including research, development, and marketing, to share insights and ensure consistent messaging. Providing scientific support for research activities. Developing and implementing KOL engagement plans. Staying up-to-date on the latest scientific advancements and competitive activities in their therapeutic area. Collaborate with Clinical Development Operations to facilitate clinical trial conduct in compliance with local regulations and timelines. Ensure all activities are conducted in accordance with applicable laws, industry codes of conduct, and internal compliance policies. Maintain accurate and up-to-date records of all interactions with healthcare professionals. Qualifications (Minimal acceptable level of education, work experience, and competency) Education  Bachelor’s degree or higher in life science is required. Experience  Minimum of 5 years clinical or pharmaceutical experience.  Experience in medical affairs related role. Language Proficiency  Fluency in written and verbal communication skills (Japanese/English). Others  Excellent interpersonal communication and presentation skills.  Ability to analyze and interpret scientific data.  Strong problem solving, decision-making, and negotiation skills.  Ability to network and partner with external customers, including key external experts, academic institutions, research consortia, and practice networks.  An uncompromising ethical standard and level of conduct  Ability to work effectively both independently and as part of a team.  Thrives in a team environment and enjoys cross-functional collaboration; positively contributes to team culture. 本ポジションにご応募される方は、右上のApplyボタンではなく、以下リンク先ページにて該当のポジションを選択し「応募する」よりエントリーをお願いいたします。 インサイト・バイオサイエンシズ・ジャパン合同会社 採用情報 Disclaimer: The above statements are intended to describe the general nature and level of work performed by employees assigned to this job. They are not intended to be an exhaustive list of all duties, responsibilities, and qualifications. Management reserves the right to change or modify such duties as required. We Respect Your Privacy Learn more at: http://www.incyte.com/privacy-policy The Incyte hiring organization processes your personal data to manage your job application in order to enter into an employment relationship with you if you are the successful candidate. During the process, you may be asked to respond to questions that will screen out your application if you do not meet certain objective criteria required by the job. You can learn more about this process here. You may have the right to access, delete, restrict, edit, move, or object to the use of your personal data. You may also have a right to report concerns to the authority responsible for data privacy in the country where the position is based or where you live or work. You can learn more about Incyte’s data protection practices here. By accessing this link you can learn about the types of personal data we collect, how we use it, whether collection and processing is optional, sources of the personal data we process, how it is shared, where it is stored or transferred to, how long we keep it, and contact information for Incyte, Incyte’s data protection officer, and your supervisory authority (if applicable). Please contact privacy@incyte.com if you have any questions or concerns or would like to exercise your rights.",
+    "location_name": "Japan-Remote",
+    "city": "Remote Location",
+    "country": "Japan",
+    "country_code": "JP",
+    "location_type": "ANY",
+    "latitude": 36.204824,
+    "longitude": 138.252924,
+    "categories": [
+     {
+      "name": "Medical Affairs"
+     }
+    ],
+    "tags1": [
+     "Japan"
+    ],
+    "promotion_value": 0,
+    "hiring_organization": "Incyte Corporation",
+    "posted_date": "2025-10-20T09:54:00+0000",
+    "apply_url": "https://careers-incyte-ita.icims.com/jobs/5579/login",
+    "internal": false,
+    "external": false,
+    "searchable": true,
+    "applyable": true,
+    "li_easy_applyable": true,
+    "ats_code": "icims",
+    "isFrontLineAIJob": false,
+    "isApplyFlowJob": false,
+    "update_date": "2026-07-14T19:39:34+0000",
+    "create_date": "2025-10-20T09:55:00+0000",
+    "category": [
+     " Medical Affairs"
+    ],
+    "full_location": "Remote Location, Japan",
+    "short_location": "Remote Location, Japan",
+    "multipleLocations": false
+   }
+  }
+ ],
+ "totalCount": 10,
+ "count": 10
+}
