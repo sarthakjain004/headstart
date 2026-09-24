@@ -100,7 +100,12 @@ _EXPLORE_BASELINE = 5.0  # unscored board with no measurement and no history to 
 # 124-146, EY 24, walmart 20, target 7.1, paradox 5.7 — then a gap — compass 1.3, viacomcbs 0.9,
 # REWE 0.5, lidl 0.3, dollartree 0.2, advanceauto 0.03, cbscorporation 0.01. Anything in the gap
 # separates the same two sets, which is why this is a threshold and not a tuned parameter.
-_GATE_FLOOR_S = 900.0  # 15 min: below it a Board cannot threaten a 60 min makespan
+#
+# The floor was 15 min while shards ran close to their 60 min budget. By 2026-09-24 they finished
+# in ~9 min, so a 10-15 min Board set the wall clock unjudged: `jibe:petsmart`, 760 s for 4 tech
+# jobs. Every fresh Board measured between 10 and 15 min then sat under 2 tech/min, and none
+# between 6 and 10 min did, so the gap still separates two sets (ADR-0064 amendment).
+_GATE_FLOOR_S = 600.0  # 10 min: just above the ~9 min a shard now takes
 _GATE_MIN_TECH_PER_MIN = 2.0  # tech jobs per minute of shard time, in the gap above
 # A gated Board is not scraped, so its cost and score freeze — and evidence that cannot change
 # makes the gate a one-way door. Expiring the measurement re-admits it for one run every so
