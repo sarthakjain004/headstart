@@ -59,6 +59,11 @@ text**, about **874 per run**. None of them differs only by whitespace.
 
 The latest run (36021294272) queued 844 already-embedded ids to re-derive. That is the same order.
 
+**Without the Zoho flip.** ADR-0208 (#639, merged first) stops a failed Zoho detail from
+replacing held text. What is left is the 1,331 replacements on other ATSes plus at most 830 Zoho
+ids that changed without going back, some of them a one-time listing-to-detail upgrade: about
+**190 to 310 per run**.
+
 **The table's backlog.** The served table as of run 35998606646 (520,566 rows) was compared with
 the store's current text:
 
@@ -93,10 +98,21 @@ serves the corpus's text, keeps `first_seen`, and takes the vector from the stor
 - **The vector is not re-embedded.** This is ADR-0021's deferral, kept on purpose because it
   costs embedding budget. A replaced description can sit beside a vector built from an older
   revision. The Keyword filter follows the edit; semantic ranking does not. To re-embed on edit
-  would cost up to about 874 embeds a run at today's churn, 78% of them Zoho's flip. Fix that
-  flip before re-embedding.
+  would cost about 190 to 310 embeds a run once the Zoho flip is gone (ADR-0208).
 - **The log says why.** The rewrite line adds `N for an edited description and M filled where it
   had none (ADR-0207)`, so the churn can be read per run.
+- **`update_descriptions` counts the churn at its source.** Every run logs, per ATS and zero
+  included, `{ats}: replaced N held description(s) with different text, R of them back to the
+  text held before`, and the step summary carries the totals. A replacement back to the text held
+  before is a flip, not an edit, so the two stay apart in the log.
+- **A per-Job change count is kept in `data/state/description_changes.tsv.gz`.** Each line is
+  `id`, the number of times a fetch replaced the Job's held text, and a 16-hex SHA-1 of the text
+  held before the last replacement, which is what tells a flip from a new revision. Only Jobs that
+  have changed at least once are listed. It is a state ledger rather than a field on the store's
+  records, because every reader of the store expects `{id, description}` and the store is
+  append-only. It grows with distinct changed Jobs: about 6,000 ids in the week measured, most of
+  them Zoho's, so on the order of 300 KB gzipped, rewritten each run beside the rest of
+  `data/state`. Nothing prunes it yet; a Job that leaves the index keeps its line.
 
 ## Cost
 
@@ -104,8 +120,8 @@ HF storage is the binding cost (ADR-0168), so each extra row rewritten was coste
 table's data files hold **5.65 KB per physical row**: 3.12 GB over 552,618 rows, measured on the
 same snapshot. That covers the vector, the description and the metadata.
 
-- **Steady state: at most about 874 extra rows a run, or 4.9 MB of new Lance data.** It is less
-  in practice, because many Zoho flips were already being rewritten. Today a run writes about
+- **Steady state: about 190 to 310 extra rows a run, at most 1.75 MB of new Lance data**, once
+  ADR-0208 has removed the Zoho flip. Without it the bound was 874 rows, 4.9 MB. Today a run writes about
   4,100 rows (2,342 rewritten and 1,757 added in run 36021294272), about 23 MB. The embedding
   store rewrites 3.31 GB a run (ADR-0168), which dwarfs both.
 - **Once: about 25,700 rows, or about 145 MB.** Most of it lands on the first run. The last run's
@@ -125,8 +141,6 @@ same snapshot. That covers the vector, the description and the metadata.
   **ADP, Apple, Cornerstone, Eightfold, Phenom and Zwayam**. Their store fragments hold 0
   replacements across the 7 runs read. Covering them means re-fetching held details on some
   cadence, which is a request-budget decision this ADR does not make.
-- Zoho's alternating text now reaches the served description on every flip, not only on the
-  flips that also move a fact. The flip is a scraper defect in its own right:
-  a failed detail fetch lets the listing's text overwrite the detail's. It is left for a separate
-  change.
+- Zoho's alternating text would have reached the served description on every flip. ADR-0208
+  fixed the flip at its source first, so it does not.
 - An edited description is still embedded as the revision it was first built from (ADR-0021).

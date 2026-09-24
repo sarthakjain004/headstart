@@ -52,6 +52,7 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import hashlib
 import json
 from collections.abc import Iterator
 from pathlib import Path
@@ -72,6 +73,10 @@ _JOBS = REPO_ROOT / "data" / "jobs" / "tech"
 _STORE = REPO_ROOT / "data" / "descriptions"
 _PRIOR_META = REPO_ROOT / "data" / "embeddings" / "jobs" / "meta.jsonl"
 _BASE = "base.jsonl.gz"
+# Per-Job change counts (ADR-0207). A state ledger rather than a field on the store's records: the
+# store's `{id, description}` shape is read by every consumer of it, and only Jobs that have
+# changed at least once are listed here, so it stays small.
+_CHANGES = REPO_ROOT / "data" / "state" / "description_changes.tsv.gz"
 
 
 def _fragments(ats_dir: Path) -> list[Path]:
@@ -157,11 +162,52 @@ def _write_fragment(ats_dir: Path, records: list[dict]) -> Path:
     return out
 
 
+class Changes(NamedTuple):
+    """One Job's line in the change ledger: how many times a fetch replaced its held text, and
+    a hash of the text it held before the last replacement."""
+
+    count: int
+    previous: str
+
+
+def _digest(text: str) -> str:
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
+
+
+def read_changes(path: Path) -> dict[str, Changes]:
+    """The change ledger, or ``{}`` when there is none yet."""
+    if not path.exists():
+        return {}
+    ledger: dict[str, Changes] = {}
+    with gzip.open(path, "rt", encoding="utf-8") as fh:
+        for line in fh:
+            if line.strip():
+                job_id, count, previous = line.rstrip("\n").split("\t")
+                ledger[job_id] = Changes(int(count), previous)
+    return ledger
+
+
+def write_changes(path: Path, ledger: dict[str, Changes]) -> None:
+    """Rewrite the change ledger through a temp file, so a kill mid-write keeps the old one."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    with gzip.open(tmp, "wt", encoding="utf-8") as fh:
+        for job_id in sorted(ledger):
+            change = ledger[job_id]
+            fh.write(f"{job_id}\t{change.count}\t{change.previous}\n")
+    tmp.replace(path)
+
+
 class Reconciled(NamedTuple):
     """What one ATS's reconcile pass did. Named because it outgrew a positional tuple."""
 
     filled: int
     learned: int
+    #: Of ``learned``, the Jobs whose held text a fetch replaced with different text (ADR-0207).
+    replaced: int
+    #: Of ``replaced``, the ones that went back to the text held before the last replacement: a
+    #: fetch path flipping between two renderings, not an edit (Zoho's, ADR-0208).
+    reverted: int
     #: No fresh text and nothing stored. These Jobs come back unchanged every run: the backlog
     #: that does not shrink on its own, invisible until it was counted. Says nothing about *why*
     #: — see the comment at the branch that counts it.
@@ -169,12 +215,16 @@ class Reconciled(NamedTuple):
     rederive_ids: list[str]
 
 
-def reconcile(jobs_path: Path, ats_dir: Path) -> Reconciled:
+def reconcile(
+    jobs_path: Path, ats_dir: Path, changes: dict[str, Changes] | None = None
+) -> Reconciled:
     """Fill this ATS's corpus from the store and persist what the run learned.
 
     Returns a :class:`Reconciled` — corpus rows repaired from the store, descriptions newly
     stored or changed, postings left with no description and none stored, and the ids behind
     the second.
+
+    ``changes`` is the change ledger, updated in place for every replacement (ADR-0207).
 
     ``rederive_ids`` is the ADR-0062 marking. A Job whose description arrives *now* still carries
     metadata derived without that text, and nothing else would ever revisit it: ``embed_plan``
@@ -183,7 +233,9 @@ def reconcile(jobs_path: Path, ats_dir: Path) -> Reconciled:
     """
     held = read_store(ats_dir)
     learned: list[dict] = []
-    filled = unrecorded = 0
+    filled = unrecorded = replaced = reverted = 0
+    if changes is None:
+        changes = {}
 
     # The rewrite streams through a temp file rather than buffering the corpus a second time —
     # `held` above already holds this ATS's stored text, and doubling that on a CI box is what
@@ -201,8 +253,16 @@ def reconcile(jobs_path: Path, ats_dir: Path) -> Reconciled:
             if fresh:
                 # Fresh text always wins: a re-fetch is more current than the store, and this is
                 # the only path by which an edited posting reaches it.
-                if held.get(job_id) != fresh:
+                before = held.get(job_id)
+                if before != fresh:
                     learned.append({"id": job_id, "description": fresh})
+                if before is not None and before != fresh:
+                    prior = changes.get(job_id)
+                    replaced += 1
+                    reverted += prior is not None and prior.previous == _digest(fresh)
+                    changes[job_id] = Changes(
+                        (prior.count if prior else 0) + 1, _digest(before)
+                    )
             else:
                 stored = held.get(job_id)
                 if stored:
@@ -227,7 +287,14 @@ def reconcile(jobs_path: Path, ats_dir: Path) -> Reconciled:
     if learned:
         _write_fragment(ats_dir, learned)
     tmp.replace(jobs_path)
-    return Reconciled(filled, len(learned), unrecorded, [r["id"] for r in learned])
+    return Reconciled(
+        filled,
+        len(learned),
+        replaced,
+        reverted,
+        unrecorded,
+        [r["id"] for r in learned],
+    )
 
 
 def _embedded_ids(meta_path: Path) -> set[str]:
@@ -346,6 +413,11 @@ def main() -> int:
         "re-derive (a Job first embedded this run needs no repair)",
     )
     ap.add_argument(
+        "--changes",
+        default=str(_CHANGES),
+        help="per-Job change ledger: times a fetch replaced held text (ADR-0207)",
+    )
+    ap.add_argument(
         "--compact",
         action="store_true",
         help="fold each ATS's fragments into its base file and stop",
@@ -371,10 +443,11 @@ def main() -> int:
     embedded = _embedded_ids(Path(args.prior_meta))
     _log.info(f"prior store: {len(embedded):,} already-embedded ids")
 
-    filled = learned = queued = unrecorded = 0
+    changes = read_changes(Path(args.changes))
+    filled = learned = queued = unrecorded = replaced = reverted = 0
     for path in sorted(jobs.glob("*.jsonl")):
         ats = path.stem
-        done = reconcile(path, store / ats)
+        done = reconcile(path, store / ats, changes)
         rederive = [i for i in done.rederive_ids if i in embedded]
         # Appended per ATS rather than accumulated and written once: the queue is what stops these
         # Jobs from keeping embed-time numbers forever, so a crash halfway through the corpus must
@@ -384,11 +457,20 @@ def main() -> int:
         learned += done.learned
         queued += len(rederive)
         unrecorded += done.unrecorded
+        replaced += done.replaced
+        reverted += done.reverted
         _log.info(
             f"{ats}: filled {done.filled:,} from the store, learned {done.learned:,}, "
             f"queued {len(rederive):,} to re-derive"
             + (f", {done.unrecorded:,} still unrecorded" if done.unrecorded else "")
         )
+        # Its own line, every run and every ATS, zero included, so a grep can chart it: the edit
+        # churn ADR-0207 serves, with the flips (`back to the text held before`) kept apart.
+        _log.info(
+            f"{ats}: replaced {done.replaced:,} held description(s) with different text, "
+            f"{done.reverted:,} of them back to the text held before"
+        )
+    write_changes(Path(args.changes), changes)
     held = write_held_details(store, Path(args.held_details))
     _log.info(f"skip-list: {held:,} Jobs held")
     _log.info(f"re-derive queue: {queued:,} newly stored -> {args.pending_rederive}")
@@ -403,6 +485,10 @@ def main() -> int:
         [
             f"- **{filled:,}** description{'s' if filled != 1 else ''} restored from the store",
             f"- **{learned:,}** description{'s' if learned != 1 else ''} learned from fresh detail fetches",
+            (
+                f"- **{replaced:,}** held description{'s' if replaced != 1 else ''} replaced by "
+                f"different text, {reverted:,} of them back to the text held before (ADR-0207)"
+            ),
             (
                 f"- **{unrecorded:,}** Job{'s' if unrecorded != 1 else ''} still "
                 f"{'have' if unrecorded != 1 else 'has'} an unknown description"

@@ -505,6 +505,8 @@ def _descriptions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         "data/state/pending_rederive.txt",
         "--prior-meta",
         "data/embeddings/jobs/meta.jsonl",
+        "--changes",
+        "data/state/description_changes.tsv.gz",
     )
 
 
