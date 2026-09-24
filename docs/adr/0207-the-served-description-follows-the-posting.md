@@ -147,8 +147,8 @@ same snapshot. That covers the vector, the description and the metadata.
   runs again for a Job the store holds, so the edit is never fetched. The owner's rule covers
   only fetches that succeeded. The ATSes are those whose pass is gated on `needs_detail`:
   **ADP, Apple, Cornerstone, Eightfold, Phenom and Zwayam**. Their store fragments hold 0
-  replacements across the 7 runs read. Covering them means re-fetching held details on some
-  cadence, which is a request-budget decision this ADR does not make.
+  replacements across the 7 runs read. ADR-0211 re-fetches the first five every 7 days and
+  leaves Zwayam out.
 - Zoho's alternating text would have reached the served description on every flip. ADR-0208
   fixed the flip at its source first, so it does not.
 - An edited description is still embedded as the revision it was first built from (ADR-0021).
