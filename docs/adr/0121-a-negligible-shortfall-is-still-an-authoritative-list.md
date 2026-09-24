@@ -330,6 +330,15 @@ total detail-pass failure — a broken scrape, not a marginal shortfall), the si
 excluded Boards at all. The gate would never fire on any of them, so converting them would change
 nothing and is deferred until a Board of theirs is seen coming back marginally short.
 
+*Amended 2026-09-25:* `icims` and `smartrecruiters` have now been seen coming back marginally
+short and are converted. Pipeline runs `35971969417`..`35998606646` (2026-09-24) excluded
+`icims:securitycareers-alliedbarton` for 1/9199 job pages unreadable, `icims:frfrench-equans` for
+1/1633, `smartrecruiters:accorhotel` for 6378 of 6379 postings read and
+`smartrecruiters:boschgroup` for 4809 of 4810. Both totals are the Board's own — the iCIMS sitemap
+and SmartRecruiters' exact `totalFound` (ADR-0070) — and SmartRecruiters' page cap is not enforced
+(#227), so neither shortfall is a hard cap. The total detail-pass failures above still read 0% and
+still truncate. `jobvite` and `zwayam` stay deferred.
+
 **Workday is untouched**, by ownership rather than by judgement. `workday.py:1080` reports a
   measured listing shortfall in the same shape and would qualify; adopting `mark_truncated_unless_negligible`
   there would release a further 37–49 rows per run — 1.2–1.6% of the shielded set, about 3–4% on

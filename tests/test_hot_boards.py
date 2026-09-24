@@ -200,3 +200,54 @@ def test_rows_carry_their_operator_label() -> None:
     labels = {r["board"]: r["operator"] for r in lenses["expansion"]}
     assert labels == {"lever:jobgether": "aggregator", "greenhouse:acme": "employer"}
     assert excluded["aggregator"] == 1
+
+
+def test_a_counting_change_and_the_run_after_it_are_not_hiring(tmp_path: Path) -> None:
+    """Amazon's Sep 17 filter change: +308 at its tick, −439 at the next — neither is hiring."""
+    deltas = tmp_path / "deltas"
+    deltas.mkdir()
+    ticks = [
+        ("2026-09-17T12:00:00+00:00", 500),  # baseline
+        ("2026-09-17T13:00:00+00:00", 6),
+        ("2026-09-17T15:26:29+00:00", 308),  # the change's tick
+        ("2026-09-17T16:09:00+00:00", -439),  # it settling
+        ("2026-09-17T17:00:00+00:00", 9),
+    ]
+    for ts, delta in ticks:
+        pq.write_table(
+            _deltas(ts, [("amazon:jobs", "stock", "se", delta)]),
+            deltas / f"{ts.replace(':', '-')}.parquet",
+        )
+    epochs = tmp_path / "trends_epochs.csv"
+    epochs.write_text(
+        "ts,centroid_version,family_map_fingerprint,tech_filter_version,"
+        "derivations_version,dedup_version\n"
+        "2026-09-16T20:37:44+00:00,2,f,1,13,1\n"
+        "2026-09-17T15:26:29+00:00,2,f,2,13,1\n"
+        "2026-09-22T19:19:38+00:00,2,f,2,14,1\n",  # extraction: moves no count
+        encoding="utf-8",
+    )
+    changes = hot_boards.counting_changes(epochs)
+    assert changes == {"2026-09-17T15:26:29+00:00"}
+    moved, _ = hot_boards.read_stock_change(deltas, changes)
+    assert moved["amazon:jobs"] == 15
+    assert hot_boards.counting_changes(tmp_path / "missing.csv") == set()
+
+
+def test_a_change_with_no_tick_of_its_own_lands_on_the_next(tmp_path: Path) -> None:
+    """A skipped delta write: the change lands on the next tick and settles on the one after."""
+    deltas = tmp_path / "deltas"
+    deltas.mkdir()
+    for ts, delta in [
+        ("2026-09-17T12:00:00+00:00", 500),  # baseline
+        ("2026-09-17T13:00:00+00:00", 6),
+        ("2026-09-17T16:00:00+00:00", 300),  # lands here
+        ("2026-09-17T17:00:00+00:00", -400),  # settles here
+        ("2026-09-17T18:00:00+00:00", 9),
+    ]:
+        pq.write_table(
+            _deltas(ts, [("amazon:jobs", "stock", "se", delta)]),
+            deltas / f"{ts.replace(':', '-')}.parquet",
+        )
+    moved, _ = hot_boards.read_stock_change(deltas, {"2026-09-17T15:26:29+00:00"})
+    assert moved["amazon:jobs"] == 15

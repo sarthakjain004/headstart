@@ -147,6 +147,38 @@ def test_a_re_probe_that_answers_clears_the_quarantine():
     assert rows == {}
 
 
+def test_only_a_verdict_parole_re_earned_is_reconfirmed():
+    """ADR-0206: `index prune` evicts only these. A first-time quarantine can be one provider
+    outage (ADR-0170: zwayam's whole cohort sat at exactly QUARANTINE_AT, live), so it is not
+    enough; the parole scrape's second 404, a week later, is."""
+    rows = {
+        "greenhouse:b": bf.Failure(bf.QUARANTINE_AT, "404", "2026-09-01T00:00:00+00:00")
+    }
+    assert bf.reconfirmed(rows) == set()
+    rows = bf.update(
+        rows, {"greenhouse:b": "HTTPError: HTTP Error 404: "}, set(), "2026-09-08"
+    )
+    assert bf.reconfirmed(rows) == {"greenhouse:b"}
+
+
+def test_a_verdict_earned_before_its_scraper_was_replaced_is_void(tmp_path):
+    """ADR-0206: #564 (merged 2026-09-22T15:07:27Z) moved trakstar off the HTML board onto
+    jsapi.recruiterbox.com. The HTML board still 404s for Boards the API lists (`twonice`, 144
+    postings on 2026-09-24), so a verdict the old scraper earned says nothing about the Board.
+    Only trakstar's own rows are voided, and only those struck before the cutoff."""
+    path = tmp_path / "board_failures.csv"
+    path.write_text(
+        "board,strikes,last_reason,last_seen_gone\n"
+        "trakstar:twonice,6,HTTPError: HTTP Error 404: ,2026-09-22T15:07:26+00:00\n"
+        "trakstar:gone,6,HTTPError: HTTP Error 404: ,2026-09-22T15:07:27+00:00\n"
+        "greenhouse:gone,6,HTTPError: HTTP Error 404: ,2026-09-17T00:00:00+00:00\n",
+        encoding="utf-8",
+    )
+    rows = bf.load(path)
+    assert bf.quarantined(rows) == {"trakstar:gone", "greenhouse:gone"}
+    assert bf.reconfirmed(rows) == {"trakstar:gone", "greenhouse:gone"}
+
+
 def test_key_for_lowercases_a_board_and_a_stored_key_alike():
     """ADR-0192: rows keep `board_key_of`'s casing; the quarantine test compares folded."""
     from headstart.scrapable_boards import ScrapableBoard
