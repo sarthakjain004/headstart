@@ -1012,6 +1012,61 @@ def test_a_requisition_only_non_public_sites_hold_is_still_served():
     assert plan.add == frozenset({f"{internal}:R-400"})
 
 
+_PUBLIC_AND_CONFIDENTIAL = frozenset({_MAIN, _CONFIDENTIAL})
+
+
+def test_a_public_copy_displaces_a_non_public_incumbent():
+    """The one exception to incumbent-wins (ADR-0187): most runs read only one of a tenant's sites,
+    so which site a requisition reaches first is close to chance. Sync adds the public copy and
+    prune drops the non-public incumbent in the same run."""
+    index, _ = _run(
+        {f"{_CONFIDENTIAL}:R-100"},
+        {f"{_MAIN}:R-100"},
+        {_MAIN},  # the confidential site sat out this run
+        frozenset(),
+        keep=_PUBLIC_AND_CONFIDENTIAL,
+    )
+    assert index == {f"{_MAIN}:R-100"}
+
+
+def test_a_non_public_copy_never_displaces_a_public_incumbent():
+    index, _ = _run(
+        {f"{_MAIN}:R-100"},
+        {f"{_CONFIDENTIAL}:R-100"},
+        {_CONFIDENTIAL},
+        frozenset(),
+        keep=_PUBLIC_AND_CONFIDENTIAL,
+    )
+    assert index == {f"{_MAIN}:R-100"}
+
+
+def test_a_non_public_copy_never_displaces_another_non_public_incumbent():
+    internal = "workday:acme/Internal_Postings"
+    index, _ = _run(
+        {f"{_CONFIDENTIAL}:R-100"},
+        {f"{internal}:R-100"},
+        {internal},
+        frozenset(),
+        keep=_PUBLIC_AND_CONFIDENTIAL | {internal},
+    )
+    assert index == {f"{_CONFIDENTIAL}:R-100"}
+
+
+def test_a_displacement_does_not_flip_back_on_unchanged_inputs():
+    index = {f"{_CONFIDENTIAL}:R-100"}
+    fresh = {f"{_CONFIDENTIAL}:R-100", f"{_MAIN}:R-100"}
+    unconfirmed: frozenset[str] = frozenset()
+    for _ in range(3):
+        index, unconfirmed = _run(
+            index,
+            fresh,
+            _PUBLIC_AND_CONFIDENTIAL,
+            unconfirmed,
+            keep=_PUBLIC_AND_CONFIDENTIAL,
+        )
+        assert index == {f"{_MAIN}:R-100"}
+
+
 def test_site_jobs_reads_each_live_workday_site_from_the_ledger(tmp_path):
     ledger = tmp_path / "liveness"
     ledger.mkdir()

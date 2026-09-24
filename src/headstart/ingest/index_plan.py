@@ -149,8 +149,9 @@ def plan_sync(
 
     **One site per Workday requisition (ADR-0187).** A fresh id is not added — it lands in
     ``refused`` instead — when another site of its Workday tenant already serves the same
-    requisition from a live Board, or when several sites bring it at once and another is the
-    :func:`_survivor_board` (public sites first, then ``site_jobs``). That is ``plan_prune``'s
+    requisition from a live Board (unless it is a public copy and every serving site is
+    non-public: that one displaces them), or when several sites bring it at once and another is
+    the :func:`_survivor_board` (public sites first, then ``site_jobs``). That is ``plan_prune``'s
     grouping, applied where rows arrive: without it, sync would re-add on the next run every copy
     prune took out.
     The served row is judged *after* this plan's evictions, so a survivor its Board stopped
@@ -279,6 +280,13 @@ def _other_site_copies(
 
     An incumbent wins: a requisition already served from a live Board stays there, and a copy
     arriving from any other Board is refused — so a survivor never moves while its row stands.
+    The one exception runs one way only: a **public** copy displaces an incumbent that sits on
+    non-public sites alone (ADR-0187). A tenant's sites rarely share a slice, so which site a
+    requisition reaches first is close to chance, and the user's decision is that public sites
+    win; ``plan_prune`` ranks the same way, so it drops the non-public row in the same run.
+    Within each class — public against public, non-public against non-public — the incumbent
+    still wins, so the order is total and one-directional and nothing oscillates.
+
     A requisition with no incumbent takes :func:`_survivor_board`, the Board ``plan_prune`` would
     keep. A copy on the incumbent's own Board is still added: that is a case-variant spelling of
     it, which ``plan_prune`` settles by the live casing (ADR-0023), and refusing it would make a
@@ -298,7 +306,15 @@ def _other_site_copies(
             incumbent[group].add(board)
     refused: set[str] = set()
     for group, by_board in arriving.items():
-        keep = incumbent.get(group) or {_survivor_board(by_board.keys(), site_jobs)}
+        held = incumbent.get(group, set())
+        displaced = all(map(_is_non_public, held)) and not all(
+            map(_is_non_public, by_board)
+        )
+        keep = (
+            {_survivor_board(by_board.keys(), site_jobs)}
+            if not held or displaced
+            else held
+        )
         for board, ids in by_board.items():
             if board not in keep:
                 refused.update(ids)
@@ -650,12 +666,16 @@ def _survivor_board(boards: AbstractSet[str], site_jobs: dict[str, int]) -> str:
     collapsing existing ones can never disagree about which Board keeps it.
     """
 
-    def rank(board: str) -> tuple[bool, int, str]:
-        site = lower_key(board.partition("/")[2])
-        non_public = any(token in site for token in _NON_PUBLIC_SITE_TOKENS)
-        return non_public, -site_jobs.get(board, 0), board
+    return min(
+        boards,
+        key=lambda board: (_is_non_public(board), -site_jobs.get(board, 0), board),
+    )
 
-    return min(boards, key=rank)
+
+def _is_non_public(board: str) -> bool:
+    """Whether a Board's site segment names it non-public (:data:`_NON_PUBLIC_SITE_TOKENS`)."""
+    site = lower_key(board.partition("/")[2])
+    return any(token in site for token in _NON_PUBLIC_SITE_TOKENS)
 
 
 def plan_prune(
@@ -670,9 +690,9 @@ def plan_prune(
     several of its sites, each a Board, under the same native id (ADR-0187). Such a group keeps one
     Board, the :func:`_survivor_board`: a public site first, then ``site_jobs``
     (:func:`workday_site_jobs`; omitted, every Board ties on jobs and the lexicographic tie-break
-    decides). ``plan_sync`` refuses copies
-    on the same rule, so once today's duplicates are gone this only ever sees one Board per
-    requisition — and a survivor never moves, because the incumbent is all there is to keep. The
+    decides). ``plan_sync`` refuses copies on the same rule, so once today's duplicates are gone
+    this sees two Boards for one requisition only when a public copy has just displaced a
+    non-public incumbent — and it drops the incumbent, because the ranking puts public first. The
     casing rule below then picks the row within the kept Board.
 
     The row kept is the one whose Board casing the **live ledger** produces, because that is the
