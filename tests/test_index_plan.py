@@ -20,6 +20,7 @@ from headstart.ingest.index_plan import (
     read_unauthoritative_boards,
     resolve_board,
     scraped_boards,
+    workday_site_jobs,
 )
 from headstart.scrapers.greenhouse import GreenhouseScraper
 from headstart.scrapers.personio import PersonioScraper
@@ -793,3 +794,181 @@ def test_a_recorded_scope_nobody_asked_for_cannot_pre_empt_the_fallback(tmp_path
     recorded.write_text('["ats:from-some-other-run"]', encoding="utf-8")
 
     assert scraped_boards(None, tmp_path / "absent", {"ats:a:1"}, {}) == {"ats:a"}
+
+
+# --- one row per Workday requisition across a tenant's sites -----------------------------------
+# A Workday Board is one site (`workday:{company}/{site}`), and a tenant posts one requisition to
+# several of its sites under the same native id. Grouped per Board, each copy was served.
+
+_MAIN, _SUB = "workday:acme/External", "workday:acme/Hidden"
+_SITE_JOBS = {"workday:acme/external": 900, "workday:acme/hidden": 40}
+
+
+def test_prune_keeps_one_copy_of_a_requisition_on_the_site_with_the_most_jobs():
+    keep = {_MAIN, _SUB}
+    off, dup = plan_prune(
+        [f"{_SUB}:R-100", f"{_MAIN}:R-100"], keep, site_jobs=_SITE_JOBS
+    )
+    assert off == []
+    assert dup == [f"{_SUB}:R-100"]
+
+
+def test_a_native_id_with_no_digit_is_not_a_requisition_and_stays_per_board():
+    """34 served Workday rows carry a fallback id — a location or a title slug — rather than a
+    requisition id. Two sites sharing `Texas` are two postings, so both stay."""
+    keep = {_MAIN, _SUB}
+    ids = [
+        f"{_MAIN}:Texas",
+        f"{_SUB}:Texas",
+        f"{_MAIN}:QA-Engineer_",
+        f"{_SUB}:QA-Engineer_",
+    ]
+    assert plan_prune(ids, keep, site_jobs=_SITE_JOBS) == ([], [])
+
+
+def test_other_atses_still_group_per_board():
+    keep = {"greenhouse:acme", "greenhouse:acmeeu"}
+    ids = ["greenhouse:acme:4001", "greenhouse:acmeeu:4001"]
+    assert plan_prune(ids, keep) == ([], [])
+
+
+def test_the_survivor_site_keeps_its_live_casing_row():
+    keep = {_MAIN, _SUB}
+    ids = [f"{_SUB}:R-100", "workday:acme/EXTERNAL:R-100", f"{_MAIN}:R-100"]
+    _, dup = plan_prune(ids, keep, site_jobs=_SITE_JOBS)
+    assert sorted(dup) == sorted([f"{_SUB}:R-100", "workday:acme/EXTERNAL:R-100"])
+
+
+def test_sync_does_not_add_a_copy_another_site_already_serves():
+    """Incumbent wins, even over the bigger site: the copy already served stays, and nothing
+    else is added for the same requisition."""
+    live = boards_by_canon({_MAIN, _SUB})
+    plan = plan_sync(
+        {f"{_SUB}:R-100"},
+        {f"{_SUB}:R-100", f"{_MAIN}:R-100", f"{_MAIN}:R-200"},
+        {_MAIN, _SUB},
+        live,
+        set(),
+        site_jobs=_SITE_JOBS,
+    )
+    assert plan.add == frozenset({f"{_MAIN}:R-200"})
+    assert plan.delete == frozenset()
+
+
+def _run(index, fresh, scraped, was_unconfirmed, keep=frozenset({_MAIN, _SUB})):
+    """One pipeline run's two table steps, sync then prune, as `index sync`/`prune` chain them."""
+    plan = plan_sync(
+        index,
+        fresh,
+        scraped,
+        boards_by_canon(keep),
+        was_unconfirmed,
+        site_jobs=_SITE_JOBS,
+    )
+    index = (set(index) | plan.add) - plan.delete
+    off, dup = plan_prune(sorted(index), set(keep), site_jobs=_SITE_JOBS)
+    return index - set(off) - set(dup), plan.unconfirmed
+
+
+def test_a_requisition_arriving_on_two_sites_at_once_is_added_once_where_prune_keeps_it():
+    plan = plan_sync(
+        set(),
+        {f"{_SUB}:R-100", f"{_MAIN}:R-100"},
+        {_MAIN, _SUB},
+        boards_by_canon({_MAIN, _SUB}),
+        set(),
+        site_jobs=_SITE_JOBS,
+    )
+    assert plan.add == frozenset({f"{_MAIN}:R-100"})
+    assert plan.duplicate == frozenset({f"{_SUB}:R-100"})
+    assert plan_prune(sorted(plan.add), {_MAIN, _SUB}, site_jobs=_SITE_JOBS) == ([], [])
+
+
+def test_a_pruned_copy_is_not_re_added_and_the_survivor_never_flips():
+    """The churn the spec measured: 26,101 duplicate rows sit on in-scope Boards, so a prune-only
+    rule would have sync re-add every one on the next run. The incumbent here is on the smaller
+    site, which the ledger rule alone would move to the bigger one — and must not."""
+    index = {f"{_SUB}:R-100"}
+    fresh = {f"{_SUB}:R-100", f"{_MAIN}:R-100"}
+    unconfirmed: frozenset[str] = frozenset()
+    for _ in range(3):
+        index, unconfirmed = _run(index, fresh, {_MAIN, _SUB}, unconfirmed)
+        assert index == {f"{_SUB}:R-100"}
+
+
+def test_the_one_time_cleanup_is_stable_on_the_next_run():
+    index = {f"{_SUB}:R-100", f"{_MAIN}:R-100"}  # both copies served today
+    fresh = {f"{_SUB}:R-100", f"{_MAIN}:R-100"}
+    index, unconfirmed = _run(index, fresh, {_MAIN, _SUB}, frozenset())
+    assert index == {f"{_MAIN}:R-100"}
+    index, _ = _run(index, fresh, {_MAIN, _SUB}, unconfirmed)
+    assert index == {f"{_MAIN}:R-100"}
+
+
+def test_another_site_takes_over_once_the_survivor_stops_listing_the_requisition():
+    """ADR-0083 still decides when the survivor is gone: its first absence only marks it
+    Unconfirmed, so the requisition keeps being served from it, and the other site's copy comes
+    in on the scrape that evicts it."""
+    index = {f"{_SUB}:R-100"}
+    moved = {f"{_MAIN}:R-100"}  # the req left the sub-site and is still on the main one
+    index, unconfirmed = _run(index, moved, {_MAIN, _SUB}, frozenset())
+    assert index == {f"{_SUB}:R-100"}
+    assert unconfirmed == {f"{_SUB}:R-100"}
+    index, unconfirmed = _run(index, moved, {_MAIN, _SUB}, unconfirmed)
+    assert index == {f"{_MAIN}:R-100"}
+    assert unconfirmed == frozenset()
+
+
+def test_an_unscraped_survivor_board_keeps_the_requisition():
+    """The partial-harvest safety: a survivor whose Board sat out the run is no evidence of
+    anything, so the other site's copy stays out."""
+    index, _ = _run({f"{_SUB}:R-100"}, {f"{_MAIN}:R-100"}, {_MAIN}, frozenset())
+    assert index == {f"{_SUB}:R-100"}
+
+
+def test_another_site_takes_over_when_the_survivor_board_leaves_the_live_set():
+    """A dead or parked Board's rows are prune's off-Board eviction, not incumbents: the other
+    site's copy is added in the same run that prune takes the old one out."""
+    index, _ = _run(
+        {f"{_SUB}:R-100"}, {f"{_MAIN}:R-100"}, {_MAIN}, frozenset(), keep={_MAIN}
+    )
+    assert index == {f"{_MAIN}:R-100"}
+
+
+def test_a_re_embedded_incumbent_keeps_its_place():
+    """`index sync` deletes an upgraded Job's row before planning so it can be re-added with its
+    new vector (ADR-0050). It is still the incumbent: without `replaced` it would compete as a
+    new arrival, lose to the bigger site, and hand the requisition over with a fresh
+    `first_seen` — a new listing for every subscriber, for a Job that never left."""
+    upgraded = f"{_SUB}:R-100"
+    plan = plan_sync(
+        set(),  # its row was just taken out
+        {upgraded, f"{_MAIN}:R-100"},
+        {_MAIN, _SUB},
+        boards_by_canon({_MAIN, _SUB}),
+        set(),
+        site_jobs=_SITE_JOBS,
+        replaced={upgraded},
+    )
+    assert plan.add == frozenset({upgraded})
+    assert plan.duplicate == frozenset({f"{_MAIN}:R-100"})
+
+
+def test_site_jobs_reads_each_live_workday_site_from_the_ledger(tmp_path):
+    ledger = tmp_path / "liveness"
+    ledger.mkdir()
+    rows = ["ats,tenant,url,status,jobs,checked_at"] + [
+        f"workday,acme.wd1.myworkdayjobs.com/{site},"
+        f"https://acme.wd1.myworkdayjobs.com/{site},{rest}"
+        for site, rest in [
+            ("External", "live,900,2026-09-01"),
+            ("external", "live,880,2026-08-01"),  # a case-variant row of the same Board
+            ("Hidden", "live,40,2026-09-01"),
+            ("Gone", "dead,,2026-09-01"),
+        ]
+    ]
+    (ledger / "workday.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
+    assert workday_site_jobs(ledger) == {
+        "workday:acme/external": 900,
+        "workday:acme/hidden": 40,
+    }

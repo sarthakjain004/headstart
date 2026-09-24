@@ -4,6 +4,8 @@
 - Date: 2026-07-17
 - Amended by: [ADR-0049](0049-match-boards-by-prefix-not-by-parsing.md) — the prune sweep
   matches ids to Boards by prefix, because parsing mis-attributed ids whose native id has a colon
+- Amended by: [ADR-0187](0187-a-workday-requisition-is-served-once-per-tenant.md) — a Workday
+  requisition's duplicate group is its tenant, not its Board, and sync refuses the copies too
 - Builds on [ADR-0014](0014-search-index-ingestion-and-freshness.md) (board-scoped incremental
   sync) and [ADR-0020](0020-free-tier-deployment.md) (the state round-trip the Space serves)
 

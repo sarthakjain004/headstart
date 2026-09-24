@@ -470,6 +470,54 @@ def test_an_upgraded_row_keeps_its_original_first_seen(tmp_path, monkeypatch):
     assert stamps["greenhouse:a:2"] == "2026-01-01T09:00:00+00:00"  # untouched
 
 
+# Two sites of one Workday tenant. The bigger one sorts *last*, so a planner that never received
+# the ledger's job counts would fall back to the lexicographic tie-break and pick the other.
+_BIG, _SMALL = "workday:acme/Careers", "workday:acme/Alumni"
+
+
+def _write_workday_ledger(ledger: Path) -> None:
+    ledger.mkdir(exist_ok=True)
+    rows = ["ats,tenant,url,status,jobs,checked_at"] + [
+        f"workday,acme.wd1.myworkdayjobs.com/{site},"
+        f"https://acme.wd1.myworkdayjobs.com/{site},live,{jobs},2026-09-01"
+        for site, jobs in (("Careers", 900), ("Alumni", 40))
+    ]
+    (ledger / "workday.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+
+def test_sync_serves_a_workday_requisition_from_the_site_the_ledger_ranks_first(
+    tmp_path, monkeypatch
+):
+    """ADR-0187: one requisition, two sites, one row — on the site with more ledger jobs."""
+    _write_workday_ledger(tmp_path / "ledger")
+    _sync(tmp_path, monkeypatch, [f"{_SMALL}:R-100", f"{_BIG}:R-100"])
+    assert set(_rows(tmp_path)) == {f"{_BIG}:R-100"}
+
+
+def test_a_re_embedded_workday_incumbent_is_not_handed_to_another_site(
+    tmp_path, monkeypatch
+):
+    """The ADR-0050 upgrade deletes the row before planning. Unless sync tells the planner that
+    row is still the incumbent, the bigger site's copy takes the requisition over with a fresh
+    `first_seen` — a new listing for a Job that never left."""
+    monkeypatch.setattr(
+        idx, "datetime", _PinnedClock(datetime(2026, 1, 1, 9, 0, tzinfo=UTC))
+    )
+    _sync(tmp_path, monkeypatch, [f"{_SMALL}:R-100"])  # no ledger yet: served as-is
+    _write_workday_ledger(tmp_path / "ledger")
+
+    monkeypatch.setattr(
+        idx, "datetime", _PinnedClock(datetime(2026, 1, 2, 9, 0, tzinfo=UTC))
+    )
+    _sync(
+        tmp_path,
+        monkeypatch,
+        [f"{_SMALL}:R-100", f"{_BIG}:R-100"],
+        upgrades=[f"{_SMALL}:R-100"],
+    )
+    assert _rows(tmp_path) == {f"{_SMALL}:R-100": "2026-01-01T09:00:00+00:00"}
+
+
 def test_log_reasons_pairs_each_board_with_why_on_its_own_line(caplog):
     """The scope-exclusion warning names a count and the Boards, but the cause it hints at
     ("truncated, or the scrape raised") was never recorded per Board — so a Board excluded on
@@ -968,6 +1016,23 @@ def test_prune_proceeds_on_a_base_that_agrees(tmp_path, monkeypatch):
     (its keep-set floor, say) would make that assertion pass while checking nothing."""
     _sync(tmp_path, monkeypatch, ["greenhouse:a:1", "greenhouse:a:2"])
     assert idx.prune(_prune_args(tmp_path, monkeypatch)) == 0
+
+
+def test_prune_collapses_a_served_workday_requisition_onto_the_site_the_ledger_ranks_first(
+    tmp_path, monkeypatch
+):
+    """The one-time cleanup of the copies served before ADR-0187, reading the same ledger."""
+    _sync(
+        tmp_path, monkeypatch, [f"{_SMALL}:R-100", f"{_BIG}:R-100"]
+    )  # no ledger: both
+    _write_workday_ledger(tmp_path / "liveness")
+    args = _prune_args(tmp_path, monkeypatch)
+    floor = idx.live_keep_set  # the stub, wide enough to clear `_MIN_KEEP_BOARDS`
+    monkeypatch.setattr(
+        idx, "live_keep_set", lambda ledger: {_BIG, _SMALL} | floor(ledger)
+    )
+    assert idx.prune(args) == 0
+    assert set(_rows(tmp_path)) == {f"{_BIG}:R-100"}
 
 
 def test_compact_always_leaves_a_record(tmp_path):

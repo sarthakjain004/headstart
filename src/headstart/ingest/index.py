@@ -45,6 +45,9 @@ once, which narrows nothing and widens nothing.
   2. **Case-variant duplicate rows.** The same job indexed under more than one slug casing — Workday
      sites like ``.../External`` vs ``.../external`` produce ``company/External`` and ``company/external``
      Board keys, hence two ids for one job. Same lowercased Board + native id → keep one, drop the rest.
+     A Workday requisition is grouped across its tenant's sites instead, since a tenant posts one
+     requisition to several of them under the same id (ADR-0187); sync applies the same rule to
+     the rows it adds, so what prune takes out is not re-added.
 
   Planning lives in :mod:`headstart.ingest.index_plan`; this is the CLI that runs it against the table.
   The keep-set is the live ledger (enabled ATSes), each Board key exactly as its scraper's
@@ -113,6 +116,7 @@ from headstart.ingest.index_plan import (
     read_unauthoritative_boards,
     resolve_board,
     scraped_boards,
+    workday_site_jobs,
 )
 from headstart.ingest.update_descriptions import read_store
 from headstart.search import PROD_TABLE, posted_at_is_comparable
@@ -836,7 +840,18 @@ def sync(args: argparse.Namespace) -> int:
     # start: one run of retained-but-closed rows is the price of never needing a migration, and
     # the run after it evicts normally.
     was_unconfirmed = read_id_list(Path(args.unconfirmed))
-    plan = plan_sync(index_ids, fresh, boards, live, was_unconfirmed)
+    # One row per Workday requisition across a tenant's sites (ADR-0187), decided here as well as
+    # in prune so a copy prune took out is never added back. The re-embedded rows just taken out
+    # are passed back as `replaced`: they are still the requisition's incumbent.
+    plan = plan_sync(
+        index_ids,
+        fresh,
+        boards,
+        live,
+        was_unconfirmed,
+        site_jobs=workday_site_jobs(args.ledger),
+        replaced=taken.keys(),
+    )
     # `add` counts every row written, and an upgrade is a delete-then-re-add of a Job that never
     # left — so reading `add - evict` as growth overstates it by exactly the upgrade count. Over
     # 19 runs that read as +4,376 while the table actually fell by 388 rows. Spell out the split
@@ -850,6 +865,11 @@ def sync(args: argparse.Namespace) -> int:
         f"plan: add {len(plan.add)} ({listings} new listings + {len(taken)} re-embedded), "
         f"evict {len(plan.delete)} -> net {listings - len(plan.delete):+d} rows"
     )
+    if plan.duplicate:
+        _log.info(
+            f"not added: {len(plan.duplicate)} Workday requisition(s) another site of the same "
+            "tenant already serves or is being given (ADR-0187)"
+        )
     # Written before the delete rather than after, and the reason is not crash-replay: `delete`
     # and `unconfirmed` are disjoint by construction, so a crash here loses no eviction — those
     # ids simply read as a first absence again next run, costing one extra cycle and nothing else.
@@ -981,7 +1001,9 @@ def prune(args: argparse.Namespace) -> int:
         # rolled-back table, rebuild it, and publish a fresh self-consistent record, laundering
         # the loss into the new base.
         return 1
-    off_board, duplicate = plan_prune(index_ids, keep)
+    off_board, duplicate = plan_prune(
+        index_ids, keep, site_jobs=workday_site_jobs(args.ledger)
+    )
     evict = off_board + duplicate
     _log.info(
         f"index: {len(index_ids)} rows | evict {len(evict)} "
