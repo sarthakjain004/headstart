@@ -42,10 +42,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from headstart import http
 from headstart.fetcher import Fetcher
 from headstart.models import Job, host_of, html_to_text, is_remote
-from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.base import BaseScraper, DetailLost, DetailRequest
 
 #: The API's own maximum `limit`. Requesting more is silently clamped to it — 300, 500 and 1000
 #: all return 200 rows and echo `"limit": 200`.
@@ -256,62 +255,38 @@ class OracleScraper(BaseScraper):
         # `remote`. Skipping it for an already-described Job would blank three fields that had
         # values. jazzhr and zoho hit the same fork and made the same call.
         reqs = self._listing()
-        ids = [str(r["Id"]) for r in reqs if r.get("Id")]
-        details: dict[str, dict] = {}
-        if ids:
-            # Multiplexed by default (ADR-0016); HEADSTART_ASYNC_FANOUT=0 falls back to threads.
-            if self.async_fanout_enabled():
-                fetched = self.fan_out_async(ids, self._detail_async)
-            else:
-                fetched = self.fan_out(ids, self._detail, workers=self.detail_workers)
-            # Reported, not marked truncated: a missing detail payload costs this Job its
-            # description and derived fields, but the Job itself is still listed and still
-            # emitted, so the Board's list is whole (ADR-0053 is about the list, not the fields).
-            self.report_detail_gaps(fetched, "detail payloads")
-            details = {i: d for i, d in zip(ids, fetched) if d}
+        # Reported, not marked truncated: a missing detail payload costs this Job its
+        # description and derived fields, but the Job itself is still listed and still
+        # emitted, so the Board's list is whole (ADR-0053 is about the list, not the fields).
+        details = self.run_detail_pass(
+            [requisition for requisition in reqs if requisition.get("Id")],
+            key_of=lambda requisition: str(requisition["Id"]),
+            what="detail payloads",
+        )
         return {"requisitionList": reqs, "details": details}
 
-    def _detail_url(self, job_id: str) -> str:
+    def detail_request(self, requisition: dict) -> DetailRequest:
         # `ById` with a *quoted* id, taken from the careers UI's own network calls — the
         # plausible-looking `findReqDetailById` returns HTTP 400. No `siteNumber`: it is ignored
         # here, and 454 cross-pod calls omitting it all returned the requisition.
-        return (
+        return DetailRequest(
             f"https://{self.slug}/hcmRestApi/resources/latest/"
-            f'recruitingCEJobRequisitionDetails?onlyData=true&expand=all&finder=ById;Id="{job_id}"'
+            f'recruitingCEJobRequisitionDetails?onlyData=true&expand=all&finder=ById;Id="{requisition["Id"]}"'
         )
 
-    def _first_item(self, body: str) -> dict | None:
-        """The one requisition in a detail response, or None if it carried none.
+    def read_detail(self, requisition: dict, response: Any) -> dict:
+        """The one requisition in a detail response.
 
         An unknown id is **not** a 404 — it answers 200 with ``items: []`` — so an empty list is a
-        real outcome to fold into the detail-gap count, not an error to raise on. It is labelled
-        rather than merely counted, because a Board whose ids have all gone stale and a Board the
-        pod is refusing produce the same number of gaps and call for opposite responses
-        (:meth:`~BaseScraper.note_detail_loss`).
+        real outcome to fold into the detail-gap count, and it is raised as a named
+        :class:`DetailLost` rather than left to count as ``unlabelled``, because a Board whose ids
+        have all gone stale and a Board the pod is refusing produce the same number of gaps and
+        call for opposite responses.
         """
-        items = json.loads(body).get("items") or []
+        items = json.loads(response.text).get("items") or []
         if not items:
-            self.note_detail_loss("no items on a 200")
-            return None
+            raise DetailLost("no items on a 200")
         return items[0]
-
-    def _detail(self, job_id: str) -> dict | None:
-        try:
-            body = self._get(self._detail_url(job_id))
-        except http.RequestsError as exc:
-            # `fan_out` turns the raise into this same None; caught here so the cause travels
-            # with the count rather than only the count.
-            self.note_detail_exception(exc)
-            return None
-        return self._first_item(body)
-
-    async def _detail_async(self, session: Any, job_id: str) -> dict | None:
-        try:
-            body = await self._get_async(session, self._detail_url(job_id))
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return self._first_item(body)
 
     def job_url(self, job_id: str) -> str:
         """The careers-UI page for one posting.

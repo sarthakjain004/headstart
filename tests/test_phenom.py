@@ -19,6 +19,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+from fake_fetcher import FakeFetcher, FakeRequest, FakeResponse
+
 from headstart.scrapers.phenom import _RESULT_WINDOW, PhenomScraper
 from headstart.scrapers.registry import get_scraper
 
@@ -345,11 +348,88 @@ def test_a_repeated_row_is_not_served_twice(monkeypatch):
     assert [str(j["jobId"]) for j in scraper._listing()] == ["A", "B", "C"]
 
 
+def _recorded_detail_responses() -> dict[str, dict]:
+    """Each fixture posting's whole `jobDetail` response, keyed by its id."""
+    with open(FIXTURES / "phenom_details.json", encoding="utf-8") as fixture_file:
+        return json.load(fixture_file)
+
+
+def _serve_fixture_board(
+    detail_answers: dict[str, dict],
+) -> tuple[PhenomScraper, FakeFetcher]:
+    """The two fixture postings behind one `/widgets` endpoint: the listing POST answers them as a
+    whole Board, and each detail POST answers from ``detail_answers`` by the `jobId` in its body."""
+    listed = _listing()
+
+    def route(method: str, url: str, kwargs: dict) -> FakeResponse:
+        if method == "GET":  # the locale-prefix probe, answered where it was asked
+            return FakeResponse(text="<html></html>")
+        payload = kwargs["json"]
+        if payload["ddoKey"] == "refineSearch":
+            rows = listed if payload["from"] == 0 else []
+            envelope = {"totalHits": len(listed), "data": {"jobs": rows}}
+            return FakeResponse(text=json.dumps({"refineSearch": envelope}))
+        return FakeResponse(text=json.dumps(detail_answers[payload["jobId"]]))
+
+    fetcher = FakeFetcher(route)
+    return PhenomScraper(HOST, fetcher=fetcher), fetcher
+
+
+def _detail_posts(fetcher: FakeFetcher) -> list[FakeRequest]:
+    return [
+        request
+        for request in fetcher.requests
+        if request.method == "POST" and request.kwargs["json"]["ddoKey"] == "jobDetail"
+    ]
+
+
+@pytest.mark.parametrize("async_fanout_switch", ["1", "0"])
+def test_the_detail_pass_posts_one_job_detail_body_per_posting_on_either_transport(
+    monkeypatch, async_fanout_switch
+):
+    """Both transports send the same request: a POST to `/widgets` with the `jobDetail` payload,
+    the widget headers and the 45 s timeout the listing POST uses."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout_switch)
+    scraper, fetcher = _serve_fixture_board(_recorded_detail_responses())
+
+    raw = scraper.fetch_raw()
+
+    assert raw["details"] == _details()
+    detail_posts = _detail_posts(fetcher)
+    assert sorted(post.kwargs["json"]["jobId"] for post in detail_posts) == sorted(
+        [HYBRID_ID, ONSITE_ID]
+    )
+    for post in detail_posts:
+        assert post.url == f"https://{HOST}/widgets"
+        assert post.kwargs["headers"] == PhenomScraper._WIDGET_HEADERS
+        assert post.kwargs["timeout"] == PhenomScraper._WIDGET_TIMEOUT == 45
+        assert post.kwargs["json"]["pageName"] == "job-details"
+    assert scraper.detail_losses == {}
+
+
+def test_a_held_description_is_not_fetched_again(monkeypatch):
+    """ADR-0048: everything else the detail supplies the listing also states, so a Job whose
+    description the store holds is skipped rather than re-fetched. The tech gate is switched off
+    so the skip alone decides what is fetched."""
+    monkeypatch.setenv("HEADSTART_TECH_GATE", "0")
+    scraper, fetcher = _serve_fixture_board(_recorded_detail_responses())
+    scraper.have_details = {f"phenom:{HOST}:{ONSITE_ID}"}
+
+    raw = scraper.fetch_raw()
+
+    assert [post.kwargs["json"]["jobId"] for post in _detail_posts(fetcher)] == [
+        HYBRID_ID
+    ]
+    assert set(raw["details"]) == {HYBRID_ID}
+
+
 def test_an_unknown_id_records_a_detail_loss_rather_than_raising():
     # A bogus id is a 200 whose envelope simply has no `job` key — a silent empty, not an error.
-    scraper = _scraper()
-    assert scraper._job_of({"jobDetail": {"status": 200, "data": {}}}) is None
-    assert scraper.detail_losses["no job on a 200"] == 1
+    no_job = {"jobDetail": {"status": 200, "data": {}}}
+    scraper, _fetcher = _serve_fixture_board({HYBRID_ID: no_job, ONSITE_ID: no_job})
+    raw = scraper.fetch_raw()
+    assert raw["details"] == {}
+    assert scraper.detail_losses == {"no job on a 200": 2}
 
 
 def test_the_prefix_probe_falls_back_when_the_board_will_not_answer(monkeypatch):
