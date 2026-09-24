@@ -60,9 +60,8 @@ import re
 from email.utils import parsedate_to_datetime
 from typing import Any
 
-from headstart import http
 from headstart.models import Job, host_of, html_to_text, is_remote
-from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 
 #: The largest Board that answers, `oakmontmanagement` (695 reqs, 3.68 MB), took 20.7 s — too
 #: close to the 30 s every other request here gets. Past ~104 s the server gives up with a 500.
@@ -201,13 +200,6 @@ class ClearCompanyScraper(BaseScraper):
         response.raise_for_status()
         return decode_hrm_bytes(response.content)
 
-    async def _page_async(self, session: Any, url: str, timeout: int) -> str:
-        response = await self._fetch_async(
-            session, "GET", url, headers=_HEADERS, timeout=timeout
-        )
-        response.raise_for_status()
-        return decode_hrm_bytes(response.content)
-
     def fetch_raw(self) -> Any:
         xml = self._page(self.url(), timeout=_FEED_TIMEOUT)
         if "<source>" not in xml:
@@ -215,45 +207,26 @@ class ClearCompanyScraper(BaseScraper):
                 "an HRM Direct <source> feed", f"{len(xml)} chars without one"
             )
             return {"xml": "", "details": {}}
-        reqs = feed_reqs(xml)
-        wanted = self.tech_detail_wanted(
-            reqs,
-            lambda r: _tag(r[1][0], "title"),
-            lambda r: _tag(r[1][0], "department"),
+        details = self.run_detail_pass(
+            feed_reqs(xml),
+            key_of=lambda req_rows: req_rows[0],
+            what="detail pages",
+            title_of=lambda req_rows: _tag(req_rows[1][0], "title"),
+            department_of=lambda req_rows: _tag(req_rows[1][0], "department"),
         )
-        ids = [req for req, _rows in wanted]
-        details: dict[str, str] = {}
-        if ids:
-            if self.async_fanout_enabled():
-                fetched = self.fan_out_async(ids, self._detail_async)
-            else:
-                fetched = self.fan_out(ids, self._detail, workers=self.detail_workers)
-            self.report_detail_gaps(fetched, "detail pages")
-            details = {i: page for i, page in zip(ids, fetched) if page}
         return {"xml": xml, "details": details}
 
-    def _posting(self, page: str) -> str | None:
+    def detail_request(self, req_rows: tuple[str, list[str]]) -> DetailRequest:
+        return DetailRequest(
+            self.job_url(req_rows[0]), headers=_HEADERS, timeout=_DETAIL_TIMEOUT
+        )
+
+    def read_detail(self, req_rows: tuple[str, list[str]], response: Any) -> str:
         """The page if a posting is on it; a closed or unknown req is a 200 with none."""
-        if _JOB_DESC in page:
-            return page
-        self.note_detail_loss("no posting")
-        return None
-
-    def _detail(self, req: str) -> str | None:
-        try:
-            return self._posting(self._page(self.job_url(req), _DETAIL_TIMEOUT))
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-
-    async def _detail_async(self, session: Any, req: str) -> str | None:
-        try:
-            return self._posting(
-                await self._page_async(session, self.job_url(req), _DETAIL_TIMEOUT)
-            )
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
+        page = decode_hrm_bytes(response.content)
+        if _JOB_DESC not in page:
+            raise DetailLost("no posting")
+        return page
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         details = raw.get("details") or {}

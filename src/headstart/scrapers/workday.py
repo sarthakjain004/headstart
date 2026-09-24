@@ -907,6 +907,9 @@ class WorkdayScraper(BaseScraper):
             lambda item: item.get("title"),
             lambda item: item.get("jobFamilyGroup"),
         )
+        # Composed from the primitives, not `run_detail_pass` (ADR-0201): an in-pass circuit
+        # breaker, in-item fallbacks (a 404 to the page's JSON-LD, a 400 to a cookie reset),
+        # recovered outcomes and its own loss line (ADR-0088) are pass state a request cannot hold.
         if self.async_fanout_enabled():
             details = self.fan_out_async(
                 wanted,
