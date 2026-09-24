@@ -43,13 +43,16 @@ _TYPO_MIN = 5
 
 
 def normalize(text: str) -> list[str]:
-    """``text`` as comparable words: no case, accents, punctuation or legal form."""
+    """``text`` as comparable words: no case, accents, punctuation or trailing legal form."""
     folded = unicodedata.normalize("NFKD", text.casefold().replace("&", " and "))
     # Dots dropped rather than split on, so "S.A." and "D.R. Horton" read as the words they are.
     plain = "".join(ch for ch in folded if not unicodedata.combining(ch) and ch != ".")
     words = [word for word in _NOT_WORD.split(plain) if word]
-    kept = [word for word in words if word not in _LEGAL]
-    return kept or words  # "Company Inc" alone is still something to match
+    # Only a trailing legal form goes: "SA Power Networks" and "Co-op" keep their first word.
+    kept = list(words)
+    while kept and kept[-1] in _LEGAL:
+        kept.pop()
+    return kept or words  # "Private Limited" alone is still something to match
 
 
 @dataclass(frozen=True)

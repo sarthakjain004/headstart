@@ -9,7 +9,7 @@ companies are hiring for and how that is changing.
 
 No new collection is needed. ADR-0143's Board-delta ledger already holds every Board's counts
 by `(metric, family, band, ats)` on every run, and the Space already loads it and replays it for
-a chosen set of Boards (`_comparable_rows`). A company filter is that replay over a different
+a chosen set of Boards (`_comparable_rows`, since generalised to `_replay_rows`). A company filter is that replay over a different
 set. What is missing is the join from what a person types, a company name, to what the ledger
 is keyed by, a **board_key**.
 
@@ -163,12 +163,21 @@ The second of the three PRs puts the directory behind two routes in the Space.
 - **`/trends?company=`** (repeatable) takes **any** board_key of an entry, so a Hot-tab row or
   a search result links to its company by the key it already holds. A pick replays only its
   Boards' deltas, and it combines with comparable coverage. `split=company` draws one line per
-  pick, within a family when one is given.
+  pick, within a family when one is given. Four details came out of review:
+  - `company_totals` carries each pick's own denominator, so a line split by company can be a
+    share of that company rather than of every pick combined.
+  - Under a pick, whether a run measured `new` is read from the whole ledger. One company can
+    go a run with nothing new, which is a 0, and every pick with rows in scope keeps a line.
+  - `history_start` names the first run a pick is charted from.
+  - Two picks sharing a name are labelled by ATS, and by key when they share the ATS too (220
+    name pairs do). The matcher strips only a *trailing* legal form, so "SA Power Networks"
+    keeps its "SA".
 
 **Within-Tenant duplicates are gone** from the first pipeline run after #602 (Taleo Enterprise
 sections, `DEDUP_VERSION` 2) and #603 (Workday sites, 3). That tick carries ADR-0188's
 duplicate-removal epoch marker. From then on, a sum over one Tenant's Boards no longer double
-counts.
+counts. The ledger's points before that tick still carry the copies, and so do the openings a
+suggestion shows until the tick lands. The marker is the only signal of this on the chart.
 
 **Cross-ATS mirrors remain** (9,872 rows; not yet scheduled), and one directory entry was built
 across them: Lockheed Martin's alias spanned both its SuccessFactors Board and its Eightfold

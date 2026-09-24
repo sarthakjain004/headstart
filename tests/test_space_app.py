@@ -1757,8 +1757,20 @@ def company_trends(trends_app, monkeypatch):
             "count": 1,
         }
         for stamp in (_T1, _T2, _T3)
+    ] + [
+        {
+            "ts": stamp,
+            "version": 2,
+            "metric": "new",
+            "family": "software-engineering",
+            "band": "mid",
+            "ats": "workday",
+            "count": 1,
+        }
+        for stamp in (_T2, _T3)
     ]
     deltas = [
+        _delta(_T2, "workday:hpe/a", 2, metric="new"),
         _delta(_T1, "workday:hpe/a", 10),
         _delta(_T1, "workday:hpe/b", 5),
         _delta(_T1, "workday:hpe/b", 2, family="ai-ml"),
@@ -1776,6 +1788,8 @@ def company_trends(trends_app, monkeypatch):
             "name": "Citi",
             "boards": ["eightfold:citi.eightfold.ai"],
         },
+        # a third "Citi", on the same ATS as the first: its ATS cannot tell them apart
+        "workday:citibank/x": {"name": "Citi", "boards": ["workday:citibank/x"]},
     }
     openings = trends_app._board_openings(deltas, 2)
     monkeypatch.setattr(trends_app, "_TRENDS", ledger)
@@ -1788,7 +1802,7 @@ def company_trends(trends_app, monkeypatch):
     )
     monkeypatch.setattr(trends_app, "_OPENINGS", openings)
     monkeypatch.setattr(
-        trends_app, "_CANDIDATES", trends_app._candidates(companies, openings)
+        trends_app, "_CANDIDATES", trends_app._build_candidates(companies, openings)
     )
     return trends_app.app.test_client()
 
@@ -1831,6 +1845,40 @@ def test_split_by_company_draws_a_line_per_pick_and_tells_twins_apart(company_tr
     }
 
 
+def test_a_pick_with_nothing_new_is_a_zero_line_not_a_missing_one(company_trends):
+    """One company can go a run with nothing new; that is 0, and it must still get a line."""
+    d = company_trends.get(
+        "/trends?metric=new&split=company&company=workday:citi/2&company=workday:hpe/a"
+    ).get_json()
+    by_label = {s["label"]: s["points"] for s in d["series"]}
+    assert by_label == {"Citi": [None, 0, 0], "Hpe": [None, 2, 2]}
+
+
+def test_each_pick_carries_its_own_share_denominator_and_history_start(company_trends):
+    d = company_trends.get(
+        "/trends?split=company&company=workday:citi/2&company=workday:hpe/a"
+    ).get_json()
+    assert d["company_totals"] == {
+        "workday:citi/2": [40, 40, 44],
+        "workday:hpe/a": [24, 25, 20],  # non-tech in the denominator, like `totals`
+    }
+    assert d["totals"] == [64, 65, 64]
+    assert d["history_start"] == _T1
+    assert company_trends.get("/trends").get_json()["history_start"] is None
+
+
+def test_twins_on_one_ats_are_told_apart_by_key(company_trends):
+    d = company_trends.get(
+        "/trends?split=company&company=workday:citi/2&company=workday:citibank/x"
+        "&company=eightfold:citi.eightfold.ai"
+    ).get_json()
+    assert sorted(c["label"] for c in d["companies"]) == [
+        "Citi (eightfold)",
+        "Citi (workday:citi/2)",
+        "Citi (workday:citibank/x)",
+    ]
+
+
 def test_company_combines_with_comparable_coverage(company_trends):
     """Picked, and counted only over Boards known at the base: the T2 Citi drops out."""
     d = company_trends.get(
@@ -1859,7 +1907,11 @@ def test_suggest_ranks_and_labels_companies(company_trends):
     d = company_trends.get("/companies/suggest?q=citi").get_json()
     got = [(c["label"], c["openings"], c["boards"]) for c in d["companies"]]
     # both Citis match exactly; more openings first, and each says which ATS it is
-    assert got == [("Citi (workday)", 44, 1), ("Citi (eightfold)", 3, 1)]
+    assert got == [
+        ("Citi (workday:citi/2)", 44, 1),
+        ("Citi (eightfold)", 3, 1),
+        ("Citi (workday:citibank/x)", 0, 1),
+    ]
     assert company_trends.get("/companies/suggest?q=hpe").get_json()["companies"][0][
         "atses"
     ] == ["workday"]

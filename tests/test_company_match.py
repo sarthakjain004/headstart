@@ -7,7 +7,7 @@ import pytest
 from headstart.company_match import Candidate, normalize, suggest, tier
 
 
-def _c(name: str, openings: int = 1, key: str | None = None) -> Candidate:
+def _company(name: str, openings: int = 1, key: str | None = None) -> Candidate:
     return Candidate(
         key=key or f"greenhouse:{name.lower()}",
         name=name,
@@ -22,6 +22,10 @@ def _c(name: str, openings: int = 1, key: str | None = None) -> Candidate:
         ("Burns & McDonnell", ["burns", "and", "mcdonnell"]),
         ("Nestlé S.A.", ["nestle"]),
         ("Acme, Inc.", ["acme"]),
+        ("Acme Pvt. Ltd.", ["acme"]),
+        # only a trailing legal form: a leading one is part of the name
+        ("SA Power Networks", ["sa", "power", "networks"]),
+        ("Co-op Group", ["co", "op", "group"]),
         # nothing but legal form still matches
         ("Private Limited", ["private", "limited"]),
     ],
@@ -51,7 +55,9 @@ def test_tier(query: str, name: str, expected: int | None) -> None:
 
 def test_a_better_tier_beats_more_openings() -> None:
     """An exact name wins over a bigger company that merely starts with the query."""
-    got = suggest("amazon", [_c("Amazon Robotics", 5000), _c("Amazon", 1)], limit=5)
+    got = suggest(
+        "amazon", [_company("Amazon Robotics", 5000), _company("Amazon", 1)], limit=5
+    )
     assert [c.name for c in got] == ["Amazon", "Amazon Robotics"]
 
 
@@ -60,8 +66,8 @@ def test_within_a_tier_more_openings_come_first() -> None:
     got = suggest(
         "amazon",
         [
-            _c("Amazon", 1, key="trakstar:amazon"),
-            _c("Amazon", 9214, key="amazon:www.amazon.jobs"),
+            _company("Amazon", 1, key="trakstar:amazon"),
+            _company("Amazon", 9214, key="amazon:www.amazon.jobs"),
         ],
         limit=5,
     )
@@ -69,7 +75,7 @@ def test_within_a_tier_more_openings_come_first() -> None:
 
 
 def test_limit_and_no_match() -> None:
-    companies = [_c(f"Acme {i}") for i in range(10)]
+    companies = [_company(f"Acme {i}") for i in range(10)]
     assert len(suggest("acme", companies, limit=3)) == 3
     assert suggest("zzz", companies, limit=3) == []
     assert suggest("  ", companies, limit=3) == []

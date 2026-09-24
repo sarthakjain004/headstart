@@ -330,7 +330,7 @@ def _board_openings(deltas: list[dict], version: int | None) -> Counter[str]:
     return openings
 
 
-def _candidates(
+def _build_candidates(
     companies: dict[str, dict], openings: Counter[str]
 ) -> list[company_match.Candidate]:
     return [
@@ -338,10 +338,18 @@ def _candidates(
             key=key,
             name=entry["name"],
             words=tuple(company_match.normalize(entry["name"])),
-            openings=sum(openings[board] for board in entry["boards"]),
+            openings=_company_openings(entry, openings),
         )
         for key, entry in companies.items()
     ]
+
+
+def _company_openings(entry: dict, openings: Counter[str]) -> int:
+    return sum(openings[board] for board in entry["boards"])
+
+
+def _company_atses(entry: dict) -> list[str]:
+    return sorted({ats_of(board) for board in entry["boards"]})
 
 
 _COMPANIES = _load_directory(_STATE / "data" / "state" / "company_directory.json")
@@ -349,7 +357,7 @@ _COMPANY_OF = {
     board: key for key, entry in _COMPANIES.items() for board in entry["boards"]
 }
 _OPENINGS = _board_openings(_TREND_DELTAS, _TRENDS[-1]["version"] if _TRENDS else None)
-_CANDIDATES = _candidates(_COMPANIES, _OPENINGS)
+_CANDIDATES = _build_candidates(_COMPANIES, _OPENINGS)
 # Email alerts (ADR-0035) — invite-only, so all three must be set before the panel appears:
 # the Google client id the sign-in button needs, and a token scoped to the Subscriptions
 # dataset alone (never the index token, which is read-only by design).
@@ -1266,8 +1274,10 @@ def trends():
     result links by the key it already carries. A company's counts exist only per Board, so a
     pick replays the Board-delta ledger and its history starts at that ledger's first tick.
     ``&split=company`` draws one series per picked company (with ``family``, within that
-    family), and ``companies`` echoes the picks with their labels. An unknown key is a 400, and
-    a deployment with no directory yet answers 503.
+    family), and ``companies`` echoes the picks with their labels. Under a pick, ``totals`` is
+    the picks' combined total and ``company_totals`` each pick's own, so a line split by company
+    can be a share of that company. ``history_start`` is the first run a pick is charted from.
+    An unknown key is a 400, and a deployment with no directory yet answers 503.
 
     ``totals`` carries the served table per stamp — narrowed by ``ats`` exactly like every
     other row here — so the caller can plot a **share** of what's currently in view rather than
@@ -1346,6 +1356,7 @@ def trends():
             base_stamp = first_charted
     else:
         trends_rows = _TRENDS
+        first_charted = None
     if since:
         trends_rows = [r for r in trends_rows if r["ts"] >= since]
     if until:
@@ -1407,27 +1418,41 @@ def trends():
     # That second case is an inference from row presence, not a recorded fact: a run where
     # nothing anywhere was new would read as unmeasured. At this corpus size that has never
     # happened, and the honest alternative (a per-run marker row) costs more than it settles.
-    measured = {r["ts"] for r in trends_rows if r["metric"] == "new"}
+    # A pick's own rows cannot answer it: one company can go a whole run with nothing new,
+    # which is a 0, not a gap. So under a pick the whole ledger says which runs measured `new`.
+    measured = {
+        r["ts"]
+        for r in (_TRENDS if company_of else trends_rows)
+        if r["metric"] == "new"
+    }
 
     def value_at(points: dict[str, int], ts: str) -> int | None:
         """A series' value at one stamp — 0 where the metric ran and found none, else None."""
         return points.get(ts, 0 if metric == "new" and ts in measured else None)
 
-    series: dict[str, dict[str, int]] = {}
+    picked_keys = sorted(set(company_of.values())) if company_of else []
+    # A pick with rows in scope gets a line even when this metric has none of them — for `new`,
+    # "nothing opened this week" is a line at 0, and a company silently missing from the legend
+    # would read as a bug. A pick with no rows at all (outside a comparable cohort) gets none.
+    in_scope = {r["company"] for r in trends_rows} if key == "company" else set()
+    series: dict[str, dict[str, int]] = {k: {} for k in picked_keys if k in in_scope}
     for r in rows:  # sum over the other axis, so a family point is its total
         series.setdefault(r[key], {})
         at = series[r[key]]
         at[r["ts"]] = at.get(r["ts"], 0) + r["count"]
-    picked_keys = sorted(set(company_of.values())) if company_of else []
     company_labels = _company_labels(picked_keys)
+
+    def _series_label(name: str) -> str:
+        if key == "company":
+            return company_labels[name]
+        if name in _WATCH:
+            return _WATCH[name]["label"]
+        return _FAMILY_LABELS.get(name, name)
+
     out = [
         {
             "name": name,
-            "label": company_labels[name]
-            if key == "company"
-            else _WATCH[name]["label"]
-            if name in _WATCH
-            else _FAMILY_LABELS.get(name, name),
+            "label": _series_label(name),
             # None (not 0) where a run has no row for this series: a gap is "not measured",
             # and plotting it as zero would invent a crash that never happened. The "new"
             # metric refines that: count_groups writes only non-empty groups, so on a stamp
@@ -1444,6 +1469,12 @@ def trends():
     for row in stock:
         if row["family"] == _NON_TECH:
             non_tech[row["ts"]] = non_tech.get(row["ts"], 0) + row["count"]
+    # Each pick's own denominator, so a line split by company is a share of *that* company.
+    company_totals: dict[str, dict[str, int]] = {k: {} for k in picked_keys}
+    for row in stock:
+        if company_of and not row["family"].startswith(_WATCH_PREFIX):
+            at = company_totals[row["company"]]
+            at[row["ts"]] = at.get(row["ts"], 0) + row["count"]
     # Which families have watched sub-roles, so the UI can offer the roles drill only there.
     watch_parents = sorted({meta["parent"] for meta in _WATCH.values()})
     return jsonify(
@@ -1459,34 +1490,48 @@ def trends():
         watch_parents=watch_parents,
         epochs=epochs,
         companies=[_company_json(k, company_labels[k]) for k in picked_keys],
+        company_totals={
+            k: [company_totals[k].get(ts) for ts in stamps] for k in picked_keys
+        },
+        history_start=first_charted if company_of else None,
     )
 
 
-def _company_json(key: str, label: str | None = None) -> dict:
+def _company_json(key: str, label: str) -> dict:
     """A directory company as the picker and the chart show it."""
-    boards = _COMPANIES[key]["boards"]
+    entry = _COMPANIES[key]
     return {
         "key": key,
-        "name": _COMPANIES[key]["name"],
-        "label": label or _COMPANIES[key]["name"],
-        "atses": sorted({ats_of(board) for board in boards}),
-        "boards": len(boards),
-        "openings": sum(_OPENINGS[board] for board in boards),
+        "name": entry["name"],
+        "label": label,
+        "atses": _company_atses(entry),
+        "boards": len(entry["boards"]),
+        "openings": _company_openings(entry, _OPENINGS),
     }
 
 
 def _company_labels(keys: list[str]) -> dict[str, str]:
-    """Each company's name, with its ATSes appended where two picked companies share one.
+    """Each company's name, told apart from any other in ``keys`` that shares it.
 
     The directory keeps same-named employers apart when nothing proves them one (ADR-0185), so
-    "Citi" on Workday and "Citi" on Eightfold can both be picked and need telling apart.
+    "Citi" on Workday and "Citi" on Eightfold both appear, labelled by ATS. Two on the *same*
+    ATS (220 name pairs measured) are labelled by their key, the one thing they cannot share.
     """
     names = Counter(_COMPANIES[key]["name"] for key in keys)
+    with_ats = {
+        key: f"{_COMPANIES[key]['name']} ({', '.join(_company_atses(_COMPANIES[key]))})"
+        for key in keys
+    }
+    still_shared = Counter(with_ats.values())
     labels = {}
     for key in keys:
         name = _COMPANIES[key]["name"]
-        atses = sorted({ats_of(board) for board in _COMPANIES[key]["boards"]})
-        labels[key] = f"{name} ({', '.join(atses)})" if names[name] > 1 else name
+        if names[name] == 1:
+            labels[key] = name
+        elif still_shared[with_ats[key]] == 1:
+            labels[key] = with_ats[key]
+        else:
+            labels[key] = f"{name} ({key})"
     return labels
 
 
