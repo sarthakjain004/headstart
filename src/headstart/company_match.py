@@ -12,6 +12,14 @@ import unicodedata
 from dataclasses import dataclass
 
 #: Legal-form words that tell two spellings of one company apart without naming it.
+#:
+#: Two neighbours look like this list and are kept apart on purpose, because they answer other
+#: questions. `board_naming._LABEL_NOISE` drops a *host label* anywhere in a slug, where "ag",
+#: "bv" or "nv" is often the Tenant itself: widened to this list, it renamed 29 of 339,080
+#: Boards, Airbus's six `ag.wd3.myworkdayjobs.com` sites to "Ag.Wd3.Myworkdayjobs.Com" among
+#: them. `company_name`'s vendor-alias fold keeps letters only and drops no legal form: folded
+#: with `normalize` instead, 3 of 314,052 names changed verdict. Measured 2026-09-24 over the
+#: company directory's names and every liveness-ledger tenant.
 _LEGAL = frozenset(
     {
         "inc",
