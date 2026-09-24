@@ -90,8 +90,8 @@ Evidence for the first three is in `docs/discovery/2026-09-23_indeed-sweep-landi
   decision on reading a front whose backing tenant opts out.
 - **The unsupported ATSes the Indeed sweep resolved most companies to**, most first:
   ADP, Hireology, Cornerstone, Recruiterflow, Avature. (Breezy led that count, and ClearCompany
-  and Pinpoint followed; all three are now built, #579, #582 and #580, and their companies are a
-  landing still to do.)
+  and Pinpoint followed; all three are now built, #579, #582 and #580. Breezy's companies are
+  landed; ClearCompany's and Pinpoint's are a landing still to do.)
 - **SenseHQ** — the scraper is registered but has no ledger and no liveness probe, so none of its
   Boards can land.
 - **TurboHire** — token flow: `/api/token/noauth` (needs Referer), then `POST
