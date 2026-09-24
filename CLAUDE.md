@@ -52,7 +52,7 @@ discovery landing (#576) moved five more. Board totals belong in README and CONT
 - **Decide "new" by `board_key`, and land in the ledger's own spelling.** `check_liveness.py` keys
   a ledger on the raw `tenant` string, so a Board already held under another spelling lands as a
   second row. Match candidates through each scraper's `slug_from(tenant, url)` and `board_key` (the
-  identity `load_active_companies` uses), and write new rows in that ledger's majority form:
+  identity `scrapable_boards.load` uses), and write new rows in that ledger's majority form:
   Workday keys a Board as `{co}.wdN.myworkdayjobs.com/{site}`, Personio and Zoho as a bare label,
   Taleo BE as `ORG:CWS@host/path`. `url` is the Board's public URL, never the probe's endpoint.
 - **Phenom carries only skins whose backing Board we do not already hold.** Phenom is a career-site
@@ -416,9 +416,9 @@ caught:
   by the raw ledger row.
 - **Stale casing duplicates** (found fixing #202/PR #226) — a prober-side casing-normalization
   change left the old-cased row behind instead of replacing it; 1,843 pairs in one ledger, one
-  root cause. `_dedupe_boards`'s lexicographic tie-break (`config.py`) usually papers over this
-  silently, but picks the **older** row whenever old and new disagree in ASCII order — which
-  matters when the two rows also disagree on *verdict*, not just casing: two boards stayed in
+  root cause. `_dedupe_boards`'s lexicographic tie-break (`scrapable_boards.py`) usually papers
+  over this silently, but picks the **older** row whenever old and new disagree in ASCII order —
+  which matters when the two rows also disagree on *verdict*, not just casing: two boards stayed in
   the active scrape list after the newer probe had already found them `dead`, because the stale
   `live` row kept winning the tie-break. Diagnostic: for a ledger with real duplicate rows, check
   whether the tie-break's survivor is the newest-verified data, not just count how many boards
@@ -427,7 +427,7 @@ caught:
 None of these are caught by `_dedupe_boards()`/`_drop_parked` alone — that mechanism assumes
 duplicate rows differ only cosmetically (casing, URL form) and always agree on which board they
 name and whether it's live. A raw `wc -l` or per-row count on a liveness CSV overstates board
-count by however many duplicates exist; go through `load_active_companies()` (or an equivalent
+count by however many duplicates exist; go through `scrapable_boards.load()` (or an equivalent
 `board_key()`-grouped count) for anything that needs to be accurate, not the CSV directly.
 
 ### Reading eviction, flapping, or "we deleted a live job" data

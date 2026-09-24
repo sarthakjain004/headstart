@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import pytest
 
-from headstart.config import load_active_companies
 from headstart.ingest.index_plan import (
     _live_board_end,
     apply_sync,
@@ -22,6 +21,7 @@ from headstart.ingest.index_plan import (
     scraped_boards,
     workday_site_jobs,
 )
+from headstart.scrapable_boards import load as load_scrapable_boards
 from headstart.scrapers.greenhouse import GreenhouseScraper
 from headstart.scrapers.personio import PersonioScraper
 from headstart.scrapers.workday import WorkdayScraper
@@ -239,7 +239,7 @@ _CASE_VARIANT_SITES = ("External", "external", "EXTERNAL")
 def test_prune_keeps_the_casing_the_scrape_emits(tmp_path):
     """The casing a scrape emits and the casing prune keeps must be the same one.
 
-    They agree structurally rather than by coincidence: ``load_active_companies`` collapses a
+    They agree structurally rather than by coincidence: ``scrapable_boards.load`` collapses a
     Board's case-variant ledger rows to one entry, and *both* consumers read that same deduped
     list — the scrape to decide what to fetch, ``live_keep_set`` to build the keep-set prune keeps
     rows against. One choice, made once, consumed twice. This pins the join end to end, from ledger
@@ -256,7 +256,7 @@ def test_prune_keeps_the_casing_the_scrape_emits(tmp_path):
     ]
     (ledger / "workday.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
 
-    scraped = load_active_companies(ledger, min_jobs=0)
+    scraped = load_scrapable_boards(ledger, min_jobs=0)
     assert len(scraped) == 1  # one Board is fetched, not three
     emitted = WorkdayScraper(scraped[0].slug).board_key()
 
@@ -692,19 +692,21 @@ def test_only_the_first_keyless_board_carries_a_stack(monkeypatch, caplog):
     the formatter silently dropped `exc_info`; a real flood once it renders them."""
     import logging
 
-    from headstart import config
     from headstart.ingest import index_plan
+    from headstart.scrapable_boards import ScrapableBoard
     from headstart.scrapers import registry
 
     def explode(*_args, **_kwargs):
         raise ValueError("no key")
 
+    # Built before the patch, as `scrapable_boards.load` builds them: each already holds its
+    # identity, so only `live_keep_set`'s own strict `board_key` call meets the failure.
+    companies = [ScrapableBoard(ats="keka", slug=f"acme{n}") for n in range(4)]
     # `live_keep_set` raises through `board_identity.board_key`, which resolves `get_scraper`
     # from the registry module lazily (a fresh look-up per call) rather than holding its own
     # module-level reference — so the registry itself is what must be patched.
     monkeypatch.setattr(registry, "get_scraper", explode)
-    companies = [config.CompanyRef(ats="keka", slug=f"acme{n}") for n in range(4)]
-    monkeypatch.setattr(index_plan, "load_active_companies", lambda *a, **k: companies)
+    monkeypatch.setattr(index_plan.scrapable_boards, "load", lambda *a, **k: companies)
 
     with caplog.at_level(logging.INFO, logger="headstart.ingest.index_plan"):
         index_plan.live_keep_set("data/validate/liveness")

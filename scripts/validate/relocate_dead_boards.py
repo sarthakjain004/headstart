@@ -112,7 +112,7 @@ def url_template(ats: str, rows: dict) -> str | None:
 def derives_back(ats: str, slug: str, url: str) -> bool:
     """Would the pipeline rebuild ``slug`` from this row?
 
-    ``load_active_companies`` does not use the ledger's slug directly — it calls
+    ``scrapable_boards.load`` does not use the ledger's slug directly — it calls
     ``scraper.slug_from(tenant, url)``. For most ATSes that returns the tenant and the url is
     decoration, but personio and zoho derive the slug *from the url* (their slug is the whole host),
     so a plausible-looking url that reads back as something else would quietly scrape a different
@@ -306,7 +306,7 @@ def main() -> int:
         existing = new.get(new_slug)
         url = existing.url if existing else template.format(tenant=new_slug)
         if not derives_back(new_ats, new_slug, url):
-            # the url column is not decoration: `load_active_companies` feeds it to `slug_from` to
+            # the url column is not decoration: `scrapable_boards.load` feeds it to `slug_from` to
             # rebuild the slug. A url the scraper reads back as something else would silently
             # scrape the wrong Board, so refuse it rather than infer harder.
             print(
