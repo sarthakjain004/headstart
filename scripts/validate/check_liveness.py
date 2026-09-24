@@ -104,7 +104,7 @@ from headstart.scrapers.lever import (
 from headstart.scrapers.lever import (
     GLOBAL_API_HOST as _LEVER_GLOBAL_API_HOST,
 )
-from headstart.scrapers.registry import (  # slug_from, per ATS
+from headstart.scrapers.registry import (  # the row-to-Board funnel, per ATS
     SCRAPERS,
     company_from_row,
 )
@@ -1947,7 +1947,8 @@ def p_adp(t, u):
     # unresolvable name says nothing about a tenant. Measured 2026-09-24: the local resolver
     # failed `workforcenow.adp.com` mid-pass while the host kept answering, which the generic
     # `status == "dns"` rule wrote down as dead Boards (breezy's lesson, ADR-0181).
-    cid, _, cc = _slug_of("adp", t, u).partition("/")
+    scraper = _scraper_for_row("adp", t, u)  # every ledger row is `{cid}/{ccId}`
+    cid, cc = scraper.cid, scraper.cc_id
     status, body = _get(locales_url(cid, cc))
     if status == "dns":
         _note("dns-on-fixed-host")
@@ -2005,7 +2006,7 @@ def p_adp_recruiting(t, u):
     #
     # No rate limit was found (2,500 requests at 128-wide), so the host is not seeded in
     # `_GATES`. A DNS failure is UNKNOWN: every site is on the one fixed host.
-    slug = SCRAPERS["adp_recruiting"].slug_from(t, u)
+    slug = _slug_of("adp_recruiting", t, u)
     status, body = _get(
         _adp_recruiting.site_url(slug), headers=_adp_recruiting.request_headers()
     )

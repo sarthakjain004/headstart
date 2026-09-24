@@ -70,10 +70,11 @@ one of several hosts has one shape for it, `listing_url_on(<where>)`:
 - **These probes ask their own request on the Scraper's slug**, each cheaper one with its reason
   in a comment: greenhouse (no `content=true`), ashby (no `includeCompensation`), workable (no
   `details`), breezy (no `verbose`), smartrecruiters (`limit=10`), oracle and pyjamahr's listing
-  (a limit of 1 against a stated total). adp, darwinbox and zwayam build theirs from the
-  Scraper's own helpers.
+  (a limit of 1 against a stated total). adp (the Scraper's own `cid`/`cc_id`), darwinbox and
+  zwayam build theirs from the Scraper's own helpers.
 - cornerstone and jibe already went through `slug_from`; they now take it from `_slug_of`
-  like the rest. **Left as it was:** eightfold, which another change is editing now. Its
+  like the rest, and so does `p_adp_recruiting`, the 36th probe, which landed (ADR-0202) while
+  this was in review. **Left as it was:** eightfold, which another change is editing now. Its
   Scraper keeps the default `slug_from`, so its probe asks the same URL either way.
 
 The browser checker's builders take the slug too, and `probe_icims.py` asks `ICIMSScraper.url()`.
@@ -135,8 +136,9 @@ changed on none. Live A/B in one headless Chrome on 12 of the 50 rows (10 live, 
 - `alias_key_of_landing` is the extension point for an ATS whose alias key is not a host. An ATS
   whose signal is not a redirect off `url()` still overrides `alias_key` whole, as Workday and the
   single source Scrapers do.
-- `taleo_enterprise_subset_sections.py` still calls `TaleoEnterpriseScraper.slug_from` itself.
-  It reads one ATS and names its Scraper class, so it has no lookup to share.
+- `taleo_enterprise_subset_sections.py` and `adp_recruiting_subset_sites.py` still call their
+  Scraper's `slug_from` themselves. Each reads one ATS and names its Scraper class, so it has no
+  lookup to share.
 - `taleo_be.slug_from`/`board_key` and `taleo_enterprise.slug_from`/`board_key` are still
   textually identical over two different `_canonical`s. A shared base for two classes was not
   worth it.

@@ -106,10 +106,15 @@ def load(ledger_dir: str | Path, *, min_jobs: int = 1) -> list[ScrapableBoard]:
         for verdict in liveness.load(csv_path).values():
             if verdict.status != liveness.LIVE or (verdict.jobs or 0) < min_jobs:
                 continue
-            row = company_from_row(scraper.ats, verdict.tenant, verdict.url)
-            if is_excluded(row.ats, row.slug) or row.slug.lower() in aliases:
+            company = company_from_row(scraper.ats, verdict.tenant, verdict.url)
+            if (
+                is_excluded(company.ats, company.slug)
+                or company.slug.lower() in aliases
+            ):
                 continue
-            boards.append(ScrapableBoard(ats=row.ats, slug=row.slug, name=row.name))
+            boards.append(
+                ScrapableBoard(ats=company.ats, slug=company.slug, name=company.name)
+            )
     return _drop_parked(_dedupe_boards(boards))
 
 
