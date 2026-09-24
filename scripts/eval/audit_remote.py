@@ -38,7 +38,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
 
-from headstart.config import load_active_companies
+from headstart import scrapable_boards
 from headstart.models import is_remote
 from headstart.scrapers.registry import SCRAPERS, get_scraper
 
@@ -78,7 +78,7 @@ def _snippet(desc: str, match: re.Match | None, width: int = 90) -> str:
 
 def sample_boards(ats: str, n: int, seed: int):
     """N boards for one ATS, seed-stable and prefix-stable (a 100 sample ⊇ the 50 sample)."""
-    pool = [c for c in load_active_companies(_LEDGER, min_jobs=1) if c.ats == ats]
+    pool = [c for c in scrapable_boards.load(_LEDGER, min_jobs=1) if c.ats == ats]
     pool.sort(key=lambda c: c.slug)
     shuffled = random.Random(seed).sample(
         pool, len(pool)

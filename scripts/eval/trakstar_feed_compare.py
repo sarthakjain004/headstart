@@ -36,7 +36,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from headstart.config import load_active_companies
+from headstart import scrapable_boards
 from headstart.scrapers.registry import get_scraper
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -131,7 +131,7 @@ def main() -> int:
     parser.add_argument("--workers", type=int, default=_DEFAULT_WORKERS)
     args = parser.parse_args()
 
-    companies = [c for c in load_active_companies(LEDGER_DIR) if c.ats == "trakstar"]
+    companies = [c for c in scrapable_boards.load(LEDGER_DIR) if c.ats == "trakstar"]
     random.seed(args.seed)
     sample = random.sample(companies, min(args.n, len(companies)))
 

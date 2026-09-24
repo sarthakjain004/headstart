@@ -15,7 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from headstart.config import CompanyRef, load_active_companies
+from headstart import scrapable_boards
+from headstart.config import CompanyRef
 from headstart.scrapers.registry import get_scraper
 
 LEDGERS = Path(__file__).resolve().parents[1] / "data" / "validate" / "liveness"
@@ -34,13 +35,13 @@ EXPECTED = {
 
 
 def _single_board(ats: str) -> CompanyRef:
-    """This ATS's one Board, via `load_active_companies` rather than the CSV.
+    """This ATS's one Board, via `scrapable_boards.load` rather than the CSV.
 
     CLAUDE.md is explicit that a liveness ledger is read through that function and never the file:
     it is what applies `board_key()`-grouped dedupe and the parked-Board filter, so a raw CSV read
     can disagree with what the pipeline actually scrapes.
     """
-    boards = [c for c in load_active_companies(LEDGERS) if c.ats == ats]
+    boards = [c for c in scrapable_boards.load(LEDGERS) if c.ats == ats]
     assert len(boards) == 1, (
         f"{ats} is a Single source scraper with {len(boards)} Boards"
     )

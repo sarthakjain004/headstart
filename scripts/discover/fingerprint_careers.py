@@ -96,8 +96,9 @@ from fingerprint_deep import (
 from fingerprint_job_evidence import check_jobs
 from wayback_feeder import ADP_HOST, ADP_PAGE_PATH, extract
 
+from headstart import scrapable_boards
 from headstart.board_identity import board_key, lower_key
-from headstart.config import CompanyRef, load_active_companies
+from headstart.config import CompanyRef
 from headstart.scrapers import registry
 
 try:
@@ -1922,7 +1923,7 @@ def cmd_verify(args) -> None:
         rows = [r for r in rows if r["ats"] in keep]
     live = {
         lower_key(board_key(company))
-        for company in load_active_companies(
+        for company in scrapable_boards.load(
             ROOT / "data/validate/liveness", min_jobs=0
         )
     }

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bounded nightly harvest for the CI pipeline (ADR-0020, ADR-0022) — a priority-first slice.
 
-Builds the scrape list straight from the committed liveness ledger (``config.load_active_companies``
+Builds the scrape list straight from the committed liveness ledger (``scrapable_boards.load``
 with ``min_jobs=0``, so a board that dropped to zero postings is still scraped and its index rows
 evict), then orders it by the board-priority ledger: boards with tech-job history first (highest
 score first, so a time-budget-truncated run still covers the top boards), with an exploration tail
@@ -28,10 +28,9 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from headstart import fanout_stats, http, log, spare_egress
-from headstart.board_identity import board_identity
+from headstart import fanout_stats, http, log, scrapable_boards, spare_egress
 from headstart.board_priority import load_scores, pick_boards
-from headstart.config import CompanyRef, load_active_companies
+from headstart.config import CompanyRef
 from headstart.harvest import scrape_all
 from headstart.ingest import HELD_DETAILS_PATH, REPO_ROOT, observability, shard_plan
 
@@ -337,10 +336,10 @@ def main() -> int:
             else "detail skip-list: absent — every detail will be fetched"
         )
     else:
-        companies = load_active_companies(_LEDGER, min_jobs=0)
+        companies = scrapable_boards.load(_LEDGER, min_jobs=0)
         scores = load_scores(_PRIORITY)
         companies = pick_boards(companies, scores, args.max_boards)
-        priority = sum(1 for c in companies if scores.get(board_identity(c), 0.0) > 0.0)
+        priority = sum(1 for c in companies if scores.get(c.identity, 0.0) > 0.0)
         _log.info(
             f"harvest: {len(companies)} boards this run "
             f"({priority} priority + {len(companies) - priority} exploration)"
