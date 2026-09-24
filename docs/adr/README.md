@@ -202,6 +202,7 @@ supersedes it and note the supersession in both.
 | [0201](0201-a-scraper-states-its-detail-request-once-and-the-base-runs-the-pass.md) | A Scraper states its detail request once, and the base runs the Detail pass | 2026-09-24 |
 | [0202](0202-an-adp-recruiting-board-is-a-career-site-read-through-its-token.md) | An ADP Recruiting Management Board is a career site, read through its token in the default language | 2026-09-24 |
 | [0203](0203-a-row-becomes-a-board-only-through-its-scraper.md) | A ledger row becomes a Board only through its Scraper | 2026-09-24 |
+| [0204](0204-a-scrapers-fetcher-is-bound-to-its-board.md) | A scraper's fetcher is bound to its Board | 2026-09-24 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*
