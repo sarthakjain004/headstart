@@ -20,7 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
-from headstart.scrapers.registry import SCRAPERS, get_scraper
+from headstart.scrapers.registry import SCRAPERS, company_from_row, get_scraper
 
 MERGED = ROOT / "data" / "ats-tenants-merged"
 WORKERS = 16
@@ -28,13 +28,13 @@ WORKERS = 16
 
 def load_pool(ats: str, n: int) -> list[tuple[str, str]]:
     """An evenly-strided sample of (slug, company) from the pool CSV."""
-    cls = SCRAPERS[ats]
     rows: list[tuple[str, str]] = []
     with (MERGED / f"{ats}.csv").open(encoding="utf-8") as f:
         for r in csv.DictReader(f):
-            t, u = (r.get("tenant") or "").strip(), (r.get("url") or "").strip()
-            if t:
-                rows.append((cls.slug_from(t, u), t))
+            tenant, url = (r.get("tenant") or "").strip(), (r.get("url") or "").strip()
+            if tenant:
+                company = company_from_row(ats, tenant, url)
+                rows.append((company.slug, company.name))
     if len(rows) <= n:
         return rows
     stride = len(rows) / n

@@ -2,7 +2,7 @@
 ``headstart.http`` and ``headstart.browser_http`` can each sit behind it as a real adapter
 instead of a scraper reaching a module global directly.
 
-Two capabilities, not one artificially merged shape:
+Three capabilities, not one artificially merged shape:
 
 - ``fetch`` — issue one request, return whatever settles (a status code, a ``.json()``, a
   ``.raise_for_status()`` — the slice of ``curl_cffi``'s ``Response`` every caller in this repo
@@ -19,6 +19,13 @@ Two capabilities, not one artificially merged shape:
   ``fetch`` only, because darwinbox's browser escalation never runs a multiplexed detail pass
   (see that module's docstring) — forcing a ``fetch_async`` onto one warmed tab would be the
   unnatural shape this protocol is deliberately declining to invent.
+- ``clear_cookies`` — forget the cookies this fetcher holds, for one ``domain`` or all of them
+  (ADR-0199). A cookie jar is transport state a scraper cannot otherwise reach through the seam,
+  and two scrapers need to reset it: Workday answers a stale session cookie with a 400 that only a
+  cleared jar cures (ADR-0103), and Cornerstone's career-site page leaves cookies that make its
+  tenant host refuse the session header. A domain the jar holds nothing for is not an error —
+  there was nothing to forget. ``BrowserFetcher`` leaves this unimplemented too (its docstring
+  says why).
 """
 
 from __future__ import annotations
@@ -38,4 +45,8 @@ class Fetcher(Protocol):
         self, session: Any, method: str, url: str, **kwargs: Any
     ) -> Any:
         """The multiplexed counterpart to :meth:`fetch`, over a caller-supplied session."""
+        ...
+
+    def clear_cookies(self, domain: str | None = None) -> None:
+        """Forget this fetcher's cookies for ``domain``, or every cookie when it is None."""
         ...

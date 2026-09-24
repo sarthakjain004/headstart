@@ -40,7 +40,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from headstart import board_aliases, liveness
-from headstart.scrapers.registry import SCRAPERS
+from headstart.scrapers.registry import SCRAPERS, company_from_row
 
 #: Probe width. These are one cheap header-only GET each against ~2,200 distinct hosts, so the
 #: bound is politeness to nobody in particular — no single origin sees more than a couple.
@@ -132,7 +132,7 @@ def main() -> int:
     ledger = liveness.load(ledger_path)
     live = sorted(
         {
-            scraper_cls.slug_from(v.tenant, v.url)
+            company_from_row(args.ats, v.tenant, v.url).slug
             for v in ledger.values()
             if v.status == liveness.LIVE
         }
