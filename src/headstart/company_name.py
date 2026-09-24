@@ -106,6 +106,14 @@ _CAREERS_WRAPPER = (
     re.compile(r"^(?P<name>.+?)\s+Careers$", re.IGNORECASE),
 )
 
+# A jibe title's name part where nothing else fences it: refuses text naming a page rather than an
+# employer ("Careers Home Apply", "Home Apply", "Explore Exciting Career Opportunities | Careers
+# Home", "Blackhawk Talent Network"), each observed on the 2026-09-24 client census.
+_JIBE_NAME = (
+    r"(?P<name>(?!.*\b(?:careers?|jobs?|home|apply|about|search|page|opportunit\w*"
+    r"|company|talent|network|welcome)\b).+?)"
+)
+
 PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     # adp: not a title at all. Workforce Now's page title is the literal "Recruitment" on every
     # career center, and nothing a browser renders names the employer; its `client-features`
@@ -119,6 +127,26 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     # bare GET. ~95% follow "{Name} Careers" (case varies: "a16z speedrun careers"), the exact
     # wrapper eightfold/jobvite/keka already use.
     "gem": _CAREERS_WRAPPER,
+    # jibe: the client host's `/jobs` page, 1,116 live clients sampled 2026-09-24. The titles are a
+    # handful of wrappers — "{Name} Careers" (200), "{Name} Apply", "{Name} Job Search - Jobs",
+    # "Home | {Name} Careers", "{Name} | Careers" — or the bare legal name ("CommonSpirit Health",
+    # "Andersen Tax LLC"). The bare-name catch-all refuses any title naming a page rather than an
+    # employer ("Careers Home", "Career Home Page", "Company", "Blackhawk Talent Network"). 887 of
+    # the 1,116 resolve; the rest keep their slug, which on this ATS is a readable word.
+    "jibe": (
+        re.compile(
+            r"^Home\s*\|\s*(?P<name>.+?)\s+Careers(?:\s+Apply)?$", re.IGNORECASE
+        ),
+        re.compile(r"^(?:Careers?|Working)\s+at\s+(?P<name>.+?)$", re.IGNORECASE),
+        re.compile(r"^Careers?\s*\|\s*(?P<name>.+?)$", re.IGNORECASE),
+        re.compile(r"^" + _JIBE_NAME + r"\s*\|\s*Careers(?:\s+Home)?$", re.IGNORECASE),
+        re.compile(
+            r"^(?P<name>.+?)\s+(?:Careers?|Jobs|Job Search - Jobs)(?:\s+Home)?(?:\s+Apply)?$",
+            re.IGNORECASE,
+        ),
+        re.compile(r"^" + _JIBE_NAME + r"\s+Apply$", re.IGNORECASE),
+        re.compile(r"^" + _JIBE_NAME + r"$", re.IGNORECASE),
+    ),
     # jobvite: every board titles itself "{Name} Careers"; 424 of 434 live boards resolve
     # (2026-09-07). See JobviteScraper.board_page.
     "jobvite": _CAREERS_WRAPPER,
@@ -228,6 +256,7 @@ _VENDOR_ALIASES: dict[str, frozenset[str]] = {
     "adp": frozenset({"adp", "automaticdataprocessing"}),
     "ashby": frozenset({"ashby", "ashbyhq"}),
     "eightfold": frozenset({"eightfold", "eightfoldai"}),
+    "jibe": frozenset({"jibe", "jibeapply", "icims"}),
     "jobvite": frozenset({"jobvite"}),
     "keka": frozenset({"keka"}),
     "lever": frozenset({"lever"}),

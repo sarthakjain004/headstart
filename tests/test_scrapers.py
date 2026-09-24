@@ -10359,6 +10359,14 @@ _RESOLVE_ROWS = [
         "Accel",
         "https://jobs.gem.com/accel",
     ),
+    (
+        # The client host's `/jobs` page; 200 of 1,116 clients title it "{Name} Careers".
+        "jibe",
+        "rmeducation",
+        "RM Education Limited Careers",
+        "RM Education Limited",
+        "https://rmeducation.jibeapply.com/jobs",
+    ),
 ]
 
 
@@ -10384,6 +10392,11 @@ def test_every_wired_scraper_resolves_its_company(
     scraper = get_scraper(ats, slug, slug)
     scraper.resolve_company()
     assert scraper.company == expected
+    # jibe reads the host's robots.txt before any other request to it (ADR-0189); the fake
+    # answers that with the same page, whose absent rules allow everything.
+    if ats == "jibe":
+        assert seen[0].endswith("/robots.txt")
+        seen = seen[1:]
     assert seen == [url]
 
 

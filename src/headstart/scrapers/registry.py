@@ -22,6 +22,7 @@ from headstart.scrapers.google import GoogleScraper
 from headstart.scrapers.greenhouse import GreenhouseScraper
 from headstart.scrapers.icims import ICIMSScraper
 from headstart.scrapers.jazzhr import JazzHRScraper
+from headstart.scrapers.jibe import JibeScraper
 from headstart.scrapers.jobvite import JobviteScraper
 from headstart.scrapers.join import JoinScraper
 from headstart.scrapers.keka import KekaScraper
@@ -86,6 +87,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         PinpointScraper,
         PyjamaHRScraper,
         JazzHRScraper,
+        JibeScraper,
         JobviteScraper,
         TeslaScraper,
         ADPScraper,
