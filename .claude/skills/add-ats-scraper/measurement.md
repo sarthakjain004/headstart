@@ -8,6 +8,10 @@ Chrome TLS) when a host walls plain curl; `headstart.browser_http` or a real bro
 the board is a client-rendered SPA and you need to see its XHRs. Write every probe script to
 disk under `experiment/{ats}-{surface}/` so the numbers can be re-derived.
 
+**Measure the rate limit (Q19) before any parallel probe.** ADP allows 200 requests per fixed
+60-second window across every tenant; a parallel census trips it within seconds and poisons
+every measurement taken after.
+
 ## Identity
 
 1. **What is a Board's slug?** A subdomain label, a path segment, a host, a URL, a numeric id? Is
@@ -40,13 +44,13 @@ disk under `experiment/{ats}-{surface}/` so the numbers can be re-derived.
    cheapest complete surface `robots.txt` allows, and say why the others lost (icims reads only
    its sitemap: the Boards whose HTML walk 403'd were exactly the ones serving `Disallow: /`).
    Ask each surface the way a browser does: pages can negotiate on `Accept` (Pinpoint's posting
-   pages answer a JSON `Accept` with 406).
+   pages answer `BaseScraper._get`'s default `Accept: application/json, text/html` with 406).
 4. **How does it paginate, and what terminates the walk?** Does the stated total match the rows
    served on every Board you measured? Does `hasMore`/`next` tell the truth (oracle's `hasMore`
    was false on a 248-posting Board)? Is there a page-size clamp (phenom silently clamps `size`
    at 500) or a hard window (phenom stops at `from + size >= 10000`, with the total reading 0
-   past it)? Where does the offset start (ADP's `$skip` counts from 1; upstream's 0 read a row
-   twice)? Measure on the **largest** Board you can find, not a typical one.
+   past it)? Where does the offset start (ADP's `$skip` counts from 1: `$skip=0` returns one row
+   short, and upstream's `0, 19, 39, …` walk read a row twice)? Measure on the **largest** Board you can find, not a typical one.
 5. **Is any parameter a filter rather than an address?** A wrong filter value can still answer
    200 with a well-formed empty envelope (oracle's hardcoded `siteNumber=CX_1` was wrong for 929
    of 1,331 Boards, silently; ADP's `lang` returns an empty list with no total for a language
@@ -65,11 +69,16 @@ disk under `experiment/{ats}-{surface}/` so the numbers can be re-derived.
    tenants from the pool, not on an invented slug alone. `GET /` returning 200 proves nothing: 9
    of 12 Boards already known dead answered it with 200 (#160). On a wildcard DNS zone
    (`*.breezy.hr`) no tenant is ever unresolvable, so a DNS failure is the resolver, never a
-   verdict: at 432 prober workers it wrote 41 live Breezy Boards dead. Re-ask before believing an
-   empty listing — Pinpoint's came back spuriously empty on 12 of 6,030 fetches.
+   verdict: the first 432-worker Breezy pass, reading DNS failures as dead, wrote 41 live Boards
+   dead.
 8a. **What does a user's click reach?** A listing can name postings whose links 404 or redirect
-   off-platform: 20 Pinpoint Boards (1,273 postings) did. Where that happens, probe liveness on
-   a posting URL — what the user would actually open — rather than on the board root.
+   off-platform: 20 Pinpoint Boards (1,273 postings) did when asked as a browser asks
+   (`Accept: text/html`), while curl's `*/*` rendered them. Where that happens, probe liveness on
+   a posting URL with a browser `Accept` — what the user would actually open — rather than on
+   the board root.
+8b. **Can an empty listing be wrong?** Re-fetch a sample of empty listings: Pinpoint's came back
+   spuriously empty on 12 of 6,030 fetches, so its scraper and prober both ask again before
+   believing an empty one.
 9. **Where does a departed tenant go?** A redirect to the vendor's marketing site, a parked
    page, a 410? That is the dead verdict the prober keys on. The prober's `_get` follows
    redirects, so a redirect-dead tenant reads as a 200 of marketing HTML — `body-unparseable`,
@@ -82,13 +91,13 @@ disk under `experiment/{ats}-{surface}/` so the numbers can be re-derived.
     share of postings that carry it on the listing versus the detail, across many Boards.
 11. **What does the detail need?** A tenant key, a header, a query flag (icims' detail without
     `in_iframe=1` returns an 80 KB wrapper with no JSON-LD — a silent empty, not an error)? What
-    charset does it arrive in (443 of 510 HRM Direct pages were cp1252, not UTF-8, and some feeds
-    mix cp1252, UTF-8 and double-encoded bytes in one document)?
+    charset does it arrive in (443 of 510 HRM Direct pages were cp1252, not UTF-8, and HRM
+    Direct's `xml.php` mixes cp1252, UTF-8 and double-encoded bytes in one document)?
 11b. **Is there a token?** For a token scraped from the page (csod embeds a per-corp JWT in
     `csod.context.token`, with an API host on a regional pod such as `eu-fra.api.csod.com`):
     its lifetime, whether it is per tenant or per site, what an expired one returns (a 401, or a
     200 empty), and which host the API calls go to — gate and rate-limit on that host. Does a
-    second host want it as a cookie too (csod's US pods: `ASP.NET_SessionId={jwt.aud}` on the
+    second host want a value from it as a cookie (csod's US pods: `ASP.NET_SessionId={jwt.aud}` on the
     tenant host, 14 of 14 401 without it and 40 of 40 200 with it)?
 12. **Can the tech gate run before the detail?** Does the listing state `title` and
     `department`, and does the detail override either? Exact, approximation (measure the recall
@@ -126,22 +135,23 @@ disk under `experiment/{ats}-{surface}/` so the numbers can be re-derived.
     `companyName` named Blue Dart on a DHL Board). An applicant always sees the employer, so
     before concluding no surface names it, capture every XHR and asset the rendered page loads,
     every field of the detail (nested too) and the apply flow's first step: ADP's name was in a
-    `client-features` call (`ClientName`, 120 of 120 centers) after its first survey found none.
+    `client-features` call (`ClientName`, 120 of 120 centers), after an initial report that no
+    surface named the employer.
     A per-posting field on a page the steady-state scrape never fetches is not a Board-level
     name. If nothing does, the slug stays the name —
     which is acceptable for a readable label and not for an opaque one: `load_active_companies`
-    passes the ledger's `tenant` as the name, so a GUID slug (ADP's `cid`) displays as a GUID.
+    passes the ledger's `tenant` as the name, so a GUID slug (ADP's `cid`, before `ClientName`)
+    would display as a GUID.
     An opaque slug with no name surface is a **checkpoint**.
 
 ## Operating limits
 
-19. **Rate limit — measure it first**, before any parallel probe: ADP allows 200 requests per
-    fixed 60-second window across every tenant, so a parallel census trips it within seconds, and
-    its scraper paces through one process-wide throttle (`harvest` reads Boards concurrently).
-    Ramp concurrency (1, 4, 16, 32, 64, 128) on one tenant and record req/s,
+19. **Rate limit** (measured first — see the top). Ramp concurrency (1, 4, 16, 32, 64, 128) on
+    one tenant and record req/s,
     latency and every non-200; find the knee and ship below it. Then ramp **across many
-    tenants at once**: a shared edge meters the whole platform (upstream Breezy reports 403s at
-    ~14 req/s across tenants; jazzhr's Cloudflare zone did the same). Refusals that span tenants
+    tenants at once**: a shared edge can meter the whole platform (jazzhr's Cloudflare zone
+    does; upstream Breezy's claimed wall at ~14 req/s did not reproduce at 113 req/s — measure
+    it, don't inherit it). Refusals that span tenants
     need a `_SPANNING` + `_GATES` entry in `check_liveness.py` — an ungated jazzhr pass wrote
     2,740 `dead` rows, and 6 of 10 spot-checked were still live (#463). A bare 403 quota is a
     different mechanism: it reaches no gate unless its host is in `_QUOTA_403` (keyed by

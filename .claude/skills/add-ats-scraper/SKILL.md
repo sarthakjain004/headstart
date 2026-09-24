@@ -133,9 +133,11 @@ ATS's line removed from `CLAUDE.md`'s build list; `README.md`'s scraper count an
 figure in `README.md` and `CONTEXT.md` recomputed; CONTEXT.md's Detail-pass entry. Then invoke
 `verify-search-filters` in this PR (CLAUDE.md requires it): `URL_SHAPES` is generated from
 `url_shape` (ADR-0157), so its coverage gate passes now. Its live-row checks can only see rows the
-Space serves, which a new ATS has none of until the pipeline runs, and it signs in with a
-session cookie only the user can refresh (a Google sign-in); name that deferral in the PR and at
-the pre-merge checkpoint.
+Space serves, which a new ATS has none of until the pipeline runs. Without a fresh session
+cookie (`~/.headstart_session`, a Google sign-in only the user can do) the harness exits 2
+before any check, coverage gate included, so ask the user to refresh it; if they defer instead,
+name the whole harness as a post-pipeline follow-up in the PR and at the pre-merge
+checkpoint.
 
 **Done when** `pytest tests/test_board_counts.py` is green and every number you wrote traces to a
 command you ran.
