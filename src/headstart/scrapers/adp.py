@@ -391,6 +391,9 @@ class ADPScraper(BaseScraper):
             if self.needs_detail(_ext_id(r))
         ]
         details: dict[str, dict] = {}
+        # Composed from the primitives, not `run_detail_pass` (ADR-0201): each request waits on a
+        # process-wide pacer and a 429 rests every Board through the window, so the transport
+        # itself carries policy a request description cannot state.
         if wanted:
             if self.async_fanout_enabled():
                 fetched = self.fan_out_async(wanted, self._detail_async)
