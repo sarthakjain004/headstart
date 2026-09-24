@@ -146,8 +146,8 @@ the first 10 reqs, which is why containment is computed on the full listing.
 
 ## Consequences
 
-- **Scrapable Board** 130,310 → 129,990 (318 sections aliased, 2 pmg sections excluded); **Hiring
-  Board** 84,865 → 84,546.
+- **Scrapable Board** falls by 320 (318 sections aliased, 2 pmg sections excluded) and **Hiring
+  Board** by 319: 152,337 → 152,017 and 100,183 → 99,864 against the ledger at merge.
 - **274 duplicate rows stay served** (the table's 278 less pmg's 4, which its exclusion evicts),
   where maximal sections overlap: Hyatt 109 (`10780` and `10880` list only reqs other sections
   also list, but no single section lists all of either), BAE 83, dasstateoh 34, molgroup 15,

@@ -1,0 +1,1799 @@
+{
+ "coxpalmer_locales": {
+  "contentLinks": [],
+  "meta": {
+   "customFieldGroup": {
+    "stringFields": [
+     {
+      "stringValue": "D",
+      "nameCode": {
+       "codeValue": "LinkLocation"
+      }
+     },
+     {
+      "stringValue": "en_CA",
+      "nameCode": {
+       "codeValue": "Locale"
+      }
+     },
+     {
+      "stringValue": "fr_CA",
+      "nameCode": {
+       "codeValue": "Locale"
+      }
+     }
+    ]
+   }
+  }
+ },
+ "coxpalmer_client_features": {
+  "contentLinks": [],
+  "meta": {
+   "customFieldGroup": {
+    "stringFields": [
+     {
+      "nameCode": {}
+     },
+     {
+      "stringValue": "en_US",
+      "nameCode": {
+       "codeValue": "lang"
+      }
+     },
+     {
+      "stringValue": "en_CA",
+      "nameCode": {
+       "codeValue": "ClientDefaultLocale"
+      }
+     },
+     {
+      "stringValue": "A",
+      "nameCode": {
+       "codeValue": "ResumeUploadType"
+      }
+     },
+     {
+      "stringValue": "FFFFFFFFFFFFFFFF",
+      "nameCode": {
+       "codeValue": "AssociateID"
+      }
+     },
+     {
+      "stringValue": "cp10fb",
+      "nameCode": {
+       "codeValue": "ClientID"
+      }
+     },
+     {
+      "stringValue": "Client Live",
+      "nameCode": {
+       "codeValue": "ClientClassification"
+      }
+     },
+     {
+      "stringValue": "Cox & Palmer",
+      "nameCode": {
+       "codeValue": "ClientName"
+      }
+     },
+     {
+      "stringValue": "60",
+      "nameCode": {
+       "codeValue": "timer"
+      }
+     }
+    ]
+   }
+  }
+ },
+ "coxpalmer_listing_en_CA": {
+  "jobRequisitions": [
+   {
+    "itemID": "9201593170168_1",
+    "requisitionTitle": "Bilingual Litigation Legal Assistant",
+    "postDate": "2026-08-25T08:01:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "Full Time"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "577400",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1073",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "",
+       "countrySubdivisionLevel1": {
+        "codeValue": ""
+       },
+       "postalCode": ""
+      },
+      "nameCode": {}
+     }
+    ]
+   },
+   {
+    "itemID": "9201571157128_1",
+    "requisitionTitle": "Litigation Paralegal",
+    "postDate": "2026-07-15T08:01:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "Full Time"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "575647",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1069",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "",
+       "countrySubdivisionLevel1": {
+        "codeValue": ""
+       },
+       "postalCode": ""
+      },
+      "nameCode": {}
+     }
+    ]
+   },
+   {
+    "itemID": "9201529259895_1",
+    "requisitionTitle": "Bilingual Legal Assistant",
+    "postDate": "2026-04-16T08:02:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "Full Time"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "572423",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1065",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "",
+       "countrySubdivisionLevel1": {
+        "codeValue": ""
+       },
+       "postalCode": ""
+      },
+      "nameCode": {}
+     }
+    ]
+   },
+   {
+    "itemID": "9201159450727_1",
+    "requisitionTitle": "ASSOCIATE LAWYER",
+    "postDate": "2024-09-04T08:27:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "Full Time"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "541636",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1037",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "",
+       "countrySubdivisionLevel1": {
+        "codeValue": ""
+       },
+       "postalCode": ""
+      },
+      "nameCode": {}
+     }
+    ]
+   }
+  ],
+  "meta": {
+   "startSequence": 1,
+   "totalNumber": 4
+  }
+ },
+ "coxpalmer_detail_en_CA_577400": {
+  "itemID": "9201593170168_1",
+  "requisitionTitle": "Bilingual Litigation Legal Assistant",
+  "postDate": "2026-08-25T08:01:00.000-04:00",
+  "organizationalUnits": [],
+  "workLevelCode": {
+   "shortName": "Full Time"
+  },
+  "customFieldGroup": {
+   "codeFields": [],
+   "stringFields": [
+    {
+     "stringValue": "577400",
+     "nameCode": {
+      "codeValue": "ExternalJobID"
+     }
+    },
+    {
+     "stringValue": "",
+     "nameCode": {
+      "codeValue": "HomeDepartment"
+     }
+    },
+    {
+     "nameCode": {
+      "codeValue": "JobClass"
+     }
+    }
+   ]
+  },
+  "clientRequisitionID": "1073",
+  "requisitionDescription": "<div><div><p style='margin-top:0cm;margin-right:0cm;margin-bottom:10.0pt;margin-left:0cm;line-height:normal;font-size:16px;font-family:\"Franklin Gothic Book\",sans-serif;text-align:justify;' data-pasted=\"true\"><span style=\"font-size:14px;color:#3A3A3A;\">Join a team dedicated to delivering outstanding client service.</span></p><p style='margin-top:0cm;margin-right:0cm;margin-bottom:0cm;margin-left:0cm;line-height:normal;font-size:16px;font-family:\"Franklin Gothic Book\",sans-serif;text-align:justify;'><span style=\"font-size:14px;color:#3A3A3A;\">Cox &amp; Palmer is a full-service, top-ranked Atlan",
+  "requisitionLocations": [
+   {
+    "aliasNames": [],
+    "address": {
+     "cityName": "",
+     "countrySubdivisionLevel1": {
+      "codeValue": ""
+     },
+     "postalCode": ""
+    },
+    "nameCode": {}
+   }
+  ]
+ },
+ "coxpalmer_detail_en_CA_575647": {
+  "itemID": "9201571157128_1",
+  "requisitionTitle": "Litigation Paralegal",
+  "postDate": "2026-07-15T08:01:00.000-04:00",
+  "organizationalUnits": [],
+  "workLevelCode": {
+   "shortName": "Full Time"
+  },
+  "customFieldGroup": {
+   "codeFields": [],
+   "stringFields": [
+    {
+     "stringValue": "575647",
+     "nameCode": {
+      "codeValue": "ExternalJobID"
+     }
+    },
+    {
+     "stringValue": "",
+     "nameCode": {
+      "codeValue": "HomeDepartment"
+     }
+    },
+    {
+     "nameCode": {
+      "codeValue": "JobClass"
+     }
+    }
+   ]
+  },
+  "clientRequisitionID": "1069",
+  "requisitionDescription": "<div><div><div><link href=\"https://static.workforcenow.adp.com/mas/mdf-components/25.6.13/styles/froala_editor.pkgd.min.css\" rel=\"stylesheet\" type=\"text/css\"></div><p style='margin-top:0cm;margin-right:0cm;margin-bottom:0cm;margin-left:0cm;line-height:normal;font-size:16px;font-family:\"Franklin Gothic Book\",sans-serif;' data-pasted=\"true\"><strong><span style=\"font-size:17px;color:#E82C2E;\">Litigation Paralegal </span></strong><strong><span style=\"font-size:17px;color:#3A3A3A;\">|</span></strong><strong><span style=\"font-size:17px;color:#E82C2E;\">Saint John</span></strong></p><p style='margin-to",
+  "requisitionLocations": [
+   {
+    "aliasNames": [],
+    "address": {
+     "cityName": "",
+     "countrySubdivisionLevel1": {
+      "codeValue": ""
+     },
+     "postalCode": ""
+    },
+    "nameCode": {}
+   }
+  ]
+ },
+ "coxpalmer_listing_fr_CA": {
+  "jobRequisitions": [
+   {
+    "itemID": "9201593170168_1",
+    "requisitionTitle": "Adjointe ou adjoint juridique bilingue en litige ",
+    "postDate": "2026-08-25T08:01:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "Temps plein"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "577400",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1073",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "",
+       "countrySubdivisionLevel1": {
+        "codeValue": ""
+       },
+       "postalCode": ""
+      },
+      "nameCode": {}
+     }
+    ]
+   },
+   {
+    "itemID": "9201571157128_1",
+    "requisitionTitle": "Parajuriste en litige",
+    "postDate": "2026-07-15T08:01:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "Temps plein"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "575647",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1069",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "",
+       "countrySubdivisionLevel1": {
+        "codeValue": ""
+       },
+       "postalCode": ""
+      },
+      "nameCode": {}
+     }
+    ]
+   },
+   {
+    "itemID": "9201529259895_1",
+    "requisitionTitle": "Adjoint juridique bilingue",
+    "postDate": "2026-04-16T08:02:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "Temps plein"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "572423",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1065",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "",
+       "countrySubdivisionLevel1": {
+        "codeValue": ""
+       },
+       "postalCode": ""
+      },
+      "nameCode": {}
+     }
+    ]
+   },
+   {
+    "itemID": "9201159450727_1",
+    "requisitionTitle": "ASSCIATE LAWYER",
+    "postDate": "2024-09-04T08:27:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "Temps plein"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "541636",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1037",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "",
+       "countrySubdivisionLevel1": {
+        "codeValue": ""
+       },
+       "postalCode": ""
+      },
+      "nameCode": {}
+     }
+    ]
+   }
+  ],
+  "meta": {
+   "startSequence": 1,
+   "totalNumber": 4
+  }
+ },
+ "coxpalmer_detail_fr_CA_577400": {
+  "itemID": "9201593170168_1",
+  "requisitionTitle": "Adjointe ou adjoint juridique bilingue en litige ",
+  "postDate": "2026-08-25T08:01:00.000-04:00",
+  "organizationalUnits": [],
+  "workLevelCode": {
+   "shortName": "Temps plein"
+  },
+  "customFieldGroup": {
+   "codeFields": [],
+   "stringFields": [
+    {
+     "stringValue": "577400",
+     "nameCode": {
+      "codeValue": "ExternalJobID"
+     }
+    },
+    {
+     "stringValue": "",
+     "nameCode": {
+      "codeValue": "HomeDepartment"
+     }
+    },
+    {
+     "nameCode": {
+      "codeValue": "JobClass"
+     }
+    }
+   ]
+  },
+  "clientRequisitionID": "1073",
+  "requisitionDescription": "<div><div><p style='margin-top:0cm;margin-right:0cm;margin-bottom:10.0pt;margin-left:0cm;line-height:normal;font-size:16px;font-family:\"Franklin Gothic Book\",sans-serif;text-align:justify;' data-pasted=\"true\"><span style=\"font-size:12px;color:#3A3A3A;\">Faites partie d&rsquo;une &eacute;quipe qui se d&eacute;voue pour offrir un service d&rsquo;exception &agrave; ses clients!</span></p><p style='margin-top:0cm;margin-right:0cm;margin-bottom:0cm;margin-left:0cm;line-height:normal;font-size:16px;font-family:\"Franklin Gothic Book\",sans-serif;text-align:justify;'><span style=\"font-size:12px;color:#3",
+  "requisitionLocations": [
+   {
+    "aliasNames": [],
+    "address": {
+     "cityName": "",
+     "countrySubdivisionLevel1": {
+      "codeValue": ""
+     },
+     "postalCode": ""
+    },
+    "nameCode": {}
+   }
+  ]
+ },
+ "coxpalmer_detail_fr_CA_575647": {
+  "itemID": "9201571157128_1",
+  "requisitionTitle": "Parajuriste en litige",
+  "postDate": "2026-07-15T08:01:00.000-04:00",
+  "organizationalUnits": [],
+  "workLevelCode": {
+   "shortName": "Temps plein"
+  },
+  "customFieldGroup": {
+   "codeFields": [],
+   "stringFields": [
+    {
+     "stringValue": "575647",
+     "nameCode": {
+      "codeValue": "ExternalJobID"
+     }
+    },
+    {
+     "stringValue": "",
+     "nameCode": {
+      "codeValue": "HomeDepartment"
+     }
+    },
+    {
+     "nameCode": {
+      "codeValue": "JobClass"
+     }
+    }
+   ]
+  },
+  "clientRequisitionID": "1069",
+  "requisitionDescription": "<div><div><div><link href=\"https://static.workforcenow.adp.com/mas/mdf-components/25.6.13/styles/froala_editor.pkgd.min.css\" rel=\"stylesheet\" type=\"text/css\"></div><p style='margin-top:0cm;margin-right:0cm;margin-bottom:10.0pt;margin-left:0cm;line-height:normal;font-size:16px;font-family:\"Franklin Gothic Book\",sans-serif;' data-pasted=\"true\"><strong><span style=\"font-size:15px;color:#E82C2E;\">Parajuriste en litige</span></strong><strong>&nbsp;</strong><strong><span style=\"font-size:15px;color:#C00000;\">|</span></strong><strong><span style=\"font-size:15px;color:#E82C2E;\"> Saint John</span></str",
+  "requisitionLocations": [
+   {
+    "aliasNames": [],
+    "address": {
+     "cityName": "",
+     "countrySubdivisionLevel1": {
+      "codeValue": ""
+     },
+     "postalCode": ""
+    },
+    "nameCode": {}
+   }
+  ]
+ },
+ "detail_skeleton": {
+  "postingInstructions": [],
+  "links": [],
+  "additionalProperties": {},
+  "screeningRequirements": [],
+  "organizationalUnits": [],
+  "sponsoredVisaTypeCodes": [],
+  "customFieldGroup": {
+   "dateFields": [],
+   "indicatorFields": [
+    {
+     "indicatorValue": false,
+     "nameCode": {
+      "codeValue": "PriortyStatusFlag"
+     }
+    },
+    {
+     "indicatorValue": false,
+     "nameCode": {
+      "codeValue": "InternalPostingFlag"
+     }
+    },
+    {
+     "indicatorValue": true,
+     "nameCode": {
+      "codeValue": "MinValue"
+     }
+    },
+    {
+     "indicatorValue": false,
+     "nameCode": {
+      "codeValue": "IsVsidApplicable"
+     }
+    },
+    {
+     "indicatorValue": false,
+     "nameCode": {
+      "codeValue": "IsSassDlReqForExtPostFlag"
+     }
+    },
+    {
+     "indicatorValue": false,
+     "nameCode": {
+      "codeValue": "IsSassDlReqForIntPostFlag"
+     }
+    },
+    {
+     "indicatorValue": false,
+     "nameCode": {
+      "codeValue": "IsMonetaryFlag"
+     }
+    },
+    {
+     "indicatorValue": false,
+     "nameCode": {
+      "codeValue": "IsNonMonetaryFlag"
+     }
+    }
+   ],
+   "numberFields": [
+    {
+     "numberValue": 0.0,
+     "categoryCode": {
+      "codeValue": "ApplicantCount"
+     }
+    },
+    {
+     "categoryCode": {
+      "codeValue": "AwardAmount"
+     }
+    }
+   ],
+   "stringFields": [
+    {
+     "nameCode": {
+      "codeValue": "ExternalJobID"
+     }
+    },
+    {
+     "nameCode": {
+      "codeValue": "CareerCenterRefId"
+     }
+    },
+    {
+     "nameCode": {
+      "codeValue": "GuidelineOid"
+     }
+    },
+    {
+     "nameCode": {
+      "codeValue": "CurrencySymbolOrCode"
+     }
+    },
+    {
+     "stringValue": "",
+     "nameCode": {
+      "codeValue": "HomeDepartment"
+     }
+    },
+    {
+     "nameCode": {
+      "codeValue": "JobClass"
+     }
+    }
+   ]
+  },
+  "requisitionLocations": []
+ },
+ "manhattanlife_page_skip1": {
+  "jobRequisitions": [
+   {
+    "itemID": "9201243656496_1",
+    "requisitionTitle": "New Business Processor",
+    "postDate": "2026-09-18T12:41:00.000-04:00",
+    "organizationalUnits": [],
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "603068",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "stringValue": "Clerical",
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1824",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "Salt Lake City",
+       "countrySubdivisionLevel1": {
+        "codeValue": "UT"
+       },
+       "postalCode": "84124"
+      },
+      "nameCode": {
+       "shortName": " Salt Lake City, UT, US"
+      }
+     }
+    ]
+   },
+   {
+    "itemID": "9201243651844_1",
+    "requisitionTitle": "New Business Processor",
+    "postDate": "2026-09-18T12:31:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "FT Hourly Full-Time"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "603065",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "stringValue": "Clerical",
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1823",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "Houston",
+       "countrySubdivisionLevel1": {
+        "codeValue": "TX"
+       },
+       "postalCode": "77092"
+      },
+      "nameCode": {
+       "shortName": " Houston, TX, US"
+      }
+     }
+    ]
+   },
+   {
+    "itemID": "9201243222758_1",
+    "requisitionTitle": "Claims Specialist",
+    "postDate": "2026-09-17T12:10:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "FT Hourly Full-Time"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "602994",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "stringValue": "Clerical",
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1822",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "",
+       "countrySubdivisionLevel1": {
+        "codeValue": "WI"
+       },
+       "postalCode": ""
+      },
+      "nameCode": {
+       "shortName": " WI, US"
+      }
+     }
+    ]
+   },
+   {
+    "itemID": "9201238291898_1",
+    "requisitionTitle": "Client Services Coordinator (Life Insurance) ",
+    "postDate": "2026-09-02T13:57:00.000-04:00",
+    "organizationalUnits": [],
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "602181",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1820",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "Houston",
+       "countrySubdivisionLevel1": {
+        "codeValue": "TX"
+       },
+       "postalCode": "77040"
+      },
+      "nameCode": {
+       "shortName": " Houston, TX, US"
+      }
+     }
+    ]
+   },
+   {
+    "itemID": "9201238188438_1",
+    "requisitionTitle": "Medical Intake Coordinator ",
+    "postDate": "2026-09-02T12:06:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "FT Hourly Full-Time"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "602161",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "stringValue": "Clerical",
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1819",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "Houston",
+       "countrySubdivisionLevel1": {
+        "codeValue": "TX"
+       },
+       "postalCode": "77040"
+      },
+      "nameCode": {
+       "shortName": " Houston, TX, US"
+      }
+     }
+    ]
+   },
+   {
+    "itemID": "9201235007659_1",
+    "requisitionTitle": "Structured Products Analyst",
+    "postDate": "2026-08-24T15:22:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "FT Salary Full-Time"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "601629",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "stringValue": "Professional",
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1812",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "Houston",
+       "countrySubdivisionLevel1": {
+        "codeValue": "TX"
+       },
+       "postalCode": "77092"
+      },
+      "nameCode": {
+       "shortName": " Houston, TX, US"
+      }
+     }
+    ]
+   },
+   {
+    "itemID": "9201233547924_1",
+    "requisitionTitle": "Insurance Sales Trainer (Bilingual) ",
+    "postDate": "2026-08-19T15:26:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "FT Salary Full-Time"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "601395",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "stringValue": "Clerical",
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1811",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "Houston",
+       "countrySubdivisionLevel1": {
+        "codeValue": "TX"
+       },
+       "postalCode": "77092"
+      },
+      "nameCode": {
+       "shortName": "Houston Corporate Office, Houston, TX, US"
+      }
+     },
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "",
+       "countrySubdivisionLevel1": {
+        "codeValue": "TX"
+       },
+       "postalCode": ""
+      },
+      "nameCode": {
+       "shortName": "Remote TX, TX, US"
+      }
+     }
+    ]
+   },
+   {
+    "itemID": "9201228961880_1",
+    "requisitionTitle": "Insurance Billing Processor ",
+    "postDate": "2026-08-06T17:33:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "FT Hourly Full-Time"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "600752",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "stringValue": "Clerical",
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1806",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "Houston",
+       "countrySubdivisionLevel1": {
+        "codeValue": "TX"
+       },
+       "postalCode": "77040"
+      },
+      "nameCode": {
+       "shortName": " Houston, TX, US"
+      }
+     }
+    ]
+   },
+   {
+    "itemID": "9201228709298_1",
+    "requisitionTitle": "Insurance Claims Quality Auditor ",
+    "postDate": "2026-08-06T10:44:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "FT Hourly Full-Time"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "600707",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "stringValue": "Clerical",
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1805",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "Louisville",
+       "countrySubdivisionLevel1": {
+        "codeValue": "KY"
+       },
+       "postalCode": "40202"
+      },
+      "nameCode": {
+       "shortName": " Louisville, KY, US"
+      }
+     }
+    ]
+   },
+   {
+    "itemID": "9201227775657_1",
+    "requisitionTitle": "Insurance Claims Supervisor (Voluntary Benefits)",
+    "postDate": "2026-08-04T10:35:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "FT Salary Full-Time"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "600579",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "stringValue": "Clerical",
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1801",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "De Pere",
+       "countrySubdivisionLevel1": {
+        "codeValue": "WI"
+       },
+       "postalCode": "54115"
+      },
+      "nameCode": {
+       "shortName": " De Pere, WI, US"
+      }
+     }
+    ]
+   },
+   {
+    "itemID": "9201226129984_1",
+    "requisitionTitle": "Fixed Income Credit Analyst",
+    "postDate": "2026-07-29T16:51:00.000-04:00",
+    "organizationalUnits": [],
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "600237",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "stringValue": "Professional",
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1798",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "Houston",
+       "countrySubdivisionLevel1": {
+        "codeValue": "TX"
+       },
+       "postalCode": "77092"
+      },
+      "nameCode": {
+       "shortName": " Houston, TX, US"
+      }
+     }
+    ]
+   },
+   {
+    "itemID": "9201224968867_1",
+    "requisitionTitle": "IT Project Manager (Mid-level)",
+    "postDate": "2026-07-27T13:10:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "FT Salary Full-Time"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "600056",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "stringValue": "Professional",
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1797",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "Houston",
+       "countrySubdivisionLevel1": {
+        "codeValue": "TX"
+       },
+       "postalCode": "77092"
+      },
+      "nameCode": {
+       "shortName": " Houston, TX, US"
+      }
+     }
+    ]
+   },
+   {
+    "itemID": "9201221816990_1",
+    "requisitionTitle": "Marketing Services & Support",
+    "postDate": "2026-07-17T12:04:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "FT Hourly Full-Time"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "599574",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1792",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "Houston",
+       "countrySubdivisionLevel1": {
+        "codeValue": "TX"
+       },
+       "postalCode": "77092"
+      },
+      "nameCode": {
+       "shortName": " Houston, TX, US"
+      }
+     }
+    ]
+   },
+   {
+    "itemID": "9201221678224_1",
+    "requisitionTitle": "Product & Sales Enablement Trainer",
+    "postDate": "2026-07-16T18:19:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "FT Salary Full-Time"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "599561",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "stringValue": "Clerical",
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1791",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "Houston",
+       "countrySubdivisionLevel1": {
+        "codeValue": "TX"
+       },
+       "postalCode": "77092"
+      },
+      "nameCode": {
+       "shortName": "Houston Corporate Office, Houston, TX, US"
+      }
+     },
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "",
+       "countrySubdivisionLevel1": {
+        "codeValue": "TX"
+       },
+       "postalCode": ""
+      },
+      "nameCode": {
+       "shortName": "Remote TX, TX, US"
+      }
+     }
+    ]
+   },
+   {
+    "itemID": "9201215899600_1",
+    "requisitionTitle": "Senior IT Security Analyst",
+    "postDate": "2026-06-30T16:07:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "FT Salary Full-Time"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "598785",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "stringValue": "Professional",
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1778",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "Houston",
+       "countrySubdivisionLevel1": {
+        "codeValue": "TX"
+       },
+       "postalCode": "77092"
+      },
+      "nameCode": {
+       "shortName": " Houston, TX, US"
+      }
+     }
+    ]
+   },
+   {
+    "itemID": "9201213645512_1",
+    "requisitionTitle": "Policy Holder Services Representative",
+    "postDate": "2026-06-24T14:40:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "FT Hourly Full-Time"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "598396",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "stringValue": "Clerical",
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1777",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "Houston",
+       "countrySubdivisionLevel1": {
+        "codeValue": "TX"
+       },
+       "postalCode": "77092"
+      },
+      "nameCode": {
+       "shortName": " Houston, TX, US"
+      }
+     }
+    ]
+   },
+   {
+    "itemID": "9201207119450_1",
+    "requisitionTitle": "Systems Administrator",
+    "postDate": "2026-06-05T16:38:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "FT Salary Full-Time"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "597463",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "stringValue": "Professional",
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1772",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "Houston",
+       "countrySubdivisionLevel1": {
+        "codeValue": "TX"
+       },
+       "postalCode": "77092"
+      },
+      "nameCode": {
+       "shortName": " Houston, TX, US"
+      }
+     }
+    ]
+   },
+   {
+    "itemID": "9201196114607_1",
+    "requisitionTitle": "Claims Examiner",
+    "postDate": "2026-05-06T09:53:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "FT Hourly Full-Time"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "595678",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "stringValue": "Clerical",
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1764",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "Houston",
+       "countrySubdivisionLevel1": {
+        "codeValue": "TX"
+       },
+       "postalCode": "77040"
+      },
+      "nameCode": {
+       "shortName": " Houston, TX, US"
+      }
+     }
+    ]
+   },
+   {
+    "itemID": "9201189231601_1",
+    "requisitionTitle": "Insurance Claims Supervisor",
+    "postDate": "2026-04-17T14:32:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "FT Salary Full-Time"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "594522",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "stringValue": "Clerical",
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1743",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "Houston",
+       "countrySubdivisionLevel1": {
+        "codeValue": "TX"
+       },
+       "postalCode": "77040"
+      },
+      "nameCode": {
+       "shortName": " Houston, TX, US"
+      }
+     }
+    ]
+   },
+   {
+    "itemID": "9201189210459_1",
+    "requisitionTitle": "Insurance Claims Manager",
+    "postDate": "2026-04-17T13:56:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "FT Salary Full-Time"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "594516",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "stringValue": "Management",
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1742",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "Houston",
+       "countrySubdivisionLevel1": {
+        "codeValue": "TX"
+       },
+       "postalCode": "77040"
+      },
+      "nameCode": {
+       "shortName": " Houston, TX, US"
+      }
+     }
+    ]
+   }
+  ],
+  "meta": {
+   "startSequence": 1,
+   "totalNumber": 21
+  }
+ },
+ "manhattanlife_page_skip21": {
+  "jobRequisitions": [
+   {
+    "itemID": "9201189207598_1",
+    "requisitionTitle": "Customer Claims Advocate",
+    "postDate": "2026-04-17T13:50:00.000-04:00",
+    "organizationalUnits": [],
+    "workLevelCode": {
+     "shortName": "FT Hourly Full-Time"
+    },
+    "customFieldGroup": {
+     "codeFields": [],
+     "stringFields": [
+      {
+       "stringValue": "594513",
+       "nameCode": {
+        "codeValue": "ExternalJobID"
+       }
+      },
+      {
+       "stringValue": "",
+       "nameCode": {
+        "codeValue": "HomeDepartment"
+       }
+      },
+      {
+       "stringValue": "Clerical",
+       "nameCode": {
+        "codeValue": "JobClass"
+       }
+      }
+     ]
+    },
+    "clientRequisitionID": "1741",
+    "requisitionLocations": [
+     {
+      "aliasNames": [],
+      "address": {
+       "cityName": "Houston",
+       "countrySubdivisionLevel1": {
+        "codeValue": "TX"
+       },
+       "postalCode": "77040"
+      },
+      "nameCode": {
+       "shortName": "Houston - 13831 Northwest Fwy., Houston, TX, US"
+      }
+     }
+    ]
+   }
+  ],
+  "meta": {
+   "startSequence": 21,
+   "totalNumber": 21
+  }
+ },
+ "empty_envelope": {
+  "jobRequisitions": []
+ }
+}
