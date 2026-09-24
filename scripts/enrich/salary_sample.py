@@ -296,7 +296,7 @@ def _fetch_ripplehire(scraper: BaseScraper) -> list[Job]:
     cost reason to, since the field costs nothing extra to read). So the FULL page (up to
     ``_PAGE_SIZE`` real listing rows) is kept for field coverage; only the expensive per-job
     detail fetch (``jobDesc``, never on the listing — confirmed in ``ripplehire.py``'s own
-    docstring) is capped at :data:`_DETAIL_FETCH_CAP`, via the scraper's own ``_job_description()``.
+    docstring) is capped at :data:`_DETAIL_FETCH_CAP`, via the scraper's own ``fetch_detail()``.
     Consequence, stated plainly rather than silently absorbed: on any board with more than
     :data:`_DETAIL_FETCH_CAP` jobs, the description-hint measurement undercounts (rows past the
     cap keep an empty ``description``, correctly read as "no hint" rather than fabricating one) —
@@ -334,8 +334,12 @@ def _fetch_ripplehire(scraper: BaseScraper) -> list[Job]:
         timeout=30,
     ).json()
     items = data.get("jobVoList") or []
+    # The detail request carries the Board's token, which production's `fetch_raw` sets itself.
+    scraper._board_token = token
     for item in items[:_DETAIL_FETCH_CAP]:
-        item["jobDesc"] = scraper._job_description(token, item.get("jobSeq"))
+        record = scraper.fetch_detail(item) or {}
+        item["jobDesc"] = record.get("jobDesc") or None
+        item["_detail"] = record
     return scraper.parse(items, datetime.now(UTC).isoformat())
 
 
