@@ -45,6 +45,7 @@ from headstart import log
 from headstart.board_identity import board_key, board_of, lower_key
 from headstart.config import CompanyRef, load_active_companies
 from headstart.corpus import iter_jobs
+from headstart.ingest.board_operator import tenant
 
 _log = log.get(__name__, __spec__)
 
@@ -295,26 +296,27 @@ def _other_site_copies(
     arriving, _ = _by_group_and_board(new, live)
     if not arriving:
         return set()
-    incumbent: dict[tuple[str, str], set[str]] = defaultdict(set)
+    incumbent_boards: dict[tuple[str, str], set[str]] = defaultdict(set)
     for job_id in served:
         placed = _placement(job_id, live)
         if placed is None:
             continue
         group, board = placed
         if group in arriving:
-            incumbent[group].add(board)
+            incumbent_boards[group].add(board)
     refused: set[str] = set()
     for group, by_board in arriving.items():
-        held = incumbent.get(group, set())
-        displaced = (
-            bool(held)
-            and all(map(_is_non_public, held))
-            and not all(map(_is_non_public, by_board))
+        incumbents = incumbent_boards.get(group, set())
+        # Displaced when the arriving copies' best class outranks the incumbents' best — the same
+        # first key `_survivor_board` sorts on, compared on its own so a class never displaces
+        # itself: public (False) below non-public (True), in one direction only.
+        displaced = bool(incumbents) and min(map(_is_non_public, by_board)) < min(
+            map(_is_non_public, incumbents)
         )
         keep = (
             {_survivor_board(by_board.keys(), site_jobs)}
-            if not held or displaced
-            else held
+            if not incumbents or displaced
+            else incumbents
         )
         for board, ids in by_board.items():
             if board not in keep:
@@ -640,7 +642,7 @@ def _workday_tenant(canon: str, native: str) -> str | None:
     """
     if not canon.startswith("workday:") or not any(ch.isdigit() for ch in native):
         return None
-    return canon.split("/", 1)[0]
+    return f"workday:{tenant(canon)}"
 
 
 #: Substrings of a Workday site segment (case-insensitive) that mark a site as not meant for the
@@ -663,8 +665,9 @@ def _survivor_board(boards: AbstractSet[str], site_jobs: dict[str, int]) -> str:
     before a non-public one (:data:`_NON_PUBLIC_SITE_TOKENS`), then the Board with the most jobs
     in the liveness ledger, then the lexicographically smallest (lowercased) key.
 
-    The one place the choice is made, so ``plan_sync`` admitting a new copy and ``plan_prune``
-    collapsing existing ones can never disagree about which Board keeps it.
+    The one place the ranking is defined, so ``plan_sync`` admitting a new copy and
+    ``plan_prune`` collapsing existing ones can never disagree about which Board keeps it; the
+    displacement in :func:`_other_site_copies` compares this ranking's first key only.
     """
     return min(
         boards,

@@ -1053,6 +1053,17 @@ def test_a_public_copy_displaces_a_re_embedded_non_public_incumbent():
 
 
 def test_a_non_public_copy_never_displaces_a_public_incumbent():
+    """Checked at sync, not only after prune: prune would take the copy back out, so the end state
+    alone cannot tell a refusal from an add-then-evict churn every run."""
+    plan = plan_sync(
+        {f"{_MAIN}:R-100"},
+        {f"{_CONFIDENTIAL}:R-100"},
+        {_CONFIDENTIAL},
+        boards_by_canon(_PUBLIC_AND_CONFIDENTIAL),
+        set(),
+        site_jobs=_RANKED,
+    )
+    assert plan.refused == frozenset({f"{_CONFIDENTIAL}:R-100"})
     index, _ = _run(
         {f"{_MAIN}:R-100"},
         {f"{_CONFIDENTIAL}:R-100"},

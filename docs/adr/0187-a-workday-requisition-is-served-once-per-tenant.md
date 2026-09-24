@@ -83,12 +83,15 @@ adds rows and in `index prune`.** Board keys do not change and nothing is re-key
   (an id's duplicate group and site, with `_workday_tenant` as the one place the key widens),
   `_survivor_board` (the ranking: public first, then ledger jobs, then key) and `_is_non_public`.
   `plan_sync` gains keyword `site_jobs` and `replaced` and reports the ids it declined as
-  `SyncPlan.refused`; `plan_prune` gains keyword `site_jobs`. One place decides which site keeps
-  a requisition, so the planner that admits a row and the planner that removes rows cannot
-  disagree about it. Sync runs the grouping over every ATS, not just Workday:
-  a group keyed on its Board holds one site, so nothing else is ever refused, and the only
-  Workday-specific line is the key. There is no per-ATS hook on `BaseScraper`: Workday is the only
-  ATS with sites under one tenant sharing an id, and a seam with one adapter is a hypothetical one.
+  `SyncPlan.refused`; `plan_prune` gains keyword `site_jobs`. One place defines the ranking, so
+  the planner that admits a row and the planner that removes rows cannot disagree about which
+  site keeps it; the displacement compares only its first key (public before non-public). The
+  tenant part of the key comes from `board_operator.tenant`, the one derivation of CONTEXT.md's
+  **Tenant** (ADR-0185). Sync runs the grouping over every ATS, not just Workday: a group keyed
+  on its Board holds one site, so nothing else is ever refused, and the only Workday-specific
+  parts are the key and the site-name tokens. There is no per-ATS hook on `BaseScraper`: Workday
+  is the only ATS with sites under one tenant sharing an id, and a seam with one adapter is a
+  hypothetical one.
 - **No new state.** The ranking reads the committed liveness ledger (`workday_site_jobs`, beside
   `live_keep_set`, which reads the same file); the incumbents are the table's own rows, which
   `sync` already reads.
@@ -115,9 +118,10 @@ to a bigger site, and hands the requisition over with a fresh `first_seen`: a "n
 Digest entry, for a Job that never left. Passing those ids back keeps them the incumbent.
 
 **The survivor cannot flip on unchanged inputs.** Once the one-time cleanup has run, sync keeps
-every requisition on one site, so prune never has two sites to choose between again. A
-displacement moves a requisition from a non-public site to a public one and nothing moves it
-back. A re-probe that changes the ledger's job counts affects only requisitions arriving
+every requisition on one site, so prune has two sites to choose between only in the run where a
+public copy displaces a non-public incumbent — and it keeps the public one, because it ranks the
+same way. A displacement moves a requisition from a non-public site to a public one and nothing
+moves it back. A re-probe that changes the ledger's job counts affects only requisitions arriving
 afterwards.
 
 ## Consequences
@@ -180,9 +184,10 @@ pre-rebase ledger the figures were first taken on):
   back out every run — the churn this rule exists to remove.
 - **The one-time cleanup ranks public first, then by ledger count — not by freshness.** It can
   keep a copy whose own site already missed it once (Unconfirmed) and evict a sibling that is
-  still listed: **5 of the 6,212** against the latest `unconfirmed_ids.txt`. If the survivor's site has really dropped it,
-  ADR-0083 evicts it on the next scrape and the sibling comes back on its own site's next scrape;
-  the requisition is unserved in between.
+  still listed: **5 of the 6,212** against the latest `unconfirmed_ids.txt` (re-measured under the
+  public-first ranking: unchanged, as is the 47 above). If the survivor's site has really dropped
+  it, ADR-0083 evicts it on the next scrape and the sibling comes back on its own site's next
+  scrape; the requisition is unserved in between.
 - **A handover re-stamps `first_seen`.** When a survivor is evicted and another site's copy comes
   in, that copy is a new row with this run's stamp, so the requisition reads as a new listing and
   can reach a Digest. `replaced` prevents this only for the re-embed case, where nothing was

@@ -85,7 +85,7 @@ The customer an ATS hosts, which may hold several **Board**s: Workday's `{compan
 _Avoid_: "account" — that is a signed-in person (**Account**); reading the ledgers' `tenant` column as a Tenant — that column holds one Board's slug spelling, site included.
 
 **Requisition** (ADR-0187):
-The ATS's own record behind a **Job**, identified by the Job's native id. A Workday **Tenant** can post one requisition to several of its sites, each a **Board**, under the same native id; the **Search index** serves it once per Tenant, not once per Board.
+The ATS's own record behind a **Job**, identified by the Job's native id. A Workday **Tenant** can post one requisition to several of its sites, each a **Board**, under the same native id; the **Search index** serves it once per Tenant, not once per Board, preferring a public site: one whose name carries `hidden`, `confidential`, `internal`, `private`, `sourcer` or `targeted` is a **non-public site**, kept only when no public site of the Tenant holds the requisition.
 
 **Single source scraper**:
 A Scraper for a company that runs its own in-house careers system rather than a third-party ATS platform other companies also rent — Amazon, Apple, Google, Meta, Tesla, Uber, ByteDance, TikTok. Modelled exactly like any other Scraper (`ats` = the company itself, `slug` fixed to its own careers host, never discovered) rather than a parallel dispatch path, so every consumer that already keys off `ats:slug` needs no new code (ADR-0139). Has no **Discovery** step — its liveness ledger carries exactly one hand-entered row, since there is only ever one Board.
