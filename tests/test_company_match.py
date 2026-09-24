@@ -55,6 +55,7 @@ def test_normalize(text: str, words: list[str]) -> None:
             4,
         ),  # and a word written whole that the company splits
         ("h p", "HP Inc", None),  # too few letters to ignore spaces over
+        ("cisco", "Discovery", None),  # no typo in the first letter
     ],
 )
 def test_tier(query: str, name: str, expected: int | None) -> None:
@@ -140,3 +141,13 @@ def test_a_name_that_differs_by_a_trailing_word_is_another_employer() -> None:
         "Affinity",
         "Affinity Group",
     ]
+
+
+def test_a_query_alias_finds_the_company_by_the_name_people_use() -> None:
+    companies = [
+        Candidate(key="amazon:jobs", name="Amazon", words=("amazon",), openings=9000),
+        Candidate(key="oracle:jpmc", name="Jpmc", words=("jpmc",), openings=1718),
+        Candidate(key="gh:awsome", name="Awsome", words=("awsome",), openings=3),
+    ]
+    assert [c.key for c in suggest("aws", companies, 5)] == ["amazon:jobs", "gh:awsome"]
+    assert [c.key for c in suggest("JP Morgan", companies, 5)] == ["oracle:jpmc"]
