@@ -101,8 +101,10 @@ The incumbent is judged **after this run's evictions**, and only on a **live** B
   keeps serving; the other site's copy is added on the first scrape of that site after the
   survivor's second absence evicts it — the same run, when both are in its slice.
 - The survivor's Board is not in this run's slice, or is Unauthoritative: no evidence, so it stays
-  the incumbent and the other copy stays out. That is the partial-harvest safety, unchanged — but
-  see Consequences for the Board that is Unauthoritative on every run.
+  the incumbent and the other copy stays out — unless the survivor is on non-public sites only
+  and the arriving copy is public, which displaces it whatever its Board's scope. That is the
+  partial-harvest safety, unchanged — but see Consequences for the Board that is Unauthoritative
+  on every run.
 - The survivor's Board goes dead or is parked: its rows are no longer incumbents, and prune evicts
   them as off-Board. The other site's copy is added on that site's next scrape — the same run if
   it is in the slice; until then the requisition is not served.
@@ -149,11 +151,23 @@ pre-rebase ledger the figures were first taken on):
   that, displacement happens one new requisition at a time, whenever a requisition first served
   from a non-public site later turns up on a public one; how often depends on how a tenant's sites
   fall into slices, and is not measured.
-- **A displacement re-stamps `first_seen`, once per displaced requisition.** The public copy is a
-  new row with this run's stamp, so the requisition reads as a new listing once — in the Search
-  tab's recency, in Trends' `new` level, and possibly in a Digest. It never repeats for the same
-  requisition, because nothing moves it back.
-- **A survivor on a Board that is Unauthoritative on every run keeps its siblings out for good.**
+- **A displacement re-stamps `first_seen`, once per displacement.** The public copy is a new row
+  with this run's stamp, so the requisition reads as a new listing once — in the Search tab's
+  recency, in Trends' `new` level, and possibly in a Digest. On unchanged inputs nothing moves it
+  back. It can recur only through a real change: if the public site stops listing it and ADR-0083
+  evicts it, a non-public copy comes back in, and a later public listing displaces that again —
+  each move a handover with its own stamp.
+- **The token match is a substring rule, so it can misclassify.** 176 of the 10,538 live Workday
+  sites in the ledger match a token, 26 of them competing in v654's multi-site groups. At least
+  one is plainly a false positive: `blackstone/x_ghostsite_theedgeinasiarecruitmentprivatelimited`
+  matches on a company's "Private Limited", not a non-public site; in the ledger,
+  `excellprivatecareservicescareersite` matches on a company name. The cost is bounded: a
+  misclassified site only ranks after its tenant's other sites, and is displaced by a public one,
+  so the requisition is still served, from another site of the same tenant; the order never
+  removes a requisition. A site that is non-public but carries none of the tokens is ranked as
+  public, which is the pre-decision behaviour.
+- **A public survivor on a Board that is Unauthoritative on every run keeps its siblings out for
+  good.** (A non-public one is displaced by the first public copy that arrives.)
   ADR-0053's exclusion has no drain, so such a survivor is never evicted, and a sibling's copy is
   refused even if the requisition has left the survivor's site and is live only on the sibling.
   Before this change that sibling's row was served. Exposure, measured against the latest run's
@@ -164,9 +178,9 @@ pre-rebase ledger the figures were first taken on):
   ADR-0053's missing drain rather than here: admitting the sibling while the survivor is out of
   scope gives prune two sites, and prune, which does not see the scope, would take one of them
   back out every run — the churn this rule exists to remove.
-- **The one-time cleanup ranks by ledger count, not by freshness.** It can keep a copy whose own
-  site already missed it once (Unconfirmed) and evict a sibling that is still listed: **5 of the
-  6,212** against the latest `unconfirmed_ids.txt`. If the survivor's site has really dropped it,
+- **The one-time cleanup ranks public first, then by ledger count — not by freshness.** It can
+  keep a copy whose own site already missed it once (Unconfirmed) and evict a sibling that is
+  still listed: **5 of the 6,212** against the latest `unconfirmed_ids.txt`. If the survivor's site has really dropped it,
   ADR-0083 evicts it on the next scrape and the sibling comes back on its own site's next scrape;
   the requisition is unserved in between.
 - **A handover re-stamps `first_seen`.** When a survivor is evicted and another site's copy comes

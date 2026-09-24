@@ -151,14 +151,13 @@ def plan_sync(
     ``refused`` instead — when another site of its Workday tenant already serves the same
     requisition from a live Board (unless it is a public copy and every serving site is
     non-public: that one displaces them), or when several sites bring it at once and another is
-    the :func:`_survivor_board` (public sites first, then ``site_jobs``). That is ``plan_prune``'s
-    grouping, applied where rows arrive: without it, sync would re-add on the next run every copy
-    prune took out.
-    The served row is judged *after* this plan's evictions, so a survivor its Board stopped
-    listing makes way on the scrape that evicts it, and one on a Board that left ``live`` makes
-    way at once — the other copy arriving whenever its own Board is next scraped. ``replaced``
-    names ids the caller took out of the table only to re-add them with a new vector (ADR-0050);
-    they are still their requisition's served row.
+    the :func:`_survivor_board`. That is ``plan_prune``'s grouping, applied where rows arrive:
+    without it, sync would re-add on the next run every copy prune took out. The served row is
+    judged *after* this plan's evictions, so a survivor its Board stopped listing makes way on the
+    scrape that evicts it, and one on a Board that left ``live`` makes way at once — the other
+    copy arriving whenever its own Board is next scraped. ``replaced`` names ids the caller took
+    out of the table only to re-add them with a new vector (ADR-0050); they are still their
+    requisition's served row.
 
     **No Board-level cap (ADR-0101).** The board-scope check above is all-or-nothing at the *line*
     level: a Board that emitted one job line is fully in scope, so a scrape truncated by a
@@ -282,8 +281,8 @@ def _other_site_copies(
     arriving from any other Board is refused — so a survivor never moves while its row stands.
     The one exception runs one way only: a **public** copy displaces an incumbent that sits on
     non-public sites alone (ADR-0187). A tenant's sites rarely share a slice, so which site a
-    requisition reaches first is close to chance, and the user's decision is that public sites
-    win; ``plan_prune`` ranks the same way, so it drops the non-public row in the same run.
+    requisition reaches first is close to chance, and ranking alone would leave it wherever it
+    landed; ``plan_prune`` ranks the same way, so it drops the non-public row in the same run.
     Within each class — public against public, non-public against non-public — the incumbent
     still wins, so the order is total and one-directional and nothing oscillates.
 
@@ -307,8 +306,10 @@ def _other_site_copies(
     refused: set[str] = set()
     for group, by_board in arriving.items():
         held = incumbent.get(group, set())
-        displaced = all(map(_is_non_public, held)) and not all(
-            map(_is_non_public, by_board)
+        displaced = (
+            bool(held)
+            and all(map(_is_non_public, held))
+            and not all(map(_is_non_public, by_board))
         )
         keep = (
             {_survivor_board(by_board.keys(), site_jobs)}
@@ -665,7 +666,6 @@ def _survivor_board(boards: AbstractSet[str], site_jobs: dict[str, int]) -> str:
     The one place the choice is made, so ``plan_sync`` admitting a new copy and ``plan_prune``
     collapsing existing ones can never disagree about which Board keeps it.
     """
-
     return min(
         boards,
         key=lambda board: (_is_non_public(board), -site_jobs.get(board, 0), board),
@@ -673,8 +673,11 @@ def _survivor_board(boards: AbstractSet[str], site_jobs: dict[str, int]) -> str:
 
 
 def _is_non_public(board: str) -> bool:
-    """Whether a Board's site segment names it non-public (:data:`_NON_PUBLIC_SITE_TOKENS`)."""
-    site = lower_key(board.partition("/")[2])
+    """Whether a lowercased Board key's Workday site segment (after the ``/``) names it non-public
+    (:data:`_NON_PUBLIC_SITE_TOKENS`). Both callers pass the lowercased key :func:`_placement`
+    builds, which is what makes the match case-insensitive. Any other ATS's groups hold one Board,
+    so the answer never decides anything there."""
+    site = board.partition("/")[2]
     return any(token in site for token in _NON_PUBLIC_SITE_TOKENS)
 
 
@@ -688,12 +691,11 @@ def plan_prune(
     group — the case-variant dupes of one job — except that a Workday requisition is grouped on
     its **Workday tenant** rather than its Board, because a Workday tenant posts one requisition to
     several of its sites, each a Board, under the same native id (ADR-0187). Such a group keeps one
-    Board, the :func:`_survivor_board`: a public site first, then ``site_jobs``
-    (:func:`workday_site_jobs`; omitted, every Board ties on jobs and the lexicographic tie-break
-    decides). ``plan_sync`` refuses copies on the same rule, so once today's duplicates are gone
-    this sees two Boards for one requisition only when a public copy has just displaced a
-    non-public incumbent — and it drops the incumbent, because the ranking puts public first. The
-    casing rule below then picks the row within the kept Board.
+    Board, the :func:`_survivor_board` (``site_jobs`` is :func:`workday_site_jobs`; omitted,
+    every Board ties on jobs). ``plan_sync`` refuses copies on the same rule, so once today's
+    duplicates are gone this sees two Boards for one requisition only when a public copy has just
+    displaced a non-public incumbent — and it drops the incumbent, because the ranking puts public
+    first. The casing rule below then picks the row within the kept Board.
 
     The row kept is the one whose Board casing the **live ledger** produces, because that is the
     casing a future scrape emits. Keeping the lexicographically-smallest instead (the rule until

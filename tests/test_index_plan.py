@@ -970,16 +970,21 @@ def test_a_re_embedded_incumbent_keeps_its_place():
 # GE Vernova's shape: its confidential executive-recruiting site lists more jobs than its public
 # one, so the ledger rank alone served 737 requisitions from the confidential site.
 _CONFIDENTIAL = "workday:acme/Only_Confidential_Recruiting"
-_RANKED = {**_SITE_JOBS, "workday:acme/only_confidential_recruiting": 2360}
+_INTERNAL = "workday:acme/Internal_Postings"
+_RANKED = {
+    **_SITE_JOBS,
+    "workday:acme/only_confidential_recruiting": 2360,
+    "workday:acme/internal_postings": 30,
+}
 
 
-def test_prune_keeps_a_public_site_over_a_larger_non_public_one():
+@pytest.mark.parametrize("non_public", [_CONFIDENTIAL, _INTERNAL])
+def test_prune_keeps_a_public_site_over_a_larger_non_public_one(non_public):
+    jobs = {**_RANKED, non_public.lower(): 5000}
     _, dup = plan_prune(
-        [f"{_CONFIDENTIAL}:R-100", f"{_MAIN}:R-100"],
-        {_MAIN, _CONFIDENTIAL},
-        site_jobs=_RANKED,
+        [f"{non_public}:R-100", f"{_MAIN}:R-100"], {_MAIN, non_public}, site_jobs=jobs
     )
-    assert dup == [f"{_CONFIDENTIAL}:R-100"]
+    assert dup == [f"{non_public}:R-100"]
 
 
 def test_sync_gives_a_new_requisition_to_the_public_site_over_a_larger_non_public_one():
@@ -997,19 +1002,20 @@ def test_sync_gives_a_new_requisition_to_the_public_site_over_a_larger_non_publi
 
 def test_a_requisition_only_non_public_sites_hold_is_still_served():
     """The order only chooses which copy stays; it never decides whether one does."""
-    internal = "workday:acme/Internal_Postings"
-    keep = {_MAIN, _CONFIDENTIAL, internal}
-    jobs = {**_RANKED, "workday:acme/internal_postings": 30}
+    keep = {_MAIN, _CONFIDENTIAL, _INTERNAL}
     _, dup = plan_prune(
-        [f"{internal}:R-300", f"{_CONFIDENTIAL}:R-300"], keep, site_jobs=jobs
+        [f"{_INTERNAL}:R-300", f"{_CONFIDENTIAL}:R-300"], keep, site_jobs=_RANKED
     )
-    assert dup == [
-        f"{internal}:R-300"
-    ]  # one copy stays, ranked by ledger jobs as before
+    assert dup == [f"{_INTERNAL}:R-300"]  # one stays, ranked by ledger jobs as before
     plan = plan_sync(
-        set(), {f"{internal}:R-400"}, keep, boards_by_canon(keep), set(), site_jobs=jobs
+        set(),
+        {f"{_INTERNAL}:R-400"},
+        keep,
+        boards_by_canon(keep),
+        set(),
+        site_jobs=_RANKED,
     )
-    assert plan.add == frozenset({f"{internal}:R-400"})
+    assert plan.add == frozenset({f"{_INTERNAL}:R-400"})
 
 
 _PUBLIC_AND_CONFIDENTIAL = frozenset({_MAIN, _CONFIDENTIAL})
@@ -1029,6 +1035,23 @@ def test_a_public_copy_displaces_a_non_public_incumbent():
     assert index == {f"{_MAIN}:R-100"}
 
 
+def test_a_public_copy_displaces_a_re_embedded_non_public_incumbent():
+    """`replaced` keeps a re-embedded row the incumbent, and a non-public incumbent is still
+    displaced: its re-add is refused and the public copy comes in instead."""
+    upgraded = f"{_CONFIDENTIAL}:R-100"
+    plan = plan_sync(
+        set(),  # its row was just taken out for the re-embed
+        {upgraded, f"{_MAIN}:R-100"},
+        _PUBLIC_AND_CONFIDENTIAL,
+        boards_by_canon(_PUBLIC_AND_CONFIDENTIAL),
+        set(),
+        site_jobs=_RANKED,
+        replaced={upgraded},
+    )
+    assert plan.add == frozenset({f"{_MAIN}:R-100"})
+    assert plan.refused == frozenset({upgraded})
+
+
 def test_a_non_public_copy_never_displaces_a_public_incumbent():
     index, _ = _run(
         {f"{_MAIN}:R-100"},
@@ -1041,13 +1064,12 @@ def test_a_non_public_copy_never_displaces_a_public_incumbent():
 
 
 def test_a_non_public_copy_never_displaces_another_non_public_incumbent():
-    internal = "workday:acme/Internal_Postings"
     index, _ = _run(
         {f"{_CONFIDENTIAL}:R-100"},
-        {f"{internal}:R-100"},
-        {internal},
+        {f"{_INTERNAL}:R-100"},
+        {_INTERNAL},
         frozenset(),
-        keep=_PUBLIC_AND_CONFIDENTIAL | {internal},
+        keep=_PUBLIC_AND_CONFIDENTIAL | {_INTERNAL},
     )
     assert index == {f"{_CONFIDENTIAL}:R-100"}
 
