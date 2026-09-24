@@ -71,7 +71,7 @@ from pathlib import Path
 from time import monotonic
 from typing import Any, NamedTuple
 
-from headstart import log
+from headstart import india_filter, log
 from headstart.experience import from_field, from_seniority
 from headstart.ingest import (
     PENDING_REDERIVE_PATH,
@@ -333,9 +333,9 @@ def refresh_row(
     # `FACT_FIELDS` resynced above, so a sweep achieves full coverage in one pass.
     country_inputs_moved = facts_changed and row.get("location") != meta.get("location")
     if sweep or rederive or country_inputs_moved:
-        new_country = country_meta(row.get("location"))["country"]
-        changed = changed or (new_country != row.get("country"))
-        row["country"] = new_country
+        new_country = country_meta(row.get("location"))[india_filter.COLUMN]
+        changed = changed or (new_country != row.get(india_filter.COLUMN))
+        row[india_filter.COLUMN] = new_country
 
     # `remote`'s overlay (headstart.remote, ADR-0061 v8/ADR-0118). `remote` is excluded from
     # FACT_FIELDS (see `_FACT_WITH_OVERLAY`), so unlike every fact above, nothing has already
@@ -514,8 +514,8 @@ def _refresh_chunk(args: _ChunkArgs) -> _ChunkResult:
                     counts[move] += 1
             # `country` has no tier concept (`derivation_delta` doesn't apply) — just a direct
             # before/after compare, since the only two values are "IN" and null.
-            if meta.get("country") != row.get("country"):
-                country_delta["gained" if row.get("country") else "lost"] += 1
+            if meta.get(india_filter.COLUMN) != row.get(india_filter.COLUMN):
+                country_delta["gained" if row.get(india_filter.COLUMN) else "lost"] += 1
         # Written once, on the rows that never had it. A row that carries the flag keeps it: it
         # is a fact about the vector, and only a re-embed may change it.
         #
