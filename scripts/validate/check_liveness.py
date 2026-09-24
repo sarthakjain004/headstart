@@ -73,6 +73,9 @@ from headstart.models import (  # one host rule, shared with the scrapers
     host_of,
 )
 from headstart.scrapers import (
+    adp_recruiting as _adp_recruiting,  # request shapes + headers, single source
+)
+from headstart.scrapers import (
     jibe as _jibe,  # robots.txt rule + crawl delay, single source
 )
 from headstart.scrapers.adp import (  # request shapes + envelope parsers, single source
@@ -1927,6 +1930,61 @@ def p_adp(t, u):
     return LIVE, total
 
 
+#: What the site record answers for a site that is gone — a 400, not a 404. Both measured
+#: 2026-09-24 on real departed sites from the seed lists: "not found" on 5 (`bastiansolutions`,
+#: `carolinapowerscareers`, ...), "not active" on 6 (`cityofpeoriaaz`, `lkqexternalcareersite`,
+#: ...). An invented slug answers "not found" too.
+_ADP_RECRUITING_GONE = (b"Careersite not found", b"Careersite is not active")
+
+
+def p_adp_recruiting(t, u):
+    # A Board is a career site, `myjobs.adp.com/{slug}/cx`. Its record answers first: a 400
+    # naming the site gone is DEAD, and a 200 carries the token the listing wants. The listing
+    # (`$top=1`) states the count; a zero is a real empty site, because only a site the record
+    # knows reaches it. Every request sends `Accept-Language: en-US` — a filter, and curl_cffi's
+    # own default reads every site as empty (`adp_recruiting.request_headers`).
+    #
+    # An employee-only site (`careerSiteType` "Internal", 15 of 681 sites) is DEAD by policy,
+    # not by absence. Of the 14 hiring ones' 3,924 postings, 3,526 are on an external site of the
+    # same client, which serves them; the other 398 are for the client's own staff (ADR-0191).
+    #
+    # No rate limit was found (2,500 requests at 128-wide), so the host is not seeded in
+    # `_GATES`. A DNS failure is UNKNOWN: every site is on the one fixed host.
+    slug = SCRAPERS["adp_recruiting"].slug_from(t, u)
+    status, body = _get(
+        _adp_recruiting.site_url(slug), headers=_adp_recruiting.request_headers()
+    )
+    if status == "dns":
+        _note("dns-on-fixed-host")
+        return UNKNOWN, None
+    if status == 400 and any(gone in body for gone in _ADP_RECRUITING_GONE):
+        return DEAD, None
+    if status != 200:
+        return UNKNOWN, None
+    try:
+        site = json.loads(body)
+    except ValueError:
+        _note("body-unparseable")
+        return UNKNOWN, None
+    if (site.get("settings") or {}).get("careerSiteType") == "Internal":
+        return DEAD, None
+    token = site.get("myJobsToken")
+    if not token:
+        _note("no-token")
+        return UNKNOWN, None
+    status, body = _get(
+        _adp_recruiting.listing_url(skip=0, top=1),
+        headers=_adp_recruiting.request_headers(token),
+    )
+    if status != 200:
+        return UNKNOWN, None
+    try:
+        return LIVE, int(json.loads(body)["count"])
+    except (ValueError, KeyError, TypeError):
+        _note("body-unparseable")
+        return UNKNOWN, None
+
+
 def p_successfactors(t, u):
     # RMK vanity-domain board: /sitemap.xml is either a compact urlset of /job/ URLs or the
     # Google-jobs RSS feed. The read is a capped stream (the RSS generator trickles, and big
@@ -2434,6 +2492,7 @@ PROBES = {
     "greenhouse": p_greenhouse,
     "lever": p_lever,
     "adp": p_adp,
+    "adp_recruiting": p_adp_recruiting,
     "ashby": p_ashby,
     "bamboohr": p_bamboohr,
     "breezy": p_breezy,

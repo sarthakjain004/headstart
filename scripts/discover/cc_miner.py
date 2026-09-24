@@ -81,6 +81,14 @@ ATS_PATTERNS = {
         "kind": "adp",
         "patterns": [f"({ADP_PAGE_URL.pattern})"],
     },
+    "adp_recruiting": {
+        # ADP Recruiting Management: one shared SPA host, the career site's slug is the first
+        # path word (`myjobs.adp.com/{slug}/cx`), which `adp_recruiting.py` keys its site config
+        # with. `public/` is the API itself and names no site.
+        "targets": ["myjobs.adp.com"],
+        "kind": "slug",
+        "patterns": [r"myjobs\.adp\.com/(?!public/)([a-z0-9][a-z0-9_.-]+)(?=[/?#]|$)"],
+    },
     "greenhouse": {
         "targets": [
             "boards.greenhouse.io",

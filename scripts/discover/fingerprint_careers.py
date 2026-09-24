@@ -282,7 +282,7 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
     "clearcompany": ("ats", [SUB + r"hrmdirect\.com", SUB + r"clearcompany\.com"]),
     # ADP Workforce Now: the Board is `cid` + `ccId` in the career-center page's query (adp.py);
     # `scan` reads them out of the captured query. ADP Recruiting Management is a different
-    # platform (its own host, path slug and API) with no scraper, so it is its own key.
+    # platform (its own host, path slug and API), so it is its own key.
     "adp": (
         "ats",
         [
@@ -291,7 +291,15 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
             re.escape(ADP_HOST) + f"(?!/{re.escape(ADP_PAGE_PATH)}\\?)",
         ],
     ),
-    "adp_recruiting": ("ats", [r"recruiting\.adp\.com", r"myjobs\.adp\.com"]),
+    # A Board is the path word of `myjobs.adp.com/{slug}/cx` (adp_recruiting.py). A legacy
+    # `recruiting.adp.com` link names the client number, not a site, so it detects the ATS only.
+    "adp_recruiting": (
+        "ats",
+        [
+            r"myjobs\.adp\.com/(?!public/)([a-zA-Z0-9][a-zA-Z0-9_.-]*[a-zA-Z0-9_-])",
+            r"recruiting\.adp\.com",
+        ],
+    ),
     "ukg": ("ats", [SUB + r"ultipro\.com"]),
     "occupop": ("ats", [SUB + r"occupop\.com"]),
     "hrcloud": ("ats", [SUB + r"hrcloud\.com"]),

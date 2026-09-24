@@ -283,6 +283,11 @@ def _with_style(style: Style, *hosts: str) -> tuple[tuple[str, Style], ...]:
 ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     # One fixed host; the Board is two query values on its career-center page (see `extract`).
     "adp": _with_style("adp", ADP_HOST),
+    # ADP Recruiting Management: every career site is one path word on the shared SPA host
+    # (`myjobs.adp.com/{slug}/cx`), the slug `adp_recruiting.py` keys its site config with. Its
+    # vendor paths (`public`, `cx`, `workforcenow`) fall out at the prober, which answers them
+    # `Careersite not found`.
+    "adp_recruiting": _with_style("path", "myjobs.adp.com"),
     "ashby": _with_style("path", "jobs.ashbyhq.com"),
     # One host, no regional pods — checked live against Wayback CDX (2026-09-16): a
     # `matchType=domain` sweep filtered to `/careers` paths found 307 distinct

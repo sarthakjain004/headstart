@@ -587,6 +587,83 @@ def test_pyjamahr_inconclusive_answers_stay_unknown(monkeypatch):
     assert cl.p_pyjamahr("acme", "") == (cl.UNKNOWN, None)
 
 
+# --- adp_recruiting: the site record answers first, and its token reads the count --------------
+
+_ADP_RM = json.loads(
+    (Path(__file__).parent / "fixtures" / "adp_recruiting_responses.json").read_text(
+        "utf-8"
+    )
+)
+
+
+def _adp_rm_get(site_status, site_body, listing=(200, b'{"count": 19}'), calls=None):
+    """`_get` keyed on path: the site record on myjobs.adp.com, the listing on my.adp.com."""
+
+    def _get(url, headers=None):
+        if calls is not None:
+            calls.append((url, headers or {}))
+        if "/career-site/" in url:
+            body = site_body if isinstance(site_body, bytes) else json.dumps(site_body)
+            return site_status, body if isinstance(body, bytes) else body.encode()
+        return listing
+
+    return _get
+
+
+def test_adp_recruiting_a_site_record_and_its_count_is_live(monkeypatch):
+    calls: list = []
+    monkeypatch.setattr(
+        cl, "_get", _adp_rm_get(200, _ADP_RM["site_churchmutual"], calls=calls)
+    )
+    assert cl.p_adp_recruiting("ChurchMutual", "") == (cl.LIVE, 19)
+    (site_url, site_h), (listing_url, listing_h) = calls
+    assert site_url.endswith("/career-site/churchmutual")
+    assert "%24top=1" in listing_url and "%24skip=0" in listing_url
+    # The token addresses the site; the language header is a filter curl_cffi would set wrong.
+    assert listing_h["myjobstoken"] == _ADP_RM["site_churchmutual"]["myJobsToken"]
+    assert site_h["Accept-Language"] == listing_h["Accept-Language"] == "en-US"
+
+
+def test_adp_recruiting_a_zero_count_on_a_known_site_is_a_live_empty_board(monkeypatch):
+    monkeypatch.setattr(
+        cl,
+        "_get",
+        _adp_rm_get(200, _ADP_RM["site_churchmutual"], (200, b'{"count": 0}')),
+    )
+    assert cl.p_adp_recruiting("churchmutual", "") == (cl.LIVE, 0)
+
+
+@pytest.mark.parametrize("key", ["site_not_found", "site_not_active"])
+def test_adp_recruiting_a_site_record_naming_the_site_gone_is_dead(monkeypatch, key):
+    monkeypatch.setattr(cl, "_get", _adp_rm_get(400, _ADP_RM[key]))
+    assert cl.p_adp_recruiting("bastiansolutions", "") == (cl.DEAD, None)
+
+
+def test_adp_recruiting_an_employee_only_site_is_dead(monkeypatch):
+    monkeypatch.setattr(cl, "_get", _adp_rm_get(200, _ADP_RM["site_taherinternal"]))
+    assert cl.p_adp_recruiting("taherinternal", "") == (cl.DEAD, None)
+
+
+@pytest.mark.parametrize(
+    "site_status, site_body, listing",
+    [
+        ("dns", b"", (200, b'{"count": 1}')),  # one fixed host: the resolver, not the site
+        (400, b'{"message":"Bad Request"}', (200, b'{"count": 1}')),  # an unmeasured 400
+        (503, b"", (200, b'{"count": 1}')),
+        (200, b"<html>wall</html>", (200, b'{"count": 1}')),
+        # A live site whose listing errored: `trulitecareers` answered this 500 on 2026-09-24.
+        (200, None, (500, b'{"message":"ErrCode=ERR_BAD_REQUEST"}')),
+        (200, None, (200, b"<html></html>")),
+    ],
+)
+def test_adp_recruiting_inconclusive_answers_stay_unknown(
+    monkeypatch, site_status, site_body, listing
+):
+    body = _ADP_RM["site_churchmutual"] if site_body is None else site_body
+    monkeypatch.setattr(cl, "_get", _adp_rm_get(site_status, body, listing))
+    assert cl.p_adp_recruiting("churchmutual", "") == (cl.UNKNOWN, None)
+
+
 # --- breezy: the listing's status settles it, redirects not followed ------------------------------
 
 

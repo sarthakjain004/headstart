@@ -10408,8 +10408,9 @@ def test_every_wired_scraper_resolves_its_company(
 #: vendor-alias coverage as every other wired ATS.
 #: adp has no page naming the employer either — its title is the literal "Recruitment" — so
 #: `ADPScraper.resolve_company` reads `ClientName` out of the `client-features` JSON instead,
-#: covered by `tests/test_adp.py`.
-_NO_BOARD_PAGE = {"taleo_enterprise", "adp"}
+#: covered by `tests/test_adp.py`. adp_recruiting reads `clientName` off the site record it
+#: already fetched for its token, covered by `tests/test_adp_recruiting.py`.
+_NO_BOARD_PAGE = {"taleo_enterprise", "adp", "adp_recruiting"}
 
 
 def test_every_ats_with_patterns_has_a_scraper_that_offers_a_board_page():
