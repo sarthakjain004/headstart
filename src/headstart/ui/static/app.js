@@ -2066,8 +2066,9 @@ function drawTrends(){
   }
 
   // Methodology boundaries (ADR-0164): the taxonomy, tech filter, extraction or duplicate
-  // removal (ADR-0188) changed at this stamp, not the market. Drawn as a vertical note behind the series, same as the reference
-  // line and the gridlines — an epoch's `ts` is written by the same tick as a trends row, so it
+  // removal (ADR-0188) changed at this stamp, not the market. Drawn as a vertical note behind
+  // the series, same as the reference line and the gridlines — an epoch's `ts` is written by
+  // the same tick as a trends row, so it
   // is normally an exact stamp match; one that predates this feature or fell outside the window
   // simply finds no index and is skipped rather than guessed at.
   (d.epochs || []).forEach(ep => {

@@ -1962,8 +1962,7 @@ def test_trends_epochs_are_narrowed_by_since_and_until(epochs_trends_app):
 
 def test_trends_epochs_name_a_dedup_change(epochs_trends_app, tmp_path):
     """A dedup-rule change removes served duplicates in one tick, which reads as a hiring drop
-    unless it is marked. ``epochs_trends_app`` writes the pre-``dedup_version`` header, so every
-    other epochs test here is also the check that a file from before the column still loads."""
+    unless it is marked."""
     stamp = {
         "centroid_version": "2",
         "family_map_fingerprint": "aaa",
@@ -1979,6 +1978,33 @@ def test_trends_epochs_name_a_dedup_change(epochs_trends_app, tmp_path):
     )
     assert epochs_trends_app._load_epochs(path) == [
         {"ts": _T2, "changed": ["duplicate removal changed"]}
+    ]
+
+
+def test_trends_epochs_load_a_file_from_before_dedup_version(
+    epochs_trends_app, tmp_path
+):
+    """The Space deploys before the next tick upgrades the file, so it must read the old shape."""
+    stamp = {"centroid_version": "2", "family_map_fingerprint": "aaa"}
+    path = _write_epochs(
+        tmp_path,
+        [
+            {
+                "ts": _T1,
+                **stamp,
+                "tech_filter_version": "1",
+                "derivations_version": "13",
+            },
+            {
+                "ts": _T2,
+                **stamp,
+                "tech_filter_version": "2",
+                "derivations_version": "13",
+            },
+        ],
+    )
+    assert epochs_trends_app._load_epochs(path) == [
+        {"ts": _T2, "changed": ["tech filter changed"]}
     ]
 
 

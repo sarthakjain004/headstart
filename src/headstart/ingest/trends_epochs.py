@@ -26,7 +26,6 @@ already documents happening twice for a version a human has to remember to move.
 from __future__ import annotations
 
 import csv
-import os
 from pathlib import Path
 
 _COLUMNS = (
@@ -45,21 +44,25 @@ _HEADER_WITHOUT_DEDUP_VERSION = _COLUMNS[:-1]
 _DEDUP_VERSION_AT_ADDITION = "1"
 
 
-def _add_dedup_version_column(path: Path) -> None:
-    """Rewrite a file from before ``dedup_version`` in the current shape.
+def _add_dedup_version_column_if_missing(path: Path) -> None:
+    """Rewrite a file from before ``dedup_version`` in the current shape; leave any other alone.
 
     Written beside it and renamed over it, so a crash mid-write leaves the old file whole rather
-    than a truncated one the merge stage's upload would publish."""
+    than a truncated one the merge stage's upload would publish — and the staged file is removed
+    on failure, because that upload takes all of ``data/state`` and would publish it too."""
     with path.open(encoding="utf-8", newline="") as fh:
-        rows = list(csv.reader(fh))
+        rows = [row for row in csv.reader(fh) if row]
     if not rows or tuple(rows[0]) != _HEADER_WITHOUT_DEDUP_VERSION:
         return
     staged = path.with_suffix(path.suffix + ".tmp")
-    with staged.open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.writer(fh)
-        writer.writerow(_COLUMNS)
-        writer.writerows([*row, _DEDUP_VERSION_AT_ADDITION] for row in rows[1:])
-    os.replace(staged, path)
+    try:
+        with staged.open("w", encoding="utf-8", newline="") as fh:
+            writer = csv.writer(fh)
+            writer.writerow(_COLUMNS)
+            writer.writerows([*row, _DEDUP_VERSION_AT_ADDITION] for row in rows[1:])
+        staged.replace(path)
+    finally:
+        staged.unlink(missing_ok=True)
 
 
 def _read_state(path: Path) -> tuple[tuple[str, ...] | None, bool]:
@@ -67,7 +70,9 @@ def _read_state(path: Path) -> tuple[tuple[str, ...] | None, bool]:
 
     A missing or empty file has nothing recorded and needs no rebuild — the ordinary first-run
     case. A file whose header doesn't match the current shape is corrupt, or predates this
-    module's shape: :func:`append_if_changed` truncates and starts over rather than appending
+    module's shape (except the pre-``dedup_version`` header, which
+    :func:`_add_dedup_version_column_if_missing` upgrades before this reads it):
+    :func:`append_if_changed` truncates and starts over rather than appending
     beneath it, so a corrupt file heals itself on the next tick instead of permanently reading as
     "nothing to compare against" and writing a row on every run forever.
     """
@@ -107,7 +112,7 @@ def append_if_changed(
         str(dedup_version),
     )
     if path.exists():
-        _add_dedup_version_column(path)
+        _add_dedup_version_column_if_missing(path)
     previous, rebuild = _read_state(path)
     if previous is not None and previous[1:] == current:
         return False

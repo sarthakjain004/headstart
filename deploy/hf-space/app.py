@@ -1184,9 +1184,9 @@ def trends():
     filter, the experience/salary extraction or the duplicate-removal rules (ADR-0188) moved at
     that stamp. Unlike every other field above, it is **not** narrowed by ``ats`` or scoped to the
     live centroid version: a refit is itself one of the things that can produce a boundary, so
-    hiding it there would hide the
-    exact event most worth marking. A chart can draw a marker at each stamp so a level shift
-    reads as "we changed how we count" rather than being mistaken for a hiring trend."""
+    hiding it there would hide the exact event most worth marking. A chart can draw a marker at
+    each stamp so a level shift reads as "we changed how we count" rather than being mistaken
+    for a hiring trend."""
     if not _TRENDS:
         return jsonify(error="no trend data yet"), 503
     metric = request.args.get("metric", "stock")

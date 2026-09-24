@@ -510,6 +510,8 @@ def scraped_boards(
 def plan_prune(index_ids: Iterable[str], keep: set[str]) -> tuple[list[str], list[str]]:
     """Split index ids into ``(evict_off_board, evict_duplicate)``.
 
+    A change to what counts as a duplicate here bumps :data:`DEDUP_VERSION` (ADR-0188).
+
     ``evict_off_board``: Board not in ``keep`` (dead / dropped from the ledger / disabled ATS).
     ``evict_duplicate``: among the survivors, every id but one per ``(lowercased Board, native id)``
     group — the case-variant dupes of one job.

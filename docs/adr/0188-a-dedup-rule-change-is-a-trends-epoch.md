@@ -45,9 +45,9 @@ same way, since an aliased Board's history stays in the Board-delta ledger.
    instead, each old row taking `1`, the version the rules had when the column was added. The
    value is fixed rather than the live constant, so a bump that lands before the first upgrading
    tick still reads as a boundary. The rewrite goes to a temporary file renamed over the original,
-   so a crash cannot leave a truncated file for the merge stage to upload. Checked against the
-   production file on 2026-09-24: its six
-   rows survive, the upgrade adds no row, and a bump to `2` adds exactly one.
+   and that file is removed if the write fails, so neither a truncated file nor a stray `.tmp`
+   reaches the merge stage's upload of `data/state`. Checked against the production file on
+   2026-09-24: its six rows survive, the upgrade adds no row, and a bump to `2` adds exactly one.
 5. **The Space reads the column with `.get`.** Between this change's deploy and the next pipeline
    tick, the Space loads a file that has no `dedup_version` yet.
 
