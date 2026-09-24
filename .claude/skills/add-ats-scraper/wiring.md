@@ -58,6 +58,12 @@ Methods (`url`, `parse`, `job_url` and `_salary_field` are abstract):
   the detail also supplies other fields that would go blank (oracle and pyjamahr decline it).
 - Per-Board log lines are INFO. A WARNING is an Actions annotation against a quota of 10 per step
   (ADR-0039); `test_scraper_log_levels.py` fails an unlisted one.
+- A hard rate limit is paced by one throttle shared across instances and across the sync and
+  async paths; a per-instance delay multiplies by the Boards `harvest` reads at once. A 429
+  mid-Board marks it truncated rather than returning a short list as whole.
+- Where a document mixes encodings, decode in a local function both the scraper and prober
+  call (ClearCompany's `decode_hrm_bytes`, on the built-in `surrogateescape`); an import that
+  registers a codec handler is a process-global side effect.
 - `html_to_text()` for descriptions, `is_remote()` only as a fallback to a stated field,
   `host_of()` for any host arithmetic — all in `headstart.models`.
 
@@ -109,8 +115,13 @@ Sources, cheapest first:
   style with a test in `tests/test_wayback_feeder.py`.
 - Common Crawl: add a `{ats}` entry to `ATS_PATTERNS` in `scripts/discover/cc_miner.py`, then
   `CC_ONLY_ATS={ats} PYTHONPATH=src python -u scripts/discover/cc_miner.py [CC-MAIN-…]` and
-  `PYTHONPATH=src python scripts/merge/merge_cc_into_tenants.py`. Sweep older indexes until the
-  count goes flat. A pattern's capture group can read a query key (greenhouse's `for=`).
+  `PYTHONPATH=src python scripts/merge/merge_cc_into_tenants.py`. Mine from the newest crawl
+  back three years, not one crawl: ClearCompany's added new labels on all 33. A pattern's
+  capture group can read a query key (greenhouse's `for=`). `cc_miner` moves to
+  `data.commoncrawl.org` itself when the index API is down, as it was all day on 2026-09-23
+  (`cc_data_host.py`, #586, which also shifts to the spare egress on a 429 or 503);
+  `CC_DATA_HOST=1` skips the API's retries. A source that did not answer is **not measured**,
+  never zero — a "flat for N crawls" stop rule reads an outage as exhaustion.
 - The careers-page fingerprinter: registering the scraper makes the ATS `SUPPORTED` in
   `scripts/discover/fingerprint_careers.py`; check its `normalise_tenant` emits your slug shape,
   with a case in `tests/test_fingerprint_careers.py`.
@@ -126,9 +137,11 @@ right.
 the gates, the backoff and the egress rotation) and `_note(reason)` for every non-settling
 outcome. The cheapest request that yields a job count first; a second request only to settle what
 the first cannot (pyjamahr's zero). A redirect-dead tenant needs `_fetch(..., allow_redirects=False)`
-(measurement.md Q9). A rate limit that spans tenants gets its host in `_SPANNING` with a `_GATES`
+(measurement.md Q9). On a wildcard DNS zone a DNS failure is UNKNOWN (Q8): the local resolver
+fails under a wide prober, so re-probe the unknowns before committing. A rate limit that spans tenants gets its host in `_SPANNING` with a `_GATES`
 entry, and a bare-403 quota its host in `_QUOTA_403`, each citing the measurement (Q19). Probes
-that call `_fetch` directly are tested by monkeypatching `cl._fetch` (the `p_jobvite` tests). `DEAD` only on a response measured on real dead tenants;
+that call `_fetch` directly are tested by monkeypatching `cl._fetch` (the `p_jobvite` tests).
+`DEAD` only on a response measured on real dead tenants;
 everything unexplained is `UNKNOWN`, which is re-probed rather than lost. Tests go in
 `tests/test_liveness_probes.py`, one per branch, by monkeypatching `cl._get` (see the pyjamahr
 block there).
@@ -138,7 +151,10 @@ reads the pool from the worktree's `data/ats-tenants-merged/{ats}.csv` and write
 `data/validate/liveness/{ats}.csv` (`ats,tenant,url,status,jobs,checked_at`), which is committed.
 Then check it: job counts vary, no constant repeats across many Boards, the row count equals the
 unique `board_key` count (or each duplicate is explained), and a spot check of 5 `live` and 5
-`dead` rows against the live host agrees with the verdict. Pool vendor test tenants and
+`dead` rows against the live host agrees with the verdict. Where several labels return one
+account's whole feed (134 ClearCompany accounts over 468 labels), bury the extra labels in the
+alias ledger `data/validate/aliases/{ats}.csv` (ADR-0111), or every posting serves once per
+label, and commit whatever regenerates it. Pool vendor test tenants and
 load-test instances go in `config.EXCLUDED_BOARDS` (oracle's 78,431-posting load-test tenant,
 jobvite's `jvauto`).
 
@@ -156,9 +172,9 @@ jobvite's `jvauto`).
   to carry quoted a figure the ledger no longer held. A landing rule the ledger's code cannot
   enforce, like Phenom's backing-Board gate, goes in CLAUDE.md §"Landing rules the ledgers' code
   does not enforce".
-- `README.md` §"ATS coverage": the scraper count — `**N scrapers**`, the intro line's "N
-  scrapers", and the "Eight of the N" sentence below the list, all the same N, the registry's
-  size — and the alphabetical list.
+- `README.md`: every scraper count — the intro line's "N scrapers", `**N scrapers**`, "Eight of
+  the N" and the layout line's "N per-ATS" (all the registry's size N), the pipeline diagram's
+  "M enabled scrapers" (N minus `DISABLED_ATS`) — and the alphabetical list.
 - Board figures in `README.md` and `CONTEXT.md` §Counting Boards change with every ledger. Print
   the recomputed figures from the tree itself:
 
