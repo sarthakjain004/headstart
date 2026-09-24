@@ -62,7 +62,7 @@ import json
 import re
 from typing import Any
 
-from headstart import http
+from headstart import http, salary
 from headstart.models import Job, html_to_text
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -119,7 +119,7 @@ def _department(item: dict) -> str | None:
 _REMOTE = {"remote": True, "onsite": False}
 
 
-#: `compensation_frequency` -> the period spelling `salary._field_generic` reads. The three it
+#: `compensation_frequency` -> the period spelling `salary.from_field` reads. The three it
 #: reads are year (3,233 rows), hour (2,781) and month (342). week (33), day (16) and two_weeks
 #: (10) have no spelling it reads, and its default is annual, so those yield no salary rather
 #: than a figure served at the wrong period.
@@ -286,6 +286,4 @@ class PinpointScraper(BaseScraper):
         if period is None:
             return None
         currency = (raw.get("compensation_currency") or "").strip()
-        return " ".join(
-            p for p in (f"{_digits(lo)}-{_digits(hi)}", currency, period) if p
-        )
+        return salary.to_field(_digits(lo), _digits(hi), currency, period)

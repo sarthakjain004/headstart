@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from headstart import http
+from headstart import http, salary
 from headstart.models import Job, epoch_ms_to_iso, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
@@ -417,7 +417,9 @@ class LeverScraper(BaseScraper):
         lo, hi = raw.get("min"), raw.get("max")
         if not lo and not hi:
             return None
-        span = f"{lo}-{hi}" if lo and hi else str(lo or hi)
-        return " ".join(
-            str(x) for x in (span, raw.get("currency"), raw.get("interval")) if x
+        return salary.to_field(
+            lo or hi,
+            hi if lo and hi else None,
+            raw.get("currency"),
+            raw.get("interval"),
         )

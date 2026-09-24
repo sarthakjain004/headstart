@@ -54,6 +54,7 @@ import json
 import re
 from typing import Any
 
+from headstart import salary
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import (
     USER_AGENT,
@@ -302,6 +303,5 @@ class SmartRecruitersScraper(BaseScraper):
         lo, hi = raw.get("min"), raw.get("max")
         if lo is None:
             return None
-        span = f"{lo}-{hi}" if hi is not None else str(lo)
         period = _STRUCTURED_PERIOD.get((raw.get("period") or "").upper())
-        return " ".join(str(x) for x in (span, raw.get("currency"), period) if x)
+        return salary.to_field(lo, hi, raw.get("currency"), period)

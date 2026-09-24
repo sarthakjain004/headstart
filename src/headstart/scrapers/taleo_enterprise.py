@@ -23,7 +23,7 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import unquote, urlencode, urlsplit, urlunsplit
 
-from headstart import company_name
+from headstart import company_name, salary
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -191,8 +191,7 @@ def _salary_field(
     it is."""
     if not payvalue:
         return None
-    span = f"{payvalue}-{maximumsalary}" if maximumsalary else payvalue
-    return " ".join(p for p in (span, currency, frequency) if p)
+    return salary.to_field(payvalue, maximumsalary or None, currency, frequency)
 
 
 def _parse_detail_page(page: str) -> dict[str, str | None] | None:

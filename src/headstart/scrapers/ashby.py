@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from headstart import salary
 from headstart.models import Job, html_to_text
 from headstart.scrapers.base import BaseScraper
 
@@ -201,12 +202,10 @@ class AshbyScraper(BaseScraper):
                 interval = c.get("interval")
                 if interval == "1 TIME":
                     continue
-                span = (
-                    f"{lo}-{hi}"
-                    if lo is not None and hi is not None
-                    else str(lo if lo is not None else hi)
-                )
-                return " ".join(
-                    str(x) for x in (span, c.get("currencyCode"), interval) if x
+                return salary.to_field(
+                    lo if lo is not None else hi,
+                    hi if lo is not None else None,
+                    c.get("currencyCode"),
+                    interval,
                 )
         return None
