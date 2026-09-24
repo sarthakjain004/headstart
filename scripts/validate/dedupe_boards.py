@@ -110,12 +110,17 @@ def main() -> int:
         )
 
     # The same trap from another side: an alias ledger this script did not write. ClearCompany's
-    # rows come from `clearcompany_shared_accounts.py` (signal `shared-reqs`, ADR-0182) and no
-    # redirect finds them, so an --apply here would replace every row with nothing.
-    if args.apply and args.ats == "clearcompany":
+    # rows come from `clearcompany_shared_accounts.py` (signal `shared-reqs`, ADR-0182), Taleo
+    # Enterprise's from `taleo_enterprise_subset_sections.py` (signal `subset-reqs`, ADR-0186),
+    # and no redirect finds either, so an --apply here would replace every row with nothing.
+    written_elsewhere = {
+        "clearcompany": "clearcompany_shared_accounts.py (ADR-0182)",
+        "taleo_enterprise": "taleo_enterprise_subset_sections.py (ADR-0186)",
+    }
+    if args.apply and args.ats in written_elsewhere:
         raise SystemExit(
-            "clearcompany's alias ledger is written by clearcompany_shared_accounts.py; "
-            "--apply here would erase it (ADR-0182)."
+            f"{args.ats}'s alias ledger is written by {written_elsewhere[args.ats]}; "
+            "--apply here would erase it."
         )
 
     scraper_cls = SCRAPERS.get(args.ats)

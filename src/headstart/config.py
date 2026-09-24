@@ -243,6 +243,15 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # employer. The "-dev" slug matches, but per this list's own rule that alone would
         # not have been enough.
         "sensehq:trm-dev",  # 204 postings
+        # Oracle's own Taleo Enterprise demo tenant, `pmg.taleo.net`. Both readable sections were
+        # read on 2026-09-24 (89 and 86 postings, mostly shared): "Director of Finance (DEMO)",
+        # "TEST 2 EPredix Assessment", "TN-CSW-Test", "test1-dup1T", "Sample", "Radius1". Its
+        # other two sections, `qatestcs` (unknown) and `mobilecs_demo_al` (dead), serve nothing
+        # readable today and are listed so a re-probe that finds them live changes nothing.
+        "taleo_enterprise:https://pmg.taleo.net/careersection/brandtss_faceted",
+        "taleo_enterprise:https://pmg.taleo.net/careersection/m1",
+        "taleo_enterprise:https://pmg.taleo.net/careersection/mobilecs_demo_al",
+        "taleo_enterprise:https://pmg.taleo.net/careersection/qatestcs",
         # Blackstone's own test sites; the second is named for what it serves. Workday slugs
         # ARE the careers URL, so these keys are longer than the rest.
         "workday:https://blackstone.wd1.myworkdayjobs.com/marni_test_site",
