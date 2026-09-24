@@ -4905,6 +4905,26 @@ def test_rippling_labels_an_empty_record_and_a_row_with_no_uuid():
     assert [row["_detail"] for row in raw] == [{}, {}]
 
 
+def test_rippling_gates_each_location_row_before_merging_a_posting():
+    """The gate asks every location row, and the posting is fetched if any row passes — so a
+    posting whose last row alone would be gated out is still described. The detail hangs on the
+    row the merge kept, and `tech_gated_details` counts rows."""
+    uuid = "b2"
+    listed = [
+        {"uuid": uuid, "name": "Backend Engineer", "workLocation": {"label": "Pune"}},
+        {"uuid": uuid, "name": "Receptionist", "workLocation": {"label": "Delhi"}},
+    ]
+    scraper, fetcher = _rippling_board(listed, {uuid: {"createdOn": "x"}})
+    scraper.have_details = frozenset()  # arms the gate
+    raw = scraper.fetch_raw()
+    assert fetcher.urls() == [
+        _RIPPLING_ACME_LISTING,
+        f"{_RIPPLING_ACME_LISTING}/{uuid}",
+    ]
+    assert [row["_detail"] for row in raw] == [{"createdOn": "x"}, {}]
+    assert scraper.telemetry["tech_gated_details"] == 1
+
+
 def test_unknown_ats_raises():
     with pytest.raises(ValueError):
         get_scraper("nonexistent", "foo")
@@ -9442,20 +9462,24 @@ def _oracle_reqs(start: int, n: int) -> list[dict]:
     return [{"Id": str(start + i), "Title": f"Engineer {start + i}"} for i in range(n)]
 
 
-def test_oracle_pages_past_the_first_200(monkeypatch):
+def test_oracle_pages_past_the_first_200():
     """The live shape: 299 across a full page and a short one. Both must arrive."""
-    pages = [
-        _oracle_page(_oracle_reqs(0, 200), 299),
-        _oracle_page(_oracle_reqs(200, 99), 299),
-    ]
+    from headstart.scrapers.oracle import OracleScraper
+
+    page_by_offset = {
+        0: _oracle_page(_oracle_reqs(0, 200), 299),
+        200: _oracle_page(_oracle_reqs(200, 99), 299),
+    }
     seen: list[int] = []
-    s = get_scraper("oracle", "acme.fa.ocs.oraclecloud.com", "Acme")
 
-    def _get(self, url=None):
-        seen.append(self._offset)
-        return pages[len(seen) - 1]
+    def route(method, url, kwargs):
+        if "/recruitingCEJobRequisitions?" not in url:
+            return FakeResponse(404)  # the Detail pass is not under test here
+        offset = int(url.split("offset=")[1])
+        seen.append(offset)
+        return FakeResponse(text=page_by_offset[offset])
 
-    monkeypatch.setattr(type(s), "_get", _get)
+    s = OracleScraper("acme.fa.ocs.oraclecloud.com", "Acme", fetcher=FakeFetcher(route))
     jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
 
     assert seen == [0, 200]  # the offset really advanced
