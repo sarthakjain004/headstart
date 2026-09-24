@@ -342,6 +342,17 @@ def test_bad_credential_is_401(auth_app, monkeypatch):
     assert r.status_code == 401
 
 
+def test_privacy_policy_is_public_and_linked_from_the_door(auth_app):
+    # Google's OAuth consent screen needs a privacy-policy URL a stranger can open, so the
+    # wall must not gate it. It points at the one canonical copy in the repository.
+    client = auth_app.app.test_client()
+    r = client.get("/privacy")
+    assert r.status_code == 302
+    assert r.headers["Location"] == f"{auth_app._REPO}/blob/main/PRIVACY.md"
+    assert (Path(__file__).resolve().parents[1] / "PRIVACY.md").is_file()
+    assert b'href="/privacy"' in client.get("/").data
+
+
 def test_unsubscribe_stays_reachable_signed_out(auth_app):
     # The wall must never break a mailed link: /unsubscribe answers its own 503 here
     # (alerts unconfigured in this fixture), not the wall's 401.
