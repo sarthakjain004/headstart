@@ -121,6 +121,9 @@ def _pull_index(attempts: int = 5) -> None:
                     # the Trends company picker's directory (ADR-0185) — ~2 MB, and absent
                     # until a run writes one, which hides the picker rather than failing
                     "data/state/company_directory.json",
+                    # each served Job's role family (ADR-0057), so a Trends category can hand
+                    # over to Search as exact ids — ~4 MB, absent until a run writes one
+                    "data/state/role_assignments.parquet",
                 ],
                 token=os.environ.get("HF_TOKEN"),
             )
@@ -417,6 +420,9 @@ def _company_atses(entry: dict) -> list[str]:
     return sorted({ats_of(board) for board in entry["boards"]})
 
 
+_FAMILY_IDS = search.load_family_ids(
+    _STATE / "data" / "state" / "role_assignments.parquet"
+)
 _COMPANIES = _load_directory(_STATE / "data" / "state" / "company_directory.json")
 _COMPANY_OF = {
     board: key for key, entry in _COMPANIES.items() for board in entry["boards"]
@@ -550,9 +556,13 @@ def _company_where(args) -> str | None:
     a toggle happens to be on".
 
     ``board=`` (repeatable) narrows to one company's Boards, the Trends and Hot tabs' hand-off
-    (ADR-0185). It needs no Account, so it applies with accounts off as well.
+    (ADR-0185), and ``family=`` beside it to one role family of theirs. Neither needs an
+    Account, so both apply with accounts off as well.
     """
-    scoped = search.scoped_boards_clause(args)
+    scoped = search.with_extra(
+        search.scoped_boards_clause(args),
+        search.scoped_family_clause(args, _FAMILY_IDS),
+    )
     gate = _account_gate()
     if not gate:
         return scoped

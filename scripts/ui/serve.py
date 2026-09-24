@@ -24,8 +24,10 @@ from headstart.embedding_conventions import PROD_TABLE, load_encoder
 from headstart.search import (
     MAX_SCOPED_BOARDS,
     JobSearch,
+    load_family_ids,
     request_account_clause,
     scoped_boards_clause,
+    scoped_family_clause,
 )
 from headstart.search_filter_compiler import (
     KEYWORD_DEFAULT_SCOPE,
@@ -143,10 +145,14 @@ def coverage():
 _LOCAL_COMPANIES = CompanyPrefs.blank("local")
 
 
+# A Trends category's Jobs by id, from a local pull of the role-assignment snapshot if any.
+_FAMILY_IDS = load_family_ids(_REPO / "data" / "state" / "role_assignments.parquet")
+
+
 def _company_where(args) -> str | None:
-    """Mirror of the Space's per-request follow/hide and ``board=`` clause — the rules are shared."""
+    """Mirror of the Space's per-request follow/hide, ``board=`` and ``family=`` clauses."""
     return with_extra(
-        scoped_boards_clause(args),
+        with_extra(scoped_boards_clause(args), scoped_family_clause(args, _FAMILY_IDS)),
         request_account_clause(
             args, _LOCAL_COMPANIES.followed, _LOCAL_COMPANIES.hidden
         ),

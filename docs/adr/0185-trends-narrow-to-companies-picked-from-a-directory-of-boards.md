@@ -452,3 +452,45 @@ Its code review tightened the round:
 - Hot drops a duplicate-removal run for every Board, while the chart drops it only at
   companies it can touch. A Board list has no company to ask, so the two can differ by one run
   of ordinary change there. A change whose own tick was skipped lands on the next tick.
+
+### A critic's fifth round (2026-09-25): 6/10
+
+The round opened with production still on older code. Each merge synced the Space, and the
+next merge restarted the build, so it cycled BUILDING/APP_STARTING. It reached RUNNING on
+`1cf75b82`, which carries #643, at 20:04 UTC. The rest of the critique was about the local
+build:
+
+- **The category hand-off filters to the category.** Search has no family column, but the
+  pipeline's `role_assignments.parquet` (id → family, ADR-0057) is exactly what the Trends
+  counts are made of. The Space now loads it (`search.load_family_ids`, about 4 MB). Beside
+  `board=`, `family=` becomes an `id IN (…)` clause over those Boards' Jobs in the family,
+  capped at 5,000 ids. Google › AI / Machine Learning now opens as Google's AI roles, not all
+  1,856 Google jobs ranked by a query. The pill names the category, and the hand-off keeps it in
+  `#search?…&family=…&area=…`.
+- **Every figure is first-to-last.** The percentages averaged the first and last three runs,
+  so a line's end (107.7) and its percentage (+7.6%) differed. A sentence's "+121 hiring" and
+  "+477 counting changes" also failed to add up to the chart's +583. Endpoints fix both, and the
+  settling run now does the job the averaging did. "Counting changes" is the chart's move less
+  the hiring move, so the two always add up.
+- **The table says what it shows.** Its columns are "Change, hiring only", "Counting changes"
+  and "Start, as counted". Before, 764 → 1,018 sat beside "−0.2%".
+- **One flat band, ±1%,** for arrows, tiles and sentences. "About flat" had meant under 2%
+  while the arrow went up from 1%, so a −0.6% line was "Biggest faller".
+- **Copy.**
+  - Under Comparable coverage the date is restored ("counted this company — too short" had
+    lost it).
+  - A short window is told apart from a young company.
+  - "New this week" loses its weekly rate.
+  - The early-sign line says when a month of counting arrives ("Oct 13").
+  - Titles fit the view: "How tech hiring is moving at Amazon" under Total, "How AI / Machine
+    Learning hiring compares at 2 companies" inside a category.
+  - Share is off under a Total line, since all tech roles as a share of the company read "96%".
+  - A drill gets a sentence too: the category's total for one company, or one per company.
+- **A custom date range rides in the link** (`since=`/`until=`, UTC minutes), and no preset
+  stays checked over it.
+- **Not fixed here:**
+  - A Board read unchanged for many runs (Google at 1,690 for 60 runs) looks the same as one not
+    read at all. Telling them apart needs per-run scrape evidence the Board-delta ledger does not
+    hold.
+  - JPMorgan's display name arrives with the next pipeline run.
+  - Paytm's two entries stay apart.

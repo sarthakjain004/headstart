@@ -206,6 +206,60 @@ def scoped_boards_clause(args) -> str | None:
     return board_clause(boards, exclude=False)
 
 
+def load_family_ids(path) -> dict[str, list[str]] | None:
+    """``family -> served ids`` from the role-assignment snapshot (ADR-0057), or None
+    without a readable one — which turns the category hand-off off rather than failing boot."""
+    from pathlib import Path
+
+    if not Path(path).exists():
+        return None
+    try:
+        import pyarrow.parquet as pq
+
+        table = pq.read_table(path, columns=["id", "family"]).to_pydict()
+    except (OSError, ValueError, KeyError) as exc:
+        _log.warning(f"role assignments unreadable ({exc}); category hand-off off")
+        return None
+    out: dict[str, list[str]] = {}
+    for job_id, family in zip(table["id"], table["family"], strict=True):
+        out.setdefault(family, []).append(job_id)
+    return out
+
+
+#: The most Jobs a ``family=`` hand-off names by id. Amazon's largest category measured 1,018
+#: (2026-09-25); past the bound the clause would be a query-string-sized IN list, so Search is
+#: left ranking by the query instead.
+MAX_FAMILY_IDS = 5000
+
+
+def scoped_family_clause(
+    args, family_ids: Mapping[str, Collection[str]] | None
+) -> str | None:
+    """The Jobs of the handed-over Boards in one role family (``family=``), or None.
+
+    Search has no family column; the family of each served Job is the pipeline's own
+    ``role_assignments`` snapshot (ADR-0057), the same assignment the Trends counts are made
+    of. So a trend's category hands over as exact ids — "243 AI roles at Google" in Trends
+    opens as Google's AI roles in Search, where a semantic query alone ranked all 1,856 Google
+    jobs. Only with ``board=``: a family across the whole index is a Trends view, not a search.
+    """
+    family = (args.get("family") or "").strip()
+    boards = [board.lower() + ":" for board in args.getlist("board") if board.strip()]
+    if not family or not boards or family_ids is None:
+        return None
+    prefixes = tuple(boards)
+    ids = [i for i in family_ids.get(family, ()) if i.lower().startswith(prefixes)]
+    if len(ids) > MAX_FAMILY_IDS:
+        return None
+    if not ids:
+        return "id IN ('')"
+    return (
+        "id IN ("
+        + ", ".join("'" + i.replace("'", "''") + "'" for i in sorted(ids))
+        + ")"
+    )
+
+
 # TEMPORARY (2026-07-07) — INTENDED FOR REMOVAL. Darwinbox rows scraped before the
 # candidatev2 URL fix carry the old `/ms/candidate/careers/jobs/{id}` link, which on v2
 # tenants redirects to the careers home instead of the job. The stored data self-heals only

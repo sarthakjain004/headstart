@@ -2750,3 +2750,35 @@ def test_picks_a_view_leaves_out_are_named(company_trends):
     ).get_json()
     assert whole["uncounted"] == []
     assert company_trends.get("/trends").get_json()["uncounted"] == []
+
+
+def test_a_category_hands_over_as_the_ids_trends_counted(app):
+    """`family=` beside `board=` names the Boards' Jobs in that family, and nothing else."""
+    from headstart import search
+
+    ids = {
+        "ai-ml": [
+            "google:careers.google.com:1",
+            "google:careers.google.com:2",
+            "x:y:3",
+        ],
+        "devops": ["google:careers.google.com:4"],
+    }
+    args = app.app.test_request_context(
+        "/search?board=google:careers.google.com&family=ai-ml"
+    ).request.args
+    assert search.scoped_family_clause(args, ids) == (
+        "id IN ('google:careers.google.com:1', 'google:careers.google.com:2')"
+    )
+    bare = app.app.test_request_context("/search?family=ai-ml").request.args
+    assert search.scoped_family_clause(bare, ids) is None, (
+        "only beside a company's Boards"
+    )
+    none = app.app.test_request_context(
+        "/search?board=google:careers.google.com&family=data-science"
+    ).request.args
+    assert search.scoped_family_clause(none, ids) == "id IN ('')"
+    assert search.scoped_family_clause(args, None) is None, "no snapshot, no filter"
+    quoted = {"ai-ml": ["b:o'k:1"]}
+    q = app.app.test_request_context("/search?board=b:o'k&family=ai-ml").request.args
+    assert search.scoped_family_clause(q, quoted) == "id IN ('b:o''k:1')"
