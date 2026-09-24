@@ -1558,9 +1558,10 @@ function topSplitNow(){
 // show: its legend would be "not indexed" rows over one line or none. The median Board holds
 // three tech openings (ADR-0185), so for a single pick this is the usual case, not the edge.
 function fewIndexable(raw){
-  return raw.series.filter(s =>
-    (s.points.find(v => v != null) ?? 0) >= INDEX_BASE_FLOOR).length < 2;
+  return raw.series.filter(startsIndexable).length < 2;
 }
+// Whether a line's first measured count reaches the Change floor (INDEX_BASE_FLOOR).
+const startsIndexable = s => (s.points.find(v => v != null) ?? 0) >= INDEX_BASE_FLOOR;
 
 // Picks live in the hash (`#trends?company=…&by=…`), so a view can be shared and a Hot-tab row
 // or a search result can link straight into it. A bare `#trends` — the tab strip's own link —
@@ -1625,6 +1626,36 @@ function pickScope(){
   return !n ? { ref: 'whole index', whole: 'the whole index', share: 'a share of the index' }
     : n === 1 ? { ref: 'whole company', whole: 'the company’s own total', share: 'a share of the company’s openings' }
     : { ref: 'all picked', whole: 'the picked companies’ combined total', share: 'a share of the picked companies’ openings' };
+}
+
+// What a company chart must say about its own line. It begins at the first run that counted
+// its Boards — the ledger's start (2026-09-13) or later, as it was for 9,981 companies
+// (measured 2026-09-24) — so a short line must not read as the company's whole history. Said
+// whenever a company is picked: a company first counted two days ago fills the whole window,
+// so "the line starts late" cannot be read off the window. A comparable cohort's start is its
+// own base, so the sentence is left out there.
+function companyNote(d){
+  if (!trendPicks.length || !d.series.length) return '';
+  const parts = [];
+  const starts = d.series.map(s => s.points.findIndex(v => v != null)).filter(i => i >= 0);
+  const first = starts.length ? Math.min(...starts) : -1;
+  if (trendCoverage !== 'comparable' && first >= 0)
+    parts.push(`HeadStart has counted ${trendPicks.length === 1 ? (trendPicks[0].label || 'this company') : 'these companies'}`
+      + ` since ${stampLabel(d.stamps[first], true)}; nothing earlier exists to show.`);
+  if ((d.discovered || []).length)
+    parts.push('A solid grey vertical line marks boards found later: their openings were already open, so the step there is not hiring.');
+  if (pickSteps(d) && viewKind(d) !== 'total')
+    parts.push('No biggest riser or faller is named, because steps like these move the lines more than hiring does.');
+  return parts.join(' ');
+}
+
+// Whether a picked company's window holds a step that is not hiring and is the company's own: a
+// Board found later, or duplicate removal (ADR-0188), which parks whole Boards of one Tenant.
+// The other counting changes move every line the index chart draws too, and it still names
+// movers across them, so they do not withhold one here either.
+function pickSteps(d){
+  return !!trendPicks.length && ((d.discovered || []).length > 0
+    || (d.epochs || []).some(e => d.stamps.includes(e.ts) && e.changed.includes('duplicate removal changed')));
 }
 
 // "at Stripe" / "at 3 companies": how the text around the chart names what the picks scope.
@@ -1778,7 +1809,7 @@ async function loadTrends(family){
   // The Space lists them sorted by key, so they are laid back onto the reader's own order: a
   // pick keeps its place, and one that came in by another Board of its company goes last.
   if (payload.companies){
-    const byKey = new Map(payload.companies.map(c => [c.key, { key: c.key, label: c.label }]));
+    const byKey = new Map(payload.companies.map(c => [c.key, { key: c.key, label: c.label, name: c.name }]));
     const kept = trendPicks.map(p => byKey.get(p.key)).filter(Boolean);
     trendPicks = [...kept, ...[...byKey.values()].filter(c => !kept.includes(c))];
   }
@@ -1787,7 +1818,7 @@ async function loadTrends(family){
   }
   trendRaw = payload; trendDrill = family || null;
   trendData = trendView(payload, trendDrill);
-  drawPicks(); writeTrendHash(); applyShareLock();
+  drawPicks(); writeTrendHash(); applyUnitLocks();
   drawTrends();
 }
 
@@ -1971,7 +2002,10 @@ function niceBounds(min, max){
   // data in a 200-unit axis and handing back a third of the plot as dead space.
   const mult = [1, 2, 2.5, 3, 4, 5, 10].find(m => want <= m * mag) ?? 10;
   const step = mult * mag;
-  const bot = Math.floor(min / step) * step, top = Math.ceil(max / step) * step;
+  let bot = Math.floor(min / step) * step, top = Math.ceil(max / step) * step;
+  // A flat line on a whole step (a company's Total holding at 19, indexed to 100 throughout)
+  // rounds both ends to the same tick, and a zero-height axis drew every y as NaN.
+  if (top === bot){ bot -= step; top += step; }
   const dec = Math.max(0, (mult === 2.5 ? 1 : 0) - Math.round(Math.log10(mag)));
   const ticks = [];
   for (let k = 0; bot + k * step <= top + step / 1e6; k++) ticks.push(bot + k * step);
@@ -2252,6 +2286,19 @@ function drawTrends(){
     svg += `<line class="epoch-marker" x1="${ex.toFixed(1)}" y1="${PAD_T}"
              x2="${ex.toFixed(1)}" y2="${H - PAD_B}"><title>${esc(title)}</title></line>`;
   });
+  // Boards of a pick that HeadStart found after its line began (ADR-0185). Each lands its
+  // whole backlog at once — openings that were already open — so the step is marked where it
+  // lands rather than left to read as hiring, the reason the Hot tab leaves new Boards out.
+  (d.discovered || []).forEach(f => {
+    const idx = d.stamps.indexOf(f.ts);
+    if (idx < 0) return;
+    const fx = x(idx);
+    const who = (trendPicks.find(p => p.key === f.company) || {}).label || 'a picked company';
+    const title = `${f.boards} more board${f.boards === 1 ? '' : 's'} of ${who} found here: `
+      + `${f.openings.toLocaleString()} openings that were already open arrive at once — not new hiring`;
+    svg += `<line class="found-marker" x1="${fx.toFixed(1)}" y1="${PAD_T}"
+             x2="${fx.toFixed(1)}" y2="${H - PAD_B}"><title>${esc(title)}</title></line>`;
+  });
 
   // Drawn before the series: context to read them against, not one of them. Dashed because
   // dashing should mean exactly this — a reference, not a measurement — which is also why the
@@ -2364,12 +2411,7 @@ function drawTrends(){
       ? 'These roles have not been measured yet — they appear after the next pipeline run.'
       : trendPicks.length && !d.series.length
       ? `No openings counted${where} in this window.`
-      // A company's counts exist only per Board, and those start with the Board-delta ledger
-      // (ADR-0185), so a ten-day line must not read as the company's whole history. Said only
-      // where that start is what cut the line: a comparable cohort's start is its own base.
-      : d.history_start && trendCoverage !== 'comparable' && d.stamps[0] === d.history_start
-      ? `Company history starts ${stampLabel(d.history_start, true)}: HeadStart began counting each board on its own then, so nothing earlier exists for any company.`
-      : '');
+      : companyNote(d));
   // An axis with no lines under it is the "broken chart" reading the message above exists to
   // replace, so with nothing measured the message stands on its own — and so do the tiles,
   // which would otherwise print four em-dashes under it.
@@ -2443,7 +2485,10 @@ function buildKpis(d, charted, measured){
   // "Biggest riser +233.3%" — the same tile class the floor was added to stop.
   // One Total line has no rival to rise or fall against; its own movement is in its legend row.
   const kind = viewKind(d);
-  const moves = kind === 'total' ? [] : charted.filter(hasIndexBase)
+  // A company's movement across a window with a found Board or duplicate removal in it is
+  // mostly those steps: Hyatt's categories climbed ~14x on 82 found Boards, then fell ~90% at
+  // the duplicate-removal tick, and "Biggest faller −92.5%" headlined neither. Not named then.
+  const moves = kind === 'total' || pickSteps(d) ? [] : charted.filter(hasIndexBase)
     .map(s => ({ label: s.label, dl: trendDelta(s.points, s) }))
     .filter(m => m.dl != null).sort((a, b) => b.dl - a.dl);
   // Summed from the series, NOT `totals - non_tech`: the ledger writes non_tech under the STOCK
@@ -2694,21 +2739,23 @@ function trendSeg(id, attr, apply){
 // cannot use, and is given no visible reason for. The group is replaced by the answer and its
 // one-line why instead. `disabled` stays on the buttons underneath: `hidden` keeps them off
 // the screen, and `disabled` keeps them off the tab order in every browser.
-function setUnit(value, shareLocked){
+function setUnit(value, shareLocked, changeLocked){
   trendUnit = value;
   const seg = el('trends-unit'); if (!seg) return;
-  // The one-line why, for whichever view locked Share (see shareLock).
-  if (shareLocked && el('trends-unit-static')) el('trends-unit-static').textContent = shareLocked;
-  // Only SHARE is withdrawn — under "New this week", and under a top-level Company split
-  // (shareLock says why for each). Under "New this week" a share of "new" openings over all live
-  // ones has no reading. Count and Change both do: "312 fresh AI/ML roles" is a number, and
-  // indexing those counts is the only way to compare eight families running from 8.4k down to
-  // 961. Hiding the whole group took Change away in the view that needs it most, and since
-  // Change is now the default (ADR-0119) it also meant the metric toggle silently changed the
-  // unit under the reader.
-  if (el('trends-unit-static')) el('trends-unit-static').hidden = !shareLocked;
+  // A unit with no reading in this view is withdrawn, with its one-line why in place of the
+  // button (shareLock, changeLock). Count always has a reading, so it is never withdrawn: under
+  // "New this week", a share of "new" openings over all live ones has none, but "312 fresh
+  // AI/ML roles" is a number, and indexing those counts is the only way to compare eight
+  // families running from 8.4k down to 961. Hiding the whole group took Change away in the
+  // view that needs it most, and since Change is now the default (ADR-0119) it also meant the
+  // metric toggle silently changed the unit under the reader.
+  const why = [shareLocked, changeLocked].filter(Boolean).join(' ');
+  if (el('trends-unit-static')){
+    if (why) el('trends-unit-static').textContent = why;
+    el('trends-unit-static').hidden = !why;
+  }
   seg.querySelectorAll('button').forEach(b => {
-    const off = shareLocked && b.dataset.unit === 'share';
+    const off = !!(shareLocked && b.dataset.unit === 'share') || !!(changeLocked && b.dataset.unit === 'change');
     b.disabled = off;
     b.hidden = off;
     setRadioChecked(b, b.dataset.unit === value);
@@ -2723,18 +2770,36 @@ function shareLock(){
     return 'Share is off here — each line is a whole company, so as a share of itself it is always 100%.';
   return '';
 }
-// Keep the reader's unit across a view change; only move them off Share where it has no reading.
-function applyShareLock(){
-  const why = shareLock();
-  setUnit(why && trendUnit === 'share' ? 'change' : trendUnit, why);
+// Why Change has no reading here: when no line starts at the floor, every line is "not
+// indexed" and the plot is empty. That is the usual company, not the edge — 22,863 of the
+// directory's 33,966 hold fewer than 5 tech openings (measured 2026-09-24), and Razorpay drew
+// one "not indexed" row over a blank chart.
+function changeLock(){
+  if (!trendData) return '';
+  const { charted } = chartedAndOther(trendData);
+  return !charted.length || charted.some(startsIndexable) ? ''
+    : `Change is off here — no line starts with ${INDEX_BASE_FLOOR} or more openings to index against, so counts are shown.`;
+}
+// A lock moves the reader off a unit only while it holds: the unit they chose is kept in
+// `unitWanted` and comes back when the view can show it again.
+let unitWanted = null;
+function applyUnitLocks(){
+  const share = shareLock(), change = changeLock();
+  const locked = u => (u === 'share' && share) || (u === 'change' && change);
+  let unit = unitWanted || trendUnit;
+  if (locked(unit)){
+    unitWanted = unit;
+    unit = unit === 'share' && !change ? 'change' : 'count';
+  } else unitWanted = null;
+  setUnit(unit, share, change);
 }
 trendSeg('trends-metric', 'metric', v => {
   trendMetric = v;
-  applyShareLock();
+  applyUnitLocks();
   loadTrends(trendDrill);
 });
 trendSeg('trends-coverage', 'coverage', v => { trendCoverage = v; loadTrends(trendDrill); });
-trendSeg('trends-unit', 'unit', v => { setUnit(v, false); drawTrends(); });
+trendSeg('trends-unit', 'unit', v => { unitWanted = null; trendUnit = v; applyUnitLocks(); drawTrends(); });
 trendSeg('trends-split', 'split', v => trendSplitSelect(v));
 function trendSplitSelect(v){
   if (trendDrill){ trendSplit = v; loadTrends(trendDrill); return; }
@@ -2744,7 +2809,7 @@ function trendSplitSelect(v){
   topSplit.chosen = v;
   if (refetch || !trendRaw){ loadTrends(null); return; }
   trendData = trendView(trendRaw, null);
-  writeTrendHash();
+  writeTrendHash(); applyUnitLocks();
   drawTrends();
 }
 // A preset and a custom bound are two spellings of the same window, so setting either clears
@@ -2793,6 +2858,9 @@ function drawPicks(){
     ><button type="button" data-unpick="${i}" aria-label="Remove ${esc(p.label || 'this company')}"
     >×</button></span>`).join('');
   if (el('trends-co-q')) el('trends-co-q').placeholder = trendPicks.length ? 'Add another' : 'Add a company';
+  if (el('trends-title')) el('trends-title').textContent =
+    'Which tech roles are growing' + (pickPhrase() ? ' ' + pickPhrase() : '');
+  if (el('trends-co-roles')) el('trends-co-roles').hidden = !(trendPicks.length === 1 && trendPicks[0].name);
 }
 
 function setPicks(picks){
@@ -2844,10 +2912,14 @@ function chooseCo(i){
   const o = coOptions[i]; if (!o) return;
   const add = o.followed ? o.followed.map(key => ({ key, label: null }))
                          : [{ key: o.company.key, label: o.company.label }];
-  el('trends-co-q').value = '';
-  closeCoList();
   setCoNote('');
   setPicks([...trendPicks, ...add]);
+  // Open on the same query, less what was picked: one employer split across entries
+  // (Atlassian's three iCIMS Tenants, Infosys's regional ones) is a few Enters, not a retype each.
+  const rest = o.followed ? [] : coOptions.filter(x => x !== o && !x.followed);
+  // The query stays, selected, so arrows and Enter pick the next entry while typing replaces it.
+  if (rest.length){ openCoList(rest); el('trends-co-q').select(); }
+  else { el('trends-co-q').value = ''; closeCoList(); }
 }
 
 async function suggestCompanies(q){
@@ -2866,7 +2938,7 @@ async function suggestCompanies(q){
   // Said in the status line, not as a fake option: a listbox should only hold choices.
   setCoNote(missing ? 'Company search isn’t available here yet.'
     : !found ? 'Suggestions didn’t load — keep typing to try again.'
-    : !options.length ? `No company matches “${q}”.` : '');
+    : !options.length ? `No company matches “${q}”. HeadStart may not read its board yet, or knows it by another name — try part of it.` : '');
 }
 
 if (el('trends-co-q')){
@@ -2903,6 +2975,15 @@ if (el('trends-co-q')){
     input.focus();   // the chip and its button are gone; the field is where the reader was
   });
 }
+
+// From a company's trend to its jobs: Search already owns the filters, ranking and job card,
+// so the pick is handed over by name like the Hot tab's "See roles".
+if (el('trends-co-roles')) el('trends-co-roles').addEventListener('click', () => {
+  const p = trendPicks[0]; if (!p || !p.name) return;
+  el('company').value = p.name;
+  location.hash = '#search';
+  go();
+});
 
 // "See trend" from a Hot-tab row or a search result (ADR-0185): the Board key the row already
 // carries is a pick, and the name it already shows labels the chip until the Space answers.

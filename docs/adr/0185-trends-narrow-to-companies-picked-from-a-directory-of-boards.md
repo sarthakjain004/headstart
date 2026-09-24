@@ -212,3 +212,32 @@ links on Hot-tab rows and search results land already picked. A search result's 
 `boardOf`'s guess from the job id (ADR-0049). 98.1% of the 514,163 served rows resolve exactly
 to a directory Board. The rest, and any other key the Space refuses, are dropped with a sentence
 under the picker rather than failing the chart.
+
+## Amendment (2026-09-24): what using the shipped tab showed
+
+A critique drove the merged tab against the 2026-09-24 state (33,966 companies) and found the
+chart misleading or empty for the common company. Each fix below answers a measurement.
+
+- **Most companies drew nothing.** 22,863 of 33,966 hold fewer than 5 tech openings (median
+  2), below Change's indexing floor, so the default view was one "not indexed" row over a blank
+  plot. Change is now withdrawn, with its reason, wherever no line can be indexed, and counts are
+  drawn. The reader's unit returns once a view can show it. A perfectly flat Total also drew
+  every y as NaN, and now gets an axis with height.
+- **Found Boards read as hiring.** 254 of 852 multi-Board companies gained a Board after their
+  line began, and each lands its whole backlog at once (Hyatt +1,048 over 83 Boards). This is the
+  reason the Hot tab leaves new Boards out. `/trends` now returns `discovered` under a pick
+  (`{ts, company, boards, openings}`, from each Board's first tick), and the chart marks each with
+  a solid ink line. Across such a step, or across duplicate removal, no riser or faller is
+  named. Tech-filter and extraction changes still allow one, as they do on the index chart.
+- **The history note was wrong for late starters.** 9,981 companies were first counted after
+  2026-09-13, but the note named 2026-09-13. It now names the picked company's own first counted
+  run, and it shows whenever a company is picked.
+- **Unfindable and fragmented names.** "jpmorgan" finds nothing (the Board is named "Jpmc"), and
+  Siemens, Goldman Sachs, Flipkart, Shopify, Swiggy and TCS have no Board at all. The no-match
+  line now says a Board may be unread or named otherwise. The picker also stays open on its
+  query after a pick, so an employer split across entries (Atlassian's three iCIMS Tenants) takes
+  a few Enters. Curated aliases for well-known employers remain open work.
+- **No way from a trend to the jobs.** One pick now offers "See its open roles", which hands
+  its name to Search as the Hot tab's "See roles" does.
+- **The picker sat under the chart on a phone.** Companies now have their own row above the
+  filters, and the heading names the pick.

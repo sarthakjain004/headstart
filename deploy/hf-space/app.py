@@ -17,6 +17,7 @@ import json
 import os
 import threading
 import time
+from bisect import bisect_left
 from collections import Counter, defaultdict
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -330,6 +331,32 @@ def _board_openings(deltas: list[dict], version: int | None) -> Counter[str]:
     return openings
 
 
+def _board_arrivals(
+    deltas: list[dict], version: int | None
+) -> dict[str, tuple[str, int]]:
+    """Each Board's first tick at the live version, and the tech openings it arrived with.
+
+    A Board's first delta is its whole stock at once (ADR-0143), so a Board found after a
+    company's line began lands in that line as one step (ADR-0185). Measured 2026-09-24: 254 of
+    852 multi-Board companies carry one, Hyatt's +1,048 over 83 Boards the largest.
+    """
+    first: dict[str, str] = {}
+    for row in deltas:
+        if row["version"] == version and row["metric"] == "stock":
+            first[row["board"]] = min(first.get(row["board"], row["ts"]), row["ts"])
+    arrived: Counter[str] = Counter()
+    for row in deltas:
+        if (
+            row["version"] == version
+            and row["metric"] == "stock"
+            and row["ts"] == first[row["board"]]
+            and row["family"] != _NON_TECH
+            and not row["family"].startswith(_WATCH_PREFIX)
+        ):
+            arrived[row["board"]] += row["delta"]
+    return {board: (ts, arrived[board]) for board, ts in first.items()}
+
+
 def _build_candidates(
     companies: dict[str, dict], openings: Counter[str]
 ) -> list[company_match.Candidate]:
@@ -358,6 +385,9 @@ _COMPANY_OF = {
 }
 _OPENINGS = _board_openings(_TREND_DELTAS, _TRENDS[-1]["version"] if _TRENDS else None)
 _CANDIDATES = _build_candidates(_COMPANIES, _OPENINGS)
+_BOARD_ARRIVALS = _board_arrivals(
+    _TREND_DELTAS, _TRENDS[-1]["version"] if _TRENDS else None
+)
 # Email alerts (ADR-0035) — invite-only, so all three must be set before the panel appears:
 # the Google client id the sign-in button needs, and a token scoped to the Subscriptions
 # dataset alone (never the index token, which is read-only by design).
@@ -1277,6 +1307,9 @@ def trends():
     family), and ``companies`` echoes the picks with their labels. Under a pick, ``totals`` is
     the picks' combined total and ``company_totals`` each pick's own, so a line split by company
     can be a share of that company. ``history_start`` is the first run a pick is charted from.
+    ``discovered`` lists ``{ts, company, boards, openings}``: Boards of a pick found after its
+    line began, at the first charted run that counts them. Each is a step of openings that were
+    already open, not hiring, so the chart marks it.
     An unknown key is a 400, and a deployment with no directory yet answers 503.
 
     ``totals`` carries the served table per stamp — narrowed by ``ats`` exactly like every
@@ -1475,6 +1508,30 @@ def trends():
         if company_of and not row["family"].startswith(_WATCH_PREFIX):
             at = company_totals[row["company"]]
             at[row["ts"]] = at.get(row["ts"], 0) + row["count"]
+    # Boards of a pick found after its line began: each lands as one step of openings that were
+    # already open, so the chart marks it rather than let it read as hiring. None under
+    # comparable coverage, which leaves every such Board out of the cohort.
+    # A company's own first Board starts its line rather than stepping it, so the bar is the
+    # later of the window's first run and that company's earliest arrival.
+    found: dict[tuple[str, str], list[int]] = {}
+    if company_of and coverage != "comparable" and stamps:
+        counted = {
+            board: pick
+            for board, pick in company_of.items()
+            if board in _BOARD_ARRIVALS and not (ats and ats_of(board) not in ats)
+        }
+        began: dict[str, str] = {}
+        for board, pick in counted.items():
+            ts = _BOARD_ARRIVALS[board][0]
+            began[pick] = min(began.get(pick, ts), ts)
+        for board, pick in counted.items():
+            ts, openings = _BOARD_ARRIVALS[board]
+            at = bisect_left(stamps, ts)
+            if ts <= max(stamps[0], began[pick]) or at == len(stamps):
+                continue
+            bucket = found.setdefault((stamps[at], pick), [0, 0])
+            bucket[0] += 1
+            bucket[1] += openings
     # Which families have watched sub-roles, so the UI can offer the roles drill only there.
     watch_parents = sorted({meta["parent"] for meta in _WATCH.values()})
     return jsonify(
@@ -1494,6 +1551,10 @@ def trends():
             k: [company_totals[k].get(ts) for ts in stamps] for k in picked_keys
         },
         history_start=first_charted if company_of else None,
+        discovered=[
+            {"ts": ts, "company": pick, "boards": n, "openings": openings}
+            for (ts, pick), (n, openings) in sorted(found.items())
+        ],
     )
 
 

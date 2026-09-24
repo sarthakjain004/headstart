@@ -1804,6 +1804,9 @@ def company_trends(trends_app, monkeypatch):
     monkeypatch.setattr(
         trends_app, "_CANDIDATES", trends_app._build_candidates(companies, openings)
     )
+    monkeypatch.setattr(
+        trends_app, "_BOARD_ARRIVALS", trends_app._board_arrivals(deltas, 2)
+    )
     return trends_app.app.test_client()
 
 
@@ -2550,3 +2553,48 @@ def test_the_door_and_the_app_share_one_palette():
                 f"the door sets {token}:{value}, which style.css does not — the two token "
                 "blocks must move together"
             )
+
+
+def test_board_arrivals_are_a_boards_first_tick_and_its_tech_stock_then(trends_app):
+    deltas = [
+        _delta(_T1, "a", 5),
+        _delta(_T1, "a", 9, family="non-tech"),
+        _delta(_T2, "a", 1),
+        _delta(_T2, "b", 3),
+        {**_delta(_T1, "b", 100), "version": 1},  # a stale refit is not an arrival
+    ]
+    assert trends_app._board_arrivals(deltas, 2) == {"a": (_T1, 5), "b": (_T2, 3)}
+
+
+def test_a_board_found_after_its_company_began_is_marked(company_trends, monkeypatch):
+    """Both Citi Boards as one entry: the Eightfold one arrives at T2 with 3 openings."""
+    app_module = company_trends.application.view_functions["trends"].__globals__
+    one = {
+        "workday:citi/2": {
+            "name": "Citi",
+            "boards": ["workday:citi/2", "eightfold:citi.eightfold.ai"],
+        }
+    }
+    monkeypatch.setitem(app_module, "_COMPANIES", one)
+    monkeypatch.setitem(
+        app_module,
+        "_COMPANY_OF",
+        {b: "workday:citi/2" for b in one["workday:citi/2"]["boards"]},
+    )
+    d = company_trends.get("/trends?company=workday:citi/2").get_json()
+    assert d["discovered"] == [
+        {"ts": _T2, "company": "workday:citi/2", "boards": 1, "openings": 3}
+    ]
+    comparable = company_trends.get(
+        "/trends?company=workday:citi/2&coverage=comparable"
+    ).get_json()
+    assert comparable["discovered"] == []
+    narrowed = company_trends.get(
+        "/trends?company=workday:citi/2&ats=workday"
+    ).get_json()
+    assert narrowed["discovered"] == []
+
+
+def test_a_single_boards_first_tick_starts_its_line_and_is_not_marked(company_trends):
+    d = company_trends.get("/trends?company=eightfold:citi.eightfold.ai").get_json()
+    assert d["discovered"] == []

@@ -672,6 +672,9 @@ textarea:focus{ border-color:var(--accent); }
 .co-opt-meta{ font-size:11px; color:var(--ink-3); font-variant-numeric:tabular-nums; }
 .co-note{ max-width:40ch; font-size:12px; line-height:1.35; color:var(--ink-3); }
 .co-note:empty{ display:none; }
+.trends-companies{ display:flex; align-items:flex-end; gap:8px 14px; flex-wrap:wrap; margin-bottom:10px; }
+.co-roles{ font-size:12.5px; padding:4px 0; }
+.co-roles[hidden]{ display:none; }
 /* A fingertip needs the room a pointer does not: the remove control and each suggestion grow
    to the 44px target on touch screens only, so the desktop row stays as dense as its neighbours. */
 @media (pointer:coarse){
@@ -794,6 +797,9 @@ textarea:focus{ border-color:var(--accent); }
    comparison series, this is a note about what the OTHER lines mean. */
 .trends-grid .epoch-marker{ stroke:var(--ink-3); stroke-width:1; stroke-dasharray:2 3;
   opacity:.5; }
+/* A Board of a picked company found here (ADR-0185): openings that were already open land at
+   once. An annotation, so ink like the epoch marker, but solid so the two never read alike. */
+.trends-grid .found-marker{ stroke:var(--ink-2); stroke-width:1; opacity:.45; }
 
 
 /* min-width:0 because the panel is a flex column below 760px (the chart sits above the
@@ -850,6 +856,7 @@ textarea:focus{ border-color:var(--accent); }
   .trends-grid{ display:contents; }
   .trends{ display:flex; flex-direction:column; }
   .trends-head{ order:0; }
+  .trends-companies{ order:0; }   /* after the head in source order: the subject, above the chart */
   .trends-note, .trends-error{ order:1; }
   .trends-kpi{ order:2; }
   .trends-skel, .trends-chart-wrap{ order:3; }

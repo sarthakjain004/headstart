@@ -90,7 +90,7 @@ function loadApp(fetchImpl) {
   const src = fs.readFileSync(APP_JS, 'utf8')
     + '\n;globalThis.__t = { draw: drawTrends, load: loadTrends, click: trendClick, split: () => trendSplit,'
     + ' chartMax: CHART_MAX,'
-    + ' niceAxis: niceAxis, fmtAxis: fmtAxis, deltaText: deltaText, seriesValues: seriesValues,'
+    + ' niceAxis: niceAxis, niceBounds: niceBounds, fmtAxis: fmtAxis, deltaText: deltaText, seriesValues: seriesValues,'
     + ' hasIndexBase: hasIndexBase,'
     + ' atsSelected: trendAtsSelected, atsLabel: trendAtsLabel, atsToggle: toggleAtsPopover,'
     + ' coverageSet: value => { trendCoverage = value; },'
@@ -102,6 +102,7 @@ function loadApp(fetchImpl) {
     + ' suggest: suggestCompanies, choose: chooseCo, options: () => coOptions,'
     + ' follow: boards => { myCompanies = { followed: boards, hidden: [] }; },'
     + ' followed: followedOption, openTrend: openCompanyTrend, chartedAndOther,'
+    + ' unit: () => trendUnit, clickUnit: v => { unitWanted = null; trendUnit = v; applyUnitLocks(); },'
     + ' set: (d, drill) => { trendData = d; trendDrill = drill || null; } };'
     // Repaints are counted at the global binding, which is what loadTrends' own `drawTrends()`
     // call resolves — so this counts the real paints, not a copy of them.
@@ -769,10 +770,11 @@ test('picks go to /trends as repeated company params', async () => {
 
 test('the Space names a pick that arrived by key alone', async () => {
   const { t, ctx, nodes } = loadApp();
-  answering(ctx, picked({ a: [50, 60], b: [40, 45] }, [{ key: 'workday:acme/site1', label: 'Acme Corp' }]));
+  answering(ctx, picked({ a: [50, 60], b: [40, 45] },
+    [{ key: 'workday:acme/site1', label: 'Acme Corp', name: 'Acme Corp' }]));
   t.setPicks([{ key: 'workday:acme/site2', label: null }]);
   await t.load(null);
-  assert.deepEqual(t.picks(), [{ key: 'workday:acme/site1', label: 'Acme Corp' }]);
+  assert.deepEqual(t.picks(), [{ key: 'workday:acme/site1', label: 'Acme Corp', name: 'Acme Corp' }]);
   assert.ok(nodes['trends-co-chips'].innerHTML.includes('Acme Corp'));
 });
 
@@ -905,7 +907,7 @@ test('the chart says where a company history starts', async () => {
   answering(ctx, picked({ a: [50, 60], b: [40, 45] }));
   t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
   await t.load(null);
-  assert.match(nodes['trends-empty'].textContent, /Company history starts Sep 13/);
+  assert.match(nodes['trends-empty'].textContent, /HeadStart has counted Acme since Sep 13/);
 });
 
 test('suggestions leave out what is picked and show openings and Boards', async () => {
@@ -1014,4 +1016,110 @@ test('past eight picks, Company folds the rest into Other, a share of their own 
   assert.match(other.label, /Other \(2 smaller companies\)/);
   // c8 + c9 = 92 + 91 openings, over their own two totals of 200: 45.75%, not 183 of 10,000
   assert.deepEqual(t.seriesValues(other), [45.75, 45.75]);
+});
+
+
+/* ---- Fixes from measuring the shipped feature (ADR-0185, 2026-09-24 critique). ---- */
+
+test('a company too small to index is drawn in counts, and Change comes back for a big one', async () => {
+  const { t, ctx, nodes } = loadApp();
+  let body = picked({ a: [3, 3], b: [1, 1] });
+  ctx.fetch = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
+  await t.load(null);
+  assert.equal(t.unit(), 'count', 'a Total of 4 openings has no index base');
+  assert.match(nodes['trends-unit-static'].textContent, /Change is off here/);
+  body = picked({ a: [50, 60], b: [40, 45] });
+  t.setPicks([{ key: 'greenhouse:big', label: 'Big' }]);
+  await t.load(null);
+  assert.equal(t.unit(), 'change', 'the reader’s unit returns once the view can show it');
+});
+
+test('picking a unit does not bring back one a lock withdrew', async () => {
+  const { t, ctx } = loadApp();
+  const two = [{ key: 'greenhouse:acme', label: 'Acme' }, { key: 'lever:beta', label: 'Beta' }];
+  answering(ctx, { ...picked({}, two), split_by: 'company',
+    series: [{ name: 'greenhouse:acme', label: 'Acme', points: [50, 60], latest: 60 }] });
+  t.setPicks(two);
+  t.selectSplit('company');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const buttons = ['share', 'count', 'change'].map(unit => ({ dataset: { unit }, hidden: false, disabled: false,
+    setAttribute() {} }));
+  ctx.document.getElementById('trends-unit').querySelectorAll = () => buttons;
+  t.clickUnit('count');
+  assert.equal(buttons[0].hidden, true, 'Share stays withdrawn under a top-level Company split');
+});
+
+test('a company counted from later than the ledger says when its own line begins', async () => {
+  const { t, ctx, nodes } = loadApp();
+  answering(ctx, { ...picked({ a: [null, 50], b: [null, 40] }), history_start: STAMPS[0] });
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
+  await t.load(null);
+  assert.match(nodes['trends-empty'].textContent, /HeadStart has counted Acme since Sep 20/);
+});
+
+test('a Board found after a company began is marked where its backlog lands', async () => {
+  const { t, ctx, nodes } = loadApp();
+  answering(ctx, { ...picked({ a: [50, 900], b: [40, 45] }),
+    discovered: [{ ts: STAMPS[1], company: 'greenhouse:acme', boards: 83, openings: 1048 }] });
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
+  await t.load(null);
+  const svg = nodes['trends-chart'].innerHTML;
+  assert.match(svg, /class="found-marker"/);
+  assert.match(svg, /83 more boards of Acme found here: 1,048 openings that were already open/);
+  assert.match(nodes['trends-empty'].textContent, /boards found later/);
+  assert.ok(!nodes['trends-kpi'].innerHTML.includes('Biggest'), 'a found Board is no riser');
+});
+
+test('the list stays open after a pick, less the company picked', async () => {
+  const { t, ctx, nodes } = loadApp();
+  nodes['trends-co-q'] = Object.assign(nodes['trends-co-q'] || {}, { select() { this.selected = true; } });
+  const c = (key, label) => ({ key, label, openings: 5, boards: 1, atses: ['icims'] });
+  answering(ctx, { companies: [c('icims:apac', 'Apac Atlassian'), c('icims:global', 'Globalcareers Atlassian')] });
+  await t.suggest('atlassian');
+  answering(ctx, picked({ a: [50, 60], b: [40, 45] }, [{ key: 'icims:apac', label: 'Apac Atlassian' }]));
+  t.choose(0);
+  assert.deepEqual(t.options().map(o => o.company.key), ['icims:global']);
+  assert.equal(nodes['trends-co-q'].selected, true, 'typing next replaces the query, not appends to it');
+});
+
+test('a flat indexed line still gets an axis with height', () => {
+  const { t } = loadApp();
+  const b = t.niceBounds(100, 100);
+  assert.ok(b.top > b.bot);
+  assert.ok(b.bot <= 100 && b.top >= 100);
+});
+
+test('one pick offers its open roles and names itself in the heading', async () => {
+  const { t, ctx, nodes } = loadApp();
+  answering(ctx, picked({ a: [50, 60], b: [40, 45] }, [{ key: 'greenhouse:acme', label: 'Acme', name: 'Acme' }]));
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
+  await t.load(null);
+  assert.equal(nodes['trends-co-roles'].hidden, false);
+  assert.equal(nodes['trends-title'].textContent, 'Which tech roles are growing at Acme');
+  answering(ctx, picked({ a: [50, 60], b: [40, 45] },
+    [{ key: 'greenhouse:acme', label: 'Acme', name: 'Acme' }, { key: 'lever:beta', label: 'Beta', name: 'Beta' }]));
+  t.setPicks([...t.picks(), { key: 'lever:beta', label: 'Beta' }]);
+  await t.load(null);
+  assert.equal(nodes['trends-co-roles'].hidden, true, 'Search filters one company at a time');
+});
+
+test('a name with no match says the board may be unread or named otherwise', async () => {
+  const { t, ctx, nodes } = loadApp();
+  answering(ctx, { companies: [] });
+  await t.suggest('jpmorgan');
+  assert.match(nodes['trends-co-note'].textContent, /may not read its board yet, or knows it by another name/);
+});
+
+test('duplicate removal withholds a company mover; a tech-filter change does not', async () => {
+  const { t, ctx, nodes } = loadApp();
+  const epoch = changed => [{ ts: STAMPS[1], changed: [changed] }];
+  answering(ctx, { ...picked({ a: [50, 90], b: [40, 45] }), epochs: epoch('duplicate removal changed') });
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
+  await t.load(null);
+  assert.ok(!nodes['trends-kpi'].innerHTML.includes('Biggest'));
+  answering(ctx, { ...picked({ a: [50, 90], b: [40, 45] }), epochs: epoch('tech filter changed') });
+  await t.load(null);
+  assert.ok(nodes['trends-kpi'].innerHTML.includes('Biggest riser'));
 });

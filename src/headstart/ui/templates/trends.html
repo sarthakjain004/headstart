@@ -1,6 +1,6 @@
 <section class="trends" id="trends">
   <div class="trends-head">
-    <h2>Which tech roles are growing</h2>
+    <h2 id="trends-title">Which tech roles are growing</h2>
     {# A real way out of the drill. The only exit used to be the sentence "click to go back"
        at 12.5px inside the scope note — an instruction standing in for a control. #}
     <nav class="trends-crumb" id="trends-crumb" hidden aria-label="Chart level">
@@ -15,13 +15,12 @@
       ><span class="glyph" aria-hidden="true">▤</span>Table view</button>
   </div>
 
-  {# One left-aligned filter row, date range first (dataviz skill, interaction.md § Filters).
-     Every group carries a VISIBLE micro-label — an aria-label alone left a sighted reader to
-     infer what "Share / Count" was the unit of. #}
-  <div class="trends-controls">
-    {# Companies lead the row (ADR-0185): picking one changes what every other control scopes.
-       A combobox the reader picks from, never a free-text filter — a typed name is only ever a
-       query for suggestions, so nothing reaches the chart without a person choosing it. #}
+  {# Companies get their own row above the filters (ADR-0185): a pick changes what the whole
+     panel is about, so it is the subject, not one filter among six — and on a phone the filter
+     row sits under the chart, which put the one control that names the subject below it. A
+     combobox the reader picks from, never a free-text filter: a typed name is only ever a query
+     for suggestions, so nothing reaches the chart without a person choosing it. #}
+  <div class="trends-companies">
     <span class="ctl ctl-company">
       <label class="ctl-label" id="trends-lbl-company" for="trends-co-q">Companies</label>
       <span class="co-pick" id="trends-co">
@@ -33,6 +32,14 @@
       </span>
       <span class="co-note" id="trends-co-note" role="status"></span>
     </span>
+    {# The way from a company's trend to its jobs. One pick only: Search filters one company. #}
+    <button class="linkish co-roles" id="trends-co-roles" type="button" hidden>See its open roles</button>
+  </div>
+
+  {# One left-aligned filter row, date range first (dataviz skill, interaction.md § Filters).
+     Every group carries a VISIBLE micro-label — an aria-label alone left a sighted reader to
+     infer what "Share / Count" was the unit of. #}
+  <div class="trends-controls">
     <span class="ctl">
       <span class="ctl-label" id="trends-lbl-range">Date range</span>
       <span class="seg" id="trends-range" role="radiogroup" aria-labelledby="trends-lbl-range">
