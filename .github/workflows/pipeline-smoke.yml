@@ -171,6 +171,7 @@ jobs:
           PY
           python "$RUNNER_TEMP/stamps.py" > "$RUNNER_TEMP/before.json"
           python -m headstart.ingest.index prune --apply
+          python -m headstart.ingest.embed_prune --apply
           python -m headstart.ingest.index sync
           python "$RUNNER_TEMP/stamps.py" > "$RUNNER_TEMP/after.json"
           diff "$RUNNER_TEMP/before.json" "$RUNNER_TEMP/after.json" && echo "OK: prune + re-sync left every row alone" || {
