@@ -3,6 +3,8 @@
 **Status:** accepted · **Date:** 2026-09-21 · **Amends:**
 [ADR-0162](0162-a-gone-verdict-expires-quarantine-parole.md) (its parole is confirmed working and
 stays the only drain; its 3.0%-live measurement is superseded) ·
+**Amended by:** [ADR-0206](0206-prune-evicts-a-board-parole-reconfirmed-gone.md) (served rows get a drain on prerequisite 3 alone: a verdict
+parole re-earns a week later evicts; the zwayam cohort, all at five strikes, keeps its rows) ·
 **Relates to:** [ADR-0058](0058-consecutive-gone-quarantine.md) (the five-strike premise this
 falsifies for correlated failures),
 [ADR-0053](0053-scope-eviction-on-scrape-outcome.md) (the other withholding mechanism with no
