@@ -363,6 +363,27 @@ def board_clause(boards: Collection[str], *, exclude: bool) -> str | None:
     return f"NOT ({joined})" if exclude else f"({joined})"
 
 
+#: The most Boards one ``board=`` hand-off may name. A company's Boards are its whole scope and
+#: the largest measured is Hyatt's 83 (2026-09-24); the bound keeps a query string from growing
+#: the where-clause without limit.
+MAX_SCOPED_BOARDS = 200
+
+
+def scoped_boards_clause(args) -> str | None:
+    """The Boards a request names with ``board=`` (repeatable), or None (ADR-0185).
+
+    How a company's trend hands over to its jobs: by the directory's Board keys rather than a
+    company-name substring, which misses aliased names ("RTX" from ``globalhr`` rows) and merges
+    same-named employers. Kept out of :class:`SearchFilters` for the reason
+    :func:`board_clause` gives: a hand-off, not a control a Saved Set should freeze. Too many
+    keys is a :class:`ValueError`, which both routes answer as an invalid filter.
+    """
+    boards = [board for board in args.getlist("board") if board.strip()]
+    if len(boards) > MAX_SCOPED_BOARDS:
+        raise ValueError(f"at most {MAX_SCOPED_BOARDS} boards")
+    return board_clause(boards, exclude=False)
+
+
 def with_extra(where: str | None, extra: str | None) -> str | None:
     """``where`` narrowed by ``extra``, either of which may be absent.
 

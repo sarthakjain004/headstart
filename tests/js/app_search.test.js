@@ -80,7 +80,7 @@ function loadApp(respond, cfg = {}) {
   const src = fs.readFileSync(APP_JS, 'utf8')
     + '\n;globalThis.__t = { go, goToPage, loadSets, runSet, page: () => page, jobCard, savedRow,'
     + ' salStop, SALARY_STOPS, stops: () => SALARY_STOPS, sync: syncSalarySlider, slide: salSlide,'
-    + ' dismiss: dismissRow, dismissed, handleSetAction };';
+    + ' dismiss: dismissRow, dismissed, handleSetAction, searchCompany, dropFilter };';
   vm.runInNewContext(src, ctx);
   return { nodes, fetches, t: ctx.__t, ctx, docHandlers };
 }
@@ -684,4 +684,20 @@ test('a result card links its company into Trends by the Board its id names (ADR
   assert.match(html, /data-trend-name="Acme"/);
   assert.match(html, /aria-label="Hiring trend at Acme"/);
   assert.ok(!t.jobCard(job('noboard'), 0).includes('data-trend='), 'no Board, no link');
+});
+
+
+test('a company handed over from Trends or Hot searches its Boards, shown as one removable pill', async () => {
+  const { t, fetches, nodes } = loadApp(() => []);
+  nodes['company'] = Object.assign(nodes['company'] || {}, { value: 'stale text' });
+  t.searchCompany(['workday:citi/2', 'workday:citi/3'], 'Citi (workday)');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const url = fetches.filter(u => u.startsWith('/search?')).pop();
+  assert.deepEqual(new URLSearchParams(url.split('?')[1]).getAll('board'), ['workday:citi/2', 'workday:citi/3']);
+  assert.equal(nodes['company'].value, '', 'the name filter would narrow the Boards again');
+  assert.match(nodes['active'].innerHTML, /<b>Company<\/b> Citi \(workday\)/);
+  t.dropFilter('board');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const after = fetches.filter(u => u.startsWith('/search?')).pop();
+  assert.equal(new URLSearchParams(after.split('?')[1]).getAll('board').length, 0);
 });

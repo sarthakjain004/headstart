@@ -299,7 +299,7 @@ function drawActive(){
   const shown = Object.entries(f).filter(([k]) => k !== 'salary_currency');
   // The panel is closed by default now (ADR-0116), so the button has to carry how many
   // filters are hiding behind it — otherwise a narrowed result set has no visible cause.
-  const btn = el('filtersbtn'), n = shown.length;
+  const btn = el('filtersbtn'), n = shown.length + (searchScope ? 1 : 0);
   if (btn){
     btn.textContent = n ? `Filters (${n})` : 'Filters';
     btn.classList.toggle('has', n > 0);
@@ -311,7 +311,10 @@ function drawActive(){
   if (fxnote) fxnote.textContent = (f.salary_currency && FX && FX.as_of)
     ? `Other currencies are converted at rates from ${FX.as_of} \u2014 currency conversion, not cost of living.`
     : '';
-  box.innerHTML = shown.map(([k,v]) =>
+  box.innerHTML = (searchScope
+    ? `<span class="pill" title="The boards HeadStart counts for this company. Not kept in a saved search."><b>Company</b> ${esc(searchScope.label)}` +
+      `<button onclick="dropFilter('board')" aria-label="Remove Company filter">×</button></span>` : '') +
+    shown.map(([k,v]) =>
     `<span class="pill"><b>${esc(LABELS[k]||k)}</b> ${esc(chipValue(k, v, f))}` +
     `<button onclick="dropFilter('${esc(k)}')" aria-label="Remove ${esc(LABELS[k]||k)} filter">×</button></span>`
   ).join('');
@@ -434,6 +437,7 @@ function salSlide(which){
 
 const BRACKET = ['salary_min', 'salary_max', 'salary_currency'];
 function dropFilter(key){
+  if (key === 'board'){ searchScope = null; go(); return; }
   // The currency picker has a default, not an empty state, so there is nothing to blank on it.
   // Dropping any part of the bracket therefore means clearing the two bounds it scopes — which
   // is also what switches the bracket off server-side.
@@ -447,6 +451,7 @@ function dropFilter(key){
   if (cleared) go();
 }
 function clearAll(){
+  searchScope = null;
   Object.values(CONTROL).forEach(id => { const c = el(id); if (!c) return;
     if (c.type === 'checkbox') c.checked = false; else c.value = ''; });
   go();
@@ -469,9 +474,20 @@ async function go(){ page = 1; searched = readSearch(); drawActive(); await fetc
 // user has not submitted — re-reading the box live sent a new query at page N and skipped its
 // first rows — and the lines describing the rows read it too, so they describe what is paged.
 let searched = null;
+// One company's Boards, handed over by the Trends and Hot tabs (ADR-0185) as `{boards, label}`.
+// Like "mine", kept out of currentFilters(): a Saved Set serializes that, and a hand-off is not
+// a control to freeze. By Board key rather than the Company text filter, whose substring match
+// misses aliased names ("RTX" from `globalhr` rows) and cannot tell two same-named employers apart.
+let searchScope = null;
+function searchCompany(boards, label){
+  searchScope = { boards, label };
+  el('company').value = '';   // the text filter would narrow the Boards again, by name
+  location.hash = '#search';
+  go();
+}
 function readSearch(){
   return { q: el('q').value.trim(), filters: currentFilters(), sort: el('sort').value,
-           mine: !!(el('mine') && el('mine').checked),
+           mine: !!(el('mine') && el('mine').checked), scope: searchScope,
            currency: el('salcur') ? el('salcur').value : '' };
 }
 
@@ -481,7 +497,7 @@ async function goToPage(n){ page = Math.max(1, Math.min(n, MAX_PAGE)); await fet
 
 async function fetchPage(){
   const request = ++searchRequest;
-  const { q, filters, sort, mine, currency } = searched;
+  const { q, filters, sort, mine, currency, scope } = searched;
   const p = new URLSearchParams({ q, k: PAGE_SIZE, page });
   for (const [key, value] of Object.entries(filters)) p.set(key, value);
   if (sort !== 'rel') p.set('sort', sort);
@@ -491,6 +507,7 @@ async function fetchPage(){
   // Deliberately NOT part of currentFilters(): a Saved Set serializes that, and freezing "only
   // my companies" into a stored Set would pin it to the list as it was on the day it was saved.
   if (mine) p.set('mine', '1');
+  if (scope) scope.boards.forEach(b => p.append('board', b));
   el('results').innerHTML = skeleton() + skeleton() + skeleton();
   setResultRows(3);
   busy(true);
@@ -1630,18 +1647,24 @@ function pickScope(){
 
 // What a company chart must say about its own line. It begins at the first run that counted
 // its Boards — the ledger's start (2026-09-13) or later, as it was for 9,981 companies
-// (measured 2026-09-24) — so a short line must not read as the company's whole history. Said
-// whenever a company is picked: a company first counted two days ago fills the whole window,
-// so "the line starts late" cannot be read off the window. A comparable cohort's start is its
-// own base, so the sentence is left out there.
+// (measured 2026-09-24) — so a short line must not read as the company's whole history. The
+// date is the Space's `counted_since`, each pick's own first tick, not the window's first point,
+// which a "7 days" window or a drill would move. A comparable cohort's start is its own base,
+// so the sentence is left out there.
 function companyNote(d){
   if (!trendPicks.length || !d.series.length) return '';
   const parts = [];
-  const starts = d.series.map(s => s.points.findIndex(v => v != null)).filter(i => i >= 0);
-  const first = starts.length ? Math.min(...starts) : -1;
-  if (trendCoverage !== 'comparable' && first >= 0)
-    parts.push(`HeadStart has counted ${trendPicks.length === 1 ? (trendPicks[0].label || 'this company') : 'these companies'}`
-      + ` since ${stampLabel(d.stamps[first], true)}; nothing earlier exists to show.`);
+  const since = d.counted_since || {};
+  const dated = trendPicks.filter(p => since[p.key]);
+  if (trendCoverage !== 'comparable' && dated.length){
+    const same = dated.every(p => since[p.key] === since[dated[0].key]);
+    const who = dated.length === 1 ? (dated[0].label || 'this company')
+      : same ? 'these companies' : null;
+    parts.push(who
+      ? `HeadStart has counted ${who} since ${stampLabel(since[dated[0].key], true)}; there is nothing before that.`
+      : 'HeadStart has counted ' + dated.map(p => `${p.label || 'a company'} since ${stampLabel(since[p.key], true)}`).join(', ')
+        + '; there is nothing before those dates.');
+  }
   if ((d.discovered || []).length)
     parts.push('A solid grey vertical line marks boards found later: their openings were already open, so the step there is not hiring.');
   if (pickSteps(d) && viewKind(d) !== 'total')
@@ -1649,13 +1672,21 @@ function companyNote(d){
   return parts.join(' ');
 }
 
-// Whether a picked company's window holds a step that is not hiring and is the company's own: a
-// Board found later, or duplicate removal (ADR-0188), which parks whole Boards of one Tenant.
+// Whether a picked company's window holds a step that is not hiring and is the company's own:
+// a Board found later, or duplicate removal (ADR-0188) crossed inside the window at a pick it
+// can touch. That removal parks copies within one Tenant's Boards — Taleo Enterprise career
+// sections and Workday sites — so only a pick holding several Boards on those ATSes can step.
 // The other counting changes move every line the index chart draws too, and it still names
-// movers across them, so they do not withhold one here either.
+// movers across them, so they do not withhold one here either. Keyed on the epoch's `fields`,
+// never its display text.
+const DEDUP_ATSES = ['taleo_enterprise', 'workday'];
 function pickSteps(d){
-  return !!trendPicks.length && ((d.discovered || []).length > 0
-    || (d.epochs || []).some(e => d.stamps.includes(e.ts) && e.changed.includes('duplicate removal changed')));
+  if (!trendPicks.length) return false;
+  if ((d.discovered || []).length) return true;
+  const touched = trendPicks.some(p => (p.boardKeys || []).length > 1
+    && (p.atses || []).some(a => DEDUP_ATSES.includes(a)));
+  return touched && (d.epochs || []).some(e =>
+    d.stamps.indexOf(e.ts) > 0 && (e.fields || []).includes('dedup_version'));
 }
 
 // "at Stripe" / "at 3 companies": how the text around the chart names what the picks scope.
@@ -1809,7 +1840,8 @@ async function loadTrends(family){
   // The Space lists them sorted by key, so they are laid back onto the reader's own order: a
   // pick keeps its place, and one that came in by another Board of its company goes last.
   if (payload.companies){
-    const byKey = new Map(payload.companies.map(c => [c.key, { key: c.key, label: c.label, name: c.name }]));
+    const byKey = new Map(payload.companies.map(c => [c.key,
+      { key: c.key, label: c.label, boardKeys: c.board_keys, atses: c.atses }]));
     const kept = trendPicks.map(p => byKey.get(p.key)).filter(Boolean);
     trendPicks = [...kept, ...[...byKey.values()].filter(c => !kept.includes(c))];
   }
@@ -2295,7 +2327,7 @@ function drawTrends(){
     const fx = x(idx);
     const who = (trendPicks.find(p => p.key === f.company) || {}).label || 'a picked company';
     const title = `${f.boards} more board${f.boards === 1 ? '' : 's'} of ${who} found here: `
-      + `${f.openings.toLocaleString()} openings that were already open arrive at once — not new hiring`;
+      + `${f.openings.toLocaleString()} tech openings across the company, already open, arrive at once — not new hiring`;
     svg += `<line class="found-marker" x1="${fx.toFixed(1)}" y1="${PAD_T}"
              x2="${fx.toFixed(1)}" y2="${H - PAD_B}"><title>${esc(title)}</title></line>`;
   });
@@ -2400,6 +2432,8 @@ function drawTrends(){
   // conflating the two would read as "the pipeline is broken" rather than "you narrowed it."
   el('trends-empty').textContent = runs === 0
     ? 'No measurements inside this window — widen the dates, or clear them to see the whole history.'
+    : runs < 2 && trendPicks.length
+    ? `${companyNote(d)} A trend line needs a few more runs.`.trim()
     : runs < 2
     ? (atsPick
         ? `Only ${runs} measurement${runs === 1 ? '' : 's'} for this ATS selection — per-ATS history starts from when this filter shipped, not before. Broaden the selection to see more.`
@@ -2795,11 +2829,15 @@ function applyUnitLocks(){
 }
 trendSeg('trends-metric', 'metric', v => {
   trendMetric = v;
+  // Share's lock follows the metric alone, so it applies before the answer lands; Change's is
+  // checked against the data again when it does (loadTrends).
   applyUnitLocks();
   loadTrends(trendDrill);
 });
 trendSeg('trends-coverage', 'coverage', v => { trendCoverage = v; loadTrends(trendDrill); });
-trendSeg('trends-unit', 'unit', v => { unitWanted = null; trendUnit = v; applyUnitLocks(); drawTrends(); });
+trendSeg('trends-unit', 'unit', v => pickUnit(v));
+// The reader's own choice clears any unit a lock was holding for them.
+function pickUnit(v){ unitWanted = null; trendUnit = v; applyUnitLocks(); drawTrends(); }
 trendSeg('trends-split', 'split', v => trendSplitSelect(v));
 function trendSplitSelect(v){
   if (trendDrill){ trendSplit = v; loadTrends(trendDrill); return; }
@@ -2860,7 +2898,7 @@ function drawPicks(){
   if (el('trends-co-q')) el('trends-co-q').placeholder = trendPicks.length ? 'Add another' : 'Add a company';
   if (el('trends-title')) el('trends-title').textContent =
     'Which tech roles are growing' + (pickPhrase() ? ' ' + pickPhrase() : '');
-  if (el('trends-co-roles')) el('trends-co-roles').hidden = !(trendPicks.length === 1 && trendPicks[0].name);
+  if (el('trends-co-roles')) el('trends-co-roles').hidden = !(trendPicks.length === 1 && trendPicks[0].boardKeys);
 }
 
 function setPicks(picks){
@@ -2918,7 +2956,7 @@ function chooseCo(i){
   // (Atlassian's three iCIMS Tenants, Infosys's regional ones) is a few Enters, not a retype each.
   const rest = o.followed ? [] : coOptions.filter(x => x !== o && !x.followed);
   // The query stays, selected, so arrows and Enter pick the next entry while typing replaces it.
-  if (rest.length){ openCoList(rest); el('trends-co-q').select(); }
+  if (rest.length){ openCoList(rest); setCoActive(0); el('trends-co-q').select(); }
   else { el('trends-co-q').value = ''; closeCoList(); }
 }
 
@@ -2977,12 +3015,10 @@ if (el('trends-co-q')){
 }
 
 // From a company's trend to its jobs: Search already owns the filters, ranking and job card,
-// so the pick is handed over by name like the Hot tab's "See roles".
+// so the pick is handed over by its Board keys, like the Hot tab's "See roles".
 if (el('trends-co-roles')) el('trends-co-roles').addEventListener('click', () => {
-  const p = trendPicks[0]; if (!p || !p.name) return;
-  el('company').value = p.name;
-  location.hash = '#search';
-  go();
+  const p = trendPicks[0]; if (!p || !p.boardKeys) return;
+  searchCompany(p.boardKeys, p.label);
 });
 
 // "See trend" from a Hot-tab row or a search result (ADR-0185): the Board key the row already
@@ -3257,7 +3293,7 @@ function hotRow(r, i, lens){
       <div class="hot-actions">
         ${CAN_COMPANIES ? `<button class="ghost hot-track" data-track="${esc(r.board)}"
           aria-pressed="${followed}">${followed ? 'Following' : 'Follow'}</button>` : ''}
-        <button class="ghost hot-see" data-company="${esc(r.company)}">See roles</button>
+        <button class="ghost hot-see" data-board="${esc(r.board)}" data-company="${esc(r.company)}">See roles</button>
         ${el('trends') ? `<button class="ghost hot-trend" data-trend="${esc(r.board)}"
           data-trend-name="${esc(r.company)}">See trend</button>` : ''}
       </div>
@@ -3298,9 +3334,7 @@ if (el('hot-results')){
     // Hand the company to Search rather than filtering here: Search already owns the filter
     // vocabulary, the ranking and the job card, and a second place that lists jobs would be a
     // second place to keep them consistent.
-    el('company').value = btn.dataset.company;
-    location.hash = '#search';
-    go();
+    searchCompany([btn.dataset.board], btn.dataset.company);
   });
 }
 

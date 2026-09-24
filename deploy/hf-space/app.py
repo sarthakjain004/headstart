@@ -271,11 +271,21 @@ def _load_epochs(path: Path) -> list[dict]:
         if previous is None:
             continue
         # .get: a file from before a column existed lacks it until the next tick upgrades it
-        changed = [
-            label for key, label in _EPOCH_LABELS if row.get(key) != previous.get(key)
+        moved = [
+            (key, label)
+            for key, label in _EPOCH_LABELS
+            if row.get(key) != previous.get(key)
         ]
-        if changed:
-            out.append({"ts": row["ts"], "changed": changed})
+        if moved:
+            # `fields` beside the labels, so code can key on what moved (the Trends tab asks
+            # whether duplicate removal did) without matching prose someone may reword.
+            out.append(
+                {
+                    "ts": row["ts"],
+                    "changed": [label for _, label in moved],
+                    "fields": [key for key, _ in moved],
+                }
+            )
     return out
 
 
@@ -321,14 +331,20 @@ def _board_openings(deltas: list[dict], version: int | None) -> Counter[str]:
     """
     openings: Counter[str] = Counter()
     for row in deltas:
-        if (
-            row["version"] == version
-            and row["metric"] == "stock"
-            and row["family"] != _NON_TECH
-            and not row["family"].startswith(_WATCH_PREFIX)
-        ):
+        if _is_tech_stock(row, version):
             openings[row["board"]] += row["delta"]
     return openings
+
+
+def _is_tech_stock(row: dict, version: int | None) -> bool:
+    """A delta row counting tech openings at the live version: `stock`, not `non-tech`, and not
+    a `watch:` row, which re-counts Jobs already counted in their family (ADR-0051)."""
+    return (
+        row["version"] == version
+        and row["metric"] == "stock"
+        and row["family"] != _NON_TECH
+        and not row["family"].startswith(_WATCH_PREFIX)
+    )
 
 
 def _board_arrivals(
@@ -346,13 +362,7 @@ def _board_arrivals(
             first[row["board"]] = min(first.get(row["board"], row["ts"]), row["ts"])
     arrived: Counter[str] = Counter()
     for row in deltas:
-        if (
-            row["version"] == version
-            and row["metric"] == "stock"
-            and row["ts"] == first[row["board"]]
-            and row["family"] != _NON_TECH
-            and not row["family"].startswith(_WATCH_PREFIX)
-        ):
+        if _is_tech_stock(row, version) and row["ts"] == first[row["board"]]:
             arrived[row["board"]] += row["delta"]
     return {board: (ts, arrived[board]) for board, ts in first.items()}
 
@@ -383,11 +393,10 @@ _COMPANIES = _load_directory(_STATE / "data" / "state" / "company_directory.json
 _COMPANY_OF = {
     board: key for key, entry in _COMPANIES.items() for board in entry["boards"]
 }
-_OPENINGS = _board_openings(_TREND_DELTAS, _TRENDS[-1]["version"] if _TRENDS else None)
+_LIVE_VERSION = _TRENDS[-1]["version"] if _TRENDS else None
+_OPENINGS = _board_openings(_TREND_DELTAS, _LIVE_VERSION)
 _CANDIDATES = _build_candidates(_COMPANIES, _OPENINGS)
-_BOARD_ARRIVALS = _board_arrivals(
-    _TREND_DELTAS, _TRENDS[-1]["version"] if _TRENDS else None
-)
+_BOARD_ARRIVALS = _board_arrivals(_TREND_DELTAS, _LIVE_VERSION)
 # Email alerts (ADR-0035) — invite-only, so all three must be set before the panel appears:
 # the Google client id the sign-in button needs, and a token scoped to the Subscriptions
 # dataset alone (never the index token, which is read-only by design).
@@ -508,14 +517,21 @@ def _company_where(args) -> str | None:
     ``mine=1`` narrows to followed Boards. Hidden Boards are excluded on **every** request,
     with or without that flag — hiding a company means not seeing it, not "not seeing it while
     a toggle happens to be on".
+
+    ``board=`` (repeatable) narrows to one company's Boards, the Trends and Hot tabs' hand-off
+    (ADR-0185). It needs no Account, so it applies with accounts off as well.
     """
+    scoped = search.scoped_boards_clause(args)
     gate = _account_gate()
     if not gate:
-        return None
+        return scoped
     email, store = gate
     prefs = store.get_companies(subscription_id(email))
-    return search.account_clause(
-        prefs.followed, prefs.hidden, mine=args.get("mine") in ("1", "true")
+    return search.with_extra(
+        scoped,
+        search.account_clause(
+            prefs.followed, prefs.hidden, mine=args.get("mine") in ("1", "true")
+        ),
     )
 
 
@@ -1306,7 +1322,7 @@ def trends():
     ``&split=company`` draws one series per picked company (with ``family``, within that
     family), and ``companies`` echoes the picks with their labels. Under a pick, ``totals`` is
     the picks' combined total and ``company_totals`` each pick's own, so a line split by company
-    can be a share of that company. ``history_start`` is the first run a pick is charted from.
+    can be a share of that company. ``counted_since`` maps each pick to its first counted tick.
     ``discovered`` lists ``{ts, company, boards, openings}``: Boards of a pick found after its
     line began, at the first charted run that counts them. Each is a step of openings that were
     already open, not hiring, so the chart marks it.
@@ -1508,26 +1524,34 @@ def trends():
         if company_of and not row["family"].startswith(_WATCH_PREFIX):
             at = company_totals[row["company"]]
             at[row["ts"]] = at.get(row["ts"], 0) + row["count"]
-    # Boards of a pick found after its line began: each lands as one step of openings that were
-    # already open, so the chart marks it rather than let it read as hiring. None under
-    # comparable coverage, which leaves every such Board out of the cohort.
-    # A company's own first Board starts its line rather than stepping it, so the bar is the
-    # later of the window's first run and that company's earliest arrival.
+    # Each pick's own first counted tick (over the Boards in scope), which is where its line
+    # starts: the ledger's first tick for most, later for the 9,981 companies first counted
+    # after it (measured 2026-09-24). The chart names it, so a short line never reads as the
+    # company's whole history.
+    counted = {
+        board: pick
+        for board, pick in (company_of or {}).items()
+        if board in _BOARD_ARRIVALS and not (ats and ats_of(board) not in ats)
+    }
+    began: dict[str, str] = {}
+    for board, pick in counted.items():
+        ts = _BOARD_ARRIVALS[board][0]
+        began[pick] = min(began.get(pick, ts), ts)
+    # Boards of a pick found after its line began: each lands its tech openings at once, openings
+    # that were already open, so the chart marks the step rather than let it read as hiring. A
+    # Board that lands on the charted point where its company's line begins starts that line and
+    # is not a step, nor is one that brought no tech openings. None under comparable coverage,
+    # which leaves every such Board out of the cohort.
     found: dict[tuple[str, str], list[int]] = {}
-    if company_of and coverage != "comparable" and stamps:
-        counted = {
-            board: pick
-            for board, pick in company_of.items()
-            if board in _BOARD_ARRIVALS and not (ats and ats_of(board) not in ats)
-        }
-        began: dict[str, str] = {}
-        for board, pick in counted.items():
-            ts = _BOARD_ARRIVALS[board][0]
-            began[pick] = min(began.get(pick, ts), ts)
+    if coverage != "comparable" and stamps:
         for board, pick in counted.items():
             ts, openings = _BOARD_ARRIVALS[board]
             at = bisect_left(stamps, ts)
-            if ts <= max(stamps[0], began[pick]) or at == len(stamps):
+            if (
+                openings <= 0
+                or at == len(stamps)
+                or at <= bisect_left(stamps, began[pick])
+            ):
                 continue
             bucket = found.setdefault((stamps[at], pick), [0, 0])
             bucket[0] += 1
@@ -1546,11 +1570,18 @@ def trends():
         split_by=key,
         watch_parents=watch_parents,
         epochs=epochs,
-        companies=[_company_json(k, company_labels[k]) for k in picked_keys],
+        # With its Board keys, so the chart can hand a pick to Search by Board (ADR-0185).
+        companies=[
+            {
+                **_company_json(k, company_labels[k]),
+                "board_keys": _COMPANIES[k]["boards"],
+            }
+            for k in picked_keys
+        ],
         company_totals={
             k: [company_totals[k].get(ts) for ts in stamps] for k in picked_keys
         },
-        history_start=first_charted if company_of else None,
+        counted_since=began,
         discovered=[
             {"ts": ts, "company": pick, "boards": n, "openings": openings}
             for (ts, pick), (n, openings) in sorted(found.items())

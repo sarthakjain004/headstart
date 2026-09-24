@@ -27,6 +27,8 @@ from headstart.search import (
     account_clause,
     keyword_scope_options,
     load_encoder,
+    scoped_boards_clause,
+    with_extra,
 )
 
 _REPO = Path(__file__).resolve().parents[2]
@@ -152,11 +154,14 @@ _LOCAL_COMPANIES = CompanyPrefs.blank("local")
 
 
 def _company_where(args) -> str | None:
-    """Mirror of the Space's per-request follow/hide clause — the rule itself is shared."""
-    return account_clause(
-        _LOCAL_COMPANIES.followed,
-        _LOCAL_COMPANIES.hidden,
-        mine=args.get("mine") in ("1", "true"),
+    """Mirror of the Space's per-request follow/hide and ``board=`` clause — the rules are shared."""
+    return with_extra(
+        scoped_boards_clause(args),
+        account_clause(
+            _LOCAL_COMPANIES.followed,
+            _LOCAL_COMPANIES.hidden,
+            mine=args.get("mine") in ("1", "true"),
+        ),
     )
 
 

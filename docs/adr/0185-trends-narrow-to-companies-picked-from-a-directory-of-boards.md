@@ -227,17 +227,27 @@ chart misleading or empty for the common company. Each fix below answers a measu
   line began, and each lands its whole backlog at once (Hyatt +1,048 over 83 Boards). This is the
   reason the Hot tab leaves new Boards out. `/trends` now returns `discovered` under a pick
   (`{ts, company, boards, openings}`, from each Board's first tick), and the chart marks each with
-  a solid ink line. Across such a step, or across duplicate removal, no riser or faller is
-  named. Tech-filter and extraction changes still allow one, as they do on the index chart.
+  a solid ink line. A Board that brought no tech openings, or that lands on the point where its
+  company's line begins, is not marked. Across a found Board, or across duplicate removal at a
+  pick holding several Taleo Enterprise or Workday Boards (the only Boards it parks), no riser or
+  faller is named. Tech-filter and extraction changes still allow one, as they do on the index
+  chart. Epochs now carry `fields` (the version columns that moved) beside their labels, so the
+  tab keys on `dedup_version`, not on prose.
 - **The history note was wrong for late starters.** 9,981 companies were first counted after
-  2026-09-13, but the note named 2026-09-13. It now names the picked company's own first counted
-  run, and it shows whenever a company is picked.
+  2026-09-13, but the note named 2026-09-13. `/trends` now returns `counted_since`, each pick's
+  own first counted tick, in place of `history_start`, and the note names it per company. It
+  shows whenever a company is picked, including on a one-run line.
 - **Unfindable and fragmented names.** "jpmorgan" finds nothing (the Board is named "Jpmc"), and
   Siemens, Goldman Sachs, Flipkart, Shopify, Swiggy and TCS have no Board at all. The no-match
   line now says a Board may be unread or named otherwise. The picker also stays open on its
   query after a pick, so an employer split across entries (Atlassian's three iCIMS Tenants) takes
-  a few Enters. Curated aliases for well-known employers remain open work.
-- **No way from a trend to the jobs.** One pick now offers "See its open roles", which hands
-  its name to Search as the Hot tab's "See roles" does.
+  a few Enters, with the next entry already active. Curated aliases for well-known employers
+  remain open work.
+- **No way from a trend to the jobs.** One pick now offers "See its open roles". It hands over
+  the company's Board keys, not its name: `/search` and `/facets` take `board=` (repeatable, at
+  most 200), kept out of `SearchFilters` like follow/hide so a Saved Set never freezes it. The
+  name's substring match found 0 of Booz Allen Hamilton's 1,388 rows and 0 of Six Group's 30,
+  and returned 2,057 rows for one Citi Board that holds 927 (2026-09-15 table). The Hot tab's
+  "See roles" had the same defect and now hands over its Board too.
 - **The picker sat under the chart on a phone.** Companies now have their own row above the
   filters, and the heading names the pick.
