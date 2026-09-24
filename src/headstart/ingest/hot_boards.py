@@ -256,18 +256,24 @@ def rank(
     behaving. Every candidate Board is scored once and the three lenses sort the same rows, so a
     Board cannot appear as an employer on one lens and a services firm on another.
     """
-    candidates, newly_found = [], 0
+    candidates, newly_found, unnamed = [], 0, 0
     for board, open_roles in stock.items():
         if open_roles < MIN_STOCK:
             continue
         if moved.get(board, 0) >= NEWLY_FOUND_SHARE * open_roles:
             newly_found += 1
             continue
+        company = display_name(names.get(board, ""), board)
+        # A row with no company says nothing about who is hiring, and `_collapse_same_company`
+        # would fold every such Board into one (ADR-0212).
+        if not company:
+            unnamed += 1
+            continue
         candidates.append(
             {
                 "board": board,
                 "ats": board.split(":", 1)[0],
-                "company": display_name(names.get(board, ""), board),
+                "company": company,
                 "stock": open_roles,
                 "new7": new.get(board, 0),
                 "net": moved.get(board, 0),
@@ -297,6 +303,7 @@ def rank(
     counts = {
         "ranked": len(candidates),
         "newly_discovered": newly_found,
+        "unnamed": unnamed,
         "below_min_stock": sum(1 for v in stock.values() if v < MIN_STOCK),
         # The threshold travels with the counts it explains. The UI prints "fewer than N open
         # roles", and with N hardcoded there, changing MIN_STOCK would leave that sentence

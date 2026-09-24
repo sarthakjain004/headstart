@@ -100,7 +100,6 @@ def _sync(
     upgrades: list[str] | None = None,
     meta_over: dict | None = None,
     descriptions: dict[str, str] | None = None,
-    backfill: bool = False,
 ) -> int:
     """Run one `index sync` cycle over ``ids`` — store, corpus, and scrape scope all agree.
 
@@ -143,7 +142,6 @@ def _sync(
             # reads as an empty set — so a first absence is withheld here exactly as it would be
             # in a real cold start. Tests that need an eviction to land run sync twice.
             unconfirmed=str(tmp_path / "unconfirmed_ids.txt"),
-            backfill_descriptions=backfill,
         )
     )
 
@@ -723,57 +721,80 @@ def test_refresh_serves_the_edited_description_on_a_row_it_rewrites_anyway(
     assert _descriptions(tmp_path)["greenhouse:a:1"] == "2+ years Go."
 
 
-def test_a_null_description_alone_is_not_a_reason_to_rewrite_unless_backfilling(
+def test_an_edited_description_alone_replaces_the_served_text(
     tmp_path, monkeypatch, caplog
 ):
+    """ADR-0207, the user's rule: a fetch that succeeded with different text replaces the served
+    description even when no other metadata moved — a company may edit its posting. Measured
+    2026-09-24: 25,690 served rows (4.9%) held an older revision than the store."""
     ids = ["greenhouse:a:1"]
-    _sync(tmp_path, monkeypatch, ids)
+    _sync(tmp_path, monkeypatch, ids, descriptions={"greenhouse:a:1": "No pay line."})
+    table = lancedb.connect(str(tmp_path / "db")).open_table(idx.PROD_TABLE)
+    before = table.search().limit(10).to_list()[0]
     caplog.set_level("INFO")
-    # Text available, meta unchanged, backfill OFF: nothing is rewritten — the +690 MB is a
-    # deliberate step, not a side effect of an ordinary run.
-    _sync(tmp_path, monkeypatch, ids, descriptions={"greenhouse:a:1": "text"})
-    assert any("already matches the store" in r.getMessage() for r in caplog.records)
-    assert _descriptions(tmp_path)["greenhouse:a:1"] is None
-    # Backfill ON: filled, and the log says how many rows were rewritten for that reason.
-    caplog.clear()
+
     _sync(
         tmp_path,
         monkeypatch,
         ids,
-        descriptions={"greenhouse:a:1": "text"},
-        backfill=True,
+        descriptions={"greenhouse:a:1": "Pay: $35-$45/hour."},
     )
-    assert _descriptions(tmp_path)["greenhouse:a:1"] == "text"
+
+    after = (
+        lancedb.connect(str(tmp_path / "db"))
+        .open_table(idx.PROD_TABLE)
+        .search()
+        .limit(10)
+        .to_list()
+    )
+    assert len(after) == 1  # replaced, not duplicated
+    assert after[0]["description"] == "Pay: $35-$45/hour."
+    assert after[0]["description_stored"] is True
+    # Not a new listing, and not re-embedded: the vector is the store's, unchanged.
+    assert after[0]["first_seen"] == before["first_seen"]
+    assert after[0]["vector"] == before["vector"]
     assert any(
-        "1 of them to backfill a description" in r.getMessage() for r in caplog.records
+        "rewrote 1 rows" in m and "1 for an edited description" in m
+        for m in (r.getMessage() for r in caplog.records)
     )
 
 
-def test_backfill_leaves_a_row_the_corpus_cannot_fill_untouched(
+def test_an_empty_fetch_never_overwrites_a_held_description(
     tmp_path, monkeypatch, caplog
 ):
-    """The merge job's corpus is this run's SLICE. A backfill candidate whose text is not in it must
-    not be rewritten — that would pay the ~25 KB vector rewrite and fill nothing, and one flagged
-    run would churn every null-description row table-wide. It waits, and the log says so."""
-    ids = ["greenhouse:a:1", "greenhouse:a:2"]
-    _sync(
-        tmp_path, monkeypatch, ids
-    )  # both indexed without text; meta says both HAVE one
+    """ADR-0050/0089: a completed fetch is not proof a posting has none. A corpus row with no text
+    leaves the served one alone and is no reason to rewrite the row."""
+    ids = ["greenhouse:a:1"]
+    _sync(tmp_path, monkeypatch, ids, descriptions={"greenhouse:a:1": "Go and gRPC."})
     caplog.set_level("INFO")
-    # Backfill ON, but the corpus carries text for :2 only.
-    _sync(
-        tmp_path,
-        monkeypatch,
-        ids,
-        descriptions={"greenhouse:a:2": "text"},
-        backfill=True,
-    )
+    _sync(tmp_path, monkeypatch, ids, descriptions={"greenhouse:a:1": "   "})
+    assert _descriptions(tmp_path)["greenhouse:a:1"] == "Go and gRPC."
+    assert any("already matches the store" in r.getMessage() for r in caplog.records)
+
+
+def test_an_unchanged_description_rewrites_nothing(tmp_path, monkeypatch, caplog):
+    ids = ["greenhouse:a:1"]
+    _sync(tmp_path, monkeypatch, ids, descriptions={"greenhouse:a:1": "Go and gRPC."})
+    caplog.set_level("INFO")
+    _sync(tmp_path, monkeypatch, ids, descriptions={"greenhouse:a:1": "Go and gRPC."})
+    assert any("already matches the store" in r.getMessage() for r in caplog.records)
+
+
+def test_a_fetched_description_fills_a_null_row(tmp_path, monkeypatch, caplog):
+    """Null is "no text yet", and text that arrives differs from it — so it is filled like any
+    other change, with no flag (ADR-0207)."""
+    ids = ["greenhouse:a:1", "greenhouse:a:2"]
+    _sync(tmp_path, monkeypatch, ids)  # both indexed without text
+    caplog.set_level("INFO")
+    # The corpus carries text for :2 only.
+    _sync(tmp_path, monkeypatch, ids, descriptions={"greenhouse:a:2": "text"})
     got = _descriptions(tmp_path)
     assert got["greenhouse:a:2"] == "text"
-    assert got["greenhouse:a:1"] is None  # left alone, not rewritten to null
-    msgs = [r.getMessage() for r in caplog.records]
-    assert any("rewrote 1 rows" in m and "1 of them to backfill" in m for m in msgs)
-    assert any("1 backfill candidate(s) left for a later run" in m for m in msgs)
+    assert got["greenhouse:a:1"] is None  # no text this run: left alone, not rewritten
+    assert any(
+        "rewrote 1 rows" in m and "1 filled where it had none" in m
+        for m in (r.getMessage() for r in caplog.records)
+    )
 
 
 def test_the_grace_period_round_trips_across_two_runs(tmp_path, monkeypatch):
@@ -830,7 +851,7 @@ def _backfill(tmp_path: Path, store: Path, apply: bool = True) -> int:
 
 
 def test_backfill_reaches_a_row_no_run_corpus_ever_carried(tmp_path, monkeypatch):
-    """The reason this subcommand exists. `sync --backfill-descriptions` reads the run's corpus,
+    """The reason this subcommand exists. `sync` fills descriptions from the run's corpus,
     so a row whose Board sat out the slice is unreachable; the store holds it regardless."""
     _sync(tmp_path, monkeypatch, ["greenhouse:a:1", "greenhouse:a:2"])
     assert _descriptions(tmp_path) == {"greenhouse:a:1": None, "greenhouse:a:2": None}

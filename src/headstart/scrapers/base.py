@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 from collections import Counter
 from collections.abc import Awaitable, Callable, Container, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from functools import cached_property
 from types import MappingProxyType
@@ -870,7 +870,7 @@ class BaseScraper(ABC):
     def board_page(self) -> str | None:
         """The page whose ``<title>`` carries this Board's company name, or None for an ATS with
         no such page. Overridden by the seven scrapers `headstart.company_name` has evidence for;
-        everything else keeps serving its slug, exactly as before."""
+        for everything else :meth:`fetch` serves the Board's humanised tenant (ADR-0212)."""
         return None
 
     def resolve_company(self) -> None:
@@ -923,9 +923,28 @@ class BaseScraper(ABC):
 
     def fetch(self) -> list[Job]:
         scraped_at = datetime.now(UTC).isoformat()
+        # What the constructor left, before any source runs: anything that differs afterwards
+        # was stated during this fetch, by `resolve_company` or a `fetch_raw` of its own.
+        unresolved = self.company
         raw = self.fetch_raw()
-        self.resolve_company()
-        return self.parse(raw, scraped_at)
+        curated = company_name.curated(self.board_key())
+        if not curated:
+            self.resolve_company()
+        # Before `parse`, so a posting with no name of its own falls back to a name, never to
+        # the slug (ADR-0212).
+        # None, where the tenant is only a code, is served as an empty company.
+        self.company = (
+            company_name.settled(self.company, unresolved, self.board_key()) or ""
+        )
+        jobs = self.parse(raw, scraped_at)
+        for i, job in enumerate(jobs):
+            # A curated name overrides a posting's own too; an all-caps legal name a posting
+            # states is title-cased; and padding, which `field or self.company` let through as
+            # truthy, falls back to the Board's name.
+            name = curated or company_name.title_cased(job.company) or self.company
+            if name != job.company:
+                jobs[i] = replace(job, company=name)
+        return jobs
 
     @staticmethod
     def fan_out(

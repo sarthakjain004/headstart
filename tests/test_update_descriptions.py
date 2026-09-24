@@ -294,6 +294,70 @@ def test_an_edited_description_is_requeued(tmp_path):
     assert ids == ["eightfold:acme:1"]
 
 
+def test_reconcile_counts_a_replacement_apart_from_a_first_arrival(tmp_path):
+    """ADR-0207: every run logs how many held descriptions a fetch replaced. A first arrival and a
+    replacement are both `learned`, so the replacement needs its own count."""
+    jobs = tmp_path / "tech" / "eightfold.jsonl"
+    store = tmp_path / "store" / "eightfold"
+    _corpus(jobs, [_job("eightfold:acme:1", "3+ years.")])
+    ud.reconcile(jobs, store, {})
+
+    _corpus(
+        jobs,
+        [_job("eightfold:acme:1", "8+ years."), _job("eightfold:acme:2", "New.")],
+    )
+    done = ud.reconcile(jobs, store, {})
+
+    assert (done.learned, done.replaced, done.reverted) == (2, 1, 0)
+
+
+def test_a_replacement_back_to_the_previous_text_is_counted_as_reverted(tmp_path):
+    """A flip (text A, then B, then A again) is what a failing fetch path looks like, not an edit.
+    The change ledger remembers each Job's previous text by hash, so a return to it is told apart
+    from a new revision, and it counts every change the Job has had."""
+    jobs = tmp_path / "tech" / "eightfold.jsonl"
+    store = tmp_path / "store" / "eightfold"
+    changes: dict = {}
+    for text in ("Detail text.", "Listing text.", "Detail text."):
+        _corpus(jobs, [_job("eightfold:acme:1", text)])
+        done = ud.reconcile(jobs, store, changes)
+
+    assert (done.replaced, done.reverted) == (1, 1)
+    assert changes["eightfold:acme:1"].count == 2
+
+
+def test_an_empty_fetch_is_no_change(tmp_path):
+    jobs = tmp_path / "tech" / "eightfold.jsonl"
+    store = tmp_path / "store" / "eightfold"
+    changes: dict = {}
+    _corpus(jobs, [_job("eightfold:acme:1", "Held.")])
+    ud.reconcile(jobs, store, changes)
+    _corpus(jobs, [_job("eightfold:acme:1", "  ")])
+    done = ud.reconcile(jobs, store, changes)
+
+    assert (done.replaced, done.reverted) == (0, 0)
+    assert changes == {}
+
+
+def test_the_change_ledger_round_trips(tmp_path):
+    path = tmp_path / "description_changes.tsv.gz"
+    ledger = {"eightfold:acme:1": ud.ChangeRecord(3, "abc123")}
+    ud.write_changes(path, ledger)
+    assert ud.read_changes(path) == ledger
+    assert ud.read_changes(tmp_path / "absent.tsv.gz") == {}
+
+
+def test_a_damaged_change_ledger_never_fails_the_run(tmp_path):
+    """The ledger only counts. A bad line is skipped, and a file that is not gzip at all starts
+    the counts again, rather than failing the step that stores this run's descriptions."""
+    path = tmp_path / "description_changes.tsv.gz"
+    with gzip.open(path, "wt", encoding="utf-8") as fh:
+        fh.write("eightfold:acme:1\t2\tabc\nnot a ledger line\n")
+    assert ud.read_changes(path) == {"eightfold:acme:1": ud.ChangeRecord(2, "abc")}
+    path.write_bytes(b"not gzip")
+    assert ud.read_changes(path) == {}
+
+
 def test_only_already_embedded_jobs_are_queued_to_rederive(tmp_path, monkeypatch):
     """A Job first embedded this run has its metadata written from this very description, so it
     needs no repair. Queueing every `learned` id would put every new Job on every listing-only
@@ -328,6 +392,8 @@ def test_only_already_embedded_jobs_are_queued_to_rederive(tmp_path, monkeypatch
             str(queue),
             "--prior-meta",
             str(prior_meta),
+            "--changes",
+            str(tmp_path / "changes.tsv.gz"),
         ],
     )
     ud.main()
@@ -366,6 +432,8 @@ def test_main_summarises_descriptions_restored_and_still_unknown(tmp_path, monke
             str(tmp_path / "pending.txt"),
             "--prior-meta",
             str(tmp_path / "absent-meta.jsonl"),
+            "--changes",
+            str(tmp_path / "changes.tsv.gz"),
         ],
     )
 

@@ -42,6 +42,13 @@ a fresh copy of every ``base.jsonl.gz`` — ~362 MB measured 2026-08-26, against
 sized it at when the store was new — the mistake ``data/lancedb`` was moved away from when it
 filled the 100 GB quota in ~45 runs.
 
+**Replacements are counted** (ADR-0207). A fetch whose text differs from the held text replaces
+it, and every run logs, per ATS in its corpus, how many held descriptions were replaced and how
+many of those went back to the text held before the last replacement, which is the shape of a
+fetch path flipping between two renderings rather than an edit. The per-Job counts live in a
+small state ledger, ``data/state/description_changes.tsv.gz``, not on the store's records, whose
+``{id, description}`` shape every reader of the store relies on.
+
 The skip-list falls out of the store rather than out of the embedding store: a Job is skipped when
 we *hold its detail*, which is what CONTEXT.md's **Detail pass** entry has always claimed. That
 also decouples eviction from the scrape — evicting a vector no longer discards the text behind it,
@@ -52,6 +59,7 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import hashlib
 import json
 from collections.abc import Iterator
 from pathlib import Path
@@ -59,6 +67,7 @@ from typing import NamedTuple
 
 from headstart import log
 from headstart.ingest import (
+    DESCRIPTION_CHANGES_PATH,
     HELD_DETAILS_PATH,
     PENDING_REDERIVE_PATH,
     REPO_ROOT,
@@ -157,11 +166,62 @@ def _write_fragment(ats_dir: Path, records: list[dict]) -> Path:
     return out
 
 
+class ChangeRecord(NamedTuple):
+    """One Job's line in the change ledger: how many times a fetch replaced its held text, and
+    a hash of the text it held before the last replacement."""
+
+    count: int
+    previous: str
+
+
+def _digest(text: str) -> str:
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
+
+
+def read_changes(path: Path) -> dict[str, ChangeRecord]:
+    """The change ledger, or ``{}`` when there is none yet.
+
+    Never fatal: the ledger only counts, so a malformed line is skipped and an unreadable file
+    starts the counts again rather than failing the run that stores this run's descriptions.
+    """
+    if not path.exists():
+        return {}
+    ledger: dict[str, ChangeRecord] = {}
+    try:
+        with gzip.open(path, "rt", encoding="utf-8") as fh:
+            for line in fh:
+                fields = line.rstrip("\n").split("\t")
+                if len(fields) == 3 and fields[1].isdigit():
+                    ledger[fields[0]] = ChangeRecord(int(fields[1]), fields[2])
+    except (OSError, EOFError, UnicodeDecodeError) as exc:
+        _log.warning(
+            f"{path} is unreadable ({exc}); change counts start again from zero"
+        )
+        return {}
+    return ledger
+
+
+def write_changes(path: Path, ledger: dict[str, ChangeRecord]) -> None:
+    """Rewrite the change ledger through a temp file, so a kill mid-write keeps the old one."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    with gzip.open(tmp, "wt", encoding="utf-8") as fh:
+        for job_id in sorted(ledger):
+            change = ledger[job_id]
+            fh.write(f"{job_id}\t{change.count}\t{change.previous}\n")
+    tmp.replace(path)
+
+
 class Reconciled(NamedTuple):
     """What one ATS's reconcile pass did. Named because it outgrew a positional tuple."""
 
     filled: int
     learned: int
+    #: Of ``learned``, the Jobs whose held text a fetch replaced with different text (ADR-0207).
+    replaced: int
+    #: Of ``replaced``, the ones that went back to the text held before the last replacement: a
+    #: fetch path flipping between two renderings, not an edit (Zoho's, ADR-0208).
+    reverted: int
     #: No fresh text and nothing stored. These Jobs come back unchanged every run: the backlog
     #: that does not shrink on its own, invisible until it was counted. Says nothing about *why*
     #: — see the comment at the branch that counts it.
@@ -169,12 +229,16 @@ class Reconciled(NamedTuple):
     rederive_ids: list[str]
 
 
-def reconcile(jobs_path: Path, ats_dir: Path) -> Reconciled:
+def reconcile(
+    jobs_path: Path, ats_dir: Path, changes: dict[str, ChangeRecord] | None = None
+) -> Reconciled:
     """Fill this ATS's corpus from the store and persist what the run learned.
 
     Returns a :class:`Reconciled` — corpus rows repaired from the store, descriptions newly
     stored or changed, postings left with no description and none stored, and the ids behind
     the second.
+
+    ``changes`` is the change ledger, updated in place for every replacement (ADR-0207).
 
     ``rederive_ids`` is the ADR-0062 marking. A Job whose description arrives *now* still carries
     metadata derived without that text, and nothing else would ever revisit it: ``embed_plan``
@@ -183,7 +247,9 @@ def reconcile(jobs_path: Path, ats_dir: Path) -> Reconciled:
     """
     held = read_store(ats_dir)
     learned: list[dict] = []
-    filled = unrecorded = 0
+    filled = unrecorded = replaced = reverted = 0
+    if changes is None:
+        changes = {}
 
     # The rewrite streams through a temp file rather than buffering the corpus a second time —
     # `held` above already holds this ATS's stored text, and doubling that on a CI box is what
@@ -201,8 +267,16 @@ def reconcile(jobs_path: Path, ats_dir: Path) -> Reconciled:
             if fresh:
                 # Fresh text always wins: a re-fetch is more current than the store, and this is
                 # the only path by which an edited posting reaches it.
-                if held.get(job_id) != fresh:
+                before = held.get(job_id)
+                if before != fresh:
                     learned.append({"id": job_id, "description": fresh})
+                if before is not None and before != fresh:
+                    prior = changes.get(job_id)
+                    replaced += 1
+                    reverted += prior is not None and prior.previous == _digest(fresh)
+                    changes[job_id] = ChangeRecord(
+                        (prior.count if prior else 0) + 1, _digest(before)
+                    )
             else:
                 stored = held.get(job_id)
                 if stored:
@@ -227,7 +301,14 @@ def reconcile(jobs_path: Path, ats_dir: Path) -> Reconciled:
     if learned:
         _write_fragment(ats_dir, learned)
     tmp.replace(jobs_path)
-    return Reconciled(filled, len(learned), unrecorded, [r["id"] for r in learned])
+    return Reconciled(
+        filled,
+        len(learned),
+        replaced,
+        reverted,
+        unrecorded,
+        [r["id"] for r in learned],
+    )
 
 
 def _embedded_ids(meta_path: Path) -> set[str]:
@@ -346,6 +427,11 @@ def main() -> int:
         "re-derive (a Job first embedded this run needs no repair)",
     )
     ap.add_argument(
+        "--changes",
+        default=str(DESCRIPTION_CHANGES_PATH),
+        help="per-Job change ledger: times a fetch replaced held text (ADR-0207)",
+    )
+    ap.add_argument(
         "--compact",
         action="store_true",
         help="fold each ATS's fragments into its base file and stop",
@@ -371,10 +457,11 @@ def main() -> int:
     embedded = _embedded_ids(Path(args.prior_meta))
     _log.info(f"prior store: {len(embedded):,} already-embedded ids")
 
-    filled = learned = queued = unrecorded = 0
+    changes = read_changes(Path(args.changes))
+    filled = learned = queued = unrecorded = replaced = reverted = 0
     for path in sorted(jobs.glob("*.jsonl")):
         ats = path.stem
-        done = reconcile(path, store / ats)
+        done = reconcile(path, store / ats, changes)
         rederive = [i for i in done.rederive_ids if i in embedded]
         # Appended per ATS rather than accumulated and written once: the queue is what stops these
         # Jobs from keeping embed-time numbers forever, so a crash halfway through the corpus must
@@ -384,11 +471,20 @@ def main() -> int:
         learned += done.learned
         queued += len(rederive)
         unrecorded += done.unrecorded
+        replaced += done.replaced
+        reverted += done.reverted
         _log.info(
             f"{ats}: filled {done.filled:,} from the store, learned {done.learned:,}, "
             f"queued {len(rederive):,} to re-derive"
             + (f", {done.unrecorded:,} still unrecorded" if done.unrecorded else "")
         )
+        # Its own line, every run and every ATS, zero included, so a grep can chart it: the edit
+        # churn ADR-0207 serves, with the flips (`back to the text held before`) kept apart.
+        _log.info(
+            f"{ats}: replaced {done.replaced:,} held description(s) with different text, "
+            f"{done.reverted:,} of them back to the text held before"
+        )
+    write_changes(Path(args.changes), changes)
     held = write_held_details(store, Path(args.held_details))
     _log.info(f"skip-list: {held:,} Jobs held")
     _log.info(f"re-derive queue: {queued:,} newly stored -> {args.pending_rederive}")
@@ -403,6 +499,10 @@ def main() -> int:
         [
             f"- **{filled:,}** description{'s' if filled != 1 else ''} restored from the store",
             f"- **{learned:,}** description{'s' if learned != 1 else ''} learned from fresh detail fetches",
+            (
+                f"- **{replaced:,}** held description{'s' if replaced != 1 else ''} replaced by "
+                f"different text, {reverted:,} of them back to the text held before (ADR-0207)"
+            ),
             (
                 f"- **{unrecorded:,}** Job{'s' if unrecorded != 1 else ''} still "
                 f"{'have' if unrecorded != 1 else 'has'} an unknown description"

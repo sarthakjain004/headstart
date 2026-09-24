@@ -205,8 +205,10 @@ supersedes it and note the supersession in both.
 | [0204](0204-a-scrapers-fetcher-is-bound-to-its-board.md) | A scraper's fetcher is bound to its Board | 2026-09-24 |
 | [0205](0205-an-eightfold-site-its-backing-board-already-serves-is-an-alias.md) | An Eightfold career site whose backing ATS Board already serves it is an alias | 2026-09-24 |
 | [0206](0206-prune-evicts-a-board-parole-reconfirmed-gone.md) | Prune evicts a Board parole re-confirmed gone, and a replaced scraper voids its verdicts | 2026-09-24 |
+| [0207](0207-the-served-description-follows-the-posting.md) | The served description follows the posting | 2026-09-24 |
 | [0208](0208-a-failed-zoho-detail-keeps-the-held-description.md) | A failed Zoho detail keeps the held description | 2026-09-24 |
 | [0209](0209-a-detail-pass-that-lands-nothing-stops.md) | A Detail pass that lands nothing stops, and no one detail can hold it open | 2026-09-25 |
+| [0212](0212-a-board-is-named-by-a-curated-stated-or-humanised-name-never-its-slug.md) | A Board is named by a curated, stated or humanised name, never by its slug | 2026-09-25 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*
