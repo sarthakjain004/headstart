@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from headstart import board_aliases, config, liveness, log
-from headstart.board_identity import board_identity, lower_key
+from headstart.board_identity import board_identity, board_key, lower_key
 from headstart.config import CompanyRef
 from headstart.scrapers.registry import DISABLED_ATS, SCRAPERS, company_from_row
 
@@ -84,7 +84,7 @@ def load(ledger_dir: str | Path, *, min_jobs: int = 1) -> list[ScrapableBoard]:
     ``config/companies.toml`` remains the small curated seed.
     """
     ledger_dir = Path(ledger_dir)
-    boards: list[ScrapableBoard] = []
+    rows: list[tuple[ScrapableBoard, liveness.Verdict]] = []
     for csv_path in sorted(ledger_dir.glob("*.csv")):
         scraper = SCRAPERS.get(csv_path.stem)
         if scraper is None:
@@ -104,18 +104,19 @@ def load(ledger_dir: str | Path, *, min_jobs: int = 1) -> list[ScrapableBoard]:
         # below cannot do it, since two different hostnames share no `board_key` to collapse on.
         aliases = board_aliases.load_for(ledger_dir, scraper.ats)
         for verdict in liveness.load(csv_path).values():
-            if verdict.status != liveness.LIVE or (verdict.jobs or 0) < min_jobs:
-                continue
             company = company_from_row(scraper.ats, verdict.tenant, verdict.url)
             if (
                 is_excluded(company.ats, company.slug)
                 or company.slug.lower() in aliases
             ):
                 continue
-            boards.append(
-                ScrapableBoard(ats=company.ats, slug=company.slug, name=company.name)
-            )
-    return _drop_parked(_dedupe_boards(boards))
+            board = _board_of_row(company, verdict)
+            if board is not None:
+                rows.append((board, verdict))
+    elected = [
+        board for board, verdict in _elect(rows) if (verdict.jobs or 0) >= min_jobs
+    ]
+    return _drop_parked(elected)
 
 
 def _drop_parked(boards: list[ScrapableBoard]) -> list[ScrapableBoard]:
@@ -124,21 +125,56 @@ def _drop_parked(boards: list[ScrapableBoard]) -> list[ScrapableBoard]:
     return [b for b in boards if b.lowercase_identity not in config.PARKED_BOARDS]
 
 
-def _dedupe_boards(boards: list[ScrapableBoard]) -> list[ScrapableBoard]:
-    """Collapse Boards that map to the same canonical key to one entry (ADR-0023).
+def _board_of_row(company: CompanyRef, verdict: liveness.Verdict) -> ScrapableBoard | None:
+    """The Board a ledger row names, or None for a row that is not ``live`` and whose slug its
+    scraper cannot parse.
 
-    The ledger holds duplicate rows for one Board — differing only by slug casing (Workday sites
-    ``.../External`` vs ``.../external``) or by an equivalent tenant/url form that resolves to the
-    same ``board_key``. Left in, each variant is scraped and indexed separately, so one job lands in
-    the index two or three times. Keep the lexicographically-smallest ``board_key`` per canonical
-    (lowercased) key — this picks the Board that is actually scraped, and ``index_plan.plan_prune``
-    keeps the index row carrying *that* casing, so scrape and index agree. (Until 2026-08-11 the
-    prune instead kept the lex-min casing *present in the index*, which is a different population —
-    it includes casings that left the ledger — and the two disagreed permanently: ADR-0023's
-    amendment.)"""
-    best: dict[str, ScrapableBoard] = {}
-    for board in boards:
-        current = best.get(board.lowercase_identity)
-        if current is None or board.identity < current.identity:
-            best[board.lowercase_identity] = board
-    return list(best.values())
+    Every row takes part in the election, not only the live ones, because a newer ``dead`` row is
+    what takes a Board out. A live row that will not parse keeps ADR-0155's fallback identity, as
+    before. A dead or unknown one is skipped: it names no Board, so it cannot overrule one, and
+    Workday's ledger holds hundreds of dead rows with no url, each of which would otherwise reach
+    the fallback's warning on every load."""
+    if verdict.status != liveness.LIVE:
+        try:
+            board_key(company)
+        except Exception:  # noqa: BLE001 - an unparseable non-live row names no Board
+            return None
+    return ScrapableBoard(ats=company.ats, slug=company.slug, name=company.name)
+
+
+def _elect(
+    rows: list[tuple[ScrapableBoard, liveness.Verdict]],
+) -> list[tuple[ScrapableBoard, liveness.Verdict]]:
+    """One representative row per Board, for the Boards whose newest verdict is live (ADR-0217,
+    amending ADR-0023).
+
+    The ledger holds several rows for one Board: casing variants (Workday ``.../External`` vs
+    ``.../external``), a display slug beside a careers URL, or one site on two data centres. They
+    group on the lowercased identity, and three questions are answered separately:
+
+    - **Is the Board scraped?** Only if no ``dead`` row is newer than its newest ``live`` row.
+      ``unknown`` rows never count: a probe that earned no verdict is no evidence. A ``dead`` row
+      on the *same* day as a ``live`` one does not take the Board out: re-probed 2026-09-25, all
+      45 such groups answered live.
+    - **Under which key?** The lexicographically-smallest identity among its live rows, the rule
+      ADR-0023 has always used. It is the casing every served id already carries, so changing it
+      would re-key them.
+    - **From which row?** The newest live row carrying that key; on a tie, the most postings, then
+      the smallest slug. Its slug is what the scraper fetches and its job count is what
+      ``min_jobs`` reads, so the Scrapable and the Hiring lists elect the same row.
+    """
+    groups: dict[str, list[tuple[ScrapableBoard, liveness.Verdict]]] = {}
+    for board, verdict in rows:
+        groups.setdefault(board.lowercase_identity, []).append((board, verdict))
+    elected = []
+    for group in groups.values():
+        live = [(b, v) for b, v in group if v.status == liveness.LIVE]
+        if not live:
+            continue
+        newest_live = max(v.checked_at for _, v in live)
+        if any(v.status == liveness.DEAD and v.checked_at > newest_live for _, v in group):
+            continue
+        key = min(b.identity for b, _ in live)
+        carriers = sorted((bv for bv in live if bv[0].identity == key), key=lambda bv: bv[0].slug)
+        elected.append(max(carriers, key=lambda bv: (bv[1].checked_at, bv[1].jobs or 0)))
+    return elected
