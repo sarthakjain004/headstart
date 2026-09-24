@@ -100,7 +100,7 @@ otherwise each re-add them to `base.py` at once: `skip_held` (apple, phenom, zwa
 
 ## Amendment, 2026-09-24: a third `read_detail` outcome
 
-Wave A2 (#631) found details that arrive without their description yet carry fields `parse`
+ADR-0201's second wave (#631) found details that arrive without their description yet carry fields `parse`
 reads — a Taleo BE layout states a location and department on 128 of 128 pages with no body — and
 three Scrapers each overrode `report_detail_gaps` to keep such a detail while counting it as a gap.
 `read_detail` may now return `DetailWithoutDescription(fields, cause)`: `run_detail_pass` labels

@@ -847,3 +847,6 @@ def test_a_detail_without_description_is_kept_but_counted_as_a_gap(
     assert details.missing == 1
     assert scraper.detail_losses == {"no description on the page": 1}
     assert scraper.fetch_detail({"id": "bodyless"}) == details["bodyless"]
+    assert scraper.detail_losses == {"no description on the page": 2}, (
+        "the sampler's per-item path labels the loss too"
+    )

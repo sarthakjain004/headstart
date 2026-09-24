@@ -508,8 +508,10 @@ class BaseScraper(ABC):
         :data:`USER_AGENT`). Labels are deliberately coarse — a status, or an exception class —
         because what a gap needs is its *shape*, not one distinct string per request.
 
-        Call it only for a detail that will count as a gap — one whose path returns ``None``, or a
-        :class:`DetailWithoutDescription` — so the tally can never exceed the count it explains. Workday keeps a richer tally of its own and does not use this.
+        Call it only for a detail that will count as a gap under :meth:`run_detail_pass` — one
+        whose path returns ``None``, or a :class:`DetailWithoutDescription` — so the tally can
+        never exceed the count it explains. Workday keeps a richer tally of its own and does not
+        use this.
         """
         self.detail_losses[cause] += 1
 
@@ -1096,17 +1098,15 @@ class BaseScraper(ABC):
                 self._fetch_detail_outcome,
                 self.detail_workers or _DEFAULT_FAN_OUT_WORKERS,
             )
-        gap_view: list[Any] = []
+        described_details: list[Any] = []
         details: dict[str, Any] = {}
         for item, outcome in zip(wanted, results):
-            if isinstance(outcome, DetailWithoutDescription):
-                gap_view.append(None)
-                outcome = outcome.fields
-            else:
-                gap_view.append(outcome)
-            if outcome is not None and (native_id := key_of(item)) is not None:
-                details[native_id] = outcome
-        return FetchedDetails(details, self.report_detail_gaps(gap_view, what))
+            fields = _unwrapped(outcome)
+            # A detail kept without its description is still a gap on the line.
+            described_details.append(outcome if fields is outcome else None)
+            if fields is not None and (native_id := key_of(item)) is not None:
+                details[native_id] = fields
+        return FetchedDetails(details, self.report_detail_gaps(described_details, what))
 
     def _fan_out_timed(
         self, items: Sequence[_T], fetch_one: Callable[[_T], _R], workers: int
