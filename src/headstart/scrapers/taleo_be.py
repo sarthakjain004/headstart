@@ -19,14 +19,18 @@ from __future__ import annotations
 
 import html
 import re
-from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
 
 from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import BaseScraper, DetailLost, DetailRequest
+from headstart.scrapers.base import (
+    BaseScraper,
+    DetailLost,
+    DetailRequest,
+    DetailWithoutDescription,
+)
 
 _MAX_PAGES = 1_000
 _DETAIL_WORKERS = 16
@@ -339,20 +343,6 @@ class TaleoBEScraper(BaseScraper):
             raise DetailLost("no detail URL")
         return DetailRequest(item["url"])
 
-    def report_detail_gaps(self, results: Sequence[Any], what: str) -> int:
-        """The gap line counts description *bodies*. A page that arrived without a readable one
-        is a loss like any other — until this was counted it was the only kind that recorded
-        nothing, since the fetch succeeded — but :meth:`read_detail` still returns it, because
-        its labels (location, department, salary) are real: YKHC's layout carries no body and
-        still states a location and department on 128 of 128 pages (measured 2026-09-24)."""
-        described_details: list[dict[str, str | None] | None] = []
-        for detail in results:
-            if detail is not None and not detail.get("description"):
-                self.note_detail_loss("200 without a parseable description body")
-                detail = None
-            described_details.append(detail)
-        return super().report_detail_gaps(described_details, what)
-
     def read_detail(
         self, item: dict[str, str | None], response: Any
     ) -> dict[str, str | None]:
@@ -360,7 +350,7 @@ class TaleoBEScraper(BaseScraper):
         labels = _labels(page)
         body = _description_html(page)
         date = _DATE_POSTED.search(page)
-        return {
+        detail = {
             "description": _text(body) if body else None,
             "location": _field(labels, "Primary Location", "Location"),
             "department": _field(labels, "Department"),
@@ -379,6 +369,13 @@ class TaleoBEScraper(BaseScraper):
                 "Location Type",
             ),
         }
+        if not detail["description"]:
+            # Kept for its labels, counted as a gap: YKHC's layout carries no body and still
+            # states a location and department on 128 of 128 pages (measured 2026-09-24).
+            return DetailWithoutDescription(
+                detail, "200 without a parseable description body"
+            )
+        return detail
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []

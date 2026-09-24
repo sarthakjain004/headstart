@@ -209,6 +209,26 @@ class DetailLost(Exception):
         self.cause = cause
 
 
+@dataclass(frozen=True)
+class DetailWithoutDescription:
+    """What :meth:`BaseScraper.read_detail` returns for a detail that arrived without its
+    description but whose other fields are real — kept for them, counted as a gap for it.
+
+    The Detail pass exists for the description (CONTEXT.md §Detail pass), so a page that parsed
+    but carries none is a loss on the gap line, labelled ``cause``; yet raising
+    :class:`DetailLost` would also drop the location, department or salary ``parse`` reads off
+    the same page (a Taleo BE layout states them on 128 of 128 pages with no body, measured
+    2026-09-24). :meth:`BaseScraper.run_detail_pass` unwraps ``detail`` into its mapping.
+    """
+
+    detail: Any
+    cause: str
+
+
+def _unwrapped(detail: Any) -> Any:
+    return detail.detail if isinstance(detail, DetailWithoutDescription) else detail
+
+
 class FetchedDetails(dict[str, Any]):
     """What :meth:`BaseScraper.run_detail_pass` returns: each detail that arrived, keyed by the
     Job's native id, plus how many of the requested ones did not (:attr:`missing`) — the count a
@@ -1009,7 +1029,8 @@ class BaseScraper(ABC):
 
     def read_detail(self, item: Any, response: Any) -> Any:
         """``item``'s detail out of its 200 ``response``, or raise :class:`DetailLost` naming
-        why the page carries none.
+        why the page carries none — or return :class:`DetailWithoutDescription` for a page whose
+        other fields are real but whose description is missing.
 
         Only ever handed a 200: a non-200 is labelled ``HTTP {status}`` before this is called,
         and anything it raises other than :class:`DetailLost` is labelled by its exception type
@@ -1069,13 +1090,19 @@ class BaseScraper(ABC):
         else:
             results = self._fan_out_timed(
                 wanted,
-                self.fetch_detail,
+                self._fetch_detail_labelled,
                 self.detail_workers or _DEFAULT_FAN_OUT_WORKERS,
             )
-        missing = self.report_detail_gaps(results, what)
+        missing = self.report_detail_gaps(
+            [
+                None if isinstance(detail, DetailWithoutDescription) else detail
+                for detail in results
+            ],
+            what,
+        )
         return FetchedDetails(
             {
-                native_id: detail
+                native_id: _unwrapped(detail)
                 for item, detail in zip(wanted, results)
                 if detail is not None and (native_id := key_of(item)) is not None
             },
@@ -1111,7 +1138,11 @@ class BaseScraper(ABC):
     def fetch_detail(self, item: Any) -> Any:
         """One Job's detail over the thread-path transport, every loss labelled — the per-item
         step of :meth:`run_detail_pass`, public so a sampler can fetch a handful of details
-        without running a whole pass (``scripts/enrich/salary_sample.py``). None when lost."""
+        without running a whole pass (``scripts/enrich/salary_sample.py``). None when lost; a
+        :class:`DetailWithoutDescription` comes back unwrapped, its loss still labelled."""
+        return _unwrapped(self._fetch_detail_labelled(item))
+
+    def _fetch_detail_labelled(self, item: Any) -> Any:
         request = self._detail_request_or_none(item)
         if request is None:
             return None
@@ -1158,11 +1189,15 @@ class BaseScraper(ABC):
             self.note_detail_loss(f"HTTP {response.status_code}")
             return None
         try:
-            return self.read_detail(item, response)
+            detail = self.read_detail(item, response)
         except DetailLost as lost:
             self.note_detail_loss(lost.cause)
         except Exception as exc:  # noqa: BLE001 - an unreadable body is a labelled loss
             self.note_detail_exception(exc)
+        else:
+            if isinstance(detail, DetailWithoutDescription):
+                self.note_detail_loss(detail.cause)
+            return detail
         return None
 
     def report_detail_gaps(self, results: Sequence[Any], what: str) -> int:
