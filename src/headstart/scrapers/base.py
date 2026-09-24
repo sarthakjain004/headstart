@@ -55,14 +55,13 @@ _R = TypeVar("_R")
 #: (ADR-0053) — the one tolerance, so the gate cannot mean different things on different ATSes
 #: (ADR-0121).
 #:
-#: One *policy*, but not yet every call site: `icims`, `jobvite`, `smartrecruiters` and `zwayam`
-#: still report a measured shortfall through the unconditional :meth:`BaseScraper.mark_truncated`.
-#: That is a measured scope boundary, not an oversight — on the live ledger the gate would never
-#: fire for them. All 13 excluded `icims` Boards read **0.000%** (`1515/1515` job pages unreadable
-#: on the worst): a total detail-pass failure, which is a broken scrape rather than a shortfall,
-#: and 0% clears no threshold. The one `smartrecruiters` Board raised `HTTP 401` and states no
-#: total at all, and `jobvite` and `zwayam` have no excluded Boards. Convert them when a Board of
-#: theirs is actually observed coming back marginally short.
+#: One *policy*, but not yet every call site: `jobvite` and `zwayam` still report a measured
+#: shortfall through the unconditional :meth:`BaseScraper.mark_truncated`. That is a measured scope
+#: boundary, not an oversight — neither has had an excluded Board, so the gate would never fire for
+#: them. Convert them when a Board of theirs is actually observed coming back marginally short, as
+#: `icims` and `smartrecruiters` were on 2026-09-24 (runs `35971969417`..`35998606646`:
+#: `icims:securitycareers-alliedbarton` 1/9199 pages unreadable, `smartrecruiters:accorhotel`
+#: 6378 of 6379 read) and were converted then.
 #:
 #: ADR-0053 shipped before ADR-0083 and has no tolerance: a Board one page short of complete
 #: leaves the eviction scope entirely, and that exclusion has **no drain**, so a Board short on
