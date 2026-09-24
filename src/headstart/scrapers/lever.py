@@ -3,6 +3,13 @@
 Lever runs a global instance (api.lever.co) and a separate EU instance (api.eu.lever.co,
 behind jobs.eu.lever.co). The company slug alone doesn't say which, so we try global first
 and fall back to EU when the slug isn't found there.
+
+The company name is the public board's ``<title>``, on the instance that answered: an EU Board's
+page lives on ``jobs.eu.lever.co``, and asking ``jobs.lever.co`` for it 404s — which left every EU
+Board on its slug (57 Boards, 841 rows among the affected ones, 2026-09-24). Where the board page
+itself is disabled but a posting page still answers, that page's JSON-LD ``hiringOrganization``
+names the company instead (`veeva`, 157 rows). 79 global Boards had both disabled: their API
+lists postings whose hosted links 404 (368 rows).
 """
 
 from __future__ import annotations
@@ -10,9 +17,10 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from headstart import http, salary
+from headstart import company_name, http, salary
 from headstart.models import Job, epoch_ms_to_iso, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.job_posting_jsonld import find_job_posting, hiring_organization
 
 #: Lever's two instances, global first — the order a scrape asks them in. Public: the liveness
 #: probe asks the same two, starting from whichever the row's URL hints at (ADR-0203).
@@ -358,6 +366,10 @@ def _description(j: dict) -> str | None:
 class LeverScraper(BaseScraper):
     ats = "lever"
     url_shape = r"https://jobs(\.eu)?\.lever\.co/[^/]+/[0-9a-f-]{36}"
+    #: The API host that answered `fetch_raw`, which says which instance the Board lives on.
+    _api_host = GLOBAL_API_HOST
+    #: One posting's hosted page, for a Board whose board page is disabled (module docstring).
+    _first_posting: str | None = None
 
     def url(self) -> str:
         return self.listing_url_on(GLOBAL_API_HOST)
@@ -375,8 +387,27 @@ class LeverScraper(BaseScraper):
         """The public board, whose ``<title>`` is the company name with no wrapper at all.
 
         The postings API carries no company name — its keys are the posting's own fields and
-        nothing else — so this is the only place Lever states it (`headstart.company_name`)."""
-        return f"https://jobs.lever.co/{self.slug}"
+        nothing else — so this is the only place Lever states it (`headstart.company_name`).
+        On the instance the listing answered from: an EU Board's page is on ``jobs.eu.lever.co``."""
+        host = "jobs.eu.lever.co" if self._api_host == EU_API_HOST else "jobs.lever.co"
+        return f"https://{host}/{self.slug}"
+
+    def company_from_page(self, page: str | None) -> str | None:
+        """The board title; else, when the board page did not answer at all, the
+        ``hiringOrganization`` of one posting page (module docstring). A board page that answered
+        with a title the guards refuse is not second-guessed from a posting."""
+        if page is not None or not self._first_posting:
+            return super().company_from_page(page)
+        try:
+            response = self._fetch_once("GET", self._first_posting)
+        except http.RequestsError:
+            return None
+        posting = (
+            find_job_posting(response.text) if response.status_code == 200 else None
+        )
+        return company_name.from_field(
+            self.ats, hiring_organization((posting or {}).get("hiringOrganization"))
+        )
 
     def fetch_raw(self) -> Any:
         # try the global instance, then EU; a 404 on both means the company isn't on Lever —
@@ -387,7 +418,12 @@ class LeverScraper(BaseScraper):
             if response.status_code == 404:
                 continue
             response.raise_for_status()
-            return response.json()
+            self._api_host = api_host
+            postings = response.json()
+            self._first_posting = next(
+                (p.get("hostedUrl") for p in postings if p.get("hostedUrl")), None
+            )
+            return postings
         # Both instances 404: the company is not on Lever. Raised in the shape
         # `board_failures.is_gone` matches, rather than left to curl_cffi's message wording.
         raise http.RequestsError(f"HTTP Error 404: no Lever board for {self.slug}")

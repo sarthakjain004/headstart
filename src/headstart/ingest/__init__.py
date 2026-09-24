@@ -52,6 +52,7 @@ here, and ``alerts`` is not the feed::
                    (the run-context line moved to ``headstart.log.context``, which
                    ``alerts/`` needs too and cannot reach from here)
     role_assignments  The id->family snapshot and the transitions between them (ADR-0057)
+    role_family_rules  Title rules that decide a row's role family before its centroid (ADR-0215)
     shard_plan     The typed ``plan.json`` shapes (``ScrapePlan``, ``EmbedPlan``) and
                    ``shard_index``, shared by each half's plan/run pair (ADR-0154)
     shard_speedup  The measured fan-out speedup the makespan divides by (ADR-0054)

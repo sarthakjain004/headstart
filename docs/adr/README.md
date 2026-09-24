@@ -211,6 +211,7 @@ supersedes it and note the supersession in both.
 | [0210](0210-an-eightfold-posting-its-backing-board-serves-is-served-once.md) | An Eightfold posting its backing Board serves is served once, matched on the requisition | 2026-09-25 |
 | [0211](0211-held-descriptions-are-re-fetched-on-a-seven-day-rotation.md) | Held descriptions are re-fetched on a seven-day rotation | 2026-09-25 |
 | [0212](0212-a-board-is-named-by-a-curated-stated-or-humanised-name-never-its-slug.md) | A Board is named by a curated, stated or humanised name, never by its slug | 2026-09-25 |
+| [0215](0215-a-title-rule-decides-a-role-family-before-the-centroid.md) | A title rule decides a role family before the centroid does | 2026-09-25 |
 | [0216](0216-a-workday-board-is-named-by-its-postings-legal-entities.md) | A Workday Board is named by its postings' legal entities, checked against its own page | 2026-09-25 |
 | [0218](0218-an-inactive-trakstar-account-is-gone.md) | An inactive Trakstar account is gone | 2026-09-25 |
 

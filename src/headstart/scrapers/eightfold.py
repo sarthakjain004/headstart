@@ -39,12 +39,14 @@ neither surface publicly, so they yield nothing — correct, they are not public
 
 from __future__ import annotations
 
+import html
+import json
 import re
 import urllib.parse
 from datetime import UTC, datetime
 from typing import Any, NamedTuple
 
-from headstart import eightfold_backing, http, log
+from headstart import company_name, eightfold_backing, http, log
 from headstart.models import Job, html_to_text, is_remote, requisition_of
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 from headstart.scrapers.job_posting_jsonld import (
@@ -78,6 +80,8 @@ _MAX_INDEX_CHILDREN = 50  # sitemap-fallback: child sitemaps to follow from an i
 # not an English phrase, or the Spanish-locale tenants (2 of 23 measured) silently miss SmartApply
 # and fall all the way to the weaker sitemap path instead.
 _PCSX_DISABLED = re.compile(r"pcsx", re.IGNORECASE)
+#: The careers page's embedded config, entity-encoded JSON.
+_PCSX_DATA = re.compile(r'id="pcsx-data"[^>]*>(.*?)</', re.DOTALL)
 
 _EF_GROUP_ID = re.compile(r'_EF_GROUP_ID\s*=\s*"([^"]+)"')
 # sitemap-fallback patterns
@@ -143,6 +147,19 @@ class EightfoldScraper(BaseScraper):
         Not `url`, which is the sitemap: the slug here is a hostname, so without this the served
         company reads "jobs.vodafone.com" (`headstart.company_name`)."""
         return f"https://{self.slug}/careers"
+
+    def company_from_page(self, page: str | None) -> str | None:
+        """The title, else the brand the page's ``pcsx-data`` config states.
+
+        Six of eleven affected Boards title the page with a slogan no wrapper reads ("Kraft Heinz
+        Careers – Explore Careers…", "Mayo Clinic Job Opportunities"); the same page's
+        ``configs.pcsxConfig.branding.companyName`` names each of them, and matched the title on
+        the Boards whose title reads (2026-09-24). Only that key: a microsite's own branding
+        (``pcsxConfig.microsite.{site}.branding``, "Alexion" on AstraZeneca's) names a subsidiary,
+        and the bare ``company_name`` key is not the brand."""
+        return super().company_from_page(page) or company_name.from_field(
+            self.ats, _pcsx_brand(page)
+        )
 
     def job_url(self, position_id: str, path: str | None = None) -> str:
         """The PCSX/SmartApply surface's job-detail URL: the API's own ``positionUrl`` when it
@@ -688,6 +705,21 @@ def sitemap_ids_for(slug: str) -> set[str]:
         for url in scraper._job_urls()
         if (pid := _sitemap_position_id(url)) is not None
     }
+
+
+def _pcsx_brand(page: str | None) -> str | None:
+    """``configs.pcsxConfig.branding.companyName`` from the careers page's ``pcsx-data`` JSON."""
+    match = _PCSX_DATA.search(page or "")
+    if not match:
+        return None
+    try:
+        data = json.loads(html.unescape(match.group(1)))
+    except ValueError:
+        return None
+    node: Any = data
+    for key in ("configs", "pcsxConfig", "branding", "companyName"):
+        node = node.get(key) if isinstance(node, dict) else None
+    return node if isinstance(node, str) else None
 
 
 def _pcsx_disabled(response: Any) -> bool:

@@ -1,3 +1,4 @@
+import html
 import json
 import logging
 import xml.etree.ElementTree as ET
@@ -8686,7 +8687,15 @@ def test_workday_html_500_mid_crawl_is_one_lost_page_not_a_failed_board(monkeypa
             return _NonJsonListing(_TOMCAT_500, status_code=500)
         return page(offset)
 
-    monkeypatch.setattr(http, "fetch", lambda method, url, **kw: page(0))
+    def fetch(
+        method, url, **kw
+    ):  # the second pass (ADR-0076 amendment) fails the page again
+        offset = kw["json"]["offset"]
+        if offset == 40:
+            return _NonJsonListing(_TOMCAT_500, status_code=500)
+        return page(offset)
+
+    monkeypatch.setattr(http, "fetch", fetch)
     monkeypatch.setattr(http, "fetch_async", fetch_async)
     scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
     absorbed = []
@@ -8699,7 +8708,102 @@ def test_workday_html_500_mid_crawl_is_one_lost_page_not_a_failed_board(monkeypa
         "R80",
     ]
     assert "1 of 5 page(s) failed mid-crawl" in scraper.truncated
-    assert scraper.telemetry["listing_loss_causes"] == {"HTTP 500": 1}
+    assert scraper.telemetry["listing_loss_causes"] == {"HTTP 500": 2}
+
+
+def _second_pass_scraper(monkeypatch, answer):
+    from headstart.scrapers.workday import WorkdayScraper
+
+    asked = []
+    scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+
+    def post(applied, offset, **_):
+        asked.append(offset)
+        return answer
+
+    monkeypatch.setattr(scraper, "_post", post)
+    return scraper, asked
+
+
+def test_workday_second_pass_stops_at_its_per_board_budget(monkeypatch):
+    """Five lost pages are asked again; six are an origin failing and none are. The budget is
+    the Board's, and a slice needing more than is left is skipped whole, not asked in part."""
+    from collections import Counter
+
+    from headstart.scrapers.workday import _SECOND_PASS_MAX
+
+    assert _SECOND_PASS_MAX == 5
+    page = {"jobPostings": [{"bulletFields": ["R"]}]}
+
+    scraper, asked = _second_pass_scraper(monkeypatch, page)
+    six = {offset: "HTTP 500" for offset in range(20, 140, 20)}
+    assert scraper._second_pass({}, six, [].extend, Counter({"HTTP 500": 6})) == 0
+    assert asked == []
+
+    scraper, asked = _second_pass_scraper(monkeypatch, page)
+    five = dict(list(six.items())[:5])
+    assert scraper._second_pass({}, five, [].extend, Counter({"HTTP 500": 5})) == 5
+    assert asked == list(five)
+
+    scraper, asked = _second_pass_scraper(monkeypatch, page)
+    three = {20: "HTTP 500", 40: "HTTP 500", 60: "HTTP 500"}
+    assert scraper._second_pass({}, three, [].extend, Counter({"HTTP 500": 3})) == 3
+    # a second slice losing three more is past what is left of the Board's five
+    assert scraper._second_pass({}, three, [].extend, Counter({"HTTP 500": 3})) == 0
+    assert asked == [20, 40, 60]
+
+
+def test_workday_a_page_that_404s_on_the_second_pass_is_labelled_a_404(monkeypatch):
+    """Still lost, and the truncation reason names why it is lost now, not why it was first."""
+    from collections import Counter
+
+    scraper, _ = _second_pass_scraper(monkeypatch, None)
+    classes = Counter({"HTTP 500": 1})
+    assert scraper._second_pass({}, {40: "HTTP 500"}, [].extend, classes) == 0
+    assert classes == Counter({"404 mid-crawl": 1})
+
+
+def test_workday_a_page_lost_mid_crawl_is_tried_once_more_after_the_fan_out(
+    monkeypatch,
+):
+    """Pipeline runs 35971969417..35998606646: 71 of 132 scope exclusions were Workday Boards that
+    lost 1-2 pages to a ConnectionError or HTTP 500 and were never asked again, so the whole
+    Board left eviction scope. A page that answers on the second pass is read, and the Board
+    stays authoritative."""
+    from headstart.scrapers.workday import WorkdayScraper
+
+    def page(offset):
+        return _Status(
+            payload={
+                "total": 100,
+                "jobPostings": [{"bulletFields": [f"R{offset}"]}],
+                "facets": [],
+            }
+        )
+
+    async def fetch_async(session, method, url, **kw):
+        offset = kw["json"]["offset"]
+        if offset == 40:
+            return _NonJsonListing(_TOMCAT_500, status_code=500)
+        return page(offset)
+
+    monkeypatch.setattr(
+        http, "fetch", lambda method, url, **kw: page(kw["json"]["offset"])
+    )
+    monkeypatch.setattr(http, "fetch_async", fetch_async)
+    scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+    absorbed = []
+    scraper._exhaust({}, absorbed.extend, depth=0)
+
+    assert sorted(p["bulletFields"][0] for p in absorbed) == [
+        "R0",
+        "R20",
+        "R40",
+        "R60",
+        "R80",
+    ]
+    assert scraper.truncated is None
+    assert scraper.telemetry["listing_second_pass_recovered"] == 1
 
 
 @pytest.mark.parametrize(
@@ -11158,8 +11262,8 @@ def test_every_ats_with_patterns_has_a_scraper_that_offers_a_board_page():
         for ats, cls in SCRAPERS.items()
         if cls.board_page is not BaseScraper.board_page
     }
-    # Every name source has a vendor guard, a title source a pattern too; a second source on
-    # an ATS is keyed "{ats}:{field}" (`BaseScraper.adopt_company`).
+    # Every name source has a vendor guard, a title source a pattern too; a second source that
+    # needs guards of its own is keyed "{ats}:{source}" (ashby's GraphQL lookup).
     wired = {key.split(":")[0] for key in _VENDOR_ALIASES}
     assert overriding == wired - _NO_BOARD_PAGE, (
         "an ATS has a board_page but no patterns, or patterns but no board_page"
@@ -11891,3 +11995,185 @@ def test_a_name_reader_that_raises_leaves_the_board_as_it_was(monkeypatch, caplo
         scraper.resolve_company()
     assert scraper.company == "acme"
     assert "raised ValueError" in caplog.text
+
+
+# ── title fallbacks: lever EU, ashby GraphQL, eightfold branding, pinpoint JSON-LD (2026-09-24) ──
+
+
+def _page_answer(status: int, text: str = "", headers: dict | None = None):
+    return FakeResponse(status, text, headers=headers)
+
+
+def test_lever_asks_the_eu_board_page_for_an_eu_board(monkeypatch):
+    """An EU Board's page is on jobs.eu.lever.co; asking jobs.lever.co 404s, which left every EU
+    Board on its slug (57 affected Boards, 2026-09-24)."""
+    from headstart import http
+    from headstart.scrapers.lever import LeverScraper
+
+    seen: list[str] = []
+
+    def _fetch(method, url, **kwargs):
+        seen.append(url)
+        if "api.lever.co" in url and "api.eu" not in url:
+            return _page_answer(404)
+        if "api.eu.lever.co" in url:
+            return FakeResponse(text=json.dumps([{"id": "1", "hostedUrl": "h"}]))
+        return _titled("Aave Labs")
+
+    monkeypatch.setattr(http, "fetch", _fetch)
+    scraper = LeverScraper("aavelabs")
+    scraper.fetch_raw()
+    assert scraper.board_page() == "https://jobs.eu.lever.co/aavelabs"
+    scraper.resolve_company()
+    assert scraper.company == "Aave Labs"
+    assert seen[-1] == "https://jobs.eu.lever.co/aavelabs"
+
+
+def test_lever_reads_a_posting_only_when_the_board_page_is_gone(monkeypatch):
+    """`veeva`'s board page 404s while its postings still answer with JSON-LD; a board page that
+    answered with a refused title (`schmidt-entities` serves "jobs") is not second-guessed."""
+    from headstart import http
+    from headstart.scrapers.lever import LeverScraper
+
+    posting = (
+        '<script type="application/ld+json">{"@type": "JobPosting", '
+        '"hiringOrganization": {"name": "Veeva Systems"}}</script>'
+    )
+
+    def _fetch(method, url, **kwargs):
+        if url == "https://jobs.lever.co/veeva/p1":
+            return _page_answer(200, posting)
+        return _page_answer(404)
+
+    monkeypatch.setattr(http, "fetch", _fetch)
+    gone = LeverScraper("veeva")
+    gone._first_posting = "https://jobs.lever.co/veeva/p1"
+    gone.resolve_company()
+    assert gone.company == "Veeva Systems"
+
+    monkeypatch.setattr(http, "fetch", lambda *a, **k: _titled("jobs"))
+    labelled = LeverScraper("schmidt-entities")
+    labelled._first_posting = "https://jobs.lever.co/schmidt-entities/p1"
+    labelled.resolve_company()
+    assert labelled.company == "schmidt-entities"
+
+
+def _ashby_graphql(name: str | None) -> str:
+    return json.dumps({"data": {"organization": {"name": name} if name else None}})
+
+
+def test_ashby_names_a_hidden_board_from_its_organization_record(monkeypatch):
+    """A Board that hides its job page titles it "Jobs" alone; the hosted-page app's own GraphQL
+    lookup names the organization (24 of 25 such live Boards, 2026-09-24)."""
+    from headstart import http
+    from headstart.scrapers.ashby import AshbyScraper
+
+    posted: list[dict] = []
+
+    def _fetch(method, url, **kwargs):
+        if method == "POST":
+            posted.append(kwargs["json"])
+            return _page_answer(200, _ashby_graphql("Form Energy, Inc"))
+        return _titled("Jobs")
+
+    monkeypatch.setattr(http, "fetch", _fetch)
+    scraper = AshbyScraper("formenergy")
+    scraper.graphql_pacer = Pacer(0.0)
+    scraper.resolve_company()
+    assert scraper.company == "Form Energy, Inc"
+    (body,) = posted
+    assert body["variables"] == {"organizationHostedJobsPageName": "formenergy"}
+    assert "searchContext" not in body["query"]
+
+
+def test_ashby_asks_no_graphql_when_the_title_names_the_board(monkeypatch):
+    from headstart import http
+    from headstart.scrapers.ashby import AshbyScraper
+
+    methods: list[str] = []
+
+    def _fetch(method, url, **kwargs):
+        methods.append(method)
+        return _titled("1Password Jobs")
+
+    monkeypatch.setattr(http, "fetch", _fetch)
+    scraper = AshbyScraper("1password")
+    scraper.resolve_company()
+    assert scraper.company == "1Password"
+    assert methods == ["GET"]
+
+
+def test_ashby_is_named_ashby_on_its_own_board(monkeypatch):
+    """The title guard refuses "Ashby Jobs" as the vendor's branding; the organization record is
+    no such fallback, and Ashby hires on Ashby."""
+    from headstart import http
+    from headstart.scrapers.ashby import AshbyScraper
+
+    def _fetch(method, url, **kwargs):
+        if method == "POST":
+            return _page_answer(200, _ashby_graphql("Ashby"))
+        return _titled("Ashby Jobs")
+
+    monkeypatch.setattr(http, "fetch", _fetch)
+    scraper = AshbyScraper("ashby")
+    scraper.graphql_pacer = Pacer(0.0)
+    scraper.resolve_company()
+    assert scraper.company == "Ashby"
+
+
+def test_ashby_waits_out_a_graphql_429_and_asks_again(monkeypatch):
+    from headstart import http
+    from headstart.scrapers.ashby import AshbyScraper
+
+    answers = [
+        _page_answer(429, headers={"retry-after": "7"}),
+        _page_answer(200, _ashby_graphql("Greptile")),
+    ]
+
+    def _fetch(method, url, **kwargs):
+        return answers.pop(0) if method == "POST" else _titled("Jobs")
+
+    rests: list[float] = []
+    monkeypatch.setattr(http, "fetch", _fetch)
+    scraper = AshbyScraper("greptile")
+    scraper.graphql_pacer = Pacer(0.0)
+    monkeypatch.setattr(scraper.graphql_pacer, "rest", rests.append)
+    scraper.resolve_company()
+    assert scraper.company == "Greptile"
+    assert rests == [7.0]
+
+
+def _pcsx_page(title: str, branding: dict) -> str:
+    data = html.escape(json.dumps({"configs": {"pcsxConfig": branding}}))
+    return (
+        f'<title>{title}</title><code id="pcsx-data" style="display:none">{data}</code>'
+    )
+
+
+def test_eightfold_reads_the_brand_when_the_title_is_a_slogan(monkeypatch):
+    """Kraft Heinz titles its page with a slogan no wrapper reads; the same page's config names
+    it. A microsite's own branding names a subsidiary and is never read."""
+    from headstart import http
+    from headstart.scrapers.eightfold import EightfoldScraper
+
+    page = _pcsx_page(
+        "Kraft Heinz Careers – Explore Careers. We’re growing greatness.",
+        {
+            "branding": {"companyName": "Kraft Heinz"},
+            "microsite": {"sub": {"branding": {"companyName": "Subsidiary"}}},
+        },
+    )
+    monkeypatch.setattr(http, "fetch", lambda *a, **k: _page_answer(200, page))
+    scraper = EightfoldScraper("kraftheinz.eightfold.ai")
+    scraper.resolve_company()
+    assert scraper.company == "Kraft Heinz"
+
+    only_microsite = _pcsx_page(
+        "Welcome", {"microsite": {"sub": {"branding": {"companyName": "Subsidiary"}}}}
+    )
+    monkeypatch.setattr(
+        http, "fetch", lambda *a, **k: _page_answer(200, only_microsite)
+    )
+    bare = EightfoldScraper("acme.eightfold.ai")
+    bare.resolve_company()
+    assert bare.company == "acme.eightfold.ai"
