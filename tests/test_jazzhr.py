@@ -15,6 +15,7 @@ the host served.
 from pathlib import Path
 
 import pytest
+from fake_fetcher import FakeResponse
 
 from headstart.salary import extract as extract_salary
 from headstart.scrapers.registry import SCRAPERS, get_scraper
@@ -222,6 +223,29 @@ def test_a_live_board_with_nothing_open_does_not_raise(monkeypatch):
     scraper = get_scraper("jazzhr", "restopros", "Fallback Co")
     monkeypatch.setattr(type(scraper), "_get", lambda self, url=None: shell_only)
     assert scraper._listing() == shell_only
+
+
+@pytest.mark.parametrize(
+    "page", [DETAIL, CLASSIC_ATTRIBUTES, CUSTOM_ATTRIBUTES, JOBPOSTING_LD]
+)
+def test_read_detail_keeps_a_page_carrying_anything_parse_reads(page):
+    scraper = get_scraper("jazzhr", "restopros")
+    assert scraper.read_detail(("k1", "t", None, None), FakeResponse(text=page)) == page
+
+
+def test_read_detail_names_a_200_that_carries_no_posting():
+    """A 200 with no description, no labelled attribute and no JSON-LD posting adds nothing to
+    the Job; it used to reach `parse` unlabelled, so a wall served as a 200 read as a Board
+    whose pages all arrived. Now it is a loss on the gap line."""
+    from headstart.scrapers.base import DetailLost
+
+    scraper = get_scraper("jazzhr", "restopros")
+    parked = FakeResponse(
+        text="<html><title>JazzHR - Inactive Career Page</title></html>"
+    )
+    with pytest.raises(DetailLost) as lost:
+        scraper.read_detail(("k1", "t", None, None), parked)
+    assert lost.value.cause == "no posting on a 200"
 
 
 def test_slug_from_is_the_bare_tenant_label():

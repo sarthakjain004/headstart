@@ -85,7 +85,7 @@ from typing import Any
 
 from headstart import http, log, salary
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.base import BaseScraper, DetailLost, DetailRequest
 from headstart.scrapers.job_posting_jsonld import find_job_posting, jsonld_nodes
 
 _log = log.get(__name__)
@@ -265,19 +265,6 @@ class JazzHRScraper(BaseScraper):
         # invisible on ~60% of its jobs).
         listing = self._listing()
         rows = _rows(listing)
-        # The tech gate (ADR-0017). `_rows` states title and department per listing row, so the
-        # gate asks `filter_tech`'s question before spending a page on the answer. Unlike
-        # workday's, this is a *measured* tolerance rather than exactness: `parse` lets the
-        # detail page's department win, so a tenant whose listing omits a department its detail
-        # supplies could disagree. Measured live 2026-09-17 over 10 Boards / 1,748 postings,
-        # chosen from the corpus as the ones where `department` does the most work (on
-        # `vyvebroadband` a department-blind gate drops 30 of 31 tech postings, on
-        # `idsinternational` 24 of 44): 845 kept by the gate, 845 by the filter, zero
-        # disagreements. Re-check it if this page's markup moves.
-        keys = [
-            key
-            for key, *_ in self.tech_detail_wanted(rows, _row_title, _row_department)
-        ]
         # `_rows` skips any `row_job_` <tr> whose posting link it cannot read, and the skip is
         # the one thing on this page that can go wrong without anything failing: the shell is
         # present, `_listing` is satisfied, and a Board whose markup moved parses to zero keys —
@@ -292,41 +279,48 @@ class JazzHRScraper(BaseScraper):
                 f"{self.board_key()}: {unread} of {unread + len(rows)} listing row(s) carried "
                 "no posting link — those postings are listed but unread"
             )
-        details: dict[str, str] = {}
-        if keys:
-            # Multiplexed by default (ADR-0016); HEADSTART_ASYNC_FANOUT=0 falls back to threads.
-            if self.async_fanout_enabled():
-                fetched = self.fan_out_async(keys, self._detail_page_async)
-            else:
-                fetched = self.fan_out(keys, self._detail_page, workers=_DETAIL_WORKERS)
-            # Reported, not marked truncated: a missing detail page costs this Job its
-            # description and derived fields, but the Job itself is still listed and still
-            # emitted, so the Board's list is whole (ADR-0053 is about the list, not the fields).
-            self.report_detail_gaps(fetched, "detail pages")
-            details = {key: page for key, page in zip(keys, fetched) if page}
+        # The tech gate (ADR-0017). `_rows` states title and department per listing row, so the
+        # gate asks `filter_tech`'s question before spending a page on the answer. Unlike
+        # workday's, this is a *measured* tolerance rather than exactness: `parse` lets the
+        # detail page's department win, so a tenant whose listing omits a department its detail
+        # supplies could disagree. Measured live 2026-09-17 over 10 Boards / 1,748 postings,
+        # chosen from the corpus as the ones where `department` does the most work (on
+        # `vyvebroadband` a department-blind gate drops 30 of 31 tech postings, on
+        # `idsinternational` 24 of 44): 845 kept by the gate, 845 by the filter, zero
+        # disagreements. Re-check it if this page's markup moves.
+        #
+        # Reported, not marked truncated: a missing detail page costs this Job its description
+        # and derived fields, but the Job itself is still listed and still emitted, so the
+        # Board's list is whole (ADR-0053 is about the list, not the fields).
+        details = self.run_detail_pass(
+            rows,
+            key_of=lambda row: row[0],
+            what="detail pages",
+            title_of=_row_title,
+            department_of=_row_department,
+        )
         return {"listing": listing, "details": details}
 
-    def _detail_page(self, key: str) -> str | None:
-        """One posting's detail page, or a ``None`` that says what lost it.
+    def detail_request(
+        self, row: tuple[str, str, str | None, str | None]
+    ) -> DetailRequest:
+        return DetailRequest(self.job_url(row[0]))
 
-        ``fan_out`` would turn the raise into the same ``None`` on its own; catching it here is
-        what lets the cause reach the Board's gap line instead of only its count — a 403 across
-        every page and a parser that stopped recognising them are one number otherwise
-        (:meth:`~BaseScraper.note_detail_loss`).
-        """
-        try:
-            return self._get(self.job_url(key))
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-
-    async def _detail_page_async(self, session: Any, key: str) -> str | None:
-        """Same as :meth:`_detail_page` over the shared multiplexed ``AsyncSession``."""
-        try:
-            return await self._get_async(session, self.job_url(key))
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
+    def read_detail(
+        self, row: tuple[str, str, str | None, str | None], response: Any
+    ) -> str:
+        """The posting's page, unless it carries none of what `parse` reads off one — no
+        description, no labelled attribute and no JSON-LD posting. Such a 200 used to reach the
+        Jobs unlabelled and add nothing to them; now it is a loss named on the gap line, so a 403
+        across every page and a parser that stopped recognising them are no longer one number."""
+        page = response.text
+        if (
+            _description_html(page) is None
+            and not _attributes(page)
+            and find_job_posting(page) is None
+        ):
+            raise DetailLost("no posting on a 200")
+        return page
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         # raw is fetch_raw's {listing, details}; a bare string means no detail pass ran

@@ -78,7 +78,7 @@ from headstart.scrapers.eightfold import _sitemap_position_id
 from headstart.scrapers.ripplehire import _PAGE_SIZE as _RIPPLEHIRE_PAGE_SIZE
 from headstart.scrapers.ripplehire import CAREERS_TOKEN as _RIPPLEHIRE_TOKEN
 from headstart.scrapers.successfactors import _job_urls_from
-from headstart.scrapers.trakstar import _codes_from
+from headstart.scrapers.trakstar import _job_cards
 
 ROOT = Path(__file__).resolve().parents[2]
 LEDGER_DIR = ROOT / "data" / "validate" / "liveness"
@@ -356,13 +356,13 @@ def _fetch_successfactors(scraper: BaseScraper) -> list[Job]:
     alone comes up empty) — for a bounded sample, a board with nothing in its sitemap contributes
     zero jobs rather than paying for the full fallback chain, an acceptable sampling loss given
     2000+ other boards. Detail-fetches only the first :data:`_DETAIL_FETCH_CAP` postings via the
-    scraper's own ``_job_fields()``, then parses just those."""
+    scraper's own ``fetch_detail()``, then parses just those."""
     kind, text, _cut_short = scraper._fetch_sitemap()
     if kind not in ("urlset", "rss"):
         return []
     urls = _job_urls_from(text, scraper.slug)[:_DETAIL_FETCH_CAP]
     raw = [
-        {"url": url, "id": job_id, "fields": scraper._job_fields(url) or {}}
+        {"url": url, "id": job_id, "fields": scraper.fetch_detail((url, job_id)) or {}}
         for url, job_id in urls
     ]
     return scraper.parse(raw, datetime.now(UTC).isoformat())
@@ -373,18 +373,18 @@ def _fetch_trakstar(scraper: BaseScraper) -> list[Job]:
     primitive, never ``fetch_raw()``, which bakes the FULL per-posting JSON-LD detail fan-out into
     that same call (workers=4, DataDome-fronted) — every job on the board, not a capped subset.
     Detail-fetches only the first :data:`_DETAIL_FETCH_CAP` postings via the scraper's own
-    ``_job_posting()``. Unlike workday/rippling/smartrecruiters (which slice the raw item list
+    ``fetch_detail()``. Unlike workday/rippling/smartrecruiters (which slice the raw item list
     itself before calling ``parse()``), trakstar's ``parse()`` walks every job card found in the
     FULL listing HTML regardless of which postings were fetched — so the result is post-filtered
     down to just the detail-fetched codes afterward, the same "don't count a never-read job as a
     no-signal one" discipline zoho's adapter already established via its own ``keep_ids`` filter."""
     html = scraper._get()
-    sample = _codes_from(html)[:_DETAIL_FETCH_CAP]
-    postings = {code: scraper._job_posting(code) for code in sample}
+    sample = _job_cards(html)[:_DETAIL_FETCH_CAP]
+    postings = {code: scraper.fetch_detail((block, code)) for block, code in sample}
     jobs = scraper.parse(
         {"html": html, "postings": postings}, datetime.now(UTC).isoformat()
     )
-    return [j for j in jobs if j.id.split(":", 2)[2] in sample]
+    return [j for j in jobs if j.id.split(":", 2)[2] in postings]
 
 
 def _fetch_eightfold(scraper: BaseScraper) -> list[Job]:
@@ -394,10 +394,11 @@ def _fetch_eightfold(scraper: BaseScraper) -> list[Job]:
     (see its own docstring, #142), expensive and unnecessary for a bounded sample. Instead:
     one raw ``_search_url(group_id, 0)`` GET via the scraper's own ``_get()`` gets the first
     page (up to 10 positions) directly, capped to :data:`_DETAIL_FETCH_CAP` before calling the
-    scraper's own ``_api_records()`` (which fans out ``_description()`` only over the positions
+    scraper's own ``_api_records()`` (which runs its Detail pass only over the positions
     it's given, not the whole board). Falls back to a capped slice of ``_job_urls()`` (the
-    sitemap listing, itself already cheap and fan-out-free) plus the scraper's own ``_jsonld()``
-    per-job detail fetch when the API 403s — matching ``fetch_raw()``'s own fallback branch."""
+    sitemap listing, itself already cheap and fan-out-free) plus the scraper's own
+    ``fetch_detail()`` per job page when the API 403s — matching ``fetch_raw()``'s own fallback
+    branch."""
     group_id = scraper._group_id()
     if group_id:
         first = scraper._get(scraper._search_url(group_id, 0), marks_wall=False)
@@ -415,7 +416,7 @@ def _fetch_eightfold(scraper: BaseScraper) -> list[Job]:
     urls = scraper._job_urls()[:_DETAIL_FETCH_CAP]
     records = []
     for u in urls:
-        fields = scraper._jsonld(u)
+        fields = scraper.fetch_detail(u)
         records.append(
             {
                 "id": _sitemap_position_id(u),

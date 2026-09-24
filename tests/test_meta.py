@@ -12,6 +12,9 @@ from __future__ import annotations
 import json
 import pathlib
 
+import pytest
+from fake_fetcher import FakeFetcher, FakeResponse
+
 from headstart.scrapers.meta import _ld_fields, _sitemap_rows
 from headstart.scrapers.registry import get_scraper
 
@@ -186,3 +189,34 @@ def test_the_fixture_board_end_to_end() -> None:
         assert job.url.startswith("https://www.metacareers.com/profile/job_details/")
         assert job.department is None  # not exposed by this surface (module docstring)
         assert job.description
+
+
+# --- the detail pass -----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("async_fanout", ["1", "0"])
+def test_fetch_raw_reads_every_listed_page_and_truncates_on_a_stale_entry(
+    monkeypatch, async_fanout
+) -> None:
+    """The Detail pass over the fixture sitemap on either transport: each listed page is asked
+    for as-is, the stale entry's 200 with no JSON-LD is a named loss, and one lost page of three
+    is past ADR-0121's tolerance, so the Board is Unauthoritative this run."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
+    rows = _sitemap_rows(_FIXTURE["sitemap_xml"])
+
+    def route(method, url, kwargs):
+        if url.endswith("/jobsearch/sitemap.xml"):
+            return FakeResponse(text=_FIXTURE["sitemap_xml"])
+        job_id = url.rstrip("/").rsplit("/", 1)[1]
+        return FakeResponse(text=_FIXTURE["pages"].get(job_id, _FIXTURE["empty_page"]))
+
+    fetcher = FakeFetcher(route)
+    scraper = get_scraper("meta", _HOST, "Meta", fetcher=fetcher)
+
+    raw = scraper.fetch_raw()
+
+    assert sorted(fetcher.urls()[1:]) == sorted(url for _, url, _ in rows)
+    assert {item["id"] for item in raw if item["fields"]} == set(_FIXTURE["pages"])
+    assert scraper.detail_losses == {"no JSON-LD on a 200": 1}
+    assert scraper.truncated.startswith("1/3 job pages unreadable")
+    assert len(scraper.parse(raw, _SCRAPED_AT)) == 2

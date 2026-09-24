@@ -15,9 +15,11 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from types import SimpleNamespace
 
-from headstart import company_name, http, salary
+import pytest
+from fake_fetcher import FakeFetcher, FakeResponse
+
+from headstart import company_name, salary
 from headstart.scrapers.pinpoint import PinpointScraper
 from headstart.scrapers.registry import detail_pass_atses, get_scraper
 
@@ -149,80 +151,71 @@ def test_a_free_text_salary_passes_through_verbatim():
 
 
 def _fetching_scraper(
-    monkeypatch, listing: dict, page=_page
-) -> tuple[PinpointScraper, list]:
-    """A scraper whose `_get` serves `listing` for the Board URL and whose `_fetch` serves
-    `page()` for any posting, recording every URL asked for; each page's `Accept` lands in
-    `accepts`."""
-    scraper = _scraper()
-    requested: list[str] = []
-    accepts: list[str] = []
+    *listings: dict, page=None
+) -> tuple[PinpointScraper, FakeFetcher]:
+    """A scraper behind a fake fetcher that answers the Board URL with each of ``listings`` in
+    turn (the last one again once they run out) and any posting page with ``page`` (default: the
+    fixture page). The fake records every request."""
+    answers = list(listings)
+    posting_page = page or FakeResponse(text=_page())
 
-    def fake_get(url=None):
-        url = url or scraper.url()
-        requested.append(url)
-        return json.dumps(listing)
+    def route(method, url, kwargs):
+        if url.endswith("/postings.json"):
+            listing = answers.pop(0) if len(answers) > 1 else answers[0]
+            return FakeResponse(text=json.dumps(listing))
+        return posting_page
 
-    def fake_fetch(method, url, **kw):
-        requested.append(url)
-        accepts.append(kw["headers"]["Accept"])
-        return SimpleNamespace(text=page(), raise_for_status=lambda: None)
-
-    monkeypatch.setattr(scraper, "_get", fake_get)
-    monkeypatch.setattr(scraper, "_fetch", fake_fetch)
-    monkeypatch.setattr(
-        scraper,
-        "fan_out_async",
-        lambda items, fn, **kw: [scraper._page_fields(i) for i in items],
-    )
-    scraper.accepts = accepts
-    return scraper, requested
+    fetcher = FakeFetcher(route)
+    return get_scraper("pinpoint", SLUG, fetcher=fetcher), fetcher
 
 
-def test_the_page_is_asked_for_as_html(monkeypatch):
+@pytest.mark.parametrize("async_fanout", ["1", "0"])
+def test_the_page_is_asked_for_as_html(monkeypatch, async_fanout):
     """The posting page content-negotiates: `Accept: application/json, text/html` — what the
     shared `_get` sends — answers **406** with a 52-byte JSON error, on every page (192 of 192 on
-    impulsespace). `text/html` answers the page."""
-    scraper, _ = _fetching_scraper(monkeypatch, {"data": [_listing()["data"][0]]})
-    scraper.fetch_raw()
-    assert scraper.accepts == ["text/html"]
+    impulsespace). `text/html` answers the page — on either transport."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
+    scraper, fetcher = _fetching_scraper({"data": [_listing()["data"][0]]})
+    raw = scraper.fetch_raw()
+    page_request = fetcher.requests[-1]
+    assert page_request.url == scraper.job_url(ENGINEER)
+    assert page_request.kwargs["headers"]["Accept"] == "text/html"
+    assert raw["details"][ENGINEER] == {
+        "posted_at": "2026-08-25T18:11:43+01:00",
+        "country": "United States",
+    }
 
 
-def test_posted_at_and_country_come_from_the_posting_page(monkeypatch):
+def test_posted_at_and_country_come_from_the_posting_page():
     """No listing field states a date on any of 13,419 rows; the page's JSON-LD `datePosted` did
     on 76 of 76, unchanged across two fetches 5 s apart. The country the listing lacks is the
     JSON-LD `applicantLocationRequirements` name (75 of 76)."""
-    listing = {"data": [_listing()["data"][0]]}
-    scraper, requested = _fetching_scraper(monkeypatch, listing)
+    scraper, fetcher = _fetching_scraper({"data": [_listing()["data"][0]]})
     raw = scraper.fetch_raw()
-    assert requested == [scraper.url(), scraper.job_url(ENGINEER)]
+    assert fetcher.urls() == [scraper.url(), scraper.job_url(ENGINEER)]
     (job,) = scraper.parse(raw, SCRAPED_AT)
     assert job.posted_at == "2026-08-25T18:11:43+01:00"
     assert job.location == "Denver, CO, Colorado, United States"
 
 
-def test_a_failed_page_is_a_counted_gap_and_the_job_still_ships(monkeypatch):
+def test_a_failed_page_is_a_counted_gap_and_the_job_still_ships():
     """A posting closed between the listing and its page 404s. Only the date and country are
     lost; the Board's list is whole, so it is not truncated."""
-
-    def gone():
-        raise http.RequestsError("404 Not Found")
-
-    scraper, _ = _fetching_scraper(monkeypatch, _listing(), page=gone)
+    scraper, _fetcher = _fetching_scraper(_listing(), page=FakeResponse(404))
     raw = scraper.fetch_raw()
     assert raw["details"] == {}
-    assert sum(scraper.detail_losses.values()) == 6
+    assert scraper.detail_losses == {"HTTP 404": 6}
     assert scraper.truncated is None
     jobs = scraper.parse(raw, SCRAPED_AT)
     assert len(jobs) == 6
     assert all(j.posted_at is None and j.description for j in jobs)
 
 
-def test_a_page_without_json_ld_is_a_labelled_gap(monkeypatch):
+def test_a_page_without_json_ld_is_a_labelled_gap():
     """The vendor's own 404 page is HTML with no JSON-LD; a 200 of anything else like it must
     count as a loss rather than pass as a posting with no date."""
-    scraper, _ = _fetching_scraper(
-        monkeypatch, {"data": [_listing()["data"][0]]}, page=lambda: "<html></html>"
+    scraper, _fetcher = _fetching_scraper(
+        {"data": [_listing()["data"][0]]}, page=FakeResponse(text="<html></html>")
     )
     raw = scraper.fetch_raw()
     assert raw["details"] == {}
@@ -234,13 +227,13 @@ def test_the_tech_gate_skips_non_tech_pages_but_still_emits_the_job(monkeypatch)
     same listing row the gate reads (department is populated on 13,419 of 13,419 rows), and the
     page overrides neither. Armed only inside the pipeline (`have_details` set)."""
     monkeypatch.delenv("HEADSTART_TECH_GATE", raising=False)
-    scraper, requested = _fetching_scraper(monkeypatch, _listing())
+    scraper, fetcher = _fetching_scraper(_listing())
     scraper.have_details = frozenset()
     raw = scraper.fetch_raw()
     # Of the six, `is_tech` keeps only "Assistant Engineer" — not even "Data Entry Agent" filed
     # under a "Technical" department.
     assert set(raw["details"]) == {ENGINEER}
-    assert requested == [scraper.url(), scraper.job_url(ENGINEER)]
+    assert fetcher.urls() == [scraper.url(), scraper.job_url(ENGINEER)]
     assert len(scraper.parse(raw, SCRAPED_AT)) == 6
     assert scraper.telemetry.get("tech_gated_details") == 5
 
@@ -250,12 +243,10 @@ def test_the_already_described_skip_is_not_taken(monkeypatch):
     from the listing and the page supplies only `posted_at` and the country, which exist nowhere
     else, so skipping it would blank the date on every run after the first."""
     monkeypatch.setenv("HEADSTART_TECH_GATE", "0")
-    scraper, requested = _fetching_scraper(
-        monkeypatch, {"data": [_listing()["data"][0]]}
-    )
+    scraper, fetcher = _fetching_scraper({"data": [_listing()["data"][0]]})
     scraper.have_details = frozenset({f"pinpoint:{SLUG}:{ENGINEER}"})
     raw = scraper.fetch_raw()
-    assert scraper.job_url(ENGINEER) in requested
+    assert scraper.job_url(ENGINEER) in fetcher.urls()
     assert raw["details"][ENGINEER]["posted_at"]
 
 
@@ -340,52 +331,27 @@ def test_the_gate_reads_the_same_title_and_department_parse_emits(monkeypatch):
         "headstart.scrapers.base.is_tech", lambda t, d: seen.append((t, d)) or False
     )
     monkeypatch.delenv("HEADSTART_TECH_GATE", raising=False)
-    scraper, _ = _fetching_scraper(monkeypatch, _listing())
+    scraper, _fetcher = _fetching_scraper(_listing())
     scraper.have_details = frozenset()
     raw = scraper.fetch_raw()
     emitted = [(j.title, j.department) for j in scraper.parse(raw, SCRAPED_AT)]
     assert seen == emitted
 
 
-def test_the_async_page_path_asks_for_html_and_reads_the_page(monkeypatch):
-    """The multiplexed path is the default in the pipeline (ADR-0016); it must send the same
-    `Accept` and read the same fields as the thread path."""
-    import asyncio
-
-    scraper = _scraper()
-    sent: dict = {}
-
-    async def fake_fetch_async(session, method, url, **kw):
-        sent.update(url=url, accept=kw["headers"]["Accept"])
-        return SimpleNamespace(text=_page(), raise_for_status=lambda: None)
-
-    monkeypatch.setattr(scraper, "_fetch_async", fake_fetch_async)
-    fields = asyncio.run(scraper._page_fields_async(None, ENGINEER))
-    assert sent == {"url": scraper.job_url(ENGINEER), "accept": "text/html"}
-    assert fields == {
-        "posted_at": "2026-08-25T18:11:43+01:00",
-        "country": "United States",
-    }
-
-
-def test_an_empty_listing_is_asked_again_before_it_is_believed(monkeypatch):
+def test_an_empty_listing_is_asked_again_before_it_is_believed():
     """The listing sometimes answers a Board that has postings with a spurious `{"data":[]}`
     (12 of 6,030 fetches over 670 hiring Boards, as often at concurrency 4 as at 16; each Board
     answered with postings on its other fetches). An empty Board costs 11 bytes, so an empty
     answer is asked once more."""
-    answers = [{"data": []}, {"data": [_listing()["data"][0]]}]
-    scraper, requested = _fetching_scraper(monkeypatch, {"data": []})
-    monkeypatch.setattr(
-        scraper,
-        "_get",
-        lambda url=None: requested.append("listing") or json.dumps(answers.pop(0)),
+    scraper, fetcher = _fetching_scraper(
+        {"data": []}, {"data": [_listing()["data"][0]]}
     )
     raw = scraper.fetch_raw()
-    assert requested[:2] == ["listing", "listing"]
+    assert fetcher.urls()[:2] == [scraper.url(), scraper.url()]
     assert len(raw["data"]) == 1
 
 
-def test_a_board_that_is_empty_twice_is_empty(monkeypatch):
-    scraper, requested = _fetching_scraper(monkeypatch, {"data": []})
+def test_a_board_that_is_empty_twice_is_empty():
+    scraper, fetcher = _fetching_scraper({"data": []})
     assert scraper.fetch_raw() == {"data": [], "details": {}}
-    assert requested == [scraper.url(), scraper.url()]
+    assert fetcher.urls() == [scraper.url(), scraper.url()]
