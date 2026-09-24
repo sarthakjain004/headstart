@@ -42,6 +42,13 @@ a fresh copy of every ``base.jsonl.gz`` — ~362 MB measured 2026-08-26, against
 sized it at when the store was new — the mistake ``data/lancedb`` was moved away from when it
 filled the 100 GB quota in ~45 runs.
 
+**Replacements are counted** (ADR-0207). A fetch whose text differs from the held text replaces
+it, and every run logs, per ATS in its corpus, how many held descriptions were replaced and how
+many of those went back to the text held before the last replacement, which is the shape of a
+fetch path flipping between two renderings rather than an edit. The per-Job counts live in a
+small state ledger, ``data/state/description_changes.tsv.gz``, not on the store's records, whose
+``{id, description}`` shape every reader of the store relies on.
+
 The skip-list falls out of the store rather than out of the embedding store: a Job is skipped when
 we *hold its detail*, which is what CONTEXT.md's **Detail pass** entry has always claimed. That
 also decouples eviction from the scrape — evicting a vector no longer discards the text behind it,
@@ -60,6 +67,7 @@ from typing import NamedTuple
 
 from headstart import log
 from headstart.ingest import (
+    DESCRIPTION_CHANGES_PATH,
     HELD_DETAILS_PATH,
     PENDING_REDERIVE_PATH,
     REPO_ROOT,
@@ -73,10 +81,6 @@ _JOBS = REPO_ROOT / "data" / "jobs" / "tech"
 _STORE = REPO_ROOT / "data" / "descriptions"
 _PRIOR_META = REPO_ROOT / "data" / "embeddings" / "jobs" / "meta.jsonl"
 _BASE = "base.jsonl.gz"
-# Per-Job change counts (ADR-0207). A state ledger rather than a field on the store's records: the
-# store's `{id, description}` shape is read by every consumer of it, and only Jobs that have
-# changed at least once are listed here, so it stays small.
-_CHANGES = REPO_ROOT / "data" / "state" / "description_changes.tsv.gz"
 
 
 def _fragments(ats_dir: Path) -> list[Path]:
@@ -162,7 +166,7 @@ def _write_fragment(ats_dir: Path, records: list[dict]) -> Path:
     return out
 
 
-class Changes(NamedTuple):
+class ChangeRecord(NamedTuple):
     """One Job's line in the change ledger: how many times a fetch replaced its held text, and
     a hash of the text it held before the last replacement."""
 
@@ -174,20 +178,30 @@ def _digest(text: str) -> str:
     return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
 
 
-def read_changes(path: Path) -> dict[str, Changes]:
-    """The change ledger, or ``{}`` when there is none yet."""
+def read_changes(path: Path) -> dict[str, ChangeRecord]:
+    """The change ledger, or ``{}`` when there is none yet.
+
+    Never fatal: the ledger only counts, so a malformed line is skipped and an unreadable file
+    starts the counts again rather than failing the run that stores this run's descriptions.
+    """
     if not path.exists():
         return {}
-    ledger: dict[str, Changes] = {}
-    with gzip.open(path, "rt", encoding="utf-8") as fh:
-        for line in fh:
-            if line.strip():
-                job_id, count, previous = line.rstrip("\n").split("\t")
-                ledger[job_id] = Changes(int(count), previous)
+    ledger: dict[str, ChangeRecord] = {}
+    try:
+        with gzip.open(path, "rt", encoding="utf-8") as fh:
+            for line in fh:
+                fields = line.rstrip("\n").split("\t")
+                if len(fields) == 3 and fields[1].isdigit():
+                    ledger[fields[0]] = ChangeRecord(int(fields[1]), fields[2])
+    except (OSError, EOFError, UnicodeDecodeError) as exc:
+        _log.warning(
+            f"{path} is unreadable ({exc}); change counts start again from zero"
+        )
+        return {}
     return ledger
 
 
-def write_changes(path: Path, ledger: dict[str, Changes]) -> None:
+def write_changes(path: Path, ledger: dict[str, ChangeRecord]) -> None:
     """Rewrite the change ledger through a temp file, so a kill mid-write keeps the old one."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
@@ -216,7 +230,7 @@ class Reconciled(NamedTuple):
 
 
 def reconcile(
-    jobs_path: Path, ats_dir: Path, changes: dict[str, Changes] | None = None
+    jobs_path: Path, ats_dir: Path, changes: dict[str, ChangeRecord] | None = None
 ) -> Reconciled:
     """Fill this ATS's corpus from the store and persist what the run learned.
 
@@ -260,7 +274,7 @@ def reconcile(
                     prior = changes.get(job_id)
                     replaced += 1
                     reverted += prior is not None and prior.previous == _digest(fresh)
-                    changes[job_id] = Changes(
+                    changes[job_id] = ChangeRecord(
                         (prior.count if prior else 0) + 1, _digest(before)
                     )
             else:
@@ -414,7 +428,7 @@ def main() -> int:
     )
     ap.add_argument(
         "--changes",
-        default=str(_CHANGES),
+        default=str(DESCRIPTION_CHANGES_PATH),
         help="per-Job change ledger: times a fetch replaced held text (ADR-0207)",
     )
     ap.add_argument(

@@ -341,10 +341,21 @@ def test_an_empty_fetch_is_no_change(tmp_path):
 
 def test_the_change_ledger_round_trips(tmp_path):
     path = tmp_path / "description_changes.tsv.gz"
-    ledger = {"eightfold:acme:1": ud.Changes(3, "abc123")}
+    ledger = {"eightfold:acme:1": ud.ChangeRecord(3, "abc123")}
     ud.write_changes(path, ledger)
     assert ud.read_changes(path) == ledger
     assert ud.read_changes(tmp_path / "absent.tsv.gz") == {}
+
+
+def test_a_damaged_change_ledger_never_fails_the_run(tmp_path):
+    """The ledger only counts. A bad line is skipped, and a file that is not gzip at all starts
+    the counts again, rather than failing the step that stores this run's descriptions."""
+    path = tmp_path / "description_changes.tsv.gz"
+    with gzip.open(path, "wt", encoding="utf-8") as fh:
+        fh.write("eightfold:acme:1\t2\tabc\nnot a ledger line\n")
+    assert ud.read_changes(path) == {"eightfold:acme:1": ud.ChangeRecord(2, "abc")}
+    path.write_bytes(b"not gzip")
+    assert ud.read_changes(path) == {}
 
 
 def test_only_already_embedded_jobs_are_queued_to_rederive(tmp_path, monkeypatch):

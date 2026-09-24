@@ -61,9 +61,12 @@ text**, about **874 per run**. None of them differs only by whitespace.
 The latest run (36021294272) queued 844 already-embedded ids to re-derive. That is the same order.
 
 **Without the Zoho flip.** ADR-0208 (#639, merged first) stops a failed Zoho detail from
-replacing held text. What is left is the 1,331 replacements on other ATSes plus at most 830 Zoho
-ids that changed without going back, some of them a one-time listing-to-detail upgrade: about
-**190 to 310 per run**.
+replacing held text. This is recomputed from the same 7 fragments, not measured on runs after
+#639. The 1,331 replacements on other ATSes, about **190 per run**, stand. Of Zoho's 4,784
+replacement entries, 2,421 went back to a text the Job had held before and 2,363 were a text new
+to that Job; the second group still includes the first switch of every flip, so Zoho's residual
+is somewhere below 2,363 entries, **under about 340 per run**. So about 190 to 530 per run in
+all, and the per-ATS log line below measures it from the first run after this ships.
 
 **The table's backlog.** The served table as of run 35998606646 (520,566 rows) was compared with
 the store's current text:
@@ -99,13 +102,17 @@ serves the corpus's text, keeps `first_seen`, and takes the vector from the stor
 - **The vector is not re-embedded.** This is ADR-0021's deferral, kept on purpose because it
   costs embedding budget. A replaced description can sit beside a vector built from an older
   revision. The Keyword filter follows the edit; semantic ranking does not. To re-embed on edit
-  would cost about 190 to 310 embeds a run once the Zoho flip is gone (ADR-0208).
+  would cost about 190 to 530 embeds a run once the Zoho flip is gone (ADR-0208).
 - **The log says why.** The rewrite line adds `N for an edited description and M filled where it
   had none (ADR-0207)`, so the churn can be read per run.
-- **`update_descriptions` counts the churn at its source.** Every run logs, per ATS and zero
-  included, `{ats}: replaced N held description(s) with different text, R of them back to the
-  text held before`, and the step summary carries the totals. A replacement back to the text held
-  before is a flip, not an edit, so the two stay apart in the log.
+- **`update_descriptions` counts the churn at its source.** Every run logs, for each ATS in
+  that run's corpus and zero included, `{ats}: replaced N held description(s) with different
+  text, R of them back to the text held before`, and the step summary carries the totals. An ATS
+  outside the run's slice has no corpus and logs no line. N minus R is the edit count.
+  "Back to the text held before" compares against the one text held before the last replacement,
+  so it sees an A-B-A flip from its second switch on. It does not see the first switch of a flip
+  (so every flip counts once as an edit, including every Job's first change after this ships), a
+  three-text cycle, or tell a company undoing its own edit apart from a flip.
 - **A per-Job change count is kept in `data/state/description_changes.tsv.gz`.** Each line is
   `id`, the number of times a fetch replaced the Job's held text, and a 16-hex SHA-1 of the text
   held before the last replacement, which is what tells a flip from a new revision. Only Jobs that
@@ -121,7 +128,7 @@ HF storage is the binding cost (ADR-0168), so each extra row rewritten was coste
 table's data files hold **5.65 KB per physical row**: 3.12 GB over 552,618 rows, measured on the
 same snapshot. That covers the vector, the description and the metadata.
 
-- **Steady state: about 190 to 310 extra rows a run, at most 1.75 MB of new Lance data**, once
+- **Steady state: about 190 to 530 extra rows a run, at most 3.0 MB of new Lance data**, once
   ADR-0208 has removed the Zoho flip. Without it the bound was 874 rows, 4.9 MB. Today a run writes about
   4,100 rows (2,342 rewritten and 1,757 added in run 36021294272), about 23 MB. The embedding
   store rewrites 3.31 GB a run (ADR-0168), which dwarfs both.
