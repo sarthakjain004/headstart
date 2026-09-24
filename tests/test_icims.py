@@ -409,6 +409,46 @@ def test_fetch_raw_reads_every_listed_page_and_names_each_loss(
     assert len(scraper.parse(raw, _SCRAPED_AT)) == 2
 
 
+@pytest.mark.parametrize(
+    ("lost", "authoritative"),
+    [
+        # 199/200 = 99.5%: the sitemap's own count measures it, ADR-0083 absorbs it
+        pytest.param(1, True, id="99.5%-stays-authoritative"),
+        # 197/200 = 98.5%: below MIN_AUTHORITATIVE_SHARE, the Board still leaves scope
+        pytest.param(3, False, id="98.5%-truncates"),
+    ],
+)
+def test_a_measured_detail_shortfall_is_tolerated_only_when_negligible(
+    lost: int, authoritative: bool
+) -> None:
+    """The sitemap states the Board's whole set, so an unreadable page is a *measured* shortfall
+    and goes through ADR-0121's tolerance, not the unconditional verdict. Observed 2026-09-24:
+    `securitycareers-alliedbarton` (1/9199) and `frfrench-equans` (1/1633) each lost their whole
+    eviction scope over a single unreadable page."""
+    host = "careers-acme.icims.com"
+    sitemap = "".join(
+        f"<url><loc>https://{host}/jobs/{n}/role-{n}/job</loc></url>"
+        for n in range(200)
+    )
+    page = _ld_page({"description": "d"})
+
+    def route(method, url, kwargs):
+        if url == f"https://{host}/sitemap.xml":
+            return FakeResponse(text=sitemap)
+        job_id = int(url.split("/jobs/", 1)[1].split("/", 1)[0])
+        return FakeResponse(404) if job_id < lost else FakeResponse(text=page)
+
+    scraper = get_scraper("icims", host, fetcher=FakeFetcher(route))
+    scraper.fetch_raw()
+
+    if authoritative:
+        assert scraper.truncated is None
+    else:
+        assert scraper.truncated == (
+            f"{lost}/200 job pages unreadable — those Jobs are listed but unbuilt"
+        )
+
+
 def _ld_page(node: dict) -> str:
     """Wrap a JobPosting node in the script tag the parser looks for."""
     return (

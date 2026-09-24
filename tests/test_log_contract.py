@@ -1368,7 +1368,10 @@ def _index_prune(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert (
         index.prune(
             argparse.Namespace(
-                db="data/lancedb", ledger="data/validate/liveness", apply=True
+                db="data/lancedb",
+                ledger="data/validate/liveness",
+                apply=True,
+                board_failures="data/state/board_failures.csv",
             )
         )
         == 0
