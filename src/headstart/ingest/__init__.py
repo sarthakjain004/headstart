@@ -109,6 +109,11 @@ PENDING_REDERIVE_PATH = REPO_ROOT / "data" / "state" / "pending_rederive.txt"
 # reappeared, been pruned, or belongs to a Board that left the ledger is simply not written again.
 UNCONFIRMED_PATH = REPO_ROOT / "data" / "state" / "unconfirmed_ids.txt"
 
+# How many times a fetch replaced each Job's held description, and a hash of the text it held
+# before the last replacement (ADR-0207). Written by `update_descriptions`, rewritten in full each
+# run. It lists only Jobs that have changed at least once.
+DESCRIPTION_CHANGES_PATH = REPO_ROOT / "data" / "state" / "description_changes.tsv.gz"
+
 #: The environment variable the pipeline sets once per merge job to this run's timestamp, so the
 #: steps that stamp a ledger — `index prune` and `role_trends` — stamp the same value.
 RUN_TS_ENV = "HEADSTART_RUN_TS"

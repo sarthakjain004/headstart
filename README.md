@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml)
 [![pipeline](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml)
-[![ADRs](https://img.shields.io/badge/ADRs-197-blue)](./docs/adr/)
+[![ADRs](https://img.shields.io/badge/ADRs-199-blue)](./docs/adr/)
 [![Python](https://img.shields.io/badge/python-3.12+-blue)](./pyproject.toml)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue)](./LICENSE)
 
@@ -42,7 +42,7 @@ and normalizes every posting into a single `Job`. You never learn an ATS's name.
 
 ### Everything above is measured.
 
-And every limit ships next to the result it qualifies. 197 ADRs record the options that lost,
+And every limit ships next to the result it qualifies. 199 ADRs record the options that lost,
 not just the one that won. When a later measurement contradicts an earlier one, the ADR is
 amended in place rather than quietly edited.
 
@@ -126,7 +126,7 @@ Every *other* ATS serves the **ATS slug** in that field instead, so a row's `com
 either — four served rows in five carry a slug rather than a name, which is why `CompanyPrefs` is
 keyed by **board_key** and never by company name.
 
-The liveness pipeline has probed **304,983 ledger rows**: 187,173 live, 100,917 dead, 16,893 unknown
+The liveness pipeline has probed **304,519 ledger rows**: 187,173 live, 100,453 dead, 16,893 unknown
 — rows, not boards; they collapse to 180,541 Unique Boards once duplicate spellings of the same
 board are folded together (`CONTEXT.md` §Counting Boards).
 
@@ -140,7 +140,7 @@ hitting the host, not by reading code. This is a rule with a scar behind it: a "
 to tell dead from empty" guard looked obviously correct and died on contact, because 9 of 12 boards
 the ledger already called dead answered `GET /` with 200. Findings carry their sample size.
 
-**Record the rejected options, not just the chosen one.** 197 ADRs, **133** carrying a heading that
+**Record the rejected options, not just the chosen one.** 199 ADRs, **134** carrying a heading that
 weighs alternatives (`grep -lEi '^#{2,3} .*(alternativ|options? (considered|rejected)|rejected)'
 docs/adr/`). When a later measurement contradicts an earlier one the ADR is amended or superseded
 in place rather than quietly edited — **57** name an `Amends:` / `Supersedes:` relationship in
@@ -178,7 +178,7 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>187,173 live rows of 304,983<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>187,173 live rows of 304,519<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
@@ -310,7 +310,7 @@ fails if this table drifts from it.
 | `ats` | string | `greenhouse`, `workday`, `ashby`, `darwinbox`, … |
 | `company` | string | the company's name where its Board states one (see *ATS coverage*, above); otherwise the ATS slug |
 | `title` | string | embedded, with the description |
-| `description` | string | the Job's description text, so the Keyword filter can match inside it (ADR-0104). **Nullable** — null on rows indexed before the column existed and on Jobs whose detail pass found nothing. Stored, not served: the API omits it |
+| `description` | string | the Job's description text, so the Keyword filter can match inside it (ADR-0104). Follows the posting: when a run fetches different text, the row is rewritten to serve it, while an empty fetch leaves it alone (ADR-0207). The `vector` is not re-embedded then, so it can encode an older revision. **Nullable** — null on rows indexed before the column existed and on Jobs whose detail pass found nothing. Stored, not served: the API omits it |
 | `description_stored` | bool | whether this row carries `description`; materialized and bitmap-indexed so coverage does not scan the text column (ADR-0173) |
 | `location` | string | raw ATS text; the India filter maps it via a gazetteer (ADR-0024) |
 | `country` | string | `"IN"` when `location` matches the India gazetteer's country-level rule, else null. Materialized so the India filter's whole-country case is a plain equality instead of a large regex alternation (ADR-0138) |
@@ -521,7 +521,7 @@ your own. The auth model and failure modes are in
 
 ## More
 
-- **Design decisions:** [`docs/adr/`](./docs/adr/) — 197 numbered ADRs (the option picked, the
+- **Design decisions:** [`docs/adr/`](./docs/adr/) — 199 numbered ADRs (the option picked, the
   ones rejected, and why).
 - **Domain glossary:** [`CONTEXT.md`](./CONTEXT.md) — the ubiquitous language (ATS, Board, Slug,
   Job, Discovery, Liveness, Feed, Doc, Bucket, GitHub VM…).

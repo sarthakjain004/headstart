@@ -20,6 +20,9 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
+from headstart.scrapers.oracle import is_pod_host
+from headstart.scrapers.registry import company_from_row
+
 ROOT = Path(__file__).resolve().parents[2]
 BYP = ROOT / "data" / "ats-company-lists" / "by-provider"
 MERGED = ROOT / "data" / "ats-tenants-merged"
@@ -57,8 +60,16 @@ def main() -> int:
         with p.open(encoding="utf-8") as f:
             for r in csv.DictReader(f):
                 t = (r.get("slug") or "").strip().strip("/").lower()
+                url = (r.get("url") or "").strip()
+                if t and ats == "oracle":
+                    # The harvest's slug is a bare label (`bun`); the pool and ledger hold an
+                    # Oracle Board under the pod host its Scraper reads, so a label landed as a
+                    # second row beside it (#627). A row naming no pod host names no Board.
+                    t = company_from_row(ats, t, url).slug.lower()
+                    if not is_pod_host(t):
+                        continue
                 if t:
-                    bucket.setdefault(t, (r.get("url") or "").strip())
+                    bucket.setdefault(t, url)
 
     print(f"{'ATS':<20}{'existing':>9}{'+new':>7}{'total':>8}  new-file")
     new_files = added_total = 0

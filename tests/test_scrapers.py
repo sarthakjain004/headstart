@@ -5338,6 +5338,107 @@ def test_successfactors_fetch_raw_rescues_only_an_unreadable_page_from_sitemal(
     )
 
 
+def test_successfactors_fetch_raw_drops_a_page_that_says_the_posting_is_unavailable(
+    monkeypatch,
+):
+    """A listed id whose page is RMK's "You can't view this job" shell is a closed posting, not
+    an unreadable page (careers.hcltech.com: 15 of 60 sampled, 2026-09-25). It is not emitted,
+    not filled from `/sitemal.xml` (which still lists it), and not counted as a loss — so it can
+    never push the Board out of eviction scope. A title-less page *without* the shell stays on
+    the loss + sitemal path."""
+    scraper = _successfactors_board(
+        monkeypatch,
+        sitemap=(
+            "urlset",
+            "".join(
+                f"<loc>https://careers.voith.com/job/Engineer/{i}/</loc>"
+                for i in (1, 2, 3)
+            ),
+            None,
+        ),
+        search=([], None, None),
+        rss=([], {}, None),
+        sitemal={
+            "2": {"title": "Feed title for a closed posting"},
+            "3": {"title": "Feed title", "description": "feed"},
+        },
+        job_page=lambda url: FakeResponse(
+            text={
+                "/1/": _successfactors_job_page("Page title"),
+                "/2/": _successfactors_unavailable_page(),
+                "/3/": "<html><body>Please try again later.</body></html>",
+            }[url[-3:]]
+        ),
+    )
+
+    raw = scraper.fetch_raw()
+
+    by_id = {item["id"]: item["fields"] for item in raw}
+    assert sorted(by_id) == ["1", "3"]  # the closed posting is gone, not rescued
+    assert by_id["3"]["description"] == "feed"  # an unparseable page is still rescued
+    assert scraper.truncated is None
+    assert scraper.detail_losses == {"200 without a parseable title": 1}
+
+
+def test_successfactors_unavailable_page_alone_does_not_fetch_sitemal(monkeypatch):
+    """Nothing unread, nothing to rescue: the feed is not fetched for a closed posting, and a
+    Board whose only failures are closures reads as whole."""
+    scraper = _successfactors_board(
+        monkeypatch,
+        sitemap=(
+            "urlset",
+            (
+                "<loc>https://careers.voith.com/job/Engineer/1/</loc>"
+                "<loc>https://careers.voith.com/job/Engineer/2/</loc>"
+            ),
+            None,
+        ),
+        search=([], None, None),
+        rss=([], {}, None),
+        job_page=lambda url: FakeResponse(
+            text=_successfactors_unavailable_page()
+            if url.endswith("/2/")
+            else _successfactors_job_page()
+        ),
+    )
+    sitemal_reads: list[int] = []
+    monkeypatch.setattr(
+        scraper, "_sitemal_fields", lambda: sitemal_reads.append(1) or {}
+    )
+
+    raw = scraper.fetch_raw()
+
+    assert [item["id"] for item in raw] == ["1"]
+    assert sitemal_reads == []
+    assert scraper.truncated is None
+    assert len(scraper.parse(raw, "2026-01-01")) == 1
+
+
+def test_successfactors_unavailable_marker_on_a_titled_page_keeps_the_job(
+    monkeypatch,
+):
+    """The shell is recognised only on a page that yields no title: every one measured does, and
+    a page that still states a posting is kept rather than dropped on a class name alone."""
+    page = _successfactors_job_page("Engineer").replace(
+        "</body>", '<p class="jobErrMsg">Applications are paused.</p></body>'
+    )
+    scraper = _successfactors_board(
+        monkeypatch,
+        sitemap=(
+            "urlset",
+            "<loc>https://careers.voith.com/job/Engineer/1/</loc>",
+            None,
+        ),
+        search=([], None, None),
+        rss=([], {}, None),
+        job_page=lambda url: FakeResponse(text=page),
+    )
+
+    raw = scraper.fetch_raw()
+
+    assert [item["fields"]["title"] for item in raw] == ["Engineer"]
+
+
 def test_successfactors_fetch_raw_falls_back_whole_when_sitemal_is_unavailable(
     monkeypatch,
 ):
@@ -6817,6 +6918,20 @@ def _successfactors_job_page(title="Engineer", posted=None):
     write it in."""
     date = f'<meta itemprop="datePosted" content="{posted}">' if posted else ""
     return f'<html><body><span itemprop="title">{title}</span>{date}</body></html>'
+
+
+def _successfactors_unavailable_page():
+    """The shell RMK serves, with a 200, for a listed id it will no longer show — trimmed from
+    careers.hcltech.com 2026-09-25 (the same markup on careers.wipro.com,
+    lockheed.jobs.hr.cloud.sap and jobs.danfoss.com). Its ``<title>`` is the template's with an
+    empty job title, so no title parses."""
+    return (
+        "<html><head><title> Job Details | HCLTech</title>"
+        '<meta content="" property="og:title" /></head><body>'
+        '<div class="jobDisplay"><div class="content"><div class="job">'
+        "<p class=\"jobErrMsg\"><strong>You can't view this job because it's not "
+        "available at this time.</strong></p></div></div></div></body></html>"
+    )
 
 
 def _successfactors_board(
