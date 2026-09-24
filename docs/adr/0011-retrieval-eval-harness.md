@@ -1,6 +1,8 @@
 # ADR-0011: Retrieval-eval harness — a validated LLM judge and graded nDCG
 
-- Status: Accepted
+- Status: Withdrawn 2026-09-24 — the benchmark corpus, its labels (`data/eval/`) and this harness
+  (`scripts/eval/`, plus the `eval` dependency group) were removed from the repository. The body
+  below is kept as the historical record of the decision.
 - Date: 2026-07-01
 
 ## Context

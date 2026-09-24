@@ -1,7 +1,7 @@
 """Tests for the Wayback feeder's shared half (scripts/discover/wayback_feeder.py).
 
 It is a script under `scripts/discover`, so we put that directory on the path and import it by
-name, the way `test_datadome_transcript.py` does for `scripts/scrape`.
+name.
 
 These check the rules that decide what counts as a Company's slug. Each one exists because the
 harvest got it wrong at some point: the slug's case, the datacenter in a Workday host, dots and
@@ -109,6 +109,35 @@ def test_taleo_keeps_the_full_board_url_and_rejects_incomplete_coordinates():
     assert wf.extract(url.replace("&cws=37", ""), "tbe.taleo.net", "taleo_be") is None
 
 
+_ADP_CID = "7d58836c-11dd-4415-9de0-63b918b88652"
+_ADP_PAGE = (
+    "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html"
+)
+
+
+def test_adp_reads_the_board_out_of_the_query_and_drops_the_rest():
+    """The Board is `cid` + `ccId`; `lang`, `jobId` and `source` are per-visit noise, so two
+    captures of one career center collapse onto one URL (and one `dedupe_key`)."""
+    url = f"{_ADP_PAGE}?cid={_ADP_CID}&ccId=9200471107142_2&jobId=564196&source=IN&lang=en_CA"
+    assert wf.extract(url, "workforcenow.adp.com", "adp") == (
+        f"{_ADP_CID}/9200471107142_2",
+        f"{_ADP_PAGE}?cid={_ADP_CID}&ccId=9200471107142_2",
+    )
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        f"{_ADP_PAGE}?cid={_ADP_CID}&lang=en_US",  # no career center
+        f"{_ADP_PAGE}?cid={_ADP_CID.upper()}&ccId=19000101_000001",  # the API 404s it
+        f"{_ADP_PAGE}?cid=not-a-guid&ccId=19000101_000001",
+        f"https://workforcenow.adp.com/theme/index.html?cid={_ADP_CID}&ccId=19000101_000001",
+    ],
+)
+def test_adp_rejects_a_capture_that_names_no_board(url):
+    assert wf.extract(url, "workforcenow.adp.com", "adp") is None
+
+
 def test_taleo_enterprise_keeps_the_full_career_section():
     assert wf.extract(
         "https://drhorton.taleo.net/careersection/2/joblist.ftl?lang=en",
@@ -207,6 +236,7 @@ def test_every_table_host_yields_the_slug_its_own_scraper_expects():
         ),  # same identity, reached from Workday's other domain
         "taleo_be": lambda host: f"ACME:1@phe.{host}/phe01",
         "taleo_enterprise": lambda host: f"https://acme.{host}/careersection/2",
+        "adp": lambda host: f"{_ADP_CID}/19000101_000001",
     }
     for ats, hosts in wf.ATS_HOSTS.items():
         for host, style in hosts:
@@ -218,6 +248,8 @@ def test_every_table_host_yields_the_slug_its_own_scraper_expects():
                 "workdaysite": f"https://wd1.{host}/en-US/recruiting/acme/External_Careers",
                 "taleo_be": f"https://phe.{host}/phe01/ats/careers/v2/searchResults?org=ACME&cws=1",
                 "taleo_enterprise": f"https://acme.{host}/careersection/2/jobsearch.ftl?lang=en",
+                "adp": f"https://{host}/mascsr/default/mdf/recruitment/recruitment.html"
+                f"?cid={_ADP_CID}&ccId=19000101_000001&lang=en_US",
             }[style]
             got = wf.extract(probe, host, style)
             assert got, f"{ats}: {host} ({style}) reads nothing"

@@ -80,9 +80,10 @@ be shorter than one pipeline cycle. It also needs no `LIKE '____-__-__%'` shape 
 for `posted_at` only because raw ATS strings like darwinbox's `21-Apr-2026` sort lexicographically
 above any ISO cutoff and would leak into every window. We write `first_seen`, so it is always ISO.
 
-The filter is added to `deploy/hf-space/app.py` only, not to `headstart.search.build_filter`. The two
-builders have already diverged — `posted_within` was never added to the latter either — and this
+The filter is added to `deploy/hf-space/app.py` only, not to `headstart.search.build_filter`. The
+two builders have already diverged — `posted_within` was never added to the latter either — and this
 follows that precedent rather than widening scope. Worth revisiting if a third filter diverges.
 *(Revisited: [ADR-0042](0042-signed-in-ui-saved-sets.md) ended the divergence — the app's builder
 moved into `headstart.search.build_filter` as the reference, and the old three-filter builder was
-renamed `eval_filter`.)*
+kept, renamed, for the retrieval benchmark alone until the builder and the benchmark were both
+removed on 2026-09-24.)*

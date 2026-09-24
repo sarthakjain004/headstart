@@ -930,6 +930,29 @@ def test_verification_job_evidence_does_not_leak_between_inputs(tmp_path, monkey
     )
 
 
+def test_an_adp_career_center_link_yields_its_cid_ccid_board():
+    """ADP Workforce Now keys a Board by two query values, in any order and, in HTML, joined by
+    `&amp;`. Only a career-center link names one; ADP Recruiting Management
+    (`recruiting.adp.com`, `myjobs.adp.com`) is a different platform with no scraper."""
+    cid = "7d58836c-11dd-4415-9de0-63b918b88652"
+    page = (
+        '<a href="https://workforcenow.adp.com/mascsr/default/mdf/recruitment/'
+        f'recruitment.html?lang=en_US&amp;ccId=19000101_000001&amp;cid={cid}">Jobs</a>'
+    )
+    assert fp.scan(page, "2lifecommunities.org") == [
+        ("adp", "ats", f"{cid}/19000101_000001", 1)
+    ]
+    assert fp.candidate_identity("adp", f"{cid}/19000101_000001", "2Life")[1] == (
+        "unverified"
+    )
+    rm = fp.scan("https://myjobs.adp.com/pathgroup/cx", "pathgroup.com")
+    assert rm and rm[0][0] == "adp_recruiting"
+    assert fp.candidate_identity("adp_recruiting", "", "PathGroup") == (
+        "",
+        "unsupported",
+    )
+
+
 def test_a_cornerstone_career_site_link_yields_the_corp_label_board():
     """`cornerstone.py` keys a Board on the `{corp}.csod.com` label, the tenant, not per site."""
     html = (

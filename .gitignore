@@ -62,7 +62,7 @@ data/ats-tenants-merged/*.csv
 data/jobs/
 # embedding vectors — large binary, regenerable from headstart.ingest.embed_run
 data/embeddings/
-# LanceDB vector store — regenerable from the embedding store via scripts/embed/build_index.py
+# LanceDB vector store — regenerable from the embedding store via headstart.ingest.index sync
 data/lancedb/
 # CI round-trip state (board-priority ledger, ADR-0022) — lives in the HF dataset, not git
 data/state/
@@ -74,8 +74,6 @@ data/enrich/
 data/ats-company-lists/
 # liveness resume checkpoints (.{ats}_checked / .{ats}_dead), not data
 data/ats-tenants-merged/active/.*
-# eval harness candidate pool — large (full job descriptions), regenerable from scripts/eval/pool_candidates.py
-data/eval/pool.jsonl
 # point-in-time filter-verification reports (scripts/eval/verify_filters.py)
 data/eval/filter_checks/
 # The ADR-0129 write guard's fingerprint, written by `state_guard record` and read by `verify`

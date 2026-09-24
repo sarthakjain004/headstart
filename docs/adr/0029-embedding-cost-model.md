@@ -81,9 +81,10 @@ median Doc is 1,040 tokens. The published speedups do not transfer.
 
 So: `scripts/bench/embed_backends.py` + the `embed-bench` workflow measure torch-fp32 (baseline),
 torch-bf16, ONNX fp32/int8/quantized, and OpenVINO on **`ubuntu-latest`, at our measured length
-distribution**, reporting tok/s and mean cosine agreement against fp32. A backend is adopted only
-if it wins there, and a *quantized* backend additionally requires a retrieval check on the
-ADR-0011 eval harness — cosine agreement on synthetic text is a drift signal, not a quality gate.
+distribution**, reporting tok/s and mean cosine agreement against fp32. A backend is adopted only if
+it wins there, and a *quantized* backend additionally requires a retrieval-quality check (ADR-0011's
+harness was withdrawn on 2026-09-24, so a benchmark would have to be rebuilt first) — cosine
+agreement on synthetic text is a drift signal, not a quality gate.
 
 **A dependency constraint may decide this before throughput does.** The backend extras do not
 coexist with the transformers 5.x production runs: `optimum-intel` (the OpenVINO path) requires
@@ -110,8 +111,9 @@ on both, which is why the threading result below transfers even though the rates
 - **Truncate Docs.** Directly attacks the dominant term (tokens), and cheap to try. But capping at
   2,048 saves 1.2% and capping at 1,024 saves 16.6% while touching 52% of Docs — and it contradicts
   ADR-0005's central rationale, which rejected 512-token models precisely to avoid truncating the
-  82% of descriptions that overflow. Deferred until the eval harness can say whether description
-  tails carry retrieval signal or are boilerplate.
+  82% of descriptions that overflow. Deferred until a retrieval benchmark can say whether
+  description tails carry retrieval signal or are boilerplate (ADR-0011's harness was withdrawn on
+  2026-09-24, so a benchmark would have to be rebuilt first).
 - **Raise the CPU attention budget / batch size.** The intuitive fix for `batch_size_for(4096) == 1`.
   Rejected on the roofline evidence: throughput is already flat per token, so the GEMMs are large
   enough, and the Bucket in question is 3.2% of Docs.
@@ -136,8 +138,9 @@ on both, which is why the threading result below transfers even though the rates
   magnitude faster). The largest available win, since FLOPs/token is the dominant term. But
   `potion-retrieval-32M` reaches 86.65% of *all-MiniLM-L6-v2*, itself well below nomic on retrieval,
   and static embeddings have no long-context modelling at all — the opposite of what ADR-0005
-  optimised for. This is a product-quality decision, not a performance one; it belongs behind the
-  eval harness in its own ADR.
+  optimised for. This is a product-quality decision, not a performance one; it belongs behind a
+  retrieval benchmark in its own ADR (ADR-0011's harness was withdrawn on 2026-09-24, so a benchmark
+  would have to be rebuilt first).
 - **Larger runners.** Outside the free-tier constraint of ADR-0020.
 
 ## Consequences

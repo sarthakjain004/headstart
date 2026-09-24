@@ -77,7 +77,7 @@ is non-recursive.
 
 And `--scraped-boards` has **no default**, so the recorded arm only runs for a caller that asked
 for it. `data/state/scraped_boards.json` rides the HF dataset and CLAUDE.md tells you to pull
-`data/state/*`, so a defaulted path would mean a local `index sync` against the Sidecorpus CSV —
+`data/state/*`, so a defaulted path would mean a local `index sync` with no full scrape on disk —
 no `data/jobs/*.jsonl`, so arm 1 misses — silently scoping eviction on the *last pipeline run's*
 14,700 Boards instead of on the corpus it was handed, marking every indexed row on them
 Unconfirmed. Passing the flag is what asserts "this checkout's `data/state` came from this run's
@@ -133,3 +133,6 @@ merely re-derived. Both failure modes were confirmed red before the change was k
 - **Re-read `data/jobs` after the union with `iter_jobs`.** Byte-identical to the reference
   implementation, but a second pass over 9.1 GB plus a 2.08 M-id dedup set, for an answer the first
   pass can produce for free.
+
+*(Amended 2026-09-24: the names of the original side-corpus and its scripts were removed from this
+record by the owner's decision, along with that corpus; the decision above is unchanged.)*

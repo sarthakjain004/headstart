@@ -89,9 +89,15 @@ Evidence for the first three is in `docs/discovery/2026-09-23_indeed-sweep-landi
   read. Each Jibe site serves `/api/jobs` JSON and allows crawling at `crawl-delay: 5`. Needs a
   decision on reading a front whose backing tenant opts out.
 - **The unsupported ATSes the Indeed sweep resolved most companies to**, most first:
-  ADP, Hireology, Recruiterflow, Avature. (Breezy led that count; it, ClearCompany, Pinpoint and
+  Hireology, Recruiterflow, Avature. (Breezy led that count; it, ClearCompany, Pinpoint and
   Cornerstone are now built, #579, #582, #580 and #584, and the sweep's companies on all four are
-  landed.)
+  landed. ADP Workforce Now is built too, #585, ADR-0180; the sweep's ADP companies are a landing
+  still to do.)
+- **ADP Recruiting Management** (`myjobs.adp.com/{slug}`, `recruiting.adp.com`) — a different
+  platform from Workforce Now: its listing
+  (`my.adp.com/myadp_prefix/mycareer/public/staffing/v1/job-requisitions/apply-custom-filters`)
+  wants an `orgoid` header, which `/public/staffing/v1/career-site/{slug}` supplies, and a
+  posting-channel id not yet found (`docs/adp/2026-09-23_careercenter-measurement.md`).
 - **SenseHQ** — the scraper is registered but has no ledger and no liveness probe, so none of its
   Boards can land.
 - **TurboHire** — token flow: `/api/token/noauth` (needs Referer), then `POST
@@ -238,7 +244,9 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   metadata refresh, after the merge and before `sync`), `index` (`sync` then `prune --apply`),
   `role_trends` (the ADR-0040 trends ledger, after prune), `hot_boards` (the actively-hiring
   ranking the "Hiring now" tab serves, strictly after `role_trends` because it reads that
-  stage's Board-count snapshot and delta ledger). `index compact` is a subcommand of the
+  stage's Board-count snapshot and delta ledger), `company_directory` (the ADR-0185 Board →
+  company names the Trends company filter searches, after `role_trends`, whose
+  Board-delta ledger it reads). `index compact` is a subcommand of the
   same module but is **not** part of this run — it moved to the `cleanup-index` workflow, because
   rewriting the whole table once per run is what the storage budget cannot afford.
   Five more entry points are not stages. `state_fetch` (ADR-0030) pulls each stage's slice of HF
@@ -253,7 +261,7 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   HF's collection, which is how the 100 GB quota filled on 2026-09-18.
   If you change what the pipeline runs, change it there and update `.github/workflows/pipeline.yml`
   to match. Don't add a pipeline stage to `scripts/`. Helper modules used *only* by the pipeline
-  live there too (`binpack`, `board_failures`, `board_freshness`, `board_operator`,
+  live there too (`binpack`, `board_failures`, `board_freshness`, `board_naming`, `board_operator`,
   `derived_meta`, `doc_prep`, `index_plan`, `observability`, `role_assignments`, `shard_plan`,
   `shard_speedup`, `trends_epochs`). Logic the curated-feed path (`python -m headstart` →
   `headstart.harvest`) also reaches stays in `headstart` proper (`harvest`, `board_cost`,
@@ -302,8 +310,6 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   (deliberately untracked: it names private infrastructure and this repo is public).
   A remote caller that gates its own startup on the tunnel must degrade rather than die: bring the
   app up regardless and fail that one endpoint, so a router outage never takes down the product.
-  **Known exception to migrate:** `scripts/eval/judge_pool.py:93` still constructs `Anthropic()`
-  against the default base URL — pre-existing, predates this rule.
 - Output must stream incrementally — never buffer until the program ends. Print per-item as
   work completes and flush (Python: `print(..., flush=True)` / `-u`; write results to a file
   progressively). A long batch that prints only at the end is forbidden: one slow item stalls

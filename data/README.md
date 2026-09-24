@@ -9,11 +9,10 @@ regenerable, so it's git-ignored; only a few small, hard-won artifacts are commi
 | `ats-tenants-merged/` | merge | the merged candidate pool: Common Crawl ∪ Wayback ∪ harvests, deduped, one `{ats}.csv` per ATS (`ats,tenant,url,source`). See its README. | `*.csv` ignored; **`active/` committed** |
 | `resolve/` | resolve | company → `ats:slug` resolution artifacts (`fingerprint_results.csv`, `verify_results.csv`, `coverage.csv`, …). | ignored |
 | `validate/` | validate | the **liveness ledger** (ADR-0012): `liveness/{ats}.csv` = `ats,tenant,url,status,jobs,checked_at`, the source of truth for Live/Dead/Unknown. The Active list is just its `status==live` rows; written by `scripts/validate/check_liveness.py`. `board_moves.txt` records Boards that changed ATS *and* slug — hand-researched, since no sweep can find them; applied by `scripts/validate/relocate_dead_boards.py --moves`. | **committed** |
-| `jobs/` | scrape → filter | scraped jobs. `{ats}.jsonl` is the full per-ATS scrape (the source of truth); **`tech/{ats}.jsonl`** is the software/tech subset (ADR-0017) that the feed, embedding, and UI actually read. `sidecorpus.csv` is the one-off Sidecorpus corpus (the frozen eval benchmark); `logs/` holds run logs. | ignored |
-| `enrich/` | enrich | years-of-experience extraction output, `sidecorpus_experience.jsonl` (ADR-0009). | ignored |
+| `jobs/` | scrape → filter | scraped jobs. `{ats}.jsonl` is the full per-ATS scrape (the source of truth); **`tech/{ats}.jsonl`** is the software/tech subset (ADR-0017) that the feed, embedding, and UI actually read. `logs/` holds run logs. | ignored |
 | `embeddings/` | embed | the vector store: `{source}/embeddings.f32` + `meta.jsonl` + `manifest.json` (ADR-0005). | ignored |
 | `lancedb/` | embed | the local LanceDB table for query-time vector search (ADR-0008). | ignored |
-| `eval/` | eval | the retrieval-eval harness data — `qrels.jsonl`, `pool.jsonl`, `judge_labels.jsonl`, `human_labels.jsonl` (ADR-0011). See its README. | committed (except `pool.jsonl`) |
+| `eval/` | eval | `filter_checks/` — point-in-time filter-verification reports written by `scripts/eval/verify_filters.py`. | ignored |
 | `scratch/` | — | regenerable run logs, recon captures, and superseded intermediates. Safe to delete. | ignored |
 
 ## Flow
