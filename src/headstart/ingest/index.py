@@ -52,6 +52,8 @@ once, which narrows nothing and widens nothing.
   Planning lives in :mod:`headstart.ingest.index_plan`; this is the CLI that runs it against the table.
   The keep-set is the live ledger (enabled ATSes), each Board key exactly as its scraper's
   ``board_key()`` builds it; ids are matched against it by prefix (ADR-0049), not by parsing them.
+  A Board whose gone-verdict parole re-confirmed (``board_failures.reconfirmed``) leaves it, since
+  nothing scrapes a quarantined Board and so ``sync`` never evicts its rows (ADR-0206).
   Dry-run by default; ``--apply`` deletes. Run after ``sync``.
   Refuses to apply if the keep-set looks too small to trust (a broken ledger must not evict the
   index) — that abort exits 1.
@@ -102,6 +104,7 @@ from headstart.ingest import (
     PENDING_UPGRADES_PATH,
     REPO_ROOT,
     UNCONFIRMED_PATH,
+    board_failures,
     board_freshness,
     observability,
     read_id_list,
@@ -141,6 +144,7 @@ _UNCONFIRMED = UNCONFIRMED_PATH
 # Written by scrape_join from the shard reports: the Boards whose scraped list is not authoritative
 # this run, which must not be evicted from just because they emitted a partial list (ADR-0053).
 _UNAUTHORITATIVE = REPO_ROOT / "data" / "state" / "unauthoritative_boards.json"
+_BOARD_FAILURES = REPO_ROOT / "data" / "state" / "board_failures.csv"
 
 _ADD_CHUNK = 2048  # rows per add batch — bounds peak memory and streams progress
 _TOP_UNCONFIRMED_BOARDS = (
@@ -978,6 +982,23 @@ def sync(args: argparse.Namespace) -> int:
 def prune(args: argparse.Namespace) -> int:
     keep = live_keep_set(args.ledger)
     _log.info(f"keep-set: {len(keep)} Scrapable Boards (enabled ATSes)")
+    # A Board quarantined as gone (ADR-0058) is never scraped, so `sync` can never evict its rows,
+    # and its liveness row still says live: its closed postings were served forever. Only a
+    # verdict parole re-earned leaves the keep-set — a first-time quarantine can be one provider
+    # outage (ADR-0170, ADR-0206). A missing or unreadable ledger reads as empty and keeps rows.
+    gone = {
+        lower_key(board)
+        for board in board_failures.reconfirmed(
+            board_failures.load(args.board_failures)
+        )
+    }
+    reconfirmed = {board for board in keep if lower_key(board) in gone}
+    if reconfirmed:
+        keep -= reconfirmed
+        _log.info(
+            f"keep-set: {len(reconfirmed)} Board(s) re-confirmed gone after parole leave it, "
+            f"{len(keep)} remain"
+        )
     if len(keep) < _MIN_KEEP_BOARDS:
         _log.error(
             f"ABORT: keep-set has only {len(keep)} Boards (< {_MIN_KEEP_BOARDS}) — the ledger "
@@ -1328,6 +1349,12 @@ def main() -> int:
         "--ledger",
         default=str(_LEDGER),
         help="liveness ledger dir (default: data/validate/liveness)",
+    )
+    p_prune.add_argument(
+        "--board-failures",
+        default=str(_BOARD_FAILURES),
+        help="consecutive-gone ledger; Boards parole re-confirmed gone are evicted (ADR-0206); "
+        "absent evicts nothing (default: data/state/board_failures.csv)",
     )
     p_prune.set_defaults(fn=prune)
 

@@ -21,10 +21,13 @@ This ledger closes that loop, and the whole design is about **not** trusting a s
 * A run that did not scrape the Board leaves its row untouched — same partial-harvest rule the
   other two ledgers follow. Boards outside the slice must not age toward quarantine.
 
-Quarantine only removes a Board from the *scrape slice* (``scrape_plan``). It deliberately does not
-touch ``data/validate/liveness/``, which stays the probe-owned truth, and it deliberately does not
-reach ``live_keep_set`` — that feeds ``index prune``, so filtering there would evict the Board's
-rows from the served table as a side effect of a scraping decision.
+Quarantine removes a Board from the *scrape slice* (``scrape_plan``). It deliberately does not
+touch ``data/validate/liveness/``, which stays the probe-owned truth. A first-time quarantine does
+not reach ``index prune`` either: a zwayam outage quarantined the whole provider at exactly
+:data:`QUARANTINE_AT` while its Boards stayed live (ADR-0170). Only a verdict parole re-earns a
+week later, :func:`reconfirmed`, takes the Board out of prune's keep-set and evicts its rows
+(ADR-0206). And a verdict struck before its ATS's scraper replaced the surface that struck it is
+void (:data:`_VOID_BEFORE`): :func:`load` drops it.
 
 And the verdict **expires**: see :func:`paroled` and ADR-0162. A quarantined Board is never
 scraped, so it can never re-enter ``produced``, so the clearing branch in :func:`update` is
@@ -42,7 +45,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
-from headstart.board_identity import lower_key
+from headstart.board_identity import ats_of, lower_key
 
 if TYPE_CHECKING:
     from headstart.scrapable_boards import ScrapableBoard
@@ -72,6 +75,14 @@ PAROLE_DAYS = 7
 _GONE = re.compile(r"HTTP Error (404|410)\b")
 
 _FIELDS = ("board", "strikes", "last_reason", "last_seen_gone")
+
+# Per ATS, the instant its listing surface was replaced: a verdict struck before it was earned
+# against a surface the scraper no longer reads, so :func:`load` drops it (ADR-0206). An entry is
+# added only on measurement — the replaced surface still 404ing for Boards the new one lists.
+#
+# trakstar: #564 moved the listing off the HTML board onto ``jsapi.recruiterbox.com``, and the HTML
+# board still answers 404 for Boards the API lists (``twonice``, 144 postings on 2026-09-24).
+_VOID_BEFORE = {"trakstar": datetime.fromisoformat("2026-09-22T15:07:27+00:00")}
 
 
 class Failure(NamedTuple):
@@ -124,14 +135,29 @@ def load(path: str | Path) -> dict[str, Failure]:
                     strikes = int(row.get("strikes") or 0)
                 except ValueError:
                     continue  # a torn row is one Board's memory, not the file's
-                rows[board] = Failure(
+                failure = Failure(
                     strikes=strikes,
                     last_reason=row.get("last_reason") or "",
                     last_seen_gone=row.get("last_seen_gone") or "",
                 )
+                if not _void(board, failure):
+                    rows[board] = failure
     except OSError:
         return {}
     return rows
+
+
+def _void(board: str, row: Failure) -> bool:
+    """Whether this verdict was struck before its ATS's scraper replaced the surface that struck
+    it (:data:`_VOID_BEFORE`). An unreadable stamp on such an ATS is void too: this module fails
+    open, so doubt must never keep a Board quarantined."""
+    cutoff = _VOID_BEFORE.get(ats_of(board))
+    if cutoff is None:
+        return False
+    try:
+        return datetime.fromisoformat(row.last_seen_gone) < cutoff
+    except (TypeError, ValueError):
+        return True
 
 
 def save(path: str | Path, rows: dict[str, Failure]) -> None:
@@ -173,6 +199,19 @@ def update(
 def quarantined(rows: dict[str, Failure]) -> set[str]:
     """The Boards that have earned their way out of the scrape slice."""
     return {board for board, row in rows.items() if row.quarantined}
+
+
+def reconfirmed(rows: dict[str, Failure]) -> set[str]:
+    """The quarantined Boards whose gone-verdict parole has re-earned — the only ones whose served
+    rows ``index prune`` evicts (ADR-0206).
+
+    A quarantined Board is out of the slice, so a strike past :data:`QUARANTINE_AT` can only come
+    from a parole scrape, :data:`PAROLE_DAYS` or more after the verdict: two gone-verdicts a week
+    apart, ADR-0170's third prerequisite. A first-time quarantine is not enough — a zwayam outage
+    on 2026-09-19 quarantined the whole provider at exactly five strikes while its Boards stayed
+    live (ADR-0170).
+    """
+    return {board for board, row in rows.items() if row.strikes > QUARANTINE_AT}
 
 
 def paroled(rows: dict[str, Failure], now: str) -> set[str]:

@@ -204,6 +204,7 @@ supersedes it and note the supersession in both.
 | [0203](0203-a-row-becomes-a-board-only-through-its-scraper.md) | A ledger row becomes a Board only through its Scraper | 2026-09-24 |
 | [0204](0204-a-scrapers-fetcher-is-bound-to-its-board.md) | A scraper's fetcher is bound to its Board | 2026-09-24 |
 | [0205](0205-an-eightfold-site-its-backing-board-already-serves-is-an-alias.md) | An Eightfold career site whose backing ATS Board already serves it is an alias | 2026-09-24 |
+| [0206](0206-prune-evicts-a-board-parole-reconfirmed-gone.md) | Prune evicts a Board parole re-confirmed gone, and a replaced scraper voids its verdicts | 2026-09-24 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

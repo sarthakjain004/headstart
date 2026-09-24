@@ -6,7 +6,8 @@
 working — 22 of the 23 Boards measured live below are gone from the ledger five days later — and
 stays the *only* drain; but the **3.0% live** figure here is superseded, and so is the method that
 produced it: one unstratified sweep averaged a 75%-live stratum into a 2%-live one, and hid a
-whole provider at 58/58 live) ·
+whole provider at 58/58 live), [ADR-0206](0206-prune-evicts-a-board-parole-reconfirmed-gone.md) (the verdict parole re-earns now also evicts the
+Board's served rows, so the last Consequence below no longer holds for it) ·
 **Relates to:** [ADR-0064](0064-a-boards-hour-must-buy-tech-jobs.md) (the same "expire the evidence"
 move, at a cadence set by a cost three orders of magnitude larger),
 [ADR-0083](0083-evict-only-on-a-second-consecutive-absence.md) (one absence is not a verdict)
