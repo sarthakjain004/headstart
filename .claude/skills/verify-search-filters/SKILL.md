@@ -29,7 +29,7 @@ The product moves; the script must chase it. Before running, diff the harness ag
 current deployment and ADD what's missing (edit the script — it is meant to grow):
 
 - Read `deploy/hf-space/app.py`: every query param `/search` accepts and every
-  `_ETYPE_CLAUSES` key must have check cases. New filter param → new cases (single + at
+  `employment_type_filter.FILTERS` key must have check cases. New filter param → new cases (single + at
   least one combo).
 - **ATS coverage is a hard gate, never a footnote.** The harness gates on the union of the
   ATSes it sampled from the live index AND the scraper registry (`SCRAPERS − DISABLED_ATS`) —

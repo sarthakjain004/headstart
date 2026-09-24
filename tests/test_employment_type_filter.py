@@ -1,4 +1,4 @@
-from headstart.employment_type import FILTERS, flags
+from headstart.employment_type_filter import FILTERS, flags
 
 
 def test_flags_preserve_the_existing_overlapping_substring_rules():
@@ -77,3 +77,12 @@ def test_raw_clauses_agree_with_the_python_flags():
                 (value,),
             ).fetchone()
             assert bool(sql) is rule.matches(value), (value, rule.column)
+
+
+def test_clause_prefers_the_flag_and_ignores_an_unknown_value():
+    from headstart.employment_type_filter import clause
+
+    assert clause("contract", True) == "is_contract = true"
+    assert clause("contract", False) == FILTERS["contract"].raw_clause()
+    assert clause("bogus", True) is None
+    assert clause(None, False) is None

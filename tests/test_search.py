@@ -14,8 +14,9 @@ import types
 
 import pytest
 
+from headstart import posted_date_guard
+from headstart.employment_type_filter import FILTERS as EMPLOYMENT_TYPE_FILTERS
 from headstart.search import (
-    ETYPE_CLAUSES,
     FACET_CACHE_SIZE,
     QUERY_VECTOR_CACHE_SIZE,
     RESULT_COLUMNS,
@@ -26,7 +27,6 @@ from headstart.search import (
     account_clause,
     board_clause,
     build_filter,
-    posted_at_is_comparable,
 )
 
 # `IndexCapabilities`'s field names — used below to route a `_clause`/`_bracket` override into
@@ -693,9 +693,9 @@ def test_has_country_is_learned_from_the_schema():
 
 
 def test_posted_at_shape_guard_prefers_the_materialized_flag():
-    assert posted_at_is_comparable("2026-09-21T00:00:00Z") is True
-    assert posted_at_is_comparable("21-Sep-2026") is False
-    assert posted_at_is_comparable(None) is False
+    assert posted_date_guard.is_comparable("2026-09-21T00:00:00Z") is True
+    assert posted_date_guard.is_comparable("21-Sep-2026") is False
+    assert posted_date_guard.is_comparable(None) is False
     assert (
         _clause(posted_after="2026-09-01", has_posted_at_comparable=True)
         == "(posted_at >= '2026-09-01' AND posted_at_comparable = true)"
@@ -703,7 +703,7 @@ def test_posted_at_shape_guard_prefers_the_materialized_flag():
 
 
 def test_employment_type_flags_are_used_only_after_the_whole_migration_lands():
-    assert _clause(etype="contract") == ETYPE_CLAUSES["contract"]
+    assert _clause(etype="contract") == EMPLOYMENT_TYPE_FILTERS["contract"].raw_clause()
     assert (
         _clause(etype="contract", has_employment_type_flags=True)
         == "is_contract = true"
@@ -1446,9 +1446,7 @@ def test_internship_does_not_claim_international():
     `test_ind_is_never_a_bare_substring` guards the gazetteer's identical trap: the failure is
     silent and the table can only catch strings someone thought to add.
     """
-    from headstart.search import ETYPE_CLAUSES
-
-    clause = ETYPE_CLAUSES["internship"]
+    clause = EMPLOYMENT_TYPE_FILTERS["internship"].raw_clause()
     assert "LIKE '%intern%'" in clause
     assert "NOT LIKE '%international%'" in clause
 

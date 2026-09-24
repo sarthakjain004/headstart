@@ -16,8 +16,8 @@ import numpy as np
 from lancedb.index import Bitmap, BTree, Fm
 
 from headstart import fx
-from headstart.employment_type import FILTERS as EMPLOYMENT_TYPE_FILTERS
-from headstart.search import ETYPE_CLAUSES, RESULT_COLUMNS
+from headstart.employment_type_filter import FILTERS as EMPLOYMENT_TYPE_FILTERS
+from headstart.search import RESULT_COLUMNS
 
 
 def _salary_case(column: str) -> str:
@@ -43,7 +43,7 @@ PROFILES = {
             "is_full_time": EMPLOYMENT_TYPE_FILTERS["full-time"].raw_clause(),
         },
         "indexes": (("is_full_time", Bitmap()),),
-        "old": ETYPE_CLAUSES["full-time"],
+        "old": EMPLOYMENT_TYPE_FILTERS["full-time"].raw_clause(),
         "new": "is_full_time = true",
     },
     "title": {

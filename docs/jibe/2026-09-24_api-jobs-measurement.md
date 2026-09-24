@@ -248,7 +248,7 @@ smoothieking, which are all non-iCIMS feeds (12,035 rows).
 
 - **Employment type.** `employment_type` is present on 75.7% of rows, as schema.org enum values:
   FULL_TIME 84,722, PART_TIME 22,960, OTHER_EMPLOYMENT_TYPE 2,421, TEMPORARY 1,630, PER_DIEM 1,461,
-  INTERN 955, CONTRACTOR 635 and CONTRACT_TO_HIRE 25. `employment_type.flags()` reads FULL_TIME,
+  INTERN 955, CONTRACTOR 635 and CONTRACT_TO_HIRE 25. `employment_type_filter.flags()` reads FULL_TIME,
   PART_TIME, INTERN, CONTRACTOR and CONTRACT_TO_HIRE correctly. TEMPORARY, PER_DIEM and OTHER set
   no flag, which is right, since none of them is one of the four filters.
 - **Experience.** `experience_levels` is present on 0.4% of rows, so there is no usable native

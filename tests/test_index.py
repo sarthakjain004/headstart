@@ -332,10 +332,7 @@ def test_employment_type_flag_migration_preserves_the_legacy_verdicts(tmp_path):
     assert rows["greenhouse:a:1"]["is_full_time"] is True
     assert rows["greenhouse:a:1"]["is_internship"] is False
     assert rows["greenhouse:a:2"]["is_internship"] is False
-    assert all(
-        rule.column in table.schema.names
-        for rule in idx.EMPLOYMENT_TYPE_FILTERS.values()
-    )
+    assert idx.employment_type_filter.has_flags(table.schema.names)
 
 
 def test_presence_flag_migration_matches_the_nullable_source_columns(tmp_path):

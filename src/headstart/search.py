@@ -14,7 +14,7 @@ the UIs expose, previously duplicated in the Space app.
 encoder and the open ``jobs`` table, ``run(args)`` takes a request's query-string mapping
 and returns projected result rows. Both the HF Space app and the local dev server are thin
 adapters over it — the Space image installs ``headstart`` as a real package (ADR-0153), so
-this module imports ``fx``/``geo`` the same way everywhere.
+this module imports ``fx`` and the Search-filter modules the same way everywhere.
 
 Only the encoder helpers need torch/sentence-transformers; they import lazily so the
 constants and the filter builders stay importable (and unit-testable) without the ML stack.
@@ -31,10 +31,15 @@ from threading import Lock
 from typing import Any, NamedTuple
 from urllib.parse import urlsplit
 
-from headstart import fx, geo, log
-from headstart.employment_type import FILTERS as EMPLOYMENT_TYPE_FILTERS
-from headstart.experience_filter import CEILINGS as EXPERIENCE_FILTER_CEILINGS
-from headstart.experience_filter import column as experience_filter_column
+from headstart import (
+    employment_type_filter,
+    experience_filter,
+    fx,
+    india_filter,
+    log,
+    posted_date_guard,
+    salary_known_filter,
+)
 
 # In the Space nothing calls `setup()` (ADR-0153's app.py boots straight into serving), which
 # is why the one boot line below is a WARNING — `logging.lastResort` carries WARNING and above
@@ -68,12 +73,6 @@ def encode_query(model: Any, text: str) -> Any:
 # ---- the product search path (ADR-0042) ----
 # Everything below moved from the Space app, which had become the de-facto reference while
 # this module lagged behind; the Space and the local dev server now both consume this.
-
-# Canonical employment-type filters mapped onto the messy per-ATS raw values
-# ("fulltime", "Full-time", "fulltime_permanent", "Permanent / Full-Time", …).
-ETYPE_CLAUSES = {
-    name: rule.raw_clause() for name, rule in EMPLOYMENT_TYPE_FILTERS.items()
-}
 
 # The retained production-table operating point (ADR-0173): IVF-SQ at 80 probes with a 2x
 # exact-vector refinement reproduced every top-20 result across 16 real queries and four filter
@@ -567,11 +566,7 @@ def _salary_clauses(
         # number" check either way. Guarded like `has_first_seen` above: a table LanceDB
         # hasn't migrated onto the new columns yet would error on every query otherwise —
         # the feature stays dark until then rather than 500ing.
-        filters.append(
-            "salary_known = true"
-            if has_salary_known
-            else "min_salary_annual IS NOT NULL"
-        )
+        filters.append(salary_known_filter.clause(has_salary_known))
 
     # The salary bracket (issue #275) is stated in ONE currency the user picks, and that is not
     # a UI nicety: salary is period-normalised but stored in the employer's own currency
@@ -679,11 +674,6 @@ def _salary_clauses(
     return filters
 
 
-def posted_at_is_comparable(value: str | None) -> bool:
-    """Whether the raw date matches Lance's legacy ``LIKE '____-__-__%'`` guard."""
-    return bool(value and len(value) >= 10 and value[4] == "-" and value[7] == "-")
-
-
 def _posted_clauses(
     *,
     posted_sortable: bool,
@@ -700,11 +690,7 @@ def _posted_clauses(
     about.
     """
     filters: list[str] = []
-    guard = (
-        "posted_at_comparable = true"
-        if has_posted_at_comparable
-        else "posted_at LIKE '____-__-__%'"
-    )
+    guard = posted_date_guard.clause(has_posted_at_comparable)
     if posted_sortable:
         # Ordering by `posted_at` needs the same shape guard filtering by it does, and it has
         # to be compiled HERE rather than bolted onto the where-clause in `run` — otherwise the
@@ -798,12 +784,10 @@ def build_filter(filters: SearchFilters, capabilities: IndexCapabilities) -> str
     if filters.remote:
         clauses.append("remote = true")
     if filters.max_years is not None:
-        years = int(filters.max_years)
         clauses.append(
-            f"{experience_filter_column(years)} = true"
-            if capabilities.has_experience_filter_flags
-            and years in EXPERIENCE_FILTER_CEILINGS
-            else f"(min_years <= {years} OR min_years IS NULL)"
+            experience_filter.clause(
+                int(filters.max_years), capabilities.has_experience_filter_flags
+            )
         )
     # A value that misses either whitelist drops the filter silently *here* and is reported
     # once, by `JobSearch.parse_filters`, before this compiler is ever entered. It cannot be
@@ -814,25 +798,18 @@ def build_filter(filters: SearchFilters, capabilities: IndexCapabilities) -> str
         filters.ats in capabilities.atses
     ):  # whitelist — never interpolated from free text
         clauses.append(f"ats = '{filters.ats}'")
-    if filters.etype in ETYPE_CLAUSES:
-        clauses.append(
-            f"{EMPLOYMENT_TYPE_FILTERS[filters.etype].column} = true"
-            if capabilities.has_employment_type_flags
-            else ETYPE_CLAUSES[filters.etype]
-        )
+    etype_clause = employment_type_filter.clause(
+        filters.etype, capabilities.has_employment_type_flags
+    )
+    if etype_clause:
+        clauses.append(etype_clause)
     if filters.india:
-        # "india" is the exact sentinel `geo.where()` itself uses for "whole country" (as
-        # opposed to a REGIONS/CITIES key like "bengaluru"), and it is the only case the 1,338ms
-        # regex alternation was ever measured on (ADR-0138) — city/region clauses are far
-        # smaller and stay on the unchanged path below regardless of `has_country`.
-        if filters.india == "india" and capabilities.has_country:
-            clauses.append("country = 'IN'")
-        else:
-            clause = geo.where(
-                filters.india
-            )  # canonical-place lookup — unknown values are ignored
-            if clause:
-                clauses.append(clause)
+        # Only the whole country is materialized (ADR-0138) — it is the only case the 1,338ms
+        # regex alternation was ever measured on; city/region clauses are far smaller and keep
+        # the gazetteer clause regardless of `has_country`. See `india_filter`.
+        india_clause = india_filter.clause(filters.india, capabilities.has_country)
+        if india_clause:
+            clauses.append(india_clause)
     if filters.location:
         clauses.append(f"lower(location) LIKE '%{_like(filters.location)}%'")
     if filters.company:
@@ -892,7 +869,7 @@ def _warn_unknown_filters(
     """
     if ats and ats not in atses:
         _log.warning("filter dropped: ats %.40r is not in this table", ats)
-    if etype and etype not in ETYPE_CLAUSES:
+    if etype and etype not in employment_type_filter.FILTERS:
         _log.warning(
             "filter dropped: employment_type %.40r is not a known value", etype
         )
@@ -948,19 +925,17 @@ class JobSearch:
         # The materialized India-filter column (ADR-0138), same rule again: until a table has
         # synced since, `build_filter` falls back to `geo.where("india")`'s slower-but-correct
         # regex alternation rather than erroring on a column that isn't there yet.
-        self.has_country = "country" in table.schema.names
+        self.has_country = india_filter.has_column(table.schema.names)
         # The employment-type booleans are an optional acceleration layer. A pre-migration
         # table keeps the raw LIKE clauses above, so this can never disable the filter.
-        self.has_employment_type_flags = all(
-            rule.column in table.schema.names
-            for rule in EMPLOYMENT_TYPE_FILTERS.values()
+        self.has_employment_type_flags = employment_type_filter.has_flags(
+            table.schema.names
         )
         self.has_description_stored = "description_stored" in table.schema.names
-        self.has_salary_known = "salary_known" in table.schema.names
-        self.has_posted_at_comparable = "posted_at_comparable" in table.schema.names
-        self.has_experience_filter_flags = all(
-            experience_filter_column(ceiling) in table.schema.names
-            for ceiling in EXPERIENCE_FILTER_CEILINGS
+        self.has_salary_known = salary_known_filter.has_flags(table.schema.names)
+        self.has_posted_at_comparable = posted_date_guard.has_flags(table.schema.names)
+        self.has_experience_filter_flags = experience_filter.has_flags(
+            table.schema.names
         )
         list_indices = getattr(table, "list_indices", None)
         self.has_vector_index = bool(
@@ -1021,7 +996,7 @@ class JobSearch:
                 ("first_seen", self.has_first_seen),
                 ("min_salary_annual", self.has_min_salary_annual),
                 ("description", self.has_description),
-                ("country", self.has_country),
+                (india_filter.COLUMN, self.has_country),
             )
             if not live
         ]
@@ -1483,11 +1458,7 @@ class JobSearch:
                 "first_seen": "first_seen IS NOT NULL AND first_seen != ''"
                 if self.has_first_seen
                 else None,
-                "salary": (
-                    "salary_known = true"
-                    if self.has_salary_known
-                    else "min_salary_annual IS NOT NULL"
-                )
+                "salary": salary_known_filter.clause(self.has_salary_known)
                 if self.has_min_salary_annual
                 else None,
                 "min_years": "min_years IS NOT NULL",

@@ -96,7 +96,7 @@ API_PATH = "/api/jobs"
 _ICIMS_PATH = "/sitemap.xml"
 
 #: `employment_type` -> label. The eight schema.org values seen on 114,809 rows; each label reads
-#: correctly through `employment_type.flags` (TEMPORARY, PER_DIEM and OTHER set no flag, which is
+#: correctly through `employment_type_filter.flags` (TEMPORARY, PER_DIEM and OTHER set no flag, which is
 #: right: none of them is one of the four filters).
 _TYPE_LABELS: dict[str, str] = {
     "FULL_TIME": "Full-Time",
