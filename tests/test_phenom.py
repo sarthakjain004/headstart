@@ -191,6 +191,48 @@ def test_an_unwrapped_title_leaves_the_slug_alone_rather_than_guessing():
     assert scraper.company == "jobs.baesystems.com"
 
 
+def _landing(scraper, title: str, site_name: str):
+    """A landing page stating both of the names `company_from_page` reads."""
+
+    class _Response:
+        status_code = 200
+        text = (
+            f"<html><head><title>{title}</title>"
+            f'<meta property="og:site_name" content="{site_name}"></head></html>'
+        )
+
+    scraper._fetch = lambda *a, **k: _Response()
+    return scraper
+
+
+def test_a_marketing_title_falls_back_to_the_site_name():
+    # careers.aircanada.com, 2026-09-24: no wrapper this ATS reads, a clean og:site_name
+    scraper = _landing(
+        PhenomScraper("careers.aircanada.com"),
+        "Join Air Canada: Explore Careers and Job Opportunities",
+        "Air Canada",
+    )
+    scraper.resolve_company()
+    assert scraper.company == "Air Canada"
+
+
+def test_the_title_outranks_the_site_name():
+    # careers.mitre.org: the brand first, the user's call — og:site_name is the legal name
+    scraper = _landing(
+        PhenomScraper("careers.mitre.org"),
+        "Careers at MITRE | MITRE jobs",
+        "The MITRE Corporation",
+    )
+    scraper.resolve_company()
+    assert scraper.company == "MITRE"
+
+
+def test_the_site_name_goes_through_the_same_guards():
+    scraper = _landing(PhenomScraper(HOST), "Welcome", "Phenom")
+    scraper.resolve_company()
+    assert scraper.company == HOST
+
+
 def test_a_board_already_carrying_a_real_name_keeps_it():
     # ADR-0114: a slug is only ever replaced, never the reverse.
     scraper = _titled(PhenomScraper(HOST, company="Cisco Systems"), "Careers at Cisco")

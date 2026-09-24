@@ -75,7 +75,8 @@ def test_a_board_title_yields_the_company_name(ats, title, slug, expected):
             "Kraft Heinz Careers – Explore Careers. We're growing greatness.",
             "kraftheinz.eightfold.ai",
         ),
-        # an ATS with no measured shape has no patterns at all, so nothing is attempted
+        # a successfactors *board* title: marketing copy, refused on its separators (its name
+        # source is the job page's title suffix instead, ADR-0217)
         (
             "successfactors",
             "Life@MOHH - people, culture, and values | MOHH",
@@ -697,3 +698,25 @@ def test_title_fallback_sources_take_the_field_path():
     assert from_field("eightfold", "Eightfold") is None
     assert from_field("pinpoint", "Pinpoint") is None
     assert from_field("lever", "Veeva Systems") == "Veeva Systems"
+
+
+def test_agreed_name_is_the_most_stated_name():
+    from headstart.company_name import agreed_name
+
+    assert (
+        agreed_name(["FM", None, "FM", "", "Factory Mutual Insurance Company"]) == "FM"
+    )
+    assert agreed_name([None, " "]) is None
+
+
+def test_agreed_name_refuses_a_board_whose_postings_disagree():
+    # reyesholdings (jibe, 2026-09-24): its subsidiaries, the largest on 43% of rows
+    from headstart.company_name import agreed_name
+
+    names = (
+        ["Reyes Beverage Group"] * 279
+        + ["Reyes Coca-Cola Bottling"] * 182
+        + ["Martin Brower"] * 137
+    )
+    assert agreed_name(names, 0.85) is None
+    assert agreed_name(["FM"] * 9 + ["Factory Mutual"], 0.85) == "FM"

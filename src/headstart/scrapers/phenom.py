@@ -41,7 +41,7 @@ from __future__ import annotations
 import re
 from typing import Any, ClassVar
 
-from headstart import http
+from headstart import company_name, http
 from headstart.fetcher import Fetcher
 from headstart.models import Job, host_of, html_to_text
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
@@ -66,6 +66,11 @@ _DETAIL_WORKERS = 16
 _PROBE_PREFIX = ("us", "en")
 
 _PREFIX_RE = re.compile(r"^https?://[^/]+/([^/?#]+)/([^/?#]+)")
+
+#: The landing page's ``og:site_name`` value, whichever order the tag writes its attributes in.
+_OG_SITE_NAME = re.compile(
+    r'<meta\b(?=[^>]*\bproperty="og:site_name")[^>]*\bcontent="([^"]*)"', re.IGNORECASE
+)
 
 
 def _listing_title(row: dict) -> str | None:
@@ -126,7 +131,8 @@ class PhenomScraper(BaseScraper):
         return f"https://{self.slug}/{self._cc}/{self._lang}/search-results"
 
     def board_page(self) -> str:
-        """The careers landing page, whose ``<title>`` carries the company name.
+        """The careers landing page, whose ``<title>`` carries the company name — and, where its
+        wrappers fail, its ``og:site_name`` (:meth:`company_from_page`).
 
         A page title rather than the `companyName` field every detail payload states, which looks
         like the better source and is not. That field is **per posting, not per Board**, and it
@@ -142,6 +148,23 @@ class PhenomScraper(BaseScraper):
         A title is one request, on the Board itself, every run.
         """
         return f"https://{self.slug}/{self._cc}/{self._lang}"
+
+    def company_from_page(self, page: str | None) -> str | None:
+        """The title's name, else the page's ``og:site_name``.
+
+        Title first because the user chose brand before legal name, and where both yield a name
+        the title is the brand ("Careers at MITRE" against "The MITRE Corporation"). The site name
+        rescues a landing page titled as marketing copy ("Join Air Canada: Explore Careers and
+        Job Opportunities"), which no wrapper can strip safely. Measured on the 79 live Boards
+        2026-09-24: the 22 serving their host all stated an ``og:site_name``, and it named the
+        employer on each landing page that answered.
+        """
+        name = super().company_from_page(page)
+        if name:
+            return name
+        # A field the tenant set, so `from_field`'s guards (ADR-0212), under phenom's aliases.
+        match = _OG_SITE_NAME.search(page or "")
+        return company_name.from_field(self.ats, match.group(1) if match else None)
 
     # --- locale prefix ----------------------------------------------------------------------
 

@@ -5322,6 +5322,136 @@ def test_successfactors_company_derived_from_host():
     assert get_scraper("successfactors", "jobs.sap.com", "SAP").company == "SAP"
 
 
+def _sf_page(
+    title: str, *, org: str | None = None, company_id: str = "acmecorp"
+) -> str:
+    """An RMK job page: the title and microdata `_page_company` reads, and the tenant's
+    company id, which it deliberately does not compare against."""
+    microdata = f'<meta itemprop="hiringOrganization" content="{org}">' if org else ""
+    return (
+        f"<html><head><title>{title}</title></head><body>"
+        f'<span itemprop="title">Data Engineer</span>{microdata}'
+        f"<script>var j2w = {{\"ssoCompanyId\"   : '{company_id}'}};</script></body></html>"
+    )
+
+
+def test_successfactors_a_job_page_names_its_company_after_the_last_pipe():
+    from headstart.scrapers.successfactors import _page_fields
+
+    page = _sf_page("Data Engineer Job Details | Fineos Corporation")
+    assert _page_fields(page)["company"] == "Fineos Corporation"
+    # the localized "Job Details" belongs to the job half, whatever language it is in
+    page = _sf_page("Data Engineer Stellendetails | Computacenter AG &amp; Co. oHG")
+    assert _page_fields(page)["company"] == "Computacenter AG & Co. oHG"
+
+
+def test_successfactors_a_title_with_no_company_falls_back_to_the_microdata():
+    from headstart.scrapers.successfactors import _page_company
+
+    page = _sf_page("Data Engineer", org="Fineos Corporation")
+    assert _page_company(page) == "Fineos Corporation"
+    assert _page_company(_sf_page("Data Engineer")) is None
+
+
+@pytest.mark.parametrize(
+    "stated",
+    [
+        "fmgl",  # a lowercase identifier
+        "L3HHCM20",  # instance ids: two or more digits,
+        "erstegro01P2",
+        "PMIProd",  # a PROD/PRD suffix,
+        "ASTARPRD",
+        "zffriedricP2",  # or a truncated name plus P/T
+        "shyamsteelT1",
+        "Apply now!",  # filler
+        "our company",
+        "Group",
+        "-",
+    ],
+)
+def test_successfactors_an_unconfigured_suffix_is_not_a_company(stated):
+    """Every refused value was served by a live RMK site on 2026-09-24, in the census of the
+    1,469 Boards serving a host: an unconfigured site puts an instance id or filler where the
+    name goes."""
+    from headstart.scrapers.successfactors import _page_company
+
+    page = _sf_page(f"Data Engineer Job Details | {stated}", org=stated)
+    assert _page_company(page) is None
+
+
+@pytest.mark.parametrize("stated", ["Bechtel", "SES", "Amtrak", "NetApP"])
+def test_successfactors_a_name_that_is_also_the_company_id_is_still_a_name(stated):
+    # bechtel.jobs.hr.cloud.sap: the tenant's id is its name, so an id-echo test refuses it
+    from headstart.scrapers.successfactors import _page_company
+
+    page = _sf_page(f"Data Engineer Job Details | {stated}", company_id=stated)
+    assert _page_company(page) == stated
+
+
+def test_successfactors_a_careers_brand_loses_its_suffix():
+    raw = [_sf_item("1", "Ingersoll Rand Careers")]
+    scraper = get_scraper("successfactors", "careers.irco.com")
+    assert scraper._board_company(raw) == "Ingersoll Rand"
+
+
+def _sf_item(job_id: str, company: str | None) -> dict:
+    return {
+        "url": f"https://careers.fineos.com/job/Data-Engineer/{job_id}/",
+        "id": job_id,
+        "fields": {"title": "Data Engineer", "company": company},
+    }
+
+
+def test_successfactors_a_board_is_named_by_the_name_most_of_its_pages_state():
+    raw = [
+        _sf_item("1", "Fineos Corporation"),
+        _sf_item("2", None),
+        _sf_item("3", "Fineos Corporation"),
+        _sf_item("4", "Fineos Holdings"),
+    ]
+    scraper = get_scraper("successfactors", "careers.fineos.com")
+    assert scraper._board_company(raw) == "Fineos Corporation"
+
+
+def test_successfactors_a_ledger_name_outranks_the_pages():
+    raw = [_sf_item("1", "Fineos Corporation")]
+    scraper = get_scraper("successfactors", "careers.fineos.com", "FINEOS")
+    assert scraper._board_company(raw) == "FINEOS"
+
+
+@pytest.mark.parametrize("stated", [None, "BestRun"])
+def test_successfactors_the_host_label_stays_the_floor(stated):
+    # nothing stated, or only the vendor's demo company: the host label, as before
+    scraper = get_scraper("successfactors", "careers.fineos.com")
+    assert scraper._board_company([_sf_item("1", stated)]) == "fineos"
+
+
+def test_successfactors_the_pages_name_is_stated_during_the_fetch(monkeypatch):
+    """Set by `fetch_raw`, not `parse`: a name stated during the fetch is what the Board keeps
+    once its company is settled, and every Job carries it."""
+
+    def named_page(url):
+        return FakeResponse(
+            text="<title>Engineer Job Details | Voith Group</title>"
+            + _successfactors_job_page()
+        )
+
+    scraper = _successfactors_board(
+        monkeypatch,
+        sitemap=(
+            "urlset",
+            "<loc>https://careers.voith.com/job/Engineer/1/</loc>",
+            None,
+        ),
+        search=([], None, None),
+        rss=([], {}, None),
+        job_page=named_page,
+    )
+    raw = scraper.fetch_raw()
+    assert scraper.company == "Voith Group"
+    assert scraper.parse(raw, SCRAPED_AT)[0].company == "Voith Group"
+
+
 def test_successfactors_job_urls_from():
     from headstart.scrapers.successfactors import _job_urls_from
 
@@ -11232,6 +11362,11 @@ def test_every_wired_scraper_resolves_its_company(
 #: JSON-LD of one posting page per career site, covered by `tests/test_cornerstone.py`. trakstar
 #: reads its careers page in `fetch_raw` rather than through `board_page`, so the HTML fallback
 #: can reuse the one response (`TrakstarScraper._careers_page`).
+#: successfactors reads the name off the job pages its detail pass already fetched
+#: (`SuccessFactorsScraper._board_company`), covered beside its other tests above. taleo_be
+#: reads its RSS feed's channel title streamed, only as far as the title
+#: (`TaleoBEScraper.resolve_company`), covered by `tests/test_taleo_be.py`. Either may land
+#: before the other; an entry naming an ATS without patterns yet subtracts nothing.
 _NO_BOARD_PAGE = {
     "taleo_enterprise",
     "adp",
@@ -11239,6 +11374,8 @@ _NO_BOARD_PAGE = {
     "workday",
     "cornerstone",
     "trakstar",
+    "successfactors",
+    "taleo_be",
     # These three read the name off a response the scrape already fetches: darwinbox's
     # `companyinfo`, zwayam's config call and zoho's careers page — covered by their own tests.
     "darwinbox",

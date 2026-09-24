@@ -79,7 +79,7 @@ from types import MappingProxyType
 from typing import Any
 from urllib.parse import unquote
 
-from headstart import http, log
+from headstart import company_name, http, log
 from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote, requisition_of
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
@@ -140,6 +140,18 @@ _SITEMAL_DESCRIPTION = re.compile(r"<description>(.*?)</description>", re.DOTALL
 _SITEMAL_LOCATION = re.compile(r"<g:location>(.*?)</g:location>", re.DOTALL)
 _SITEMAL_LINK = re.compile(r"<link>(.*?)</link>", re.DOTALL)
 _CDATA = re.compile(r"\A\s*<!\[CDATA\[(.*)\]\]>\s*\Z", re.DOTALL)
+
+# The company a job page names (:func:`_page_company`), and the shapes it refuses there. Each is a
+# value live sites served on 2026-09-24 (census of 1,469 Boards): a SuccessFactors instance id —
+# two or more digits ("L3HHCM20", "erstegro01P2"), a PROD/PRD suffix ("PMIProd", "ASTARPRD") or
+# RMK's truncated-name-plus-P/T form ("zffriedricP2", "shyamsteelT1") — and filler text.
+_HIRING_ORG = re.compile(
+    r'<meta\b(?=[^>]*\bitemprop="hiringOrganization")[^>]*\bcontent="([^"]*)"'
+)
+_INSTANCE_ID = re.compile(
+    r"[A-Za-z0-9]*\d[A-Za-z0-9]*\d[A-Za-z0-9]*|\S*(?i:prod|prd)|[a-z]\S*[a-z][PT]\d*"
+)
+_FILLER_NAMES = frozenset({"our company", "apply now!", "group"})
 
 # Vanity-host labels that are the board, not the company: jobs.sap.com -> "sap".
 _BOARD_HOST_LABELS = {"jobs", "careers", "career", "jobsearch", "jobdetails"}
@@ -542,7 +554,7 @@ class SuccessFactorsScraper(BaseScraper):
         # there is, and it exists only for the `job_functions` this Board's surface populated.
         # `/sitemal.xml` states `g:job_function` too, but :func:`_sitemal_items` reads only the
         # fallback's title/description/location, so this applies whichever source filled a Job.
-        return [
+        items = [
             {
                 "url": url,
                 "id": job_id,
@@ -554,6 +566,8 @@ class SuccessFactorsScraper(BaseScraper):
             }
             for (url, job_id), page_fields in zip(open_listed, fields)
         ]
+        self.company = self._board_company(items)
+        return items
 
     def detail_request(self, pair: tuple[str, str]) -> DetailRequest:
         return DetailRequest(pair[0], headers={"User-Agent": USER_AGENT})
@@ -607,6 +621,25 @@ class SuccessFactorsScraper(BaseScraper):
                 )
             )
         return jobs
+
+    def _board_company(self, items: list[dict[str, Any]]) -> str:
+        """The name most of this Board's job pages state, or ``self.company`` when it is a real
+        name already or no page states one (ADR-0217).
+
+        The modal value, because the name is set once for the whole site: each of the 30 largest
+        Boards stated one name on every page sampled (ten each, 2026-09-24; jobs.sap.com served
+        one) — so a page that disagrees is more likely a stray than the Board's name. Read off the
+        pages the Detail pass has already fetched, so it costs no request, and in `fetch_raw`
+        rather than `parse` so the name is stated during the fetch, before the Board's company
+        is settled. A Board whose pages were all unreadable, or all gated out as non-tech, keeps
+        its host label and serves no row anyway.
+        """
+        if not company_name.looks_like_slug(self.company):
+            return self.company
+        modal = company_name.agreed_name(
+            (item.get("fields") or {}).get("company") for item in items
+        )
+        return company_name.from_title(self.ats, modal, self.slug) or self.company
 
     def _salary_field(self, raw: Any) -> str | None:
         # Not yet measured: no structured compensation field has been looked for across either
@@ -822,7 +855,39 @@ def _page_fields(page: str, url: str | None = None) -> dict[str, Any]:
         fields["posted_at"] = _csb_posted_at(page)
     requisition = _INTERNAL_ID.search(page)
     fields["requisition"] = requisition_of(requisition and requisition.group(1))
+    fields["company"] = _page_company(page)
     return fields
+
+
+def _page_company(page: str) -> str | None:
+    """The company this job page names, or None where what it names is not one.
+
+    RMK titles a job page "{job} {localized 'Job Details'} | {Company}" and usually states the
+    company again as ``hiringOrganization`` microdata; the title is read first and the
+    microdata where it is missing. An unconfigured site fills that slot with something else: a
+    lowercase identifier ("fmgl", "thaioilpub"), an instance id (:data:`_INSTANCE_ID`) or filler
+    ("Apply now!", "our company", "-"). The vendor's demo company ("BestRun") is left to
+    `company_name`'s vendor aliases.
+
+    Not refused: a value equal to the tenant's own SuccessFactors company id. That test was the
+    first design, and a census of the 1,469 Boards serving a host showed it refusing real names
+    far more often than ids — "Bechtel", "Atos", "Bombardier", "Amtrak" and "Clariant" are each
+    their tenant's id too — while every id-shaped value it caught is an instance id above.
+    """
+    title = company_name.title_of(page) or ""
+    microdata = _HIRING_ORG.search(page)
+    stated = (
+        title.rsplit(" | ", 1)[1] if " | " in title else None,
+        microdata.group(1) if microdata else None,
+    )
+    for name in stated:
+        name = unescape(name or "").strip()
+        if not re.search(r"\w", name) or company_name.looks_like_slug(name):
+            continue
+        if _INSTANCE_ID.fullmatch(name) or name.lower() in _FILLER_NAMES:
+            continue
+        return name
+    return None
 
 
 def _titled_fields(page: str, url: str | None = None) -> dict[str, Any] | None:
