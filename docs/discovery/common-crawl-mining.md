@@ -193,6 +193,17 @@ that torn tail parses as a key sorting past the prefix (a line cut to `z\t18100\
 key `z`), the scan ends before it starts and the crawl reads as "no blocks". A sibling mine hit
 this on 14 of 33 Pinpoint crawls on 2026-09-23.
 
+**Ashby re-swept with the fixed reader (2026-09-24): the bug had cost Ashby nothing.** A fresh
+`ASHBY_CC_S3=1 mine_ashby.py cc`, with no resume state, read all 42 crawls from `CC-MAIN-2026-39`
+back to `CC-MAIN-2022-05`. None came back empty: 234 to 22,595 captures and 78 to 2,835 slugs per
+crawl, 4,999 slugs in all. The old record had no suspects to begin with. Its 2026-07-27 run read
+15 crawls and got 2 to 8 blocks from each (none empty), and it never marks an empty crawl done.
+Against the 7,592-row pool and the 7,595-row ledger, 41 of the 42 crawls add nothing (one URL-noise
+slug, `callohttps`). All 89 real new slugs come from `CC-MAIN-2026-39`, the newest crawl, which no
+Ashby mine had read: `cc_miner`'s checkpoint stops at `2026-34`, `mine_ashby`'s run at `2026-25`.
+They yield 78 live Boards, 73 of them hiring with 650 postings, and 12 dead. So what Ashby needs
+from CC is each new crawl as it lands. Re-reading old crawls finds nothing.
+
 The 2008–2012 tail (4 crawls) was deliberately skipped: counts had been frozen since the
 2016 crawls (every ATS we track postdates them), so they add nothing. The data shows it —
 recruitee stopped growing by `CC-MAIN-2016-22`, zoho by the 2018 crawls.
