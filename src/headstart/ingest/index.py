@@ -865,9 +865,9 @@ def sync(args: argparse.Namespace) -> int:
         f"plan: add {len(plan.add)} ({listings} new listings + {len(taken)} re-embedded), "
         f"evict {len(plan.delete)} -> net {listings - len(plan.delete):+d} rows"
     )
-    if plan.duplicate:
+    if plan.refused:
         _log.info(
-            f"not added: {len(plan.duplicate)} Workday requisition(s) another site of the same "
+            f"not added: {len(plan.refused)} Workday requisition(s) another site of the same "
             "tenant already serves or is being given (ADR-0187)"
         )
     # Written before the delete rather than after, and the reason is not crash-replay: `delete`

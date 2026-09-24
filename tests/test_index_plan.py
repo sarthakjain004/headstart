@@ -826,6 +826,19 @@ def test_a_native_id_with_no_digit_is_not_a_requisition_and_stays_per_board():
     assert plan_prune(ids, keep, site_jobs=_SITE_JOBS) == ([], [])
 
 
+def test_sync_adds_a_no_digit_native_id_on_every_site():
+    plan = plan_sync(
+        {f"{_SUB}:Texas"},
+        {f"{_SUB}:Texas", f"{_MAIN}:Texas"},
+        {_MAIN, _SUB},
+        boards_by_canon({_MAIN, _SUB}),
+        set(),
+        site_jobs=_SITE_JOBS,
+    )
+    assert plan.add == frozenset({f"{_MAIN}:Texas"})
+    assert plan.refused == frozenset()
+
+
 def test_other_atses_still_group_per_board():
     keep = {"greenhouse:acme", "greenhouse:acmeeu"}
     ids = ["greenhouse:acme:4001", "greenhouse:acmeeu:4001"]
@@ -880,7 +893,7 @@ def test_a_requisition_arriving_on_two_sites_at_once_is_added_once_where_prune_k
         site_jobs=_SITE_JOBS,
     )
     assert plan.add == frozenset({f"{_MAIN}:R-100"})
-    assert plan.duplicate == frozenset({f"{_SUB}:R-100"})
+    assert plan.refused == frozenset({f"{_SUB}:R-100"})
     assert plan_prune(sorted(plan.add), {_MAIN, _SUB}, site_jobs=_SITE_JOBS) == ([], [])
 
 
@@ -951,7 +964,7 @@ def test_a_re_embedded_incumbent_keeps_its_place():
         replaced={upgraded},
     )
     assert plan.add == frozenset({upgraded})
-    assert plan.duplicate == frozenset({f"{_MAIN}:R-100"})
+    assert plan.refused == frozenset({f"{_MAIN}:R-100"})
 
 
 def test_site_jobs_reads_each_live_workday_site_from_the_ledger(tmp_path):

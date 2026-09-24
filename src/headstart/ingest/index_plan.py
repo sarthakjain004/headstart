@@ -59,7 +59,7 @@ class SyncPlan:
 
     The caller persists ``unconfirmed`` and hands it back next run as ``was_unconfirmed``.
 
-    ``duplicate`` is the fresh ids *not* added because another site of the same Workday tenant
+    ``refused`` is the fresh ids *not* added because another site of the same Workday tenant
     serves, or is being given, the same requisition — the rule ``plan_prune`` enforces on rows
     already indexed, applied where rows arrive so prune never has to take them back out.
     """
@@ -67,7 +67,7 @@ class SyncPlan:
     add: frozenset[str]
     delete: frozenset[str]
     unconfirmed: frozenset[str] = frozenset()
-    duplicate: frozenset[str] = frozenset()
+    refused: frozenset[str] = frozenset()
 
 
 def grace_period_counts(
@@ -146,14 +146,15 @@ def plan_sync(
     than the bug it fixes.
 
     **One site per Workday requisition (ADR-0187).** A fresh id is not added — it lands in
-    ``duplicate`` instead — when another site of its Workday tenant already serves the same
+    ``refused`` instead — when another site of its Workday tenant already serves the same
     requisition from a live Board, or when several sites bring it at once and another is the
     :func:`_survivor_site` ranked by ``site_jobs``. That is ``plan_prune``'s grouping, applied
     where rows arrive: without it, sync would re-add on the next run every copy prune took out.
     The served row is judged *after* this plan's evictions, so a survivor its Board stopped
     listing makes way on the scrape that evicts it, and one on a Board that left ``live`` makes
-    way at once. ``replaced`` names ids the caller took out of the table only to re-add them with
-    a new vector (ADR-0050); they are still their requisition's served row.
+    way at once — the other copy arriving whenever its own Board is next scraped. ``replaced``
+    names ids the caller took out of the table only to re-add them with a new vector (ADR-0050);
+    they are still their requisition's served row.
 
     **No Board-level cap (ADR-0101).** The board-scope check above is all-or-nothing at the *line*
     level: a Board that emitted one job line is fully in scope, so a scrape truncated by a
@@ -245,29 +246,27 @@ def plan_sync(
                 unconfirmed.add(job_id)
 
     served = (index - delete) | (add & replaced)
-    duplicate = _other_site_copies(add, served, live, site_jobs or {})
+    refused = _other_site_copies(add, served, live, site_jobs or {})
     return SyncPlan(
-        add=frozenset(add - duplicate),
+        add=frozenset(add - refused),
         delete=frozenset(delete),
         unconfirmed=frozenset(unconfirmed),
-        duplicate=frozenset(duplicate),
+        refused=frozenset(refused),
     )
 
 
-def _requisition(
-    job_id: str, live: dict[str, str]
-) -> tuple[tuple[str, str], str] | None:
-    """``((tenant, native id), lowercased Board)`` for a Workday requisition on a live Board, else
-    None — the grouping :func:`plan_prune` uses, for the rows ``plan_sync`` weighs. The prefix
-    check first spares the Board scan on the four rows in five that are not Workday's."""
-    if not job_id.startswith("workday:"):
-        return None
+def _placement(job_id: str, live: dict[str, str]) -> tuple[tuple[str, str], str] | None:
+    """``(duplicate group, lowercased Board)`` for an id on a live Board, else None.
+
+    The group is ``(Board or Workday tenant, native id)`` — one served row each — and it is the
+    one grouping both planners use: ``plan_prune`` to collapse the rows a group already holds,
+    ``plan_sync`` to decline copies of one it already serves.
+    """
     end = _live_board_end(job_id, live)
     if end is None:
         return None
     canon, native = lower_key(job_id[:end]), job_id[end + 1 :]
-    tenant = _workday_tenant(canon, native)
-    return ((tenant, native), canon) if tenant else None
+    return (_workday_tenant(canon, native) or canon, native), canon
 
 
 def _other_site_copies(
@@ -282,25 +281,40 @@ def _other_site_copies(
     the same Board, which ``plan_prune`` settles by the live casing (ADR-0023), and refusing it
     would make a fossil casing immortal.
     """
-    arriving: dict[tuple[str, str], dict[str, list[str]]] = defaultdict(
-        lambda: defaultdict(list)
-    )
-    for job_id in new:
-        if found := _requisition(job_id, live):
-            arriving[found[0]][found[1]].append(job_id)
+    arriving, _ = _by_group_and_site(new, live)
     if not arriving:
         return set()
     incumbent: dict[tuple[str, str], set[str]] = defaultdict(set)
     for job_id in served:
-        if (found := _requisition(job_id, live)) and found[0] in arriving:
-            incumbent[found[0]].add(found[1])
+        placed = _placement(job_id, live)
+        if placed and placed[0] in arriving:
+            group, site = placed
+            incumbent[group].add(site)
     refused: set[str] = set()
-    for req, by_site in arriving.items():
-        keep = incumbent.get(req) or {_survivor_site(by_site.keys(), site_jobs)}
+    for group, by_site in arriving.items():
+        keep = incumbent.get(group) or {_survivor_site(by_site.keys(), site_jobs)}
         for site, ids in by_site.items():
             if site not in keep:
                 refused.update(ids)
     return refused
+
+
+def _by_group_and_site(
+    job_ids: Iterable[str], live: dict[str, str]
+) -> tuple[dict[tuple[str, str], dict[str, list[str]]], list[str]]:
+    """``({duplicate group: {lowercased Board: ids}}, the ids on no live Board)``."""
+    grouped: dict[tuple[str, str], dict[str, list[str]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    off_board: list[str] = []
+    for job_id in job_ids:
+        placed = _placement(job_id, live)
+        if placed is None:
+            off_board.append(job_id)
+            continue
+        group, site = placed
+        grouped[group][site].append(job_id)
+    return grouped, off_board
 
 
 def _quote(value: str) -> str:
@@ -617,7 +631,7 @@ def _survivor_site(sites: AbstractSet[str], site_jobs: dict[str, int]) -> str:
 
 
 def plan_prune(
-    index_ids: Iterable[str], keep: set[str], site_jobs: dict[str, int] | None = None
+    index_ids: Iterable[str], keep: set[str], *, site_jobs: dict[str, int] | None = None
 ) -> tuple[list[str], list[str]]:
     """Split index ids into ``(evict_off_board, evict_duplicate)``.
 
@@ -647,17 +661,7 @@ def plan_prune(
     every Board key in use today, with longest-match as the documented tie-break should one Board
     key ever nest inside another at a colon."""
     live = boards_by_canon(keep)
-    off_board: list[str] = []
-    groups: dict[tuple[str, str], dict[str, list[str]]] = defaultdict(
-        lambda: defaultdict(list)
-    )
-    for jid in index_ids:
-        end = _live_board_end(jid, live)
-        if end is None:
-            off_board.append(jid)
-            continue
-        canon, native = lower_key(jid[:end]), jid[end + 1 :]
-        groups[(_workday_tenant(canon, native) or canon, native)][canon].append(jid)
+    groups, off_board = _by_group_and_site(index_ids, live)
     duplicate: list[str] = []
     for by_site in groups.values():
         site = _survivor_site(by_site.keys(), site_jobs or {})
