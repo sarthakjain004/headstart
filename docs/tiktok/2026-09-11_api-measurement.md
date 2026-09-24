@@ -132,7 +132,7 @@ scraper's first version read `data or {}` and collapsed the second shape onto th
 the first shape produces — a mid-crawl failure would have silently read as "the board ended,"
 losing whatever pages came after it with no `mark_truncated` call at all. Fixed: `fetch_raw` now
 checks the envelope's own `code` before ever reading `data`, and calls `mark_truncated` on anything
-nonzero — covered by `tests/test_tiktok.py::test_an_application_level_error_on_http_200_marks_truncated_not_the_end`.
+nonzero — covered by `tests/test_supplier_search.py::test_a_nonzero_code_on_http_200_keeps_what_was_read_and_marks_truncated`.
 This is the same class of trap `base.py`'s `USER_AGENT` comment documents for SuccessFactors' User-
 Agent denylist (a 403 read as "unparseable" for five runs) — a status that looks like ordinary
 emptiness until the two causes are told apart.
@@ -146,6 +146,12 @@ through `html_to_text` (the same flattening every other scraper applies), since 
 carries HTML markup.
 
 ## ByteDance-platform-sharing check
+
+**Superseded 2026-09-24 by [ADR-0198](../adr/0198-tiktok-and-bytedance-share-one-scraper-and-keep-two-ats-values.md).**
+The two Boards are one backend. `website-path` selects the Board on either host: `tiktok` is
+TikTok's and `en` is ByteDance's. `bytedance`, the value tried below, is simply not a valid one.
+Both scrapers now share `headstart.scrapers.supplier_search`. The check below is kept as it was
+measured.
 
 A sibling agent is building `ats="bytedance"` against `jobs.bytedance.com`; TikTok is owned by
 ByteDance, so it was worth checking whether the two share one backend behind a brand filter before

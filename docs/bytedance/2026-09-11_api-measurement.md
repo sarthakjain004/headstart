@@ -137,6 +137,12 @@ checks exactly that shape.
 
 ## 8. Does TikTok's careers site share this platform?
 
+**Settled 2026-09-24 by [ADR-0198](../adr/0198-tiktok-and-bytedance-share-one-scraper-and-keep-two-ats-values.md):
+yes.** `api.lifeattiktok.com` serves these routes, and `website-path` selects the Board on
+either host (`en` is ByteDance's, `tiktok` is TikTok's). Both scrapers now share
+`headstart.scrapers.supplier_search`. The same measurement found that `accept-language` is no
+longer required (§1). It still decides the language of `i18n_name`, which is Chinese without it.
+
 Partially confirmed, not fully — this is the explicit cross-check the task brief asked for, since
 a parallel effort was building a TikTok (`lifeattiktok.com`) scraper at the same time.
 
