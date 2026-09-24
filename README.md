@@ -275,16 +275,16 @@ table in lockstep with the committed ledger:
 | --- | ---: | --- |
 | live rows in the ledger | 186,183 | a row, not a board — 6,632 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −25,488 | all of it `join` |
-| − `config.EXCLUDED_BOARDS` | −70 | vendor test/sandbox/demo boards and one historical feed, confirmed by reading their postings |
+| − `config.EXCLUDED_BOARDS` | −90 | vendor test/sandbox/demo boards and one historical feed, confirmed by reading their postings |
 | − alias ledger | −766 | one board under a second hostname or label, or a career section another section of the same tenant already covers (ADR-0111, ADR-0182, ADR-0186) |
 | − case-variant dedupe | −6,630 | `company/External` and `company/external` are one board (ADR-0023) |
 | − `config.PARKED_BOARDS` | −13 | real boards withheld for now — five for scrape cost, two for near-duplicate spam, six Jibe clients whose every posting is on a Workday or Oracle board already held |
-| = **Scrapable Board** | **153,216** | |
+| = **Scrapable Board** | **153,196** | |
 
-That order matters: excluding before deduping reads −70 and −6,630, deduping first reads −68,
-because two excluded boards were themselves duplicates. Both land on 153,216.
+That order matters: excluding before deduping reads −90 and −6,630, deduping first reads −88,
+because two excluded boards were themselves duplicates. Both land on 153,196.
 
-Of those, **100,795 are currently hiring** — the 52,421 live-but-empty boards are skipped as having
+Of those, **100,775 are currently hiring** — the 52,421 live-but-empty boards are skipped as having
 nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
 sticky measure of tech-job yield) and a random exploration tail drawn from everything else, so
 newly-productive boards can never starve and eviction keeps working on boards outside the head.
