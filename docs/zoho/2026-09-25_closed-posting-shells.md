@@ -45,8 +45,10 @@ that had returned its full record minutes earlier. `.in`, `.eu` and the other da
 answering normally (the shell hit 2,812 of 3,674 `.com` hosts and 0 of 1,326 others). About 7
 minutes later the block had lifted.
 
-The scraper follows the redirect and reads a 200 with no jobs blob, so it labels the page
-`no jobs blob on the page`. It is deliberately **not** a closure verdict, and a test pins that.
+The scraper follows the redirect and reads a 200 with no jobs blob. Until 2026-09-25 (#664) it
+labelled the page `no jobs blob on the page`; it now labels it `.com throttle shell (page currently
+unavailable)`, so a CI gap line tells the two apart. It is deliberately **not** a closure verdict:
+the Job stays, and a test pins that.
 This fits finding 4 of the run-log review: that loss occurs only in CI and, per run, lands on
 3,191–5,965 postings across 150–264 Boards. A shard that concentrates detail fetches on the `.com`
 data centre from one egress IP would produce it. That remains a hypothesis until a CI log records
