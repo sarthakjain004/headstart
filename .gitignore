@@ -47,6 +47,8 @@ config/*
 !config/fx_rates.json
 !config/role_families.json
 !config/role_watchlist.json
+# The hand-curated Board -> company name map (ADR-0212).
+!config/company_names.csv
 
 # Regenerable pipeline scratch — run logs and superseded intermediates; safe to delete
 data/scratch/
