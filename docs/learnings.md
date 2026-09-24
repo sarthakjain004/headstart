@@ -544,7 +544,7 @@ careers page with the openings **server-rendered** into the HTML as
 `<h3 class="… js-job-list-opening-name" title="…">`, location in `js-job-list-opening-loc`). So
 `scrapers/trakstar.py` parses that HTML (same shape as the Zoho scraper) instead of chasing the
 API — no DataDome solve required. If Trakstar ever moves the listing behind the bot wall too,
-this breaks and would need the full DataDome challenge solve (see `experiment/wellfound-datadome`).
+this breaks and would need the full DataDome challenge solve.
 
 Contrast with the other India-tier ATSes built the same week: **Keka** has a clean unauth embed
 API (`/careers/api/embedjobs/default/active/{tenantUUID}`, urllib-friendly), and **SenseHQ** has

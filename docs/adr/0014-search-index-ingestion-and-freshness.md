@@ -12,14 +12,13 @@
 
 ## Context
 
-The AI search layer (ADR-0005–0008) has never ingested the product's own output. `embed_wellfound.py`
-reads a single hardcoded `data/jobs/wellfound.csv` — a one-off side-corpus — and `build_index.py`
-loads LanceDB with `create_table(mode="overwrite")`. Two consequences, both flagged in the June-2026
-audit (finding #3):
+The AI search layer (ADR-0005–0008) has never ingested the product's own output. Its embed script
+reads a single hardcoded CSV — a one-off side-corpus — and its index loader loads LanceDB with
+`create_table(mode="overwrite")`. Two consequences, both flagged in the June-2026 audit (finding #3):
 
 1. **Wrong corpus.** The 18 ATS scrapers write canonical `Job` records to `data/jobs/{ats}.jsonl`,
    but nothing embeds them. The whole retrieval story — including the ADR-0011 eval (nDCG@10 = 0.90) —
-   is measured over the Wellfound side-corpus, not the pipeline's. ADR-0007 already calls the
+   is measured over the side-corpus, not the pipeline's. ADR-0007 already calls the
    `to_meta` adapter temporary and names the canonical JSONL as the no-adapter source; this is that
    deferral coming due.
 2. **No freshness.** The embedding store is append-only and the index is rebuilt-from-store by
@@ -33,22 +32,22 @@ Three facts constrain the fix:
   and *upstream* — it already selects which Boards get scraped. The precise, *posting*-level
   "still open" signal is the fresh scrape's own id-set: `JobWriter` truncates `{ats}.jsonl` on a
   non-resume run, so after a full scrape of a Board the ids present are exactly its currently-open Jobs.
-- **Not yet materialised.** No `{ats}.jsonl` is on disk (only one-off `wellfound.csv` / `zoho.csv`
+- **Not yet materialised.** No `{ats}.jsonl` is on disk (only the one-off side-corpus and `zoho.csv`
   CSVs), and `scrape.yml` was removed, so no scrape cadence runs. The mechanism is buildable now but
   only fully exercised once a scrape runs on a cadence.
-- **Eval is Wellfound-locked.** Every qrel/label id is `wellfound:…`; moving the served index off
-  Wellfound orphans the ADR-0011 labels unless Wellfound's role is decided.
+- **Eval is side-corpus-locked.** Every qrel/label id is a side-corpus id; moving the served index
+  off the side-corpus orphans the ADR-0011 labels unless the side-corpus's role is decided.
 
 ## Decision
 
 Four decisions, taken together.
 
-**1. Served corpus = the pipeline's `{ats}.jsonl`; Wellfound becomes a frozen eval benchmark.**
+**1. Served corpus = the pipeline's `{ats}.jsonl`; the side-corpus becomes a frozen eval benchmark.**
 A source-agnostic `iter_jobs(source)` reader yields canonical `Job`-shaped dicts, so for JSONL sources
 `to_meta` collapses to near-nothing (the scrapers already produce the canonical shape). The production
-index is built from `{ats}.jsonl`; the Wellfound CSV is retained, behind its existing adapter, purely
+index is built from `{ats}.jsonl`; the side-corpus CSV is retained, behind its existing adapter, purely
 as the *labelled eval benchmark* — a fixed test set is meant to be stable, not the live corpus.
-`embed_wellfound.py` is generalised to `embed_run.py --source`.
+The side-corpus embed script is generalised to `embed_run.py --source`.
 
 **2. Eviction = scrape-diff scoped to the Boards actually scraped.**
 After a scrape, for each Board in the run's `.done` set, delete index rows for that Board whose id is
@@ -72,10 +71,10 @@ stale text, not a dead link). Content-hash re-embedding is deferred; it slots in
 
 ## Rejected alternatives
 
-- **One unified index (Wellfound + pipeline together).** Simplest single table, but production would
-  serve a stale one-off Wellfound scrape mixed with fresh Jobs, and the eval pool would be diluted by
-  non-Wellfound neighbours — silently changing what nDCG = 0.90 means.
-- **Re-scrape Wellfound into canonical `{ats}.jsonl`, drop the CSV.** Cleanest end-state, but voids
+- **One unified index (side-corpus + pipeline together).** Simplest single table, but production would
+  serve a stale one-off scrape mixed with fresh Jobs, and the eval pool would be diluted by
+  non-side-corpus neighbours — silently changing what nDCG = 0.90 means.
+- **Re-scrape the side-corpus into canonical `{ats}.jsonl`, drop the CSV.** Cleanest end-state, but voids
   the eval labels (ids change) and needs a scraper rewrite plus a full re-pool/re-label — most effort,
   and it discards the ADR-0011 labelling investment.
 - **Liveness-only (board-level) eviction.** Cheap, but only removes whole dead Boards; a posting that
@@ -95,9 +94,9 @@ stale text, not a dead link). Content-hash re-embedding is deferred; it slots in
 
 The AI layer finally serves the product's real corpus, and closed postings leave the index — the
 freshness story `architecture.md` promised. `to_meta` retires for canonical JSONL sources (ADR-0007's
-temporary adapter), surviving only for the Wellfound benchmark CSV. `build_index.py`'s overwrite is
-replaced by an incremental sync, and the durable table makes the ANN index (finding #8) buildable. The
-eval now explicitly measures a *benchmark* corpus distinct from production — a gap that is now
+temporary adapter), surviving only for the side-corpus benchmark CSV (that CSV path was removed on
+2026-09-24, with the benchmark). The index loader's overwrite is replaced by an incremental sync,
+and the durable table makes the ANN index (finding #8) buildable. The eval now explicitly measures a *benchmark* corpus distinct from production — a gap that is now
 documented rather than accidental.
 
 Deferred / gated: the mechanism can be built now but is only exercised once a scrape produces

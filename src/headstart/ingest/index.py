@@ -1252,7 +1252,7 @@ def main() -> int:
     p_sync.add_argument(
         "--source",
         default=str(_SOURCE),
-        help="corpus snapshot: a {ats}.jsonl directory or a Wellfound CSV (default: data/jobs/tech)",
+        help="corpus snapshot: a {ats}.jsonl directory (default: data/jobs/tech)",
     )
     p_sync.add_argument(
         "--scraped",

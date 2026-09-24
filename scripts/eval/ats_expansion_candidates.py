@@ -74,9 +74,6 @@ ALREADY_COVERED = {
     "uber": "uber",
     "workable": "workable",
     "workday": "workday",
-    # scraped by a dedicated one-off (browser-tab parallelized, DataDome-guarded), not a
-    # src/headstart/scrapers/ module — still a covered source, not a build candidate.
-    "wellfound": "wellfound (scripts/scrape/, not a scrapers/ module)",
     # Verified live 2026-09-16: recruiterbox.com 301s every tenant to {slug}.hire.trakstar.com
     # (Recruiterbox rebranded to Trakstar Hire), and ats-scrapers' own recruiterbox rows carry
     # *.hire.trakstar.com URLs already. Not a distinct platform — a discovery-gap in trakstar.py's

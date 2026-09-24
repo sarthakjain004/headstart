@@ -43,7 +43,7 @@ Fix the two Tier-1 arithmetic guards; **defer** the Tier-2 anchor fix and pin it
 The two arithmetic fixes are local and only ever change already-implausible values, so ADR-0009's
 measured coverage (82.6% overall, 18.1% from the description tier) is unaffected. Tightening the
 anchor is a different risk class: it edits the *core matching regex* whose recall was measured
-against `data/jobs/wellfound.csv`, which is gitignored and not on disk. A blind tightening (e.g.
+against the ADR-0005 side-corpus CSV, which is gitignored and not on disk. A blind tightening (e.g.
 rejecting a trailing `"ago"`, or requiring the number to precede `"experience"`) could silently drop
 legitimate matches like `"experience gained over 5 years"` with no way to re-verify recall. The
 honest move is to defer until the corpus is available to re-measure — the standing rule being *don't

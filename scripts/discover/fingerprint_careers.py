@@ -19,7 +19,7 @@ here by a different signal rather than by fetching the same two pages harder:
    answer with a table of what you already have — the point is to find what is *missing*. The
    table here carries 70+ providers, marked `supported` / `unsupported` from
    `headstart.scrapers.registry`, plus two deliberately-separate non-ATS classes: `jobboard`
-   (LinkedIn/Naukri/Wellfound/workatastartup — an apply link, not a board we could scrape) and
+   (LinkedIn/Naukri/workatastartup — an apply link, not a board we could scrape) and
    `diy` (Notion/Typeform/Google Forms/`mailto:`), which is what much of the genuine "no ATS"
    tail turns out to be.
 
@@ -338,10 +338,6 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
         [r"naukri\.com/[a-z0-9-]{0,60}-jobs", r"naukri\.com/(?:job-listings|jobs)"],
     ),
     "indeed": ("jobboard", [r"indeed\.com/(?:cmp|viewjob|jobs)"]),
-    "wellfound": (
-        "jobboard",
-        [r"(?:wellfound|angel)\.co/(?:company|l)/([a-zA-Z0-9_.-]+)/jobs"],
-    ),
     "instahyre": ("jobboard", [r"instahyre\.com/(?:jobs|c)/"]),
     "cutshort": ("jobboard", [r"cutshort\.io/(?:company|jobs)/"]),
     "glassdoor": ("jobboard", [r"glassdoor\.[a-z.]{2,6}/(?:Jobs|job-listing)"]),
@@ -547,7 +543,6 @@ PROVIDER_DOMAINS = {
     "notion": {"notion.so"},
     "airtable": {"airtable.com"},
     "typeform": {"typeform.com"},
-    "wellfound": {"wellfound.com"},
     "apna": {"apna.co"},
     "hirebuddy": {"hirebuddy.net"},
 }

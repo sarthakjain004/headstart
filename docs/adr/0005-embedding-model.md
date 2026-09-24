@@ -5,8 +5,8 @@
 
 ## Context
 
-The first slice of AI semantic retrieval (see `docs/AI_Integration/`) is built over `data/jobs/wellfound.csv`
-— 6,374 Jobs with real descriptions (median ~892 tokens; **82% exceed 512 tokens**, max ~4,800). We need
+The first slice of AI semantic retrieval (see `docs/AI_Integration/`) is built over a one-off scraped
+side-corpus CSV (since removed from the repository) — 6,374 Jobs with real descriptions (median ~892 tokens; **82% exceed 512 tokens**, max ~4,800). We need
 to pick the bi-encoder embedding model that turns each Job (and later each query) into a vector. Four
 requirements pin the choice: descriptions are **long** (so truncation is the dominant risk), the search
 corpus is **English-only for now** (multilingual deferred; non-English is pre-filtered out before
@@ -19,7 +19,7 @@ the eventual ~3.3M-Job corpus.
 Use **`nomic-embed-text-v1.5`**, run locally via `sentence-transformers`.
 
 **Why this one.** It is the model that satisfies all four drivers at once: **8192-token context** (every
-Wellfound description embeds whole — no truncation of the 82% that overflow 512), **English-focused**
+side-corpus description embeds whole — no truncation of the 82% that overflow 512), **English-focused**
 (matches the scoped corpus), **768-dim with Matryoshka** representation (vectors can be truncated to
 512/256-dim later, at 3.3M scale, without re-embedding), **Apache-2.0 with fully open training data** (clean
 reproducibility story), and small (~137M params) so it is fast on this hardware.

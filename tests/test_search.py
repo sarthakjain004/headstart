@@ -1,11 +1,10 @@
-"""Tests for the shared search layer — both where-clause builders and JobSearch.
+"""Tests for the shared search layer — the where-clause builders and JobSearch.
 
 The builders are the one place user input reaches the LanceDB where-clause, so their
-validation (whitelists, re-serialization, escaping) is worth locking down: `eval_filter`
-is the frozen benchmark builder (ADR-0019), `build_filter` the reference product filter
-(ADR-0031, moved here from the Space app in ADR-0042). `JobSearch` is exercised through
-its interface with a fake encoder and table — no model load, so all of this runs in the
-standard test env.
+validation (whitelists, re-serialization, escaping) is worth locking down: `build_filter`
+is the reference product filter (ADR-0031, moved here from the Space app in ADR-0042).
+`JobSearch` is exercised through its interface with a fake encoder and table — no model
+load, so all of this runs in the standard test env.
 """
 
 from __future__ import annotations
@@ -16,7 +15,6 @@ import types
 import pytest
 
 from headstart.search import (
-    EMPLOYMENT_TYPES,
     ETYPE_CLAUSES,
     FACET_CACHE_SIZE,
     QUERY_VECTOR_CACHE_SIZE,
@@ -28,7 +26,6 @@ from headstart.search import (
     account_clause,
     board_clause,
     build_filter,
-    eval_filter,
     posted_at_is_comparable,
 )
 
@@ -44,29 +41,14 @@ def _split(kwargs: dict) -> tuple[SearchFilters, IndexCapabilities]:
     return SearchFilters(**filters), IndexCapabilities(**caps)
 
 
-# ---- eval_filter: the frozen benchmark builder (was named build_filter) ----
+# ---- build_filter: the reference product builder ----
 
 
-def test_eval_no_filters_returns_none():
-    assert eval_filter() is None
-
-
-def test_eval_remote_only():
-    assert eval_filter(remote=True) == "remote = true"
-
-
-def test_eval_employment_type_must_be_known():
-    for value in EMPLOYMENT_TYPES:
-        assert eval_filter(employment_type=value) == f"employment_type = '{value}'"
-
-
-def test_eval_unknown_employment_type_rejected():
-    with pytest.raises(ValueError):
-        eval_filter(employment_type="full-time'; DROP TABLE wellfound; --")
-
-
-def test_eval_max_years_keeps_unknown_experience():
-    assert eval_filter(max_years=5) == "(min_years <= 5 OR min_years IS NULL)"
+def _clause(**kw):
+    kw.setdefault("atses", ("greenhouse", "lever"))
+    kw.setdefault("has_first_seen", True)
+    kw.setdefault("has_min_salary_annual", True)
+    return build_filter(*_split(kw))
 
 
 def test_product_experience_filter_uses_flags_only_for_materialized_ceilings():
@@ -77,24 +59,6 @@ def test_product_experience_filter_uses_flags_only_for_materialized_ceilings():
     assert _clause(max_years=3, has_experience_filter_flags=True) == (
         "(min_years <= 3 OR min_years IS NULL)"
     )
-
-
-def test_eval_filters_combine_with_and():
-    clause = eval_filter(remote=True, employment_type="contract", max_years=3)
-    assert clause == (
-        "remote = true AND employment_type = 'contract' "
-        "AND (min_years <= 3 OR min_years IS NULL)"
-    )
-
-
-# ---- build_filter: the reference product builder ----
-
-
-def _clause(**kw):
-    kw.setdefault("atses", ("greenhouse", "lever"))
-    kw.setdefault("has_first_seen", True)
-    kw.setdefault("has_min_salary_annual", True)
-    return build_filter(*_split(kw))
 
 
 def test_no_filters_is_no_clause():

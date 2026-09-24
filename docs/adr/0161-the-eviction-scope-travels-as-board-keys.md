@@ -77,7 +77,7 @@ is non-recursive.
 
 And `--scraped-boards` has **no default**, so the recorded arm only runs for a caller that asked
 for it. `data/state/scraped_boards.json` rides the HF dataset and CLAUDE.md tells you to pull
-`data/state/*`, so a defaulted path would mean a local `index sync` against the Wellfound CSV —
+`data/state/*`, so a defaulted path would mean a local `index sync` with no full scrape on disk —
 no `data/jobs/*.jsonl`, so arm 1 misses — silently scoping eviction on the *last pipeline run's*
 14,700 Boards instead of on the corpus it was handed, marking every indexed row on them
 Unconfirmed. Passing the flag is what asserts "this checkout's `data/state` came from this run's

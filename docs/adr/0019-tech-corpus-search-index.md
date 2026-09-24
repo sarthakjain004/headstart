@@ -7,9 +7,9 @@
 ## Context
 
 ADR-0014 decided the search index should serve the product's own corpus, but the decision never
-got wired: `embed_wellfound.py` still embeds the one-off Wellfound CSV, `build_index.py` still
-`create_table(mode="overwrite")` on a `wellfound` table, and `TABLE = "wellfound"` is baked into the
-shared `search.py`. Only the *scaffolding* landed — `corpus.iter_jobs(source)` (a source-agnostic
+got wired: the side-corpus embed script still embeds the one-off side-corpus CSV, its index loader
+still `create_table(mode="overwrite")` on a side-corpus table, and that table's name is baked into
+the shared `search.py` as `TABLE`. Only the *scaffolding* landed — `corpus.iter_jobs(source)` (a source-agnostic
 reader) and `index_plan.plan_sync`/`apply_sync` (the pure, board-scoped add/evict diff and its
 LanceDB executor), both unit-tested but unused.
 
@@ -34,19 +34,22 @@ Ship a **thin slice**: serve the real tech corpus semantically with only the fil
 and already built, reusing the ADR-0014 scaffolding rather than rewriting it.
 
 1. **Embed source = `data/jobs/tech/`** (reconciles ADR-0014's intent with ADR-0017). Generalise
-   `embed_wellfound.py` → `embed_run.py --source`, reading via `corpus.iter_jobs`, keeping the
+   the side-corpus embed script → `embed_run.py --source`, reading via `corpus.iter_jobs`, keeping the
    `langdetect` English gate (Project Scope) and the crash-safe streaming `EmbeddingStore`. The
    vector cache moves to `data/embeddings/jobs/`, keyed by id so re-runs embed only new ids.
-2. **A production `jobs` table; Wellfound becomes the frozen eval benchmark.** `search.py` gains
-   `PROD_TABLE = "jobs"` + `EVAL_TABLE = "wellfound"`; `serve.py` serves `jobs`, the eval scripts and
-   `search_wellfound.py` stay on `wellfound`. This makes ADR-0014's "Wellfound = benchmark" split
-   concrete.
+2. **A production `jobs` table; the side-corpus becomes the frozen eval benchmark.** `search.py`
+   gains `PROD_TABLE = "jobs"` beside a second constant naming the benchmark table; `serve.py` serves
+   `jobs`, while the eval scripts and the side-corpus search script stay on the benchmark table.
+   This makes ADR-0014's "side-corpus = benchmark" split concrete. *(Amended 2026-09-24: the
+   benchmark table's constant, its filter builder and the eval scripts were removed from the code
+   with the ADR-0011 harness; `PROD_TABLE` is the only table `search.py` names.)*
 3. **Thin-slice metadata.** Filters live for v1: `remote` (already a clean bool) and `min_years`.
    `employment_type` and `salary` are stored **raw for display only** — no filter on them yet; their
    normalization/parsing is deferred.
 4. **`min_years`/`max_years` computed inline into `meta.jsonl`** (via `experience.extract(field,
    description, title)`), with the `source` tag carried alongside. No separate `data/enrich/tech`
-   artifact and no join — Wellfound only needed that because extraction post-dated its embeddings.
+   artifact and no join — the side-corpus only needed that because extraction post-dated its
+   embeddings.
 5. **The experience filter trusts all `min_years`, seniority estimates included.** `build_filter`'s
    `min_years <= N OR min_years IS NULL` is unchanged; the seniority-derived floors flow in by
    construction. This keeps ADR-0018's coverage for the filter, and the exclusion a floor produces
@@ -67,7 +70,7 @@ and already built, reusing the ADR-0014 scaffolding rather than rewriting it.
 - **Only stated numbers gate the experience filter** (seniority display-only) — safer against
   false-negatives, but discards most of ADR-0018's gain for the filter use-case; rejected per the
   fork, with the `source` tag kept as the escape hatch.
-- **A separate `data/enrich/tech` experience artifact + join** (mirroring Wellfound) — needless
+- **A separate `data/enrich/tech` experience artifact + join** (mirroring the side-corpus) — needless
   indirection for a greenfield path; extraction is cheap and recomputed independently by
   `experience_coverage.py`.
 - **Overwrite-rebuild** (`create_table(overwrite)`) — the already-built `index_plan` makes
@@ -76,8 +79,8 @@ and already built, reusing the ADR-0014 scaffolding rather than rewriting it.
 
 ## Consequences
 
-The AI layer finally serves the product's real ~49.7k-Job tech corpus, and Wellfound is explicitly
-the frozen benchmark (the eval's nDCG now measures a corpus distinct from production — documented,
+The AI layer finally serves the product's real ~49.7k-Job tech corpus, and the side-corpus is
+explicitly the frozen benchmark (the eval's nDCG now measures a corpus distinct from production — documented,
 not accidental). Filters live: `remote` and experience (including seniority-estimated floors);
 `employment_type` and `salary` are display-only until normalized. The seniority-in-filter call
 narrows the old "unknown is kept" invariant — only a Job with **neither** a stated number **nor** a

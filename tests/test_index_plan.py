@@ -775,8 +775,8 @@ def test_a_corrupt_recorded_scope_falls_back_instead_of_scoping_on_garbage(tmp_p
 
 
 def test_no_recorded_scope_and_no_records_keeps_the_corpus_id_fallback(tmp_path):
-    """The Wellfound-CSV and unit-test path: neither source exists, so the corpus's own Boards
-    are the scope — unchanged by ADR-0161."""
+    """The no-full-scrape local-sync and unit-test path: neither source exists, so the corpus's
+    own Boards are the scope — unchanged by ADR-0161."""
     assert scraped_boards(None, tmp_path / "absent", {"ats:a:1"}, {}) == {"ats:a"}
     assert scraped_boards(
         tmp_path / "absent.json", tmp_path / "absent", {"ats:a:1"}, {}
@@ -785,8 +785,8 @@ def test_no_recorded_scope_and_no_records_keeps_the_corpus_id_fallback(tmp_path)
 
 def test_a_recorded_scope_nobody_asked_for_cannot_pre_empt_the_fallback(tmp_path):
     """Why `recorded` has no default. `data/state/scraped_boards.json` round-trips through the HF
-    dataset, and CLAUDE.md tells you to pull `data/state/*` — so a local `index sync` against the
-    Wellfound CSV would find the last pipeline run's ~14,700 Boards on disk and scope eviction on
+    dataset, and CLAUDE.md tells you to pull `data/state/*` — so a local `index sync` with no full
+    scrape on disk would find the last pipeline run's ~14,700 Boards on disk and scope eviction on
     them instead of on the corpus it was handed, marking every indexed row on them Unconfirmed.
     Only a caller that passes the path gets that arm."""
     recorded = tmp_path / "scraped_boards.json"

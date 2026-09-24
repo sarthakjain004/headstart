@@ -20,8 +20,8 @@
 The run that `.github/workflows/pipeline.yml` executes was **12 scripts, 1,899 lines, spread across
 5 of `scripts/`'s 12 subdirs** — `pipeline/`, `scrape/`, `filter/`, `rank/`, `embed/` — mixed in with
 roughly 8,500 lines of R&D and one-off tooling in those same directories, with nothing marking which
-is which. `scripts/embed/` held `embed_jobs.py` (in the run) beside `search_wellfound.py`,
-`build_index.py`, `evict_store.py` (not). `scripts/pipeline/` was itself a misnomer: it held 4 of
+is which. `scripts/embed/` held `embed_jobs.py` (in the run) beside a side-corpus search script,
+a side-corpus index loader, and `evict_store.py` (not). `scripts/pipeline/` was itself a misnomer: it held 4 of
 the 12.
 
 Three concrete costs, not just untidiness:

@@ -85,4 +85,4 @@ builders have already diverged — `posted_within` was never added to the latter
 follows that precedent rather than widening scope. Worth revisiting if a third filter diverges.
 *(Revisited: [ADR-0042](0042-signed-in-ui-saved-sets.md) ended the divergence — the app's builder
 moved into `headstart.search.build_filter` as the reference, and the old three-filter builder was
-renamed `eval_filter`.)*
+kept, renamed, for the retrieval benchmark alone until both were removed on 2026-09-24.)*

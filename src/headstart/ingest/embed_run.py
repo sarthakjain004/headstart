@@ -63,9 +63,9 @@ _FLOAT_BYTES = 4  # float32
 
 # Batching is shaped by two empirical MPS findings (controlled experiments, 2026-07-04):
 #
-# 1. Attention memory scales with batch × seq² — a fixed batch of 8 (calibrated on Wellfound's
-#    ~4,800-token max, ~9 GB peak) pushed a 64 GB machine deep into swap on this corpus's
-#    longer docs. n × seq² ≤ _ATTN_BUDGET holds the transient peak roughly constant.
+# 1. Attention memory scales with batch × seq² — a fixed batch of 8 (calibrated on the original
+#    benchmark corpus's ~4,800-token max, ~9 GB peak) pushed a 64 GB machine deep into swap on
+#    this corpus's longer docs. n × seq² ≤ _ATTN_BUDGET holds the transient peak roughly constant.
 # 2. The Metal driver caches compiled-graph workspace per *unique (batch, seq) shape* and never
 #    frees it: repeating one shape holds driver memory flat, while every new shape adds ~2-3 GB
 #    for 4k-token batches until allocations are refused and the process wedges. Since padding to
@@ -86,9 +86,10 @@ _FLOAT_BYTES = 4  # float32
 # the real Docs alone, padded only to the longest Doc in it.
 #
 # Sequences are hard-capped at 4,096 tokens (the top bucket): a single full-context 8,192-token
-# doc transiently demands ~50 GB on this stack. 4,096 is inside the envelope the Wellfound run
-# proved safe, and only ~0.01% of tech-corpus docs are longer (their boilerplate tails get
-# truncated). This consciously narrows ADR-0005's "no truncation" to "up to 4k tokens".
+# doc transiently demands ~50 GB on this stack. 4,096 is inside the envelope the original
+# benchmark corpus's run proved safe, and only ~0.01% of tech-corpus docs are longer (their
+# boilerplate tails get truncated). This consciously narrows ADR-0005's "no truncation" to "up to
+# 4k tokens".
 # BUCKETS / MAX_SEQ_TOKENS moved to headstart.ingest.doc_prep (shared with the planner); the
 # batch-sizing budget below is encode-side and stays here.
 _ATTN_BUDGET = 128_000_000  # tokens²; ~2/3 of the observed 8 × 4800² ≈ 9 GB anchor
@@ -427,7 +428,7 @@ def main() -> None:
     ap.add_argument(
         "--source",
         default=str(_SOURCE),
-        help="corpus source: a {ats}.jsonl directory or a Wellfound CSV (default: data/jobs/tech)",
+        help="corpus source: a {ats}.jsonl directory (default: data/jobs/tech)",
     )
     ap.add_argument(
         "--limit",

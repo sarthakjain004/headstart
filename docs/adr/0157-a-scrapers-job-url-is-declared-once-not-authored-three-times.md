@@ -65,14 +65,13 @@ vs. slug-pinned host) and keep two separate methods, documented as deliberately 
 `scripts/eval/verify_filters.py`'s `URL_SHAPES` is now *generated*:
 
 ```python
-URL_SHAPES: dict[str, str] = {ats: cls.url_shape for ats, cls in SCRAPERS.items()} | {
-    "wellfound": r"https://wellfound\.com/jobs/\d+(-[\w-]+)?"
-}
+URL_SHAPES: dict[str, str] = {ats: cls.url_shape for ats, cls in SCRAPERS.items()}
 ```
 
-`wellfound` is the one entry that stays manual: it is built by the standalone `run_wellfound*.py`
-scripts, never through `headstart.scrapers`, so there is no `BaseScraper` subclass for it to
-declare a shape on. Every other entry now has exactly one possible source — a wrong shape can no
+At the time one entry stayed manual, merged onto that dict: a side-corpus built by standalone
+scripts, never through `headstart.scrapers`, so there was no `BaseScraper` subclass for it to
+declare a shape on. *(Amended 2026-09-24: that corpus and its manual entry have since been
+removed.)* Every other entry now has exactly one possible source — a wrong shape can no
 longer be typed independently of the scraper, because there is nowhere left to type it. A new
 `tests/test_base.py` check (`test_every_scraper_declares_a_compilable_url_shape`) fails the suite
 if any registered scraper's `url_shape` is missing or does not compile, closing the coverage
