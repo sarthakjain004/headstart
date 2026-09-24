@@ -26,9 +26,8 @@ import json
 import re
 from typing import Any
 
-from headstart import http
 from headstart.models import Job, html_to_text
-from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 
 _NEXT = re.compile(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.DOTALL)
 _PAGE_SIZE = 5  # 2026-07: the API rejects larger values ("pageSize: Invalid value")
@@ -82,7 +81,7 @@ class JoinScraper(BaseScraper):
         company = self._company()
         cid = company.get("id")
         if not cid:
-            return {"company": company, "items": []}
+            return {"company": company, "items": [], "descriptions": {}}
         items: list[dict] = []
         page = 1
         while page <= _MAX_PAGES:
@@ -112,83 +111,43 @@ class JoinScraper(BaseScraper):
             self.mark_truncated(
                 f"hit the {_MAX_PAGES}-page cap at {len(items)} jobs — the rest unread"
             )
-        # Fill each posting's description concurrently (bounded); a failed fetch leaves it None.
-        if self.async_fanout_enabled():
-            descriptions = self.fan_out_async(
-                items,
-                lambda session, it: self._job_description_async(session, it.get("id")),
-            )
-        else:
-            descriptions = self.fan_out(
-                items,
-                lambda it: self._job_description(it.get("id")),
-                workers=_DETAIL_WORKERS,
-            )
-        self.report_detail_gaps(descriptions, "descriptions")
-        for item, description in zip(items, descriptions):
-            item["_description"] = description
-        return {"company": company, "items": items}
-
-    def _detail_url(self, jid: str) -> str:
-        return f"https://join.com/api/public/jobs/{jid}?locale=en"
-
-    def _extract_description(self, response: Any) -> str | None:
-        """Description, or intro/tasks/requirements joined, from a detail response (None on
-        non-200), with every ``None`` labelled by what lost it — an instance method for that
-        reason (:meth:`~BaseScraper.note_detail_loss`): a refused Board and a Board whose
-        postings simply carry no body count the same in a bare gap total."""
-        if response.status_code != 200:
-            self.note_detail_loss(f"HTTP {response.status_code}")
-            return None
-        d = response.json()
-        text = (
-            d.get("description")
-            or "\n\n".join(
-                s for s in (d.get("intro"), d.get("tasks"), d.get("requirements")) if s
-            )
-            or None
+        # Each posting's description, keyed by its id; a failed fetch leaves it out and the Job
+        # is still kept.
+        descriptions = self.run_detail_pass(
+            items,
+            key_of=lambda item: str(item["id"]) if item.get("id") else None,
+            what="descriptions",
         )
-        if text is None:
-            self.note_detail_loss("no description on a 200")
+        return {"company": company, "items": items, "descriptions": descriptions}
+
+    def detail_request(self, item: dict) -> DetailRequest:
+        if not item.get("id"):
+            raise DetailLost("no job id")
+        return DetailRequest(
+            f"https://join.com/api/public/jobs/{item['id']}?locale=en",
+            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+        )
+
+    def read_detail(self, item: dict, response: Any) -> str:
+        """Description, or intro/tasks/requirements joined. A 200 carrying neither is a named
+        loss, so a Board whose postings carry no body does not read like a refused one."""
+        payload = response.json()
+        text = payload.get("description") or "\n\n".join(
+            section
+            for section in (
+                payload.get("intro"),
+                payload.get("tasks"),
+                payload.get("requirements"),
+            )
+            if section
+        )
+        if not text:
+            raise DetailLost("no description on a 200")
         return text
-
-    def _job_description(self, jid) -> str | None:
-        """GET one posting's detail and return its description body (None on failure). Sync path."""
-        if not jid:
-            self.note_detail_unattempted("no job id")
-            return None
-        try:
-            resp = self._fetch(
-                "GET",
-                self._detail_url(jid),
-                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-                timeout=30,
-            )
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return self._extract_description(resp)
-
-    async def _job_description_async(self, session: Any, jid) -> str | None:
-        """Same as :meth:`_job_description` but over the shared multiplexed ``AsyncSession``."""
-        if not jid:
-            self.note_detail_unattempted("no job id")
-            return None
-        try:
-            resp = await self._fetch_async(
-                session,
-                "GET",
-                self._detail_url(jid),
-                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-                timeout=30,
-            )
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return self._extract_description(resp)
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         company_name = (raw.get("company") or {}).get("name") or self.company
+        descriptions = raw.get("descriptions") or {}
         jobs: list[Job] = []
         for it in raw.get("items", []):
             city = it.get("city") or {}
@@ -215,7 +174,7 @@ class JoinScraper(BaseScraper):
                     url=self.job_url(it.get("idParam", "")),
                     posted_at=it.get("createdAt"),
                     scraped_at=scraped_at,
-                    description=html_to_text(it.get("_description")),
+                    description=html_to_text(descriptions.get(str(it["id"]))),
                     employment_type=(it.get("employmentType") or {}).get("name"),
                     salary=self._salary_field(it),
                 )
@@ -226,8 +185,8 @@ class JoinScraper(BaseScraper):
         """``Job.salary`` from the listing item's ``salaryAmountFrom``/``salaryAmountTo`` (each
         ``{amount, currency}``, ``amount`` in MINOR units — cents) and ``salaryFrequency``.
 
-        Read off the LISTING item itself, not the per-job detail response `_job_description` already
-        fetches — confirmed live, 2026-09-15 (job 16244456, indie-solutions): both carry the
+        Read off the LISTING item itself, not the per-job detail response `read_detail` already
+        reads — confirmed live, 2026-09-15 (job 16244456, indie-solutions): both carry the
         identical figures for the same job, so reading the listing needs no extra request and
         doesn't depend on the detail fetch succeeding.
 

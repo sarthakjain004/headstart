@@ -42,8 +42,9 @@ import re
 from typing import Any, ClassVar
 
 from headstart import http
+from headstart.fetcher import Fetcher
 from headstart.models import Job, host_of, html_to_text
-from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 
 #: Rows per listing call. The endpoint clamps anything larger to 500 without saying so.
 _PAGE_SIZE = 500
@@ -101,8 +102,10 @@ class PhenomScraper(BaseScraper):
     detail_workers = _DETAIL_WORKERS
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
-    def __init__(self, slug: str, company: str | None = None) -> None:
-        super().__init__(slug, company)
+    def __init__(
+        self, slug: str, company: str | None = None, fetcher: Fetcher | None = None
+    ) -> None:
+        super().__init__(slug, company, fetcher)
         # Resolved by `fetch_raw` before anything needs it; `job_url` renders whichever prefix the
         # Board turned out to use, and falls back to the probe prefix for a Board never fetched
         # (the liveness prober builds a scraper and reads `url()` without calling `fetch_raw`).
@@ -182,8 +185,8 @@ class PhenomScraper(BaseScraper):
     def _widgets_url(self) -> str:
         return f"https://{self.slug}/widgets"
 
-    #: The one set of headers both widget calls send. Declared once because the sync and async
-    #: paths post to the same endpoint, and two copies of a header block drift.
+    #: The one set of headers both widget calls send. Declared once because the listing and the
+    #: detail request post to the same endpoint, and two copies of a header block drift.
     _WIDGET_HEADERS: ClassVar[dict[str, str]] = {
         "User-Agent": USER_AGENT,
         "Accept": "*/*",
@@ -296,43 +299,29 @@ class PhenomScraper(BaseScraper):
             "pageId": "page7",
         }
 
-    def _job_of(self, body: dict[str, Any]) -> dict | None:
-        """The one posting in a detail response, or None when it carried none.
+    def detail_request(self, row: dict) -> DetailRequest:
+        # The same POST `_widgets` sends for the listing, with the detail payload as its body.
+        return DetailRequest(
+            self._widgets_url(),
+            method="POST",
+            headers=self._WIDGET_HEADERS,
+            timeout=45,
+            options={"json": self._detail_payload(str(row["jobId"]))},
+        )
+
+    def read_detail(self, row: dict, response: Any) -> dict:
+        """The one posting in a detail response.
 
         An unknown id is **not** a 404 and not an empty list — it is a 200 whose envelope simply
         has no ``job`` key. Labelled rather than merely counted, because a Board whose ids have
         gone stale and a Board the edge is refusing produce the same gap count and call for
         opposite responses.
         """
+        body = response.json() or {}
         job = ((body.get("jobDetail") or {}).get("data") or {}).get("job")
         if not job:
-            self.note_detail_loss("no job on a 200")
-            return None
+            raise DetailLost("no job on a 200")
         return job
-
-    def _detail(self, native_id: str) -> dict | None:
-        try:
-            body = self._widgets(self._detail_payload(native_id))
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return self._job_of(body)
-
-    async def _detail_async(self, session: Any, native_id: str) -> dict | None:
-        try:
-            response = await self._fetch_async(
-                session,
-                "POST",
-                self._widgets_url(),
-                json=self._detail_payload(native_id),
-                headers=self._WIDGET_HEADERS,
-                timeout=45,
-            )
-            response.raise_for_status()
-            return self._job_of(response.json() or {})
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
 
     def fetch_raw(self) -> Any:
         self._cc, self._lang = self._prefix()
@@ -354,25 +343,18 @@ class PhenomScraper(BaseScraper):
         # 9,515), and on 300 of those, sampled at random and fetched, **0** details state a
         # `category`/`jobFamilyGroup` the listing did not and **0** carry a different `title`.
         # Re-check it if either payload's field set moves.
-        tech = self.tech_detail_wanted(listed, _listing_title, _listing_department)
-        wanted = [
-            str(j["jobId"])
-            for j in tech
-            if j.get("jobId") and self.needs_detail(str(j["jobId"]))
-        ]
-        details: dict[str, dict] = {}
-        if wanted:
-            if self.async_fanout_enabled():
-                fetched = self.fan_out_async(wanted, self._detail_async)
-            else:
-                fetched = self.fan_out(
-                    wanted, self._detail, workers=self.detail_workers
-                )
-            # Reported, not marked truncated: a missing detail costs one Job its description, but
-            # the Job is still listed and still emitted, so the Board's *list* is whole — and
-            # ADR-0053 is about the list, not the fields.
-            self.report_detail_gaps(fetched, "descriptions")
-            details = {i: d for i, d in zip(wanted, fetched) if d}
+        #
+        # Reported, not marked truncated: a missing detail costs one Job its description, but the
+        # Job is still listed and still emitted, so the Board's *list* is whole — and ADR-0053 is
+        # about the list, not the fields. Every row `_listing` keeps has a `jobId`.
+        details = self.run_detail_pass(
+            listed,
+            key_of=lambda row: str(row["jobId"]),
+            what="descriptions",
+            title_of=_listing_title,
+            department_of=_listing_department,
+            skip_held=True,
+        )
         return {"jobs": listed, "details": details}
 
     # --- parse ------------------------------------------------------------------------------
@@ -398,7 +380,7 @@ class PhenomScraper(BaseScraper):
             detail = details.get(native_id) or {}
             jobs.append(
                 Job(
-                    id=f"{self.ats}:{self.slug}:{native_id}",
+                    id=self.job_id(native_id),
                     ats=self.ats,
                     company=self.company,
                     title=(detail.get("title") or row.get("title") or "").strip(),

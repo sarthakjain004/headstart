@@ -13,9 +13,8 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
-from headstart import http
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 
 _API = "https://api.rippling.com/platform/api/ats/v1/board"
 _DETAIL_WORKERS = 8
@@ -125,76 +124,36 @@ class RipplingScraper(BaseScraper):
         # and now correctly populated (served field + the post-detail `filter_tech` pass, which
         # reads `Job.department` independently of this pre-detail gate) — a small board sample
         # finding no gate-level swing is expected, not evidence the fix does nothing.
-        wanted = self.tech_detail_wanted(
-            items, lambda it: it.get("name"), _department_of
+        #
+        # One detail per posting, not one per location row — `parse` merges a posting's rows,
+        # whose `name` and `department` are the same, so gating after the merge asks the same
+        # question per posting.
+        postings = list({it.get("uuid"): it for it in items}.values())
+        details = self.run_detail_pass(
+            postings,
+            key_of=lambda posting: posting.get("uuid") or None,
+            what="details",
+            title_of=lambda posting: posting.get("name"),
+            department_of=_department_of,
         )
-        # One detail per posting, not one per location row — `parse` merges a posting's rows.
-        wanted = list({it.get("uuid"): it for it in wanted}.values())
-        # Fill each posting's detail concurrently (bounded); a failed fetch leaves ``_detail`` {}.
-        if self.async_fanout_enabled():
-            details = self.fan_out_async(
-                wanted,
-                lambda session, it: self._detail_async(session, it.get("uuid")),
-                default={},
-            )
-        else:
-            details = self.fan_out(
-                wanted,
-                lambda it: self._detail(it.get("uuid")),
-                workers=_DETAIL_WORKERS,
-                default={},
-            )
-        # {} is this scraper's failure sentinel (a real record is never empty), so map
-        # falsy to None for the gap count.
-        self.report_detail_gaps([d or None for d in details], "details")
-        self.attach_details(items, wanted, details)
+        # A failed or gated fetch leaves ``_detail`` {}.
+        for item in items:
+            item["_detail"] = details.get(item.get("uuid")) or {}
         return items
 
-    def _detail_url(self, uuid: str) -> str:
-        return f"{_API}/{self.slug}/jobs/{uuid}"
+    def detail_request(self, posting: dict) -> DetailRequest:
+        if not posting.get("uuid"):
+            raise DetailLost("no job uuid")
+        return DetailRequest(
+            f"{_API}/{self.slug}/jobs/{posting['uuid']}",
+            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+        )
 
-    def _extract_detail(self, response: Any) -> dict:
-        """This posting's record, or the ``{}`` failure sentinel labelled by what lost it —
-        an instance method for that reason alone (see :meth:`~BaseScraper.note_detail_loss`)."""
-        if response.status_code != 200:
-            self.note_detail_loss(f"HTTP {response.status_code}")
-            return {}
-        return response.json()
-
-    def _detail(self, uuid: str | None) -> dict:
-        """GET one posting's full record (``{}`` on failure). Sync path."""
-        if not uuid:
-            self.note_detail_unattempted("no job uuid")
-            return {}
-        try:
-            resp = self._fetch(
-                "GET",
-                self._detail_url(uuid),
-                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-                timeout=30,
-            )
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return {}
-        return self._extract_detail(resp)
-
-    async def _detail_async(self, session: Any, uuid: str | None) -> dict:
-        """Same as :meth:`_detail` but over the shared multiplexed ``AsyncSession``."""
-        if not uuid:
-            self.note_detail_unattempted("no job uuid")
-            return {}
-        try:
-            resp = await self._fetch_async(
-                session,
-                "GET",
-                self._detail_url(uuid),
-                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-                timeout=30,
-            )
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return {}
-        return self._extract_detail(resp)
+    def read_detail(self, posting: dict, response: Any) -> dict:
+        record = response.json()
+        if not record:
+            raise DetailLost("empty record on a 200")
+        return record
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         # A multi-location posting is N rows sharing one `uuid` (see `_location`) — grouped so it
