@@ -3511,39 +3511,38 @@ def test_trakstar_jobs_from_feed_builds_job_objects():
     assert j.remote is False
 
 
-def test_trakstar_fetch_via_feed_returns_none_when_feed_unavailable(monkeypatch):
-    import headstart.scrapers.trakstar as trakstar_module
-
-    monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug, egress_board: None)
-    s = get_scraper("trakstar", "acme", "Acme")
-    assert s.fetch_via_feed(SCRAPED_AT) is None
+_TRAKSTAR_FEED_URL = "https://acme.hire.trakstar.com/jobfeeds/acme"
 
 
-def test_trakstar_fetch_via_feed_returns_empty_list_when_feed_has_zero_jobs(
-    monkeypatch,
-):
+def _trakstar_feed_fetcher(status: int, feed: str = ""):
+    """The shared fake, answering acme's feed request with ``status``/``feed``."""
+    from fake_fetcher import FakeFetcher, FakeResponse
+
+    return FakeFetcher(lambda _method, _url, _kwargs: FakeResponse(status, feed))
+
+
+def test_trakstar_fetch_via_feed_returns_none_when_feed_unavailable():
+    fake = _trakstar_feed_fetcher(404)
+    scraper = get_scraper("trakstar", "acme", "Acme", fetcher=fake)
+    assert scraper.fetch_via_feed(SCRAPED_AT) is None
+    assert fake.urls() == [_TRAKSTAR_FEED_URL]
+
+
+def test_trakstar_fetch_via_feed_returns_empty_list_when_feed_has_zero_jobs():
     # a working feed reporting zero current openings must be distinguishable from "no feed at
     # all" — a caller checking `is None` sees the difference; one that checks truthiness doesn't
-    import headstart.scrapers.trakstar as trakstar_module
-
     empty_feed = '<?xml version="1.0"?><rss version="2.0"><channel></channel></rss>'
-    monkeypatch.setattr(
-        trakstar_module, "_fetch_feed", lambda slug, egress_board: empty_feed
-    )
-    s = get_scraper("trakstar", "acme", "Acme")
-    result = s.fetch_via_feed(SCRAPED_AT)
+    fake = _trakstar_feed_fetcher(200, empty_feed)
+    scraper = get_scraper("trakstar", "acme", "Acme", fetcher=fake)
+    result = scraper.fetch_via_feed(SCRAPED_AT)
     assert result == []
     assert result is not None
 
 
-def test_trakstar_fetch_via_feed_returns_jobs_when_available(monkeypatch):
-    import headstart.scrapers.trakstar as trakstar_module
-
-    monkeypatch.setattr(
-        trakstar_module, "_fetch_feed", lambda slug, egress_board: _TRAKSTAR_FEED
-    )
-    s = get_scraper("trakstar", "acme", "Acme")
-    jobs = s.fetch_via_feed(SCRAPED_AT)
+def test_trakstar_fetch_via_feed_returns_jobs_when_available():
+    fake = _trakstar_feed_fetcher(200, _TRAKSTAR_FEED)
+    scraper = get_scraper("trakstar", "acme", "Acme", fetcher=fake)
+    jobs = scraper.fetch_via_feed(SCRAPED_AT)
     assert len(jobs) == 2
     assert jobs[0].id == "trakstar:acme:fk0abc1"
 
@@ -3607,9 +3606,7 @@ def test_trakstar_fetch_raw_uses_feed_when_capped_and_skips_the_detail_pass(
         s, "_api_listing", lambda: None
     )  # no jsapi surface -> HTML+RSS path
     monkeypatch.setattr(s, "_get", lambda url=None: _trakstar_cards_page(25, total=40))
-    monkeypatch.setattr(
-        trakstar_module, "_fetch_feed", lambda slug, egress_board: _TRAKSTAR_FEED
-    )
+    monkeypatch.setattr(s, "_fetch_feed", lambda: _TRAKSTAR_FEED)
     detail_calls = []
     monkeypatch.setattr(s, "_job_posting", lambda code: detail_calls.append(code))
 
@@ -3626,8 +3623,6 @@ def test_trakstar_fetch_raw_uses_feed_when_capped_and_skips_the_detail_pass(
 def test_trakstar_fetch_raw_skips_feed_when_not_capped(monkeypatch):
     """The 92%+ of Boards under the render cap must cost exactly the one careers-page request
     they always did -- no RSS fetch, since there's nothing the cards are missing."""
-    import headstart.scrapers.trakstar as trakstar_module
-
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
     s = get_scraper("trakstar", "acme", "Acme")
     monkeypatch.setattr(
@@ -3635,10 +3630,10 @@ def test_trakstar_fetch_raw_skips_feed_when_not_capped(monkeypatch):
     )  # no jsapi surface -> HTML+RSS path
     monkeypatch.setattr(s, "_get", lambda url=None: _trakstar_cards_page(3, total=3))
 
-    def boom_feed(slug, egress_board):
+    def boom_feed():
         raise AssertionError("must not fetch the RSS feed when the Board isn't capped")
 
-    monkeypatch.setattr(trakstar_module, "_fetch_feed", boom_feed)
+    monkeypatch.setattr(s, "_fetch_feed", boom_feed)
     monkeypatch.setattr(s, "_job_posting", lambda code: None)
 
     raw = s.fetch_raw()
@@ -3652,15 +3647,13 @@ def test_trakstar_fetch_raw_keeps_html_when_feed_unreachable(monkeypatch):
     """sleekr-shaped live case: capped (25 cards, real total higher) but the feed 404s. The
     capped HTML list must still come back -- not an empty Board -- and the Board must be marked
     truncated now that the page's own total makes the shortfall provable, not just suspected."""
-    import headstart.scrapers.trakstar as trakstar_module
-
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
     s = get_scraper("trakstar", "acme", "Acme")
     monkeypatch.setattr(
         s, "_api_listing", lambda: None
     )  # no jsapi surface -> HTML+RSS path
     monkeypatch.setattr(s, "_get", lambda url=None: _trakstar_cards_page(25, total=77))
-    monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug, egress_board: None)
+    monkeypatch.setattr(s, "_fetch_feed", lambda: None)
     monkeypatch.setattr(s, "_job_posting", lambda code: None)
 
     raw = s.fetch_raw()
@@ -3681,8 +3674,6 @@ def test_trakstar_fetch_raw_does_not_mark_truncated_for_card_count_heuristic_alo
     marked truncated -- this is the same ambiguous "reached the cap" signal the pre-fix code
     deliberately declined to mark_truncated for; only the page's own total turns that into
     proof, and this Board never had one."""
-    import headstart.scrapers.trakstar as trakstar_module
-
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
     s = get_scraper("trakstar", "acme", "Acme")
     monkeypatch.setattr(
@@ -3691,7 +3682,7 @@ def test_trakstar_fetch_raw_does_not_mark_truncated_for_card_count_heuristic_alo
     monkeypatch.setattr(
         s, "_get", lambda url=None: _trakstar_cards_page(25)
     )  # no total button
-    monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug, egress_board: None)
+    monkeypatch.setattr(s, "_fetch_feed", lambda: None)
     monkeypatch.setattr(s, "_job_posting", lambda code: None)
 
     raw = s.fetch_raw()

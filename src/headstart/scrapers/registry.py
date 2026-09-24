@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Container
 
 from headstart.config import CompanyRef
+from headstart.fetcher import Fetcher
 from headstart.scrapers.adp import ADPScraper
 from headstart.scrapers.adp_recruiting import ADPRecruitingScraper
 from headstart.scrapers.amazon import AmazonScraper
@@ -168,13 +169,14 @@ def get_scraper(
     company: str | None = None,
     *,
     have_details: Container[str] | None = None,
+    fetcher: Fetcher | None = None,
 ) -> BaseScraper:
     try:
         cls = SCRAPERS[ats]
     except KeyError:
         raise ValueError(f"unknown ats {ats!r}; known: {sorted(SCRAPERS)}") from None
-    scraper = cls(slug, company)
-    # Set after construction, not passed in: five scrapers override ``__init__`` and only one
+    scraper = cls(slug, company, fetcher)
+    # Set after construction, not passed in: nine scrapers override ``__init__`` and only one
     # consults this, so widening all their signatures for it would be churn for nothing.
     scraper.have_details = have_details
     return scraper

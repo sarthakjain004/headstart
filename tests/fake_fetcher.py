@@ -1,6 +1,6 @@
-"""The shared test double for the Fetcher seam (ADR-0153) — what new tests inject instead of writing
-another. The older per-file fakes (test_fetcher, test_bamboohr, test_jibe, test_cornerstone) are
-still their own; they move onto this one as the seam is extended to every Scraper.
+"""The shared test double for the Fetcher seam (ADR-0153, ADR-0199) — what tests inject instead of
+writing another. The older per-file fakes (test_fetcher, test_bamboohr, test_jibe, test_cornerstone)
+now build on it too.
 
 A Scraper built with ``fetcher=FakeFetcher(route)`` sends every request — listing, detail, sync or
 multiplexed — through ``route(method, url, kwargs)``, which returns a :class:`FakeResponse` or an
@@ -63,6 +63,10 @@ class FakeFetcher:
     def __init__(self, route: Route) -> None:
         self.route = route
         self.requests: list[FakeRequest] = []
+        #: One entry per ``clear_cookies`` call: the domain asked for, or None for the whole jar.
+        #: A route that answers differently once the jar is cleared (Workday's stale-cookie 400,
+        #: ADR-0103) reads this.
+        self.cookie_clears: list[str | None] = []
 
     def fetch(self, method: str, url: str, **kwargs: Any) -> FakeResponse:
         self.requests.append(FakeRequest(method, url, kwargs))
@@ -76,6 +80,9 @@ class FakeFetcher:
         self, session: Any, method: str, url: str, **kwargs: Any
     ) -> FakeResponse:
         return self.fetch(method, url, **kwargs)
+
+    def clear_cookies(self, domain: str | None = None) -> None:
+        self.cookie_clears.append(domain)
 
     def urls(self) -> list[str]:
         return [request.url for request in self.requests]

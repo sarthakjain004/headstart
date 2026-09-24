@@ -39,14 +39,15 @@ from typing import Any
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "src"))
 
+from headstart import http
 from headstart.scrapers.registry import get_scraper
 from headstart.tech_filter import is_tech
 
 
 class _CountingFetcher:
-    """Wraps a scraper's own fetcher to tally requests. The per-origin budget is the cost the
-    gate exists to spend less of, so a request count is the measurement that transfers between
-    machines — unlike seconds, which are this runner's."""
+    """Wraps the default fetcher to tally a scraper's requests. The per-origin budget is the
+    cost the gate exists to spend less of, so a request count is the measurement that transfers
+    between machines — unlike seconds, which are this runner's."""
 
     def __init__(self, inner: Any) -> None:
         self._inner = inner
@@ -61,6 +62,9 @@ class _CountingFetcher:
     ) -> Any:
         self.n += 1
         return await self._inner.fetch_async(session, method, url, **kwargs)
+
+    def clear_cookies(self, domain: str | None = None) -> None:
+        self._inner.clear_cookies(domain)
 
 
 def arm_order(rep: int) -> tuple[bool, bool]:
@@ -89,9 +93,8 @@ def _run(board: str, gate: bool) -> dict[str, Any]:
     # container is the honest value here: it says "the pipeline is running and holds no detail
     # for this Board", which is the first-run state and the one that makes the gate the only
     # thing skipping anything — so the arms differ by the gate alone, not by the skip-list.
-    scraper = get_scraper(ats, slug, have_details=frozenset())
-    counter = _CountingFetcher(scraper._fetcher)
-    scraper._fetcher = counter
+    counter = _CountingFetcher(http.DEFAULT_FETCHER)
+    scraper = get_scraper(ats, slug, have_details=frozenset(), fetcher=counter)
     t0 = time.monotonic()
     raw = scraper.fetch_raw()
     jobs = scraper.parse(raw, "2026-09-17T00:00:00Z")

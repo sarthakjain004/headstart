@@ -39,7 +39,6 @@ neither surface publicly, so they yield nothing — correct, they are not public
 
 from __future__ import annotations
 
-import json
 import re
 import urllib.parse
 from datetime import UTC, datetime
@@ -48,6 +47,11 @@ from typing import Any
 from headstart import http, log
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.job_posting_jsonld import (
+    find_job_posting,
+    job_location_text,
+    job_posting_fields,
+)
 
 _log = log.get(__name__)
 
@@ -82,9 +86,6 @@ _CHILD_SITEMAP = re.compile(
     r"<loc>\s*([^<\s]*sitemap[^<\s]*\.xml[^<\s]*)\s*</loc>", re.IGNORECASE
 )
 _POSITION_ID = re.compile(r"/careers/job/(\d+)")
-_LD_BLOCK = re.compile(
-    r'<script type="application/ld\+json">\s*(.*?)\s*</script>', re.DOTALL
-)
 
 # workLocationOption -> remote. "hybrid" stays None (neither purely remote nor onsite). Live
 # vocabulary measured 2026-08-25 across 44,215 jobs/62 boards is exactly onsite/hybrid/
@@ -901,57 +902,14 @@ def _sitemap_position_id(url: str) -> str | None:
 
 
 def _jobposting(page: str) -> dict[str, Any] | None:
-    """The JobPosting fields from a job page's JSON-LD (sitemap fallback), or None without one."""
-    for match in _LD_BLOCK.finditer(page):
-        try:
-            data = json.loads(match.group(1))
-        except ValueError:
-            continue
-        for node in data if isinstance(data, list) else [data]:
-            if not isinstance(node, dict):
-                continue
-            node_type = node.get("@type")
-            if node_type != "JobPosting" and not (
-                isinstance(node_type, list) and "JobPosting" in node_type
-            ):
-                continue
-            employment = node.get("employmentType")
-            if isinstance(employment, list):
-                employment = ", ".join(str(e) for e in employment) or None
-            return {
-                "title": node.get("title"),
-                "description": node.get("description"),
-                "location": _jsonld_location(node.get("jobLocation")),
-                "posted_at": node.get("datePosted"),
-                "employment_type": employment,
-                "department": None,  # not in the JSON-LD
-                "remote": True
-                if node.get("jobLocationType") == "TELECOMMUTE"
-                else None,
-            }
-    return None
-
-
-def _jsonld_location(job_location: Any) -> str | None:
-    """First ``Place``'s "City, Region, Country" from a JobPosting ``jobLocation``. The region
-    often already carries the country ("Hsinchu City,TW"), so drop a country it already holds."""
-    if isinstance(job_location, list):
-        job_location = job_location[0] if job_location else None
-    if not isinstance(job_location, dict):
+    """The JobPosting fields from a job page's JSON-LD (sitemap fallback), or None without one.
+    The region often already carries the country ("Hsinchu City,TW"), so a country it already
+    holds is dropped from the location."""
+    node = find_job_posting(page)
+    if node is None:
         return None
-    address = job_location.get("address")
-    if not isinstance(address, dict):
-        return None
-    country = address.get("addressCountry")
-    if isinstance(country, dict):
-        country = country.get("name")
-    parts: list[str] = []
-    for value in (
-        address.get("addressLocality"),
-        address.get("addressRegion"),
-        country,
-    ):
-        text = str(value).strip() if value else ""
-        if text and text not in parts and not any(text in p.split(",") for p in parts):
-            parts.append(text)
-    return ", ".join(parts) or None
+    return {
+        **job_posting_fields(node),
+        "location": job_location_text(node.get("jobLocation"), drop_repeats=True),
+        "department": None,  # not in the JSON-LD
+    }

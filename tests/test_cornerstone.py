@@ -23,8 +23,9 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import pytest
-from curl_cffi.requests.exceptions import HTTPError
+from fake_fetcher import FakeFetcher, FakeResponse
 
+from headstart import http
 from headstart.scrapers.cornerstone import CornerstoneScraper
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -36,36 +37,26 @@ def _boards() -> dict:
         return json.load(fh)
 
 
-class _Response:
-    def __init__(
-        self, status: int, body: Any = "", headers: dict | None = None
-    ) -> None:
-        self.status_code = status
-        self.text = body if isinstance(body, str) else json.dumps(body)
-        self.content = self.text.encode("utf-8")
-        self.headers = headers or {}
-
-    def json(self) -> Any:
-        return json.loads(self.content)
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise HTTPError(f"HTTP {self.status_code}", 0, self)
+def _csod_response(
+    status: int, body: Any = "", headers: dict | None = None
+) -> FakeResponse:
+    return FakeResponse(
+        status, body if isinstance(body, str) else json.dumps(body), headers=headers
+    )
 
 
-class _FakeCsod:
+class _FakeCsod(FakeFetcher):
     """Routes the four request shapes the scraper makes to one tenant's recorded answers."""
 
     def __init__(self, slug: str, board: dict) -> None:
+        super().__init__(self._answer)
         self.slug = slug
         self.board = board
-        self.requests: list[tuple[str, str, dict]] = []
         self.home_status: dict[int, int] = {}
         self.fail_ads: set[str] = set()
         self.unauthorized_once: set[str] = set()
 
-    def fetch(self, method: str, url: str, **kwargs: Any) -> _Response:
-        self.requests.append((method, url, kwargs))
+    def _answer(self, method: str, url: str, kwargs: dict[str, Any]) -> FakeResponse:
         parts = urlsplit(url)
         path = parts.path
         m = re.fullmatch(r"/ux/ats/careersite/(\d+)/home", path)
@@ -74,17 +65,17 @@ class _FakeCsod:
                 int(m.group(1)), 200 if m.group(1) == "1" else 302
             )
             if status == 302:
-                return _Response(302, "", {"location": "/ui/error"})
-            return _Response(200, self.board["home"])
+                return _csod_response(302, "", {"location": "/ui/error"})
+            return _csod_response(200, self.board["home"])
         if hits := [k for k in self.unauthorized_once if k in url]:
             self.unauthorized_once.discard(hits[0])
-            return _Response(401, "")
+            return _csod_response(401, "")
         m = re.fullmatch(r"/services/x/career-site/v1/careersites/(\d+)", path)
         if m:
             answer = self.board["careersites"].get(
                 m.group(1), {"status": 404, "body": {}}
             )
-            return _Response(answer["status"], answer["body"])
+            return _csod_response(answer["status"], answer["body"])
         if path.endswith("/rec-job-search/external/jobs"):
             body = kwargs["json"]
             site = str(body["careerSitePageId"])
@@ -95,22 +86,19 @@ class _FakeCsod:
                         "totalCount"
                     ]
                 }
-                return _Response(200, {"data": {**empty, "requisitions": []}})
-            return _Response(200, page)
+                return _csod_response(200, {"data": {**empty, "requisitions": []}})
+            return _csod_response(200, page)
         m = re.fullmatch(
             r"/Services/API/ATS/CareerSite/(\d+)/JobRequisitions/(\d+)", path
         )
         if m:
             key = f"{m.group(1)}/{m.group(2)}"
             if key in self.fail_ads or key not in self.board["ads"]:
-                return _Response(500, "")
-            return _Response(
+                return _csod_response(500, "")
+            return _csod_response(
                 200, self.board["ads"][key], {"content-type": "application/json"}
             )
         raise AssertionError(f"unrouted {method} {url}")
-
-    async def fetch_async(self, session: Any, method: str, url: str, **kwargs: Any):
-        return self.fetch(method, url, **kwargs)
 
 
 def _scrape(slug: str, **setup: Any) -> tuple[list, _FakeCsod, CornerstoneScraper]:
@@ -141,13 +129,15 @@ def test_a_board_is_the_union_of_its_active_sites_by_requisition():
 
 
 def _searched_sites(fake: _FakeCsod) -> list[int]:
-    return [kw["json"]["careerSitePageId"] for m, _, kw in fake.requests if m == "POST"]
+    return [
+        request.kwargs["json"]["careerSitePageId"]
+        for request in fake.requests
+        if request.method == "POST"
+    ]
 
 
 def _walked_sites(fake: _FakeCsod) -> list[int]:
-    return [
-        int(u.rsplit("/", 1)[1]) for _, u, _ in fake.requests if "/careersites/" in u
-    ]
+    return [int(url.rsplit("/", 1)[1]) for url in fake.urls() if "/careersites/" in url]
 
 
 def test_inactive_sites_are_walked_but_not_searched():
@@ -179,11 +169,13 @@ def test_the_search_goes_to_the_pages_pod_and_the_tenant_host_gets_the_session_c
     `csod.context.endpoints.cloud`. US-pod tenant hosts 401 without `ASP.NET_SessionId`, whose
     value is the JWT's `aud` (14 of 14 US-pod tenants)."""
     _, fake, _ = _scrape("ama-assn")
-    posts = [u for m, u, _ in fake.requests if m == "POST"]
+    posts = [request.url for request in fake.requests if request.method == "POST"]
     assert posts and all(
         u == "https://us.api.csod.com/rec-job-search/external/jobs" for u in posts
     )
-    tenant_calls = [kw for _, u, kw in fake.requests if "/careersites/" in u]
+    tenant_calls = [
+        request.kwargs for request in fake.requests if "/careersites/" in request.url
+    ]
     assert all(
         kw["headers"]["Cookie"] == "ASP.NET_SessionId=fixture-session-ama-assn"
         for kw in tenant_calls
@@ -218,9 +210,9 @@ def test_the_description_is_the_job_ad_not_the_listing_fragment():
 def test_the_job_ad_is_fetched_from_the_site_the_posting_was_seen_on():
     _, fake, _ = _scrape("ama-assn")
     ads = sorted(
-        u.split("/CareerSite/")[1].split("?")[0]
-        for _, u, _ in fake.requests
-        if "/JobRequisitions/" in u
+        url.split("/CareerSite/")[1].split("?")[0]
+        for url in fake.urls()
+        if "/JobRequisitions/" in url
     )
     assert ads == [
         "2/JobRequisitions/4070",
@@ -265,7 +257,11 @@ def test_posted_at_is_the_listing_date_read_as_us_month_first():
     jobs = _by_id(_scrape("ama-assn")[0])
     assert jobs["4125"].posted_at == "2026-08-27"
     assert jobs["4070"].posted_at == "2026-07-14"
-    search = [kw["json"] for m, _, kw in _scrape("ama-assn")[1].requests if m == "POST"]
+    search = [
+        request.kwargs["json"]
+        for request in _scrape("ama-assn")[1].requests
+        if request.method == "POST"
+    ]
     assert all(b["cultureName"] == "en-US" for b in search)
 
 
@@ -293,9 +289,9 @@ def test_an_html_escaped_title_is_unescaped():
 
 def _ad_fetches(fake: _FakeCsod) -> list[str]:
     return sorted(
-        u.split("JobRequisitions/")[1].split("?")[0]
-        for _, u, _ in fake.requests
-        if "/JobRequisitions/" in u
+        url.split("JobRequisitions/")[1].split("?")[0]
+        for url in fake.urls()
+        if "/JobRequisitions/" in url
     )
 
 
@@ -323,7 +319,7 @@ def test_the_tech_gate_and_the_description_store_skip_job_ads(monkeypatch):
 
 
 def _home_fetches(fake: _FakeCsod) -> int:
-    return sum(1 for _, u, _ in fake.requests if "/home?c=" in u)
+    return sum(1 for url in fake.urls() if "/home?c=" in url)
 
 
 def test_an_expired_token_is_refreshed_once_and_the_request_retried():
@@ -339,17 +335,14 @@ def test_an_expired_token_is_refreshed_once_and_the_request_retried():
 
 def test_a_401_that_survives_the_refresh_fails_the_board():
     fake = _FakeCsod("ama-assn", _boards()["ama-assn"])
-    fake.fetch_orig = fake.fetch
-
-    def always_401(method, url, **kw):
-        if "rec-job-search" in url:
-            fake.requests.append((method, url, kw))
-            return _Response(401, "")
-        return fake.fetch_orig(method, url, **kw)
-
-    fake.fetch = always_401
+    tenant_route = fake.route
+    fake.route = lambda method, url, kwargs: (
+        _csod_response(401, "")
+        if "rec-job-search" in url
+        else tenant_route(method, url, kwargs)
+    )
     scraper = CornerstoneScraper("ama-assn", fetcher=fake)
-    with pytest.raises(HTTPError):
+    with pytest.raises(http.RequestsError, match="HTTP 401"):
         scraper.fetch_raw()
 
 
@@ -359,7 +352,7 @@ def test_a_corp_with_no_career_site_reads_as_no_jobs():
     jobs, fake, _ = _scrape("ama-assn", home_status={1: 302, 2: 302, 3: 302})
     assert jobs == []
     assert _home_fetches(fake) == 3
-    assert not [u for _, u, _ in fake.requests if "/careersites/" in u]
+    assert not [url for url in fake.urls() if "/careersites/" in url]
 
 
 def test_the_token_is_read_from_the_next_site_when_site_1_redirects():
@@ -377,21 +370,21 @@ class _PagedSearch(_FakeCsod):
         self.rows = [{**template, "requisitionId": i} for i in range(served)]
         self.total = total
 
-    def fetch(self, method, url, **kwargs):
+    def _answer(self, method, url, kwargs):
         if method == "POST":
-            self.requests.append((method, url, kwargs))
             body = kwargs["json"]
             if body["careerSitePageId"] != 2:
-                return _Response(200, {"data": {"totalCount": 0, "requisitions": []}})
+                return _csod_response(
+                    200, {"data": {"totalCount": 0, "requisitions": []}}
+                )
             size, page = body["pageSize"], body["pageNumber"]
             chunk = self.rows[(page - 1) * size : page * size]
-            return _Response(
+            return _csod_response(
                 200, {"data": {"totalCount": self.total, "requisitions": chunk}}
             )
         if "/JobRequisitions/" in url:
-            self.requests.append((method, url, kwargs))
-            return _Response(500, "")
-        return super().fetch(method, url, **kwargs)
+            return _csod_response(500, "")
+        return super()._answer(method, url, kwargs)
 
 
 def test_a_site_is_read_page_by_page_until_its_total():
@@ -402,9 +395,9 @@ def test_a_site_is_read_page_by_page_until_its_total():
     raw = scraper.fetch_raw()
     assert len(raw["postings"]) == 2345
     assert [
-        kw["json"]["pageNumber"]
-        for m, _, kw in fake.requests
-        if m == "POST" and kw["json"]["careerSitePageId"] == 2
+        request.kwargs["json"]["pageNumber"]
+        for request in fake.requests
+        if request.method == "POST" and request.kwargs["json"]["careerSitePageId"] == 2
     ] == [1, 2, 3]
     assert scraper.truncated is None
 
@@ -434,25 +427,14 @@ def test_the_scraper_declares_its_detail_pass_and_no_salary():
     assert CornerstoneScraper("aak")._salary_field({}) is None
 
 
-def test_the_pooled_session_keeps_no_cornerstone_cookies(monkeypatch):
+def test_the_pooled_session_keeps_no_cornerstone_cookies():
     """The real transport is a thread-pooled session with a cookie jar. On US-pod tenants the
     jar's `ASP.NET_SessionId` *plus* the explicit header answers 401 (6 of 6 trials, ama-assn and
     alamo), and re-reading the career-site page with the jar populated redirects to `/ui/error`
     (ama-assn, aswatsoneurope). So the page's cookies are dropped as soon as it is read, and
     every tenant-host request carries its session only as the header."""
-    from headstart import http
-
-    class _Jar:
-        def __init__(self) -> None:
-            self.cleared: list[str] = []
-
-        def clear(self, domain=None, path=None):
-            self.cleared.append(domain)
-
-    jar = _Jar()
-    monkeypatch.setattr(http, "session", lambda: type("S", (), {"cookies": jar})())
-    _scrape("ama-assn")
-    assert jar.cleared and set(jar.cleared) == {"ama-assn.csod.com"}
+    _, fake, _ = _scrape("ama-assn")
+    assert fake.cookie_clears and set(fake.cookie_clears) == {"ama-assn.csod.com"}
 
 
 def test_a_refused_site_answer_fails_the_board_rather_than_walking_on():
@@ -461,7 +443,7 @@ def test_a_refused_site_answer_fails_the_board_rather_than_walking_on():
     board = _boards()["ama-assn"]
     board["careersites"]["2"] = {"status": 403, "body": {}}
     fake = _FakeCsod("ama-assn", board)
-    with pytest.raises(HTTPError):
+    with pytest.raises(http.RequestsError, match="HTTP 403"):
         CornerstoneScraper("ama-assn", fetcher=fake).fetch_raw()
     assert _walked_sites(fake) == [1, 2]
 
@@ -473,17 +455,16 @@ def test_a_site_the_search_does_not_know_lists_nothing():
     board = _boards()["ama-assn"]
 
     class _Unindexed(_FakeCsod):
-        def fetch(self, method, url, **kwargs):
+        def _answer(self, method, url, kwargs):
             if method == "POST":
-                self.requests.append((method, url, kwargs))
-                return _Response(
+                return _csod_response(
                     404,
                     {
                         "status": "ValidationError",
                         "error": {"code": "ResourceNotFound"},
                     },
                 )
-            return super().fetch(method, url, **kwargs)
+            return super()._answer(method, url, kwargs)
 
     scraper = CornerstoneScraper("ama-assn", fetcher=_Unindexed("ama-assn", board))
     assert scraper.listing() == []
@@ -517,15 +498,15 @@ def test_a_search_404_without_resource_not_found_fails_the_board():
     news, and must not turn a live Board into zero jobs."""
 
     class _Moved(_FakeCsod):
-        def fetch(self, method, url, **kwargs):
+        def _answer(self, method, url, kwargs):
             if method == "POST":
-                return _Response(404, "<html>Not Found</html>")
-            return super().fetch(method, url, **kwargs)
+                return _csod_response(404, "<html>Not Found</html>")
+            return super()._answer(method, url, kwargs)
 
     scraper = CornerstoneScraper(
         "ama-assn", fetcher=_Moved("ama-assn", _boards()["ama-assn"])
     )
-    with pytest.raises(HTTPError):
+    with pytest.raises(http.RequestsError, match="HTTP 404"):
         scraper.listing()
 
 
@@ -534,11 +515,11 @@ def test_resource_not_found_after_rows_were_read_fails_the_board():
     otherwise pass for a whole site."""
 
     class _GoneMidWalk(_PagedSearch):
-        def fetch(self, method, url, **kwargs):
+        def _answer(self, method, url, kwargs):
             if method == "POST" and kwargs["json"]["pageNumber"] > 1:
-                return _Response(404, {"error": {"code": "ResourceNotFound"}})
-            return super().fetch(method, url, **kwargs)
+                return _csod_response(404, {"error": {"code": "ResourceNotFound"}})
+            return super()._answer(method, url, kwargs)
 
     scraper = CornerstoneScraper("aak", fetcher=_GoneMidWalk(total=2345, served=2345))
-    with pytest.raises(HTTPError):
+    with pytest.raises(http.RequestsError, match="HTTP 404"):
         scraper.listing()

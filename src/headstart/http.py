@@ -27,6 +27,7 @@ fallback** (``egress_group``), which escalates from "try again" to "try from som
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import random
 import threading
 import time
@@ -587,6 +588,19 @@ class HTTPFetcher:
         self, session: Any, method: str, url: str, **kwargs: Any
     ) -> Any:
         return await fetch_async(session, method, url, **kwargs)
+
+    def clear_cookies(self, domain: str | None = None) -> None:
+        """Clear the calling thread's pooled session jar (ADR-0199) — the one :func:`fetch`
+        sends, so a scraper resets exactly the cookies its next request would carry. A
+        multiplexed pass's ``AsyncSession`` keeps its own jar, which its caller clears directly.
+        """
+        jar = session().cookies
+        if domain is None:
+            jar.clear()
+            return
+        # `CookieJar.clear(domain)` raises KeyError when the jar holds nothing for that domain.
+        with contextlib.suppress(KeyError):
+            jar.clear(domain=domain)
 
 
 #: :class:`~headstart.scrapers.base.BaseScraper`'s default fetcher. Stateless — it only forwards

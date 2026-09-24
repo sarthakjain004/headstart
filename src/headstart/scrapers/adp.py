@@ -53,6 +53,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 from headstart import company_name, http, salary
+from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -271,8 +272,10 @@ class ADPScraper(BaseScraper):
     #: Process-wide, shared by every instance (see `_Pacer`).
     pacer = _PACER
 
-    def __init__(self, slug: str, company: str | None = None) -> None:
-        super().__init__(slug, company)
+    def __init__(
+        self, slug: str, company: str | None = None, fetcher: Fetcher | None = None
+    ) -> None:
+        super().__init__(slug, company, fetcher)
         self.cid, self.cc_id = slug.split("/", 1)
 
     def url(self) -> str:

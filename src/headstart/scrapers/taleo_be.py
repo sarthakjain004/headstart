@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
 
+from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
@@ -229,8 +230,10 @@ class TaleoBEScraper(BaseScraper):
     detail_workers = _DETAIL_WORKERS
     has_detail_pass = True
 
-    def __init__(self, slug: str, company: str | None = None) -> None:
-        super().__init__(slug, company)
+    def __init__(
+        self, slug: str, company: str | None = None, fetcher: Fetcher | None = None
+    ) -> None:
+        super().__init__(slug, company, fetcher)
         # The liveness ledger may disambiguate two same-named career sites with a stable Taleo
         # suffix.  It is a Board identity, not the company name shown to job seekers.
         self.company = re.sub(r" \[Taleo [^]]+\]$", "", self.company)

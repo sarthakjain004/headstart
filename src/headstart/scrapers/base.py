@@ -289,9 +289,10 @@ class BaseScraper(ABC):
     #: group is walled, so it sits ~95% whether or not the fallback bought anything. Only a
     #: per-Board outcome can.
     #:
-    #: Only requests made through :meth:`_get` carry the opt-in. A scraper that calls
-    #: ``http.fetch`` or ``http.fetch_async`` directly (most of them do, for their detail passes) must pass
-    #: ``**self._egress()`` itself, or setting this is silently inert.
+    #: Requests made through :meth:`_get`, :meth:`_fetch` and their async counterparts carry the
+    #: opt-in. A scraper that calls its fetcher directly must pass ``**self._egress()`` itself, or
+    #: setting this is silently inert: Workday's listing POST does, and drops it on purpose for its
+    #: one direct-egress retry.
     egress_fallback_on: frozenset[int] = frozenset()
 
     #: Hosts this ATS parks a decommissioned tenant on — its own marketing pages. A Board whose
@@ -345,9 +346,8 @@ class BaseScraper(ABC):
         # — resolved here, not as the parameter's own default value — means a caller that never
         # passes `fetcher` gets exactly today's global-http behaviour, unchanged, while a test
         # (or a future second HTTP-shaped adapter) can inject a fake without monkeypatching
-        # `headstart.http` itself. None of the nine scrapers that override `__init__` need any
-        # change for this: they all call `super().__init__(slug, company)` positionally, which
-        # still resolves to the same default.
+        # `headstart.http` itself. Every scraper that overrides `__init__` passes `fetcher` on to
+        # here, and `registry.get_scraper` takes one too, so a fake reaches any Scraper (ADR-0199).
         self._fetcher: Fetcher = (
             fetcher if fetcher is not None else http.DEFAULT_FETCHER
         )
