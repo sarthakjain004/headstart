@@ -62,7 +62,15 @@ _SLUG = re.compile(r"[^A-Za-z0-9]+")
 # single-quoted string (\xNN hex escapes) wrapping JSON
 _DETAIL_JOBS = re.compile(r"jobs\s*=\s*JSON\.parse\('((?:[^'\\]|\\.)*)'\)")
 _JS_ESCAPE = re.compile(r"\\x([0-9a-fA-F]{2})|\\(.)")
-_UNAVAILABLE = "posting explicitly unavailable"
+
+
+class _PostingClosed(DetailLost):
+    """The detail page says the posting is gone: a closure, not a gap in the read."""
+
+    def __init__(self) -> None:
+        super().__init__("posting explicitly unavailable")
+
+
 #: The verdict a closed posting's detail page renders in place of its record, in the Board's
 #: language — each seen live 2026-09-25 (a sweep of /jobs/Careers/{unknown id} across the
 #: ledger; the English and Portuguese ones also on listed ids, harrisonconsultingsolutions and
@@ -218,6 +226,7 @@ class ZohoScraper(BaseScraper):
         # No tech gate: a department-blind gate would drop 47.4% of zoho's tech postings
         # (ADR-0166). No held-description skip either: a stored description does not hold the
         # Salary above.
+        self._unavailable_ids.clear()
         details = self.run_detail_pass(
             ids, key_of=lambda job_id: job_id, what="detail pages"
         )
@@ -249,7 +258,7 @@ class ZohoScraper(BaseScraper):
         try:
             return self._detail_record_of(response.text)
         except DetailLost as lost:
-            if lost.cause == _UNAVAILABLE:
+            if isinstance(lost, _PostingClosed):
                 self._unavailable_ids.add(job_id)
             raise
 
@@ -269,7 +278,7 @@ class ZohoScraper(BaseScraper):
         m = _DETAIL_JOBS.search(page)
         if not m:
             if any(verdict in page for verdict in _UNAVAILABLE_VERDICTS):
-                raise DetailLost(_UNAVAILABLE)
+                raise _PostingClosed()
             raise DetailLost("no jobs blob on the page")
         try:
             records = json.loads(_js_unescape(m.group(1)))
@@ -284,7 +293,7 @@ class ZohoScraper(BaseScraper):
         page, details, unavailable = (
             (raw, {}, frozenset())
             if isinstance(raw, str)
-            else (raw["page"], raw["details"], raw.get("unavailable", frozenset()))
+            else (raw["page"], raw["details"], raw["unavailable"])
         )
         records = self._records(page)
         if not records:
