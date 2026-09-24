@@ -930,6 +930,49 @@ def test_verification_job_evidence_does_not_leak_between_inputs(tmp_path, monkey
     )
 
 
+def test_a_direct_jibe_client_host_is_the_jibe_board_named_by_its_label(monkeypatch):
+    """`{client}.jibeapply.com` is a Jibe Board keyed by the bare label, while a vanity CNAME
+    target (`careers.rm.com.jibeapply.com`) keeps the zone's existing `icims` routing."""
+    monkeypatch.setattr(
+        fp,
+        "get",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("unnecessary HTTP")),
+    )
+    monkeypatch.setattr(fp, "cname_chain", lambda _host: [])
+    by_url = fp.probe_host(
+        fp.HostSeed(
+            "Costco",
+            "costco.jibeapply.com",
+            "costco.jibeapply.com",
+            "https://costco.jibeapply.com/jobs/123",
+            "",
+            1,
+        )
+    )
+    by_dns = fp.probe_host(
+        fp.HostSeed("Costco", "costco.jibeapply.com", "costco.jibeapply.com", "", "", 1)
+    )
+    assert (by_url["board_key"], by_url["tenant"]) == ("jibe:costco", "costco")
+    assert (by_dns["board_key"], by_dns["tenant"]) == ("jibe:costco", "costco")
+
+    monkeypatch.setattr(
+        fp, "cname_chain", lambda _host: ["careers.rm.com.jibeapply.com"]
+    )
+    vanity = fp.probe_host(
+        fp.HostSeed("RM", "careers.rm.com", "careers.rm.com", "", "", 1)
+    )
+    assert vanity["ats"] == "icims"
+
+    assert fp.scan("https://careers.rm.com.jibeapply.com/jobs", "rm.com") == []
+    assert (
+        fp.normalise_tenant(
+            "jibe", "costco.jibeapply.com", "https://costco.jibeapply.com/"
+        )
+        == "costco"
+    )
+    assert fp.normalise_tenant("jibe", "www.jibeapply.com", "https://x/") == ""
+
+
 def test_an_adp_career_center_link_yields_its_cid_ccid_board():
     """ADP Workforce Now keys a Board by two query values, in any order and, in HTML, joined by
     `&amp;`. Only a career-center link names one; ADP Recruiting Management

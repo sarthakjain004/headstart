@@ -21,6 +21,7 @@ def _stamp(**overrides):
         "family_map_fingerprint": "abc123",
         "tech_filter_version": 1,
         "derivations_version": 12,
+        "dedup_version": 1,
     }
     base.update(overrides)
     return base
@@ -36,7 +37,7 @@ def test_first_stamp_always_writes(tmp_path):
         rows = list(csv.reader(fh))
     assert rows == [
         list(trends_epochs._COLUMNS),
-        ["2026-09-16T00:00:00+00:00", "1", "abc123", "1", "12"],
+        ["2026-09-16T00:00:00+00:00", "1", "abc123", "1", "12", "1"],
     ]
 
 
@@ -62,7 +63,7 @@ def test_a_changed_field_writes_a_new_row(tmp_path):
     with path.open(encoding="utf-8", newline="") as fh:
         rows = list(csv.reader(fh))
     assert len(rows) == 3
-    assert rows[-1] == ["2026-09-16T02:00:00+00:00", "1", "abc123", "2", "12"]
+    assert rows[-1] == ["2026-09-16T02:00:00+00:00", "1", "abc123", "2", "12", "1"]
 
 
 def test_every_field_can_trigger_a_row_independently(tmp_path):
@@ -73,9 +74,10 @@ def test_every_field_can_trigger_a_row_independently(tmp_path):
         path, "t2", **_stamp(family_map_fingerprint="xyz")
     )
     assert trends_epochs.append_if_changed(path, "t3", **_stamp(derivations_version=13))
+    assert trends_epochs.append_if_changed(path, "t4", **_stamp(dedup_version=2))
     with path.open(encoding="utf-8", newline="") as fh:
         rows = list(csv.reader(fh))
-    assert len(rows) == 5  # header + 4 real boundaries
+    assert len(rows) == 6  # header + 5 real boundaries
 
 
 def test_a_missing_file_is_the_same_as_no_prior_stamp(tmp_path):
@@ -96,5 +98,75 @@ def test_a_malformed_file_heals_by_rebuilding_rather_than_appending_beneath_it(
     # would keep failing to parse a "previous" stamp and would write on every run forever
     assert rows == [
         list(trends_epochs._COLUMNS),
-        ["t0", "1", "abc123", "1", "12"],
+        ["t0", "1", "abc123", "1", "12", "1"],
     ]
+
+
+_HEADER_WITHOUT_DEDUP_VERSION = (
+    ",".join(trends_epochs._HEADER_WITHOUT_DEDUP_VERSION) + "\n"
+)
+
+
+def test_a_file_from_before_dedup_version_is_upgraded_not_rebuilt(tmp_path):
+    """The rows written before ``dedup_version`` existed are real boundaries the Space still
+    marks. Rebuilding on the header mismatch, as a corrupt file is, would silently erase them;
+    they carry the version the rules had when the column was added instead."""
+    path = tmp_path / "trends_epochs.csv"
+    path.write_text(
+        _HEADER_WITHOUT_DEDUP_VERSION + "t0,1,abc123,1,11\nt1,1,abc123,1,12\n",
+        encoding="utf-8",
+    )
+    wrote = trends_epochs.append_if_changed(path, "t2", **_stamp())
+    assert wrote is False  # the same methodology as t1: an upgrade is not a boundary
+    with path.open(encoding="utf-8", newline="") as fh:
+        rows = list(csv.reader(fh))
+    assert rows == [
+        list(trends_epochs._COLUMNS),
+        ["t0", "1", "abc123", "1", "11", "1"],
+        ["t1", "1", "abc123", "1", "12", "1"],
+    ]
+    assert list(tmp_path.iterdir()) == [
+        path
+    ]  # renamed into place, nothing left beside it
+
+
+def test_a_dedup_change_on_an_upgraded_file_appends_after_the_old_rows(tmp_path):
+    path = tmp_path / "trends_epochs.csv"
+    path.write_text(
+        _HEADER_WITHOUT_DEDUP_VERSION + "t0,1,abc123,1,12\n", encoding="utf-8"
+    )
+    assert trends_epochs.append_if_changed(path, "t1", **_stamp(dedup_version=2))
+    with path.open(encoding="utf-8", newline="") as fh:
+        rows = list(csv.reader(fh))
+    assert rows == [
+        list(trends_epochs._COLUMNS),
+        ["t0", "1", "abc123", "1", "12", "1"],
+        ["t1", "1", "abc123", "1", "12", "2"],
+    ]
+
+
+def test_a_blank_line_in_an_old_file_is_not_upgraded_into_a_false_boundary(tmp_path):
+    path = tmp_path / "trends_epochs.csv"
+    path.write_text(
+        _HEADER_WITHOUT_DEDUP_VERSION + "t0,1,abc123,1,12\n\n", encoding="utf-8"
+    )
+    assert trends_epochs.append_if_changed(path, "t1", **_stamp()) is False
+    with path.open(encoding="utf-8", newline="") as fh:
+        assert list(csv.reader(fh))[1:] == [["t0", "1", "abc123", "1", "12", "1"]]
+
+
+def test_a_failed_upgrade_leaves_the_old_file_and_no_staged_copy(tmp_path, monkeypatch):
+    path = tmp_path / "trends_epochs.csv"
+    old = _HEADER_WITHOUT_DEDUP_VERSION + "t0,1,abc123,1,12\n"
+    path.write_text(old, encoding="utf-8")
+
+    def fail(self, target):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(type(path), "replace", fail)
+    try:
+        trends_epochs.append_if_changed(path, "t1", **_stamp())
+    except OSError:
+        pass
+    assert path.read_text(encoding="utf-8") == old
+    assert list(tmp_path.iterdir()) == [path]

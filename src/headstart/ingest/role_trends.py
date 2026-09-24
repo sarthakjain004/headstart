@@ -41,7 +41,12 @@ import numpy as np
 from headstart import log, roles, tech_filter
 from headstart.ingest import REPO_ROOT, role_assignments, trends_epochs
 from headstart.ingest.doc_prep import DERIVATIONS_VERSION
-from headstart.ingest.index_plan import boards_by_canon, live_keep_set, resolve_board
+from headstart.ingest.index_plan import (
+    DEDUP_VERSION,
+    boards_by_canon,
+    live_keep_set,
+    resolve_board,
+)
 
 _log = log.get(__name__, __spec__)
 
@@ -633,7 +638,7 @@ def main() -> int:
         _log.warning(f"assignment diff skipped: {type(exc).__name__}: {exc}")
 
     # Which methodology moved since the last tick, if any (ADR-0164) — a re-curated family map,
-    # a tech-filter version bump, or a derivations-version bump each change what a count means
+    # a tech-filter, derivations or dedup version bump (ADR-0188) each change what a count means
     # without a centroid refit, and none of them leave any other mark on this ledger. Diagnostic
     # only: never fails the run.
     try:
@@ -644,6 +649,7 @@ def main() -> int:
             family_map_fingerprint=roles.family_map_fingerprint(args.families),
             tech_filter_version=tech_filter.TECH_FILTER_VERSION,
             derivations_version=DERIVATIONS_VERSION,
+            dedup_version=DEDUP_VERSION,
         )
         if wrote_epoch:
             _log.info(f"epochs: methodology boundary recorded @ {ts} -> {args.epochs}")

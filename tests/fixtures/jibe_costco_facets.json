@@ -1,0 +1,276 @@
+{
+ "_source": "costco.jibeapply.com /api/jobs page 1, 2026-09-24: totalCount and filter only (jobs removed)",
+ "totalCount": 20093,
+ "filter": {
+  "facetList": {
+   "state": [
+    {
+     "term": "Alabama",
+     "count": 166
+    },
+    {
+     "term": "Alaska",
+     "count": 139
+    },
+    {
+     "term": "Arizona",
+     "count": 592
+    },
+    {
+     "term": "Arkansas",
+     "count": 31
+    },
+    {
+     "term": "California",
+     "count": 4257
+    },
+    {
+     "term": "Colorado",
+     "count": 494
+    },
+    {
+     "term": "Connecticut",
+     "count": 254
+    },
+    {
+     "term": "Delaware",
+     "count": 31
+    },
+    {
+     "term": "Florida",
+     "count": 1093
+    },
+    {
+     "term": "Georgia",
+     "count": 567
+    },
+    {
+     "term": "Hawaii",
+     "count": 219
+    },
+    {
+     "term": "Idaho",
+     "count": 241
+    },
+    {
+     "term": "Illinois",
+     "count": 790
+    },
+    {
+     "term": "Indiana",
+     "count": 316
+    },
+    {
+     "term": "Iowa",
+     "count": 138
+    },
+    {
+     "term": "Kansas",
+     "count": 121
+    },
+    {
+     "term": "Kentucky",
+     "count": 130
+    },
+    {
+     "term": "Louisiana",
+     "count": 118
+    },
+    {
+     "term": "Maine",
+     "count": 31
+    },
+    {
+     "term": "Maryland",
+     "count": 361
+    },
+    {
+     "term": "Massachusetts",
+     "count": 231
+    },
+    {
+     "term": "Michigan",
+     "count": 594
+    },
+    {
+     "term": "Minnesota",
+     "count": 488
+    },
+    {
+     "term": "Mississippi",
+     "count": 30
+    },
+    {
+     "term": "Missouri",
+     "count": 261
+    },
+    {
+     "term": "Montana",
+     "count": 146
+    },
+    {
+     "term": "Nebraska",
+     "count": 131
+    },
+    {
+     "term": "Nevada",
+     "count": 265
+    },
+    {
+     "term": "New Hampshire",
+     "count": 31
+    },
+    {
+     "term": "New Jersey",
+     "count": 669
+    },
+    {
+     "term": "New Mexico",
+     "count": 83
+    },
+    {
+     "term": "New York",
+     "count": 647
+    },
+    {
+     "term": "North Carolina",
+     "count": 319
+    },
+    {
+     "term": "North Dakota",
+     "count": 61
+    },
+    {
+     "term": "Ohio",
+     "count": 421
+    },
+    {
+     "term": "Oklahoma",
+     "count": 128
+    },
+    {
+     "term": "Oregon",
+     "count": 386
+    },
+    {
+     "term": "Pennsylvania",
+     "count": 377
+    },
+    {
+     "term": "Puerto Rico",
+     "count": 131
+    },
+    {
+     "term": "South Carolina",
+     "count": 219
+    },
+    {
+     "term": "South Dakota",
+     "count": 33
+    },
+    {
+     "term": "Tennessee",
+     "count": 255
+    },
+    {
+     "term": "Texas",
+     "count": 1559
+    },
+    {
+     "term": "Utah",
+     "count": 487
+    },
+    {
+     "term": "Vermont",
+     "count": 31
+    },
+    {
+     "term": "Virginia",
+     "count": 541
+    },
+    {
+     "term": "Washington",
+     "count": 1041
+    },
+    {
+     "term": "Washington, DC",
+     "count": 31
+    },
+    {
+     "term": "Wisconsin",
+     "count": 408
+    }
+   ]
+  },
+  "categories": {
+   "all": [
+    {
+     "category": "Almacenes y empresas asociadas",
+     "numJobs": 107
+    },
+    {
+     "category": "Costco Travel",
+     "numJobs": 2
+    },
+    {
+     "category": "Distribuci\u00f3n (Almacenes de distribuci\u00f3n y L\u00f3g\u00edstica)",
+     "numJobs": 15
+    },
+    {
+     "category": "Distribution (Depots and Logisitcs)",
+     "numJobs": 1079
+    },
+    {
+     "category": "Home/Regional Offices",
+     "numJobs": 6
+    },
+    {
+     "category": "Manufacturing and Other Businesses",
+     "numJobs": 65
+    },
+    {
+     "category": "Member Service Centers",
+     "numJobs": 8
+    },
+    {
+     "category": "Warehouses and Business Associates",
+     "numJobs": 18077
+    }
+   ],
+   "shortlist": [
+    {
+     "category": "Almacenes y empresas asociadas",
+     "numJobs": 107
+    },
+    {
+     "category": "Costco Travel",
+     "numJobs": 2
+    },
+    {
+     "category": "Distribuci\u00f3n (Almacenes de distribuci\u00f3n y L\u00f3g\u00edstica)",
+     "numJobs": 15
+    },
+    {
+     "category": "Distribution (Depots and Logisitcs)",
+     "numJobs": 1079
+    },
+    {
+     "category": "Home/Regional Offices",
+     "numJobs": 6
+    },
+    {
+     "category": "Manufacturing and Other Businesses",
+     "numJobs": 65
+    },
+    {
+     "category": "Member Service Centers",
+     "numJobs": 8
+    },
+    {
+     "category": "Warehouses and Business Associates",
+     "numJobs": 18077
+    }
+   ]
+  }
+ }
+}

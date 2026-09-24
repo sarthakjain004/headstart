@@ -8,6 +8,11 @@ updates:
     groups:
       python:
         patterns: ["*"]   # one grouped PR instead of one per package
+    # The embed extra's `transformers<5.13` is a measured cap (see its comment in pyproject.toml):
+    # newer releases break the embedding model's remote code, and quality CI never installs that
+    # extra, so a grouped bump arrives green and breaks the nightly embed. Widen it by measuring.
+    ignore:
+      - dependency-name: "transformers"
   # Keeps the SHA-pinned actions in .github/workflows current.
   - package-ecosystem: github-actions
     directory: "/"

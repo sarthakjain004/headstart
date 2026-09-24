@@ -28,7 +28,7 @@ from datetime import UTC
 import lancedb
 
 from headstart import roles, tech_filter
-from headstart.ingest import role_trends
+from headstart.ingest import index_plan, role_trends
 from headstart.ingest.doc_prep import DERIVATIONS_VERSION
 from headstart.search import PROD_TABLE
 
@@ -205,11 +205,19 @@ def test_a_tick_records_one_epoch_row_then_stays_quiet_while_unchanged(
     _run(tmp_path, monkeypatch)
     rows = list(csv.reader(epochs.open(encoding="utf-8", newline="")))
     assert len(rows) == 2  # header + exactly one boundary
-    _, centroid_version, fingerprint, tech_filter_version, derivations_version = rows[1]
+    (
+        _,
+        centroid_version,
+        fingerprint,
+        tech_filter_version,
+        derivations_version,
+        dedup_version,
+    ) = rows[1]
     assert centroid_version == "1"
     assert fingerprint  # a real hash, not asserting its exact value
     assert tech_filter_version == str(tech_filter.TECH_FILTER_VERSION)
     assert derivations_version == str(DERIVATIONS_VERSION)
+    assert dedup_version == str(index_plan.DEDUP_VERSION)
 
     _run(tmp_path, monkeypatch)  # nothing about the taxonomy or the code changed
     rows_again = list(csv.reader(epochs.open(encoding="utf-8", newline="")))

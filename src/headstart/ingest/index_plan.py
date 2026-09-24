@@ -49,6 +49,23 @@ from headstart.ingest.board_operator import tenant
 
 _log = log.get(__name__, __spec__)
 
+#: The version of the rules that decide which served rows are duplicates of each other (ADR-0188).
+#: A change to them removes rows that were served before, all in the tick it first runs, and the
+#: Trends chart would draw that as a hiring drop; ``role_trends`` stamps this into the
+#: ADR-0164 epoch ledger so the chart marks it instead. Bump it in the change that alters which
+#: rows count as duplicates: a new grouping in :func:`plan_prune`, or a new alias-ledger signal
+#: (:mod:`headstart.board_aliases`). Don't bump it for a routine alias-ledger rewrite that applies
+#: an existing signal, nor for a ``config.PARKED_BOARDS`` entry, which is a temporary hold rather
+#: than a duplicate rule. The marker lands on the step only because both routes remove rows
+#: through ``index prune``, which has no grace period; a dedup that instead stops emitting ids at
+#: scrape time would drain through ``sync``'s two-scrape grace (ADR-0083) and read as a slow
+#: decline after the marker, so keep new dedup rules on the prune path.
+#:
+#: 1 — the rules when the counter was added (ADR-0188): casing duplicates, redirect and
+#:     ``shared-reqs`` aliases. 2 — Taleo Enterprise ``subset-reqs`` aliases (ADR-0186).
+#: 3 — one row per Workday tenant and requisition, public sites first (ADR-0187).
+DEDUP_VERSION = 3
+
 
 @dataclass(frozen=True, slots=True)
 class SyncPlan:
@@ -688,6 +705,8 @@ def plan_prune(
     index_ids: Iterable[str], keep: set[str], *, site_jobs: dict[str, int] | None = None
 ) -> tuple[list[str], list[str]]:
     """Split index ids into ``(evict_off_board, evict_duplicate)``.
+
+    A change to what counts as a duplicate here bumps :data:`DEDUP_VERSION` (ADR-0188).
 
     ``evict_off_board``: Board not in ``keep`` (dead / dropped from the ledger / disabled ATS).
     ``evict_duplicate``: among the survivors, every id but one per ``(lowercased Board, native id)``

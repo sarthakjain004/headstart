@@ -126,6 +126,10 @@ afterwards.
 
 ## Consequences
 
+This is a new duplicate rule, so it bumps `index_plan.DEDUP_VERSION` from 2 to 3
+([ADR-0188](0188-a-dedup-rule-change-is-a-trends-epoch.md)): the tick its first prune removes the
+7,146 rows carries a "duplicate removal changed" marker on the Trends chart.
+
 Projected on served v654, running the new planners against the committed ledger at `610578b3`
 (130,310-Board keep-set, 10,538 Workday sites with a count; the Workday side is identical to the
 pre-rebase ledger the figures were first taken on):

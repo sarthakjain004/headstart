@@ -49,6 +49,28 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # `jobvite._MAX_PAGES` (10,000 at 50 a page = 200), whose comment calls the cap "not
         # a cap anyone is expected to reach".
         "jobvite:jvauto",
+        # Jibe clients that are not a board of openings (ADR-0189), each read 2026-09-24.
+        # `fedex` lists 136,186 rows from `ats_code: fedex-prod-historical-jobs-feed` — page 1 is
+        # 98 postings dated 2024 and 2 dated 2025 — and its board page redirects to an Okta SSO
+        # login; its live openings are on FedEx's Workday Boards, which the workday ledger holds.
+        # `mortonfinancial` is the vendor's test data (`ats_code: test-bank` on 29 of 38 rows,
+        # `jobs-notacustomereutest.icims.com` apply links, dates from 2018). `testaxa` and
+        # `axatest` are AXA's UAT site (`testaxa-uat-taleo-external`, "2026-01-22 external job -
+        # Fred"; the real Board is `jibe:axa`). `discovery1` serves one posting, "TEST REQ APRIL-
+        # DO NOT APPLY". `icims` and `template` are the vendor's own labels, live with nothing
+        # listed. `hexdigital` is Jibe's own demo client: 906 rows, page 1 all "Software Engineer"
+        # with `hiring_organization: Jibe` or none and no `apply_url` on 98 of 100 — left in, it
+        # would serve 906 fake tech postings. `launch` is another: 25 stock titles ("Corporate
+        # Lawyer", "Security Officer") with no dates, each applying to its own Jibe host.
+        "jibe:fedex",
+        "jibe:mortonfinancial",
+        "jibe:testaxa",
+        "jibe:axatest",
+        "jibe:discovery1",
+        "jibe:icims",
+        "jibe:template",
+        "jibe:hexdigital",
+        "jibe:launch",
         # Pinpoint's test and demo tenants, each confirmed live with postings on 2026-09-23 by
         # reading its board title and posting titles rather than its slug. `hooli` (the sitcom
         # company) is the vendor's own: "Elvin new test", "Anca's test", "SUP-7257 Canadian
@@ -243,6 +265,15 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # employer. The "-dev" slug matches, but per this list's own rule that alone would
         # not have been enough.
         "sensehq:trm-dev",  # 204 postings
+        # Oracle's own Taleo Enterprise demo tenant, `pmg.taleo.net`. Both readable sections were
+        # read on 2026-09-24 (89 and 86 postings, mostly shared): "Director of Finance (DEMO)",
+        # "TEST 2 EPredix Assessment", "TN-CSW-Test", "test1-dup1T", "Sample", "Radius1". Its
+        # other two sections, `qatestcs` (unknown) and `mobilecs_demo_al` (dead), serve nothing
+        # readable today and are listed so a re-probe that finds them live changes nothing.
+        "taleo_enterprise:https://pmg.taleo.net/careersection/brandtss_faceted",
+        "taleo_enterprise:https://pmg.taleo.net/careersection/m1",
+        "taleo_enterprise:https://pmg.taleo.net/careersection/mobilecs_demo_al",
+        "taleo_enterprise:https://pmg.taleo.net/careersection/qatestcs",
         # Blackstone's own test sites; the second is named for what it serves. Workday slugs
         # ARE the careers URL, so these keys are longer than the rest.
         "workday:https://blackstone.wd1.myworkdayjobs.com/marni_test_site",
@@ -389,6 +420,21 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         # `EndeavorItSolution9` at 158, four at 0-10); they are separate Boards, left alone here
         # because only this one is large enough to have been measured.
         "smartrecruiters:endeavoritsolution",
+        # Jibe clients whose every posting is on a Board another ledger already holds (ADR-0189),
+        # so each posting would serve twice under two ATS labels — the Phenom rule. Measured
+        # 2026-09-24 by walking each client's whole listing and joining every `apply_url` host to
+        # the ledgers: stjude 163 of 163 on `stjude.wd1.myworkdayjobs.com`, spglobal 292 of 292 on
+        # `spgi.wd5`, fedexfreight 677 of 677 on `freight.wd108`, mercy 2,257 of 2,257 on
+        # `mercy.wd1` (all live Workday rows), mountsinai 1,821 of 1,821 on `ejis.fa.us6` and
+        # marriott 1 of 1 on `ejwl.fa.us2` (live Oracle rows). `aidt` was a candidate from its
+        # page 1 and is not parked: 1 of its 25 postings is on Workday. Un-park a client if its
+        # postings move off the held Board, or once cross-ATS dedup exists.
+        "jibe:stjude",
+        "jibe:spglobal",
+        "jibe:fedexfreight",
+        "jibe:mercy",
+        "jibe:mountsinai",
+        "jibe:marriott",
     }
 )
 

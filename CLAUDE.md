@@ -64,13 +64,29 @@ discovery landing (#576) moved five more. Board totals belong in README and CONT
   Board is the live one (`careers.ucb.com`). Widen past this gate only if cross-ATS dedup is built.
 - **iCIMS holds tenant hosts only.** Every live row has a hyphen in its tenant label; single-word
   `{customer}.icims.com` hosts are vendor infrastructure (`docs/icims/`) or recruiter logins
-  (#576). A vanity career site on Jibe, iCIMS's own career-site layer, is not a tenant: resolve it
-  to its `*.icims.com` host through the site's `/api/jobs` `apply_url`, and land that.
+  (#576). A vanity career site on Jibe, iCIMS's own career-site layer, is not an iCIMS tenant.
+- **Jibe lands a vanity career site as its client id, and parks clients on Boards already held.**
+  A Board is `{client}.jibeapply.com`; resolve a vanity host (`careers.costco.com`) to its client
+  with `scripts/discover/mine_jibe.py --vanity`, which reads the rows' `client_code`, else the
+  page's `_jibe` cid, which is sometimes a template leftover. The scraper drops a
+  posting whose iCIMS tenant is readable, so no iCIMS overlap needs a gate, but it cannot see a
+  Workday or Oracle backing Board: walk a new client's whole listing, join every `apply_url` host
+  to the ledgers, and park a client whose postings all sit on a held Board (ADR-0189).
+  Resolve DNS for `jibeapply.com` on a public resolver, never the OS one: macOS answered a false
+  "no such host" for live clients under a 64-thread sweep.
 - **ClearCompany: re-run `scripts/validate/clearcompany_shared_accounts.py` after landing rows.**
   Every label an HRM Direct account owns serves that whole account's feed, so a new label is often
   a second name for a Board already held (131 accounts spanned 453 labels on 2026-09-23). The
   script rewrites `data/validate/aliases/clearcompany.csv`; `dedupe_boards.py` finds none of these
   and refuses `--apply` for this ATS (ADR-0182).
+- **Taleo Enterprise: re-run `scripts/validate/taleo_enterprise_subset_sections.py` after every
+  refresh of its ledger.** A tenant's career sections often list the same requisitions (HDR's 15
+  sections listed the same 2,282 on 2026-09-24), so a section whose reqs another section of the
+  tenant already lists is buried in `data/validate/aliases/taleo_enterprise.csv` (signal
+  `subset-reqs`). Nothing scrapes a buried section, so the script is the only thing that notices
+  when one starts listing a req of its own, or when the section it is buried onto dies. It re-reads
+  every buried section and rewrites the file; `dedupe_boards.py` refuses `--apply` for this ATS
+  (ADR-0186).
 - **SuccessFactors holds RMK sites only.** `p_successfactors` accepts any `<urlset>`, so a corporate
   site or a Radancy career front probes `live`, and the scraper reads it as 0 jobs or as page titles
   ("Working at TUI"). Before landing a host, confirm a `/job/` page from its sitemap (urlset, RSS or
@@ -82,12 +98,8 @@ discovery landing (#576) moved five more. Board totals belong in README and CONT
 
 ### To build, by evidence
 
-Evidence for the first three is in `docs/discovery/2026-09-23_indeed-sweep-landing.md`.
+Evidence for the first two is in `docs/discovery/2026-09-23_indeed-sweep-landing.md`.
 
-- **Jibe.** 271 employers found by the Indeed sweep list 145,555 open jobs on Jibe sites, and 99.7%
-  of them sit on iCIMS tenants that serve `Disallow: /`, which the sitemap-only iCIMS scraper cannot
-  read. Each Jibe site serves `/api/jobs` JSON and allows crawling at `crawl-delay: 5`. Needs a
-  decision on reading a front whose backing tenant opts out.
 - **The unsupported ATSes the Indeed sweep resolved most companies to**, most first:
   Hireology, Recruiterflow, Avature. (Breezy led that count; it, ClearCompany, Pinpoint and
   Cornerstone are now built, #579, #582, #580 and #584, and the sweep's companies on all four are

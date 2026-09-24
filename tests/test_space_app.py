@@ -1483,16 +1483,8 @@ def _write_epochs(state: Path, rows: list[dict]) -> Path:
     path = state / "data" / "state" / "trends_epochs.csv"
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.DictWriter(
-            fh,
-            fieldnames=[
-                "ts",
-                "centroid_version",
-                "family_map_fingerprint",
-                "tech_filter_version",
-                "derivations_version",
-            ],
-        )
+        # the header is whatever the rows carry, so a fixture can write either shape
+        writer = csv.DictWriter(fh, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
     return path
@@ -1977,6 +1969,54 @@ def test_trends_epochs_are_narrowed_by_since_and_until(epochs_trends_app):
     ]
     d = client.get(f"/trends?until={quote(_T2)}").get_json()
     assert d["epochs"] == [{"ts": _T2, "changed": ["tech filter changed"]}]
+
+
+def test_trends_epochs_name_a_dedup_change(epochs_trends_app, tmp_path):
+    """A dedup-rule change removes served duplicates in one tick, which reads as a hiring drop
+    unless it is marked."""
+    stamp = {
+        "centroid_version": "2",
+        "family_map_fingerprint": "aaa",
+        "tech_filter_version": "2",
+        "derivations_version": "13",
+    }
+    path = _write_epochs(
+        tmp_path,
+        [
+            {"ts": _T1, **stamp, "dedup_version": "1"},
+            {"ts": _T2, **stamp, "dedup_version": "2"},
+        ],
+    )
+    assert epochs_trends_app._load_epochs(path) == [
+        {"ts": _T2, "changed": ["duplicate removal changed"]}
+    ]
+
+
+def test_trends_epochs_load_a_file_from_before_dedup_version(
+    epochs_trends_app, tmp_path
+):
+    """The Space deploys before the next tick upgrades the file, so it must read the old shape."""
+    stamp = {"centroid_version": "2", "family_map_fingerprint": "aaa"}
+    path = _write_epochs(
+        tmp_path,
+        [
+            {
+                "ts": _T1,
+                **stamp,
+                "tech_filter_version": "1",
+                "derivations_version": "13",
+            },
+            {
+                "ts": _T2,
+                **stamp,
+                "tech_filter_version": "2",
+                "derivations_version": "13",
+            },
+        ],
+    )
+    assert epochs_trends_app._load_epochs(path) == [
+        {"ts": _T2, "changed": ["tech filter changed"]}
+    ]
 
 
 def test_trends_epochs_are_not_narrowed_by_ats(epochs_trends_app):
