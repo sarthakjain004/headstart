@@ -10,9 +10,10 @@ One CSV per ATS at ``data/validate/liveness/{ats}.csv``::
 - ``checked_at`` — ISO date of the last probe; the freshness key.
 
 The ledger is the single source of truth: the Active list is ``status == live`` (see
-``config.load_active_companies``), the dead set is ``status == dead``, the unresolved set is
+``scrapable_boards.load``), the dead set is ``status == dead``, the unresolved set is
 ``status == unknown``. This module is pure CSV I/O plus the re-probe policy — no network — so both
-the checker (which probes and upserts) and ``config`` (which reads the live set) can share it.
+the checker (which probes and upserts) and ``scrapable_boards`` (which reads the live set) can
+share it.
 """
 
 from __future__ import annotations

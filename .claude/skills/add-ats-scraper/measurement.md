@@ -23,8 +23,8 @@ every measurement taken after.
    (ADP's `cid`/`ccId`)? The slug is the URL, the API key and the discovery key at once when you
    can make it so (pyjamahr's uuid turned out to be a detour — the API took the path slug).
    A compound slug follows workday's `slug_from`/`board_key` override (`workday.py`).
-   Board keys compare case-folded (`config.py`), so two slugs differing only in case are one
-   Board; and `board_identity.board_of` splits a Job id on its last `:`, so measure whether
+   Board keys compare case-folded (`scrapable_boards.py`), so two slugs differing only in case are
+   one Board; and `board_identity.board_of` splits a Job id on its last `:`, so measure whether
    native ids ever contain one (upstream ADP keyed on `itemID`, which does on 8 of 2,069 rows;
    the all-digit `ExternalJobID` does not).
 2. **Which slug spellings does discovery produce**, and does `slug_from(tenant, url)` normalise
@@ -139,7 +139,7 @@ every measurement taken after.
     surface named the employer.
     A per-posting field on a page the steady-state scrape never fetches is not a Board-level
     name. If nothing does, the slug stays the name —
-    which is acceptable for a readable label and not for an opaque one: `load_active_companies`
+    which is acceptable for a readable label and not for an opaque one: `scrapable_boards.load`
     passes the ledger's `tenant` as the name, so a GUID slug (ADP's `cid`, before `ClientName`)
     would display as a GUID.
     An opaque slug with no name surface is a **checkpoint**.

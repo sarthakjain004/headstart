@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Sample real boards to measure how one ATS shows salary (docs/salary-extraction/).
 
-For up to N live boards of ``<ats>`` (``config.load_active_companies`` — the same liveness-ledger
+For up to N live boards of ``<ats>`` (``scrapable_boards.load`` — the same liveness-ledger
 source and dedup every other production consumer uses), fetches the listing response through the
 *real* registered scraper (``registry.get_scraper``) and its real ``parse()``, then measures, per
 Job: whether ``salary`` came back populated (a structured-field hit), and whether the description
@@ -69,8 +69,8 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from headstart import http
-from headstart.config import EXCLUDED_BOARDS, CompanyRef, load_active_companies
+from headstart import http, scrapable_boards
+from headstart.config import CompanyRef
 from headstart.models import Job
 from headstart.scrapers import registry
 from headstart.scrapers.base import USER_AGENT, BaseScraper
@@ -130,7 +130,7 @@ class BoardResult:
 
 
 def _sample_boards(ats: str, n: int, seed: int) -> list[CompanyRef]:
-    all_companies = [c for c in load_active_companies(LEDGER_DIR) if c.ats == ats]
+    all_companies = [c for c in scrapable_boards.load(LEDGER_DIR) if c.ats == ats]
     if not all_companies and not (LEDGER_DIR / f"{ats}.csv").exists():
         all_companies = _candidates_without_ledger(ats)
     if len(all_companies) <= n:
@@ -141,7 +141,7 @@ def _sample_boards(ats: str, n: int, seed: int) -> list[CompanyRef]:
 def _candidates_without_ledger(ats: str) -> list[CompanyRef]:
     """Fallback for an ATS with no liveness ledger at all (:data:`CANDIDATES_DIR`'s own
     docstring) — reads the raw candidate-tenant discovery file directly, applying the same
-    :data:`~headstart.config.EXCLUDED_BOARDS` filter :func:`load_active_companies` would.
+    :data:`~headstart.config.EXCLUDED_BOARDS` filter :func:`scrapable_boards.load` would.
     Unlike that function, this does NOT itself check liveness — for a population this small
     (dozens, not thousands), the caller's own per-board fetch during sampling already is
     the liveness check, so a candidate that turns out dead simply errors there, same as any
@@ -153,7 +153,7 @@ def _candidates_without_ledger(ats: str) -> list[CompanyRef]:
     with path.open(newline="") as f:
         for row in csv.DictReader(f):
             slug = row["tenant"]
-            if f"{ats}:{slug}".lower() in EXCLUDED_BOARDS:
+            if scrapable_boards.is_excluded(ats, slug):
                 continue
             companies.append(CompanyRef(ats=ats, slug=slug, name=slug))
     return companies
