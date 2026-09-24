@@ -199,7 +199,7 @@ def test_the_company_is_the_site_records_client_name_at_no_extra_request(monkeyp
 
 def test_adp_itself_is_a_client_name_like_any_other():
     scraper = get_scraper("adp_recruiting", "apply", "apply")
-    scraper._adopt_client_name("ADP")
+    scraper.adopt_company("ADP")
     assert scraper.company == "ADP"
 
 

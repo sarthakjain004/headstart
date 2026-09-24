@@ -21,7 +21,7 @@ the live endpoint on 2026-08-27 rather than carried over:
   value, to mirror the real client. The one place the *real* numeric id is required is the
   ``jobs-service`` detail endpoint (the detail-pass section below), which is why the config call
   still exists in this file — demoted from step 1 of every scrape to a helper the detail pass
-  invokes only when it has something to fetch.
+  invokes only when it has something to fetch, or the Board needs its company name (below).
 * **A non-default ``User-Agent`` is required, and a missing one HANGS.** Measured 2026-08-27:
   ``curl/8.7.1`` and ``python-requests``'s own default both **time out** rather than answering, so
   a caller that treats a timeout as a transient fault will retry forever. It is not a *browser*
@@ -123,6 +123,7 @@ from headstart import log, salary
 from headstart.fetcher import Fetcher
 from headstart.models import Job, host_of, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
+from headstart.scrapers.pacer import Pacer
 
 _log = log.get(__name__)
 
@@ -186,6 +187,14 @@ _MAX_PAGES = 1_200
 #: (The EUR row reads ``2500000-3500000 EUR`` — plainly rupees mislabelled by the tenant. A stated
 #: currency still wins, so the row is left wrong rather than second-guessed here.)
 _DEFAULT_CURRENCY = "INR"
+#: The config call names the tenant as well as numbering it — ``responseObject.company.
+#: companyName``, on 164 of 165 affected Boards (2026-09-24) — so it is made for a Board that
+#: needs its name even when no detail is wanted. That is one more metered request per Board
+#: against the per-IP quota (`egress_fallback_on`), so config calls are spaced process-wide. The
+#: 2026-09-24 census asked all 165 Boards from one IP one at a time, ~1.5-2 s apart: 164 answered
+#: and one was refused 403; a 70-Board retry pass at 2 s answered every one.
+_CONFIG_SPACING_S = 2.0
+_CONFIG_PACER = Pacer(_CONFIG_SPACING_S)
 #: The careers SPA declares its own path prefix here; the job deep link has to carry it.
 _BASE_HREF = re.compile(r"<base\s+href=\"([^\"]*)\"", re.IGNORECASE)
 #: Where :meth:`ZwayamScraper.fetch_raw` records the text a Job should ship with. Absent means
@@ -386,7 +395,7 @@ class ZwayamScraper(BaseScraper):
     #:
     #: Carried by `base._fetch`, which all four request sites here go through, so the opt-in is
     #: not inert (the caution above about direct `http.fetch` calls does not apply). Three of the
-    #: four hit the metered API — `_page` (`_API`), `_company_id` (`_CONFIG_API`) and
+    #: four hit the metered API — `_page` (`_API`), `_config` (`_CONFIG_API`) and
     #: `detail_request` (`_DETAIL_API`, sent by `run_detail_pass` through `_fetch`), all on
     #: `public.zwayam.com`. The fourth, `_link_base`, GETs the Board's own
     #: customer domain and passes `marks_wall=False` for that reason; see the note there.
@@ -430,19 +439,21 @@ class ZwayamScraper(BaseScraper):
     #: nothing shows which is faster. What is on record is the note on `detail_workers` above: a
     #: measured ~8-9 responses/s per-IP ceiling, which multiplexing cannot raise. Re-run the A/B
     #: from a fresh egress before moving this pass off threads. That move must also take
-    #: `_company_id_once_per_board`'s blocking config call out of `detail_request`, which the
+    #: `_config_once_per_board`'s blocking config call out of `detail_request`, which the
     #: multiplexed path runs inside its event loop.
     async_fanout = False
+    #: Process-wide, shared by every instance (see `_CONFIG_SPACING_S`).
+    config_pacer = _CONFIG_PACER
 
     def __init__(
         self, slug: str, company: str | None = None, fetcher: Fetcher | None = None
     ) -> None:
         super().__init__(slug, company, fetcher=fetcher)
-        self._company_id_lock = threading.Lock()
-        # Filled by `_company_id_once_per_board`; a failed config call leaves None and is not
+        self._config_lock = threading.Lock()
+        # Filled by `_config_once_per_board`; a failed config call leaves None and is not
         # asked again.
-        self._company_id_asked = False
-        self._resolved_company_id: int | None = None
+        self._config_asked = False
+        self._resolved_config: tuple[int | None, str | None] = (None, None)
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -551,10 +562,12 @@ class ZwayamScraper(BaseScraper):
             return f"https://{self.slug}/#!/job-view/"
         return self._fallback_link_base()
 
-    def _company_id(self) -> int | None:
-        """The tenant's numeric id, from the config endpoint — the detail POST rejects anything
-        else (measured: base64 400s, a wrong numeric id 404s). ``None`` on any failure: a Board
-        whose config call breaks loses this run's detail fetches, never its Jobs."""
+    def _config(self) -> tuple[int | None, str | None]:
+        """The tenant's numeric id and stated name, from the config endpoint. The detail POST
+        rejects any other id (measured: base64 400s, a wrong numeric id 404s); the name is
+        ``company.companyName``. ``(None, None)`` on any failure: a Board whose config call breaks
+        loses this run's detail fetches and name, never its Jobs."""
+        self.config_pacer.wait()
         try:
             response = self._fetch(
                 "POST",
@@ -570,26 +583,30 @@ class ZwayamScraper(BaseScraper):
             response.raise_for_status()
             payload = response.json() or {}
             company = (payload.get("responseObject") or {}).get("company") or {}
-            native = company.get("id")
-            return native if isinstance(native, int) else None
+            native, name = company.get("id"), company.get("companyName")
+            return (
+                native if isinstance(native, int) else None,
+                name if isinstance(name, str) else None,
+            )
         except Exception as exc:  # noqa: BLE001 - a lost detail pass must not fail the Board
             _log.info(f"{self.board_key()}: config call failed ({type(exc).__name__})")
-            return None
+            return None, None
 
-    def _company_id_once_per_board(self) -> int | None:
-        """:meth:`_company_id`, called once per Board and only once the Detail pass forms its
-        first request — the config call is metered like every other (``egress_fallback_on``), so
-        a Board whose rows are all gated or already held never spends it. Locked because the
-        thread transport (:attr:`async_fanout`) forms requests from several workers at once."""
-        with self._company_id_lock:
-            if not self._company_id_asked:
-                self._resolved_company_id = self._company_id()
-                self._company_id_asked = True
-            return self._resolved_company_id
+    def _config_once_per_board(self) -> tuple[int | None, str | None]:
+        """:meth:`_config`, called once per Board and only when something needs it — the Board's
+        name, or the Detail pass's first request. The call is metered like every other
+        (``egress_fallback_on``), so a named Board whose rows are all gated or already held never
+        spends it. Locked because the thread transport (:attr:`async_fanout`) forms requests from
+        several workers at once."""
+        with self._config_lock:
+            if not self._config_asked:
+                self._resolved_config = self._config()
+                self._config_asked = True
+            return self._resolved_config
 
     def detail_request(self, row: dict) -> DetailRequest:
         """A JSON POST, unlike the multipart search, carrying the *real* numeric company id."""
-        company_id = self._company_id_once_per_board()
+        company_id, _ = self._config_once_per_board()
         if company_id is None:
             # The config call is per-Board, so its failure fails every detail on the Board — each
             # a loss like any other failed detail, so each retries next run.
@@ -668,6 +685,8 @@ class ZwayamScraper(BaseScraper):
         # exact here — `parse` reads `jobTitle` and `departmentName` off this same listing row
         # and the detail supplies only text — so it cannot cost a Job the index would have kept.
         # A row with no `jobUrl` has no detail to ask for, and `parse` drops it anyway.
+        if rows and self.wants_company_name():
+            self.adopt_company(self._config_once_per_board()[1])
         linked = [row for row in rows if (row.get("jobUrl") or "").strip()]
         texts = self.run_detail_pass(
             linked,

@@ -14,7 +14,7 @@ Everything below was measured 2026-09-23 against the live host and is written up
 **The rate limit shapes the scraper.** F5 BigIP refuses the 201st request in a fixed 60-second
 window, counted across every tenant, with a bare 429 and no Retry-After (rested runs at 5 and 8
 req/s were refused on exactly request #201; 450 requests at 3 req/s ran clean). So every request
-goes through one process-wide :class:`_Pacer` at 0.4 s spacing, and a 429 anyway rests the whole
+goes through one process-wide :class:`~headstart.scrapers.pacer.Pacer` at 0.4 s spacing, and a 429 anyway rests the whole
 process through the window and retries; a Board still refused is marked truncated, never
 returned short as complete.
 
@@ -45,10 +45,7 @@ browser's all 200).
 
 from __future__ import annotations
 
-import asyncio
 import json
-import threading
-import time
 from typing import Any
 from urllib.parse import urlencode
 
@@ -56,6 +53,7 @@ from headstart import company_name, http, salary
 from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.pacer import Pacer
 
 _HOST = "https://workforcenow.adp.com"
 _PAGE = f"{_HOST}/mascsr/default/mdf/recruitment/recruitment.html"
@@ -90,58 +88,7 @@ class _RateLimited(Exception):
     """Still refused after resting through the window `_TRIES - 1` times."""
 
 
-class _Pacer:
-    """Spaces request starts to one host across every thread and event loop in the process.
-
-    `harvest` scrapes many Boards concurrently in one process, so a delay kept per Board or per
-    scraper instance multiplies by the Board count. This holds one next-free slot under a lock:
-    :meth:`reserve` claims the next slot and says how long to wait for it, which the sync path
-    sleeps and the async path awaits, so both paths draw from the same budget.
-
-    A slot claimed before a :meth:`rest` would still fire into the refused window, so a caller
-    that wakes while :meth:`resting` claims a fresh slot instead — which a rest has already put
-    past the window's end.
-    """
-
-    def __init__(self, spacing: float) -> None:
-        self.spacing = spacing
-        self._lock = threading.Lock()
-        self._next = 0.0
-        self._rest_until = 0.0
-
-    def reserve(self) -> float:
-        with self._lock:
-            now = time.monotonic()
-            start = max(now, self._next)
-            self._next = start + self.spacing
-            return start - now
-
-    def rest(self, seconds: float) -> None:
-        """Hold every request until ``seconds`` from now — a refused window's remainder."""
-        with self._lock:
-            until = time.monotonic() + seconds
-            self._next = max(self._next, until)
-            self._rest_until = max(self._rest_until, until)
-
-    def resting(self) -> bool:
-        with self._lock:
-            return time.monotonic() < self._rest_until
-
-    def wait(self) -> None:
-        """Sleep until this caller's slot, re-claiming one if a rest began meanwhile."""
-        while True:
-            time.sleep(self.reserve())
-            if not self.resting():
-                return
-
-    async def wait_async(self) -> None:
-        while True:
-            await asyncio.sleep(self.reserve())
-            if not self.resting():
-                return
-
-
-_PACER = _Pacer(_SPACING_S)
+_PACER = Pacer(_SPACING_S)
 
 
 def _query(cid: str, cc_id: str, lang: str | None = None, **extra: Any) -> str:
@@ -269,7 +216,7 @@ class ADPScraper(BaseScraper):
         r"\?cid=[0-9a-f-]{36}&ccId=\d+_\d+&lang=[a-z]{2}_[A-Z]{2}&jobId=\d+"
     )
 
-    #: Process-wide, shared by every instance (see `_Pacer`).
+    #: Process-wide, shared by every instance (see `Pacer`).
     pacer = _PACER
 
     def __init__(
@@ -435,10 +382,7 @@ class ADPScraper(BaseScraper):
             )
         except Exception:  # noqa: BLE001 - a display name is never worth failing a Board for
             return
-        stated = next(iter(_strings(_meta_group(body), "ClientName")), "")
-        name = company_name.from_title(self.ats, stated, self.slug)
-        if name:
-            self.company = name
+        self.adopt_company(next(iter(_strings(_meta_group(body), "ClientName")), ""))
 
     def _detail_url(self, row: dict) -> str:
         return f"{_LISTING}/{_ext_id(row)}?{_query(self.cid, self.cc_id, row['_lang'])}"

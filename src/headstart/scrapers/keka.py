@@ -48,15 +48,12 @@ new request:
    value seen on one tenant is exactly the "unsourced enum" risk this addition exists to avoid
    for the other two.
 
-**Not done: company name from ``careerportalinfo`` (a change requested in #547, re-verified and
-declined 2026-09-22).** #547 asked for this on the premise that the scraper "already fetches that
-exact response" — true when #547 was written, false two minutes later: #529, merged first,
-removed the ``careerportalinfo`` fetch from the listing path entirely (see above; it was strictly
-worse for the *listing*). Reading it now for the name alone would be a **new** per-Board request,
-not a free one, and #547's own "before shipping" note asks for a ≥100-board presence check against
-ADR-0114's quality bar — a measurement this pass didn't do. Filed as a follow-up rather than forced
-in under a premise that no longer holds; `board_page()`'s existing ``<title>`` reading
-(``company_name.py``, ~11% yield) is unchanged.
+**The company name is ``careerportalinfo``'s ``name``** (#547's request, done 2026-09-24). It is a
+new per-Board request — #529 took that endpoint off the listing path — and it replaces the
+``/careers`` ``<title>`` GET, which named about one Board in nine because most render their title
+client-side. Measured over all 516 affected Boards: 494 state a name the guards accept. Tenants
+type it themselves, so it can carry a wrapper ("Careers at WeDoGood", "Jobs at Olyv"), which the
+patterns strip, or be a URL ("https://www.azuga.com/"), which is refused.
 """
 
 from __future__ import annotations
@@ -64,7 +61,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from headstart import salary
+from headstart import company_name, salary
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
@@ -121,19 +118,25 @@ class KekaScraper(BaseScraper):
         return f"https://{self.slug}.keka.com/careers/jobdetails/{native_id}"
 
     def board_page(self) -> str:
-        """The careers page, whose ``<title>`` is "Careers at {Name}" or "{Name} Careers".
+        """The career portal's own record, whose ``name`` the tenant typed (module docstring).
 
-        Most keka Boards render their ``<title>`` client-side and serve nothing to read, but
-        where one exists the wrapper is as uniform as eightfold's, and every keka Board serves a
-        slug today, so it is all upside. The measured rate is deliberately **not** repeated here:
-        `headstart.company_name` holds it and ADR-0114 restates it as the spec of record, and
-        three copies of it had already drifted apart before this docstring stopped being a fourth.
-
-        Nothing else fetches this page — the listing no longer reads it for a tenant uuid — so it
-        is always a genuinely new request, costing a measured 0.12s (~2 min across a full run,
-        concurrent within each shard).
+        Nothing else fetches it — the listing no longer reads it for a tenant uuid — so it is a
+        genuinely new request per Board, as the ``/careers`` title it replaces was.
         """
-        return f"https://{self.slug}.keka.com/careers"
+        return f"https://{self.slug}.keka.com/careers/api/organization/default/careerportalinfo"
+
+    def company_from_page(self, page: str | None) -> str | None:
+        """``name`` of the portal record, through this ATS's title guards rather than
+        `company_name.from_field`: tenants typed page labels around it ("Careers at WeDoGood"),
+        which the patterns strip, and a URL ("https://www.azuga.com/"), which they refuse."""
+        try:
+            data = json.loads(page or "")
+        except json.JSONDecodeError:
+            return None
+        stated = data.get("name") if isinstance(data, dict) else None
+        if not isinstance(stated, str):
+            return None
+        return company_name.from_title(self.ats, stated, self.slug)
 
     def url(self) -> str:
         return f"https://{self.slug}.keka.com/careers/api/jobs/default/active"

@@ -22,7 +22,6 @@ ashby             ``{Name} Jobs``                                    ~92% (n=120
 eightfold         ``Careers at {Name}`` / ``{Name} Careers``         ~93% (n=100)
 ripplehire        ``{Name} Careers | Latest jobs at …``              ~96% (all 51)
 lever             ``{Name}`` — no wrapper at all                     ~88% (352/400)
-keka              ``Careers at {Name}`` / ``{Name} Careers``         ~11% (92 of 819)
 taleo_enterprise  four ``Careers``-wrappers (see below)              20% (30/150)
 gem               ``Careers at {Name}`` / ``{Name} Careers``         63% (36/57)
 jobvite           ``{Name} Careers``                                 424 of 434
@@ -37,11 +36,9 @@ many Gem tenants are early-stage startups whose brand IS their domain (``agenta.
 company states is its name; only a URL (a scheme, or a leading ``www.``) is still refused. The 63%
 predates that change.
 
-Keka is the odd row and worth reading twice: only about one Board in eight serves a ``<title>`` at
-all (the rest render it client-side), but where one exists the wrapper is as uniform as
-eightfold's, and *every* keka Board serves a slug today — so that ~11% is pure upside for one
-cheap request. The first draft excluded keka on a stated **0/30**, which was simply wrong; the
-figure here is a full 819-Board census, not a sample.
+Keka is no longer a title row. Only about one Board in eight served a ``<title>`` (92 of an
+819-Board census), so since 2026-09-24 `KekaScraper` reads the ``name`` the tenant typed into its
+career-portal record instead: 494 of the 516 affected Boards resolve through the guards below.
 
 **taleo_enterprise is a different mechanism, not just a different wrapper.** Its shell serves
 *two* ``<title>`` tags — a fixed chrome placeholder first ("Job Search", literally, on all 150 of
@@ -60,12 +57,16 @@ Wichita Public Schools USD 259, …). 30 of the 150 sampled Boards' second title
 these four and passed the safety checks below, with zero observed false positives; the rest —
 generic, vendor, unwrapped, or a shape none of the four models — correctly resolve to `None`.
 
-**Absent, and why.** darwinbox and freshteam render their boards client-side and serve nothing to
-read. successfactors is the interesting exclusion: it does serve titles, but they are marketing
-copy in several languages with no shared wrapper — "Life@MOHH - people, culture, and values |
-MOHH", "Trabaja en Volaris", "Careers at Bachem" — so a pattern wide enough to catch the third
-mangles the first two. That is a quality bar, not a cost one, and no measurement will move it;
-what it needs is per-tenant evidence this module has no place to keep.
+**Not titles.** darwinbox, zwayam, keka and bamboohr render their boards client-side, but each
+SPA loads a record that names the tenant: `from_field` reads darwinbox's, zwayam's and bamboohr's,
+and keka's pattern reads its own, because keka tenants typed page labels into it. freshteam's
+``<title>`` is "Careers" everywhere, but its ``og:title`` names the company.
+
+**Absent, and why.** successfactors is the interesting exclusion: it does serve titles, but they
+are marketing copy in several languages with no shared wrapper — "Life@MOHH - people, culture,
+and values | MOHH", "Trabaja en Volaris", "Careers at Bachem" — so a pattern wide enough to catch
+the third mangles the first two. That is a quality bar, not a cost one, and no measurement will
+move it; what it needs is per-tenant evidence this module has no place to keep.
 
 **Workday** reads no title. Its board page is a client-rendered SPA whose ``og:title`` is correct
 on well under half of the boards that have one and otherwise junk this module's rules would happily
@@ -145,19 +146,12 @@ _JIBE_NAME = (
 )
 
 PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
-    # adp: not a title at all. Workforce Now's page title is the literal "Recruitment" on every
-    # career center, and nothing a browser renders names the employer; its `client-features`
-    # JSON does, as `ClientName` (120 of 120 centers sampled 2026-09-23). `ADPScraper` reads that
-    # field and passes it through `from_title` for the guards below, so the pattern is the bare
-    # catch-all pyjamahr's is: the value is a field, not a wrapped slogan.
-    "adp": (re.compile(r"^(?P<name>.+)$"),),
-    # adp_recruiting (ADP Recruiting Management, a separate product from ADP Workforce Now's
-    # `adp` above): a field again, not a title. The SPA's title is "Career Site" on every site;
-    # the site record it fetches for its token states `clientName` (681 of 681 sites,
-    # 2026-09-24), which `ADPRecruitingScraper` passes through here for the guards below.
-    "adp_recruiting": (re.compile(r"^(?P<name>.+)$"),),
     "ashby": (re.compile(r"^(?P<name>.+?)\s+Jobs$", re.IGNORECASE),),
     "eightfold": _CAREERS_WRAPPER,
+    # freshteam: not the `<title>` ("Careers" on every Board) but the `/jobs` page's `og:title`,
+    # "Careers - {Name}" on 106 of 120 affected Boards (2026-09-24); the rest serve an 889-byte
+    # shell with no og: tags at all. `FreshteamScraper.company_from_page` reads it.
+    "freshteam": (re.compile(r"^Careers\s+-\s+(?P<name>.+)$", re.IGNORECASE),),
     # gem: sampled 60 live board pages (2026-09-16) — no JS wall, real server-rendered HTML on a
     # bare GET. ~95% follow "{Name} Careers" (case varies: "a16z speedrun careers"), the exact
     # wrapper eightfold/jobvite/keka already use.
@@ -185,7 +179,14 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     # jobvite: every board titles itself "{Name} Careers"; 424 of 434 live boards resolve
     # (2026-09-07). See JobviteScraper.board_page.
     "jobvite": _CAREERS_WRAPPER,
-    "keka": _CAREERS_WRAPPER,
+    # keka: the portal record's `name`, typed by the tenant — bare on most, but some typed a page
+    # label around it ("Careers at WeDoGood", "Jobs at Olyv", "SecPod Careers"), so the wrappers
+    # come off first and a bare value is taken whole.
+    "keka": (
+        *_CAREERS_WRAPPER,
+        re.compile(r"^Jobs\s+at\s+(?P<name>.+)$", re.IGNORECASE),
+        re.compile(r"^(?P<name>.+)$"),
+    ),
     "ripplehire": (re.compile(r"^(?P<name>.+?)\s+Careers\s*\|", re.IGNORECASE),),
     "lever": (re.compile(r"^(?P<name>.+)$"),),
     # pyjamahr: the board page's <title> is the bare company name, with no wrapper at all —
@@ -197,6 +198,9 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     # ("aainacareers.com", which ADR-0212 now takes as stated) and one is a page label ("Careers
     # at AiFA Labs"). A refusal leaves the Board to its humanised tenant.
     "pyjamahr": (re.compile(r"^(?P<name>.+)$"),),
+    # personio: the board root asked in English (`?language=en`), titled "Jobs at {Name}" — 149
+    # of 186 affected Boards, 2026-09-24. Unasked, a German tenant answers "Jobs bei {Name}".
+    "personio": (re.compile(r"^Jobs\s+at\s+(?P<name>.+)$", re.IGNORECASE),),
     # pinpoint: every board titles itself "Jobs at {Name} | {Name} Careers" (40 of 40 sampled
     # 2026-09-23). The name is read from the first clause, which ends at the pipe; the spacing
     # before it varies ("Jobs at Reconomy  | Reconomy  Careers"). 38 of the 40 resolve; the two
@@ -228,6 +232,21 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     # `hiringOrganization` values and the board page's og tags, then passes it here for the
     # guards below, so the pattern is adp's bare catch-all (ADR-0216).
     "workday": (re.compile(r"^(?P<name>.+)$"),),
+    # zoho: the careers page the scraper already fetches, where `org_info.company_name` is unset
+    # (51 affected Boards, 2026-09-24). Tenants title it freely; these three shapes carry a name.
+    # No trailing "{Name} Jobs": `eiger` titles its board "Project Management Jobs", a job family.
+    "zoho": (
+        re.compile(
+            r"^(?:Jobs|Careers?|Internships)\s+(?:at|@|by)\s+(?P<name>.+?)\s*(?:\||\s-\s|$)",
+            re.IGNORECASE,
+        ),
+        re.compile(r"^Jobs\s*\|\s*(?P<name>.+)$", re.IGNORECASE),
+        re.compile(r"^(?P<name>.+?)\s+Careers$", re.IGNORECASE),
+    ),
+    # trakstar: the careers page titles itself "{Name} jobs | {Name} openings | {Name} careers";
+    # the name is the first clause. `TrakstarScraper` reads the page itself, on the request that
+    # also tells an inactive account apart (see there), rather than through `board_page`.
+    "trakstar": (re.compile(r"^(?P<name>.+?)\s+jobs\s*\|", re.IGNORECASE),),
 }
 
 #: A separator still present after the wrapper came off means the title had a shape this does not
@@ -298,6 +317,15 @@ _VENDOR_ALIASES: dict[str, frozenset[str]] = {
     # (909 postings) and `adpinternalcareers` both state "ADP" (2 of 681 sites, 2026-09-24).
     "adp_recruiting": frozenset(),
     "ashby": frozenset({"ashby", "ashbyhq"}),
+    # The field sources below are read by `from_field`, which takes a name as typed and
+    # checks it against nothing else: bamboohr's `company-info`, cornerstone's posting JSON-LD,
+    # darwinbox's `companyinfo`, ripplehire's `companyVO` and zwayam's config call (2026-09-24).
+    "bamboohr": frozenset({"bamboohr"}),
+    # Cornerstone OnDemand; "cyberu" is its legacy brand, still on the LMS side of `csod.com`.
+    "cornerstone": frozenset({"cornerstone", "cornerstoneondemand", "cyberu"}),
+    "freshteam": frozenset({"freshteam"}),
+    # Darwinbox's own admin tenant states its product name.
+    "darwinbox": frozenset({"darwinbox", "darwinboxadmin"}),
     "eightfold": frozenset({"eightfold", "eightfoldai"}),
     "jibe": frozenset({"jibe", "jibeapply", "icims"}),
     "jobvite": frozenset({"jobvite"}),
@@ -318,6 +346,7 @@ _VENDOR_ALIASES: dict[str, frozenset[str]] = {
     # like phenom's this entry is reached by a real Board, not only by a failed render: that one
     # tenant keeps its slug, which reads the same.
     "pyjamahr": frozenset({"pyjamahr"}),
+    "personio": frozenset({"personio"}),
     # No matched-wrapper case reached this in the 150-Board sample — "Oracle Taleo" and
     # "Taleo | Mercedes-Benz Group AG" are both already refused for being unwrapped or not
     # matching any of the four shapes. Kept as a precaution: a themed board could plausibly
@@ -327,6 +356,16 @@ _VENDOR_ALIASES: dict[str, frozenset[str]] = {
     # that can fall back to the vendor's branding, and Workday hires on its own platform
     # (`workday.wd5.myworkdayjobs.com/Workday`).
     "workday": frozenset(),
+    "zoho": frozenset({"zoho", "zohorecruit"}),
+    # Beyond the vendor's names, its own test tenants, each stating itself as a company on a
+    # live Board (2026-09-24): `hirematetest1` ("Hiremate Test 1"), `ssttest` ("SST Test"),
+    # `talentsst1` ("Talent SST"); and "TechCorp", the openings.co template's placeholder title.
+    "zwayam": frozenset(
+        {"zwayam", "naukri", "hirematetest", "ssttest", "talentsst", "techcorp"}
+    ),
+    # Trakstar Hire was Recruiterbox before its rebrand, and a trial tenant still titles itself
+    # "Recruiterbox jobs | …" (`trakstar:trial101`, 2026-09-24).
+    "trakstar": frozenset({"trakstar", "trakstarhire", "recruiterbox"}),
 }
 
 

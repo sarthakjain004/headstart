@@ -10,6 +10,7 @@ import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
 from headstart import fanout_stats, http
+from headstart.scrapers.pacer import Pacer
 from headstart.scrapers.personio import PersonioScraper
 from headstart.scrapers.registry import get_scraper
 from headstart.scrapers.rippling import RipplingScraper
@@ -3538,16 +3539,17 @@ def test_trakstar_api_listing_reports_a_shortfall_against_the_stated_total(monke
     assert scraper.truncated and "1 of 100" in scraper.truncated
 
 
-def test_trakstar_fetch_raw_prefers_the_api_and_never_touches_the_careers_page(
+def test_trakstar_fetch_raw_prefers_the_api_and_never_reads_the_page_cards(
     monkeypatch,
 ):
     scraper = get_scraper("trakstar", "acme", "Acme")
+    monkeypatch.setattr(scraper, "_careers_page", lambda: None)
     monkeypatch.setattr(
         scraper, "_api_listing", lambda: [{"id": "1", "title": "Engineer"}]
     )
 
     def boom_get(url=None):
-        raise AssertionError("must not fetch the careers page when the API answered")
+        raise AssertionError("must not re-fetch the careers page when the API answered")
 
     monkeypatch.setattr(scraper, "_get", boom_get)
 
@@ -9749,7 +9751,7 @@ def test_darwinbox_marks_its_page_cap(monkeypatch):
     s = db.DarwinboxScraper("acme")
     full = [{"id": i} for i in range(db._PAGE_SIZE)]
     monkeypatch.setattr(s, "_alljobs", lambda host, page: full)
-    monkeypatch.setattr(s, "_portal_is_v2", lambda host: True)
+    monkeypatch.setattr(s, "_company_info", lambda host: {})
     jobs = s.fetch_raw()
 
     assert len(jobs) == db._PAGE_SIZE * 99
@@ -9769,7 +9771,7 @@ def test_darwinbox_marks_a_measured_shortfall_against_job_counts(monkeypatch):
         return [{"id": 1}]  # a short page, but job_counts says the board isn't done
 
     monkeypatch.setattr(s, "_alljobs", _alljobs)
-    monkeypatch.setattr(s, "_portal_is_v2", lambda host: True)
+    monkeypatch.setattr(s, "_company_info", lambda host: {})
     jobs = s.fetch_raw()
 
     assert len(jobs) == 1
@@ -9789,7 +9791,7 @@ def test_darwinbox_does_not_mark_a_board_whose_job_counts_matches(monkeypatch):
         return [{"id": 1}, {"id": 2}]
 
     monkeypatch.setattr(s, "_alljobs", _alljobs)
-    monkeypatch.setattr(s, "_portal_is_v2", lambda host: True)
+    monkeypatch.setattr(s, "_company_info", lambda host: {})
     jobs = s.fetch_raw()
 
     assert len(jobs) == 2
@@ -10095,7 +10097,7 @@ def test_zwayam_reports_a_short_read_as_truncated():
     }
     scraper._page = lambda start: page
     scraper._link_base = lambda: "https://careers.short.example/x/jobview/"
-    scraper._company_id = lambda: None  # keeps the detail pass off the network
+    scraper._config = lambda: (None, None)  # keeps the detail pass off the network
     raw = scraper.fetch_raw()
     assert len(raw["rows"]) == 10
     assert scraper.truncated == "read 10 of 50 postings"
@@ -10127,7 +10129,7 @@ def test_zwayam_truncation_keeps_the_first_reason(monkeypatch):
     }
     scraper._page = lambda start: page
     scraper._link_base = lambda: "https://careers.runaway.example/x/jobview/"
-    scraper._company_id = lambda: None  # keeps the detail pass off the network
+    scraper._config = lambda: (None, None)  # keeps the detail pass off the network
     scraper.fetch_raw()
     assert scraper.truncated.startswith(f"stopped at the {monkey_cap}-page cap")
 
@@ -10313,7 +10315,9 @@ def _zwayam_served_board(rows, detail_for, config=None):
         return FakeResponse(text='<base href="/">')
 
     fetcher = FakeFetcher(route)
-    return zwayam_module.ZwayamScraper("h.example", fetcher=fetcher), fetcher
+    scraper = zwayam_module.ZwayamScraper("h.example", fetcher=fetcher)
+    scraper.config_pacer = Pacer(0.0)  # the real one spaces config calls 2 s apart
+    return scraper, fetcher
 
 
 def _zwayam_detail_response(job_url: str) -> FakeResponse:
@@ -10435,12 +10439,13 @@ def test_zwayam_a_detail_that_answers_empty_keeps_the_listing_text():
     assert scraper.telemetry["detail_losses"] == 0
 
 
-def test_zwayam_asks_for_the_company_id_once_and_only_when_a_detail_is_wanted(
+def test_zwayam_asks_for_its_config_once_and_only_when_a_detail_or_the_name_is_wanted(
     monkeypatch,
 ):
     """The config call is metered like every other request here, so it is made once per Board
-    however many workers form requests at once — and not at all on a Board whose every row is
-    already held. The config answer is slowed so the thread pool's workers really do overlap."""
+    however many workers form requests at once — and not at all on a named Board whose every row
+    is already held. The config answer is slowed so the thread pool's workers really do
+    overlap."""
     import time
 
     from headstart.scrapers import zwayam as zwayam_module
@@ -10472,9 +10477,15 @@ def test_zwayam_asks_for_the_company_id_once_and_only_when_a_detail_is_wanted(
     assert len(_zwayam_detail_bodies(fetcher)) == 40
 
     held, held_fetcher = _zwayam_served_board(rows, _zwayam_detail_response)
+    held.company = "Acme"  # a name from the ledger: the config call has nothing to add
     held.have_details = {f"zwayam:h.example:{index}" for index in range(40)}
     held.fetch_raw()
     assert zwayam_module._CONFIG_API not in held_fetcher.urls()
+
+    unnamed, unnamed_fetcher = _zwayam_served_board(rows, _zwayam_detail_response)
+    unnamed.have_details = {f"zwayam:h.example:{index}" for index in range(40)}
+    unnamed.fetch_raw()
+    assert unnamed_fetcher.urls().count(zwayam_module._CONFIG_API) == 1
 
 
 def test_zwayam_detail_request_carries_the_browser_agent_the_edge_demands():
@@ -10855,6 +10866,33 @@ def _titled(title: str, status: int = 200):
     return SimpleNamespace(status_code=status, text=f"<title>{title}</title>")
 
 
+class _StatedPage:
+    """A board-page response for the ATSes whose name is not in the ``<title>``: the page as
+    that ATS states it, readable whole or streamed (freshteam reads only its head)."""
+
+    def __init__(self, text: str, status_code: int = 200) -> None:
+        self.status_code = status_code
+        self.text = text
+        self.closed = False
+
+    def iter_content(self):
+        yield self.text.encode()
+
+    def close(self) -> None:
+        self.closed = True
+
+
+#: The page each non-title ATS serves around its stated name, keyed by ATS; every other row is
+#: served as a ``<title>``.
+_STATED_PAGE = {
+    "bamboohr": lambda stated: json.dumps({"result": {"name": stated}}),
+    "keka": lambda stated: json.dumps({"name": stated}),
+    "freshteam": lambda stated: (
+        f'<head><title>Careers</title><meta property="og:title" content= "{stated}" />'
+    ),
+}
+
+
 #: One row per ATS in `company_name.PATTERNS`. Named so both the resolve test and the
 #: binding test below can read it directly, rather than reaching into pytest's own marker
 #: internals to recover what was parametrised.
@@ -10881,11 +10919,12 @@ _RESOLVE_ROWS = [
         "https://jobs.jobvite.com/barracuda-networks-inc/search",
     ),
     (
+        # The portal record's `name`, typed by the tenant — here with a wrapper around it.
         "keka",
         "skylarkdrones",
         "Careers at Skylark Drones",
         "Skylark Drones",
-        "https://skylarkdrones.keka.com/careers",
+        "https://skylarkdrones.keka.com/careers/api/organization/default/careerportalinfo",
     ),
     (
         # The `| Zelis Jobs` tail is the point: `_CAREERS_WRAPPER` would take the whole thing.
@@ -10935,6 +10974,30 @@ _RESOLVE_ROWS = [
         "https://jobs.gem.com/accel",
     ),
     (
+        # Not a title: the careers SPA's `company-info` JSON states the account name.
+        "bamboohr",
+        "cintel",
+        "Cintel Inc",
+        "Cintel Inc",
+        "https://cintel.bamboohr.com/careers/company-info",
+    ),
+    (
+        # The `/jobs` page's og:title; its <title> is "Careers" on every Board.
+        "freshteam",
+        "krazybee",
+        "Careers - KreditBee",
+        "KreditBee",
+        "https://krazybee.freshteam.com/jobs",
+    ),
+    (
+        # The board root, asked in English — a German tenant answers "Jobs bei …" otherwise.
+        "personio",
+        "7learnings.jobs.personio.de",
+        "Jobs at 7Learnings GmbH",
+        "7Learnings GmbH",
+        "https://7learnings.jobs.personio.de/?language=en",
+    ),
+    (
         # The client host's `/jobs` page; 200 of 1,116 clients title it "{Name} Careers".
         "jibe",
         "rmeducation",
@@ -10961,6 +11024,8 @@ def test_every_wired_scraper_resolves_its_company(
 
     def _fetch(method, fetched, **kwargs):
         seen.append(fetched)
+        if ats in _STATED_PAGE:
+            return _StatedPage(_STATED_PAGE[ats](title))
         return _titled(title)
 
     monkeypatch.setattr(http, "fetch", _fetch)
@@ -10986,7 +11051,23 @@ def test_every_wired_scraper_resolves_its_company(
 #: `client-features` JSON instead, covered by `tests/test_adp.py`. adp_recruiting (ADP
 #: Recruiting Management, a separate product) reads `clientName` off the site record it already
 #: fetched for its token, covered by `tests/test_adp_recruiting.py`.
-_NO_BOARD_PAGE = {"taleo_enterprise", "adp", "adp_recruiting", "workday"}
+#: cornerstone has no Board-level page at all: `CornerstoneScraper._read_company` reads the
+#: JSON-LD of one posting page per career site, covered by `tests/test_cornerstone.py`. trakstar
+#: reads its careers page in `fetch_raw` rather than through `board_page`, so the HTML fallback
+#: can reuse the one response (`TrakstarScraper._careers_page`).
+_NO_BOARD_PAGE = {
+    "taleo_enterprise",
+    "adp",
+    "adp_recruiting",
+    "workday",
+    "cornerstone",
+    "trakstar",
+    # These three read the name off a response the scrape already fetches: darwinbox's
+    # `companyinfo`, zwayam's config call and zoho's careers page — covered by their own tests.
+    "darwinbox",
+    "zwayam",
+    "zoho",
+}
 
 
 def test_every_ats_with_patterns_has_a_scraper_that_offers_a_board_page():
@@ -11004,14 +11085,17 @@ def test_every_ats_with_patterns_has_a_scraper_that_offers_a_board_page():
         for ats, cls in SCRAPERS.items()
         if cls.board_page is not BaseScraper.board_page
     }
-    assert overriding == set(PATTERNS) - _NO_BOARD_PAGE, (
+    # Every name source has a vendor guard, a title source a pattern too; a second source on
+    # an ATS is keyed "{ats}:{field}" (`BaseScraper.adopt_company`).
+    wired = {key.split(":")[0] for key in _VENDOR_ALIASES}
+    assert overriding == wired - _NO_BOARD_PAGE, (
         "an ATS has a board_page but no patterns, or patterns but no board_page"
     )
     covered = {row[0] for row in _RESOLVE_ROWS}
-    assert covered == set(PATTERNS) - _NO_BOARD_PAGE, (
+    assert covered == wired - _NO_BOARD_PAGE, (
         "every wired ATS needs a row in the resolve test"
     )
-    assert set(_VENDOR_ALIASES) == set(PATTERNS), (
+    assert set(PATTERNS) <= set(_VENDOR_ALIASES), (
         "every wired ATS needs a vendor-alias entry, or its board page can serve the platform's "
         "own branding as the employer"
     )
@@ -11514,3 +11598,223 @@ def test_eightfold_smartapply_to_pcsx_shape_carries_the_requisition_ids():
         {"id": 1, "ats_job_id": "REQ-31366", "display_job_id": "REQ-31366"}
     )
     assert (got["atsJobId"], got["displayJobId"]) == ("REQ-31366", "REQ-31366")
+
+
+# ── company names read off a page or field other than a board title (2026-09-24) ──────────
+
+
+def test_a_board_page_that_names_no_one_says_so(monkeypatch, caplog):
+    """`resolve_company` was silent on every failure, so a Board serving its slug could not be
+    told apart from one whose page was refused, unrecognised or never asked."""
+    from headstart import http
+    from headstart.scrapers.lever import LeverScraper
+
+    monkeypatch.setattr(http, "fetch", lambda *a, **k: _titled("Not Found", status=404))
+    with caplog.at_level(logging.INFO):
+        LeverScraper("acme").resolve_company()
+    assert "lever:acme: no company name" in caplog.text
+    assert "404" in caplog.text
+
+
+def test_a_board_page_that_raises_says_so(monkeypatch, caplog):
+    from headstart import http
+    from headstart.scrapers.lever import LeverScraper
+
+    def _raise(*a, **k):
+        raise http.RequestsError("boom")
+
+    monkeypatch.setattr(http, "fetch", _raise)
+    with caplog.at_level(logging.INFO):
+        LeverScraper("acme").resolve_company()
+    assert "lever:acme: no company name" in caplog.text
+    assert "raised RequestException" in caplog.text
+
+
+def test_adopt_company_keeps_a_real_name_and_logs_a_refusal(caplog):
+    from headstart.scrapers.bamboohr import BambooHRScraper
+
+    named = BambooHRScraper("cintel", "Cintel")
+    named.adopt_company("Someone Else")
+    assert named.company == "Cintel"
+
+    slugged = BambooHRScraper("bamboohr")
+    with caplog.at_level(logging.INFO):
+        slugged.adopt_company("BambooHR")
+    assert slugged.company == "bamboohr"
+    assert "'BambooHR', which the guards refuse" in caplog.text
+
+
+def test_freshteam_streams_only_the_head_of_its_page_and_closes_it(monkeypatch):
+    """The og:title sits in the first ~3 KB of a page that runs to 1.7 MB (`abnhire`)."""
+    from headstart import http
+    from headstart.scrapers.freshteam import FreshteamScraper
+
+    head = '<head><meta property="og:title" content= "Careers - KreditBee" /></head>'
+    chunks = [head.encode(), b"x" * 20_000, b"never read"]
+
+    class _Streamed:
+        status_code = 200
+        closed = False
+        read = 0
+
+        def iter_content(self):
+            for chunk in chunks:
+                self.read += 1
+                yield chunk
+
+        def close(self):
+            self.closed = True
+
+    response = _Streamed()
+    captured: dict = {}
+
+    def _fetch(method, url, **kwargs):
+        captured.update(kwargs)
+        return response
+
+    monkeypatch.setattr(http, "fetch", _fetch)
+    scraper = FreshteamScraper("krazybee")
+    scraper.resolve_company()
+    assert scraper.company == "KreditBee"
+    assert captured["stream"] is True
+    assert response.read == 2, "the chunk past 16 KB must not be read"
+    assert response.closed
+
+
+def test_freshteam_closes_a_streamed_page_that_is_not_a_200(monkeypatch):
+    from headstart import http
+    from headstart.scrapers.freshteam import FreshteamScraper
+
+    response = _StatedPage("<html>502</html>", status_code=502)
+    monkeypatch.setattr(http, "fetch", lambda *a, **k: response)
+    scraper = FreshteamScraper("krazybee")
+    scraper.resolve_company()
+    assert scraper.company == "krazybee"
+    assert response.closed
+
+
+def test_trakstar_names_the_board_from_the_careers_page_it_reads_once():
+    """The API carries no name; the careers page's title does, and the HTML fallback reuses that
+    same response rather than asking again."""
+    page = _trakstar_cards_page(1, total=1).replace(
+        "<html>", "<html><title> Acme Corp jobs | Acme Corp openings </title>", 1
+    )
+    scraper, fetcher = _trakstar_board(page)
+    scraper.company = "acme"  # no name from the ledger
+
+    raw = scraper.fetch_raw()
+
+    assert scraper.company == "Acme Corp"
+    assert raw["html"] == page
+    assert fetcher.urls().count(scraper.url()) == 1
+    assert {job.company for job in scraper.parse(raw, SCRAPED_AT)} == {"Acme Corp"}
+
+
+def test_personio_a_posting_without_a_subcompany_serves_the_board_name():
+    scraper = get_scraper("personio", "acme", "acme")
+    scraper.company = (
+        "Acme GmbH"  # what `resolve_company` read off the English board page
+    )
+    feed = ET.fromstring(
+        "<workzag-jobs>"
+        "<position><id>1</id><name>Engineer</name></position>"
+        "<position><id>2</id><name>Analyst</name><subcompany>Acme Labs</subcompany></position>"
+        "<position><id>3</id><name>Tester</name><subcompany>   </subcompany></position>"
+        "</workzag-jobs>"
+    )
+    jobs = scraper.parse(feed, SCRAPED_AT)
+    assert [job.company for job in jobs] == ["Acme GmbH", "Acme Labs", "Acme GmbH"]
+
+
+def test_an_inactive_trakstar_account_raises_as_gone_before_reading_the_api(
+    monkeypatch,
+):
+    """The API still lists an inactive account's openings and every link it names 404s
+    (`nowfloats1`, 2026-09-24), so the Board must fail as gone — the shape ADR-0058 counts —
+    rather than serve those postings or return a quiet empty list."""
+    from headstart import http
+    from headstart.ingest.board_failures import is_gone
+
+    scraper = get_scraper("trakstar", "nowfloats1")
+    monkeypatch.setattr(
+        scraper,
+        "_careers_page",
+        lambda: (
+            "<div>Inactive account. This employer is no longer using Trakstar Hire to "
+            "collect applications.</div>"
+        ),
+    )
+
+    def boom_api():
+        raise AssertionError("an inactive account's API listing must not be read")
+
+    monkeypatch.setattr(scraper, "_api_listing", boom_api)
+    with pytest.raises(http.RequestsError) as raised:
+        scraper.fetch_raw()
+    assert is_gone(str(raised.value))
+
+
+def test_zwayam_names_the_board_from_its_config_and_refuses_a_test_tenant():
+    """The config call names the tenant (164 of 165 affected Boards, 2026-09-24); the vendor's
+    own test tenants state names that are not employers."""
+    rows = [{"id": 1, "jobTitle": "Backend Engineer", "jobUrl": "job-1"}]
+
+    def config(name):
+        return FakeResponse(
+            text=json.dumps(
+                {"responseObject": {"company": {"id": 4242, "companyName": name}}}
+            )
+        )
+
+    named, _ = _zwayam_served_board(
+        rows, _zwayam_detail_response, config=config("Persistent Systems")
+    )
+    jobs = named.parse(named.fetch_raw(), SCRAPED_AT)
+    assert {job.company for job in jobs} == {"Persistent Systems"}
+
+    for test_tenant in ("Hiremate Test 1", "SST Test", "Talent SST", "TechCorp"):
+        board, _ = _zwayam_served_board(
+            rows, _zwayam_detail_response, config=config(test_tenant)
+        )
+        board.fetch_raw()
+        assert board.company == "h.example", test_tenant
+
+
+def test_zwayam_config_calls_share_one_process_wide_pacer():
+    from headstart.scrapers import zwayam as zwayam_module
+
+    first = zwayam_module.ZwayamScraper("a.example")
+    second = zwayam_module.ZwayamScraper("b.example")
+    assert first.config_pacer is second.config_pacer is zwayam_module._CONFIG_PACER
+    assert zwayam_module._CONFIG_PACER.spacing == 2.0
+
+
+def test_a_curated_board_spends_no_request_on_a_name_source(monkeypatch):
+    """A curated name overrides every source (ADR-0212), so a scraper that would spend a request
+    on one — zwayam's paced config call, cornerstone's posting pages — asks first."""
+    from headstart import company_name
+    from headstart.scrapers.bamboohr import BambooHRScraper
+
+    scraper = BambooHRScraper("cintel")
+    assert scraper.wants_company_name()
+    monkeypatch.setattr(company_name, "curated", lambda key: "Cintel")
+    assert not scraper.wants_company_name()
+    scraper.adopt_company("Someone Else")
+    assert scraper.company == "cintel"
+
+
+def test_a_name_reader_that_raises_leaves_the_board_as_it_was(monkeypatch, caplog):
+    from headstart import http
+    from headstart.scrapers.lever import LeverScraper
+
+    monkeypatch.setattr(http, "fetch", lambda *a, **k: _titled("Acme"))
+    scraper = LeverScraper("acme")
+
+    def _boom(page):
+        raise ValueError("not the page it expected")
+
+    monkeypatch.setattr(scraper, "company_from_page", _boom)
+    with caplog.at_level(logging.INFO):
+        scraper.resolve_company()
+    assert scraper.company == "acme"
+    assert "raised ValueError" in caplog.text

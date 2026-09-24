@@ -46,6 +46,8 @@ samples since where the first one proved too small to trust — the sample size 
 
 successfactors, darwinbox and freshteam scored **0/30 against the registered patterns**. For
 darwinbox and freshteam that is genuine — they render client-side and serve nothing to read.
+(Amended 2026-09-24, alongside ADR-0212: both do state a name elsewhere — darwinbox in its
+`companyinfo` record, freshteam in its `/jobs` page's `og:title` — and both are now read.)
 Successfactors is the interesting exclusion: it *does* serve titles ("Careers at Bachem"), but
 they are marketing copy in several languages with no shared wrapper ("Life@MOHH - people, culture,
 and values | MOHH", "Trabaja en Volaris"), so a pattern wide enough to catch the third mangles the

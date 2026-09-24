@@ -56,8 +56,8 @@ request in a fixed 60-second window, counted across every tenant, with a bare 42
 Retry-After: rested runs at 5 and 8 req/s were refused on exactly request #201, a probe polled
 every ~3 s stayed refused until ~60 s after the window opened, and 450 requests at 3 req/s ran
 clean. `harvest` scrapes Boards concurrently in one process, so a per-Board delay would multiply
-by the Board count. `adp._Pacer` is one lock and one next-free slot shared by every instance and
-by both the sync and async detail paths, spacing request starts at 0.4 s (150/minute, 25% under
+by the Board count. `adp._Pacer` (since moved to `scrapers/pacer.Pacer`) is one lock and one
+next-free slot shared by every instance and by both the sync and async detail paths, spacing request starts at 0.4 s (150/minute, 25% under
 the budget). The fetch seam's own 429 retries are turned off for this host — its ~5 s of backoff
 cannot outlast a 60 s window and would spend budget the pacer is guarding. A 429 anyway (another
 process on the same IP) rests every request for the window and retries, three attempts in all;
