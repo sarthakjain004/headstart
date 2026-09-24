@@ -291,12 +291,10 @@ def _listing_with_description(job_id: str) -> str:
 
 
 def test_a_failed_detail_never_replaces_a_held_description_with_the_listings():
-    """ADR-0208. The listing's Job_Description renders differently from the detail page's (34 of
-    40 live pairs on 5 tenants, 2026-09-24), and whole Boards' detail passes fail on some runs
-    ("no jobs blob on the page", 526/526 on jobberman in run 36021294272, 15/15 fine fetched by
-    hand). Falling back to the listing then flipped the stored text back and forth — 4,784 of
-    the store's 6,115 replacements in 7 runs. A Job whose description the store holds gets none
-    instead, so `update_descriptions` keeps the held text."""
+    """ADR-0208. The listing renders a posting's description differently from the detail page,
+    and whole detail passes fail on some runs, so falling back to the listing flipped the stored
+    text back and forth. A Job whose description the store holds gets none instead, and
+    `update_descriptions` keeps the held text."""
     scraper = get_scraper("zoho", "acme.zohorecruit.com")
     scraper.have_details = {"zoho:acme.zohorecruit.com:1"}
     raw = {"page": _listing_with_description("1"), "details": {}}

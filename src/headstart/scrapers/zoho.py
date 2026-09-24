@@ -276,10 +276,9 @@ class ZohoScraper(BaseScraper):
             # listing renders it differently from the detail page, so a failed detail would
             # replace the held text with another rendering of the same posting, and flip it back
             # the next time the detail lands. No text here keeps the held one.
+            held = not self.needs_detail(jid)
             description = (
-                None
-                if detail is None and not self.needs_detail(jid)
-                else html_to_text(_description_text(d))
+                None if held and not detail else html_to_text(_description_text(d))
             )
             jobs.append(
                 Job(

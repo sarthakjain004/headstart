@@ -3,8 +3,8 @@
 **Status:** accepted · **Date:** 2026-09-24 · **Relates to:**
 [ADR-0050](0050-persist-descriptions-across-runs.md) (the store restores held text into the
 corpus), [ADR-0089](0089-the-description-store-holds-text-not-verdicts.md),
-[ADR-0207](0207-the-served-description-follows-the-posting.md) (the served description follows
-changed text, so a flip would reach the table)
+ADR-0207 (PR #638, which lands after this one: the served description follows changed text, so
+a flip would reach the table)
 
 ## Context
 
@@ -28,7 +28,8 @@ rewritten in the served table.
 ## Decision
 
 **A Job whose description the store holds gets no description from a failed detail.** `parse`
-leaves `description` as None when the detail is missing and `needs_detail` says the text is held.
+leaves `description` as None when the detail is missing and the Job is on the skip-list of held
+descriptions (`needs_detail` answers False).
 `update_descriptions` then writes the held text back into the corpus, so the store, the re-derive
 queue and the table see no change.
 
@@ -45,7 +46,12 @@ unchanged for local scrapes.
 - The Zoho flip leaves the store's replacement count. Without it, the store's replacements in
   those 7 runs were 1,331 on other ATSes plus at most 830 Zoho ids that changed without going
   back (some of them a one-time listing-to-detail upgrade), so about 190 to 310 a run.
-- Other fields still fall back to the listing on a failed detail. The `salary` fact, which exists
-  only on the detail page, still reads None on such a run. That is a separate flip in
-  `update_meta`'s fact sync, not addressed here.
+- Other fields still fall back to the listing on a failed detail. The detail adds to the listing
+  without contradicting it, so the fields that flip are the ones it alone supplies: `salary`,
+  `posted_at` (Date_Opened), `experience` (Work_Experience), `department` (Industry) and the
+  State part of `location`. On such a run they read None or shorter, and `update_meta`'s fact
+  sync writes that to the table; `experience` feeds `min_years`. That is a fact flip, not
+  addressed here.
+- A detail that lands with an empty `Job_Description` still keeps the listing's text. The detail
+  was measured to carry everything the listing does, so this should be rare.
 - Why whole detail passes fail from CI but not by hand is not diagnosed here.
