@@ -140,6 +140,7 @@ the first 10 reqs, which is why containment is computed on the full listing.
 - **A failed read un-buries**: its section is not buried, and nothing is buried onto it. That
   serves duplicates until the next run and never hides a req. Check a run's unreadable count
   before committing its ledger.
-- **Two hosts can be one tenant.** `pruitthealth.taleo.net` and `pruitthealthcareers.taleo.net`
-  each have a section `2` listing the same 1,440 reqs. Tenant = host, so this signal does not
-  compare them. It is the redirect-free cross-host shape, left for its own change.
+- **A known cross-host duplicate this rule cannot see.** `pruitthealth.taleo.net` and
+  `pruitthealthcareers.taleo.net` each have a section `2`, and both list the same 1,440 reqs
+  (measured 2026-09-24). A tenant is one host, so this signal never compares them, and no redirect
+  joins them either. Both stay scraped and served. It is out of scope here.
