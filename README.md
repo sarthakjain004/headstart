@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml)
 [![pipeline](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml)
-[![ADRs](https://img.shields.io/badge/ADRs-178-blue)](./docs/adr/)
+[![ADRs](https://img.shields.io/badge/ADRs-180-blue)](./docs/adr/)
 [![Python](https://img.shields.io/badge/python-3.12+-blue)](./pyproject.toml)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue)](./LICENSE)
 
@@ -42,7 +42,7 @@ and normalizes every posting into a single `Job`. You never learn an ATS's name.
 
 ### Everything above is measured.
 
-And every limit ships next to the result it qualifies. 178 ADRs record the options that lost,
+And every limit ships next to the result it qualifies. 180 ADRs record the options that lost,
 not just the one that won. When a later measurement contradicts an earlier one, the ADR is
 amended in place rather than quietly edited.
 
@@ -136,7 +136,7 @@ hitting the host, not by reading code. This is a rule with a scar behind it: a "
 to tell dead from empty" guard looked obviously correct and died on contact, because 9 of 12 boards
 the ledger already called dead answered `GET /` with 200. Findings carry their sample size.
 
-**Record the rejected options, not just the chosen one.** 178 ADRs, **119** carrying a heading that
+**Record the rejected options, not just the chosen one.** 180 ADRs, **121** carrying a heading that
 weighs alternatives (`grep -lEi '^#{2,3} .*(alternativ|options? (considered|rejected)|rejected)'
 docs/adr/`). When a later measurement contradicts an earlier one the ADR is amended or superseded
 in place rather than quietly edited — **57** name an `Amends:` / `Supersedes:` relationship in
@@ -264,8 +264,9 @@ No always-on server: scheduled GitHub Actions and a free-tier Space.
 
 A run does not scrape every board it could. The liveness ledger's headline number reduces through
 several filters before it reaches what a run can even consider — `registry.DISABLED_ATS`,
-vendor test/sandbox boards, aliases (one board serving two hostnames, or a career section whose
-every posting another section of the same tenant already lists), case-variant duplicate spellings,
+vendor test/sandbox boards, aliases (one board serving two hostnames, a career section whose
+every posting another section of the same tenant already lists, or an Eightfold career site whose
+backing ATS board already serves it), case-variant duplicate spellings,
 and a handful of real boards deliberately parked — most because their cost
 dwarfs their tech yield, two because what they serve is near-duplicate spam. `CONTEXT.md`'s
 §Counting Boards names each of these stages precisely, and `tests/test_board_counts.py` keeps this
@@ -276,15 +277,15 @@ table in lockstep with the committed ledger:
 | live rows in the ledger | 186,183 | a row, not a board — 6,632 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −25,488 | all of it `join` |
 | − `config.EXCLUDED_BOARDS` | −70 | vendor test/sandbox/demo boards and one historical feed, confirmed by reading their postings |
-| − alias ledger | −766 | one board under a second hostname or label, or a career section another section of the same tenant already covers (ADR-0111, ADR-0182, ADR-0186) |
+| − alias ledger | −769 | one board under a second hostname or label, a career section another section of the same tenant already covers, or an Eightfold career site its backing ATS board already serves (ADR-0111, ADR-0182, ADR-0186, ADR-0191) |
 | − case-variant dedupe | −6,630 | `company/External` and `company/external` are one board (ADR-0023) |
 | − `config.PARKED_BOARDS` | −13 | real boards withheld for now — five for scrape cost, two for near-duplicate spam, six Jibe clients whose every posting is on a Workday or Oracle board already held |
-| = **Scrapable Board** | **153,216** | |
+| = **Scrapable Board** | **153,213** | |
 
 That order matters: excluding before deduping reads −70 and −6,630, deduping first reads −68,
-because two excluded boards were themselves duplicates. Both land on 153,216.
+because two excluded boards were themselves duplicates. Both land on 153,213.
 
-Of those, **100,795 are currently hiring** — the 52,421 live-but-empty boards are skipped as having
+Of those, **100,792 are currently hiring** — the 52,421 live-but-empty boards are skipped as having
 nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
 sticky measure of tech-job yield) and a random exploration tail drawn from everything else, so
 newly-productive boards can never starve and eviction keeps working on boards outside the head.
@@ -512,7 +513,7 @@ your own. The auth model and failure modes are in
 
 ## More
 
-- **Design decisions:** [`docs/adr/`](./docs/adr/) — 178 numbered ADRs (the option picked, the
+- **Design decisions:** [`docs/adr/`](./docs/adr/) — 180 numbered ADRs (the option picked, the
   ones rejected, and why).
 - **Domain glossary:** [`CONTEXT.md`](./CONTEXT.md) — the ubiquitous language (ATS, Board, Slug,
   Job, Discovery, Liveness, Feed, Doc, Bucket, GitHub VM…).

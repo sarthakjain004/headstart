@@ -87,6 +87,14 @@ discovery landing (#576) moved five more. Board totals belong in README and CONT
   when one starts listing a req of its own, or when the section it is buried onto dies. It re-reads
   every buried section and rewrites the file; `dedupe_boards.py` refuses `--apply` for this ATS
   (ADR-0186).
+- **Eightfold: re-run `scripts/validate/eightfold_backing_boards.py` after every refresh of the
+  eightfold ledger or of a ledger it reads (workday, successfactors, oracle, taleo_enterprise,
+  greenhouse).** An Eightfold career site is often a front over the company's real ATS Board, so a
+  site whose postings that Board already lists and would serve is buried in
+  `data/validate/aliases/eightfold.csv` (signal `backing-reqs`), one row per backing Board. Nothing
+  scrapes a buried site, so the script is the only thing that notices when its backing Board drops
+  out or it starts posting on its own. Candidates are its `BACKING` table; a new front enters there.
+  `dedupe_boards.py` refuses `--apply` for this ATS (ADR-0191).
 - **SuccessFactors holds RMK sites only.** `p_successfactors` accepts any `<urlset>`, so a corporate
   site or a Radancy career front probes `live`, and the scraper reads it as 0 jobs or as page titles
   ("Working at TUI"). Before landing a host, confirm a `/job/` page from its sitemap (urlset, RSS or

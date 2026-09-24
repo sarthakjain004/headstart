@@ -302,3 +302,30 @@ def test_alias_key_uses_full_career_section(monkeypatch):
     assert TaleoEnterpriseScraper(
         "https://acme.taleo.net/careersection/2"
     ).alias_key() == ("https://acme.taleo.net/careersection/2")
+
+
+def test_listing_row_carries_the_contest_number(monkeypatch):
+    """`jobId` is the posting's id and `contestNo` the requisition number the recruiter sees —
+    the one an Eightfold career site in front of this section states as `atsJobId` (Premier
+    Health `978472` / `111166`, 2026-09-24; ADR-0191)."""
+    row = {
+        "jobId": "978472",
+        "contestNo": "111166",
+        "column": ["Registered Nurse", '["Middletown"]', "", "Sep 11, 2026"],
+        "linkedColumn": 0,
+        "locationsColumns": [1],
+    }
+    monkeypatch.setattr(
+        http,
+        "fetch",
+        lambda *a, **k: type(
+            "R",
+            (),
+            {
+                "raise_for_status": lambda s: None,
+                "json": lambda s: _page([row], 1, total=1),
+            },
+        )(),
+    )
+    jobs = TaleoEnterpriseScraper(BOARD)._listing(SHELL)
+    assert [(j["id"], j["contest_no"]) for j in jobs] == [("978472", "111166")]

@@ -131,11 +131,11 @@ _Avoid_: "live Boards" for this number — that is the phrase this section exist
 **Unique Board** — 179,551:
 Live rows collapsed to one entry per canonical `board_key` (ADR-0023) — the distinct Boards we know exist. **Scrapable Board** and **Hiring Board** are subsets of it; nothing in that chain removes a duplicate, only Boards we choose not to read. The two *history* counts at the end are **not** subsets: 600 Scraped Boards are absent from it, because a Board read months ago may have gone Dead since and left the live set.
 
-**Scrapable Board** — 153,216:
-A Unique Board a run may actually pick: minus `registry.DISABLED_ATS` (−25,488, all of it `join`), `config.EXCLUDED_BOARDS` (−68 vendor test Boards), the alias ledger (−766 Boards published under a second hostname or label, or Taleo career sections whose every posting another section of the tenant already lists, ADR-0111, ADR-0182 and ADR-0186) and `config.PARKED_BOARDS` (−13). Computed by `load_active_companies(min_jobs=0)` — which applies these in the *other* order, excluding before it dedupes, and lands on the same figure. The right default answer to "how many Boards do we have".
-_Avoid_: calling this "unique" — the 26,335 Boards between it and Unique Board are real and distinct, deliberately skipped rather than deduplicated. The alias subtraction is the one exception, and it is small: those 766 serve no posting a kept Board does not — one Board reached by more than one name, or a Taleo career section whose every posting another section of its tenant already lists (a distinct Board, but a redundant one).
+**Scrapable Board** — 153,213:
+A Unique Board a run may actually pick: minus `registry.DISABLED_ATS` (−25,488, all of it `join`), `config.EXCLUDED_BOARDS` (−68 vendor test Boards), the alias ledger (−769 Boards published under a second hostname or label, Taleo career sections whose every posting another section of the tenant already lists, or Eightfold career sites whose backing ATS Board already serves them, ADR-0111, ADR-0182, ADR-0186 and ADR-0191) and `config.PARKED_BOARDS` (−13). Computed by `load_active_companies(min_jobs=0)` — which applies these in the *other* order, excluding before it dedupes, and lands on the same figure. The right default answer to "how many Boards do we have".
+_Avoid_: calling this "unique" — the 26,338 Boards between it and Unique Board are real and distinct, deliberately skipped rather than deduplicated. The alias subtraction is the one exception, and it is small: those 769 serve no posting a kept Board does not — one Board reached by more than one name, a Taleo career section whose every posting another section of its tenant already lists, or an Eightfold career site whose backing ATS Board lists its postings and serves every tech one (a distinct Board, but a redundant one).
 
-**Hiring Board** — 100,795:
+**Hiring Board** — 100,792:
 A Scrapable Board with at least one open posting (`load_active_companies(min_jobs=1)`, the function's default). The other 52,421 are live but empty.
 
 **Slice** — 20,000:

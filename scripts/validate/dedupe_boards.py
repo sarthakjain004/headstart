@@ -30,6 +30,7 @@ liveness change rather than a dedupe one (ADR-0111).
 from __future__ import annotations
 
 import argparse
+import csv
 import sys
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -110,17 +111,28 @@ def main() -> int:
         )
 
     # The same trap from another side: an alias ledger another script writes. No redirect finds
-    # its rows (`shared-reqs`, `subset-reqs`), so an --apply here would replace every one of them
-    # with nothing.
+    # its rows (`shared-reqs`, `subset-reqs`, `backing-reqs`), so an --apply here would replace
+    # every one of them with nothing.
     written_elsewhere = {
         "clearcompany": "clearcompany_shared_accounts.py (ADR-0182)",
         "taleo_enterprise": "taleo_enterprise_subset_sections.py (ADR-0186)",
+        "eightfold": "eightfold_backing_boards.py (ADR-0191)",
     }
     if args.apply and args.ats in written_elsewhere:
         raise SystemExit(
             f"{args.ats}'s alias ledger is written by {written_elsewhere[args.ats]}; "
             "--apply here would erase it."
         )
+    # And a row nobody's script writes (Jibe's hand-written `shared-listing`): refuse on content.
+    existing = board_aliases.path_for(liveness.dir_for(ROOT), args.ats)
+    if args.apply and existing.exists():
+        with existing.open(newline="", encoding="utf-8") as fh:
+            foreign = {row["signal"] for row in csv.DictReader(fh)} - {"redirect"}
+        if foreign:
+            raise SystemExit(
+                f"{args.ats}'s alias ledger holds {', '.join(sorted(foreign))} rows no redirect "
+                "finds; --apply here would erase them."
+            )
 
     scraper_cls = SCRAPERS.get(args.ats)
     if scraper_cls is None:
