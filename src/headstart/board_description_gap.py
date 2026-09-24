@@ -32,16 +32,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from headstart.config import CompanyRef
+    from headstart.scrapable_boards import ScrapableBoard
 
 FIELDS = ("board", "unsettled", "updated_at")
 
 
-def key_for(company: CompanyRef) -> str:
+def key_for(board: ScrapableBoard) -> str:
     """This Board's key in the ledger — the one form every reader and writer must agree on."""
-    from headstart.board_identity import board_identity, lower_key
-
-    return lower_key(board_identity(company))
+    return board.lowercase_identity
 
 
 def load(path: str | Path) -> dict[str, int]:

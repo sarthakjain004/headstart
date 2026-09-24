@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from headstart.config import CompanyRef
+    from headstart.scrapable_boards import ScrapableBoard
 
 FIELDS = ("board", "score", "last_tech_jobs", "updated_at")
 CURRENT_WEIGHT = 0.7  # EWMA weight on the night's tech count (the rest on history)
@@ -110,11 +110,11 @@ def update(
 
 
 def _gap_picks(
-    companies: list[CompanyRef],
+    companies: list[ScrapableBoard],
     unsettled: Mapping[str, int],
     taken: set[str],
     slots: int,
-) -> list[CompanyRef]:
+) -> list[ScrapableBoard]:
     """The gap quota's boards: cheapest class first, then most unsettled Jobs (ADR-0062).
 
     Listing-only ATSes come first because their descriptions arrive *with the listing* — one
@@ -124,14 +124,11 @@ def _gap_picks(
     unsettled Jobs goes first, so each slot repairs as many rows as it can.
     """
     from headstart.board_description_gap import key_for
-    from headstart.board_identity import board_identity
     from headstart.scrapers.registry import detail_pass_atses
 
     detail_pass = detail_pass_atses()
     candidates = [
-        c
-        for c in companies
-        if key_for(c) in unsettled and board_identity(c) not in taken
+        c for c in companies if key_for(c) in unsettled and c.identity not in taken
     ]
     # `False < True`, so listing-only sorts ahead of detail-pass. An ATS missing from the registry
     # cannot be scraped at all, so where it lands is moot — it is treated as the expensive class
@@ -141,7 +138,7 @@ def _gap_picks(
 
 
 def pick_boards(
-    companies: list[CompanyRef],
+    companies: list[ScrapableBoard],
     scores: Mapping[str, float],
     max_boards: int,
     *,
@@ -149,7 +146,7 @@ def pick_boards(
     unsettled: Mapping[str, int] | None = None,
     gap_frac: float = GAP_FRAC,
     rng: random.Random | None = None,
-) -> list[CompanyRef]:
+) -> list[ScrapableBoard]:
     """The run's slice: scored boards first (score desc), a gap quota, then random exploration.
 
     The head gets ``max_boards - round(max_boards * explore_frac)`` slots of scored boards
@@ -164,14 +161,13 @@ def pick_boards(
     pick is strictly worse than a Board we already know is worth visiting. It self-cancels: an
     empty or absent ledger reserves nothing and the slice is byte-identical to before.
     """
-    from headstart.board_identity import board_identity
-
     rng = rng or random.Random()
     shuffled = list(companies)
     rng.shuffle(shuffled)
 
-    # `board_identity`, not `f"{ats}:{slug}"`. The ledger is written by `update_ledgers priority`
-    # from `board_identity.board_of(job_id)`, which yields the **board_key** shape — and Workday and
+    # `ScrapableBoard.identity` (`board_identity`), not `f"{ats}:{slug}"`. The ledger is written
+    # by `update_ledgers priority` from `board_identity.board_of(job_id)`, which yields the
+    # **board_key** shape — and Workday and
     # Personio override `board_key()` (a Workday slug is a whole careers URL, a Personio slug the
     # whole host), so the old key could never match one of their rows. It even carried a comment
     # claiming it matched `corpus.board_of`.
@@ -181,29 +177,27 @@ def pick_boards(
     # rides HF, so treat this as indicative) 4,611 of them held a row — 3,784 Workday, 827
     # Personio — every one scoring 0.0 whatever it had earned, reachable only through the random
     # exploration tail. No board loses a score from this change; 4,611 regain one.
-    known = [c for c in shuffled if scores.get(board_identity(c), 0.0) > 0.0]
+    known = [c for c in shuffled if scores.get(c.identity, 0.0) > 0.0]
     # Sorting an empty list is a no-op, so the bootstrap case (no ledger yet) falls through the
     # same path rather than returning early. It has to: the gap quota is reserved out of the
     # exploration slots, and an early return skipped it entirely whenever nothing was scored —
     # which is exactly the state a fresh or lost priority ledger leaves behind.
     known.sort(
-        key=lambda c: scores[board_identity(c)], reverse=True
+        key=lambda c: scores[c.identity], reverse=True
     )  # stable: shuffle breaks ties
 
     if not max_boards or max_boards >= len(companies):
-        rest = [c for c in shuffled if scores.get(board_identity(c), 0.0) <= 0.0]
+        rest = [c for c in shuffled if scores.get(c.identity, 0.0) <= 0.0]
         return known + rest
 
     head = known[: max_boards - round(max_boards * explore_frac)]
-    head_set = {board_identity(c) for c in head}
+    head_set = {c.identity for c in head}
     explore_slots = max_boards - len(head)
     gap = (
         _gap_picks(shuffled, unsettled, head_set, round(explore_slots * gap_frac))
         if unsettled
         else []
     )
-    picked = head_set | {board_identity(c) for c in gap}
-    tail = [c for c in shuffled if board_identity(c) not in picked][
-        : explore_slots - len(gap)
-    ]
+    picked = head_set | {c.identity for c in gap}
+    tail = [c for c in shuffled if c.identity not in picked][: explore_slots - len(gap)]
     return head + gap + tail

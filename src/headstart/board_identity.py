@@ -16,8 +16,9 @@ ADR-0155):
 
 - :func:`board_identity` — never raises; a slug that won't parse falls back to the plain
   ``ats:slug``, logged once per distinct Board (bounded, ADR-0039). For callers that need a name
-  for *every* Board unconditionally: dedup (``config._dedupe_boards``), the parked-Board check,
-  cost/priority-ledger keys. Dropping a Board here would silently shrink the scrape list.
+  for *every* Board unconditionally: dedup and the parked-Board check
+  (:mod:`headstart.scrapable_boards`, which stores the answer on each Board), cost/priority-ledger
+  keys. Dropping a Board here would silently shrink the scrape list.
 - :func:`board_key_of` — takes a raw ``"{ats}:{slug}"`` string (a shard report's own key, which
   carries no :class:`CompanyRef`) and returns ``None`` on anything that won't resolve. For callers
   pairing against a **real** ``board_key``-keyed ledger (``board_failures``, the ADR-0053
@@ -68,15 +69,17 @@ def board_key(company: CompanyRef) -> str:
 #: named. The membership test is what keeps that cap counting *distinct* Boards.
 #:
 #: Module-level, and never cleared: a pipeline stage is one process, and the point is that every
-#: caller shares one record. `board_identity` is reached from ~15 sites (`scrape_plan` x8,
-#: `board_priority` x7, plus `config._drop_parked` and `config._dedupe_boards`), each walking the
+#: caller shares one record. `board_identity` was reached from ~15 sites (`scrape_plan` x8,
+#: `board_priority` x7, plus the Scrapable Board list's park and dedupe), each walking the
 #: whole company list, so one bad slug restated itself ~15x per run — and a scraper whose
-#: `board_key()` starts raising would emit `N_Boards x 15` lines for one bug.
+#: `board_key()` starts raising would emit `N_Boards x 15` lines for one bug. Since ADR-0191 a
+#: `ScrapableBoard` computes it once and every one of those sites reads the stored answer, but
+#: `harvest` and any second `scrapable_boards.load` in one process still reach it again.
 #:
 #: What reaches the fallback is decided by the *provenance* of the slug, and the two answers
 #: differ. A **liveness**-ledger slug is a raw scraper slug, so `board_key()` really parses it:
-#: measured 2026-09-09, `load_active_companies('data/validate/liveness', min_jobs=0)` yields
-#: 91,325 Scrapable Boards and reaches this path **zero** times. A **state**-ledger key is
+#: measured 2026-09-09, `load_active_companies('data/validate/liveness', min_jobs=0)` (now
+#: `scrapable_boards.load`) yields 91,325 Scrapable Boards and reaches this path **zero** times. A **state**-ledger key is
 #: `board_key()`'s own *output*, and feeding one back in raises wherever the scraper's parser
 #: demands its input form — every one of `data/state/board_cost.csv`'s 10,561 Workday keys is the
 #: shorthand `{co}/{site}`, which Workday's parser rejects because it wants a careers URL.
@@ -89,7 +92,7 @@ def board_key(company: CompanyRef) -> str:
 #:
 #: `board_priority.csv` is keyed the same way (5,143 Workday keys, 5,120 of them that shorthand)
 #: but never reaches here: `board_priority.load` returns `row["board"]` verbatim, and `pick_boards`
-#: calls `board_identity` on liveness `CompanyRef`s. That is the check on this diagnosis — 1,142
+#: reads the `board_identity` of liveness-ledger Boards. That is the check on this diagnosis — 1,142
 #: of its Workday keys are absent from the cost ledger, so had it fed them back too the flood
 #: would have been their 11,703-key union, not the 10,561 actually observed.
 #:
@@ -132,8 +135,9 @@ def _report_identity_failure(key: str, exc: Exception) -> None:
     """Name a Board that fell back, once, up to :data:`_IDENTITY_REPORT_CAP` distinct Boards.
 
     The fallback key is a *different* identity from the one the rest of the pipeline uses for this
-    Board — `config._dedupe_boards` collapses on it and `index prune` builds its keep-set from it
-    — so a Board quietly landing here can be scraped under one name and pruned under another.
+    Board — `scrapable_boards._dedupe_boards` collapses on it and `index prune` builds its
+    keep-set from it — so a Board quietly landing here can be scraped under one name and pruned
+    under another.
     Worth a line even though nothing is dropped.
 
     The **first** distinct Board warns and carries its stack; every later one is INFO. Under
@@ -210,8 +214,8 @@ def board_of(job_id: str) -> str:
     for an id on no known Board, which is the self-comparing case again.
 
     The priority ledger is keyed by this function, so its consumers must pair against it rather
-    than rebuild a key themselves: ``pick_boards`` now looks up :func:`board_identity` (the real
-    ``board_key()``) and ``embed_run.order_by_priority`` calls this. What remains of ADR-0049's
+    than rebuild a key themselves: ``pick_boards`` now looks up each Board's
+    ``ScrapableBoard.identity`` (:func:`board_identity`, the real ``board_key()``) and ``embed_run.order_by_priority`` calls this. What remains of ADR-0049's
     caveat is only the colon-bearing native id — it writes a phantom Board no real key matches,
     which mis-*scores* that Board rather than evicting anything.
     """

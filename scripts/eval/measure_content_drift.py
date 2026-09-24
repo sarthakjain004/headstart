@@ -21,8 +21,8 @@ from pathlib import Path
 
 from huggingface_hub import HfApi, snapshot_download
 
+from headstart import scrapable_boards
 from headstart.board_identity import board_key
-from headstart.config import load_active_companies
 from headstart.ingest.update_descriptions import read_store
 from headstart.scrapers.registry import get_scraper
 
@@ -112,7 +112,7 @@ def main() -> int:
         by_board[f"{ats}:{slug}".lower()][job_id] = text
     companies = [
         c
-        for c in load_active_companies(ROOT / "data/validate/liveness", min_jobs=0)
+        for c in scrapable_boards.load(ROOT / "data/validate/liveness", min_jobs=0)
         if c.ats == args.ats and board_key(c).lower() in by_board
     ]
     companies.sort(key=board_key)

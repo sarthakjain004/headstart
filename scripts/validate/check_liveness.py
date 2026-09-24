@@ -10,7 +10,7 @@ so a transient blip never gets mistaken for a dead board:
 
 Verdicts land in the liveness ledger (ADR-0012), one CSV per ATS at
 data/validate/liveness/{ats}.csv (ats,tenant,url,status,jobs,checked_at) — the single source of
-truth. The Active list is just its status==live rows (config.load_active_companies); dead is
+truth. The Active list is just its status==live rows (scrapable_boards.load); dead is
 status==dead; still-unknown is status==unknown.
 
 Incremental + fresh: a board is re-probed only when it's new or past its per-status TTL (live 7d /
@@ -2541,7 +2541,7 @@ def main():
         # Boards buried as duplicates of another live Board (ADR-0111). Dropped from the work list
         # rather than probed-and-marked: they answer 200 and serve a full board, so any verdict
         # this could reach would be `live` — which is true, and beside the point. Their ledger row
-        # carries forward untouched, and `config.load_active_companies` is what keeps them out of
+        # carries forward untouched, and `scrapable_boards.load` is what keeps them out of
         # the scrape. This is the free half of #157's problem, without the frozen set.
         todo = _drop_alias_duplicates(ats, todo, ledger_dir)
         if limit:

@@ -48,7 +48,7 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "src"))
 
-from headstart.config import load_active_companies
+from headstart import scrapable_boards
 from headstart.scrapers.registry import SCRAPERS, get_scraper
 
 _LEDGER = _ROOT / "data" / "validate" / "liveness"
@@ -106,7 +106,7 @@ def sample(ats: str, n: int, seed: int) -> list:
     So raising --boards keeps every Board the smaller run used, and two runs at different sizes
     stay comparable instead of being two unrelated samples.
     """
-    pool = [c for c in load_active_companies(_LEDGER, min_jobs=1) if c.ats == ats]
+    pool = [c for c in scrapable_boards.load(_LEDGER, min_jobs=1) if c.ats == ats]
     pool.sort(key=lambda c: c.slug)
     return random.Random(seed).sample(pool, len(pool))[:n]
 

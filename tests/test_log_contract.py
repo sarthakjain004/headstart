@@ -714,7 +714,7 @@ def _ledger_gap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     Path("data/state/unauthoritative_boards.json").write_text("{}", encoding="utf-8")
     # Every Board that must stay *reachable*. The 1,006 `lever:unlisted-*` ids below are on no
     # row here, so they are the off-slice class; `gap` reads this through the same
-    # `load_active_companies` call `scrape_plan` makes, so the keys pair by construction.
+    # `scrapable_boards.load` call `scrape_plan` makes, so the keys pair by construction.
     _liveness_ledger(
         {
             "lever": [
@@ -976,7 +976,7 @@ def _plan_coldstart(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     `fanout_plan.MAKESPAN` both required a clause `scrape_plan` omits here, so both tools printed
     nothing on exactly the runs whose plan is least trustworthy — a silent zero, not an error.
 
-    `load_active_companies` is stubbed, as `tests/test_scrape_plan.py` stubs it: the real one
+    `scrapable_boards.load` is stubbed, as `tests/test_scrape_plan.py` stubs it: the real one
     reads the committed liveness ledger, whose ~20k Boards would make every count in this entry
     drift with a data file that has nothing to do with the log's wording.
 
@@ -984,15 +984,15 @@ def _plan_coldstart(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     format string shared by both branches of the line below — so this branch clearing 999 is what
     keeps a `{n:,}` on it catchable, whatever slice the measured fixture happens to plan.
     """
-    from headstart.config import CompanyRef
     from headstart.ingest import scrape_plan
+    from headstart.scrapable_boards import ScrapableBoard
 
     monkeypatch.chdir(tmp_path)
     companies = [
-        CompanyRef("greenhouse", f"cold-{n}", f"Cold {n}") for n in range(15000)
+        ScrapableBoard("greenhouse", f"cold-{n}", f"Cold {n}") for n in range(15000)
     ]
     monkeypatch.setattr(
-        scrape_plan, "load_active_companies", lambda ledger, min_jobs=0: companies
+        scrape_plan.scrapable_boards, "load", lambda ledger, min_jobs=0: companies
     )
     _run_main(scrape_plan, monkeypatch, *_plan_args("--target-boards", "1000"))
 
@@ -1012,8 +1012,8 @@ def _plan_measured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from datetime import UTC, datetime
 
     from headstart import board_cost, board_description_gap, board_priority
-    from headstart.config import CompanyRef
     from headstart.ingest import board_failures, scrape_plan
+    from headstart.scrapable_boards import ScrapableBoard
 
     monkeypatch.chdir(tmp_path)
     today = datetime.now(UTC).strftime("%Y-%m-%d")
@@ -1022,11 +1022,11 @@ def _plan_measured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     measured = [f"measured-{n}" for n in range(1204)]
     explore = [f"explore-{n}" for n in range(1102)]
     companies = [
-        CompanyRef("greenhouse", slug, slug.title())
+        ScrapableBoard("greenhouse", slug, slug.title())
         for slug in [*quarantined, *gated, *measured, *explore, "giant"]
     ]
     monkeypatch.setattr(
-        scrape_plan, "load_active_companies", lambda ledger, min_jobs=0: companies
+        scrape_plan.scrapable_boards, "load", lambda ledger, min_jobs=0: companies
     )
 
     board_failures.save(
@@ -1206,14 +1206,14 @@ def _index_ledger(monkeypatch: pytest.MonkeyPatch, boards: list[str]) -> None:
     """Stub the liveness ledger `live_keep_set` reads, as `_plan_coldstart` stubs it for the
     planner: the committed one holds ~20k Boards, and every count below would then drift with a
     data file that has nothing to do with the log's wording."""
-    from headstart.config import CompanyRef
     from headstart.ingest import index_plan
+    from headstart.scrapable_boards import ScrapableBoard
 
     monkeypatch.setattr(
-        index_plan,
-        "load_active_companies",
+        index_plan.scrapable_boards,
+        "load",
         lambda ledger, min_jobs=0: [
-            CompanyRef(*board.split(":", 1), board) for board in boards
+            ScrapableBoard(*board.split(":", 1), board) for board in boards
         ],
     )
 

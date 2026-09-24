@@ -244,8 +244,8 @@ class BaseScraper(ABC):
     #: declared here rather than in the ledger, and left ``None`` by every multi-tenant ATS
     #: (ADR-0172).
     #:
-    #: The ledger cannot carry it. `load_active_companies` builds
-    #: ``CompanyRef(slug=scraper.slug_from(tenant, url), name=tenant)`` — so ``name`` is the raw
+    #: The ledger cannot carry it. `scrapable_boards.load` builds
+    #: ``ScrapableBoard(slug=scraper.slug_from(tenant, url), name=tenant)`` — so ``name`` is the raw
     #: ``tenant`` column, whatever that happens to be, while ``slug`` goes through
     #: :meth:`slug_from`. A Board whose tenant was recorded as a hostname therefore *displays* the
     #: hostname: ``amazon``/``apple``/``google``/``tiktok``/``bytedance`` served

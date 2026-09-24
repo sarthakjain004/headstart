@@ -22,7 +22,7 @@ the kept section's own job URLs are the ones served. The rules, all in `burials`
 Reads every `live` row of the liveness ledger, including the sections the last run buried (the
 alias ledger leaves their liveness rows in place), so each run re-derives every verdict and a
 buried section that has since gained a req of its own comes back. `config.EXCLUDED_BOARDS` is
-skipped. One listing walk per section, 16 sections at a time. Replaces the alias file, so re-run it
+skipped (`scrapable_boards.is_excluded`). One listing walk per section, 16 sections at a time. Replaces the alias file, so re-run it
 after every refresh of `data/validate/liveness/taleo_enterprise.csv`.
 
     PYTHONPATH=src python scripts/validate/taleo_enterprise_subset_sections.py
@@ -41,8 +41,7 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from headstart import board_aliases, http, liveness
-from headstart.config import EXCLUDED_BOARDS
+from headstart import board_aliases, http, liveness, scrapable_boards
 from headstart.scrapers.taleo_enterprise import TaleoEnterpriseScraper
 
 ATS = "taleo_enterprise"
@@ -90,7 +89,7 @@ def write_aliases(
         for v in liveness.load(liveness_dir / f"{ATS}.csv").values()
         if v.status == liveness.LIVE
     }
-    sections = {s for s in live if f"{ATS}:{s}".lower() not in EXCLUDED_BOARDS}
+    sections = {s for s in live if not scrapable_boards.is_excluded(ATS, s)}
     print(
         f"{len(sections)} sections to read (live rows, less EXCLUDED_BOARDS)",
         flush=True,
