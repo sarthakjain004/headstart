@@ -181,9 +181,9 @@ _EXPERIENCE_FILTER_FIELDS = tuple(
 )
 
 
-class _Stale(NamedTuple):
-    """A row `_refresh_metadata` will rewrite, with the two columns it carries across (the
-    description only where this run's corpus has no different text for it, ADR-0207)."""
+class _Held(NamedTuple):
+    """An indexed row as `_refresh_metadata` found it: the two columns a rewrite carries across
+    (the description only where this run's corpus has no different text for it, ADR-0207)."""
 
     job_id: str
     first_seen: str | None
@@ -503,18 +503,18 @@ def _refresh_metadata(
     # materialised one batch at a time. Carrying a vector per stale row would be ~25 KB each — a
     # first sweep of ~130k rows is 3.5 GB in one list, and `apply_sync` deletes before it adds, so
     # an OOM there would leave those rows deleted with nothing put back. The description text is
-    # carried too — ~4.4 KB median (ADR-0104), so a full sweep holds a few hundred MB of text:
-    # real, an order of magnitude under the vector case, and bounded by the table rather than the
-    # corpus.
-    stale: dict[str, _Stale] = {}  # its meta moved
-    current: dict[str, _Stale] = {}  # its meta matches; only its text can make it stale
+    # carried too, for every row (ADR-0207 compares it) — ~4.4 KB median (ADR-0104), so ~2 GB
+    # across a 520k-row table. It is the text `_scan` already materialised, so holding it adds
+    # references rather than copies: still well under the vector case, and bounded by the table.
+    stale: dict[str, _Held] = {}  # its meta moved
+    current: dict[str, _Held] = {}  # its meta matches; only its text can make it stale
     for row in indexed:
         job_id = row["id"]
         index = row_of.get(job_id)
         if index is None or job_id in just_added:
             continue
         stored = _served_meta(metas[index])
-        kept = _Stale(
+        kept = _Held(
             job_id, row[_FIRST_SEEN_FIELD.name], row.get(_DESCRIPTION_FIELD.name)
         )
         if all(row.get(field) == stored.get(field) for field in columns):
@@ -525,7 +525,7 @@ def _refresh_metadata(
     # One corpus pass for both: text for the rows being rewritten anyway, and for every row whose
     # fetched text is not the text it serves — which is what makes that row stale (ADR-0207).
     texts: dict[str, str] = {}
-    edited: dict[str, _Stale] = {}
+    edited: dict[str, _Held] = {}
     for job_id, text in _corpus_texts(source):
         if job_id in stale:
             texts[job_id] = text
@@ -562,7 +562,8 @@ def _refresh_metadata(
             f"metadata refresh: {min(start + _ADD_CHUNK, len(rewrite))}/{len(rewrite)}"
         )
     _log.info(
-        f"metadata refresh: rewrote {len(rewrite)} rows to match the store (ADR-0061)"
+        f"metadata refresh: rewrote {len(rewrite)} rows — {len(stale)} to match the store "
+        "(ADR-0061)"
         + (
             f", {len(edited) - filled} for an edited description and {filled} filled where it "
             "had none (ADR-0207)"
@@ -581,14 +582,6 @@ def _corpus_texts(source: str | Path) -> Iterator[tuple[str, str]]:
     for job in iter_jobs(source):
         if text := (job.get("description") or "").strip():
             yield job["id"], text
-
-
-def _corpus_descriptions(source: str | Path, wanted: set[str]) -> dict[str, str]:
-    """Description text for exactly ``wanted`` ids, off the corpus rows `update_descriptions`
-    filled."""
-    if not wanted:
-        return {}
-    return {job_id: text for job_id, text in _corpus_texts(source) if job_id in wanted}
 
 
 #: Name of the base-row record, written beside the ``.lance`` table directories rather than into
@@ -912,7 +905,10 @@ def sync(args: argparse.Namespace) -> int:
     # into these rows in the join job, and the corpus travels to this job as an artifact — so no
     # separate download of the 450 MB description store is needed. A targeted pass over exactly
     # these ids keeps memory bounded to the run's adds rather than the whole corpus.
-    texts = _corpus_descriptions(args.source, set(add_ids))
+    wanted = set(add_ids)
+    texts = {
+        job_id: text for job_id, text in _corpus_texts(args.source) if job_id in wanted
+    }
     for start in range(0, len(add_ids), _ADD_CHUNK):
         chunk = add_ids[start : start + _ADD_CHUNK]
         rows = []

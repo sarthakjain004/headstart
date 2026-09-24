@@ -46,8 +46,10 @@ since its last compaction, one per run. Those fragments hold **6,115 entries tha
 text**, about **874 per run**. None of them differs only by whitespace.
 
 - **Zoho** accounts for 4,784 of them. That is not editing: 1,527 of the 2,357 changed Zoho ids
-  went back to an earlier text. The text alternates between a detail-merged revision (with its
-  `Salary:` line) and the bare listing record whenever the detail fetch fails. The detail also
+  went back to an earlier text. The text alternates between the detail page's record and the
+  bare listing record whenever the detail fetch fails. The two differ in the appended `Salary:`
+  line alone for 364 of the 2,357 ids, and in the rendered body too (inline CSS, spacing) for
+  the other 1,993. The detail also
   supplies facts such as `salary`, the posting date and the state, so a flip often moves the
   row's metadata as well, and such a row was already being rewritten. How often was not
   measured.

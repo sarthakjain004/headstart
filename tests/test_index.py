@@ -782,7 +782,7 @@ def test_an_unchanged_description_rewrites_nothing(tmp_path, monkeypatch, caplog
 
 def test_a_fetched_description_fills_a_null_row(tmp_path, monkeypatch, caplog):
     """Null is "no text yet", and text that arrives differs from it — so it is filled like any
-    other change, with no flag (ADR-0207 retired `sync --backfill-descriptions`)."""
+    other change, with no flag (ADR-0207)."""
     ids = ["greenhouse:a:1", "greenhouse:a:2"]
     _sync(tmp_path, monkeypatch, ids)  # both indexed without text
     caplog.set_level("INFO")
@@ -851,7 +851,7 @@ def _backfill(tmp_path: Path, store: Path, apply: bool = True) -> int:
 
 
 def test_backfill_reaches_a_row_no_run_corpus_ever_carried(tmp_path, monkeypatch):
-    """The reason this subcommand exists. `sync --backfill-descriptions` reads the run's corpus,
+    """The reason this subcommand exists. `sync` fills descriptions from the run's corpus,
     so a row whose Board sat out the slice is unreachable; the store holds it regardless."""
     _sync(tmp_path, monkeypatch, ["greenhouse:a:1", "greenhouse:a:2"])
     assert _descriptions(tmp_path) == {"greenhouse:a:1": None, "greenhouse:a:2": None}
