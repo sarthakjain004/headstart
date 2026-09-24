@@ -25,7 +25,9 @@ from typing import Any
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 
-_TOKEN = re.compile(r"token=([A-Za-z0-9_-]+)")
+#: The session token the careers page redirects onto. Public: the liveness probe reads the
+#: same token before it asks for a count (ADR-0203).
+CAREERS_TOKEN = re.compile(r"token=([A-Za-z0-9_-]+)")
 _PAGE_SIZE = 100
 # The width this detail pass has always run at — `fan_out`'s default, stated here so the async
 # path resolves to it rather than to the 100-stream default (base.fan_out_async, ADR-0047).
@@ -72,6 +74,10 @@ class RippleHireScraper(BaseScraper):
     def url(self) -> str:
         return f"https://{self.slug}.ripplehire.com/candidate/careers"
 
+    def search_url(self) -> str:
+        """The job-search endpoint the careers page's token unlocks."""
+        return f"https://{self.slug}.ripplehire.com/candidate/candidatejobsearch"
+
     def job_url(self) -> str:
         """No per-job route exists on this ATS's public site (known gap, tracked in
         ``url_shape``'s own comment) — every Job serves the board-level careers page."""
@@ -97,11 +103,11 @@ class RippleHireScraper(BaseScraper):
         # A 200 that redirects somewhere without a token still returns [] — that is the
         # portal's shape for "no public board", not a fetch failure.
         response.raise_for_status()
-        m = _TOKEN.search(response.url)
+        m = CAREERS_TOKEN.search(response.url)
         if not m:
             return []
         token = m.group(1)
-        api = f"https://{self.slug}.ripplehire.com/candidate/candidatejobsearch"
+        api = self.search_url()
         headers = {
             "User-Agent": USER_AGENT,
             "Accept": "application/json",

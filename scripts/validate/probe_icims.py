@@ -23,6 +23,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 
 from headstart.scrapers.base import USER_AGENT
+from headstart.scrapers.icims import ICIMSScraper
 
 _JOB_LOC = re.compile(r"<loc>[^<]*/jobs/(\d+)/[^<]*/job[^<]*</loc>", re.IGNORECASE)
 #: Status codes that answer the question. Everything else is retried rather than believed.
@@ -55,7 +56,7 @@ def _row(tenant: str, status: str, jobs: object, why: str = "") -> dict[str, obj
 
 
 def probe(tenant: str) -> dict[str, object]:
-    url = f"https://{tenant}/sitemap.xml"
+    url = ICIMSScraper(tenant).url()  # a tenant here is its host, which is the slug
     last = ""
     for attempt in range(_ATTEMPTS):
         try:

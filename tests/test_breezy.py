@@ -126,7 +126,7 @@ def _salary(raw: str, country: str | None) -> str | None:
 
 
 def test_a_bare_dollar_names_its_currency_by_the_postings_country():
-    """ADR-0181, the user's scoped exception to `salary._symbol_currency`: against the page's
+    """ADR-0181, the user's scoped exception to `salary.from_field`'s rule: against the page's
     JSON-LD a bare `$` was USD on 141 of 141 US postings and CAD on 179 of 188 Canadian ones, but
     USD on only 41 of 47 elsewhere — so only the first two are named."""
     assert _salary("$19 – $20 / hour", "US") == "19-20 USD HOUR"

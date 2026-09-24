@@ -520,7 +520,7 @@ def main() -> int:
 
     import lancedb
 
-    from headstart.search import PROD_TABLE
+    from headstart.embedding_conventions import PROD_TABLE
 
     try:
         centroids, manifest = roles.load(args.centroids)

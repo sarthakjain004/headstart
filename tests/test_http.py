@@ -10,6 +10,7 @@ import asyncio
 import logging
 
 import pytest
+from curl_cffi.requests import Session
 
 from headstart import http
 
@@ -1051,3 +1052,36 @@ def test_resolving_a_route_never_stalls_the_event_loop_during_a_rotation(monkeyp
         assert asyncio.run(_drive()) > 5
     finally:
         spare_egress._gate.set()
+
+
+# --- HTTPFetcher.clear_cookies: the calling thread's pooled jar ------------------------------
+
+
+@pytest.fixture
+def pooled_session(monkeypatch: pytest.MonkeyPatch) -> Session:
+    pooled = Session()
+    pooled.cookies.set("session", "a", domain="acme.csod.com")
+    pooled.cookies.set("session", "b", domain="other.example")
+    monkeypatch.setattr(http, "session", lambda: pooled)
+    return pooled
+
+
+def test_http_fetcher_clears_one_domain_and_keeps_the_rest(
+    pooled_session: Session,
+) -> None:
+    http.DEFAULT_FETCHER.clear_cookies(domain="acme.csod.com")
+    assert [cookie.domain for cookie in pooled_session.cookies.jar] == ["other.example"]
+
+
+def test_http_fetcher_clears_the_whole_jar_without_a_domain(
+    pooled_session: Session,
+) -> None:
+    http.DEFAULT_FETCHER.clear_cookies()
+    assert list(pooled_session.cookies.jar) == []
+
+
+def test_http_fetcher_treats_a_domain_it_holds_nothing_for_as_already_clear(
+    pooled_session: Session,
+) -> None:
+    http.DEFAULT_FETCHER.clear_cookies(domain="never-visited.example")
+    assert len(list(pooled_session.cookies.jar)) == 2

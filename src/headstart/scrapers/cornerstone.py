@@ -68,7 +68,6 @@ non-200s — and every host is User-Agent-agnostic.
 from __future__ import annotations
 
 import base64
-import contextlib
 import html
 import json
 import re
@@ -209,10 +208,7 @@ class CornerstoneScraper(BaseScraper):
             # Drop the page's cookies from the pooled session at once: with them in the jar,
             # US-pod tenant hosts 401 the explicit session header (6 of 6 trials) and a later
             # re-read of this page redirects to `/ui/error` (module docstring).
-            with contextlib.suppress(
-                KeyError
-            ):  # nothing to drop: another transport's jar
-                http.session().cookies.clear(domain=f"{self.slug}.csod.com")
+            self._fetcher.clear_cookies(domain=f"{self.slug}.csod.com")
             self._token = context["token"]
             self._pod = context["endpoints"]["cloud"]
             return True

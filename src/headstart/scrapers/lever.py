@@ -10,9 +10,15 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from headstart import http
+from headstart import http, salary
 from headstart.models import Job, epoch_ms_to_iso, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
+
+#: Lever's two instances, global first — the order a scrape asks them in. Public: the liveness
+#: probe asks the same two, starting from whichever the row's URL hints at (ADR-0203).
+GLOBAL_API_HOST = "api.lever.co"
+EU_API_HOST = "api.eu.lever.co"
+API_HOSTS = (GLOBAL_API_HOST, EU_API_HOST)
 
 # ISO 3166-1 alpha-2 -> common English short name, used only to recognize when the
 # top-level `country` is already spelled out in the composed location string (so it isn't
@@ -354,7 +360,11 @@ class LeverScraper(BaseScraper):
     url_shape = r"https://jobs(\.eu)?\.lever\.co/[^/]+/[0-9a-f-]{36}"
 
     def url(self) -> str:
-        return f"https://api.lever.co/v0/postings/{self.slug}?mode=json"
+        return self.listing_url_on(GLOBAL_API_HOST)
+
+    def listing_url_on(self, api_host: str) -> str:
+        """This Board's postings on one of :data:`API_HOSTS`; the slug does not say which."""
+        return f"https://{api_host}/v0/postings/{self.slug}?mode=json"
 
     def job_url(self, url: str) -> str:
         """Lever's postings API states the job's own link directly (``hostedUrl``); nothing to
@@ -372,11 +382,8 @@ class LeverScraper(BaseScraper):
         # try the global instance, then EU; a 404 on both means the company isn't on Lever —
         # which must RAISE, not read as an empty board: swallowing it left dead boards
         # "alive with zero jobs" forever, invisible to the ADR-0058 quarantine.
-        for host in ("api.lever.co", "api.eu.lever.co"):
-            response = self._fetch(
-                "GET",
-                f"https://{host}/v0/postings/{self.slug}?mode=json",
-            )
+        for api_host in API_HOSTS:
+            response = self._fetch("GET", self.listing_url_on(api_host))
             if response.status_code == 404:
                 continue
             response.raise_for_status()
@@ -417,7 +424,9 @@ class LeverScraper(BaseScraper):
         lo, hi = raw.get("min"), raw.get("max")
         if not lo and not hi:
             return None
-        span = f"{lo}-{hi}" if lo and hi else str(lo or hi)
-        return " ".join(
-            str(x) for x in (span, raw.get("currency"), raw.get("interval")) if x
+        return salary.to_field(
+            lo or hi,
+            hi if lo and hi else None,
+            raw.get("currency"),
+            raw.get("interval"),
         )

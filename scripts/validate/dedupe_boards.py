@@ -40,7 +40,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from headstart import board_aliases, liveness
-from headstart.scrapers.registry import SCRAPERS
+from headstart.scrapers.registry import SCRAPERS, company_from_row
 
 #: Probe width. These are one cheap header-only GET each against ~2,200 distinct hosts, so the
 #: bound is politeness to nobody in particular — no single origin sees more than a couple.
@@ -113,6 +113,7 @@ def main() -> int:
     # its rows (`shared-reqs`, `subset-reqs`), so an --apply here would replace every one of them
     # with nothing.
     written_elsewhere = {
+        "adp_recruiting": "adp_recruiting_subset_sites.py (ADR-0202)",
         "clearcompany": "clearcompany_shared_accounts.py (ADR-0182)",
         "taleo_enterprise": "taleo_enterprise_subset_sections.py (ADR-0186)",
     }
@@ -131,7 +132,7 @@ def main() -> int:
     ledger = liveness.load(ledger_path)
     live = sorted(
         {
-            scraper_cls.slug_from(v.tenant, v.url)
+            company_from_row(args.ats, v.tenant, v.url).slug
             for v in ledger.values()
             if v.status == liveness.LIVE
         }

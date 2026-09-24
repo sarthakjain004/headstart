@@ -40,10 +40,15 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
-from headstart import board_description_gap, log, scrapable_boards
+from headstart import (
+    board_cost,
+    board_description_gap,
+    board_priority,
+    log,
+    scrapable_boards,
+)
 from headstart.board_cost import BoardCost, costs_for
 from headstart.board_cost import load as load_cost_ledger
-from headstart.board_identity import lower_key
 from headstart.board_priority import load_scores, pick_boards
 from headstart.ingest import (
     HELD_DETAILS_PATH,
@@ -100,7 +105,13 @@ _EXPLORE_BASELINE = 5.0  # unscored board with no measurement and no history to 
 # 124-146, EY 24, walmart 20, target 7.1, paradox 5.7 — then a gap — compass 1.3, viacomcbs 0.9,
 # REWE 0.5, lidl 0.3, dollartree 0.2, advanceauto 0.03, cbscorporation 0.01. Anything in the gap
 # separates the same two sets, which is why this is a threshold and not a tuned parameter.
-_GATE_FLOOR_S = 900.0  # 15 min: below it a Board cannot threaten a 60 min makespan
+#
+# The floor was 15 min while shards ran close to their 60 min budget. By 2026-09-24 they finished
+# in ~9 min, so a 10-15 min Board set the wall clock unjudged: `jibe:petsmart`, 760 s at a score
+# of 2.8 (4 tech jobs). On score, every fresh Board measured between 10 and 15 min then sat under
+# 2 tech/min and none between 6 and 10 min did; `jibe:ulta` is borderline on a still-warming
+# score (ADR-0064 amendment).
+_GATE_FLOOR_S = 600.0  # 10 min: just above the ~9 min a shard now takes
 _GATE_MIN_TECH_PER_MIN = 2.0  # tech jobs per minute of shard time, in the gap above
 # A gated Board is not scraped, so its cost and score freeze — and evidence that cannot change
 # makes the gate a one-way door. Expiring the measurement re-admits it for one run every so
@@ -129,11 +140,11 @@ def _gated_boards(
 ) -> dict[str, float]:
     """Boards whose measured hour buys too little tech to be worth a shard's makespan.
 
-    One key per Board — `ScrapableBoard.identity` — reads both ledgers since ADR-0096. It used to
-    take a *pair*, because the cost ledger was keyed `{ats}:{slug}` and the priority ledger by
-    `board_key`, and reading one with the other's key is what left every Workday board unscored
-    (ADR-0049). Returns ``{board_key: tech per minute}`` — the number, not just the verdict, so the
-    caller can log why each Board went.
+    One key per Board — `board_cost.key_for`, equal to `board_priority.key_for` — reads both ledgers
+    since ADR-0096. It used to take a *pair*, because the cost ledger was keyed `{ats}:{slug}` and
+    the priority ledger by `board_key`, and reading one with the other's key is what left every
+    Workday board unscored (ADR-0049). Returns ``{board_key: tech per minute}`` — the number, not
+    just the verdict, so the caller can log why each Board went.
 
     Only ever judges a Board on **its own** measurement. An unmeasured Board is costed from its
     ATS's median by :func:`costs_for`, and gating on that would drop a Board for its ATS's
@@ -298,16 +309,19 @@ def main() -> int:
         failure_rows, datetime.now(UTC).isoformat(timespec="seconds")
     )
     quarantine = {
-        lower_key(b) for b in board_failures.quarantined(failure_rows) - on_parole
+        board_failures.key_for(b)
+        for b in board_failures.quarantined(failure_rows) - on_parole
     }
     if quarantine or on_parole:
         # Boards confirmed gone (404/410) on QUARANTINE_AT consecutive scrapes — skip them here,
         # and only here: the liveness ledger stays the probe-owned truth, and `live_keep_set`
         # (which feeds `index prune`) must not shrink, or a scraping decision would evict rows.
-        # Lowercased on both sides, like every other Board-key comparison in the plan path: the
+        # Compared in the ledger's own key form (`board_failures.key_for`, lowercased): the
         # ledger's casing and `board_key()`'s need not agree (ADR-0049).
         before = len(companies)
-        companies = [c for c in companies if c.lowercase_identity not in quarantine]
+        companies = [
+            c for c in companies if board_failures.key_for(c) not in quarantine
+        ]
         # Two things make this line honest. The parole count is stated even when it is zero, so
         # a consumer never has to treat the clause as optional going forward. And the ledger's
         # own quarantined total is named, because the `of N` denominator no longer *is* that
@@ -324,12 +338,12 @@ def main() -> int:
     # would still have taken a slot from something that would have been scraped.
     cost_rows = load_cost_ledger(Path(args.cost))
     gated = _gated_boards(
-        [c.identity for c in companies],
+        [board_cost.key_for(c) for c in companies],
         cost_rows,
         scores,
     )
     if gated:
-        companies = [c for c in companies if c.identity not in gated]
+        companies = [c for c in companies if board_cost.key_for(c) not in gated]
         # Named, every run, not just counted. This gate removes work on purpose, and the only
         # way that stays honest is if the list is in front of whoever reads the run — a Board
         # gated in error is invisible everywhere else, because nothing downstream misses it.
@@ -359,7 +373,9 @@ def main() -> int:
     unsettled = board_description_gap.load(Path(args.gap))
     companies = pick_boards(companies, scores, args.max_boards, unsettled=unsettled)
     n = len(companies)
-    priority = sum(1 for c in companies if scores.get(c.identity, 0.0) > 0.0)
+    priority = sum(
+        1 for c in companies if scores.get(board_priority.key_for(c), 0.0) > 0.0
+    )
     # Boards in the slice that hold unsettled descriptions — deliberately NOT reported as "the
     # quota picked N". With ~12k gap Boards and a ~14k random exploration tail, coincidental hits
     # dominate the ~700 reserved slots, so a count phrased as quota fill would read as progress
@@ -393,7 +409,7 @@ def main() -> int:
     # 2026-08-28 — cost written by `harvest` under `{ats}:{slug}`, priority from `board_identity.board_of`
     # under `board_key()` — and conflating them is what left every Workday and Personio board
     # unscored (ADR-0049). The fix was to make them agree, not to keep pairing them up.
-    keys = [c.identity for c in companies]
+    keys = [board_cost.key_for(c) for c in companies]
     measured = bool(cost_rows)  # branch once; every later format choice reads this
     if measured:
         costs = costs_for(keys, cost_rows)
@@ -405,7 +421,10 @@ def main() -> int:
             f"({len(cost_rows)} in ledger); rest estimated from their ATS median"
         )
     else:
-        costs = [_coldstart_cost(c.ats, scores.get(c.identity, 0.0)) for c in companies]
+        costs = [
+            _coldstart_cost(c.ats, scores.get(board_priority.key_for(c), 0.0))
+            for c in companies
+        ]
         sizing_total, sizing_target = float(n), float(args.target_boards)
         _log.info(
             "cost: no measurements yet — cold-start heuristic (ADR-0026); "
@@ -426,7 +445,7 @@ def main() -> int:
     for k in range(m):
         # priority-desc within a shard: a time-boxed shard scrapes its highest-value boards first
         shard_boards[k].sort(
-            key=lambda i: scores.get(companies[i].identity, 0.0),
+            key=lambda i: scores.get(board_priority.key_for(companies[i]), 0.0),
             reverse=True,
         )
         path = out_dir / f"shard-{k}.jsonl"

@@ -42,6 +42,7 @@ import re
 from typing import Any, ClassVar
 
 from headstart import http
+from headstart.fetcher import Fetcher
 from headstart.models import Job, host_of, html_to_text
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -101,8 +102,10 @@ class PhenomScraper(BaseScraper):
     detail_workers = _DETAIL_WORKERS
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
-    def __init__(self, slug: str, company: str | None = None) -> None:
-        super().__init__(slug, company)
+    def __init__(
+        self, slug: str, company: str | None = None, fetcher: Fetcher | None = None
+    ) -> None:
+        super().__init__(slug, company, fetcher)
         # Resolved by `fetch_raw` before anything needs it; `job_url` renders whichever prefix the
         # Board turned out to use, and falls back to the probe prefix for a Board never fetched
         # (the liveness prober builds a scraper and reads `url()` without calling `fetch_raw`).
@@ -179,7 +182,9 @@ class PhenomScraper(BaseScraper):
 
     # --- listing ----------------------------------------------------------------------------
 
-    def _widgets_url(self) -> str:
+    def widgets_url(self) -> str:
+        """The tenant's one JSON endpoint. Public: the liveness probe posts its count here
+        (ADR-0203)."""
         return f"https://{self.slug}/widgets"
 
     #: The one set of headers both widget calls send. Declared once because the sync and async
@@ -193,7 +198,7 @@ class PhenomScraper(BaseScraper):
     def _widgets(self, payload: dict[str, Any]) -> dict[str, Any]:
         response = self._fetch(
             "POST",
-            self._widgets_url(),
+            self.widgets_url(),
             json=payload,
             headers=self._WIDGET_HEADERS,
             timeout=45,
@@ -323,7 +328,7 @@ class PhenomScraper(BaseScraper):
             response = await self._fetch_async(
                 session,
                 "POST",
-                self._widgets_url(),
+                self.widgets_url(),
                 json=self._detail_payload(native_id),
                 headers=self._WIDGET_HEADERS,
                 timeout=45,

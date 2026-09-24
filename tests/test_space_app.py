@@ -23,6 +23,7 @@ import re
 import sys
 import types
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
@@ -1004,7 +1005,11 @@ def test_keyword_filter_controls_render_in_the_rail(app):
 def test_description_scopes_are_enabled_once_the_table_has_the_column(app, monkeypatch):
     """The disabled rule is a runtime fact of the served table, read per request — so a Space that
     has restarted onto a migrated table lights the options up with no template change."""
-    monkeypatch.setattr(app._searcher, "has_description", True)
+    monkeypatch.setattr(
+        app._searcher,
+        "capabilities",
+        replace(app._searcher.capabilities, has_description=True),
+    )
     page = app.app.test_client().get("/").data
     assert b'<option value="description">' in page
     assert b'<option value="both">' in page
@@ -2300,7 +2305,9 @@ def test_the_door_states_no_figure_it_cannot_count(auth_app, monkeypatch):
     real risk is the opposite one: a tile rendering `None`, `0` or an exception where the
     number is simply unavailable."""
     searcher = auth_app.app.view_functions["index"].__globals__["_searcher"]
-    monkeypatch.setattr(searcher, "has_first_seen", False)
+    monkeypatch.setattr(
+        searcher, "capabilities", replace(searcher.capabilities, has_first_seen=False)
+    )
     page = auth_app.app.test_client().get("/").data.decode()
     assert "added in the last" not in page
     # Scoped to the tiles: the page's own prose opens "None of this has to be taken on faith".
@@ -2333,7 +2340,9 @@ def test_coverage_is_behind_the_wall_like_everything_else(auth_app):
 def test_coverage_reports_a_missing_column_as_unknown_not_zero(app, monkeypatch):
     """A column the table lacks is None. Zero would read as 'measured, and none have it'."""
     searcher = app.app.view_functions["coverage"].__globals__["_searcher"]
-    monkeypatch.setattr(searcher, "has_description", False)
+    monkeypatch.setattr(
+        searcher, "capabilities", replace(searcher.capabilities, has_description=False)
+    )
     monkeypatch.setattr(searcher, "_coverage", None)  # drop the per-process cache
     assert app.app.test_client().get("/coverage").json["fields"]["description"] is None
 

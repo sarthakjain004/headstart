@@ -36,7 +36,7 @@ from pathlib import Path
 from headstart import board_aliases, config, liveness, log
 from headstart.board_identity import board_identity, lower_key
 from headstart.config import CompanyRef
-from headstart.scrapers.registry import DISABLED_ATS, SCRAPERS
+from headstart.scrapers.registry import DISABLED_ATS, SCRAPERS, company_from_row
 
 _log = log.get(__name__)
 
@@ -79,7 +79,8 @@ def load(ledger_dir: str | Path, *, min_jobs: int = 1) -> list[ScrapableBoard]:
 
     ``min_jobs=0`` is CONTEXT.md's **Scrapable Board** count and what the pipeline reads;
     the default ``min_jobs=1`` is the **Hiring Board** subset. Each scraper turns a ledger row's
-    ``(tenant, url)`` into its own slug via ``slug_from``, so no per-ATS logic lives here.
+    ``(tenant, url)`` into its own slug via ``slug_from`` (``registry.company_from_row``,
+    ADR-0203), so no per-ATS logic lives here.
     ``config/companies.toml`` remains the small curated seed.
     """
     ledger_dir = Path(ledger_dir)
@@ -105,11 +106,14 @@ def load(ledger_dir: str | Path, *, min_jobs: int = 1) -> list[ScrapableBoard]:
         for verdict in liveness.load(csv_path).values():
             if verdict.status != liveness.LIVE or (verdict.jobs or 0) < min_jobs:
                 continue
-            slug = scraper.slug_from(verdict.tenant, verdict.url)
-            if is_excluded(scraper.ats, slug) or slug.lower() in aliases:
+            company = company_from_row(scraper.ats, verdict.tenant, verdict.url)
+            if (
+                is_excluded(company.ats, company.slug)
+                or company.slug.lower() in aliases
+            ):
                 continue
             boards.append(
-                ScrapableBoard(ats=scraper.ats, slug=slug, name=verdict.tenant)
+                ScrapableBoard(ats=company.ats, slug=company.slug, name=company.name)
             )
     return _drop_parked(_dedupe_boards(boards))
 

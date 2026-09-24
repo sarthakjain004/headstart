@@ -1,6 +1,6 @@
 # ADR-0149: Search filters and index capabilities are two objects, not one 27-keyword function
 
-**Status:** accepted · **Date:** 2026-09-15 · **Relates to:** ADR-0031 (`build_filter` itself), ADR-0084 (facet counts), ADR-0104 (the Keyword filter's `has_description`), ADR-0035 (the alerts Watermark / `ALLOWED_SEARCH_FILTERS`)
+**Status:** accepted · **Date:** 2026-09-15 · **Amended by:** [ADR-0194](0194-job-search-absorbs-what-its-adapters-copy.md) (`capabilities` is a stored field, and the `search`/`facets` cycle is broken) · **Relates to:** ADR-0031 (`build_filter` itself), ADR-0084 (facet counts), ADR-0104 (the Keyword filter's `has_description`), ADR-0035 (the alerts Watermark / `ALLOWED_SEARCH_FILTERS`)
 
 ## Context
 
