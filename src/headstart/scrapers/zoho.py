@@ -43,6 +43,7 @@ import re
 from typing import Any
 
 from headstart import log
+from headstart.fetcher import Fetcher
 from headstart.models import Job, host_of, html_to_text
 from headstart.scrapers.base import BaseScraper, DetailLost, DetailRequest
 
@@ -61,6 +62,40 @@ _SLUG = re.compile(r"[^A-Za-z0-9]+")
 # single-quoted string (\xNN hex escapes) wrapping JSON
 _DETAIL_JOBS = re.compile(r"jobs\s*=\s*JSON\.parse\('((?:[^'\\]|\\.)*)'\)")
 _JS_ESCAPE = re.compile(r"\\x([0-9a-fA-F]{2})|\\(.)")
+
+
+class _PostingClosed(DetailLost):
+    """The detail page says the posting is gone: a closure, not a gap in the read."""
+
+    def __init__(self) -> None:
+        super().__init__("posting explicitly unavailable")
+
+
+#: The verdict a closed posting's detail page renders in place of its record, in the Board's
+#: language — each seen live 2026-09-25 (a sweep of /jobs/Careers/{unknown id} across the
+#: ledger; the English and Portuguese ones also on listed ids, harrisonconsultingsolutions and
+#: resourceit). Not "this page is currently unavailable.": that is the .com data centre's answer
+#: to a throttled client, served for live postings too.
+_UNAVAILABLE_VERDICTS = (
+    "This job posting is no longer available.",
+    "A postagem desta vaga não está mais disponível.",
+    "Esta vaga de emprego já não está disponível.",
+    "Este anuncio de empleo ya no está disponible.",
+    "Cette offre d’emploi n’est plus disponible.",
+    "Dieses Jobangebot ist nicht mehr verfügbar.",
+    "Questa pubblicazione di lavoro non è più disponibile.",
+    "Deze vacature is niet langer beschikbaar.",
+    "Denna jobbpublicering är inte längre tillgänglig.",
+    "Dette jobopslag er ikke længere tilgængeligt.",
+    "Ta oferta pracy nie jest już dostępna.",
+    "Ez a meghirdetett állás már nem érhető el.",
+    "Ovaj oglas za posao više nije dostupan.",
+    "Эта вакансия больше не доступна.",
+    "Bu iş gönderesi artık kullanılamıyor.",
+    "لم تعد نشرة الوظائف هذه متاحة.",
+    "此职位发布不再可用。",
+    "この求人は終了しています。",
+)
 _DETAIL_WORKERS = (
     6  # detail pages are ~1.7MB each — bandwidth, not rate limits, is the constraint
 )
@@ -146,6 +181,13 @@ class ZohoScraper(BaseScraper):
     detail_workers = _DETAIL_WORKERS  # also the async stream width (base.fan_out_async)
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
+    def __init__(
+        self, slug: str, company: str | None = None, fetcher: Fetcher | None = None
+    ) -> None:
+        super().__init__(slug, company, fetcher)
+        # Listed ids whose detail page says the posting is gone, filled by `read_detail`.
+        self._unavailable_ids: set[str] = set()
+
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
         # Host only, e.g. acme.zohorecruit.in — the same normalisation personio needs, for the
@@ -184,10 +226,15 @@ class ZohoScraper(BaseScraper):
         # No tech gate: a department-blind gate would drop 47.4% of zoho's tech postings
         # (ADR-0166). No held-description skip either: a stored description does not hold the
         # Salary above.
+        self._unavailable_ids.clear()
         details = self.run_detail_pass(
             ids, key_of=lambda job_id: job_id, what="detail pages"
         )
-        return {"page": page, "details": details}
+        return {
+            "page": page,
+            "details": details,
+            "unavailable": frozenset(self._unavailable_ids),
+        }
 
     @staticmethod
     def _records(page: str) -> list[dict]:
@@ -208,7 +255,12 @@ class ZohoScraper(BaseScraper):
         return DetailRequest(f"https://{self.slug}/jobs/Careers/{job_id}")
 
     def read_detail(self, job_id: str, response: Any) -> dict:
-        return self._detail_record_of(response.text)
+        try:
+            return self._detail_record_of(response.text)
+        except DetailLost as lost:
+            if isinstance(lost, _PostingClosed):
+                self._unavailable_ids.add(job_id)
+            raise
 
     @staticmethod
     def _detail_record_of(page: str) -> dict:
@@ -225,11 +277,8 @@ class ZohoScraper(BaseScraper):
         that moved and a page that never arrived are one count otherwise."""
         m = _DETAIL_JOBS.search(page)
         if not m:
-            if (
-                "This job posting is no longer available." in page
-                or "A postagem desta vaga não está mais disponível." in page
-            ):
-                raise DetailLost("posting explicitly unavailable")
+            if any(verdict in page for verdict in _UNAVAILABLE_VERDICTS):
+                raise _PostingClosed()
             raise DetailLost("no jobs blob on the page")
         try:
             records = json.loads(_js_unescape(m.group(1)))
@@ -240,9 +289,11 @@ class ZohoScraper(BaseScraper):
         return records[0]
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
-        # raw is fetch_raw's {page, details}; a bare page string means no detail pass
-        page, details = (
-            (raw, {}) if isinstance(raw, str) else (raw["page"], raw["details"])
+        # raw is fetch_raw's {page, details, unavailable}; a bare page string means no detail pass
+        page, details, unavailable = (
+            (raw, {}, frozenset())
+            if isinstance(raw, str)
+            else (raw["page"], raw["details"], raw.get("unavailable", frozenset()))
         )
         records = self._records(page)
         if not records:
@@ -266,11 +317,26 @@ class ZohoScraper(BaseScraper):
             jid = r.get("id")
             if not jid:
                 continue
+            # The listing still carries it but its own page says it is gone: a closure, so no
+            # Job, and the Board stays authoritative (not `mark_truncated`) so eviction sees the
+            # id absent and ADR-0083 evicts it on the second consecutive absence. Measured
+            # 1,247-1,953 a run on 23-31 Boards (docs/pipeline/2026-09-24_five-run-log-review.md).
+            if jid in unavailable:
+                continue
             # The detail record wins field-by-field when it landed — measured a strict superset
             # over the listing (`_merge_detail`'s docstring) — and falls back to the bare listing
             # record if the detail fetch failed.
-            d = _merge_detail(r, details.get(jid))
+            detail = details.get(jid)
+            d = _merge_detail(r, detail)
             title = (r.get("Posting_Title") or r.get("Job_Opening_Name") or "").strip()
+            # Except for the description of a Job the store already holds (ADR-0208): the
+            # listing renders it differently from the detail page, so a failed detail would
+            # replace the held text with another rendering of the same posting, and flip it back
+            # the next time the detail lands. No text here keeps the held one.
+            held = not self.needs_detail(jid)
+            description = (
+                None if held and not detail else html_to_text(_description_text(d))
+            )
             jobs.append(
                 Job(
                     id=self.job_id(jid),
@@ -285,7 +351,7 @@ class ZohoScraper(BaseScraper):
                     url=self.job_url(jid, title),
                     posted_at=d.get("Date_Opened") or None,
                     scraped_at=scraped_at,
-                    description=html_to_text(_description_text(d)),
+                    description=description,
                     experience=d.get("Work_Experience"),
                     employment_type=d.get("Job_Type"),
                     salary=self._salary_field(d),

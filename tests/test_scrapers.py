@@ -1442,6 +1442,38 @@ def test_smartrecruiters_marks_truncation_when_the_board_outruns_one_page(monkey
     assert "24556" in scraper.truncated
 
 
+@pytest.mark.parametrize(
+    ("read", "total", "authoritative"),
+    [
+        (6378, 6379, True),  # accorhotel, 2026-09-24
+        (4809, 4810, True),  # boschgroup, 2026-09-24
+        (4700, 4810, False),  # 97.7%: below MIN_AUTHORITATIVE_SHARE
+    ],
+)
+def test_smartrecruiters_tolerates_only_a_negligible_shortfall(
+    monkeypatch, read, total, authoritative
+):
+    """`totalFound` is exact (ADR-0070) and no cap is enforced (#227), so a short read is a
+    *measured* shortfall and goes through ADR-0121's tolerance. Unconditional, one posting
+    closing mid-crawl cost `accorhotel` and `boschgroup` their whole eviction scope."""
+    scraper = get_scraper("smartrecruiters", "acme", "Acme")
+    _sr_offline(
+        monkeypatch,
+        scraper,
+        {
+            "offset": 0,
+            "limit": 100,
+            "totalFound": total,
+            "content": [{"id": str(n)} for n in range(read)],
+        },
+    )
+
+    if authoritative:
+        assert scraper.truncated is None
+    else:
+        assert scraper.truncated == f"read {read} of {total} postings — the rest unread"
+
+
 def test_smartrecruiters_complete_board_is_not_marked_truncated(monkeypatch):
     """A Board that fits in one page is authoritative — marking it would strip it from the
     eviction scope for nothing, and its real delistings would then never be pruned."""
@@ -1532,7 +1564,7 @@ def test_smartrecruiters_a_short_last_page_is_not_blamed_on_the_cap(monkeypatch)
     """Truncated, but *not* by the cap: the last page came back short.
 
     `page` alone reaches `_MAX_PAGES` either way, and `totalFound` is read off page 1 — so a board
-    that loses a posting mid-read lands exactly here. The reason string feeds the shard report
+    that loses postings mid-read lands exactly here. The reason string feeds the shard report
     (ADR-0045), and a reason that names a cap which never fired is the false premise CLAUDE.md's
     review rule exists to catch.
     """
@@ -1546,7 +1578,9 @@ def test_smartrecruiters_a_short_last_page_is_not_blamed_on_the_cap(monkeypatch)
         {
             "offset": 0,
             "limit": sr._PAGE_SIZE,
-            "totalFound": board + 1,  # page 1 counted the posting that has since closed
+            # page 1 counted 100 postings that have since closed: past ADR-0121's tolerance
+            # (4999/5099 = 98.0%), since a single one would now stay authoritative
+            "totalFound": board + 100,
             "content": [{"id": str(n)} for n in range(board)],
         },
     )

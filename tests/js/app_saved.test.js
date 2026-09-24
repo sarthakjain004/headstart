@@ -20,6 +20,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const same = require('./same_values');
 
 const APP_JS = path.join(__dirname, '..', '..', 'src', 'headstart', 'ui', 'static', 'app.js');
 
@@ -89,9 +90,9 @@ test('the stars a signed-in account has are handed over, in the shape the picker
   await settled();
   const rows = ctx.window.savedJobs();
   assert.equal(rows.length, 2);
-  assert.deepEqual(rows.map(j => j.job_id), ['greenhouse:razorpay:9001', 'lever:dreamsports:42']);
+  same(rows.map(j => j.job_id), ['greenhouse:razorpay:9001', 'lever:dreamsports:42']);
   // The four fields the picker names a version and draws a row from.
-  assert.deepEqual(
+  same(
     [rows[0].company, rows[0].title, rows[0].location, rows[0].starred_at],
     ['Razorpay', 'Backend Engineer', 'Bengaluru', '2026-09-02T09:00:00+00:00']);
 });
@@ -105,7 +106,7 @@ test('no list is null, never an empty one — "nothing starred" is a different a
 
   const signedIn = loadApp([]);
   await settled();
-  assert.deepEqual(signedIn.window.savedJobs(), [],
+  same(signedIn.window.savedJobs(), [],
     'an account with nothing starred is indistinguishable from having no account');
 });
 
@@ -122,7 +123,7 @@ test('the list handed over is a copy, so a reader cannot reorder the Saved tab',
   // The picker sorts what it is handed, newest star first. If that were the page's own array,
   // the Saved tab's list would be reordered underneath it by a menu merely being opened.
   ctx.window.savedJobs().reverse().push(star('c'));
-  assert.deepEqual(ctx.window.savedJobs().map(j => j.job_id), ['a', 'b']);
+  same(ctx.window.savedJobs().map(j => j.job_id), ['a', 'b']);
 });
 
 /* ---- stars on a card the company cap held back ---------------------------------------------

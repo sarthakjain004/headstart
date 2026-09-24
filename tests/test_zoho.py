@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
+from headstart.scrapers.base import DetailLost
 from headstart.scrapers.registry import get_scraper
 from headstart.scrapers.zoho import ZohoScraper
 
@@ -278,6 +279,40 @@ def test_zoho_falls_back_to_listing_when_detail_fetch_missing():
     assert j.salary is None  # never in the listing to begin with
 
 
+def _listing_with_description(job_id: str) -> str:
+    return _page(
+        [
+            {
+                "id": job_id,
+                "Posting_Title": "Backend Engineer",
+                "Job_Description": "<p>The listing's rendering of the posting.</p>",
+            }
+        ]
+    )
+
+
+def test_a_failed_detail_never_replaces_a_held_description_with_the_listings():
+    """ADR-0208. The listing renders a posting's description differently from the detail page,
+    and whole detail passes fail on some runs, so falling back to the listing flipped the stored
+    text back and forth. A Job whose description the store holds gets none instead, and
+    `update_descriptions` keeps the held text."""
+    scraper = get_scraper("zoho", "acme.zohorecruit.com")
+    scraper.have_details = {"zoho:acme.zohorecruit.com:1"}
+    raw = {"page": _listing_with_description("1"), "details": {}}
+    [job] = scraper.parse(raw, SCRAPED_AT)
+    assert job.description is None
+
+
+def test_a_failed_detail_still_falls_back_to_the_listing_for_an_unheld_job():
+    """With nothing held, the listing's text is the best text there is: a new Job keeps it
+    rather than being embedded from its title alone."""
+    scraper = get_scraper("zoho", "acme.zohorecruit.com")
+    scraper.have_details = set()
+    raw = {"page": _listing_with_description("1"), "details": {}}
+    [job] = scraper.parse(raw, SCRAPED_AT)
+    assert job.description == "The listing's rendering of the posting."
+
+
 @pytest.mark.parametrize("async_fanout", ["1", "0"])
 def test_zoho_classifies_a_source_declared_unavailable_detail(
     monkeypatch, async_fanout
@@ -293,3 +328,73 @@ def test_zoho_classifies_a_source_declared_unavailable_detail(
 
     assert raw["details"] == {}
     assert scraper.detail_losses == {"posting explicitly unavailable": 1}
+
+
+# The shell Zoho serves at a posting's detail URL once the posting is closed, captured live
+# 2026-09-25 (harrisonconsultingsolutions, a listed id): no jobs blob, one <h4> verdict.
+def _unavailable_shell(verdict: str) -> str:
+    return (
+        '<html><head></head><body><div class="sorry-block"><h2>Sorry,</h2>\n'
+        f"<h4>{verdict}</h4>\n"
+        "<p>For more details, please contact the website administrator.</p>\n"
+        "</div></body></html>"
+    )
+
+
+@pytest.mark.parametrize("async_fanout", ["1", "0"])
+def test_zoho_drops_a_listed_posting_its_detail_page_says_is_gone(
+    monkeypatch, async_fanout
+) -> None:
+    # The listing still carries a closed posting; only its detail page says it is gone, and a
+    # Job built from the listing would serve a dead link (docs/pipeline/
+    # 2026-09-24_five-run-log-review.md finding 3). It is a closure, so the Board stays
+    # authoritative and eviction sees the id as absent.
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
+    records = [
+        {"id": "1", "Posting_Title": "Closed Role"},
+        {"id": "2", "Posting_Title": "Open Role"},
+    ]
+    pages = {
+        "1": _unavailable_shell("This job posting is no longer available."),
+        "2": _detail_page({"id": "2", "Job_Description": "<p>Go</p>"}),
+    }
+    scraper, _fetcher = _zoho_board(
+        _page(records), lambda job_id: FakeResponse(text=pages[job_id])
+    )
+
+    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+
+    assert [j.title for j in jobs] == ["Open Role"]
+    assert scraper.detail_losses == {"posting explicitly unavailable": 1}
+    assert scraper.truncated is None
+
+
+@pytest.mark.parametrize(
+    "verdict",
+    [
+        # Each seen live 2026-09-25 on a Board in that language (host in the comment).
+        "A postagem desta vaga não está mais disponível.",  # resourceit (.com)
+        "Cette offre d’emploi n’est plus disponible.",  # 4-icanada (.com)
+        "Dieses Jobangebot ist nicht mehr verfügbar.",  # alltagsbegleitung-sw (.eu)
+        "この求人は終了しています。",  # corp (.com)
+    ],
+)
+def test_zoho_reads_the_unavailable_verdict_in_the_boards_language(verdict) -> None:
+    with pytest.raises(DetailLost, match="posting explicitly unavailable"):
+        ZohoScraper._detail_record_of(_unavailable_shell(verdict))
+
+
+def test_zoho_keeps_a_posting_behind_the_page_unavailable_shell() -> None:
+    # Zoho's .com data centre answers a throttled client with a *different* shell (a 302 to
+    # /html/portal.html), for live postings too: measured 2026-09-25 after ~1,000 requests from
+    # one IP. It says nothing about the posting, so the Job stays and the loss stays unexplained.
+    throttled = _unavailable_shell("this page is currently unavailable.")
+    scraper, _fetcher = _zoho_board(
+        _page([{"id": "1", "Posting_Title": "Open Role"}]),
+        lambda job_id: FakeResponse(text=throttled),
+    )
+
+    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+
+    assert [j.title for j in jobs] == ["Open Role"]
+    assert scraper.detail_losses == {"no jobs blob on the page": 1}
