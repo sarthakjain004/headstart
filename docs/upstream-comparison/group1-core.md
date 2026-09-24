@@ -220,7 +220,7 @@ the thing CLAUDE.md says the Phenom ledger is deliberately narrowed to 16 of 91 
 of. Not a scraper change and not this task, but it is the field that would unblock it.
 
 Their `commitment`/`employment_type` split (raw label + normalized enum) is a schema preference
-our `search.ETYPE_CLAUSES` substring matching makes unnecessary — we keep the provider's own
+our `employment_type_filter.RULES` substring matching makes unnecessary — we keep the provider's own
 wording, deliberately (`models.py:26-31`).
 
 ---
@@ -341,7 +341,7 @@ wording, deliberately (`models.py:26-31`).
 | greenhouse | `?content=true` single-request descriptions | ALREADY-HAVE (`scrapers/greenhouse.py:83`) |
 | greenhouse | `requisition_id` placeholder filter ("See Opening ID"/"TBD") | NOT-APPLICABLE — no such field in our `Job` |
 | greenhouse | keeps HTML in the description for a later markdownify step | NOT-APPLICABLE — we store plain text for the embedding (`models.py:56-65`) |
-| lever | `commitment` → normalized `EmploymentType` enum | NOT-APPLICABLE — we keep provider wording, `search.ETYPE_CLAUSES` matches by substring |
+| lever | `commitment` → normalized `EmploymentType` enum | NOT-APPLICABLE — we keep provider wording, `employment_type_filter.RULES` matches by substring |
 | lever | `workplaceType` onsite → `is_remote=False` | ALREADY-HAVE in effect (`scrapers/lever.py:393-394`) |
 | ashby | `url = jobUrl or applyUrl` | NEEDS-LIVE-CHECK, low value — never observed `jobUrl` absent; ours would emit `""` if it happened |
 | smartrecruiters | `location.remote is False` → explicit non-remote | equivalent; ours reaches the same answer via `is_remote(location)` |

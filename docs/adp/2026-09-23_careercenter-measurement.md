@@ -133,7 +133,7 @@ the request carries (3 Boards x 3 variants).
   **min 0.0**, max 43.46 (a lone ceiling); `18.00 To 20.00 (CAD) Annually` is hourly money
   labelled annual by the tenant.
 - **Experience (Q16):** no native field. **Employment type:** `workLevelCode.shortName`, free text
-  per tenant, 83.7% populated, 126 distinct values; `employment_type.flags` reads none of
+  per tenant, 83.7% populated, 126 distinct values; `employment_type_filter.flags` reads none of
   `Seasonal` (23), `Casual` (14), `Temporary` (11), `Student` (10), `FT FACULTY…` (11) — 136 of
   1,731 (7.9%).
 - **Location (Q17):** `requisitionLocations[]` — 1 on 1,829 rows, 0 on 52, up to 62 on one.

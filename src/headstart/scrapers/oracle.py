@@ -151,7 +151,7 @@ class OracleScraper(BaseScraper):
         # A pool row that is a bare label with no URL either (23 of them: `akamai`, `chubb`,
         # `cummins`) has no host to recover, and falls through to the tenant — which will not
         # resolve. That is deliberate and currently unreachable: those rows are unprobeable, so
-        # the ledger has no such entry and `load_active_companies` can never build one. Guarding
+        # the ledger has no such entry and `scrapable_boards.load` can never build one. Guarding
         # it here would be error handling for a case that cannot arrive.
         return host_of(url) or tenant.strip().lower()
 
