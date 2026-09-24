@@ -345,7 +345,7 @@ class TaleoBEScraper(BaseScraper):
 
     def read_detail(
         self, item: dict[str, str | None], response: Any
-    ) -> dict[str, str | None]:
+    ) -> dict[str, str | None] | DetailWithoutDescription:
         page = response.text
         labels = _labels(page)
         body = _description_html(page)

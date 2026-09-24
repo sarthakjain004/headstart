@@ -216,23 +216,25 @@ class DetailWithoutDescription:
 
     The Detail pass exists for the description (CONTEXT.md §Detail pass), so a page that parsed
     but carries none is a loss on the gap line, labelled ``cause``; yet raising
-    :class:`DetailLost` would also drop the location, department or salary ``parse`` reads off
-    the same page (a Taleo BE layout states them on 128 of 128 pages with no body, measured
-    2026-09-24). :meth:`BaseScraper.run_detail_pass` unwraps ``detail`` into its mapping.
+    :class:`DetailLost` would also drop the other fields ``parse`` reads off the same page (a
+    Taleo BE layout states a location and department on 128 of 128 pages with no body, measured
+    2026-09-24). :meth:`BaseScraper.run_detail_pass` keeps ``fields`` in its mapping.
     """
 
-    detail: Any
+    fields: Any
     cause: str
 
 
-def _unwrapped(detail: Any) -> Any:
-    return detail.detail if isinstance(detail, DetailWithoutDescription) else detail
+def _unwrapped(outcome: Any) -> Any:
+    return outcome.fields if isinstance(outcome, DetailWithoutDescription) else outcome
 
 
 class FetchedDetails(dict[str, Any]):
     """What :meth:`BaseScraper.run_detail_pass` returns: each detail that arrived, keyed by the
-    Job's native id, plus how many of the requested ones did not (:attr:`missing`) — the count a
-    load-bearing pass marks its Board truncated on (ADR-0053).
+    Job's native id, plus how many of the requested ones are gaps (:attr:`missing`) — the count a
+    load-bearing pass marks its Board truncated on (ADR-0053). A detail that arrived without its
+    description (:class:`DetailWithoutDescription`) is both: kept for its other fields, and
+    counted in :attr:`missing`.
 
     A Job the tech gate or the held-description skip left out is simply absent: never requested,
     so neither present nor missing.
@@ -506,8 +508,8 @@ class BaseScraper(ABC):
         :data:`USER_AGENT`). Labels are deliberately coarse — a status, or an exception class —
         because what a gap needs is its *shape*, not one distinct string per request.
 
-        Call it only where the same path returns ``None``, so the tally can never exceed the
-        count it explains. Workday keeps a richer tally of its own and does not use this.
+        Call it only for a detail that will count as a gap — one whose path returns ``None``, or a
+        :class:`DetailWithoutDescription` — so the tally can never exceed the count it explains. Workday keeps a richer tally of its own and does not use this.
         """
         self.detail_losses[cause] += 1
 
@@ -1063,8 +1065,9 @@ class BaseScraper(ABC):
           (:meth:`async_fanout_enabled`), in which case on :attr:`detail_workers` threads. Both
           transports record their width and throughput (``fanout_stats``).
         * Every loss is labelled — a transport exception, a non-200 status, a
-          :class:`DetailLost`, or an unexpected parse error by its type — and the pass ends in
-          one :meth:`report_detail_gaps` line titled ``what``.
+          :class:`DetailLost`, a :class:`DetailWithoutDescription`'s cause, or an unexpected
+          parse error by its type — and the pass ends in one :meth:`report_detail_gaps` line
+          titled ``what``.
 
         ``key_of`` gives an item's native id: the key of the returned mapping, and what
         :meth:`needs_detail` is asked about. It may answer None for a row with no id, which is
@@ -1085,29 +1088,25 @@ class BaseScraper(ABC):
             ]
         if self.async_fanout_enabled():
             results = self.fan_out_async(
-                wanted, self._fetch_detail_async, concurrency=concurrency
+                wanted, self._fetch_detail_outcome_async, concurrency=concurrency
             )
         else:
             results = self._fan_out_timed(
                 wanted,
-                self._fetch_detail_labelled,
+                self._fetch_detail_outcome,
                 self.detail_workers or _DEFAULT_FAN_OUT_WORKERS,
             )
-        missing = self.report_detail_gaps(
-            [
-                None if isinstance(detail, DetailWithoutDescription) else detail
-                for detail in results
-            ],
-            what,
-        )
-        return FetchedDetails(
-            {
-                native_id: _unwrapped(detail)
-                for item, detail in zip(wanted, results)
-                if detail is not None and (native_id := key_of(item)) is not None
-            },
-            missing,
-        )
+        gap_view: list[Any] = []
+        details: dict[str, Any] = {}
+        for item, outcome in zip(wanted, results):
+            if isinstance(outcome, DetailWithoutDescription):
+                gap_view.append(None)
+                outcome = outcome.fields
+            else:
+                gap_view.append(outcome)
+            if outcome is not None and (native_id := key_of(item)) is not None:
+                details[native_id] = outcome
+        return FetchedDetails(details, self.report_detail_gaps(gap_view, what))
 
     def _fan_out_timed(
         self, items: Sequence[_T], fetch_one: Callable[[_T], _R], workers: int
@@ -1140,9 +1139,9 @@ class BaseScraper(ABC):
         step of :meth:`run_detail_pass`, public so a sampler can fetch a handful of details
         without running a whole pass (``scripts/enrich/salary_sample.py``). None when lost; a
         :class:`DetailWithoutDescription` comes back unwrapped, its loss still labelled."""
-        return _unwrapped(self._fetch_detail_labelled(item))
+        return _unwrapped(self._fetch_detail_outcome(item))
 
-    def _fetch_detail_labelled(self, item: Any) -> Any:
+    def _fetch_detail_outcome(self, item: Any) -> Any:
         request = self._detail_request_or_none(item)
         if request is None:
             return None
@@ -1157,9 +1156,9 @@ class BaseScraper(ABC):
         except Exception as exc:  # noqa: BLE001 - labelled here, not lost to fan_out's catch-all
             self.note_detail_exception(exc)
             return None
-        return self._read_detail_labelled(item, response)
+        return self._read_detail_outcome(item, response)
 
-    async def _fetch_detail_async(self, session: Any, item: Any) -> Any:
+    async def _fetch_detail_outcome_async(self, session: Any, item: Any) -> Any:
         request = self._detail_request_or_none(item)
         if request is None:
             return None
@@ -1175,7 +1174,7 @@ class BaseScraper(ABC):
         except Exception as exc:  # noqa: BLE001 - labelled here, not lost to fan_out's catch-all
             self.note_detail_exception(exc)
             return None
-        return self._read_detail_labelled(item, response)
+        return self._read_detail_outcome(item, response)
 
     def _detail_request_or_none(self, item: Any) -> DetailRequest | None:
         try:
@@ -1184,7 +1183,7 @@ class BaseScraper(ABC):
             self.note_detail_unattempted(lost.cause)
             return None
 
-    def _read_detail_labelled(self, item: Any, response: Any) -> Any:
+    def _read_detail_outcome(self, item: Any, response: Any) -> Any:
         if response.status_code != 200:
             self.note_detail_loss(f"HTTP {response.status_code}")
             return None

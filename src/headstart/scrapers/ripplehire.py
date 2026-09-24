@@ -180,7 +180,9 @@ class RippleHireScraper(BaseScraper):
             headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
         )
 
-    def read_detail(self, listing_row: dict, response: Any) -> dict:
+    def read_detail(
+        self, listing_row: dict, response: Any
+    ) -> dict | DetailWithoutDescription:
         """The whole ``jobVO`` record, not only its ``jobDesc``.
 
         The search list always carries ``jobDesc: null``, so this was fetched for the

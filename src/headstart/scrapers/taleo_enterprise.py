@@ -418,7 +418,9 @@ class TaleoEnterpriseScraper(BaseScraper):
     def detail_request(self, item: dict[str, Any]) -> DetailRequest:
         return DetailRequest(item["url"])
 
-    def read_detail(self, item: dict[str, Any], response: Any) -> dict[str, str | None]:
+    def read_detail(
+        self, item: dict[str, Any], response: Any
+    ) -> dict[str, str | None] | DetailWithoutDescription:
         detail = _parse_detail_page(response.text)
         if detail is None:
             raise DetailLost("no labelled requisition fields on a 200")
