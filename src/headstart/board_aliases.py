@@ -229,6 +229,20 @@ def load_for(liveness_dir: str | Path, ats: str) -> dict[str, str]:
     return load(path_for(liveness_dir, ats))
 
 
+def signals_for(liveness_dir: str | Path, ats: str) -> dict[str, str]:
+    """This ATS's ``{duplicate: signal}`` map — why each Board is buried, keyed as :func:`load`
+    keys it (lowercased). Empty when the ATS has no ledger."""
+    path = path_for(liveness_dir, ats)
+    if not path.exists():
+        return {}
+    with open(path, newline="", encoding="utf-8") as fh:
+        return {
+            row["duplicate"].lower(): row["signal"]
+            for row in csv.DictReader(fh)
+            if row.get("duplicate") and row.get("signal")
+        }
+
+
 def load(path: str | Path) -> dict[str, str]:
     """``{duplicate_slug: canonical_slug}``, or empty when no ledger exists for this ATS.
 

@@ -330,8 +330,12 @@ def _backing_copies(
     """
     if not requisitions or not backing:
         return {}
+    # A pair whose backing Board is itself an Eightfold site (a company's second site, #154)
+    # is ADR-0205's alias business, not this rule's: the backing row must be a different ATS's.
     by_slug = {
-        lower_key(f"eightfold:{slug}"): [lower_key(b) for b in boards]
+        lower_key(f"eightfold:{slug}"): [
+            lower_key(b) for b in boards if not b.startswith("eightfold:")
+        ]
         for slug, boards in backing.items()
     }
     held: dict[tuple[str, str], tuple[str, str]] = {}
@@ -562,24 +566,16 @@ def aliased_boards(ledger_dir: str | Path) -> dict[str, str]:
     against the alias ledger's ``duplicate`` — whatever the row's status, since a buried Board
     that later died still left through the alias.
     """
-    import csv
-
     from headstart import board_aliases, liveness
     from headstart.scrapers.registry import company_from_row
 
     out: dict[str, str] = {}
-    for path in sorted(board_aliases.path_for(ledger_dir, "").parent.glob("*.csv")):
-        with path.open(encoding="utf-8", newline="") as fh:
-            signals = {
-                row["duplicate"].lower(): row["signal"]
-                for row in csv.DictReader(fh)
-                if row.get("duplicate") and row.get("signal")
-            }
-        ledger = Path(ledger_dir) / path.name
-        if not signals or not ledger.exists():
+    for ledger in sorted(Path(ledger_dir).glob("*.csv")):
+        signals = board_aliases.signals_for(ledger_dir, ledger.stem)
+        if not signals:
             continue
         for verdict in liveness.load(ledger).values():
-            company = company_from_row(path.stem, verdict.tenant, verdict.url)
+            company = company_from_row(ledger.stem, verdict.tenant, verdict.url)
             signal = signals.get(company.slug.lower())
             if signal:
                 try:
@@ -824,11 +820,24 @@ def _is_non_public(board: str) -> bool:
 
 
 #: Which rule took a duplicate row out, as :func:`plan_prune_by_rule` names it and the dedup
-#: eviction ledger records it (ADR-0210). ``index prune`` adds ``alias:{signal}`` for an off-Board
-#: row whose Board an alias ledger buries.
+#: eviction ledger records it (ADR-0210); :func:`alias_rules` adds ``alias:{signal}``.
 CASE_VARIANT = "case-variant"
 WORKDAY_TENANT = "workday-tenant"
 BACKING_REQUISITION = "backing-requisition"
+
+
+def alias_rules(
+    off_board: Iterable[str], live: dict[str, str], aliased: Mapping[str, str]
+) -> dict[str, str]:
+    """``{off-Board id: "alias:{signal}"}`` for each one whose Board an alias ledger buries
+    (``aliased`` is :func:`aliased_boards`). Its canonical Board serves the same posting, so the
+    removal is a dedup for Trends; any other off-Board row is not, and is left out (ADR-0210)."""
+    rules: dict[str, str] = {}
+    for job_id in off_board:
+        signal = aliased.get(lower_key(resolve_board(job_id, live)))
+        if signal:
+            rules[job_id] = f"alias:{signal}"
+    return rules
 
 
 def plan_prune(

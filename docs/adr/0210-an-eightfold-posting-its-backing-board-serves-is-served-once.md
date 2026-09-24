@@ -39,6 +39,18 @@ Every Eightfold posting states its backing ATS's requisition, and #632 measured 
    (`doc_prep.META_FIELDS`), so ADR-0061's facts pass stamps a row already held the next time its
    Board is scraped, and sync's metadata refresh carries it into the table. Nothing in the Space or
    the search API reads it (`search.RESULT_COLUMNS` is an explicit projection).
+   **The store keeps it only on rows whose Board the pairs name** (the coordinator's decision for
+   the user, 2026-09-25): every Eightfold site in the file, and every Board behind one — for
+   Workday any site of the tenant. `eightfold_backing.in_scope` is the test, matched on the id's
+   prefix, and `doc_prep.stored_facts` is the one place it is applied, read by both `to_meta` (a
+   new Job) and `update_meta`'s facts refresh (a Job already held); every other row stores null.
+   Only these rows can ever match, and a new value in the store rewrites the served row, vector
+   included: stamping all six ATSes would rewrite 215,746 v654 rows on the first run (267,496 over
+   a day) for no dedup, where the scoped fill rewrites **25,890 on the first run and 26,124 in all**
+   (13,909 Eightfold, 10,879 Workday, 614 SuccessFactors, 393 Oracle, 264 Taleo Enterprise, 65
+   Greenhouse). HF storage is the binding cost (ADR-0168). The scrapers still state the id on
+   every row of their ATS, in the corpus. **To widen it**, add pairs to the file — a new pair's
+   rows are stamped the next time its Boards are scraped — or drop the check in `stored_facts`.
 2. **The Eightfold scraper picks its field by the backing ATS.** `displayJobId` when its Board's
    backing Board is Oracle, else `atsJobId`, read from the pairs file below. A posting read through
    the sitemap fallback states neither, and stays null.
@@ -57,7 +69,9 @@ Every Eightfold posting states its backing ATS's requisition, and #632 measured 
    while its backing row is served, an arriving backing row displaces a served Eightfold copy that
    prune then drops in the same run, and in prune the copy is a duplicate. A Workday backing Board
    is matched on its tenant, the group ADR-0187 already serves a requisition from, so a copy the
-   tenant serves from another site still counts. What ADR-0187 decides for Workday rows is
+   tenant serves from another site still counts. A pair whose backing Board is itself an Eightfold
+   site (a company's second site, ADR-0205's hand-frozen losers) is not matched: there is no other
+   ATS's row to prefer. What ADR-0187 decides for Workday rows is
    unchanged: a Workday row's stamp is its native id, the group it already had, and an Eightfold
    copy that joins ranks last in it (pinned by a test).
 5. **Zero loss, re-admission and the transition fall out of the grouping.** A posting only the
@@ -102,7 +116,9 @@ day): a Head Board (top 6,000 by score) is scraped every run; any other Scrapabl
 is in the Tail with p = 14,000 / 148,052 = 0.095 a run, 90% after 24 runs (~19 hours). Weighted by
 the 10,296 rows, **99.6% have both sides on Head Boards and are stamped in the first run after
 deploy**, 99.9% within 15 runs, all within ~25 runs (under a day). The rest sit on six Tail
-pairs (albemarle, britishcouncil, costar_campus, premierhealth, sephora, vialto: 41 rows).
+pairs (albemarle, britishcouncil, costar_campus, premierhealth, sephora, vialto: 41 rows). Counted
+by pair instead of by row, 25 of the 31 matchable pairs are stamped on both sides on the first run,
+and **90% of pairs after about 10 runs (~8 hours)**.
 
 ## Alternatives considered
 
@@ -114,20 +130,23 @@ pairs (albemarle, britishcouncil, costar_campus, premierhealth, sephora, vialto:
 - **Match on descriptions.** Rejected by the user for the requisition column.
 - **Have the ADR-0205 writer emit the pairs file from its `BACKING`.** Two copies of one table, the
   file refreshed only by a long network run; the committed file read by all three is one.
-- **Stamp only rows on paired Boards.** It would rewrite ~26k rows instead of ~268k (below), but
-  the scrapers would have to know the pairs. Not chosen here; see the first consequence.
+- **Stamp every row of the six ATSes** (the spec's first reading of "fill it only where it's
+  needed"). 267,496 v654 rows rewritten, 215,746 of them in one run, for stamps nothing reads.
+  Rejected for the scoped fill above.
+- **Scope in each scraper.** Six scrapers would each need the pairs; one check where the fact
+  enters the store is one place.
 - **Land every removal on the marker tick** (hold the rule until both sides are stamped
   everywhere). Unneeded: 99.6% land on it already, and the ledger records the rest exactly.
 
 ## Consequences
 
-- **A one-time rewrite of ~268k served rows.** `requisition` is a new fact, so the facts pass
-  changes every re-scraped row on the six ATSes and sync's refresh rewrites each once, vector
-  included: on v654, 215,746 rows on Head Boards in the first run after deploy, and 51,750 over
-  the following day. The same shape as a `DERIVATIONS_VERSION` sweep, and the fragments are
-  reclaimed by `cleanup-index`'s compaction, but it is merge-job time and HF upload in one run.
-  Stamping only paired Boards' rows (about 26k on v654, Workday counted tenant-wide) would avoid it
-  and is the option to take if that run is a concern.
+- **A one-time rewrite of ~26k served rows**, 25,890 of them in the first run after deploy (on
+  v654): sync's refresh rewrites each newly stamped row once, vector included, and
+  `cleanup-index`'s compaction reclaims the fragments. A pair added to the file later costs its
+  own rows the same, once.
+- **The corpus and the store disagree on purpose.** `data/jobs/tech` carries the scraper's
+  `requisition` on every row of the six ATSes; the store and the served table carry it only in
+  scope. Read the column, not the corpus, for what the rule sees.
 - **ADR-0188's marker no longer carries a dedup's removals alone.** This rule's removals follow the
   stamps, not the marker; measured, 99.6% land on the marker's tick and the rest within a day. The
   dedup eviction ledger is what makes that exact: it records every removal a dedup rule makes, in

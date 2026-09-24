@@ -86,7 +86,7 @@ from headstart.ingest.derived_meta import (
     salary_fields,
     salary_meta,
 )
-from headstart.ingest.doc_prep import DERIVATIONS_VERSION, META_FIELDS
+from headstart.ingest.doc_prep import DERIVATIONS_VERSION, META_FIELDS, stored_facts
 from headstart.ingest.update_descriptions import read_store
 from headstart.salary import from_field as salary_from_field
 from headstart.scrapers import registry
@@ -199,9 +199,9 @@ def corpus_facts(jobs_dir: Path) -> dict[str, dict]:
                 line = line.strip()
                 if not line:
                     continue
-                job = json.loads(line)
-                facts[job["id"]] = {
-                    f: job.get(f) for f in (*FACT_FIELDS, *_FACT_WITH_OVERLAY)
+                stored = stored_facts(json.loads(line))
+                facts[stored["id"]] = {
+                    f: stored[f] for f in (*FACT_FIELDS, *_FACT_WITH_OVERLAY)
                 }
     return facts
 

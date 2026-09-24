@@ -29,6 +29,7 @@ import numpy as np
 
 import headstart.ingest.index as idx
 from headstart import employment_type_filter
+from headstart.ingest import RUN_TS_ENV
 
 _DIM = 4
 
@@ -1175,7 +1176,7 @@ def test_prune_records_each_dedup_eviction_under_its_rule_and_the_run_stamp(
         [_FRONT, _BEHIND, dead],
         meta_over={"requisition": "R-100"},
     )
-    monkeypatch.setenv(idx.RUN_TS_ENV, "2026-09-25T06:00:00+00:00")
+    monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T06:00:00+00:00")
     args = _prune_args_keeping_the_stub(tmp_path)
     args.dedup_evictions = str(tmp_path / "state" / "dedup_evictions.csv")
     assert idx.prune(args) == 0
@@ -1198,7 +1199,7 @@ def test_prune_records_a_row_on_an_aliased_board_under_its_signal(
     )
     args = _prune_args(tmp_path, monkeypatch)
     args.dedup_evictions = str(tmp_path / "dedup_evictions.csv")
-    monkeypatch.setenv(idx.RUN_TS_ENV, "2026-09-25T06:00:00+00:00")
+    monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T06:00:00+00:00")
     assert idx.prune(args) == 0
     assert (tmp_path / "dedup_evictions.csv").read_text(encoding="utf-8").splitlines()[
         1

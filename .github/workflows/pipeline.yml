@@ -870,14 +870,10 @@ jobs:
         env:
           CORPUS: ${{ steps.corpus.outcome }}
         run: |
-          if [ "$CORPUS" = "success" ]; then
-            python -m headstart.ingest.index prune --apply \
-              --board-failures data/state/board_failures.csv \
-              --dedup-evictions data/state/dedup_evictions.csv
-          else
-            python -m headstart.ingest.index prune --apply \
-              --board-failures data/state/board_failures.csv
-          fi
+          ledger=()
+          [ "$CORPUS" = "success" ] && ledger=(--dedup-evictions data/state/dedup_evictions.csv)
+          python -m headstart.ingest.index prune --apply \
+            --board-failures data/state/board_failures.csv "${ledger[@]}"
       - name: Drop the store's vectors of unserved Jobs (ADR-0190)
         # After prune, so the table it keeps is final. Needs the corpus, whose ids it also keeps.
         # Never fatal: it rewrites through tmp files (which the upload excludes), so a failure

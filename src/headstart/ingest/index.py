@@ -108,7 +108,6 @@ from headstart.embedding_conventions import PROD_TABLE
 from headstart.ingest import (
     PENDING_UPGRADES_PATH,
     REPO_ROOT,
-    RUN_TS_ENV,  # noqa: F401 - re-exported for the tests that pin a run's stamp
     UNCONFIRMED_PATH,
     board_failures,
     board_freshness,
@@ -120,6 +119,7 @@ from headstart.ingest import (
 )
 from headstart.ingest.doc_prep import PLANNER_ONLY_FIELDS
 from headstart.ingest.index_plan import (
+    alias_rules,
     aliased_boards,
     apply_sync,
     boards_by_canon,
@@ -187,8 +187,9 @@ _POSTED_AT_COMPARABLE_FIELD = pa.field(posted_date_guard.COLUMN, pa.bool_())
 _EXPERIENCE_FILTER_FIELDS = tuple(
     pa.field(column, pa.bool_()) for column in experience_filter.COLUMNS
 )
-# The ATS's requisition id where one is needed to match a posting across ATSes (ADR-0210). A fact
-# like `url`, so `_refresh_metadata` fills it on a row already held once its Board is re-scraped;
+# The ATS's requisition id on the Boards the Eightfold pairs name, the only rows that can match a
+# posting across ATSes (ADR-0210). A fact like `url`, so `_refresh_metadata` fills it on a row
+# already held once its Board is re-scraped;
 # held as a constant because `_schema` and `sync`'s migration both need it.
 _REQUISITION_FIELD = pa.field("requisition", pa.string())
 
@@ -1084,19 +1085,12 @@ def prune(args: argparse.Namespace) -> int:
     _log_ids("prune duplicate", duplicate)
     apply_sync(table, [], evict)
     if args.dedup_evictions:
-        # After the delete, so the ledger never records a removal the table did not make. A row on
-        # a Board an alias ledger buries left as off-Board, but its canonical Board serves the
-        # same posting, so for Trends it is a dedup too; any other off-Board row is not (ADR-0210).
+        # After the delete, so the ledger never records a removal the table did not make.
         live = boards_by_canon(keep)
-        buried = aliased_boards(args.ledger)
-        for job_id in off_board:
-            signal = buried.get(lower_key(resolve_board(job_id, live)))
-            if signal:
-                rules[job_id] = f"alias:{signal}"
         dedup_evictions.append(
             args.dedup_evictions,
             run_ts().isoformat(timespec="seconds"),
-            rules,
+            {**rules, **alias_rules(off_board, live, aliased_boards(args.ledger))},
             lambda job_id: resolve_board(job_id, live),
         )
     final = table.count_rows()

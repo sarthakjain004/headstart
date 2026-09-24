@@ -1189,6 +1189,19 @@ def test_the_same_requisition_on_a_board_that_is_not_its_backing_board_is_not_a_
     ) == ([], [])
 
 
+def test_a_second_eightfold_site_in_the_pairs_is_not_matched_on_its_requisition():
+    """The pairs file also names a company's second Eightfold site behind its first (#154, the
+    ADR-0205 losers). Both rows are Eightfold's, so this rule has no backing row to prefer."""
+    second = "eightfold:nvidia.eightfold.ai"
+    reqs = {f"{second}:7": "JR1", f"{_EF}:1099": "JR1"}
+    assert plan_prune(
+        [f"{second}:7", f"{_EF}:1099"],
+        {second, _EF},
+        requisitions=reqs,
+        backing={"nvidia.eightfold.ai": ("eightfold:jobs.acme.com",)},
+    ) == ([], [])
+
+
 def test_a_copy_its_workday_tenant_serves_from_another_site_is_still_a_copy():
     """ADR-0187 serves a Workday requisition from one site of the tenant, which need not be the
     site the pairs name; it is the same requisition either way."""
