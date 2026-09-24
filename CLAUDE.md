@@ -417,8 +417,8 @@ caught:
 - **Stale casing duplicates** (found fixing #202/PR #226) — a prober-side casing-normalization
   change left the old-cased row behind instead of replacing it; 1,843 pairs in one ledger, one
   root cause. `_dedupe_boards`'s lexicographic tie-break (`scrapable_boards.py`) usually papers
-  over this silently, but picks the **older** row whenever old and new disagree in ASCII order — which
-  matters when the two rows also disagree on *verdict*, not just casing: two boards stayed in
+  over this silently, but picks the **older** row whenever old and new disagree in ASCII order —
+  which matters when the two rows also disagree on *verdict*, not just casing: two boards stayed in
   the active scrape list after the newer probe had already found them `dead`, because the stale
   `live` row kept winning the tie-break. Diagnostic: for a ledger with real duplicate rows, check
   whether the tie-break's survivor is the newest-verified data, not just count how many boards

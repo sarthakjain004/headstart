@@ -245,8 +245,8 @@ class BaseScraper(ABC):
     #: (ADR-0172).
     #:
     #: The ledger cannot carry it. `scrapable_boards.load` builds
-    #: ``ScrapableBoard(slug=scraper.slug_from(tenant, url), name=tenant)`` — so ``name`` is the raw
-    #: ``tenant`` column, whatever that happens to be, while ``slug`` goes through
+    #: ``ScrapableBoard(slug=scraper.slug_from(tenant, url), name=tenant)`` — so ``name`` is the
+    #: raw ``tenant`` column, whatever that happens to be, while ``slug`` goes through
     #: :meth:`slug_from`. A Board whose tenant was recorded as a hostname therefore *displays* the
     #: hostname: ``amazon``/``apple``/``google``/``tiktok``/``bytedance`` served
     #: ``www.amazon.jobs`` and friends to the UI, 17,587 served tech rows between them.

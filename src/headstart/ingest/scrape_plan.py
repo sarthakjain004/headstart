@@ -129,11 +129,11 @@ def _gated_boards(
 ) -> dict[str, float]:
     """Boards whose measured hour buys too little tech to be worth a shard's makespan.
 
-    One key per Board — `ScrapableBoard.identity` — reads both ledgers since ADR-0096. It used to take a
-    *pair*, because the cost ledger was keyed `{ats}:{slug}` and the priority ledger by
+    One key per Board — `ScrapableBoard.identity` — reads both ledgers since ADR-0096. It used to
+    take a *pair*, because the cost ledger was keyed `{ats}:{slug}` and the priority ledger by
     `board_key`, and reading one with the other's key is what left every Workday board unscored
-    (ADR-0049). Returns ``{board_key: tech per minute}`` — the number, not just the verdict, so
-    the caller can log why each Board went.
+    (ADR-0049). Returns ``{board_key: tech per minute}`` — the number, not just the verdict, so the
+    caller can log why each Board went.
 
     Only ever judges a Board on **its own** measurement. An unmeasured Board is costed from its
     ATS's median by :func:`costs_for`, and gating on that would drop a Board for its ATS's

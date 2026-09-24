@@ -45,7 +45,10 @@ Six places outside the function re-implemented parts of the filter:
    built in many places that have no reason to resolve a scraper (the curated seed, the shard files
    `scrape_run` reads, discovery scripts); rather than a separate `Board` type, because
    `get_scraper`, `harvest.scrape_all` and the shard writer take a `CompanyRef` and now take a
-   `ScrapableBoard` unchanged. A test stub builds one the way it built a `CompanyRef`.
+   `ScrapableBoard` unchanged. A test stub builds one the way it built a `CompanyRef`. Equality is
+   still the dataclass's: a `ScrapableBoard` never equals the `CompanyRef` it was built from and
+   hashes differently, so the two must not be mixed in one set or comparison. No caller does; the
+   shard path reads plain `CompanyRef`s and never meets a `ScrapableBoard`.
 3. **Consumers read the stored identity.** `scrape_plan` (quarantine, value gate, slice count, cost
    keys, shard sort), `pick_boards` and its gap quota, `scrape_run`'s monolith path and
    `board_description_gap.key_for` take a `ScrapableBoard`. After this change `board_identity` has

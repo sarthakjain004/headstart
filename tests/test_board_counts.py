@@ -11,8 +11,8 @@ are therefore NOT checked here and cannot be: **Scraped Board** (`data/state/boa
 **Scored Board** (`data/state/board_priority.csv`) live only on HF and move every run, with no
 commit to hang an assertion on. They carry a measured-on date in the glossary instead.
 
-No `importorskip`: this needs stdlib plus `headstart.scrapable_boards`, so unlike `test_readme_schema.py` it
-actually runs in CI rather than skipping and reading green.
+No `importorskip`: this needs stdlib plus `headstart.scrapable_boards`, so unlike
+`test_readme_schema.py` it actually runs in CI rather than skipping and reading green.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ ROOT = Path(__file__).resolve().parents[1]
 LEDGER = ROOT / "data" / "validate" / "liveness"
 
 
-def _live_companies() -> list[ScrapableBoard]:
+def _live_boards() -> list[ScrapableBoard]:
     out = []
     for path in sorted(LEDGER.glob("*.csv")):
         scraper = SCRAPERS.get(path.stem)
@@ -66,7 +66,7 @@ def _counts() -> dict[str, int]:
                 st = (row.get("status") or "").strip()
                 by_status[st] = by_status.get(st, 0) + 1
 
-    live = _live_companies()
+    live = _live_boards()
     unique = _dedupe_boards(live)
     # Boards buried as another Board's duplicate (ADR-0111). A stage of the funnel that neither
     # `EXCLUDED_BOARDS` nor the case-variant dedupe accounts for: it is keyed on evidence from

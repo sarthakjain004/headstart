@@ -23,8 +23,8 @@ every measurement taken after.
    (ADP's `cid`/`ccId`)? The slug is the URL, the API key and the discovery key at once when you
    can make it so (pyjamahr's uuid turned out to be a detour — the API took the path slug).
    A compound slug follows workday's `slug_from`/`board_key` override (`workday.py`).
-   Board keys compare case-folded (`scrapable_boards.py`), so two slugs differing only in case are one
-   Board; and `board_identity.board_of` splits a Job id on its last `:`, so measure whether
+   Board keys compare case-folded (`scrapable_boards.py`), so two slugs differing only in case are
+   one Board; and `board_identity.board_of` splits a Job id on its last `:`, so measure whether
    native ids ever contain one (upstream ADP keyed on `itemID`, which does on 8 of 2,069 rows;
    the all-digit `ExternalJobID` does not).
 2. **Which slug spellings does discovery produce**, and does `slug_from(tenant, url)` normalise

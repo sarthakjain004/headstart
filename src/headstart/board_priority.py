@@ -110,7 +110,7 @@ def update(
 
 
 def _gap_picks(
-    companies: list[ScrapableBoard],
+    boards: list[ScrapableBoard],
     unsettled: Mapping[str, int],
     taken: set[str],
     slots: int,
@@ -128,7 +128,7 @@ def _gap_picks(
 
     detail_pass = detail_pass_atses()
     candidates = [
-        c for c in companies if key_for(c) in unsettled and c.identity not in taken
+        c for c in boards if key_for(c) in unsettled and c.identity not in taken
     ]
     # `False < True`, so listing-only sorts ahead of detail-pass. An ATS missing from the registry
     # cannot be scraped at all, so where it lands is moot — it is treated as the expensive class
@@ -138,7 +138,7 @@ def _gap_picks(
 
 
 def pick_boards(
-    companies: list[ScrapableBoard],
+    boards: list[ScrapableBoard],
     scores: Mapping[str, float],
     max_boards: int,
     *,
@@ -162,7 +162,7 @@ def pick_boards(
     empty or absent ledger reserves nothing and the slice is byte-identical to before.
     """
     rng = rng or random.Random()
-    shuffled = list(companies)
+    shuffled = list(boards)
     rng.shuffle(shuffled)
 
     # `ScrapableBoard.identity` (`board_identity`), not `f"{ats}:{slug}"`. The ledger is written
@@ -186,7 +186,7 @@ def pick_boards(
         key=lambda c: scores[c.identity], reverse=True
     )  # stable: shuffle breaks ties
 
-    if not max_boards or max_boards >= len(companies):
+    if not max_boards or max_boards >= len(boards):
         rest = [c for c in shuffled if scores.get(c.identity, 0.0) <= 0.0]
         return known + rest
 

@@ -102,13 +102,15 @@ def load(ledger_dir: str | Path, *, min_jobs: int = 1) -> list[ScrapableBoard]:
         # here beside EXCLUDED_BOARDS because both are keyed on the slug; the *syntactic* dedupe
         # below cannot do it, since two different hostnames share no `board_key` to collapse on.
         aliases = board_aliases.load_for(ledger_dir, scraper.ats)
-        for v in liveness.load(csv_path).values():
-            if v.status != liveness.LIVE or (v.jobs or 0) < min_jobs:
+        for verdict in liveness.load(csv_path).values():
+            if verdict.status != liveness.LIVE or (verdict.jobs or 0) < min_jobs:
                 continue
-            slug = scraper.slug_from(v.tenant, v.url)
+            slug = scraper.slug_from(verdict.tenant, verdict.url)
             if is_excluded(scraper.ats, slug) or slug.lower() in aliases:
                 continue
-            boards.append(ScrapableBoard(ats=scraper.ats, slug=slug, name=v.tenant))
+            boards.append(
+                ScrapableBoard(ats=scraper.ats, slug=slug, name=verdict.tenant)
+            )
     return _drop_parked(_dedupe_boards(boards))
 
 

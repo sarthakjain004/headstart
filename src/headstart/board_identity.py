@@ -76,24 +76,24 @@ def board_key(company: CompanyRef) -> str:
 #: `ScrapableBoard` computes it once and every one of those sites reads the stored answer, but
 #: `harvest` and any second `scrapable_boards.load` in one process still reach it again.
 #:
-#: What reaches the fallback is decided by the *provenance* of the slug, and the two answers
-#: differ. A **liveness**-ledger slug is a raw scraper slug, so `board_key()` really parses it:
-#: measured 2026-09-09, `load_active_companies('data/validate/liveness', min_jobs=0)` (now
-#: `scrapable_boards.load`) yields 91,325 Scrapable Boards and reaches this path **zero** times. A **state**-ledger key is
-#: `board_key()`'s own *output*, and feeding one back in raises wherever the scraper's parser
-#: demands its input form — every one of `data/state/board_cost.csv`'s 10,561 Workday keys is the
-#: shorthand `{co}/{site}`, which Workday's parser rejects because it wants a careers URL.
-#: Until 2026-09-09 `board_cost._rekeyed` did exactly that round-trip on every row, so each of
-#: `scrape-plan` and `join` emitted 10,561 lines a run — 21,122 in total, and 99.8% of the
+#: What reaches the fallback is decided by the *provenance* of the slug, and the two answers differ.
+#: A **liveness**-ledger slug is a raw scraper slug, so `board_key()` really parses it: measured
+#: 2026-09-09, `load_active_companies('data/validate/liveness', min_jobs=0)` (now
+#: `scrapable_boards.load`) yields 91,325 Scrapable Boards and reaches this path **zero** times. A
+#: **state**-ledger key is `board_key()`'s own *output*, and feeding one back in raises wherever the
+#: scraper's parser demands its input form — every one of `data/state/board_cost.csv`'s 10,561
+#: Workday keys is the shorthand `{co}/{site}`, which Workday's parser rejects because it wants a
+#: careers URL. Until 2026-09-09 `board_cost._rekeyed` did exactly that round-trip on every row, so
+#: each of `scrape-plan` and `join` emitted 10,561 lines a run — 21,122 in total, and 99.8% of the
 #: `scrape_plan` *step*'s own output (10,561 of 10,585 lines; the surrounding job log is larger).
-#: That caller is gone. ADR-0096's migration completed — the live ledger's legacy-key count read
-#: 0 on 2026-09-09 — so the shim, and the `report_failure` opt-out added for it, were both
-#: removed. Nothing feeds a state-ledger key back through here today.
+#: That caller is gone. ADR-0096's migration completed — the live ledger's legacy-key count read 0
+#: on 2026-09-09 — so the shim, and the `report_failure` opt-out added for it, were both removed.
+#: Nothing feeds a state-ledger key back through here today.
 #:
 #: `board_priority.csv` is keyed the same way (5,143 Workday keys, 5,120 of them that shorthand)
 #: but never reaches here: `board_priority.load` returns `row["board"]` verbatim, and `pick_boards`
-#: reads the `board_identity` of liveness-ledger Boards. That is the check on this diagnosis — 1,142
-#: of its Workday keys are absent from the cost ledger, so had it fed them back too the flood
+#: reads the `board_identity` of liveness-ledger Boards. That is the check on this diagnosis —
+#: 1,142 of its Workday keys are absent from the cost ledger, so had it fed them back too the flood
 #: would have been their 11,703-key union, not the 10,561 actually observed.
 #:
 #: So the blast radius was never nil, only mis-measured: the one population that was measured is
@@ -213,11 +213,11 @@ def board_of(job_id: str) -> str:
     the live keep-set by prefix (``index_plan.resolve_board``) and call this only as the fallback
     for an id on no known Board, which is the self-comparing case again.
 
-    The priority ledger is keyed by this function, so its consumers must pair against it rather
-    than rebuild a key themselves: ``pick_boards`` now looks up each Board's
-    ``ScrapableBoard.identity`` (:func:`board_identity`, the real ``board_key()``) and ``embed_run.order_by_priority`` calls this. What remains of ADR-0049's
-    caveat is only the colon-bearing native id — it writes a phantom Board no real key matches,
-    which mis-*scores* that Board rather than evicting anything.
+    The priority ledger is keyed by this function, so its consumers must pair against it rather than
+    rebuild a key themselves: ``pick_boards`` now looks up each Board's ``ScrapableBoard.identity``
+    (:func:`board_identity`, the real ``board_key()``) and ``embed_run.order_by_priority`` calls
+    this. What remains of ADR-0049's caveat is only the colon-bearing native id — it writes a
+    phantom Board no real key matches, which mis-*scores* that Board rather than evicting anything.
     """
     return job_id.rsplit(":", 1)[0]
 

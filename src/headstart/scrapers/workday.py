@@ -517,18 +517,18 @@ class WorkdayScraper(BaseScraper):
         bare host never matches a Workday slug, so every live Board reads `migrated` and the
         script's own >50% warning fires on every invocation.
 
-        Measured against the full live population and against the deferred (id-overlap) signal
-        both -- full transcripts, not just the summary, in
-        `docs/workday/2026-09-11_alias-key-full-population-scan.md`; the single duplicate found
-        and why it is not in the alias ledger is in ADR-0111's 2026-09-11 amendment. Short form:
-        12,844 Boards, 1 duplicate (a `scrapable_boards._dedupe_boards` no-op today), 2 migrated, 38 landed
+        Measured against the full live population and against the deferred (id-overlap) signal both
+        -- full transcripts, not just the summary, in
+        `docs/workday/2026-09-11_alias-key-full-population-scan.md`; the single duplicate found and
+        why it is not in the alias ledger is in ADR-0111's 2026-09-11 amendment. Short form: 12,844
+        Boards, 1 duplicate (a `scrapable_boards._dedupe_boards` no-op today), 2 migrated, 38 landed
         on Workday's own outage page (:attr:`alias_vendor_hosts`); 0/217 same-company site pairs
         shared a posting (the deferred, Eightfold-shaped signal) -- a false negative: it compared
         ``externalPath``, whose per-site ``-N`` suffix differs on 6,208 of 6,212 cross-site
-        requisitions, while the native id matches, so sites do share postings and ADR-0187
-        dedupes them per requisition in the index, not here; 0/50 same-company instance-split
-        pairs were simultaneously live (the other known Workday duplicate shape, already handled
-        by `board_key`'s instance-blind fold, ADR-0023, needing no help from this method).
+        requisitions, while the native id matches, so sites do share postings and ADR-0187 dedupes
+        them per requisition in the index, not here; 0/50 same-company instance-split pairs were
+        simultaneously live (the other known Workday duplicate shape, already handled by
+        `board_key`'s instance-blind fold, ADR-0023, needing no help from this method).
 
         Query string and fragment are stripped before returning: Workday's outage page appends a
         per-request `?d=&s=&e=&o=` tail that would otherwise make two visits to the very same
