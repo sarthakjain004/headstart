@@ -370,6 +370,7 @@ def from_title(ats: str, title: str | None, slug: str) -> str | None:
     # precisely the improvement being sought. It did: ashby scored 0/12 until this was narrowed.
     if text == slug:
         return None
+    # Letters only, no legal form dropped: not `company_match.normalize` (see its `_LEGAL`).
     if re.sub(r"[^a-z]", "", text.lower()) in _VENDOR_ALIASES.get(ats, frozenset()):
         return None
     if _PLACEHOLDER.search(text):

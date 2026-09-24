@@ -352,5 +352,5 @@ details) against the 2026-08-25 full-corpus audit:
   currency), `jobLocationType`→`remoteType` ("TELECOMMUTE" maps through `_remote_from`'s
   existing patterns verbatim), and `employmentType`→`timeType` via a closed schema.org enum map
   onto Workday's own wording — verified live on iheartmedia. The filter vocabulary
-  (`ETYPE_CLAUSES`) matches by substring, so both forms filter identically; the map is display
+  (`employment_type_filter.RULES`) matches by substring, so both forms filter identically; the map is display
   consistency.

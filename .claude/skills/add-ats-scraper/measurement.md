@@ -118,7 +118,7 @@ every measurement taken after.
     served as a floor. A shape the generic parser misreads needs a `_field_{ats}` parser.
 16. **Experience and employment type.** Is there a native field, how populated is it, and what
     are its observed values (bamboohr's `minimumExperience`: 97.9% populated, unread upstream)?
-    Run `employment_type.flags(v)` on every observed employment-type value: the filter matches
+    Run `employment_type_filter.flags(v)` on every observed employment-type value: the filter matches
     substrings (`full`, `part`, `contract`/`freelance`, `intern` but not `international`;
     `permanent` counts as full-time unless it says `part`), so "FT" or "Temporary" reach no
     filter until mapped to a label.
