@@ -159,9 +159,9 @@ def _currency_for_symbol(
     `_currency_of_symbol_before`)."""
     if symbol and symbol != "$":
         return _SYMBOL_CURRENCY.get(symbol.upper())
-    code_m = _CURRENCY_CODE.search(stated_text)
-    if code_m:
-        return code_m.group(1).upper()
+    stated_code = _CURRENCY_CODE.search(stated_text)
+    if stated_code:
+        return stated_code.group(1).upper()
     return bare_dollar if symbol == "$" else None
 
 

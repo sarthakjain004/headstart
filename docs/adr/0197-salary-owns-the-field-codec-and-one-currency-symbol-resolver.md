@@ -18,10 +18,10 @@ reading the same way.
 
 Two halves of one contract lived apart:
 
-- **The encoder was hand-written in 17 scrapers.** Each `_salary_field()` joined
+- **The encoder was hand-written in 18 scrapers.** Each `_salary_field()` joined
   `"LOW-HIGH CODE PERIOD"` itself (`" ".join(str(x) for x in (span, currency, period) if x)` in
   lever, recruitee, teamtailor, ashby, personio, rippling, smartrecruiters, jazzhr, breezy, jibe,
-  keka, adp, pinpoint, pyjamahr, join, taleo_enterprise and greenhouse), and the shape it had to
+  keka, adp, pinpoint, pyjamahr, join, taleo_enterprise, greenhouse and zwayam), and the shape it had to
   match was stated only in comments naming salary.py privates (`_field_range_currency_interval`,
   `_period_multiplier`, `_field_generic`, `_symbol_currency`, `_guess_currency`).
 - **Three currency-symbol maps disagreed on a bare `$`.** `_DOLLAR_PREFIX` + `_CURRENCY_SYM` via
@@ -40,12 +40,16 @@ it. It takes structured parts and nothing else: each scraper keeps its own polic
 is the floor, whether a lone ceiling is emitted at all, how a number is spelt, which native period
 word is passed), because those differ per ATS and moving them would change stored strings. The
 per-ATS parser dispatch (`_FIELD_PARSERS`) is unchanged; the codec's docstring states which period
-spellings `from_field` annualises for which ATSes, and the scrapers' comments now name
-`to_field`/`from_field` instead of privates.
+spellings `from_field` annualises for which ATSes. The scraper comments that stated the contract
+(what shape to emit, which period words are read) now name `to_field`/`from_field`, and every
+reference to a removed private is gone. Comments that explain one parser's internals — why an ATS
+is registered on `_field_range_currency_interval`, how `_field_generic` reads a lone figure — still
+name those functions, which still exist; they document the parser, not the contract.
 
 Left on hand-built strings because they are not this shape: darwinbox (`"INR 3 - 5 (Annual)"`),
-jobvite (`"LOW - HIGH"` with spaces), zwayam (its `"Upto HIGH CODE"` branch), zoho, bamboohr,
-clearcompany, icims, ripplehire, taleo_be and gem (the ATS's own text passed through).
+jobvite (`"LOW - HIGH"` with spaces), zwayam's `"Upto HIGH CODE"` branch (its range and lone-floor
+branches use `to_field`), zoho, bamboohr, clearcompany, icims, ripplehire, taleo_be and gem (the
+ATS's own text passed through).
 
 **2. One resolver, with the context difference as an explicit policy.**
 `_currency_for_symbol(symbol, stated_text, *, bare_dollar)` and one map, `_SYMBOL_CURRENCY`,
@@ -69,7 +73,17 @@ stored answers, which this refactor must not do. The served counts do not warran
 Stored data must read the same, so everything was measured against the merge-base
 (`12d45409`), per ADR-0066 (old tier → new tier, plus same-tier value changes):
 
-MEASUREMENT_PLACEHOLDER
+| Population | Inputs | Old → new tier | Same-tier value changes |
+| --- | --- | --- | --- |
+| Every call the test suite makes to `extract`, `from_field` and `from_description` (recorded by a pytest plugin over the full suite, replayed through both modules) | 490 unique calls | extract field→field 31, regex→regex 40, none→none 44; from_field field→field 172, none→none 39; from_description regex→regex 91, none→none 73 | 0 |
+| The whole description store on HF (`data/descriptions/`, pulled 2026-09-24, 868 MB), through `from_description` | 897,064 descriptions, 43 ATSes | regex→regex 200,302, none→none 696,762 | 0 |
+| Every served row of a local LanceDB snapshot (2026-09-23; the fresh table is 5.2 GB, not pulled), through `extract(salary, held description, ats)` — the call `derived_meta` makes; a row with no held description reads its field only | 514,163 rows (41,299 with a field string) | field→field 34,223, regex→regex 109,103, none→none 370,837 | 0 |
+
+The encoder was checked the same way: every converted `_salary_field` (and taleo_enterprise's
+module-level one) was run before and after over a generated grid of its native inputs — None, 0,
+empty strings, floats, strings with spaces, unknown periods — 172,490 inputs across the 18
+scrapers, comparing the returned string (or the exception raised). **0 differed.** Each scraper's
+own existing tests pass unchanged.
 
 ## Consequences
 
@@ -82,8 +96,11 @@ MEASUREMENT_PLACEHOLDER
   minimum/maximum is set, and `_field_keka` reads ranges only, so it declines — 64 of 1,376
   served keka salary fields (mostly `"1 INR"` placeholders). It is pinned by a test rather than
   fixed: keka's lone figure may be a ceiling, and reading it would serve it as a floor.
-- A new scraper that spells a structured field should call `to_field`; its round trip is one
-  entry in the parametrized test.
+- A new scraper that spells a structured field should call `to_field`; the round-trip test reads
+  its callers off the scraper sources, so the new ATS is tested without an edit.
+- The "which bound is the floor when only one is set" rule stays in each scraper, spelt two ways
+  (truthiness in lever, teamtailor and keka; `is not None` in ashby, personio, jazzhr and join).
+  Unifying it would change stored strings for a 0-valued bound, so it is left as it is.
 
 ## Alternatives considered
 

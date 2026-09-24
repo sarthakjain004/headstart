@@ -208,8 +208,8 @@ class BreezyScraper(BaseScraper):
     def _salary_field(self, raw: Any) -> str | None:
         """``Job.salary`` from the row's templated `salary` string ("$25 – $30 / hour"), re-spelt
         as RANGE CODE UNIT ("25-30 USD HOUR") through `salary.to_field` — the shape
-        `salary.from_field` reads for breezy, where the generic reader read none of the hourly, weekly or monthly figures (neither
-        "/ hour" nor "/ week" is one of its phrase markers).
+        `salary.from_field` reads for breezy, where the generic reader read none of the hourly,
+        weekly or monthly figures (neither "/ hour" nor "/ week" is one of its phrase markers).
 
         A floor ("$20+") keeps no ceiling and an exact figure ("$18") becomes coinciding bounds.
         A lone ceiling ("Up to $60,000", 37 postings) and a biweekly period (161) yield None: the

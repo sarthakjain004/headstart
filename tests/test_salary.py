@@ -9,8 +9,11 @@ unguarded.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+from headstart import salary as salary_module
 from headstart.salary import SalarySpan, extract, from_description, from_field
 
 # --- Shared: _num(), US and European number formats -------------------------------------------
@@ -1874,39 +1877,27 @@ def test_a_word_cut_at_the_period_window_edge_is_not_a_hint():
 
 # --- The field codec and the one currency-symbol resolver (ADR-0197) --------------------------
 
-#: Every ATS whose scraper spells ``Job.salary`` through ``to_field``.
-_ATSES_ENCODING_THROUGH_TO_FIELD = (
-    "adp",
-    "ashby",
-    "breezy",
-    "greenhouse",
-    "jazzhr",
-    "jibe",
-    "join",
-    "keka",
-    "lever",
-    "personio",
-    "pinpoint",
-    "pyjamahr",
-    "recruitee",
-    "rippling",
-    "smartrecruiters",
-    "taleo_enterprise",
-    "teamtailor",
+#: Every ATS whose scraper spells ``Job.salary`` through ``to_field``, read off the scraper
+#: sources (a scraper module is named for its ATS), so a new caller is tested without an edit here.
+_ATSES_ENCODING_THROUGH_TO_FIELD = sorted(
+    scraper_source.stem
+    for scraper_source in (Path(salary_module.__file__).parent / "scrapers").glob(
+        "*.py"
+    )
+    if "salary.to_field(" in scraper_source.read_text(encoding="utf-8")
 )
 #: The ones registered on the parser that also reads bare unit words ("HOUR").
-_ATSES_READING_BARE_UNIT_WORDS = (
-    "ashby",
-    "breezy",
-    "jazzhr",
-    "jibe",
-    "lever",
-    "personio",
-    "recruitee",
-    "rippling",
-    "smartrecruiters",
-    "teamtailor",
+_ATSES_READING_BARE_UNIT_WORDS = sorted(
+    ats
+    for ats, parser in salary_module._FIELD_PARSERS.items()
+    if parser is salary_module._field_range_currency_interval
 )
+
+
+def test_the_encoding_ats_list_finds_every_scraper_that_calls_to_field():
+    # Guards the source scan above from silently parametrizing nothing.
+    assert len(_ATSES_ENCODING_THROUGH_TO_FIELD) >= 18
+    assert set(_ATSES_READING_BARE_UNIT_WORDS) <= set(_ATSES_ENCODING_THROUGH_TO_FIELD)
 
 
 def test_to_field_spells_figures_currency_and_period_leaving_out_empty_parts():

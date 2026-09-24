@@ -65,9 +65,9 @@ honest answer rather than a wrong one.
 
 ``Job.salary`` is assembled from the JSON-LD ``baseSalary`` (a real ``MonetaryAmount``:
 currency + ``unitText`` HOUR/YEAR + min/max) into the ``"MIN-MAX CUR UNIT"`` shape
-``salary._field_range_currency_interval`` already reads for rippling and ashby — jazzhr is
-registered on that parser rather than falling through to ``_field_generic``, which annualizes
-nothing and therefore rejected every hourly figure. Present on 25.8% of detail pages;
+``salary.to_field`` spells — the one ``salary.from_field`` reads for rippling and ashby. jazzhr
+is registered for the bare unit words there rather than on the generic reader, which annualizes
+none of them and therefore rejected every hourly figure. Present on 25.8% of detail pages;
 368 of the 393 real values in the sample parse, and the 25 that don't are the plausibility
 bound correctly rejecting tenant data-entry errors (an hourly rate typed under ``unitText:
 YEAR``, e.g. "35-60 USD YEAR").

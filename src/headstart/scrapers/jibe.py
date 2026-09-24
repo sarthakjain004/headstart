@@ -505,12 +505,12 @@ class JibeScraper(BaseScraper):
         if not period:
             return None
         if low and high:
-            figures = (low, high)
+            bounds = (low, high)
         elif low:
-            figures = (low, None)
+            bounds = (low, None)
         elif exact:
-            figures = (exact, exact)
+            bounds = (exact, exact)
         else:
             return None
         currency = (row.get("salary_currency") or "").strip().upper()
-        return salary.to_field(*figures, currency, period)
+        return salary.to_field(*bounds, currency, period)
