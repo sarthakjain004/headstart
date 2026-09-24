@@ -690,6 +690,8 @@ textarea:focus{ border-color:var(--accent); }
 }
 /* Under the plot on a narrow chart (positionHoverLayer), so it can span the column. */
 .trends-tooltip.under{ max-width:100%; }
+/* Full width under the chart there is room for whole names ("softwa…" was truncated). */
+.trends-tooltip.under .tt-name{ white-space:normal; }
 /* A fingertip needs the room a pointer does not: the remove control and each suggestion grow
    to the 44px target on touch screens only, so the desktop row stays as dense as its neighbours. */
 @media (pointer:coarse){
