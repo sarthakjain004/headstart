@@ -389,7 +389,7 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
 # Keyed on the canonical lowercased ``board_key``, NOT on ``ats:slug`` like EXCLUDED_BOARDS. The
 # ledger carries one Workday Board under several hosts — Accenture sits on both `wd3` and `wd103`
 # — and `board_key` is what collapses them (ADR-0023). Keyed on one URL, the park would remove
-# that row and merely promote another instance's row to be `scrapable_boards._dedupe_boards`'
+# that row and merely promote another instance's row to be `scrapable_boards._elect`'s
 # survivor: the Board keeps being scraped while the entry looks effective.
 #
 # A parked Board also leaves `index_plan.live_keep_set`, so whatever rows it holds in the index

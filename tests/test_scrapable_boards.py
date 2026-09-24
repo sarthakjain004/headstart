@@ -56,7 +56,7 @@ def test_load_maps_slug_and_filters(tmp_path):
 def test_parked_board_is_dropped_across_hosts_and_casings(tmp_path):
     """A park must survive every form the ledger carries the same Board in. Accenture sits on
     BOTH `wd3` and `wd103` and in two casings; keyed on one URL the park removes that row and
-    merely promotes another instance's row to be `_dedupe_boards`' survivor, so the Board keeps
+    merely promotes another instance's row to be `_elect`'s survivor, so the Board keeps
     being scraped while the entry looks effective. `board_key` is what collapses them."""
     ledger = tmp_path / "liveness"
     _write_ledger(
@@ -120,7 +120,7 @@ def test_excluded_boards_are_dropped_but_look_alikes_are_kept(tmp_path):
 
 def test_excluded_boards_match_regardless_of_slug_casing(tmp_path):
     """One entry must cover every casing the ledger carries — smartrecruiters lists the same
-    demo Board as both `Dev2` and `dev2`, and the pair survives `_dedupe_boards`."""
+    demo Board as both `Dev2` and `dev2`, and the pair survives `_elect`."""
     ledger = tmp_path / "liveness"
     _write_ledger(
         ledger,
@@ -333,4 +333,22 @@ def test_no_board_in_the_committed_ledger_changes_key():
         for b in load(ledger, min_jobs=0)
         if b.identity != lex_min[b.lowercase_identity]
     }
-    assert not changed, f"{len(changed)} Boards re-keyed, e.g. {list(changed.items())[:3]}"
+    assert not changed, (
+        f"{len(changed)} Boards re-keyed, e.g. {list(changed.items())[:3]}"
+    )
+
+
+def test_a_same_day_tie_keeps_the_row_the_ledger_lists_first(tmp_path):
+    """A probe date is the only evidence of recency, and a tie carries none. Re-probed 2026-09-25,
+    breaking ties on job count instead moved 51 Boards and picked the pod that answered on 11."""
+    ledger = tmp_path / "liveness"
+    _write_ledger(
+        ledger,
+        "workday.csv",
+        [
+            "workday,a,https://amadeus.wd502.myworkdayjobs.com/jobs,live,124,2026-07-03",
+            "workday,b,https://amadeus.wd3.myworkdayjobs.com/jobs,live,130,2026-07-03",
+        ],
+    )
+    (board,) = load(ledger, min_jobs=0)
+    assert board.slug == "https://amadeus.wd502.myworkdayjobs.com/jobs"

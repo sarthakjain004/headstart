@@ -130,8 +130,9 @@ a vendor's code (Oracle's pods, ADP's GUIDs). A name is a display value, never a
 is why `CompanyPrefs` is keyed by **board_key** and never by company name.
 
 The liveness pipeline has probed **304,519 ledger rows**: 187,173 live, 100,453 dead, 16,893 unknown
-— rows, not boards; they collapse to 180,541 Unique Boards once duplicate spellings of the same
-board are folded together (`CONTEXT.md` §Counting Boards).
+— rows, not boards; they collapse to 180,537 Unique Boards once duplicate spellings of the same
+board are folded together and the 4 whose newest row is `dead` are dropped (`CONTEXT.md` §Counting
+Boards).
 
 ## What this optimises for
 
@@ -273,8 +274,8 @@ A run does not scrape every board it could. The liveness ledger's headline numbe
 several filters before it reaches what a run can even consider — `registry.DISABLED_ATS`,
 vendor test/sandbox boards, aliases (one board serving two hostnames, a career section or site whose
 every posting another of the same tenant already lists, or an Eightfold career site whose backing
-ATS board already serves it), case-variant duplicate spellings,
-and a handful of real boards deliberately parked — most because their cost
+ATS board already serves it), case-variant duplicate spellings, boards whose newest probe says
+`dead`, and a handful of real boards deliberately parked — most because their cost
 dwarfs their tech yield, two because what they serve is near-duplicate spam. `CONTEXT.md`'s
 §Counting Boards names each of these stages precisely, and `tests/test_board_counts.py` keeps this
 table in lockstep with the committed ledger:
@@ -286,13 +287,14 @@ table in lockstep with the committed ledger:
 | − `config.EXCLUDED_BOARDS` | −105 | vendor test/sandbox/demo boards and one historical feed, confirmed by reading their postings |
 | − alias ledger | −900 | one board under a second hostname or label, a career section or career site another of the same tenant already covers, or an Eightfold career site its backing ATS board already serves (ADR-0111, ADR-0182, ADR-0186, ADR-0202, ADR-0205) |
 | − case-variant dedupe | −6,630 | `company/External` and `company/external` are one board (ADR-0023) |
+| − newer `dead` row | −4 | a board is read only if no `dead` row is newer than its newest `live` one; all 4 re-probed dead (ADR-0217) |
 | − `config.PARKED_BOARDS` | −13 | real boards withheld for now — five for scrape cost, two for near-duplicate spam, six Jibe clients whose every posting is on a Workday or Oracle board already held |
-| = **Scrapable Board** | **154,037** | |
+| = **Scrapable Board** | **154,033** | |
 
 That order matters: excluding before deduping reads −105 and −6,630, deduping first reads −103,
-because two excluded boards were themselves duplicates. Both land on 154,037.
+because two excluded boards were themselves duplicates. Both land on 154,033.
 
-Of those, **101,487 are currently hiring** — the 52,550 live-but-empty boards are skipped as having
+Of those, **101,482 are currently hiring** — the 52,551 live-but-empty boards are skipped as having
 nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
 sticky measure of tech-job yield) and a random exploration tail drawn from everything else, so
 newly-productive boards can never starve and eviction keeps working on boards outside the head.

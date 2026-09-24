@@ -524,7 +524,7 @@ class WorkdayScraper(BaseScraper):
         -- full transcripts, not just the summary, in
         `docs/workday/2026-09-11_alias-key-full-population-scan.md`; the single duplicate found and
         why it is not in the alias ledger is in ADR-0111's 2026-09-11 amendment. Short form: 12,844
-        Boards, 1 duplicate (a `scrapable_boards._dedupe_boards` no-op today), 2 migrated, 38 landed
+        Boards, 1 duplicate (a `scrapable_boards._elect` no-op today), 2 migrated, 38 landed
         on Workday's own outage page (:attr:`alias_vendor_hosts`); 0/217 same-company site pairs
         shared a posting (the deferred, Eightfold-shaped signal) -- a false negative: it compared
         ``externalPath``, whose per-site ``-N`` suffix differs on 6,208 of 6,212 cross-site

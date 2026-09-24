@@ -6,7 +6,7 @@ One CSV per ATS at ``data/validate/aliases/{ats}.csv``::
 
 A company can run one Board under two hostnames. Both go live in the liveness ledger, both are
 scraped, and both are indexed under different ``board_key``s — so the same posting is served
-twice. ``scrapable_boards._dedupe_boards`` cannot see it: that collapses Boards whose canonical
+twice. ``scrapable_boards._elect`` cannot see it: that collapses Boards whose canonical
 ``board_key`` already matches modulo casing or URL form, and two different hostnames match
 nothing.
 

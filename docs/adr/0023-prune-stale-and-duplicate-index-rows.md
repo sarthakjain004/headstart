@@ -6,6 +6,9 @@
   matches ids to Boards by prefix, because parsing mis-attributed ids whose native id has a colon
 - Amended by: [ADR-0187](0187-a-workday-requisition-is-served-once-per-tenant.md) — a Workday
   requisition's duplicate group is its tenant, not its Board, and sync refuses the copies too
+- Amended by: [ADR-0217](0217-a-boards-row-is-elected-on-evidence-its-key-is-kept.md) — the
+  representative keeps the lex-min key but is fetched from the newest live row carrying it, and a
+  Board whose newest verified row is `dead` is not scraped
 - Builds on [ADR-0014](0014-search-index-ingestion-and-freshness.md) (board-scoped incremental
   sync) and [ADR-0020](0020-free-tier-deployment.md) (the state round-trip the Space serves)
 

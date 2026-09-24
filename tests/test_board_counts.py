@@ -26,27 +26,34 @@ from headstart import board_aliases, liveness
 from headstart.config import PARKED_BOARDS
 from headstart.scrapable_boards import (
     ScrapableBoard,
-    _dedupe_boards,
+    _board_of_row,
+    _elect,
     is_excluded,
     load,
 )
-from headstart.scrapers.registry import DISABLED_ATS, SCRAPERS
+from headstart.scrapers.registry import DISABLED_ATS, SCRAPERS, company_from_row
 
 ROOT = Path(__file__).resolve().parents[1]
 LEDGER = ROOT / "data" / "validate" / "liveness"
 
 
-def _live_boards() -> list[ScrapableBoard]:
+def _ledger_rows() -> list[tuple[ScrapableBoard, liveness.Verdict]]:
+    """Every row naming a Board, every status: a newer `dead` row takes a Board out (ADR-0217)."""
     out = []
     for path in sorted(LEDGER.glob("*.csv")):
-        scraper = SCRAPERS.get(path.stem)
-        if scraper is None:
+        if path.stem not in SCRAPERS:
             continue
         for v in liveness.load(path).values():
-            if v.status == liveness.LIVE:
-                slug = scraper.slug_from(v.tenant, v.url)
-                out.append(ScrapableBoard(ats=scraper.ats, slug=slug, name=v.tenant))
+            board = _board_of_row(company_from_row(path.stem, v.tenant, v.url), v)
+            if board is not None:
+                out.append((board, v))
     return out
+
+
+def _dedupe(
+    rows: list[tuple[ScrapableBoard, liveness.Verdict]],
+) -> list[ScrapableBoard]:
+    return [board for board, _ in _elect(rows)]
 
 
 @functools.cache
@@ -66,12 +73,17 @@ def _counts() -> dict[str, int]:
                 st = (row.get("status") or "").strip()
                 by_status[st] = by_status.get(st, 0) + 1
 
-    live = _live_boards()
-    unique = _dedupe_boards(live)
+    rows = _ledger_rows()
+    unique = _dedupe(rows)
+    # Two things separate Live row from Unique Board: duplicate spellings of one Board, and Boards
+    # whose newest verified row is `dead` (ADR-0217). The docs quote them apart.
+    live_groups = {c.lowercase_identity for c, v in rows if v.status == liveness.LIVE}
     # Boards buried as another Board's duplicate (ADR-0111). A stage of the funnel that neither
     # `EXCLUDED_BOARDS` nor the case-variant dedupe accounts for: it is keyed on evidence from
     # outside the ledger, so without it the components stop summing to Scrapable Board.
-    alias = {ats: board_aliases.load_for(LEDGER, ats) for ats in {c.ats for c in live}}
+    alias = {
+        ats: board_aliases.load_for(LEDGER, ats) for ats in {c.ats for c, _ in rows}
+    }
 
     def is_alias(c: ScrapableBoard) -> bool:
         return c.slug.lower() in alias.get(c.ats, {})  # `load` lowercases its keys
@@ -83,32 +95,42 @@ def _counts() -> dict[str, int]:
     kept = [c for c in enabled if not is_excluded(c.ats, c.slug)]
     unaliased = [c for c in kept if not is_alias(c)]
     # the other order, for the README's funnel: exclude on the raw live set, then dedupe
-    live_enabled = [c for c in live if c.ats not in DISABLED_ATS]
-    exclude_first_excluded = [c for c in live_enabled if is_excluded(c.ats, c.slug)]
-    exclude_first_kept = [
-        c for c in live_enabled if not is_excluded(c.ats, c.slug) and not is_alias(c)
+    enabled_rows = [(c, v) for c, v in rows if c.ats not in DISABLED_ATS]
+    exclude_first_excluded = [
+        c
+        for c, v in enabled_rows
+        if v.status == liveness.LIVE and is_excluded(c.ats, c.slug)
     ]
+    exclude_first_kept = [
+        (c, v)
+        for c, v in enabled_rows
+        if not is_excluded(c.ats, c.slug) and not is_alias(c)
+    ]
+    kept_live = [c for c, v in exclude_first_kept if v.status == liveness.LIVE]
+    kept_groups = {c.lowercase_identity for c in kept_live}
     return {
         "Ledger row": sum(by_status.values()),
         "Live row": by_status.get("live", 0),
         "dead": by_status.get("dead", 0),
         "unknown": by_status.get("unknown", 0),
         "Unique Board": len(unique),
+        "duplicate_spellings": by_status.get("live", 0) - len(live_groups),
+        "outvoted": len(live_groups) - len(unique),
         "disabled": len(unique) - len(enabled),
         "excluded_after_dedupe": len(enabled) - len(kept),
         "aliased": len(kept) - len(unaliased),
         # The README excludes first, so its two middle deltas differ from the dedupe-first ones
         # above. Both are real; each doc must be checked in the order it actually states.
         "excluded_before_dedupe": len(exclude_first_excluded),
-        "dedupe_after_exclude": len(exclude_first_kept)
-        - len(_dedupe_boards(exclude_first_kept)),
+        "dedupe_after_exclude": len(kept_live) - len(kept_groups),
+        "outvoted_after_exclude": len(kept_groups) - len(_dedupe(exclude_first_kept)),
         "parked": sum(1 for c in unaliased if c.lowercase_identity in PARKED_BOARDS),
         "Scrapable Board": len(load(LEDGER, min_jobs=0)),
         "Hiring Board": len(load(LEDGER, min_jobs=1)),
         # Needs `data/state/board_cost.csv`, which is HF-backed and gitignored. Absent on a fresh
         # clone and in CI, so the one figure derived from it is skipped there rather than guessed.
         "scraped_not_unique": _scraped_not_unique(
-            {c.lowercase_identity for c in _dedupe_boards(live)}
+            {c.lowercase_identity for c in unique}
         ),
     }
 
@@ -218,6 +240,7 @@ def test_the_readme_funnel_agrees_with_the_ledger() -> None:
         truth["excluded_before_dedupe"],
         truth["aliased"],
         truth["dedupe_after_exclude"],
+        truth["outvoted_after_exclude"],
         truth["parked"],
     ]
     assert deltas == expected, (
@@ -234,7 +257,7 @@ def test_every_derived_figure_is_current_at_every_site_that_quotes_it() -> None:
     leaving the other stale — the realistic failure — read as green.
     """
     truth = counts()
-    dupes = truth["Live row"] - truth["Unique Board"]
+    dupes = truth["duplicate_spellings"]
     empty = truth["Scrapable Board"] - truth["Hiring Board"]
     skipped = truth["Unique Board"] - truth["Scrapable Board"]
     scraped_not_unique = truth["scraped_not_unique"]
@@ -257,6 +280,16 @@ def test_every_derived_figure_is_current_at_every_site_that_quotes_it() -> None:
             (truth["Ledger row"], truth["Live row"], truth["dead"], truth["unknown"]),
         ),
         ("README.md", r"collapse to ([\d,]+) Unique Boards", (truth["Unique Board"],)),
+        (
+            "README.md",
+            r"and the ([\d,]+) whose newest row is `dead` are dropped",
+            (truth["outvoted"],),
+        ),
+        (
+            "CONTEXT.md",
+            r"less the ([\d,]+) Boards whose newest verified row is `dead`",
+            (truth["outvoted"],),
+        ),
         ("CONTEXT.md", r"because ([\d,]+) live rows are duplicate spellings", (dupes,)),
         (
             "CONTEXT.md",
