@@ -235,8 +235,8 @@ class AppleScraper(BaseScraper):
         # re-fetched.
         #
         # Every row `_listing` keeps has an `id`. The pass rides the thread transport because
-        # `async_fanout` is False (ADR-0167), and records its `concurrency apple details @32`
-        # line there (ADR-0201) — the line the transport decision was read from.
+        # `async_fanout` is False (ADR-0167), and records its `concurrency apple details @N` line
+        # there at `detail_workers` (ADR-0201) — the line the transport decision was read from.
         details = self.run_detail_pass(
             items,
             key_of=lambda row: row["id"],

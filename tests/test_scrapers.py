@@ -4561,8 +4561,8 @@ def test_join_fetch_raw_keys_each_description_by_its_posting_id(
     assert {request.kwargs["headers"]["Accept"] for request in detail_requests} == {
         "application/json"
     }
-    with_ids = {**raw, "items": raw["items"][:2]}  # `parse` needs an id to build a Job
-    jobs = {job.title: job for job in scraper.parse(with_ids, SCRAPED_AT)}
+    raw_with_ids = {**raw, "items": raw["items"][:2]}  # `parse` needs an id for a Job
+    jobs = {job.title: job for job in scraper.parse(raw_with_ids, SCRAPED_AT)}
     assert jobs["Engineer"].description == "Build."
     assert jobs["Analyst"].description is None
 
@@ -10970,6 +10970,8 @@ def test_phenom_gate_reads_the_listing_title_and_category_not_the_teaser(monkeyp
     proves the department: its `category` rescues a title the gate would otherwise drop, and the
     `jobFamilyGroup` sitting beside it would not. The gate runs before `needs_detail`, so the
     second row also shows the two skips composing."""
+    from headstart.scrapers.phenom import PhenomScraper
+
     listed = [
         {
             "jobId": "1",
@@ -10986,11 +10988,10 @@ def test_phenom_gate_reads_the_listing_title_and_category_not_the_teaser(monkeyp
         },
         {"jobId": "4", "title": "Data Engineer", "category": "Engineering"},
     ]
-    from headstart.scrapers.phenom import PhenomScraper
 
     def route(method, url, kwargs):
-        job_id = kwargs["json"]["jobId"]
-        job = {"description": f"body {job_id}"}
+        posting_id = kwargs["json"]["jobId"]
+        job = {"description": f"body {posting_id}"}
         return FakeResponse(text=json.dumps({"jobDetail": {"data": {"job": job}}}))
 
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")

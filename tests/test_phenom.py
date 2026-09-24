@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fake_fetcher import FakeFetcher, FakeResponse
+from fake_fetcher import FakeFetcher, FakeRequest, FakeResponse
 
 from headstart.scrapers.phenom import _RESULT_WINDOW, PhenomScraper
 from headstart.scrapers.registry import get_scraper
@@ -375,7 +375,7 @@ def _serve_fixture_board(
     return PhenomScraper(HOST, fetcher=fetcher), fetcher
 
 
-def _detail_posts(fetcher: FakeFetcher) -> list[Any]:
+def _detail_posts(fetcher: FakeFetcher) -> list[FakeRequest]:
     return [
         request
         for request in fetcher.requests
