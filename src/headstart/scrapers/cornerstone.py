@@ -208,7 +208,7 @@ class CornerstoneScraper(BaseScraper):
             # Drop the page's cookies from the pooled session at once: with them in the jar,
             # US-pod tenant hosts 401 the explicit session header (6 of 6 trials) and a later
             # re-read of this page redirects to `/ui/error` (module docstring).
-            self._fetcher.clear_cookies(domain=f"{self.slug}.csod.com")
+            self.board_fetcher.clear_cookies(domain=f"{self.slug}.csod.com")
             self._token = context["token"]
             self._pod = context["endpoints"]["cloud"]
             return True

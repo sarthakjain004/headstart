@@ -213,8 +213,8 @@ def test_fan_out_async_keeps_the_global_default_when_nothing_is_declared(monkeyp
 def test_fan_out_async_narrows_once_this_scrapers_egress_group_has_walled(monkeypatch):
     """Every step of the chain above is static, so a shard the origin had already refused fanned
     out exactly as wide as one it was still serving — 4 of 15 shards on run 32249345870 took 80%
-    of its 94,110 rate-limit retries that way (#195). The clamp keys on the group `_egress()`
-    names, so it reaches only the scrapers whose requests carry one."""
+    of its 94,110 rate-limit retries that way (#195). The clamp keys on the group the Board fetcher binds, so
+    it reaches only the scrapers whose requests carry one."""
     from headstart import spare_egress
 
     seen = _spy_concurrency(monkeypatch)
@@ -266,29 +266,37 @@ def test_egress_is_inert_unless_the_scraper_opts_in():
     """Routing has to stay inert: every ATS that has never walled us must keep making exactly the
     request it made before this existed. Only ``egress_board`` — pure log attribution, no routing
     effect — rides along regardless."""
-    assert _StubScraper("acme")._egress() == {"egress_board": "stub:acme"}
+    assert _StubScraper("acme").board_fetcher.egress_binding() == {
+        "egress_board": "stub:acme"
+    }
 
 
 def test_egress_opt_in_keys_on_the_ats_not_the_board():
     # per-Board marking would make each of a shard's Boards spend its own attempts rediscovering
     # a wall the first one already proved (the metering is per origin, across tenants)
-    kwargs = _WalledScraper("acme")._egress()
-    other = _WalledScraper("other-board")._egress()
-    assert kwargs["egress_group"] == other["egress_group"] == "walled"
-    assert kwargs["egress_on"] == other["egress_on"] == frozenset({403, 405})
+    binding = _WalledScraper("acme").board_fetcher.egress_binding()
+    other_binding = _WalledScraper("other-board").board_fetcher.egress_binding()
+    assert binding["egress_group"] == other_binding["egress_group"] == "walled"
+    assert binding["egress_on"] == other_binding["egress_on"] == frozenset({403, 405})
 
 
 def test_the_board_rides_along_for_attribution_only():
     """`egress_board` lets the shard report name which Boards spent the IP supply. It must not
     change the grouping: two Boards of one ATS still share a budget and a wall."""
-    assert _WalledScraper("acme")._egress()["egress_board"] == "walled:acme"
-    assert _WalledScraper("other")._egress()["egress_board"] == "walled:other"
+    assert (
+        _WalledScraper("acme").board_fetcher.egress_binding()["egress_board"]
+        == "walled:acme"
+    )
+    assert (
+        _WalledScraper("other").board_fetcher.egress_binding()["egress_board"]
+        == "walled:other"
+    )
 
 
 def test_fetch_threads_egress_kwargs_into_http_fetch(monkeypatch):
     """`_fetch` is `_get`'s counterpart for a caller that needs a non-GET method, custom
-    headers/timeout, or the raw ``Response`` — it must apply this scraper's `_egress()` kwargs
-    exactly as `_get` does, not leave the caller to spell `**self._egress()` itself."""
+    headers/timeout, or the raw ``Response`` — its request must carry the Board fetcher's egress
+    binding exactly as `_get`'s does (ADR-0204)."""
     captured = {}
 
     def fake_fetch(method, url, **kwargs):
@@ -309,7 +317,7 @@ def test_fetch_threads_egress_kwargs_into_http_fetch(monkeypatch):
 
 
 def test_fetch_marks_wall_false_drops_only_the_marking(monkeypatch):
-    """`marks_wall=False` passes straight through to `_egress`: the request still carries
+    """`marks_wall=False` passes straight through to the Board fetcher's binding: the request still carries
     `egress_group`/`egress_board` (still routed once walled) but `egress_on` is emptied, so this
     call's own failures can never be what walls the ATS."""
     captured = {}
@@ -323,7 +331,7 @@ def test_fetch_marks_wall_false_drops_only_the_marking(monkeypatch):
 
 
 def test_fetch_async_threads_egress_kwargs_into_http_fetch_async(monkeypatch):
-    """Async counterpart: `_fetch_async` must thread the same `_egress()` kwargs into
+    """Async counterpart: `_fetch_async` must thread the same egress binding into
     `http.fetch_async`, with `session` and `method` passed through positionally."""
     captured = {}
 
@@ -355,7 +363,12 @@ def test_eightfold_opts_in_on_the_wall_statuses():
     from headstart.scrapers.eightfold import EightfoldScraper
 
     assert EightfoldScraper.egress_fallback_on == frozenset({403, 405, 429})
-    assert EightfoldScraper("x.eightfold.ai")._egress()["egress_group"] == "eightfold"
+    assert (
+        EightfoldScraper("x.eightfold.ai").board_fetcher.egress_binding()[
+            "egress_group"
+        ]
+        == "eightfold"
+    )
 
 
 def test_measured_429_scrapers_opt_into_spare_egress():

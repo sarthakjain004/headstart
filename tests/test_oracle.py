@@ -19,6 +19,9 @@ import logging
 from collections import Counter
 from pathlib import Path
 
+import pytest
+from fake_fetcher import FakeFetcher, FakeResponse
+
 from headstart.models import html_to_text
 from headstart.scrapers.oracle import OracleScraper
 from headstart.scrapers.registry import get_scraper
@@ -113,7 +116,7 @@ def test_the_detail_url_quotes_the_id_and_omits_the_site():
     """`ById` with a quoted id is what the careers UI itself calls; the plausible-looking
     `findReqDetailById` returns HTTP 400. `siteNumber` is ignored on this endpoint — 454
     cross-pod calls omitting it all returned their requisition."""
-    url = _scraper()._detail_url("142972")
+    url = _scraper().detail_request({"Id": "142972"}).url
     assert 'finder=ById;Id="142972"' in url
     assert "siteNumber" not in url
     assert "recruitingCEJobRequisitionDetails" in url
@@ -241,9 +244,10 @@ def test_parse_still_reads_the_pre_detail_pass_envelope():
 class _FakeListing:
     """Serves pages from a canned id list, recording every offset asked for.
 
-    Reads the offset out of the scraper's own `url()` — `_listing` calls `_get()` bare and lets
-    the base default to it — so these tests exercise the real URL builder rather than a
-    re-derived one, and a `url()` that stopped advancing its offset would fail here.
+    Reads the offset out of the URL the scraper actually requested — `_listing` calls `_get()`
+    bare and lets the base default to its own `url()` — so these tests exercise the real URL
+    builder rather than a re-derived one, and a `url()` that stopped advancing its offset would
+    fail here.
     """
 
     def __init__(self, total_ids, page_size, reported_total=None, lies_has_more=False):
@@ -257,10 +261,9 @@ class _FakeListing:
         # what Oracle does; switched off only to exercise `_MAX_PAGES`, which the ceiling
         # otherwise reaches first and so hides.
         self.ceiling = True
-        self.scraper = None
 
-    def __call__(self, url=None):
-        offset = int((url or self.scraper.url()).split("offset=")[1])
+    def __call__(self, url):
+        offset = int(url.split("offset=")[1])
         self.offsets.append(offset)
         if self.ceiling and offset + self.page_size > 10_000:
             page = []  # the API's own offset ceiling: a blank envelope, not an error
@@ -285,44 +288,49 @@ class _FakeListing:
         )
 
 
-def _paged(monkeypatch, fake):
-    scraper = _scraper()
-    fake.scraper = scraper
-    monkeypatch.setattr(scraper, "_get", fake)
-    # Detail pass off: pagination is what is under test here.
-    monkeypatch.setattr(scraper, "fan_out", lambda items, fn, **kw: [None] * len(items))
-    monkeypatch.setattr(
-        scraper, "fan_out_async", lambda items, fn, **kw: [None] * len(items)
-    )
-    return scraper
+def _requisition_id_in(detail_url: str) -> str:
+    """The id a detail URL's `ById;Id="..."` finder asks for."""
+    return detail_url.rsplit('Id="', 1)[1].rstrip('"')
 
 
-def test_pagination_walks_every_page_until_the_total_is_met(monkeypatch):
+def _paged(fake: _FakeListing) -> OracleScraper:
+    """A scraper whose listing pages come from ``fake`` and whose every detail request finds no
+    requisition — pagination, not the Detail pass, is what is under test here."""
+
+    def route(method: str, url: str, kwargs: dict) -> FakeResponse:
+        if "/recruitingCEJobRequisitions?" in url:
+            return FakeResponse(text=fake(url))
+        return FakeResponse(text=json.dumps({"items": []}))
+
+    return OracleScraper(HOST, "Effx", fetcher=FakeFetcher(route))
+
+
+def test_pagination_walks_every_page_until_the_total_is_met():
     fake = _FakeListing(total_ids=450, page_size=200)
-    scraper = _paged(monkeypatch, fake)
+    scraper = _paged(fake)
     raw = scraper.fetch_raw()
     assert len(raw["requisitionList"]) == 450
     assert fake.offsets == [0, 200, 400]
     assert scraper.truncated is None
 
 
-def test_has_more_false_does_not_stop_a_board_that_is_not_done(monkeypatch):
+def test_has_more_false_does_not_stop_a_board_that_is_not_done():
     """Measured: `hasMore` came back false on a 248-posting board whose first page held 200.
     `TotalJobsCount` is the only honest terminator."""
     fake = _FakeListing(total_ids=248, page_size=200, lies_has_more=True)
-    scraper = _paged(monkeypatch, fake)
+    scraper = _paged(fake)
     raw = scraper.fetch_raw()
     assert len(raw["requisitionList"]) == 248
 
 
-def test_a_short_page_does_not_end_the_walk(monkeypatch):
+def test_a_short_page_does_not_end_the_walk():
     """The bug this class of terminator had. Oracle serves under-full pages mid-walk —
     `ebxr.fa.us2` answers offset 0 with 199 rows against a total of 420, reproducibly — and
     treating that as the end read 199 of 420. Measured across 40 multi-page boards, 12% hit one
     and 3,421 of 28,715 postings were lost."""
     fake = _FakeListing(total_ids=420, page_size=200)
     fake.short_at = {0}  # page 0 comes back with 199
-    scraper = _paged(monkeypatch, fake)
+    scraper = _paged(fake)
     raw = scraper.fetch_raw()
     # 199 + 200 + 20 = 419, one short of the stated total — and the walk ended on an empty
     # page, so that gap is not reported (ADR-0169).
@@ -336,9 +344,7 @@ def test_a_short_page_does_not_end_the_walk(monkeypatch):
     assert scraper.truncated is None
 
 
-def test_the_offset_ceiling_is_reported_though_every_other_shortfall_is_not(
-    monkeypatch,
-):
+def test_the_offset_ceiling_is_reported_though_every_other_shortfall_is_not():
     """The ceiling is the one shortfall that still truncates.
 
     Oracle serves no offset past 10,000, so a Board stating more than that reads exactly 10,000 and
@@ -348,13 +354,13 @@ def test_the_offset_ceiling_is_reported_though_every_other_shortfall_is_not(
     is far smaller than the sub-ceiling gaps now tolerated.
     """
     fake = _FakeListing(total_ids=10_050, page_size=200, reported_total=10_050)
-    scraper = _paged(monkeypatch, fake)
+    scraper = _paged(fake)
     raw = scraper.fetch_raw()
     assert len(raw["requisitionList"]) == 10_000  # the ceiling, not the Board's end
     assert scraper.truncated and "no offset past 10,000" in scraper.truncated
 
 
-def test_the_etud_shortfall_that_justified_the_slack_is_not_a_loss(monkeypatch):
+def test_the_etud_shortfall_that_justified_the_slack_is_not_a_loss():
     """The case `_SLACK_PER_PAGE` was sized against, re-measured and reversed (ADR-0169).
 
     `etud.fa.us8` was cited in three places as a measured loss — "89 of 114 in one page" — and was
@@ -365,49 +371,43 @@ def test_the_etud_shortfall_that_justified_the_slack_is_not_a_loss(monkeypatch):
     offset ceiling is reported.
     """
     fake = _FakeListing(total_ids=98, page_size=200, reported_total=123)
-    scraper = _paged(monkeypatch, fake)
+    scraper = _paged(fake)
     raw = scraper.fetch_raw()
     assert len(raw["requisitionList"]) == 98
     assert scraper.truncated is None
 
 
-def test_an_empty_page_ends_the_walk_when_no_total_is_stated(monkeypatch):
+def test_an_empty_page_ends_the_walk_when_no_total_is_stated():
     """The `total and ...` guard: without it `len(reqs) >= 0` is true and the walk stops after
     one page — a silent truncation wearing the natural-end branch's clothes."""
     fake = _FakeListing(total_ids=250, page_size=200, reported_total=0)
-    scraper = _paged(monkeypatch, fake)
+    scraper = _paged(fake)
     raw = scraper.fetch_raw()
     assert len(raw["requisitionList"]) == 250
     # With no total to satisfy, only an empty page can end the walk.
     assert fake.offsets == [0, 200, 400]
 
 
-def test_hitting_the_page_cap_marks_truncated(monkeypatch):
+def test_hitting_the_page_cap_marks_truncated():
     """A backstop that no real Board reaches: the API's offset ceiling stops a walk at 50 pages,
     half of `_MAX_PAGES`. Kept because the ceiling is measured on three Boards, not guaranteed
     across every tenant, and an unbounded pagination loop is not something to leave to that."""
     fake = _FakeListing(total_ids=10**6, page_size=200)
     fake.ceiling = False
-    scraper = _paged(monkeypatch, fake)
+    scraper = _paged(fake)
     scraper.fetch_raw()
     assert scraper.truncated
     assert "page cap" in scraper.truncated
 
 
-def test_a_detail_gap_does_not_mark_the_board_truncated(monkeypatch):
+def test_a_detail_gap_does_not_mark_the_board_truncated():
     """ADR-0053 is about the *list*, not the fields. Every posting is still listed and emitted,
     so the Board is whole even when no detail payload arrives."""
-    fake = _FakeListing(total_ids=10, page_size=200)
-    scraper = _scraper()
-    fake.scraper = scraper
-    monkeypatch.setattr(scraper, "_get", fake)
-    monkeypatch.setattr(scraper, "fan_out", lambda items, fn, **kw: [None] * len(items))
-    monkeypatch.setattr(
-        scraper, "fan_out_async", lambda items, fn, **kw: [None] * len(items)
-    )
+    scraper = _paged(_FakeListing(total_ids=10, page_size=200))
     raw = scraper.fetch_raw()
     assert len(raw["requisitionList"]) == 10
     assert raw["details"] == {}
+    assert scraper.detail_losses == Counter({"no items on a 200": 10})
     assert scraper.truncated is None
 
 
@@ -417,11 +417,47 @@ def test_an_unknown_id_returns_none_rather_than_raising():
 
     And the empty answer is labelled, not merely counted: a Board whose ids have all gone stale
     and a Board the pod is refusing produce the same number of gaps."""
-    scraper = OracleScraper("fa-abcd.fa.us2.oraclecloud.com")
-    assert scraper._first_item(json.dumps({"items": []})) is None
+    answers_by_id = {"7": {"items": [{"Id": "7"}]}, "8": {"items": []}}
+
+    def route(method: str, url: str, kwargs: dict) -> FakeResponse:
+        requisition_id = _requisition_id_in(url)
+        return FakeResponse(text=json.dumps(answers_by_id[requisition_id]))
+
+    scraper = OracleScraper(
+        "fa-abcd.fa.us2.oraclecloud.com", fetcher=FakeFetcher(route)
+    )
+    assert scraper.fetch_detail({"Id": "8"}) is None
     assert scraper.detail_losses == Counter({"no items on a 200": 1})
-    assert scraper._first_item(json.dumps({"items": [{"Id": "7"}]})) == {"Id": "7"}
+    assert scraper.fetch_detail({"Id": "7"}) == {"Id": "7"}
     assert scraper.detail_losses == Counter({"no items on a 200": 1})
+
+
+@pytest.mark.parametrize("async_fanout_switch", ["1", "0"])
+def test_fetch_raw_pairs_each_detail_with_its_requisition_on_either_transport(
+    monkeypatch, async_fanout_switch
+):
+    """The fixture Board end to end: each requisition's detail GET reaches the quoted-id URL and
+    comes back keyed by that requisition's id, whichever transport carries it."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout_switch)
+    detail_answers = json.loads((FIXTURES / "oracle_details.json").read_text("utf-8"))
+
+    def route(method: str, url: str, kwargs: dict) -> FakeResponse:
+        if "/recruitingCEJobRequisitions?" in url:
+            return FakeResponse(text=json.dumps(_listing()))
+        requisition_id = _requisition_id_in(url)
+        return FakeResponse(text=json.dumps(detail_answers[requisition_id]))
+
+    fetcher = FakeFetcher(route)
+    scraper = OracleScraper(HOST, "Effx", fetcher=fetcher)
+    raw = scraper.fetch_raw()
+
+    assert raw["details"] == _details()
+    detail_requests = [
+        request for request in fetcher.requests if "Details?" in request.url
+    ]
+    assert {request.method for request in detail_requests} == {"GET"}
+    assert {request.kwargs["timeout"] for request in detail_requests} == {30}
+    assert scraper.detail_losses == {}
 
 
 def test_a_slug_that_still_carries_a_site_suffix_is_not_split_apart():
@@ -458,7 +494,7 @@ def test_the_scraper_declares_a_detail_pass():
     assert "oracle" in detail_pass_atses()
 
 
-def test_a_walk_that_ended_on_an_empty_page_is_authoritative_however_short(monkeypatch):
+def test_a_walk_that_ended_on_an_empty_page_is_authoritative_however_short():
     """`TotalJobsCount` is not a count of servable requisitions, so a shortfall against it is not
     evidence of an unread remainder (ADR-0169).
 
@@ -470,7 +506,7 @@ def test_a_walk_that_ended_on_an_empty_page_is_authoritative_however_short(monke
     in ADR-0053's exclusion scope, which has no drain.
     """
     fake = _FakeListing(total_ids=27, page_size=200, reported_total=600)
-    scraper = _paged(monkeypatch, fake)
+    scraper = _paged(fake)
     raw = scraper.fetch_raw()
     assert len(raw["requisitionList"]) == 27
     # Two fetches: the page holding all 27, then the empty one that proves the Board is exhausted.
@@ -478,7 +514,7 @@ def test_a_walk_that_ended_on_an_empty_page_is_authoritative_however_short(monke
     assert scraper.truncated is None
 
 
-def test_the_tolerated_gap_is_logged_with_both_numbers(monkeypatch, caplog):
+def test_the_tolerated_gap_is_logged_with_both_numbers(caplog):
     """ADR-0169 keeps the over-count visible, and this line is the only place that can see it.
 
     Nothing downstream records a shortfall once the Board is authoritative, so if this stops firing
@@ -486,7 +522,7 @@ def test_the_tolerated_gap_is_logged_with_both_numbers(monkeypatch, caplog):
     that falls while the stated total holds) becomes unreadable. Both numbers must be in it.
     """
     fake = _FakeListing(total_ids=27, page_size=200, reported_total=600)
-    scraper = _paged(monkeypatch, fake)
+    scraper = _paged(fake)
     with caplog.at_level(logging.INFO, logger="headstart.scrapers.oracle"):
         scraper.fetch_raw()
     logged = " ".join(r.getMessage() for r in caplog.records)
