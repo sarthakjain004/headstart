@@ -1,4 +1,4 @@
-from headstart.employment_type import FILTERS, flags
+from headstart.employment_type_filter import RULES, clause, flags
 
 
 def test_flags_preserve_the_existing_overlapping_substring_rules():
@@ -14,9 +14,7 @@ def test_flags_preserve_the_existing_overlapping_substring_rules():
         "is_contract": True,
         "is_internship": False,
     }
-    assert flags(None) == dict.fromkeys(
-        (rule.column for rule in FILTERS.values()), False
-    )
+    assert flags(None) == dict.fromkeys((rule.column for rule in RULES.values()), False)
 
 
 def test_international_is_not_an_internship():
@@ -31,12 +29,12 @@ def test_international_is_not_an_internship():
 
 
 def test_raw_clauses_keep_the_filter_contract():
-    assert FILTERS["full-time"].raw_clause() == (
+    assert RULES["full-time"].raw_clause() == (
         "(lower(employment_type) LIKE '%full%' OR "
         "(lower(employment_type) LIKE '%permanent%' AND "
         "lower(employment_type) NOT LIKE '%part%'))"
     )
-    assert FILTERS["internship"].raw_clause() == (
+    assert RULES["internship"].raw_clause() == (
         "(lower(employment_type) LIKE '%intern%' AND "
         "lower(employment_type) NOT LIKE '%international%')"
     )
@@ -71,9 +69,16 @@ def test_raw_clauses_agree_with_the_python_flags():
         "",
     )
     for value in values:
-        for rule in FILTERS.values():
+        for rule in RULES.values():
             (sql,) = db.execute(
                 f"SELECT {rule.raw_clause()} FROM (SELECT ? AS employment_type)",
                 (value,),
             ).fetchone()
             assert bool(sql) is rule.matches(value), (value, rule.column)
+
+
+def test_clause_prefers_the_flag_and_ignores_an_unknown_value():
+    assert clause("contract", True) == "is_contract = true"
+    assert clause("contract", False) == RULES["contract"].raw_clause()
+    assert clause("bogus", True) is None
+    assert clause(None, False) is None

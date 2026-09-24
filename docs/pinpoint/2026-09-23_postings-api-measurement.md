@@ -171,7 +171,7 @@ following redirects.
     declines the rest (`"Up to $70K (…)"` → None — no lone ceiling served as a floor).
 16. **Experience / employment type.** No native experience field exists (upstream's
     `experience_level` is absent from all 13,419 rows). `employment_type_text` is 100% populated
-    with 20 labels; `employment_type.flags` maps 14 of them (12,984 rows, 96.8%) onto a filter.
+    with 20 labels; `employment_type_filter.flags` maps 14 of them (12,984 rows, 96.8%) onto a filter.
     The six it does not — Temporary 191, Flexible 187, Apprentice 23, Zero Hours 22, Programme 9,
     Volunteer 3 — pass through as the tenant spells them.
 17. **Location.** One `location` object per posting (no multi-location field on any row).
