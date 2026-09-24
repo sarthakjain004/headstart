@@ -312,9 +312,9 @@ def main() -> int:
         for b in board_failures.quarantined(failure_rows) - on_parole
     }
     if quarantine or on_parole:
-        # Boards confirmed gone (404/410) on QUARANTINE_AT consecutive scrapes — skip them here,
-        # and only here: the liveness ledger stays the probe-owned truth, and `live_keep_set`
-        # (which feeds `index prune`) must not shrink, or a scraping decision would evict rows.
+        # Boards confirmed gone (404/410) on QUARANTINE_AT consecutive scrapes — skip them here.
+        # The liveness ledger stays the probe-owned truth, and `index prune` evicts only a
+        # verdict parole re-confirmed, never a first-time quarantine (ADR-0206).
         # Compared in the ledger's own key form (`board_failures.key_for`, lowercased): the
         # ledger's casing and `board_key()`'s need not agree (ADR-0049).
         before = len(companies)
