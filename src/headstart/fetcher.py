@@ -24,8 +24,8 @@ Three capabilities, not one artificially merged shape:
   and two scrapers need to reset it: Workday answers a stale session cookie with a 400 that only a
   cleared jar cures (ADR-0103), and Cornerstone's career-site page leaves cookies that make its
   tenant host refuse the session header. A domain the jar holds nothing for is not an error —
-  there was nothing to forget. ``BrowserFetcher`` leaves this unimplemented too: its cookies are
-  the Cloudflare clearance its navigation earned, and nothing ever asks a warmed tab to drop them.
+  there was nothing to forget. ``BrowserFetcher`` leaves this unimplemented too (its docstring
+  says why).
 """
 
 from __future__ import annotations

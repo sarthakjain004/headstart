@@ -158,7 +158,7 @@ def get_scraper(
     except KeyError:
         raise ValueError(f"unknown ats {ats!r}; known: {sorted(SCRAPERS)}") from None
     scraper = cls(slug, company, fetcher)
-    # Set after construction, not passed in: five scrapers override ``__init__`` and only one
+    # Set after construction, not passed in: nine scrapers override ``__init__`` and only one
     # consults this, so widening all their signatures for it would be churn for nothing.
     scraper.have_details = have_details
     return scraper

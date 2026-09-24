@@ -95,8 +95,8 @@ opaque argument, and a fake ignores it.
 
    Two fakes stay specialised. `test_jibe.py`'s becomes `_ClockedFetcher`, a subclass that stamps
    each request with the fake clock, because its crawl-delay tests read the gaps between requests.
-   `FakeBrowserFetcher` stays as it was, because it stands in for darwinbox's browser factory, a
-   context manager behind a different seam.
+   `FakeBrowserFetcher` stays its own class, because it stands in for darwinbox's browser factory,
+   a context manager behind a different seam, but it now answers with the shared `FakeResponse`.
 6. **Migrate when touched.** The existing monkeypatches of `headstart.http` stay: 93 `setattr`
    calls in 8 test files on `main`. `HTTPFetcher` still forwards to `http.fetch`/`fetch_async` by
    name, so they still work. A test that is rewritten for another reason moves to the shared fake;

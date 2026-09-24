@@ -3511,35 +3511,38 @@ def test_trakstar_jobs_from_feed_builds_job_objects():
     assert j.remote is False
 
 
-def _trakstar_feed_answering(status: int, feed: str = ""):
-    """A trakstar scraper whose feed request gets ``status``/``feed`` from the shared fake."""
+_TRAKSTAR_FEED_URL = "https://acme.hire.trakstar.com/jobfeeds/acme"
+
+
+def _trakstar_feed_fetcher(status: int, feed: str = ""):
+    """The shared fake, answering acme's feed request with ``status``/``feed``."""
     from fake_fetcher import FakeFetcher, FakeResponse
 
-    feed_url = "https://acme.hire.trakstar.com/jobfeeds/acme"
-    fake = FakeFetcher(lambda method, url, _kwargs: FakeResponse(status, feed))
-    scraper = get_scraper("trakstar", "acme", "Acme", fetcher=fake)
-    return scraper, fake, feed_url
+    return FakeFetcher(lambda method, url, _kwargs: FakeResponse(status, feed))
 
 
 def test_trakstar_fetch_via_feed_returns_none_when_feed_unavailable():
-    s, fake, feed_url = _trakstar_feed_answering(404)
-    assert s.fetch_via_feed(SCRAPED_AT) is None
-    assert fake.urls() == [feed_url]
+    fake = _trakstar_feed_fetcher(404)
+    scraper = get_scraper("trakstar", "acme", "Acme", fetcher=fake)
+    assert scraper.fetch_via_feed(SCRAPED_AT) is None
+    assert fake.urls() == [_TRAKSTAR_FEED_URL]
 
 
 def test_trakstar_fetch_via_feed_returns_empty_list_when_feed_has_zero_jobs():
     # a working feed reporting zero current openings must be distinguishable from "no feed at
     # all" — a caller checking `is None` sees the difference; one that checks truthiness doesn't
     empty_feed = '<?xml version="1.0"?><rss version="2.0"><channel></channel></rss>'
-    s, _, _ = _trakstar_feed_answering(200, empty_feed)
-    result = s.fetch_via_feed(SCRAPED_AT)
+    fake = _trakstar_feed_fetcher(200, empty_feed)
+    scraper = get_scraper("trakstar", "acme", "Acme", fetcher=fake)
+    result = scraper.fetch_via_feed(SCRAPED_AT)
     assert result == []
     assert result is not None
 
 
 def test_trakstar_fetch_via_feed_returns_jobs_when_available():
-    s, _, _ = _trakstar_feed_answering(200, _TRAKSTAR_FEED)
-    jobs = s.fetch_via_feed(SCRAPED_AT)
+    fake = _trakstar_feed_fetcher(200, _TRAKSTAR_FEED)
+    scraper = get_scraper("trakstar", "acme", "Acme", fetcher=fake)
+    jobs = scraper.fetch_via_feed(SCRAPED_AT)
     assert len(jobs) == 2
     assert jobs[0].id == "trakstar:acme:fk0abc1"
 

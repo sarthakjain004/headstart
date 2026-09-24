@@ -130,9 +130,9 @@ def test_a_board_is_the_union_of_its_active_sites_by_requisition():
 
 def _searched_sites(fake: _FakeCsod) -> list[int]:
     return [
-        r.kwargs["json"]["careerSitePageId"]
-        for r in fake.requests
-        if r.method == "POST"
+        request.kwargs["json"]["careerSitePageId"]
+        for request in fake.requests
+        if request.method == "POST"
     ]
 
 
@@ -169,11 +169,13 @@ def test_the_search_goes_to_the_pages_pod_and_the_tenant_host_gets_the_session_c
     `csod.context.endpoints.cloud`. US-pod tenant hosts 401 without `ASP.NET_SessionId`, whose
     value is the JWT's `aud` (14 of 14 US-pod tenants)."""
     _, fake, _ = _scrape("ama-assn")
-    posts = [r.url for r in fake.requests if r.method == "POST"]
+    posts = [request.url for request in fake.requests if request.method == "POST"]
     assert posts and all(
         u == "https://us.api.csod.com/rec-job-search/external/jobs" for u in posts
     )
-    tenant_calls = [r.kwargs for r in fake.requests if "/careersites/" in r.url]
+    tenant_calls = [
+        request.kwargs for request in fake.requests if "/careersites/" in request.url
+    ]
     assert all(
         kw["headers"]["Cookie"] == "ASP.NET_SessionId=fixture-session-ama-assn"
         for kw in tenant_calls
@@ -256,7 +258,9 @@ def test_posted_at_is_the_listing_date_read_as_us_month_first():
     assert jobs["4125"].posted_at == "2026-08-27"
     assert jobs["4070"].posted_at == "2026-07-14"
     search = [
-        r.kwargs["json"] for r in _scrape("ama-assn")[1].requests if r.method == "POST"
+        request.kwargs["json"]
+        for request in _scrape("ama-assn")[1].requests
+        if request.method == "POST"
     ]
     assert all(b["cultureName"] == "en-US" for b in search)
 
@@ -391,9 +395,9 @@ def test_a_site_is_read_page_by_page_until_its_total():
     raw = scraper.fetch_raw()
     assert len(raw["postings"]) == 2345
     assert [
-        r.kwargs["json"]["pageNumber"]
-        for r in fake.requests
-        if r.method == "POST" and r.kwargs["json"]["careerSitePageId"] == 2
+        request.kwargs["json"]["pageNumber"]
+        for request in fake.requests
+        if request.method == "POST" and request.kwargs["json"]["careerSitePageId"] == 2
     ] == [1, 2, 3]
     assert scraper.truncated is None
 
