@@ -10,6 +10,7 @@ from __future__ import annotations
 import html
 import importlib.util
 import json
+import urllib.parse
 from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +20,7 @@ from curl_cffi.requests.exceptions import HTTPError as CurlHTTPError
 
 from headstart.scrapers.registry import company_from_row, get_scraper
 from headstart.scrapers.workday import INSTANCES as WORKDAY_INSTANCES
+from headstart.scrapers.zwayam import search_request
 
 _ROOT = Path(__file__).resolve().parent.parent
 _spec = importlib.util.spec_from_file_location(
@@ -1498,3 +1500,102 @@ def test_pyjamahr_settles_a_zero_count_on_the_scrapers_board_page(monkeypatch):
         0,
     )
     assert asked[1] == get_scraper("pyjamahr", "tulip-group").board_page()
+
+
+# --- #627: every probe asks the host its Scraper reads, on every row shape a ledger holds ------
+
+_LEDGERS = _ROOT / "data" / "validate" / "liveness"
+
+
+class _Asked(Exception):
+    """Raised by every network seam, so a probe stops at the first request it would send."""
+
+
+def _row_shape(tenant, url):
+    if "://" in tenant:
+        kind = "url"
+    elif "." in tenant or "/" in tenant:
+        kind = "host"
+    else:
+        kind = "label"
+    return kind, bool(url)
+
+
+def _row_shapes():
+    """Per ATS with a probe, the rows whose shape a probe could misread.
+
+    Two sources. The first committed ledger row of each (tenant form, has url) shape, so a shape
+    a discovery run lands is covered the day it lands. And three spellings of one Board, built
+    from the host its Scraper reads — bare label with the host in `url`, host, full URL — so a
+    shape stays covered after a cleanup deletes it from the ledger. Oracle's bare-label rows
+    (`bun`, url `bun.fa.em2.oraclecloud.com`) were probed at `https://bun/`, which the scraper
+    never reads, and all 441 were written dead (#627)."""
+    import csv
+
+    cases = []
+    for ats in sorted(cl.PROBES):
+        seen, host = set(), None
+        with (_LEDGERS / f"{ats}.csv").open(encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                tenant, url = row["tenant"], row["url"]
+                shape = _row_shape(tenant, url)
+                if shape not in seen:
+                    seen.add(shape)
+                    cases.append(pytest.param(ats, tenant, url, id=f"{ats}-ledger-{shape}"))
+                if host is None:
+                    host = _host_the_scraper_reads(ats, tenant, url)
+        for name, tenant, url in (
+            ("label", host.split(".")[0], host),
+            ("host", host, f"https://{host}"),
+            ("url", f"https://{host}/careers", ""),
+        ):
+            cases.append(pytest.param(ats, tenant, url, id=f"{ats}-spelled-{name}"))
+    return cases
+
+
+def _first_host_asked(monkeypatch, ats, tenant, url):
+    """The host of the first request `PROBES[ats]` sends for this row, or None if it sends none."""
+    asked = []
+
+    def record(target):
+        asked.append(target)
+        raise _Asked
+
+    monkeypatch.setattr(cl, "_fetch", lambda method, target, **kw: record(target))
+    monkeypatch.setattr(cl.http, "fetch", lambda method, target, **kw: record(target))
+    monkeypatch.setattr(
+        cl.http,
+        "session",
+        lambda: SimpleNamespace(request=lambda method, target, **kw: record(target)),
+    )
+    monkeypatch.setattr(
+        cl, "_jibe_has_no_a_record", lambda hostname: record(f"https://{hostname}")
+    )
+    try:
+        cl.PROBES[ats](tenant, url)
+    except (_Asked, ValueError):  # ValueError: the row names no Board its Scraper can read
+        pass
+    return urllib.parse.urlsplit(asked[0]).hostname if asked else None
+
+
+def _host_the_scraper_reads(ats, tenant, url):
+    """The host of the Scraper's own listing request, or None for a row it cannot read at all.
+
+    Zwayam's `url()` is the Board page, but every Board's listing is one shared search API
+    (`search_request`), which the probe asks too; `test_phenom_and_zwayam_ask_the_host_their_
+    scrapers_read` pins the Board it names there."""
+    try:
+        if ats == "zwayam":
+            target = search_request(company_from_row(ats, tenant, url).slug)[0]
+        else:
+            target = _scraper_url(ats, tenant, url)
+    except ValueError:  # e.g. 3,042 workday rows are a bare company name with no careers URL
+        return None
+    return urllib.parse.urlsplit(target).hostname
+
+
+@pytest.mark.parametrize(("ats", "tenant", "url"), _row_shapes())
+def test_every_probe_asks_the_host_its_scraper_reads(monkeypatch, ats, tenant, url):
+    assert _first_host_asked(monkeypatch, ats, tenant, url) == _host_the_scraper_reads(
+        ats, tenant, url
+    )
