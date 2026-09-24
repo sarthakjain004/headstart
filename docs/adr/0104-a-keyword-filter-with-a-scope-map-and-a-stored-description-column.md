@@ -1,6 +1,6 @@
 # ADR-0104: A Keyword filter with a scope map, backed by a stored `description` column
 
-**Status:** accepted · **Date:** 2026-09-02 · **Extends ADR-0031's Search-filter vocabulary and ADR-0084's counting rule; changes `index._schema()`, with README §"The served table" updated in lockstep**
+**Status:** accepted · **Date:** 2026-09-02 · **Extends ADR-0031's Search-filter vocabulary and ADR-0084's counting rule; changes `index._schema()`, with README §"The served table" updated in lockstep** · **Amended by:** [ADR-0207](0207-the-served-description-follows-the-posting.md) — §3's column is compared after all, against the run's corpus, so an edited posting's text replaces the served one; `sync --backfill-descriptions` is removed
 
 ## Context
 

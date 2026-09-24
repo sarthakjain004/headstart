@@ -1197,7 +1197,6 @@ def _index_paths(**over: object) -> argparse.Namespace:
         upgrades="data/state/pending_upgrades.txt",
         unauthoritative_boards="data/state/unauthoritative_boards.json",
         unconfirmed="data/state/unconfirmed_ids.txt",
-        backfill_descriptions=False,
         **over,
     )
 
