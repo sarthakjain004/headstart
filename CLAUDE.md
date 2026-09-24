@@ -105,11 +105,6 @@ Evidence for the first two is in `docs/discovery/2026-09-23_indeed-sweep-landing
   Cornerstone are now built, #579, #582, #580 and #584, and the sweep's companies on all four are
   landed. ADP Workforce Now is built too, #585, ADR-0180; the sweep's ADP companies are a landing
   still to do.)
-- **ADP Recruiting Management** (`myjobs.adp.com/{slug}`, `recruiting.adp.com`) — a different
-  platform from Workforce Now: its listing
-  (`my.adp.com/myadp_prefix/mycareer/public/staffing/v1/job-requisitions/apply-custom-filters`)
-  wants an `orgoid` header, which `/public/staffing/v1/career-site/{slug}` supplies, and a
-  posting-channel id not yet found (`docs/adp/2026-09-23_careercenter-measurement.md`).
 - **SenseHQ** — the scraper is registered but has no ledger and no liveness probe, so none of its
   Boards can land.
 - **TurboHire** — token flow: `/api/token/noauth` (needs Referer), then `POST

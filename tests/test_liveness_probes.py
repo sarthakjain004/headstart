@@ -647,8 +647,10 @@ def test_adp_recruiting_an_employee_only_site_is_dead(monkeypatch):
 @pytest.mark.parametrize(
     "site_status, site_body, listing",
     [
-        ("dns", b"", (200, b'{"count": 1}')),  # one fixed host: the resolver, not the site
-        (400, b'{"message":"Bad Request"}', (200, b'{"count": 1}')),  # an unmeasured 400
+        # One fixed host: a DNS failure is the resolver, not the site.
+        ("dns", b"", (200, b'{"count": 1}')),
+        # A 400 whose message was never measured on a departed site.
+        (400, b'{"message":"Bad Request"}', (200, b'{"count": 1}')),
         (503, b"", (200, b'{"count": 1}')),
         (200, b"<html>wall</html>", (200, b'{"count": 1}')),
         # A live site whose listing errored: `trulitecareers` answered this 500 on 2026-09-24.

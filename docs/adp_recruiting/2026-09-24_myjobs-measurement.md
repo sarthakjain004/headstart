@@ -105,9 +105,10 @@ hypotheses. Two of them were wrong in ways that matter (the `orgoid`-only listin
   and the other 398 are for the client's own staff. The prober writes them DEAD by policy
   (ADR-0191 §4).
 - **The click (Q8a).** `/{slug}/cx/job-details?reqId={reqId}`, rendered in Chromium, shows the
-  posting. The page fetches `search-meta/{reqId}` itself. `/{slug}/cx/job/{reqId}` (openings-mcp's
-  URL) rendered the site chrome with no posting. It routes through the SPA's `legacy` module,
-  which wants a login.
+  posting on 3 of 3 sites (`800flowerscareers`, `churchmutual`, `lifewisecareers`). The page
+  fetches `search-meta/{reqId}` itself. `/{slug}/cx/job/{reqId}` (openings-mcp's URL) rendered the
+  site chrome with no posting. The SPA's route table lists `job/:reqId` only under its `legacy`
+  module, and the render hit ADP's login redirect.
 
 ## Detail (Q10, Q11, Q11b, Q12)
 

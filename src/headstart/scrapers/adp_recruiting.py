@@ -185,8 +185,9 @@ class ADPRecruitingScraper(BaseScraper):
     #: No rate limit was found up to 128-wide; 16 is what icims, zwayam, oracle and pyjamahr run.
     detail_workers = 16
     # scraper: f"https://myjobs.adp.com/{slug}/cx/job-details?reqId={reqId}". The SPA's own
-    # route for a `reqId`; rendered in Chromium 2026-09-24 it shows the posting (the page fetches
-    # `search-meta/{reqId}` itself). `/cx/job/{reqId}` rendered the board chrome with no posting.
+    # route for a `reqId`; rendered in Chromium 2026-09-24 it shows the posting on 3 of 3 sites
+    # (the page fetches `search-meta/{reqId}` itself). `/cx/job/{reqId}` rendered the board
+    # chrome with no posting.
     # Slugs are `[a-z0-9_.-]` across 681 live sites; `reqId` is 13 digits on 77,242 of 77,242.
     url_shape = r"https://myjobs\.adp\.com/[a-z0-9_.-]+/cx/job-details\?reqId=\d+"
 
