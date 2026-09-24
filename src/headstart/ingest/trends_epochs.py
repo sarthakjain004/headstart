@@ -14,7 +14,7 @@ count" from "conditions changed".
 A fifth, :data:`headstart.ingest.index_plan.DEDUP_VERSION` (ADR-0188), marks a change to which
 served rows count as duplicates: that removes rows that were served before, in one tick.
 
-This module stamps those five values each tick and appends a row to
+This module stamps those values each tick and appends a row to
 ``data/state/trends_epochs.csv`` only when at least one differs from the last recorded row — so
 every row in the file is already a real methodology boundary, not a per-tick sample, and the
 Space can draw a marker at each one. ``family_map_fingerprint`` is a content hash rather than a
@@ -26,6 +26,7 @@ already documents happening twice for a version a human has to remember to move.
 from __future__ import annotations
 
 import csv
+import os
 from pathlib import Path
 
 _COLUMNS = (
@@ -40,20 +41,25 @@ _COLUMNS = (
 # still marks, so a file in this shape is upgraded in place rather than rebuilt as corrupt, each
 # old row taking the version the rules had when the column was added. A fixed value, never the
 # live constant: a bump that lands before the first upgrading tick must still read as a boundary.
-_BEFORE_DEDUP = _COLUMNS[:-1]
+_HEADER_WITHOUT_DEDUP_VERSION = _COLUMNS[:-1]
 _DEDUP_VERSION_AT_ADDITION = "1"
 
 
-def _upgrade_before_dedup(path: Path) -> None:
-    """Rewrite a file from before ``dedup_version`` in the current shape, in place."""
+def _add_dedup_version_column(path: Path) -> None:
+    """Rewrite a file from before ``dedup_version`` in the current shape.
+
+    Written beside it and renamed over it, so a crash mid-write leaves the old file whole rather
+    than a truncated one the merge stage's upload would publish."""
     with path.open(encoding="utf-8", newline="") as fh:
         rows = list(csv.reader(fh))
-    if not rows or tuple(rows[0]) != _BEFORE_DEDUP:
+    if not rows or tuple(rows[0]) != _HEADER_WITHOUT_DEDUP_VERSION:
         return
-    with path.open("w", encoding="utf-8", newline="") as fh:
+    staged = path.with_suffix(path.suffix + ".tmp")
+    with staged.open("w", encoding="utf-8", newline="") as fh:
         writer = csv.writer(fh)
         writer.writerow(_COLUMNS)
         writer.writerows([*row, _DEDUP_VERSION_AT_ADDITION] for row in rows[1:])
+    os.replace(staged, path)
 
 
 def _read_state(path: Path) -> tuple[tuple[str, ...] | None, bool]:
@@ -89,7 +95,7 @@ def append_if_changed(
 ) -> bool:
     """Append one row when this tick's stamp differs from the last recorded one.
 
-    Returns whether it wrote. The comparison is over the five definition values only, never
+    Returns whether it wrote. The comparison is over the definition values only, never
     ``ts`` — an unchanged run writes nothing, keeping the file at one row per real boundary
     rather than one row per tick.
     """
@@ -101,7 +107,7 @@ def append_if_changed(
         str(dedup_version),
     )
     if path.exists():
-        _upgrade_before_dedup(path)
+        _add_dedup_version_column(path)
     previous, rebuild = _read_state(path)
     if previous is not None and previous[1:] == current:
         return False

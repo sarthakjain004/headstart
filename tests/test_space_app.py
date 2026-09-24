@@ -1472,16 +1472,8 @@ def _write_epochs(state: Path, rows: list[dict]) -> Path:
     path = state / "data" / "state" / "trends_epochs.csv"
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.DictWriter(
-            fh,
-            fieldnames=[
-                "ts",
-                "centroid_version",
-                "family_map_fingerprint",
-                "tech_filter_version",
-                "derivations_version",
-            ],
-        )
+        # the header is whatever the rows carry, so a fixture can write either shape
+        writer = csv.DictWriter(fh, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
     return path
@@ -1972,14 +1964,19 @@ def test_trends_epochs_name_a_dedup_change(epochs_trends_app, tmp_path):
     """A dedup-rule change removes served duplicates in one tick, which reads as a hiring drop
     unless it is marked. ``epochs_trends_app`` writes the pre-``dedup_version`` header, so every
     other epochs test here is also the check that a file from before the column still loads."""
-    path = tmp_path / "trends_epochs.csv"
-    fields = ["ts", "centroid_version", "family_map_fingerprint"]
-    fields += ["tech_filter_version", "derivations_version", "dedup_version"]
-    with path.open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.writer(fh)
-        writer.writerow(fields)
-        writer.writerow([_T1, "2", "aaa", "2", "13", "1"])
-        writer.writerow([_T2, "2", "aaa", "2", "13", "2"])
+    stamp = {
+        "centroid_version": "2",
+        "family_map_fingerprint": "aaa",
+        "tech_filter_version": "2",
+        "derivations_version": "13",
+    }
+    path = _write_epochs(
+        tmp_path,
+        [
+            {"ts": _T1, **stamp, "dedup_version": "1"},
+            {"ts": _T2, **stamp, "dedup_version": "2"},
+        ],
+    )
     assert epochs_trends_app._load_epochs(path) == [
         {"ts": _T2, "changed": ["duplicate removal changed"]}
     ]

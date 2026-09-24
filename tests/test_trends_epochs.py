@@ -120,6 +120,9 @@ def test_a_file_from_before_dedup_version_is_upgraded_not_rebuilt(tmp_path):
         ["t0", "1", "abc123", "1", "11", "1"],
         ["t1", "1", "abc123", "1", "12", "1"],
     ]
+    assert list(tmp_path.iterdir()) == [
+        path
+    ]  # renamed into place, nothing left beside it
 
 
 def test_a_dedup_change_on_an_upgraded_file_appends_after_the_old_rows(tmp_path):

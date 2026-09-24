@@ -22,7 +22,8 @@ straight to ``C``. The transitive step happens in the transport. A future *pairw
 overlap between two independently-served Boards, which is what Eightfold's aliases need — would
 bring union-find back. The one pairwise signal shipping, ClearCompany's ``shared-reqs`` (ADR-0182),
 is clustered and elected outside this module and only loaded here, so the grouping here is still
-never pairwise.
+never pairwise. A new signal changes which served rows count as duplicates, so it bumps
+``index_plan.DEDUP_VERSION`` in the same change (ADR-0188).
 
 **A group is a duplicate cluster only when its key is itself a live Board**, and that one
 condition is what keeps two unrelated companies apart. Measured 2026-09-06:
