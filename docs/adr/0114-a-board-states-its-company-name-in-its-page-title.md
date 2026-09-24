@@ -3,7 +3,9 @@
 **Status:** accepted · **Date:** 2026-09-07 · **Amended by:**
 [ADR-0172](0172-a-single-source-scraper-declares-its-company.md) (on the Context's opening premise:
 `__init__` now does `self.COMPANY or company or slug`, so a Single source scraper's declared name
-outranks the caller-supplied one this ADR's fallback assumed) · **Relates to:** ADR-0031 (the filter compiler that
+outranks the caller-supplied one this ADR's fallback assumed);
+[ADR-0216](0216-a-workday-board-is-named-by-its-postings-legal-entities.md) (Workday's detail does
+carry a name, `hiringOrganization`, and Workday Boards are now named from it) · **Relates to:** ADR-0031 (the filter compiler that
 serves `company`), ADR-0007 (the typed Job projection), ADR-0063 (the spare egress this request
 deliberately cannot wall), ADR-0034 (the vendor-Board blocklist that already removes placeholder
 names)
@@ -44,6 +46,8 @@ samples since where the first one proved too small to trust — the sample size 
 
 successfactors, darwinbox and freshteam scored **0/30 against the registered patterns**. For
 darwinbox and freshteam that is genuine — they render client-side and serve nothing to read.
+(Amended 2026-09-24, alongside ADR-0212: both do state a name elsewhere — darwinbox in its
+`companyinfo` record, freshteam in its `/jobs` page's `og:title` — and both are now read.)
 Successfactors is the interesting exclusion: it *does* serve titles ("Careers at Bachem"), but
 they are marketing copy in several languages with no shared wrapper ("Life@MOHH - people, culture,
 and values | MOHH", "Trabaja en Volaris"), so a pattern wide enough to catch the third mangles the

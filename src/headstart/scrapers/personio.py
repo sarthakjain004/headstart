@@ -5,6 +5,9 @@ Personio publishes a public XML feed of openings. The careers host's TLD varies 
 that host and the feed is ``https://{host}/xml``. Each ``<position>`` carries the title, office
 (location), department, employment type, seniority, salary, and one or more ``<jobDescription>``
 sections (CDATA HTML) that we concatenate into the description.
+
+The company is a posting's own ``<subcompany>`` where it states one, else the Board's name from
+its English board page title, "Jobs at {Name}" (149 of 186 affected Boards, 2026-09-24).
 """
 
 from __future__ import annotations
@@ -190,6 +193,13 @@ class PersonioScraper(BaseScraper):
 
     def job_url(self, native_id: str) -> str:
         return f"https://{self.slug}/job/{native_id}"
+
+    def board_page(self) -> str:
+        """The board root, asked in English: its ``<title>`` is then "Jobs at {Name}", where a
+        German tenant's default answers "Jobs bei {Name}". The feed carries no Board-level name —
+        ``<subcompany>`` is per posting and absent on most — so a posting without one serves
+        this."""
+        return f"https://{self.slug}/?language=en"
 
     def fetch_raw(self) -> Any:
         """The tenant's XML feed — following no redirect, and reading the target as the signal.

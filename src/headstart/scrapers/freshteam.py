@@ -40,13 +40,22 @@ the cap calls `mark_truncated`, per `base.mark_truncated`'s contract for a hard 
 only logged, and a posting past the cap was absent from every snapshot, went Unconfirmed and was
 evicted on the guaranteed second miss (ADR-0083). An unknown/dead slug soft-errors at HTTP 200 with an
 HTML 404 page (not JSON), which ``fetch_raw`` treats as an empty board.
+
+**The company name is the ``/jobs`` page's ``og:title``, "Careers - {Name}"** — not rendered
+client-side, as this ATS was once written off: the server sends it in the ``<head>`` of a page
+whose ``<title>`` is just "Careers". 106 of 120 affected Boards state it (2026-09-24,
+`krazybee` -> "KreditBee", `crimsoniteam` -> "Crimson Interactive Inc"); the other 14 answer an
+889-byte shell with no og: tags. The page runs to 1.7 MB on a large Board, and the tag sits in the
+first ~3 KB, so only the head is streamed (:attr:`board_page_head`).
 """
 
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
+from headstart import company_name
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
@@ -67,6 +76,14 @@ _JOB_TYPE_LABELS: dict[int, str] = {
     7: "Volunteer",
     8: "Fixed Term Contract",
 }
+
+
+#: The ``/jobs`` page's ``og:title``, as served: ``<meta property="og:title" content= "…" />``
+#: (the space after ``content=`` is the tenant template's own).
+_OG_TITLE = re.compile(
+    r'<meta[^>]*\bproperty=["\']og:title["\'][^>]*\bcontent=\s*(["\'])(?P<title>.*?)\1',
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def _branch_location(branch: dict) -> str | None:
@@ -93,6 +110,8 @@ class FreshteamScraper(BaseScraper):
     ats = "freshteam"
     # scraper passes through the API's own url field; tenants live on {slug}.freshteam.com
     url_shape = r"https://[\w-]+\.freshteam\.com/jobs/[\w-]+"
+    #: The og:title sits in the first ~3 KB of a page that runs to 1.7 MB (module docstring).
+    board_page_head = 16_384
 
     def url(self) -> str:
         return f"https://{self.slug}.freshteam.com/hire/widgets/jobs.json"
@@ -100,6 +119,16 @@ class FreshteamScraper(BaseScraper):
     def job_url(self, native_url: str | None, unique_id: str) -> str:
         """The widget's own ``url`` field when present, else the derived jobs page route."""
         return native_url or f"https://{self.slug}.freshteam.com/jobs/{unique_id}"
+
+    def board_page(self) -> str:
+        """The careers page, whose ``og:title`` names the company (module docstring)."""
+        return f"https://{self.slug}.freshteam.com/jobs"
+
+    def company_from_page(self, page: str | None) -> str | None:
+        match = _OG_TITLE.search(page or "")
+        return company_name.from_title(
+            self.ats, match.group("title") if match else None, self.slug
+        )
 
     def fetch_raw(self) -> Any:
         """The widget payload, or ``{}`` for a dead tenant. An unknown slug returns an HTML 404

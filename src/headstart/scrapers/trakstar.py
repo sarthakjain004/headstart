@@ -76,6 +76,21 @@ doesn't mark_truncated on its own. ``fetch_via_feed`` below remains a separate, 
 investigative entry point (``scripts/eval/trakstar_feed_compare.py`` still uses it to compare
 both paths at scale) built on the same ``_fetch_feed``/``_feed_items`` primitives
 ``fetch_raw()`` now also calls directly.
+
+**The company name is the careers page's ``<title>``**, "{Name} jobs | {Name} openings | {Name}
+careers" — the API objects carry none. :meth:`TrakstarScraper.fetch_raw` reads that page once,
+first, and the HTML fallback below reuses it rather than asking again. 122 of 200 affected Boards
+state a name there (2026-09-24); most of the rest are inactive accounts, whose page has no title.
+
+**An inactive account raises as gone.** 64 of those 200 Boards serve a careers page reading
+"Inactive account. This employer is no longer using Trakstar Hire to collect applications" —
+while ``jsapi`` still lists their openings (`nowfloats1`: 395) and every ``hosted_url`` it names
+404s (25 of 25 Boards checked, two postings each). Read from the API alone they were served as
+live jobs with dead links. The same careers-page read now raises ``HTTP Error 410`` for them, in
+the shape `board_failures.is_gone` matches, so ADR-0058's quarantine retires the Board after five
+agreeing runs — never a quiet ``[]``, which would evict through ADR-0200 on a signal no status
+code backs (ADR-0218). ``check_liveness.p_trakstar`` still records these Boards live: it counts
+cards on the same page, reads zero, and calls that an empty live board.
 """
 
 from __future__ import annotations
@@ -94,6 +109,10 @@ from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailR
 from headstart.scrapers.job_posting_jsonld import find_job_posting
 
 _log = log.get(__name__)
+
+#: What the careers page says, at HTTP 200, for an employer that has left the product (module
+#: docstring); the page carries no job cards and no title.
+_INACTIVE_ACCOUNT = "This employer is no longer using Trakstar Hire"
 
 # jsapi.recruiterbox.com — the primary listing surface (module docstring). Measured live
 # 2026-09-22: the server clamps `limit` to 250 regardless of a higher ask, so pagination steps by
@@ -224,14 +243,35 @@ class TrakstarScraper(BaseScraper):
             )
         return objects
 
+    def _careers_page(self) -> str | None:
+        """The careers page, or None — read once per Board for its company name, one attempt
+        that cannot wall the ATS, as `BaseScraper.resolve_company` asks its own page. Not
+        :meth:`board_page`: the HTML fallback in :meth:`fetch_raw` reuses this same response."""
+        try:
+            response = self._fetch_once("GET", self.url())
+        except http.RequestsError:
+            return None
+        return response.text if response.status_code == 200 else None
+
     def fetch_raw(self) -> Any:
+        page = self._careers_page()
+        if page is not None and _INACTIVE_ACCOUNT in page:
+            # Raised in the shape `board_failures.is_gone` matches (module docstring): the API
+            # still lists this account's openings, and every link it names is dead.
+            raise http.RequestsError(
+                f"HTTP Error 410: {self.board_key()} is an inactive Trakstar Hire account"
+            )
+        if page is not None and self.wants_company_name():
+            # A title, so the title patterns read it (`company_from_page`), not `from_field`.
+            self.company = self.company_from_page(page) or self.company
         api_items = self._api_listing()
         if api_items is not None:
             # The whole point of this surface (module docstring): listing IS the detail — every
             # object already carries its own description, so there is no per-job fetch to gate
             # with ADR-0017 the way the HTML+detail path below still needs.
             return {"api_items": api_items}
-        html = self._get()  # the careers page HTML (job cards)
+        # The careers page HTML (job cards), fetched again only if the first read failed.
+        html = page if page is not None else self._get()
         # Split once: the cap check needs the count, the tech gate below needs each card's own
         # title and department, and `parse` re-reads the same blocks.
         cards = _job_cards(html)

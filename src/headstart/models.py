@@ -41,6 +41,8 @@ class Job:
         # titles (smartrecruiters, zwayam) and a company (pyjamahr), 3,851 companies with edge
         # whitespace, and locations carrying markup (teamtailor's own feed) or one place per
         # line (50 icims rows, one workday). `object.__setattr__` because the dataclass is frozen.
+        # UTF-8 read once as Latin-1 is repaired here too (`repaired_mojibake`): zoho serves its
+        # locations that way at source ("San JosÃ©", "FÃ¨s-Boulemane").
         object.__setattr__(self, "title", _unescaped(self.title))
         object.__setattr__(self, "company", _unescaped(self.company))
         object.__setattr__(self, "location", _location_text(self.location))
@@ -59,13 +61,33 @@ def requisition_of(value: Any) -> str | None:
 
 
 _TAGS = re.compile(r"<[^>]+>")
+#: A UTF-8 two-byte sequence read as Latin-1: its lead byte shows as "Ã" or "Â", its continuation
+#: byte as one character in U+0080-U+00BF ("é" -> "Ã©", "°" -> "Â°").
+_MOJIBAKE = re.compile("[\u00c2\u00c3][\u0080-\u00bf]")
 _WS = re.compile(r"\s+")
 _LINE_BREAKS = re.compile(r"\s*[\r\n]+\s*")
 
 
+def repaired_mojibake(value: str | None) -> str | None:
+    """``value`` with UTF-8-read-as-Latin-1 reversed ("San JosÃ©" -> "San José"), or unchanged.
+
+    Guarded, because a Latin-1 "Ã" is also real text ("SÃO PAULO"): the repair applies only when
+    the whole string re-encodes as Latin-1, that decodes as valid UTF-8, and no "Ã"/"Â" sequence
+    is left afterwards. "SÃO" fails the second test — "Ã" before "O" is not a UTF-8 sequence.
+    """
+    if not value or not _MOJIBAKE.search(value):
+        return value
+    try:
+        repaired = value.encode("latin-1").decode("utf-8")
+    except UnicodeError:
+        return value
+    return value if _MOJIBAKE.search(repaired) else repaired
+
+
 def _unescaped(value: str | None) -> str | None:
-    """``value`` with its entities decoded and its ends stripped; the inside is left as stated."""
-    return value if value is None else html.unescape(value).strip()
+    """``value`` with its entities decoded, mojibake repaired and ends stripped; the inside is
+    otherwise left as stated."""
+    return value if value is None else repaired_mojibake(html.unescape(value).strip())
 
 
 def _location_text(value: str | None) -> str | None:
@@ -78,7 +100,7 @@ def _location_text(value: str | None) -> str | None:
     if not value:
         return None
     text = _LINE_BREAKS.sub("; ", _TAGS.sub(" ", value).strip())
-    return _WS.sub(" ", html.unescape(text)).strip() or None
+    return repaired_mojibake(_WS.sub(" ", html.unescape(text)).strip()) or None
 
 
 def host_of(url: str | None) -> str:

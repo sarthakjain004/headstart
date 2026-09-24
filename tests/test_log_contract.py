@@ -508,6 +508,10 @@ def _descriptions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         "data/embeddings/jobs/meta.jsonl",
         "--changes",
         "data/state/description_changes.tsv.gz",
+        "--checked",
+        "data/state/description_checked.tsv.gz",
+        "--refetch-due",
+        "data/state/refetch_due.txt",
     )
 
 

@@ -33,6 +33,13 @@ that the widget can omit jobs for reasons unrelated to the cap: a majority of sm
 have a feed serve fewer jobs from the widget than from the feed, by up to 9x. So the count this
 file returns is not a reliable board size at the small end. See
 docs/zoho/2026-09-07_the-rss-second-listing-surface.md.
+
+**The company** is the page's own ``org_info.company_name`` when the tenant set a real one, else
+the careers page ``<title>`` read through `company_name`'s zoho patterns ("Jobs at MasonBlue
+Technologies, LLC", "Careers @ thinkbridge"), else whatever ``org_info`` holds, else the ledger's.
+Of the 51 Boards serving an identifier on 2026-09-24, ``org_info`` held that identifier on most
+("agrocommercialbyliotis"); the title is on the page this scrape already fetches, so it costs
+nothing.
 """
 
 from __future__ import annotations
@@ -42,7 +49,7 @@ import json
 import re
 from typing import Any
 
-from headstart import log
+from headstart import company_name, log
 from headstart.fetcher import Fetcher
 from headstart.models import Job, host_of, html_to_text
 from headstart.scrapers.base import BaseScraper, DetailLost, DetailRequest
@@ -309,7 +316,7 @@ class ZohoScraper(BaseScraper):
                 "widget ceiling — anything past it is unread, not absent"
             )
 
-        company = self._company_name(page) or self.company
+        company = self._board_company(page)
         jobs: list[Job] = []
         for r in records:
             if r.get("Is_Locked") or not r.get("Publish", True):
@@ -373,6 +380,17 @@ class ZohoScraper(BaseScraper):
             return None
         currency_text = (raw.get("Currency") or "").strip()
         return f"{salary_text} {currency_text}" if currency_text else salary_text
+
+    def _board_company(self, page: str) -> str:
+        """The Board's company (module docstring): a real ``org_info`` name, else the page title's,
+        else the ``org_info`` identifier, else the ledger's."""
+        stated = self._company_name(page)
+        if stated and not company_name.looks_like_slug(stated):
+            return stated
+        titled = company_name.from_title(
+            self.ats, company_name.title_of(page), stated or self.slug
+        )
+        return titled or stated or self.company
 
     @staticmethod
     def _company_name(raw: str) -> str | None:

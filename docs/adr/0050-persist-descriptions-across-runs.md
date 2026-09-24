@@ -2,7 +2,9 @@
 
 **Status:** accepted · **Date:** 2026-08-13 · **Amends:** ADR-0048, ADR-0021 · **Amended by:**
 [ADR-0089](0089-the-description-store-holds-text-not-verdicts.md) — the `null` entry and
-`Job.detail_fetched` are removed; the store is two-state · **Related:**
+`Job.detail_fetched` are removed; the store is two-state; and by
+[ADR-0211](0211-held-descriptions-are-re-fetched-on-a-seven-day-rotation.md) — the skip-list leaves out the
+held Jobs due a re-fetch · **Related:**
 [ADR-0207](0207-the-served-description-follows-the-posting.md) — measures the edit churn left
 unmeasured below, and makes the served `description` follow an edit the store takes
 

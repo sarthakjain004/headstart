@@ -28,8 +28,8 @@ def test_one_tenant_split_into_sites_is_one_company() -> None:
     """Workday sites, Taleo career sections and TBE `cws` sites of one Tenant merge."""
     got = _companies(
         [
-            "workday:hpe/ACJobSite",
-            "workday:hpe/Jobsathpe",
+            "workday:acmecorp/ACJobSite",
+            "workday:acmecorp/Jobsatacme",
             "taleo_enterprise:https://hdr.taleo.net/careersection/ex",
             "taleo_enterprise:https://hdr.taleo.net/careersection/aviation",
             "taleo_be:https://phg.tbe.taleo.net/phg04/ats/careers/v2/searchResults?org=ALLETE&cws=43",
@@ -39,7 +39,7 @@ def test_one_tenant_split_into_sites_is_one_company() -> None:
             "taleo_be:https://phg.tbe.taleo.net/phg04/ats/careers/v2/searchResults?org=ALLETE&cws=43": "ALLETE INC"
         },
     )
-    assert len(got["HPE"]) == 1 and len(got["HPE"][0]) == 2
+    assert len(got["Acmecorp"]) == 1 and len(got["Acmecorp"][0]) == 2
     assert len(got["HDR"]) == 1 and len(got["HDR"][0]) == 2
     assert len(got["ALLETE INC"]) == 1 and len(got["ALLETE INC"][0]) == 2
 
@@ -223,7 +223,7 @@ def test_the_file_names_boards_and_carries_no_counts(
                 2,
                 [
                     ("greenhouse:acme", "stock", "software-engineering", 3),
-                    ("workday:hpe/ACJobSite", "stock", "data", 5),
+                    ("workday:acmecorp/ACJobSite", "stock", "data", 5),
                 ],
             )
         ],
@@ -236,7 +236,7 @@ def test_the_file_names_boards_and_carries_no_counts(
     assert json.loads(first) == {
         "companies": [
             {"name": "Acme", "boards": ["greenhouse:acme"]},
-            {"name": "HPE", "boards": ["workday:hpe/ACJobSite"]},
+            {"name": "Acmecorp", "boards": ["workday:acmecorp/ACJobSite"]},
         ]
     }
 
