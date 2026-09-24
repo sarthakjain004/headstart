@@ -24,12 +24,14 @@ experiment/ats-provider-expansion/artifacts/research_successfactors.md + 2026-07
 The list surfaces otherwise carry no indexable fields — the one exception is surface 3's own
 ``g:job_function`` (:func:`_job_functions_from`), read for free since that surface's whole body
 is already being paid for; a bounded detail pass fetches every job page and extracts every other
-field from whichever markup that tenant serves: classic RMK pages embed a JSON-LD
-``JobPosting`` (title, datePosted, jobLocation, employmentType, description); CSB-rendered pages
-(Wipro, Voith) have no JSON-LD but keep schema.org microdata (``itemprop="title"`` /
-``"description"``), ``og:title``, a ``<title>`` of the form "{Job Title} Job Details | {Co}", and
-per-tenant ``joblayouttoken`` label/value spans (City / State/Province / Posting Start Date) —
-each field falls back independently, since tenants mix the shapes. No detail markup sampled
+field from its markup: schema.org microdata (``itemprop="title"`` / ``"description"``),
+``og:title``, a ``<title>`` of the form "{Job Title} Job Details | {Co}", and per-tenant
+``joblayouttoken`` label/value spans (City / State/Province / Posting Start Date) — each field
+falls back independently, since tenants mix the shapes. The reader tries a JSON-LD ``JobPosting``
+first, and this docstring used to say classic RMK pages embed one; no page measured does today:
+none of 50 pages from the 10 largest Boards nor the probe pages of 195 more (ADR-0196), and none of
+113 pages from 60 more Boards sampled 2026-09-24 (two carried an ``ld+json`` block, neither a
+``JobPosting``). The branch stays because it costs nothing where absent. No detail markup sampled
 carries a department field at all, which is why ``department`` was hardcoded ``None`` until this
 RSS-feed field was found — see :func:`_job_functions_from`'s docstring. A page that yields no
 title drops that job for the run (there is nothing to keep it by); it returns next scrape.
@@ -45,9 +47,9 @@ on ``jobsearch.alstom.com`` (2,234/2,283). Not every tenant has it (``jobs.thyss
 **It is a fallback, not a shortcut: its fields fill a Job only where that id's job page yielded
 none**, and it is fetched only when some page did. The page stays the authority because it states
 a posting date and the feed never does (no item of 3,083 over three tenants, nor of 961 on
-``jobs.sap.com``), while the page does on 8 of 9 tenants sampled 2026-09-22 — JSON-LD on classic
-pages, ``datePosted`` microdata or a "Posting Start Date:" label on CSB ones
-(:func:`_csb_posted_at`); ``basf.jobs`` is the exception. Serving the feed *instead* of readable
+``jobs.sap.com``), while the page does on 8 of 9 tenants sampled 2026-09-22 — ``datePosted``
+microdata or a "Posting Start Date:" label (:func:`_csb_posted_at`); ``basf.jobs`` is the
+exception. Serving the feed *instead* of readable
 pages (as #564 did) leaves ``posted_at=None`` on nearly every such Job, and ``update_meta`` then
 copies that over the indexed row's stored date. The listing surface above stays the sole authority
 on which ids exist; this only ever fills fields.
