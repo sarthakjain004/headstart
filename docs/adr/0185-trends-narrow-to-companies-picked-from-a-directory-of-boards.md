@@ -203,7 +203,8 @@ The third PR is the UI. Four user decisions shape it, and one changes the matche
   browser, since those partition a pick's tech openings exactly. Share is withdrawn under a
   top-level Company split, where each line is a whole company and reads 100%.
 - **The follow list is one option.** Followed companies are stored as Board keys, so an empty
-  query offers "Add the N companies you follow" rather than a list the page cannot name.
+  query offers "Add the companies you follow" rather than a list the page cannot name. It is
+  uncounted: two followed Boards of one employer are one company, which only the Space can see.
 - **No cap on picks.** Past eight, a Company split folds the rest into "Other", as categories do.
 
 Picks live in the hash (`#trends?company=…&by=…`), so a view can be shared and the "See trend"

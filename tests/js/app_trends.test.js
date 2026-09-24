@@ -97,11 +97,11 @@ function loadApp(fetchImpl) {
     + ' colorSlot: name => seriesColorAssignment.get(name), setUnit: setUnit,'
     + ' load: loadTrends,'
     + ' data: () => trendData,'
-    + ' picks: () => trendPicks, setPicks: p => { trendPicks = p; trendAutoStale = true; },'
-    + ' top: () => trendTop, selectSplit: trendSplitSelect, readHash: readTrendHash,'
+    + ' picks: () => trendPicks, setPicks: p => { trendPicks = p; topSplit.stale = true; },'
+    + ' top: () => topSplit.chosen, selectSplit: trendSplitSelect, readHash: readTrendHash,'
     + ' suggest: suggestCompanies, choose: chooseCo, options: () => coOptions,'
     + ' follow: boards => { myCompanies = { followed: boards, hidden: [] }; },'
-    + ' followed: followedOption, openTrend: openCompanyTrend,'
+    + ' followed: followedOption, openTrend: openCompanyTrend, chartedAndOther,'
     + ' set: (d, drill) => { trendData = d; trendDrill = drill || null; } };'
     // Repaints are counted at the global binding, which is what loadTrends' own `drawTrends()`
     // call resolves — so this counts the real paints, not a copy of them.
@@ -978,4 +978,40 @@ test('Share leaves a top-level Company split, where every line would read 100%',
   assert.notEqual(t.data().series[0].name, undefined);
   assert.equal(nodes['trends-unit-static'].hidden, false);
   assert.match(nodes['trends-unit-static'].textContent, /always 100%/);
+});
+
+test('picks keep the order they were added in, though the Space answers sorted by key', async () => {
+  const { t, ctx } = loadApp();
+  answering(ctx, picked({ a: [50, 60], b: [40, 45] },
+    [{ key: 'a:first', label: 'A' }, { key: 'z:last', label: 'Z' }, { key: 'm:canonical', label: 'M' }]));
+  t.setPicks([{ key: 'z:last', label: null }, { key: 'm:alias', label: null }, { key: 'a:first', label: null }]);
+  await t.load(null);
+  assert.deepEqual(t.picks().map(p => p.key), ['z:last', 'a:first', 'm:canonical'],
+    'a pick made by another Board of its company goes last, under the directory key');
+});
+
+test('a 503 for missing trend data keeps the picks and says trends did not load', async () => {
+  const { t, ctx, nodes } = loadApp();
+  const asked = answering(ctx, { error: 'no trend data yet' }, 503);
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
+  await t.load(null);
+  assert.equal(asked.length, 1, 'no retry into the same 503');
+  assert.equal(t.picks().length, 1);
+  assert.equal(nodes['trends-error'].hidden, false);
+});
+
+test('past eight picks, Company folds the rest into Other, a share of their own totals', async () => {
+  const { t, ctx } = loadApp();
+  const keys = Array.from({ length: 10 }, (_, i) => `greenhouse:c${i}`);
+  answering(ctx, { ...picked({}, keys.map(key => ({ key, label: key }))), split_by: 'company',
+    totals: [10000, 10000],
+    series: keys.map((key, i) => ({ name: key, label: key, points: [100 - i, 100 - i], latest: 100 - i })),
+    company_totals: Object.fromEntries(keys.map(key => [key, [200, 200]])) });
+  t.setPicks(keys.map(key => ({ key, label: key })));
+  await t.load('ai-ml');   // inside a drill, where Share stays on under Company
+  t.setUnit('share', false);
+  const { other } = t.chartedAndOther(t.data());
+  assert.match(other.label, /Other \(2 smaller companies\)/);
+  // c8 + c9 = 92 + 91 openings, over their own two totals of 200: 45.75%, not 183 of 10,000
+  assert.deepEqual(t.seriesValues(other), [45.75, 45.75]);
 });
