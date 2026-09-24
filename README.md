@@ -274,7 +274,7 @@ table in lockstep with the committed ledger:
 | --- | ---: | --- |
 | live rows in the ledger | 186,105 | a row, not a board — 6,632 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −25,488 | all of it `join` |
-| − `config.EXCLUDED_BOARDS` | −68 | vendor test/sandbox boards, confirmed by reading their postings |
+| − `config.EXCLUDED_BOARDS` | −68 | vendor test/sandbox/demo boards and one historical feed, confirmed by reading their postings |
 | − alias ledger | −448 | one board reached under a second hostname or label (ADR-0111, ADR-0182) |
 | − case-variant dedupe | −6,630 | `company/External` and `company/external` are one board (ADR-0023) |
 | − `config.PARKED_BOARDS` | −13 | real boards withheld for now — five for scrape cost, two for near-duplicate spam, six Jibe clients whose every posting is on a Workday or Oracle board already held |

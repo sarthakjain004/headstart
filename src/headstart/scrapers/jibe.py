@@ -69,7 +69,7 @@ import time
 import urllib.robotparser
 from datetime import datetime
 from typing import Any
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import urlencode, urljoin, urlsplit
 
 from headstart import http
 from headstart.models import Job, html_to_text, is_remote
@@ -83,6 +83,9 @@ PAGE_SIZE = 100
 #: Rows a single query can reach: Costco repeats one fixed page from page 51 on (at limit 100 and
 #: at limit 50), and UHS stops at 5,092 unique ids of 6,056.
 WINDOW = 5100
+#: curl's CURLE_COULDNT_RESOLVE_HOST: the client label has no A record, a departed client. Never
+#: retried.
+_NO_SUCH_HOST = 6
 #: Attempts per request, each paced by :data:`CRAWL_DELAY`. The shared ladder's backoff starts at
 #: 0.75 s, which would break the crawl delay on a retry, so this module retries on its own.
 _ATTEMPTS = 3
@@ -134,6 +137,11 @@ def robots_verdict(status: int | None, text: str, path: str, agent: str) -> str:
 # next run. The lock keeps one fetch in flight at a time across every Board of the process.
 _icims_verdicts: dict[str, str] = {}
 _icims_lock = threading.Lock()
+#: Seconds between two iCIMS robots.txt fetches from one process. Every tenant is its own host and
+#: is asked once, so this is courtesy to iCIMS's shared edge rather than a per-host crawl delay: no
+#: rate limit was found there at 15 req/s (`icims.py`), and one a second is far below it.
+_ICIMS_INTERVAL = 1.0
+_icims_last = float("-inf")
 
 
 def _pair(row: dict) -> tuple[str, str]:
@@ -238,11 +246,11 @@ class JibeScraper(BaseScraper):
         """This client host's robots.txt verdict on `path`, the file read on first use."""
         if self._robots is None:
             try:
-                response = self._send("GET", f"https://{self.host}/robots.txt", {})
+                response = self._send("GET", f"https://{self.host}/robots.txt")
                 self._robots = (response.status_code, response.text)
             except http.RequestsError as exc:
                 if (
-                    getattr(exc, "code", None) == 6
+                    getattr(exc, "code", None) == _NO_SUCH_HOST
                 ):  # no such client: fail as the departed Board
                     raise
                 self._robots = (None, "")
@@ -257,23 +265,23 @@ class JibeScraper(BaseScraper):
         """
         if urlsplit(url).hostname != self.host:
             return super()._fetch(method, url, **kwargs)
-        return self._send(method, url, kwargs)
+        return self._send(method, url, **kwargs)
 
-    def _send(self, method: str, url: str, kwargs: dict) -> Any:
+    def _send(self, method: str, url: str, **kwargs: Any) -> Any:
         """Paced: :data:`CRAWL_DELAY` after the last request to the client host, retries too —
         which is why the shared ladder (backoff from 0.75 s) is switched off. A redirect is followed
         only while it stays on the client host, so no request reaches a host whose robots.txt this
         Board has not read: 6 client board pages redirect off-host (an employer site, an SSO
-        login). robots.txt itself is the exception, as RFC 9309 asks."""
+        login). robots.txt itself is the exception, as RFC 9309 asks: its redirects are followed
+        up to five hops, onto any host and any path, and none of them is gated on robots.txt."""
         kwargs = {"timeout": 30, **kwargs, "attempts": 1, "allow_redirects": False}
         kwargs.setdefault("headers", {"User-Agent": USER_AGENT})
-        # RFC 9309 §2.3.1.2: robots.txt's own redirects are followed, up to five, onto any host.
         robots = urlsplit(url).path == "/robots.txt"
         response = None
         for attempt in range(_ATTEMPTS):
             for _hop in range(5):
                 path = urlsplit(url).path
-                if path != "/robots.txt" and self.robots_verdict_for(path) != ALLOW:
+                if not robots and self.robots_verdict_for(path) != ALLOW:
                     raise PermissionError(
                         f"{self.host}{path} is not allowed by robots.txt"
                     )
@@ -281,22 +289,18 @@ class JibeScraper(BaseScraper):
                 try:
                     response = super()._fetch(method, url, **kwargs)
                 except http.RequestsError as exc:
-                    # curl's 6 is "could not resolve host": a departed client, never retried.
-                    if getattr(exc, "code", None) == 6 or attempt == _ATTEMPTS - 1:
+                    if (
+                        getattr(exc, "code", None) == _NO_SUCH_HOST
+                        or attempt == _ATTEMPTS - 1
+                    ):
                         raise
                     response = None
                     break
                 if response.status_code in (301, 302, 303, 307, 308):
-                    location = response.headers.get("location") or ""
-                    target = urlsplit(location)
-                    if target.hostname not in (None, self.host):
-                        if not robots:
-                            return response
-                        url = location
-                        continue
-                    url = f"https://{self.host}{target.path}" + (
-                        f"?{target.query}" if target.query else ""
-                    )
+                    target = urljoin(url, response.headers.get("location") or "")
+                    if urlsplit(target).hostname != self.host and not robots:
+                        return response
+                    url = target
                     continue
                 break
             if response is not None and response.status_code not in http.TRANSIENT:
@@ -398,9 +402,15 @@ class JibeScraper(BaseScraper):
         return rows
 
     def _icims_readable(self, host: str) -> bool:
-        """Whether iCIMS's own scraper may read `host` — cached per process, one fetch at a time."""
+        """Whether iCIMS's own scraper may read `host` — cached per process, one fetch at a time,
+        each at least :data:`_ICIMS_INTERVAL` after the last."""
+        global _icims_last
         with _icims_lock:
             if host not in _icims_verdicts:
+                wait = _icims_last + _ICIMS_INTERVAL - time.monotonic()
+                if wait > 0:
+                    time.sleep(wait)
+                _icims_last = time.monotonic()
                 try:
                     response = self._fetch(
                         "GET",

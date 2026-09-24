@@ -1793,7 +1793,13 @@ def _jibe_get(url, follow=False):
     request reaches a host whose robots.txt was not read — except robots.txt's own (`follow`),
     which RFC 9309 asks a crawler to follow. "dns" when the label does not resolve."""
     try:
-        r = _fetch("GET", url, headers={"User-Agent": UA}, allow_redirects=follow)
+        r = _fetch(
+            "GET",
+            url,
+            headers={"User-Agent": UA},
+            allow_redirects=follow,
+            max_redirects=5,
+        )
     except http.RequestsError as e:
         if _is_dns(e):
             return "dns", ""
@@ -1806,8 +1812,10 @@ def _jibe_get(url, follow=False):
 
 
 def _jibe_has_no_a_record(hostname):
-    """True only when public resolvers agree `hostname` has no A record — an unknown Jibe label
-    answers NOERROR with an empty answer, not NXDOMAIN. A timeout is not an answer: False."""
+    """True when a public resolver — the first of 1.1.1.1 and 8.8.8.8 that answers at all — says
+    `hostname` has no A record: an unknown Jibe label answers NOERROR with an empty answer, not
+    NXDOMAIN, on both alike. Neither answering is not an answer: False, so the Board stays
+    UNKNOWN."""
     import dns.exception
     import dns.resolver
 
@@ -1834,19 +1842,15 @@ def p_jibe(t, u):
     # (requisition, language), so it can exceed the postings the scraper keeps. A 404 there is not
     # a departed client: 21 resolving labels answer it (dycom's board lives under `/dycom/`), so it
     # is UNKNOWN too. Measured 2026-09-24, docs/jibe/2026-09-24_api-jobs-measurement.md.
-    host = f"https://{SCRAPERS['jibe'](SCRAPERS['jibe'].slug_from(t, u)).host}"
+    hostname = _jibe.JibeScraper(_jibe.JibeScraper.slug_from(t, u)).host
+    host = f"https://{hostname}"
     status, body = _jibe_get(f"{host}/robots.txt", follow=True)
     if status == "dns":
         # Only a public resolver's "no A record" is dead: the macOS system resolver answered "no
         # such host" for live clients (uhs) under a 64-thread sweep on 2026-09-24.
-        return (
-            (DEAD, None)
-            if _jibe_has_no_a_record(urllib.parse.urlsplit(host).hostname)
-            else (
-                UNKNOWN,
-                None,
-            )
-        )
+        if _jibe_has_no_a_record(hostname):
+            return DEAD, None
+        return UNKNOWN, None
     verdict = _jibe.robots_verdict(status, body, _jibe.API_PATH, UA)
     if verdict != _jibe.ALLOW:
         _note(

@@ -237,6 +237,7 @@ def clock(monkeypatch):
     fake = _Clock()
     monkeypatch.setattr(jibe, "time", fake)
     monkeypatch.setattr(jibe, "_icims_verdicts", {})
+    monkeypatch.setattr(jibe, "_icims_last", float("-inf"))
     return fake
 
 
@@ -554,3 +555,41 @@ def test_a_robots_redirect_is_followed_even_off_host(clock):
     )
     assert scraper.fetch() == []  # the redirected file disallows everything
     assert any("example-parent.com/robots.txt" in url for _, url in fetcher.log)
+
+
+def test_a_robots_redirect_to_a_page_is_read_once_not_recursively(clock):
+    """A robots.txt that redirects to a homepage (on or off host) is read as that page — no rules,
+    so no restriction — in one chain of at most five hops, never by re-asking robots.txt."""
+    routes = _routes(
+        [_page([_row("3713")], 1)], icims={RM_TENANT: (200, ICIMS_DISALLOW)}
+    )
+    routes[("www.example-parent.com", "/")] = [
+        (200, "<html><title>Parent</title></html>")
+    ]
+    moved = SimpleNamespace(
+        status_code=301,
+        text="",
+        headers={"location": "https://www.example-parent.com/"},
+    )
+    scraper, fetcher = _scraper(routes, clock)
+    real = fetcher.fetch
+    fetcher.fetch = lambda m, url, **kw: (
+        moved
+        if url == "https://rmeducation.jibeapply.com/robots.txt"
+        else real(m, url, **kw)
+    )
+    assert [j.id for j in scraper.fetch()] == ["jibe:rmeducation:3713"]
+    assert sum(url == "https://www.example-parent.com/" for _, url in fetcher.log) == 1
+
+
+def test_icims_robots_fetches_are_spaced(clock):
+    """One process asks each backing tenant once, one at a time, a second apart."""
+    rows = [_row("3713"), _row("6496")]
+    routes = _routes(
+        [_page(rows, 2)],
+        icims={RM_TENANT: (200, ICIMS_DISALLOW), UHS_TENANT: (200, ICIMS_ALLOW)},
+    )
+    scraper, fetcher = _scraper(routes, clock)
+    scraper.fetch()
+    icims = [t for t, url in fetcher.log if ".icims.com/robots.txt" in url]
+    assert len(icims) == 2 and icims[1] - icims[0] >= jibe._ICIMS_INTERVAL
