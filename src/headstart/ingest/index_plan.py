@@ -41,9 +41,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from headstart import log
+from headstart import log, scrapable_boards
 from headstart.board_identity import board_key, board_of, lower_key
-from headstart.config import CompanyRef, load_active_companies
+from headstart.config import CompanyRef
 from headstart.corpus import iter_jobs
 from headstart.ingest.board_operator import tenant
 
@@ -414,7 +414,7 @@ def apply_sync(
 def live_keep_set(ledger_dir: str | Path) -> set[str]:
     """Board keys that should survive: every live ledger Board on an enabled ATS, each key exactly
     as its scraper's ``board_key()`` builds it — the real keys ids carry, which is what makes
-    prefix-matching them exact (ADR-0049). ``load_active_companies`` already drops dead Boards and
+    prefix-matching them exact (ADR-0049). ``scrapable_boards.load`` already drops dead Boards and
     ``DISABLED_ATS``; ``min_jobs=0`` keeps Scrapable Boards with no open postings.
 
     Kept in the ledger's **own casing**, not lowercased: :func:`plan_prune` matches Boards
@@ -422,7 +422,7 @@ def live_keep_set(ledger_dir: str | Path) -> set[str]:
     keep: set[str] = set()
     keyless: list[str] = []
     no_board_key = log.FirstOnly(_log)
-    for company in load_active_companies(ledger_dir, min_jobs=0):
+    for company in scrapable_boards.load(ledger_dir, min_jobs=0):
         try:
             keep.add(board_key(company))
         except Exception:  # noqa: BLE001 - a malformed ledger row shouldn't sink the whole set
@@ -440,7 +440,7 @@ def live_keep_set(ledger_dir: str | Path) -> set[str]:
             continue
     if len(keyless) > 1:
         # "Scrapable Board", the term `index prune`'s own keep-set line uses and the one
-        # `load_active_companies(min_jobs=0)` actually yields — CONTEXT.md §Counting Boards
+        # `scrapable_boards.load(min_jobs=0)` actually yields — CONTEXT.md §Counting Boards
         # binds each name to exactly one figure, and "live Boards" names none of them.
         _log.warning(
             f"keep-set: {len(keyless)} Scrapable Board(s) built no board_key and will prune as "
@@ -501,7 +501,7 @@ def boards_by_canon(keep: Iterable[str]) -> dict[str, str]:
     against.
 
     The lex-min tie-break is defensive, not the decision: a production ``keep`` already holds one
-    casing per Board, because ``live_keep_set`` reads the list ``config._dedupe_boards`` has
+    casing per Board, because ``live_keep_set`` reads the list ``scrapable_boards.load`` has
     collapsed — the same list the scrape works from, which is *why* the casing prune keeps is the
     casing a scrape emits. It matters only for a caller assembling ``keep`` some other way, where an
     arbitrary set order must not be able to change the plan.

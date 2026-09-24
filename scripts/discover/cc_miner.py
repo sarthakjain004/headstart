@@ -329,7 +329,7 @@ ATS_PATTERNS = {
         # `{host}/{site}/job/{...}`, so on a genuine two-letter site the wider pattern eats the
         # site and captures the path marker — `howard.../hu/job/...` went from `hu` to `job`
         # (dropped by BLOCK, so the Board became undiscoverable) and `browardcollege.../pt/details/...`
-        # minted a phantom Board `details`. `load_active_companies(min_jobs=0)` counts 100
+        # minted a phantom Board `details`. `scrapable_boards.load(min_jobs=0)` counts 100
         # Scrapable Boards with a two-letter Workday site, 7 of them an ISO-639-1 code. The cost
         # of staying narrow is that a bare `/es` survives as a junk row, which the liveness
         # checker settles as dead — one probe.

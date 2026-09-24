@@ -112,7 +112,7 @@ def test_remote_is_the_stated_workplace_type_and_hybrid_is_unknown():
 
 def test_employment_type_is_the_tenant_label():
     """`employment_type_text` is the display label of the `employment_type` code on all 13,419
-    rows; the label is what `employment_type.flags` reads ("Permanent - Full Time" is full-time,
+    rows; the label is what `employment_type_filter.flags` reads ("Permanent - Full Time" is full-time,
     "Fixed Term Contract" a contract), where the code (`permanent_full_time`) reaches no filter."""
     assert _jobs()[ENGINEER].employment_type == "Full Time"
 
