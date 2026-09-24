@@ -376,6 +376,9 @@ class TaleoEnterpriseScraper(BaseScraper):
                 listed.append(
                     {
                         "id": job_id,
+                        # The requisition number; unused by `parse`, read by
+                        # `eightfold_backing_boards.py` (ADR-0205).
+                        "contest_no": record.get("contestNo"),
                         "title": title,
                         "location": locations,
                         "department": _column(

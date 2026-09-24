@@ -63,7 +63,8 @@ _log = log.get(__name__, __spec__)
 #: 1 — the rules when the counter was added (ADR-0188): casing duplicates, redirect and
 #:     ``shared-reqs`` aliases. 2 — Taleo Enterprise ``subset-reqs`` aliases (ADR-0186).
 #: 3 — one row per Workday tenant and requisition, public sites first (ADR-0187).
-DEDUP_VERSION = 3
+#: 4 — Eightfold ``backing-reqs`` aliases onto the ATS Board behind the career site (ADR-0205).
+DEDUP_VERSION = 4
 
 
 @dataclass(frozen=True, slots=True)
