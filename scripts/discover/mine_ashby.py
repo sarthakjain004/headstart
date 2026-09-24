@@ -16,9 +16,8 @@ The Common-Crawl half has two transports, because the CDX *API* host bans an egr
 level under sweep load (`connect()` to index.commoncrawl.org:443 -> ECONNREFUSED while DNS still
 resolves, so TLS impersonation and challenge solvers are irrelevant). **data.commoncrawl.org, the
 S3 mirror of the same index files, is a different host and stays reachable** — so when the API is
-unreachable this falls back to binary-searching each crawl's sorted `cluster.idx` with range GETs
-and pulling only the `cdx-NNNNN.gz` blocks for this host. Set `ASHBY_CC_S3=1` to skip straight
-there once you know you are blocked. See docs/discovery/common-crawl-mining.md.
+unreachable this falls back to reading the index off that mirror (`cc_data_host.py`). Set
+`ASHBY_CC_S3=1` to skip straight there once you know you are blocked. See docs/discovery/common-crawl-mining.md.
 
 Both feeders are candidate-grade (historical, so full of dead Boards and URL noise); the slug is
 only real once `api.ashbyhq.com/posting-api/job-board/{slug}` answers 200. Validate with
@@ -38,7 +37,6 @@ Run:  python -u scripts/discover/mine_ashby.py            # both feeders
 """
 
 import csv
-import gzip
 import json
 import os
 import re
@@ -49,6 +47,7 @@ import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+import cc_data_host
 from curl_cffi import requests
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -213,126 +212,9 @@ def wayback(seen: set[str], done: set[str]) -> None:
 
 
 def _known_crawl_ids() -> list[str]:
-    """Crawl ids for the S3 fallback, when collinfo.json's host is blocked.
-
-    collinfo.json is authoritative and used whenever it is reachable; this is only the offline
-    substitute. Crawl ids are immutable historical facts, and a wrong guess is harmless — an id
-    that does not exist simply has no cluster.idx, so `_cc_blocks` returns nothing after one HEAD.
-    Unioned with whatever ids the local cc_miner checkpoint has already seen.
-    """
-    static = [
-        f"CC-MAIN-{y}-{w:02d}"
-        for y, weeks in (
-            (2022, (5, 21, 27, 33, 40, 49)),
-            (2023, (6, 14, 23, 40, 50)),
-            (2024, (10, 18, 22, 26, 30, 33, 38, 42, 46, 51)),
-            (2025, (5, 8, 13, 18, 21, 26, 30, 33, 38, 43, 47, 51)),
-            (2026, (4, 8, 12, 17, 21, 25)),
-        )
-        for w in weeks
-    ]
-    ckpt = ROOT / "data" / "discover" / "cc_miner_checkpoint.txt"
-    if ckpt.exists():
-        static += re.findall(r"CC-MAIN-\d{4}-\d{2}", ckpt.read_text(encoding="utf-8"))
-    return sorted({c for c in static if c >= CC_SINCE}, reverse=True)
-
-
-def _range(url: str, start: int, end: int) -> bytes | None:
-    """One HTTP Range GET (inclusive bounds). None on failure."""
-    for attempt in range(5):
-        try:
-            r = requests.get(
-                url,
-                timeout=90,
-                headers={"User-Agent": UA, "Range": f"bytes={start}-{end}"},
-            )
-            if r.status_code in (200, 206):
-                return r.content
-        except Exception:  # noqa: BLE001, S110
-            pass
-        time.sleep(min(3 * 2**attempt, 45))
-    return None
-
-
-def _seek_key(url: str, size: int, pos: int) -> tuple[int, bytes] | None:
-    """(offset, SURT key) of the first *complete* line at or after byte `pos`."""
-    chunk = _range(url, pos, min(pos + 16384, size - 1))
-    if not chunk:
-        return None
-    off = 0 if pos == 0 else chunk.find(b"\n") + 1
-    if off == 0 and pos != 0:
-        return None
-    line = chunk[off:].split(b"\n")[0]
-    return (pos + off, line.split(b" ", 1)[0]) if line else None
-
-
-def _cc_blocks(crawl_id: str, prefix: bytes) -> list[tuple[str, int, int]] | None:
-    """Locate the cdx blocks covering `prefix` by binary-searching the crawl's cluster.idx.
-
-    cluster.idx is a *sorted*, sparse map `SURT ts \\t cdx-NNNNN.gz \\t offset \\t length \\t n`
-    — one line per ~3000 index lines. It is ~100 MB, but sorted order means ~25 range GETs of
-    16 KB find the neighbourhood, and one 512 KB window then covers every line for the host.
-
-    Returns `None` when the *lookup itself* failed (no cluster.idx, or a range GET died), so the
-    caller can retry it later; `[]` only when the index genuinely holds nothing for the prefix.
-    Collapsing those two into `[]` marks a transient failure as permanently done — that is how
-    CC-MAIN-2024-51 came back "no blocks" despite having a 128 MB cluster.idx.
-    """
-    base = f"https://data.commoncrawl.org/cc-index/collections/{crawl_id}/indexes/"
-    idx = base + "cluster.idx"
-    try:
-        head = requests.head(idx, timeout=60, headers={"User-Agent": UA})
-        size = int(head.headers.get("content-length") or 0)
-    except Exception:  # noqa: BLE001
-        size = 0
-    if not size:
-        return None
-    lo, hi, best = 0, size - 1, 0
-    while lo <= hi:
-        mid = (lo + hi) // 2
-        got = _seek_key(idx, size, mid)
-        if got is None:
-            # A failed probe is NOT evidence that this offset sorts past the prefix. Folding it
-            # into the `hi = mid - 1` branch (as this first did) silently drags `best` below the
-            # true answer, and the window then never reaches the host — which is how CC-MAIN-2024-51
-            # reported "no captures" even though `com,ashbyhq,jobs)/photoroom/…` is demonstrably
-            # in its cluster.idx. Abort instead, and let the caller retry the whole crawl.
-            return None
-        start, key = got
-        if key < prefix:
-            lo, best = mid + 1, start
-        else:
-            hi = mid - 1
-    window = _range(idx, max(0, best - 1024), min(best + 524288, size - 1))
-    if not window:
-        return None
-    # cluster.idx is SPARSE — one line per ~3000 index lines — so the block holding our prefix
-    # normally *starts at a key below it*. Taking only lines whose key >= prefix therefore misses
-    # the block that actually contains the host, usually returning nothing at all. Carry the last
-    # sub-prefix line and emit it as soon as the range is reached or passed.
-    blocks: list[tuple[str, int, int]] = []
-    prev: tuple[str, int, int] | None = None
-    for line in window.split(b"\n"):
-        parts = line.split(b"\t")
-        if len(parts) < 4:
-            continue
-        key = parts[0].split(b" ", 1)[0]
-        try:
-            entry = (parts[1].decode(), int(parts[2]), int(parts[3]))
-        except ValueError:
-            continue
-        if key < prefix:
-            prev = entry
-            continue
-        if prev is not None:  # the block straddling the start of our range
-            blocks.append(prev)
-            prev = None
-        if not key.startswith(prefix):
-            break  # sorted, so the first key past the prefix ends the range
-        blocks.append(entry)
-    if prev is not None:  # prefix sorts past every line in the window
-        blocks.append(prev)
-    return blocks
+    """Crawl ids for the S3 fallback, when collinfo.json's host is blocked: the data host's own
+    crawl list, newest first, back to `CC_SINCE`."""
+    return cc_data_host.crawl_ids(CC_SINCE)
 
 
 def commoncrawl_s3(seen: set[str], done: set[str], crawls: list[dict]) -> None:
@@ -346,43 +228,27 @@ def commoncrawl_s3(seen: set[str], done: set[str], crawls: list[dict]) -> None:
     host is blocked. It is also cheaper: range GETs pull only the gzip blocks for one host
     instead of paging the whole result set.
     """
-    # One prefix for the whole domain: SURT sorts `com,ashbyhq,api)/` and `com,ashbyhq,jobs)/`
+    # One range for the whole domain: SURT sorts `com,ashbyhq,api)/` and `com,ashbyhq,jobs)/`
     # adjacently, so a single search+fetch covers both hosts instead of doing the work twice.
     for crawl in crawls:
         cid = crawl["id"]
         key0 = f"s3|{cid}|ashbyhq.com"
         if key0 in done:
             continue
-        blocks = _cc_blocks(cid, b"com,ashbyhq,")
-        if blocks is None:  # lookup failed — leave unmarked so a later run retries it
+        urls = cc_data_host.capture_urls(cid, "ashbyhq.com")
+        if urls is None:  # lookup failed — leave unmarked so a later run retries it
             print(f"  [cc-s3] {cid}: index lookup failed — retry next run", flush=True)
             continue
-        if not blocks:
+        if not urls:
             # Deliberately NOT marked done. An empty result is indistinguishable from a
             # mis-seeked search, and this miner has been wrong that way before — so an empty
             # crawl stays retryable rather than being frozen as "checked, nothing there".
             print(
-                f"  [cc-s3] {cid}: no blocks found — left unmarked for a later run",
+                f"  [cc-s3] {cid}: no captures found — left unmarked for a later run",
                 flush=True,
             )
             continue
-        base = f"https://data.commoncrawl.org/cc-index/collections/{cid}/indexes/"
-        found: set[str] = set()
-        ok = True
-        for fname, off, length in blocks:
-            time.sleep(CC_PACE)
-            raw = _range(base + fname, off, off + length - 1)
-            if raw is None:
-                ok = False
-                break
-            try:
-                text = gzip.decompress(raw).decode("utf-8", "replace")
-            except Exception:  # noqa: BLE001, S112
-                continue
-            found |= slugs_from(text)
-        if not ok:
-            print(f"  [cc-s3] {cid}: BLOCKED — retry next run", flush=True)
-            continue
+        found = slugs_from("\n".join(urls))
         with _lock:
             new = found - seen
             seen.update(new)
@@ -390,7 +256,7 @@ def commoncrawl_s3(seen: set[str], done: set[str], crawls: list[dict]) -> None:
                 append(new)
             mark(key0)
         print(
-            f"  [cc-s3] {cid}: {len(blocks)} blocks, +{len(new)} new (total {len(seen)})",
+            f"  [cc-s3] {cid}: {len(urls)} captures, +{len(new)} new (total {len(seen)})",
             flush=True,
         )
 

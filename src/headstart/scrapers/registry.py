@@ -28,6 +28,7 @@ from headstart.scrapers.meta import MetaScraper
 from headstart.scrapers.oracle import OracleScraper
 from headstart.scrapers.personio import PersonioScraper
 from headstart.scrapers.phenom import PhenomScraper
+from headstart.scrapers.pinpoint import PinpointScraper
 from headstart.scrapers.pyjamahr import PyjamaHRScraper
 from headstart.scrapers.recruitee import RecruiteeScraper
 from headstart.scrapers.ripplehire import RippleHireScraper
@@ -80,6 +81,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         BreezyScraper,
         ClearCompanyScraper,
         PhenomScraper,
+        PinpointScraper,
         PyjamaHRScraper,
         JazzHRScraper,
         JobviteScraper,

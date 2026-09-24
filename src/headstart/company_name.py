@@ -27,6 +27,7 @@ taleo_enterprise  four ``Careers``-wrappers (see below)              20% (30/150
 gem               ``Careers at {Name}`` / ``{Name} Careers``         63% (36/57)
 jobvite           ``{Name} Careers``                                 424 of 434
 phenom            ``Careers``-wrappers ending at ``|`` or ``:``       11 of 16 boards
+pinpoint          ``Jobs at {Name} | {Name} Careers``                 38 of 40
 ================  =================================================  =================
 
 **gem** is the lowest-yield row of the wrapper-matching ATSes, and the gap between "matches the
@@ -127,6 +128,11 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     # ("aainacareers.com") and one is a page label ("Careers at AiFA Labs"); the slug is the
     # floor this module promises, and every refusal here lands on it.
     "pyjamahr": (re.compile(r"^(?P<name>.+)$"),),
+    # pinpoint: every board titles itself "Jobs at {Name} | {Name} Careers" (40 of 40 sampled
+    # 2026-09-23). The name is read from the first clause, which ends at the pipe; the spacing
+    # before it varies ("Jobs at Reconomy  | Reconomy  Careers"). 38 of the 40 resolve; the two
+    # that do not ("elfc", "scandiweb") are titles that are the slug itself.
+    "pinpoint": (re.compile(r"^Jobs\s+at\s+(?P<name>.+?)\s*\|", re.IGNORECASE),),
     # phenom: `_CAREERS_WRAPPER` cannot be reused, because these titles carry a second clause
     # after a pipe or a colon ("Careers at Zelis | Zelis Jobs", "OmniCable Careers: Play to
     # Win") and its `$`-anchored non-greedy group would swallow the whole tail as the name.
@@ -225,6 +231,8 @@ _VENDOR_ALIASES: dict[str, frozenset[str]] = {
     # entry is not merely precautionary. `phenompeople` is the legacy brand the CDN and the dead
     # `*.phenompeople.com` host namespace still carry.
     "phenom": frozenset({"phenom", "phenompeople"}),
+    # The vendor hires on its own platform (`workwithus.pinpointhq.com`, "Jobs at Pinpoint").
+    "pinpoint": frozenset({"pinpoint", "pinpointhq"}),
     # The vendor hires on its own platform (`jobs.pyjamahr.com/pyjamahr`, title "PyjamaHR"), so
     # like phenom's this entry is reached by a real Board, not only by a failed render: that one
     # tenant keeps its slug, which reads the same.
