@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from typing import NamedTuple
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -190,10 +191,10 @@ def test_the_job_url_matches_the_declared_shape():
 def test_the_company_is_the_site_records_client_name_at_no_extra_request(monkeypatch):
     scraper, fetcher = _wired(monkeypatch, _fixture_route(_church_pages()))
     scraper.fetch_raw()
-    sent = len(fetcher.requests)
+    requests_before = len(fetcher.requests)
     scraper.resolve_company()
     assert scraper.company == FIXTURES["site_churchmutual"]["clientName"]
-    assert len(fetcher.requests) == sent  # no request of its own
+    assert len(fetcher.requests) == requests_before  # no request of its own
 
 
 def test_adp_itself_is_a_client_name_like_any_other():
@@ -209,39 +210,69 @@ def _json_response(status: int, body: object) -> FakeResponse:
     return FakeResponse(status, body if isinstance(body, str) else json.dumps(body))
 
 
-def _fixture_route(pages: dict, details: dict | None = None, too_big: int = 0) -> Route:
+_LISTING_PATH = "apply-custom-filters"
+_DETAIL_PATH = "/search-meta/"
+
+
+def _path_and_query(url: str) -> tuple[str, dict[str, str]]:
+    parts = urlsplit(url)
+    return parts.path, {
+        name: values[0] for name, values in parse_qs(parts.query).items()
+    }
+
+
+def _fixture_route(
+    pages: dict, details: dict | None = None, largest_accepted_page: int = 0
+) -> Route:
     """Answers the scraper's GETs from recorded fixtures by path and query.
 
     ``pages`` maps a `$skip` to its listing body and ``details`` a `reqId` to its detail body; a
-    detail not in ``details`` answers the closed posting's 400. ``too_big`` answers 502 for any
-    page asking more rows than it."""
+    detail not in ``details`` answers the closed posting's 400. A page asking more rows than
+    ``largest_accepted_page`` (when set) answers 502."""
     details = details or {}
 
     def route(method: str, url: str, kwargs: dict) -> FakeResponse:
-        parts = urlsplit(url)
-        query = {name: values[0] for name, values in parse_qs(parts.query).items()}
-        if "/career-site/" in parts.path:
+        path, query = _path_and_query(url)
+        if "/career-site/" in path:
             return _json_response(200, FIXTURES["site_churchmutual"])
-        if parts.path.endswith("apply-custom-filters"):
-            if too_big and int(query["$top"]) > too_big:
+        if _LISTING_PATH in path:
+            if largest_accepted_page and int(query["$top"]) > largest_accepted_page:
                 return _json_response(502, "<html>502 Bad Gateway</html>")
             return _json_response(200, pages[int(query["$skip"])])
-        req_id = parts.path.rsplit("/", 1)[1]
-        if req_id in details:
-            return _json_response(200, details[req_id])
+        requisition_id = path.rsplit("/", 1)[1]
+        if requisition_id in details:
+            return _json_response(200, details[requisition_id])
         return _json_response(400, FIXTURES["detail_closed"])
 
     return route
 
 
-def _sent(fetcher: FakeFetcher) -> list[tuple[str, dict, dict]]:
-    """Each request the scraper sent, as (path, query, headers)."""
-    sent = []
+class _SentRequest(NamedTuple):
+    path: str
+    query: dict[str, str]
+    headers: dict[str, str]
+    timeout: float | None
+
+
+def _sent_requests(fetcher: FakeFetcher, path_part: str) -> list[_SentRequest]:
+    """Each request the scraper sent whose path contains ``path_part``, in order."""
+    sent_requests = []
     for request in fetcher.requests:
-        parts = urlsplit(request.url)
-        query = {name: values[0] for name, values in parse_qs(parts.query).items()}
-        sent.append((parts.path, query, request.kwargs.get("headers") or {}))
-    return sent
+        path, query = _path_and_query(request.url)
+        if path_part in path:
+            sent_requests.append(
+                _SentRequest(
+                    path,
+                    query,
+                    request.kwargs.get("headers") or {},
+                    request.kwargs.get("timeout"),
+                )
+            )
+    return sent_requests
+
+
+def _listing_page_sizes(fetcher: FakeFetcher) -> list[str]:
+    return [sent.query["$top"] for sent in _sent_requests(fetcher, _LISTING_PATH)]
 
 
 def _church_pages() -> dict:
@@ -269,37 +300,27 @@ def test_the_walk_is_zero_based_until_the_stated_count_with_the_sites_token(
     scraper, fetcher = _wired(monkeypatch, _fixture_route(_church_pages()))
     raw = scraper.fetch_raw()
     assert [r["reqId"] for r in raw["rows"]] == [r["reqId"] for r in ROWS]
-    listing = [
-        sent for sent in _sent(fetcher) if sent[0].endswith("apply-custom-filters")
-    ]
-    assert [query["$skip"] for _, query, _ in listing] == ["0", "10"]
-    assert all(headers["myjobstoken"] == TOKEN for _, _, headers in listing)
-    assert "jobDescription" in listing[0][1]["$select"]
+    listing_requests = _sent_requests(fetcher, _LISTING_PATH)
+    assert [sent.query["$skip"] for sent in listing_requests] == ["0", "10"]
+    assert all(sent.headers["myjobstoken"] == TOKEN for sent in listing_requests)
+    assert "jobDescription" in listing_requests[0].query["$select"]
 
 
 def test_a_page_too_big_for_the_host_is_asked_again_smaller(monkeypatch):
     """A page past ~1 MB answers 502; the walk halves the page rather than retrying it, and
     asks the full page size again for the next page."""
     scraper, fetcher = _wired(
-        monkeypatch, _fixture_route(_church_pages(), too_big=10), page=20
+        monkeypatch, _fixture_route(_church_pages(), largest_accepted_page=10), page=20
     )
     raw = scraper.fetch_raw()
     assert len(raw["rows"]) == 19
     assert _listing_page_sizes(fetcher) == ["20", "10", "20", "10"]
 
 
-def _listing_page_sizes(fetcher: FakeFetcher) -> list[str]:
-    return [
-        query["$top"]
-        for path, query, _ in _sent(fetcher)
-        if path.endswith("apply-custom-filters")
-    ]
-
-
 def test_a_page_still_refused_at_the_floor_truncates_the_board(monkeypatch):
     """Halving stops at `_MIN_PAGE` (5): 10 -> 5, and a 5-row page still refused gives up."""
     scraper, fetcher = _wired(
-        monkeypatch, _fixture_route(_church_pages(), too_big=1), page=10
+        monkeypatch, _fixture_route(_church_pages(), largest_accepted_page=1), page=10
     )
     raw = scraper.fetch_raw()
     assert raw["rows"] == []
@@ -398,23 +419,15 @@ def test_the_tech_gate_picks_the_details_and_a_lost_one_ships_without_salary(
     scraper, fetcher = _wired(monkeypatch, route, async_fanout=async_fanout)
     scraper.have_details = frozenset()
     raw = scraper.fetch_raw()
-    detail_requests = [
-        (path, headers)
-        for path, _, headers in _sent(fetcher)
-        if "/search-meta/" in path
-    ]
-    asked = {path.rsplit("/", 1)[1] for path, _ in detail_requests}
+    detail_requests = _sent_requests(fetcher, _DETAIL_PATH)
+    asked = {sent.path.rsplit("/", 1)[1] for sent in detail_requests}
     assert (
         "5001222115706" in asked and "5001218033006" in asked
     )  # QA manager, network engineer
     assert "5001222163806" not in asked  # Customer Service Assistant
-    assert all(headers["myjobstoken"] == TOKEN for _, headers in detail_requests)
-    assert all(headers["Accept-Language"] == "en-US" for _, headers in detail_requests)
-    assert all(
-        request.kwargs["timeout"] == 60
-        for request in fetcher.requests
-        if "/search-meta/" in request.url
-    )
+    assert all(sent.headers["myjobstoken"] == TOKEN for sent in detail_requests)
+    assert all(sent.headers["Accept-Language"] == "en-US" for sent in detail_requests)
+    assert all(sent.timeout == 60 for sent in detail_requests)
     assert set(raw["details"]) == {"5001222115706"}
     jobs = {j.id.rsplit(":", 1)[1]: j for j in scraper.parse(raw, SCRAPED_AT)}
     assert len(jobs) == 19

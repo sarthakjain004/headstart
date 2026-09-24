@@ -90,6 +90,8 @@ _MAX_PAGES = 1000
 #: A 502 here is the page's size, not a flaky origin (module docstring), so it is answered by a
 #: smaller page rather than by the fetch seam's retries of the same one.
 _RETRY_ON = http.TRANSIENT - {502}
+#: Every request's timeout: the site record, the listing pages and the detail.
+_TIMEOUT = 60
 
 #: The customFieldGroup codes carrying pay, on the detail only.
 _COMPENSATION = "RTiReqExtended_compensationDetails"
@@ -250,7 +252,7 @@ class ADPRecruitingScraper(BaseScraper):
 
     def _json(self, url: str, token: str | None = None, **kwargs: Any) -> Any:
         response = self._fetch(
-            "GET", url, headers=request_headers(token), timeout=60, **kwargs
+            "GET", url, headers=request_headers(token), timeout=_TIMEOUT, **kwargs
         )
         response.raise_for_status()
         return json.loads(response.text)
@@ -339,12 +341,12 @@ class ADPRecruitingScraper(BaseScraper):
         return {"rows": rows, "details": details}
 
     def detail_request(self, row: dict) -> DetailRequest:
-        # The listing's token, headers and timeout (`_json`): the token names the site's posting
-        # channel, and `Accept-Language` is a filter (module docstring).
+        # The listing's token and headers: the token names the site's posting channel, and
+        # `Accept-Language` is a filter (module docstring).
         return DetailRequest(
             f"{_DETAIL}/{row['reqId']}",
             headers=request_headers(self._site_token),
-            timeout=60,
+            timeout=_TIMEOUT,
         )
 
     def read_detail(self, row: dict, response: Any) -> dict:
