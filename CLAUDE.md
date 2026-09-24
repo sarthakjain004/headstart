@@ -430,15 +430,14 @@ caught:
   by the raw ledger row.
 - **Stale casing duplicates** (found fixing #202/PR #226) — a prober-side casing-normalization
   change left the old-cased row behind instead of replacing it; 1,843 pairs in one ledger, one
-  root cause. `_dedupe_boards`'s lexicographic tie-break (`scrapable_boards.py`) usually papers
-  over this silently, but picks the **older** row whenever old and new disagree in ASCII order —
-  which matters when the two rows also disagree on *verdict*, not just casing: two boards stayed in
-  the active scrape list after the newer probe had already found them `dead`, because the stale
-  `live` row kept winning the tie-break. Diagnostic: for a ledger with real duplicate rows, check
-  whether the tie-break's survivor is the newest-verified data, not just count how many boards
-  survive dedup.
+  root cause. Until ADR-0219 the lexicographic tie-break let a stale `live` row keep a Board in
+  the scrape list after a newer probe found it `dead`. `scrapable_boards._elect` now drops a Board
+  with a `dead` row newer than its newest `live` row and fetches from the newest live row carrying
+  the key, but the key itself is still the lex-min spelling, so a stale casing row can still name
+  the Board. Diagnostic: for a ledger with real duplicate rows, check which row `_elect` fetches
+  from, not just how many Boards survive.
 
-None of these are caught by `_dedupe_boards()`/`_drop_parked` alone — that mechanism assumes
+None of these are caught by `_elect()`/`_drop_parked` alone — that mechanism assumes
 duplicate rows differ only cosmetically (casing, URL form) and always agree on which board they
 name and whether it's live. A raw `wc -l` or per-row count on a liveness CSV overstates board
 count by however many duplicates exist; go through `scrapable_boards.load()` (or an equivalent
