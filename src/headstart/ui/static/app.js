@@ -2348,8 +2348,9 @@ function signedOpenings(n){
 // plot draws these levels and every percentage is read off them, so the line and its number
 // can never disagree again: a round of critique found Google's line ending at 117 over a legend
 // reading −0.2%. With no pick there are no such steps, so the index chart is unchanged.
-// A step off zero (a pick at 0 whose first Board lands 40) has no ratio to scale by, so the
-// line starts at the step: what came before it was nothing counted, not a level to adjust.
+// A counting change to or from zero has no ratio to scale by, so the line starts after it:
+// what came before was nothing counted, not a level to adjust. (A found Board off zero is a
+// lift, not a ratio, so it keeps the line.)
 // Walking back, each earlier value maps through `v * scale + lift`: a counting change scales
 // the history by its ratio, openings found or joining lift it by their count.
 function netOfSteps(levels, s){
