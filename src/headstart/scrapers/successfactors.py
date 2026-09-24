@@ -69,6 +69,7 @@ from typing import Any
 from urllib.parse import unquote
 
 from headstart import http, log
+from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -132,8 +133,10 @@ class SuccessFactorsScraper(BaseScraper):
     # Where SAP parks a decommissioned RMK tenant (ADR-0111). Both spellings observed live.
     alias_vendor_hosts = frozenset({"www.sap.com", "sap.com"})
 
-    def __init__(self, slug: str, company: str | None = None) -> None:
-        super().__init__(slug, company)
+    def __init__(
+        self, slug: str, company: str | None = None, fetcher: Fetcher | None = None
+    ) -> None:
+        super().__init__(slug, company, fetcher)
         # The ledger only knows the host, so a missing display name derives from it.
         if self.company == self.slug:
             labels = self.slug.split(".")

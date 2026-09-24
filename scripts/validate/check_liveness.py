@@ -1280,6 +1280,10 @@ class _GatedFetcher:
             raise _BreakerOpen
         return r
 
+    def clear_cookies(self, domain=None):
+        """`_fetch` rides the pooled session, so its jar is the one to clear (ADR-0199)."""
+        http.DEFAULT_FETCHER.clear_cookies(domain)
+
 
 def p_cornerstone(t, u):
     """The Board's whole listing, read by the scraper's own walk (`CornerstoneScraper.listing`).

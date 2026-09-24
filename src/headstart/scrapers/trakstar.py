@@ -245,7 +245,7 @@ class TrakstarScraper(BaseScraper):
             # reachable and embeds its own description inline, so if it answers here, the
             # detail pass — DataDome-guarded, one request per card — would be pure waste
             # fetching pages whose Jobs we're about to discard in favor of the feed's.
-            feed_xml = _fetch_feed(self.slug, self.board_key())
+            feed_xml = self._fetch_feed()
             feed_items = _feed_items(feed_xml) if feed_xml is not None else None
             if feed_items is not None:
                 _log.info(
@@ -298,6 +298,28 @@ class TrakstarScraper(BaseScraper):
         postings = dict(zip(wanted, results))
         return {"html": html, "postings": postings}
 
+    def _fetch_feed(self) -> str | None:
+        """GET the tenant's RSS job feed through this scraper's fetcher, like the per-job detail
+        pages — though unlike them it isn't behind DataDome (confirmed live, 0 errors across 148
+        sampled boards, 2026-08-22). Returns ``None`` on any non-200 (most commonly a 404 — the
+        feed isn't offered for every tenant, confirmed: sleekr) so a caller treats it as "fall
+        back to the HTML+JSON-LD path". A 200 with an empty channel (confirmed: grassrootsvoter,
+        knowingtechnologies) is NOT this case — it's real feed text, still returned here; the "no
+        jobs" vs. "no feed" distinction is made one layer up, in :func:`_feed_items`/
+        ``fetch_via_feed``, never collapsed into a single ``None`` at this layer."""
+        try:
+            response = self._fetch(
+                "GET",
+                f"https://{self.slug}.hire.trakstar.com/jobfeeds/{self.slug}",
+                timeout=30,
+                headers={"User-Agent": USER_AGENT},
+            )
+        except http.RequestsError:
+            return None
+        if response.status_code != 200:
+            return None
+        return response.text
+
     def fetch_via_feed(self, scraped_at: str) -> list[Job] | None:
         """Separate, complete investigative entry point — one request to the tenant's RSS feed
         (``/jobfeeds/{slug}``) returns every job with its full description already inline, no
@@ -311,7 +333,7 @@ class TrakstarScraper(BaseScraper):
         A working feed reporting zero current openings is a real, different result — an empty
         list, not ``None`` — confirmed live: `grassrootsvoter`/`knowingtechnologies` are genuine
         200s with an empty ``<channel>``, not 404s like `sleekr`."""
-        xml_text = _fetch_feed(self.slug, self.board_key())
+        xml_text = self._fetch_feed()
         if xml_text is None:
             return None
         items = _feed_items(xml_text)
@@ -528,33 +550,6 @@ def _html_description(html: str) -> str | None:
     ``parse``) strips the markup and turns an empty match into None, so a present-but-blank
     container (a job with no real description body) still ends up None rather than ""."""
     return _isolate_div(html, _DESC_DIV)
-
-
-def _fetch_feed(slug: str, egress_board: str) -> str | None:
-    """GET the tenant's RSS job feed. Reached through plain ``http.fetch``, not ``curl_cffi``:
-    unlike the per-job detail pages, it isn't behind DataDome (confirmed live, 0 errors across
-    148 sampled boards, 2026-08-22). Returns ``None`` on any non-200 (most commonly a 404 — the
-    feed isn't offered for every tenant, confirmed: sleekr) so a caller treats it as "fall back
-    to the HTML+JSON-LD path". A 200 with an empty channel (confirmed: grassrootsvoter,
-    knowingtechnologies) is NOT this case — it's real feed text, still returned here; the "no
-    jobs" vs. "no feed" distinction is made one layer up, in :func:`_feed_items`/
-    ``fetch_via_feed``, never collapsed into a single ``None`` at this layer.
-
-    ``egress_board`` comes from the caller's own :meth:`BaseScraper.board_key` rather than being
-    rebuilt from ``slug`` here, so it can never drift from what ``board_key()`` actually returns."""
-    try:
-        response = http.fetch(
-            "GET",
-            f"https://{slug}.hire.trakstar.com/jobfeeds/{slug}",
-            timeout=30,
-            headers={"User-Agent": USER_AGENT},
-            egress_board=egress_board,
-        )
-    except http.RequestsError:
-        return None
-    if response.status_code != 200:
-        return None
-    return response.text
 
 
 def _feed_description(description_field: str) -> str | None:

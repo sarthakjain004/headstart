@@ -11,6 +11,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
@@ -24,8 +25,10 @@ class SenseHQScraper(BaseScraper):
     # ZERO indexed rows today — source-derived only, same caveat oracle's entry used to carry.
     url_shape = r"https://[\w-]+\.sensehq\.com/careers/jobs/\d+"
 
-    def __init__(self, slug: str, company: str | None = None) -> None:
-        super().__init__(slug, company)
+    def __init__(
+        self, slug: str, company: str | None = None, fetcher: Fetcher | None = None
+    ) -> None:
+        super().__init__(slug, company, fetcher)
         self._page = 0
 
     def url(self) -> str:

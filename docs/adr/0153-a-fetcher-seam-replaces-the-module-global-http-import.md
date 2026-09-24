@@ -6,6 +6,11 @@
 decided; this gives each of them a named seam to sit behind instead of being reached as a module
 global.
 
+**Amended by:** [ADR-0199](0199-the-fetcher-seam-reaches-every-scraper.md) — the seam now
+reaches every Scraper: `get_scraper` takes a `fetcher`, every `__init__` override passes it on,
+Workday's listing and Trakstar's feed ride it, and `Fetcher` gains `clear_cookies`. The
+"`registry.get_scraper` is unchanged" consequence below no longer holds.
+
 ## Context
 
 `BaseScraper.__init__(slug, company)` takes no fetcher parameter. Every scraper reaches HTTP

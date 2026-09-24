@@ -48,6 +48,7 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from headstart import fanout_stats, http, log, spare_egress
+from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import (
     USER_AGENT,
@@ -469,8 +470,10 @@ class WorkdayScraper(BaseScraper):
     _settled_5xx_streak = 0
     _detail_pass_broken = False
 
-    def __init__(self, slug: str, company: str | None = None) -> None:
-        super().__init__(slug, company)
+    def __init__(
+        self, slug: str, company: str | None = None, fetcher: Fetcher | None = None
+    ) -> None:
+        super().__init__(slug, company, fetcher)
         # The data center actually serving the tenant. None until resolved; overrides the URL's
         # ``wdN`` when the tenant has migrated (see :meth:`_resolve_instance`).
         self._instance: str | None = None
@@ -668,7 +671,7 @@ class WorkdayScraper(BaseScraper):
                 int(self.telemetry.get("listing_fetch_calls", 0)) + 1
             )
             try:
-                response = http.fetch(
+                response = self._fetcher.fetch(
                     "POST",
                     self.url(),
                     json=body,
@@ -700,7 +703,7 @@ class WorkdayScraper(BaseScraper):
             # measure is what a *persisting* 400 still does below, exactly as before the reset —
             # mid-crawl it raises into `_paginate`'s "page(s) failed mid-crawl (HTTP 400)" line;
             # on a slice's first page it raises out of `_exhaust` as a Board error. Both drop.
-            http.session().cookies.clear()
+            self._fetcher.clear_cookies()
             response = fetch()
         if response.status_code == 404:
             if not raise_gone:
@@ -783,7 +786,7 @@ class WorkdayScraper(BaseScraper):
                 int(self.telemetry.get("listing_fetch_calls", 0)) + 1
             )
             try:
-                response = await http.fetch_async(
+                response = await self._fetcher.fetch_async(
                     session,
                     "POST",
                     self.url(),
@@ -1023,7 +1026,7 @@ class WorkdayScraper(BaseScraper):
         if (
             response.status_code == 400
         ):  # a stale session cookie — see _COOKIE_RECOVERED
-            http.session().cookies.clear()
+            self._fetcher.clear_cookies()
             try:
                 response = self._fetch(
                     "GET",
