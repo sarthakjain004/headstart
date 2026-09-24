@@ -151,7 +151,7 @@ jobs:
         run: |
           python - <<'PY'
           import lancedb
-          from headstart.search import PROD_TABLE
+          from headstart.embedding_conventions import PROD_TABLE
           t = lancedb.connect("data/lancedb").open_table(PROD_TABLE)
           n = t.count_rows()
           assert n == 16, f"index has {n} rows, expected 16"
@@ -164,7 +164,7 @@ jobs:
         run: |
           cat > "$RUNNER_TEMP/stamps.py" <<'PY'
           import json, lancedb
-          from headstart.search import PROD_TABLE
+          from headstart.embedding_conventions import PROD_TABLE
           t = lancedb.connect("data/lancedb").open_table(PROD_TABLE)
           rows = t.search().limit(max(t.count_rows(), 1)).to_list()
           print(json.dumps({r["id"]: r["first_seen"] for r in rows}, sort_keys=True, indent=1))
@@ -226,7 +226,7 @@ jobs:
           python - <<'PY'
           import json, pathlib
           import lancedb
-          from headstart.search import PROD_TABLE
+          from headstart.embedding_conventions import PROD_TABLE
 
           boards = json.loads(pathlib.Path("data/scrape/boards.json").read_text())
           healthy, flaky = boards["healthy"], boards["flaky"]
@@ -314,7 +314,7 @@ jobs:
           python - <<'PY'
           import json, pathlib
           import lancedb
-          from headstart.search import PROD_TABLE
+          from headstart.embedding_conventions import PROD_TABLE
 
           boards = json.loads(pathlib.Path("data/scrape/boards.json").read_text())
           healthy, flaky = boards["healthy"], boards["flaky"]

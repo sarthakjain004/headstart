@@ -237,3 +237,12 @@ def test_absent_gap_ledger_leaves_the_slice_byte_identical():
     empty = pick_boards(companies, scores, 25, unsettled={}, rng=random.Random(42))
 
     assert [c.slug for c in before] == [c.slug for c in empty]
+
+
+def test_key_for_keeps_the_casing_its_scraper_builds():
+    """ADR-0192: a folded lookup would score Boards the verbatim one misses and change the slice."""
+    from headstart.board_priority import key_for
+
+    board = ScrapableBoard("workday", "https://Acme.wd1.myworkdayjobs.com/External")
+    assert key_for(board) == "workday:Acme/External"
+    assert key_for("workday:Acme/External") == "workday:Acme/External"

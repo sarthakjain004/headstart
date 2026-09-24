@@ -29,12 +29,12 @@ import json
 from pathlib import Path
 
 from headstart import log
+from headstart.embedding_conventions import DOC_PREFIX, MODEL
 from headstart.ingest import (
     PENDING_UPGRADES_PATH,
     REPO_ROOT,
     read_id_list,
 )
-from headstart.search import DOC_PREFIX, MODEL
 
 _log = log.get(__name__, __spec__)
 

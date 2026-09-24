@@ -4,7 +4,8 @@
 [ADR-0145](0145-the-value-gate-reads-the-measurement-that-kept-up.md) (the gate's numerator and
 denominator sit on different clocks: a Board that scrapes and returns nothing is absent from the
 priority snapshot, so its score is carried forever while its cost is rewritten every run — the
-collapse this gate is for is what blinded it to one) · **Date:** 2026-08-18 · **Relates to:**
+collapse this gate is for is what blinded it to one), and on 2026-09-24 (the floor moves from 15 to
+10 min, see the amendment at the end) · **Date:** 2026-08-18 · **Relates to:**
 [ADR-0022](0022-tech-priority-board-ordering.md),
 [ADR-0026](0026-parallelize-nightly-scrape.md),
 [ADR-0027](0027-measured-scrape-cost-ledger.md),
@@ -161,3 +162,34 @@ The honest alternatives, and why not now:
   that investigation is running separately and this ADR does not presume its answer.
 * **Fewer, monster-aware shards.** ~50% of paid fleet minutes are idle wait on the slowest shard.
   A cost problem, not a coverage one, so it ranks below both of the above.
+
+## Amendment, 2026-09-24: the floor is 10 minutes
+
+The 15-minute floor rested on a premise that no longer holds: *"below it a Board cannot threaten
+a 60 min makespan"*. On 2026-09-24 the 14 shards not held up by one Board finished in 8-10
+minutes (runs `35986858550`-`35998606646`), so any Board over ~10 minutes sets the scrape
+stage's wall clock by itself. Once `jibe:costco`'s cashiers left the tech count (TECH_FILTER_VERSION
+5, #622), the next such Board was `jibe:petsmart`: 760 s at a priority score of 2.8 (4 tech jobs on
+its last scrape), 0.22 a minute on the score the gate reads, and never judged because it cost under
+15 minutes.
+
+The threshold stays 2 tech jobs a minute; only the floor moves. It is still read off a gap. In
+`board_cost.csv` and `board_priority.csv` as of 2026-09-24, restricted to rows measured within the
+14-day re-check window:
+
+| measured cost | Boards | tech jobs / min |
+|---|---|---|
+| 10-15 min | 3 | `jibe:petsmart` 0.22, `teamtailor:waymaneducation-1710232669` 1.17 (parked by ADR-0136), `jibe:ulta` 1.49 |
+| 6-10 min | 4 | `oracle:hcbt` 26.4, `jibe:jcpenney` 3.3, `successfactors:careers.hcltech.com` 646, `smartrecruiters:SonsoftInc` 951 |
+
+On the score the gate reads, every Board between 10 and 15 minutes is under the threshold and every
+Board between 6 and 10 minutes is over it, so a 10-minute floor gates the first set and none of the
+second. **`jibe:ulta` is borderline, not cleanly under.** Jibe landed on 2026-09-23, so its EWMA
+score (15.4) is still warming toward its raw count: 22 tech jobs in 10.3 minutes is 2.13 a minute,
+just over the line. Gated now, it is out until its 14-day re-check, which judges it on a settled
+score. That is the same trade the gate made above 15 minutes, and it costs at most 22 tech jobs for
+two weeks.
+
+The floor tracks shard wall time, not a fixed truth. If the slice grows until shards again run
+close to their budget, it can rise again. The right test is the one above: which Boards sit
+between the old floor and the new one, and does the gap still separate them.

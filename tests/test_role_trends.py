@@ -28,9 +28,9 @@ from datetime import UTC
 import lancedb
 
 from headstart import roles, tech_filter
+from headstart.embedding_conventions import PROD_TABLE
 from headstart.ingest import index_plan, role_trends
 from headstart.ingest.doc_prep import DERIVATIONS_VERSION
-from headstart.search import PROD_TABLE
 
 _DIM = 4
 

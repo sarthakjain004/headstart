@@ -1046,7 +1046,7 @@ def _plan_measured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         f"greenhouse:{slug}": board_cost.BoardCost(0.5 + n / 10000, 12, today)
         for n, slug in enumerate(measured)
     }
-    # The value gate's own inputs: over 15 min of measured scrape (`_GATE_FLOOR_S`) for a score
+    # The value gate's own inputs: over 10 min of measured scrape (`_GATE_FLOOR_S`) for a score
     # that works out under 2 tech jobs a minute, and a measurement recent enough not to have
     # expired into a re-check.
     cost_rows.update(
@@ -2566,7 +2566,7 @@ CONTRACT: tuple[Line, ...] = (
         consumer="fanout_plan.VALUE_GATE",
         emitter=_SCRAPE_PLAN,
         body=(
-            "value gate: skipped 7 Board(s) costing over 15 min for under 2 tech jobs/min — "
+            "value gate: skipped 7 Board(s) costing over 10 min for under 2 tech jobs/min — "
             "greenhouse:gate-0 (0.03/min), greenhouse:gate-1 (0.03/min), "
             "greenhouse:gate-2 (0.03/min), greenhouse:gate-3 (0.04/min), "
             "greenhouse:gate-4 (0.04/min), greenhouse:gate-5 (0.04/min), "

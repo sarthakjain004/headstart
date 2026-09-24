@@ -20,8 +20,8 @@ import lancedb
 import numpy as np
 
 import headstart.ingest.embed_prune as ep
+from headstart.embedding_conventions import PROD_TABLE
 from headstart.ingest.index import write_base
-from headstart.search import PROD_TABLE
 
 _DIM = 4
 

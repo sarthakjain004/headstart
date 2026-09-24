@@ -42,6 +42,7 @@ from headstart import log
 from headstart.board_identity import board_of
 from headstart.board_priority import load_scores
 from headstart.corpus import iter_jobs
+from headstart.embedding_conventions import DOC_PREFIX, MODEL
 from headstart.ingest import REPO_ROOT, observability, shard_plan
 from headstart.ingest.doc_prep import (  # re-exported: doc-prep shared with the embed planner (ADR-0025)
     BUCKETS,
@@ -51,7 +52,6 @@ from headstart.ingest.doc_prep import (  # re-exported: doc-prep shared with the
     is_english,
     to_meta,
 )
-from headstart.search import DOC_PREFIX, MODEL
 
 _log = log.get(__name__, __spec__)
 
