@@ -24,7 +24,7 @@ dependencies = ["curl_cffi>=0.7", "requests>=2.32"]
 # and the Digest spreadsheet are otherwise covered nowhere automatic (ADR-0035). All three
 # are small and pure-Python. The index/schema and Subscription adapter checks also need their
 # runtime libraries; include these without pulling the transformer/torch stack into quality CI.
-dev = ["pytest", "ruff==0.16.6", "flask", "xlsxwriter", "openpyxl", "lancedb", "pyarrow", "huggingface_hub", "langdetect", "playwright", "tldextract>=5.1", "dnspython>=2.6", "certifi"]
+dev = ["pytest", "ruff==0.16.8", "flask", "xlsxwriter", "openpyxl", "lancedb", "pyarrow", "huggingface_hub", "langdetect", "playwright", "tldextract>=5.1", "dnspython>=2.6", "certifi"]
 # Local ATS discovery. PSL uses the package snapshot (no startup network fetch); browser
 # fallback uses an installed Chromium/Chrome and is opt-in via fingerprint_careers --deep.
 discovery = ["dnspython>=2.6", "tldextract>=5.1", "playwright>=1.40", "certifi"]
