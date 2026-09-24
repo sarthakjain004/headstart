@@ -7,7 +7,7 @@ from fake_fetcher import FakeFetcher, FakeResponse
 
 from headstart.scrapers.base import DetailLost
 from headstart.scrapers.registry import get_scraper
-from headstart.scrapers.zoho import THROTTLED, ZohoScraper
+from headstart.scrapers.zoho import _THROTTLE_LOSS, ZohoScraper
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 SCRAPED_AT = "2026-01-01T00:00:00+00:00"
@@ -398,4 +398,10 @@ def test_zoho_keeps_a_posting_behind_the_page_unavailable_shell() -> None:
     jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
 
     assert [j.title for j in jobs] == ["Open Role"]
-    assert scraper.detail_losses == {THROTTLED: 1}
+    assert scraper.detail_losses == {_THROTTLE_LOSS: 1}
+
+
+def test_zoho_labels_any_other_blobless_page_as_a_missing_jobs_blob() -> None:
+    """The fallback stays: a page with no record and neither shell is a shape that moved."""
+    with pytest.raises(DetailLost, match="no jobs blob on the page"):
+        ZohoScraper._detail_record_of("<html><body><p>something else</p></body></html>")

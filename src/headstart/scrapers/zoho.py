@@ -101,7 +101,7 @@ _UNAVAILABLE_VERDICTS = (
 #: and lifting within ~7 min. It says nothing about the posting, so the Job stays; the label keeps
 #: it apart from a page shape that moved, so a CI gap line can say whether it is the CI-only
 #: "no jobs blob" loss (``docs/zoho/2026-09-25_closed-posting-shells.md``).
-THROTTLED = "throttled: .com shell says page currently unavailable"
+_THROTTLE_LOSS = ".com throttle shell (page currently unavailable)"
 _THROTTLE_SHELL = "this page is currently unavailable."
 _DETAIL_WORKERS = (
     6  # detail pages are ~1.7MB each — bandwidth, not rate limits, is the constraint
@@ -287,7 +287,7 @@ class ZohoScraper(BaseScraper):
             if any(verdict in page for verdict in _UNAVAILABLE_VERDICTS):
                 raise _PostingClosed()
             if _THROTTLE_SHELL in page:
-                raise DetailLost(THROTTLED)
+                raise DetailLost(_THROTTLE_LOSS)
             raise DetailLost("no jobs blob on the page")
         try:
             records = json.loads(_js_unescape(m.group(1)))
