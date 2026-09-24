@@ -119,6 +119,57 @@ def test_taleo_enterprise_has_no_catch_all_unlike_lever():
     )
 
 
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        # the name part ends where a wrapper begins: the refusal reads the name, not the rest
+        ("SAM | Careers", "SAM"),
+        ("Intelligent Waves Apply", "Intelligent Waves"),
+        ("Karsun Solutions LLC Apply", "Karsun Solutions LLC"),
+        # "company" is a word in legal names; only a title that *is* the word is a page label
+        ("Factory Mutual Insurance Company", "Factory Mutual Insurance Company"),
+        ("Company", None),
+        # still refused: text naming a page rather than an employer
+        ("Reyes Holdings Talent Community Apply", None),
+        ("LLA Talent Community", None),
+        ("Careers Home Apply", None),
+        ("Home Apply", None),
+    ],
+)
+def test_jibe_titles(title, expected):
+    # client `/jobs` titles seen on the 2026-09-24 census
+    assert from_title("jibe", title, "demo") == expected
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        ("Job Listings at Peraton", "Peraton"),
+        (
+            (
+                "Find a Job - General Dynamics Mission Systems Job Listings at General "
+                "Dynamics Mission Systems"
+            ),
+            "General Dynamics Mission Systems",
+        ),
+        ("Job Openings at TekSynap", "TekSynap"),
+        ("Job Opportunities at Latham &amp; Watkins LLP", "Latham & Watkins LLP"),
+        # a lowercase "the" is the template's; a capitalised one is the name's
+        (
+            "Job Listings at the Law School Admission Council",
+            "Law School Admission Council",
+        ),
+        ("Job Listings at The Squires Group", "The Squires Group"),
+        ("Offerte di lavoro presso Merlin Entertainments", None),
+        ("Docusign Careers", None),
+        ("Job Listings", None),
+    ],
+)
+def test_icims_listing_titles(title, expected):
+    # `/jobs/search?ss=1&in_iframe=1` titles on 52 Boards, 2026-09-24
+    assert from_title("icims", title, "careers-demo.icims.com") == expected
+
+
 def test_keka_reads_the_wrapper_it_shares_with_eightfold():
     """Both titles are live keka boards, and neither shape was covered by any test.
 
@@ -697,3 +748,25 @@ def test_title_fallback_sources_take_the_field_path():
     assert from_field("eightfold", "Eightfold") is None
     assert from_field("pinpoint", "Pinpoint") is None
     assert from_field("lever", "Veeva Systems") == "Veeva Systems"
+
+
+def test_agreed_name_is_the_most_stated_name():
+    from headstart.company_name import agreed_name
+
+    assert (
+        agreed_name(["FM", None, "FM", "", "Factory Mutual Insurance Company"]) == "FM"
+    )
+    assert agreed_name([None, " "]) is None
+
+
+def test_agreed_name_refuses_a_board_whose_postings_disagree():
+    # reyesholdings (jibe, 2026-09-24): its subsidiaries, the largest on 43% of rows
+    from headstart.company_name import agreed_name
+
+    names = (
+        ["Reyes Beverage Group"] * 279
+        + ["Reyes Coca-Cola Bottling"] * 182
+        + ["Martin Brower"] * 137
+    )
+    assert agreed_name(names, 0.85) is None
+    assert agreed_name(["FM"] * 9 + ["Factory Mutual"], 0.85) == "FM"

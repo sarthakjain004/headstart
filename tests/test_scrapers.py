@@ -11175,6 +11175,14 @@ _RESOLVE_ROWS = [
         "https://7learnings.jobs.personio.de/?language=en",
     ),
     (
+        # The listing page, which iCIMS's template titles "Job Listings at {Name}".
+        "icims",
+        "careers-peraton.icims.com",
+        "Job Listings at Peraton",
+        "Peraton",
+        "https://careers-peraton.icims.com/jobs/search?ss=1&in_iframe=1",
+    ),
+    (
         # The client host's `/jobs` page; 200 of 1,116 clients title it "{Name} Careers".
         "jibe",
         "rmeducation",
