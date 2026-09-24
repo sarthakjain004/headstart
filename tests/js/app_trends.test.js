@@ -1574,3 +1574,15 @@ test('a found Board on a whole company line is lifted by its own size, keeping t
   // 200 were found; the other 10 that run were hiring and stay in (by the run's jump, 210).
   same(t.netOfSteps(acme.points, acme), [300, 300, 310, 310]);
 });
+
+
+test('duplicate removal is taken out of an Eightfold-only company too (Micron Technology)', () => {
+  const { t } = loadApp();
+  t.setPicks([{ key: 'eightfold:careers.micron.com', label: 'Micron Technology', boardKeys: ['eightfold:careers.micron.com'] }, BETA]);
+  t.set(companies([['eightfold:careers.micron.com', 'Micron Technology', [1887, 1887, 20, 20]], ['lever:beta', 'Beta', [100, 100, 80, 80]]],
+    { epochs: [{ ts: FOUR[2], changed: ['duplicate removal changed'], fields: ['dedup_version'] }] }));
+  t.setUnit('change', false);
+  const [micron, beta] = t.data().series;
+  same(t.seriesValues(micron), [100, 100, 100, 100]);
+  same(t.seriesValues(beta), [100, 100, 80, 80], 'one Board off Eightfold: its fall is its own');
+});

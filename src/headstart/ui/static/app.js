@@ -1884,8 +1884,10 @@ function drawVerdict(d){
 // as crossed: a change at the window's first point is already in every line's start.
 const LINE_MOVING = ['centroid_version', 'family_map_fingerprint', 'tech_filter_version'];
 const DEDUP_ATSES = ['taleo_enterprise', 'workday'];
-// Eightfold Boards are aliased onto the Board they mirror on another ATS (#632), so a pick
-// holding an Eightfold Board beside any other can step too.
+// Eightfold Boards are aliased onto, or have their rows dropped against, the Board they
+// mirror on another ATS (#632, #649), so any pick holding one can step. That includes a
+// directory entry that is only the Eightfold Board ("Micron Technology"): #649 drops almost
+// all of its rows on one run, which left in would read as the company collapsing.
 const MIRROR_ATS = 'eightfold';
 function stepNotes(d){
   const notes = [];
@@ -1896,7 +1898,7 @@ function stepNotes(d){
   const touched = trendPicks.filter(p => {
     const keys = p.boardKeys || [];
     return DEDUP_ATSES.some(a => keys.filter(k => k.startsWith(a + ':')).length > 1)
-      || (keys.length > 1 && keys.some(k => k.startsWith(MIRROR_ATS + ':')));
+      || keys.some(k => k.startsWith(MIRROR_ATS + ':'));
   }).map(p => p.key);
   (d.epochs || []).forEach(e => {
     const i = d.stamps.indexOf(e.ts); if (i < 0) return;
