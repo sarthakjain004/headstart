@@ -210,8 +210,8 @@ def _json_response(status: int, body: object) -> FakeResponse:
     return FakeResponse(status, body if isinstance(body, str) else json.dumps(body))
 
 
-_LISTING_PATH = "apply-custom-filters"
-_DETAIL_PATH = "/search-meta/"
+_LISTING_PATH_PART = "apply-custom-filters"
+_DETAIL_PATH_PART = "/search-meta/"
 
 
 def _path_and_query(url: str) -> tuple[str, dict[str, str]]:
@@ -222,22 +222,25 @@ def _path_and_query(url: str) -> tuple[str, dict[str, str]]:
 
 
 def _fixture_route(
-    pages: dict, details: dict | None = None, largest_accepted_page: int = 0
+    pages: dict, details: dict | None = None, largest_accepted_page: int | None = None
 ) -> Route:
     """Answers the scraper's GETs from recorded fixtures by path and query.
 
     ``pages`` maps a `$skip` to its listing body and ``details`` a `reqId` to its detail body; a
     detail not in ``details`` answers the closed posting's 400. A page asking more rows than
-    ``largest_accepted_page`` (when set) answers 502."""
+    ``largest_accepted_page``, when one is given, answers 502."""
     details = details or {}
 
     def route(method: str, url: str, kwargs: dict) -> FakeResponse:
         path, query = _path_and_query(url)
         if "/career-site/" in path:
             return _json_response(200, FIXTURES["site_churchmutual"])
-        if _LISTING_PATH in path:
-            if largest_accepted_page and int(query["$top"]) > largest_accepted_page:
-                return _json_response(502, "<html>502 Bad Gateway</html>")
+        if _LISTING_PATH_PART in path:
+            if (
+                largest_accepted_page is not None
+                and int(query["$top"]) > largest_accepted_page
+            ):
+                return FakeResponse(502, "<html>502 Bad Gateway</html>")
             return _json_response(200, pages[int(query["$skip"])])
         requisition_id = path.rsplit("/", 1)[1]
         if requisition_id in details:
@@ -272,7 +275,7 @@ def _sent_requests(fetcher: FakeFetcher, path_part: str) -> list[_SentRequest]:
 
 
 def _listing_page_sizes(fetcher: FakeFetcher) -> list[str]:
-    return [sent.query["$top"] for sent in _sent_requests(fetcher, _LISTING_PATH)]
+    return [sent.query["$top"] for sent in _sent_requests(fetcher, _LISTING_PATH_PART)]
 
 
 def _church_pages() -> dict:
@@ -283,14 +286,14 @@ def _church_pages() -> dict:
 
 
 def _wired(
-    monkeypatch, route: Route, page: int = 10, async_fanout: str = "0"
+    monkeypatch, route: Route, page: int = 10, async_fanout: bool = False
 ) -> tuple[ADPRecruitingScraper, FakeFetcher]:
     fetcher = FakeFetcher(route)
     scraper = get_scraper(
         "adp_recruiting", "churchmutual", "churchmutual", fetcher=fetcher
     )
     monkeypatch.setattr(adp_recruiting, "_PAGE", page)
-    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "1" if async_fanout else "0")
     return scraper, fetcher
 
 
@@ -300,7 +303,7 @@ def test_the_walk_is_zero_based_until_the_stated_count_with_the_sites_token(
     scraper, fetcher = _wired(monkeypatch, _fixture_route(_church_pages()))
     raw = scraper.fetch_raw()
     assert [r["reqId"] for r in raw["rows"]] == [r["reqId"] for r in ROWS]
-    listing_requests = _sent_requests(fetcher, _LISTING_PATH)
+    listing_requests = _sent_requests(fetcher, _LISTING_PATH_PART)
     assert [sent.query["$skip"] for sent in listing_requests] == ["0", "10"]
     assert all(sent.headers["myjobstoken"] == TOKEN for sent in listing_requests)
     assert "jobDescription" in listing_requests[0].query["$select"]
@@ -400,7 +403,7 @@ def test_a_posting_served_twice_across_pages_counts_once(monkeypatch):
     assert scraper.truncated is None
 
 
-@pytest.mark.parametrize("async_fanout", ["1", "0"], ids=["multiplexed", "threads"])
+@pytest.mark.parametrize("async_fanout", [True, False], ids=["multiplexed", "threads"])
 def test_the_tech_gate_picks_the_details_and_a_lost_one_ships_without_salary(
     monkeypatch, async_fanout
 ):
@@ -419,7 +422,7 @@ def test_the_tech_gate_picks_the_details_and_a_lost_one_ships_without_salary(
     scraper, fetcher = _wired(monkeypatch, route, async_fanout=async_fanout)
     scraper.have_details = frozenset()
     raw = scraper.fetch_raw()
-    detail_requests = _sent_requests(fetcher, _DETAIL_PATH)
+    detail_requests = _sent_requests(fetcher, _DETAIL_PATH_PART)
     asked = {sent.path.rsplit("/", 1)[1] for sent in detail_requests}
     assert (
         "5001222115706" in asked and "5001218033006" in asked
@@ -427,7 +430,9 @@ def test_the_tech_gate_picks_the_details_and_a_lost_one_ships_without_salary(
     assert "5001222163806" not in asked  # Customer Service Assistant
     assert all(sent.headers["myjobstoken"] == TOKEN for sent in detail_requests)
     assert all(sent.headers["Accept-Language"] == "en-US" for sent in detail_requests)
-    assert all(sent.timeout == 60 for sent in detail_requests)
+    assert all(
+        sent.timeout == adp_recruiting._TIMEOUT == 60 for sent in detail_requests
+    )
     assert set(raw["details"]) == {"5001222115706"}
     jobs = {j.id.rsplit(":", 1)[1]: j for j in scraper.parse(raw, SCRAPED_AT)}
     assert len(jobs) == 19

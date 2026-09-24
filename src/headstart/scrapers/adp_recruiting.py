@@ -234,8 +234,8 @@ class ADPRecruitingScraper(BaseScraper):
     # chrome with no posting.
     # The slug is `SLUG`; `reqId` is 13 digits on 77,242 of 77,242.
     url_shape = rf"https://myjobs\.adp\.com/{SLUG}/cx/job-details\?reqId=\d+"
-    #: The career site's token, which `fetch_raw` reads off the site record before the Detail
-    #: pass; every detail request carries it, as every listing page does.
+    #: The career site's token, which `read_site` keeps off the site record for the Detail pass
+    #: that follows; every detail request carries it, as every listing page does.
     _site_token: str | None = None
 
     @staticmethod
@@ -270,11 +270,12 @@ class ADPRecruitingScraper(BaseScraper):
         """The site record, every listing row, and the count the listing states.
 
         The record's `clientName` also becomes this Board's company here (`_adopt_client_name`),
-        since it arrives with the token and costs no request of its own. A record with no token
-        reads as no rows and a count of 0, noted as an unreadable Board."""
+        since it arrives with the token and costs no request of its own; the token is kept for
+        the Detail pass (`_site_token`). A record with no token reads as no rows and a count of
+        0, noted as an unreadable Board."""
         site = self._json(self.url())
         self._adopt_client_name(site.get("clientName"))
-        token = site.get("myJobsToken")
+        token = self._site_token = site.get("myJobsToken")
         if not token:
             self.note_unreadable_board("a site record with a myJobsToken", "none")
             return site, [], 0
@@ -326,8 +327,7 @@ class ADPRecruitingScraper(BaseScraper):
         return rows, total or 0
 
     def fetch_raw(self) -> Any:
-        site, rows, _ = self.read_site()
-        self._site_token = site.get("myJobsToken")
+        _, rows, _ = self.read_site()
         # Exact gate: `parse` reads the title and department off this same listing row and the
         # detail overrides neither (300 of 300 titles equal). The description store's skip is
         # declined: the detail is the only source of `salary` (module docstring).
