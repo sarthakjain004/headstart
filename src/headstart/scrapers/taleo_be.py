@@ -11,8 +11,9 @@ description and labelled metadata. That JSON-LD is not universally absent: measu
 2026-09-22 on 3 boards, NBF1199 rid=11231 carries it (description byte-identical to this
 scraper's own ``cwsJobDescription`` read, so it rescues nothing there) while CLINIPACE rid=8094
 and YKHC rid=18951 carry neither JSON-LD nor a readable ``cwsJobDescription`` anchor — a second
-layout this scraper does not yet handle. So JSON-LD is a redundant path where this scraper
-already works, not a free fix for the layout it doesn't.
+layout, read from its ``col-md-8`` column since 2026-09-25 (:func:`_description_html`). JSON-LD
+turns up on some pages of both layouts (INVXIS carries it) and not on others, so it is a path
+neither layout can rely on.
 """
 
 from __future__ import annotations
@@ -73,12 +74,24 @@ _COMPANY = re.compile(r"Company:\s*(?P<company>[^%<\r\n]+)", re.IGNORECASE)
 #:
 #: The fetch *succeeds* on these pages, so nothing raised and no cause was ever recorded —
 #: taleo_be was the only ATS with a five-figure loss and no ``detail loss causes:`` line at all.
-#: The 14th tenant (Caidya) is a second layout carrying no anchor. Its body is still lost — only
-#: the *reporting* changes: the caller now records a cause, so it is distinguishable from a posting
-#: that genuinely has no description, though not from one whose container we simply could not
-#: parse. A selector for that layout is follow-up work.
+#: The 14th tenant (Caidya) is the second layout, carrying no anchor; :func:`_description_html`
+#: reads it from its ``col-md-8`` column since 2026-09-25.
 _DETAIL_OPEN = re.compile(r'<div[^>]*\bname="cwsJobDescription"[^>]*>', re.IGNORECASE)
-_DIV_TAG = re.compile(r"<(?P<close>/?)div\b", re.IGNORECASE)
+_DIV_TAG = re.compile(r"<(?P<close>/?)div\b[^>]*>", re.IGNORECASE)
+#: The second layout's header column; its presence is what makes the ``col-md-8`` below a job's
+#: body rather than any Bootstrap page's main column.
+_SECOND_LAYOUT_HEADER = re.compile(
+    r'<div[^>]*class="well oracletaleocwsv2-job-description"[^>]*>', re.IGNORECASE
+)
+_SECOND_LAYOUT_BODY = re.compile(
+    r'<div[^>]*class="col-xs-12 col-sm-12 col-md-8"[^>]*>', re.IGNORECASE
+)
+_SECOND_LAYOUT_BUTTONS = re.compile(
+    r'<div[^>]*class="oracletaleocwsv2-button-navigation[^"]*"[^>]*>', re.IGNORECASE
+)
+_STYLE_OR_SCRIPT = re.compile(
+    r"<(style|script)\b.*?</\1\s*>", re.IGNORECASE | re.DOTALL
+)
 _LABEL = re.compile(
     r"<span[^>]*>\s*(?P<label>[^<]+?)\s*</span>\s*<strong>\s*(?P<value>.*?)\s*</strong>",
     re.DOTALL | re.IGNORECASE,
@@ -98,21 +111,43 @@ def _text(value: str | None) -> str | None:
 
 
 def _description_html(page: str) -> str | None:
-    """The raw HTML inside the ``name="cwsJobDescription"`` container, or None if absent.
+    """The raw HTML of the job's description, from whichever of the two live layouts the page is.
 
-    Depth-counts ``<div>``/``</div>`` from the anchor so the body ends at its *own* closing tag.
-    Returns None for the second live layout, which carries no anchor at all (YKHC, INVXIS) —
-    the caller records that as a cause rather than reporting an empty description.
+    The first carries a ``name="cwsJobDescription"`` container. The second (INVXIS, ORBIS,
+    COVESTIC2 and 13-17 Boards a run, measured 2026-09-25) carries none: a ``well`` header column
+    sits beside a ``col-md-8`` main column holding the description, its own Back / Share / Apply
+    buttons and, on some tenants, an inline ``<style>``. Both are cut by depth-counting
+    ``<div>``/``</div>``, so the body ends at its container's *own* closing tag. None when neither
+    container is on the page — the caller records that as a cause, not an empty description.
     """
+    # The first layout is tried first and returns even when unbalanced: its pages carry the
+    # second layout's markers too (STG_CITCO's anchor sits inside the same ``col-md-8``).
     opening = _DETAIL_OPEN.search(page)
-    if not opening:
+    if opening:
+        close = _div_close(page, opening.end())
+        return page[opening.end() : close.start()] if close else None
+    header = _SECOND_LAYOUT_HEADER.search(page)
+    column = header and _SECOND_LAYOUT_BODY.search(page, header.end())
+    if not column:
         return None
-    start = opening.end()
+    close = _div_close(page, column.end())
+    if close is None:
+        return None
+    body = _STYLE_OR_SCRIPT.sub("", page[column.end() : close.start()])
+    buttons = _SECOND_LAYOUT_BUTTONS.search(body)
+    bar_close = buttons and _div_close(body, buttons.end())
+    if bar_close:
+        body = body[: buttons.start()] + body[bar_close.end() :]
+    return body
+
+
+def _div_close(page: str, start: int) -> re.Match[str] | None:
+    """The ``</div>`` closing the ``<div>`` whose opening tag ends at ``start``, by depth count."""
     depth = 1
     for tag in _DIV_TAG.finditer(page, start):
         depth += -1 if tag.group("close") else 1
         if depth == 0:
-            return page[start : tag.start()]
+            return tag
     # Unbalanced markup: refuse rather than pollute. Running to the end of the page would put the
     # site footer and navigation into the job's description, and a description that is wrong is
     # worse for the embedding than one that is absent — the caller records a cause either way.
