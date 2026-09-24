@@ -260,7 +260,7 @@ No always-on server: scheduled GitHub Actions and a free-tier Space.
 A run does not scrape every board it could. The liveness ledger's headline number reduces through
 several filters before it reaches what a run can even consider — `registry.DISABLED_ATS`,
 vendor test/sandbox boards, aliases (one board serving two hostnames, or a career section whose
-every posting another section of its company already lists), case-variant duplicate spellings,
+every posting another section of the same tenant already lists), case-variant duplicate spellings,
 and a handful of real boards deliberately parked — most because their cost
 dwarfs their tech yield, two because what they serve is near-duplicate spam. `CONTEXT.md`'s
 §Counting Boards names each of these stages precisely, and `tests/test_board_counts.py` keeps this
@@ -271,7 +271,7 @@ table in lockstep with the committed ledger:
 | live rows in the ledger | 162,941 | a row, not a board — 6,632 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −25,488 | all of it `join` |
 | − `config.EXCLUDED_BOARDS` | −61 | vendor test/sandbox boards, confirmed by reading their postings |
-| − alias ledger | −765 | one board under a second hostname or label, or a career section another section of its company already covers (ADR-0111, ADR-0182, ADR-0186) |
+| − alias ledger | −765 | one board under a second hostname or label, or a career section another section of the same tenant already covers (ADR-0111, ADR-0182, ADR-0186) |
 | − case-variant dedupe | −6,630 | `company/External` and `company/external` are one board (ADR-0023) |
 | − `config.PARKED_BOARDS` | −7 | real boards withheld for now — five for scrape cost, two for near-duplicate spam |
 | = **Scrapable Board** | **129,990** | |

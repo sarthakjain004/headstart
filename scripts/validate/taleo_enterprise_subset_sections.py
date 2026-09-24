@@ -9,7 +9,7 @@ tenant's sections serve some or all of the tenant's requisitions under one tenan
 The signal is containment. A section whose full requisition set — every role, not only tech — is
 non-empty and contained in another live section's set of the same tenant (the section URL's host)
 is buried onto a maximal section, which lists every req the buried one does, so no req is lost and
-the kept section's own job URLs are the ones served. The rules, all in `bury`:
+the kept section's own job URLs are the ones served. The rules, all in `burials`:
 
 - **Chains collapse to the top.** A ⊂ B ⊂ C buries A and B onto C.
 - **Mirrors keep one**, the lowest section URL, so the same sets always elect the same section.
@@ -41,7 +41,7 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from headstart import board_aliases, liveness
+from headstart import board_aliases, http, liveness
 from headstart.config import EXCLUDED_BOARDS
 from headstart.scrapers.taleo_enterprise import TaleoEnterpriseScraper
 
@@ -52,7 +52,7 @@ SIGNAL = "subset-reqs"
 _WORKERS = 16
 
 
-def bury(sets: Mapping[str, Collection[str]]) -> dict[str, str]:
+def burials(sets: Mapping[str, Collection[str]]) -> dict[str, str]:
     """``{buried section: kept section}`` for every section another one of its tenant contains.
 
     ``sets`` maps a section's canonical URL to its full requisition ids. Pure, and deterministic in
@@ -62,35 +62,39 @@ def bury(sets: Mapping[str, Collection[str]]) -> dict[str, str]:
         if ids:
             tenants[urlsplit(section).hostname][section] = frozenset(ids)
     buried = {}
-    for reqs in tenants.values():
+    for sections in tenants.values():
         kept: dict[frozenset[str], str] = {}  # one elected section per maximal set
-        for section in sorted(reqs):
-            if not any(reqs[section] < other for other in reqs.values()):
-                kept.setdefault(reqs[section], section)
-        for section, own in reqs.items():
+        for section in sorted(sections):
+            if not any(sections[section] < other for other in sections.values()):
+                kept.setdefault(sections[section], section)
+        for section, own in sections.items():
             if kept.get(own) != section:
                 buried[section] = min(
-                    (k for r, k in kept.items() if own <= r),
-                    key=lambda k: (-len(reqs[k]), k),
+                    (keep for ids, keep in kept.items() if own <= ids),
+                    key=lambda keep: (-len(sections[keep]), keep),
                 )
     return buried
 
 
-def run(
+def write_ledger(
     ledger_dir: Path,
     reqs_of: Callable[[str], Collection[str]],
     checked_at: str,
 ) -> list[board_aliases.Alias]:
-    """Read every live, non-excluded section through ``reqs_of``, bury the subsets, and replace
-    the alias ledger beside ``ledger_dir`` with the result. A section whose read raises is left
-    out, so it is neither buried nor kept for anything else."""
+    """Read the section of every live, non-excluded row through ``reqs_of``, bury the subsets,
+    and replace the alias ledger beside ``ledger_dir`` with the result. A section whose read fails
+    (a request error, or a page the listing cannot parse) is left out, so it is neither buried nor
+    kept for anything else; any other exception is a bug and propagates."""
     live = {
         TaleoEnterpriseScraper.slug_from(v.tenant, v.url)
-        for v in liveness.load(Path(ledger_dir) / f"{ATS}.csv").values()
+        for v in liveness.load(ledger_dir / f"{ATS}.csv").values()
         if v.status == liveness.LIVE
     }
     sections = {s for s in live if f"{ATS}:{s}".lower() not in EXCLUDED_BOARDS}
-    print(f"{len(sections)} live sections to read", flush=True)
+    print(
+        f"{len(sections)} sections to read (live rows, less EXCLUDED_BOARDS)",
+        flush=True,
+    )
     sets: dict[str, Collection[str]] = {}
     with ThreadPoolExecutor(_WORKERS) as pool:
         futures = {pool.submit(reqs_of, s): s for s in sorted(sections)}
@@ -98,7 +102,7 @@ def run(
             section = futures[future]
             try:
                 sets[section] = future.result()
-            except Exception as exc:  # noqa: BLE001 - an unreadable section is never buried
+            except (http.RequestsError, ValueError) as exc:  # unreadable: never buried
                 print(
                     f"  [{n}/{len(futures)}] {section}: unreadable ({exc})", flush=True
                 )
@@ -109,7 +113,7 @@ def run(
             )
     aliases = [
         board_aliases.Alias(ATS, dup, keep, SIGNAL, keep, checked_at)
-        for dup, keep in sorted(bury(sets).items())
+        for dup, keep in sorted(burials(sets).items())
     ]
     board_aliases.write(board_aliases.path_for(ledger_dir, ATS), aliases)
     print(
@@ -128,7 +132,7 @@ def _reqs(section: str) -> set[str]:
 
 def main() -> None:
     today = datetime.now(UTC).date().isoformat()
-    for a in run(liveness.dir_for(ROOT), _reqs, today):
+    for a in write_ledger(liveness.dir_for(ROOT), _reqs, today):
         print(f"  bury {a.duplicate} -> {a.canonical}", flush=True)
 
 

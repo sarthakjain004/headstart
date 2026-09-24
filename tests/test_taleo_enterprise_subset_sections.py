@@ -1,6 +1,6 @@
 """Which Taleo Enterprise career sections are buried as a subset of another (ADR-0186).
 
-The script is `scripts/validate/taleo_enterprise_subset_sections.py`. Its election, `bury`, is
+The script is `scripts/validate/taleo_enterprise_subset_sections.py`. Its election, `burials`, is
 pure, so every rule is tested here without a network: a section is buried when its requisitions
 are a non-empty subset of another section of the same tenant, onto a maximal section.
 """
@@ -37,14 +37,14 @@ def test_mirrors_keep_one_section_whatever_order_they_arrive_in(mod):
     """HDR serves the same 2,282 reqs on 15 sections. One is kept, and the same one every time."""
     reqs = {"1", "2", "3"}
     sections = [f"{HDR}/ex", f"{HDR}/2", f"{HDR}/int"]
-    forward = mod.bury({s: reqs for s in sections})
-    backward = mod.bury({s: reqs for s in reversed(sections)})
+    forward = mod.burials({s: reqs for s in sections})
+    backward = mod.burials({s: reqs for s in reversed(sections)})
     assert forward == backward == {f"{HDR}/ex": f"{HDR}/2", f"{HDR}/int": f"{HDR}/2"}
 
 
 def test_a_chain_buries_every_link_onto_the_top_section(mod):
     """A ⊂ B ⊂ C buries A and B onto C — never A onto B, which is itself buried."""
-    buried = mod.bury(
+    buried = mod.burials(
         {
             f"{HDR}/a": {"1"},
             f"{HDR}/b": {"1", "2"},
@@ -58,12 +58,12 @@ def test_a_partial_overlap_keeps_both_sections(mod):
     """BAE's sections overlap without either containing the other (209 union vs 176 largest).
     Both stay; burying either would hide the reqs only it lists."""
     bae = "https://baesystems.taleo.net/careersection"
-    assert mod.bury({f"{bae}/us": {"1", "2"}, f"{bae}/uk": {"2", "3"}}) == {}
+    assert mod.burials({f"{bae}/us": {"1", "2"}, f"{bae}/uk": {"2", "3"}}) == {}
 
 
 def test_a_section_under_two_overlapping_sections_goes_to_the_larger(mod):
     bae = "https://baesystems.taleo.net/careersection"
-    buried = mod.bury(
+    buried = mod.burials(
         {
             f"{bae}/us": {"1", "2", "3"},
             f"{bae}/uk": {"2", "4"},
@@ -76,14 +76,16 @@ def test_a_section_under_two_overlapping_sections_goes_to_the_larger(mod):
 def test_an_empty_section_is_never_buried(mod):
     """The empty set is a subset of everything, so containment says nothing about it. A section
     with nothing open today may post a req no other section lists tomorrow."""
-    assert mod.bury({f"{HDR}/ex": {"1"}, f"{HDR}/campus": set()}) == {}
-    assert mod.bury({f"{HDR}/ex": set(), f"{HDR}/int": set()}) == {}
+    assert mod.burials({f"{HDR}/ex": {"1"}, f"{HDR}/campus": set()}) == {}
+    assert mod.burials({f"{HDR}/ex": set(), f"{HDR}/int": set()}) == {}
 
 
 def test_the_same_reqs_on_two_tenants_are_not_a_subset(mod):
     """A tenant is the section URL's host, and ids are only ever compared within one."""
     assert (
-        mod.bury({f"{HDR}/ex": {"1"}, "https://ttec.taleo.net/careersection/2": {"1"}})
+        mod.burials(
+            {f"{HDR}/ex": {"1"}, "https://ttec.taleo.net/careersection/2": {"1"}}
+        )
         == {}
     )
 
@@ -107,17 +109,19 @@ def test_a_buried_section_that_gains_its_own_req_is_unburied(mod, tmp_path):
 
     liveness = _ledger(tmp_path, {f"{HDR}/ex": "live", f"{HDR}/int": "live"})
     reqs = {f"{HDR}/ex": {"1", "2"}, f"{HDR}/int": {"1"}}
-    mod.run(liveness, reqs.get, "2026-09-24")
+    mod.write_ledger(liveness, reqs.get, "2026-09-24")
     assert board_aliases.load_for(liveness, "taleo_enterprise") == {
         f"{HDR}/int": f"{HDR}/ex"
     }
 
     reqs[f"{HDR}/int"] = {"1", "3"}  # int now lists a req ex does not
-    mod.run(liveness, reqs.get, "2026-09-25")
+    mod.write_ledger(liveness, reqs.get, "2026-09-25")
     assert board_aliases.load_for(liveness, "taleo_enterprise") == {}
 
 
-def test_only_live_sections_are_read_and_oracles_demo_tenant_is_not_one(mod, tmp_path):
+def test_only_sections_on_live_rows_are_read_and_oracles_demo_tenant_is_not(
+    mod, tmp_path
+):
     """`pmg` is Oracle's own demo tenant ("Director of Finance (DEMO)", "TEST 2 EPredix
     Assessment"), excluded in `config.EXCLUDED_BOARDS`. Its two sections mirror each other, so
     reading them would write an alias row for a Board that is never scraped anyway."""
@@ -137,5 +141,33 @@ def test_only_live_sections_are_read_and_oracles_demo_tenant_is_not_one(mod, tmp
         read.append(section)
         return {"1"}
 
-    assert mod.run(liveness, reqs_of, "2026-09-24") == []
+    assert mod.write_ledger(liveness, reqs_of, "2026-09-24") == []
     assert read == [f"{HDR}/ex"]
+
+
+def test_an_unreadable_section_is_neither_buried_nor_a_kept_section(mod, tmp_path):
+    """edmonton's shells served no `portalNo` in one run and did 3.5 h later. A section with no
+    known set is no evidence either way: it is not buried, and nothing is buried onto it."""
+    liveness = _ledger(
+        tmp_path, {f"{HDR}/all": "live", f"{HDR}/ex": "live", f"{HDR}/int": "live"}
+    )
+
+    def reqs_of(section):
+        if section.endswith("/all"):
+            raise ValueError("Career Section shell has no portalNo")
+        return {"1", "2"} if section.endswith("/ex") else {"1"}
+
+    aliases = mod.write_ledger(liveness, reqs_of, "2026-09-24")
+    assert {a.duplicate: a.canonical for a in aliases} == {f"{HDR}/int": f"{HDR}/ex"}
+
+
+def test_a_bug_in_the_read_is_not_taken_for_an_unreadable_section(mod, tmp_path):
+    """Only a failed request or a malformed page counts as unreadable. Anything else is a bug,
+    and filing it as one more unreadable section would hide it."""
+    liveness = _ledger(tmp_path, {f"{HDR}/ex": "live"})
+
+    def reqs_of(section):
+        raise KeyError("id")
+
+    with pytest.raises(KeyError):
+        mod.write_ledger(liveness, reqs_of, "2026-09-24")

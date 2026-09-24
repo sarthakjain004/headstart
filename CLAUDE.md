@@ -73,11 +73,12 @@ discovery landing (#576) moved five more. Board totals belong in README and CONT
   and refuses `--apply` for this ATS (ADR-0182).
 - **Taleo Enterprise: re-run `scripts/validate/taleo_enterprise_subset_sections.py` after every
   refresh of its ledger.** A tenant's career sections often list the same requisitions (HDR's 15
-  sections list the same 2,282), so a section whose reqs another section of the tenant already
-  lists is buried in `data/validate/aliases/taleo_enterprise.csv` (signal `subset-reqs`). Nothing
-  scrapes a buried section, so the script is the only thing that notices when one starts listing a
-  req of its own. It re-reads every buried section and rewrites the file; `dedupe_boards.py`
-  refuses `--apply` for this ATS (ADR-0186).
+  sections listed the same 2,282 on 2026-09-24), so a section whose reqs another section of the
+  tenant already lists is buried in `data/validate/aliases/taleo_enterprise.csv` (signal
+  `subset-reqs`). Nothing scrapes a buried section, so the script is the only thing that notices
+  when one starts listing a req of its own, or when the section it is buried onto dies. It re-reads
+  every buried section and rewrites the file; `dedupe_boards.py` refuses `--apply` for this ATS
+  (ADR-0186).
 - **SuccessFactors holds RMK sites only.** `p_successfactors` accepts any `<urlset>`, so a corporate
   site or a Radancy career front probes `live`, and the scraper reads it as 0 jobs or as page titles
   ("Working at TUI"). Before landing a host, confirm a `/job/` page from its sitemap (urlset, RSS or

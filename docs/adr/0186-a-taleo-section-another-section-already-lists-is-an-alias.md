@@ -63,16 +63,20 @@ the next run.
 
 **The gap:** a burial is bounded by how often the ledger is refreshed, not by wall-clock time.
 Nothing scrapes a buried section, so a req that only it lists stays hidden until someone re-runs
-the writer. A newly opened section is already bounded the same way: nothing finds it until the
-next ledger refresh.
+the writer. The same holds for a whole group if its kept section goes: a refresh that marks the
+kept section `dead` drops it from the scrape list, `load_active_companies` still drops the
+sections buried onto it, and the prober leaves their rows untouched, so the group's reqs leave
+the index until the writer runs and elects a new kept section from them. That is why the landing
+rule says to re-run after *every* refresh. A newly opened section is already bounded the same
+way: nothing finds it until the next ledger refresh.
 
 `pmg.taleo.net`, Oracle's own demo tenant ("Director of Finance (DEMO)", "TEST 2 EPredix
 Assessment", read 2026-09-24), is added to `config.EXCLUDED_BOARDS`, all four of its sections.
 
 ## Evidence
 
-Two full runs against the committed ledger on 2026-09-24, 3.5 h apart, over the 559 live sections
-(561 live rows less pmg's two):
+Two full runs against the committed ledger on 2026-09-24, 3.5 h apart, over the 559 sections its
+live rows name (561 rows less pmg's two):
 
 | | read | unreadable | buried | kept targets |
 | --- | ---: | ---: | ---: | ---: |
@@ -89,6 +93,17 @@ Two full runs against the committed ledger on 2026-09-24, 3.5 h apart, over the 
   `ex` was buried onto `dnac`. Every one of those 25 was on `dnac` by then: this was propagation lag
   between sections, not divergence. Had the second run's ledger been in force at 04:45, those 25
   would have been hidden for those hours.
+
+**A walk reads the same set every time, even when it is short of the stated total.** 390 of the
+557 sections read fewer unique ids than Taleo's own `totalCount` (the 340 multi-page ones read
+89.1% of it in total). Pages come back under their 25-row size with no id repeated (Daimler `ex`:
+446 over 20 pages against a stated 499), so the gap is rows Taleo counts but never lists, not
+pages lost. Twelve short, buried sections on twelve tenants were each read twice back to back:
+12 of 12 returned identical sets, among them `hdr/highway_bridges` (2,280 of 2,283),
+`hyatt/clearwater_internal` (3,230 of 3,333) and `aa308/ex_busop` (254 of 666). Twelve re-reads
+are evidence, not proof, but none showed a walk that was short by chance. A completeness check
+against `totalCount` would refuse 243 of the 318 burials for a count the listing never meets, so
+none is built.
 
 Projected onto served v654 (opened read-only), using the second run:
 
@@ -138,8 +153,12 @@ the first 10 reqs, which is why containment is computed on the full listing.
   edmonton 11, and 22 more across eight tenants. Reaching them needs a per-req rule rather than a
   per-section one.
 - **A failed read un-buries**: its section is not buried, and nothing is buried onto it. That
-  serves duplicates until the next run and never hides a req. Check a run's unreadable count
-  before committing its ledger.
+  serves duplicates until the next run and never hides a req. If the unreadable section was a kept
+  mirror, the rest of its mirrors elect the next-lowest URL for that run and move back on the next
+  clean one, which evicts and re-indexes that group's rows once each way. Check a run's unreadable
+  count before committing its ledger, and re-run if it is not near zero (29 of 559, then 2). A
+  buried section that has since died fails its read the same way and returns to the scrape list on
+  its stale `live` row until the prober next reaches it.
 - **A known cross-host duplicate this rule cannot see.** `pruitthealth.taleo.net` and
   `pruitthealthcareers.taleo.net` each have a section `2`, and both list the same 1,440 reqs
   (measured 2026-09-24). A tenant is one host, so this signal never compares them, and no redirect

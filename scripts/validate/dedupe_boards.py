@@ -109,10 +109,9 @@ def main() -> int:
             "probed. Run the full scan to apply."
         )
 
-    # The same trap from another side: an alias ledger this script did not write. ClearCompany's
-    # rows come from `clearcompany_shared_accounts.py` (signal `shared-reqs`, ADR-0182), Taleo
-    # Enterprise's from `taleo_enterprise_subset_sections.py` (signal `subset-reqs`, ADR-0186),
-    # and no redirect finds either, so an --apply here would replace every row with nothing.
+    # The same trap from another side: an alias ledger another script writes. No redirect finds
+    # its rows (`shared-reqs`, `subset-reqs`), so an --apply here would replace every one of them
+    # with nothing.
     written_elsewhere = {
         "clearcompany": "clearcompany_shared_accounts.py (ADR-0182)",
         "taleo_enterprise": "taleo_enterprise_subset_sections.py (ADR-0186)",
