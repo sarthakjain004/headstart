@@ -181,6 +181,15 @@ ATS_PATTERNS = {
         "kind": "label",
         "patterns": [r"([a-z0-9][a-z0-9-]*)\.(?:hrmdirect|clearcompany)\.com"],
     },
+    "cornerstone": {
+        # `{corp}.csod.com` also serves the vendor's LMS, so the pattern keeps only URLs on the
+        # recruiting career site (`/ux/ats/careersite/`); the label is `cornerstone.py`'s slug.
+        "targets": ["csod.com"],
+        "kind": "label",
+        "patterns": [
+            r"(?i)(?:^|//|%2f)([a-z0-9][a-z0-9-]*)\.csod\.com(?:/|%2f)ux(?:/|%2f)ats(?:/|%2f)careersite"
+        ],
+    },
     "darwinbox": {
         "targets": ["darwinbox.in", "darwinbox.com"],
         "kind": "label",

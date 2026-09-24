@@ -181,4 +181,5 @@ supersedes it and note the supersession in both.
 | [0179](0179-the-tech-filter-stays-english-and-its-trade-vetoes-stand-down-for-infrastructure.md) | The tech filter stays English, and its trade vetoes stand down for infrastructure | 2026-09-23 |
 | [0181](0181-a-breezy-board-is-one-verbose-json-listing.md) | A Breezy HR Board is one verbose JSON listing, and a bare `$` is named by country | 2026-09-23 |
 | [0182](0182-a-clearcompany-board-is-its-hrm-direct-feed.md) | A ClearCompany Board is its HRM Direct feed, not a clearcompany.com surface | 2026-09-23 |
+| [0183](0183-a-cornerstone-board-is-the-tenant-read-across-every-career-site.md) | A Cornerstone Board is the tenant, read across every career site | 2026-09-23 |
 | [0184](0184-a-pinpoint-board-is-read-from-its-listing-and-dated-from-its-page.md) | A Pinpoint Board is read from its listing and dated from its posting pages | 2026-09-23 |
