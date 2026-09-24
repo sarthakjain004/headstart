@@ -259,31 +259,29 @@ class OracleScraper(BaseScraper):
         # description and derived fields, but the Job itself is still listed and still
         # emitted, so the Board's list is whole (ADR-0053 is about the list, not the fields).
         details = self.run_detail_pass(
-            reqs,
-            key_of=lambda req: str(req["Id"]) if req.get("Id") else None,
+            [requisition for requisition in reqs if requisition.get("Id")],
+            key_of=lambda requisition: str(requisition["Id"]),
             what="detail payloads",
         )
         return {"requisitionList": reqs, "details": details}
 
-    def detail_request(self, req: dict) -> DetailRequest:
+    def detail_request(self, requisition: dict) -> DetailRequest:
         # `ById` with a *quoted* id, taken from the careers UI's own network calls — the
         # plausible-looking `findReqDetailById` returns HTTP 400. No `siteNumber`: it is ignored
         # here, and 454 cross-pod calls omitting it all returned the requisition.
-        if not req.get("Id"):
-            raise DetailLost("no requisition id")
         return DetailRequest(
             f"https://{self.slug}/hcmRestApi/resources/latest/"
-            f'recruitingCEJobRequisitionDetails?onlyData=true&expand=all&finder=ById;Id="{req["Id"]}"'
+            f'recruitingCEJobRequisitionDetails?onlyData=true&expand=all&finder=ById;Id="{requisition["Id"]}"'
         )
 
-    def read_detail(self, req: dict, response: Any) -> dict:
+    def read_detail(self, requisition: dict, response: Any) -> dict:
         """The one requisition in a detail response.
 
         An unknown id is **not** a 404 — it answers 200 with ``items: []`` — so an empty list is a
-        real outcome to fold into the detail-gap count, not an error to raise on. It is labelled
-        rather than merely counted, because a Board whose ids have all gone stale and a Board the
-        pod is refusing produce the same number of gaps and call for opposite responses
-        (:meth:`~BaseScraper.note_detail_loss`).
+        real outcome to fold into the detail-gap count, and it is raised as a named
+        :class:`DetailLost` rather than left to count as ``unlabelled``, because a Board whose ids
+        have all gone stale and a Board the pod is refusing produce the same number of gaps and
+        call for opposite responses.
         """
         items = json.loads(response.text).get("items") or []
         if not items:

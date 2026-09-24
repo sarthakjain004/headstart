@@ -288,6 +288,11 @@ class _FakeListing:
         )
 
 
+def _requisition_id_in(detail_url: str) -> str:
+    """The id a detail URL's `ById;Id="..."` finder asks for."""
+    return detail_url.rsplit('Id="', 1)[1].rstrip('"')
+
+
 def _paged(fake: _FakeListing) -> OracleScraper:
     """A scraper whose listing pages come from ``fake`` and whose every detail request finds no
     requisition — pagination, not the Detail pass, is what is under test here."""
@@ -415,7 +420,7 @@ def test_an_unknown_id_returns_none_rather_than_raising():
     answers_by_id = {"7": {"items": [{"Id": "7"}]}, "8": {"items": []}}
 
     def route(method: str, url: str, kwargs: dict) -> FakeResponse:
-        requisition_id = url.rsplit('Id="', 1)[1].rstrip('"')
+        requisition_id = _requisition_id_in(url)
         return FakeResponse(text=json.dumps(answers_by_id[requisition_id]))
 
     scraper = OracleScraper(
@@ -439,7 +444,7 @@ def test_fetch_raw_pairs_each_detail_with_its_requisition_on_either_transport(
     def route(method: str, url: str, kwargs: dict) -> FakeResponse:
         if "/recruitingCEJobRequisitions?" in url:
             return FakeResponse(text=json.dumps(_listing()))
-        requisition_id = url.rsplit('Id="', 1)[1].rstrip('"')
+        requisition_id = _requisition_id_in(url)
         return FakeResponse(text=json.dumps(detail_answers[requisition_id]))
 
     fetcher = FakeFetcher(route)
@@ -447,9 +452,11 @@ def test_fetch_raw_pairs_each_detail_with_its_requisition_on_either_transport(
     raw = scraper.fetch_raw()
 
     assert raw["details"] == _details()
-    detail_requests = [r for r in fetcher.requests if "Details?" in r.url]
-    assert {r.method for r in detail_requests} == {"GET"}
-    assert {r.kwargs["timeout"] for r in detail_requests} == {30}
+    detail_requests = [
+        request for request in fetcher.requests if "Details?" in request.url
+    ]
+    assert {request.method for request in detail_requests} == {"GET"}
+    assert {request.kwargs["timeout"] for request in detail_requests} == {30}
     assert scraper.detail_losses == {}
 
 

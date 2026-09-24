@@ -348,6 +348,12 @@ def test_a_repeated_row_is_not_served_twice(monkeypatch):
     assert [str(j["jobId"]) for j in scraper._listing()] == ["A", "B", "C"]
 
 
+def _recorded_detail_responses() -> dict[str, dict]:
+    """Each fixture posting's whole `jobDetail` response, keyed by its id."""
+    with open(FIXTURES / "phenom_details.json", encoding="utf-8") as fixture_file:
+        return json.load(fixture_file)
+
+
 def _serve_fixture_board(
     detail_answers: dict[str, dict],
 ) -> tuple[PhenomScraper, FakeFetcher]:
@@ -384,9 +390,7 @@ def test_the_detail_pass_posts_one_job_detail_body_per_posting_on_either_transpo
     """Both transports send the same request: a POST to `/widgets` with the `jobDetail` payload,
     the widget headers and the 45 s timeout the listing POST uses."""
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout_switch)
-    with open(FIXTURES / "phenom_details.json", encoding="utf-8") as fh:
-        detail_answers = json.load(fh)
-    scraper, fetcher = _serve_fixture_board(detail_answers)
+    scraper, fetcher = _serve_fixture_board(_recorded_detail_responses())
 
     raw = scraper.fetch_raw()
 
@@ -398,7 +402,7 @@ def test_the_detail_pass_posts_one_job_detail_body_per_posting_on_either_transpo
     for post in detail_posts:
         assert post.url == f"https://{HOST}/widgets"
         assert post.kwargs["headers"] == PhenomScraper._WIDGET_HEADERS
-        assert post.kwargs["timeout"] == 45
+        assert post.kwargs["timeout"] == PhenomScraper._WIDGET_TIMEOUT == 45
         assert post.kwargs["json"]["pageName"] == "job-details"
     assert scraper.detail_losses == {}
 
@@ -408,9 +412,7 @@ def test_a_held_description_is_not_fetched_again(monkeypatch):
     description the store holds is skipped rather than re-fetched. The tech gate is switched off
     so the skip alone decides what is fetched."""
     monkeypatch.setenv("HEADSTART_TECH_GATE", "0")
-    with open(FIXTURES / "phenom_details.json", encoding="utf-8") as fh:
-        detail_answers = json.load(fh)
-    scraper, fetcher = _serve_fixture_board(detail_answers)
+    scraper, fetcher = _serve_fixture_board(_recorded_detail_responses())
     scraper.have_details = {f"phenom:{HOST}:{ONSITE_ID}"}
 
     raw = scraper.fetch_raw()

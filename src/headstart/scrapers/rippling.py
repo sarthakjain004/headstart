@@ -125,20 +125,22 @@ class RipplingScraper(BaseScraper):
         # reads `Job.department` independently of this pre-detail gate) — a small board sample
         # finding no gate-level swing is expected, not evidence the fix does nothing.
         #
-        # One detail per posting, not one per location row — `parse` merges a posting's rows,
-        # whose `name` and `department` are the same, so gating after the merge asks the same
-        # question per posting.
-        postings = list({it.get("uuid"): it for it in items}.values())
+        # The gate runs over every location row, before the rows merge, and not through
+        # `run_detail_pass`'s own gate — which would ask only the one row the merge keeps.
+        wanted = self.tech_detail_wanted(
+            items, lambda row: row.get("name"), _department_of
+        )
+        # One detail per posting, not one per location row — `parse` merges a posting's rows.
+        postings = list({row.get("uuid"): row for row in wanted}.values())
         details = self.run_detail_pass(
             postings,
             key_of=lambda posting: posting.get("uuid") or None,
             what="details",
-            title_of=lambda posting: posting.get("name"),
-            department_of=_department_of,
         )
         # A failed or gated fetch leaves ``_detail`` {}.
-        for item in items:
-            item["_detail"] = details.get(item.get("uuid")) or {}
+        self.attach_details(
+            items, postings, [details.get(posting.get("uuid")) for posting in postings]
+        )
         return items
 
     def detail_request(self, posting: dict) -> DetailRequest:

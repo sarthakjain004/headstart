@@ -185,13 +185,14 @@ class PhenomScraper(BaseScraper):
     def _widgets_url(self) -> str:
         return f"https://{self.slug}/widgets"
 
-    #: The one set of headers both widget calls send. Declared once because the listing and the
-    #: detail request post to the same endpoint, and two copies of a header block drift.
+    #: The one set of headers and the one timeout both widget calls send. Declared once because
+    #: the listing and the detail request post to the same endpoint, and two copies drift.
     _WIDGET_HEADERS: ClassVar[dict[str, str]] = {
         "User-Agent": USER_AGENT,
         "Accept": "*/*",
         "Content-Type": "application/json",
     }
+    _WIDGET_TIMEOUT: ClassVar[int] = 45
 
     def _widgets(self, payload: dict[str, Any]) -> dict[str, Any]:
         response = self._fetch(
@@ -199,7 +200,7 @@ class PhenomScraper(BaseScraper):
             self._widgets_url(),
             json=payload,
             headers=self._WIDGET_HEADERS,
-            timeout=45,
+            timeout=self._WIDGET_TIMEOUT,
         )
         response.raise_for_status()
         return response.json() or {}
@@ -305,7 +306,7 @@ class PhenomScraper(BaseScraper):
             self._widgets_url(),
             method="POST",
             headers=self._WIDGET_HEADERS,
-            timeout=45,
+            timeout=self._WIDGET_TIMEOUT,
             options={"json": self._detail_payload(str(row["jobId"]))},
         )
 

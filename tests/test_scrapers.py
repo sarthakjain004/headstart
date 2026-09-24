@@ -4560,12 +4560,14 @@ def test_join_fetch_raw_keys_each_description_by_its_posting_id(
 
     assert raw["descriptions"] == {"11": "<p>Build.</p>"}
     assert scraper.detail_losses == {"no description on a 200": 1, "no job id": 1}
-    detail_requests = [r for r in fetcher.requests if "/api/public/jobs/" in r.url]
-    assert sorted(r.url for r in detail_requests) == [
+    detail_requests = [
+        request for request in fetcher.requests if "/api/public/jobs/" in request.url
+    ]
+    assert sorted(request.url for request in detail_requests) == [
         "https://join.com/api/public/jobs/11?locale=en",
         "https://join.com/api/public/jobs/12?locale=en",
     ]
-    assert {r.kwargs["headers"]["Accept"] for r in detail_requests} == {
+    assert {request.kwargs["headers"]["Accept"] for request in detail_requests} == {
         "application/json"
     }
     with_ids = {**raw, "items": raw["items"][:2]}  # `parse` needs an id to build a Job
