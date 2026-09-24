@@ -92,7 +92,8 @@ class RippleHireScraper(BaseScraper):
         """The careers URL again — its ``<title>`` opens with ``"{Name} Careers |"``.
 
         The same page `url` names, fetched a second time rather than threaded through the token
-        dance in `fetch_raw`; one request per Board, and it keeps the two concerns apart."""
+        dance in `fetch_raw`; one request per Board, and it keeps the two concerns apart. Asked
+        only when no detail record named the company first (:meth:`fetch_raw`)."""
         return self.url()
 
     def fetch_raw(self) -> Any:
@@ -166,6 +167,11 @@ class RippleHireScraper(BaseScraper):
             key_of=lambda listing_row: str(listing_row["jobSeq"]),
             what="descriptions",
         )
+        # Every detail record names the employer (`companyVO.companyName`, one value per Board),
+        # so a Board with any detail read needs no title GET for its name.
+        self.adopt_company(
+            next((r["_company"] for r in records.values() if r.get("_company")), None)
+        )
         for listing_row in need:
             # A missing detail record must not drop the Job: it ships on its listing fields.
             record = records.get(str(listing_row["jobSeq"])) or {}
@@ -196,9 +202,13 @@ class RippleHireScraper(BaseScraper):
         failed. A ``jobVO`` with no ``jobDesc`` is still kept — its other fields are real — and
         counted as the gap it is.
         """
-        record = response.json().get("jobVO") or None
+        payload = response.json()
+        record = payload.get("jobVO") or None
         if record is None:
             raise DetailLost("no jobVO on a 200")
+        # The response's sibling `companyVO` names the employer; kept beside the record for
+        # `fetch_raw`, which reads it once per Board.
+        record["_company"] = (payload.get("companyVO") or {}).get("companyName")
         if not record.get("jobDesc"):
             return DetailWithoutDescription(record, "no jobDesc on the record")
         return record

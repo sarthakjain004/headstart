@@ -62,10 +62,11 @@ at 32/64/128 both stayed all-200 with no latency blowup up to 122 req/s; the ful
 detail pass at concurrency 32 (~50 req/s sustained) was also all-200. `detail_workers` is set to
 16 — comfortably under everything measured clean, not the ceiling itself.
 
-`company_name.board_page`: not implemented. `/careers` renders no server-side `<title>` on every
-tenant sampled — a client-rendered SPA, like darwinbox and freshteam (see
-`headstart.company_name`'s module docstring for why those two are excluded the same way).
-`self.company` stays the slug, the documented fallback for an ATS with no title to read.
+**The company name is ``/careers/company-info``'s ``result.name``** (:meth:`BambooHRScraper.
+board_page`). `/careers` renders no server-side `<title>` — a client-rendered SPA — but the JSON
+that SPA loads its header from states the tenant's account name: 194 of 200 affected Boards
+(2026-09-24), e.g. `cintel` -> "Cintel Inc", `jcifederal` -> "Johnson Controls Federal Systems".
+One ~400-byte GET per Board; the rest keep their slug.
 
 `compensation` is free-text prose, not a structured min/max field — `'£28,090'`,
 `'$160,000 - $190,000 + based on experience'`, `'Negotiable'`, `'30-35 (DOE)'` (503 non-null
@@ -102,6 +103,7 @@ import json
 import re
 from typing import Any
 
+from headstart import company_name
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper, DetailLost, DetailRequest
 
@@ -183,6 +185,23 @@ class BambooHRScraper(BaseScraper):
 
     def job_url(self, native_id: str) -> str:
         return f"https://{self.slug}.bamboohr.com/careers/{native_id}"
+
+    def board_page(self) -> str:
+        """The careers SPA's own ``company-info`` JSON — not a page with a title (module
+        docstring), so :meth:`company_from_page` reads it."""
+        return f"https://{self.slug}.bamboohr.com/careers/company-info"
+
+    def company_from_page(self, page: str | None) -> str | None:
+        """``result.name`` of the ``company-info`` JSON, through this ATS's guards."""
+        try:
+            data = json.loads(page or "")
+        except json.JSONDecodeError:
+            return None
+        result = data.get("result") if isinstance(data, dict) else None
+        stated = result.get("name") if isinstance(result, dict) else None
+        return company_name.from_field(
+            self.ats, stated if isinstance(stated, str) else None
+        )
 
     def fetch_raw(self) -> Any:
         page = self._get()

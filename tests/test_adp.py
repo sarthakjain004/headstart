@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from headstart.scrapers.pacer import Pacer
 from headstart.scrapers.registry import get_scraper
 
 FIXTURES = json.loads(
@@ -248,7 +249,7 @@ def _wired(monkeypatch, slug: str, fake: _FakeADP):
 
     scraper = get_scraper("adp", slug, slug)
     monkeypatch.setattr(scraper, "_fetch", fake)
-    monkeypatch.setattr(scraper, "pacer", adp._Pacer(0.0))
+    monkeypatch.setattr(scraper, "pacer", Pacer(0.0))
     monkeypatch.setattr(adp, "_WINDOW_S", 0.0)
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
     return scraper
@@ -479,14 +480,13 @@ def test_the_pacer_is_one_budget_for_every_board_in_the_process(monkeypatch):
 def test_the_async_detail_path_draws_on_the_same_pacer(monkeypatch):
     """The detail pass is multiplexed by default; its requests must wait on the same slots the
     listing walk and every other Board use, or the async path spends a budget of its own."""
-    from headstart.scrapers import adp
 
     fake = _cox_fake()
     scraper = get_scraper("adp", COX, COX)
     monkeypatch.setattr(scraper, "_fetch", fake)
     monkeypatch.delenv("HEADSTART_ASYNC_FANOUT", raising=False)
     reserved: list[int] = []
-    pacer = adp._Pacer(0.0)
+    pacer = Pacer(0.0)
     real = pacer.reserve
 
     def counted():
@@ -541,12 +541,10 @@ def test_a_failed_name_lookup_leaves_the_slug(monkeypatch):
 def test_the_vendor_name_is_never_served_as_the_employer():
     from headstart import company_name
 
-    assert company_name.from_title("adp", "ADP", COX) is None
-    assert company_name.from_title("adp", "Automatic Data Processing", COX) is None
+    assert company_name.from_field("adp", "ADP") is None
+    assert company_name.from_field("adp", "Automatic Data Processing") is None
     # a real client's all-caps legal name, title-cased (ADR-0212)
-    assert (
-        company_name.from_title("adp", "2LIFE COMMUNITIES", COX) == "2Life Communities"
-    )
+    assert company_name.from_field("adp", "2LIFE COMMUNITIES") == "2Life Communities"
 
 
 def test_a_rate_limited_name_lookup_rests_the_pacer_once_and_keeps_the_slug(
@@ -570,9 +568,7 @@ def test_a_slot_claimed_before_a_rest_is_not_spent_inside_the_window():
     import threading
     import time
 
-    from headstart.scrapers import adp
-
-    pacer = adp._Pacer(0.05)
+    pacer = Pacer(0.05)
     pacer.reserve()  # someone else holds the current slot, so the next waiter queues 50 ms
     started = time.monotonic()
     woke: list[float] = []
@@ -653,9 +649,7 @@ def test_the_async_path_re_claims_a_slot_that_a_rest_overtook():
     import asyncio
     import time
 
-    from headstart.scrapers import adp
-
-    pacer = adp._Pacer(0.05)
+    pacer = Pacer(0.05)
     pacer.reserve()
 
     async def run() -> float:

@@ -60,8 +60,12 @@ Not on any surface, so never set: department, salary (75 of 924 ads end in a tem
 Salary 25,000.00 - 28,000.00" prose line, 45 of them "0.00 - 0.00" — the description extractor's
 business), employment type, experience. ``remote`` is the location text's: tenants write it into
 the city ("Deutscher Standort/Remote"). No page names the employer at Board level (no ``<title>``
-on 30 of 30 tenants; ``csod.context`` and ``careersites/{id}`` carry no name), so the company is
-the slug. No rate limit was found — up to 196 req/s on one tenant and 172 across 60, zero
+on 30 of 30 tenants; ``csod.context`` and ``careersites/{id}`` carry no name), but a posting's own
+page does, in its JSON-LD ``HiringOrganization.Name`` ("Turner Construction", "MACOM Technology
+Solutions Holdings, Inc."). It is set per career site, not per tenant — `turnerconstruction`
+states it on site 1 and not on sites 2-8 — so :meth:`CornerstoneScraper._read_company` reads one
+posting per site, lowest first, and stops at the first name. About half the Boards state none on
+any site and keep their slug (2026-09-24). No rate limit was found — up to 196 req/s on one tenant and 172 across 60, zero
 non-200s — and every host is User-Agent-agnostic.
 """
 
@@ -78,6 +82,7 @@ from typing import Any
 from headstart import http
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.job_posting_jsonld import find_job_posting
 
 _CONTEXT = re.compile(r"csod\.context=(\{.*?\});", re.DOTALL)
 #: The search's silent ceiling: 5,000 asked, 1,000 served.
@@ -328,6 +333,7 @@ class CornerstoneScraper(BaseScraper):
                 "a career-site page on site ids 1-3", "a redirect to /ui/error on each"
             )
             return {"postings": [], "ads": {}}
+        self._read_company(rows)
         # Ads only for what the tech filter will keep (exact here) and the description store
         # does not already hold (module docstring).
         wanted = [
@@ -346,6 +352,34 @@ class CornerstoneScraper(BaseScraper):
                 str(r["requisitionId"]): a for r, a in zip(wanted, ads) if a is not None
             },
         }
+
+    def _read_company(self, rows: list[dict]) -> None:
+        """Name the Board from one posting page per career site, lowest site first, stopping at
+        the first that states a ``HiringOrganization.Name`` (module docstring). At most one GET
+        per site, each one attempt that cannot wall the host; a failure moves on to the next
+        site, and none leaves the slug."""
+        if not self.wants_company_name():
+            return
+        first_per_site: dict[int, dict] = {}
+        for row in rows:
+            first_per_site.setdefault(row["_site"], row)
+        for site in sorted(first_per_site):
+            url = self.job_url(site, str(first_per_site[site]["requisitionId"]))
+            try:
+                response = self._fetch_once("GET", url)
+            except http.RequestsError:
+                continue
+            posting = (
+                find_job_posting(response.text) if response.status_code == 200 else None
+            )
+            # The keys are PascalCase on this ATS, unlike schema.org's own spelling.
+            organization = (posting or {}).get("HiringOrganization")
+            stated = (
+                organization.get("Name") if isinstance(organization, dict) else None
+            )
+            if isinstance(stated, str) and stated.strip():
+                self.adopt_company(stated)
+                return
 
     async def _ad_async(self, session: Any, row: dict) -> str | None:
         """The job ad's HTML ("" when the tenant left it empty), or None when it failed."""

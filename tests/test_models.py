@@ -1,4 +1,10 @@
-from headstart.models import Job, epoch_ms_to_iso, html_to_text, is_remote
+from headstart.models import (
+    Job,
+    epoch_ms_to_iso,
+    html_to_text,
+    is_remote,
+    repaired_mojibake,
+)
 
 
 def test_job_round_trips_to_dict():
@@ -118,3 +124,33 @@ def test_job_location_drops_tags_and_lists_lines():
     assert _job(location="  Pune,   India ").location == "Pune, India"
     assert _job(location=" <br> ").location is None
     assert _job(location="&lt;Remote&gt; &#x7c; UK").location == "<Remote> | UK"
+
+
+def test_job_repairs_utf8_read_as_latin1_in_its_display_text():
+    """zoho serves locations double-encoded at source ("San JosÃ©", 2026-09-24)."""
+    job = Job(
+        id="zoho:x:1",
+        ats="zoho",
+        company="CafÃ© Coffee Day",
+        title="IngÃ©nieur",
+        location="San JosÃ©, Costa Rica",
+        remote=None,
+        department=None,
+        url="https://x",
+        posted_at=None,
+        scraped_at="2026-09-24T00:00:00+00:00",
+    )
+    assert (job.company, job.title, job.location) == (
+        "Café Coffee Day",
+        "Ingénieur",
+        "San José, Costa Rica",
+    )
+
+
+def test_a_real_latin1_capital_a_tilde_is_left_alone():
+    """ "SÃO PAULO" is Portuguese, not mojibake: "Ã" before "O" is no UTF-8 sequence."""
+    assert repaired_mojibake("SÃO PAULO") == "SÃO PAULO"
+    assert repaired_mojibake("São Paulo") == "São Paulo"
+    # a string that cannot be Latin-1 at all was not produced by this defect
+    assert repaired_mojibake("cafÃ© â€™") == "cafÃ© â€™"
+    assert repaired_mojibake(None) is None

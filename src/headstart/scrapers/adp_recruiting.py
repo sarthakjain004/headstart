@@ -60,7 +60,7 @@ import re
 from typing import Any
 from urllib.parse import quote, urlencode
 
-from headstart import company_name, employment_type_filter, http
+from headstart import employment_type_filter, http
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import (
     USER_AGENT,
@@ -269,12 +269,12 @@ class ADPRecruitingScraper(BaseScraper):
     def read_site(self) -> tuple[dict, list[dict], int]:
         """The site record, every listing row, and the count the listing states.
 
-        The record's `clientName` also becomes this Board's company here (`_adopt_client_name`),
+        The record's `clientName` also becomes this Board's company here (`adopt_company`),
         since it arrives with the token and costs no request of its own; the token is kept for
         the Detail pass (`_site_token`). A record with no token reads as no rows and a count of
         0, noted as an unreadable Board."""
         site = self._json(self.url())
-        self._adopt_client_name(site.get("clientName"))
+        self.adopt_company(site.get("clientName"))
         token = self._site_token = site.get("myJobsToken")
         if not token:
             self.note_unreadable_board("a site record with a myJobsToken", "none")
@@ -356,18 +356,6 @@ class ADPRecruitingScraper(BaseScraper):
         if not found:
             raise DetailLost("no jobRequisitions on a 200")
         return found[0]
-
-    def _adopt_client_name(self, stated: str | None) -> None:
-        """The employer, from the site record's ``clientName`` — already fetched for the token,
-        so this costs no request, and `resolve_company` (no `board_page`) leaves it alone. Present
-        on 681 of 681 sites; it is ADP's client record, often the legal or parent entity
-        ("Seaboard Corporation" for `stfcareers`), where the record's ``name`` labels the site
-        ("External", "External Career Site"). A real name already on the Board is kept."""
-        if not company_name.looks_like_slug(self.company):
-            return
-        name = company_name.from_title(self.ats, stated, self.slug)
-        if name:
-            self.company = name
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         details = raw.get("details") or {}

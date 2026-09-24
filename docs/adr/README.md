@@ -211,6 +211,7 @@ supersedes it and note the supersession in both.
 | [0211](0211-held-descriptions-are-re-fetched-on-a-seven-day-rotation.md) | Held descriptions are re-fetched on a seven-day rotation | 2026-09-25 |
 | [0212](0212-a-board-is-named-by-a-curated-stated-or-humanised-name-never-its-slug.md) | A Board is named by a curated, stated or humanised name, never by its slug | 2026-09-25 |
 | [0216](0216-a-workday-board-is-named-by-its-postings-legal-entities.md) | A Workday Board is named by its postings' legal entities, checked against its own page | 2026-09-25 |
+| [0218](0218-an-inactive-trakstar-account-is-gone.md) | An inactive Trakstar account is gone | 2026-09-25 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

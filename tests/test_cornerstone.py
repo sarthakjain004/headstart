@@ -55,6 +55,8 @@ class _FakeCsod(FakeFetcher):
         self.home_status: dict[int, int] = {}
         self.fail_ads: set[str] = set()
         self.unauthorized_once: set[str] = set()
+        #: A posting page's HTML by "{site}/{requisition}"; any other answers 404.
+        self.posting_pages: dict[str, str] = {}
 
     def _answer(self, method: str, url: str, kwargs: dict[str, Any]) -> FakeResponse:
         parts = urlsplit(url)
@@ -67,6 +69,12 @@ class _FakeCsod(FakeFetcher):
             if status == 302:
                 return _csod_response(302, "", {"location": "/ui/error"})
             return _csod_response(200, self.board["home"])
+        m = re.fullmatch(r"/ux/ats/careersite/(\d+)/home/requisition/(\d+)", path)
+        if m:
+            page = self.posting_pages.get(f"{m.group(1)}/{m.group(2)}")
+            return (
+                _csod_response(404, "") if page is None else _csod_response(200, page)
+            )
         if hits := [k for k in self.unauthorized_once if k in url]:
             self.unauthorized_once.discard(hits[0])
             return _csod_response(401, "")
@@ -523,3 +531,60 @@ def test_resource_not_found_after_rows_were_read_fails_the_board():
     scraper = CornerstoneScraper("aak", fetcher=_GoneMidWalk(total=2345, served=2345))
     with pytest.raises(http.RequestsError, match="HTTP 404"):
         scraper.listing()
+
+
+def _posting_page(organization: str | None) -> str:
+    """A requisition page's JSON-LD as this ATS serves it: PascalCase keys (`cs_req.html`,
+    turnerconstruction, 2026-09-24)."""
+    posting = {"@context": "http://schema.org", "@type": "JobPosting", "Title": "x"}
+    if organization is not None:
+        posting["HiringOrganization"] = {"@type": "Organization", "Name": organization}
+    return f'<script type="application/ld+json">{json.dumps(posting)}</script>'
+
+
+def _posting_page_fetches(fake: _FakeCsod) -> list[str]:
+    return [url for url in fake.urls() if "/home/requisition/" in url]
+
+
+def test_the_company_is_the_first_career_site_whose_posting_names_one():
+    """The name is set per site — turnerconstruction states it on site 1 and not on 2-8 — so one
+    posting per site is read, lowest site first, until one names the employer."""
+    _, fake, scraper = _scrape(
+        "ama-assn",
+        posting_pages={
+            "2/4144": _posting_page(None),
+            "3/4152": _posting_page("American Medical Association"),
+        },
+    )
+    assert scraper.company == "American Medical Association"
+    assert _posting_page_fetches(fake) == [
+        "https://ama-assn.csod.com/ux/ats/careersite/2/home/requisition/4144?c=ama-assn",
+        "https://ama-assn.csod.com/ux/ats/careersite/3/home/requisition/4152?c=ama-assn",
+    ]
+
+
+def test_the_first_name_found_ends_the_company_read():
+    _, fake, scraper = _scrape(
+        "ama-assn",
+        posting_pages={
+            "2/4144": _posting_page("American Medical Association"),
+            "3/4152": _posting_page("Someone Else"),
+        },
+    )
+    assert scraper.company == "American Medical Association"
+    assert len(_posting_page_fetches(fake)) == 1
+
+
+def test_a_board_whose_postings_name_no_one_keeps_its_slug():
+    jobs, fake, scraper = _scrape("ama-assn")  # every posting page 404s
+    assert scraper.company == "ama-assn"
+    assert {j.company for j in jobs} == {"ama-assn"}
+    assert len(_posting_page_fetches(fake)) == 2, "one posting per site, no more"
+
+
+def test_a_board_that_already_has_a_name_reads_no_posting_page():
+    fake = _FakeCsod("ama-assn", _boards()["ama-assn"])
+    scraper = CornerstoneScraper("ama-assn", "AMA", fetcher=fake)
+    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+    assert {j.company for j in jobs} == {"AMA"}
+    assert _posting_page_fetches(fake) == []
