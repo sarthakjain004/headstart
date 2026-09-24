@@ -10,12 +10,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-// Deep equality that is strict on values but not on realms. app.js runs in a vm context, so its
-// arrays carry that context's prototypes and fail `deepStrictEqual` by prototype alone — while
-// the loose `deepEqual` the file used to use treats `[40, 40]` and `[null, null]` as equal on
-// Node 26, which let a wrong netting result pass locally and fail on CI.
-const same = (actual, expected, message) =>
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(actual)), expected, message);
+const same = require('./same_values');
 
 const APP_JS = path.join(__dirname, '..', '..', 'src', 'headstart', 'ui', 'static', 'app.js');
 

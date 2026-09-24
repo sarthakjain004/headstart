@@ -19,12 +19,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-// Deep equality that is strict on values but not on realms. app.js runs in a vm context, so its
-// arrays carry that context's prototypes and fail `deepStrictEqual` by prototype alone — while
-// the loose `deepEqual` the file used to use treats `[40, 40]` and `[null, null]` as equal on
-// Node 26, which let a wrong netting result pass locally and fail on CI.
-const same = (actual, expected, message) =>
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(actual)), expected, message);
+const same = require('./same_values');
 
 const APP_JS = path.join(__dirname, '..', '..', 'src', 'headstart', 'ui', 'static', 'app.js');
 
@@ -1461,19 +1456,22 @@ test('the mover floor is held to the openings a line really started with', () =>
   assert.match(row(nodes['trends-legend'].innerHTML, 'a'), /↑ \+1 opening</);
 });
 
-test('a counting change off zero starts the line there; found openings off zero lift it', () => {
+test('a counting change off zero starts the line there', () => {
   const { t } = loadApp();
   t.setPicks([ACME]);
   t.set({ ...picked({}), stamps: FOUR, series: [], discovered: [],
     epochs: [{ ts: FOUR[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
   // No ratio off zero, so nothing before the change is a level to adjust.
   same(t.netOfSteps([0, 0, 40, 40]), [null, null, 40, 40]);
-  const found = loadApp();
-  found.t.setPicks([ACME]);
-  found.t.set({ ...picked({}), stamps: FOUR, series: [], epochs: [],
+});
+
+test('found openings off zero lift the line', () => {
+  const { t } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({}), stamps: FOUR, series: [], epochs: [],
     discovered: [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 1, openings: 40 }] });
   // Found openings were open all along: the history is lifted by them.
-  same(found.t.netOfSteps([0, 0, 40, 42]), [40, 40, 40, 42]);
+  same(t.netOfSteps([0, 0, 40, 42]), [40, 40, 40, 42]);
 });
 
 test('a pick the ATS selection drops is told so, even under Comparable', () => {
