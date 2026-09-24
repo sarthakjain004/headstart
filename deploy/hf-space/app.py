@@ -22,7 +22,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import lancedb
-from flask import Flask, jsonify, render_template, request, session
+from flask import Flask, jsonify, redirect, render_template, request, session
 from huggingface_hub import snapshot_download
 
 import headstart  # only for headstart.__file__, to locate ui/ beside this package (ADR-0153)
@@ -334,8 +334,9 @@ app.config.update(
 
 # Paths that must answer signed out: the door itself, and the unsubscribe link every Digest
 # already delivered carries — a session wall must never break a mailed link. `/me` answers
-# from the caller's own cookie, so it can only tell you what you sent.
-_PUBLIC_PATHS = {"/", "/auth/google", "/me", "/unsubscribe"}
+# from the caller's own cookie, so it can only tell you what you sent. `/privacy` is the URL
+# Google's OAuth consent screen points strangers at before they have an Account.
+_PUBLIC_PATHS = {"/", "/auth/google", "/me", "/unsubscribe", "/privacy"}
 
 # The public repository, named once *for the Space*. Both trust surfaces (ADR-0112's door,
 # ADR-0113's Data tab) link into it, and "check it yourself" is the claim they both rest on,
@@ -1357,6 +1358,12 @@ def _fx_converts(currencies: list[str]) -> bool:
     """
     rates = (fx.table() or {}).get("rates") or {}
     return len([c for c in currencies if c in rates]) > 1
+
+
+@app.route("/privacy")
+def privacy():
+    """The privacy policy — one canonical copy, `PRIVACY.md` in the repository."""
+    return redirect(f"{_REPO}/blob/main/PRIVACY.md")
 
 
 @app.route("/")
