@@ -25,7 +25,7 @@ when, in `aliases`:
   `check_liveness`'s hand-frozen `_EIGHTFOLD_ALIAS_LOSERS`, which stays beside them (ADR-0205).
 
 The candidates are `BACKING`, the committed pairs file `data/validate/eightfold_backing.csv`
-(`headstart.eightfold_backing`, ADR-0206), found by content on served index v654 (2026-09-23):
+(`headstart.eightfold_backing`, ADR-0210), found by content on served index v654 (2026-09-23):
 pairs of Boards on two ATSes sharing exact descriptions. A new front enters by adding a row there.
 Lumen is left out by the user's decision (its backing site is an internal careers site), and so is
 International SOS (postings of its own). Every verdict is re-derived live on each run, including
@@ -88,7 +88,7 @@ RESIDUAL_SHARE = 0.01
 _WORKERS = 16
 
 #: Eightfold Board -> the Board keys (lowercased `board_key`) that list its postings: the
-#: committed pairs file, which `index sync`/`prune` read too (ADR-0206).
+#: committed pairs file, which `index sync`/`prune` read too (ADR-0210).
 BACKING: dict[str, tuple[str, ...]] = eightfold_backing.load()
 
 

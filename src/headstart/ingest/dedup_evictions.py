@@ -1,12 +1,12 @@
 """The dedup eviction ledger: which served rows a dedup rule took out, per run, Board and rule
-(ADR-0206).
+(ADR-0210).
 
     ts,board,count,rule
     2026-09-25T06:00:00+00:00,eightfold:jobs.nvidia.com,41,backing-requisition
 
 A dedup rule removes a row that was never a closure — the posting is still served, from another
 Board — yet the Trends chart counts it as one. ADR-0188's epoch marker could absorb that only when
-the removals land on the tick the rule changes, and ADR-0206's do not: they follow the
+the removals land on the tick the rule changes, and ADR-0210's do not: they follow the
 ``requisition`` stamps, which arrive as each Board is re-scraped. This ledger records every such
 removal where it happens, so a Trends reader can add them back exactly, whenever they land.
 

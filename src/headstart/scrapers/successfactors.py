@@ -102,7 +102,7 @@ _ATS_TOKEN = re.compile(r"^ATS_[A-Z0-9_]+$")
 _ITEMPROP_TITLE = re.compile(r'<[^>]*itemprop="title"[^>]*>([^<]*)')
 _OG_TITLE = re.compile(r'property="og:title"\s+content="([^"]*)"')
 #: The requisition every RMK job page states, then its locale: `"internalId":"41525-en_US"`. Only
-#: the id is kept, so a requisition's pages in two locales carry one id (ADR-0206). It rides the
+#: the id is kept, so a requisition's pages in two locales carry one id (ADR-0210). It rides the
 #: page the detail pass already fetches, so it costs no request. Measured 2026-09-24: 484 of 510
 #: pages across 27 Boards, classic and CSB-rendered alike; all 26 misses were one tenant's
 #: (careers.bsp.gov.ph), and one careers.dolby.com page omitted it for about a minute.

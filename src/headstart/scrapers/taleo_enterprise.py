@@ -382,7 +382,7 @@ class TaleoEnterpriseScraper(BaseScraper):
                     {
                         "id": job_id,
                         # The requisition number the recruiter sees: `parse` stores it, and
-                        # `eightfold_backing_boards.py` reads it (ADR-0205, ADR-0206).
+                        # `eightfold_backing_boards.py` reads it (ADR-0205, ADR-0210).
                         "contest_no": record.get("contestNo"),
                         "title": title,
                         "location": locations,
@@ -467,7 +467,7 @@ class TaleoEnterpriseScraper(BaseScraper):
                     salary=detail.get("salary"),
                     experience=detail.get("experience"),
                     # What an Eightfold site in front of this section states as `atsJobId`
-                    # (ADR-0206).
+                    # (ADR-0210).
                     requisition=requisition_of(item.get("contest_no")),
                 )
             )

@@ -630,7 +630,7 @@ def test_sync_refreshes_materialized_search_flags_with_their_sources(
 def test_a_requisition_reaches_a_row_indexed_before_the_column_existed(
     tmp_path, monkeypatch
 ):
-    """The fill path for `requisition` (ADR-0206): `update_meta` writes the re-scraped fact into
+    """The fill path for `requisition` (ADR-0210): `update_meta` writes the re-scraped fact into
     the store, and sync's metadata refresh carries it into a row the table already held — on a
     table frozen before the column existed. A row whose Board was not re-scraped keeps null."""
     ids = ["greenhouse:a:1"]
@@ -1019,8 +1019,70 @@ def _prune_args(tmp_path, monkeypatch):
         ledger=str(tmp_path / "liveness"),
         apply=True,
         limit=None,
+        board_failures=str(tmp_path / "board_failures.csv"),
         dedup_evictions=None,
     )
+
+
+def _prune_with_failures(tmp_path, monkeypatch, failures: str | None) -> set[str]:
+    """Prune a table holding one row per Board below, each Board in the keep-set, against a
+    consecutive-gone ledger (``None`` passes no ``--board-failures``); return the ids that
+    survive."""
+    _sync(
+        tmp_path,
+        monkeypatch,
+        [
+            "greenhouse:a:1",
+            "greenhouse:reconfirmed:1",
+            "greenhouse:reconfirmed:2",
+            "greenhouse:outage:1",
+            "greenhouse:flaky:1",
+        ],
+    )
+    args = _prune_args(tmp_path, monkeypatch)
+    floor = idx.live_keep_set
+    monkeypatch.setattr(
+        idx,
+        "live_keep_set",
+        lambda ledger: (
+            {"greenhouse:Reconfirmed", "greenhouse:outage", "greenhouse:flaky"}
+            | floor(ledger)
+        ),
+    )
+    if failures is None:
+        args.board_failures = None  # how `cleanup-index` runs it
+    else:
+        Path(args.board_failures).write_text(
+            "board,strikes,last_reason,last_seen_gone\n" + failures, encoding="utf-8"
+        )
+    assert idx.prune(args) == 0
+    return set(_rows(tmp_path))
+
+
+def test_prune_evicts_a_board_only_once_parole_reconfirms_it_gone(
+    tmp_path, monkeypatch
+):
+    """A quarantined Board is never scraped, so `sync` never evicts its rows, and its liveness row
+    still says live, so prune kept them: 910 quarantined Boards served 6,004 rows on 2026-09-24.
+    But a first-time quarantine (5 strikes) is not evidence enough — a zwayam outage quarantined
+    the whole provider at exactly 5 while its Boards stayed live (ADR-0170). Only a verdict parole
+    re-earned a week later (6+) evicts (ADR-0206), matched case-insensitively (ADR-0049)."""
+    gone = "HTTPError: HTTP Error 404: ,2026-09-23T17:47:04+00:00\n"
+    kept = _prune_with_failures(
+        tmp_path,
+        monkeypatch,
+        f"greenhouse:RECONFIRMED,6,{gone}"
+        f"greenhouse:outage,5,{gone}"
+        f"greenhouse:flaky,2,{gone}",
+    )
+    assert kept == {"greenhouse:a:1", "greenhouse:outage:1", "greenhouse:flaky:1"}
+
+
+def test_prune_without_a_failures_ledger_evicts_nothing_for_it(tmp_path, monkeypatch):
+    """`cleanup-index` passes no `--board-failures` and never fetches `data/state`: its prune must
+    keep every row, not fail and not evict."""
+    kept = _prune_with_failures(tmp_path, monkeypatch, None)
+    assert len(kept) == 5
 
 
 def test_prune_refuses_a_base_it_cannot_explain(tmp_path, monkeypatch):
@@ -1060,7 +1122,7 @@ _FRONT, _BEHIND = "eightfold:jobs.acme.com:1099", "workday:acme/Careers:R-100"
 
 
 def _pair_boards(monkeypatch):
-    """An Eightfold site in front of a Workday site (ADR-0206), both live."""
+    """An Eightfold site in front of a Workday site (ADR-0210), both live."""
     monkeypatch.setattr(
         idx.eightfold_backing,
         "load",
@@ -1101,7 +1163,7 @@ def test_prune_drops_the_eightfold_copy_once_both_rows_carry_the_requisition(
 def test_prune_records_each_dedup_eviction_under_its_rule_and_the_run_stamp(
     tmp_path, monkeypatch
 ):
-    """The dedup eviction ledger (ADR-0206): the Eightfold copy is recorded under its rule and
+    """The dedup eviction ledger (ADR-0210): the Eightfold copy is recorded under its rule and
     the run stamp `role_trends` will use; an off-Board row on a Board no alias ledger buries is an
     ordinary eviction and is not recorded."""
     dead = "greenhouse:gone:1"
@@ -1149,6 +1211,7 @@ def _prune_args_keeping_the_stub(tmp_path):
         ledger=str(tmp_path / "liveness"),
         apply=True,
         limit=None,
+        board_failures=None,
         dedup_evictions=None,
     )
 

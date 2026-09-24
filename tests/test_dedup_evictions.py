@@ -1,4 +1,4 @@
-"""The dedup eviction ledger (headstart.ingest.dedup_evictions, ADR-0206) and the one run
+"""The dedup eviction ledger (headstart.ingest.dedup_evictions, ADR-0210) and the one run
 timestamp it shares with the trends ledger (headstart.ingest.run_ts)."""
 
 from __future__ import annotations

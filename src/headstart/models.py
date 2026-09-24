@@ -29,7 +29,7 @@ class Job:
     experience: str | None = None  # e.g. "3-5 Years", "Mid-Senior level"
     employment_type: str | None = None  # e.g. "Full-time", "Intern", "Contract"
     salary: str | None = None
-    # The ATS's own requisition id as it states it (ADR-0206), filled only where a served row
+    # The ATS's own requisition id as it states it (ADR-0210), filled only where a served row
     # needs it to be matched across ATSes: an Eightfold career site's posting names its backing
     # Board's requisition, and a row on that Board carries the same id. None everywhere else.
     requisition: str | None = None
@@ -52,7 +52,7 @@ def requisition_of(value: Any) -> str | None:
     """A stated requisition id as ``Job.requisition`` stores it: text, trimmed, None when absent.
 
     ATSes state one as a number (Greenhouse's ``internal_job_id``) or a string (Workday's
-    ``R-100``), and two rows match only on equal strings (ADR-0206)."""
+    ``R-100``), and two rows match only on equal strings (ADR-0210)."""
     text = "" if value is None else str(value).strip()
     return text or None
 

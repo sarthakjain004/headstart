@@ -109,7 +109,7 @@ PENDING_REDERIVE_PATH = REPO_ROOT / "data" / "state" / "pending_rederive.txt"
 # reappeared, been pruned, or belongs to a Board that left the ledger is simply not written again.
 UNCONFIRMED_PATH = REPO_ROOT / "data" / "state" / "unconfirmed_ids.txt"
 
-# The ADR-0206 dedup eviction ledger: one row per (run, Board, rule) for every served row a dedup
+# The ADR-0210 dedup eviction ledger: one row per (run, Board, rule) for every served row a dedup
 # rule took out, so Trends can add back removals that were never closures. Appended by
 # `index prune`; round-trips through the HF dataset with the rest of data/state.
 DEDUP_EVICTIONS_PATH = REPO_ROOT / "data" / "state" / "dedup_evictions.csv"
@@ -122,7 +122,7 @@ RUN_TS_ENV = "HEADSTART_RUN_TS"
 def run_ts() -> datetime:
     """This run's one timestamp, to the second: :data:`RUN_TS_ENV` when the pipeline set it, else
     now. `index prune` and `role_trends` run minutes apart, and a Trends reader joins the dedup
-    eviction ledger to the trends ledger on it (ADR-0206)."""
+    eviction ledger to the trends ledger on it (ADR-0210)."""
     stated = os.environ.get(RUN_TS_ENV)
     moment = datetime.fromisoformat(stated) if stated else datetime.now(UTC)
     return moment.astimezone(UTC).replace(microsecond=0)

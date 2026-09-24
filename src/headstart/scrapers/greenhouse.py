@@ -142,7 +142,7 @@ class GreenhouseScraper(BaseScraper):
                     description=html_to_text(j.get("content")),
                     salary=self._salary_field(j.get("metadata")),
                     # What an Eightfold site in front of this Board states as `atsJobId`
-                    # (ADR-0206). One internal job can carry several posts, one per location.
+                    # (ADR-0210). One internal job can carry several posts, one per location.
                     requisition=requisition_of(j.get("internal_job_id")),
                 )
             )

@@ -1372,6 +1372,7 @@ def _index_prune(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
                 db="data/lancedb",
                 ledger="data/validate/liveness",
                 apply=True,
+                board_failures="data/state/board_failures.csv",
                 dedup_evictions=None,
             )
         )
@@ -1556,7 +1557,7 @@ def _trends(
     from headstart.ingest import role_assignments, role_trends
 
     monkeypatch.chdir(tmp_path)
-    # The tick's stamp is the run's (ADR-0206), which the pipeline pins through the environment.
+    # The tick's stamp is the run's (ADR-0210), which the pipeline pins through the environment.
     monkeypatch.setenv(RUN_TS_ENV, "2026-09-08T00:00:00+00:00")
     _trends_taxonomy(tmp_path)
     served, assigned = _trends_rows()
@@ -1606,7 +1607,7 @@ def _trends_all_non_tech(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     from headstart.ingest import role_trends
 
     monkeypatch.chdir(tmp_path)
-    # The tick's stamp is the run's (ADR-0206), which the pipeline pins through the environment.
+    # The tick's stamp is the run's (ADR-0210), which the pipeline pins through the environment.
     monkeypatch.setenv(RUN_TS_ENV, "2026-09-08T00:00:00+00:00")
     _trends_taxonomy(tmp_path)
     served, _ = _trends_rows()

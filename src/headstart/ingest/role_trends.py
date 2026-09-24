@@ -556,7 +556,7 @@ def main() -> int:
         columns.append("first_seen")
     rows = table.search().select(columns).limit(n).to_arrow()
 
-    # The run's one stamp, which `index prune` also wrote its dedup evictions under (ADR-0206).
+    # The run's one stamp, which `index prune` also wrote its dedup evictions under (ADR-0210).
     now = run_ts()
     ts = now.isoformat(timespec="seconds")
     new_after = (now - timedelta(days=NEW_WINDOW_DAYS)).isoformat(timespec="seconds")

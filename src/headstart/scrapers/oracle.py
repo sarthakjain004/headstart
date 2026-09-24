@@ -355,7 +355,7 @@ class OracleScraper(BaseScraper):
                         or r.get("JobSchedule")
                     ),
                     # What an Eightfold site in front of this Board states as `displayJobId`
-                    # (ADR-0206).
+                    # (ADR-0210).
                     requisition=job_id,
                 )
             )

@@ -26,7 +26,7 @@ the scrape list, nor case-variant duplicates of one job (Workday sites like ``..
 ``.../external``). These planners compute what to drop in those two cases; the duplicate case also
 covers one Workday requisition on several sites of its Workday tenant, which sync declines to add
 in the first place (ADR-0187), and an Eightfold career site's copy of a posting its backing Board
-serves, matched on the stored ``requisition`` (ADR-0206).
+serves, matched on the stored ``requisition`` (ADR-0210).
 
 Both layers ask "which Board owns this id", and both answer it through :func:`resolve_board`, whose
 docstring says why they must agree (ADR-0049).
@@ -66,7 +66,7 @@ _log = log.get(__name__, __spec__)
 #: 3 — one row per Workday tenant and requisition, public sites first (ADR-0187).
 #: 4 — Eightfold ``backing-reqs`` aliases onto the ATS Board behind the career site (ADR-0205).
 #: 5 — one row per posting across an Eightfold site and its backing Board, on ``requisition``
-#:     (ADR-0206). Its removals follow the stamps, which arrive as each Board is re-scraped, so they
+#:     (ADR-0210). Its removals follow the stamps, which arrive as each Board is re-scraped, so they
 #:     spread over days after the marker rather than landing on it (ADR-0188's amendment).
 DEDUP_VERSION = 5
 
@@ -182,7 +182,7 @@ def plan_sync(
     out of the table only to re-add them with a new vector (ADR-0050); they are still their
     requisition's served row.
 
-    **One row per posting across an Eightfold site and its backing Board (ADR-0206).** The same
+    **One row per posting across an Eightfold site and its backing Board (ADR-0210).** The same
     rule reaches an Eightfold id whose ``requisitions`` stamp a row on one of its ``backing``
     Boards also carries: it joins that row's group, where the backing row always wins. So the
     copy is refused while the backing row is served, and comes back on a later scrape of its own
@@ -299,7 +299,7 @@ def _placement(
     one grouping both planners use: ``plan_prune`` to collapse the rows a group already holds,
     ``plan_sync`` to decline copies of one it already serves. An Eightfold id in ``copies``
     (:func:`_backing_copies`) joins the group of the backing row that carries its requisition
-    instead (ADR-0206).
+    instead (ADR-0210).
     """
     end = _live_board_end(job_id, live)
     if end is None:
@@ -316,7 +316,7 @@ def _backing_copies(
     backing: Mapping[str, Iterable[str]],
 ) -> dict[str, tuple[str, str]]:
     """``{Eightfold id: the duplicate group of a row among job_ids that serves its requisition
-    on one of its backing Boards}`` (ADR-0206).
+    on one of its backing Boards}`` (ADR-0210).
 
     ``requisitions`` is each stamped row's ``requisition``; ``backing`` maps an Eightfold Board's
     slug to its backing Board keys (:mod:`headstart.eightfold_backing`). A row with no stamp never
@@ -382,7 +382,7 @@ def _other_site_copies(
     keep. A copy on the incumbent's own Board is still added: that is a case-variant spelling of
     it, which ``plan_prune`` settles by the live casing (ADR-0023), and refusing it would make a
     fossil casing immortal. Every group but a Workday tenant's holds one Board, save an Eightfold
-    copy that joined its backing row's group (``copies``, ADR-0206) — whose backing row outranks it
+    copy that joined its backing row's group (``copies``, ADR-0210) — whose backing row outranks it
     both ways, so the copy is refused behind a served backing row and displaced by an arriving one.
     """
     arriving, _ = _by_group_and_board(new, live, copies)
@@ -557,7 +557,7 @@ def aliased_boards(ledger_dir: str | Path) -> dict[str, str]:
 
     A buried Board leaves the keep-set, so ``plan_prune`` evicts its rows as off-Board — but its
     canonical Board serves the same postings, so for Trends that is a dedup, not a closure, and
-    ``index prune`` records it in the dedup eviction ledger as ``alias:{signal}`` (ADR-0206). The
+    ``index prune`` records it in the dedup eviction ledger as ``alias:{signal}`` (ADR-0210). The
     rows are matched exactly as ``scrapable_boards.load`` skips them — each liveness row's slug
     against the alias ledger's ``duplicate`` — whatever the row's status, since a buried Board
     that later died still left through the alias.
@@ -809,7 +809,7 @@ def _survivor_board(boards: AbstractSet[str], site_jobs: dict[str, int]) -> str:
 def _rank_class(board: str) -> tuple[bool, bool]:
     """``(an Eightfold career site, a non-public Workday site)`` for a lowercased Board key —
     :func:`_survivor_board`'s first keys, and all a displacement compares. A backing Board
-    outranks the Eightfold site in front of it (ADR-0206), and a public Workday site a non-public
+    outranks the Eightfold site in front of it (ADR-0210), and a public Workday site a non-public
     one (ADR-0187); a group holding one Board never reaches either."""
     return board.startswith("eightfold:"), _is_non_public(board)
 
@@ -824,7 +824,7 @@ def _is_non_public(board: str) -> bool:
 
 
 #: Which rule took a duplicate row out, as :func:`plan_prune_by_rule` names it and the dedup
-#: eviction ledger records it (ADR-0206). ``index prune`` adds ``alias:{signal}`` for an off-Board
+#: eviction ledger records it (ADR-0210). ``index prune`` adds ``alias:{signal}`` for an off-Board
 #: row whose Board an alias ledger buries.
 CASE_VARIANT = "case-variant"
 WORKDAY_TENANT = "workday-tenant"
@@ -858,7 +858,7 @@ def plan_prune_by_rule(
 
     The rule is :data:`CASE_VARIANT` for a row another casing of its own Board keeps,
     :data:`WORKDAY_TENANT` for one another site of its Workday tenant keeps (ADR-0187), and
-    :data:`BACKING_REQUISITION` for an Eightfold copy its backing Board keeps (ADR-0206).
+    :data:`BACKING_REQUISITION` for an Eightfold copy its backing Board keeps (ADR-0210).
 
     A change to what counts as a duplicate here bumps :data:`DEDUP_VERSION` (ADR-0188).
 
@@ -873,7 +873,7 @@ def plan_prune_by_rule(
     displaced a non-public incumbent — and it drops the incumbent, because the ranking puts public
     first. The casing rule below then picks the row within the kept Board. An Eightfold row whose
     ``requisitions`` stamp a row on one of its ``backing`` Boards carries joins that row's group
-    and loses to it (:func:`_backing_copies`, ADR-0206).
+    and loses to it (:func:`_backing_copies`, ADR-0210).
 
     The row kept is the one whose Board casing the **live ledger** produces, because that is the
     casing a future scrape emits. Keeping the lexicographically-smallest instead (the rule until

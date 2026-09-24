@@ -1124,7 +1124,7 @@ def test_site_jobs_reads_each_live_workday_site_from_the_ledger(tmp_path):
     }
 
 
-# --- one row per posting across an Eightfold career site and its backing Board (ADR-0206) -------
+# --- one row per posting across an Eightfold career site and its backing Board (ADR-0210) -------
 # An Eightfold career site fronts the company's real ATS, and each posting states that ATS's
 # requisition. Both Boards are scraped, so the posting was served twice under two ATS labels.
 
@@ -1204,7 +1204,7 @@ def test_a_copy_its_workday_tenant_serves_from_another_site_is_still_a_copy():
 
 def test_prune_names_the_rule_behind_each_duplicate():
     """The dedup eviction ledger records which rule took each row out, so Trends can add
-    removals that were never closures back in (ADR-0206)."""
+    removals that were never closures back in (ADR-0210)."""
     ids = [
         f"{_EF}:1099",  # the Eightfold copy of R-100
         f"{_SUB}:R-100",  # R-100 on the tenant's smaller site

@@ -844,7 +844,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 35
         run: python -m headstart.ingest.update_meta --sweep-budget-seconds 600
-      - name: Stamp this run's time for the ledgers it writes (ADR-0206)
+      - name: Stamp this run's time for the ledgers it writes (ADR-0210)
         # One value for `index prune`'s dedup eviction ledger and `role_trends`' ledger, which run
         # minutes apart: Trends joins the two on it to add back removals that were never closures.
         if: needs.scrape-plan.outputs.run == 'true'
@@ -860,18 +860,23 @@ jobs:
           python -m headstart.ingest.index sync
           --scraped-boards data/state/scraped_boards.json
       - name: Prune dead-Board and duplicate rows
-        # The dedup eviction ledger (ADR-0206) rides `data/state`, which only this run's corpus
-        # artifact brings and only then is published — so without it, prune still runs and the
-        # ledger is not written rather than written to a file nothing uploads.
+        # --board-failures is this run's join ledger from the corpus-state artifact: Boards parole
+        # re-confirmed gone leave the keep-set (ADR-0206). If that download failed the file is
+        # absent, and prune evicts nothing on its account.
+        # The dedup eviction ledger (ADR-0210) rides `data/state` too, and is published only when
+        # this run's corpus artifact arrived — so without it prune still runs, and the ledger is
+        # not written rather than written to a file nothing uploads.
         if: needs.scrape-plan.outputs.run == 'true'
         env:
           CORPUS: ${{ steps.corpus.outcome }}
         run: |
           if [ "$CORPUS" = "success" ]; then
             python -m headstart.ingest.index prune --apply \
+              --board-failures data/state/board_failures.csv \
               --dedup-evictions data/state/dedup_evictions.csv
           else
-            python -m headstart.ingest.index prune --apply
+            python -m headstart.ingest.index prune --apply \
+              --board-failures data/state/board_failures.csv
           fi
       - name: Drop the store's vectors of unserved Jobs (ADR-0190)
         # After prune, so the table it keeps is final. Needs the corpus, whose ids it also keeps.

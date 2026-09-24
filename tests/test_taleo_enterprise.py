@@ -338,7 +338,7 @@ def test_listing_row_carries_the_contest_number(monkeypatch):
 
 def test_the_requisition_is_the_contest_number():
     """Stored on the Job, so a row on this section can be matched to the Eightfold site's copy
-    of the same posting (ADR-0206)."""
+    of the same posting (ADR-0210)."""
     item = {
         "id": "978472",
         "contest_no": "111166",

@@ -231,7 +231,7 @@ def test_the_core_identity_fields_come_from_the_listing():
 
 
 def test_the_requisition_is_the_listing_id():
-    """What an Eightfold site in front of this Board states as `displayJobId` (ADR-0206)."""
+    """What an Eightfold site in front of this Board states as `displayJobId` (ADR-0210)."""
     assert {j.requisition for j in _jobs().values()} == set(_jobs())
 
 

@@ -9,6 +9,10 @@
   while the total climbed 749 → 755, and a live re-probe of all 757 found 12 Boards serving 264
   tech postings. A gone-verdict now expires after 7 days and the Board comes back for one run to
   re-earn it.
+- **Amended by:** [ADR-0206](0206-prune-evicts-a-board-parole-reconfirmed-gone.md) — the Decision below keeps quarantine out of
+  `live_keep_set`. A verdict parole re-earns (6+ strikes) now leaves it, so `index prune` evicts
+  that Board's rows; a first-time quarantine still does not. A verdict struck before its ATS's
+  scraper replaced its listing surface is void.
 
 **Relates to:**
 [ADR-0012](0012-liveness-ledger.md) (the liveness ledger stays probe-owned),

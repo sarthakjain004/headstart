@@ -1,4 +1,4 @@
-"""The committed Eightfold -> backing Board pairs (headstart.eightfold_backing, ADR-0206)."""
+"""The committed Eightfold -> backing Board pairs (headstart.eightfold_backing, ADR-0210)."""
 
 from __future__ import annotations
 

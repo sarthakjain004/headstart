@@ -128,7 +128,7 @@ def test_job_location_drops_tags_and_lists_lines():
 
 
 def test_a_requisition_is_stored_as_trimmed_text_or_none():
-    """Two rows match only on equal strings (ADR-0206), whether the ATS stated a number or text."""
+    """Two rows match only on equal strings (ADR-0210), whether the ATS stated a number or text."""
     assert requisition_of(3560628) == "3560628"
     assert requisition_of(" R-100 ") == "R-100"
     assert requisition_of("") is None

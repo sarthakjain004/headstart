@@ -52,6 +52,8 @@ once, which narrows nothing and widens nothing.
   Planning lives in :mod:`headstart.ingest.index_plan`; this is the CLI that runs it against the table.
   The keep-set is the live ledger (enabled ATSes), each Board key exactly as its scraper's
   ``board_key()`` builds it; ids are matched against it by prefix (ADR-0049), not by parsing them.
+  A Board whose gone-verdict parole re-confirmed (``board_failures.reconfirmed``) leaves it, since
+  nothing scrapes a quarantined Board and so ``sync`` never evicts its rows (ADR-0206).
   Dry-run by default; ``--apply`` deletes. Run after ``sync``.
   Refuses to apply if the keep-set looks too small to trust (a broken ledger must not evict the
   index) — that abort exits 1.
@@ -104,6 +106,7 @@ from headstart.ingest import (
     REPO_ROOT,
     RUN_TS_ENV,  # noqa: F401 - re-exported for the tests that pin a run's stamp
     UNCONFIRMED_PATH,
+    board_failures,
     board_freshness,
     dedup_evictions,
     observability,
@@ -180,7 +183,7 @@ _POSTED_AT_COMPARABLE_FIELD = pa.field(posted_date_guard.COLUMN, pa.bool_())
 _EXPERIENCE_FILTER_FIELDS = tuple(
     pa.field(column, pa.bool_()) for column in experience_filter.COLUMNS
 )
-# The ATS's requisition id where one is needed to match a posting across ATSes (ADR-0206). A fact
+# The ATS's requisition id where one is needed to match a posting across ATSes (ADR-0210). A fact
 # like `url`, so `_refresh_metadata` fills it on a row already held once its Board is re-scraped;
 # held as a constant because `_schema` and `sync`'s migration both need it.
 _REQUISITION_FIELD = pa.field("requisition", pa.string())
@@ -827,7 +830,7 @@ def sync(args: argparse.Namespace) -> int:
 
     _migrate_employment_type_flags(table)
 
-    # And for `requisition` (ADR-0206). Existing rows get null, which never matches another row,
+    # And for `requisition` (ADR-0210). Existing rows get null, which never matches another row,
     # until `_refresh_metadata` below rewrites them from the store once their Board is re-scraped.
     if _REQUISITION_FIELD.name not in table.schema.names:
         _log.info(f"adding '{_REQUISITION_FIELD.name}' to the existing table")
@@ -849,7 +852,7 @@ def sync(args: argparse.Namespace) -> int:
     # the run after it evicts normally.
     was_unconfirmed = read_id_list(Path(args.unconfirmed))
     # One row per requisition across a Workday tenant's sites (ADR-0187), and per posting across
-    # an Eightfold site and its backing Board (ADR-0206), decided here as well as in prune so a
+    # an Eightfold site and its backing Board (ADR-0210), decided here as well as in prune so a
     # copy prune took out is never added back. The re-embedded rows just taken out are passed back
     # as `replaced`: they are still the requisition's incumbent. The stamps come from the store,
     # which `update_meta` has just refreshed, so a row is judged on the same value the refresh
@@ -883,7 +886,7 @@ def sync(args: argparse.Namespace) -> int:
         _log.info(
             f"not added: {len(plan.refused) - fronts} Workday requisition(s) another site of the "
             f"same Workday tenant already serves or is being given (ADR-0187), and {fronts} "
-            "Eightfold posting(s) its backing Board serves or is being given (ADR-0206)"
+            "Eightfold posting(s) its backing Board serves or is being given (ADR-0210)"
         )
     # Written before the delete rather than after, and the reason is not crash-replay: `delete`
     # and `unconfirmed` are disjoint by construction, so a crash here loses no eviction — those
@@ -1001,6 +1004,21 @@ def sync(args: argparse.Namespace) -> int:
 def prune(args: argparse.Namespace) -> int:
     keep = live_keep_set(args.ledger)
     _log.info(f"keep-set: {len(keep)} Scrapable Boards (enabled ATSes)")
+    # A Board quarantined as gone (ADR-0058) is never scraped, so `sync` can never evict its rows,
+    # and its liveness row still says live: its closed postings were served forever. Only a
+    # verdict parole re-earned leaves the keep-set — a first-time quarantine can be one provider
+    # outage (ADR-0170, ADR-0206). No ledger given, or a missing one, evicts nothing.
+    failures = board_failures.load(args.board_failures) if args.board_failures else {}
+    gone_keys = {
+        board_failures.key_for(b) for b in board_failures.reconfirmed(failures)
+    }
+    evicted = {board for board in keep if board_failures.key_for(board) in gone_keys}
+    if evicted:
+        keep -= evicted
+        _log.info(
+            f"keep-set: {len(evicted)} Board(s) re-confirmed gone after parole leave it, "
+            f"{len(keep)} remain"
+        )
     if len(keep) < _MIN_KEEP_BOARDS:
         _log.error(
             f"ABORT: keep-set has only {len(keep)} Boards (< {_MIN_KEEP_BOARDS}) — the ledger "
@@ -1009,7 +1027,7 @@ def prune(args: argparse.Namespace) -> int:
         return 1
 
     table = lancedb.connect(args.db).open_table(PROD_TABLE)
-    # The stamps ADR-0206 matches on; a table from before the column carries none, and matches
+    # The stamps ADR-0210 matches on; a table from before the column carries none, and matches
     # nothing until sync adds it.
     stamped = _REQUISITION_FIELD.name in table.schema.names
     rows = _scan(table, ["id", _REQUISITION_FIELD.name] if stamped else ["id"])
@@ -1064,7 +1082,7 @@ def prune(args: argparse.Namespace) -> int:
     if args.dedup_evictions:
         # After the delete, so the ledger never records a removal the table did not make. A row on
         # a Board an alias ledger buries left as off-Board, but its canonical Board serves the
-        # same posting, so for Trends it is a dedup too; any other off-Board row is not (ADR-0206).
+        # same posting, so for Trends it is a dedup too; any other off-Board row is not (ADR-0210).
         live = boards_by_canon(keep)
         buried = aliased_boards(args.ledger)
         for job_id in off_board:
@@ -1383,9 +1401,16 @@ def main() -> int:
         help="liveness ledger dir (default: data/validate/liveness)",
     )
     p_prune.add_argument(
+        "--board-failures",
+        help="data/state/board_failures.csv; Boards parole re-confirmed gone leave the keep-set "
+        "(ADR-0206). Deliberately NOT defaulted, like sync's --scraped-boards: that file rides "
+        "data/state through the HF dataset, so a default would let a local prune evict against "
+        "whatever ledger was last pulled. The merge job passes it; omitted, it evicts nothing",
+    )
+    p_prune.add_argument(
         "--dedup-evictions",
         default=None,
-        help="append each dedup eviction to this ledger (ADR-0206); the pipeline passes "
+        help="append each dedup eviction to this ledger (ADR-0210); the pipeline passes "
         "data/state/dedup_evictions.csv, and a run that does not publish data/state omits it",
     )
     p_prune.set_defaults(fn=prune)

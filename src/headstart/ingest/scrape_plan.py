@@ -108,9 +108,8 @@ _EXPLORE_BASELINE = 5.0  # unscored board with no measurement and no history to 
 #
 # The floor was 15 min while shards ran close to their 60 min budget. By 2026-09-24 they finished
 # in ~9 min, so a 10-15 min Board set the wall clock unjudged: `jibe:petsmart`, 760 s at a score
-# of 2.8 (4 tech jobs). On score, every fresh Board measured between 10 and 15 min then sat under
-# 2 tech/min and none between 6 and 10 min did; `jibe:ulta` is borderline on a still-warming
-# score (ADR-0064 amendment).
+# of 2.8 (4 tech jobs). On score, petsmart and greatclips sat far under 2 tech/min, ulta on the
+# line (2.08), and no fresh Board between 6 and 10 min was under it (ADR-0064 amendment).
 _GATE_FLOOR_S = 600.0  # 10 min: just above the ~9 min a shard now takes
 _GATE_MIN_TECH_PER_MIN = 2.0  # tech jobs per minute of shard time, in the gap above
 # A gated Board is not scraped, so its cost and score freeze — and evidence that cannot change
@@ -313,9 +312,9 @@ def main() -> int:
         for b in board_failures.quarantined(failure_rows) - on_parole
     }
     if quarantine or on_parole:
-        # Boards confirmed gone (404/410) on QUARANTINE_AT consecutive scrapes — skip them here,
-        # and only here: the liveness ledger stays the probe-owned truth, and `live_keep_set`
-        # (which feeds `index prune`) must not shrink, or a scraping decision would evict rows.
+        # Boards confirmed gone (404/410) on QUARANTINE_AT consecutive scrapes — skip them here.
+        # The liveness ledger stays the probe-owned truth, and `index prune` evicts only a
+        # verdict parole re-confirmed, never a first-time quarantine (ADR-0206).
         # Compared in the ledger's own key form (`board_failures.key_for`, lowercased): the
         # ledger's casing and `board_key()`'s need not agree (ADR-0049).
         before = len(companies)

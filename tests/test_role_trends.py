@@ -225,7 +225,7 @@ def test_a_tick_records_one_epoch_row_then_stays_quiet_while_unchanged(
 
 
 def test_a_tick_is_stamped_with_the_run_stamp_prune_used(tmp_path, monkeypatch):
-    """ADR-0206: the dedup eviction ledger `index prune` writes and this ledger carry the same
+    """ADR-0210: the dedup eviction ledger `index prune` writes and this ledger carry the same
     `ts`, so Trends joins a removal to the tick it happened in."""
     import pandas as pd
 

@@ -43,7 +43,7 @@ def test_greenhouse_parse():
 
 
 def test_greenhouse_requisition_is_the_internal_job_id():
-    """What an Eightfold site in front of this Board states as `atsJobId` (ADR-0206)."""
+    """What an Eightfold site in front of this Board states as `atsJobId` (ADR-0210)."""
     jobs = get_scraper("greenhouse", "stripe", "Stripe").parse(
         _load("greenhouse_stripe.json"), SCRAPED_AT
     )
@@ -2046,7 +2046,7 @@ def test_workday_parse():
 
 
 def test_workday_requisition_is_the_native_id():
-    """What an Eightfold site in front of this Board states as `atsJobId` (ADR-0206)."""
+    """What an Eightfold site in front of this Board states as `atsJobId` (ADR-0210)."""
     slug = "https://3m.wd1.myworkdayjobs.com/search"
     jobs = get_scraper("workday", slug, "3M").parse(
         _load("workday_3m.json"), SCRAPED_AT
@@ -5407,7 +5407,7 @@ def test_successfactors_page_fields_jsonld():
 
 def test_successfactors_requisition_is_the_page_internal_id_without_its_locale():
     """Every RMK job page states `"internalId":"{req}-{locale}"`, the requisition an Eightfold
-    site in front of the Board states as `atsJobId` (ADR-0206). The locale is dropped, so the
+    site in front of the Board states as `atsJobId` (ADR-0210). The locale is dropped, so the
     en_US and de_DE pages of one requisition carry the same id; a page stating none gives None."""
     from headstart.scrapers.successfactors import SuccessFactorsScraper, _page_fields
 
@@ -5905,7 +5905,7 @@ def test_eightfold_api_records_wires_the_remote_and_location_fixes():
 )
 def test_eightfold_requisition_is_the_backing_atses_id(monkeypatch, host, requisition):
     """Each posting states its backing ATS's requisition, under a field that depends on that
-    ATS; the committed pairs say which ATS backs the Board (ADR-0206)."""
+    ATS; the committed pairs say which ATS backs the Board (ADR-0210)."""
     from headstart.scrapers.registry import get_scraper
 
     scraper = get_scraper("eightfold", host, "Acme")

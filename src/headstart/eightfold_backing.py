@@ -1,4 +1,4 @@
-"""The Eightfold career sites that front another ATS's Board, and which Boards (ADR-0205, ADR-0206).
+"""The Eightfold career sites that front another ATS's Board, and which Boards (ADR-0205, ADR-0210).
 
 One committed CSV, ``data/validate/eightfold_backing.csv``, one row per pair::
 
@@ -11,7 +11,7 @@ that lists its postings, and a site may have several. Three readers, one file:
 - ``scripts/validate/eightfold_backing_boards.py`` takes them as its candidates, and buries a site
   whose backing Boards serve every tech posting it lists (ADR-0205).
 - ``index sync``/``prune`` serve a posting once when a site that is not buried and its backing
-  Board both list it, matched on the stored ``requisition`` (ADR-0206).
+  Board both list it, matched on the stored ``requisition`` (ADR-0210).
 - ``EightfoldScraper`` reads which ATS backs its Board, because the posting states that ATS's
   requisition under a field that depends on it (Oracle's is ``displayJobId``).
 
