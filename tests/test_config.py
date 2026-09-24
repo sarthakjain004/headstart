@@ -203,6 +203,26 @@ def test_excluded_boards_drops_walmart_non_workday_internal(monkeypatch):
     assert key in unexcluded_slugs, "ledger no longer names this Board at all"
 
 
+def test_excluded_boards_drop_oracles_taleo_demo_tenant(monkeypatch):
+    """Against the real ledger and from both sides, like the Walmart test above: a Taleo
+    Enterprise slug is the whole canonical section URL, so a key spelt any other way would
+    silently exclude nothing."""
+    ledger = Path(__file__).resolve().parents[1] / "data" / "validate" / "liveness"
+
+    def pmg_sections():
+        return {
+            c.slug
+            for c in load_active_companies(ledger, min_jobs=0)
+            if c.slug.startswith("https://pmg.taleo.net/")
+        }
+
+    assert pmg_sections() == set()
+    monkeypatch.setattr(config, "EXCLUDED_BOARDS", frozenset())
+    assert len(pmg_sections()) == 2, (
+        "ledger no longer holds pmg's two sections on live rows"
+    )
+
+
 def test_load_active_companies_min_jobs(tmp_path):
     ledger = tmp_path / "liveness"
     _write_ledger(

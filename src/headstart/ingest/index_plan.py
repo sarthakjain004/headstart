@@ -57,7 +57,10 @@ _log = log.get(__name__, __spec__)
 #: through ``index prune``, which has no grace period; a dedup that instead stops emitting ids at
 #: scrape time would drain through ``sync``'s two-scrape grace (ADR-0083) and read as a slow
 #: decline after the marker, so keep new dedup rules on the prune path.
-DEDUP_VERSION = 1
+#:
+#: 1 — the rules when the counter was added (ADR-0188): casing duplicates, redirect and
+#:     ``shared-reqs`` aliases. 2 — Taleo Enterprise ``subset-reqs`` aliases (ADR-0186).
+DEDUP_VERSION = 2
 
 
 @dataclass(frozen=True, slots=True)
