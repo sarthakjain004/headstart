@@ -9982,7 +9982,13 @@ def test_zwayam_detail_request_carries_the_browser_agent_the_edge_demands():
         for request in fetcher.requests
         if request.url == zwayam_module._DETAIL_API
     }
+    other_agents = {
+        request.kwargs["headers"]["User-Agent"]
+        for request in fetcher.requests
+        if request.url != zwayam_module._DETAIL_API
+    }
     assert detail_agents == {zwayam_module._DETAIL_USER_AGENT}
+    assert other_agents == {zwayam_module.USER_AGENT}  # search, config and homepage
 
 
 def test_workday_detail_404_falls_back_to_the_public_page(monkeypatch):
