@@ -327,3 +327,54 @@ Its code review then tightened the round:
   Source hides only the ATSes the picks are not on, and hidden boxes are never sent. A custom
   date range survives Back. The empty-Comparable advice appears only when the window starts
   before per-Board counting.
+
+### A critic's third round (2026-09-24): 5.5/10, and the line and its number disagreed
+
+The critic used the tab again with a signed-in session. The worst finding was a regression the
+second round introduced: the percentages were net of the marked steps but the lines were not.
+Google's Total line ended near 117 over a legend reading −0.2%, and on a phone Google's line
+was the highest while its tile said "Biggest faller". What changed:
+
+- **The Change plot draws the net levels.** Steps are taken out backwards, the way a price
+  history is adjusted for a split: the latest value stays real, and the history before each
+  step is scaled by that step's jump. Every percentage reads from the same levels, so a line
+  and its number can no longer disagree. Measured on the same data, each company's line ends
+  at 100 plus its legend percentage (Amazon 97.1 against −2.9%, Microsoft 107.7 against
+  +7.6%). Share and Count plot real levels, which a reader takes off the axis, and break the
+  line at each marked step rather than draw the jump as a climb.
+- **Steps belong to the picks they can move.** Duplicate removal is taken out only of a pick
+  whose Boards it can touch. That is two or more on Taleo Enterprise or Workday, or an
+  Eightfold Board beside another (#632 aliases Eightfold mirrors). Google had read −0.2% beside
+  Stripe and −0.5% beside Micron, and now reads +0.2% beside either. Under a pick, a counting
+  change that cannot move its lines is not marked. An extraction change moves only a Level
+  breakdown.
+- **Two or more picks compare by default** (Company breakdown). Summed categories under "at 4
+  companies" answered a question nobody asked. One pick keeps Category, or Total when small.
+- **A sentence per company** above the chart gives its tech openings now and its move in
+  percent and in openings, net of the marked steps. Examples: "Google: 1,802 tech openings;
+  about flat over 11 days (+0.2%, +3 openings)", then how long HeadStart has counted it. Under
+  14 days it adds that this is an early sign, not a trend.
+- **Small numbers are counts, not percentages.** A line starting under 20 openings shows its
+  change in openings, and no tile names it. Stripe's "Biggest riser +18.2%" was 11 openings
+  becoming 13.
+- **Nothing is dropped silently.** The Space names `uncounted` picks, and the page says why
+  each is missing. Comparable coverage whose window starts before per-Board counting now begins
+  at the first per-Board run and says so. Before, Google over 30 days answered nothing. With no
+  runs, the caption is empty ("live openings at , or…").
+- **A held week is a gap.** Under `new`, a pick's runs before its first week ends are `None`,
+  not 0. The zeros drew a week of nothing and then a surge. A summed line starts with its
+  earliest pick.
+- **Marker tooltips give the size.** Each line's row reads, for example, "1,739 · index 103 ·
+  jumped +148 here". The index is named.
+- **Notes fit the view.** The dashed whole-company line appears only where lines are parts of
+  it, so not on Total or Company. The reassignment caveat is hidden where a category cannot
+  move. The step explanation appears only where a line has a step and a percentage, and sits
+  in the caption under the chart.
+- **Search keeps the hand-off.** It rides in `#search?board=…&label=…&q=…`, so a reload keeps
+  it. From a drill, the category's name becomes the semantic query. Search has no category
+  filter, so the jobs come ranked by the category rather than narrowed to it.
+- **Findability.** Company search matches a name prefix with spaces ignored (5+ letters), so
+  "micro soft" finds Microsoft. "jp morgan" needs the pending `Jpmc` alias to reach the served
+  directory.
+- **Phones.** The legend follows the chart directly, then the tiles, then the filters. A phone
+  draws no end labels, so the legend is the only key.

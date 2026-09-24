@@ -1262,9 +1262,12 @@ def _replay_rows(
             base = next(
                 (stamp for stamp in stamps if stamp >= first_delta), first_delta
             )
+        # A base before per-Board counting began starts the cohort at the first run that
+        # counted by Board: nothing earlier can be told apart, and answering "nothing" left a
+        # 30-day window blank for a reader who only asked to hold coverage fixed (ADR-0185).
         base_stamp = max(
             (stamp for stamp in stamps if first_delta <= stamp <= base), default=None
-        )
+        ) or next((stamp for stamp in stamps if stamp >= first_delta), None)
         if base_stamp is None:
             return [], None
         first: dict[str, str] = {}
@@ -1514,55 +1517,32 @@ def trends():
         if r["metric"] == "new"
     }
 
-    def value_at(points: dict[str, int], ts: str) -> int | None:
-        """A series' value at one stamp — 0 where the metric ran and found none, else None."""
+    def value_at(
+        points: dict[str, int], ts: str, counts_from: str | None = None
+    ) -> int | None:
+        """A series' value at one stamp — 0 where the metric ran and found none, else None.
+
+        ``counts_from`` is when a pick's ``new`` first counts (``_new_holds``): before it every
+        Board of the series is held, so the run measured nothing for it, which is a gap — a 0
+        there drew a week of nothing and then a leap that read as a hiring surge."""
+        if counts_from is not None and ts < counts_from:
+            return None
         return points.get(ts, 0 if metric == "new" and ts in measured else None)
 
     picked_keys = sorted(set(company_of.values())) if company_of else []
     # A pick with rows in scope gets a line even when this metric has none of them — for `new`,
     # "nothing opened this week" is a line at 0, and a company silently missing from the legend
-    # would read as a bug. A pick with no rows at all (outside a comparable cohort) gets none.
-    in_scope = {r["company"] for r in trends_rows} if key == "company" else set()
-    series: dict[str, dict[str, int]] = {k: {} for k in picked_keys if k in in_scope}
+    # would read as a bug. A pick with no rows at all (outside a comparable cohort, the ATS
+    # selection or the window) gets none, and is named in `uncounted`.
+    in_scope = {r["company"] for r in trends_rows} if company_of else set()
+    series: dict[str, dict[str, int]] = {
+        k: {} for k in picked_keys if key == "company" and k in in_scope
+    }
     for r in rows:  # sum over the other axis, so a family point is its total
         series.setdefault(r[key], {})
         at = series[r[key]]
         at[r["ts"]] = at.get(r["ts"], 0) + r["count"]
     company_labels = _company_labels(picked_keys)
-
-    def _series_label(name: str) -> str:
-        if key == "company":
-            return company_labels[name]
-        if name in _WATCH:
-            return _WATCH[name]["label"]
-        return _FAMILY_LABELS.get(name, name)
-
-    out = [
-        {
-            "name": name,
-            "label": _series_label(name),
-            # None (not 0) where a run has no row for this series: a gap is "not measured",
-            # and plotting it as zero would invent a crash that never happened. The "new"
-            # metric refines that: count_groups writes only non-empty groups, so on a stamp
-            # where new WAS measured (any new row exists), a missing series row genuinely
-            # means zero fresh openings; a stamp with no new rows at all predates ADR-0051
-            # and stays a gap.
-            "points": [value_at(points, ts) for ts in stamps],
-            "latest": value_at(points, stamps[-1]) if stamps else None,
-        }
-        for name, points in series.items()
-    ]
-    out.sort(key=lambda s: -(s["latest"] or 0))
-    non_tech: dict[str, int] = {}
-    for row in stock:
-        if row["family"] == _NON_TECH:
-            non_tech[row["ts"]] = non_tech.get(row["ts"], 0) + row["count"]
-    # Each pick's own denominator, so a line split by company is a share of *that* company.
-    company_totals: dict[str, dict[str, int]] = {k: {} for k in picked_keys}
-    for row in stock:
-        if company_of and not row["family"].startswith(_WATCH_PREFIX):
-            at = company_totals[row["company"]]
-            at[row["ts"]] = at.get(row["ts"], 0) + row["count"]
     # Each pick's own first counted tick (over the Boards in scope), which is where its line
     # starts: the ledger's first tick for most, later for the 9,981 companies first counted
     # after it (measured 2026-09-24). The chart names it, so a short line never reads as the
@@ -1581,6 +1561,52 @@ def trends():
         began[pick] = min(began.get(pick, ts), ts)
         release = _NEW_HOLD.get(board, ts)
         new_from[pick] = min(new_from.get(pick, release), release)
+
+    def _series_label(name: str) -> str:
+        if key == "company":
+            return company_labels[name]
+        if name in _WATCH:
+            return _WATCH[name]["label"]
+        return _FAMILY_LABELS.get(name, name)
+
+    # Under `new`, where a series' first counted run is: a company line's own pick's release,
+    # and for a line summing several picks the earliest, after which each later one joins the
+    # sum as a marked step (the page's stepNotes).
+    def counts_from(name: str) -> str | None:
+        if metric != "new" or not company_of:
+            return None
+        if key == "company":
+            return new_from.get(name)
+        return min(new_from.values(), default=None)
+
+    out = [
+        {
+            "name": name,
+            "label": _series_label(name),
+            # None (not 0) where a run has no row for this series: a gap is "not measured",
+            # and plotting it as zero would invent a crash that never happened. The "new"
+            # metric refines that: count_groups writes only non-empty groups, so on a stamp
+            # where new WAS measured (any new row exists), a missing series row genuinely
+            # means zero fresh openings; a stamp with no new rows at all predates ADR-0051
+            # and stays a gap.
+            "points": [value_at(points, ts, counts_from(name)) for ts in stamps],
+            "latest": value_at(points, stamps[-1], counts_from(name))
+            if stamps
+            else None,
+        }
+        for name, points in series.items()
+    ]
+    out.sort(key=lambda s: -(s["latest"] or 0))
+    non_tech: dict[str, int] = {}
+    for row in stock:
+        if row["family"] == _NON_TECH:
+            non_tech[row["ts"]] = non_tech.get(row["ts"], 0) + row["count"]
+    # Each pick's own denominator, so a line split by company is a share of *that* company.
+    company_totals: dict[str, dict[str, int]] = {k: {} for k in picked_keys}
+    for row in stock:
+        if company_of and not row["family"].startswith(_WATCH_PREFIX):
+            at = company_totals[row["company"]]
+            at[row["ts"]] = at.get(row["ts"], 0) + row["count"]
     # Boards of a pick found after its line began: each lands its tech openings at once, openings
     # that were already open, so the chart marks the step rather than let it read as hiring. A
     # Board that lands on the charted point where its company's line begins starts that line and
@@ -1615,6 +1641,8 @@ def trends():
         totals=[totals.get(ts) for ts in stamps],
         non_tech=[non_tech.get(ts) for ts in stamps],
         split_by=key,
+        # The drilled family's display name, so a cold link into a drill can name it.
+        family_label=_FAMILY_LABELS.get(family, family) if family else None,
         watch_parents=watch_parents,
         epochs=epochs,
         # With its Board keys, so the chart can hand a pick to Search by Board (ADR-0185).
@@ -1629,6 +1657,10 @@ def trends():
             k: [company_totals[k].get(ts) for ts in stamps] for k in picked_keys
         },
         counted_since=began,
+        # Picks with nothing in this scope — a comparable cohort they joined after, an ATS
+        # selection or a window they have no Boards in — so the page names them rather than
+        # charting fewer companies than the chips show.
+        uncounted=[k for k in picked_keys if k not in in_scope],
         ledger_start=_LEDGER_START,
         new_counted_from=new_from,
         discovered=[

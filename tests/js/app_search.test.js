@@ -80,7 +80,7 @@ function loadApp(respond, cfg = {}) {
   const src = fs.readFileSync(APP_JS, 'utf8')
     + '\n;globalThis.__t = { go, goToPage, loadSets, runSet, page: () => page, jobCard, savedRow,'
     + ' salStop, SALARY_STOPS, stops: () => SALARY_STOPS, sync: syncSalarySlider, slide: salSlide,'
-    + ' dismiss: dismissRow, dismissed, handleSetAction, searchCompany, dropFilter };';
+    + ' dismiss: dismissRow, dismissed, handleSetAction, searchCompany, dropFilter, readSearchHash };';
   vm.runInNewContext(src, ctx);
   return { nodes, fetches, t: ctx.__t, ctx, docHandlers };
 }
@@ -700,4 +700,22 @@ test('a company handed over from Trends or Hot searches its Boards, shown as one
   await new Promise(resolve => setTimeout(resolve, 0));
   const after = fetches.filter(u => u.startsWith('/search?')).pop();
   assert.equal(new URLSearchParams(after.split('?')[1]).getAll('board').length, 0);
+});
+
+
+test('a company hand-off rides in the hash, so a reload keeps it', async () => {
+  const { t, ctx, nodes } = loadApp(() => []);
+  t.searchCompany(['workday:citi/2'], 'Citi', 'AI / Machine Learning');
+  const hash = new URLSearchParams(ctx.location.hash.split('?')[1]);
+  assert.deepEqual(hash.getAll('board'), ['workday:citi/2']);
+  assert.equal(hash.get('label'), 'Citi');
+  assert.equal(nodes['q'].value, 'AI / Machine Learning', 'a drilled category is the query');
+  const reload = loadApp(() => []);
+  reload.ctx.location.hash = ctx.location.hash;
+  assert.equal(reload.t.readSearchHash(), true);
+  reload.t.go();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const url = reload.fetches.filter(u => u.startsWith('/search?')).pop();
+  assert.deepEqual(new URLSearchParams(url.split('?')[1]).getAll('board'), ['workday:citi/2']);
+  assert.match(reload.nodes['active'].innerHTML, /<b>Company<\/b> Citi/);
 });

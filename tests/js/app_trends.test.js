@@ -769,7 +769,15 @@ test('picks go to /trends as repeated company params', async () => {
   t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }, { key: 'lever:beta', label: 'Beta' }]);
   await t.load(null);
   assert.deepEqual(asked[0].getAll('company'), ['greenhouse:acme', 'lever:beta']);
-  assert.equal(asked[0].get('split'), null, 'Category is the Space default, not a split');
+  assert.equal(asked[0].get('split'), 'company', 'two picks are compared, not summed');
+});
+
+test('one pick asks for categories, the Space default', async () => {
+  const { t, ctx } = loadApp();
+  const asked = answering(ctx, picked({ a: [50, 60], b: [40, 45] }));
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
+  await t.load(null);
+  assert.equal(asked[0].get('split'), null);
 });
 
 test('the Space names a pick that arrived by key alone', async () => {
@@ -912,7 +920,9 @@ test('the chart says where a company history starts', async () => {
   answering(ctx, picked({ a: [50, 60], b: [40, 45] }));
   t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
   await t.load(null);
-  assert.match(nodes['trends-empty'].textContent, /HeadStart has counted Acme since Sep 13; there is nothing before that/);
+  // Said once, in the company's own sentence block, rather than again above the chart.
+  assert.match(nodes['trends-verdict'].innerHTML, /HeadStart has counted Acme since Sep 13 — 7 days, so read this as an early sign/);
+  assert.doesNotMatch(nodes['trends-empty'].textContent, /counted Acme/);
 });
 
 test('suggestions leave out what is picked and show openings and Boards', async () => {
@@ -1061,7 +1071,7 @@ test('a company counted from later than the ledger says when its own line begins
   answering(ctx, { ...picked({ a: [null, 50], b: [null, 40] }), counted_since: { 'greenhouse:acme': STAMPS[1] } });
   t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
   await t.load(null);
-  assert.match(nodes['trends-empty'].textContent, /HeadStart has counted Acme since Sep 20/);
+  assert.match(nodes['trends-verdict'].innerHTML, /HeadStart has counted Acme since Sep 20/);
 });
 
 test('a Board found after a company began is marked where its backlog lands', async () => {
@@ -1073,7 +1083,7 @@ test('a Board found after a company began is marked where its backlog lands', as
   const svg = nodes['trends-chart'].innerHTML;
   assert.match(svg, /class="found-marker"/);
   assert.match(svg, /83 more boards of Acme found here: 1,048 tech openings across the company, already open/);
-  assert.match(nodes['trends-empty'].textContent, /boards found later/);
+  assert.match(nodes['trends-foot'].textContent, /boards found later/, 'explained under the chart');
   assert.ok(!nodes['trends-kpi'].innerHTML.includes('Biggest'), 'a found Board is no riser');
 });
 
@@ -1148,7 +1158,7 @@ test('several picks are each dated from their own first counted run', async () =
     counted_since: { 'greenhouse:acme': STAMPS[0], 'lever:beta': STAMPS[1] } });
   t.setPicks(two);
   await t.load(null);
-  assert.match(nodes['trends-empty'].textContent, /Acme since Sep 13, Beta since Sep 20/);
+  assert.match(nodes['trends-verdict'].innerHTML, /Acme since Sep 13, Beta since Sep 20/);
 });
 
 test('a company counted for one run keeps its own note, not a pipeline one', async () => {
@@ -1157,7 +1167,8 @@ test('a company counted for one run keeps its own note, not a pipeline one', asy
     counted_since: { 'greenhouse:acme': STAMPS[1] } });
   t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
   await t.load(null);
-  assert.match(nodes['trends-empty'].textContent, /counted Acme since Sep 20.*a few more runs/);
+  assert.match(nodes['trends-verdict'].innerHTML, /counted Acme since Sep 20/);
+  assert.match(nodes['trends-empty'].textContent, /a few more runs/);
   assert.ok(!/pipeline/.test(nodes['trends-empty'].textContent));
 });
 
@@ -1300,5 +1311,128 @@ test('a step on a gap lands on the line’s next point', () => {
   t.set({ ...picked({}), stamps, series: [], discovered: [],
     epochs: [{ ts: 'b', changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
   t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
-  assert.deepEqual(t.netOfSteps([100, null, 200, 220]), [100, null, 100, 110]);
+  // Adjusted backwards: the latest value stays real, the history before the step is scaled.
+  assert.deepEqual(t.netOfSteps([100, null, 200, 220]), [200, null, 200, 220]);
+});
+
+
+// ---- critique round 3: the line and its number agree, and nothing is left unsaid ----------
+const FOUR = ['2026-09-13T00:00:00+00:00', '2026-09-14T00:00:00+00:00',
+              '2026-09-15T00:00:00+00:00', '2026-09-16T00:00:00+00:00'];
+function companies(series, extra) {
+  return { version: 2, metric: 'stock', split_by: 'company', stamps: FOUR,
+    totals: [1e4, 1e4, 1e4, 1e4], non_tech: [0, 0, 0, 0], watch_parents: [],
+    series: series.map(([name, label, points]) => ({ name, label, points, latest: points[3] })),
+    companies: series.map(([name, label]) => ({ key: name, label, board_keys: [name], atses: [name.split(':')[0]] })),
+    company_totals: {}, epochs: [], discovered: [], uncounted: [],
+    counted_since: Object.fromEntries(series.map(([name]) => [name, FOUR[0]])), ...extra };
+}
+const ACME = { key: 'greenhouse:acme', label: 'Acme', boardKeys: ['greenhouse:acme'] };
+const BETA = { key: 'lever:beta', label: 'Beta', boardKeys: ['lever:beta'] };
+
+test('under Change the plotted line is the one its percentage is read from', () => {
+  const { t } = loadApp();
+  t.setPicks([ACME, BETA]);
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 300, 300]], ['lever:beta', 'Beta', [100, 100, 150, 150]]],
+    { discovered: [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 3, openings: 200 }] }));
+  t.setUnit('change', false);
+  const [acme, beta] = t.data().series;
+  // Google's line ended at 117 over a legend reading −0.2%: the found Boards are not drawn now.
+  assert.deepEqual(t.seriesValues(acme), [100, 100, 100, 100]);
+  assert.deepEqual(t.seriesValues(beta), [100, 100, 150, 150], 'another company’s step is not taken out of Beta');
+});
+
+test('duplicate removal is taken out only of the pick it can touch', () => {
+  const { t } = loadApp();
+  t.setPicks([{ ...ACME, key: 'workday:acme/a', boardKeys: ['workday:acme/a', 'workday:acme/b'] }, BETA]);
+  t.set(companies([['workday:acme/a', 'Acme', [100, 100, 80, 80]], ['lever:beta', 'Beta', [100, 100, 80, 80]]],
+    { epochs: [{ ts: FOUR[2], changed: ['duplicate removal changed'], fields: ['dedup_version'] }] }));
+  t.setUnit('change', false);
+  const [acme, beta] = t.data().series;
+  assert.deepEqual(t.seriesValues(acme), [100, 100, 100, 100]);
+  // Beta has one Board: duplicate removal cannot have moved it, so its fall is its own.
+  assert.deepEqual(t.seriesValues(beta), [100, 100, 80, 80]);
+});
+
+test('under Count a marked step breaks the line instead of drawing a climb', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME, BETA]);
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 300, 300]], ['lever:beta', 'Beta', [100, 100, 150, 150]]],
+    { discovered: [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 3, openings: 200 }] }));
+  t.setUnit('count', false);
+  t.draw();
+  const path = name => (nodes['trends-chart'].innerHTML.match(
+    new RegExp(`class="series-line"[^>]*data-name="${name}" d="([^"]*)"`)) || [])[1] || '';
+  assert.equal((path('greenhouse:acme').match(/M/g) || []).length, 2, path('greenhouse:acme'));
+  assert.equal((path('lever:beta').match(/M/g) || []).length, 1);
+});
+
+test('a pick the view leaves out is named, with the reason', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME, BETA]);
+  t.coverageSet('comparable');
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 100, 100]]],
+    { uncounted: ['lever:beta'], base: FOUR[0], coverage: 'comparable' }));
+  t.draw();
+  assert.match(nodes['trends-empty'].textContent,
+    /Beta isn’t in this view: HeadStart began counting it after Sep 13/);
+  assert.match(nodes['trends-scope'].textContent, /^1 company ·/, 'not "1 companies"');
+});
+
+test('a small line moves in openings, and no tile headlines it', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({ small: [11, 13], big: [100, 150] }), stamps: STAMPS });
+  t.setUnit('count', false);
+  t.draw();
+  assert.match(row(nodes['trends-legend'].innerHTML, 'small'), /\+2 openings/);
+  assert.doesNotMatch(row(nodes['trends-legend'].innerHTML, 'small'), /%/);
+  assert.match(nodes['trends-kpi'].innerHTML, /Biggest riser<\/span>\s*<span class="kpi-value">big/);
+});
+
+test('each company gets a sentence: its openings and which way they moved', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME, BETA]);
+  t.set(companies([['greenhouse:acme', 'Acme', [1000, 1000, 1000, 998]], ['lever:beta', 'Beta', [100, 100, 150, 150]]]));
+  t.draw();
+  const html = nodes['trends-verdict'].innerHTML;
+  assert.equal(nodes['trends-verdict'].hidden, false);
+  assert.match(html, /<b>Acme<\/b>: 998 tech openings; about flat over 3 days \(−0\.1%, −1 opening\)\./);
+  assert.match(html, /<b>Beta<\/b>: 150 tech openings; up 50\.0% over 3 days \(\+50 openings\)\./);
+  assert.match(html, /HeadStart has counted these companies since Sep 13 — 3 days, so read this as an early sign/);
+});
+
+test('the notes fit the view: no dashed line or reassignment caveat on whole companies', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME, BETA]);
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 100, 100]], ['lever:beta', 'Beta', [100, 100, 150, 150]]]));
+  t.setUnit('change', false);
+  t.draw();
+  assert.doesNotMatch(nodes['trends-foot'].textContent, /dashed line/);
+  assert.doesNotMatch(nodes['trends-chart'].innerHTML, /ref-line/);
+  assert.equal(nodes['trends-how'].hidden, true);
+  t.set(fixture(), null);
+  t.setPicks([]);
+  t.draw();
+  assert.match(nodes['trends-foot'].textContent, /dashed line/);
+  assert.equal(nodes['trends-how'].hidden, false);
+});
+
+test('with nothing measured, no caption describes a line', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({}), stamps: [], series: [], totals: [], non_tech: [] });
+  t.draw();
+  assert.equal(nodes['trends-foot'].textContent, '');
+});
+
+test('under a pick, a counting change that cannot move its lines is not marked', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({ a: [100, 100, 100, 100] }), stamps: FOUR,
+    series: [{ name: 'a', label: 'a', points: [100, 100, 100, 100], latest: 100 }],
+    totals: [1e3, 1e3, 1e3, 1e3], non_tech: [0, 0, 0, 0],
+    epochs: [{ ts: FOUR[2], changed: ['experience extraction changed'], fields: ['derivations_version'] }] });
+  t.draw();
+  assert.doesNotMatch(nodes['trends-chart'].innerHTML, /epoch-marker/);
 });

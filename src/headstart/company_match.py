@@ -40,6 +40,8 @@ _LEGAL = frozenset(
 _NOT_WORD = re.compile(r"[^0-9a-z]+")
 #: A typo is only forgiven in a word this long; a short word one edit away is another word.
 _TYPO_MIN = 5
+#: Fewest letters a space-blind match needs: shorter, it matches half the directory.
+_SQUEEZE_MIN = 5
 
 
 def normalize(text: str) -> list[str]:
@@ -67,7 +69,9 @@ class Candidate:
 
 def tier(query: list[str], words: tuple[str, ...]) -> int | None:
     """How well ``query`` matches a company's words, best first: 0 exact, 1 name prefix,
-    2 every query word starts a name word, 3 the same allowing one typo per long word."""
+    2 every query word starts a name word, 3 the same allowing one typo per long word, 4 a
+    name prefix once spaces are ignored — "micro soft" and "jp morgan" found nothing, because
+    the reader split a word the company writes whole, or the other way round."""
     if not query:
         return None
     if list(words) == query:
@@ -79,6 +83,9 @@ def tier(query: list[str], words: tuple[str, ...]) -> int | None:
         return 2
     if all(any(w.startswith(q) or _near(q, w) for w in words) for q in query):
         return 3
+    squeezed = "".join(query)
+    if len(squeezed) >= _SQUEEZE_MIN and "".join(words).startswith(squeezed):
+        return 4
     return None
 
 

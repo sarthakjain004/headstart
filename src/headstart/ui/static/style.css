@@ -542,8 +542,8 @@ textarea:focus{ border-color:var(--accent); }
    was the unit of and left everyone else to guess. */
 .ctl-label{ font:600 10.5px/1 var(--sans); letter-spacing:.07em; text-transform:uppercase;
   color:var(--ink-3); }
-.ctl-static{ font-size:12px; color:var(--ink-3); max-width:34ch; line-height:1.35;
-  padding:2px 0; }
+.ctl-static{ font-size:12px; color:var(--ink-3); max-width:74ch; line-height:1.35;
+  margin:-2px 0 10px; }
 .ctl-static[hidden]{ display:none !important; }
 /* [hidden] overrides display, matching .panel[hidden] above — an author `display` rule beats
    the UA stylesheet's [hidden]{display:none} at equal specificity, so every element toggled via
@@ -586,6 +586,13 @@ textarea:focus{ border-color:var(--accent); }
    430px wide, most of it air around a two-digit number. A definite max inside minmax() is
    what auto-fit counts repetitions with, so `minmax(130px, 250px)` collapses to ONE column at
    390px — measured, not assumed. 1fr keeps the count honest and --measure caps the row. */
+/* The answer in words, at body size and ink: the reason a reader picked the company. */
+.trends-verdict{ margin:14px 0 0; max-width:74ch; font-size:14px; line-height:1.45; color:var(--ink-2); }
+.trends-verdict[hidden]{ display:none !important; }
+.trends-verdict ul{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:3px; }
+.trends-verdict b{ color:var(--ink); font-weight:600; }
+.trends-verdict .verdict-early{ margin:6px 0 0; font-size:12.5px; color:var(--ink-3); }
+.note-more[hidden]{ display:none !important; }
 .trends-kpi{ display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));
   max-width:1040px; gap:10px; margin:14px 0 4px; }
 .kpi{ padding:10px 12px; background:var(--raise-2); border:1px solid var(--rule);
@@ -851,22 +858,28 @@ textarea:focus{ border-color:var(--accent); }
 
 @media (max-width:760px){
   /* `display:contents` so the chart and the legend become orderable siblings of everything
-     else. As one grid block they moved together, which forced the filter row below BOTH — on
-     an 844px phone the Unit toggle sat at y=937, under a nine-row legend and off the screen.
-     The controls belong between the plot and the legend: still above the thing they filter's
-     detail, still reachable without scrolling past it. */
+     else. As one grid block they moved together. The filter row once sat between the plot and
+     its legend to keep the Unit toggle off y=937 under a nine-row legend; a critique on a
+     390px phone then found the lines with no names in reach, since a phone draws no end
+     labels. The key wins: the legend follows the plot, and the filters follow the legend. */
   .trends-grid{ display:contents; }
   .trends{ display:flex; flex-direction:column; }
   .trends-head{ order:0; }
   .trends-companies{ order:0; }   /* after the head in source order: the subject, above the chart */
   .trends-note, .trends-error{ order:1; }
-  .trends-kpi{ order:2; }
+  .trends-verdict{ order:2; }
   .trends-skel, .trends-chart-wrap{ order:3; }
-  .trends-controls{ order:4; margin:14px 0 0; }
-  .trends-custom{ order:5; }
-  .trends-legend{ order:6; margin-top:14px; }
-  #trends-readout, .trends-table-wrap{ order:7; }
-  .chart-note{ order:8; }
+  /* The legend straight under the plot: it is the plot's key, and a phone draws no end
+     labels, so with the filters between them the lines had no names within a screen. The
+     tiles follow it: above the plot, with the company sentences, they pushed it off the
+     first screen of an 844px phone, and the sentences already say what the tiles headline. */
+  .trends-legend{ order:4; margin-top:14px; }
+  .trends-kpi{ order:5; }
+  .trends-controls{ order:6; margin:14px 0 0; }
+  .ctl-static{ order:6; margin-top:6px; }
+  .trends-custom{ order:7; }
+  #trends-readout, .trends-table-wrap{ order:8; }
+  .chart-note{ order:9; }
   .text-toggle{ margin-left:0; }
   /* `display:contents` drops the grid box that used to carry these, so they move to the
      children the reader actually sees. */

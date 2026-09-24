@@ -47,6 +47,14 @@ def test_normalize(text: str, words: list[str]) -> None:
         ("gogle", "Goggles Co", None),  # two edits from "goggl"
         ("hpe", "Hp", None),  # no typo forgiven in a short word
         ("nvidia", "Micron", None),
+        ("micro soft", "Microsoft", 4),  # a word the company writes whole, split
+        ("jp morgan", "JPMorgan Chase", 4),
+        (
+            "jpmorgan",
+            "JP Morgan Chase",
+            4,
+        ),  # and a word written whole that the company splits
+        ("h p", "HP Inc", None),  # too few letters to ignore spaces over
     ],
 )
 def test_tier(query: str, name: str, expected: int | None) -> None:

@@ -1689,9 +1689,11 @@ def test_comparable_default_starts_at_supported_history(comparable_history):
     assert data["base"] == _T2
     assert data["stamps"] == [_T2, _T3]
     assert data["series"][0]["points"] == [10, 10]
+    # A base before per-Board counting began starts the cohort where counting did, rather
+    # than answering nothing: the page names the base it actually used.
     early = client.get(f"/trends?coverage=comparable&base={quote(_T1)}").get_json()
-    assert early["base"] is None
-    assert early["stamps"] == []
+    assert early["base"] == _T2
+    assert early["stamps"] == [_T2, _T3]
 
 
 @pytest.mark.parametrize("since", [_T1, _T3])
@@ -2706,3 +2708,36 @@ def test_new_counts_from_each_picks_own_first_week(company_trends, monkeypatch):
         "workday:hpe/a": holds["workday:hpe/a"],
         "eightfold:citi.eightfold.ai": holds["eightfold:citi.eightfold.ai"],
     }
+
+
+def test_a_held_week_is_a_gap_not_a_zero(company_trends, monkeypatch):
+    """Before a pick's `new` counts, its line is unmeasured: a 0 drew a surge at the release."""
+    app_module = company_trends.application.view_functions["trends"].__globals__
+    monkeypatch.setitem(
+        app_module, "_NEW_HOLD", {"workday:hpe/a": _T3, "workday:hpe/b": _T3}
+    )
+    d = company_trends.get(
+        "/trends?metric=new&split=company&company=workday:hpe/a&company=workday:citi/2"
+    ).get_json()
+    points = {s["name"]: s["points"] for s in d["series"]}
+    assert points == {"workday:hpe/a": [None, None, 2], "workday:citi/2": [None, 0, 0]}
+    summed = company_trends.get(
+        "/trends?metric=new&company=workday:hpe/a&company=workday:citi/2"
+    ).get_json()
+    # a summed line starts with its earliest pick; the later one joins it as a marked step
+    assert summed["series"][0]["points"] == [None, 0, 2]
+
+
+def test_picks_a_view_leaves_out_are_named(company_trends):
+    """Comparable from T1 keeps only Boards known then: Eightfold's Citi (found T2) is out."""
+    d = company_trends.get(
+        f"/trends?coverage=comparable&base={quote(_T1)}&split=company"
+        "&company=workday:citi/2&company=eightfold:citi.eightfold.ai"
+    ).get_json()
+    assert d["uncounted"] == ["eightfold:citi.eightfold.ai"]
+    assert [s["name"] for s in d["series"]] == ["workday:citi/2"]
+    whole = company_trends.get(
+        "/trends?company=workday:citi/2&company=eightfold:citi.eightfold.ai"
+    ).get_json()
+    assert whole["uncounted"] == []
+    assert company_trends.get("/trends").get_json()["uncounted"] == []
