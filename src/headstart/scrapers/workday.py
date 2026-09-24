@@ -55,6 +55,7 @@ from headstart.scrapers.base import (
     classify_exception,
     loss_breakdown,
 )
+from headstart.scrapers import workday_company
 from headstart.scrapers.job_posting_jsonld import jsonld_nodes
 
 _log = log.get(__name__)
@@ -175,11 +176,16 @@ def _extract_page_detail(response: Any) -> dict[str, Any] | None:
     employment = posting.get("employmentType")
     if isinstance(employment, list):  # the spec allows a list here too
         employment = employment[0] if employment else None
+    organization = posting.get("hiringOrganization")
     return {
         "description": posting["description"],
         "startDate": posting.get("datePosted"),
         "remoteType": posting.get("jobLocationType"),
         "timeType": _SCHEMA_EMPLOYMENT.get(employment, employment),
+        # The same legal entity the CXS detail states, for the Board's name (ADR-0209).
+        "hiringOrganization": organization.get("name")
+        if isinstance(organization, dict)
+        else None,
     }
 
 
@@ -470,6 +476,8 @@ class WorkdayScraper(BaseScraper):
         # The data center actually serving the tenant. None until resolved; overrides the URL's
         # ``wdN`` when the tenant has migrated (see :meth:`_resolve_instance`).
         self._instance: str | None = None
+        # This run's details' `hiringOrganization` values, which `resolve_company` votes on.
+        self._hiring_organizations: list[str | None] = []
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -932,6 +940,7 @@ class WorkdayScraper(BaseScraper):
             if not item.get("externalPath") and (item.get("title") or "").strip()
         )
         self._report_detail_losses(details, classes, titled_stubs)
+        self._hiring_organizations = [d.get("hiringOrganization") for d in details if d]
         # The fan-out covered `wanted`, a subset of `postings` — see `attach_details` for why
         # zipping against the full list would hang each detail on the wrong posting.
         self.attach_details(postings, wanted, details)
@@ -973,8 +982,11 @@ class WorkdayScraper(BaseScraper):
         """
         if response.status_code != 200:
             return None
-        info = response.json().get("jobPostingInfo") or {}
+        payload = response.json()
+        info = payload.get("jobPostingInfo") or {}
         country = info.get("country")
+        # Beside `jobPostingInfo`, not inside it: the posting's legal entity (ADR-0209).
+        organization = payload.get("hiringOrganization")
         return {
             "description": info.get("jobDescription"),
             "startDate": info.get("startDate"),
@@ -983,6 +995,9 @@ class WorkdayScraper(BaseScraper):
             "additionalLocations": info.get("additionalLocations"),
             "country": country.get("descriptor") if isinstance(country, dict) else None,
             "remoteType": info.get("remoteType"),
+            "hiringOrganization": organization.get("name")
+            if isinstance(organization, dict)
+            else None,
         }
 
     def _job_detail(
@@ -1550,6 +1565,43 @@ class WorkdayScraper(BaseScraper):
                 classes["404 mid-crawl"] += 1
             absorb((payload or {}).get("jobPostings") or [])
         return missing, error
+
+    def resolve_company(self) -> None:
+        """Name this Board from a name on file, else from this run's postings and board page.
+
+        Every Workday Board comes here, not only a slug-shaped one: the ledger's tenant column is
+        the Board's identity (``{co}.wdN.myworkdayjobs.com/{site}``, "External", "AVEVA_careers"),
+        never its company, so no ledger value is worth keeping over a name.
+
+        A name on file wins and costs no request: `workday_company.recorded_name` reads the
+        curated map and the cascade's committed answers, the cache that keeps a Board's name the
+        same from run to run (ADR-0209). Otherwise one GET of the board page — one attempt that
+        can never wall the host, as the base method's — feeds `workday_company.board_name` with
+        the `hiringOrganization` values the detail pass already fetched. A Board that yields no
+        name keeps the one it had.
+        """
+        recorded = workday_company.recorded_name(self.board_key())
+        if recorded:
+            self.company = recorded
+            return
+        try:
+            response = self._fetch(
+                "GET",
+                self.job_url(""),  # the board page itself, on the resolved instance
+                headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
+                timeout=30,
+                attempts=1,
+                marks_wall=False,
+            )
+            page = response.text if response.status_code == 200 else None
+        except Exception:  # noqa: BLE001 - a display name is never worth failing a Board for
+            page = None
+        tenant, _instance, site = self._parts()
+        name, _source = workday_company.board_name(
+            self._hiring_organizations, page, f"{tenant}/{site}"
+        )
+        if name:
+            self.company = name
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         company, _instance, _site = self._parts()

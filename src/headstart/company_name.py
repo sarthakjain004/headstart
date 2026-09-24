@@ -67,14 +67,15 @@ MOHH", "Trabaja en Volaris", "Careers at Bachem" — so a pattern wide enough to
 mangles the first two. That is a quality bar, not a cost one, and no measurement will move it;
 what it needs is per-tenant evidence this module has no place to keep.
 
-**Workday** is excluded on stronger evidence. Its listing and detail responses carry no name —
-verified by driving the real scraper — and its board page is a client-rendered SPA. It does serve
-an ``og:title``, but sampled live it is correct on well under half of the boards that have one and
-otherwise junk this module's rules would happily accept ("Careers", "Job Opportunities", "Team
-Member Jobs"). The public job page's JSON-LD ``hiringOrganization`` is worse still: it is the
-*per-posting* legal entity and varies **within a single Board** — nvidia alone returns "IL00
-Mellanox Technologies, Ltd.", "IN01 NVIDIA Graphics Bengaluru" and "2100 NVIDIA USA" across three
-postings. A name we invent is worse than a slug we admit to.
+**Workday** reads no title. Its board page is a client-rendered SPA whose ``og:title`` is correct
+on well under half of the boards that have one and otherwise junk this module's rules would happily
+accept ("Careers", "Job Opportunities", "Team Member Jobs"). Its name comes from the posting
+detail's ``hiringOrganization`` instead, which an earlier draft of this paragraph said the detail
+did not carry — it does, beside ``jobPostingInfo``, on 140 of 140 Boards sampled 2026-09-24. That
+value is the *per-posting* legal entity and varies **within a single Board** — nvidia alone returns
+"IL00 Mellanox Technologies, Ltd.", "IN01 NVIDIA Graphics Bengaluru" and "2100 NVIDIA USA" — so
+`headstart.scrapers.workday_company` cleans, checks and votes the values into one name, and only
+then calls `from_title` for the guards below (ADR-0209).
 
 Every rule below rejects a shape that was actually observed. A title this cannot read leaves the
 Board unnamed, and `settled` then serves its `humanised` tenant rather than the raw slug (ADR-0212).
@@ -223,6 +224,10 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
         re.compile(r"^(?P<name>.+?)\s*-\s*Careers$", re.IGNORECASE),
         *_CAREERS_WRAPPER,
     ),
+    # workday: not a title. `workday_company.board_name` reads a name out of the postings'
+    # `hiringOrganization` values and the board page's og tags, then passes it here for the
+    # guards below, so the pattern is adp's bare catch-all (ADR-0209).
+    "workday": (re.compile(r"^(?P<name>.+)$"),),
 }
 
 #: A separator still present after the wrapper came off means the title had a shape this does not
@@ -318,6 +323,10 @@ _VENDOR_ALIASES: dict[str, frozenset[str]] = {
     # matching any of the four shapes. Kept as a precaution: a themed board could plausibly
     # still leave the vendor's own name in a wrapper this ATS *does* match.
     "taleo_enterprise": frozenset({"taleo", "oracle", "oracletaleo"}),
+    # Empty on purpose, like adp_recruiting's: the name comes from a posting field, not a page
+    # that can fall back to the vendor's branding, and Workday hires on its own platform
+    # (`workday.wd5.myworkdayjobs.com/Workday`).
+    "workday": frozenset(),
 }
 
 
