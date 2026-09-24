@@ -193,9 +193,6 @@ _BASE_HREF = re.compile(r"<base\s+href=\"([^\"]*)\"", re.IGNORECASE)
 #: already holds this Job's text and will supply it, which is why the listing's own fields are
 #: never read at parse time.
 _TEXT = "_resolved_description"
-#: A Board's company id before the Detail pass has asked for it — distinct from the None a failed
-#: config call leaves, which is not asked again.
-_UNRESOLVED = object()
 
 
 def _native_id(row: dict) -> str | None:
@@ -390,8 +387,8 @@ class ZwayamScraper(BaseScraper):
     #: Carried by `base._fetch`, which all four request sites here go through, so the opt-in is
     #: not inert (the caution above about direct `http.fetch` calls does not apply). Three of the
     #: four hit the metered API — `_page` (`_API`), `_company_id` (`_CONFIG_API`) and
-    #: `detail_request` (`_DETAIL_API`, sent by `run_detail_pass` through `_fetch` or
-    #: `_fetch_async`), all on `public.zwayam.com`. The fourth, `_link_base`, GETs the Board's own
+    #: `detail_request` (`_DETAIL_API`, sent by `run_detail_pass` through `_fetch`), all on
+    #: `public.zwayam.com`. The fourth, `_link_base`, GETs the Board's own
     #: customer domain and passes `marks_wall=False` for that reason; see the note there.
     #:
     #: `_DETAIL_API`'s documented UA-rule 403 (above) is a malformed-request 403, not a quota one.
@@ -424,14 +421,17 @@ class ZwayamScraper(BaseScraper):
     #: measurements, and the ADR-0050 skip-list makes the full-corpus pass a one-time cost
     #: anyway. Whatever the width, no async fan-out: multiplexing cannot raise a server ceiling.
     detail_workers = 16
-    #: The thread path, which this pass has always taken — the transport is **not** measured
-    #: (ADR-0167 wants a measurement, and this records why there is none). An interleaved A/B
-    #: at width 16 was tried on 2026-09-24 (impetus.openings.co, careers.practo.com) and the
-    #: per-IP quota (`egress_fallback_on`) walled the detail path on both transports within
-    #: ~15-20 requests: multiplexed 21 of 32 then 13 of 32 details before HTTP 403, threads 15 of
-    #: 39. That shows the two equally correct under the wall, not which is faster; the two Taleo
-    #: origins measured the same day both ran slower multiplexed. Re-run the A/B from a fresh
-    #: egress before moving this pass off threads.
+    #: The thread path, which this pass has always taken. The transport itself is **not**
+    #: measured: ADR-0167 asks for a measurement, and this records why there is none. An
+    #: interleaved A/B at width 16 was tried on 2026-09-24 (impetus.openings.co,
+    #: careers.practo.com), and the per-IP quota (`egress_fallback_on`) walled the detail path on
+    #: both transports within ~15-20 requests. Multiplexed got 21 of 32 details, then 13 of 32,
+    #: before HTTP 403; threads got 15 of 39. So the two are equally correct under the wall, but
+    #: nothing shows which is faster. What is on record is the note on `detail_workers` above: a
+    #: measured ~8-9 responses/s per-IP ceiling, which multiplexing cannot raise. Re-run the A/B
+    #: from a fresh egress before moving this pass off threads. That move must also take
+    #: `_detail_company_id`'s blocking config call out of `detail_request`, which the multiplexed
+    #: path runs inside its event loop.
     async_fanout = False
 
     def __init__(
@@ -439,7 +439,10 @@ class ZwayamScraper(BaseScraper):
     ) -> None:
         super().__init__(slug, company, fetcher=fetcher)
         self._company_id_lock = threading.Lock()
-        self._board_company_id: Any = _UNRESOLVED
+        self._company_id_asked = (
+            False  # a failed config call leaves None, not asked again
+        )
+        self._board_company_id: int | None = None
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -579,8 +582,9 @@ class ZwayamScraper(BaseScraper):
         a Board whose rows are all gated or already held never spends it. Locked because the
         thread transport (:attr:`async_fanout`) forms requests from several workers at once."""
         with self._company_id_lock:
-            if self._board_company_id is _UNRESOLVED:
+            if not self._company_id_asked:
                 self._board_company_id = self._company_id()
+                self._company_id_asked = True
             return self._board_company_id
 
     def detail_request(self, row: dict) -> DetailRequest:

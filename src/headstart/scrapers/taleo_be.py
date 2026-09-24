@@ -345,12 +345,13 @@ class TaleoBEScraper(BaseScraper):
         nothing, since the fetch succeeded — but :meth:`read_detail` still returns it, because
         its labels (location, department, salary) are real: YKHC's layout carries no body and
         still states a location and department on 128 of 128 pages (measured 2026-09-24)."""
-        bodies: list[dict[str, str | None] | None] = []
+        described_details: list[dict[str, str | None] | None] = []
         for detail in results:
             if detail is not None and not detail.get("description"):
                 self.note_detail_loss("200 without a parseable description body")
-            bodies.append(detail if detail and detail.get("description") else None)
-        return super().report_detail_gaps(bodies, what)
+                detail = None
+            described_details.append(detail)
+        return super().report_detail_gaps(described_details, what)
 
     def read_detail(
         self, item: dict[str, str | None], response: Any

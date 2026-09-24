@@ -199,16 +199,16 @@ def test_zoho_fetch_raw_detail_pass(monkeypatch, async_fanout):
         {"id": "3", "Posting_Title": "Locked", "Is_Locked": True},
     ]
     detail = {"id": "1", "Job_Description": "<div>4+ years of Go</div>"}
-    s, fetcher = _zoho_board(
+    scraper, fetcher = _zoho_board(
         _page(records), lambda job_id: FakeResponse(text=_detail_page(detail))
     )
-    raw = s.fetch_raw()
+    raw = scraper.fetch_raw()
     assert sorted(fetcher.urls()[1:]) == [
         "https://acme.zohorecruit.com/jobs/Careers/1",
         "https://acme.zohorecruit.com/jobs/Careers/2",
     ]  # not "3" — locked
     assert raw["details"] == {"1": detail, "2": detail}
-    jobs = s.parse(raw, SCRAPED_AT)
+    jobs = scraper.parse(raw, SCRAPED_AT)
     # The detail record wins over the listing's own Job_Description for both jobs — it is a
     # measured strict superset (experiment/location-audit-2026-08-25/zoho.md).
     assert jobs[0].description == "4+ years of Go"
@@ -244,8 +244,10 @@ def test_zoho_detail_record_enriches_posted_at_experience_department_state_and_s
             "Currency": "EUR",
         }
     )
-    s, _fetcher = _zoho_board(_page(records), lambda job_id: FakeResponse(text=detail))
-    jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
+    scraper, _fetcher = _zoho_board(
+        _page(records), lambda job_id: FakeResponse(text=detail)
+    )
+    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
     j = jobs[0]
     assert j.posted_at == "2025-09-25"  # listing had none
     assert j.experience == "+3 ans"  # listing had none
@@ -276,7 +278,11 @@ def test_zoho_falls_back_to_listing_when_detail_fetch_missing():
     assert j.salary is None  # never in the listing to begin with
 
 
-def test_zoho_classifies_a_source_declared_unavailable_detail() -> None:
+@pytest.mark.parametrize("async_fanout", ["1", "0"])
+def test_zoho_classifies_a_source_declared_unavailable_detail(
+    monkeypatch, async_fanout
+) -> None:
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
     unavailable = '<div class="sorry-block"><h4>This job posting is no longer available.</h4></div>'
     scraper, _fetcher = _zoho_board(
         _page([{"id": "1", "Posting_Title": "Backend Engineer"}]),

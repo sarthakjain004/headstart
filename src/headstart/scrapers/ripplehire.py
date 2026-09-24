@@ -157,23 +157,25 @@ class RippleHireScraper(BaseScraper):
         self._board_token = token
         need = [j for j in jobs if j.get("jobSeq") and not j.get("jobDesc")]
         records = self.run_detail_pass(
-            need, key_of=lambda job: str(job["jobSeq"]), what="descriptions"
+            need,
+            key_of=lambda listing_row: str(listing_row["jobSeq"]),
+            what="descriptions",
         )
-        for job in need:
-            # A missing detail record must not drop the job: it ships on its listing fields.
-            record = records.get(str(job["jobSeq"])) or {}
-            job["jobDesc"] = record.get("jobDesc") or None
-            job["_detail"] = record
+        for listing_row in need:
+            # A missing detail record must not drop the Job: it ships on its listing fields.
+            record = records.get(str(listing_row["jobSeq"])) or {}
+            listing_row["jobDesc"] = record.get("jobDesc") or None
+            listing_row["_detail"] = record
         return jobs
 
-    def detail_request(self, job: dict) -> DetailRequest:
+    def detail_request(self, listing_row: dict) -> DetailRequest:
         return DetailRequest(
             f"https://{self.slug}.ripplehire.com/candidate/candidatejobdetail"
-            f"?token={self._board_token}&jobSeq={job['jobSeq']}&source=CAREERSITE&lang=en",
+            f"?token={self._board_token}&jobSeq={listing_row['jobSeq']}&source=CAREERSITE&lang=en",
             headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
         )
 
-    def read_detail(self, job: dict, response: Any) -> dict:
+    def read_detail(self, listing_row: dict, response: Any) -> dict:
         """The whole ``jobVO`` record, not only its ``jobDesc``.
 
         The search list always carries ``jobDesc: null``, so this was fetched for the

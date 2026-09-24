@@ -423,14 +423,13 @@ class TaleoEnterpriseScraper(BaseScraper):
         """The gap line counts descriptions. A page whose fields parse but carry no description
         is counted as the gap it is, yet :meth:`read_detail` still returns it: its other fields
         (location, department, salary) are real and `parse` prefers them to the listing's."""
-        descriptions: list[dict[str, str | None] | None] = []
+        described_details: list[dict[str, str | None] | None] = []
         for detail in results:
             if detail is not None and not detail.get("description"):
                 self.note_detail_loss("no description on the requisition")
-            descriptions.append(
-                detail if detail and detail.get("description") else None
-            )
-        return super().report_detail_gaps(descriptions, what)
+                detail = None
+            described_details.append(detail)
+        return super().report_detail_gaps(described_details, what)
 
     def fetch_raw(self) -> Any:
         shell = self._get()

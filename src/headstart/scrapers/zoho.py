@@ -181,9 +181,12 @@ class ZohoScraper(BaseScraper):
             for r in self._records(page)
             if r.get("id") and not r.get("Is_Locked") and r.get("Publish", True)
         ]
-        # No tech gate: gated on the listing's fields it measured 47.4% recall (ADR-0166). No
-        # held-description skip either: a stored description does not hold the Salary above.
-        details = self.run_detail_pass(ids, key_of=lambda jid: jid, what="detail pages")
+        # No tech gate: a department-blind gate would drop 47.4% of zoho's tech postings
+        # (ADR-0166). No held-description skip either: a stored description does not hold the
+        # Salary above.
+        details = self.run_detail_pass(
+            ids, key_of=lambda job_id: job_id, what="detail pages"
+        )
         return {"page": page, "details": details}
 
     @staticmethod
@@ -201,10 +204,10 @@ class ZohoScraper(BaseScraper):
             return []
         return json.loads(html.unescape(match.group(1)))
 
-    def detail_request(self, jid: str) -> DetailRequest:
-        return DetailRequest(f"https://{self.slug}/jobs/Careers/{jid}")
+    def detail_request(self, job_id: str) -> DetailRequest:
+        return DetailRequest(f"https://{self.slug}/jobs/Careers/{job_id}")
 
-    def read_detail(self, jid: str, response: Any) -> dict:
+    def read_detail(self, job_id: str, response: Any) -> dict:
         return self._detail_record_of(response.text)
 
     @staticmethod

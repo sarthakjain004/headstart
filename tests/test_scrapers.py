@@ -1670,11 +1670,13 @@ def test_ripplehire_fetch_raw_attaches_full_detail_record():
     assert raw[0]["_detail"]["jobPostingDate"] == "23-Jun-2020"
 
 
+@pytest.mark.parametrize("async_fanout", ["1", "0"])
 def test_ripplehire_a_record_without_jobdesc_keeps_its_fields_and_is_a_labelled_gap(
-    caplog,
+    caplog, monkeypatch, async_fanout
 ):
     """A record that arrives with no text is a description gap, labelled apart from a fetch that
     never landed — but its other fields are real, so the Job still ships its department."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
     scraper, _fetcher = _ripplehire_board(
         [{"jobSeq": 1, "jobTitle": "SRE", "jobDesc": None}],
         lambda job_seq: _ripplehire_record({"bussinessUnit": "Technology"}),
@@ -1690,9 +1692,13 @@ def test_ripplehire_a_record_without_jobdesc_keeps_its_fields_and_is_a_labelled_
     assert "1/1 descriptions missing (no jobDesc on the record x1)" in caplog.text
 
 
-def test_ripplehire_a_lost_detail_is_labelled_and_the_job_still_ships():
+@pytest.mark.parametrize("async_fanout", ["1", "0"])
+def test_ripplehire_a_lost_detail_is_labelled_and_the_job_still_ships(
+    monkeypatch, async_fanout
+):
     """A 200 without a ``jobVO`` and a refused request are both losses, each named; neither
     costs the Job, which ships on its listing fields."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
     answers = {
         "1": FakeResponse(text=json.dumps({"status": "error"})),
         "2": FakeResponse(500, "down"),
@@ -7567,7 +7573,7 @@ def test_zoho_detail_description_appends_salary_and_currency(record, expected):
 
     page = f"var jobs = JSON.parse('[{record}]')"
     assert (
-        _description_text(ZohoScraper("jobs.acme.com")._detail_record_of(page) or {})
+        _description_text(ZohoScraper("jobs.acme.com")._detail_record_of(page))
         == expected
     )
 
@@ -7625,8 +7631,8 @@ def test_zoho_fetches_every_job_detail_not_just_empty_descriptions():
             "Publish": False,
         },  # excluded: unpublished
     ]
-    s, fetcher = _zoho_served(records, lambda job_id: FakeResponse(404, "gone"))
-    s.fetch_raw()
+    scraper, fetcher = _zoho_served(records, lambda job_id: FakeResponse(404, "gone"))
+    scraper.fetch_raw()
 
     fetched_ids = [url.rsplit("/", 1)[1] for url in fetcher.urls()[1:]]
     assert sorted(fetched_ids) == ["1", "2"]  # not "3" (locked) or "4" (unpublished)
@@ -7646,28 +7652,32 @@ def test_zoho_parse_prefers_the_salary_enriched_detail_description():
         "Salary": "10-12",
         "Currency": "LPA",
     }
-    s, _fetcher = _zoho_served(
+    scraper, _fetcher = _zoho_served(
         records, lambda job_id: FakeResponse(text=_zoho_detail_page(detail))
     )
 
-    raw = s.fetch_raw()
-    jobs = s.parse(raw, SCRAPED_AT)
+    raw = scraper.fetch_raw()
+    jobs = scraper.parse(raw, SCRAPED_AT)
 
     assert jobs[0].description == "Plain listing text. Salary: 10-12 Currency: LPA"
     assert jobs[0].salary == "10-12 LPA"
 
 
-def test_zoho_parse_falls_back_to_the_listing_if_the_detail_fetch_failed():
+@pytest.mark.parametrize("async_fanout", ["1", "0"])
+def test_zoho_parse_falls_back_to_the_listing_if_the_detail_fetch_failed(
+    monkeypatch, async_fanout
+):
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
     records = [
         {"id": "1", "Job_Description": "Plain listing text.", "Is_Locked": False}
     ]
-    s, _fetcher = _zoho_served(records, lambda job_id: FakeResponse(503, "down"))
+    scraper, _fetcher = _zoho_served(records, lambda job_id: FakeResponse(503, "down"))
 
-    raw = s.fetch_raw()
-    jobs = s.parse(raw, SCRAPED_AT)
+    raw = scraper.fetch_raw()
+    jobs = scraper.parse(raw, SCRAPED_AT)
 
     assert jobs[0].description == "Plain listing text."
-    assert s.detail_losses == {"HTTP 503": 1}
+    assert scraper.detail_losses == {"HTTP 503": 1}
 
 
 def test_zoho_slug_from_keeps_only_the_host():
@@ -9510,37 +9520,22 @@ def test_zwayam_slug_is_the_board_host():
     ) == ("impetus.openings.co")
 
 
-class _ZwayamNullBody:
-    """The 200-with-`data: null` a non-Board hostname answers with."""
+def _zwayam_answering(host: str, answer: FakeResponse | Exception):
+    """A zwayam Scraper for ``host`` whose every request ``answer`` settles — returned, or raised
+    when it is an exception."""
+    from headstart.scrapers.zwayam import ZwayamScraper
 
-    status_code = 200
-    text = ""
-
-    def raise_for_status(self):
-        return None
-
-    def json(self):
-        return {"code": 200, "data": None}
+    return ZwayamScraper(host, fetcher=FakeFetcher(lambda method, url, kwargs: answer))
 
 
-def test_zwayam_unregistered_host_yields_no_jobs(monkeypatch):
+def test_zwayam_unregistered_host_yields_no_jobs():
     """A hostname that is not a Board answers 200 with data: null — not an error, and not jobs."""
-    monkeypatch.setattr(http, "fetch", lambda *a, **k: _ZwayamNullBody())
-    scraper = get_scraper("zwayam", "careers.not-a-board.example")
+    null_body = FakeResponse(text=json.dumps({"code": 200, "data": None}))
+    scraper = _zwayam_answering("careers.not-a-board.example", null_body)
     assert scraper.parse(scraper.fetch_raw(), SCRAPED_AT) == []
 
 
-class _ZwayamHomepage:
-    status_code = 200
-
-    def __init__(self, text):
-        self.text = text
-
-    def raise_for_status(self):
-        return None
-
-
-def test_zwayam_link_base_tells_the_three_frontend_generations_apart(monkeypatch):
+def test_zwayam_link_base_tells_the_three_frontend_generations_apart():
     """One API, three careers frontends, three job routes (live-classified across all 224 hiring
     Boards): Angular's `<base href>` + `jobview/`, Next.js's root `/job-view/` (where `jobview`
     hard-404s, 10/10 Boards), and the old Angular 1 shell's hash route `/#!/job-view/`."""
@@ -9549,26 +9544,22 @@ def test_zwayam_link_base_tells_the_three_frontend_generations_apart(monkeypatch
         ('<script src="/_next/static/x.js">', "https://h.example/job-view/"),
         ('<div ng-view="" id="ng-view">', "https://h.example/#!/job-view/"),
     ]
-    for html, expected in cases:
-        monkeypatch.setattr(http, "fetch", lambda *a, _h=html, **k: _ZwayamHomepage(_h))
-        assert get_scraper("zwayam", "h.example")._link_base() == expected
+    for homepage_html, expected in cases:
+        homepage = FakeResponse(text=homepage_html)
+        assert _zwayam_answering("h.example", homepage)._link_base() == expected
 
 
-def test_zwayam_unreadable_homepage_falls_back_on_the_hostname_prior(monkeypatch):
+def test_zwayam_unreadable_homepage_falls_back_on_the_hostname_prior():
     """When the homepage GET fails the shape comes from the measured prior: `openings.co` hosts
     are the Next generation 102:12, custom domains Angular 92:0. A wrong guess costs a dead link,
     not a lost Job — so the Board must still return its rows."""
-
-    def _boom(*a, **k):
-        raise OSError("refused")
-
-    monkeypatch.setattr(http, "fetch", _boom)
+    refused = OSError("refused")
     assert (
-        get_scraper("zwayam", "x.openings.co")._link_base()
+        _zwayam_answering("x.openings.co", refused)._link_base()
         == "https://x.openings.co/job-view/"
     )
     assert (
-        get_scraper("zwayam", "careers.x.com")._link_base()
+        _zwayam_answering("careers.x.com", refused)._link_base()
         == "https://careers.x.com/jobview/"
     )
 
@@ -9644,15 +9635,12 @@ def test_zwayam_multipart_encodes_every_field():
     assert 'name="b"\r\n\r\ntwo\r\n' in body
 
 
-def test_zwayam_absolute_base_href_does_not_corrupt_the_link(monkeypatch):
+def test_zwayam_absolute_base_href_does_not_corrupt_the_link():
     """An absolute <base href> is legal HTML; pasting it onto the Board host would build
     https://host/https://cdn.../jobview/… — unresolvable."""
     html = '<html><base href="https://cdn.example.com/x/"><app-root></app-root></html>'
-    monkeypatch.setattr(http, "fetch", lambda *a, **k: _ZwayamHomepage(html))
-    assert (
-        get_scraper("zwayam", "careers.abs.example")._link_base()
-        == "https://careers.abs.example/jobview/"
-    )
+    scraper = _zwayam_answering("careers.abs.example", FakeResponse(text=html))
+    assert scraper._link_base() == "https://careers.abs.example/jobview/"
 
 
 def test_zwayam_row_without_a_joburl_is_skipped_not_linked_to_the_board_root():
@@ -9778,26 +9766,14 @@ def test_zwayam_department_survives_the_lowercase_key_being_null():
     assert job.department == "Engineering"
 
 
-def test_zwayam_a_body_error_code_raises_rather_than_reading_as_an_empty_board(
-    monkeypatch,
-):
+def test_zwayam_a_body_error_code_raises_rather_than_reading_as_an_empty_board():
     """The endpoint reports its own failures as HTTP 200 with body `code: 500` and `data: null`
     (measured) — byte-identical to a dead Board except for the code. Reading it as "no jobs"
     marks every posting Unconfirmed, and a second one evicts them all (ADR-0083)."""
-    import pytest
-
-    class _ErrorBody:
-        status_code = 200
-        text = ""
-
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return {"code": 500, "data": None, "message": "Internal Server Error"}
-
-    monkeypatch.setattr(http, "fetch", lambda *a, **k: _ErrorBody())
-    scraper = get_scraper("zwayam", "careers.err.example")
+    error_body = FakeResponse(
+        text=json.dumps({"code": 500, "data": None, "message": "Internal Server Error"})
+    )
+    scraper = _zwayam_answering("careers.err.example", error_body)
     with pytest.raises(RuntimeError, match="body code 500"):
         scraper.fetch_raw()
 
