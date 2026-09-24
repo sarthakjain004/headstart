@@ -269,8 +269,17 @@ class ZohoScraper(BaseScraper):
             # The detail record wins field-by-field when it landed — measured a strict superset
             # over the listing (`_merge_detail`'s docstring) — and falls back to the bare listing
             # record if the detail fetch failed.
-            d = _merge_detail(r, details.get(jid))
+            detail = details.get(jid)
+            d = _merge_detail(r, detail)
             title = (r.get("Posting_Title") or r.get("Job_Opening_Name") or "").strip()
+            # Except for the description of a Job the store already holds (ADR-0208): the
+            # listing renders it differently from the detail page, so a failed detail would
+            # replace the held text with another rendering of the same posting, and flip it back
+            # the next time the detail lands. No text here keeps the held one.
+            held = not self.needs_detail(jid)
+            description = (
+                None if held and not detail else html_to_text(_description_text(d))
+            )
             jobs.append(
                 Job(
                     id=self.job_id(jid),
@@ -285,7 +294,7 @@ class ZohoScraper(BaseScraper):
                     url=self.job_url(jid, title),
                     posted_at=d.get("Date_Opened") or None,
                     scraped_at=scraped_at,
-                    description=html_to_text(_description_text(d)),
+                    description=description,
                     experience=d.get("Work_Experience"),
                     employment_type=d.get("Job_Type"),
                     salary=self._salary_field(d),
