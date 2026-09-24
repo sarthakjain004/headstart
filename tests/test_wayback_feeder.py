@@ -267,8 +267,8 @@ def test_every_table_host_yields_the_slug_its_own_scraper_expects():
 
 
 def test_a_workday_slug_keeps_the_site_its_scraper_parses():
-    """`WorkdayScraper.slug_from` keeps the whole careers URL and `_URL_PATTERN` demands a site
-    segment, so a bare host would be a slug the scraper rejects outright."""
+    """`WorkdayScraper.slug_from` keeps the whole careers URL and `CAREERS_URL_PATTERN` demands a
+    site segment, so a bare host would be a slug the scraper rejects outright."""
     slug, url = wf.extract(
         "https://2020companies.wd1.myworkdayjobs.com/en-US/External_Careers/job/x",
         "myworkdayjobs.com",
@@ -318,7 +318,7 @@ def test_workday_reads_the_site_shapes_that_really_occur(url, expected):
 @pytest.mark.parametrize(
     "url",
     [
-        # implementation/preview tenants: `WorkdayScraper._URL_PATTERN` wants `wd\\d+` and raises
+        # implementation/preview tenants: `workday.CAREERS_URL_PATTERN` wants `wd\\d+` and raises
         # on these, so harvesting them would hand the scraper a slug it rejects
         "https://acme.impl-wd10.myworkdayjobs.com/External_Careers",
         # `/wday/` machinery that is not the jobs endpoint

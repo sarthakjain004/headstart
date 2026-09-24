@@ -183,7 +183,11 @@ def _extract_page_detail(response: Any) -> dict[str, Any] | None:
     }
 
 
-_URL_PATTERN = re.compile(
+#: A Workday Board's careers URL — its slug (:meth:`WorkdayScraper.slug_from`) — split into the
+#: tenant, the data centre it was discovered on and the site. Public because the liveness probe
+#: reads the same three parts off the same URL, and a second copy of this pattern is how the two
+#: could disagree about which Board a row names (ADR-0203).
+CAREERS_URL_PATTERN = re.compile(
     r"^https://(?P<company>[^.]+)\.(?P<instance>wd\d+)\.myworkdayjobs\.com/(?P<site>[^/?#]+)"
 )
 
@@ -478,7 +482,14 @@ class WorkdayScraper(BaseScraper):
         return f"{self.ats}:{company}/{site}"
 
     def url(self) -> str:
-        company, instance, site = self._parts()
+        return self.listing_url_on(self._requested_instance)
+
+    def listing_url_on(self, instance: str) -> str:
+        """The CXS listing this Board would answer on data centre ``instance``.
+
+        :meth:`url` asks the one this scrape resolved; :meth:`_resolve_instance` and the liveness
+        probe ask each of :data:`INSTANCES` in turn to find a tenant that migrated (ADR-0203)."""
+        company, _instance, site = self._parts()
         return (
             f"https://{company}.{instance}.myworkdayjobs.com"
             f"/wday/cxs/{company}/{site}/jobs"
@@ -528,7 +539,7 @@ class WorkdayScraper(BaseScraper):
         """
         try:
             # `_parts()` inside the guard, not before it: it raises `ValueError` on a slug that
-            # does not match `_URL_PATTERN`, and `dedupe_boards.py` reads this method's result
+            # does not match `CAREERS_URL_PATTERN`, and `dedupe_boards.py` reads this method's result
             # from an unguarded `future.result()` inside a `ThreadPoolExecutor` -- one malformed
             # slug anywhere in a 12,844-board scan would abort the whole run on whichever board
             # happened to raise, not just mark that one unreachable.
@@ -549,7 +560,7 @@ class WorkdayScraper(BaseScraper):
             return None
 
     def _parts(self) -> tuple[str, str, str]:
-        match = _URL_PATTERN.match(self.slug.rstrip("/"))
+        match = CAREERS_URL_PATTERN.match(self.slug.rstrip("/"))
         if not match:
             raise ValueError(
                 "Workday slug must be a careers URL like "
@@ -578,19 +589,13 @@ class WorkdayScraper(BaseScraper):
         retried a 400 on the theory it was a throttle; the 400 is a session-cookie fault the sweep
         never provokes, so that special case is gone.)
         """
-        company, hinted, site = (
-            self._parts()
-        )  # self._instance is None here -> the URL's instance
+        hinted = self._requested_instance  # _instance is None here, so the URL's own
 
         def serves(instance: str) -> bool:
-            probe_url = (
-                f"https://{company}.{instance}.myworkdayjobs.com"
-                f"/wday/cxs/{company}/{site}/jobs"
-            )
             try:
                 response = self._fetch(
                     "POST",
-                    probe_url,
+                    self.listing_url_on(instance),
                     json={
                         "appliedFacets": {},
                         "limit": 1,

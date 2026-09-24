@@ -650,10 +650,11 @@ class BaseScraper(ABC):
         host it lands on. A Board nothing points away from resolves to its own host, which is what
         makes the shared key meaningful rather than merely equal.
 
-        Override where an ATS serves its aliases independently instead of redirecting between them
-        — Eightfold's ``nvidia.eightfold.ai`` and ``jobs.nvidia.com`` each answer for themselves, so
-        the default finds nothing there and its tenant id is the key. This is the same
-        default-here-override-there shape as :meth:`board_key` and :meth:`slug_from`.
+        Override where the redirect off :meth:`url` is not the signal: Workday follows its public
+        careers page instead, and each single source scraper (``google``, ``apple``, ``meta``, …)
+        is its own key without a request. Where the redirect is the signal but the landing host is
+        the wrong key, override only :meth:`alias_key_of_landing` (both Taleo editions). This is
+        the same default-here-override-there shape as :meth:`board_key` and :meth:`slug_from`.
 
         **The default's return value must be comparable to this ATS's own ``slug``, and for the
         default that means the slug has to BE a host.** ``board_aliases.resolve`` decides a Board
@@ -678,6 +679,10 @@ class BaseScraper(ABC):
         Streamed and closed unread — only the redirect chain is wanted, and a SuccessFactors
         sitemap body runs to megabytes. Only the final host survives, not the chain that reached
         it, which is why the ledger records a destination rather than a route.
+
+        Names its Board in the retry log (``egress_board``) and does no more: it neither routes
+        nor walls the spare egress, which is exactly what both Taleo editions' own copies of this
+        fetch did before they came to share it (ADR-0203).
         """
         try:
             resp = self._fetcher.fetch(
@@ -687,11 +692,22 @@ class BaseScraper(ABC):
                 timeout=30,
                 allow_redirects=True,
                 stream=True,
+                egress_board=self.board_key(),
             )
             resp.close()
-            return urllib.parse.urlsplit(resp.url).netloc.lower() or None
+            return self.alias_key_of_landing(resp.url)
         except Exception:  # noqa: BLE001 - any failure to reach it is "no verdict", not a crash
             return None
+
+    @staticmethod
+    def alias_key_of_landing(landing_url: str) -> str | None:
+        """The alias key a Board's surface names by landing on ``landing_url`` — its host.
+
+        The one step of :meth:`alias_key` an ATS may need to change without re-implementing the
+        fetch around it: a Taleo Board shares its regional host with every other customer, so its
+        key is the whole canonical career-section URL instead (ADR-0203). Raising is "no verdict",
+        the same as a failed fetch."""
+        return urllib.parse.urlsplit(landing_url).netloc.lower() or None
 
     @abstractmethod
     def url(self) -> str:

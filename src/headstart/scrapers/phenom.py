@@ -182,7 +182,9 @@ class PhenomScraper(BaseScraper):
 
     # --- listing ----------------------------------------------------------------------------
 
-    def _widgets_url(self) -> str:
+    def widgets_url(self) -> str:
+        """The tenant's one JSON endpoint. Public: the liveness probe posts its count here
+        (ADR-0203)."""
         return f"https://{self.slug}/widgets"
 
     #: The one set of headers both widget calls send. Declared once because the sync and async
@@ -196,7 +198,7 @@ class PhenomScraper(BaseScraper):
     def _widgets(self, payload: dict[str, Any]) -> dict[str, Any]:
         response = self._fetch(
             "POST",
-            self._widgets_url(),
+            self.widgets_url(),
             json=payload,
             headers=self._WIDGET_HEADERS,
             timeout=45,
@@ -326,7 +328,7 @@ class PhenomScraper(BaseScraper):
             response = await self._fetch_async(
                 session,
                 "POST",
-                self._widgets_url(),
+                self.widgets_url(),
                 json=self._detail_payload(native_id),
                 headers=self._WIDGET_HEADERS,
                 timeout=45,

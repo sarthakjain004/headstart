@@ -43,7 +43,6 @@ from typing import Any
 
 from headstart import log, scrapable_boards
 from headstart.board_identity import board_key, board_of, lower_key
-from headstart.config import CompanyRef
 from headstart.corpus import iter_jobs
 from headstart.ingest.board_operator import tenant
 
@@ -459,14 +458,13 @@ def workday_site_jobs(ledger_dir: str | Path) -> dict[str, int]:
     harmless, and one whose URL will not parse is already reported by :func:`live_keep_set`.
     """
     from headstart import liveness
-    from headstart.scrapers.registry import SCRAPERS
+    from headstart.scrapers.registry import company_from_row
 
-    slug_from = SCRAPERS["workday"].slug_from
     jobs: dict[str, int] = {}
     for verdict in liveness.load(Path(ledger_dir) / "workday.csv").values():
         if verdict.status != liveness.LIVE:
             continue
-        company = CompanyRef(ats="workday", slug=slug_from(verdict.tenant, verdict.url))
+        company = company_from_row("workday", verdict.tenant, verdict.url)
         try:
             board = lower_key(board_key(company))
         except ValueError:
