@@ -1,4 +1,4 @@
-"""Name a Board for a person to read: its stated company, a curated alias, or its humanised slug.
+"""Name a Board for a person to read: its stated company, a curated alias, or its humanised tenant.
 
 Two stages name Boards — `hot_boards` for the Hot tab's ranked rows and `company_directory`
 for every Board the Trends company filter can pick — and both must name a Board the same way,
@@ -13,7 +13,7 @@ from typing import Final
 
 from headstart import company_name, log
 from headstart.board_identity import ats_of
-from headstart.company_name import LABEL_NOISE, SCHEME, tidy
+from headstart.company_name import LABEL_NOISE, tidy
 from headstart.ingest.board_operator import tenant
 
 _log = log.get(__name__)
@@ -57,15 +57,6 @@ def board_names(db: Path, table_name: str) -> dict[str, str]:
 _WORDS = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")
 
 
-#: Hand-written names for Boards whose slug cannot produce one, keyed by board_key: the committed
-#: map `config/company_names.csv`, which the scrape also serves as the company (ADR-0209).
-#:
-#: It is also the company directory's only cross-ATS identity (ADR-0185): Boards sharing an
-#: alias are one company there, and a company's counts are summed over its Boards. The file's
-#: header says why a pair whose Boards mirror each other (Lockheed Martin) must not share one.
-DISPLAY_ALIASES: Final[dict[str, str]] = company_name.curated_names()
-
-
 def stated_name(company: str, board: str) -> str | None:
     """The name a Board *asserts* — a curated alias or a cased company name — else None.
 
@@ -73,12 +64,18 @@ def stated_name(company: str, board: str) -> str | None:
     difference to name a multi-Board company by its stated spelling ("NVIDIA"), not the tidied
     slug of whichever Board sorts first ("Nvidia").
     """
-    alias = DISPLAY_ALIASES.get(board)
+    # The hand-written names of `config/company_names.csv`, which the scrape also serves as the
+    # company. They are the company directory's only cross-ATS identity too (ADR-0185, ADR-0209).
+    alias = company_name.curated(board)
     if alias:
         return alias
     stated = (company or "").strip()
-    if stated and stated != stated.lower() and not _names_the_board(stated, board):
-        return stated  # a real, cased company name — never re-case or trim it
+    if not stated or _names_the_board(stated, board):
+        return None
+    # A cased name is a real one; a lowercase one is too unless it repeats the Board's own key
+    # ("incident.io" on `gem:incident`, ADR-0209). Never re-case or trim either.
+    if stated != stated.lower() or not company_name.echoes_board(stated, board):
+        return stated
     return None
 
 
@@ -136,10 +133,10 @@ def _is_noise_label(name: str, board: str) -> bool:
 
 def _slug(board: str) -> str:
     """The board_key's slug without a URL scheme, so its first segment is a host or tenant."""
-    return SCHEME.sub("", board.split(":", 1)[-1])
+    return company_name.without_scheme(board.split(":", 1)[-1])
 
 
-def display_name(company: str, board: str) -> str:
+def display_name(company: str, board: str) -> str | None:
     """A name a person can read, without inventing one.
 
     Two Boards in five carry an ATS slug rather than a resolved company name (ADR-0114), and a
@@ -154,11 +151,11 @@ def display_name(company: str, board: str) -> str:
 
     It stops there. `swa.wd1.myworkdayjobs.com/external` derives "SWA" and not "Southwest
     Airlines", because that expansion is not in the data; it comes from the curated map
-    (`DISPLAY_ALIASES`), which a person wrote. A stated, mixed-case name is returned
+    (`config/company_names.csv`), which a person wrote. A stated, mixed-case name is returned
     untouched, so `CI&T` and `HCLTech` survive — unless it is the Board's own site or ledger
     spelling (`stated_name`), which names the board, not the company.
 
-    Empty where the Board states nothing and its tenant is only a code; callers skip such a
+    None where the Board states nothing and its tenant is only a code; callers skip such a
     Board rather than list it without a name.
     """
     named = stated_name(company, board)
@@ -167,7 +164,7 @@ def display_name(company: str, board: str) -> str:
     # A tenant that is only a code (Oracle's pods, ADP's GUIDs) names nothing, and an empty
     # name is shown as none rather than as the code (ADR-0209).
     if not company_name.humanised(board):
-        return ""
+        return None
     # Everything below tidies a *slug*. The cased-name guard above must not reach it: a slug
     # carries capitals of its own (`micron/External`), and treating those as a company name
     # returned the raw slug, path and all.
@@ -179,5 +176,9 @@ def display_name(company: str, board: str) -> str:
     # nothing, so its "sap" stays.
     if name and from_slug and _names_the_board(name, board):
         name = ""
-    text = (tidy(name) if name else None) or from_slug or name or tenant(board)
-    return company_name.humanised_text(text) or text
+    # A name of its own is spelled like the scrape's fallback; with none, this *is* that
+    # fallback, so the Hot and Trends tabs and the served table spell a Board alike (ADR-0209).
+    named = tidy(name) if name else None
+    return (
+        company_name.humanised_text(named) if named else company_name.humanised(board)
+    )

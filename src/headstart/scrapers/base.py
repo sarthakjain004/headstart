@@ -916,7 +916,10 @@ class BaseScraper(ABC):
             self.resolve_company()
         # Before `parse`, so a posting with no name of its own falls back to a name, never to
         # the slug (ADR-0209).
-        self.company = company_name.settled(self.company, unresolved, self.board_key())
+        # None, where the tenant is only a code, is served as an empty company.
+        self.company = (
+            company_name.settled(self.company, unresolved, self.board_key()) or ""
+        )
         jobs = self.parse(raw, scraped_at)
         for i, job in enumerate(jobs):
             # A curated name overrides a posting's own too; an all-caps legal name a posting

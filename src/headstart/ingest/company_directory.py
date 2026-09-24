@@ -43,7 +43,7 @@ over the ledger's 34,203 Boards on 2026-09-24:
   sections under one host (HDR's fifteen: 40 hosts), and Taleo Business Edition into `cws` sites
   under one `org` (15 orgs). Ignoring case also folds ADR-0023's stale casing duplicates
   (`smartrecruiters:AbhiBus` and `smartrecruiters:abhibus`: 267 pairs).
-- **A curated alias** (`board_naming.DISPLAY_ALIASES`) is the one cross-ATS identity anyone
+- **A curated alias** (`config/company_names.csv`, ADR-0209) is the one cross-ATS identity anyone
   has asserted, and it is withheld from a pair whose Boards mirror each other: Lockheed
   Martin's Eightfold Board is its own entry, because summed with SuccessFactors it counts twice.
 
@@ -74,14 +74,9 @@ import collections
 import json
 from pathlib import Path
 
-from headstart import log, roles
+from headstart import company_name, log, roles
 from headstart.board_identity import ats_of
-from headstart.ingest.board_naming import (
-    DISPLAY_ALIASES,
-    board_names,
-    display_name,
-    stated_name,
-)
+from headstart.ingest.board_naming import board_names, display_name, stated_name
 from headstart.ingest.board_operator import tenant
 
 # `__spec__` as well as `__name__`, like every other module that doubles as a `python -m`
@@ -141,7 +136,7 @@ def companies(boards: set[str], names: dict[str, str]) -> list[dict]:
     # casing duplicate share only a Tenant, while two ATSes' Boards can share only an alias.
     first_board: dict[str, str] = {}  # key -> the first Board that carried it
     for board in sorted(boards):
-        alias = DISPLAY_ALIASES.get(board)
+        alias = company_name.curated(board)
         tenant_key = f"{ats_of(board)}:{tenant(board).lower()}"
         for key in (tenant_key, f"alias:{alias.lower()}" if alias else None):
             if key is None:
@@ -165,7 +160,7 @@ def companies(boards: set[str], names: dict[str, str]) -> list[dict]:
     return entries
 
 
-def _company_name(cluster: list[str], names: dict[str, str]) -> str:
+def _company_name(cluster: list[str], names: dict[str, str]) -> str | None:
     """A curated alias, else a name at least half its Boards state, else its Tenant's name.
 
     At least half, not merely the first stated name: a holding group's Tenant can carry one
@@ -174,7 +169,7 @@ def _company_name(cluster: list[str], names: dict[str, str]) -> str:
     unnamed stale casing duplicate (`AbhiBus` / `abhibus`) keep the real Board's spelling.
     """
     aliases = sorted(
-        {DISPLAY_ALIASES[board] for board in cluster if board in DISPLAY_ALIASES}
+        {alias for board in cluster if (alias := company_name.curated(board))}
     )
     if aliases:
         return aliases[0]

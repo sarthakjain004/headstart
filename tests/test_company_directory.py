@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from headstart import company_name
 from headstart.ingest import company_directory
 
 pa = pytest.importorskip("pyarrow")
@@ -74,7 +75,8 @@ def test_a_casing_duplicate_is_the_same_board() -> None:
 
 def test_a_curated_alias_joins_two_atses(monkeypatch: pytest.MonkeyPatch) -> None:
     aliases = {"greenhouse:acme": "Acme", "lever:acme-corp": "Acme"}
-    monkeypatch.setattr(company_directory, "DISPLAY_ALIASES", aliases)
+    # Read at call time (ADR-0209), so a patched map reaches the directory.
+    monkeypatch.setattr(company_name, "curated_names", lambda: aliases)
     got = _companies(["greenhouse:acme", "lever:acme-corp"])
     assert got == {"Acme": [["greenhouse:acme", "lever:acme-corp"]]}
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from headstart import company_name
 from headstart.ingest import board_naming
 
 
@@ -72,7 +73,7 @@ def test_display_name(company: str, board: str, expected: str) -> None:
 def test_derivation_never_invents_an_expansion() -> None:
     """The *derivation* only spells. An unaliased `swa` is "SWA", never "Southwest Airlines".
 
-    Expanding an abbreviation is human input, and it arrives as an explicit DISPLAY_ALIASES
+    Expanding an abbreviation is human input, and it arrives as an explicit curated-map
     entry (below) rather than as a guess the code makes from three letters.
     """
     assert (
@@ -96,7 +97,7 @@ def test_a_mirrored_pair_is_named_alike_without_sharing_an_alias() -> None:
     """Lockheed's Eightfold Board mirrors its SuccessFactors one, so only the latter is aliased
     (ADR-0185): an alias would sum the two in the company directory. The Eightfold Board states
     its own name, so the Hot tab still collapses the pair into one row."""
-    assert "eightfold:lockheedmartin.eightfold.ai" not in board_naming.DISPLAY_ALIASES
+    assert company_name.curated("eightfold:lockheedmartin.eightfold.ai") is None
     names = {
         board_naming.display_name(
             "Lockheed Martin", "eightfold:lockheedmartin.eightfold.ai"
@@ -106,3 +107,36 @@ def test_a_mirrored_pair_is_named_alike_without_sharing_an_alias() -> None:
         ),
     }
     assert names == {"Lockheed Martin"}
+
+
+@pytest.mark.parametrize(
+    "board",
+    [
+        "workday:nvidia/NVIDIAExternalCareerSite",
+        "icims:careers-gd-ais.icims.com",
+        "zwayam:careers.persistent.com",
+        "lever:1password",
+        "taleo_enterprise:https://hdr.taleo.net/careersection/austin_tx",
+        "oracle:eeho.fa.us2.oraclecloud.com",
+    ],
+)
+def test_an_unnamed_board_is_spelled_as_the_scrape_spells_it(board: str) -> None:
+    """ADR-0209: the Hot and Trends tabs and the served table name a Board alike."""
+    assert board_naming.display_name("", board) == company_name.humanised(board)
+
+
+def test_a_stated_lowercase_name_survives_unless_it_repeats_the_key() -> None:
+    """ADR-0209: the scrape serves "incident.io" as stated, so Hot and Trends must too."""
+    assert board_naming.display_name("incident.io", "gem:incident") == "incident.io"
+    assert board_naming.display_name("11x.ai", "gem:11x") == "11x.ai"
+    # a legacy row still carrying the Board's own host is not a stated name
+    assert (
+        board_naming.display_name(
+            "careers.persistent.com", "zwayam:careers.persistent.com"
+        )
+        == "Persistent"
+    )
+
+
+def test_a_code_only_tenant_has_no_display_name() -> None:
+    assert board_naming.display_name("", "oracle:eeho.fa.us2.oraclecloud.com") is None

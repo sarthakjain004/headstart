@@ -436,14 +436,16 @@ def test_the_curated_map_names_boards_that_state_nothing():
         ),
         ("taleo_enterprise:https://hdr.taleo.net/careersection/austin_tx", "HDR"),
         # only a code: no name at all rather than one (ADR-0209)
-        ("breezy:1001", ""),
-        ("oracle:eeho.fa.us2.oraclecloud.com", ""),
-        ("oracle:utulsa-ibvjjb.fa.ocs.oraclecloud.com", ""),
-        ("adp:37053934-22c6-4362-aa6a-1fee41c0cca3/19000101_000001", ""),
+        ("breezy:1001", None),
+        ("oracle:eeho.fa.us2.oraclecloud.com", None),
+        ("oracle:utulsa-ibvjjb.fa.ocs.oraclecloud.com", None),
+        ("adp:37053934-22c6-4362-aa6a-1fee41c0cca3/19000101_000001", None),
         (
             "taleo_be:https://lde.tbe.taleo.net/lde01/ats/careers/v2/searchResults?org=G94W9A&cws=37",
-            "",
+            None,
         ),
+        # a digit-led slug is cased too, never served verbatim
+        ("lever:1password", "1Password"),
         (
             "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=40",
             "Covestic2",

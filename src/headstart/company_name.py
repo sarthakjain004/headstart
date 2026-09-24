@@ -112,6 +112,7 @@ __all__ = [
     "brand_first",
     "curated",
     "curated_names",
+    "echoes_board",
     "from_field",
     "from_title",
     "humanised",
@@ -122,6 +123,7 @@ __all__ = [
     "tidy",
     "title_cased",
     "title_of",
+    "without_scheme",
 ]
 
 #: Per ATS, the wrapper its board title puts around the company name. Anchored, so a title
@@ -414,7 +416,7 @@ def from_title(ats: str, title: str | None, slug: str) -> str | None:
 
 def _is_url(text: str) -> bool:
     """A URL rather than a name: it carries a scheme or opens on ``www.`` (ADR-0209)."""
-    return "://" in text or text.lower().startswith("www.")
+    return bool(_SCHEME.match(text)) or text.lower().startswith("www.")
 
 
 def from_field(ats: str, value: str | None) -> str | None:
@@ -497,7 +499,7 @@ def title_cased(name: str) -> str:
             lambda m: _SHORT_WORDS.get(m.group().lower(), m.group()), word
         )
         # A joining word opens a name capitalised: "THE HI-TECH …" is "The Hi-Tech …".
-        out.append(cased[:1].upper() + cased[1:] if position == 0 else cased)
+        out.append(_capitalised(cased) if position == 0 else cased)
     return " ".join(out)
 
 
@@ -506,12 +508,15 @@ _CURATED_FILE = "company_names.csv"
 
 @functools.cache
 def curated_names() -> dict[str, str]:
-    """``board_key -> name`` from the committed map, `config/company_names.csv` (ADR-0209).
+    """``lowercased board_key -> name`` from the committed map, `config/company_names.csv`.
 
     Looked for beside this module and then in every ancestor's ``config/``, as `fx` finds its
     rate table: a repo checkout and an installed package lay the file out differently. Lines
     opening with ``#`` are comments. Absent, it is an empty map and every Board is named from
-    its own sources.
+    its own sources. Keys are lowercased once here, because a ledger's casing and a fresh
+    ``board_key()`` need not agree (ADR-0049). Read once per process and cached; callers read it
+    through this function at call time, and ``curated_names.cache_clear()`` re-reads the file
+    (ADR-0209).
     """
     here = Path(__file__).resolve()
     for path in (
@@ -523,20 +528,13 @@ def curated_names() -> dict[str, str]:
                 rows = csv.DictReader(
                     line for line in handle if not line.startswith("#")
                 )
-                return {row["board_key"]: row["name"].strip() for row in rows}
+                return {row["board_key"].lower(): row["name"].strip() for row in rows}
     return {}
 
 
 def curated(board_key: str) -> str | None:
-    """The hand-curated name for this Board, which overrides every other source, else None.
-
-    Matched case-insensitively, because a ledger's casing and a fresh ``board_key()`` need not
-    agree (ADR-0049).
-    """
-    wanted = board_key.lower()
-    return next(
-        (name for key, name in curated_names().items() if key.lower() == wanted), None
-    )
+    """The hand-curated name for this Board, which overrides every other source, else None."""
+    return curated_names().get(board_key.lower())
 
 
 #: Host labels that name the *board* rather than the company, and so are never the answer.
@@ -604,7 +602,13 @@ LABEL_NOISE = frozenset(
 )
 _WD_POD = re.compile(r"^wd\d+$")  # micron.wd5.myworkdayjobs.com
 # Taleo Enterprise's slug is a whole URL.
-SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*://", re.IGNORECASE)
+_SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*://", re.IGNORECASE)
+
+
+def without_scheme(text: str) -> str:
+    """``text`` with a leading URL scheme removed, so its first segment is a host or tenant."""
+    return _SCHEME.sub("", text)
+
 
 #: Words that name the board at the edge of a hyphenated slug: `apexanalytix-careers`,
 #: `codvo-team`, `careers-at-aifa-labs`. Stripped only at the ends, and only while a word remains.
@@ -620,7 +624,7 @@ def tidy(text: str) -> str | None:
     reads the latter as "Cloud"; taking the first label reads the former as "Careers-Inc".
     """
     # Taleo Enterprise's slug is a whole URL; split on "/" first, it tidied to "Https:".
-    head = SCHEME.sub("", text).split("/", 1)[0]
+    head = without_scheme(text).split("/", 1)[0]
     if "." not in head:
         return head or None
     labels = [
@@ -657,17 +661,23 @@ def humanised_text(text: str) -> str:
             # An identifier's capitals are not the company's spelling: Taleo Business Edition's
             # org `GATEWAYVENT` reads "Gatewayvent".
             cased.append(word.capitalize())
-        elif word != word.lower():
-            cased.append(word[:1].upper() + word[1:])
         elif word in _SHORT_WORDS:
             cased.append(_SHORT_WORDS[word])
-        elif _letter_count(word) <= 3:
+        elif word == word.lower() and _letter_count(word) <= 3:
             cased.append(word.upper())
         else:
-            cased.append(word[:1].upper() + word[1:])
+            cased.append(_capitalised(word))
     if cased:
-        cased[0] = cased[0][:1].upper() + cased[0][1:]
+        cased[0] = _capitalised(cased[0])
     return title_cased(" ".join(cased))
+
+
+_FIRST_LETTER = re.compile(r"[^\W\d_]")
+
+
+def _capitalised(word: str) -> str:
+    """``word`` with its first *letter* uppercased: "1password" is "1Password", not unchanged."""
+    return _FIRST_LETTER.sub(lambda m: m.group().upper(), word, count=1)
 
 
 #: ATSes whose tenant is a code the vendor generated, never the employer's name, and whose host
@@ -689,49 +699,53 @@ def _is_code(word: str) -> bool:
     return word.isdigit() or len(re.findall(r"\d+", word)) >= 2
 
 
-def humanised(board_key: str) -> str:
+def humanised(board_key: str) -> str | None:
     """The name a Board with no stated name is shown under: its tenant, humanised (ADR-0209).
 
     Never the raw slug. `workday:nvidia/NVIDIAExternalCareerSite` is "Nvidia", and
     `icims:careers-gd-ais.icims.com` is "GD AIS": the tenant (`board_identity.tenant`), its board
     and vendor labels dropped (`tidy`), spelled as words (`humanised_text`).
 
-    Empty where that would only spell a code: an ATS in `_CODE_TENANTS`, or a tenant whose every
-    word `_is_code`. An empty company is shown as no company, which is better than a code that
-    reads as one (ADR-0209).
+    None where that would only spell a code: an ATS in `_CODE_TENANTS`, or a tenant whose every
+    word `_is_code`. No company is better than a code that reads as one (ADR-0209).
     """
     if board_key.split(":", 1)[0] in _CODE_TENANTS:
-        return ""
+        return None
     core = tenant(board_key)
     name = humanised_text(tidy(core) or core) or core
-    return "" if all(_is_code(word) for word in name.split()) else name
+    return None if all(_is_code(word) for word in name.split()) else name
 
 
-def is_identifier(name: str, board_key: str) -> bool:
-    """Whether ``name`` is one of this Board's own identifiers rather than a company's name.
-
-    Lowercase identifier text ("wipro", "careers.persistent.com"), anything written as a path or
-    an address (Workday's ledger `nvidia.wd5.myworkdayjobs.com/nvidia…`, Taleo Business
-    Edition's `COVESTIC2:40@phf…`), or exactly a piece of the key (SuccessFactors' `hcltech`,
-    SmartRecruiters' `TecTammina`).
+def echoes_board(name: str, board_key: str) -> bool:
+    """Whether ``name`` repeats this Board's key rather than naming anyone: a URL, anything
+    written as a path or an address (Workday's ledger `nvidia.wd5.myworkdayjobs.com/nvidia…`,
+    Taleo Business Edition's `COVESTIC2:40@phf…`), or exactly a piece of the key
+    (SuccessFactors' `hcltech`, SmartRecruiters' `TecTammina`). "incident.io" on `gem:incident`
+    does not, which is how a stated lowercase name survives on the Hot and Trends tabs.
     """
     text = name.strip()
-    if looks_like_slug(text) or "://" in text:
-        return True
-    if not re.search(r"\s", text) and re.search(r"[/@]", text):
+    if _is_url(text) or (not re.search(r"\s", text) and re.search(r"[/@]", text)):
         return True
     slug = board_key.split(":", 1)[-1]
     return text in {slug, tenant(board_key), *re.split(r"[/.:@?=&]", slug)}
 
 
-def settled(name: str, unresolved: str, board_key: str) -> str:
+def is_identifier(name: str, board_key: str) -> bool:
+    """Whether a name the scraper was *constructed* with is an identifier rather than a
+    company's name: lowercase identifier text ("wipro", "careers.persistent.com"), or it
+    `echoes_board`.
+    """
+    return looks_like_slug(name) or echoes_board(name, board_key)
+
+
+def settled(name: str, unresolved: str, board_key: str) -> str | None:
     """The company this Board's Jobs are served under, once its sources have had their say.
 
     ``unresolved`` is what the scraper held before any source ran: its declared ``COMPANY``, or
     the ledger's name or slug. A curated name overrides everything; a name a source stated during
     the fetch is kept, and so is an unresolved one that is really a name (a declared
     ``COMPANY``, the curated feed's "Stripe"); a Board's own identifier becomes its `humanised`
-    tenant, never the raw slug (ADR-0209).
+    tenant, never the raw slug, or None where that tenant is only a code (ADR-0209).
     """
     named = curated(board_key)
     if named:

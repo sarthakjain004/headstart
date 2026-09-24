@@ -23,12 +23,13 @@ same day. Two other changes wire those sources per ATS; this one is the shared p
 Board, after `fetch_raw` and `resolve_company` and before `parse`. A Board's company is, in order:
 
 1. **A curated name**, from `config/company_names.csv` (`board_key,name,evidence`, `#` lines are
-   comments, keys matched case-insensitively). It overrides every source, per-posting names
-   included, and a curated Board skips its title request. It is for Boards that state a name
-   nowhere we read, and every row says where a person read it. `board_naming.DISPLAY_ALIASES`,
-   the Hot and Trends alias map, is now this file, so one map names a Board on every surface; it
-   keeps its ADR-0185 role as the directory's cross-ATS identity, which is why the file's header
-   repeats the Lockheed Martin rule.
+   comments, keys lowercased once on load and matched case-insensitively, read at call time
+   through `curated_names()`). It overrides every source, per-posting names included, and a
+   curated Board skips its title request. It is for Boards that state a name
+   nowhere we read, and every row says where a person read it. It replaces
+   `board_naming.DISPLAY_ALIASES`, the Hot and Trends alias map, so one map names a Board on every
+   surface; it keeps that map's ADR-0185 role as the directory's cross-ATS identity, which is why
+   the file's header repeats the Lockheed Martin rule.
 2. **A name a source stated during the fetch.** A page title's brand outranks a structured legal
    name where both exist (`brand_first`). A structured field's name is taken as the company typed
    it (`from_field`): not refused for equalling the slug or for being lowercase ("commercetools",
@@ -39,12 +40,16 @@ Board, after `fetch_raw` and `resolve_company` and before `parse`. A Board's com
    entirely uppercase, has more than one word and has a word longer than four letters. Short words
    keep their capitals unless they are legal forms or common words (`_SHORT_WORDS`).
 4. **The humanised tenant** (`humanised`): `board_identity.tenant`, board and vendor labels dropped
-   (`tidy`), split into words, a lowercase word of three letters or fewer read as an acronym. Never
-   the raw slug. `board_naming.display_name` spells its derived names the same way, so the Hot tab's
-   "Hpe" is "HPE".
+   (`tidy`), split into words, a lowercase word of three letters or fewer read as an acronym, the
+   first letter of every other word capitalised ("1password" is "1Password"). Never the raw slug.
+   `board_naming.display_name` returns `humanised(board)` itself for a Board with no name of its
+   own, so the Hot and Trends tabs and the served table spell it alike ("Hpe" is now "HPE"). A
+   stated lowercase name reaches those tabs as stated unless it repeats the Board's key
+   (`echoes_board`): "incident.io" on `gem:incident` stays "incident.io".
 5. **No name at all** where the tenant is only a code: the ATSes in `_CODE_TENANTS` (Oracle,
    ADP), and a tenant whose every word is all digits or has digits in two or more runs (`B973N8`).
-   The Job's company is the empty string; the Hot tab skips such a Board and counts it as
+   `humanised`, `settled` and `display_name` return None, the one "no name" signal; the scrape
+   turns it into an empty company at the edge. The Hot tab skips such a Board and counts it as
    `unnamed`, and the Trends directory leaves it unpickable.
 
 "Stated during the fetch" is decided by comparing `self.company` with what the constructor left.
@@ -100,6 +105,12 @@ facet naming 734 of 796 hosts.
   from what the constructor left. One that equals it exactly (a title that is the ledger's own
   spelling) is humanised, which only recases it.
 - `looks_like_slug` still gates `resolve_company`'s title request; it is untouched.
+- A lowercase word of three letters or fewer is read as an acronym, which is right for "HPE",
+  "GMV" and "AMD" and wrong for a real word such as `greenhouse:box` or `ashby:zip`. Those
+  Boards state their names in fields and titles, so the fallback rarely reaches them.
+- `board_identity.tenant` accepts only `http(s)://` while `company_name.without_scheme` strips any
+  scheme. They stay two rules: `tenant` decides directory grouping, and changing it regroups
+  companies, which is outside this change.
 - Fifteen test Boards found by the research go to `config.EXCLUDED_BOARDS`, each read live on
   2026-09-25: BambooHR `implementation` and `whitmansandbox`, four Gem integration sandboxes,
   Jobvite `halogen-customer-support`, and eight SAP SuccessFactors demo tenants `ace19xx`.
