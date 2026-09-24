@@ -61,9 +61,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from headstart import http, salary
+from headstart import salary
 from headstart.models import Job, html_to_text
-from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 from headstart.scrapers.job_posting_jsonld import find_job_posting
 
 #: The listing's body sections after `description`, in the order the posting page's own JSON-LD
@@ -145,10 +145,7 @@ def _ld_fields(page: str) -> dict[str, Any] | None:
 #: The posting page content-negotiates on `Accept`: the shared `_get`'s
 #: "application/json, text/html" answers 406 with a 52-byte JSON error on every page (192 of
 #: 192 on impulsespace), where "text/html" answers the page. The listing answers either way.
-_PAGE_REQUEST: dict[str, Any] = {
-    "headers": {"User-Agent": USER_AGENT, "Accept": "text/html"},
-    "timeout": 30,
-}
+_PAGE_HEADERS = {"User-Agent": USER_AGENT, "Accept": "text/html"}
 
 #: Concurrent page fetches. Posting pages of one Board ran clean to 64 (106.7 req/s, zero
 #: non-200s) and slowed at 128; `harvest` scrapes Boards concurrently, so peak in-flight is the
@@ -187,51 +184,25 @@ class PinpointScraper(BaseScraper):
         # empty puts every one of its Jobs one absence from eviction (ADR-0083). A real empty
         # Board costs 11 bytes to confirm.
         listed = self._listing() or self._listing()
-        wanted = self.tech_detail_wanted(listed, _title, _department)
-        uuids = [_uuid(i) for i in wanted]
-        details: dict[str, dict] = {}
-        if uuids:
-            if self.async_fanout_enabled():
-                fetched = self.fan_out_async(uuids, self._page_fields_async)
-            else:
-                fetched = self.fan_out(
-                    uuids, self._page_fields, workers=self.detail_workers
-                )
-            self.report_detail_gaps(fetched, "posting pages")
-            details = {u: d for u, d in zip(uuids, fetched) if d}
+        details = self.run_detail_pass(
+            listed,
+            key_of=_uuid,
+            what="posting pages",
+            title_of=_title,
+            department_of=_department,
+        )
         return {"data": listed, "details": details}
 
     def _listing(self) -> list[dict]:
         return json.loads(self._get()).get("data") or []
 
-    def _page_fields(self, uuid: str) -> dict[str, Any] | None:
-        try:
-            response = self._fetch("GET", self.job_url(uuid), **_PAGE_REQUEST)
-            response.raise_for_status()
-            page = response.text
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return self._fields_or_loss(page)
+    def detail_request(self, item: dict) -> DetailRequest:
+        return DetailRequest(self.job_url(_uuid(item)), headers=_PAGE_HEADERS)
 
-    async def _page_fields_async(
-        self, session: Any, uuid: str
-    ) -> dict[str, Any] | None:
-        try:
-            response = await self._fetch_async(
-                session, "GET", self.job_url(uuid), **_PAGE_REQUEST
-            )
-            response.raise_for_status()
-            page = response.text
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return self._fields_or_loss(page)
-
-    def _fields_or_loss(self, page: str) -> dict[str, Any] | None:
-        fields = _ld_fields(page)
+    def read_detail(self, item: dict, response: Any) -> dict[str, Any]:
+        fields = _ld_fields(response.text)
         if fields is None:
-            self.note_detail_loss("no JSON-LD on a 200")
+            raise DetailLost("no JSON-LD on a 200")
         return fields
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:

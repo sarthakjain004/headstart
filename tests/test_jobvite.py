@@ -14,6 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from fake_fetcher import FakeFetcher, FakeResponse
 
 from headstart import http
 from headstart.scrapers.jobvite import JobviteScraper, total_of
@@ -294,24 +295,33 @@ def test_the_walk_asks_for_no_redirects(monkeypatch):
     assert captured["allow_redirects"] is False
 
 
-def test_an_unreadable_detail_page_marks_the_board_truncated(monkeypatch):
+@pytest.mark.parametrize("async_fanout", ["1", "0"])
+def test_an_unreadable_detail_page_marks_the_board_truncated(monkeypatch, async_fanout):
     """The detail pass is load-bearing here — no page, no title, no Job — so a Board that lost
     one comes back short for a reason `harvest` cannot see. ADR-0053 exists to carry exactly
     that alongside the Jobs that did survive, instead of letting `index sync` read the gap as
-    two delistings."""
-    base = "https://jobs.jobvite.com/acme/search"
+    two delistings. On both transports, which send one request description."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
     detail = "https://jobs.jobvite.com/acme/job/"
     pages = {
-        base: (200, _listing(jobs=("a", "b"), total=2), None),
-        detail + "a": (200, '<h2 class="jv-header">Staff Engineer</h2>', None),
-        detail + "b": (404, "", None),
+        "https://jobs.jobvite.com/acme/search": FakeResponse(
+            text=_listing(jobs=("a", "b"), total=2)
+        ),
+        detail + "a": FakeResponse(text='<h2 class="jv-header">Staff Engineer</h2>'),
+        detail + "b": FakeResponse(404),
     }
-    _responses(monkeypatch, pages)
-    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")  # keep the stubbed sync path
-    scraper = JobviteScraper("acme")
+    fetcher = FakeFetcher(lambda method, url, kwargs: pages[url])
+    scraper = JobviteScraper("acme", fetcher=fetcher)
     raw = scraper.fetch_raw()
-    assert raw["postings"] == {"a": {"title": "Staff Engineer"}, "b": None}
+    assert raw["postings"] == {"a": {"title": "Staff Engineer"}}
+    assert scraper.detail_losses == {"HTTP 404": 1}
     assert scraper.truncated == "1/2 detail pages could not be read"
+    detail_headers = [
+        request.kwargs["headers"]
+        for request in fetcher.requests
+        if "/job/" in request.url
+    ]
+    assert [headers["Accept"] for headers in detail_headers] == ["text/html"] * 2
     (job,) = scraper.parse(raw, SCRAPED_AT)
     assert job.id == "jobvite:acme:a"
 

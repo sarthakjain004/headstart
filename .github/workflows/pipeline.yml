@@ -855,8 +855,13 @@ jobs:
           python -m headstart.ingest.index sync
           --scraped-boards data/state/scraped_boards.json
       - name: Prune dead-Board and duplicate rows
+        # --board-failures is this run's join ledger from the corpus-state artifact: Boards parole
+        # re-confirmed gone leave the keep-set (ADR-0206). If that download failed the file is
+        # absent, and prune evicts nothing on its account.
         if: needs.scrape-plan.outputs.run == 'true'
-        run: python -m headstart.ingest.index prune --apply
+        run: >-
+          python -m headstart.ingest.index prune --apply
+          --board-failures data/state/board_failures.csv
       - name: Drop the store's vectors of unserved Jobs (ADR-0190)
         # After prune, so the table it keeps is final. Needs the corpus, whose ids it also keeps.
         # Never fatal: it rewrites through tmp files (which the upload excludes), so a failure

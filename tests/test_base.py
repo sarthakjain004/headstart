@@ -11,6 +11,7 @@ from headstart.scrapers.base import (
     BaseScraper,
     DetailLost,
     DetailRequest,
+    DetailWithoutDescription,
 )
 
 
@@ -806,3 +807,46 @@ def test_alias_key_is_none_when_the_landing_url_cannot_be_read(monkeypatch):
         http, "fetch", lambda *args, **kwargs: _Landed("https://elsewhere.example/")
     )
     assert _Refusing("acme").alias_key() is None
+
+
+class _BodylessDetailStub(_StubScraper):
+    """A Scraper whose detail pages may state a location but no description."""
+
+    def detail_request(self, row):
+        return DetailRequest(f"https://example.invalid/detail/{row['id']}")
+
+    def read_detail(self, row, response):
+        detail = json.loads(response.text)
+        if not detail.get("description"):
+            return DetailWithoutDescription(detail, "no description on the page")
+        return detail
+
+
+@pytest.mark.parametrize("async_fanout", ["1", "0"])
+def test_a_detail_without_description_is_kept_but_counted_as_a_gap(
+    monkeypatch, async_fanout
+):
+    """Its other fields are real, so the mapping keeps them; the pass exists for the
+    description, so the gap line and `.missing` count it, under its own label."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
+    pages = {
+        "full": '{"description": "body", "location": "Pune"}',
+        "bodyless": '{"description": null, "location": "Anchorage"}',
+    }
+    fetcher = FakeFetcher(
+        lambda method, url, kwargs: FakeResponse(text=pages[url.rsplit("/", 1)[1]])
+    )
+    scraper = _BodylessDetailStub("x", fetcher=fetcher)
+
+    details = scraper.run_detail_pass(
+        [{"id": "full"}, {"id": "bodyless"}], key_of=lambda row: row["id"], what="pages"
+    )
+
+    assert details["bodyless"] == {"description": None, "location": "Anchorage"}
+    assert details["full"]["description"] == "body"
+    assert details.missing == 1
+    assert scraper.detail_losses == {"no description on the page": 1}
+    assert scraper.fetch_detail({"id": "bodyless"}) == details["bodyless"]
+    assert scraper.detail_losses == {"no description on the page": 2}, (
+        "the sampler's per-item path labels the loss too"
+    )

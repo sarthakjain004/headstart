@@ -3,7 +3,10 @@
 **Status:** accepted · **Date:** 2026-09-17 · **Amends:** [ADR-0048](0048-skip-details-we-already-hold.md)
 (its 2026-09-16 amendments described two hand-rolled gates; this replaces both with one seam and
 states which scrapers may take it) · **Implements:**
-[#500](https://github.com/sarthakjain004/headstart/issues/500)
+[#500](https://github.com/sarthakjain004/headstart/issues/500) · **Amended 2026-09-24:** bamboohr
+no longer belongs under *Excluded* — #564 (2026-09-22) found its department on the listing's own
+department headers, so its gate is department-aware rather than department-blind, and it gates
+as a measured approximation (CONTEXT.md §Detail pass)
 
 ## Context
 
