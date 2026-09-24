@@ -45,9 +45,9 @@ once, which narrows nothing and widens nothing.
   2. **Case-variant duplicate rows.** The same job indexed under more than one slug casing — Workday
      sites like ``.../External`` vs ``.../external`` produce ``company/External`` and ``company/external``
      Board keys, hence two ids for one job. Same lowercased Board + native id → keep one, drop the rest.
-     A Workday requisition is grouped across its tenant's sites instead, since a tenant posts one
-     requisition to several of them under the same id (ADR-0187); sync applies the same rule to
-     the rows it adds, so what prune takes out is not re-added.
+     A Workday requisition is grouped across its Workday tenant's sites instead, since a Workday
+     tenant posts one requisition to several of them under the same id (ADR-0187); sync applies
+     the same rule to the rows it adds, so what prune takes out is not re-added.
 
   Planning lives in :mod:`headstart.ingest.index_plan`; this is the CLI that runs it against the table.
   The keep-set is the live ledger (enabled ATSes), each Board key exactly as its scraper's
@@ -840,7 +840,7 @@ def sync(args: argparse.Namespace) -> int:
     # start: one run of retained-but-closed rows is the price of never needing a migration, and
     # the run after it evicts normally.
     was_unconfirmed = read_id_list(Path(args.unconfirmed))
-    # One row per Workday requisition across a tenant's sites (ADR-0187), decided here as well as
+    # One row per requisition across a Workday tenant's sites (ADR-0187), decided here as well as
     # in prune so a copy prune took out is never added back. The re-embedded rows just taken out
     # are passed back as `replaced`: they are still the requisition's incumbent.
     plan = plan_sync(
@@ -868,7 +868,7 @@ def sync(args: argparse.Namespace) -> int:
     if plan.refused:
         _log.info(
             f"not added: {len(plan.refused)} Workday requisition(s) another site of the same "
-            "tenant already serves or is being given (ADR-0187)"
+            "Workday tenant already serves or is being given (ADR-0187)"
         )
     # Written before the delete rather than after, and the reason is not crash-replay: `delete`
     # and `unconfirmed` are disjoint by construction, so a crash here loses no eviction — those
@@ -1325,7 +1325,9 @@ def main() -> int:
     )
     p_sync.set_defaults(fn=sync)
 
-    p_prune = sub.add_parser("prune", help="dead-Board sweep + case-variant dedup")
+    p_prune = sub.add_parser(
+        "prune", help="dead-Board sweep + case-variant and Workday cross-site dedup"
+    )
     _add_db(p_prune)
     p_prune.add_argument(
         "--apply", action="store_true", help="delete (default: dry-run report only)"

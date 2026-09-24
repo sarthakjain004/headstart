@@ -898,9 +898,9 @@ def test_a_requisition_arriving_on_two_sites_at_once_is_added_once_where_prune_k
 
 
 def test_a_pruned_copy_is_not_re_added_and_the_survivor_never_flips():
-    """The churn the spec measured: 26,101 duplicate rows sit on in-scope Boards, so a prune-only
-    rule would have sync re-add every one on the next run. The incumbent here is on the smaller
-    site, which the ledger rule alone would move to the bigger one — and must not."""
+    """The churn ADR-0187 measured: 5,940 of the 7,146 copies it removes sit on a Board in one
+    run's scope, so a prune-only rule would have that run's sync re-add them. The incumbent here is
+    on the smaller site, which the ledger rule alone would move to the bigger one — and must not."""
     index = {f"{_SUB}:R-100"}
     fresh = {f"{_SUB}:R-100", f"{_MAIN}:R-100"}
     unconfirmed: frozenset[str] = frozenset()

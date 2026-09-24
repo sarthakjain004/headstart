@@ -123,7 +123,7 @@ top pairs by shared postings:
 
 > **Corrected 2026-09-24 ([ADR-0187](../adr/0187-a-workday-requisition-is-served-once-per-tenant.md)).**
 > `shared=0` is a false negative. The comparison keyed on `externalPath`, which ends in a per-site
-> `-N` suffix, so one requisition's copies on two sites never match: their URL tails differ in
+> `-N` suffix, so one requisition's copies on two sites almost never match: their URL tails differ in
 > 6,208 of 6,212 cross-site requisitions on served v654. On the native id, a tenant's sites share
 > 6,212 requisitions (7,146 duplicate rows).
 

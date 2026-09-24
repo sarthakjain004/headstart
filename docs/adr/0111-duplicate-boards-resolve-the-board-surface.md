@@ -224,7 +224,7 @@ twice. No pairwise mechanism is built for Workday; none is warranted by what was
 
 > **Amended 2026-09-24 by [ADR-0187](0187-a-workday-requisition-is-served-once-per-tenant.md).**
 > The 0/217 result above is a false negative, and so is its conclusion. `externalPath` ends in a
-> per-site `-N` suffix, so two sites' copies of one requisition never compare equal on it: on
+> per-site `-N` suffix, so two sites' copies of one requisition almost never compare equal on it: on
 > served v654 the URL tails differ in 6,208 of 6,212 cross-site requisitions. Compared on the
 > native id instead, 6,212 requisitions span more than one site of a tenant, 7,146 duplicate
 > rows. Sites do share postings — mostly partially, which is why ADR-0187 dedupes per

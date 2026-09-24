@@ -2,15 +2,15 @@
 
 **Status:** accepted · **Date:** 2026-09-24 · **Amends:**
 [ADR-0023](0023-prune-stale-and-duplicate-index-rows.md) (the duplicate group widens from one
-Board to one Workday tenant) · **Relates to:**
+Board to one Workday tenant), [ADR-0111](0111-duplicate-boards-resolve-the-board-surface.md) (its
+2026-09-11 amendment's "Workday sites share no postings" was a false negative) · **Relates to:**
 [ADR-0049](0049-match-boards-by-prefix-not-by-parsing.md) (ids resolve to a Board by prefix; the
 native id is what follows it), [ADR-0050](0050-persist-descriptions-across-runs.md) (the re-embed
 that deletes a row before sync re-adds it), [ADR-0053](0053-scope-eviction-on-scrape-outcome.md)
 and [ADR-0121](0121-a-negligible-shortfall-is-still-an-authoritative-list.md) (eviction scope),
 [ADR-0083](0083-evict-only-on-a-second-consecutive-absence.md) (the grace period),
 [ADR-0097](0097-a-postings-id-comes-from-the-listing-never-the-detail.md) (how the native id is
-chosen), [ADR-0111](0111-duplicate-boards-resolve-the-board-surface.md) (parking a Board as an
-alias), [ADR-0188](0188-a-dedup-rule-change-is-a-trends-epoch.md) (the Trends epoch a dedup
+chosen), [ADR-0188](0188-a-dedup-rule-change-is-a-trends-epoch.md) (the Trends epoch a dedup
 change marks)
 
 ## Context
@@ -36,8 +36,15 @@ Measured on the served table, version 654 (2026-09-23; 514,163 rows, 104,849 of 
 Parking whole sites through the alias ledger (ADR-0111) was measured first and removes only 2,644
 of the 7,146, because most multi-site tenants overlap only partly — a main site plus sub-sites that
 each hold a few requisitions of their own (HPE: 1,490 requisitions across its sites, 1,389 on the
-largest). And a prune-only rule churns: 26,101 of the duplicate rows sat on Boards in the latest
-run's scope (14,851 Boards), so sync would re-add every copy prune removed, run after run.
+largest). And a prune-only rule churns: 5,940 of the 7,146 copies it would remove sit on a
+Board in the latest run's recorded eviction scope (`scraped_boards.json`, 14,822 Boards, pulled
+2026-09-24), so that run's sync would re-add them, and every later run's sync would re-add the
+copies its own slice re-emits, for prune to take out again.
+
+That record was wrong once already. ADR-0111's 2026-09-11 amendment measured 217 same-company
+site pairs and found 0 shared postings, but it compared `externalPath`, whose per-site `-N`
+suffix differs between two sites' copies of one requisition in 6,208 of 6,212 cases. On the
+native id the sharing is plain.
 
 ## Decision
 
@@ -55,7 +62,7 @@ adds rows and in `index prune`.** Board keys do not change and nothing is re-key
   would make a fossil casing immortal: the loop ADR-0023's amendment exists to break.
 - **Where the rule lives.** `index_plan`, in private helpers both planners call: `_placement`
   (an id's duplicate group and site, with `_workday_tenant` as the one place the key widens) and
-  `_survivor_site` (the ranking). `plan_sync` gains keyword `site_jobs` and `replaced` and reports
+  `_survivor_board` (the ranking). `plan_sync` gains keyword `site_jobs` and `replaced` and reports
   the ids it declined as `SyncPlan.refused`; `plan_prune` gains keyword `site_jobs`. One place
   decides which site keeps a requisition, so the planner that admits a row and the planner that
   removes rows cannot disagree about it. Sync runs the grouping over every ATS, not just Workday:
@@ -91,8 +98,9 @@ that changes the ledger's job counts affects only requisitions arriving afterwar
 
 ## Consequences
 
-Projected on served v654, running the new planners against the committed ledger (130,213 Board
-keep-set, 10,538 Workday sites with a count):
+Projected on served v654, running the new planners against the committed ledger at `610578b3`
+(130,310-Board keep-set, 10,538 Workday sites with a count; the Workday side is identical to the
+pre-rebase ledger the figures were first taken on):
 
 | | measured | expected |
 | --- | ---: | ---: |
@@ -164,12 +172,13 @@ keep-set, 10,538 Workday sites with a count):
 
 - **Park superset sites through the alias ledger.** Removes 2,644 of 7,146, because most
   overlaps are partial; parking a site that also holds unique requisitions would drop those.
-- **The rule in prune only.** Sync re-adds what prune removed on every run for the 26,101 rows on
-  in-scope Boards: a churn loop of the kind ADR-0023's amendment and ADR-0049 each had to undo.
+- **The rule in prune only.** Sync re-adds what prune removed for every copy on an in-scope
+  Board (5,940 of 7,146 on the latest run's scope), run after run: a churn loop of the kind
+  ADR-0023's amendment and ADR-0049 each had to undo.
 - **Fixed survivor per tenant (its largest site), with no incumbent rule.** The user's choice
-  as first stated, refined to incumbent-first in the design spec this was built from: a fixed
-  survivor moves a served requisition whenever the bigger site's copy arrives, re-stamping
-  `first_seen`, while incumbent-first gives the same one-time cleanup and no churn.
+  as first stated, refined to incumbent-first before this was built: a fixed survivor moves a
+  served requisition whenever the bigger site's copy arrives, re-stamping `first_seen`, while
+  incumbent-first gives the same one-time cleanup and no churn.
 - **Exclude internal-looking sites by name.** A guess at tenant-chosen names, and the measured
   links work; left as the open question above.
 - **Gate `embed_plan` too.** Needs a served-id list in `data/state/` that nothing writes today; see
