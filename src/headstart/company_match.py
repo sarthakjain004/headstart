@@ -103,8 +103,11 @@ def tier(query: list[str], words: tuple[str, ...]) -> int | None:
 
 
 def _near(typed: str, word: str) -> bool:
-    """One edit from ``word`` or from its same-length prefix."""
-    if len(typed) < _TYPO_MIN:
+    """One edit from ``word`` or from its same-length prefix, never in the first letter.
+
+    A first-letter slip is rare in a name someone knows, and allowing it made "cisco" offer
+    Discovery and Discord (2026-09-25 critique) — one substitution from "disco"."""
+    if len(typed) < _TYPO_MIN or typed[0] != word[0]:
         return False
     return _one_edit(typed, word) or _one_edit(typed, word[: len(typed)])
 
@@ -144,6 +147,25 @@ def _is_test_tenant(candidate: Candidate) -> bool:
     )
 
 
+#: What people type for a company that the directory knows by another name: a short form, a
+#: parent's name, or the name before a Board's alias lands. Each maps to words the directory's
+#: own name starts with, and is searched beside the query, never instead of it.
+QUERY_ALIASES: dict[str, str] = {
+    "aws": "amazon",
+    "amazon web services": "amazon",
+    "jp morgan": "jpmc",
+    "jpmorgan": "jpmc",
+    "j p morgan": "jpmc",
+    "jpmorgan chase": "jpmc",
+    "chase": "jpmc",
+    "meta platforms": "meta",
+    "facebook": "meta",
+    "google deepmind": "deepmind",
+    "alphabet": "google",
+    "tcs": "tata consultancy",
+}
+
+
 def suggest(query: str, candidates: list[Candidate], limit: int) -> list[Candidate]:
     """The best ``limit`` companies for ``query``: by tier, then most openings, then name.
 
@@ -155,9 +177,19 @@ def suggest(query: str, candidates: list[Candidate], limit: int) -> list[Candida
     cost is a same-named different employer the list no longer offers.
     """
     typed = normalize(query)
+    alias = QUERY_ALIASES.get(" ".join(typed))
+    also = normalize(alias) if alias else None
     ranked = []
     for candidate in candidates:
         rank = tier(typed, candidate.words)
+        if also is not None:
+            # An alias names one company, so only its exact name counts, ranked with the typed
+            # name's prefix tier: "aws" means Amazon. A prefix hit made "facebook" offer every
+            # name starting "meta" (Metabase, Metaview). A two-word alias may still match as a
+            # prefix, since "tata consultancy" is how "Tata Consultancy Services" begins.
+            aliased = tier(also, candidate.words)
+            if aliased == 0 or (aliased == 1 and len(also) > 1):
+                rank = 1 if rank is None else min(rank, 1)
         if rank is not None and not _is_test_tenant(candidate):
             ranked.append(
                 (rank, -candidate.openings, candidate.name, candidate.key, candidate)
