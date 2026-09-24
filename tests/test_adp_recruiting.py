@@ -21,6 +21,11 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from typing import NamedTuple
+from urllib.parse import parse_qs, urlsplit
+
+import pytest
+from fake_fetcher import FakeFetcher, FakeResponse, Route
 
 from headstart.scrapers import adp_recruiting
 from headstart.scrapers.adp_recruiting import ADPRecruitingScraper
@@ -184,13 +189,12 @@ def test_the_job_url_matches_the_declared_shape():
 
 
 def test_the_company_is_the_site_records_client_name_at_no_extra_request(monkeypatch):
-    fake = _FakeADP(_church_pages())
-    scraper = _wired(monkeypatch, fake)
+    scraper, fetcher = _wired(monkeypatch, _fixture_route(_church_pages()))
     scraper.fetch_raw()
-    calls = len(fake.calls)
+    requests_before = len(fetcher.requests)
     scraper.resolve_company()
     assert scraper.company == FIXTURES["site_churchmutual"]["clientName"]
-    assert len(fake.calls) == calls  # no request of its own
+    assert len(fetcher.requests) == requests_before  # no request of its own
 
 
 def test_adp_itself_is_a_client_name_like_any_other():
@@ -202,44 +206,76 @@ def test_adp_itself_is_a_client_name_like_any_other():
 # ------------------------------------------------------------------------------ the network half
 
 
-class _Resp:
-    def __init__(self, status: int, body: object):
-        self.status_code = status
-        self.text = body if isinstance(body, str) else json.dumps(body)
-
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            from headstart import http
-
-            # The shape curl_cffi raises: the settled response rides on the exception.
-            raise http.RequestsError(f"HTTP {self.status_code}", response=self)
+def _json_response(status: int, body: object) -> FakeResponse:
+    return FakeResponse(status, body if isinstance(body, str) else json.dumps(body))
 
 
-class _FakeADP:
-    """Routes the scraper's GETs to recorded fixtures by path and query, and records each."""
+_LISTING_PATH_PART = "apply-custom-filters"
+_DETAIL_PATH_PART = "/search-meta/"
 
-    def __init__(self, pages: dict, details: dict | None = None, too_big: int = 0):
-        self.pages = pages  # skip -> body
-        self.details = details or {}  # reqId -> body
-        self.too_big = too_big  # answer 502 for any page asking more rows than this
-        self.calls: list[tuple[str, dict, dict]] = []
 
-    def __call__(self, method, url, **kwargs):
-        from urllib.parse import parse_qs, urlsplit
+def _path_and_query(url: str) -> tuple[str, dict[str, str]]:
+    parts = urlsplit(url)
+    return parts.path, {
+        name: values[0] for name, values in parse_qs(parts.query).items()
+    }
 
-        parts = urlsplit(url)
-        q = {k: v[0] for k, v in parse_qs(parts.query).items()}
-        self.calls.append((parts.path, q, kwargs.get("headers") or {}))
-        if "/career-site/" in parts.path:
-            return _Resp(200, FIXTURES["site_churchmutual"])
-        if parts.path.endswith("apply-custom-filters"):
-            if self.too_big and int(q["$top"]) > self.too_big:
-                return _Resp(502, "<html>502 Bad Gateway</html>")
-            return _Resp(200, self.pages[int(q["$skip"])])
-        req_id = parts.path.rsplit("/", 1)[1]
-        if req_id in self.details:
-            return _Resp(200, self.details[req_id])
-        return _Resp(400, FIXTURES["detail_closed"])
+
+def _fixture_route(
+    pages: dict, details: dict | None = None, largest_accepted_page: int | None = None
+) -> Route:
+    """Answers the scraper's GETs from recorded fixtures by path and query.
+
+    ``pages`` maps a `$skip` to its listing body and ``details`` a `reqId` to its detail body; a
+    detail not in ``details`` answers the closed posting's 400. A page asking more rows than
+    ``largest_accepted_page``, when one is given, answers 502."""
+    details = details or {}
+
+    def route(method: str, url: str, kwargs: dict) -> FakeResponse:
+        path, query = _path_and_query(url)
+        if "/career-site/" in path:
+            return _json_response(200, FIXTURES["site_churchmutual"])
+        if _LISTING_PATH_PART in path:
+            if (
+                largest_accepted_page is not None
+                and int(query["$top"]) > largest_accepted_page
+            ):
+                return FakeResponse(502, "<html>502 Bad Gateway</html>")
+            return _json_response(200, pages[int(query["$skip"])])
+        requisition_id = path.rsplit("/", 1)[1]
+        if requisition_id in details:
+            return _json_response(200, details[requisition_id])
+        return _json_response(400, FIXTURES["detail_closed"])
+
+    return route
+
+
+class _SentRequest(NamedTuple):
+    path: str
+    query: dict[str, str]
+    headers: dict[str, str]
+    timeout: float | None
+
+
+def _sent_requests(fetcher: FakeFetcher, path_part: str) -> list[_SentRequest]:
+    """Each request the scraper sent whose path contains ``path_part``, in order."""
+    sent_requests = []
+    for request in fetcher.requests:
+        path, query = _path_and_query(request.url)
+        if path_part in path:
+            sent_requests.append(
+                _SentRequest(
+                    path,
+                    query,
+                    request.kwargs.get("headers") or {},
+                    request.kwargs.get("timeout"),
+                )
+            )
+    return sent_requests
+
+
+def _listing_page_sizes(fetcher: FakeFetcher) -> list[str]:
+    return [sent.query["$top"] for sent in _sent_requests(fetcher, _LISTING_PATH_PART)]
 
 
 def _church_pages() -> dict:
@@ -249,50 +285,54 @@ def _church_pages() -> dict:
     }
 
 
-def _wired(monkeypatch, fake: _FakeADP, page: int = 10) -> ADPRecruitingScraper:
-    scraper = get_scraper("adp_recruiting", "churchmutual", "churchmutual")
-    monkeypatch.setattr(scraper, "_fetch", fake)
+def _wired(
+    monkeypatch, route: Route, page: int = 10, async_fanout: bool = False
+) -> tuple[ADPRecruitingScraper, FakeFetcher]:
+    fetcher = FakeFetcher(route)
+    scraper = get_scraper(
+        "adp_recruiting", "churchmutual", "churchmutual", fetcher=fetcher
+    )
     monkeypatch.setattr(adp_recruiting, "_PAGE", page)
-    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
-    return scraper
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "1" if async_fanout else "0")
+    return scraper, fetcher
 
 
 def test_the_walk_is_zero_based_until_the_stated_count_with_the_sites_token(
     monkeypatch,
 ):
-    fake = _FakeADP(_church_pages())
-    raw = _wired(monkeypatch, fake).fetch_raw()
+    scraper, fetcher = _wired(monkeypatch, _fixture_route(_church_pages()))
+    raw = scraper.fetch_raw()
     assert [r["reqId"] for r in raw["rows"]] == [r["reqId"] for r in ROWS]
-    listing = [c for c in fake.calls if c[0].endswith("apply-custom-filters")]
-    assert [c[1]["$skip"] for c in listing] == ["0", "10"]
-    assert all(c[2]["myjobstoken"] == TOKEN for c in listing)
-    assert "jobDescription" in listing[0][1]["$select"]
+    listing_requests = _sent_requests(fetcher, _LISTING_PATH_PART)
+    assert [sent.query["$skip"] for sent in listing_requests] == ["0", "10"]
+    assert all(sent.headers["myjobstoken"] == TOKEN for sent in listing_requests)
+    assert "jobDescription" in listing_requests[0].query["$select"]
 
 
 def test_a_page_too_big_for_the_host_is_asked_again_smaller(monkeypatch):
     """A page past ~1 MB answers 502; the walk halves the page rather than retrying it, and
     asks the full page size again for the next page."""
-    fake = _FakeADP(_church_pages(), too_big=10)
-    raw = _wired(monkeypatch, fake, page=20).fetch_raw()
+    scraper, fetcher = _wired(
+        monkeypatch, _fixture_route(_church_pages(), largest_accepted_page=10), page=20
+    )
+    raw = scraper.fetch_raw()
     assert len(raw["rows"]) == 19
-    tops = [c[1]["$top"] for c in fake.calls if c[0].endswith("apply-custom-filters")]
-    assert tops == ["20", "10", "20", "10"]
+    assert _listing_page_sizes(fetcher) == ["20", "10", "20", "10"]
 
 
 def test_a_page_still_refused_at_the_floor_truncates_the_board(monkeypatch):
     """Halving stops at `_MIN_PAGE` (5): 10 -> 5, and a 5-row page still refused gives up."""
-    fake = _FakeADP(_church_pages(), too_big=1)
-    scraper = _wired(monkeypatch, fake, page=10)
+    scraper, fetcher = _wired(
+        monkeypatch, _fixture_route(_church_pages(), largest_accepted_page=1), page=10
+    )
     raw = scraper.fetch_raw()
     assert raw["rows"] == []
-    tops = [c[1]["$top"] for c in fake.calls if c[0].endswith("apply-custom-filters")]
-    assert tops == ["10", "5"]
+    assert _listing_page_sizes(fetcher) == ["10", "5"]
     assert scraper.truncated and "a 5-row page" in scraper.truncated
 
 
 def test_the_page_cap_truncates_once_with_its_own_reason(monkeypatch):
-    fake = _FakeADP(_church_pages())
-    scraper = _wired(monkeypatch, fake)
+    scraper, _ = _wired(monkeypatch, _fixture_route(_church_pages()))
     monkeypatch.setattr(adp_recruiting, "_MAX_PAGES", 1)
     raw = scraper.fetch_raw()
     assert len(raw["rows"]) == 10
@@ -300,49 +340,30 @@ def test_the_page_cap_truncates_once_with_its_own_reason(monkeypatch):
 
 
 def test_a_site_record_with_no_token_is_an_unreadable_board(monkeypatch, caplog):
-    scraper = get_scraper("adp_recruiting", "churchmutual", "churchmutual")
     record = {
-        k: v for k, v in FIXTURES["site_churchmutual"].items() if k != "myJobsToken"
+        key: value
+        for key, value in FIXTURES["site_churchmutual"].items()
+        if key != "myJobsToken"
     }
-    monkeypatch.setattr(scraper, "_fetch", lambda *a, **k: _Resp(200, record))
+    scraper, _ = _wired(
+        monkeypatch, lambda method, url, kwargs: _json_response(200, record)
+    )
     with caplog.at_level("INFO"):
         assert scraper.fetch_raw() == {"rows": [], "details": {}}
     assert "expected a site record with a myJobsToken" in caplog.text
 
 
 def test_a_walk_short_of_the_stated_count_is_marked_truncated(monkeypatch):
-    fake = _FakeADP(
+    route = _fixture_route(
         {
             0: FIXTURES["churchmutual_listing_top10_skip0"],
             10: {"count": 19, "jobRequisitions": []},
         }
     )
-    scraper = _wired(monkeypatch, fake)
+    scraper, _ = _wired(monkeypatch, route)
     raw = scraper.fetch_raw()
     assert len(raw["rows"]) == 10
     assert scraper.truncated and "read 10 of 19" in scraper.truncated
-
-
-def test_the_async_detail_pass_reads_the_same_fields(monkeypatch):
-    """The default fan-out is the multiplexed one; it asks with the token and reads the pay."""
-    import asyncio
-
-    scraper = get_scraper("adp_recruiting", "churchmutual", "churchmutual")
-    seen: list[dict] = []
-
-    async def fetch_async(session, method, url, **kwargs):
-        seen.append(kwargs["headers"])
-        if url.endswith("/5001222115706"):
-            return _Resp(200, FIXTURES["churchmutual_detail_5001222115706"])
-        return _Resp(400, FIXTURES["detail_closed"])
-
-    monkeypatch.setattr(scraper, "_fetch_async", fetch_async)
-    found = asyncio.run(scraper._detail_async(None, TOKEN, "5001222115706"))
-    closed = asyncio.run(scraper._detail_async(None, TOKEN, "5009999999900"))
-    assert scraper._salary_field(found) == "107,000 to 160,400"
-    assert closed is None and scraper.detail_losses == {"HTTP 400": 1}
-    assert all(h["myjobstoken"] == TOKEN for h in seen)
-    assert all(h["Accept-Language"] == "en-US" for h in seen)
 
 
 def test_an_abbreviated_work_level_is_labelled_for_the_filter():
@@ -369,42 +390,55 @@ def test_an_abbreviated_work_level_is_labelled_for_the_filter():
 def test_a_posting_served_twice_across_pages_counts_once(monkeypatch):
     page2 = dict(FIXTURES["churchmutual_listing_top10_skip10"])
     page2["jobRequisitions"] = [ROWS[9], *page2["jobRequisitions"]]
-    fake = _FakeADP(
+    route = _fixture_route(
         {
             0: FIXTURES["churchmutual_listing_top10_skip0"],
             10: page2,
             20: {"count": 19, "jobRequisitions": []},
         }
     )
-    scraper = _wired(monkeypatch, fake)
+    scraper, _ = _wired(monkeypatch, route)
     raw = scraper.fetch_raw()
     assert len(raw["rows"]) == 19
     assert scraper.truncated is None
 
 
-def test_the_tech_gate_picks_the_details_and_a_closed_one_ships_without_salary(
-    monkeypatch,
+@pytest.mark.parametrize("async_fanout", [True, False], ids=["multiplexed", "threads"])
+def test_the_tech_gate_picks_the_details_and_a_lost_one_ships_without_salary(
+    monkeypatch, async_fanout
 ):
-    """The gate is exact: title and department off the listing. A closed detail answers 400;
-    its Job still ships, and every detail request carries the token."""
+    """The gate is exact: title and department off the listing. On either transport every
+    detail request carries the token and `Accept-Language: en-US`, the pay is read, and a lost
+    detail — a closed posting's 400, or a 200 with no requisition — is labelled while its Job
+    still ships."""
     monkeypatch.delenv("HEADSTART_TECH_GATE", raising=False)
-    fake = _FakeADP(
+    route = _fixture_route(
         _church_pages(),
-        details={"5001222115706": FIXTURES["churchmutual_detail_5001222115706"]},
+        details={
+            "5001222115706": FIXTURES["churchmutual_detail_5001222115706"],
+            "5001218033006": {"jobRequisitions": []},
+        },
     )
-    scraper = _wired(monkeypatch, fake)
+    scraper, fetcher = _wired(monkeypatch, route, async_fanout=async_fanout)
     scraper.have_details = frozenset()
     raw = scraper.fetch_raw()
-    asked = {c[0].rsplit("/", 1)[1] for c in fake.calls if "/search-meta/" in c[0]}
+    detail_requests = _sent_requests(fetcher, _DETAIL_PATH_PART)
+    asked = {sent.path.rsplit("/", 1)[1] for sent in detail_requests}
     assert (
         "5001222115706" in asked and "5001218033006" in asked
     )  # QA manager, network engineer
     assert "5001222163806" not in asked  # Customer Service Assistant
+    assert all(sent.headers["myjobstoken"] == TOKEN for sent in detail_requests)
+    assert all(sent.headers["Accept-Language"] == "en-US" for sent in detail_requests)
     assert all(
-        c[2]["myjobstoken"] == TOKEN for c in fake.calls if "/search-meta/" in c[0]
+        sent.timeout == adp_recruiting._TIMEOUT == 60 for sent in detail_requests
     )
     assert set(raw["details"]) == {"5001222115706"}
     jobs = {j.id.rsplit(":", 1)[1]: j for j in scraper.parse(raw, SCRAPED_AT)}
     assert len(jobs) == 19
+    assert jobs["5001222115706"].salary == "107,000 to 160,400"
     assert jobs["5001218033006"].salary is None
-    assert sum(scraper.detail_losses.values()) == len(asked) - 1
+    assert scraper.detail_losses == {
+        "HTTP 400": len(asked) - 2,
+        "no jobRequisitions on a 200": 1,
+    }
