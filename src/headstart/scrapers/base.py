@@ -14,11 +14,12 @@ from collections.abc import Awaitable, Callable, Container, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from functools import cached_property
 from types import MappingProxyType
 from typing import Any, TypeVar
 
-from headstart import company_name, fanout_stats, http, log, spare_egress
-from headstart.fetcher import Fetcher
+from headstart import company_name, fanout_stats, http, log
+from headstart.fetcher import BoardFetcher, Fetcher
 from headstart.models import Job
 from headstart.tech_filter import is_tech
 
@@ -289,10 +290,9 @@ class BaseScraper(ABC):
     #: group is walled, so it sits ~95% whether or not the fallback bought anything. Only a
     #: per-Board outcome can.
     #:
-    #: Requests made through :meth:`_get`, :meth:`_fetch` and their async counterparts carry the
-    #: opt-in. A scraper that calls its fetcher directly must pass ``**self._egress()`` itself, or
-    #: setting this is silently inert: Workday's listing POST does, and drops it on purpose for its
-    #: one direct-egress retry.
+    #: Every request made through :attr:`board_fetcher` carries the opt-in — :meth:`_get`,
+    #: :meth:`_fetch` and their async twins all go through it (ADR-0204). Workday's listing POST
+    #: drops it on purpose, with ``direct=True``, for its one direct-egress retry.
     egress_fallback_on: frozenset[int] = frozenset()
 
     #: Hosts this ATS parks a decommissioned tenant on — its own marketing pages. A Board whose
@@ -680,9 +680,10 @@ class BaseScraper(ABC):
         it, which is why the ledger records a destination rather than a route.
         """
         try:
-            resp = self._fetcher.fetch(
+            resp = self.board_fetcher.fetch(
                 "GET",
                 self.url(),
+                direct=True,
                 headers={"User-Agent": USER_AGENT},
                 timeout=30,
                 allow_redirects=True,
@@ -726,47 +727,41 @@ class BaseScraper(ABC):
         what stops a future scraper from silently never addressing the salary question at all.
         """
 
-    def _egress(self, *, marks_wall: bool = True) -> dict[str, Any]:
-        """``http.fetch`` kwargs opting this scraper into the spare-egress fallback, plus board
-        attribution for the retry log even when it doesn't.
+    @cached_property
+    def board_fetcher(self) -> BoardFetcher:
+        """This Board's fetcher: the injected transport, bound to the Board's spare-egress opt-in
+        and its attribution, so every request made through it carries both (ADR-0204).
 
         Routing (``egress_group``/``egress_on``) is empty for every scraper that leaves
-        :attr:`egress_fallback_on` unset, so the *request* it feeds is identical to the one made
-        before this existed — no scraper is routed or walled without opting in. Keyed on
+        :attr:`egress_fallback_on` unset, so its requests are identical to the ones made before
+        the fallback existed — no scraper is routed or walled without opting in. Keyed on
         :attr:`ats` rather than the Board, because the metering that motivates it is per origin
-        across all of an ATS's tenants.
+        across all of an ATS's tenants. ``egress_board`` rides along unconditionally: it steers
+        nothing, and exists so the retry log (``http._note_retry``, DEBUG) and the shard report
+        can name *which* Board spent a retry or the IP supply.
 
-        ``egress_board`` rides along unconditionally: it steers nothing, costs nothing, and exists
-        only so the retry log (``http._note_retry``, DEBUG) and the shard report can name *which*
-        Board spent a retry or the IP supply — a scraper with no wall configured used to retry in
-        total silence, indistinguishable in the log from one that never needed to. Grouping is
-        still per ATS.
-
-        ``marks_wall=False`` keeps the **routing** and drops only the **marking**: the request still
-        rides the spare egress once the ATS is walled, but its own failures can never be what walls
-        it. That is for a request whose non-200 means something other than "this IP is refused" —
-        see Eightfold's API-availability probe (ADR-0063). Dropping the routing too would send it
-        over the spent IP on exactly the shard the fallback exists to rescue.
+        Bound on first use, not in ``__init__``: :meth:`board_key` is not computable until a
+        subclass's own ``__init__`` has run (Workday's reads ``_instance``, set after
+        ``super().__init__``), and a malformed slug must fail the Board's first request, as it
+        always has, rather than the scraper's construction.
         """
-        if not self.egress_fallback_on:
-            return {"egress_board": self.board_key()}
-        return {
-            "egress_group": self.ats,
-            "egress_on": self.egress_fallback_on if marks_wall else frozenset(),
-            "egress_board": self.board_key(),
-        }
+        return BoardFetcher(
+            self._fetcher,
+            board=self.board_key(),
+            egress_group=self.ats if self.egress_fallback_on else None,
+            wall_statuses=self.egress_fallback_on,
+        )
 
     def _get(self, url: str | None = None) -> str:
         """GET a board URL as text via the reliable-fetch seam (retry lives there). Defaults to
         ``self.url()``; pass an explicit ``url`` to fetch a secondary endpoint (e.g. a per-job detail
         page). Raises on a definitive HTTP error so a dead board surfaces as a
         per-company failure."""
-        response = self._fetcher.fetch(
+        response = self.board_fetcher.fetch(
             "GET",
             url or self.url(),
             headers=dict(DEFAULT_REQUEST_HEADERS),
             timeout=30,
-            **self._egress(),
         )
         response.raise_for_status()
         return response.text
@@ -779,13 +774,12 @@ class BaseScraper(ABC):
         overrides `_get` must override this too** — eightfold's adds a Referer and marks the
         wall, so it cannot ride this one.
         """
-        response = await self._fetcher.fetch_async(
+        response = await self.board_fetcher.fetch_async(
             session,
             "GET",
             url or self.url(),
             headers=dict(DEFAULT_REQUEST_HEADERS),
             timeout=30,
-            **self._egress(),
         )
         response.raise_for_status()
         return response.text
@@ -796,11 +790,9 @@ class BaseScraper(ABC):
         """Raw request via the reliable-fetch seam, with this scraper's egress opt-in and board
         attribution always applied — the counterpart to :meth:`_get` for a caller that needs a
         non-GET method, custom headers/timeout, or the raw ``Response`` rather than parsed text.
-        ``marks_wall`` passes straight through to :meth:`_egress`.
+        ``marks_wall`` passes straight through to :meth:`BoardFetcher.egress_binding`.
         """
-        return self._fetcher.fetch(
-            method, url, **self._egress(marks_wall=marks_wall), **kwargs
-        )
+        return self.board_fetcher.fetch(method, url, marks_wall=marks_wall, **kwargs)
 
     async def _fetch_async(
         self,
@@ -812,8 +804,8 @@ class BaseScraper(ABC):
         **kwargs: Any,
     ) -> Any:
         """Async counterpart to :meth:`_fetch`, over the shared multiplexed ``AsyncSession``."""
-        return await self._fetcher.fetch_async(
-            session, method, url, **self._egress(marks_wall=marks_wall), **kwargs
+        return await self.board_fetcher.fetch_async(
+            session, method, url, marks_wall=marks_wall, **kwargs
         )
 
     def fetch_raw(self) -> Any:
@@ -950,12 +942,10 @@ class BaseScraper(ABC):
             concurrency = int(
                 env or self.detail_streams or self.detail_workers or _DEFAULT_H2_STREAMS
             )
-        # `_egress()` names the group this scraper's traffic is metered under, and is empty for one
-        # that never opted in — so the clamp keys on exactly what the requests themselves carry
-        # rather than a second guess at it that could drift from `egress_fallback_on`.
-        concurrency = spare_egress.stream_width(
-            self._egress().get("egress_group"), concurrency
-        )
+        # The board fetcher holds the group this scraper's traffic is metered under, and none for
+        # one that never opted in — so the clamp keys on exactly what the requests themselves
+        # carry rather than a second guess at it that could drift from `egress_fallback_on`.
+        concurrency = self.board_fetcher.stream_width(concurrency)
         # Recorded against the width in force, not the ceiling above it, so the clamp's two
         # operating points stay comparable (`headstart.fanout_stats`).
         with fanout_stats.batch(f"{self.ats} details", concurrency) as item_done:

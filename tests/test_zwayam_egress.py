@@ -27,7 +27,7 @@ def test_the_opt_in_is_retryable_or_it_only_helps_the_next_board():
 def test_the_opt_in_actually_reaches_the_request():
     """`egress_fallback_on` is silently inert on a scraper that bypasses the base fetch seam, so
     assert the kwargs rather than the attribute."""
-    egress = ZwayamScraper("careers.example.com")._egress()
+    egress = ZwayamScraper("careers.example.com").board_fetcher.egress_binding()
 
     assert egress["egress_group"] == "zwayam", (
         "the metering is per origin across every tenant, so the group is the ATS"

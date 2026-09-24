@@ -22,6 +22,7 @@ every registered Scraper takes the fetcher ``get_scraper`` is given.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Callable
 
@@ -157,9 +158,7 @@ class FakeBrowserFetcher:
     def __exit__(self, *exc_info: object) -> None:
         return None
 
-    def fetch(
-        self, method: str, url: str, *, json: dict | None = None, **_ignored: Any
-    ):
+    def fetch(self, method: str, url: str, *, json: dict | None = None):
         self._calls.append((method, url, json))
         if method == "GET":
             portal = {"message": {"company": {"new_careers": True}}}
@@ -342,7 +341,7 @@ def test_workday_listing_retry_via_direct_egress_sends_no_egress_kwargs(
     seam_bypass_fails: None,
 ) -> None:
     """A transient non-JSON page is refetched once with `direct=True`, which deliberately
-    carries none of `_egress()` — not even the Board attribution."""
+    carries none of the Board fetcher's binding — not even the Board attribution."""
     empty_board = FakeResponse(200, json.dumps({"total": 0, "jobPostings": []}))
     listing_answers = iter(
         [FakeResponse(200, "<html><title>Just a moment...</title></html>"), empty_board]
@@ -418,3 +417,69 @@ def test_trakstar_feed_reaches_the_injected_fetcher_with_board_attribution_only(
             },
         )
     ]
+
+
+# --- the Fetcher bound to its Board (ADR-0204) ------------------------------------------------
+
+
+def _answer_empty(method: str, url: str, kwargs: dict[str, Any]) -> FakeResponse:
+    return FakeResponse(200, "{}")
+
+
+def test_a_board_fetcher_adds_the_boards_egress_binding_to_every_request() -> None:
+    """An opted-in scraper's requests carry group, walls and Board without spreading anything;
+    ``marks_wall=False`` keeps the routing and drops only the marking (ADR-0063)."""
+    fake = FakeFetcher(_answer_empty)
+    scraper = get_scraper("workday", _WORKDAY_BOARD, "Acme", fetcher=fake)
+
+    scraper._fetch("GET", "https://example.invalid/a", timeout=5)
+    asyncio.run(scraper._fetch_async(None, "GET", "https://example.invalid/b"))
+    scraper._fetch("GET", "https://example.invalid/c", marks_wall=False)
+
+    bindings = [request.kwargs for request in fake.requests]
+    assert bindings[0] == {
+        "egress_group": "workday",
+        "egress_on": frozenset({429}),
+        "egress_board": "workday:acme/External",
+        "timeout": 5,
+    }
+    assert bindings[1]["egress_on"] == frozenset({429})
+    assert bindings[2]["egress_group"] == "workday"
+    assert bindings[2]["egress_on"] == frozenset()  # routed, but cannot mark the wall
+
+
+def test_a_scraper_that_never_opted_in_carries_only_its_board() -> None:
+    fake = FakeFetcher(_answer_empty)
+    GreenhouseScraper("acme", fetcher=fake)._fetch("GET", "https://x.invalid")
+    assert fake.requests[0].kwargs == {"egress_board": "greenhouse:acme"}
+
+
+def test_the_stream_width_is_read_through_the_board_fetcher() -> None:
+    from headstart import spare_egress
+
+    scraper = get_scraper(
+        "workday", _WORKDAY_BOARD, "Acme", fetcher=FakeFetcher(_answer_empty)
+    )
+    spare_egress.reset()
+    try:
+        assert scraper.board_fetcher.stream_width(25) == 25
+        spare_egress.mark_walled("workday", 429)
+        assert scraper.board_fetcher.stream_width(25) == 12
+        # a scraper that never opted in names no group, so another ATS's wall is not its own
+        assert GreenhouseScraper("acme").board_fetcher.stream_width(25) == 25
+    finally:
+        spare_egress.reset()
+
+
+def test_the_browser_fetcher_refuses_an_egress_binding_rather_than_dropping_it() -> (
+    None
+):
+    """A browser tab has one origin and its own network stack; the spare egress cannot route it.
+    It used to swallow any keyword, which is how a binding goes missing without a trace."""
+    from headstart.browser_http import BrowserFetcher
+
+    browser = BrowserFetcher("https://acme.darwinbox.in/ms/candidate/careers")
+    with pytest.raises(TypeError):
+        browser.fetch(
+            "GET", "https://acme.darwinbox.in/ms/x", egress_board="darwinbox:acme"
+        )

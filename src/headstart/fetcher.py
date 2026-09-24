@@ -26,11 +26,16 @@ Three capabilities, not one artificially merged shape:
   tenant host refuse the session header. A domain the jar holds nothing for is not an error —
   there was nothing to forget. ``BrowserFetcher`` leaves this unimplemented too (its docstring
   says why).
+
+A scraper never calls its ``Fetcher`` directly: :class:`BoardFetcher` binds it to the Board, so
+every request carries the Board's spare-egress opt-in and attribution (ADR-0204).
 """
 
 from __future__ import annotations
 
 from typing import Any, Protocol
+
+from headstart import spare_egress
 
 
 class Fetcher(Protocol):
@@ -50,3 +55,91 @@ class Fetcher(Protocol):
     def clear_cookies(self, domain: str | None = None) -> None:
         """Forget this fetcher's cookies for ``domain``, or every cookie when it is None."""
         ...
+
+
+class BoardFetcher:
+    """A :class:`Fetcher` bound to one Board (ADR-0204): the Board's spare-egress opt-in and its
+    attribution travel with the fetcher, so no request made through it can drop them.
+
+    Before this, every request carried them as keyword arguments a scraper had to spread into
+    each call (``**self._egress()``), and a call that forgot was silently inert: its wall never
+    marked, its retries never attributed. Here the binding happens once, and :meth:`fetch`/
+    :meth:`fetch_async` add exactly the keyword arguments ``headstart.http.fetch`` has always
+    received, so the request on the wire is unchanged.
+
+    ``egress_group`` is None for a scraper that never opted into the spare egress; its requests
+    then carry only ``egress_board``, which steers nothing and names the Board in the retry log.
+    ``wall_statuses`` are the statuses that mark the group walled (``http.fetch``'s ``egress_on``).
+    """
+
+    def __init__(
+        self,
+        transport: Fetcher,
+        *,
+        board: str,
+        egress_group: str | None,
+        wall_statuses: frozenset[int],
+    ) -> None:
+        self.transport = transport
+        self.board = board
+        self.egress_group = egress_group
+        self.wall_statuses = wall_statuses
+
+    def egress_binding(self, *, marks_wall: bool = True) -> dict[str, Any]:
+        """The keyword arguments :meth:`fetch` adds to every request it forwards.
+
+        ``marks_wall=False`` keeps the **routing** and drops only the **marking**: the request
+        still rides the spare egress once the group is walled, but its own failures can never be
+        what walls it — for a request whose non-200 means something other than "this IP is
+        refused" (Eightfold's API-availability probe, ADR-0063). Dropping the routing too would
+        send it over the spent IP on exactly the shard the fallback exists to rescue."""
+        if self.egress_group is None:
+            return {"egress_board": self.board}
+        return {
+            "egress_group": self.egress_group,
+            "egress_on": self.wall_statuses if marks_wall else frozenset(),
+            "egress_board": self.board,
+        }
+
+    def fetch(
+        self,
+        method: str,
+        url: str,
+        *,
+        marks_wall: bool = True,
+        direct: bool = False,
+        **kwargs: Any,
+    ) -> Any:
+        """One request through the transport, carrying this Board's egress binding.
+
+        ``direct=True`` sends it with no binding at all — the shard's own route, no group and no
+        attribution: Workday's listing retrying once off a spare egress that handed back a
+        non-JSON page, and :meth:`BaseScraper.alias_key`'s redirect probe, which never carried
+        one."""
+        binding = {} if direct else self.egress_binding(marks_wall=marks_wall)
+        return self.transport.fetch(method, url, **binding, **kwargs)
+
+    async def fetch_async(
+        self,
+        session: Any,
+        method: str,
+        url: str,
+        *,
+        marks_wall: bool = True,
+        direct: bool = False,
+        **kwargs: Any,
+    ) -> Any:
+        """The multiplexed counterpart to :meth:`fetch`, over a caller-supplied session."""
+        binding = {} if direct else self.egress_binding(marks_wall=marks_wall)
+        return await self.transport.fetch_async(
+            session, method, url, **binding, **kwargs
+        )
+
+    def stream_width(self, ceiling: int) -> int:
+        """How wide this Board's fan-out may go now, at most ``ceiling``: narrowed once its
+        egress group has walled (:func:`headstart.spare_egress.stream_width`, #195)."""
+        return spare_egress.stream_width(self.egress_group, ceiling)
+
+    def clear_cookies(self, domain: str | None = None) -> None:
+        """Clear the transport's cookies (:meth:`Fetcher.clear_cookies`)."""
+        self.transport.clear_cookies(domain)

@@ -21,10 +21,10 @@ specifically was undercounting real coverage on boards with many missing-descrip
 exits with a clear message rather than guessing.
 
 **Spare egress is automatic, never hand-rolled.** Every fetch goes through the scraper's own
-``_get()``/``_post()``/``_job_detail()``-style methods, which already carry
-``**self._egress()`` — so an ATS with ``egress_fallback_on`` set (workday: ``{429}``) transparently
-routes through `headstart.spare_egress`'s WARP fallback the same way the real pipeline does,
-reactively, the first time this process meets a wall. No adapter here should ever call
+``_get()``/``_post()``/``_job_detail()``-style methods, which already carry their Board
+fetcher's egress binding (ADR-0204) — so an ATS with ``egress_fallback_on`` set (workday:
+``{429}``) transparently routes through `headstart.spare_egress`'s WARP fallback the same way the
+real pipeline does, reactively, the first time this process meets a wall. No adapter here should ever call
 ``http.fetch`` directly; that would silently skip it. **Narrow, named exception:**
 ``_fetch_ripplehire`` calls ``http.fetch`` directly twice, mirroring ``ripplehire.py``'s own
 production ``fetch_raw()`` exactly (which does the same for the identical reason — see that

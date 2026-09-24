@@ -46,7 +46,7 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from headstart import fanout_stats, http, log, spare_egress
+from headstart import fanout_stats, http, log
 from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import (
@@ -660,13 +660,13 @@ class WorkdayScraper(BaseScraper):
                 int(self.telemetry.get("listing_fetch_calls", 0)) + 1
             )
             try:
-                response = self._fetcher.fetch(
+                response = self.board_fetcher.fetch(
                     "POST",
                     self.url(),
+                    direct=direct,
                     json=body,
                     headers=headers,
                     timeout=30,
-                    **({} if direct else self._egress()),
                 )
             except http.RequestsError as exc:
                 self._record_listing_loss(classify_exception(exc))
@@ -692,7 +692,7 @@ class WorkdayScraper(BaseScraper):
             # measure is what a *persisting* 400 still does below, exactly as before the reset —
             # mid-crawl it raises into `_paginate`'s "page(s) failed mid-crawl (HTTP 400)" line;
             # on a slice's first page it raises out of `_exhaust` as a Board error. Both drop.
-            self._fetcher.clear_cookies()
+            self.board_fetcher.clear_cookies()
             response = fetch()
         if response.status_code == 404:
             if not raise_gone:
@@ -775,14 +775,14 @@ class WorkdayScraper(BaseScraper):
                 int(self.telemetry.get("listing_fetch_calls", 0)) + 1
             )
             try:
-                response = await self._fetcher.fetch_async(
+                response = await self.board_fetcher.fetch_async(
                     session,
                     "POST",
                     self.url(),
+                    direct=direct,
                     json=body,
                     headers=headers,
                     timeout=30,
-                    **({} if direct else self._egress()),
                 )
             except http.RequestsError as exc:
                 self._record_listing_loss(classify_exception(exc))
@@ -1015,7 +1015,7 @@ class WorkdayScraper(BaseScraper):
         if (
             response.status_code == 400
         ):  # a stale session cookie — see _COOKIE_RECOVERED
-            self._fetcher.clear_cookies()
+            self.board_fetcher.clear_cookies()
             try:
                 response = self._fetch(
                     "GET",
@@ -1485,9 +1485,7 @@ class WorkdayScraper(BaseScraper):
         # site rather than through it: this gather exists precisely because that method's
         # exception contract is not the one `_paginate` needs (above), so the width policy is
         # shared as a function and the two fan-outs stay apart (#195).
-        width = spare_egress.stream_width(
-            self._egress().get("egress_group"), _PAGE_STREAMS
-        )
+        width = self.board_fetcher.stream_width(_PAGE_STREAMS)
         sem = asyncio.Semaphore(width)
         missing = 0
         error: http.RequestsError | None = None
