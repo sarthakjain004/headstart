@@ -5,7 +5,7 @@
 
 **Why call the Space instead of ranking here.** The scores in a Digest are then the same
 numbers the same search shows in the browser, and the ranking rules stay in one place
-(`headstart/search.py`, ADR-0005's prefixes included). The cost is that the Space must be
+(`headstart/search.py`, with ADR-0005's prefixes in `headstart/embedding_conventions.py`). The cost is that the Space must be
 awake — and the merge job restarts it at the end of every pipeline run, so this always
 arrives at a cold Space. Hence the retry budget, in the shape ADR-0033 established: waits
 sized to a cold start (~1 min), not to a network blip.

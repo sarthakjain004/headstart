@@ -2,13 +2,14 @@
 
 `JobSearch` is exercised through its interface with a fake encoder and table — no model
 load, so all of this runs in the standard test env. The where-clause builders it compiles
-through are tested in `test_search_filters.py` (ADR-0194).
+through are tested in `test_search_filter_compiler.py` (ADR-0194).
 """
 
 from __future__ import annotations
 
 import logging
 import types
+from dataclasses import replace
 
 import pytest
 
@@ -18,16 +19,9 @@ from headstart.search import (
     RESULT_COLUMNS,
     SORT_COLUMNS,
     JobSearch,
+    request_account_clause,
 )
-from headstart.search_filters import (
-    build_filter,
-)
-
-# ---- build_filter: the reference product builder ----
-
-
-# ---- the Keyword filter (ADR-0104) ----
-
+from headstart.search_filter_compiler import account_clause, build_filter
 
 # ---- JobSearch: through its interface, with fakes ----
 
@@ -1023,4 +1017,42 @@ def test_no_extra_where_leaves_the_clause_untouched():
     assert "lower(id)" not in (table.last_where or "")
 
 
-# --- board_clause / account_clause: whole-Board filtering (ADR-0171) ---
+# ── what both adapters used to copy (ADR-0194) ──────────────────────────────────────────────
+
+
+def test_request_account_clause_reads_mine_from_the_query_string():
+    followed, hidden = ["greenhouse:acme"], ["lever:skip"]
+    for mine in ("1", "true"):
+        assert request_account_clause({"mine": mine}, followed, hidden) == (
+            account_clause(followed, hidden, mine=True)
+        )
+    for args in ({}, {"mine": "0"}, {"mine": "yes"}):
+        assert request_account_clause(args, followed, hidden) == (
+            account_clause(followed, hidden, mine=False)
+        )
+
+
+def test_salary_bracket_converts_only_where_two_served_currencies_carry_a_rate(
+    monkeypatch,
+):
+    from headstart import fx
+
+    searcher, _ = _searcher()
+    monkeypatch.setattr(fx, "table", lambda: {"rates": {"USD": 1.0, "INR": 80.0}})
+    for currencies, converts in ((["USD", "INR"], True), (["USD", "EUR"], False)):
+        monkeypatch.setattr(
+            searcher,
+            "capabilities",
+            replace(searcher.capabilities, currencies=currencies),
+        )
+        assert searcher.salary_bracket_converts is converts, currencies
+    monkeypatch.setattr(fx, "table", lambda: None)
+    assert searcher.salary_bracket_converts is False
+
+
+def test_a_result_row_is_every_result_column_with_score_after_the_id():
+    searcher, _ = _searcher()
+    (row,) = searcher.run({})
+    assert list(row) == ["id", "score", *[c for c in RESULT_COLUMNS if c != "id"]]
+    # A column the table lacks reads as None rather than failing the whole page.
+    assert row["salary_source"] is None

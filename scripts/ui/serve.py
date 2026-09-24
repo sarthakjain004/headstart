@@ -21,11 +21,10 @@ import headstart
 from headstart import facets, fx, geo
 from headstart.alerts.store import MAX_COMPANIES, CompanyPrefs
 from headstart.embedding_conventions import PROD_TABLE, load_encoder
-from headstart.search import JobSearch
-from headstart.search_filters import (
+from headstart.search import JobSearch, request_account_clause
+from headstart.search_filter_compiler import (
     KEYWORD_DEFAULT_SCOPE,
     keyword_scope_options,
-    request_account_clause,
 )
 
 _REPO = Path(__file__).resolve().parents[2]
@@ -61,6 +60,7 @@ app = Flask(
 
 @app.route("/")
 def index():
+    capabilities = _searcher.capabilities
     scopes = keyword_scope_options()  # the Keyword filter's one map (ADR-0104)
     return render_template(
         "base.html",
@@ -72,7 +72,7 @@ def index():
             "keyword_scopes": {value: needs for value, _, needs in scopes},
             "keyword_default_scope": KEYWORD_DEFAULT_SCOPE,
             # The Data tab's browse line reads this to name the ordering actually in force.
-            "has_first_seen": _searcher.capabilities.has_first_seen,
+            "has_first_seen": capabilities.has_first_seen,
             # The salary bracket's rate table (ADR-0117), so the page can print what a row
             # in another currency comes to in the one the user asked in — the SAME table the
             # where-clause was compiled from, never a second lookup, so the label beside a row
@@ -85,15 +85,15 @@ def index():
         repo="https://github.com/sarthakjain004/headstart",
         auth_on=False,  # the local renderer has no sign-in, so nothing is stored
         njobs=f"{_table.count_rows():,}",
-        atses=_searcher.capabilities.atses,
+        atses=capabilities.atses,
         india_opts=geo.dropdown_options(),
-        has_first_seen=_searcher.capabilities.has_first_seen,
+        has_first_seen=capabilities.has_first_seen,
         # the "Highest salary" sort option — dark until the ADR-0082 columns exist on the
         # served table, the same rule app.py and JobSearch.run apply to the value the control
         # would send (this was previously missing here — the option silently vanished from
         # local dev only, ADR-0153)
-        has_min_salary=_searcher.capabilities.has_min_salary_annual,
-        currencies=_searcher.capabilities.currencies,
+        has_min_salary=capabilities.has_min_salary_annual,
+        currencies=capabilities.currencies,
         # The salary bracket converts across currencies (ADR-0117); the rail prints the date
         # of the rates it used, so a stale table is visible rather than silent.
         # Both facts, because the tip needs the second one: `as_of` says the table parsed,
@@ -109,7 +109,7 @@ def index():
         # Keyword scope <select> comes out with zero options, silently.
         keyword_scopes=scopes,
         keyword_default_scope=KEYWORD_DEFAULT_SCOPE,
-        has_description=_searcher.capabilities.has_description,
+        has_description=capabilities.has_description,
         trends_on=False,
         hot_on=bool(_HOT),
         alerts_on=False,

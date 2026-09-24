@@ -12,7 +12,7 @@ materialized Search filter's own facts live in its module (ADR-0193); this compi
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import NamedTuple
@@ -232,18 +232,6 @@ def account_clause(
     return " AND ".join(c for c in clauses if c) or None
 
 
-def request_account_clause(
-    args: Mapping[str, str], followed: Collection[str], hidden: Collection[str]
-) -> str | None:
-    """:func:`account_clause` for one request, ``mine`` read off its query string (ADR-0171).
-
-    Both apps call this with their own Account's lists — the Space from the signed-in Account's
-    stored record, the local renderer from its one in-memory record — so the query-string rule
-    for ``mine`` is written once, beside the clause it switches, rather than in each app.
-    """
-    return account_clause(followed, hidden, mine=args.get("mine") in ("1", "true"))
-
-
 def _keyword_terms(kw: str) -> list[str]:
     """The Keyword filter's terms: whitespace-split, each escaped by :func:`_like`, capped.
 
@@ -283,7 +271,7 @@ def _ago(**window: int) -> datetime:
     739,865 days (17,756,755 hours) walks ``datetime`` below year 1 — one past the last that
     lands on 0001-01-01, and both creep by a day each day as ``now`` moves — and a magnitude past 999,999,999
     days breaks ``timedelta`` itself — in both directions, since a negative window that large
-    runs off the far end instead. Converted here rather than clamped in :func:`headstart.search._int_arg`, which
+    runs off the far end instead. Converted here rather than clamped in the query-string int reader in :mod:`headstart.search`, which
     is shared with ``k``, ``page`` and the salary bounds and has no business knowing what a date
     can hold; here it matches ``_next_day``'s identical treatment further down and also covers the facet
     counts, which call :func:`build_filter` directly rather than through the parse step.

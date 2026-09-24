@@ -67,7 +67,7 @@ The search design is a **hybrid split made explicit at the UI**: you apply struc
 yourself, *and separately* type a natural-language query describing only the role. Filters drive
 a deterministic where-clause; the query drives the embedding. `/search` takes `remote`,
 `has_salary`, `max_years`, `ats`, `etype`, `india`, `location`, `company`, `posted_within`,
-`seen_within`, and explicit date bounds — all compiled by `search_filters.build_filter`, which rejects
+`seen_within`, and explicit date bounds — all compiled by `search_filter_compiler.build_filter`, which rejects
 unparseable input with a 400 rather than silently ignoring it.
 
 - **Embeddings:** `nomic-embed-text-v1.5`, 768-dim, L2-normalized, over `title + cleaned

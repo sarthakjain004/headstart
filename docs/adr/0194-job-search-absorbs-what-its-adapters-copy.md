@@ -41,17 +41,20 @@ were carrying code again, and the modules around `search.py` leaned on it for th
    neighbours. `ingest/embed_*` are pipeline stages, a different kind of module in a different
    package, and `search_index` was ruled out because ADR-0173 already uses "Search index" for the
    LanceDB scalar and vector indexes.
-2. **`headstart.search_filters`** is the Search-filter compiler moved out of `search.py`:
+2. **`headstart.search_filter_compiler`** is the Search-filter compiler moved out of `search.py`:
    `SearchFilters`, `IndexCapabilities`, `build_filter` and its clause helpers, the Keyword scope
    map, `SALARY_DEFAULT_CURRENCY`, and the Account clause (`board_clause`, `account_clause`,
    `with_extra`). The Account clause lives with the compiler because it shares the LIKE escaping.
-   `search` and `facets` both import `search_filters`, so `search` imports `facets` at module
+   `search` and `facets` both import `search_filter_compiler`, so `search` imports `facets` at module
    level and the cycle is gone. `test_facets.py` now pins the direction ("facets never imports
    the serving path") where `test_search.py` used to pin the deferral. The compiler's tests
-   moved to `tests/test_search_filters.py`, named after the module.
+   moved to `tests/test_search_filter_compiler.py`, named after the module. It is not called
+   `search_filters`, because that plural would sit among the one-filter-per-module family
+   (`experience_filter`, `india_filter`, …, ADR-0193) and read as one more of them.
 3. **The adapters' copies move behind the search interface.**
-   `search_filters.request_account_clause(args, followed, hidden)` reads `mine` from the query
-   string once. `JobSearch.salary_bracket_converts` replaces both `_fx_converts`, and `fx.as_of()`
+   `search.request_account_clause(args, followed, hidden)` reads `mine` from the query string
+   once. It lives beside `JobSearch.parse_filters` and the other query-string readers, not in
+   the compiler, which only takes values that are already parsed. `JobSearch.salary_bracket_converts` replaces both `_fx_converts`, and `fx.as_of()`
    replaces both `_fx_as_of`, next to the rate table it reads. Each adapter's `_company_where`
    still fetches its own Account's lists, because those differ: the Space reads the signed-in
    Account's stored record, and the local renderer reads its one in-memory record.
@@ -71,7 +74,7 @@ failing that, by the smallest interface.
 
 - **`request_account_clause` takes the two lists, not the `CompanyPrefs` record.** Moving the
   Account lookup into `JobSearch` would have tied the serving path to the alerts store, which the
-  local renderer does not have. Passing `CompanyPrefs` would have made `search_filters` import
+  local renderer does not have. Passing `CompanyPrefs` would have made `search` import
   `alerts.store`. Two collections is the smallest interface both adapters can meet.
 - **`run(args, extra_where=…)` keeps its signature.** Taking follow/hide lists in place of
   `extra_where` would have changed the cache keys and every caller, and `request_account_clause`
@@ -85,10 +88,13 @@ failing that, by the smallest interface.
   column. Before, the hand-written dict read those three with `row[...]` and raised a `KeyError`.
   All three are in the base `_schema()`, so no served table reaches this path.
 
+No glossary term changes. The compiler, the embedding conventions and the Account clause are
+modules, not domain concepts, so CONTEXT.md only has its two module paths updated.
+
 ## Consequences
 
-- The pipeline no longer imports the serving path. `search.py` went from about 1,500 lines to 851:
-  the compiler is 628 lines in `search_filters.py`, and the conventions are in their own small
+- The pipeline no longer imports the serving path. `search.py` went from about 1,500 lines to 867:
+  the compiler is 616 lines in `search_filter_compiler.py`, and the conventions are in their own small
   module.
 - An adapter that needs a new fact about the table reads it from `capabilities`, and it is
   already on the object `build_filter` compiles against.
@@ -100,3 +106,6 @@ failing that, by the smallest interface.
   clause, covering semantic and browse queries, all three sorts, salary sorts in another
   currency, pagination and every filter family, plus `facets()`, `coverage()` and
   `n_seen_within()`. Its 696 lines are byte-identical before and after.
+- New tests pin the seams this change created: `request_account_clause`,
+  `salary_bracket_converts`, `fx.as_of`, the result row's key order, and the direction of the
+  `facets` import.

@@ -59,10 +59,9 @@ from headstart.alerts.store import (
     subscription_id,
 )
 from headstart.board_identity import ats_of
-from headstart.search_filters import (
+from headstart.search_filter_compiler import (
     KEYWORD_DEFAULT_SCOPE,
     keyword_scope_options,
-    request_account_clause,
 )
 
 DATASET = os.environ.get("HF_DATASET", "imPoseidon/headstart-index")
@@ -494,7 +493,7 @@ def _company_where(args) -> str | None:
         return None
     email, store = gate
     prefs = store.get_companies(subscription_id(email))
-    return request_account_clause(args, prefs.followed, prefs.hidden)
+    return search.request_account_clause(args, prefs.followed, prefs.hidden)
 
 
 @app.route("/search")
@@ -1621,6 +1620,7 @@ def privacy():
 
 @app.route("/")
 def index():
+    capabilities = _searcher.capabilities
     if _AUTH_ON and not session.get("email"):
         # The door states what this is and proves it before asking for an identity
         # (ADR-0112). Every number is read rather than written, and every one is EXACT —
@@ -1632,7 +1632,7 @@ def index():
             "signin.html",
             google_client_id=_GOOGLE_CLIENT_ID,
             njobs=f"{_table.count_rows():,}",
-            n_atses=len(_searcher.capabilities.atses),
+            n_atses=len(capabilities.atses),
             n_new=_searcher.n_seen_within(_DOOR_NEW_HOURS),
             new_days=_DOOR_NEW_HOURS // 24,
             repo=_REPO,
@@ -1651,7 +1651,7 @@ def index():
             # A no-query browse orders by `first_seen` only when the column exists; without
             # it the fallback is `id`, which is not a date at all. The line naming what the
             # user is looking at must not claim "newest first" on the second one.
-            "has_first_seen": _searcher.capabilities.has_first_seen,
+            "has_first_seen": capabilities.has_first_seen,
             # The salary bracket's rate table (ADR-0117), so the page can print what a row
             # in another currency comes to in the one the user asked in — the SAME table the
             # where-clause was compiled from, never a second lookup, so the label beside a row
@@ -1660,21 +1660,21 @@ def index():
             "fx": fx.table(),
         },
         njobs=f"{_table.count_rows():,}",
-        atses=_searcher.capabilities.atses,
+        atses=capabilities.atses,
         india_opts=geo.dropdown_options(),
-        has_first_seen=_searcher.capabilities.has_first_seen,
+        has_first_seen=capabilities.has_first_seen,
         # the Keyword filter (ADR-0104): its scopes from the one map, and whether the served
         # table carries the description column yet — description-bearing scopes are disabled
         # until it does
         keyword_scopes=scopes,
         keyword_default_scope=KEYWORD_DEFAULT_SCOPE,
-        has_description=_searcher.capabilities.has_description,
+        has_description=capabilities.has_description,
         # the "Highest salary" sort option — dark until the ADR-0082 columns exist on the
         # served table, the same rule `run` applies to the value the control would send
-        has_min_salary=_searcher.capabilities.has_min_salary_annual,
+        has_min_salary=capabilities.has_min_salary_annual,
         # the salary bracket's currency picker (issue #275) — only the currencies the served
         # table actually carries, and the same list `build_filter` whitelists against
-        currencies=_searcher.capabilities.currencies,
+        currencies=capabilities.currencies,
         # The salary bracket converts across currencies (ADR-0117); the rail prints the date
         # of the rates it used, so a stale table is visible rather than silent.
         # Both facts, because the tip needs the second one: `as_of` says the table parsed,

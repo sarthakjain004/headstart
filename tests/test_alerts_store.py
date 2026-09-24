@@ -96,13 +96,13 @@ def test_create_keeps_only_allowed_filters():
 
 def test_allowed_search_filters_stay_a_subset_of_the_real_vocabulary():
     """ADR-0149: `ALLOWED_SEARCH_FILTERS` is a hand-curated allowlist, not derived from
-    `headstart.search_filters.SearchFilters` (this module ships standalone into the Space and is also
+    `headstart.search_filter_compiler.SearchFilters` (this module ships standalone into the Space and is also
     called over HTTP against a possibly-different-commit deployed one — see the comment beside
     `ALLOWED_SEARCH_FILTERS`). Nothing then stops the two from drifting apart on their own, so
     this is the automated check that catches it: a rename or typo in `search.py`'s filter
     vocabulary now fails here, in CI, rather than silently dropping a filter from every Digest.
     """
-    from headstart.search_filters import SearchFilters
+    from headstart.search_filter_compiler import SearchFilters
 
     real = set(SearchFilters.__dataclass_fields__)
     assert st.ALLOWED_SEARCH_FILTERS <= real

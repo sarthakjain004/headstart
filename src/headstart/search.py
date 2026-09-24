@@ -1,6 +1,6 @@
 """The one serving-path search implementation both UIs run (ADR-0042).
 
-It compiles filters through :mod:`headstart.search_filters` (the reference Search-filter
+It compiles filters through :mod:`headstart.search_filter_compiler` (the reference Search-filter
 compiler), counts Facets through :mod:`headstart.facets`, and shares the embedding conventions —
 model id, task prefixes, table name, encoder — with the pipeline through
 :mod:`headstart.embedding_conventions` (ADR-0194).
@@ -32,12 +32,13 @@ from headstart import (
     salary_known_filter,
 )
 from headstart.embedding_conventions import encode_query
-from headstart.search_filters import (
+from headstart.search_filter_compiler import (
     KEYWORD_DEFAULT_SCOPE,
     KEYWORD_SCOPES,
     SALARY_DEFAULT_CURRENCY,
     IndexCapabilities,
     SearchFilters,
+    account_clause,
     build_filter,
     with_extra,
 )
@@ -169,6 +170,19 @@ def _int_arg(args: Mapping[str, str]) -> Callable[[str], int | None]:
     return read
 
 
+def request_account_clause(
+    args: Mapping[str, str], followed: Collection[str], hidden: Collection[str]
+) -> str | None:
+    """:func:`~headstart.search_filter_compiler.account_clause` for one request, ``mine`` read
+    off its query string (ADR-0171).
+
+    Both apps call this with their own Account's lists — the Space from the signed-in Account's
+    stored record, the local renderer from its one in-memory record — so the query-string rule
+    for ``mine`` is written once, beside the clause it switches, rather than in each app.
+    """
+    return account_clause(followed, hidden, mine=args.get("mine") in ("1", "true"))
+
+
 # TEMPORARY (2026-07-07) — INTENDED FOR REMOVAL. Darwinbox rows scraped before the
 # candidatev2 URL fix carry the old `/ms/candidate/careers/jobs/{id}` link, which on v2
 # tenants redirects to the careers home instead of the job. The stored data self-heals only
@@ -273,11 +287,13 @@ def _result_row(row: Mapping[str, Any], query: str) -> dict[str, Any]:
     ``{ats}:{slug}:{native_id}``. ``url`` is rewritten at serve time (temporary; see
     :func:`_canonical_url`).
     """
-    result: dict[str, Any] = {}
-    for column in RESULT_COLUMNS:
-        result[column] = row.get(column)
-        if column == "id":
-            result["score"] = round(1 - row["_distance"], 3) if query else None
+    result: dict[str, Any] = {
+        "id": row.get("id"),
+        "score": round(1 - row["_distance"], 3) if query else None,
+    }
+    result.update(
+        {column: row.get(column) for column in RESULT_COLUMNS if column != "id"}
+    )
     result["url"] = _canonical_url(row.get("ats"), row.get("url"), row.get("id"))
     return result
 

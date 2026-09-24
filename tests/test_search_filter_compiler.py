@@ -1,4 +1,4 @@
-"""Tests for the Search-filter compiler, `headstart.search_filters` (ADR-0031, ADR-0149, ADR-0194).
+"""Tests for the Search-filter compiler, `headstart.search_filter_compiler` (ADR-0031, ADR-0149, ADR-0194).
 
 The builders are the one place user input reaches the LanceDB where-clause, so their
 validation (whitelists, re-serialization, escaping) is worth locking down: `build_filter`
@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from headstart.employment_type_filter import RULES as EMPLOYMENT_TYPE_RULES
-from headstart.search_filters import (
+from headstart.search_filter_compiler import (
     IndexCapabilities,
     SearchFilters,
     account_clause,
@@ -225,7 +225,7 @@ def test_a_scope_without_a_keyword_filters_nothing():
 
 
 def test_keyword_scope_options_come_from_the_map_in_order_with_labels_and_needs():
-    from headstart.search_filters import KEYWORD_SCOPES, keyword_scope_options
+    from headstart.search_filter_compiler import KEYWORD_SCOPES, keyword_scope_options
 
     options = keyword_scope_options()
     assert [v for v, _, _ in options] == list(KEYWORD_SCOPES)  # same order as the map
@@ -420,7 +420,7 @@ def test_an_inclusive_upper_bound_compares_below_the_next_day():
     hold date-or-datetime strings and '2026-08-10T12:00' sorts above '2026-08-10'. Leap years
     come from `date` itself, and running off the calendar is a 400 like any other bad date.
     """
-    from headstart.search_filters import _next_day
+    from headstart.search_filter_compiler import _next_day
 
     assert _next_day("2026-08-10") == "2026-08-11"
     assert _next_day("2026-12-31") == "2027-01-01"

@@ -1,9 +1,8 @@
 """The conventions a Doc vector and a Query vector must share (ADR-0005, ADR-0008, ADR-0194).
 
 The model id, the load-bearing task prefixes, the encoder factory and the served LanceDB table's
-name live here once. The ingest stages that write vectors (``embed_plan``, ``embed_run``,
-``embed_merge``, ``doc_prep``, ``index``) and :mod:`headstart.search`, which reads them, import
-these instead of re-declaring their own copies, so a mismatched prefix or model id can't drift
+name live here once. The ingest stages that write or read the vectors and the served table, and
+:mod:`headstart.search`, which queries them, import these instead of re-declaring their own copies, so a mismatched prefix or model id can't drift
 into one side and silently degrade ranking (ADR-0005 warns a wrong prefix throws no error).
 
 Moved out of :mod:`headstart.search` (ADR-0194) so the pipeline no longer imports the serving
