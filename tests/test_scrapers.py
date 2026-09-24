@@ -8482,7 +8482,7 @@ def _second_pass_scraper(monkeypatch, answer):
 
 def test_workday_second_pass_stops_at_its_per_board_budget(monkeypatch):
     """Five lost pages are asked again; six are an origin failing and none are. The budget is
-    the Board's, so slices that together lost more than five stop asking once it is spent."""
+    the Board's, and a slice needing more than is left is skipped whole, not asked in part."""
     from collections import Counter
 
     from headstart.scrapers.workday import _SECOND_PASS_MAX
@@ -8494,6 +8494,11 @@ def test_workday_second_pass_stops_at_its_per_board_budget(monkeypatch):
     six = {offset: "HTTP 500" for offset in range(20, 140, 20)}
     assert scraper._second_pass({}, six, [].extend, Counter({"HTTP 500": 6})) == 0
     assert asked == []
+
+    scraper, asked = _second_pass_scraper(monkeypatch, page)
+    five = dict(list(six.items())[:5])
+    assert scraper._second_pass({}, five, [].extend, Counter({"HTTP 500": 5})) == 5
+    assert asked == list(five)
 
     scraper, asked = _second_pass_scraper(monkeypatch, page)
     three = {20: "HTTP 500", 40: "HTTP 500", 60: "HTTP 500"}

@@ -1493,12 +1493,13 @@ class WorkdayScraper(BaseScraper):
         Workday Boards that lost pages to a ConnectionError or an HTTP 500 and were never asked
         again, so the whole Board left eviction scope for the run — 68 of the 71 had lost three
         pages or fewer. The same Boards list every page cleanly on a later crawl (umiami, rbc,
-        manulife, 2026-09-25), so the failure is transient; this pass comes after every other
+        manulife, 2026-09-25, one probe each), so the failure looks transient; this pass comes after every other
         page has answered, through the sync path and its own retry ladder. A page that answers is
         read, and its loss is taken back out of the count :meth:`_paginate` decides on; one that
         404s now is relabelled as the lost page it has become.
 
-        Bounded by :data:`_SECOND_PASS_MAX` pages per *Board* (``_second_pass_left``): the pass is
+        Bounded by :data:`_SECOND_PASS_MAX` pages per *Board* (``_second_pass_left``), and a slice
+        that needs more than is left is not asked at all rather than asked in part: the pass is
         sequential, each request carrying a full retry ladder, and a Board losing more is an
         origin failing, where asking again one page at a time only spends the shard's budget.
         """
