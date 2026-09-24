@@ -188,6 +188,31 @@ def test_the_gate_keeps_a_giant_board_that_earns_its_hour():
     assert gated == {}
 
 
+def test_the_gate_drops_a_ten_minute_board_that_yields_almost_no_tech():
+    """`jibe:petsmart`, 2026-09-24: 760 s at a score of 2.8 (4 tech jobs), 0.22 a minute. Under
+    the old 15 min floor it sat unjudged while shards now finish in ~9 min, so it set the scrape
+    stage's wall clock once Costco was gone (ADR-0064's 2026-09-24 amendment)."""
+    gated = ps._gated_boards(
+        ["jibe:petsmart"],
+        {"jibe:petsmart": _cost(760.0, day="2026-09-24")},
+        {"jibe:petsmart": 2.8},
+        today="2026-09-24",
+    )
+    assert "jibe:petsmart" in gated
+
+
+def test_the_gate_leaves_a_board_under_ten_minutes_alone():
+    """The floor moved, it did not vanish: a nine-minute Board is under it however little it
+    yields, so the long tail stays out of the gate's business."""
+    gated = ps._gated_boards(
+        ["jibe:nine"],
+        {"jibe:nine": _cost(590.0, day="2026-09-24")},
+        {"jibe:nine": 0.5},
+        today="2026-09-24",
+    )
+    assert gated == {}
+
+
 def test_the_gate_never_touches_a_cheap_board():
     """Almost the whole corpus: a Board too cheap to threaten the makespan is not the gate's
     business however little it yields, and gating on yield alone would gut the long tail."""
@@ -317,11 +342,11 @@ def test_floor_warning_compares_wall_clock_not_serial_minutes(
     monkeypatch.setattr(
         ps.scrapable_boards, "load", lambda ledger, min_jobs=0: list(boards)
     )
-    # 700 s stays under the ADR-0064 value gate's 15 min bar, so the giant survives into the slice.
+    # 590 s stays under the ADR-0064 value gate's 10 min bar, so the giant survives into the slice.
     cost = tmp_path / "cost.csv"
     cost.write_text(
         "board,seconds,jobs,updated_at\n"
-        f"{board_identity(boards[0])},700.0,900,2026-09-08\n"
+        f"{board_identity(boards[0])},590.0,900,2026-09-08\n"
         + "".join(f"{board_identity(b)},200.0,50,2026-09-08\n" for b in boards[1:])
     )
     speedup = tmp_path / "speedup.csv"
