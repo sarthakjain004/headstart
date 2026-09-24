@@ -70,7 +70,8 @@ The run is a **download → mutate → upload cycle** over the dataset, parallel
    (`ingest.embed_merge`, reconciling any partial tail), then the unchanged tail: **sync** the LanceDB `jobs`
    table (`index sync`: add ids that now have a vector, evict postings gone from scraped boards —
    incremental, no rebuild), **prune** rows the board-scoped sync can't reach (`index prune --apply` —
-   dead boards keyed on the live ledger + case-variant dups, ADR-0023; safety-aborts on a too-small
+   dead boards keyed on the live ledger + case-variant dups, ADR-0023, + a Workday requisition's
+   copies on its tenant's other sites, ADR-0187, which sync also declines to add; safety-aborts on a too-small
    keep-set), append the trends/Hot ledgers, bank the embedding store, then **refresh** all Search
    indexes over the final rows (`index refresh-indexes`, ADR-0174) — `index compact` is **not** in
    this run, it moved to `cleanup-index` — then **upload** the remaining dirs back —

@@ -23,7 +23,9 @@ cannot. A Board short the same way twice running evicts in full (ADR-0101).
 
 **Prune sweep** (ADR-0023) — because the sync is board-scoped it can't reach rows on Boards that left
 the scrape list, nor case-variant duplicates of one job (Workday sites like ``.../External`` vs
-``.../external``). These planners compute what to drop in those two cases.
+``.../external``). These planners compute what to drop in those two cases; the duplicate case also
+covers one Workday requisition on several sites of its Workday tenant, which sync declines to add
+in the first place (ADR-0187).
 
 Both layers ask "which Board owns this id", and both answer it through :func:`resolve_board`, whose
 docstring says why they must agree (ADR-0049).
@@ -41,8 +43,9 @@ from typing import Any
 
 from headstart import log
 from headstart.board_identity import board_key, board_of, lower_key
-from headstart.config import load_active_companies
+from headstart.config import CompanyRef, load_active_companies
 from headstart.corpus import iter_jobs
+from headstart.ingest.board_operator import tenant
 
 _log = log.get(__name__, __spec__)
 
@@ -57,7 +60,11 @@ _log = log.get(__name__, __spec__)
 #: through ``index prune``, which has no grace period; a dedup that instead stops emitting ids at
 #: scrape time would drain through ``sync``'s two-scrape grace (ADR-0083) and read as a slow
 #: decline after the marker, so keep new dedup rules on the prune path.
-DEDUP_VERSION = 1
+#:
+#: 1 — the rules when the counter was added (ADR-0188): casing duplicates, redirect and
+#:     ``shared-reqs`` aliases. 2 — Taleo Enterprise ``subset-reqs`` aliases (ADR-0186).
+#: 3 — one row per Workday tenant and requisition, public sites first (ADR-0187).
+DEDUP_VERSION = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,11 +78,16 @@ class SyncPlan:
     looked like.
 
     The caller persists ``unconfirmed`` and hands it back next run as ``was_unconfirmed``.
+
+    ``refused`` is the fresh ids *not* added because another site of the same Workday tenant
+    serves, or is being given, the same requisition — the rule ``plan_prune`` enforces on rows
+    already indexed, applied where rows arrive so prune never has to take them back out.
     """
 
     add: frozenset[str]
     delete: frozenset[str]
     unconfirmed: frozenset[str] = frozenset()
+    refused: frozenset[str] = frozenset()
 
 
 def grace_period_counts(
@@ -137,6 +149,9 @@ def plan_sync(
     scraped_boards: Iterable[str],
     live: dict[str, str],
     was_unconfirmed: Iterable[str] | None = None,
+    *,
+    site_jobs: dict[str, int] | None = None,
+    replaced: AbstractSet[str] = frozenset(),
 ) -> SyncPlan:
     """Diff the current index against a scrape's fresh ids, scoped to the Boards it covered.
 
@@ -149,6 +164,18 @@ def plan_sync(
     there is no ledger to read, which degrades to :func:`~headstart.board_identity.board_of`. Required
     rather than defaulted: omitting it silently restores the scoping ADR-0049 records as *worse*
     than the bug it fixes.
+
+    **One site per Workday requisition (ADR-0187).** A fresh id is not added — it lands in
+    ``refused`` instead — when another site of its Workday tenant already serves the same
+    requisition from a live Board (unless it is a public copy and every serving site is
+    non-public: that one displaces them), or when several sites bring it at once and another is
+    the :func:`_survivor_board`. That is ``plan_prune``'s grouping, applied where rows arrive:
+    without it, sync would re-add on the next run every copy prune took out. The served row is
+    judged *after* this plan's evictions, so a survivor its Board stopped listing makes way on the
+    scrape that evicts it, and one on a Board that left ``live`` makes way at once — the other
+    copy arriving whenever its own Board is next scraped. ``replaced`` names ids the caller took
+    out of the table only to re-add them with a new vector (ADR-0050); they are still their
+    requisition's served row.
 
     **No Board-level cap (ADR-0101).** The board-scope check above is all-or-nothing at the *line*
     level: a Board that emitted one job line is fully in scope, so a scrape truncated by a
@@ -239,11 +266,97 @@ def plan_sync(
             if board not in boards and lower_key(board) in live:
                 unconfirmed.add(job_id)
 
+    served = (index - delete) | (add & replaced)
+    refused = _other_site_copies(add, served, live, site_jobs or {})
     return SyncPlan(
-        add=frozenset(add),
+        add=frozenset(add - refused),
         delete=frozenset(delete),
         unconfirmed=frozenset(unconfirmed),
+        refused=frozenset(refused),
     )
+
+
+def _placement(job_id: str, live: dict[str, str]) -> tuple[tuple[str, str], str] | None:
+    """``(duplicate group, lowercased Board)`` for an id on a live Board, else None.
+
+    The group is ``(Board or Workday tenant, native id)`` — one served row each — and it is the
+    one grouping both planners use: ``plan_prune`` to collapse the rows a group already holds,
+    ``plan_sync`` to decline copies of one it already serves.
+    """
+    end = _live_board_end(job_id, live)
+    if end is None:
+        return None
+    canon, native = lower_key(job_id[:end]), job_id[end + 1 :]
+    return (_workday_tenant(canon, native) or canon, native), canon
+
+
+def _other_site_copies(
+    new: set[str], served: set[str], live: dict[str, str], site_jobs: dict[str, int]
+) -> set[str]:
+    """The ``new`` ids not to add because their requisition is served from another Board.
+
+    An incumbent wins: a requisition already served from a live Board stays there, and a copy
+    arriving from any other Board is refused — so a survivor never moves while its row stands.
+    The one exception runs one way only: a **public** copy displaces an incumbent that sits on
+    non-public sites alone (ADR-0187). A tenant's sites rarely share a slice, so which site a
+    requisition reaches first is close to chance, and ranking alone would leave it wherever it
+    landed; ``plan_prune`` ranks the same way, so it drops the non-public row in the same run.
+    Within each class — public against public, non-public against non-public — the incumbent
+    still wins, so the order is total and one-directional and nothing oscillates.
+
+    A requisition with no incumbent takes :func:`_survivor_board`, the Board ``plan_prune`` would
+    keep. A copy on the incumbent's own Board is still added: that is a case-variant spelling of
+    it, which ``plan_prune`` settles by the live casing (ADR-0023), and refusing it would make a
+    fossil casing immortal. Every group but a Workday tenant's holds one Board, so nothing else is
+    ever refused.
+    """
+    arriving, _ = _by_group_and_board(new, live)
+    if not arriving:
+        return set()
+    incumbent_boards: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for job_id in served:
+        placed = _placement(job_id, live)
+        if placed is None:
+            continue
+        group, board = placed
+        if group in arriving:
+            incumbent_boards[group].add(board)
+    refused: set[str] = set()
+    for group, by_board in arriving.items():
+        incumbents = incumbent_boards.get(group, set())
+        # Displaced when the arriving copies' best class outranks the incumbents' best — the same
+        # first key `_survivor_board` sorts on, compared on its own so a class never displaces
+        # itself: public (False) below non-public (True), in one direction only.
+        displaced = bool(incumbents) and min(map(_is_non_public, by_board)) < min(
+            map(_is_non_public, incumbents)
+        )
+        keep = (
+            {_survivor_board(by_board.keys(), site_jobs)}
+            if not incumbents or displaced
+            else incumbents
+        )
+        for board, ids in by_board.items():
+            if board not in keep:
+                refused.update(ids)
+    return refused
+
+
+def _by_group_and_board(
+    job_ids: Iterable[str], live: dict[str, str]
+) -> tuple[dict[tuple[str, str], dict[str, list[str]]], list[str]]:
+    """``({duplicate group: {lowercased Board: ids}}, the ids on no live Board)``."""
+    grouped: dict[tuple[str, str], dict[str, list[str]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    off_board: list[str] = []
+    for job_id in job_ids:
+        placed = _placement(job_id, live)
+        if placed is None:
+            off_board.append(job_id)
+            continue
+        group, board = placed
+        grouped[group][board].append(job_id)
+    return grouped, off_board
 
 
 def _quote(value: str) -> str:
@@ -334,6 +447,32 @@ def live_keep_set(ledger_dir: str | Path) -> set[str]:
             "off-Board: " + log.named_sample(keyless)
         )
     return keep
+
+
+def workday_site_jobs(ledger_dir: str | Path) -> dict[str, int]:
+    """``{lowercased Workday Board key: its jobs at the last Live probe}`` — what
+    :func:`_survivor_board` ranks a Workday tenant's sites by.
+
+    Read from the committed liveness ledger, the same file :func:`live_keep_set` builds the
+    keep-set from, so the rule needs no state of its own. Case-variant rows of one Board take the
+    larger count. Only the Boards a keep-set holds are ever looked up, so a dead row here is
+    harmless, and one whose URL will not parse is already reported by :func:`live_keep_set`.
+    """
+    from headstart import liveness
+    from headstart.scrapers.registry import SCRAPERS
+
+    slug_from = SCRAPERS["workday"].slug_from
+    jobs: dict[str, int] = {}
+    for verdict in liveness.load(Path(ledger_dir) / "workday.csv").values():
+        if verdict.status != liveness.LIVE:
+            continue
+        company = CompanyRef(ats="workday", slug=slug_from(verdict.tenant, verdict.url))
+        try:
+            board = lower_key(board_key(company))
+        except ValueError:
+            continue
+        jobs[board] = max(jobs.get(board, 0), verdict.jobs or 0)
+    return jobs
 
 
 def _live_board_end(job_id: str, live: dict[str, str]) -> int | None:
@@ -508,14 +647,77 @@ def scraped_boards(
     return {resolve_board(job_id, live) for job_id in corpus_ids}
 
 
-def plan_prune(index_ids: Iterable[str], keep: set[str]) -> tuple[list[str], list[str]]:
+def _workday_tenant(canon: str, native: str) -> str | None:
+    """``workday:{company}`` — the Workday tenant a row's requisition belongs to — or None.
+
+    A Workday Board is one *site* (``workday:{company}/{site}``), and a Workday tenant posts one
+    requisition to several of its sites under the same native id, so the requisition's identity is
+    the Workday tenant plus that id, not the Board plus it. None for every other ATS, and for a
+    Workday native id with no digit in it: that is a fallback id (``Texas``, a title slug), not a
+    requisition id, and two sites sharing one says nothing about sharing a posting. The Workday
+    tenant key carries no ``/``, so it can never equal a real Board key.
+    """
+    if not canon.startswith("workday:") or not any(ch.isdigit() for ch in native):
+        return None
+    return f"workday:{tenant(canon)}"
+
+
+#: Substrings of a Workday site segment (case-insensitive) that mark a site as not meant for the
+#: public — measured on served v654, where a confidential executive-recruiting site outranked its
+#: public sibling on ledger jobs and kept 737 of GE Vernova's requisitions (ADR-0187). This only
+#: orders the choice of which copy stays; it never decides whether a requisition is served, so
+#: one found only on non-public sites still survives on one of them.
+_NON_PUBLIC_SITE_TOKENS = (
+    "hidden",
+    "confidential",
+    "internal",
+    "private",
+    "sourcer",
+    "targeted",
+)
+
+
+def _survivor_board(boards: AbstractSet[str], site_jobs: dict[str, int]) -> str:
+    """The one Board a requisition is served from when no incumbent decides it: a public site
+    before a non-public one (:data:`_NON_PUBLIC_SITE_TOKENS`), then the Board with the most jobs
+    in the liveness ledger, then the lexicographically smallest (lowercased) key.
+
+    The one place the ranking is defined, so ``plan_sync`` admitting a new copy and
+    ``plan_prune`` collapsing existing ones can never disagree about which Board keeps it; the
+    displacement in :func:`_other_site_copies` compares this ranking's first key only.
+    """
+    return min(
+        boards,
+        key=lambda board: (_is_non_public(board), -site_jobs.get(board, 0), board),
+    )
+
+
+def _is_non_public(board: str) -> bool:
+    """Whether a lowercased Board key's Workday site segment (after the ``/``) names it non-public
+    (:data:`_NON_PUBLIC_SITE_TOKENS`). Both callers pass the lowercased key :func:`_placement`
+    builds, which is what makes the match case-insensitive. Any other ATS's groups hold one Board,
+    so the answer never decides anything there."""
+    site = board.partition("/")[2]
+    return any(token in site for token in _NON_PUBLIC_SITE_TOKENS)
+
+
+def plan_prune(
+    index_ids: Iterable[str], keep: set[str], *, site_jobs: dict[str, int] | None = None
+) -> tuple[list[str], list[str]]:
     """Split index ids into ``(evict_off_board, evict_duplicate)``.
 
     A change to what counts as a duplicate here bumps :data:`DEDUP_VERSION` (ADR-0188).
 
     ``evict_off_board``: Board not in ``keep`` (dead / dropped from the ledger / disabled ATS).
     ``evict_duplicate``: among the survivors, every id but one per ``(lowercased Board, native id)``
-    group — the case-variant dupes of one job.
+    group — the case-variant dupes of one job — except that a Workday requisition is grouped on
+    its **Workday tenant** rather than its Board, because a Workday tenant posts one requisition to
+    several of its sites, each a Board, under the same native id (ADR-0187). Such a group keeps one
+    Board, the :func:`_survivor_board` (``site_jobs`` is :func:`workday_site_jobs`; omitted,
+    every Board ties on jobs). ``plan_sync`` refuses copies on the same rule, so once today's
+    duplicates are gone this sees two Boards for one requisition only when a public copy has just
+    displaced a non-public incumbent — and it drops the incumbent, because the ranking puts public
+    first. The casing rule below then picks the row within the kept Board.
 
     The row kept is the one whose Board casing the **live ledger** produces, because that is the
     casing a future scrape emits. Keeping the lexicographically-smallest instead (the rule until
@@ -532,18 +734,16 @@ def plan_prune(index_ids: Iterable[str], keep: set[str]) -> tuple[list[str], lis
     every Board key in use today, with longest-match as the documented tie-break should one Board
     key ever nest inside another at a colon."""
     live = boards_by_canon(keep)
-    off_board: list[str] = []
-    groups: dict[tuple[str, str], list[str]] = defaultdict(list)
-    for jid in index_ids:
-        end = _live_board_end(jid, live)
-        if end is None:
-            off_board.append(jid)
-            continue
-        canon, native = lower_key(jid[:end]), jid[end + 1 :]
-        groups[(canon, native)].append(jid)
+    groups, off_board = _by_group_and_board(index_ids, live)
     duplicate: list[str] = []
-    for (canon, _), ids in groups.items():
-        if len(ids) > 1:
-            kept = next((i for i in ids if i.startswith(live[canon] + ":")), min(ids))
-            duplicate.extend(i for i in ids if i != kept)
+    for by_board in groups.values():
+        kept_board = _survivor_board(by_board.keys(), site_jobs or {})
+        for canon, ids in by_board.items():
+            if canon != kept_board:
+                duplicate.extend(ids)
+            elif len(ids) > 1:
+                kept = next(
+                    (i for i in ids if i.startswith(live[canon] + ":")), min(ids)
+                )
+                duplicate.extend(i for i in ids if i != kept)
     return off_board, duplicate
