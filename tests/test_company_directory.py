@@ -50,13 +50,13 @@ def test_a_shared_taleo_be_pod_is_not_a_shared_tenant() -> None:
         "taleo_be:https://phf.tbe.taleo.net/phf03/ats/careers/v2/searchResults?org=NBF1199&cws=41",
         "taleo_be:https://phf.tbe.taleo.net/phf04/ats/careers/v2/searchResults?org=B973N8&cws=40",
     ]
-    # Named, because `B973N8` alone is a code and a code names no directory entry (ADR-0209).
+    # Named, because `B973N8` alone is a code and a code names no directory entry (ADR-0212).
     names = {boards[0]: "NBF Industries", boards[1]: "Brookfield Nursing"}
     assert len(company_directory.companies(set(boards), names)) == 2
 
 
 def test_a_board_only_a_code_names_is_left_out() -> None:
-    """ADR-0209: no name beats a code. Oracle's pod `eeho` is a code by ATS, `B973N8` by shape."""
+    """ADR-0212: no name beats a code. Oracle's pod `eeho` is a code by ATS, `B973N8` by shape."""
     boards = {
         "oracle:eeho.fa.us2.oraclecloud.com",
         "taleo_be:https://phf.tbe.taleo.net/phf04/ats/careers/v2/searchResults?org=B973N8&cws=40",
@@ -75,7 +75,7 @@ def test_a_casing_duplicate_is_the_same_board() -> None:
 
 def test_a_curated_alias_joins_two_atses(monkeypatch: pytest.MonkeyPatch) -> None:
     aliases = {"greenhouse:acme": "Acme", "lever:acme-corp": "Acme"}
-    # Read at call time (ADR-0209), so a patched map reaches the directory.
+    # Read at call time (ADR-0212), so a patched map reaches the directory.
     monkeypatch.setattr(company_name, "curated_names", lambda: aliases)
     got = _companies(["greenhouse:acme", "lever:acme-corp"])
     assert got == {"Acme": [["greenhouse:acme", "lever:acme-corp"]]}

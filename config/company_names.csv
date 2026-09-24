@@ -1,4 +1,4 @@
-# Hand-curated company names, keyed by board_key (ADR-0209). An entry here overrides every other
+# Hand-curated company names, keyed by board_key (ADR-0212). An entry here overrides every other
 # name source, at scrape time (the served `company`) and on the Hot and Trends tabs. It is for
 # Boards that state no name anywhere we read; `evidence` says where a person read this one.
 #

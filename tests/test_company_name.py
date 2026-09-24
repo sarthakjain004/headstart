@@ -271,7 +271,7 @@ def test_a_page_label_is_not_a_company_name():
 
 
 def test_a_name_the_company_writes_as_a_domain_is_a_name():
-    """ADR-0209 reversed the hostname guard: a startup whose brand is its domain states it.
+    """ADR-0212 reversed the hostname guard: a startup whose brand is its domain states it.
 
     Gem titles itself "11x.ai Careers" and "agenta.ai Careers" (2026-09-16 sample), and the
     field ATSes carry "incident.io" and "tails.com". A URL is still refused, scheme or `www.`.
@@ -368,7 +368,7 @@ def test_title_casing_reaches_both_name_paths():
 
 
 def test_a_stated_field_name_is_taken_as_the_company_typed_it():
-    """ADR-0209: a field name is not refused for equalling the slug or being lowercase.
+    """ADR-0212: a field name is not refused for equalling the slug or being lowercase.
 
     Greenhouse's `commercetools` and Teamtailor's `sunday` state exactly their slug, and Workable,
     JazzHR and Breezy state names written as domains; all are what the company typed.
@@ -435,7 +435,7 @@ def test_the_curated_map_names_boards_that_state_nothing():
             "Gatewayvent",
         ),
         ("taleo_enterprise:https://hdr.taleo.net/careersection/austin_tx", "HDR"),
-        # only a code: no name at all rather than one (ADR-0209)
+        # only a code: no name at all rather than one (ADR-0212)
         ("breezy:1001", None),
         ("oracle:eeho.fa.us2.oraclecloud.com", None),
         ("oracle:utulsa-ibvjjb.fa.ocs.oraclecloud.com", None),
@@ -456,7 +456,7 @@ def test_the_curated_map_names_boards_that_state_nothing():
 def test_a_board_with_no_stated_name_is_shown_under_its_humanised_tenant(
     board_key, expected
 ):
-    """Never the raw slug (ADR-0209). Each key is a residue Board from the 2026-09-24 served
+    """Never the raw slug (ADR-0212). Each key is a residue Board from the 2026-09-24 served
     table, bar `careers-gd-ais`'s neighbours, which are the shapes the tidy rules exist for."""
     assert humanised(board_key) == expected
 

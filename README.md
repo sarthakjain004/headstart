@@ -122,7 +122,7 @@ literal "Recruitment", and `adp_recruiting` (ADP Recruiting Management, a separa
 reads `clientName` off the career-site record it already fetches for its token (ADR-0202). The
 eight **Single source scrapers** above need no page fetch for
 it: one fixed company each, so the name is declared as `BaseScraper.COMPANY` and always served.
-No Board is served under its **ATS slug** (ADR-0209). A hand-curated name in
+No Board is served under its **ATS slug** (ADR-0212). A hand-curated name in
 `config/company_names.csv` overrides every source; an all-caps legal name is title-cased; and a
 Board no source names is served under its humanised tenant (`nvidia.wd5.myworkdayjobs.com/…` is
 "Nvidia", `careers-gd-ais.icims.com` is "GD AIS"), or under no name at all where that tenant is only
@@ -311,7 +311,7 @@ fails if this table drifts from it.
 | --- | --- | --- |
 | `id` | string | `{ats}:{slug}:{native_id}` — the Board key is everything before the last `:` |
 | `ats` | string | `greenhouse`, `workday`, `ashby`, `darwinbox`, … |
-| `company` | string | the company's name: a curated one, else the one its Board states, else its humanised tenant; empty where the tenant is only a code (see *ATS coverage*, above; ADR-0209) |
+| `company` | string | the company's name: a curated one, else the one its Board states, else its humanised tenant; empty where the tenant is only a code (see *ATS coverage*, above; ADR-0212) |
 | `title` | string | embedded, with the description |
 | `description` | string | the Job's description text, so the Keyword filter can match inside it (ADR-0104). **Nullable** — null on rows indexed before the column existed and on Jobs whose detail pass found nothing. Stored, not served: the API omits it |
 | `description_stored` | bool | whether this row carries `description`; materialized and bitmap-indexed so coverage does not scan the text column (ADR-0173) |
@@ -411,7 +411,7 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
   reliable-fetch seam), `config.py`, `scrapable_boards.py` (which Boards a run may scrape,
   ADR-0191), `harvest.py` (the scrape engine), `liveness.py`, `corpus.py`,
   `tech_filter.py` (ADR-0017), `experience.py`, `salary.py` (ADR-0082), `geo.py`, `remote.py`,
-  `company_name.py` (ADR-0114, ADR-0209), `search.py` (shared embed/search constants + filter builder),
+  `company_name.py` (ADR-0114, ADR-0212), `search.py` (shared embed/search constants + filter builder),
   `facets.py` (ADR-0084), `board_priority.py` (ADR-0022), `board_cost.py` (measured scrape
   seconds, ADR-0027), `board_aliases.py`, `board_identity.py`, `board_description_gap.py`,
   `roles.py`, `profile_extract.py`, `fx.py`, `fetcher.py`, `fanout_stats.py`; plus

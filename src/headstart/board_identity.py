@@ -268,7 +268,7 @@ def tenant(board_key: str) -> str:
     directory (ADR-0185) groups Boards by this, so a pod read as a tenant would merge them.
 
     Here rather than in `ingest.board_operator`, which re-exports it, because the scrape names a
-    Board no source names by its tenant (`company_name.humanised`, ADR-0209), and nothing outside
+    Board no source names by its tenant (`company_name.humanised`, ADR-0212), and nothing outside
     `ingest` may import from it.
     """
     slug = board_key.split(":", 1)[1] if ":" in board_key else board_key

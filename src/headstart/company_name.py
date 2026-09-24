@@ -33,7 +33,7 @@ pinpoint          ``Jobs at {Name} | {Name} Careers``                 38 of 40
 **gem** is the lowest-yield row of the wrapper-matching ATSes, and the gap between "matches the
 wrapper" (~95%) and "yields a name" (63%) was almost entirely a hostname guard, not a bad pattern:
 many Gem tenants are early-stage startups whose brand IS their domain (``agenta.ai Careers``,
-``11x.ai Careers``, ``basalt.health Careers``). ADR-0209 dropped that guard, because a domain the
+``11x.ai Careers``, ``basalt.health Careers``). ADR-0212 dropped that guard, because a domain the
 company states is its name; only a URL (a scheme, or a leading ``www.``) is still refused. The 63%
 predates that change.
 
@@ -77,9 +77,9 @@ Mellanox Technologies, Ltd.", "IN01 NVIDIA Graphics Bengaluru" and "2100 NVIDIA 
 postings. A name we invent is worse than a slug we admit to.
 
 Every rule below rejects a shape that was actually observed. A title this cannot read leaves the
-Board unnamed, and `settled` then serves its `humanised` tenant rather than the raw slug (ADR-0209).
+Board unnamed, and `settled` then serves its `humanised` tenant rather than the raw slug (ADR-0212).
 
-**ADR-0209 makes this module the whole naming policy, not only the title reader.** In order: a
+**ADR-0212 makes this module the whole naming policy, not only the title reader.** In order: a
 hand-curated name (`curated`, from ``config/company_names.csv``) overrides every source; a page
 title's brand outranks a structured legal name (`brand_first`); a field's name is taken as the
 company typed it (`from_field`); an all-caps legal name is title-cased (`title_cased`); and a Board
@@ -193,7 +193,7 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     # `from_title`, 723 of those 757 resolve. Of the 34 that keep their slug, 25 are titles that
     # *are* the slug ("smallcase", "volopay" — nothing to upgrade), 5 carry a separator
     # ("RealPage | Rexera", "Ana Reis - Headhunter"), 3 are written as hostnames
-    # ("aainacareers.com", which ADR-0209 now takes as stated) and one is a page label ("Careers
+    # ("aainacareers.com", which ADR-0212 now takes as stated) and one is a page label ("Careers
     # at AiFA Labs"). A refusal leaves the Board to its humanised tenant.
     "pyjamahr": (re.compile(r"^(?P<name>.+)$"),),
     # pinpoint: every board titles itself "Jobs at {Name} | {Name} Careers" (40 of 40 sampled
@@ -398,7 +398,7 @@ def from_title(ats: str, title: str | None, slug: str) -> str | None:
     if any(separator in text for separator in _SEPARATORS) or _PAGE_LABEL.search(text):
         return None
     # A domain-shaped name is a name when the company states it ("11x.ai", "incident.io"), so it
-    # is taken (ADR-0209). A URL is not: lever served "https://www.azuga.com/" as a title.
+    # is taken (ADR-0212). A URL is not: lever served "https://www.azuga.com/" as a title.
     if _is_url(text):
         return None
     # Only an EXACT echo is worthless. Case and spacing are the whole point — "aida" becomes
@@ -415,7 +415,7 @@ def from_title(ats: str, title: str | None, slug: str) -> str | None:
 
 
 def _is_url(text: str) -> bool:
-    """A URL rather than a name: it carries a scheme or opens on ``www.`` (ADR-0209)."""
+    """A URL rather than a name: it carries a scheme or opens on ``www.`` (ADR-0212)."""
     return bool(_SCHEME.match(text)) or text.lower().startswith("www.")
 
 
@@ -426,7 +426,7 @@ def from_field(ats: str, value: str | None) -> str | None:
     ``company.name`` — not a title that has to be unwrapped. Such a name is what the company typed,
     so the guards `from_title` needs against page copy do not apply: "commercetools" and "sunday"
     are refused neither for equalling the slug nor for being lowercase, and "incident.io" is not
-    read as a hostname (ADR-0209). Padding is not a name, which is the bug ``value or fallback``
+    read as a hostname (ADR-0212). Padding is not a name, which is the bug ``value or fallback``
     had: rippling's ``agora`` states "   ", which is truthy.
     """
     text = html.unescape(value or "").strip()
@@ -438,7 +438,7 @@ def from_field(ats: str, value: str | None) -> str | None:
 
 
 def brand_first(brand: str | None, legal: str | None) -> str | None:
-    """The brand a Board's page states, else its structured legal name (ADR-0209).
+    """The brand a Board's page states, else its structured legal name (ADR-0212).
 
     Both arrive already checked (`from_title`, `from_field`). A page title carries the name the
     company shows a job seeker ("Klipboard"), where a structured field often carries the entity
@@ -477,7 +477,7 @@ def _letter_count(word: str) -> int:
 
 
 def title_cased(name: str) -> str:
-    """``name`` title-cased when it is an all-caps legal name, else unchanged (ADR-0209).
+    """``name`` title-cased when it is an all-caps legal name, else unchanged (ADR-0212).
 
     Converts only a name that is entirely uppercase, has more than one word, and has a word
     longer than four letters: "IMPRONICS DIGITECH PRIVATE LIMITED" becomes "Impronics Digitech
@@ -516,7 +516,7 @@ def curated_names() -> dict[str, str]:
     its own sources. Keys are lowercased once here, because a ledger's casing and a fresh
     ``board_key()`` need not agree (ADR-0049). Read once per process and cached; callers read it
     through this function at call time, and ``curated_names.cache_clear()`` re-reads the file
-    (ADR-0209).
+    (ADR-0212).
     """
     here = Path(__file__).resolve()
     for path in (
@@ -700,14 +700,14 @@ def _is_code(word: str) -> bool:
 
 
 def humanised(board_key: str) -> str | None:
-    """The name a Board with no stated name is shown under: its tenant, humanised (ADR-0209).
+    """The name a Board with no stated name is shown under: its tenant, humanised (ADR-0212).
 
     Never the raw slug. `workday:nvidia/NVIDIAExternalCareerSite` is "Nvidia", and
     `icims:careers-gd-ais.icims.com` is "GD AIS": the tenant (`board_identity.tenant`), its board
     and vendor labels dropped (`tidy`), spelled as words (`humanised_text`).
 
     None where that would only spell a code: an ATS in `_CODE_TENANTS`, or a tenant whose every
-    word `_is_code`. No company is better than a code that reads as one (ADR-0209).
+    word `_is_code`. No company is better than a code that reads as one (ADR-0212).
     """
     if board_key.split(":", 1)[0] in _CODE_TENANTS:
         return None
@@ -745,7 +745,7 @@ def settled(name: str, unresolved: str, board_key: str) -> str | None:
     the ledger's name or slug. A curated name overrides everything; a name a source stated during
     the fetch is kept, and so is an unresolved one that is really a name (a declared
     ``COMPANY``, the curated feed's "Stripe"); a Board's own identifier becomes its `humanised`
-    tenant, never the raw slug, or None where that tenant is only a code (ADR-0209).
+    tenant, never the raw slug, or None where that tenant is only a code (ADR-0212).
     """
     named = curated(board_key)
     if named:

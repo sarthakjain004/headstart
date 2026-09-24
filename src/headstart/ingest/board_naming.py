@@ -65,7 +65,7 @@ def stated_name(company: str, board: str) -> str | None:
     slug of whichever Board sorts first ("Nvidia").
     """
     # The hand-written names of `config/company_names.csv`, which the scrape also serves as the
-    # company. They are the company directory's only cross-ATS identity too (ADR-0185, ADR-0209).
+    # company. They are the company directory's only cross-ATS identity too (ADR-0185, ADR-0212).
     alias = company_name.curated(board)
     if alias:
         return alias
@@ -73,7 +73,7 @@ def stated_name(company: str, board: str) -> str | None:
     if not stated or _names_the_board(stated, board):
         return None
     # A cased name is a real one; a lowercase one is too unless it repeats the Board's own key
-    # ("incident.io" on `gem:incident`, ADR-0209). Never re-case or trim either.
+    # ("incident.io" on `gem:incident`, ADR-0212). Never re-case or trim either.
     if stated != stated.lower() or not company_name.echoes_board(stated, board):
         return stated
     return None
@@ -147,7 +147,7 @@ def display_name(company: str, board: str) -> str | None:
     vendor and keeps the first that names the company (`tidy`), reading the slug through
     `tenant`, so a Taleo Business Edition Board is named by its `org` and not its shared pod,
     and spells it the way the scrape's own fallback does (`company_name.humanised_text`,
-    ADR-0209): `hpe/ACJobSite` is "HPE", not "Hpe".
+    ADR-0212): `hpe/ACJobSite` is "HPE", not "Hpe".
 
     It stops there. `swa.wd1.myworkdayjobs.com/external` derives "SWA" and not "Southwest
     Airlines", because that expansion is not in the data; it comes from the curated map
@@ -162,7 +162,7 @@ def display_name(company: str, board: str) -> str | None:
     if named:
         return named
     # A tenant that is only a code (Oracle's pods, ADP's GUIDs) names nothing, and an empty
-    # name is shown as none rather than as the code (ADR-0209).
+    # name is shown as none rather than as the code (ADR-0212).
     if not company_name.humanised(board):
         return None
     # Everything below tidies a *slug*. The cased-name guard above must not reach it: a slug
@@ -177,7 +177,7 @@ def display_name(company: str, board: str) -> str | None:
     if name and from_slug and _names_the_board(name, board):
         name = ""
     # A name of its own is spelled like the scrape's fallback; with none, this *is* that
-    # fallback, so the Hot and Trends tabs and the served table spell a Board alike (ADR-0209).
+    # fallback, so the Hot and Trends tabs and the served table spell a Board alike (ADR-0212).
     named = tidy(name) if name else None
     return (
         company_name.humanised_text(named) if named else company_name.humanised(board)

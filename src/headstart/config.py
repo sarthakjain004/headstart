@@ -329,7 +329,7 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "smartrecruiters:piqc",
         "smartrecruiters:rebeccajdemo",
         "smartrecruiters:rhaegalsandbox",
-        # Found by the 2026-09-24 company-name research (ADR-0209) and re-read live through each
+        # Found by the 2026-09-24 company-name research (ADR-0212) and re-read live through each
         # Board's own scraper on 2026-09-25. BambooHR: `implementation` names itself
         # "Implementation - BLOCKING DOMAIN" (og:site_name) and serves 3 stock postings dated
         # 2019 ("IT Security Engineer" in "Mayfaird, London, City of", "Software Engineer",

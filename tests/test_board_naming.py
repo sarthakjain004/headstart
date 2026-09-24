@@ -121,12 +121,12 @@ def test_a_mirrored_pair_is_named_alike_without_sharing_an_alias() -> None:
     ],
 )
 def test_an_unnamed_board_is_spelled_as_the_scrape_spells_it(board: str) -> None:
-    """ADR-0209: the Hot and Trends tabs and the served table name a Board alike."""
+    """ADR-0212: the Hot and Trends tabs and the served table name a Board alike."""
     assert board_naming.display_name("", board) == company_name.humanised(board)
 
 
 def test_a_stated_lowercase_name_survives_unless_it_repeats_the_key() -> None:
-    """ADR-0209: the scrape serves "incident.io" as stated, so Hot and Trends must too."""
+    """ADR-0212: the scrape serves "incident.io" as stated, so Hot and Trends must too."""
     assert board_naming.display_name("incident.io", "gem:incident") == "incident.io"
     assert board_naming.display_name("11x.ai", "gem:11x") == "11x.ai"
     # a legacy row still carrying the Board's own host is not a stated name

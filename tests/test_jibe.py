@@ -322,7 +322,7 @@ def test_a_client_that_disallows_the_listing_is_not_read(clock):
     scraper, fetcher = _scraper(routes, clock)
     assert scraper.fetch() == []
     assert [urlsplit(url).path for _, url in fetcher.log] == ["/robots.txt"]
-    # no name was read, so the Board is its humanised slug (ADR-0209)
+    # no name was read, so the Board is its humanised slug (ADR-0212)
     assert scraper.company == "Rmeducation"
 
 

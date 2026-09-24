@@ -1,4 +1,4 @@
-# ADR-0209: A Board is named by a curated, stated or humanised name, never by its slug
+# ADR-0212: A Board is named by a curated, stated or humanised name, never by its slug
 
 **Status:** accepted · **Date:** 2026-09-25 · **Amends:**
 [ADR-0114](0114-a-board-states-its-company-name-in-its-page-title.md) (its floor was "a title we

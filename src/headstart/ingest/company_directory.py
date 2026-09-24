@@ -43,7 +43,7 @@ over the ledger's 34,203 Boards on 2026-09-24:
   sections under one host (HDR's fifteen: 40 hosts), and Taleo Business Edition into `cws` sites
   under one `org` (15 orgs). Ignoring case also folds ADR-0023's stale casing duplicates
   (`smartrecruiters:AbhiBus` and `smartrecruiters:abhibus`: 267 pairs).
-- **A curated alias** (`config/company_names.csv`, ADR-0209) is the one cross-ATS identity anyone
+- **A curated alias** (`config/company_names.csv`, ADR-0212) is the one cross-ATS identity anyone
   has asserted, and it is withheld from a pair whose Boards mirror each other: Lockheed
   Martin's Eightfold Board is its own entry, because summed with SuccessFactors it counts twice.
 
@@ -152,7 +152,7 @@ def companies(boards: set[str], names: dict[str, str]) -> list[dict]:
         {"name": name, "boards": sorted(cluster)}
         for cluster in clusters.values()
         # A company nobody can name cannot be picked by name: its tenant is only a code and no
-        # source states one (ADR-0209). Its Boards still count toward the Total breakdown.
+        # source states one (ADR-0212). Its Boards still count toward the Total breakdown.
         if (name := _company_name(cluster, names))
     ]
     # Sorted so the same Boards always write the same file.

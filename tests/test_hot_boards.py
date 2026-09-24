@@ -191,7 +191,7 @@ def test_one_company_on_two_atses_collapses_to_one_row() -> None:
 
 
 def test_a_board_no_one_can_name_is_counted_not_ranked() -> None:
-    """ADR-0209: an Oracle pod names nobody, and two such rows would collapse into one."""
+    """ADR-0212: an Oracle pod names nobody, and two such rows would collapse into one."""
     lenses, counts = _rank(
         new={
             "oracle:eeho.fa.us2.oraclecloud.com": 40,

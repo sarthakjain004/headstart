@@ -265,7 +265,7 @@ def rank(
             continue
         company = display_name(names.get(board, ""), board)
         # A row with no company says nothing about who is hiring, and `_collapse_same_company`
-        # would fold every such Board into one (ADR-0209).
+        # would fold every such Board into one (ADR-0212).
         if not company:
             unnamed += 1
             continue
