@@ -82,7 +82,15 @@ from pathlib import Path
 # pre-filter snapshot 68,600 -> 69,192, **+1,852 in, -1,260 out**. A blind 800-title hold-out
 # puts recall at ~84.6% and precision at ~82.0%. See
 # docs/tech-filter/2026-09-23_spellings-and-trades.md.
-TECH_FILTER_VERSION = 4
+# 5 (2026-09-24, `git log 6458fbac..098dbcfb -- src/headstart/tech_filter.py`): rule 0 sets aside
+# a cashier on either side of "front end" ("Cashier (Front End)", "FRONT END/CASHIER"), which the
+# strong `front[\s-]?end` signal had been reading as a front-end developer. Purely subtractive: on
+# the served table (v654, 514,163 rows) **-148 out, 0 in**, every one a cashier title read by hand;
+# on the 1,135,079-posting pre-filter corpus (July scrape + Indeed harvest) **-3 out, 0 in**. Jibe
+# was not yet in v654: `jibe:costco` alone carried 1,581 such rows (live keyword sample 2026-09-24:
+# 1,213 of 2,500 hits were its only two kept titles). The blind hold-out is unchanged (recall
+# 84.6%, precision 82.0%). See docs/pipeline/2026-09-24_five-run-log-review.md finding 1.
+TECH_FILTER_VERSION = 5
 
 # 1. Strong, software-specific signals. A match here means tech regardless of any disqualifier.
 _STRONG_TERMS = [

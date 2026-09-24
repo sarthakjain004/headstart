@@ -593,7 +593,7 @@ def test_a_non_software_department_still_vetoes_a_generic_title():
 
 def test_the_version_counter_moved_with_the_line():
     """`role_trends` reads this to tell "we changed who counts" from "the market moved"."""
-    assert TECH_FILTER_VERSION == 4, (
+    assert TECH_FILTER_VERSION == 5, (
         "bump this and its comment together — the comment carries the commit range and the "
         "measured effect, and a bump without one is what CLAUDE.md's DERIVATIONS_VERSION rule "
         "exists to stop"
