@@ -36,6 +36,14 @@ carries a department field at all, which is why ``department`` was hardcoded ``N
 RSS-feed field was found — see :func:`_job_functions_from`'s docstring. A page that yields no
 title drops that job for the run (there is nothing to keep it by); it returns next scrape.
 
+One title-less page is not a failure: RMK's unavailable shell, a ``<p class="jobErrMsg">`` reading
+"You can't view this job because it's not available at this time.", served with a 200 for an id
+the sitemap and ``/sitemal.xml`` both still list. That posting is closed, so it is dropped as a
+closure — neither counted as a loss nor filled from the feed below — and ADR-0083 evicts it like
+any delisting. Measured 2026-09-25: 15 of 60 sampled ``careers.hcltech.com`` pages, none of the
+45 that parsed carrying it; the same shell on closed ids of ``careers.wipro.com``,
+``lockheed.jobs.hr.cloud.sap`` and ``jobs.danfoss.com``, 13 of 13.
+
 **A fourth surface backs up that detail pass: ``/sitemal.xml``** (that typo, not ``sitemap`` —
 the same undocumented-but-stable path on every tenant that has it). It is the full Google-jobs
 RSS: one GET carries ``title``/``description``/``g:location`` inline for (usually) the whole board,
@@ -64,8 +72,10 @@ happened to answer for it.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from datetime import datetime
 from html import unescape
+from types import MappingProxyType
 from typing import Any
 from urllib.parse import unquote
 
@@ -105,6 +115,15 @@ _TITLE_TAG = re.compile(r"<title>([^<|]*)", re.IGNORECASE)
 _DESC_OPEN = re.compile(
     r'<(span|div)\b[^>]*itemprop="description"[^>]*>', re.IGNORECASE
 )
+# The element RMK's "You can't view this job because it's not available at this time." shell
+# renders its message in (module docstring). Matched on the class, not the sentence: every shell
+# measured was English, even requested in de_DE/fr_FR, but the class is the template's own.
+_UNAVAILABLE_SHELL = re.compile(r'<[^>]*\bclass="jobErrMsg"')
+# What `read_detail` returns for that shell: a closed posting, neither fields nor a loss. An
+# empty read-only mapping rather than a bare `object()`, so a caller outside `fetch_raw` that
+# reads it as fields (`fetch_detail(...) or {}` in scripts/enrich/salary_sample.py) sees an
+# empty page and `parse` skips it, instead of failing on `.get`.
+_UNAVAILABLE: Mapping[str, Any] = MappingProxyType({})
 
 # /sitemal.xml — the Google-jobs RSS field surface (module docstring). Matched with simple,
 # non-nesting patterns rather than a general XML parser: every field it carries is a leaf element
@@ -470,13 +489,23 @@ class SuccessFactorsScraper(BaseScraper):
             tech_listed, key_of=lambda pair: pair[1], what="detail fields"
         )
         unread = pages.missing
+        # A page that says its posting is unavailable closes that id (module docstring): it is
+        # not a Job, not a loss, and not the feed's to fill — the feed still lists it.
+        open_listed = [
+            pair for pair in tech_listed if pages.get(pair[1]) is not _UNAVAILABLE
+        ]
+        if len(open_listed) < len(tech_listed):
+            _log.info(
+                f"{self.slug}: {len(tech_listed) - len(open_listed)} of {len(tech_listed)} "
+                "job pages say the posting is not available — dropped as closed"
+            )
         # /sitemal.xml (module docstring): the fallback for a page that yielded nothing, fetched
         # only when one did. The page stays the authority — it states the posting date the feed
         # never does — and `listed` stays the sole id authority; this only ever fills fields.
         sitemal_fields = self._sitemal_fields() if unread else {}
         fields = [
             pages[job_id] if job_id in pages else sitemal_fields.get(job_id)
-            for _, job_id in tech_listed
+            for _, job_id in open_listed
         ]
         lost = sum(1 for page in fields if page is None)
         if lost < unread:
@@ -493,11 +522,12 @@ class SuccessFactorsScraper(BaseScraper):
             # Measured against `tech_listed`, not `listed`: a non-tech posting was never going to
             # be indexed regardless of whether its detail was fetched, so it must not count
             # against how authoritative this Board's *tech* read is. This is the shape that
-            # excluded whole 2,130-page Boards over a single unreadable page (ADR-0121).
+            # excluded whole 2,130-page Boards over a single unreadable page (ADR-0121). And
+            # against `open_listed`: a page that said its posting is closed was read, not lost.
             self.mark_truncated_unless_negligible(
-                len(tech_listed) - lost,
-                len(tech_listed),
-                f"{lost}/{len(tech_listed)} job pages unreadable — those Jobs are listed but "
+                len(open_listed) - lost,
+                len(open_listed),
+                f"{lost}/{len(open_listed)} job pages unreadable — those Jobs are listed but "
                 "unbuilt",
             )
         # `department` folded in here, not read on the job page — the detail markup (JSON-LD
@@ -516,13 +546,13 @@ class SuccessFactorsScraper(BaseScraper):
                     else None
                 ),
             }
-            for (url, job_id), page_fields in zip(tech_listed, fields)
+            for (url, job_id), page_fields in zip(open_listed, fields)
         ]
 
     def detail_request(self, pair: tuple[str, str]) -> DetailRequest:
         return DetailRequest(pair[0], headers={"User-Agent": USER_AGENT})
 
-    def read_detail(self, pair: tuple[str, str], response: Any) -> dict[str, Any]:
+    def read_detail(self, pair: tuple[str, str], response: Any) -> Mapping[str, Any]:
         """One job page's fields, or a loss named for a page that yielded no title.
 
         This is the pass the User-Agent denylist landed on: 102 Boards, five consecutive runs,
@@ -531,9 +561,14 @@ class SuccessFactorsScraper(BaseScraper):
         were one count (:data:`~headstart.scrapers.base.USER_AGENT`). The label is what separates
         "the origin refused us" from "the parser did not recognise the page", and those two call
         for opposite responses.
+
+        A title-less page carrying RMK's unavailable shell is neither: the posting is closed,
+        and :data:`_UNAVAILABLE` says so, for :meth:`fetch_raw` to drop rather than rescue.
         """
         fields = _titled_fields(response.text, pair[0])
         if fields is None:
+            if _UNAVAILABLE_SHELL.search(response.text):
+                return _UNAVAILABLE
             raise DetailLost("200 without a parseable title")
         return fields
 
