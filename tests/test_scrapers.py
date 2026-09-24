@@ -2696,6 +2696,175 @@ def test_workday_detail_classes_reach_the_report_through_fetch_raw(monkeypatch, 
     assert "2 of 2 detail(s) failed mid-crawl (HTTP 404 x2)" in caplog.text
 
 
+@pytest.fixture
+def no_names_on_file(monkeypatch, tmp_path):
+    """Neither the curated map nor the committed Workday cache names these made-up Boards, so the
+    cascade itself is what a test observes, whatever the repo's own files come to hold."""
+    from headstart import company_name
+    from headstart.scrapers import workday_company_name
+
+    monkeypatch.setattr(company_name, "curated_names", dict)
+    monkeypatch.setattr(workday_company_name, "RESOLVED_NAMES", tmp_path / "absent.csv")
+
+
+def _workday_board(site: str, entities: list[str], page: str, *, cxs_detail=True):
+    """A one-tenant Workday route: a listing of one posting per entity, each detail stating that
+    entity (from the CXS API, or from the public page's JSON-LD when ``cxs_detail`` is False),
+    and ``page`` as the board page."""
+    host = "https://humana.wd5.myworkdayjobs.com"
+    postings = [
+        {"externalPath": f"/job/x/Software-Engineer_R{i}", "title": "Software Engineer"}
+        for i in range(len(entities))
+    ]
+
+    def route(method, url, kwargs):
+        if method == "POST":
+            return FakeResponse(
+                text=json.dumps({"total": len(postings), "jobPostings": postings})
+            )
+        if url == f"{host}/{site}":
+            return FakeResponse(text=page)
+        index = int(url.rsplit("_R", 1)[1])
+        if "/wday/cxs/" in url:
+            if not cxs_detail:
+                return FakeResponse(404)
+            return FakeResponse(
+                text=json.dumps(
+                    {
+                        "hiringOrganization": {"name": entities[index], "url": ""},
+                        "jobPostingInfo": {"jobDescription": "<p>Build</p>"},
+                    }
+                )
+            )
+        jsonld = {
+            "@type": "JobPosting",
+            "description": "Build",
+            "hiringOrganization": {"@type": "Organization", "name": entities[index]},
+        }
+        return FakeResponse(
+            text=f'<script type="application/ld+json">{json.dumps(jsonld)}</script>'
+        )
+
+    return f"{host}/{site}", route
+
+
+@pytest.mark.usefixtures("no_names_on_file")
+def test_workday_names_each_site_of_one_tenant_from_its_own_postings():
+    """humana's main site and its CenterWell site are two companies (2026-09-24): one tenant,
+    never one name."""
+    from headstart.scrapers.workday import WorkdayScraper
+
+    humana_slug, humana = _workday_board(
+        "Humana_External_Career_Site",
+        ["004 Humana Insurance Company", "003 Humana Inc.", "427 CDO 2, LLC"],
+        "<html></html>",
+    )
+    centerwell_slug, centerwell = _workday_board(
+        "centerwell_external_career_site",
+        ["804 CenterWell Certified Healthcare Corp.", "821 CHMG of Griffin, LLC"],
+        '<meta name="title" property="og:title" content="CenterWell Careers">',
+    )
+    ledger_name = "humana.wd5.myworkdayjobs.com/humana_external_career_site"
+
+    humana_jobs = WorkdayScraper(humana_slug, ledger_name, FakeFetcher(humana)).fetch()
+    centerwell_jobs = WorkdayScraper(
+        centerwell_slug, ledger_name, FakeFetcher(centerwell)
+    ).fetch()
+
+    assert {job.company for job in humana_jobs} == {"Humana"}
+    assert {job.company for job in centerwell_jobs} == {"CenterWell"}
+
+
+@pytest.mark.usefixtures("no_names_on_file")
+def test_workday_names_a_board_from_the_json_ld_fallback_too():
+    """A sub-site whose CXS details all 404 recovers them from the public page (ADR-0099); that
+    page's JSON-LD states the same legal entity."""
+    from headstart.scrapers.workday import WorkdayScraper
+
+    slug, route = _workday_board(
+        "Humana_External_Career_Site",
+        ["003 Humana Inc.", "004 Humana Insurance Company"],
+        "<html></html>",
+        cxs_detail=False,
+    )
+    jobs = WorkdayScraper(slug, "humana", FakeFetcher(route)).fetch()
+    assert {job.company for job in jobs} == {"Humana"}
+
+
+@pytest.mark.usefixtures("no_names_on_file")
+def test_workday_falls_back_to_the_humanised_tenant_when_nothing_names_the_board():
+    """An office is not an employer, and the page says nothing: the ledger's identifier is never
+    served, and the policy's humanised tenant is (ADR-0212)."""
+    from headstart.scrapers.workday import WorkdayScraper
+
+    slug, route = _workday_board(
+        "Humana_External_Career_Site", ["0090 CORP-Corporate Office"], "<html></html>"
+    )
+    ledger_name = "humana.wd5.myworkdayjobs.com/humana_external_career_site"
+    jobs = WorkdayScraper(slug, ledger_name, FakeFetcher(route)).fetch()
+    assert {job.company for job in jobs} == {"Humana"}
+
+
+def _names_file(tmp_path, name, header, rows):
+    path = tmp_path / name
+    path.write_text("\n".join([header, *rows]) + "\n", encoding="utf-8")
+    return path
+
+
+def test_workday_name_on_file_wins_and_skips_the_board_page(monkeypatch, tmp_path):
+    from headstart import company_name
+    from headstart.scrapers import workday_company_name
+
+    monkeypatch.setattr(company_name, "curated_names", dict)
+    from headstart.scrapers.workday import WorkdayScraper
+
+    monkeypatch.setattr(
+        workday_company_name,
+        "RESOLVED_NAMES",
+        _names_file(
+            tmp_path,
+            "resolved.csv",
+            "board_key,name,source,checked_at",
+            ["workday:humana/humana_external_career_site,Humana,og:title,2026-09-24"],
+        ),
+    )
+    slug, route = _workday_board(
+        "Humana_External_Career_Site", ["003 Humana Inc."], "<html></html>"
+    )
+    fetcher = FakeFetcher(route)
+    jobs = WorkdayScraper(slug, "humana", fetcher).fetch()
+    assert {job.company for job in jobs} == {"Humana"}
+    assert slug not in fetcher.urls()  # the cache spends no board-page request
+
+
+def test_workday_curated_name_outranks_the_cascade_and_its_cache(monkeypatch, tmp_path):
+    from headstart import company_name
+    from headstart.scrapers import workday_company_name
+    from headstart.scrapers.workday import WorkdayScraper
+
+    key = "workday:humana/Humana_External_Career_Site"
+    monkeypatch.setattr(
+        company_name, "curated_names", lambda: {key.lower(): "Humana Inc."}
+    )
+    monkeypatch.setattr(
+        workday_company_name,
+        "RESOLVED_NAMES",
+        _names_file(
+            tmp_path,
+            "resolved.csv",
+            "board_key,name,source,checked_at",
+            [f"{key},Humana Insurance,hiringOrganization,2026-09-24"],
+        ),
+    )
+    slug, route = _workday_board(
+        "Humana_External_Career_Site", ["003 Humana Inc."], "<html></html>"
+    )
+    fetcher = FakeFetcher(route)
+    jobs = WorkdayScraper(slug, "humana", fetcher).fetch()
+    assert {job.company for job in jobs} == {"Humana Inc."}
+    assert slug not in fetcher.urls()
+
+
 def test_freshteam_parse():
     jobs = get_scraper("freshteam", "12min", "12min").parse(
         _load("freshteam_12min.json"), SCRAPED_AT
@@ -10495,6 +10664,7 @@ def test_workday_extract_page_detail_reads_both_type_shapes_and_the_exact_fields
         "startDate": "2026-08-31",
         "remoteType": "TELECOMMUTE",
         "timeType": "Full time",
+        "hiringOrganization": None,  # this block states none
     }
     assert _remote_from(detail["remoteType"]) is True
     # a page whose JobPosting has no description recovers nothing — the gate field
@@ -10816,7 +10986,7 @@ def test_every_wired_scraper_resolves_its_company(
 #: `client-features` JSON instead, covered by `tests/test_adp.py`. adp_recruiting (ADP
 #: Recruiting Management, a separate product) reads `clientName` off the site record it already
 #: fetched for its token, covered by `tests/test_adp_recruiting.py`.
-_NO_BOARD_PAGE = {"taleo_enterprise", "adp", "adp_recruiting"}
+_NO_BOARD_PAGE = {"taleo_enterprise", "adp", "adp_recruiting", "workday"}
 
 
 def test_every_ats_with_patterns_has_a_scraper_that_offers_a_board_page():
