@@ -47,6 +47,14 @@ def test_normalize(text: str, words: list[str]) -> None:
         ("gogle", "Goggles Co", None),  # two edits from "goggl"
         ("hpe", "Hp", None),  # no typo forgiven in a short word
         ("nvidia", "Micron", None),
+        ("micro soft", "Microsoft", 4),  # a word the company writes whole, split
+        ("jp morgan", "JPMorgan Chase", 4),
+        (
+            "jpmorgan",
+            "JP Morgan Chase",
+            4,
+        ),  # and a word written whole that the company splits
+        ("h p", "HP Inc", None),  # too few letters to ignore spaces over
     ],
 )
 def test_tier(query: str, name: str, expected: int | None) -> None:
@@ -107,3 +115,28 @@ def test_limit_and_no_match() -> None:
     assert len(suggest("acme", companies, limit=3)) == 3
     assert suggest("zzz", companies, limit=3) == []
     assert suggest("  ", companies, limit=3) == []
+
+
+def test_a_test_tenant_with_no_openings_is_not_offered() -> None:
+    companies = [
+        _company("Jpmc", 1716, key="oracle:jpmc"),
+        _company("Jpmc Dev1", 0, key="oracle:jpmc-dev1"),
+        _company("Nvidia Sandbox2", 0),
+        _company("Dev Partners", 12),  # an employer: the word alone is not enough
+        _company(
+            "Acme Studio", 0
+        ),  # nor are no openings alone: a closed employer stays
+    ]
+    assert [c.name for c in suggest("jpmc", companies, 5)] == ["Jpmc"]
+    assert suggest("nvidia", companies, 5) == []
+    assert [c.name for c in suggest("dev", companies, 5)] == ["Dev Partners"]
+    assert [c.name for c in suggest("acme", companies, 5)] == ["Acme Studio"]
+
+
+def test_a_name_that_differs_by_a_trailing_word_is_another_employer() -> None:
+    """Affinity and Affinity Group are two employers, so both are offered."""
+    companies = [_company("Affinity", 40), _company("Affinity Group", 12)]
+    assert [c.name for c in suggest("affinity", companies, 5)] == [
+        "Affinity",
+        "Affinity Group",
+    ]

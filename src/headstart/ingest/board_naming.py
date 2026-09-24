@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Final
 
 from headstart import log
+from headstart.board_identity import ats_of
 from headstart.ingest.board_operator import tenant
 
 _log = log.get(__name__)
@@ -100,6 +101,7 @@ _LABEL_NOISE = frozenset(
         "hr",
         "wd",
         "smartrecruiters",
+        "successfactors",
         "com",
         "net",
         "org",
@@ -146,6 +148,14 @@ DISPLAY_ALIASES: Final[dict[str, str]] = {
     "successfactors:careers.capgemini.com": "Capgemini",
     "successfactors:careers.wipro.com": "Wipro",
     "successfactors:careers-inc.nttdata.com": "NTT Data",
+    # Named by slug alone, so nobody finds them by the name they know (2026-09-24 critique:
+    # "jpmorgan" found nothing). Each checked on the Board itself: the Oracle site calls itself
+    # "JPMC Candidate Experience page", and all three iCIMS tenants carry Atlassian's own pages,
+    # so the alias also makes them one directory company rather than three fragments.
+    "oracle:jpmc.fa.oraclecloud.com": "JPMorgan Chase",
+    "icims:careers-apac-atlassian.icims.com": "Atlassian",
+    "icims:globalcareers-atlassian.icims.com": "Atlassian",
+    "icims:campus-globalcareers-atlassian.icims.com": "Atlassian",
 }
 
 
@@ -168,11 +178,28 @@ def stated_name(company: str, board: str) -> str | None:
 def _names_the_board(name: str, board: str) -> bool:
     """Whether a company string is really a piece of the Board's own key, not a company.
 
-    Three shapes reach the company column: a Workday site (`_is_site`), a noise label of the
-    host (`_is_noise_label`), and Taleo Business Edition's ledger spelling, `GATEWAYVENT:77@phg…`.
+    Four shapes reach the company column: a Workday site (`_is_site`), a noise label of the
+    host (`_is_noise_label`), Taleo Business Edition's ledger spelling, `GATEWAYVENT:77@phg…`,
+    and the ATS's own title for the site (`_VENDOR_TITLES`).
     """
     ledger_spelling = name.lower().startswith(tenant(board).lower() + ":")
-    return ledger_spelling or _is_site(name, board) or _is_noise_label(name, board)
+    return (
+        ledger_spelling
+        or _is_site(name, board)
+        or _is_noise_label(name, board)
+        or name.strip().casefold() in _VENDOR_TITLES.get(ats_of(board), ())
+    )
+
+
+#: The title an ATS gives a site it hosts, which reaches the company column as if it named the
+#: employer. Measured 2026-09-24: "Oracle Taleo" named four directory companies (Scripps, PMG,
+#: two PruittHealth hosts) and "Successfactors" one (TTTech). Workday and Greenhouse are left out
+#: on purpose: each hires on its own product, and there the title is the company.
+_VENDOR_TITLES: Final[dict[str, frozenset[str]]] = {
+    "taleo_enterprise": frozenset({"oracle taleo", "taleo"}),
+    "taleo_be": frozenset({"oracle taleo", "taleo"}),
+    "successfactors": frozenset({"successfactors", "sap successfactors"}),
+}
 
 
 def _is_site(name: str, board: str) -> bool:

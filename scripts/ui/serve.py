@@ -21,10 +21,16 @@ import headstart
 from headstart import facets, fx, geo
 from headstart.alerts.store import MAX_COMPANIES, CompanyPrefs
 from headstart.embedding_conventions import PROD_TABLE, load_encoder
-from headstart.search import JobSearch, request_account_clause
+from headstart.search import (
+    MAX_SCOPED_BOARDS,
+    JobSearch,
+    request_account_clause,
+    scoped_boards_clause,
+)
 from headstart.search_filter_compiler import (
     KEYWORD_DEFAULT_SCOPE,
     keyword_scope_options,
+    with_extra,
 )
 
 _REPO = Path(__file__).resolve().parents[2]
@@ -79,6 +85,8 @@ def index():
             # cannot disagree with the query that returned it. `None` when the table is
             # unreadable, and the page then converts nothing, exactly as `build_filter` does.
             "fx": fx.table(),
+            # The Trends tab's hand-off cap, shared with the Space (ADR-0042 mirror).
+            "max_scoped_boards": MAX_SCOPED_BOARDS,
         },
         # The Data tab links out to the public repo (ADR-0113). Hardcoded here rather than
         # imported: this file is the local dev renderer and shares no config with the Space.
@@ -136,9 +144,12 @@ _LOCAL_COMPANIES = CompanyPrefs.blank("local")
 
 
 def _company_where(args) -> str | None:
-    """Mirror of the Space's per-request follow/hide clause — the rule itself is shared."""
-    return request_account_clause(
-        args, _LOCAL_COMPANIES.followed, _LOCAL_COMPANIES.hidden
+    """Mirror of the Space's per-request follow/hide and ``board=`` clause — the rules are shared."""
+    return with_extra(
+        scoped_boards_clause(args),
+        request_account_clause(
+            args, _LOCAL_COMPANIES.followed, _LOCAL_COMPANIES.hidden
+        ),
     )
 
 

@@ -17,6 +17,7 @@ import json
 import os
 import threading
 import time
+from bisect import bisect_left
 from collections import Counter, defaultdict
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -163,6 +164,9 @@ _searcher.warm()
 # Read once at startup — the Space restarts after every run, so it is never more than one run
 # stale, and the file is a few dozen rows per run.
 _NON_TECH = "non-tech"  # reserved diagnostic series — mirrors headstart.roles.NON_TECH
+_NEW_WINDOW_DAYS = (
+    7  # the `new` flow window — mirrors ingest.role_trends.NEW_WINDOW_DAYS
+)
 
 
 def _load_trends(path: Path) -> list[dict]:
@@ -279,11 +283,21 @@ def _load_epochs(path: Path) -> list[dict]:
         if previous is None:
             continue
         # .get: a file from before a column existed lacks it until the next tick upgrades it
-        changed = [
-            label for key, label in _EPOCH_LABELS if row.get(key) != previous.get(key)
+        moved = [
+            (key, label)
+            for key, label in _EPOCH_LABELS
+            if row.get(key) != previous.get(key)
         ]
-        if changed:
-            out.append({"ts": row["ts"], "changed": changed})
+        if moved:
+            # `fields` beside the labels, so code can key on what moved (the Trends tab asks
+            # whether duplicate removal did) without matching prose someone may reword.
+            out.append(
+                {
+                    "ts": row["ts"],
+                    "changed": [label for _, label in moved],
+                    "fields": [key for key, _ in moved],
+                }
+            )
     return out
 
 
@@ -329,14 +343,56 @@ def _board_openings(deltas: list[dict], version: int | None) -> Counter[str]:
     """
     openings: Counter[str] = Counter()
     for row in deltas:
-        if (
-            row["version"] == version
-            and row["metric"] == "stock"
-            and row["family"] != _NON_TECH
-            and not row["family"].startswith(_WATCH_PREFIX)
-        ):
+        if _is_tech_stock(row, version):
             openings[row["board"]] += row["delta"]
     return openings
+
+
+def _is_tech_stock(row: dict, version: int | None) -> bool:
+    """A delta row counting tech openings at the live version: `stock`, not `non-tech`, and not
+    a `watch:` row, which re-counts Jobs already counted in their family (ADR-0051)."""
+    return (
+        row["version"] == version
+        and row["metric"] == "stock"
+        and row["family"] != _NON_TECH
+        and not row["family"].startswith(_WATCH_PREFIX)
+    )
+
+
+def _board_arrivals(
+    deltas: list[dict], version: int | None
+) -> dict[str, tuple[str, int]]:
+    """Each Board's first tick at the live version, and the tech openings it arrived with.
+
+    A Board's first delta is its whole stock at once (ADR-0143), so a Board found after a
+    company's line began lands in that line as one step (ADR-0185). Measured 2026-09-24: 254 of
+    852 multi-Board companies carry one, Hyatt's +1,048 over 83 Boards the largest.
+    """
+    first: dict[str, str] = {}
+    for row in deltas:
+        if row["version"] == version and row["metric"] == "stock":
+            first[row["board"]] = min(first.get(row["board"], row["ts"]), row["ts"])
+    arrived: Counter[str] = Counter()
+    for row in deltas:
+        if _is_tech_stock(row, version) and row["ts"] == first[row["board"]]:
+            arrived[row["board"]] += row["delta"]
+    return {board: (ts, arrived[board]) for board, ts in first.items()}
+
+
+def _new_holds(arrivals: dict[str, tuple[str, int]]) -> dict[str, str]:
+    """When each Board may count toward `new`: its first tick plus the flow window (ADR-0185).
+
+    Every Board, the first tick's baseline included. Measured 2026-09-24: Amazon's `new` held at
+    ~8,600 for exactly seven days from the ledger's first tick and then fell to 1,371, Google's
+    1,690 to 489, so the ledger's first week reads a Board's whole backlog as new wherever the
+    Board was found.
+    """
+    return {
+        board: (
+            datetime.fromisoformat(ts) + timedelta(days=_NEW_WINDOW_DAYS)
+        ).isoformat(timespec="seconds")
+        for board, (ts, _) in arrivals.items()
+    }
 
 
 def _build_candidates(
@@ -365,8 +421,13 @@ _COMPANIES = _load_directory(_STATE / "data" / "state" / "company_directory.json
 _COMPANY_OF = {
     board: key for key, entry in _COMPANIES.items() for board in entry["boards"]
 }
-_OPENINGS = _board_openings(_TREND_DELTAS, _TRENDS[-1]["version"] if _TRENDS else None)
+_LIVE_VERSION = _TRENDS[-1]["version"] if _TRENDS else None
+_OPENINGS = _board_openings(_TREND_DELTAS, _LIVE_VERSION)
 _CANDIDATES = _build_candidates(_COMPANIES, _OPENINGS)
+_BOARD_ARRIVALS = _board_arrivals(_TREND_DELTAS, _LIVE_VERSION)
+_NEW_HOLD = _new_holds(_BOARD_ARRIVALS)
+# The first tick of the Board-delta ledger, before which no per-Board count exists.
+_LEDGER_START = min((ts for ts, _ in _BOARD_ARRIVALS.values()), default=None)
 # Email alerts (ADR-0035) — invite-only, so all three must be set before the panel appears:
 # the Google client id the sign-in button needs, and a token scoped to the Subscriptions
 # dataset alone (never the index token, which is read-only by design).
@@ -487,13 +548,19 @@ def _company_where(args) -> str | None:
     ``mine=1`` narrows to followed Boards. Hidden Boards are excluded on **every** request,
     with or without that flag — hiding a company means not seeing it, not "not seeing it while
     a toggle happens to be on".
+
+    ``board=`` (repeatable) narrows to one company's Boards, the Trends and Hot tabs' hand-off
+    (ADR-0185). It needs no Account, so it applies with accounts off as well.
     """
+    scoped = search.scoped_boards_clause(args)
     gate = _account_gate()
     if not gate:
-        return None
+        return scoped
     email, store = gate
     prefs = store.get_companies(subscription_id(email))
-    return search.request_account_clause(args, prefs.followed, prefs.hidden)
+    return search.with_extra(
+        scoped, search.request_account_clause(args, prefs.followed, prefs.hidden)
+    )
 
 
 @app.route("/search")
@@ -1201,9 +1268,12 @@ def _replay_rows(
             base = next(
                 (stamp for stamp in stamps if stamp >= first_delta), first_delta
             )
+        # A base before per-Board counting began starts the cohort at the first run that
+        # counted by Board: nothing earlier can be told apart, and answering "nothing" left a
+        # 30-day window blank for a reader who only asked to hold coverage fixed (ADR-0185).
         base_stamp = max(
             (stamp for stamp in stamps if first_delta <= stamp <= base), default=None
-        )
+        ) or next((stamp for stamp in stamps if stamp >= first_delta), None)
         if base_stamp is None:
             return [], None
         first: dict[str, str] = {}
@@ -1223,13 +1293,26 @@ def _replay_rows(
     state: Counter[tuple[str, str, str, str, str]] = Counter()
     rows = []
     measurements = set(stamps)
+    # A Board's first week in the ledger reads its whole backlog as `new`, so its `new` deltas
+    # wait out the flow window and are applied once it has passed, when the backlog has aged out
+    # and what lands is real inflow. The Hot tab leaves new Boards out for the same reason
+    # (ADR-0185). Every replay, a pick's or a comparable cohort's, reads the same ledger.
+    held: dict[str, list[tuple[tuple[str, str, str, str, str], int]]] = defaultdict(
+        list
+    )
     # A delta can survive a failed aggregate append. Apply it before the next
     # measurement even though that interrupted tick is not itself charted.
     for stamp in sorted(measurements | by_stamp.keys()):
+        for board in [b for b in held if _NEW_HOLD[b] <= stamp]:
+            for key, delta in held.pop(board):
+                state[key] += delta
         for row in by_stamp[stamp]:
             if eligible is None or row["board"] in eligible:
                 company = company_of[row["board"]] if company_of else ""
                 key = (company, row["metric"], row["family"], row["band"], row["ats"])
+                if row["metric"] == "new" and stamp < _NEW_HOLD.get(row["board"], ""):
+                    held[row["board"]].append((key, row["delta"]))
+                    continue
                 state[key] += row["delta"]
         if stamp < base_stamp or stamp not in measurements:
             continue
@@ -1283,7 +1366,14 @@ def trends():
     ``&split=company`` draws one series per picked company (with ``family``, within that
     family), and ``companies`` echoes the picks with their labels. Under a pick, ``totals`` is
     the picks' combined total and ``company_totals`` each pick's own, so a line split by company
-    can be a share of that company. ``history_start`` is the first run a pick is charted from.
+    can be a share of that company. ``counted_since`` maps each pick to its first counted tick,
+    and ``ledger_start`` is the Board-delta ledger's first tick, before which no pick has history.
+    Under a pick, a Board counts toward ``new`` only once the flow window has passed since its
+    first tick, so its backlog never reads as a week's hiring; ``new_counted_from`` maps each
+    pick to the first run its ``new`` can count.
+    ``discovered`` lists ``{ts, company, boards, openings}``: Boards of a pick found after its
+    line began, at the first charted run that counts them. Each is a step of openings that were
+    already open, not hiring, so the chart marks it.
     An unknown key is a 400, and a deployment with no directory yet answers 503.
 
     ``totals`` carries the served table per stamp — narrowed by ``ats`` exactly like every
@@ -1433,21 +1523,50 @@ def trends():
         if r["metric"] == "new"
     }
 
-    def value_at(points: dict[str, int], ts: str) -> int | None:
-        """A series' value at one stamp — 0 where the metric ran and found none, else None."""
+    def value_at(
+        points: dict[str, int], ts: str, counts_from: str | None = None
+    ) -> int | None:
+        """A series' value at one stamp — 0 where the metric ran and found none, else None.
+
+        ``counts_from`` is when a pick's ``new`` first counts (``_new_holds``): before it every
+        Board of the series is held, so the run measured nothing for it, which is a gap — a 0
+        there drew a week of nothing and then a leap that read as a hiring surge."""
+        if counts_from is not None and ts < counts_from:
+            return None
         return points.get(ts, 0 if metric == "new" and ts in measured else None)
 
     picked_keys = sorted(set(company_of.values())) if company_of else []
     # A pick with rows in scope gets a line even when this metric has none of them — for `new`,
     # "nothing opened this week" is a line at 0, and a company silently missing from the legend
-    # would read as a bug. A pick with no rows at all (outside a comparable cohort) gets none.
-    in_scope = {r["company"] for r in trends_rows} if key == "company" else set()
-    series: dict[str, dict[str, int]] = {k: {} for k in picked_keys if k in in_scope}
+    # would read as a bug. A pick with no rows at all (outside a comparable cohort, the ATS
+    # selection or the window) gets none, and is named in `uncounted`.
+    in_scope = {r["company"] for r in trends_rows} if company_of else set()
+    series: dict[str, dict[str, int]] = {
+        k: {} for k in picked_keys if key == "company" and k in in_scope
+    }
     for r in rows:  # sum over the other axis, so a family point is its total
         series.setdefault(r[key], {})
         at = series[r[key]]
         at[r["ts"]] = at.get(r["ts"], 0) + r["count"]
     company_labels = _company_labels(picked_keys)
+    # Each pick's own first counted tick (over the Boards in scope), which is where its line
+    # starts: the ledger's first tick for most, later for the 9,981 companies first counted
+    # after it (measured 2026-09-24). The chart names it, so a short line never reads as the
+    # company's whole history.
+    counted = {
+        board: pick
+        for board, pick in (company_of or {}).items()
+        if board in _BOARD_ARRIVALS and not (ats and ats_of(board) not in ats)
+    }
+    began: dict[str, str] = {}
+    new_from: dict[
+        str, str
+    ] = {}  # when each pick's `new` first counts (see _new_holds)
+    for board, pick in counted.items():
+        ts = _BOARD_ARRIVALS[board][0]
+        began[pick] = min(began.get(pick, ts), ts)
+        release = _NEW_HOLD.get(board, ts)
+        new_from[pick] = min(new_from.get(pick, release), release)
 
     def _series_label(name: str) -> str:
         if key == "company":
@@ -1455,6 +1574,16 @@ def trends():
         if name in _WATCH:
             return _WATCH[name]["label"]
         return _FAMILY_LABELS.get(name, name)
+
+    # Under `new`, where a series' first counted run is: a company line's own pick's release,
+    # and for a line summing several picks the earliest, after which each later one joins the
+    # sum as a marked step (the page's stepNotes).
+    def counts_from(name: str) -> str | None:
+        if metric != "new" or not company_of:
+            return None
+        if key == "company":
+            return new_from.get(name)
+        return min(new_from.values(), default=None)
 
     out = [
         {
@@ -1466,8 +1595,10 @@ def trends():
             # where new WAS measured (any new row exists), a missing series row genuinely
             # means zero fresh openings; a stamp with no new rows at all predates ADR-0051
             # and stays a gap.
-            "points": [value_at(points, ts) for ts in stamps],
-            "latest": value_at(points, stamps[-1]) if stamps else None,
+            "points": [value_at(points, ts, counts_from(name)) for ts in stamps],
+            "latest": value_at(points, stamps[-1], counts_from(name))
+            if stamps
+            else None,
         }
         for name, points in series.items()
     ]
@@ -1482,6 +1613,28 @@ def trends():
         if company_of and not row["family"].startswith(_WATCH_PREFIX):
             at = company_totals[row["company"]]
             at[row["ts"]] = at.get(row["ts"], 0) + row["count"]
+    # Boards of a pick found after its line began: each lands its tech openings at once, openings
+    # that were already open, so the chart marks the step rather than let it read as hiring. A
+    # Board that lands on the charted point where its company's line begins starts that line and
+    # is not a step, nor is one that brought no tech openings. None under comparable coverage,
+    # which leaves every such Board out of the cohort.
+    # Under `new` a found Board steps the line when its hold ends, not when it arrived.
+    found: dict[tuple[str, str], list[int]] = {}
+    if coverage != "comparable" and stamps:
+        for board, pick in counted.items():
+            ts, openings = _BOARD_ARRIVALS[board]
+            if metric == "new":
+                ts = _NEW_HOLD.get(board, ts)
+            at = bisect_left(stamps, ts)
+            if (
+                openings <= 0
+                or at == len(stamps)
+                or at <= bisect_left(stamps, began[pick])
+            ):
+                continue
+            bucket = found.setdefault((stamps[at], pick), [0, 0])
+            bucket[0] += 1
+            bucket[1] += openings
     # Which families have watched sub-roles, so the UI can offer the roles drill only there.
     watch_parents = sorted({meta["parent"] for meta in _WATCH.values()})
     return jsonify(
@@ -1494,13 +1647,32 @@ def trends():
         totals=[totals.get(ts) for ts in stamps],
         non_tech=[non_tech.get(ts) for ts in stamps],
         split_by=key,
+        # The drilled family's display name, so a cold link into a drill can name it.
+        family_label=_FAMILY_LABELS.get(family, family) if family else None,
         watch_parents=watch_parents,
         epochs=epochs,
-        companies=[_company_json(k, company_labels[k]) for k in picked_keys],
+        # With its Board keys, so the chart can hand a pick to Search by Board (ADR-0185).
+        companies=[
+            {
+                **_company_json(k, company_labels[k]),
+                "board_keys": _COMPANIES[k]["boards"],
+            }
+            for k in picked_keys
+        ],
         company_totals={
             k: [company_totals[k].get(ts) for ts in stamps] for k in picked_keys
         },
-        history_start=first_charted if company_of else None,
+        counted_since=began,
+        # Picks with nothing in this scope — a comparable cohort they joined after, an ATS
+        # selection or a window they have no Boards in — so the page names them rather than
+        # charting fewer companies than the chips show.
+        uncounted=[k for k in picked_keys if k not in in_scope],
+        ledger_start=_LEDGER_START,
+        new_counted_from=new_from,
+        discovered=[
+            {"ts": ts, "company": pick, "boards": n, "openings": openings}
+            for (ts, pick), (n, openings) in sorted(found.items())
+        ],
     )
 
 
@@ -1658,6 +1830,9 @@ def index():
             # cannot disagree with the query that returned it. `None` when the table is
             # unreadable, and the page then converts nothing, exactly as `build_filter` does.
             "fx": fx.table(),
+            # The most Boards one Search hand-off may name, so the Trends tab can say so
+            # rather than send a request the route refuses.
+            "max_scoped_boards": search.MAX_SCOPED_BOARDS,
         },
         njobs=f"{_table.count_rows():,}",
         atses=capabilities.atses,

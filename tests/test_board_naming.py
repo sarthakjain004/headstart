@@ -47,6 +47,19 @@ from headstart.ingest import board_naming
             "taleo_be:https://phh.tbe.taleo.net/phh03/ats/careers/v2/searchResults?org=ACME&cws=1",
             "Acme",
         ),
+        # The ATS's own title for a site is not the employer; the host names it instead.
+        (
+            "Oracle Taleo",
+            "taleo_enterprise:https://scripps.taleo.net/careersection/2m",
+            "Scripps",
+        ),
+        ("Successfactors", "successfactors:successfactors.tttech.com", "Tttech"),
+        # ...but a vendor that hires on its own product is its own name.
+        ("Workday", "workday:workday/Workday", "Workday"),
+        ("Greenhouse", "greenhouse:greenhouse", "Greenhouse"),
+        # Curated where only a slug names the Board.
+        ("", "oracle:jpmc.fa.oraclecloud.com", "JPMorgan Chase"),
+        ("", "icims:globalcareers-atlassian.icims.com", "Atlassian"),
         # A stated, cased name is never re-cased or trimmed.
         ("CI&T", "lever:ciandt", "CI&T"),
         ("Qantas Group", "smartrecruiters:QantasGroup", "Qantas Group"),

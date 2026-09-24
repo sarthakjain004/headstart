@@ -1694,9 +1694,11 @@ def test_comparable_default_starts_at_supported_history(comparable_history):
     assert data["base"] == _T2
     assert data["stamps"] == [_T2, _T3]
     assert data["series"][0]["points"] == [10, 10]
+    # A base before per-Board counting began starts the cohort where counting did, rather
+    # than answering nothing: the page names the base it actually used.
     early = client.get(f"/trends?coverage=comparable&base={quote(_T1)}").get_json()
-    assert early["base"] is None
-    assert early["stamps"] == []
+    assert early["base"] == _T2
+    assert early["stamps"] == [_T2, _T3]
 
 
 @pytest.mark.parametrize("since", [_T1, _T3])
@@ -1809,6 +1811,14 @@ def company_trends(trends_app, monkeypatch):
     monkeypatch.setattr(
         trends_app, "_CANDIDATES", trends_app._build_candidates(companies, openings)
     )
+    arrivals = trends_app._board_arrivals(deltas, 2)
+    monkeypatch.setattr(trends_app, "_BOARD_ARRIVALS", arrivals)
+    # No holds by default: the fixture's runs span two days, inside every Board's first week.
+    # The hold has its own tests below.
+    monkeypatch.setattr(trends_app, "_NEW_HOLD", {})
+    monkeypatch.setattr(
+        trends_app, "_LEDGER_START", min(ts for ts, _ in arrivals.values())
+    )
     return trends_app.app.test_client()
 
 
@@ -1831,6 +1841,7 @@ def test_any_board_of_a_company_picks_the_whole_company(company_trends):
     points = {s["name"]: s["points"] for s in d["series"]}
     assert points == {"software-engineering": [15, 16, 11], "ai-ml": [2, 2, 2]}
     assert [c["key"] for c in d["companies"]] == ["workday:hpe/a"]
+    assert d["companies"][0]["board_keys"] == ["workday:hpe/a", "workday:hpe/b"]
     assert d["companies"][0]["openings"] == 13  # 11 + 2, no non-tech
     # the share denominator is the picked company's own total, non-tech included
     assert d["totals"] == [24, 25, 20]
@@ -1859,7 +1870,7 @@ def test_a_pick_with_nothing_new_is_a_zero_line_not_a_missing_one(company_trends
     assert by_label == {"Citi": [None, 0, 0], "Hpe": [None, 2, 2]}
 
 
-def test_each_pick_carries_its_own_share_denominator_and_history_start(company_trends):
+def test_each_pick_carries_its_own_share_denominator_and_start(company_trends):
     d = company_trends.get(
         "/trends?split=company&company=workday:citi/2&company=workday:hpe/a"
     ).get_json()
@@ -1868,8 +1879,11 @@ def test_each_pick_carries_its_own_share_denominator_and_history_start(company_t
         "workday:hpe/a": [24, 25, 20],  # non-tech in the denominator, like `totals`
     }
     assert d["totals"] == [64, 65, 64]
-    assert d["history_start"] == _T1
-    assert company_trends.get("/trends").get_json()["history_start"] is None
+    assert d["counted_since"] == {"workday:citi/2": _T1, "workday:hpe/a": _T1}
+    assert company_trends.get("/trends").get_json()["counted_since"] == {}
+    # a company first counted later is dated from its own first Board, not the ledger's start
+    late = company_trends.get("/trends?company=eightfold:citi.eightfold.ai").get_json()
+    assert late["counted_since"] == {"eightfold:citi.eightfold.ai": _T2}
 
 
 def test_twins_on_one_ats_are_told_apart_by_key(company_trends):
@@ -2156,13 +2170,18 @@ def epochs_trends_app(tmp_path_factory):
 def test_trends_epochs_drops_the_baseline_and_names_what_moved(epochs_trends_app):
     d = epochs_trends_app.app.test_client().get("/trends").get_json()
     assert d["epochs"] == [
-        {"ts": _T2, "changed": ["tech filter changed"]},
+        {
+            "ts": _T2,
+            "changed": ["tech filter changed"],
+            "fields": ["tech_filter_version"],
+        },
         {
             "ts": _T3,
             "changed": [
                 "role family map edited",
                 "experience/salary extraction changed",
             ],
+            "fields": ["family_map_fingerprint", "derivations_version"],
         },
     ]
 
@@ -2177,10 +2196,17 @@ def test_trends_epochs_are_narrowed_by_since_and_until(epochs_trends_app):
                 "role family map edited",
                 "experience/salary extraction changed",
             ],
+            "fields": ["family_map_fingerprint", "derivations_version"],
         }
     ]
     d = client.get(f"/trends?until={quote(_T2)}").get_json()
-    assert d["epochs"] == [{"ts": _T2, "changed": ["tech filter changed"]}]
+    assert d["epochs"] == [
+        {
+            "ts": _T2,
+            "changed": ["tech filter changed"],
+            "fields": ["tech_filter_version"],
+        }
+    ]
 
 
 def test_trends_epochs_name_a_dedup_change(epochs_trends_app, tmp_path):
@@ -2200,7 +2226,11 @@ def test_trends_epochs_name_a_dedup_change(epochs_trends_app, tmp_path):
         ],
     )
     assert epochs_trends_app._load_epochs(path) == [
-        {"ts": _T2, "changed": ["duplicate removal changed"]}
+        {
+            "ts": _T2,
+            "changed": ["duplicate removal changed"],
+            "fields": ["dedup_version"],
+        }
     ]
 
 
@@ -2227,7 +2257,11 @@ def test_trends_epochs_load_a_file_from_before_dedup_version(
         ],
     )
     assert epochs_trends_app._load_epochs(path) == [
-        {"ts": _T2, "changed": ["tech filter changed"]}
+        {
+            "ts": _T2,
+            "changed": ["tech filter changed"],
+            "fields": ["tech_filter_version"],
+        }
     ]
 
 
@@ -2559,3 +2593,160 @@ def test_the_door_and_the_app_share_one_palette():
                 f"the door sets {token}:{value}, which style.css does not — the two token "
                 "blocks must move together"
             )
+
+
+def test_board_arrivals_are_a_boards_first_tick_and_its_tech_stock_then(trends_app):
+    deltas = [
+        _delta(_T1, "a", 5),
+        _delta(_T1, "a", 9, family="non-tech"),
+        _delta(_T2, "a", 1),
+        _delta(_T2, "b", 3),
+        {**_delta(_T1, "b", 100), "version": 1},  # a stale refit is not an arrival
+    ]
+    assert trends_app._board_arrivals(deltas, 2) == {"a": (_T1, 5), "b": (_T2, 3)}
+
+
+def test_a_board_found_after_its_company_began_is_marked(company_trends, monkeypatch):
+    """Both Citi Boards as one entry: the Eightfold one arrives at T2 with 3 openings."""
+    app_module = company_trends.application.view_functions["trends"].__globals__
+    one = {
+        "workday:citi/2": {
+            "name": "Citi",
+            "boards": ["workday:citi/2", "eightfold:citi.eightfold.ai"],
+        }
+    }
+    monkeypatch.setitem(app_module, "_COMPANIES", one)
+    monkeypatch.setitem(
+        app_module,
+        "_COMPANY_OF",
+        {b: "workday:citi/2" for b in one["workday:citi/2"]["boards"]},
+    )
+    d = company_trends.get("/trends?company=workday:citi/2").get_json()
+    assert d["discovered"] == [
+        {"ts": _T2, "company": "workday:citi/2", "boards": 1, "openings": 3}
+    ]
+    comparable = company_trends.get(
+        "/trends?company=workday:citi/2&coverage=comparable"
+    ).get_json()
+    assert comparable["discovered"] == []
+    narrowed = company_trends.get(
+        "/trends?company=workday:citi/2&ats=workday"
+    ).get_json()
+    assert narrowed["discovered"] == []
+
+
+def test_a_single_boards_first_tick_starts_its_line_and_is_not_marked(company_trends):
+    d = company_trends.get("/trends?company=eightfold:citi.eightfold.ai").get_json()
+    assert d["discovered"] == []
+
+
+def test_a_board_that_brought_no_tech_openings_is_not_marked(
+    company_trends, monkeypatch
+):
+    app_module = company_trends.application.view_functions["trends"].__globals__
+    one = {
+        "workday:hpe/a": {"name": "Hpe", "boards": ["workday:hpe/a", "workday:hpe/new"]}
+    }
+    monkeypatch.setitem(app_module, "_COMPANIES", one)
+    monkeypatch.setitem(
+        app_module,
+        "_COMPANY_OF",
+        {b: "workday:hpe/a" for b in one["workday:hpe/a"]["boards"]},
+    )
+    arrivals = dict(app_module["_BOARD_ARRIVALS"])
+    arrivals["workday:hpe/new"] = (_T2, 0)  # its first tick held only non-tech
+    monkeypatch.setitem(app_module, "_BOARD_ARRIVALS", arrivals)
+    d = company_trends.get("/trends?company=workday:hpe/a").get_json()
+    assert d["discovered"] == []
+
+
+def test_search_narrows_to_the_boards_a_trend_hands_over(app):
+    """`board=` scopes /search and /facets to one company's Boards, accounts or not."""
+    from headstart import search
+
+    args = app.app.test_request_context(
+        "/search?board=workday:citi/2&board=eightfold:x"
+    ).request.args
+    assert search.scoped_boards_clause(args) == (
+        "(lower(id) LIKE 'eightfold:x:%' OR lower(id) LIKE 'workday:citi/2:%')"
+    )
+    many = "&".join(f"board=b{i}" for i in range(search.MAX_SCOPED_BOARDS + 1))
+    client = app.app.test_client()
+    assert client.get("/search?" + many).status_code == 400
+    assert client.get("/facets?" + many).status_code == 400
+
+
+def test_a_found_boards_backlog_waits_out_the_new_window(company_trends, monkeypatch):
+    """Eightfold's Citi Board is found at T2; its first-week `new` is its backlog, not hiring."""
+    app_module = company_trends.application.view_functions["trends"].__globals__
+    deltas = app_module["_TREND_DELTAS"] + [
+        _delta(_T2, "eightfold:citi.eightfold.ai", 3, metric="new")
+    ]
+    monkeypatch.setitem(app_module, "_TREND_DELTAS", deltas)
+    monkeypatch.setitem(
+        app_module, "_NEW_HOLD", app_module["_new_holds"](app_module["_BOARD_ARRIVALS"])
+    )
+    held = company_trends.get(
+        "/trends?company=eightfold:citi.eightfold.ai&metric=new"
+    ).get_json()
+    assert held["series"] == []  # nothing new yet: the three were its backlog
+    monkeypatch.setitem(app_module, "_NEW_HOLD", {})
+    counted = company_trends.get(
+        "/trends?company=eightfold:citi.eightfold.ai&metric=new"
+    ).get_json()
+    assert [s["points"] for s in counted["series"]] == [[3, 3]]
+    assert held["ledger_start"] == _T1
+
+
+def test_every_board_waits_out_the_new_window_from_its_first_tick(trends_app):
+    holds = trends_app._new_holds(
+        {"a": ("2026-09-13T00:00:00+00:00", 5), "b": ("2026-09-20T06:00:00+00:00", 3)}
+    )
+    # the first tick's baseline waits too: the ledger's first week reads every backlog as new
+    assert holds == {"a": "2026-09-20T00:00:00+00:00", "b": "2026-09-27T06:00:00+00:00"}
+
+
+def test_new_counts_from_each_picks_own_first_week(company_trends, monkeypatch):
+    app_module = company_trends.application.view_functions["trends"].__globals__
+    holds = app_module["_new_holds"](app_module["_BOARD_ARRIVALS"])
+    monkeypatch.setitem(app_module, "_NEW_HOLD", holds)
+    d = company_trends.get(
+        "/trends?company=workday:hpe/a&company=eightfold:citi.eightfold.ai"
+    ).get_json()
+    assert d["new_counted_from"] == {
+        "workday:hpe/a": holds["workday:hpe/a"],
+        "eightfold:citi.eightfold.ai": holds["eightfold:citi.eightfold.ai"],
+    }
+
+
+def test_a_held_week_is_a_gap_not_a_zero(company_trends, monkeypatch):
+    """Before a pick's `new` counts, its line is unmeasured: a 0 drew a surge at the release."""
+    app_module = company_trends.application.view_functions["trends"].__globals__
+    monkeypatch.setitem(
+        app_module, "_NEW_HOLD", {"workday:hpe/a": _T3, "workday:hpe/b": _T3}
+    )
+    d = company_trends.get(
+        "/trends?metric=new&split=company&company=workday:hpe/a&company=workday:citi/2"
+    ).get_json()
+    points = {s["name"]: s["points"] for s in d["series"]}
+    assert points == {"workday:hpe/a": [None, None, 2], "workday:citi/2": [None, 0, 0]}
+    summed = company_trends.get(
+        "/trends?metric=new&company=workday:hpe/a&company=workday:citi/2"
+    ).get_json()
+    # a summed line starts with its earliest pick; the later one joins it as a marked step
+    assert summed["series"][0]["points"] == [None, 0, 2]
+
+
+def test_picks_a_view_leaves_out_are_named(company_trends):
+    """Comparable from T1 keeps only Boards known then: Eightfold's Citi (found T2) is out."""
+    d = company_trends.get(
+        f"/trends?coverage=comparable&base={quote(_T1)}&split=company"
+        "&company=workday:citi/2&company=eightfold:citi.eightfold.ai"
+    ).get_json()
+    assert d["uncounted"] == ["eightfold:citi.eightfold.ai"]
+    assert [s["name"] for s in d["series"]] == ["workday:citi/2"]
+    whole = company_trends.get(
+        "/trends?company=workday:citi/2&company=eightfold:citi.eightfold.ai"
+    ).get_json()
+    assert whole["uncounted"] == []
+    assert company_trends.get("/trends").get_json()["uncounted"] == []

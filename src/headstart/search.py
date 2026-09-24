@@ -39,6 +39,7 @@ from headstart.search_filter_compiler import (
     IndexCapabilities,
     SearchFilters,
     account_clause,
+    board_clause,
     build_filter,
     with_extra,
 )
@@ -181,6 +182,28 @@ def request_account_clause(
     for ``mine`` is written once, beside the clause it switches, rather than in each app.
     """
     return account_clause(followed, hidden, mine=args.get("mine") in ("1", "true"))
+
+
+#: The most Boards one ``board=`` hand-off may name. A company's Boards are its whole scope and
+#: the largest measured is Hyatt's 83 (2026-09-24); the bound keeps a query string from growing
+#: the where-clause without limit.
+MAX_SCOPED_BOARDS = 200
+
+
+def scoped_boards_clause(args) -> str | None:
+    """The Boards a request names with ``board=`` (repeatable), or None (ADR-0185).
+
+    How a company's trend hands over to its jobs: by the directory's Board keys rather than a
+    company-name substring, which misses aliased names ("RTX" from ``globalhr`` rows) and merges
+    same-named employers. Kept out of :class:`SearchFilters` for the reason
+    :func:`~headstart.search_filter_compiler.board_clause` gives: a hand-off, not a control a
+    Saved Set should freeze. Too many keys is a :class:`ValueError`, which both routes answer as
+    an invalid filter.
+    """
+    boards = [board for board in args.getlist("board") if board.strip()]
+    if len(boards) > MAX_SCOPED_BOARDS:
+        raise ValueError(f"at most {MAX_SCOPED_BOARDS} boards")
+    return board_clause(boards, exclude=False)
 
 
 # TEMPORARY (2026-07-07) — INTENDED FOR REMOVAL. Darwinbox rows scraped before the
