@@ -1120,3 +1120,161 @@ def test_site_jobs_reads_each_live_workday_site_from_the_ledger(tmp_path):
         "workday:acme/external": 900,
         "workday:acme/hidden": 40,
     }
+
+
+# --- one row per posting across an Eightfold career site and its backing Board (ADR-0206) -------
+# An Eightfold career site fronts the company's real ATS, and each posting states that ATS's
+# requisition. Both Boards are scraped, so the posting was served twice under two ATS labels.
+
+_EF = "eightfold:jobs.acme.com"
+_GH = "greenhouse:acme"
+_BACKING = {"jobs.acme.com": ("workday:acme/external",)}
+
+
+def test_prune_drops_an_eightfold_copy_its_backing_board_serves():
+    ids = [f"{_EF}:1099", f"{_MAIN}:R-100"]
+    reqs = {f"{_EF}:1099": "R-100", f"{_MAIN}:R-100": "R-100"}
+    off, dup = plan_prune(ids, {_EF, _MAIN}, requisitions=reqs, backing=_BACKING)
+    assert (off, dup) == ([], [f"{_EF}:1099"])
+
+
+def test_every_backing_row_of_one_requisition_stays():
+    """A backing Board can serve one requisition as several rows — Twilio's Greenhouse Board
+    posts one internal job four times — and those are four postings; only the Eightfold copy
+    goes."""
+    posts = [f"{_GH}:8067678", f"{_GH}:8067501", f"{_GH}:8067500"]
+    reqs = {p: "3399621" for p in posts} | {f"{_EF}:2201": "3399621"}
+    _, dup = plan_prune(
+        [f"{_EF}:2201", *posts],
+        {_EF, _GH},
+        requisitions=reqs,
+        backing={"jobs.acme.com": (_GH,)},
+    )
+    assert dup == [f"{_EF}:2201"]
+
+
+def test_a_posting_only_eightfold_serves_stays():
+    reqs = {f"{_EF}:1099": "R-999", f"{_MAIN}:R-100": "R-100"}
+    assert plan_prune(
+        [f"{_EF}:1099", f"{_MAIN}:R-100"],
+        {_EF, _MAIN},
+        requisitions=reqs,
+        backing=_BACKING,
+    ) == ([], [])
+
+
+@pytest.mark.parametrize("unstamped", [f"{_EF}:1099", f"{_MAIN}:R-100"])
+def test_a_row_without_a_requisition_never_matches(unstamped):
+    """Stamps arrive as each Board is re-scraped; until both rows carry one, both are served."""
+    reqs = {f"{_EF}:1099": "R-100", f"{_MAIN}:R-100": "R-100"}
+    del reqs[unstamped]
+    assert plan_prune(
+        [f"{_EF}:1099", f"{_MAIN}:R-100"],
+        {_EF, _MAIN},
+        requisitions=reqs,
+        backing=_BACKING,
+    ) == ([], [])
+
+
+def test_the_same_requisition_on_a_board_that_is_not_its_backing_board_is_not_a_copy():
+    other = "workday:other/External"
+    reqs = {f"{_EF}:1099": "R-100", f"{other}:R-100": "R-100"}
+    assert plan_prune(
+        [f"{_EF}:1099", f"{other}:R-100"],
+        {_EF, other},
+        requisitions=reqs,
+        backing=_BACKING,
+    ) == ([], [])
+
+
+def test_a_copy_its_workday_tenant_serves_from_another_site_is_still_a_copy():
+    """ADR-0187 serves a Workday requisition from one site of the tenant, which need not be the
+    site the pairs name; it is the same requisition either way."""
+    reqs = {f"{_EF}:1099": "R-100", f"{_SUB}:R-100": "R-100"}
+    _, dup = plan_prune(
+        [f"{_EF}:1099", f"{_SUB}:R-100"],
+        {_EF, _MAIN, _SUB},
+        requisitions=reqs,
+        backing=_BACKING,
+    )
+    assert dup == [f"{_EF}:1099"]
+
+
+_COPY, _BACK = f"{_EF}:1099", f"{_MAIN}:R-100"
+_REQS = {_COPY: "R-100", _BACK: "R-100"}
+_PAIR = frozenset({_EF, _MAIN})
+
+
+def _run_pair(index, fresh, scraped, was_unconfirmed, keep=_PAIR):
+    """`_run` with the requisition stamps and the pairs both planners read."""
+    plan = plan_sync(
+        index,
+        fresh,
+        scraped,
+        boards_by_canon(keep),
+        was_unconfirmed,
+        requisitions=_REQS,
+        backing=_BACKING,
+    )
+    index = (set(index) | plan.add) - plan.delete
+    off, dup = plan_prune(
+        sorted(index), set(keep), requisitions=_REQS, backing=_BACKING
+    )
+    return index - set(off) - set(dup), plan.unconfirmed, plan.refused
+
+
+def test_sync_does_not_add_an_eightfold_copy_its_backing_board_serves():
+    """Refused where rows arrive, so the copy prune took out is never re-added next run."""
+    index: set[str] = {_BACK}
+    unconfirmed: frozenset[str] = frozenset()
+    for _ in range(3):
+        index, unconfirmed, refused = _run_pair(
+            index, {_COPY, _BACK}, {_EF, _MAIN}, unconfirmed
+        )
+        assert index == {_BACK}
+        assert refused == {_COPY}
+
+
+def test_a_backing_copy_displaces_a_served_eightfold_incumbent():
+    """Backing always wins: the Eightfold site is often read first, and the backing row still
+    takes the requisition when it arrives — sync adds it, prune drops the copy in the same run."""
+    index, _, refused = _run_pair({_COPY}, {_BACK}, {_MAIN}, frozenset())
+    assert index == {_BACK}
+    assert refused == frozenset()
+
+
+def test_both_arriving_at_once_adds_only_the_backing_row():
+    index, _, refused = _run_pair(set(), {_COPY, _BACK}, {_EF, _MAIN}, frozenset())
+    assert index == {_BACK}
+    assert refused == {_COPY}
+
+
+def test_the_eightfold_copy_comes_back_once_the_backing_row_is_evicted():
+    """Re-admission: the backing Board stops listing the requisition. Its first absence only
+    marks it Unconfirmed (ADR-0083); the scrape that evicts it lets the Eightfold copy in."""
+    index: set[str] = {_BACK}
+    index, unconfirmed, _ = _run_pair(index, {_COPY}, {_EF, _MAIN}, frozenset())
+    assert index == {_BACK}
+    index, unconfirmed, refused = _run_pair(index, {_COPY}, {_EF, _MAIN}, unconfirmed)
+    assert index == {_COPY}
+    assert refused == frozenset()
+
+
+def test_the_eightfold_copy_comes_back_when_the_backing_board_leaves_the_live_set():
+    index, _, _ = _run_pair({_BACK}, {_COPY}, {_EF}, frozenset(), keep={_EF})
+    assert index == {_COPY}
+
+
+def test_requisitions_on_workday_rows_leave_adr_0187_unchanged():
+    """A Workday row's stamp is its native id; the tenant rule reads the id, so stamping every
+    row changes nothing it decides."""
+    ids = [f"{_SUB}:R-100", f"{_MAIN}:R-100", f"{_MAIN}:Texas", f"{_SUB}:Texas"]
+    stamps = {i: i.rsplit(":", 1)[1] for i in ids}
+    keep = {_MAIN, _SUB}
+    assert plan_prune(
+        ids, keep, site_jobs=_SITE_JOBS, requisitions=stamps, backing=_BACKING
+    ) == plan_prune(ids, keep, site_jobs=_SITE_JOBS)
+    args = ({f"{_SUB}:R-100"}, set(ids), keep, boards_by_canon(keep), set())
+    assert plan_sync(
+        *args, site_jobs=_SITE_JOBS, requisitions=stamps, backing=_BACKING
+    ) == plan_sync(*args, site_jobs=_SITE_JOBS)

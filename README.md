@@ -336,6 +336,7 @@ fails if this table drifts from it.
 | `salary_known` | bool | whether `min_salary_annual` is known; materialized and bitmap-indexed for the “Shows salary” filter (ADR-0173) |
 | `department` | string | raw ATS text. Not served to the API and not currently read from this table by any filter, sort, or downstream logic — its one real consumer is the tech filter, which reads it off the *raw scrape record*, before a row ever reaches this table. See the note below |
 | `url` | string | the job-detail link |
+| `requisition` | string | the ATS's own requisition id, filled on six ATSes only — on an Eightfold row, the id its backing Board states (`atsJobId`, or `displayJobId` over Oracle); on a Workday, Oracle, Greenhouse, Taleo Enterprise or SuccessFactors row, that Board's own. **Nullable**: null on every other ATS and on rows not re-scraped since the column arrived, and null never matches. Not served to the API; `index sync`/`prune` read it to serve a posting once when an Eightfold career site and its backing Board both list it (ADR-0206) |
 | `posted_at` | string | **the company's** posting date, straight from the ATS — inconsistent in shape across ATSes (`2026-01-09T00:46:44.672+00:00`, `03-Jul-2026`) and null on a meaningful share of rows |
 | `posted_at_comparable` | bool | whether `posted_at` has the `____-__-__` prefix the date filters can compare; materialized and bitmap-indexed (ADR-0173) |
 | `first_seen` | string | **ours** — ISO-8601 UTC, stamped when `index sync` first adds the row. Write-once, and null on rows added before the column existed (ADR-0031) |
@@ -367,6 +368,7 @@ Two rows, fetched live from the index:
   "min_salary_annual": 180000, "max_salary_annual": 300000, "salary_currency": "USD",
   "salary_known": true,
   "url": "https://jobs.ashbyhq.com/character/b063d44b-e1fd-4777-8079-573706a589a0",
+  "requisition": null,                                    // filled on six ATSes only
   "posted_at": "2025-12-08T19:38:59.867+00:00",
   "posted_at_comparable": true,
   "first_seen": null
@@ -387,6 +389,7 @@ Two rows, fetched live from the index:
   "min_salary_annual": 108000, "max_salary_annual": 125000, "salary_currency": null,
   "salary_known": true,
   "url": "https://jobs.smartrecruiters.com/xplor/744000140844907",
+  "requisition": null,                                    // filled on six ATSes only
   "posted_at": "2026-07-31T07:57:53.720Z",                 // not every ATS's date is ISO
   "posted_at_comparable": true,
   "first_seen": "2026-08-20T16:19:41+00:00"

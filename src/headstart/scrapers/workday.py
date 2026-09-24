@@ -1591,6 +1591,9 @@ class WorkdayScraper(BaseScraper):
                     scraped_at=scraped_at,
                     description=html_to_text(detail.get("description")),
                     employment_type=item.get("timeType") or detail.get("timeType"),
+                    # What an Eightfold site in front of this Board states as `atsJobId`
+                    # (ADR-0206).
+                    requisition=ats_id,
                 )
             )
         return jobs

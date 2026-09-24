@@ -25,7 +25,7 @@ from typing import Any
 from urllib.parse import unquote, urlencode, urlsplit, urlunsplit
 
 from headstart import company_name, salary
-from headstart.models import Job, html_to_text, is_remote
+from headstart.models import Job, html_to_text, is_remote, requisition_of
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 
 _PORTAL = re.compile(r"portalNo:\s*'?(\d+)")
@@ -376,8 +376,8 @@ class TaleoEnterpriseScraper(BaseScraper):
                 listed.append(
                     {
                         "id": job_id,
-                        # The requisition number; unused by `parse`, read by
-                        # `eightfold_backing_boards.py` (ADR-0205).
+                        # The requisition number the recruiter sees: `parse` stores it, and
+                        # `eightfold_backing_boards.py` reads it (ADR-0205, ADR-0206).
                         "contest_no": record.get("contestNo"),
                         "title": title,
                         "location": locations,
@@ -467,6 +467,9 @@ class TaleoEnterpriseScraper(BaseScraper):
                     or item["employment_type"],
                     salary=detail.get("salary"),
                     experience=detail.get("experience"),
+                    # What an Eightfold site in front of this section states as `atsJobId`
+                    # (ADR-0206).
+                    requisition=requisition_of(item.get("contest_no")),
                 )
             )
         return jobs

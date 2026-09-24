@@ -25,7 +25,8 @@ cannot. A Board short the same way twice running evicts in full (ADR-0101).
 the scrape list, nor case-variant duplicates of one job (Workday sites like ``.../External`` vs
 ``.../external``). These planners compute what to drop in those two cases; the duplicate case also
 covers one Workday requisition on several sites of its Workday tenant, which sync declines to add
-in the first place (ADR-0187).
+in the first place (ADR-0187), and an Eightfold career site's copy of a posting its backing Board
+serves, matched on the stored ``requisition`` (ADR-0206).
 
 Both layers ask "which Board owns this id", and both answer it through :func:`resolve_board`, whose
 docstring says why they must agree (ADR-0049).
@@ -35,7 +36,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from pathlib import Path
@@ -64,7 +65,10 @@ _log = log.get(__name__, __spec__)
 #:     ``shared-reqs`` aliases. 2 — Taleo Enterprise ``subset-reqs`` aliases (ADR-0186).
 #: 3 — one row per Workday tenant and requisition, public sites first (ADR-0187).
 #: 4 — Eightfold ``backing-reqs`` aliases onto the ATS Board behind the career site (ADR-0205).
-DEDUP_VERSION = 4
+#: 5 — one row per posting across an Eightfold site and its backing Board, on ``requisition``
+#:     (ADR-0206). Its removals follow the stamps, which arrive as each Board is re-scraped, so they
+#:     spread over days after the marker rather than landing on it (ADR-0188's amendment).
+DEDUP_VERSION = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +155,8 @@ def plan_sync(
     *,
     site_jobs: dict[str, int] | None = None,
     replaced: AbstractSet[str] = frozenset(),
+    requisitions: Mapping[str, str] | None = None,
+    backing: Mapping[str, Iterable[str]] | None = None,
 ) -> SyncPlan:
     """Diff the current index against a scrape's fresh ids, scoped to the Boards it covered.
 
@@ -175,6 +181,12 @@ def plan_sync(
     copy arriving whenever its own Board is next scraped. ``replaced`` names ids the caller took
     out of the table only to re-add them with a new vector (ADR-0050); they are still their
     requisition's served row.
+
+    **One row per posting across an Eightfold site and its backing Board (ADR-0206).** The same
+    rule reaches an Eightfold id whose ``requisitions`` stamp a row on one of its ``backing``
+    Boards also carries: it joins that row's group, where the backing row always wins. So the
+    copy is refused while the backing row is served, and comes back on a later scrape of its own
+    Board once the backing row is evicted or its Board leaves ``live``. Unstamped rows never match.
 
     **No Board-level cap (ADR-0101).** The board-scope check above is all-or-nothing at the *line*
     level: a Board that emitted one job line is fully in scope, so a scrape truncated by a
@@ -266,7 +278,8 @@ def plan_sync(
                 unconfirmed.add(job_id)
 
     served = (index - delete) | (add & replaced)
-    refused = _other_site_copies(add, served, live, site_jobs or {})
+    copies = _backing_copies(served | add, live, requisitions or {}, backing or {})
+    refused = _other_site_copies(add, served, live, site_jobs or {}, copies)
     return SyncPlan(
         add=frozenset(add - refused),
         delete=frozenset(delete),
@@ -275,22 +288,84 @@ def plan_sync(
     )
 
 
-def _placement(job_id: str, live: dict[str, str]) -> tuple[tuple[str, str], str] | None:
+def _placement(
+    job_id: str,
+    live: dict[str, str],
+    copies: Mapping[str, tuple[str, str]] | None = None,
+) -> tuple[tuple[str, str], str] | None:
     """``(duplicate group, lowercased Board)`` for an id on a live Board, else None.
 
     The group is ``(Board or Workday tenant, native id)`` — one served row each — and it is the
     one grouping both planners use: ``plan_prune`` to collapse the rows a group already holds,
-    ``plan_sync`` to decline copies of one it already serves.
+    ``plan_sync`` to decline copies of one it already serves. An Eightfold id in ``copies``
+    (:func:`_backing_copies`) joins the group of the backing row that carries its requisition
+    instead (ADR-0206).
     """
     end = _live_board_end(job_id, live)
     if end is None:
         return None
     canon, native = lower_key(job_id[:end]), job_id[end + 1 :]
-    return (_workday_tenant(canon, native) or canon, native), canon
+    group = (copies or {}).get(job_id)
+    return group or (_workday_tenant(canon, native) or canon, native), canon
+
+
+def _backing_copies(
+    job_ids: Iterable[str],
+    live: dict[str, str],
+    requisitions: Mapping[str, str],
+    backing: Mapping[str, Iterable[str]],
+) -> dict[str, tuple[str, str]]:
+    """``{Eightfold id: the duplicate group of a row among job_ids that serves its requisition
+    on one of its backing Boards}`` (ADR-0206).
+
+    ``requisitions`` is each stamped row's ``requisition``; ``backing`` maps an Eightfold Board's
+    slug to its backing Board keys (:mod:`headstart.eightfold_backing`). A row with no stamp never
+    matches, so an unstamped pair keeps being served twice rather than risk serving it never.
+
+    The Eightfold row joins the backing row's group rather than both joining a group keyed on
+    the requisition, because a backing Board can serve one requisition as several rows —
+    Greenhouse posts per location, SuccessFactors per locale — and those stay per row. A Workday
+    backing Board is matched on its tenant, the group ADR-0187 already serves a requisition from,
+    so a copy the tenant serves from another site still counts.
+    """
+    if not requisitions or not backing:
+        return {}
+    by_slug = {
+        lower_key(f"eightfold:{slug}"): [lower_key(b) for b in boards]
+        for slug, boards in backing.items()
+    }
+    held: dict[tuple[str, str], tuple[str, str]] = {}
+    fronts: list[tuple[str, str, str]] = []
+    for job_id in job_ids:
+        requisition = requisitions.get(job_id)
+        placed = _placement(job_id, live) if requisition else None
+        if placed is None:
+            continue
+        group, board = placed
+        if board in by_slug:
+            fronts.append((job_id, board, requisition))
+        else:
+            held[group[0], requisition] = min(
+                group, held.get((group[0], requisition), group)
+            )
+    copies: dict[str, tuple[str, str]] = {}
+    for job_id, board, requisition in fronts:
+        found = [
+            held[key]
+            for b in by_slug[board]
+            if (key := (_workday_tenant(b, requisition) or b, requisition)) in held
+        ]
+        if found:
+            copies[job_id] = min(found)
+    return copies
 
 
 def _other_site_copies(
-    new: set[str], served: set[str], live: dict[str, str], site_jobs: dict[str, int]
+    new: set[str],
+    served: set[str],
+    live: dict[str, str],
+    site_jobs: dict[str, int],
+    copies: Mapping[str, tuple[str, str]],
 ) -> set[str]:
     """The ``new`` ids not to add because their requisition is served from another Board.
 
@@ -306,15 +381,16 @@ def _other_site_copies(
     A requisition with no incumbent takes :func:`_survivor_board`, the Board ``plan_prune`` would
     keep. A copy on the incumbent's own Board is still added: that is a case-variant spelling of
     it, which ``plan_prune`` settles by the live casing (ADR-0023), and refusing it would make a
-    fossil casing immortal. Every group but a Workday tenant's holds one Board, so nothing else is
-    ever refused.
+    fossil casing immortal. Every group but a Workday tenant's holds one Board, save an Eightfold
+    copy that joined its backing row's group (``copies``, ADR-0206) — whose backing row outranks it
+    both ways, so the copy is refused behind a served backing row and displaced by an arriving one.
     """
-    arriving, _ = _by_group_and_board(new, live)
+    arriving, _ = _by_group_and_board(new, live, copies)
     if not arriving:
         return set()
     incumbent_boards: dict[tuple[str, str], set[str]] = defaultdict(set)
     for job_id in served:
-        placed = _placement(job_id, live)
+        placed = _placement(job_id, live, copies)
         if placed is None:
             continue
         group, board = placed
@@ -324,10 +400,11 @@ def _other_site_copies(
     for group, by_board in arriving.items():
         incumbents = incumbent_boards.get(group, set())
         # Displaced when the arriving copies' best class outranks the incumbents' best — the same
-        # first key `_survivor_board` sorts on, compared on its own so a class never displaces
-        # itself: public (False) below non-public (True), in one direction only.
-        displaced = bool(incumbents) and min(map(_is_non_public, by_board)) < min(
-            map(_is_non_public, incumbents)
+        # first keys `_survivor_board` sorts on, compared on their own so a class never displaces
+        # itself: a backing Board below an Eightfold site, public below non-public, in one
+        # direction only.
+        displaced = bool(incumbents) and min(map(_rank_class, by_board)) < min(
+            map(_rank_class, incumbents)
         )
         keep = (
             {_survivor_board(by_board.keys(), site_jobs)}
@@ -341,7 +418,9 @@ def _other_site_copies(
 
 
 def _by_group_and_board(
-    job_ids: Iterable[str], live: dict[str, str]
+    job_ids: Iterable[str],
+    live: dict[str, str],
+    copies: Mapping[str, tuple[str, str]] | None = None,
 ) -> tuple[dict[tuple[str, str], dict[str, list[str]]], list[str]]:
     """``({duplicate group: {lowercased Board: ids}}, the ids on no live Board)``."""
     grouped: dict[tuple[str, str], dict[str, list[str]]] = defaultdict(
@@ -349,7 +428,7 @@ def _by_group_and_board(
     )
     off_board: list[str] = []
     for job_id in job_ids:
-        placed = _placement(job_id, live)
+        placed = _placement(job_id, live, copies)
         if placed is None:
             off_board.append(job_id)
             continue
@@ -686,9 +765,16 @@ def _survivor_board(boards: AbstractSet[str], site_jobs: dict[str, int]) -> str:
     displacement in :func:`_other_site_copies` compares this ranking's first key only.
     """
     return min(
-        boards,
-        key=lambda board: (_is_non_public(board), -site_jobs.get(board, 0), board),
+        boards, key=lambda board: (*_rank_class(board), -site_jobs.get(board, 0), board)
     )
+
+
+def _rank_class(board: str) -> tuple[bool, bool]:
+    """``(an Eightfold career site, a non-public Workday site)`` for a lowercased Board key —
+    :func:`_survivor_board`'s first keys, and all a displacement compares. A backing Board
+    outranks the Eightfold site in front of it (ADR-0206), and a public Workday site a non-public
+    one (ADR-0187); a group holding one Board never reaches either."""
+    return board.startswith("eightfold:"), _is_non_public(board)
 
 
 def _is_non_public(board: str) -> bool:
@@ -701,7 +787,12 @@ def _is_non_public(board: str) -> bool:
 
 
 def plan_prune(
-    index_ids: Iterable[str], keep: set[str], *, site_jobs: dict[str, int] | None = None
+    index_ids: Iterable[str],
+    keep: set[str],
+    *,
+    site_jobs: dict[str, int] | None = None,
+    requisitions: Mapping[str, str] | None = None,
+    backing: Mapping[str, Iterable[str]] | None = None,
 ) -> tuple[list[str], list[str]]:
     """Split index ids into ``(evict_off_board, evict_duplicate)``.
 
@@ -716,7 +807,9 @@ def plan_prune(
     every Board ties on jobs). ``plan_sync`` refuses copies on the same rule, so once today's
     duplicates are gone this sees two Boards for one requisition only when a public copy has just
     displaced a non-public incumbent — and it drops the incumbent, because the ranking puts public
-    first. The casing rule below then picks the row within the kept Board.
+    first. The casing rule below then picks the row within the kept Board. An Eightfold row whose
+    ``requisitions`` stamp a row on one of its ``backing`` Boards carries joins that row's group
+    and loses to it (:func:`_backing_copies`, ADR-0206).
 
     The row kept is the one whose Board casing the **live ledger** produces, because that is the
     casing a future scrape emits. Keeping the lexicographically-smallest instead (the rule until
@@ -733,7 +826,9 @@ def plan_prune(
     every Board key in use today, with longest-match as the documented tie-break should one Board
     key ever nest inside another at a colon."""
     live = boards_by_canon(keep)
-    groups, off_board = _by_group_and_board(index_ids, live)
+    index_ids = list(index_ids)
+    copies = _backing_copies(index_ids, live, requisitions or {}, backing or {})
+    groups, off_board = _by_group_and_board(index_ids, live, copies)
     duplicate: list[str] = []
     for by_board in groups.values():
         kept_board = _survivor_board(by_board.keys(), site_jobs or {})

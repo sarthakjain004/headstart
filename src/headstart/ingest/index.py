@@ -88,6 +88,7 @@ import numpy as np
 import pyarrow as pa
 
 from headstart import (
+    eightfold_backing,
     employment_type_filter,
     experience_filter,
     india_filter,
@@ -175,6 +176,10 @@ _POSTED_AT_COMPARABLE_FIELD = pa.field(posted_date_guard.COLUMN, pa.bool_())
 _EXPERIENCE_FILTER_FIELDS = tuple(
     pa.field(column, pa.bool_()) for column in experience_filter.COLUMNS
 )
+# The ATS's requisition id where one is needed to match a posting across ATSes (ADR-0206). A fact
+# like `url`, so `_refresh_metadata` fills it on a row already held once its Board is re-scraped;
+# held as a constant because `_schema` and `sync`'s migration both need it.
+_REQUISITION_FIELD = pa.field("requisition", pa.string())
 
 
 class _Stale(NamedTuple):
@@ -224,6 +229,7 @@ def _schema(dim: int) -> pa.Schema:
             _SALARY_KNOWN_FIELD,
             pa.field("department", pa.string()),
             pa.field("url", pa.string()),
+            _REQUISITION_FIELD,
             pa.field("posted_at", pa.string()),
             _POSTED_AT_COMPARABLE_FIELD,
             _FIRST_SEEN_FIELD,
@@ -817,6 +823,12 @@ def sync(args: argparse.Namespace) -> int:
 
     _migrate_employment_type_flags(table)
 
+    # And for `requisition` (ADR-0206). Existing rows get null, which never matches another row,
+    # until `_refresh_metadata` below rewrites them from the store once their Board is re-scraped.
+    if _REQUISITION_FIELD.name not in table.schema.names:
+        _log.info(f"adding '{_REQUISITION_FIELD.name}' to the existing table")
+        table.add_columns(_REQUISITION_FIELD)
+
     # Replace the rows of Jobs being re-embedded with a description they previously lacked
     # (ADR-0050) — before planning, not after. `plan_sync` computes add = fresh - index, so an id
     # still listed in `index_ids` is excluded from the adds; deleting its row afterwards would take
@@ -832,9 +844,12 @@ def sync(args: argparse.Namespace) -> int:
     # start: one run of retained-but-closed rows is the price of never needing a migration, and
     # the run after it evicts normally.
     was_unconfirmed = read_id_list(Path(args.unconfirmed))
-    # One row per requisition across a Workday tenant's sites (ADR-0187), decided here as well as
-    # in prune so a copy prune took out is never added back. The re-embedded rows just taken out
-    # are passed back as `replaced`: they are still the requisition's incumbent.
+    # One row per requisition across a Workday tenant's sites (ADR-0187), and per posting across
+    # an Eightfold site and its backing Board (ADR-0206), decided here as well as in prune so a
+    # copy prune took out is never added back. The re-embedded rows just taken out are passed back
+    # as `replaced`: they are still the requisition's incumbent. The stamps come from the store,
+    # which `update_meta` has just refreshed, so a row is judged on the same value the refresh
+    # below writes into the table.
     plan = plan_sync(
         index_ids,
         fresh,
@@ -843,6 +858,8 @@ def sync(args: argparse.Namespace) -> int:
         was_unconfirmed,
         site_jobs=workday_site_jobs(args.ledger),
         replaced=taken.keys(),
+        requisitions={m["id"]: m["requisition"] for m in metas if m.get("requisition")},
+        backing=eightfold_backing.load(),
     )
     # `add` counts every row written, and an upgrade is a delete-then-re-add of a Job that never
     # left — so reading `add - evict` as growth overstates it by exactly the upgrade count. Over
@@ -858,9 +875,11 @@ def sync(args: argparse.Namespace) -> int:
         f"evict {len(plan.delete)} -> net {listings - len(plan.delete):+d} rows"
     )
     if plan.refused:
+        fronts = sum(1 for job_id in plan.refused if ats_of(job_id) == "eightfold")
         _log.info(
-            f"not added: {len(plan.refused)} Workday requisition(s) another site of the same "
-            "Workday tenant already serves or is being given (ADR-0187)"
+            f"not added: {len(plan.refused) - fronts} Workday requisition(s) another site of the "
+            f"same Workday tenant already serves or is being given (ADR-0187), and {fronts} "
+            "Eightfold posting(s) its backing Board serves or is being given (ADR-0206)"
         )
     # Written before the delete rather than after, and the reason is not crash-replay: `delete`
     # and `unconfirmed` are disjoint by construction, so a crash here loses no eviction — those
@@ -986,7 +1005,16 @@ def prune(args: argparse.Namespace) -> int:
         return 1
 
     table = lancedb.connect(args.db).open_table(PROD_TABLE)
-    index_ids = _all_ids(table)
+    # The stamps ADR-0206 matches on; a table from before the column carries none, and matches
+    # nothing until sync adds it.
+    stamped = _REQUISITION_FIELD.name in table.schema.names
+    rows = _scan(table, ["id", _REQUISITION_FIELD.name] if stamped else ["id"])
+    index_ids = [r["id"] for r in rows]
+    requisitions = {
+        r["id"]: r[_REQUISITION_FIELD.name]
+        for r in rows
+        if r.get(_REQUISITION_FIELD.name)
+    }
     if not check_base(args.db, len(index_ids)):
         # Checked here too, not only in `sync`. `cleanup-index` runs `prune` as its FIRST table
         # operation, with no `sync` ahead of it — so without this a compaction would read a
@@ -994,7 +1022,11 @@ def prune(args: argparse.Namespace) -> int:
         # the loss into the new base.
         return 1
     off_board, duplicate = plan_prune(
-        index_ids, keep, site_jobs=workday_site_jobs(args.ledger)
+        index_ids,
+        keep,
+        site_jobs=workday_site_jobs(args.ledger),
+        requisitions=requisitions,
+        backing=eightfold_backing.load(),
     )
     evict = off_board + duplicate
     _log.info(

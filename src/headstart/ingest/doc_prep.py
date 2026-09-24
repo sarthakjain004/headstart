@@ -50,6 +50,7 @@ META_FIELDS = (
     "salary",
     "department",
     "url",
+    "requisition",
     "posted_at",
 )
 

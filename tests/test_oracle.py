@@ -230,6 +230,11 @@ def test_the_core_identity_fields_come_from_the_listing():
     assert job.posted_at
 
 
+def test_the_requisition_is_the_listing_id():
+    """What an Eightfold site in front of this Board states as `displayJobId` (ADR-0206)."""
+    assert {j.requisition for j in _jobs().values()} == set(_jobs())
+
+
 def test_parse_still_reads_the_pre_detail_pass_envelope():
     """`fetch_raw`'s shape changed; a recorded fixture or a direct caller may still hand parse
     the API's own `{"items": [...]}` envelope."""
