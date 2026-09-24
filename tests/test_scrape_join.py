@@ -425,9 +425,10 @@ def test_a_board_scraped_clean_with_zero_jobs_is_in_the_scope(tmp_path):
     """A Board that answered with nothing open writes no job line, so a scope built from lines
     alone never held it: `index sync` left its old rows alone, and `prune` kept them too, because
     the Board is still live in the ledger. Its closed postings were served forever (measured
-    2026-09-24: greenhouse:hyphenconnect answers 404 and served 602 rows). The shard report's
+    2026-09-24: lever:whoop answers 200 with no postings and served 74 rows). The shard report's
     `boards_ok` is the evidence the lines cannot carry, keyed the way ids are, so Workday's
-    URL slug lands as `{company}/{site}`."""
+    URL slug lands as `{company}/{site}`. A Board that raised is not in `boards_ok` and stays
+    out."""
     frags = tmp_path / "frags"
     _shard(frags, 0, {"greenhouse.jsonl": ['{"id": "greenhouse:stripe:1"}']})
     observability.write_shard(

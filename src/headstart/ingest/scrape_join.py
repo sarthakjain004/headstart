@@ -117,7 +117,10 @@ def write_scraped_boards(boards: set[str], path: Path) -> None:
 
     Keys are :func:`~headstart.ingest.index_plan.resolve_board`'s, in the id's own casing, because
     that is exactly what the scope is compared against (ADR-0049) — the ledger both halves resolve
-    against is committed to git, so the join and the merge read the same one.
+    against is committed to git, so the join and the merge read the same one. A Board that scraped
+    clean with zero jobs has no id to resolve, so it is added from the shard reports' ``boards_ok``
+    through :func:`~headstart.board_identity.board_key_of` — the ``board_key()`` its ids would
+    carry, so the two sources agree.
 
     Always writes, even when the union covered nothing: ``data/state`` round-trips through the HF
     dataset, so a run that skipped the write would leave the *previous* run's Boards in place and
@@ -216,8 +219,12 @@ def main() -> int:
     # scope and its closed postings would be served forever. `boards_ok` is that evidence; keyed
     # through `board_key_of`, it is the prefix the Board's own ids carry. A truncated Board is in
     # `boards_ok` too, and `index sync` drops it again as unauthoritative (ADR-0053).
+    # A Board that answered 404 raised, so it is in `errors`, not `boards_ok`, and stays out.
     for report in reports:
-        boards.update(filter(None, map(board_key_of, report.boards_ok)))
+        for key in report.boards_ok:
+            board = board_key_of(key)
+            if board is not None:
+                boards.add(board)
     # Before the telemetry below, like the unauthoritative-Board write: this is the eviction
     # signal, and an empty file is the honest record of a run that joined nothing.
     write_scraped_boards(boards, Path(args.scraped_boards))
