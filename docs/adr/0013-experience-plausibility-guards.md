@@ -67,3 +67,6 @@ lower requirement ceiling. The `_MAX_PLAUSIBLE_YEARS = 50` bound below is still 
 One known false-positive class (`"N years ago … experience"`) remains,
 now *documented and test-pinned* rather than silently present, with its fix gated on corpus access.
 No change to the ADR-0009 cascade design or the LanceDB schema join.
+
+*(Amended 2026-09-24: the names of the original side-corpus and its scripts were removed from this
+record by the owner's decision, along with that corpus; the decision above is unchanged.)*

@@ -18,11 +18,11 @@
 ## Context
 
 The run that `.github/workflows/pipeline.yml` executes was **12 scripts, 1,899 lines, spread across
-5 of `scripts/`'s 12 subdirs** — `pipeline/`, `scrape/`, `filter/`, `rank/`, `embed/` — mixed in with
-roughly 8,500 lines of R&D and one-off tooling in those same directories, with nothing marking which
-is which. `scripts/embed/` held `embed_jobs.py` (in the run) beside a side-corpus search script,
-a side-corpus index loader, and `evict_store.py` (not). `scripts/pipeline/` was itself a misnomer: it held 4 of
-the 12.
+5 of `scripts/`'s 12 subdirs** — `pipeline/`, `scrape/`, `filter/`, `rank/`, `embed/` — mixed in
+with roughly 8,500 lines of R&D and one-off tooling in those same directories, with nothing marking
+which is which. `scripts/embed/` held `embed_jobs.py` (in the run) beside a side-corpus search
+script, a side-corpus index loader, and `evict_store.py` (not). `scripts/pipeline/` was itself a
+misnomer: it held 4 of the 12.
 
 Three concrete costs, not just untidiness:
 
@@ -169,3 +169,6 @@ failure. Two subcommands, two workflow steps, failure semantics unchanged.
   scheduled run", which is the distinction that was missing.
 - Anyone with a local `python scripts/embed/embed_jobs.py --resume` habit needs the new command;
   the README quickstart and `docs/agents/deployment.md` are updated.
+
+*(Amended 2026-09-24: the names of the original side-corpus and its scripts were removed from this
+record by the owner's decision, along with that corpus; the decision above is unchanged.)*

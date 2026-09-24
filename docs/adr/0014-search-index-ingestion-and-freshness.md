@@ -14,7 +14,8 @@
 
 The AI search layer (ADR-0005–0008) has never ingested the product's own output. Its embed script
 reads a single hardcoded CSV — a one-off side-corpus — and its index loader loads LanceDB with
-`create_table(mode="overwrite")`. Two consequences, both flagged in the June-2026 audit (finding #3):
+`create_table(mode="overwrite")`. Two consequences, both flagged in the June-2026 audit (finding
+#3):
 
 1. **Wrong corpus.** The 18 ATS scrapers write canonical `Job` records to `data/jobs/{ats}.jsonl`,
    but nothing embeds them. The whole retrieval story — including the ADR-0011 eval (nDCG@10 = 0.90) —
@@ -42,12 +43,12 @@ Three facts constrain the fix:
 
 Four decisions, taken together.
 
-**1. Served corpus = the pipeline's `{ats}.jsonl`; the side-corpus becomes a frozen eval benchmark.**
-A source-agnostic `iter_jobs(source)` reader yields canonical `Job`-shaped dicts, so for JSONL sources
-`to_meta` collapses to near-nothing (the scrapers already produce the canonical shape). The production
-index is built from `{ats}.jsonl`; the side-corpus CSV is retained, behind its existing adapter, purely
-as the *labelled eval benchmark* — a fixed test set is meant to be stable, not the live corpus.
-The side-corpus embed script is generalised to `embed_run.py --source`.
+**1. Served corpus = the pipeline's `{ats}.jsonl`; the side-corpus becomes a frozen eval
+benchmark.** A source-agnostic `iter_jobs(source)` reader yields canonical `Job`-shaped dicts, so
+for JSONL sources `to_meta` collapses to near-nothing (the scrapers already produce the canonical
+shape). The production index is built from `{ats}.jsonl`; the side-corpus CSV is retained, behind
+its existing adapter, purely as the *labelled eval benchmark* — a fixed test set is meant to be
+stable, not the live corpus. The side-corpus embed script is generalised to `embed_run.py --source`.
 
 **2. Eviction = scrape-diff scoped to the Boards actually scraped.**
 After a scrape, for each Board in the run's `.done` set, delete index rows for that Board whose id is
@@ -71,12 +72,12 @@ stale text, not a dead link). Content-hash re-embedding is deferred; it slots in
 
 ## Rejected alternatives
 
-- **One unified index (side-corpus + pipeline together).** Simplest single table, but production would
-  serve a stale one-off scrape mixed with fresh Jobs, and the eval pool would be diluted by
+- **One unified index (side-corpus + pipeline together).** Simplest single table, but production
+  would serve a stale one-off scrape mixed with fresh Jobs, and the eval pool would be diluted by
   non-side-corpus neighbours — silently changing what nDCG = 0.90 means.
-- **Re-scrape the side-corpus into canonical `{ats}.jsonl`, drop the CSV.** Cleanest end-state, but voids
-  the eval labels (ids change) and needs a scraper rewrite plus a full re-pool/re-label — most effort,
-  and it discards the ADR-0011 labelling investment.
+- **Re-scrape the side-corpus into canonical `{ats}.jsonl`, drop the CSV.** Cleanest end-state, but
+  voids the eval labels (ids change) and needs a scraper rewrite plus a full re-pool/re-label — most
+  effort, and it discards the ADR-0011 labelling investment.
 - **Liveness-only (board-level) eviction.** Cheap, but only removes whole dead Boards; a posting that
   closes on a still-live Board would never leave the index.
 - **Both posting-diff and a liveness sweep.** More thorough as a backstop, but more moving parts; the
@@ -93,13 +94,17 @@ stale text, not a dead link). Content-hash re-embedding is deferred; it slots in
 ## Consequences
 
 The AI layer finally serves the product's real corpus, and closed postings leave the index — the
-freshness story `architecture.md` promised. `to_meta` retires for canonical JSONL sources (ADR-0007's
-temporary adapter), surviving only for the side-corpus benchmark CSV (that CSV path was removed on
-2026-09-24, with the benchmark). The index loader's overwrite is replaced by an incremental sync,
-and the durable table makes the ANN index (finding #8) buildable. The eval now explicitly measures a *benchmark* corpus distinct from production — a gap that is now
-documented rather than accidental.
+freshness story `architecture.md` promised. `to_meta` retires for canonical JSONL sources
+(ADR-0007's temporary adapter), surviving only for the side-corpus benchmark CSV (that CSV path was
+removed on 2026-09-24, with the benchmark). The index loader's overwrite is replaced by an
+incremental sync, and the durable table makes the ANN index (finding #8) buildable. The eval now
+explicitly measures a *benchmark* corpus distinct from production — a gap that is now documented
+rather than accidental.
 
 Deferred / gated: the mechanism can be built now but is only exercised once a scrape produces
 `{ats}.jsonl` on a cadence — which needs the removed `scrape.yml` re-enabled (audit finding #13); the
 eviction loop has no scheduler until then. Content-change re-embedding, the liveness board-sweep
 backstop, and ANN-index tuning at scale (ADR-0008's threshold) are all deferred.
+
+*(Amended 2026-09-24: the names of the original side-corpus and its scripts were removed from this
+record by the owner's decision, along with that corpus; the decision above is unchanged.)*

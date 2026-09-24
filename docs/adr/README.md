@@ -19,7 +19,7 @@ supersedes it and note the supersession in both.
 | [0008](0008-local-lancedb-vector-store.md) | Local LanceDB for the query-time vector store (cloud later) | 2026-06-28 |
 | [0009](0009-experience-extraction.md) | Years-of-experience extraction: a tiered deterministic cascade | 2026-06-29 |
 | [0010](0010-feed-from-jsonl.md) | Dashboard feed built from the per-board `.jsonl`, not an in-memory copy | 2026-06-29 |
-| [0011](0011-retrieval-eval-harness.md) | Retrieval-eval harness: a validated LLM judge and graded nDCG | 2026-07-01 |
+| [0011](0011-retrieval-eval-harness.md) | Retrieval-eval harness: a validated LLM judge and graded nDCG (withdrawn 2026-09-24) | 2026-07-01 |
 | [0012](0012-liveness-ledger.md) | Liveness state as a TTL'd ledger keyed by `(ats, tenant)` | 2026-07-02 |
 | [0013](0013-experience-plausibility-guards.md) | Experience plausibility guards: fix Tier 1, defer the Tier 2 anchor | 2026-07-03 |
 | [0014](0014-search-index-ingestion-and-freshness.md) | Search-index ingestion: real corpus, scrape-diff eviction, incremental LanceDB | 2026-07-03 |
@@ -182,3 +182,6 @@ supersedes it and note the supersession in both.
 | [0182](0182-a-clearcompany-board-is-its-hrm-direct-feed.md) | A ClearCompany Board is its HRM Direct feed, not a clearcompany.com surface | 2026-09-23 |
 | [0183](0183-a-cornerstone-board-is-the-tenant-read-across-every-career-site.md) | A Cornerstone Board is the tenant, read across every career site | 2026-09-23 |
 | [0184](0184-a-pinpoint-board-is-read-from-its-listing-and-dated-from-its-page.md) | A Pinpoint Board is read from its listing and dated from its posting pages | 2026-09-23 |
+
+*ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
+reused.*

@@ -133,3 +133,6 @@ merely re-derived. Both failure modes were confirmed red before the change was k
 - **Re-read `data/jobs` after the union with `iter_jobs`.** Byte-identical to the reference
   implementation, but a second pass over 9.1 GB plus a 2.08 M-id dedup set, for an answer the first
   pass can produce for free.
+
+*(Amended 2026-09-24: the names of the original side-corpus and its scripts were removed from this
+record by the owner's decision, along with that corpus; the decision above is unchanged.)*

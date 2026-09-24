@@ -5,11 +5,12 @@
 
 ## Context
 
-To filter "≤ N years" the required experience must be a **number**, but embeddings can't reason about
-numbers (ADR-0006) so it has to be extracted as structured data. The number lives in two places: a
-source's structured field (the ADR-0005 side-corpus provides `years_experience` for ~64% of Jobs) or, when that's
-absent, the free-text description (e.g. *"7+ years of experience"*). The extractor must be
-source-agnostic (most ATS sources won't have a field) and extensible toward millions of Jobs.
+To filter "≤ N years" the required experience must be a **number**, but embeddings can't reason
+about numbers (ADR-0006) so it has to be extracted as structured data. The number lives in two
+places: a source's structured field (the ADR-0005 side-corpus provides `years_experience` for ~64%
+of Jobs) or, when that's absent, the free-text description (e.g. *"7+ years of experience"*). The
+extractor must be source-agnostic (most ATS sources won't have a field) and extensible toward
+millions of Jobs.
 
 ## Decision
 
@@ -40,10 +41,11 @@ which recovered 51% of the field-empty Jobs. Manual eyeballing of regex matches 
 precision (the anchoring holds). 17.4% got nothing.
 
 **This coverage will fall as the corpus grows, by design.** Tier 1's 64% is specific to the
-side-corpus — it depends on that source exposing a field. Field-less sources fall through to the regex tier (the
-source-agnostic floor, ~51% of field-empty here), so as such sources dominate, total coverage drifts
-toward that floor — and *that* is when the deferred LLM/inference tiers start earning their cost. The
-cascade degrades gracefully: `from_field` returns `None` and Tier 2 takes over automatically.
+side-corpus — it depends on that source exposing a field. Field-less sources fall through to the
+regex tier (the source-agnostic floor, ~51% of field-empty here), so as such sources dominate, total
+coverage drifts toward that floor — and *that* is when the deferred LLM/inference tiers start
+earning their cost. The cascade degrades gracefully: `from_field` returns `None` and Tier 2 takes
+over automatically.
 
 ## Rejected alternatives
 
@@ -57,3 +59,6 @@ cascade degrades gracefully: `from_field` returns `None` and Tier 2 takes over a
 `min_years` is a live filter (`--max-years`). Null-experience Jobs are kept on that filter (a policy
 choice, easy to flip). Patterns and tiers are extensible without touching the runner or the schema
 join. Scaling the extraction to millions is deferred.
+
+*(Amended 2026-09-24: the names of the original side-corpus and its scripts were removed from this
+record by the owner's decision, along with that corpus; the decision above is unchanged.)*

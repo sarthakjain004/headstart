@@ -8,8 +8,8 @@
 The embedding store (`embeddings.f32` + `meta.jsonl`) is enough for a brute-force numpy probe, but
 the search design is **filter-then-rank**: hard-filter on the typed metadata (ADR-0007 — `remote`,
 `employment_type`) and rank the survivors by vector similarity. It must also scale from today's
-6,360 side-corpus vectors (ADR-0005) to the eventual ~3.3M-Job corpus. We want a **local, embedded** store now;
-cloud storage is deferred because it carries real cost/investment.
+6,360 side-corpus vectors (ADR-0005) to the eventual ~3.3M-Job corpus. We want a **local, embedded**
+store now; cloud storage is deferred because it carries real cost/investment.
 
 ## Decision
 
@@ -43,3 +43,6 @@ B1's typed metadata pays off directly: `remote` is a filterable bool column, `em
 filterable string. Filtering on `experience` / `salary` still waits on the enrichment component
 (they remain raw strings). `data/lancedb/` is regenerable from the embedding store, so it is
 gitignored. Moving to cloud storage is a future, separate ADR.
+
+*(Amended 2026-09-24: the names of the original side-corpus and its scripts were removed from this
+record by the owner's decision, along with that corpus; the decision above is unchanged.)*

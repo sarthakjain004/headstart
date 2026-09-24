@@ -93,8 +93,7 @@ at least: a full parse against the fixture, pagination to its terminator, the tr
 a failed detail (the Job still ships, without a description), every field mapping measured as
 non-obvious, and `url_shape` matching what `job_url()` builds. CI installs `.[dev]` (lancedb,
 pyarrow and langdetect included) under a 10-minute timeout, so importorskip only what the
-`embed`/`scrape`/`eval`/`alerts` extras bring (sentence-transformers, pydoll, anthropic,
-google-auth).
+`embed`/`scrape`/`alerts` extras bring (sentence-transformers, pydoll, google-auth).
 
 ## Discovery
 

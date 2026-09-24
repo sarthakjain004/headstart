@@ -1,8 +1,8 @@
-"""Shared conventions for the embed/search/eval layer (ADR-0005, ADR-0008) — and, since
+"""Shared conventions for the embed/search layer (ADR-0005, ADR-0008) — and, since
 ADR-0042, the one serving-path search implementation both UIs run.
 
 The model id, the load-bearing task prefixes, the LanceDB table name, the encoder factory,
-and the where-clause builders live here once. The embed/search/eval scripts import the
+and the where-clause builders live here once. The embed/search scripts import the
 conventions instead of re-declaring their own copies, so a mismatched prefix or model id
 can't drift into one script and silently degrade ranking (ADR-0005 warns a wrong prefix
 throws no error), and every caller escapes filter input the same way.

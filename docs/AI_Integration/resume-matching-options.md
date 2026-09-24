@@ -211,7 +211,8 @@ read-then-decide loop is how ADR-0018's patterns were found.
 Option 3 is not wrong, it is *expensive in a way that lands on the user*: a 1.8 GB cold start and a
 multi-second search, in exchange for better ordering of 30 results the user will mostly skim. If
 ranking quality turns out to be the real complaint after Option 2 ships, that is the moment to buy
-it — and measure it on a retrieval benchmark rather than assuming (ADR-0011's harness was withdrawn on 2026-09-24, so a benchmark would have to be rebuilt first).
+it — and measure it on a retrieval benchmark rather than assuming (ADR-0011's harness was withdrawn
+on 2026-09-24, so a benchmark would have to be rebuilt first).
 
 ---
 
@@ -224,9 +225,9 @@ it — and measure it on a retrieval benchmark rather than assuming (ADR-0011's 
 - **Must-have vs nice-to-have** (Options 2, 4, 5): weighting them equally makes strong candidates
   look weak.
 - **No resume→Job eval set.** ADR-0011's harness (since withdrawn) graded *query*→Job, with the
-  judge validated by Cohen's kappa. Resume→Job has no labelled data, so no option here can currently be measured
-  against ground truth. Deferred by decision, but it is the thing that would tell you whether any
-  of this works.
+  judge validated by Cohen's kappa. Resume→Job has no labelled data, so no option here can currently
+  be measured against ground truth. Deferred by decision, but it is the thing that would tell you
+  whether any of this works.
 - **Glossary terms pending.** `CONTEXT.md` has no entry for **Query** at all, and **Doc** is defined
   as strictly per-Job — so the pasted resume and its distilled form are unnamed. Proposed:
   **Resume** (what the user pastes), **Profile text** (the distilled role signal that gets

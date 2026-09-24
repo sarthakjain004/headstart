@@ -47,3 +47,6 @@ The metadata is source-agnostic and immediately filterable on the typed fields (
 `employment_type == "full-time"`). Filtering on `experience`/`salary` waits on the enrichment
 component. Implemented as `to_meta` in the side-corpus's embed script; its existing
 `meta.jsonl` under `data/embeddings/` must be regenerated to pick up the new shape.
+
+*(Amended 2026-09-24: the names of the original side-corpus and its scripts were removed from this
+record by the owner's decision, along with that corpus; the decision above is unchanged.)*
