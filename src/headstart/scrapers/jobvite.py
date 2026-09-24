@@ -94,13 +94,13 @@ ADR-0023's duplicate-prune case, so nothing is done about it here beyond saying 
 
 from __future__ import annotations
 
-import json
 import re
 from typing import Any
 
 from headstart import http, log
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.job_posting_jsonld import find_job_posting
 
 _log = log.get(__name__)
 
@@ -122,7 +122,6 @@ _NEXT = re.compile(r'<a[^>]+href="([^"]+)"[^>]*class="[^"]*jv-pagination-next')
 _PAGINATION = re.compile(r'class="jv-pagination-text[^"]*">(.*?)</div>', re.DOTALL)
 _NUMBER = re.compile(r"[\d,]+")
 
-_JSONLD = re.compile(r'type="application/ld\+json"[^>]*>(.*?)</script>', re.DOTALL)
 #: The rendered job title. Read only up to its first nested tag: one template (agscareer) puts
 #: the location inside this heading as a ``<br><h3>Canada</h3>``, and stripping tags first turned
 #: "Account Executive- Slots" into "Account Executive- Slots Canada".
@@ -324,14 +323,9 @@ class JobviteScraper(BaseScraper):
         ``datePosted`` to give — the page does not render one — so those Jobs carry no
         ``posted_at``, which is a property of the surface rather than of this parse.
         """
-        match = _JSONLD.search(page)
-        if match:
-            try:
-                posting = json.loads(match.group(1))
-            except json.JSONDecodeError:
-                posting = None
-            if isinstance(posting, dict) and posting.get("title"):
-                return posting
+        posting = find_job_posting(page)
+        if posting is not None and posting.get("title"):
+            return posting
         title = _HTML_TITLE.search(page)
         if not title:
             return None

@@ -37,7 +37,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import json
 import re
 import time
 import urllib.parse
@@ -55,6 +54,7 @@ from headstart.scrapers.base import (
     classify_exception,
     loss_breakdown,
 )
+from headstart.scrapers.job_posting_jsonld import jsonld_nodes
 
 _log = log.get(__name__)
 
@@ -163,31 +163,23 @@ def _extract_page_detail(response: Any) -> dict[str, Any] | None:
     them, and reformatting the JSON-LD address would be guesswork on top of it."""
     if response.status_code != 200:
         return None
-    for block in _JSON_LD.findall(response.text):
-        try:
-            data = json.loads(block)
-        except ValueError:
-            continue
-        for node in data if isinstance(data, list) else [data]:
-            if not isinstance(node, dict):
-                continue
-            kind = node.get("@type")  # JSON-LD allows a list of types
-            if kind == "JobPosting" or (
-                isinstance(kind, list) and "JobPosting" in kind
-            ):
-                description = node.get("description")
-                if not description:
-                    continue
-                employment = node.get("employmentType")
-                if isinstance(employment, list):  # the spec allows a list here too
-                    employment = employment[0] if employment else None
-                return {
-                    "description": description,
-                    "startDate": node.get("datePosted"),
-                    "remoteType": node.get("jobLocationType"),
-                    "timeType": _SCHEMA_EMPLOYMENT.get(employment, employment),
-                }
-    return None
+    described = (
+        node
+        for node in jsonld_nodes(response.text, "JobPosting")
+        if node.get("description")
+    )
+    posting = next(described, None)
+    if posting is None:
+        return None
+    employment = posting.get("employmentType")
+    if isinstance(employment, list):  # the spec allows a list here too
+        employment = employment[0] if employment else None
+    return {
+        "description": posting["description"],
+        "startDate": posting.get("datePosted"),
+        "remoteType": posting.get("jobLocationType"),
+        "timeType": _SCHEMA_EMPLOYMENT.get(employment, employment),
+    }
 
 
 _URL_PATTERN = re.compile(
@@ -306,9 +298,6 @@ _PAGE_RECOVERED = "recovered from the public page"
 # unconditionally the cookie one. Recovered details ride this label and are popped from the loss
 # tally exactly as `_PAGE_RECOVERED` is.
 _COOKIE_RECOVERED = "cookie-reset (recovered)"
-_JSON_LD = re.compile(
-    r'<script[^>]*type="application/ld\+json"[^>]*>(.*?)</script>', re.DOTALL
-)
 
 # A 500-episode is the origin refusing a Board's details wholesale for minutes, and nothing
 # in-run beats it (ADR-0100): massgeneralbrigham lost 2,324 of 2,420 details to settled 500s
