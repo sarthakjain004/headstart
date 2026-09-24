@@ -504,10 +504,12 @@ function readSearchHash(){
   if (currentTab() !== 'search' || at < 0) return false;
   const p = new URLSearchParams(location.hash.slice(at + 1));
   const boards = p.getAll('board');
-  if (!boards.length || (searchScope && searchScope.boards.join('\n') === boards.join('\n'))) return false;
-  searchScope = { boards, label: p.get('label') || `${boards.length} boards` };
+  // The whole hand-off, not only its Boards: Back from Google › Data to Google › AI names the
+  // same Boards with another query, and comparing the Boards alone left the page on Data.
+  if (!boards.length || location.hash === searchHash()) return false;
+  searchScope = { boards, label: p.get('label') || `${boards.length} board${boards.length === 1 ? '' : 's'}` };
   el('company').value = '';
-  if (p.has('q')) el('q').value = p.get('q');
+  el('q').value = p.get('q') || '';
   return true;
 }
 // Kept in step with what was searched: the query as run, and the scope gone once dropped.
@@ -1747,7 +1749,7 @@ function stepNote(d){
     parts.push('A solid grey vertical line marks openings that joined the count at once — boards found later, or a company counted from a later date — not hiring.');
   // Said only where a line carries a step and has a figure read off it: Zomato, with no
   // percentage, and a Count view, whose lines are real levels, both got the Change sentence.
-  if (chartedAndOther(d).charted.some(s => stepsFor(s).length && trendDelta(s.points, s) != null))
+  if (chartedAndOther(d).charted.some(s => stepsFor(s).length && lineMove(s).dl != null))
     parts.push(trendUnit === 'change'
       ? 'Lines and percentages leave out the jumps at marked lines, so they show hiring between them. Point at a marked line to see how big its jump was.'
       : 'Lines break at each marked jump, and the percentages leave the jumps out, so they measure hiring between them. Point at a marked line to see how big its jump was.');
@@ -1763,9 +1765,13 @@ function uncountedNote(d){
   const names = out.map(p => p.label || 'a picked company');
   const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
   const [isnt, them, their] = out.length === 1 ? ['isn’t', 'it', 'its'] : ['aren’t', 'them', 'their'];
-  if (trendCoverage === 'comparable' && d.base)
+  // The reason is read off the data, never off which control happens to be on: a pick the ATS
+  // selection dropped under Comparable was told it "began counting after" the base.
+  const since = d.counted_since || {};
+  if (trendCoverage === 'comparable' && d.base && out.every(p => since[p.key] && since[p.key] > d.base))
     return `${list} ${isnt} in this view: HeadStart began counting ${them} after ${stampLabel(d.base, true)}.`;
-  if (trendAtsSelected()) return `${list} ${isnt} in this view: none of ${their} boards are on the selected sources.`;
+  if (trendAtsSelected() && out.every(p => !(p.atses || []).some(a => trendAtsSelected().includes(a))))
+    return `${list} ${isnt} in this view: none of ${their} boards are on the selected sources.`;
   return `${list} ${isnt} in this view: HeadStart counted no openings at ${them} in this window.`;
 }
 
@@ -1804,11 +1810,11 @@ function verdictOf(s, d){
   if (!m) move = 'not enough runs yet to show a direction';
   else {
     const n = Math.round(m.change), pct = m.head ? m.change / m.head * 100 : 0;
-    const count = `${n < 0 ? '−' : '+'}${Math.abs(n).toLocaleString()} opening${Math.abs(n) === 1 ? '' : 's'}`;
-    move = m.head < MOVER_FLOOR ? (n ? `${count} ${over}, too few to call a trend` : `unchanged ${over}`)
+    const count = signedOpenings(n);
+    move = m.real < MOVER_FLOOR ? (n ? `${count} ${over}, too few to call a trend` : `unchanged ${over}`)
       : Math.abs(pct) < 2 ? `about flat ${over} (${pct < 0 ? '−' : '+'}${Math.abs(pct).toFixed(1)}%, ${count})`
       : `${pct > 0 ? 'up' : 'down'} ${Math.abs(pct).toFixed(1)}% ${over} (${count})`;
-    if (stepsFor(s).length && m.head >= MOVER_FLOOR) move += ', leaving out the marked jumps';
+    if (stepsFor(s).length && m.real >= MOVER_FLOOR) move += ', leaving out the marked jumps';
   }
   return { text: `${now == null ? 'no' : Math.round(now).toLocaleString()} ${what}; ${move}.`, days };
 }
@@ -1819,7 +1825,13 @@ function drawVerdict(d){
   if (!lines.length){ host.innerHTML = ''; return; }
   // Eleven days of counting is too short to tell a trend from noise, and the chart cannot say
   // so by itself: most companies have been counted since Sep 13 (ADR-0185).
-  const days = Math.round(Math.max(...lines.map(l => l.days)));
+  // How long HeadStart has counted them, from `counted_since` — not the window's span, which
+  // under "7 days" said "counted since Sep 13 — 7 days".
+  const firsts = Object.values(d.counted_since || {}).filter(Boolean).sort();
+  const last = d.stamps[d.stamps.length - 1];
+  const days = firsts.length
+    ? Math.round((new Date(last) - new Date(firsts[firsts.length - 1])) / 864e5)
+    : Math.round(Math.max(...lines.map(l => l.days)));
   const counted = trendCoverage !== 'comparable' && datedPicks(d.counted_since, 'since');
   const since = counted ? `HeadStart has counted ${counted}` : '';
   const n = Math.max(1, days), span = `${n} day${n === 1 ? '' : 's'}`;
@@ -1909,8 +1921,8 @@ function datedPicks(dates, word){
 
 // "at Stripe" / "at 3 companies": how the text around the chart names what the picks scope.
 // The drilled family's name as the Space labels it, else its slug.
-function familyLabel(name){
-  return (trendRaw && trendRaw.family_label && name === trendDrill) ? trendRaw.family_label : name;
+function drillLabel(){
+  return (trendRaw && trendRaw.family_label) || trendDrill || '';
 }
 
 function pickPhrase(){
@@ -2230,10 +2242,13 @@ function headTail(values){
            tail: seen.slice(-k).reduce((a, b) => a + b) / k };
 }
 // A line's movement in openings, net of the marked steps, read the way trendDelta reads its
-// percentage. `head` is its opening count at the window's start, which MOVER_FLOOR is held to.
+// percentage. `head` is the net head the percentage divides by; `real` is the openings it
+// really had at the window's start, which MOVER_FLOOR is held to — held to the adjusted head,
+// a company at 12 whose found Board doubled it cleared the floor it exists to stop.
 function trendMove(s){
   const ends = headTail(netOfSteps(s.points, s));
-  return ends && { head: ends.head, change: ends.tail - ends.head };
+  const real = headTail(s.points);
+  return ends && { head: ends.head, real: real ? real.head : ends.head, change: ends.tail - ends.head };
 }
 // Below this many openings at the window's start a line's move is stated in openings, never as
 // a percentage, and no tile names it: Stripe's "Biggest riser: sre-platform +18.2%" was 11
@@ -2244,14 +2259,23 @@ const MOVER_FLOOR = 20;
 // change in openings (`count`), which is what a reader can actually weigh.
 function lineMove(s){
   const m = trendMove(s);
-  if (m && m.head < MOVER_FLOOR) return { count: Math.round(m.change) };
+  if (m && m.real < MOVER_FLOOR) return { count: Math.round(m.change) };
   return { dl: trendDelta(s.points, s) };
 }
-function moveClass(mv){ return mv.count != null ? deltaClass(mv.count * 2) : deltaClass(mv.dl); }
+// A count has no dead band: one opening either way is a direction, where deltaClass reads
+// ±1 as flat because it was written for percentages.
+function moveClass(mv){
+  if (mv.count == null) return deltaClass(mv.dl);
+  return mv.count > 0 ? 'up' : mv.count < 0 ? 'down' : 'flat';
+}
 function moveText(mv){
   if (mv.count == null) return deltaText(mv.dl);
   const n = mv.count;
-  return `${n > 0 ? '↑' : n < 0 ? '↓' : '→'} ${n < 0 ? '−' : '+'}${Math.abs(n).toLocaleString()} opening${Math.abs(n) === 1 ? '' : 's'}`;
+  return `${n > 0 ? '↑' : n < 0 ? '↓' : '→'} ${signedOpenings(n)}`;
+}
+// "+3 openings", "−1 opening": every place a change is given in openings.
+function signedOpenings(n){
+  return `${n < 0 ? '−' : '+'}${Math.abs(n).toLocaleString()} opening${Math.abs(n) === 1 ? '' : 's'}`;
 }
 
 // A line's levels with the marked steps taken out (stepNotes' `withhold`: a line-moving
@@ -2263,6 +2287,8 @@ function moveText(mv){
 // plot draws these levels and every percentage is read off them, so the line and its number
 // can never disagree again: a round of critique found Google's line ending at 117 over a legend
 // reading −0.2%. With no pick there are no such steps, so the index chart is unchanged.
+// A step off zero (a pick at 0 whose first Board lands 40) has no ratio to scale by, so the
+// line starts at the step: what came before it was nothing counted, not a level to adjust.
 function netOfSteps(levels, s){
   const jumps = stepJumps(levels, s);
   if (!jumps.size) return levels;
@@ -2270,9 +2296,11 @@ function netOfSteps(levels, s){
   let factor = 1;
   for (let j = levels.length - 1; j >= 0; j--){
     if (levels[j] == null) continue;
-    out[j] = levels[j] * factor;
+    out[j] = factor == null ? null : levels[j] * factor;
     const jump = jumps.get(j);
-    if (jump && jump.before > 0 && jump.after > 0) factor *= jump.after / jump.before;
+    if (!jump || factor == null) continue;
+    if (jump.before > 0 && jump.after > 0) factor *= jump.after / jump.before;
+    else if (jump.before <= 0 && jump.after > 0) factor = null;
   }
   return out;
 }
@@ -2306,7 +2334,7 @@ function notesOf(d){
 }
 function stepsFor(s){
   if (!trendData) return [];
-  const perCompany = VIEWS[viewKind(trendData)].split === 'company' && s;
+  const perCompany = !!s && VIEWS[viewKind(trendData)].split === 'company';
   return notesOf(trendData)
     .filter(n => n.withhold && !(perCompany && ((n.company && s.name !== n.company)
       || (n.companies && !n.companies.includes(s.name)))))
@@ -2826,7 +2854,7 @@ function drawTrends(){
   // The breadcrumb is the way out of a drill; the by-level / by-role toggle only exists inside
   // a family that has watched roles.
   if (el('trends-crumb')) el('trends-crumb').hidden = !trendDrill;
-  if (el('trends-crumb-here')) el('trends-crumb-here').textContent = trendDrill ? familyLabel(trendDrill) : '';
+  if (el('trends-crumb-here')) el('trends-crumb-here').textContent = trendDrill ? drillLabel() : '';
   // A pick adds Total and Company to the top level and Company to a drill (ADR-0185). An
   // option that does not apply is hidden AND disabled, as setUnit does: hidden keeps it off the
   // screen, disabled keeps it out of the radiogroup's arrow-key walk.
@@ -3274,7 +3302,7 @@ function drawPicks(){
     // AI / Machine Learning leads to Google's AI roles first rather than to every Google job.
     const its = trendPicks.length > 1 ? 'their' : 'its';
     roles.textContent = roles.disabled ? `Too many boards to list at once (${boards.length}) — remove a company`
-      : trendDrill ? `See ${its} ${familyLabel(trendDrill)} roles` : `See ${its} open roles`;
+      : trendDrill ? `See ${its} ${drillLabel()} roles` : `See ${its} open roles`;
   }
   // Source offers only the picks' ATSes: one no pick is on answers with an empty chart. Hidden,
   // not unchecked, so clearing the picks gives back exactly the selection there was.
@@ -3409,7 +3437,8 @@ if (el('trends-co-roles')) el('trends-co-roles').addEventListener('click', () =>
   if (!trendPicks.length) return;
   searchCompany(trendPicks.flatMap(p => p.boardKeys || []),
     trendPicks.length === 1 ? trendPicks[0].label : trendPicks.map(p => p.label).join(', '),
-    trendDrill ? familyLabel(trendDrill).replace(/\s*\(.*\)\s*$/, '') : '');
+    // "Software Engineering (general)" asks for "(general)" too; the qualifier is not a role.
+    trendDrill ? drillLabel().replace(/\s*\(.*\)\s*$/, '') : '');
 });
 
 // "See trend" from a Hot-tab row or a search result (ADR-0185): the Board key the row already

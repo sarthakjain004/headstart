@@ -1372,7 +1372,8 @@ test('a pick the view leaves out is named, with the reason', () => {
   t.setPicks([ACME, BETA]);
   t.coverageSet('comparable');
   t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 100, 100]]],
-    { uncounted: ['lever:beta'], base: FOUR[0], coverage: 'comparable' }));
+    { uncounted: ['lever:beta'], base: FOUR[0], coverage: 'comparable',
+      counted_since: { 'greenhouse:acme': FOUR[0], 'lever:beta': FOUR[2] } }));
   t.draw();
   assert.match(nodes['trends-empty'].textContent,
     /Beta isn’t in this view: HeadStart began counting it after Sep 13/);
@@ -1435,4 +1436,52 @@ test('under a pick, a counting change that cannot move its lines is not marked',
     epochs: [{ ts: FOUR[2], changed: ['experience extraction changed'], fields: ['derivations_version'] }] });
   t.draw();
   assert.doesNotMatch(nodes['trends-chart'].innerHTML, /epoch-marker/);
+});
+
+
+// ---- code review of the third round -----------------------------------------------------
+test('the mover floor is held to the openings a line really started with', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  // 12 openings, then a found Board doubles it: adjusted, the head reads 24 and cleared 20.
+  t.set({ ...picked({}), stamps: FOUR, totals: [1e3, 1e3, 1e3, 1e3], non_tech: [0, 0, 0, 0],
+    series: [{ name: 'a', label: 'a', points: [12, 12, 24, 26], latest: 26 }],
+    discovered: [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 1, openings: 12 }] });
+  t.setUnit('count', false);
+  t.draw();
+  // Net [24, 24, 24, 26]: the last two runs average 25 against 24 — one opening, no percentage.
+  assert.match(row(nodes['trends-legend'].innerHTML, 'a'), /↑ \+1 opening</);
+});
+
+test('a step off zero starts the line there rather than staying in it', () => {
+  const { t } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({}), stamps: FOUR, series: [], epochs: [],
+    discovered: [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 1, openings: 40 }] });
+  assert.deepEqual(t.netOfSteps([0, 0, 40, 42]), [null, null, 40, 42]);
+});
+
+test('a pick the ATS selection drops is told so, even under Comparable', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME, { ...BETA, atses: ['lever'] }]);
+  t.coverageSet('comparable');
+  nodes['trends-ats-menu'].querySelectorAll = () => [
+    { value: 'greenhouse', checked: true, parentElement: { hidden: false } },
+    { value: 'lever', checked: false, parentElement: { hidden: false } }];
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 100, 100]]],
+    { uncounted: ['lever:beta'], base: FOUR[0], coverage: 'comparable',
+      counted_since: { 'greenhouse:acme': FOUR[0], 'lever:beta': FOUR[0] } }));
+  t.draw();
+  assert.match(nodes['trends-empty'].textContent, /Beta isn’t in this view: none of its boards are on the selected sources/);
+});
+
+test('how long a company has been counted comes from its counting, not the window', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  // A window of the last day, over a company counted since Sep 13: three days, not one.
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 100, 100]]],
+    { stamps: FOUR, series: [{ name: 'greenhouse:acme', label: 'Acme', points: [null, null, 100, 100], latest: 100 }],
+      split_by: 'company', counted_since: { 'greenhouse:acme': FOUR[0] } }));
+  t.draw();
+  assert.match(nodes['trends-verdict'].innerHTML, /since Sep 13 — 3 days/);
 });
