@@ -56,15 +56,25 @@ adds rows and in `index prune`.** Board keys do not change and nothing is re-key
   row, and a Workday row whose native id has no digit, keeps ADR-0023's `(Board, native id)` group.
 - **The survivor.** An **incumbent wins**: a requisition already served from a live Board stays
   there, and a copy arriving from another site is not added. With no incumbent — copies arriving
-  together, and the one-time cleanup of today's duplicates — the site with the **most jobs in the
-  liveness ledger** keeps it, tie-broken by the lexicographically smallest lowercased Board key.
-  Within the kept site, ADR-0023's live-casing rule still picks the row. A copy on the incumbent's
+  together, and the one-time cleanup of today's duplicates — a **public site** keeps it before a
+  non-public one, then the site with the **most jobs in the liveness ledger**, tie-broken by the
+  lexicographically smallest lowercased Board key. Within the kept site, ADR-0023's live-casing
+  rule still picks the row.
+- **Public before non-public — the user's decision (2026-09-24).** A site is non-public when its
+  `{site}` segment contains, case-insensitively, one of `hidden`, `confidential`, `internal`,
+  `private`, `sourcer` or `targeted` (`_NON_PUBLIC_SITE_TOKENS`). The motivating case is GE
+  Vernova: its `only_confidential_executive_recruiting` site lists 2,360 ledger jobs against
+  `vernova_externalsite`'s 2,194, so ranking on jobs alone served 737 of its requisitions from the
+  confidential site, and 806 across four tenants. The order only chooses which copy stays; it
+  never decides whether a requisition is served, so one that only non-public sites hold still
+  survives on one of them. A copy on the incumbent's
   own site is still added, since that is a case-variant spelling of the same Board, and refusing it
   would make a fossil casing immortal: the loop ADR-0023's amendment exists to break.
 - **Where the rule lives.** `index_plan`, in private helpers both planners call: `_placement`
   (an id's duplicate group and site, with `_workday_tenant` as the one place the key widens) and
-  `_survivor_board` (the ranking). `plan_sync` gains keyword `site_jobs` and `replaced` and reports
-  the ids it declined as `SyncPlan.refused`; `plan_prune` gains keyword `site_jobs`. One place
+  `_survivor_board` (the ranking: public first, then ledger jobs, then key). `plan_sync` gains
+  keyword `site_jobs` and `replaced` and reports the ids it declined as `SyncPlan.refused`;
+  `plan_prune` gains keyword `site_jobs`. One place
   decides which site keeps a requisition, so the planner that admits a row and the planner that
   removes rows cannot disagree about it. Sync runs the grouping over every ATS, not just Workday:
   a group keyed on its Board holds one site, so nothing else is ever refused, and the only
@@ -110,17 +120,22 @@ pre-rebase ledger the figures were first taken on):
 | requisitions lost | **0** | 0 |
 | rows the next sync re-adds, every live Board re-emitting every id | **0** (7,146 refused) | 0 |
 
-- **An internal-looking site keeps 806 of the 6,212 collapsed requisitions (13%).** 1,158 groups
-  had a copy on a site whose name contains `hidden`, `confidential`, `internal`, `private`,
-  `sourcer` or `targeted`. In 806 of them that site won the ledger ranking over a public-looking
-  sibling, on four sites: `gevernova/only_confidential_executive_recruiting` (737; 2,360 ledger
-  jobs against `vernova_externalsite`'s 2,194), `spgi/spgi_internal` (59), `denver/internal-postings`
-  (8) and `baincapital/external_private` (2). The other 5,406 survivors sit on the main or another
-  public site. Measured live, one posting per site pair (10 URLs): all 10 answer the CXS detail
-  with 200, the same title, and `canApply: true`, and the public pages serve 200. So these links
-  work. Whether an outside applicant *should* be sent to a site named "internal" or "confidential"
-  is not settled here: it is left as an open question rather than special-cased by name, because
-  the names are tenant-chosen and a name rule would be a guess.
+- **Every collapsed requisition keeps a public site.** Of the 6,212, all 6,212 survivors are
+  public. 1,158 groups had a copy on a non-public site; under the ledger ranking alone 806 of them
+  kept it — `gevernova/only_confidential_executive_recruiting` 737, `spgi/spgi_internal` 59,
+  `denver/internal-postings` 8, `baincapital/external_private` 2 — and all 806 now move to their
+  public sibling. (Before the decision, one posting per site pair was probed live, 10 URLs: all 10
+  answered the CXS detail with 200, the same title and `canApply: true`, so the confidential
+  links worked; the decision is about where an outside applicant is sent, not about dead links.)
+- **570 Workday requisitions stay on non-public sites**, on 59 sites, because no public site of
+  their tenant holds them — led by GE Vernova's confidential site (143), `expedia/private` (76) and
+  `globalhr/private_posting_no_tmp` (48). They are served exactly as before; the order has no
+  sibling to prefer.
+- **An incumbent on a non-public site keeps its requisition.** The order applies only where no
+  incumbent decides, so a requisition first served from a non-public site — its public sibling's
+  Board sat out that run's slice — stays there when the public copy arrives later. Today's
+  duplicates are unaffected (the cleanup ranks them all); how often this happens to new
+  requisitions depends on how a tenant's sites fall into slices, and is not measured.
 - **A survivor on a Board that is Unauthoritative on every run keeps its siblings out for good.**
   ADR-0053's exclusion has no drain, so such a survivor is never evicted, and a sibling's copy is
   refused even if the requisition has left the survivor's site and is live only on the sibling.
@@ -128,9 +143,10 @@ pre-rebase ledger the figures were first taken on):
   `unauthoritative_boards.json` (96 Boards, 21 of them Workday, pulled 2026-09-24): **47 of the
   6,212 collapsed requisitions** keep a site on that list, on six Workday Boards (`ms/external`,
   `usbank/us_bank_careers`, `rbc/rbcglobal1`, …). One snapshot, so an upper bound on no single
-  run. Not fixed here: admitting the sibling while the survivor is out of scope gives prune two
-  sites, and prune, which does not see the scope, would take one of them back out every run — the
-  churn this rule exists to remove. The cure is the drain ADR-0053 lacks, not an exception here.
+  run. **A known gap, deferred by the user's decision (2026-09-24)**, to be fixed together with
+  ADR-0053's missing drain rather than here: admitting the sibling while the survivor is out of
+  scope gives prune two sites, and prune, which does not see the scope, would take one of them
+  back out every run — the churn this rule exists to remove.
 - **The one-time cleanup ranks by ledger count, not by freshness.** It can keep a copy whose own
   site already missed it once (Unconfirmed) and evict a sibling that is still listed: **5 of the
   6,212** against the latest `unconfirmed_ids.txt`. If the survivor's site has really dropped it,
@@ -180,7 +196,7 @@ pre-rebase ledger the figures were first taken on):
   as first stated, refined to incumbent-first before this was built: a fixed survivor moves a
   served requisition whenever the bigger site's copy arrives, re-stamping `first_seen`, while
   incumbent-first gives the same one-time cleanup and no churn.
-- **Exclude internal-looking sites by name.** A guess at tenant-chosen names, and the measured
-  links work; left as the open question above.
+- **Drop non-public copies outright.** The 570 requisitions only non-public sites hold would
+  leave the index; the user's decision orders those sites last instead of excluding them.
 - **Gate `embed_plan` too.** Needs a served-id list in `data/state/` that nothing writes today; see
   Consequences.

@@ -800,8 +800,8 @@ def test_a_recorded_scope_nobody_asked_for_cannot_pre_empt_the_fallback(tmp_path
 # A Workday Board is one site (`workday:{company}/{site}`), and a tenant posts one requisition to
 # several of its sites under the same native id. Grouped per Board, each copy was served.
 
-_MAIN, _SUB = "workday:acme/External", "workday:acme/Hidden"
-_SITE_JOBS = {"workday:acme/external": 900, "workday:acme/hidden": 40}
+_MAIN, _SUB = "workday:acme/External", "workday:acme/Campus"
+_SITE_JOBS = {"workday:acme/external": 900, "workday:acme/campus": 40}
 
 
 def test_prune_keeps_one_copy_of_a_requisition_on_the_site_with_the_most_jobs():
@@ -965,6 +965,51 @@ def test_a_re_embedded_incumbent_keeps_its_place():
     )
     assert plan.add == frozenset({upgraded})
     assert plan.refused == frozenset({f"{_MAIN}:R-100"})
+
+
+# GE Vernova's shape: its confidential executive-recruiting site lists more jobs than its public
+# one, so the ledger rank alone served 737 requisitions from the confidential site.
+_CONFIDENTIAL = "workday:acme/Only_Confidential_Recruiting"
+_RANKED = {**_SITE_JOBS, "workday:acme/only_confidential_recruiting": 2360}
+
+
+def test_prune_keeps_a_public_site_over_a_larger_non_public_one():
+    _, dup = plan_prune(
+        [f"{_CONFIDENTIAL}:R-100", f"{_MAIN}:R-100"],
+        {_MAIN, _CONFIDENTIAL},
+        site_jobs=_RANKED,
+    )
+    assert dup == [f"{_CONFIDENTIAL}:R-100"]
+
+
+def test_sync_gives_a_new_requisition_to_the_public_site_over_a_larger_non_public_one():
+    plan = plan_sync(
+        set(),
+        {f"{_CONFIDENTIAL}:R-100", f"{_MAIN}:R-100"},
+        {_MAIN, _CONFIDENTIAL},
+        boards_by_canon({_MAIN, _CONFIDENTIAL}),
+        set(),
+        site_jobs=_RANKED,
+    )
+    assert plan.add == frozenset({f"{_MAIN}:R-100"})
+    assert plan.refused == frozenset({f"{_CONFIDENTIAL}:R-100"})
+
+
+def test_a_requisition_only_non_public_sites_hold_is_still_served():
+    """The order only chooses which copy stays; it never decides whether one does."""
+    internal = "workday:acme/Internal_Postings"
+    keep = {_MAIN, _CONFIDENTIAL, internal}
+    jobs = {**_RANKED, "workday:acme/internal_postings": 30}
+    _, dup = plan_prune(
+        [f"{internal}:R-300", f"{_CONFIDENTIAL}:R-300"], keep, site_jobs=jobs
+    )
+    assert dup == [
+        f"{internal}:R-300"
+    ]  # one copy stays, ranked by ledger jobs as before
+    plan = plan_sync(
+        set(), {f"{internal}:R-400"}, keep, boards_by_canon(keep), set(), site_jobs=jobs
+    )
+    assert plan.add == frozenset({f"{internal}:R-400"})
 
 
 def test_site_jobs_reads_each_live_workday_site_from_the_ledger(tmp_path):

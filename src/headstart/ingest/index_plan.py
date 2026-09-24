@@ -150,8 +150,9 @@ def plan_sync(
     **One site per Workday requisition (ADR-0187).** A fresh id is not added — it lands in
     ``refused`` instead — when another site of its Workday tenant already serves the same
     requisition from a live Board, or when several sites bring it at once and another is the
-    :func:`_survivor_board` ranked by ``site_jobs``. That is ``plan_prune``'s grouping, applied
-    where rows arrive: without it, sync would re-add on the next run every copy prune took out.
+    :func:`_survivor_board` (public sites first, then ``site_jobs``). That is ``plan_prune``'s
+    grouping, applied where rows arrive: without it, sync would re-add on the next run every copy
+    prune took out.
     The served row is judged *after* this plan's evictions, so a survivor its Board stopped
     listing makes way on the scrape that evicts it, and one on a Board that left ``live`` makes
     way at once — the other copy arriving whenever its own Board is next scraped. ``replaced``
@@ -625,14 +626,36 @@ def _workday_tenant(canon: str, native: str) -> str | None:
     return canon.split("/", 1)[0]
 
 
+#: Substrings of a Workday site segment (case-insensitive) that mark a site as not meant for the
+#: public — measured on served v654, where a confidential executive-recruiting site outranked its
+#: public sibling on ledger jobs and kept 737 of GE Vernova's requisitions (ADR-0187). This only
+#: orders the choice of which copy stays; it never decides whether a requisition is served, so
+#: one found only on non-public sites still survives on one of them.
+_NON_PUBLIC_SITE_TOKENS = (
+    "hidden",
+    "confidential",
+    "internal",
+    "private",
+    "sourcer",
+    "targeted",
+)
+
+
 def _survivor_board(boards: AbstractSet[str], site_jobs: dict[str, int]) -> str:
-    """The one Board a requisition is served from when no incumbent decides it: the Board with
-    the most jobs in the liveness ledger, then the lexicographically smallest (lowercased) key.
+    """The one Board a requisition is served from when no incumbent decides it: a public site
+    before a non-public one (:data:`_NON_PUBLIC_SITE_TOKENS`), then the Board with the most jobs
+    in the liveness ledger, then the lexicographically smallest (lowercased) key.
 
     The one place the choice is made, so ``plan_sync`` admitting a new copy and ``plan_prune``
     collapsing existing ones can never disagree about which Board keeps it.
     """
-    return min(boards, key=lambda board: (-site_jobs.get(board, 0), board))
+
+    def rank(board: str) -> tuple[bool, int, str]:
+        site = lower_key(board.partition("/")[2])
+        non_public = any(token in site for token in _NON_PUBLIC_SITE_TOKENS)
+        return non_public, -site_jobs.get(board, 0), board
+
+    return min(boards, key=rank)
 
 
 def plan_prune(
@@ -645,8 +668,9 @@ def plan_prune(
     group — the case-variant dupes of one job — except that a Workday requisition is grouped on
     its **Workday tenant** rather than its Board, because a Workday tenant posts one requisition to
     several of its sites, each a Board, under the same native id (ADR-0187). Such a group keeps one
-    Board, the :func:`_survivor_board` ranked by ``site_jobs`` (:func:`workday_site_jobs`; omitted,
-    every Board ties and the lexicographic tie-break alone decides). ``plan_sync`` refuses copies
+    Board, the :func:`_survivor_board`: a public site first, then ``site_jobs``
+    (:func:`workday_site_jobs`; omitted, every Board ties on jobs and the lexicographic tie-break
+    decides). ``plan_sync`` refuses copies
     on the same rule, so once today's duplicates are gone this only ever sees one Board per
     requisition — and a survivor never moves, because the incumbent is all there is to keep. The
     casing rule below then picks the row within the kept Board.
