@@ -126,18 +126,14 @@ _WORDS = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")
 #: does not carry the company — `workday:bah/BAH_Jobs` is Booz Allen Hamilton and
 #: `workday:globalhr/REC_RTX_Ext_Gateway` is RTX — and no derivation recovers that.
 #:
-#: It also does the work cross-ATS identity would: Lockheed Martin reaches the Expansion lens
-#: on **both** Eightfold and SuccessFactors, and before this map they ranked first and second
-#: as "Lockheed Martin" and "Lockheed". Mapping both to one name lets
-#: `hot_boards._collapse_same_company` see them as one company. That is a display-level patch over a real gap — the index has no
-#: cross-ATS Board identity (`index_plan.evict_duplicate` groups *within* a Board) — so a pair
-#: not listed here still shows twice. Add pairs as the head of a lens surfaces them.
-#:
 #: It is also the company directory's only cross-ATS identity (ADR-0185): Boards sharing an
-#: alias are one company there. That makes them one *pick*, not additive counts — Lockheed's
-#: two Boards list the same requisitions (1,248 of 1,249 distinct titles shared, 2026-09-23).
+#: alias are one company there, and a company's counts are summed over its Boards. So a pair
+#: whose Boards mirror each other must not share an alias until the index keeps one copy.
+#: Lockheed Martin is that pair: its Eightfold Board lists the same requisitions as its
+#: SuccessFactors one (1,248 of 1,249 distinct titles, 2026-09-23), so only the SuccessFactors
+#: Board is aliased. The Eightfold one states "Lockheed Martin" itself, so the Hot tab still
+#: shows the two as one company. Alias it again once cross-ATS duplicates are parked.
 DISPLAY_ALIASES: Final[dict[str, str]] = {
-    "eightfold:lockheedmartin.eightfold.ai": "Lockheed Martin",
     "successfactors:lockheed.jobs.hr.cloud.sap": "Lockheed Martin",
     "workday:globalhr/REC_RTX_Ext_Gateway": "RTX",
     "workday:bah/BAH_Jobs": "Booz Allen Hamilton",

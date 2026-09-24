@@ -54,7 +54,7 @@ _Avoid_: "blocked" or "muted" — a hidden Board is still scraped, still indexed
 
 **Company directory** (ADR-0185):
 The list of companies the Trends tab can be filtered to, each naming the **Board**s it owns — `data/state/company_directory.json`, written by `ingest/company_directory` from every Board the ADR-0143 delta ledger has counted. An entry is a **Company** only as far as the data proves it: two Boards join when they share a **Tenant** (casing duplicates included) or a curated alias, never because their names match — measured, a matching name joined different startups across four ATSes. So one employer on two ATSes with no alias is two entries under one name. It holds names and Boards, no counts; counts come from the delta ledger.
-_Avoid_: reading an entry's Boards as additive — one Company's Boards can list the same requisitions (Taleo sections, Workday sites, Lockheed's mirrored Eightfold Board), so summing them overcounts until the index removes the copies.
+_Avoid_: reading an entry's Boards as additive where the index still holds both copies of a requisition — one Company's Boards on two ATSes can mirror each other, which is why a curated alias is withheld from such a pair.
 
 **Careers page**:
 A company's own web page that links to or embeds its Board; the input to careers-page discovery, distinct from the Board itself.

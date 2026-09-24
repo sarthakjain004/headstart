@@ -5,9 +5,8 @@ ADR-0143 Board-delta ledger, which is keyed by **board_key**, while a person typ
 name, so something has to join the two. This stage writes that join as a static file the Space
 serves, `data/state/company_directory.json`:
 
-    {"companies": [{"name": "Lockheed Martin",
-                    "boards": ["eightfold:lockheedmartin.eightfold.ai",
-                               "successfactors:lockheed.jobs.hr.cloud.sap"]}, ...]}
+    {"companies": [{"name": "Hpe",
+                    "boards": ["workday:hpe/ACJobSite", "workday:hpe/Jobsathpe"]}, ...]}
 
 It runs in the pipeline rather than the Space because the naming rules live in `board_naming`,
 and the Space never imports from `ingest`.
@@ -45,7 +44,8 @@ over the ledger's 34,203 Boards on 2026-09-24:
   under one `org` (15 orgs). Ignoring case also folds ADR-0023's stale casing duplicates
   (`smartrecruiters:AbhiBus` and `smartrecruiters:abhibus`: 267 pairs).
 - **A curated alias** (`board_naming.DISPLAY_ALIASES`) is the one cross-ATS identity anyone
-  has asserted, so Lockheed Martin's Eightfold and SuccessFactors Boards are one company.
+  has asserted, and it is withheld from a pair whose Boards mirror each other: Lockheed
+  Martin's Eightfold Board is its own entry, because summed with SuccessFactors it counts twice.
 
 A Tenant is usually one employer but not always. A holding group's Tenant carries its portfolio
 companies' sites (`workday:volarisgroup` has 26 Boards), which then appear as the group: one
@@ -62,9 +62,8 @@ posting, and `workday:google/GOCJobs` is Google Operations Center. So an entry h
 both. A wrong merge, by contrast, would add another employer to their chart without telling them.
 
 **Grouping is not deduplication.** One company's Boards can list the same requisitions: Taleo
-sections serve the Tenant's whole set, Workday sites overlap, and Lockheed's Eightfold Board
-mirrors its SuccessFactors one (1,248 of 1,249 distinct titles shared). A sum over an entry's
-Boards counts those postings more than once. This file says which Boards belong to a company.
+sections serve the Tenant's whole set and Workday sites overlap, and until the index keeps one
+copy (#602, #603) a sum over an entry's Boards counts those postings more than once. This file says which Boards belong to a company.
 Whether their counts can be added is the index's problem, not this one.
 """
 
@@ -139,7 +138,7 @@ def companies(boards: set[str], names: dict[str, str]) -> list[dict]:
         return board
 
     # A union over two keys, not a grouping by one: RTX's aliased site and its lowercase
-    # casing duplicate share only a Tenant, while Lockheed's two Boards share only an alias.
+    # casing duplicate share only a Tenant, while two ATSes' Boards can share only an alias.
     first_board: dict[str, str] = {}  # key -> the first Board that carried it
     for board in sorted(boards):
         alias = DISPLAY_ALIASES.get(board)

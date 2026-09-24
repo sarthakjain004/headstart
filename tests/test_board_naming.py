@@ -79,10 +79,17 @@ def test_a_curated_alias_beats_both_the_slug_and_a_stated_name() -> None:
     )
 
 
-def test_aliases_unify_one_company_across_two_atses() -> None:
-    """Lockheed Martin reached Expansion on Eightfold *and* SuccessFactors, ranking 1 and 2."""
-    both = {
-        "eightfold:lockheedmartin.eightfold.ai",
-        "successfactors:lockheed.jobs.hr.cloud.sap",
+def test_a_mirrored_pair_is_named_alike_without_sharing_an_alias() -> None:
+    """Lockheed's Eightfold Board mirrors its SuccessFactors one, so only the latter is aliased
+    (ADR-0185): an alias would sum the two in the company directory. The Eightfold Board states
+    its own name, so the Hot tab still collapses the pair into one row."""
+    assert "eightfold:lockheedmartin.eightfold.ai" not in board_naming.DISPLAY_ALIASES
+    names = {
+        board_naming.display_name(
+            "Lockheed Martin", "eightfold:lockheedmartin.eightfold.ai"
+        ),
+        board_naming.display_name(
+            "lockheed", "successfactors:lockheed.jobs.hr.cloud.sap"
+        ),
     }
-    assert {board_naming.display_name("", b) for b in both} == {"Lockheed Martin"}
+    assert names == {"Lockheed Martin"}

@@ -61,19 +61,26 @@ def test_a_casing_duplicate_is_the_same_board() -> None:
     assert got == {"AbhiBus": [["smartrecruiters:AbhiBus", "smartrecruiters:abhibus"]]}
 
 
-def test_a_curated_alias_joins_two_atses() -> None:
+def test_a_curated_alias_joins_two_atses(monkeypatch: pytest.MonkeyPatch) -> None:
+    aliases = {"greenhouse:acme": "Acme", "lever:acme-corp": "Acme"}
+    monkeypatch.setattr(company_directory, "DISPLAY_ALIASES", aliases)
+    got = _companies(["greenhouse:acme", "lever:acme-corp"])
+    assert got == {"Acme": [["greenhouse:acme", "lever:acme-corp"]]}
+
+
+def test_a_mirrored_pair_stays_two_entries() -> None:
+    """Lockheed's Eightfold Board mirrors its SuccessFactors one; summed, it would count twice."""
     got = _companies(
         [
             "eightfold:lockheedmartin.eightfold.ai",
             "successfactors:lockheed.jobs.hr.cloud.sap",
-        ]
+        ],
+        {"eightfold:lockheedmartin.eightfold.ai": "Lockheed Martin"},
     )
     assert got == {
         "Lockheed Martin": [
-            [
-                "eightfold:lockheedmartin.eightfold.ai",
-                "successfactors:lockheed.jobs.hr.cloud.sap",
-            ]
+            ["eightfold:lockheedmartin.eightfold.ai"],
+            ["successfactors:lockheed.jobs.hr.cloud.sap"],
         ]
     }
 
