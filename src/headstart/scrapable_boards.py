@@ -80,7 +80,7 @@ def load(ledger_dir: str | Path, *, min_jobs: int = 1) -> list[ScrapableBoard]:
     ``min_jobs=0`` is CONTEXT.md's **Scrapable Board** count and what the pipeline reads;
     the default ``min_jobs=1`` is the **Hiring Board** subset. Each scraper turns a ledger row's
     ``(tenant, url)`` into its own slug via ``slug_from`` (``registry.company_from_row``,
-    ADR-0197), so no per-ATS logic lives here.
+    ADR-0203), so no per-ATS logic lives here.
     ``config/companies.toml`` remains the small curated seed.
     """
     ledger_dir = Path(ledger_dir)

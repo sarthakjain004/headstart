@@ -59,7 +59,7 @@ class _FakeTab:
 @pytest.mark.parametrize(
     "built,expected",
     [
-        # The defect: a bare host — three builders emitted one before ADR-0197, workday still can.
+        # The defect: a bare host — three builders emitted one before ADR-0203, workday still can.
         ("foo.jobs.personio.com", "https://foo.jobs.personio.com"),
         ("advancis.jobs.personio.com/", "https://advancis.jobs.personio.com/"),
         ("acme.recruitee.com/", "https://acme.recruitee.com/"),

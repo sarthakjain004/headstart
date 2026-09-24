@@ -53,7 +53,7 @@ _log = log.get(__name__)
 _EMBED_CEILING = 750
 
 #: The listing's hidden ``<input id="jobs">``. Public: the liveness probe counts the same
-#: input off the same page (ADR-0197).
+#: input off the same page (ADR-0203).
 JOBS_INPUT = re.compile(r'value="([^"]*)"\s+id="jobs"')
 _CONFIG_AFTER_JOBS = re.compile(r'id="jobs">\s*<input[^>]*\bvalue="([^"]*)"')
 _SLUG = re.compile(r"[^A-Za-z0-9]+")

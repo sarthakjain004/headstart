@@ -17,7 +17,6 @@ from types import SimpleNamespace
 import pytest
 from curl_cffi.requests.exceptions import HTTPError as CurlHTTPError
 
-from headstart.scrapers.darwinbox import LISTING_PATH as DARWINBOX_LISTING_PATH
 from headstart.scrapers.registry import company_from_row, get_scraper
 from headstart.scrapers.workday import INSTANCES as WORKDAY_INSTANCES
 
@@ -1306,7 +1305,7 @@ def test_adp_an_adp_side_500_is_unknown(monkeypatch):
     assert cl.p_adp(_ADP, _ADP_URL) == (cl.UNKNOWN, None)
 
 
-# --- ADR-0197: a probe asks the Board its own Scraper reads, at the URL the scrape reads ---------
+# --- ADR-0203: a probe asks the Board its own Scraper reads, at the URL the scrape reads ---------
 
 
 def _recording_get(asked):
@@ -1419,7 +1418,7 @@ def test_lever_probe_asks_the_hinted_instance_first(monkeypatch):
     monkeypatch.setattr(cl, "_get", _recording_get(asked))
     assert cl.p_lever("acme", "https://jobs.eu.lever.co/acme") == (cl.DEAD, None)
     scraper = get_scraper("lever", "acme")
-    assert asked == [scraper.url("api.eu.lever.co"), scraper.url()]
+    assert asked == [scraper.listing_url_on("api.eu.lever.co"), scraper.url()]
 
 
 def test_darwinbox_probe_asks_the_scrapers_listing_on_each_tld(monkeypatch):
@@ -1432,10 +1431,7 @@ def test_darwinbox_probe_asks_the_scrapers_listing_on_each_tld(monkeypatch):
     monkeypatch.setattr(cl.http, "fetch", fetch)
     assert cl.p_darwinbox("acme", "https://acme.darwinbox.com") == (cl.DEAD, None)
     scraper = get_scraper("darwinbox", "acme")
-    assert asked == [
-        scraper.host_on_tld("com") + DARWINBOX_LISTING_PATH,
-        scraper.host_on_tld("in") + DARWINBOX_LISTING_PATH,
-    ]
+    assert asked == [scraper.listing_url_on("com"), scraper.listing_url_on("in")]
 
 
 def test_ripplehire_probe_reads_the_scrapers_token_and_search(monkeypatch):
@@ -1458,3 +1454,47 @@ def test_ripplehire_probe_reads_the_scrapers_token_and_search(monkeypatch):
     assert cl.p_ripplehire("acme", "https://acme.ripplehire.com") == (cl.LIVE, 7)
     scraper = get_scraper("ripplehire", "acme")
     assert asked == [scraper.url(), scraper.search_url()]
+
+
+def test_successfactors_probe_streams_the_scrapers_sitemap(monkeypatch):
+    asked = []
+
+    def request(method, url, **kwargs):
+        asked.append(url)
+        raise CurlHTTPError("connection reset", 0, None)
+
+    monkeypatch.setattr(cl.http, "session", lambda: SimpleNamespace(request=request))
+    assert cl.p_successfactors("careers.acme.com", "https://careers.acme.com") == (
+        cl.UNKNOWN,
+        None,
+    )
+    assert asked == [_scraper_url("successfactors", "careers.acme.com", "")]
+
+
+def test_taleo_be_walk_starts_on_the_scrapers_canonical_board_url(monkeypatch):
+    """A stored url carrying a sort parameter starts the walk on the Board, not on that view."""
+    asked = []
+    monkeypatch.setattr(cl, "_get", _recording_get(asked))
+    stored = (
+        "https://phe.tbe.taleo.net/p/ats/careers/v2/searchResults?org=A&cws=1&act=sort"
+    )
+    assert cl.p_taleo_be("acme", stored) == (cl.DEAD, None)
+    assert asked == [
+        "https://phe.tbe.taleo.net/p/ats/careers/v2/searchResults?org=A&cws=1"
+    ]
+    assert asked == [_scraper_url("taleo_be", "acme", stored)]
+
+
+def test_pyjamahr_settles_a_zero_count_on_the_scrapers_board_page(monkeypatch):
+    asked = []
+
+    def _get(url, headers=None):
+        asked.append(url)
+        return (200, b'{"count": 0}') if len(asked) == 1 else (200, b"<html></html>")
+
+    monkeypatch.setattr(cl, "_get", _get)
+    assert cl.p_pyjamahr("tulip-group", "https://jobs.pyjamahr.com/tulip-group") == (
+        cl.LIVE,
+        0,
+    )
+    assert asked[1] == get_scraper("pyjamahr", "tulip-group").board_page()

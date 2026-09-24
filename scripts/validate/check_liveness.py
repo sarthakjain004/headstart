@@ -89,10 +89,7 @@ from headstart.scrapers.clearcompany import (  # feed decode + req grouping, sin
 from headstart.scrapers.cornerstone import (  # the site walk + token, single source
     CornerstoneScraper,
 )
-from headstart.scrapers.darwinbox import (  # data-centre TLDs + listing path, single source
-    LISTING_PATH as _DARWINBOX_LISTING_PATH,
-)
-from headstart.scrapers.darwinbox import (
+from headstart.scrapers.darwinbox import (  # the data-centre TLDs, single source
     TLDS as _DARWINBOX_TLDS,
 )
 from headstart.scrapers.jobvite import (  # counter parse, single source
@@ -100,6 +97,12 @@ from headstart.scrapers.jobvite import (  # counter parse, single source
 )
 from headstart.scrapers.lever import (  # the two instances, single source
     API_HOSTS as _LEVER_API_HOSTS,
+)
+from headstart.scrapers.lever import (
+    EU_API_HOST as _LEVER_EU_API_HOST,
+)
+from headstart.scrapers.lever import (
+    GLOBAL_API_HOST as _LEVER_GLOBAL_API_HOST,
 )
 from headstart.scrapers.registry import (  # slug_from, per ATS
     SCRAPERS,
@@ -1160,7 +1163,7 @@ def _classify(url, count):
 
 
 def _slug_of(ats, tenant, url):
-    """The Board's slug, read off this row by its own Scraper's ``slug_from`` (ADR-0197).
+    """The Board's slug, read off this row by its own Scraper's ``slug_from`` (ADR-0203).
 
     A probe that reads the raw ``tenant`` instead can ask a different host than the scrape reads:
     a Personio row whose ``url`` is a vanity host, an Oracle row whose ``tenant`` is a bare label."""
@@ -1169,13 +1172,20 @@ def _slug_of(ats, tenant, url):
 
 def _scraper_for_row(ats, tenant, url):
     """The Scraper for the Board this row names, so a probe asks the very URL the scrape reads
-    (its ``url()``) rather than a copy of it (ADR-0197)."""
+    (its ``url()``) rather than a copy of it (ADR-0203)."""
     return SCRAPERS[ats](_slug_of(ats, tenant, url))
 
 
+def _hinted_first(hinted, choices):
+    """``choices`` reordered to ask ``hinted`` first: the instance, data centre or TLD a row's url
+    names, before the others a Board may have moved to."""
+    return (hinted, *(choice for choice in choices if choice != hinted))
+
+
 # --- per-ATS probes: return (verdict, jobs) ---
-# Each reads the Board through `_scraper_for_row`/`_slug_of`. Where a probe asks a different URL
-# than the scraper's `url()` — a smaller page, no descriptions — it says why beside it.
+# Each reads the Board through `_scraper_for_row`/`_slug_of`, except `p_eightfold`, which ADR-0203
+# left as it was. Where a probe asks a different URL than the scraper's `url()` (a smaller page,
+# no descriptions), it says why beside it.
 
 
 def p_greenhouse(t, u):
@@ -1194,10 +1204,10 @@ def p_lever(t, u):
     # host but the company actually sits on EU: measured 2026-07-27, 13 boards the ledger called
     # dead answered live on api.eu.lever.co. Only a 404 from *both* instances is definitive.
     scraper = _scraper_for_row("lever", t, u)
-    hinted = _LEVER_API_HOSTS[1] if "jobs.eu.lever.co" in u else _LEVER_API_HOSTS[0]
+    hinted = _LEVER_EU_API_HOST if "jobs.eu.lever.co" in u else _LEVER_GLOBAL_API_HOST
     verdict = DEAD
-    for api_host in (hinted, *(h for h in _LEVER_API_HOSTS if h != hinted)):
-        v, jobs = _classify(scraper.url(api_host), _len_of)
+    for api_host in _hinted_first(hinted, _LEVER_API_HOSTS):
+        v, jobs = _classify(scraper.listing_url_on(api_host), _len_of)
         if v == LIVE:
             return v, jobs
         if v == UNKNOWN:
@@ -1328,9 +1338,7 @@ def p_cornerstone(t, u):
     career-site page on ids 1-3 redirects to `/ui/error` (an LMS-only corp: 12 of that sample,
     and 5 tenants x ids 1-6). Anything else unexplained is UNKNOWN.
     """
-    scraper = CornerstoneScraper(
-        CornerstoneScraper.slug_from(t, u), fetcher=_GatedFetcher()
-    )
+    scraper = CornerstoneScraper(_slug_of("cornerstone", t, u), fetcher=_GatedFetcher())
     try:
         rows = scraper.listing()
     except _BreakerOpen:
@@ -1479,7 +1487,7 @@ def p_workday(t, u):
     m = _WD_URL.match(slug)
     if not m:
         return DEAD, None  # not a Workday URL -> can't be a board
-    scraper, hinted = SCRAPERS["workday"](slug), m.group("instance")
+    scraper = SCRAPERS["workday"](slug)
 
     def probe(inst):
         status, data = _post(
@@ -1496,7 +1504,7 @@ def p_workday(t, u):
 
     # Probe the hinted DC, then sweep the rest (tenant may have migrated). Any 200 -> LIVE, found.
     statuses = []
-    for inst in (hinted, *(i for i in _WD_INSTANCES if i != hinted)):
+    for inst in _hinted_first(m.group("instance"), _WD_INSTANCES):
         total, status = probe(inst)
         if total is not None:
             return LIVE, total
@@ -1564,10 +1572,12 @@ def p_darwinbox(t, u):
     # The scraper tries `TLDS` in its own order; the probe starts from the one the row's url
     # names, and asks each host the same listing the scrape pages through.
     scraper = _scraper_for_row("darwinbox", t, u)
-    host_tld = "com" if ".darwinbox.com" in u else "in"
+    hinted = next(
+        (tld for tld in _DARWINBOX_TLDS if f".darwinbox.{tld}" in u), _DARWINBOX_TLDS[0]
+    )
     dns_fails = 0
-    for tld in (host_tld, *[x for x in _DARWINBOX_TLDS if x != host_tld]):
-        api = scraper.host_on_tld(tld) + _DARWINBOX_LISTING_PATH
+    for tld in _hinted_first(hinted, _DARWINBOX_TLDS):
+        api = scraper.listing_url_on(tld)
         try:
             r = http.fetch(
                 "POST",
@@ -1889,7 +1899,7 @@ def p_jibe(t, u):
     # (requisition, language), so it can exceed the postings the scraper keeps. A 404 there is not
     # a departed client: 21 resolving labels answer it (dycom's board lives under `/dycom/`), so it
     # is UNKNOWN too. Measured 2026-09-24, docs/jibe/2026-09-24_api-jobs-measurement.md.
-    hostname = _jibe.JibeScraper(_jibe.JibeScraper.slug_from(t, u)).host
+    hostname = _scraper_for_row("jibe", t, u).host
     host = f"https://{hostname}"
     status, body = _jibe_get(f"{host}/robots.txt", follow=True)
     if status == "dns":
@@ -2483,7 +2493,7 @@ def p_phenom(t, u):
     """
     scraper = _scraper_for_row("phenom", t, u)
     status, body = _post(
-        scraper._widgets_url(),
+        scraper.widgets_url(),
         scraper._search_payload(0, 1),
         {"User-Agent": UA, "Accept": "*/*", "Content-Type": "application/json"},
     )

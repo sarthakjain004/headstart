@@ -682,7 +682,7 @@ class BaseScraper(ABC):
 
         Names its Board in the retry log (``egress_board``) and does no more: it neither routes
         nor walls the spare egress, which is exactly what both Taleo editions' own copies of this
-        fetch did before they came to share it (ADR-0197).
+        fetch did before they came to share it (ADR-0203).
         """
         try:
             resp = self._fetcher.fetch(
@@ -705,7 +705,7 @@ class BaseScraper(ABC):
 
         The one step of :meth:`alias_key` an ATS may need to change without re-implementing the
         fetch around it: a Taleo Board shares its regional host with every other customer, so its
-        key is the whole canonical career-section URL instead (ADR-0197). Raising is "no verdict",
+        key is the whole canonical career-section URL instead (ADR-0203). Raising is "no verdict",
         the same as a failed fetch."""
         return urllib.parse.urlsplit(landing_url).netloc.lower() or None
 

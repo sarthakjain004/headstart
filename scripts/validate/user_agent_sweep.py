@@ -37,7 +37,7 @@ UNREACHED and are excluded from the verdict for that reason. Until 2026-09-24 wh
 there by construction: the sample passed the ledger's raw `tenant` as the slug, which is not the
 slug on personio (2,503 of the 2,503 rows this samples from), taleo_be (217/217), workday
 (4,899/5,021) or zoho (4,416/4,446), whose Scrapers read theirs from the `url`. Rows now go
-through `registry.company_from_row` (ADR-0197), the one place a row becomes a Board.
+through `registry.company_from_row` (ADR-0203), the one place a row becomes a Board.
 
 Run: python -u scripts/validate/user_agent_sweep.py --new "headstart/0.1"
 """

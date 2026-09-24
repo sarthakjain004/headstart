@@ -1,4 +1,4 @@
-"""Tests for scripts/validate/user_agent_sweep.py's sample of ledger rows (ADR-0197)."""
+"""Tests for scripts/validate/user_agent_sweep.py's sample of ledger rows (ADR-0203)."""
 
 from __future__ import annotations
 

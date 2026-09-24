@@ -50,7 +50,7 @@ _SORT_COLUMN = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 #: The listing's link to its next ten rows. Public: the liveness probe walks the same pages to
-#: count a Board (ADR-0197).
+#: count a Board (ADR-0203).
 NEXT_PAGE_LINK = re.compile(
     r'<a\s+href="(?P<href>[^"]+)"\s+class="jscroll-next"', re.IGNORECASE
 )

@@ -26,7 +26,7 @@ from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
 #: The session token the careers page redirects onto. Public: the liveness probe reads the
-#: same token before it asks for a count (ADR-0197).
+#: same token before it asks for a count (ADR-0203).
 CAREERS_TOKEN = re.compile(r"token=([A-Za-z0-9_-]+)")
 _PAGE_SIZE = 100
 # The width this detail pass has always run at — `fan_out`'s default, stated here so the async

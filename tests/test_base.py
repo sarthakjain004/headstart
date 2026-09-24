@@ -764,7 +764,7 @@ def test_default_alias_key_is_the_lowercased_landing_host(monkeypatch):
     scraper = _StubScraper("acme")
     assert scraper.alias_key() == "careers.example.com"
     assert seen["url"] == scraper.url()
-    # It names its Board in the retry log and neither routes nor walls (ADR-0197).
+    # It names its Board in the retry log and neither routes nor walls (ADR-0203).
     assert seen["egress_board"] == scraper.board_key()
     assert "egress_group" not in seen and "egress_on" not in seen
 

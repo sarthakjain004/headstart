@@ -15,8 +15,10 @@ from headstart.models import Job, epoch_ms_to_iso, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
 #: Lever's two instances, global first — the order a scrape asks them in. Public: the liveness
-#: probe asks the same two, starting from whichever the row's URL hints at (ADR-0197).
-API_HOSTS = ("api.lever.co", "api.eu.lever.co")
+#: probe asks the same two, starting from whichever the row's URL hints at (ADR-0203).
+GLOBAL_API_HOST = "api.lever.co"
+EU_API_HOST = "api.eu.lever.co"
+API_HOSTS = (GLOBAL_API_HOST, EU_API_HOST)
 
 # ISO 3166-1 alpha-2 -> common English short name, used only to recognize when the
 # top-level `country` is already spelled out in the composed location string (so it isn't
@@ -357,7 +359,11 @@ class LeverScraper(BaseScraper):
     ats = "lever"
     url_shape = r"https://jobs(\.eu)?\.lever\.co/[^/]+/[0-9a-f-]{36}"
 
-    def url(self, api_host: str = API_HOSTS[0]) -> str:
+    def url(self) -> str:
+        return self.listing_url_on(GLOBAL_API_HOST)
+
+    def listing_url_on(self, api_host: str) -> str:
+        """This Board's postings on one of :data:`API_HOSTS`; the slug does not say which."""
         return f"https://{api_host}/v0/postings/{self.slug}?mode=json"
 
     def job_url(self, url: str) -> str:
@@ -377,7 +383,7 @@ class LeverScraper(BaseScraper):
         # which must RAISE, not read as an empty board: swallowing it left dead boards
         # "alive with zero jobs" forever, invisible to the ADR-0058 quarantine.
         for api_host in API_HOSTS:
-            response = self._fetch("GET", self.url(api_host))
+            response = self._fetch("GET", self.listing_url_on(api_host))
             if response.status_code == 404:
                 continue
             response.raise_for_status()

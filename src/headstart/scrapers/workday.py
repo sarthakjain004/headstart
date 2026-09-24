@@ -193,7 +193,7 @@ def _extract_page_detail(response: Any) -> dict[str, Any] | None:
 #: A Workday Board's careers URL — its slug (:meth:`WorkdayScraper.slug_from`) — split into the
 #: tenant, the data centre it was discovered on and the site. Public because the liveness probe
 #: reads the same three parts off the same URL, and a second copy of this pattern is how the two
-#: could disagree about which Board a row names (ADR-0197).
+#: could disagree about which Board a row names (ADR-0203).
 CAREERS_URL_PATTERN = re.compile(
     r"^https://(?P<company>[^.]+)\.(?P<instance>wd\d+)\.myworkdayjobs\.com/(?P<site>[^/?#]+)"
 )
@@ -496,7 +496,7 @@ class WorkdayScraper(BaseScraper):
         """The CXS listing this Board would answer on data centre ``instance``.
 
         :meth:`url` asks the one this scrape resolved; :meth:`_resolve_instance` and the liveness
-        probe ask each of :data:`INSTANCES` in turn to find a tenant that migrated (ADR-0197)."""
+        probe ask each of :data:`INSTANCES` in turn to find a tenant that migrated (ADR-0203)."""
         company, _instance, site = self._parts()
         return (
             f"https://{company}.{instance}.myworkdayjobs.com"

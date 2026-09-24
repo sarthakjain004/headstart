@@ -14,7 +14,7 @@ def test_every_enabled_scraper_has_a_live_filter_harness_url_shape():
 
 
 def test_company_from_row_reads_the_slug_through_the_scraper():
-    """ADR-0197: the Scraper decides which column its slug comes from, never the caller."""
+    """ADR-0203: the Scraper decides which column its slug comes from, never the caller."""
     company = company_from_row(
         "workday", "acme", "https://acme.wd3.myworkdayjobs.com/External/"
     )

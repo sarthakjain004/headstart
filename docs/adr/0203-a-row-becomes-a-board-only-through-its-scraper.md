@@ -1,11 +1,12 @@
-# ADR-0197: A ledger row becomes a Board only through its Scraper
+# ADR-0203: A ledger row becomes a Board only through its Scraper
 
 **Status:** accepted · **Date:** 2026-09-24 · **Extends:**
 [ADR-0001](0001-per-ats-slug-derivation.md) (the Scraper owns its slug) · **Relates to:**
 [ADR-0012](0012-liveness-ledger.md) (the ledger is the scrape list),
 [ADR-0023](0023-prune-stale-and-duplicate-index-rows.md) (`board_key`),
 [ADR-0034](0034-nonprod-boards-dead-by-convention.md) (non-prod rows skip the probe),
-[ADR-0111](0111-duplicate-boards-resolve-the-board-surface.md) (`alias_key`)
+[ADR-0111](0111-duplicate-boards-resolve-the-board-surface.md) (`alias_key`),
+[ADR-0191](0191-one-module-answers-whether-a-board-is-scraped.md) (the Scrapable Board list)
 
 ## Context
 
@@ -13,10 +14,12 @@ ADR-0001 made each Scraper the one authority on what its slug means: `slug_from(
 reads the slug off a discovered row, and `url()` turns it back into the Board's address. The
 code around the Scrapers kept re-deriving both.
 
-- **The row-to-Board loop was written out seven times.** `config.load_active_companies`,
+- **The row-to-Board loop was written out seven times.** `scrapable_boards.load`,
   `run_scrapers._load_rows`, `verify_scraper.load_pool`, `index_plan.workday_site_jobs`,
   `dedupe_boards`, `check_liveness._drop_alias_duplicates` and `relocate_dead_boards.derives_back`
-  each called `SCRAPERS[ats].slug_from` and built a `CompanyRef` by hand. `user_agent_sweep`
+  each called `SCRAPERS[ats].slug_from` and built a `CompanyRef` by hand. ADR-0191 moved the
+  Scrapable Board filter into `scrapable_boards` and left this per-row step in each caller; this
+  ADR is that step. `user_agent_sweep`
   skipped `slug_from` and passed the raw tenant as the slug. That tenant is not the slug on
   personio (2,503 of the 2,503 rows the sweep samples from), taleo_be (217/217), workday
   (4,899/5,021) or zoho (4,416/4,446), so those Boards failed under both User-Agents and read
@@ -25,7 +28,8 @@ code around the Scrapers kept re-deriving both.
   through `slug_from`. The other 33 took the raw `(tenant, url)`. Most rebuilt the listing URL
   that the Scraper's `url()` already builds. Four regexes copied a Scraper's own: Zoho's jobs
   `<input>` and RippleHire's token byte for byte, Workday's careers URL and Taleo BE's next-page
-  link differing only in their group names. Lever's two instances and Darwinbox's TLDs and listing path were copied too.
+  link differing only in their group names. Lever's two instances and Darwinbox's TLDs and
+  listing path were copied too.
   `check_liveness_browser.py` held a third copy of the workable, personio and recruitee board
   addresses, and `probe_icims.py` a copy of `ICIMSScraper.url()`.
 - **Both Taleo editions copied `alias_key`.** They re-implemented the base fetch-and-follow
@@ -41,18 +45,18 @@ had no "`personio` in host" check. The browser checker navigated to whatever `ur
 `registry.company_from_row(ats, tenant, url)`**.
 It returns a `CompanyRef` whose slug comes from the Scraper's `slug_from` and whose `name` is the
 raw tenant, as the scrape list has always carried it. The function lives in `registry` beside
-`get_scraper`, because it needs every Scraper class. `config` still imports the registry lazily,
-so `load_companies` stays free of Scraper imports (ADR-0001). All seven copies call it now, and
-so does `user_agent_sweep`.
+`get_scraper`, because it needs every Scraper class; `config` keeps `CompanyRef` and imports no
+Scraper (ADR-0001). All seven copies call it now, and so does `user_agent_sweep`.
 
 **The Scrapers export the facts the probes need, and keep defining them:**
 `workday.CAREERS_URL_PATTERN`, `zoho.JOBS_INPUT`, `ripplehire.CAREERS_TOKEN`,
-`taleo_be.NEXT_PAGE_LINK`, `lever.API_HOSTS`, `darwinbox.TLDS` and `darwinbox.LISTING_PATH`.
-Three small methods take the place of copied f-strings:
+`taleo_be.NEXT_PAGE_LINK`, `lever.API_HOSTS` (with `GLOBAL_API_HOST` and `EU_API_HOST`) and
+`darwinbox.TLDS`. Small methods take the place of copied f-strings, and a Board that answers on
+one of several hosts has one shape for it, `listing_url_on(<where>)`:
 
-- `WorkdayScraper.listing_url_on(instance)`. `url()` and `_resolve_instance` use it too.
-- `LeverScraper.url(api_host)`.
-- `RippleHireScraper.search_url()` and `DarwinboxScraper.host_on_tld(tld)`.
+- `WorkdayScraper.listing_url_on(instance)`, `LeverScraper.listing_url_on(api_host)` and
+  `DarwinboxScraper.listing_url_on(tld)`. Each Scraper's own `url()` and fallback walk use it too.
+- `RippleHireScraper.search_url()` and `PhenomScraper.widgets_url()` (made public).
 
 **A probe reads the Board through the Scraper.** `check_liveness._scraper_for_row` builds
 `SCRAPERS[ats](slug)` from the row's slug.
@@ -68,8 +72,9 @@ Three small methods take the place of copied f-strings:
   `details`), breezy (no `verbose`), smartrecruiters (`limit=10`), oracle and pyjamahr's listing
   (a limit of 1 against a stated total). adp, darwinbox and zwayam build theirs from the
   Scraper's own helpers.
-- **Left as they were:** cornerstone and jibe, which already went through `slug_from`, and
-  eightfold, which another change is editing now.
+- cornerstone and jibe already went through `slug_from`; they now take it from `_slug_of`
+  like the rest. **Left as it was:** eightfold, which another change is editing now. Its
+  Scraper keeps the default `slug_from`, so its probe asks the same URL either way.
 
 The browser checker's builders take the slug too, and `probe_icims.py` asks `ICIMSScraper.url()`.
 
@@ -117,12 +122,14 @@ changed on none. Live A/B in one headless Chrome on 12 of the 50 rows (10 live, 
 
 - **Oracle's bare-label rows become duplicate spellings of live Boards.** The 464 bare-label rows
   were all last probed on 2026-09-09. The next probe after their 90-day dead TTL, or a `--force`
-  run, will find about 433 of them live. Simulated on the committed ledger, the Scrapable Oracle
-  Boards stay at 1,681, because `_dedupe_boards` collapses equal `board_key`s. But **432 of those
+  run, will find about 433 of them live. Simulated on the committed ledger through
+  `scrapable_boards.load(min_jobs=0)`, the Scrapable Oracle Boards stay at 1,681, because its
+  dedupe collapses equal `board_key`s. But **432 of those
   Boards would change the name they carry.** The tie-break keeps the first of equal keys, and
   ledger order puts `bun` ahead of `bun.fa.em2.oraclecloud.com`. Every served row would then say
-  `bun` in place of the pod host. We have not decided this. Either drop the bare-label rows from
-  `oracle.csv` before that refresh, since each duplicates a host row, or accept the label.
+  `bun` in place of the pod host. We have not decided this; issue #627 tracks it. Either drop
+  the bare-label rows from `oracle.csv` before that refresh, since each duplicates a host row, or
+  accept the label.
 - A new copy of a Scraper fact outside the Scraper is now visible in review. A probe that asks
   anything other than `url()` carries a comment saying why.
 - `alias_key_of_landing` is the extension point for an ATS whose alias key is not a host. An ATS
@@ -136,9 +143,11 @@ changed on none. Live A/B in one headless Chrome on 12 of the 50 rows (10 live, 
 
 ## Alternatives considered
 
-- **Put the function in `config` next to `CompanyRef`.** That would need a lazy registry import
-  inside it and would move ADR-0001's `config → registry` edge from one function to the module's
-  public surface.
+- **Put the function in `config` next to `CompanyRef`.** That would put a registry import back in
+  `config`, which since ADR-0191 reaches no Scraper at all.
+- **Return only the slug, not a `CompanyRef`.** About half the callers want only the slug and read
+  `.slug`. The rest want the whole reference, and one function that always pairs the slug with
+  the name it came with is the funnel ADR-0001 asked for; a slug-only twin would be a second.
 - **Pass each probe a Scraper instance, not `(tenant, url)`.** This is cleaner at the call site.
   But Lever and Darwinbox still read the raw `url` for a hint of which instance to ask first,
   and every probe test would change shape for no behavioural gain.

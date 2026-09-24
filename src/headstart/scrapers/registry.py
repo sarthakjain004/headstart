@@ -134,14 +134,15 @@ DISABLED_ATS: frozenset[str] = frozenset({"join"})
 
 
 def company_from_row(ats: str, tenant: str, url: str) -> CompanyRef:
-    """The Board a discovered ``(tenant, url)`` row names, with its slug read by the Scraper.
+    """The ``CompanyRef`` for the Board a discovered ``(tenant, url)`` row names, its slug read
+    by that ATS's Scraper.
 
     A liveness-ledger row and a candidate-pool row both carry a Board as ``tenant`` and ``url``,
     and only the Scraper knows which of the two its slug comes from — the tenant for most ATSes,
     the careers host for Zoho and Personio, the whole careers URL for Workday (ADR-0001). Every
     caller that turns such a row into a Board goes through here, so none of them can skip
     :meth:`~headstart.scrapers.base.BaseScraper.slug_from` and pass the raw tenant as the slug
-    (ADR-0197). ``name`` is the raw tenant, as the scrape list has always carried it.
+    (ADR-0203). ``name`` is the raw tenant, as the scrape list has always carried it.
 
     Raises ``KeyError`` for an ``ats`` with no Scraper, and whatever ``slug_from`` raises on a
     row it cannot read; each caller decides what a bad row means for it.

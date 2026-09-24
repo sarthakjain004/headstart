@@ -95,7 +95,7 @@ LIVE, DEAD, UNKNOWN = "live", "dead", "unknown"
 # Per-ATS: how to reach a tenant's board, and how to read a verdict off the rendered page.
 #
 # `board_page` builds the board address from the Board's slug, which each row's own Scraper reads
-# off it (`registry.company_from_row`, ADR-0197) — so the browser asks about the Board the scrape
+# off it (`registry.company_from_row`, ADR-0203) — so the browser asks about the Board the scrape
 # reads, not whatever deep link discovery stored in `url`. `count_js` runs in page context
 # after render and must return an integer job count, or -1 for "this is not a board" (which is
 # what settles DEAD). Selectors are deliberately broad — these are marketing-grade pages that
@@ -226,7 +226,7 @@ def _nav_url(built: str) -> str | None:
     sample, all 103 errors were bare hosts and all 197 rows carrying a scheme returned a verdict.
 
     Counted then through the per-ATS builders, three of which passed the stored URL through:
-    **personio 3,292, recruitee 225, workday 5 — 3,522 rows**. Since ADR-0197 each builder starts
+    **personio 3,292, recruitee 225, workday 5 — 3,522 rows**. Since ADR-0203 each builder starts
     from the Scraper's slug instead, so personio's and recruitee's always carry a scheme; workday's
     slug *is* the stored URL, and its scheme-less rows (5 on 2026-09-24) are what this still
     rescues.
