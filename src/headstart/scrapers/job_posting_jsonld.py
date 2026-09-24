@@ -18,8 +18,8 @@ first block whatever its ``@type``, and every one of 25 live Jobvite JSON-LD pag
   its ``Organization`` block before the ``JobPosting`` one (33 of 33);
 - JSON parsed with ``strict=False``: Trakstar embeds literal newlines inside string values, which
   strict parsing rejects (45 of 45 of its JSON-LD pages);
-- ``@type`` as a string or a list, and a top-level array of nodes — both valid JSON-LD, already
-  read by five and six of the nine copies this replaced;
+- ``@type`` as a string or a list, and a top-level array of nodes — both valid JSON-LD, and each
+  already read by six of the nine copies this replaced;
 - a ``@graph`` of nodes, the one shape no copy read. None of 460 live pages across nine ATSes
   used it, nor a list ``@type`` or an array (ADR-0196); it is read because it is how JSON-LD
   commonly nests several nodes, and a node found there is still a ``JobPosting``.

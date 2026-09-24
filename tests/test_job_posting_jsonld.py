@@ -5,7 +5,8 @@ per-scraper tests keep what each scraper chose on its own (iCIMS's allowlist, Me
 sections, Workday's `timeType` mapping); these pin the behaviour every one of them now shares.
 
 `job_posting_jsonld_pages.json` holds three live pages' ld+json tags, verbatim, captured
-2026-09-24: each is a shape only one scraper's own copy read before the copies were merged.
+2026-09-24: each is a shape that only one ATS's pages served in that day's sample, and that some
+of the nine copies the reader replaced could not read.
 """
 
 from __future__ import annotations

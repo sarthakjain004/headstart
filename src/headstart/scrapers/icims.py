@@ -344,7 +344,7 @@ def _ld_fields(page: str) -> dict[str, Any] | None:
     node = find_job_posting(page)
     if node is None:
         return _classic_fields(page)
-    kept = {k: v for k, v in node.items() if k in _LD_KEEP}
+    kept = {key: value for key, value in node.items() if key in _LD_KEEP}
     return {
         **job_posting_fields(kept),
         # Only the first of a multi-location posting is used (4 of 207 sampled carry more than

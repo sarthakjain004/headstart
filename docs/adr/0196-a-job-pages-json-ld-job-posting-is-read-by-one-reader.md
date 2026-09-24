@@ -94,16 +94,26 @@ Live pages were fetched 2026-09-24 from live ledger rows, five per Board, exactl
 scraper's detail pass fetches them: 450 job pages and 10 JazzHR listing pages. Every per-scraper
 test passes unchanged.
 
-Then every reader, old and new, was run over all 489 pages at once — the fixtures, the live pages
-of every ATS, and each ld+json page written inline in `tests/` — so that a reader meets shapes its
-own ATS never served. No reader lost a posting, or changed a value it had read from JSON-LD, on
-any of them. Every difference is a page the old copy could not read and the shared one can, and
-each traces to one of the three shapes below: eightfold and jazzhr now read Meta's attributed
-tags (52 pages), every reader but trakstar now reads Trakstar's lenient JSON (45), and jobvite
-now reads JazzHR's JobPosting in a second block (33). SuccessFactors, whose own pages gave its
-reader nothing to read, returned the same fields as before on every JSON-LD page its old copy
-could parse; on the Meta and Trakstar pages it could not, its fields now come from the JSON-LD
-instead of its page-markup fallbacks.
+Then every reader, old and new, was run over 499 pages at once — the fixtures, the live pages of
+every ATS, each ld+json string literal in `tests/`, and one synthetic page of each shape the
+reader accepts — so that a reader meets shapes its own ATS never served. On the real pages, no
+reader lost a posting or changed a value it had read from JSON-LD. Every difference there is a
+page the old copy could not read and the shared one can, and each traces to one of the three
+shapes below: eightfold and jazzhr now read Meta's attributed tags (52 pages), every reader but
+trakstar now reads Trakstar's lenient JSON (45), and jobvite now reads JazzHR's JobPosting in a
+second block (33). SuccessFactors, whose own pages gave its reader nothing to read, returned the
+same fields as before on every JSON-LD page its old copy could parse; on the Meta and Trakstar
+pages it could not, its fields now come from the JSON-LD instead of its page-markup fallbacks.
+
+**Two differences are not gains, and both sit on shapes no live page carried.** Each follows
+from a scraper reading more than before, and each was accepted rather than coded around:
+
+- *Two JobPostings, the first unreadable to the old copy.* The old copy served the second; the
+  shared reader serves the first. None of the 460 live pages carried more than one `JobPosting`.
+- *A markup fallback displaced.* icims's classic-template reader, jobvite's rendered blocks and
+  successfactors' CSB markup run only when no `JobPosting` is found. A page whose JSON-LD only the
+  shared reader can parse now yields that JSON-LD's fields instead of the fallback's. Every live
+  icims and jobvite JSON-LD block parsed under the old copy's rules (50 of 50, 25 of 25).
 
 `tests/fixtures/job_posting_jsonld_pages.json` keeps one live page of each of those three shapes,
 and `tests/test_job_posting_jsonld.py` reads a posting from each.
