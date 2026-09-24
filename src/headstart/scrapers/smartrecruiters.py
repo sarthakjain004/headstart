@@ -63,8 +63,8 @@ _PAGE_SIZE = 100  # our page size, not the provider's ceiling (ADR-0070)
 # Our own ceiling, sized by cost rather than by tech density — because density does not fall off
 # down the list. Measured live: 14.1% tech at offset 500 across 40 random boards over 500 postings,
 # and 6 of the 15 boards over 3,000 run 14-62% tech at *half* and *end* of board. 5,000 postings is
-# the most this scraper can read and still stay under ADR-0064's 15-minute gate floor at the slow
-# end of fleet throughput; what stays truncated above it is ~0%-tech retail the gate handles.
+# the most this scraper can read and still stay under ADR-0064's gate floor (15 min when sized; 10 since
+# 2026-09-24, so re-derive before re-enabling) at the slow end of fleet throughput; what stays truncated above it is ~0%-tech retail the gate handles.
 # NOT ENFORCED right now (#227) — kept defined so re-enabling is a two-line uncomment, not a
 # re-derivation.
 _MAX_PAGES = 50

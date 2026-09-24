@@ -169,8 +169,9 @@ The 15-minute floor rested on a premise that no longer holds: *"below it a Board
 a 60 min makespan"*. On 2026-09-24 the 14 shards not held up by one Board finished in 8-10
 minutes (runs `35986858550`-`35998606646`), so any Board over ~10 minutes sets the scrape
 stage's wall clock by itself. Once `jibe:costco`'s cashiers left the tech count (TECH_FILTER_VERSION
-5, #622), the next such Board was `jibe:petsmart`: 760 s for 4 tech jobs, 0.22 a minute, which the
-gate never judged because it cost under 15 minutes.
+5, #622), the next such Board was `jibe:petsmart`: 760 s at a priority score of 2.8 (4 tech jobs on
+its last scrape), 0.22 a minute on the score the gate reads, and never judged because it cost under
+15 minutes.
 
 The threshold stays 2 tech jobs a minute; only the floor moves. It is still read off a gap. In
 `board_cost.csv` and `board_priority.csv` as of 2026-09-24, restricted to rows measured within the
@@ -181,12 +182,14 @@ The threshold stays 2 tech jobs a minute; only the floor moves. It is still read
 | 10-15 min | 3 | `jibe:petsmart` 0.22, `teamtailor:waymaneducation-1710232669` 1.17 (parked by ADR-0136), `jibe:ulta` 1.49 |
 | 6-10 min | 4 | `oracle:hcbt` 26.4, `jibe:jcpenney` 3.3, `successfactors:careers.hcltech.com` 646, `smartrecruiters:SonsoftInc` 951 |
 
-Every Board between 10 and 15 minutes is under the threshold, and every Board between 6 and 10
-minutes is over it, so a 10-minute floor gates the first set and none of the second. The cost is
-`jibe:ulta`'s 22 tech jobs, out of the index until its 14-day re-check re-admits it. That is the
-same trade the gate already makes above 15 minutes.
+On the score the gate reads, every Board between 10 and 15 minutes is under the threshold and every
+Board between 6 and 10 minutes is over it, so a 10-minute floor gates the first set and none of the
+second. **`jibe:ulta` is borderline, not cleanly under.** Jibe landed on 2026-09-23, so its EWMA
+score (15.4) is still warming toward its raw count: 22 tech jobs in 10.3 minutes is 2.13 a minute,
+just over the line. Gated now, it is out until its 14-day re-check, which judges it on a settled
+score. That is the same trade the gate made above 15 minutes, and it costs at most 22 tech jobs for
+two weeks.
 
 The floor tracks shard wall time, not a fixed truth. If the slice grows until shards again run
 close to their budget, it can rise again. The right test is the one above: which Boards sit
 between the old floor and the new one, and does the gap still separate them.
-
