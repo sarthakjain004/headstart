@@ -82,7 +82,7 @@ from pathlib import Path
 # pre-filter snapshot 68,600 -> 69,192, **+1,852 in, -1,260 out**. A blind 800-title hold-out
 # puts recall at ~84.6% and precision at ~82.0%. See
 # docs/tech-filter/2026-09-23_spellings-and-trades.md.
-# 5 (2026-09-24, `git log 6458fbac..098dbcfb -- src/headstart/tech_filter.py`): rule 0 sets aside
+# 5 (2026-09-24, `git log 6458fbac..6e05d8cc -- src/headstart/tech_filter.py`): rule 0 sets aside
 # a cashier on either side of "front end" ("Cashier (Front End)", "FRONT END/CASHIER"), which the
 # strong `front[\s-]?end` signal had been reading as a front-end developer. Purely subtractive: on
 # the served table (v654, 514,163 rows) **-148 out, 0 in**, every one a cashier title read by hand;
