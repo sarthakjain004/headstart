@@ -146,6 +146,9 @@ the first 10 reqs, which is why containment is computed on the full listing.
 
 ## Consequences
 
+- **The Trends chart marks the tick.** `subset-reqs` is a new alias signal, so this change bumps
+  `index_plan.DEDUP_VERSION` from 1 to 2 ([ADR-0188](0188-a-dedup-rule-change-is-a-trends-epoch.md)),
+  and the ~20,176 rows its first prune evicts read as "duplicate removal changed", not a hiring drop.
 - **Scrapable Board** falls by 320 (318 sections aliased, 2 pmg sections excluded) and **Hiring
   Board** by 319: 153,458 → 153,138 and 101,041 → 100,722 against the ledger at merge.
 - **274 duplicate rows stay served** (the table's 278 less pmg's 4, which its exclusion evicts),

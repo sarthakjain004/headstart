@@ -239,6 +239,7 @@ _EPOCH_LABELS = (
     ("family_map_fingerprint", "role family map edited"),
     ("tech_filter_version", "tech filter changed"),
     ("derivations_version", "experience/salary extraction changed"),
+    ("dedup_version", "duplicate removal changed"),
 )
 
 
@@ -256,7 +257,10 @@ def _load_epochs(path: Path) -> list[dict]:
     for previous, row in zip([None, *rows], rows):
         if previous is None:
             continue
-        changed = [label for key, label in _EPOCH_LABELS if row[key] != previous[key]]
+        # .get: a file from before a column existed lacks it until the next tick upgrades it
+        changed = [
+            label for key, label in _EPOCH_LABELS if row.get(key) != previous.get(key)
+        ]
         if changed:
             out.append({"ts": row["ts"], "changed": changed})
     return out
@@ -1179,11 +1183,12 @@ def trends():
 
     ``epochs`` (ADR-0164) lists methodology boundaries within the requested window —
     ``{ts, changed}``, ``changed`` naming which of the role taxonomy, the family map, the tech
-    filter or the experience/salary extraction moved at that stamp. Unlike every other field
-    above, it is **not** narrowed by ``ats`` or scoped to the live centroid version: a refit is
-    itself one of the four things that can produce a boundary, so hiding it there would hide the
-    exact event most worth marking. A chart can draw a marker at each stamp so a level shift
-    reads as "we changed how we count" rather than being mistaken for a hiring trend."""
+    filter, the experience/salary extraction or the duplicate-removal rules (ADR-0188) moved at
+    that stamp. Unlike every other field above, it is **not** narrowed by ``ats`` or scoped to the
+    live centroid version: a refit is itself one of the things that can produce a boundary, so
+    hiding it there would hide the exact event most worth marking. A chart can draw a marker at
+    each stamp so a level shift reads as "we changed how we count" rather than being mistaken
+    for a hiring trend."""
     if not _TRENDS:
         return jsonify(error="no trend data yet"), 503
     metric = request.args.get("metric", "stock")
@@ -1229,7 +1234,7 @@ def trends():
         trends_rows = [r for r in trends_rows if r["ats"] in ats]
 
     # Epochs (ADR-0164) are their own timeline, independent of centroid version — a refit is
-    # itself one of the four things that can produce a boundary row, so filtering by the live
+    # itself one of the things that can produce a boundary row, so filtering by the live
     # version would hide the exact event most worth marking. Only the requested window narrows it.
     epochs = _EPOCHS
     if since:

@@ -11,7 +11,10 @@ can widen or narrow which jobs enter the served index at all
 that looks exactly like a hiring trend, and today nothing tells a reader "we changed how we
 count" from "conditions changed".
 
-This module stamps those four values each tick and appends a row to
+A fifth, :data:`headstart.ingest.index_plan.DEDUP_VERSION` (ADR-0188), marks a change to which
+served rows count as duplicates: that removes rows that were served before, in one tick.
+
+This module stamps those values each tick and appends a row to
 ``data/state/trends_epochs.csv`` only when at least one differs from the last recorded row — so
 every row in the file is already a real methodology boundary, not a per-tick sample, and the
 Space can draw a marker at each one. ``family_map_fingerprint`` is a content hash rather than a
@@ -31,7 +34,35 @@ _COLUMNS = (
     "family_map_fingerprint",
     "tech_filter_version",
     "derivations_version",
+    "dedup_version",
 )
+# The header before ``dedup_version`` existed (ADR-0188). Its rows are real boundaries the Space
+# still marks, so a file in this shape is upgraded in place rather than rebuilt as corrupt, each
+# old row taking the version the rules had when the column was added. A fixed value, never the
+# live constant: a bump that lands before the first upgrading tick must still read as a boundary.
+_HEADER_WITHOUT_DEDUP_VERSION = _COLUMNS[:-1]
+_DEDUP_VERSION_AT_ADDITION = "1"
+
+
+def _add_dedup_version_column_if_missing(path: Path) -> None:
+    """Rewrite a file from before ``dedup_version`` in the current shape; leave any other alone.
+
+    Written beside it and renamed over it, so a crash mid-write leaves the old file whole rather
+    than a truncated one the merge stage's upload would publish — and the staged file is removed
+    on failure, because that upload takes all of ``data/state`` and would publish it too."""
+    with path.open(encoding="utf-8", newline="") as fh:
+        rows = [row for row in csv.reader(fh) if row]
+    if not rows or tuple(rows[0]) != _HEADER_WITHOUT_DEDUP_VERSION:
+        return
+    staged = path.with_suffix(path.suffix + ".tmp")
+    try:
+        with staged.open("w", encoding="utf-8", newline="") as fh:
+            writer = csv.writer(fh)
+            writer.writerow(_COLUMNS)
+            writer.writerows([*row, _DEDUP_VERSION_AT_ADDITION] for row in rows[1:])
+        staged.replace(path)
+    finally:
+        staged.unlink(missing_ok=True)
 
 
 def _read_state(path: Path) -> tuple[tuple[str, ...] | None, bool]:
@@ -39,7 +70,9 @@ def _read_state(path: Path) -> tuple[tuple[str, ...] | None, bool]:
 
     A missing or empty file has nothing recorded and needs no rebuild — the ordinary first-run
     case. A file whose header doesn't match the current shape is corrupt, or predates this
-    module's shape: :func:`append_if_changed` truncates and starts over rather than appending
+    module's shape (except the pre-``dedup_version`` header, which
+    :func:`_add_dedup_version_column_if_missing` upgrades before this reads it):
+    :func:`append_if_changed` truncates and starts over rather than appending
     beneath it, so a corrupt file heals itself on the next tick instead of permanently reading as
     "nothing to compare against" and writing a row on every run forever.
     """
@@ -63,10 +96,11 @@ def append_if_changed(
     family_map_fingerprint: str,
     tech_filter_version: int,
     derivations_version: int,
+    dedup_version: int,
 ) -> bool:
     """Append one row when this tick's stamp differs from the last recorded one.
 
-    Returns whether it wrote. The comparison is over the four definition values only, never
+    Returns whether it wrote. The comparison is over the definition values only, never
     ``ts`` — an unchanged run writes nothing, keeping the file at one row per real boundary
     rather than one row per tick.
     """
@@ -75,7 +109,10 @@ def append_if_changed(
         family_map_fingerprint,
         str(tech_filter_version),
         str(derivations_version),
+        str(dedup_version),
     )
+    if path.exists():
+        _add_dedup_version_column_if_missing(path)
     previous, rebuild = _read_state(path)
     if previous is not None and previous[1:] == current:
         return False
