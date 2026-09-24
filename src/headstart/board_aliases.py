@@ -22,7 +22,7 @@ straight to ``C``. The transitive step happens in the transport. A future *pairw
 overlap between two independently-served Boards, which is what Eightfold's aliases need — would
 bring union-find back. The two pairwise signals shipping are ClearCompany's ``shared-reqs``
 (ADR-0182) and ``subset-reqs``, written for Taleo Enterprise (ADR-0186) and ADP Recruiting
-Management (ADR-0191). ``shared-reqs`` is clustered outside this module; ``subset-reqs``' election
+Management (ADR-0202). ``shared-reqs`` is clustered outside this module; ``subset-reqs``' election
 is :func:`bury_contained`, a containment test within one account rather than a union-find. So the
 grouping :func:`resolve` does is still never pairwise. A new signal changes which
 served rows count as duplicates, so it bumps ``index_plan.DEDUP_VERSION`` in the same change

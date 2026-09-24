@@ -8,7 +8,7 @@ identity. A Board is one **career site**, addressed by the path word of its publ
 record's own ``domain`` is lowercase on 681 of 681 sites), so the slug is lowercased.
 
 Everything below was measured 2026-09-24 against the live hosts and is written up in
-``docs/adp_recruiting/2026-09-24_myjobs-measurement.md`` (ADR-0191). The request flow is the one
+``docs/adp_recruiting/2026-09-24_myjobs-measurement.md`` (ADR-0202). The request flow is the one
 the open-source clients ``amikai/openings-mcp`` and ``Masterjx9/OpenPostings`` use; each step was
 re-measured rather than adopted.
 
@@ -26,7 +26,7 @@ with the same count); a token 62 minutes old still answered. One token is fetche
 ``en-US,en;q=0.9``, answers ``count: 0`` on 7 of 7 — which is why every request here states it.
 A site offering another language lists some postings only under that one (236 on 15 of 150
 sites, 1.2% of the 150 sites' postings; the 186 read were English). A visitor sees those only after
-switching the site's language, and this scraper reads the default view the SPA shows (ADR-0191).
+switching the site's language, and this scraper reads the default view the SPA shows (ADR-0202).
 
 **The listing carries the description.** With ``$select`` it returns ``jobDescription`` (99.8%
 of 77,242 rows), ``jobQualifications`` (47.7%, a separate "Requirements" block, contained in the
@@ -60,7 +60,7 @@ import re
 from typing import Any
 from urllib.parse import quote, urlencode
 
-from headstart import company_name, employment_type, http
+from headstart import company_name, employment_type_filter, http
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -189,7 +189,7 @@ def _employment_type(row: dict) -> str | None:
     645 of 77,242 rows ("PT 129 or Less Hours" 340, "FT" 95, ...). Everything else — "Variable",
     "PRN", "Seasonal", "Temporary" — stays as stated, as it does on every other scraper."""
     value = (row.get("workLevelCode") or "").strip()
-    if not value or any(employment_type.flags(value).values()):
+    if not value or any(employment_type_filter.flags(value).values()):
         return value or None
     if _FULL.search(value):
         return f"Full-time ({value})"

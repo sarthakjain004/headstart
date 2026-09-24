@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write ADP Recruiting Management's alias ledger: career sites another site already lists (ADR-0191).
+"""Write ADP Recruiting Management's alias ledger: career sites another site already lists (ADR-0202).
 
 An ADP Recruiting Management Board is one career site, `myjobs.adp.com/{slug}/cx`, and one client
 (`orgoid`) can run several. Their postings share one client-wide `reqId`, and some sites list
@@ -36,7 +36,7 @@ from headstart.scrapers.adp_recruiting import ADPRecruitingScraper
 
 ATS = "adp_recruiting"
 SIGNAL = "subset-reqs"
-#: Sites read at once. No rate limit was found up to 128-wide (ADR-0191), and this is the width
+#: Sites read at once. No rate limit was found up to 128-wide (ADR-0202), and this is the width
 #: the census and dump ran clean at.
 _WORKERS = 16
 

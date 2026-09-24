@@ -67,7 +67,7 @@ hypotheses. Two of them were wrong in ways that matter (the `orgoid`-only listin
   the default view's, by 236 postings on a base of 18,942 (1.2%). All 186 such extras read on 7 of
   those sites are in English (`langdetect`). Examples are "QAQC Tech III" on `brownandrootexternal`
   and "Lead Appl. Developer" on `apply`. A visitor sees them only after switching the site's
-  language. The scraper reads the default view, as the SPA does (ADR-0191 §3).
+  language. The scraper reads the default view, as the SPA does (ADR-0202 §3).
 - **`$select` decides the fields (Q3a, Q6).** Without it, a row has only `reqId`, `jobTitle`, the
   location arrays, `organizationalUnits` and flags. With it, a row adds `jobDescription` on 99.8% of
   77,242 rows, `jobQualifications` on 47.7%, `postingDate` on 57.8% and `workLevelCode` on 98.2%.
@@ -105,7 +105,7 @@ hypotheses. Two of them were wrong in ways that matter (the `orgoid`-only listin
 - **Employee-only sites.** `settings.careerSiteType` is `"Internal"` on 15 of 681 sites. The 14
   hiring ones list 3,924 postings. 3,526 of those are also on an external site of the same org,
   and the other 398 are for the client's own staff. The prober writes them DEAD by policy
-  (ADR-0191 §4).
+  (ADR-0202 §4).
 - **The click (Q8a).** `/{slug}/cx/job-details?reqId={reqId}`, rendered in Chromium, shows the
   posting on 3 of 3 sites (`800flowerscareers`, `churchmutual`, `lifewisecareers`). The page
   fetches `search-meta/{reqId}` itself. `/{slug}/cx/job/{reqId}` (openings-mcp's URL) rendered the

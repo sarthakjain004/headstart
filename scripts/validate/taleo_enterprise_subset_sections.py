@@ -56,7 +56,7 @@ def burials(reqs_by_section: Mapping[str, Collection[str]]) -> dict[str, str]:
 
     ``reqs_by_section`` maps a section's canonical URL to its full requisition ids; the tenant is
     the URL's host. The election is `board_aliases.bury_contained`, shared with ADP Recruiting
-    Management's (ADR-0191)."""
+    Management's (ADR-0202)."""
     return board_aliases.bury_contained(
         reqs_by_section, lambda section: urlsplit(section).hostname
     )

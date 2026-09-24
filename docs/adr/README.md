@@ -193,7 +193,7 @@ supersedes it and note the supersession in both.
 | [0193](0193-one-module-per-materialized-search-filter.md) | One module per materialized Search filter | 2026-09-24 |
 | [0195](0195-one-retry-policy-drives-both-fetch-paths-and-the-warp-daemon-sits-behind-a-port.md) | One retry policy drives both fetch paths, and the WARP daemon sits behind a port | 2026-09-24 |
 | [0201](0201-a-scraper-states-its-detail-request-once-and-the-base-runs-the-pass.md) | A Scraper states its detail request once, and the base runs the Detail pass | 2026-09-24 |
-| [0191](0191-an-adp-recruiting-board-is-a-career-site-read-through-its-token.md) | An ADP Recruiting Management Board is a career site, read through its token in the default language | 2026-09-24 |
+| [0202](0202-an-adp-recruiting-board-is-a-career-site-read-through-its-token.md) | An ADP Recruiting Management Board is a career site, read through its token in the default language | 2026-09-24 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

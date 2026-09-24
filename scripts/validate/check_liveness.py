@@ -1946,7 +1946,7 @@ def p_adp_recruiting(t, u):
     #
     # An employee-only site (`careerSiteType` "Internal", 15 of 681 sites) is DEAD by policy,
     # not by absence. Of the 14 hiring ones' 3,924 postings, 3,526 are on an external site of the
-    # same client, which serves them; the other 398 are for the client's own staff (ADR-0191).
+    # same client, which serves them; the other 398 are for the client's own staff (ADR-0202).
     #
     # No rate limit was found (2,500 requests at 128-wide), so the host is not seeded in
     # `_GATES`. A DNS failure is UNKNOWN: every site is on the one fixed host.
@@ -1960,7 +1960,8 @@ def p_adp_recruiting(t, u):
     if status == 400 and any(gone in body for gone in _ADP_RECRUITING_GONE):
         return DEAD, None
     if status != 200:
-        if status in (404, 410):  # `_get` notes every other non-200 itself; neither was seen
+        # `_get` notes every other non-200 itself; neither was seen on this host.
+        if status in (404, 410):
             _note(f"site-http-{status}")
         return UNKNOWN, None
     try:

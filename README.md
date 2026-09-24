@@ -119,7 +119,8 @@ Board's `company` name is read off the board page itself where the ATS makes tha
 listing carries the employer's own `company.name`, `adp` (ADP Workforce Now) reads its client
 name out of the career center's `client-features` JSON (ADR-0180), since its page title is the
 literal "Recruitment", and `adp_recruiting` (ADP Recruiting Management, a separate ADP product)
-reads `clientName` off the career-site record it already fetches for its token (ADR-0191). The eight **Single source scrapers** above need no page fetch for
+reads `clientName` off the career-site record it already fetches for its token (ADR-0202). The
+eight **Single source scrapers** above need no page fetch for
 it: one fixed company each, so the name is declared as `BaseScraper.COMPANY` and always served.
 Every *other* ATS serves the **ATS slug** in that field instead, so a row's `company` may be
 either — four served rows in five carry a slug rather than a name, which is why `CompanyPrefs` is
@@ -267,8 +268,8 @@ No always-on server: scheduled GitHub Actions and a free-tier Space.
 
 A run does not scrape every board it could. The liveness ledger's headline number reduces through
 several filters before it reaches what a run can even consider — `registry.DISABLED_ATS`,
-vendor test/sandbox boards, aliases (one board serving two hostnames, or a career section whose
-every posting another section of the same tenant already lists), case-variant duplicate spellings,
+vendor test/sandbox boards, aliases (one board serving two hostnames, or a career section or site whose
+every posting another of the same tenant already lists), case-variant duplicate spellings,
 and a handful of real boards deliberately parked — most because their cost
 dwarfs their tech yield, two because what they serve is near-duplicate spam. `CONTEXT.md`'s
 §Counting Boards names each of these stages precisely, and `tests/test_board_counts.py` keeps this

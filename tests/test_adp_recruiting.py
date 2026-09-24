@@ -347,7 +347,7 @@ def test_the_async_detail_pass_reads_the_same_fields(monkeypatch):
 
 
 def test_an_abbreviated_work_level_is_labelled_for_the_filter():
-    from headstart import employment_type
+    from headstart import employment_type_filter
 
     cases = {
         "PT 129 or Less Hours": "Part-time (PT 129 or Less Hours)",
@@ -362,7 +362,9 @@ def test_an_abbreviated_work_level_is_labelled_for_the_filter():
             {"rows": [{**ROWS[0], "workLevelCode": stated}], "details": {}}
         ).values()
         assert job.employment_type == served
-    assert employment_type.flags("Part-time (PT 129 or Less Hours)")["is_part_time"]
+    assert employment_type_filter.flags("Part-time (PT 129 or Less Hours)")[
+        "is_part_time"
+    ]
 
 
 def test_a_posting_served_twice_across_pages_counts_once(monkeypatch):

@@ -1,4 +1,4 @@
-# ADR-0191: An ADP Recruiting Management Board is a career site, read through its token in the default language
+# ADR-0202: An ADP Recruiting Management Board is a career site, read through its token in the default language
 
 **Status:** accepted · **Date:** 2026-09-24 · **Relates to:** [ADR-0001](0001-per-ats-slug-derivation.md) (a scraper's slug is its own to define), [ADR-0012](0012-liveness-ledger.md) (the ledger is the scrape list), [ADR-0048](0048-skip-details-we-already-hold.md) (skipping a held detail), [ADR-0053](0053-scope-eviction-on-scrape-outcome.md) / [ADR-0121](0121-a-negligible-shortfall-is-still-an-authoritative-list.md) (a short list is not a complete one), [ADR-0114](0114-a-board-states-its-company-name-in-its-page-title.md) (company names), [ADR-0158](0158-jazzhr-and-jobvite-are-worth-their-storage.md) (the storage bar), [ADR-0166](0166-gate-the-detail-pass-on-the-tech-filter.md) (the pre-detail tech gate), [ADR-0180](0180-an-adp-board-is-a-career-center-read-in-every-language-at-one-paced-budget.md) (ADP Workforce Now)
 
