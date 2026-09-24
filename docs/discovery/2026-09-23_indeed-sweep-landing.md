@@ -145,6 +145,34 @@ all hiring.
 SenseHQ has a registered scraper but no ledger and no liveness probe, so the 12 SenseHQ Boards the
 sweep found cannot land.
 
+## The redo round and the final landing (2026-09-24)
+
+The sweep finished at 09:06 on 2026-09-24 with 1,829 of 46,698 routes inconclusive after two
+rounds, and 318 slug probes failed after five attempts. One more round, run alone once the sweep
+had drained, settled 1,314 of the 1,828 routes it requeued (the one invalid host is never
+replayed) and every failed probe. **515 routes (1.1%) stay inconclusive after three rounds**,
+recorded as such and never as done.
+
+Rendering the pages queued after the 19:46 snapshot, plus the redo, added almost nothing on the
+ATSes the sweep already supported: 1 SuccessFactors and 1 Teamtailor Board. The rest of the
+final landing came from the four ATSes built while the sweep ran:
+
+| ATS | Companies | New Boards | Live | Hiring | Postings |
+|---|---:|---:|---:|---:|---:|
+| ClearCompany | 352 | 90 | 90 | 90 | 5,038 |
+| Pinpoint | 326 | 43 | 39 | 39 | 1,048 |
+| Cornerstone | 158 | 1 | 1 | 1 | 271 |
+| Breezy | 418 | 1 | 0 | 0 | 0 |
+
+The sweep recorded ClearCompany's companies under its CDN host (`cc-client-cdn`, 337 of 352), so
+their tenants were re-derived from the `{slug}.hrmdirect.com`/`.clearcompany.com` apply URLs, the
+same repair Breezy needed. 16 Pinpoint companies were seen only through DNS (`careers.infor.com
+CNAME infor.cdn.pinpointhq.com`), so their tenant is the CNAME target's first label. Six iCIMS hosts
+appeared after the iCIMS resolution ran: two are single-word login hosts, and the four vanity sites
+trace through `/api/jobs` to tenants the ledger already holds as `Disallow: /` (213 more postings
+behind Jibe). `jobs.sanctuary-group.co.uk` probed `dead` once and `live` on a re-probe:
+`p_successfactors` calls a transient non-feed page dead rather than unknown.
+
 ## Follow-ups
 
 - **Phenom tenants to redo:**
@@ -155,6 +183,8 @@ sweep found cannot land.
   - Royal Enfield and Cadila Pharma: backing ATS unresolved.
 - **4 iCIMS candidates** found after the iCIMS resolution ran.
 - **Textron:** replace `tabbu` with the `textron` umbrella section.
+- **`p_successfactors` records one bad fetch as `dead`,** not `unknown`
+  (`jobs.sanctuary-group.co.uk`, 2026-09-24).
 - **`p_successfactors` and `confirm_successfactors_boards.py` should both check RMK assets.** The
   existing SuccessFactors ledger holds 35 `live,0` rows that are probably the same false positive.
 - **Rejected Phenom tenants are recorded nowhere committed,** so every sweep re-measures them.
