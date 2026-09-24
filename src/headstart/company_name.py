@@ -23,8 +23,8 @@ eightfold         ``Careers at {Name}`` / ``{Name} Careers``         ~93% (n=100
 ripplehire        ``{Name} Careers | Latest jobs at …``              ~96% (all 51)
 lever             ``{Name}`` — no wrapper at all                     ~88% (352/400)
 taleo_enterprise  four ``Careers``-wrappers (see below)              20% (30/150)
-gem               ``Careers at {Name}`` / ``{Name} Careers``         63% (36/57)
-jobvite           ``{Name} Careers``                                 424 of 434
+gem               ``{Name} Careers`` and five more (see its pattern)  63% (36/57)
+jobvite           ``{Name} Careers``, and its localized forms        424 of 434
 phenom            ``Careers``-wrappers ending at ``|`` or ``:``       11 of 16 boards
 pinpoint          ``Jobs at {Name} | {Name} Careers``                 38 of 40
 ================  =================================================  =================
@@ -145,6 +145,10 @@ _JIBE_NAME = (
     r"|company|talent|network|welcome)\b).+?)"
 )
 
+# gem's "{Name} Jobs" and "{Name} Opportunities" would otherwise read a page label's one
+# qualifier as the name ("Open Jobs" -> "Open"); no gem Board was seen serving one.
+_GEM_NOT_A_LABEL = r"^(?!(?:open|search|current|all|our|new|latest|available)\s)"
+
 PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     "ashby": (re.compile(r"^(?P<name>.+?)\s+Jobs$", re.IGNORECASE),),
     "eightfold": _CAREERS_WRAPPER,
@@ -155,7 +159,23 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     # gem: sampled 60 live board pages (2026-09-16) — no JS wall, real server-rendered HTML on a
     # bare GET. ~95% follow "{Name} Careers" (case varies: "a16z speedrun careers"), the exact
     # wrapper eightfold/jobvite/keka already use.
-    "gem": _CAREERS_WRAPPER,
+    # The wrappers after the first two were each served by an affected Board, 2026-09-24:
+    # "Bluesky Jobs", "Jobs @ Formal", "Opportunities @ Haulvana", "SynthBee Opportunities",
+    # "Shorr Packaging Open Positions". "Career Opportunities" comes off whole, or "Align
+    # Builders Career Opportunities" would read as "Align Builders Career".
+    "gem": (
+        *_CAREERS_WRAPPER,
+        re.compile(
+            r"^(?:Jobs|Careers?|Opportunities)\s+(?:at|@)\s+(?P<name>.+)$",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            _GEM_NOT_A_LABEL + r"(?P<name>.+?)\s+(?:Career\s+)?Opportunities$",
+            re.IGNORECASE,
+        ),
+        re.compile(r"^(?P<name>.+?)\s+Open\s+Positions$", re.IGNORECASE),
+        re.compile(_GEM_NOT_A_LABEL + r"(?P<name>.+?)\s+Jobs$", re.IGNORECASE),
+    ),
     # jibe: the client host's `/jobs` page, 1,116 live clients sampled 2026-09-24. The titles are a
     # handful of wrappers — "{Name} Careers" (200), "{Name} Apply", "{Name} Job Search - Jobs",
     # "Home | {Name} Careers", "{Name} | Careers" — or the bare legal name ("CommonSpirit Health",
@@ -178,7 +198,15 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     ),
     # jobvite: every board titles itself "{Name} Careers"; 424 of 434 live boards resolve
     # (2026-09-07). See JobviteScraper.board_page.
-    "jobvite": _CAREERS_WRAPPER,
+    # And the localized boards of the same tenants (2026-09-24): "Carrières Buckman", "Provisur
+    # Technologies Karrieren", "Samtec, Inc carreras", "Samtec, Inc 职业".
+    "jobvite": (
+        *_CAREERS_WRAPPER,
+        re.compile(r"^Carri[eè]res\s+(?P<name>.+)$", re.IGNORECASE),
+        re.compile(
+            r"^(?P<name>.+?)\s+(?:Karrieren|Carri[eè]res|carreras|职业)$", re.IGNORECASE
+        ),
+    ),
     # keka: the portal record's `name`, typed by the tenant — bare on most, but some typed a page
     # label around it ("Careers at WeDoGood", "Jobs at Olyv", "SecPod Careers"), so the wrappers
     # come off first and a bare value is taken whole.
@@ -317,6 +345,9 @@ _VENDOR_ALIASES: dict[str, frozenset[str]] = {
     # (909 postings) and `adpinternalcareers` both state "ADP" (2 of 681 sites, 2026-09-24).
     "adp_recruiting": frozenset(),
     "ashby": frozenset({"ashby", "ashbyhq"}),
+    # Empty on purpose: the GraphQL organization record is no page that can fall back to the
+    # vendor's branding, and Ashby is a real employer on its own board (`ashby:ashby`).
+    "ashby:graphql": frozenset(),
     # The field sources below are read by `from_field`, which takes a name as typed and
     # checks it against nothing else: bamboohr's `company-info`, cornerstone's posting JSON-LD,
     # darwinbox's `companyinfo`, ripplehire's `companyVO` and zwayam's config call (2026-09-24).

@@ -74,6 +74,16 @@ def find_job_posting(page: str) -> dict[str, Any] | None:
     return next(jsonld_nodes(page, "JobPosting"), None)
 
 
+def hiring_organization(value: Any) -> str | None:
+    """``hiringOrganization`` as a name. It is a bare string on some tenants and an
+    ``{"@type": "Organization", "name": …}`` object on others, so both are read."""
+    if isinstance(value, str):
+        return value.strip() or None
+    if isinstance(value, dict) and isinstance(value.get("name"), str):
+        return value["name"].strip() or None
+    return None
+
+
 def job_posting_fields(node: dict[str, Any]) -> JobPostingFields:
     """The common fields of one ``JobPosting`` node.
 

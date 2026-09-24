@@ -1,5 +1,5 @@
 {
-  "_comment": "Curated cluster -> role-family map for the trends ledger (ADR-0040). Keys on centroid_version: the cluster ids are meaningless against any other fit, so a refit re-curates this file. Every cluster of the fit must appear exactly once here or in non_tech - headstart.roles.load_families refuses to load otherwise, because an unmapped cluster would silently vanish from every chart. Cluster contents are in the fit's manifest.json (label + top_titles); the counts below are count_at_fit, kept as a sanity anchor for review.",
+  "_comment": "Curated cluster -> role-family map for the trends ledger (ADR-0040). Keys on centroid_version: the cluster ids are meaningless against any other fit, so a refit re-curates this file. Every cluster of the fit must appear exactly once here or in non_tech - headstart.roles.load_families refuses to load otherwise, because an unmapped cluster would silently vanish from every chart. Cluster contents are in the fit's manifest.json (label + top_titles); the counts below are count_at_fit, kept as a sanity anchor for review. Since ADR-0215 this map decides only the rows headstart.ingest.role_family_rules leaves undecided (about a quarter of served rows); a row's title rules come first.",
   "centroid_version": 2,
   "families": [
     {

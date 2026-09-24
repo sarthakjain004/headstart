@@ -143,6 +143,7 @@ from types import ModuleType
 import pytest
 
 from headstart import log
+from headstart.ingest import role_family_rules
 
 _ROOT = Path(__file__).resolve().parents[1]
 _RUNLOG = _ROOT / "scripts" / "runlog"
@@ -1400,13 +1401,19 @@ _TRENDS_BANDS = (
 _TRENDS_ATSES = ("workday", "lever", "greenhouse", "ashby", "icims")
 #: Curated family names, one per cluster below `len(_TRENDS_FAMILIES)`; every higher cluster is
 #: non-tech. The first five are real families because they are the ones the `top:` sample names.
+#: Every family a title rule can name follows them, because `role_trends` refuses a map missing
+#: one (ADR-0215); placeholders make up the rest of a curated-scale count.
+_TRENDS_RULE_FAMILIES = sorted(
+    role_family_rules.FAMILIES - {"software-engineering", "devops"}
+)
 _TRENDS_FAMILIES = (
     "software-engineering",
     "data",
     "ml",
     "devops",
     "security",
-    *(f"family-{n:02d}" for n in range(5, 41)),
+    *_TRENDS_RULE_FAMILIES,
+    *(f"family-{n:02d}" for n in range(5 + len(_TRENDS_RULE_FAMILIES), 41)),
 )
 #: `(family index, ats index, extra rows)` — the groups that outweigh the one-row-per-group base,
 #: so `stock_top`'s ranking is decided by the counts rather than by a tie-break. The first clears
@@ -1466,7 +1473,8 @@ def _trends_rows() -> tuple[list[dict], dict[str, str]]:
                     _TRENDS_K,
                     vector=list(vector),
                     min_years=years,
-                    title="backend engineer",
+                    # A title no rule decides (ADR-0215), so the stated cluster is the family.
+                    title="engineer",
                     # Inside the ADR-0051 window the pinned clock puts this run in, so every
                     # served row is also a `new` row and both metrics carry a count.
                     first_seen="2026-09-07T00:00:00+00:00",
@@ -1582,8 +1590,12 @@ def _trends(
                     f"{_TRENDS_FAMILIES.index(family)}-2-"
                 ):
                     snapshot[job_id] = was[family]
+        # Stamped as role_trends stamps it: the series version, not the bare centroid version
+        # (ADR-0215), or the snapshot reads as a re-base and is discarded.
         role_assignments.save(
-            Path("data/state/role_assignments.parquet"), snapshot, _TRENDS_VERSION
+            Path("data/state/role_assignments.parquet"),
+            snapshot,
+            role_trends.series_version(_TRENDS_VERSION),
         )
     _run_main(role_trends, monkeypatch, *_trends_argv())
 
@@ -2370,7 +2382,10 @@ CONTRACT: tuple[Line, ...] = (
     Line(
         consumer="fanout_merge.TRENDS_ASSIGNING",
         emitter=_TRENDS,
-        body="assigning 3472 served rows to 41 families via 120 clusters (centroid version 7)",
+        body=(
+            "assigning 3472 served rows to 41 families via 120 clusters (centroid version 7), "
+            "title rules first (generation 1, series version 7001)"
+        ),
         why=(
             "logged before the slow vector read, so a stalled step is not unnarrated. The family "
             "and cluster counts are curated (`config/role_families.json`) and stay at their real "

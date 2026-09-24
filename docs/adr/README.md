@@ -210,6 +210,7 @@ supersedes it and note the supersession in both.
 | [0209](0209-a-detail-pass-that-lands-nothing-stops.md) | A Detail pass that lands nothing stops, and no one detail can hold it open | 2026-09-25 |
 | [0211](0211-held-descriptions-are-re-fetched-on-a-seven-day-rotation.md) | Held descriptions are re-fetched on a seven-day rotation | 2026-09-25 |
 | [0212](0212-a-board-is-named-by-a-curated-stated-or-humanised-name-never-its-slug.md) | A Board is named by a curated, stated or humanised name, never by its slug | 2026-09-25 |
+| [0215](0215-a-title-rule-decides-a-role-family-before-the-centroid.md) | A title rule decides a role family before the centroid does | 2026-09-25 |
 | [0216](0216-a-workday-board-is-named-by-its-postings-legal-entities.md) | A Workday Board is named by its postings' legal entities, checked against its own page | 2026-09-25 |
 | [0218](0218-an-inactive-trakstar-account-is-gone.md) | An inactive Trakstar account is gone | 2026-09-25 |
 | [0219](0219-a-boards-row-is-elected-on-evidence-its-key-is-kept.md) | A Board's row is elected on evidence, and its key is kept | 2026-09-25 |

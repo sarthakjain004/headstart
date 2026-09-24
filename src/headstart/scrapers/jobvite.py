@@ -100,7 +100,7 @@ from typing import Any
 from headstart import http, log
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
-from headstart.scrapers.job_posting_jsonld import find_job_posting
+from headstart.scrapers.job_posting_jsonld import find_job_posting, hiring_organization
 
 _log = log.get(__name__)
 
@@ -164,16 +164,6 @@ def total_of(page: str) -> int | None:
         return None
     numbers = _NUMBER.findall(html_to_text(match.group(1)))
     return int(numbers[-1].replace(",", "")) if numbers else None
-
-
-def _organization(value: Any) -> str | None:
-    """``hiringOrganization`` as a name. It is a bare string on most tenants and an
-    ``{"@type": "Organization", "name": …}`` object on others (zones), so both are read."""
-    if isinstance(value, str):
-        return value.strip() or None
-    if isinstance(value, dict):
-        return (value.get("name") or "").strip() or None
-    return None
 
 
 def _location(posting: dict) -> str | None:
@@ -379,7 +369,7 @@ class JobviteScraper(BaseScraper):
                 Job(
                     id=self.job_id(job_id),
                     ats=self.ats,
-                    company=_organization(posting.get("hiringOrganization"))
+                    company=hiring_organization(posting.get("hiringOrganization"))
                     or self.company,
                     title=html_to_text(posting.get("title")),
                     location=location,

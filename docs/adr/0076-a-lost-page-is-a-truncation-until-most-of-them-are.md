@@ -2,7 +2,8 @@
 
 **Status:** accepted · **Date:** 2026-08-20 · **Amends:**
 [ADR-0058](0058-consecutive-gone-quarantine.md) (whose "a listing error must raise" rule this
-narrows to the *first* page) · **Relates to:**
+narrows to the *first* page) · **Amended by:** its own 2026-09-25 amendment (Workday's second
+pass, at the end) · **Relates to:**
 [ADR-0053](0053-scope-eviction-on-scrape-outcome.md) (the truncation channel this uses),
 [ADR-0047](0047-pace-against-the-origin.md) (the fan-out that made this bite)
 
@@ -98,3 +99,42 @@ that total, the crawl fails instead.**
 - A mid-crawl **410** majority still re-raises as gone text and takes one strike (of five). It did
   before this change too, on a single page rather than a majority — narrowed, not introduced, and
   left alone rather than rewriting the status text the ledger depends on.
+
+## Amendment, 2026-09-25: Workday asks a lost page once more before counting it
+
+Runs `35971969417`-`35998606646` (2026-09-24) had 132 ADR-0053 scope exclusions. 71 of them (54%)
+were Workday Boards that lost listing pages to a ConnectionError (33) or an HTTP 500 (38) and were
+never asked again. Run `35998606646` shows the shape: `workday:aia/External` with "1 of 51
+page(s) failed mid-crawl (ConnectionError x1)", and `workday:globalhr/REC_RTX_Ext_Gateway` with "2
+of 242 page(s) failed mid-crawl (HTTP 500 x2)". Of the 71:
+
+| pages lost | exclusions |
+|---|---|
+| 1 | 50 |
+| 2 | 15 |
+| 3 | 3 |
+| 8, 11 and 22 | 1 each |
+
+The failures look transient. Across 52 distinct Boards, 39 were excluded in only one of the five
+runs. Three of the 13 that recurred listed every page cleanly on 2026-09-25: `umiami` (1,737
+postings), `rbc` (1,279) and `manulife` (742). That is one probe each, which is evidence, not
+proof.
+
+`WorkdayScraper._paginate` now makes a second pass after each slice's fan-out. It asks again,
+one page at a time through the sync `_post` and its own retry ladder, for every page lost to a
+request error. The pass rides the same egress binding as the fan-out, so a walled Board stays on
+its spare egress. A 404 is not asked again, because mid-crawl it means the listing moved on, and a
+page that 404s on the second pass is relabelled `404 mid-crawl`. A page that answers is read,
+and its loss comes back off the count that decides between keeping the list, truncating it, and
+failing the crawl.
+
+The pass is bounded at `_SECOND_PASS_MAX` (5) pages per Board, not per slice. A subdivided Board
+pages fifteen or more slices, and a per-slice allowance would let a failing origin cost minutes in
+each. Five covers the 68 exclusions that lost three pages or fewer, and leaves out the three that
+lost 8, 11 and 22.
+
+A recovered page still shows in the `listing_loss_causes` events, which count failures as they
+happened. `listing_second_pass_recovered` and an INFO line ("N of M page(s) lost mid-crawl
+answered a second pass") say it came back. How many exclusions the pass removes is not measured
+yet. The yardstick is the next runs' count of `scope-excluded Board: workday:... page(s) failed
+mid-crawl`, against the 71 in five runs above.

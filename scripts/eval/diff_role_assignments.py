@@ -38,7 +38,10 @@ _FAMILIES = Path("config/role_families.json")
 
 
 def _assign_at(table, version: int, centroids, families) -> dict[str, str]:
-    """`id -> family` for one table version, using the same centroids as the trends step."""
+    """`id -> family` for one table version by centroid alone, the fallback the trends step
+    uses only where no title rule decides (ADR-0215) — so this isolates what a re-embed moves.
+    On versions after ADR-0215 it overcounts production's reassignments: about three quarters of
+    rows are pinned by their title there, and a re-embed cannot move them."""
     table.checkout(version)
     rows = table.search().select(["id", "vector"]).limit(table.count_rows()).to_arrow()
     vectors = np.stack(rows["vector"].to_numpy(zero_copy_only=False))

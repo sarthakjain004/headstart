@@ -255,6 +255,20 @@ def test_a_counting_change_and_the_run_after_it_are_not_hiring(tmp_path: Path) -
     assert hot_boards.counting_changes(tmp_path / "missing.csv") == set()
 
 
+def test_a_family_title_rule_edit_is_a_counting_change(tmp_path: Path) -> None:
+    """ADR-0215: a rule edit moves Jobs between families the way a family-map edit does. The
+    upgraded file gives rows from before the rules existed ``none``."""
+    epochs = tmp_path / "trends_epochs.csv"
+    epochs.write_text(
+        "ts,centroid_version,family_map_fingerprint,tech_filter_version,"
+        "derivations_version,dedup_version,family_rules_fingerprint\n"
+        "2026-09-24T16:23:40+00:00,2,f,5,15,3,none\n"
+        "2026-09-25T01:00:00+00:00,2,f,5,15,3,3b5cc5d9183c\n",
+        encoding="utf-8",
+    )
+    assert hot_boards.counting_changes(epochs) == {"2026-09-25T01:00:00+00:00"}
+
+
 def test_a_change_with_no_tick_of_its_own_lands_on_the_next(tmp_path: Path) -> None:
     """A skipped delta write: the change lands on the next tick and settles on the one after."""
     deltas = tmp_path / "deltas"

@@ -5,7 +5,9 @@
 *too small* to earn a centroid; it covers any role the fit cannot express, including the large
 domain roles (Backend, Frontend, …) that k-means cannot separate at any practical k ·
 **Amended by:** [ADR-0120](0120-the-trends-ledger-is-parquet-not-csv.md) — the ledger these rows
-are written to is Parquet, not CSV; the `metric` axis this ADR added is unchanged
+are written to is Parquet, not CSV; the `metric` axis this ADR added is unchanged ·
+**Amended by:** [ADR-0215](0215-a-title-rule-decides-a-role-family-before-the-centroid.md) — a
+watched role counts only rows whose family is tech, no longer every title match
 
 ## Context
 
