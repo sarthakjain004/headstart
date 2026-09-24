@@ -476,10 +476,11 @@ def scraped_boards(
        real scrape on disk must never be scoped by a summary of some *other* scrape.
     2. ``recorded`` — the Board keys ``scrape_join`` wrote from the same full scrape. What the
        pipeline uses, and **only when the caller passes a path**. It is not defaulted, because
-       this file rides ``data/state`` through the HF dataset: a local ``index sync`` against the
-       Sidecorpus CSV would otherwise find the last pipeline run's ~14,700 Boards sitting on disk
+       this file rides ``data/state`` through the HF dataset: a local ``index sync`` with no full
+       scrape on disk would otherwise find the last pipeline run's ~14,700 Boards sitting on disk
        and scope eviction on them instead of on the corpus it was handed.
-    3. the corpus ids' Boards, when neither is available (a Sidecorpus-CSV or unit-test sync).
+    3. the corpus ids' Boards, when neither is available (a local sync with no full scrape on
+       disk, or a unit test).
 
     (A Board scraped that yields *zero* jobs of any kind writes no ids and so isn't covered by any
     of them — that rarer case is handled by the dead/absent-Board prune, ADR-0023.)

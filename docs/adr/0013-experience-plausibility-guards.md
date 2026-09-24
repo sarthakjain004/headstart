@@ -43,7 +43,7 @@ Fix the two Tier-1 arithmetic guards; **defer** the Tier-2 anchor fix and pin it
 The two arithmetic fixes are local and only ever change already-implausible values, so ADR-0009's
 measured coverage (82.6% overall, 18.1% from the description tier) is unaffected. Tightening the
 anchor is a different risk class: it edits the *core matching regex* whose recall was measured
-against `data/jobs/sidecorpus.csv`, which is gitignored and not on disk. A blind tightening (e.g.
+against the ADR-0005 side-corpus CSV, which is gitignored and not on disk. A blind tightening (e.g.
 rejecting a trailing `"ago"`, or requiring the number to precede `"experience"`) could silently drop
 legitimate matches like `"experience gained over 5 years"` with no way to re-verify recall. The
 honest move is to defer until the corpus is available to re-measure — the standing rule being *don't
@@ -67,3 +67,6 @@ lower requirement ceiling. The `_MAX_PLAUSIBLE_YEARS = 50` bound below is still 
 One known false-positive class (`"N years ago … experience"`) remains,
 now *documented and test-pinned* rather than silently present, with its fix gated on corpus access.
 No change to the ADR-0009 cascade design or the LanceDB schema join.
+
+*(Amended 2026-09-24: the names of the original side-corpus and its scripts were removed from this
+record by the owner's decision, along with that corpus; the decision above is unchanged.)*

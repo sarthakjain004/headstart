@@ -1,7 +1,7 @@
 """Tests for the Wayback feeder's shared half (scripts/discover/wayback_feeder.py).
 
 It is a script under `scripts/discover`, so we put that directory on the path and import it by
-name, the way `test_datadome_transcript.py` does for `scripts/scrape`.
+name.
 
 These check the rules that decide what counts as a Company's slug. Each one exists because the
 harvest got it wrong at some point: the slug's case, the datacenter in a Workday host, dots and

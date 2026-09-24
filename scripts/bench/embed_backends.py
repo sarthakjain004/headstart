@@ -14,8 +14,8 @@ corpus (p50 1040, p90 1549, p99 2550; Bucket mix 5.9/41.9/48.9/3.2% — see
 `docs/AI_Integration/embedding-throughput.md`). Backend throughput depends on token counts and
 batch shapes, not on what the words mean, so synthetic text is sound for the *speed* question.
 It is NOT sound for the quality question: the `agree` column below (mean cosine vs the fp32
-baseline) is a drift signal only — confirm any int8 adoption on the retrieval eval harness
-(ADR-0011) before shipping it.
+baseline) is a drift signal only — confirm any int8 adoption on a retrieval-quality benchmark
+before shipping it (ADR-0011's harness was withdrawn on 2026-09-24; one would need rebuilding).
 
 Run: python -m scripts.bench.embed_backends           # or: python scripts/bench/embed_backends.py
      python scripts/bench/embed_backends.py --docs 200 --backends torch-fp32,onnx-int8
@@ -277,7 +277,7 @@ def main() -> int:
         )
     print(
         "\nagree = mean cosine vs torch-fp32 on identical inputs (drift signal only — "
-        "confirm on the retrieval eval harness before adopting a quantized backend)."
+        "confirm on a retrieval-quality benchmark before adopting a quantized backend)."
     )
     return 0
 

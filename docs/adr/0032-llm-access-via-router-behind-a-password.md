@@ -104,4 +104,6 @@ limits, and once leaked it stays leaked until the Space secret is rotated. Adequ
 beta and nothing more; opening this feature to the public is a new decision, not a config change.
 
 `scripts/eval/judge_pool.py` still calls `Anthropic()` directly and is now the one exception to the
-router rule. It predates this ADR; it should migrate.
+router rule. It predates this ADR; it should migrate. *(Amended 2026-09-24: that script has since
+been removed with the rest of the [ADR-0011](0011-retrieval-eval-harness.md) harness, so the
+exception no longer exists.)*

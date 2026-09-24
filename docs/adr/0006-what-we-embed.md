@@ -6,11 +6,11 @@
 ## Context
 
 The embedding model (ADR-0005) turns **one string per Job** into one vector — so the whole design
-question is *what goes into that string, and what stays out*. A Sidecorpus row carries both
-free-text (`title`, `description`) and structured fields (`remote`, `job_type`, `years_experience`,
-`compensation`, `location`, …). The hybrid retrieval design (`docs/AI_Integration/`) splits a query
-into a *semantic* part (match by meaning → embeddings) and *hard constraints* (match by rule →
-filter). The index must mirror that split.
+question is *what goes into that string, and what stays out*. A row of the ADR-0005 side-corpus
+carries both free-text (`title`, `description`) and structured fields (`remote`, `job_type`,
+`years_experience`, `compensation`, `location`, …). The hybrid retrieval design
+(`docs/AI_Integration/`) splits a query into a *semantic* part (match by meaning → embeddings) and
+*hard constraints* (match by rule → filter). The index must mirror that split.
 
 ## Decision
 
@@ -28,8 +28,9 @@ negation, so a salary or a year baked into the text smears into the geometry ins
 cleanly.
 
 **English gate before embedding.** A `langdetect` pass over `title + description` holds non-English
-rows out of the index (14 of 6,374 on Sidecorpus), per Project Scope in `CLAUDE.md`. The model isn't
-trusted to "filter" foreign text — it would embed it badly — so the gate is an explicit prior step.
+rows out of the index (14 of 6,374 on the side-corpus), per Project Scope in `CLAUDE.md`. The model
+isn't trusted to "filter" foreign text — it would embed it badly — so the gate is an explicit prior
+step.
 
 **Years-of-experience is handled by extraction, not the embedding.** The required years live in the
 `years_experience` field only ~64% of the time; where absent they're in the prose. A separate
@@ -45,5 +46,8 @@ discards the description's semantic richness, which is most of the signal.
 
 One vector per Job (descriptions fit nomic's 8192-token window, so no chunking). The structured
 filter's quality now depends on the metadata fields and on the YoE-extraction component, which
-becomes the next piece after storage. Implemented in `scripts/embed/embed_sidecorpus.py`; output
-under `data/embeddings/sidecorpus/`.
+becomes the next piece after storage. Implemented in the side-corpus's own embed script (later
+generalised into `embed_run`, ADR-0014); output under `data/embeddings/`.
+
+*(Amended 2026-09-24: the names of the original side-corpus and its scripts were removed from this
+record by the owner's decision, along with that corpus; the decision above is unchanged.)*

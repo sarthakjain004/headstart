@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml)
 [![pipeline](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml)
-[![ADRs](https://img.shields.io/badge/ADRs-173-blue)](./docs/adr/)
+[![ADRs](https://img.shields.io/badge/ADRs-172-blue)](./docs/adr/)
 [![Python](https://img.shields.io/badge/python-3.12+-blue)](./pyproject.toml)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue)](./LICENSE)
 
@@ -42,7 +42,7 @@ and normalizes every posting into a single `Job`. You never learn an ATS's name.
 
 ### Everything above is measured.
 
-And every limit ships next to the result it qualifies. 173 ADRs record the options that lost,
+And every limit ships next to the result it qualifies. 172 ADRs record the options that lost,
 not just the one that won. When a later measurement contradicts an earlier one, the ADR is
 amended in place rather than quietly edited.
 
@@ -80,12 +80,6 @@ unparseable input with a 400 rather than silently ignoring it.
 - **Freshness:** the index is reconciled incrementally, never rebuilt. New postings are added,
   closed ones are evicted, and metadata already in the table gets corrected as fresher scrapes
   arrive — so a fix reaches rows indexed long ago, not only new ones (ADR-0014, ADR-0061, ADR-0062).
-- **Ranking quality is measured, not asserted** (ADR-0011): a five-stage harness pools the
-  search's top hits per query, grades each `(query, job)` pair with an LLM judge validated against
-  hand labels (quadratic-weighted Cohen's **κ ≈ 0.64**, "substantial"), then scores with `ranx` →
-  **nDCG@10 = 0.90** on a held-out benchmark corpus. Two honest limits ship with the score: it's a
-  single-system pool, so it measures how well the search orders its own picks rather than
-  corpus-wide recall; and the benchmark is kept deliberately distinct from the production corpus.
 - **Signed in:** the full UI sits behind Google sign-in (`SECRET_KEY` + `GOOGLE_CLIENT_ID`,
   ADR-0042). Signing in unlocks three per-account tabs: **Matches** (saved searches, one of which
   can become an email Subscription), **Saved** (starred jobs), and **Profile** (paste a résumé;
@@ -137,15 +131,14 @@ hitting the host, not by reading code. This is a rule with a scar behind it: a "
 to tell dead from empty" guard looked obviously correct and died on contact, because 9 of 12 boards
 the ledger already called dead answered `GET /` with 200. Findings carry their sample size.
 
-**Record the rejected options, not just the chosen one.** 173 ADRs, **115** carrying a heading that
+**Record the rejected options, not just the chosen one.** 172 ADRs, **114** carrying a heading that
 weighs alternatives (`grep -lEi '^#{2,3} .*(alternativ|options? (considered|rejected)|rejected)'
 docs/adr/`). When a later measurement contradicts an earlier one the ADR is amended or superseded
 in place rather than quietly edited — **57** name an `Amends:` / `Supersedes:` relationship in
 their header — so the reasoning stays auditable even when it turns out to be wrong.
 
-**Publish the limits next to the result.** The retrieval score ships with the two reasons not to
-over-trust it. Coverage tables say what is excluded and why. A number without its caveat is
-treated as a defect.
+**Publish the limits next to the result.** Coverage tables say what is excluded and why. A number
+without its caveat is treated as a defect.
 
 **Degrade where degrading is possible.** A missing binary, an unregistered client, a walled
 origin: the spare egress returns "not available" and leaves the caller on the path it already had,
@@ -513,7 +506,7 @@ your own. The auth model and failure modes are in
 
 ## More
 
-- **Design decisions:** [`docs/adr/`](./docs/adr/) — 173 numbered ADRs (the option picked, the
+- **Design decisions:** [`docs/adr/`](./docs/adr/) — 172 numbered ADRs (the option picked, the
   ones rejected, and why).
 - **Domain glossary:** [`CONTEXT.md`](./CONTEXT.md) — the ubiquitous language (ATS, Board, Slug,
   Job, Discovery, Liveness, Feed, Doc, Bucket, GitHub VM…).

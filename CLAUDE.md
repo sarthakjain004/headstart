@@ -302,8 +302,6 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   (deliberately untracked: it names private infrastructure and this repo is public).
   A remote caller that gates its own startup on the tunnel must degrade rather than die: bring the
   app up regardless and fail that one endpoint, so a router outage never takes down the product.
-  **Known exception to migrate:** `scripts/eval/judge_pool.py:93` still constructs `Anthropic()`
-  against the default base URL — pre-existing, predates this rule.
 - Output must stream incrementally — never buffer until the program ends. Print per-item as
   work completes and flush (Python: `print(..., flush=True)` / `-u`; write results to a file
   progressively). A long batch that prints only at the end is forbidden: one slow item stalls

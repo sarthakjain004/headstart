@@ -974,7 +974,7 @@ def test_compact_always_leaves_a_record(tmp_path):
     """Its rmtree destroys the previous one, so a path that reaches the swap without writing a new
     record would upload a directory with none at all — failing open, and silently."""
     db = tmp_path / "db"
-    lancedb.connect(str(db)).create_table("sidecorpus", [{"id": "a", "n": 1}])
+    lancedb.connect(str(db)).create_table("side", [{"id": "a", "n": 1}])
     idx.compact(argparse.Namespace(db=str(db)))
     assert idx.read_base(db) is not None
     assert idx.read_base(db)["by"] == "compact"
