@@ -70,11 +70,11 @@ what it needs is per-tenant evidence this module has no place to keep.
 **Workday** reads no title. Its board page is a client-rendered SPA whose ``og:title`` is correct
 on well under half of the boards that have one and otherwise junk this module's rules would happily
 accept ("Careers", "Job Opportunities", "Team Member Jobs"). Its name comes from the posting
-detail's ``hiringOrganization`` instead, which an earlier draft of this paragraph said the detail
-did not carry — it does, beside ``jobPostingInfo``, on 140 of 140 Boards sampled 2026-09-24. That
+detail's ``hiringOrganization`` instead, beside ``jobPostingInfo`` on 140 of 140 Boards sampled
+2026-09-24. That
 value is the *per-posting* legal entity and varies **within a single Board** — nvidia alone returns
 "IL00 Mellanox Technologies, Ltd.", "IN01 NVIDIA Graphics Bengaluru" and "2100 NVIDIA USA" — so
-`headstart.scrapers.workday_company` cleans, checks and votes the values into one name, and only
+`headstart.scrapers.workday_company_name` cleans, checks and votes the values into one name, and only
 then calls `from_title` for the guards below (ADR-0210).
 
 Every rule below rejects a shape that was actually observed. A title this cannot read leaves the
@@ -224,7 +224,7 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
         re.compile(r"^(?P<name>.+?)\s*-\s*Careers$", re.IGNORECASE),
         *_CAREERS_WRAPPER,
     ),
-    # workday: not a title. `workday_company.board_name` reads a name out of the postings'
+    # workday: not a title. `workday_company_name.board_name` reads a name out of the postings'
     # `hiringOrganization` values and the board page's og tags, then passes it here for the
     # guards below, so the pattern is adp's bare catch-all (ADR-0210).
     "workday": (re.compile(r"^(?P<name>.+)$"),),

@@ -2701,10 +2701,10 @@ def no_names_on_file(monkeypatch, tmp_path):
     """Neither the curated map nor the committed Workday cache names these made-up Boards, so the
     cascade itself is what a test observes, whatever the repo's own files come to hold."""
     from headstart import company_name
-    from headstart.scrapers import workday_company
+    from headstart.scrapers import workday_company_name
 
     monkeypatch.setattr(company_name, "curated_names", dict)
-    monkeypatch.setattr(workday_company, "RESOLVED_NAMES", tmp_path / "absent.csv")
+    monkeypatch.setattr(workday_company_name, "RESOLVED_NAMES", tmp_path / "absent.csv")
 
 
 def _workday_board(site: str, entities: list[str], page: str, *, cxs_detail=True):
@@ -2813,13 +2813,13 @@ def _names_file(tmp_path, name, header, rows):
 
 def test_workday_name_on_file_wins_and_skips_the_board_page(monkeypatch, tmp_path):
     from headstart import company_name
-    from headstart.scrapers import workday_company
+    from headstart.scrapers import workday_company_name
 
     monkeypatch.setattr(company_name, "curated_names", dict)
     from headstart.scrapers.workday import WorkdayScraper
 
     monkeypatch.setattr(
-        workday_company,
+        workday_company_name,
         "RESOLVED_NAMES",
         _names_file(
             tmp_path,
@@ -2839,13 +2839,13 @@ def test_workday_name_on_file_wins_and_skips_the_board_page(monkeypatch, tmp_pat
 
 def test_workday_curated_name_outranks_the_cascade_and_its_cache(monkeypatch, tmp_path):
     from headstart import company_name
-    from headstart.scrapers import workday_company
+    from headstart.scrapers import workday_company_name
     from headstart.scrapers.workday import WorkdayScraper
 
     key = "workday:humana/Humana_External_Career_Site"
     monkeypatch.setattr(company_name, "curated_names", lambda: {key: "Humana Inc."})
     monkeypatch.setattr(
-        workday_company,
+        workday_company_name,
         "RESOLVED_NAMES",
         _names_file(
             tmp_path,

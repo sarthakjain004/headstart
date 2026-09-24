@@ -119,7 +119,9 @@ Board's `company` name is read off the board page itself where the ATS makes tha
 listing carries the employer's own `company.name`, `adp` (ADP Workforce Now) reads its client
 name out of the career center's `client-features` JSON (ADR-0180), since its page title is the
 literal "Recruitment", and `adp_recruiting` (ADP Recruiting Management, a separate ADP product)
-reads `clientName` off the career-site record it already fetches for its token (ADR-0202). The
+reads `clientName` off the career-site record it already fetches for its token (ADR-0202), and
+`workday` votes one name out of its postings' `hiringOrganization` legal entities, checked against
+its board page and cached per Board in `data/validate/company_names/workday.csv` (ADR-0210). The
 eight **Single source scrapers** above need no page fetch for
 it: one fixed company each, so the name is declared as `BaseScraper.COMPANY` and always served.
 No Board is served under its **ATS slug** (ADR-0212). A hand-curated name in

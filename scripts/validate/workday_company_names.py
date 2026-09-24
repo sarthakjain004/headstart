@@ -4,9 +4,10 @@
 `WorkdayScraper.resolve_company` reads `data/validate/company_names/workday.csv` before it spends a
 request, so a Board on file keeps the same name from run to run. This script is what fills it. Per
 Board it reads the first listing page, up to `_DETAILS` posting details (their
-`hiringOrganization`) and the board page, then runs `workday_company.board_name` — the same cascade
-the scraper runs live. Only named Boards get a row; one the cascade cannot name keeps resolving live
-until a curated name (`config/company_names.csv`) or a later run names it.
+`hiringOrganization`) and the board page, then runs `workday_company_name.board_name` — the same cascade
+the scraper runs live. Only named Boards get a row, and a Board with a curated name
+(`config/company_names.csv`) is skipped, since that name overrides the cache. One the cascade
+cannot name keeps resolving live until it is curated or a later run names it.
 
 By default it reads the Workday Hiring Boards not yet on file, so re-run it after a Workday landing.
 `--all` re-reads every Hiring Board, for a periodic refresh: a Board it names gets the new row, and
@@ -14,7 +15,7 @@ one it no longer names keeps the old one. Rows are appended
 as each Board finishes, so an interrupted run keeps its progress; the file is rewritten sorted at
 the end.
 
-    PYTHONPATH=src python scripts/validate/workday_company_names.py [--all]
+    python scripts/validate/workday_company_names.py [--all]
 """
 
 from __future__ import annotations
@@ -29,12 +30,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from headstart import scrapable_boards
-from headstart.scrapers import workday_company
+from headstart import company_name, scrapable_boards
+from headstart.scrapers import workday_company_name
 from headstart.scrapers.base import USER_AGENT
 from headstart.scrapers.workday import WorkdayScraper
 
-OUT = ROOT / workday_company.RESOLVED_NAMES
+OUT = ROOT / workday_company_name.RESOLVED_NAMES
 FIELDS = ("board_key", "name", "source", "checked_at")
 #: Details read per Board: enough postings to vote over, measured at 8-12 on 2026-09-24.
 _DETAILS = 8
@@ -59,7 +60,7 @@ def resolve(slug: str) -> tuple[str, str | None, str]:
         "GET", scraper.job_url(""), headers={"User-Agent": USER_AGENT}, timeout=30
     )
     page = response.text if response.status_code == 200 else None
-    name, source = workday_company.board_name(
+    name, source = workday_company_name.board_name(
         [d.get("hiringOrganization") for d in details if d], page, f"{tenant}/{site}"
     )
     return scraper.board_key(), name, source
@@ -83,7 +84,10 @@ def main() -> None:
     boards = [
         b
         for b in scrapable_boards.load(ROOT / "data/validate/liveness", min_jobs=1)
-        if b.ats == "workday" and (args.all or b.lowercase_identity not in held)
+        if b.ats == "workday"
+        and (args.all or b.lowercase_identity not in held)
+        # A curated name overrides the cache, so a Board with one needs no cached answer.
+        and not company_name.curated(b.identity)
     ]
     print(f"{len(boards)} Workday Boards to read ({len(held)} on file)", flush=True)
     today = datetime.now(UTC).date().isoformat()

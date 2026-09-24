@@ -28,9 +28,9 @@ Careers" wrapper, then an ``og:description`` that opens "X is a…", "At X," or 
 candidate then passes `company_name.from_title`'s guards — no hostname, no page label, no
 separator, no 60-character sentence.
 
-Measured on 2026-09-24 over 140 random affected Boards: 126 named (90%), 92% of an 80-Board
-holdout, 82% of multi-site tenants; about 86% of the names correct, 11% partial ("Johnson" for
-Johnson Controls), 2% wrong. Over the full 4,175-Board sweep: 86% of Boards named; ADR-0210 has the rest.
+Measured live over all 4,175 affected Boards (2026-09-24): 86% named. Of a seeded random 120 read
+by hand, 89.5% of the named ones were correct, 9.5% partial ("CHG" for CHG Healthcare) and 1% wrong
+(ADR-0210).
 
 **Per site, never per tenant.** A tenant's sites often host different companies —
 ``volarisgroup`` runs a site per acquired business, ``humana``'s ``centerwell`` site hires for
@@ -50,7 +50,7 @@ from pathlib import Path
 
 from headstart import company_name
 
-__all__ = ["RESOLVED_NAMES", "board_name", "clean", "og", "resolved_name"]
+__all__ = ["RESOLVED_NAMES", "board_name", "clean", "resolved_name"]
 
 #: The cascade's own answers, one ``board_key,name,source,checked_at`` row per Board it named,
 #: written by ``scripts/validate/workday_company_names.py`` and committed. This is the per-Board
@@ -156,7 +156,7 @@ def _names_in(path: Path) -> dict[str, str]:
         return {}
 
 
-def og(page: str | None, prop: str) -> str | None:
+def _og(page: str | None, prop: str) -> str | None:
     """The ``content`` of the page's ``<meta property="og:{prop}">``, entity-decoded, or None."""
     match = re.search(
         r'<meta[^>]*property="og:' + re.escape(prop) + r'"[^>]*content="([^"]*)"',
@@ -283,7 +283,7 @@ def board_name(
     Board's ``{tenant}/{site}``. The steps run in the module docstring's order; a candidate the
     `company_name` guards refuse passes to the next step rather than ending the search.
     """
-    title, description = og(page, "title"), og(page, "description")
+    title, description = _og(page, "title"), _og(page, "description")
     prose = f"{title or ''}\n{description or ''}"
     steps = (
         ("hiringOrganization", lambda: _voted(entities, prose, board)),

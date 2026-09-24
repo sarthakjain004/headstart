@@ -23,7 +23,7 @@ USA", "IL00 Mellanox Technologies, Ltd.", Airbus's nine entities, Northrop Grumm
 
 ## Decision
 
-**Every Workday Board runs a clean → check → vote cascade** (`scrapers/workday_company.py`) over
+**Every Workday Board runs a clean → check → vote cascade** (`scrapers/workday_company_name.py`) over
 the `hiringOrganization` values its detail pass already fetched, with one board-page GET:
 
 1. **Clean** each value: drop a dba prefix, a leading entity code (`2100`, `QLYS_IN`, `LE30006`,
@@ -64,8 +64,11 @@ serves it.
 - **Accuracy**, a seeded random 120 Boards labelled by reading each page: 94 correct, 10 partial
   ("CHG" for CHG Healthcare, "Rangers" for Texas Rangers), 1 wrong (Sparus named after its
   subsidiary Southern Cross), 15 unnamed. Of the 105 named: 89.5% correct, 9.5% partial, 1% wrong.
-- **After curation and the cache:** 537 Boards (21,983 rows) take a curated name, 3,575 (74,120
-  rows) the cached cascade answer, and 63 Boards (231 rows) are left to the humanised fallback.
+- **After curation and the cache**, counted as served Boards (the served table spells some sites
+  two ways, `/External` and `/external`; both files are keyed case-insensitively, one row per
+  spelling-folded Board): 537 served Boards (21,983 rows) take a curated name, 3,575 (74,120 rows)
+  the cached cascade answer, and 63 (231 rows) are left to the humanised fallback. The 3,605 named
+  served Boards fold to 3,394 cache keys.
 
 ## Consequences
 

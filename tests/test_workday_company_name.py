@@ -2,7 +2,7 @@
 
 import pytest
 
-from headstart.scrapers.workday_company import board_name, clean
+from headstart.scrapers.workday_company_name import board_name, clean
 
 
 def _page(title: str | None = None, description: str | None = None) -> str:

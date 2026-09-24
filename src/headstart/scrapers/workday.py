@@ -49,7 +49,7 @@ from urllib.parse import urlsplit, urlunsplit
 from headstart import fanout_stats, http, log
 from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers import workday_company
+from headstart.scrapers import workday_company_name
 from headstart.scrapers.base import (
     USER_AGENT,
     BaseScraper,
@@ -176,17 +176,19 @@ def _extract_page_detail(response: Any) -> dict[str, Any] | None:
     employment = posting.get("employmentType")
     if isinstance(employment, list):  # the spec allows a list here too
         employment = employment[0] if employment else None
-    organization = posting.get("hiringOrganization")
     return {
         "description": posting["description"],
         "startDate": posting.get("datePosted"),
         "remoteType": posting.get("jobLocationType"),
         "timeType": _SCHEMA_EMPLOYMENT.get(employment, employment),
         # The same legal entity the CXS detail states, for the Board's name (ADR-0210).
-        "hiringOrganization": organization.get("name")
-        if isinstance(organization, dict)
-        else None,
+        "hiringOrganization": _organization_name(posting.get("hiringOrganization")),
     }
+
+
+def _organization_name(organization: Any) -> str | None:
+    """``hiringOrganization.name``, which the CXS detail and the page's JSON-LD both state."""
+    return organization.get("name") if isinstance(organization, dict) else None
 
 
 #: A Workday Board's careers URL — its slug (:meth:`WorkdayScraper.slug_from`) — split into the
@@ -985,8 +987,6 @@ class WorkdayScraper(BaseScraper):
         payload = response.json()
         info = payload.get("jobPostingInfo") or {}
         country = info.get("country")
-        # Beside `jobPostingInfo`, not inside it: the posting's legal entity (ADR-0210).
-        organization = payload.get("hiringOrganization")
         return {
             "description": info.get("jobDescription"),
             "startDate": info.get("startDate"),
@@ -995,9 +995,8 @@ class WorkdayScraper(BaseScraper):
             "additionalLocations": info.get("additionalLocations"),
             "country": country.get("descriptor") if isinstance(country, dict) else None,
             "remoteType": info.get("remoteType"),
-            "hiringOrganization": organization.get("name")
-            if isinstance(organization, dict)
-            else None,
+            # Beside `jobPostingInfo`, not inside it: the posting's legal entity (ADR-0210).
+            "hiringOrganization": _organization_name(payload.get("hiringOrganization")),
         }
 
     def _job_detail(
@@ -1574,14 +1573,14 @@ class WorkdayScraper(BaseScraper):
         never its company, so no ledger value is worth keeping over a name.
 
         A curated name never reaches here: `BaseScraper.fetch` applies it and skips this call. A
-        name in the cascade's committed cache (`workday_company.resolved_name`) wins next and costs
+        name in the cascade's committed cache (`workday_company_name.resolved_name`) wins next and costs
         no request; it is what keeps a Board's name the same from run to run (ADR-0210).
         Otherwise one GET of the board page — one attempt that can never wall the host, as the
-        base method's — feeds `workday_company.board_name` with the `hiringOrganization` values
+        base method's — feeds `workday_company_name.board_name` with the `hiringOrganization` values
         the detail pass already fetched. A Board that yields no name keeps the one it had, which
         `company_name.settled` then humanises (ADR-0209).
         """
-        cached = workday_company.resolved_name(self.board_key())
+        cached = workday_company_name.resolved_name(self.board_key())
         if cached:
             self.company = cached
             return
@@ -1598,7 +1597,7 @@ class WorkdayScraper(BaseScraper):
         except Exception:  # noqa: BLE001 - a display name is never worth failing a Board for
             page = None
         tenant, _instance, site = self._parts()
-        name, _source = workday_company.board_name(
+        name, _source = workday_company_name.board_name(
             self._hiring_organizations, page, f"{tenant}/{site}"
         )
         if name:
