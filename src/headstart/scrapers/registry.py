@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Container
 
 from headstart.scrapers.adp import ADPScraper
+from headstart.scrapers.adp_recruiting import ADPRecruitingScraper
 from headstart.scrapers.amazon import AmazonScraper
 from headstart.scrapers.apple import AppleScraper
 from headstart.scrapers.ashby import AshbyScraper
@@ -91,6 +92,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         JobviteScraper,
         TeslaScraper,
         ADPScraper,
+        ADPRecruitingScraper,
         AmazonScraper,
         ByteDanceScraper,
         CornerstoneScraper,

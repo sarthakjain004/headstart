@@ -1978,3 +1978,11 @@ def test_every_currency_salary_can_emit_has_an_fx_rate():
 
     emittable = {*salary._CURRENCY_CODES.split("|"), *salary._SYMBOL_CURRENCY.values()}
     assert emittable - fx.table()["rates"].keys() == set()
+def test_adp_recruiting_pay_transparency_amounts_read_annual_and_refuse_hourly():
+    # `ADPRecruitingScraper._salary_field` emits the pay-transparency pair with no period, as
+    # "40000-141700 USD" (Follett, 2026-09-24): the annual default reads it, and the plausibility
+    # floor refuses an hourly-scale pair rather than serving it 2,080x too low.
+    assert from_field("40000-141700 USD", "adp_recruiting") == SalarySpan(
+        40_000, 141_700, "USD", "field"
+    )
+    assert from_field("20-25 USD", "adp_recruiting") is None

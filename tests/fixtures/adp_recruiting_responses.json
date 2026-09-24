@@ -1,0 +1,1595 @@
+{
+ "site_churchmutual": {
+  "id": "ef2fe0fd-bc98-4d5a-9d1a-646be0f09160",
+  "name": "External",
+  "domain": "churchmutual",
+  "clientName": "Church Mutual Insurance, S.I.",
+  "orgoid": "G37B9N5A9JS742KS",
+  "active": true,
+  "hideDaysPosted": false,
+  "myJobsToken": "AQICAHjbeJX6AsPF3JkKBFXa9PICJgo38oRwJbrU0hcfh8rBagEACL5w4m+XPmPQnsep5R3YAAAA2TCB1gYJKoZIhvcNAQcGoIHIMIHFAgEAMIG/BgkqhkiG9w0BBwEwHgYJYIZIAWUDBAEuMBEEDKTtToh9Hdw+6n5fgAIBEICBkaprFxh/3kpQIOr3f8W+WYvzOVWBeylUL5xUvbjT18HMtdHvAeevm8iyAoS0rPcWn0Vs6q+LaNDYJbkgFyy4pY4H2R44ww8XlNOn6r60idR4CjhRQGNsHLl0Nm/1/cAZn0hjP5NneGOCMvMg+vTtjx+WSn26KpLakqXKAacYgriMsIj7OhObOCOqs7SDPv2ngDU=",
+  "settings": {
+   "careerSiteType": "External"
+  }
+ },
+ "churchmutual_listing_top10_skip0": {
+  "count": 19,
+  "jobRequisitions": [
+   {
+    "organizationalUnits": [
+     {
+      "name": "Internships",
+      "codeValue": "Internships"
+     }
+    ],
+    "workLocations": [],
+    "postingLocations": [],
+    "requisitionLocations": [
+     {
+      "itemID": "5000422082306",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "Milwaukee",
+       "postalCode": "53202",
+       "lineOne": "833 E Michigan Street\nSuite 600",
+       "countrySubdivisionLevel1": {
+        "codeValue": "WI",
+        "longName": "Wisconsin"
+       }
+      },
+      "nameCode": {
+       "codeValue": "MILW",
+       "longName": "Milwaukee Office"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": true
+     },
+     {
+      "itemID": "5000422082406",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "Merrill",
+       "postalCode": "54452",
+       "lineOne": "3000 Schuster Lane",
+       "countrySubdivisionLevel1": {
+        "codeValue": "WI",
+        "longName": "Wisconsin"
+       }
+      },
+      "nameCode": {
+       "codeValue": "MER",
+       "longName": "Merrill Office"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": false
+     }
+    ],
+    "careerSiteDomains": [
+     "churchmutual"
+    ],
+    "jobDescription": "<p><span><strong><span>What You'll Be Doing</span></strong></span></p>\n<p><span>During this 12-week internship, the Application Security Intern will gain hands-on experience supporting Church Mutual's cybersecurity program while learning how security is integrated into the software development lifecycle. Working alongside security professionals and software developers, you will help identify, assess, and reduce application security risks.</span></p>\n<p><span><strong><span>\u00a0</span></strong></span></p>\n<p><span><strong><span>Responsibilities</span></strong></span></p>\n<ul>\n<li><span>Assist with ",
+    "postingDate": "2026-09-23T18:42:47Z",
+    "clientRequisitionID": "364",
+    "jobTitle": "Intern- IT Application Security",
+    "reqId": "5001227248706",
+    "easyApplyEnabled": false,
+    "category": "Internships",
+    "workLevelCode": "Full-time",
+    "type": "Normal",
+    "publishedJobTitle": "Intern- IT Application Security",
+    "canApply": true
+   },
+   {
+    "organizationalUnits": [
+     {
+      "name": "Internships",
+      "codeValue": "Internships"
+     }
+    ],
+    "workLocations": [],
+    "postingLocations": [],
+    "requisitionLocations": [
+     {
+      "itemID": "5000422082306",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "Milwaukee",
+       "postalCode": "53202",
+       "lineOne": "833 E Michigan Street\nSuite 600",
+       "countrySubdivisionLevel1": {
+        "codeValue": "WI",
+        "longName": "Wisconsin"
+       }
+      },
+      "nameCode": {
+       "codeValue": "MILW",
+       "longName": "Milwaukee Office"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": false
+     },
+     {
+      "itemID": "5000422082406",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "Merrill",
+       "postalCode": "54452",
+       "lineOne": "3000 Schuster Lane",
+       "countrySubdivisionLevel1": {
+        "codeValue": "WI",
+        "longName": "Wisconsin"
+       }
+      },
+      "nameCode": {
+       "codeValue": "MER",
+       "longName": "Merrill Office"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": true
+     },
+     {
+      "itemID": "5000422083706",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "Madison",
+       "postalCode": "53703",
+       "lineOne": "44 E Mifflin Street",
+       "countrySubdivisionLevel1": {
+        "codeValue": "WI",
+        "longName": "Wisconsin"
+       }
+      },
+      "nameCode": {
+       "codeValue": "MAD",
+       "longName": "Madison Office"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": false
+     }
+    ],
+    "careerSiteDomains": [
+     "churchmutual"
+    ],
+    "jobDescription": "<p><strong>What you'll be doing :</strong></p>\n<p>Church Mutual' s Internship program runs the day after Memorial Day through mid August, when students return to school. During the paid summer program you will learn key actuarial and insurance concepts and how they are applied at Church Mutual Group.\u00a0</p>\n<p>\u00a0</p>\n<p><strong>On</strong>\u00a0<strong>any given</strong>\u00a0<strong>day, you'll:</strong></p>\n<p>Do project work\u00a0 that will allow you to apply actuarial techniques and explain their methods, assumptions, and results working on a variety of projects. Actuarial interns will participate in insura",
+    "postingDate": "2026-09-23T18:21:28Z",
+    "clientRequisitionID": "358",
+    "jobTitle": "Intern- Actuarial",
+    "reqId": "5001225467006",
+    "easyApplyEnabled": false,
+    "category": "Internships",
+    "workLevelCode": "Full-time",
+    "type": "Normal",
+    "publishedJobTitle": "Intern- Actuarial",
+    "canApply": true
+   },
+   {
+    "organizationalUnits": [
+     {
+      "name": "Internships",
+      "codeValue": "Internships"
+     }
+    ],
+    "workLocations": [],
+    "postingLocations": [],
+    "requisitionLocations": [
+     {
+      "itemID": "5000422082306",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "Milwaukee",
+       "postalCode": "53202",
+       "lineOne": "833 E Michigan Street\nSuite 600",
+       "countrySubdivisionLevel1": {
+        "codeValue": "WI",
+        "longName": "Wisconsin"
+       }
+      },
+      "nameCode": {
+       "codeValue": "MILW",
+       "longName": "Milwaukee Office"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": false
+     },
+     {
+      "itemID": "5000422082406",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "Merrill",
+       "postalCode": "54452",
+       "lineOne": "3000 Schuster Lane",
+       "countrySubdivisionLevel1": {
+        "codeValue": "WI",
+        "longName": "Wisconsin"
+       }
+      },
+      "nameCode": {
+       "codeValue": "MER",
+       "longName": "Merrill Office"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": true
+     },
+     {
+      "itemID": "5000422083706",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "Madison",
+       "postalCode": "53703",
+       "lineOne": "44 E Mifflin Street",
+       "countrySubdivisionLevel1": {
+        "codeValue": "WI",
+        "longName": "Wisconsin"
+       }
+      },
+      "nameCode": {
+       "codeValue": "MAD",
+       "longName": "Madison Office"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": false
+     }
+    ],
+    "careerSiteDomains": [
+     "churchmutual"
+    ],
+    "jobDescription": "<p>Church Mutual's Internship Program runs from the day after Memorial Day through mid-August.</p>\n<p>The Content Marketing &amp; Communications Intern will support the Marketing &amp; Corporate Communications team in creating content that strengthens brand awareness, supports thought leadership initiatives, and engages our customers and stakeholders. This internship provides hands-on experience in content creation, storytelling, digital marketing, and communications while working on projects that make a real business impact.</p>\n<p><strong>\u00a0</strong></p>\n<p><strong>What you'll do:</strong></p",
+    "postingDate": "2026-09-23T18:21:02Z",
+    "clientRequisitionID": "359",
+    "jobTitle": "Intern-Content Marketing & Communications",
+    "reqId": "5001225484206",
+    "easyApplyEnabled": false,
+    "category": "Internships",
+    "workLevelCode": "Full-time",
+    "type": "Normal",
+    "publishedJobTitle": "Intern-Content Marketing & Communications",
+    "canApply": true
+   },
+   {
+    "organizationalUnits": [
+     {
+      "name": "Customer Service/Support",
+      "codeValue": "Customer Service/Support"
+     }
+    ],
+    "workLocations": [],
+    "postingLocations": [],
+    "requisitionLocations": [
+     {
+      "itemID": "5000422082406",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "Merrill",
+       "postalCode": "54452",
+       "lineOne": "3000 Schuster Lane",
+       "countrySubdivisionLevel1": {
+        "codeValue": "WI",
+        "longName": "Wisconsin"
+       }
+      },
+      "nameCode": {
+       "codeValue": "MER",
+       "longName": "Merrill Office"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": true
+     }
+    ],
+    "careerSiteDomains": [
+     "churchmutual"
+    ],
+    "jobDescription": "<div>What you'll be doing:<br />As part of a team, provide timely resolution to customers through written and/or telephonic inquiries while optimizing the customer experience. Documentation of all inquiries and actions taken is required. Process transactions, complete required forms, and produce insurance documents.</div>\n<div>\u00a0</div>\n<div>On any given day, you'll:</div>\n<ul>\n<li>Promptly provide information in response to inquiries to handle and resolve concerns.</li>\n<li>Gather and enter system data to process transactions and produce contractually correct insurance documents. Document all d",
+    "postingDate": "2026-09-16T13:33:33Z",
+    "clientRequisitionID": "350",
+    "jobTitle": "Customer Service Assistant",
+    "reqId": "5001222163806",
+    "easyApplyEnabled": false,
+    "category": "Customer Service/Support",
+    "workLevelCode": "Full-time",
+    "type": "Normal",
+    "publishedJobTitle": "Customer Service Assistant",
+    "canApply": true
+   },
+   {
+    "organizationalUnits": [
+     {
+      "name": "Underwriting",
+      "codeValue": "Underwriting"
+     }
+    ],
+    "workLocations": [],
+    "postingLocations": [],
+    "requisitionLocations": [
+     {
+      "itemID": "5000422082406",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "Merrill",
+       "postalCode": "54452",
+       "lineOne": "3000 Schuster Lane",
+       "countrySubdivisionLevel1": {
+        "codeValue": "WI",
+        "longName": "Wisconsin"
+       }
+      },
+      "nameCode": {
+       "codeValue": "MER",
+       "longName": "Merrill Office"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": true
+     }
+    ],
+    "careerSiteDomains": [
+     "churchmutual"
+    ],
+    "jobDescription": "<div>What you'll be doing:<br />Provide timely and accurate response to assigned internal and external customers to include service requests from producers, agencies, CM\u00a0Group subsidiaries, and others to support the retention of business.\u00a0 Collaborate with underwriters to establish target dates and communicate coverage limitation issues. \u00a0Assist in reviewing applications received for completeness and request missing information from producer.\u00a0 Responsibilities to include account set up, quoting, proposals, policy issuance, policy administration requests, and account service. \u00a0Document and main",
+    "postingDate": "2026-09-15T15:05:48Z",
+    "clientRequisitionID": "353",
+    "jobTitle": "Underwriting Support Specialist",
+    "reqId": "5001223379106",
+    "easyApplyEnabled": false,
+    "category": "Underwriting",
+    "workLevelCode": "Full-time",
+    "type": "Normal",
+    "publishedJobTitle": "Underwriting Support Specialist",
+    "canApply": true
+   },
+   {
+    "organizationalUnits": [
+     {
+      "name": "Risk Management",
+      "codeValue": "Risk Management"
+     }
+    ],
+    "workLocations": [],
+    "postingLocations": [],
+    "requisitionLocations": [
+     {
+      "itemID": "5000422082406",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "Merrill",
+       "postalCode": "54452",
+       "lineOne": "3000 Schuster Lane",
+       "countrySubdivisionLevel1": {
+        "codeValue": "WI",
+        "longName": "Wisconsin"
+       }
+      },
+      "nameCode": {
+       "codeValue": "MER",
+       "longName": "Merrill Office"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": true
+     }
+    ],
+    "careerSiteDomains": [
+     "churchmutual"
+    ],
+    "jobDescription": "<div>What you'll be doing:<br />Review risk exposures and coverage alternatives and evaluate policy submissions for completeness. Investigate and research inquiries to make appropriate decisions and determine and calculate pricing for insurance coverages. Review and verify information to process transactions and input data to produce insurance contract. Analyze information received from outside vendors and apply or adjust appropriate rates as determined.</div>\n<div>\u00a0</div>\n<div><br />On any given day, you'll:</div>\n<ul>\n<li>Review risk exposures and coverage alternatives and evaluate policy su",
+    "postingDate": "2026-09-08T19:50:34Z",
+    "clientRequisitionID": "325",
+    "jobTitle": "Policy Processing Associate",
+    "reqId": "5001217045606",
+    "easyApplyEnabled": false,
+    "category": "Risk Management",
+    "workLevelCode": "Full-time",
+    "type": "Normal",
+    "publishedJobTitle": "Policy Processing Associate",
+    "canApply": true
+   },
+   {
+    "organizationalUnits": [
+     {
+      "name": "Claim",
+      "codeValue": "Claim"
+     }
+    ],
+    "workLocations": [],
+    "postingLocations": [],
+    "requisitionLocations": [
+     {
+      "itemID": "5000422082306",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "Milwaukee",
+       "postalCode": "53202",
+       "lineOne": "833 E Michigan Street\nSuite 600",
+       "countrySubdivisionLevel1": {
+        "codeValue": "WI",
+        "longName": "Wisconsin"
+       }
+      },
+      "nameCode": {
+       "codeValue": "MILW",
+       "longName": "Milwaukee Office"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": false
+     },
+     {
+      "itemID": "5000422082406",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "Merrill",
+       "postalCode": "54452",
+       "lineOne": "3000 Schuster Lane",
+       "countrySubdivisionLevel1": {
+        "codeValue": "WI",
+        "longName": "Wisconsin"
+       }
+      },
+      "nameCode": {
+       "codeValue": "MER",
+       "longName": "Merrill Office"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": true
+     }
+    ],
+    "careerSiteDomains": [
+     "churchmutual"
+    ],
+    "jobDescription": "<div>What you'll be doing:<br />In accordance with application of state and federal laws and company best practices, provide claimants and insureds with clear and correct instructions regarding the workers compensation claim process. Process basic claims by verifying coverage, obtaining and documenting necessary information for the claim, and issuing appropriate payments as directed.</div>\n<div>\u00a0</div>\n<div>On any given day, you'll:</div>\n<ul>\n<li>Process newly reported workers compensation claims, initiate basic claim investigation, and redirect moderate and complex claims to a higher level C",
+    "postingDate": "2026-09-08T18:08:45Z",
+    "clientRequisitionID": "352",
+    "jobTitle": "Claim Processor - Workers Compensation",
+    "reqId": "5001222415406",
+    "easyApplyEnabled": false,
+    "category": "Claim",
+    "workLevelCode": "Full-time",
+    "type": "Normal",
+    "publishedJobTitle": "Claim Processor - Workers Compensation",
+    "canApply": true
+   },
+   {
+    "organizationalUnits": [
+     {
+      "name": "Information Technology",
+      "codeValue": "Information Technology"
+     }
+    ],
+    "workLocations": [],
+    "postingLocations": [],
+    "requisitionLocations": [
+     {
+      "itemID": "5000422082306",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "Milwaukee",
+       "postalCode": "53202",
+       "lineOne": "833 E Michigan Street\nSuite 600",
+       "countrySubdivisionLevel1": {
+        "codeValue": "WI",
+        "longName": "Wisconsin"
+       }
+      },
+      "nameCode": {
+       "codeValue": "MILW",
+       "longName": "Milwaukee Office"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": true
+     }
+    ],
+    "careerSiteDomains": [
+     "churchmutual"
+    ],
+    "jobDescription": "<p><strong><span>What you'll be doing:</span></strong></p>\n<p><span>The IT Development Manager \u2013 Digital Experience &amp; Workflow Platforms is responsible for leading the design, development, implementation, and support of customer, agent, employee, and workflow-based technology solutions. This role manages a team of software engineers, technical leads, business analysts, and quality assurance professionals responsible for delivering modern digital experiences, workflow automation, and integrated business solutions.</span></p>\n<p><span>\u00a0</span></p>\n<p><span>The manager provides leadership for",
+    "postingDate": "2026-09-02T20:52:24Z",
+    "clientRequisitionID": "342",
+    "jobTitle": "Manager - Digital Experience & Workflow Platforms",
+    "reqId": "5001220712006",
+    "easyApplyEnabled": false,
+    "category": "Information Technology",
+    "workLevelCode": "Full-time",
+    "type": "Normal",
+    "publishedJobTitle": "Manager - Digital Experience & Workflow Platforms",
+    "canApply": true
+   },
+   {
+    "organizationalUnits": [
+     {
+      "name": "Information Technology",
+      "codeValue": "Information Technology"
+     }
+    ],
+    "workLocations": [],
+    "postingLocations": [],
+    "requisitionLocations": [
+     {
+      "itemID": "5000422082406",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "Merrill",
+       "postalCode": "54452",
+       "lineOne": "3000 Schuster Lane",
+       "countrySubdivisionLevel1": {
+        "codeValue": "WI",
+        "longName": "Wisconsin"
+       }
+      },
+      "nameCode": {
+       "codeValue": "MER",
+       "longName": "Merrill Office"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": true
+     }
+    ],
+    "careerSiteDomains": [
+     "churchmutual"
+    ],
+    "jobDescription": "<div><span><strong>What you'll be doing:\u00a0</strong></span>\n<p><span>The IT Development Manager is responsible for leading the design, development, support, and continuous improvement of the organization's Policy Administration System (PAS) technology platform. This role provides leadership to a team of software engineers, technical leads, business analysts, and quality assurance professionals responsible for delivering scalable, secure, and high-quality solutions that support policy lifecycle processes including quoting, underwriting, policy issuance, endorsements, renewals, cancellations, and ",
+    "postingDate": "2026-09-02T20:51:55Z",
+    "clientRequisitionID": "343",
+    "jobTitle": "Manager - Policy Administration Systems",
+    "reqId": "5001220718406",
+    "easyApplyEnabled": false,
+    "category": "Information Technology",
+    "workLevelCode": "Full-time",
+    "type": "Normal",
+    "publishedJobTitle": "Manager - Policy Administration Systems",
+    "canApply": true
+   },
+   {
+    "organizationalUnits": [
+     {
+      "name": "Information Technology",
+      "codeValue": "Information Technology"
+     }
+    ],
+    "workLocations": [],
+    "postingLocations": [],
+    "requisitionLocations": [
+     {
+      "itemID": "5000422082406",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "Merrill",
+       "postalCode": "54452",
+       "lineOne": "3000 Schuster Lane",
+       "countrySubdivisionLevel1": {
+        "codeValue": "WI",
+        "longName": "Wisconsin"
+       }
+      },
+      "nameCode": {
+       "codeValue": "MER",
+       "longName": "Merrill Office"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": true
+     }
+    ],
+    "careerSiteDomains": [
+     "churchmutual"
+    ],
+    "jobDescription": "<p><span><strong>What you'll be doing:\u00a0</strong></span></p>\n<p><span>The IT Quality Assurance &amp; Engineering Manager is responsible for establishing and leading the quality engineering strategy, testing practices, automation frameworks, and quality governance processes across the IT organization. This role leads a team of quality assurance analysts, test automation engineers, and quality engineering professionals responsible for ensuring the reliability, performance, security, and business readiness of technology solutions delivered throughout the enterprise.</span></p>\n<p><span>The manager",
+    "postingDate": "2026-09-02T20:50:06Z",
+    "clientRequisitionID": "347",
+    "jobTitle": "Manager - Quality Assurance & Engineering",
+    "reqId": "5001222115706",
+    "easyApplyEnabled": false,
+    "category": "Information Technology",
+    "workLevelCode": "Full-time",
+    "type": "Normal",
+    "publishedJobTitle": "Manager - Quality Assurance & Engineering",
+    "canApply": true
+   }
+  ]
+ },
+ "churchmutual_listing_top10_skip10": {
+  "count": 19,
+  "jobRequisitions": [
+   {
+    "organizationalUnits": [
+     {
+      "name": "Customer Service/Support",
+      "codeValue": "Customer Service/Support"
+     }
+    ],
+    "workLocations": [],
+    "postingLocations": [],
+    "requisitionLocations": [
+     {
+      "itemID": "5000422082406",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "Merrill",
+       "postalCode": "54452",
+       "lineOne": "3000 Schuster Lane",
+       "countrySubdivisionLevel1": {
+        "codeValue": "WI",
+        "longName": "Wisconsin"
+       }
+      },
+      "nameCode": {
+       "codeValue": "MER",
+       "longName": "Merrill Office"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": true
+     }
+    ],
+    "careerSiteDomains": [
+     "churchmutual"
+    ],
+    "jobDescription": "<div>\n<div>\n<div>\n<p><span><span>What</span><span> you'll be doing:</span></span></p>\n</div>\n</div>\n</div>\n<div>\n<div>\n<div>\n<p><span>As part of a team, provide timely solutions to customers primarily through telephone and email inquiries while optimizing the customer experience. Provide comprehensive direction regarding insurance coverages and options, information as requested, and resolution for concerns.</span></p>\n<p><span>Documentation of all inquiries and actions taken is required. Process transactions, complete required forms, and produce insurance documents. Determine eligibility for a",
+    "jobQualifications": "\u2022 We encourage bilingual candidates to apply, particularly those fluent in both English and Spanish.<br /><br />\u2022 Property and casualty insurance license required, and relevant licenses must be renewed and maintained in accordance with Church Mutual and applicable state requirements.<br />\u2022 High school diploma or equivalent required.<br />\u2022 Two years of customer service, industry, or equivalent work experience preferred. A two- or four-year degree may waive all or a portion of the work requirement.<br />\u2022 Post-secondary education or participation in recognized insurance education courses is de",
+    "postingDate": "2026-08-25T20:57:46Z",
+    "clientRequisitionID": "313",
+    "jobTitle": "Customer Service Agent I",
+    "reqId": "5001213634406",
+    "easyApplyEnabled": false,
+    "category": "Customer Service/Support",
+    "workLevelCode": "Full-time",
+    "type": "Normal",
+    "publishedJobTitle": "Customer Service Agent I",
+    "canApply": true
+   },
+   {
+    "organizationalUnits": [
+     {
+      "name": "Information Technology",
+      "codeValue": "Information Technology"
+     }
+    ],
+    "workLocations": [],
+    "postingLocations": [],
+    "requisitionLocations": [
+     {
+      "itemID": "5000422082406",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "Merrill",
+       "postalCode": "54452",
+       "lineOne": "3000 Schuster Lane",
+       "countrySubdivisionLevel1": {
+        "codeValue": "WI",
+        "longName": "Wisconsin"
+       }
+      },
+      "nameCode": {
+       "codeValue": "MER",
+       "longName": "Merrill Office"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": true
+     }
+    ],
+    "careerSiteDomains": [
+     "churchmutual"
+    ],
+    "jobDescription": "<p><span><strong>BASIC PURPOSE:</strong></span></p>\n<p><span>The Senior Network Engineer provides technical leadership for enterprise network infrastructure, driving architecture standards, design improvements, and alignment with business objectives. This role leads complex network design, implementation, troubleshooting, and optimization across routing, switching, security, cloud, and enterprise connectivity (voice, data, wireless, and collaboration), while ensuring high availability through proactive monitoring, rapid incident response, and effective disaster recovery planning. The position ",
+    "postingDate": "2026-08-21T16:31:17Z",
+    "clientRequisitionID": "334",
+    "jobTitle": "Senior Network Engineer",
+    "reqId": "5001218033006",
+    "easyApplyEnabled": false,
+    "category": "Information Technology",
+    "workLevelCode": "Full-time",
+    "type": "Normal",
+    "publishedJobTitle": "Senior Network Engineer",
+    "canApply": true
+   },
+   {
+    "organizationalUnits": [
+     {
+      "name": "Sales",
+      "codeValue": "Sales"
+     }
+    ],
+    "workLocations": [],
+    "postingLocations": [],
+    "requisitionLocations": [
+     {
+      "itemID": "5000422083306",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "",
+       "postalCode": "",
+       "lineOne": "",
+       "countrySubdivisionLevel1": {
+        "codeValue": "",
+        "longName": ""
+       },
+       "geoCoordinate": {
+        "latitude": 0,
+        "longitude": 0
+       }
+      },
+      "nameCode": {
+       "codeValue": "HOME",
+       "longName": "Home Based"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": true
+     }
+    ],
+    "careerSiteDomains": [
+     "churchmutual"
+    ],
+    "jobDescription": "<p><span><strong>****This is a remote opportunity***</strong></span></p>\n<p>\u00a0</p>\n<p><span><strong>BASIC PURPOSE:</strong></span></p>\n<p><span>The National Broker Territory Manager will play a critical role in developing and executing strategies to enhance our relationships with national brokers who operate coast to coast, ensuring their success and driving business growth. This leadership position requires a combination of strategic thinking, relationship management, entrepreneurial spirit, and a deep understanding of our products and service offerings.</span></p>\n<p><span>\u00a0</span></p>\n<p><sp",
+    "postingDate": "2026-08-19T21:07:17Z",
+    "clientRequisitionID": "341",
+    "jobTitle": "National Broker Territory Manager - REMOTE",
+    "reqId": "5001219701706",
+    "easyApplyEnabled": false,
+    "category": "Sales",
+    "workLevelCode": "Full-time",
+    "type": "Normal",
+    "publishedJobTitle": "National Broker Territory Manager - REMOTE",
+    "canApply": true
+   },
+   {
+    "organizationalUnits": [
+     {
+      "name": "Claim",
+      "codeValue": "Claim"
+     }
+    ],
+    "workLocations": [],
+    "postingLocations": [],
+    "requisitionLocations": [
+     {
+      "itemID": "5000422083306",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "",
+       "postalCode": "",
+       "lineOne": "",
+       "countrySubdivisionLevel1": {
+        "codeValue": "",
+        "longName": ""
+       },
+       "geoCoordinate": {
+        "latitude": 0,
+        "longitude": 0
+       }
+      },
+      "nameCode": {
+       "codeValue": "HOME",
+       "longName": "Home Based"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": true
+     }
+    ],
+    "careerSiteDomains": [
+     "churchmutual"
+    ],
+    "jobDescription": "<div>\u00a0</div>\n<div>\u00a0</div>\n<div>\n<p><span><strong><span>***This role can be FULLY REMOTE or HYBRID (in office days Tuesday-Thursday) if in close proximity to our office in Merrill, WI.\u00a0</span></strong></span></p>\n<p><span>\u00a0</span></p>\n<p><span>Who should apply:\u00a0\u00a0</span></p>\n<p>\u00a0</p>\n<p>\u00a0</p>\n<div><span>If you're an experienced <strong>commercial property</strong> claims professional who enjoys analyzing complex losses, solving challenging claim scenarios, making sound claim decisions, and mentoring others, this may be the next opportunity for you!</span></div>\n<br />\n<div><span>This role is ide",
+    "postingDate": "2026-08-18T17:19:02Z",
+    "clientRequisitionID": "329",
+    "jobTitle": "Technical Claim Specialist - Property",
+    "reqId": "5001217324106",
+    "easyApplyEnabled": false,
+    "category": "Claim",
+    "workLevelCode": "Full-time",
+    "type": "Normal",
+    "publishedJobTitle": "Technical Claim Specialist - Property",
+    "canApply": true
+   },
+   {
+    "organizationalUnits": [
+     {
+      "name": "Sales",
+      "codeValue": "Sales"
+     }
+    ],
+    "workLocations": [],
+    "postingLocations": [],
+    "requisitionLocations": [
+     {
+      "itemID": "5000422083306",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "",
+       "postalCode": "",
+       "lineOne": "",
+       "countrySubdivisionLevel1": {
+        "codeValue": "",
+        "longName": ""
+       },
+       "geoCoordinate": {
+        "latitude": 0,
+        "longitude": 0
+       }
+      },
+      "nameCode": {
+       "codeValue": "HOME",
+       "longName": "Home Based"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": true
+     }
+    ],
+    "careerSiteDomains": [
+     "churchmutual"
+    ],
+    "jobDescription": "<div>What you'll be doing:<br />Prospect and sell new insurance accounts for Church Mutual and subsidiaries.</div>\n<div>\u00a0</div>\n<div>\u00a0</div>\n<div><br />Compensation &amp; Benefits:</div>\n<ul>\n<li>The target pay for this position is $64,000 - $86,000, which includes base plus book commission. The base salary for this role is $44.4K - $66.6K. Total compensation is heavily dependent on sales performance.</li>\n<li>Generous Commission Structure on New Business</li>\n<li>Earn competitive commissions on policy renewals from day one, based upon an existing book of business</li>\n<li>\u00a0High earning potent",
+    "postingDate": "2026-08-11T18:49:08Z",
+    "clientRequisitionID": "320",
+    "jobTitle": "Regional Sales Representative - Utah",
+    "reqId": "5001215941206",
+    "easyApplyEnabled": false,
+    "category": "Sales",
+    "workLevelCode": "Full-time",
+    "type": "Normal",
+    "publishedJobTitle": "Regional Sales Representative - Utah",
+    "canApply": true
+   },
+   {
+    "organizationalUnits": [
+     {
+      "name": "Risk Management",
+      "codeValue": "Risk Management"
+     }
+    ],
+    "workLocations": [],
+    "postingLocations": [],
+    "requisitionLocations": [
+     {
+      "itemID": "5000422083706",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "Madison",
+       "postalCode": "53703",
+       "lineOne": "44 E Mifflin Street",
+       "countrySubdivisionLevel1": {
+        "codeValue": "WI",
+        "longName": "Wisconsin"
+       }
+      },
+      "nameCode": {
+       "codeValue": "MAD",
+       "longName": "Madison Office"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": true
+     }
+    ],
+    "careerSiteDomains": [
+     "churchmutual"
+    ],
+    "jobDescription": "<p><span><strong><span><span>BASIC PURPOSE:</span></span></strong><span>\u00a0</span></span></p>\n<p><span><span><span>Responsible for the leadership, innovation, governance, and management necessary to identify, evaluate, mitigate, and monitor the company</span><span>'</span><span>s enterprise risks.\u00a0 Evaluate emerging risks and trends that may impact the company</span><span>'</span><span>s risk appetite and present mitigation strategies.\u00a0 Prioritize risks within the company</span><span>'</span><span>s ERM framework, enterprise risk register, and risk profile to ensure risks are managed to minimize",
+    "postingDate": "2026-07-31T17:22:47Z",
+    "clientRequisitionID": "316",
+    "jobTitle": "Director - Enterprise Risk Management",
+    "reqId": "5001214823206",
+    "easyApplyEnabled": false,
+    "category": "Risk Management",
+    "workLevelCode": "Full-time",
+    "type": "Normal",
+    "publishedJobTitle": "Director - Enterprise Risk Management",
+    "canApply": true
+   },
+   {
+    "organizationalUnits": [
+     {
+      "name": "Underwriting",
+      "codeValue": "Underwriting"
+     }
+    ],
+    "workLocations": [],
+    "postingLocations": [],
+    "requisitionLocations": [
+     {
+      "itemID": "5000422083306",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "",
+       "postalCode": "",
+       "lineOne": "",
+       "countrySubdivisionLevel1": {
+        "codeValue": "",
+        "longName": ""
+       },
+       "geoCoordinate": {
+        "latitude": 0,
+        "longitude": 0
+       }
+      },
+      "nameCode": {
+       "codeValue": "HOME",
+       "longName": "Home Based"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": true
+     }
+    ],
+    "careerSiteDomains": [
+     "churchmutual"
+    ],
+    "jobDescription": "<div>\n<div>\n<p>CM | Vantage Specialty Insurance Company is the excess and surplus lines carrier within the CM Group family of companies. Focused on providing specialized insurance solutions through strong broker partnerships, technical underwriting expertise, and disciplined portfolio management, CM | Vantage is positioned for continued growth and innovation within the specialty insurance marketplace.</p>\n<p>\u00a0</p>\n<p>As a member of the leadership team, the Managing Director will play a critical role in shaping business strategy, driving profitable growth, strengthening broker relationships, an",
+    "postingDate": "2026-07-22T14:18:40Z",
+    "clientRequisitionID": "305",
+    "jobTitle": "Managing Director, Excess & Surplus Casualty",
+    "reqId": "5001212235206",
+    "easyApplyEnabled": false,
+    "category": "Underwriting",
+    "workLevelCode": "Full-time",
+    "type": "Normal",
+    "publishedJobTitle": "Managing Director, Excess & Surplus Casualty",
+    "canApply": true
+   },
+   {
+    "organizationalUnits": [
+     {
+      "name": "Other",
+      "codeValue": "Other"
+     }
+    ],
+    "workLocations": [],
+    "postingLocations": [],
+    "requisitionLocations": [
+     {
+      "itemID": "5000422082406",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "Merrill",
+       "postalCode": "54452",
+       "lineOne": "3000 Schuster Lane",
+       "countrySubdivisionLevel1": {
+        "codeValue": "WI",
+        "longName": "Wisconsin"
+       }
+      },
+      "nameCode": {
+       "codeValue": "MER",
+       "longName": "Merrill Office"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": true
+     }
+    ],
+    "careerSiteDomains": [
+     "churchmutual"
+    ],
+    "jobDescription": "<div>What you'll be doing:<br />Process transactional print output, including policies, endorsements, cancelations, renewals, billing statements, claim letters, and claim &amp; accounting checks, and prepare for mailing and delivery. Prepare company outgoing mail, including overnight mail, and mail with special delivery requirements. Perform administrative tasks associated with special handling of items including obtaining and assembling of archived material and processing of cancelations.</div>\n<div>\u00a0</div>\n<div>On any given day, you'll:</div>\n<ul>\n<li>Assemble and prepare policies, endorseme",
+    "postingDate": "2026-06-01T16:44:58Z",
+    "clientRequisitionID": "281",
+    "jobTitle": "Distribution Technician-DCT",
+    "reqId": "5001201134906",
+    "easyApplyEnabled": false,
+    "category": "Other",
+    "workLevelCode": "Full-time",
+    "type": "Normal",
+    "publishedJobTitle": "Distribution Technician-DCT",
+    "canApply": true
+   },
+   {
+    "organizationalUnits": [
+     {
+      "name": "Information Technology",
+      "codeValue": "Information Technology"
+     }
+    ],
+    "workLocations": [],
+    "postingLocations": [],
+    "requisitionLocations": [
+     {
+      "itemID": "5000422082406",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "Merrill",
+       "postalCode": "54452",
+       "lineOne": "3000 Schuster Lane",
+       "countrySubdivisionLevel1": {
+        "codeValue": "WI",
+        "longName": "Wisconsin"
+       }
+      },
+      "nameCode": {
+       "codeValue": "MER",
+       "longName": "Merrill Office"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": true
+     }
+    ],
+    "careerSiteDomains": [
+     "churchmutual"
+    ],
+    "jobDescription": "<div><span>What you'll do:</span></div>\n<div>\n<p><span>The Assistant Vice President of IT &amp; Chief Technology Officer (CTO) is a senior IT executive role responsible for enterprise application development, integration, and data platforms across Church Mutual\u2019s Property &amp; Casualty insurance technology ecosystem. This role leads a high\u2011performance technology delivery organization and partners closely with business leaders to translate strategy into scalable, secure, and reliable technology solutions.</span></p>\n<p><span>The CTO owns working with business unit leaders to translate business",
+    "postingDate": "2026-04-02T19:01:14Z",
+    "clientRequisitionID": "250",
+    "jobTitle": "AVP - IT Chief Technology Officer",
+    "reqId": "5001187943206",
+    "easyApplyEnabled": false,
+    "category": "Information Technology",
+    "workLevelCode": "Full-time",
+    "type": "Normal",
+    "publishedJobTitle": "AVP - IT Chief Technology Officer",
+    "canApply": true
+   }
+  ]
+ },
+ "churchmutual_detail_5001222115706": {
+  "jobRequisitions": [
+   {
+    "requisitionTitle": "Manager - Quality Assurance & Engineering",
+    "itemID": 5001222115706,
+    "postingInstructions": [
+     {
+      "jobRequisitionOverrides": {
+       "requisitionTitle": "Manager - Quality Assurance & Engineering"
+      },
+      "prospectReferralIndicator": true,
+      "timestampLastPosted": "2026-09-02T20:50:19Z",
+      "postingChannel": {
+       "internetAddress": "https://recruiting.adp.com/srccsh/public/RTI.home?r=5001222115706&c=2212939&d=ExternalCareerSite",
+       "channelID": "483439",
+       "typeCode": {
+        "codeValue": "00001000",
+        "longName": "External"
+       }
+      }
+     }
+    ],
+    "requisitionDescription": "<p><span style=\"font-family: arial, helvetica, sans-serif; font-size: 10pt;\"><strong>What you'll be doing:&nbsp;</strong></span></p>\n<p style=\"margin-bottom: 8.0pt; line-height: 115%;\"><span style=\"font-size: 10pt; line-height: 115%; font-family: arial, helvetica, sans-serif;\">The IT Quality Assurance &amp; Engineering Manager is responsible for establishing and leading the quality engineering strategy, testing practices, automation frameworks, and quality governance processes across the IT organization. This role leads a team of quality assurance analysts, test automation engineers, and quali",
+    "clientRequisitionID": "347",
+    "requisitionLocations": [
+     {
+      "itemID": "5000422082406",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "Merrill",
+       "postalCode": "54452",
+       "lineOne": "3000 Schuster Lane",
+       "countrySubdivisionLevel1": {
+        "codeValue": "WI",
+        "longName": "Wisconsin"
+       }
+      },
+      "nameCode": {
+       "codeValue": "MER",
+       "longName": "Merrill Office"
+      },
+      "aliasNames": [
+       {
+        "nameValue": "",
+        "typeCode": {
+         "codeValue": ""
+        }
+       }
+      ],
+      "postingIndicator": false,
+      "primaryIndicator": true
+     }
+    ],
+    "customFieldGroup": {
+     "stringFields": [
+      {
+       "stringValue": "<div>\n<h2 class=\"iCIMS_InfoMsg iCIMS_InfoField_Job\"><span style=\"font-size: 10.0pt;font-family: arial , helvetica , sans-serif;\"><strong>Looking to join a vibrant organization that makes a difference?</strong></span></h2>\n<div class=\"iCIMS_InfoMsg iCIMS_InfoMsg_Job\">\n<div class=\"iCIMS_Expandable_Container\">\n<div class=\"iCIMS_Expandable_Text\">\n<p><span style=\"font-size: 10.0pt;font-family: arial , helvetica , sans-serif;\">At Church Mutual, our customers are at the heart of everything we do. For more than 125 years, we've made it our business to protect those who serve and inspire others through our specialized insurance expertise and innovative solutions. Our customers do amazing things for the world -- when we protect them, we <strong>Stand for Good</strong>. We foster a workplace where all employees are treated with dignity and respect; diversity, inclusion and belonging are woven into the fabric of our company through our customers, employees, leadership, business relationships and outreach programs.</span></p>\n</div>\n</div>\n</div>\n</div>",
+       "categoryCode": {
+        "codeValue": "RTi2212939Req_zzreqJobPostingIntro"
+       }
+      },
+      {
+       "stringValue": "107,000 to 160,400",
+       "categoryCode": {
+        "codeValue": "RTiReqExtended_compensationDetails"
+       }
+      },
+      {
+       "stringValue": "107,000 to 160,400",
+       "categoryCode": {
+        "codeValue": "RTiReqExtended_compensationDetails"
+       }
+      }
+     ],
+     "codeFields": [
+      {
+       "categoryCode": {
+        "codeValue": "RTiReq_typeOfFulltime"
+       },
+       "codeValue": "00001000",
+       "longName": "Full-time"
+      },
+      {
+       "categoryCode": {
+        "codeValue": "RTiReq_isConfidential"
+       },
+       "codeValue": "00001000",
+       "longName": "No"
+      },
+      {
+       "categoryCode": {
+        "codeValue": "RTiReq_type"
+       },
+       "codeValue": "00001000",
+       "longName": "Normal"
+      },
+      {
+       "categoryCode": {
+        "codeValue": "RTiReq_typeOfSalaried"
+       },
+       "codeValue": "00001000",
+       "longName": "Salaried"
+      }
+     ],
+     "indicatorFields": [
+      {
+       "categoryCode": {
+        "codeValue": "PostingIndicatorExternal"
+       },
+       "indicatorValue": true
+      }
+     ]
+    },
+    "masterDataSearchIds": [],
+    "easyApplyEnabled": false,
+    "type": "Normal",
+    "canApply": true
+   }
+  ]
+ },
+ "site_corpfollettexternal": {
+  "id": "6fce241b-4c70-4f56-8984-173ba5b1ef04",
+  "name": "Corpfollettexternal",
+  "domain": "corpfollettexternal",
+  "clientName": "Follett Corporation",
+  "orgoid": "G3QR72GFXDYZR5SB",
+  "active": true,
+  "hideDaysPosted": true,
+  "myJobsToken": "AQICAHjbeJX6AsPF3JkKBFXa9PICJgo38oRwJbrU0hcfh8rBagEMhqt13h3QnUnvLrb4SYnvAAAA2jCB1wYJKoZIhvcNAQcGoIHJMIHGAgEAMIHABgkqhkiG9w0BBwEwHgYJYIZIAWUDBAEuMBEEDKLr8m3jxqZ5EzujYQIBEICBkrtxOCGSjsL1w0I1voIhYN5Hfzy8NQsfxrWd7XS0fKfXrapHQsqCoHyFqGMA81LJIIQVWQ3eJPmKjbSF89X14qlv1KPVm9g+WvaA4TqbSfaSWMnDJd7wfP8K0ko6ikdeKGDJoIEKzZPH66qMU04wBBsMFGPqyHeHj8vUruGloxy430HD72Q130xyY2pOiZ2Dcwe1",
+  "settings": {
+   "careerSiteType": "External"
+  }
+ },
+ "corpfollettexternal_detail_5001213128706": {
+  "jobRequisitions": [
+   {
+    "requisitionTitle": "Lead Business Intelligence Engineer",
+    "itemID": 5001213128706,
+    "postingInstructions": [
+     {
+      "jobRequisitionOverrides": {
+       "requisitionTitle": "Lead Business Intelligence Engineer"
+      },
+      "prospectReferralIndicator": true,
+      "timestampLastPosted": "2026-07-20T18:06:41Z",
+      "postingChannel": {
+       "internetAddress": "https://recruiting.adp.com/srccsh/public/RTI.home?r=5001213128706&c=1122441&d=Corporate_External",
+       "channelID": "1036741",
+       "typeCode": {
+        "codeValue": "00001000",
+        "longName": "External"
+       }
+      },
+      "postDate": ""
+     }
+    ],
+    "requisitionDescription": "<DIV>\n<DIV>\n<P><SPAN style=\"text-decoration: underline;\"><STRONG>Position Overview</STRONG></SPAN></P>\n<P>Follett Higher Education is a leading educational service provider and omnichannel retailer, providing students, faculty, staff, parents, and fans with the course materials, learning tools, and retail services needed to successfully support the collegiate journey. Follett Higher Education supports over 6 million students through its 1,100 physical and 1,750 eCommerce campus stores across North America.</P>\n<P>The <STRONG>Lead Business Intelligence Engineer</STRONG> is responsible for desig",
+    "clientRequisitionID": "26-30374",
+    "screeningRequirements": [
+     {
+      "requirementDescription": "<DIV>\n<DIV>\n<UL>\n<LI>Bachelor's degree in a related field or equivalent.</LI>\n<LI>7+ years of experience designing and implementing end-to-end data analytics solutions.</LI>\n<LI>Experience designing and implementing semantic layers for Business Intelligence and Analytics consumption.</LI>\n<LI>Strong understanding of ETL processes and data pipelines, and experience developing them.</LI>\n<LI>Experience developing actionable reports and dashboards.</LI>\n<LI>Strong analytical and problem-solving skills, with the ability to analyze complex data sets or business requirements and translate them into tangible solutions.</LI>\n<LI>Excellent communication and interpersonal skills, with the ability to work collaboratively with business stakeholders and technical teams.</LI>\n<LI>Experience in project management and Agile methodologies.</LI>\n<LI>Ability to work independently and as part of a team in a fast-paced, dynamic environment.</LI>\n<LI>Experience with cloud computing platforms, such as Azure and Google Cloud Platform.</LI>\n<LI>Data Analytics, Business Intelligence, and Cloud certifications are a plus.</LI>\n<LI>Experience working in the retail and education industries is a plus.</LI>\n</UL>\n</DIV>\n</DIV>"
+     }
+    ],
+    "requisitionLocations": [
+     {
+      "itemID": "5000009637600",
+      "address": {
+       "country": {
+        "codeValue": "USA",
+        "longName": "United States"
+       },
+       "cityName": "Westchester",
+       "postalCode": "60154",
+       "lineOne": "3 Westbrook Corporate Center Suite 200",
+       "countrySubdivisionLevel1": {
+        "codeValue": "IL",
+        "longName": "Illinois"
+       },
+       "geoCoordinate": {
+        "latitude": 41.8498339,
+        "longitude": -87.8806738
+       }
+      },
+      "nameCode": {
+       "codeValue": "70000",
+       "longName": "FHEG Westchester"
+      },
+      "postingIndicator": true,
+      "primaryIndicator": true
+     }
+    ],
+    "customFieldGroup": {
+     "codeFields": [
+      {
+       "categoryCode": {
+        "codeValue": "RTiReq_grp"
+       },
+       "codeValue": "00000042",
+       "longName": "Information Technology"
+      },
+      {
+       "categoryCode": {
+        "codeValue": "RTiReq_typeOfFulltime"
+       },
+       "codeValue": "00001000",
+       "longName": "Full-time"
+      },
+      {
+       "categoryCode": {
+        "codeValue": "RTiReq_isConfidential"
+       },
+       "codeValue": "00001000",
+       "longName": "No"
+      },
+      {
+       "categoryCode": {
+        "codeValue": "RTiReq_type"
+       },
+       "codeValue": "00001000",
+       "longName": "Normal"
+      },
+      {
+       "categoryCode": {
+        "codeValue": "RTiReq_typeOfSalaried"
+       },
+       "codeValue": "00001000",
+       "longName": "Salaried"
+      }
+     ],
+     "stringFields": [
+      {
+       "stringValue": "#LI-II1",
+       "categoryCode": {
+        "codeValue": "RTi1122441Req_zzreqSellOverview"
+       }
+      },
+      {
+       "stringValue": "The annual salary/hourly rate range has been established based on the role, experience, skill set, and location. The exact starting salary/hourly rate within the range will depend on the role and the local market. This position may be eligible to participate in one of the Company\u2019s incentive plans. The amount of any incentive payment varies and is subject to the terms and conditions of the applicable incentive plan. \r\n\r\n\r\nWe offer a comprehensive benefits package which includes medical, dental, vision, disability, wellness programs, 401(k) plan, flex spending, paid holidays, and paid time off. Eligibility for benefits is governed by the applicable policies and plan documents.",
+       "categoryCode": {
+        "codeValue": "jobRequisition_payTransparency_verbiage"
+       }
+      }
+     ],
+     "amountFields": [
+      {
+       "amountValue": 40000,
+       "currencyCode": "USD",
+       "categoryCode": {
+        "codeValue": "RTiReqExtended_payTransparencyMinSalary"
+       }
+      },
+      {
+       "amountValue": 141700,
+       "currencyCode": "USD",
+       "categoryCode": {
+        "codeValue": "RTiReqExtended_payTransparencyMaxSalary"
+       }
+      }
+     ],
+     "indicatorFields": [
+      {
+       "categoryCode": {
+        "codeValue": "PostingIndicatorExternal"
+       },
+       "indicatorValue": true
+      }
+     ]
+    },
+    "masterDataSearchIds": [],
+    "payTransPayType": "00001000",
+    "easyApplyEnabled": false,
+    "type": "Normal",
+    "gridControl": "00000001",
+    "canApply": true
+   }
+  ]
+ },
+ "detail_closed": {
+  "requestId": "b607d5d1-addb-45fd-ac47-399d87028569",
+  "message": "Bad Request"
+ },
+ "site_taherinternal": {
+  "id": "b4b07f20-566c-4499-a5e2-9900275f5c5c",
+  "name": "Internal Site",
+  "domain": "taherinternal",
+  "clientName": "Taher, Inc",
+  "orgoid": "0KSY8KE2TP300CN8",
+  "active": true,
+  "hideDaysPosted": false,
+  "myJobsToken": "AQICAHjbeJX6AsPF3JkKBFXa9PICJgo38oRwJbrU0hcfh8rBagE9cpTGwcSiVkS3P6Ds+OJmAAAA2jCB1wYJKoZIhvcNAQcGoIHJMIHGAgEAMIHABgkqhkiG9w0BBwEwHgYJYIZIAWUDBAEuMBEEDK/mRqGqFl6Z2/vgqwIBEICBkhJWJL71e437qWSGiajWz9IIFSgXDCIFBUHo5CeKiY64/pIjdy/dFZuDRTzkFwsORqv4lyeIakKI6NycW1qGmcBgoexW0jSHTjtDi0pEFqbluDFVE1+hWxG9ziOYoyYJ2U5ZtVRDGL1MvYRl8QBI4k60m4giibdMavPGfpR25PElSsp3EhgDdZisCl3gqFGNnthz",
+  "settings": {
+   "careerSiteType": "Internal"
+  }
+ },
+ "site_not_found": {
+  "requestId": "82dab3b3-2b2f-45dd-abc6-e5fa5f2f1c30",
+  "message": "Careersite not found"
+ },
+ "site_not_active": {
+  "requestId": "30e0c614-7249-484f-9606-0f9f9b5b244d",
+  "message": "Careersite is not active"
+ },
+ "listing_bad_token": {
+  "requestId": "3703ff25-9715-482f-8cad-bde4bf61ea26",
+  "message": "postingChannelId not found"
+ }
+}
