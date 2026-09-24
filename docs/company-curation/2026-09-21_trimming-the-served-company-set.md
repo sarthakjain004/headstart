@@ -76,8 +76,8 @@ So the blocker on "startups under 200 people" or "not IT services" is company→
 not the availability of company data. On the data itself: People Data Labs publishes a free
 22M-company dataset under **CC BY 4.0** with name, website, LinkedIn URL, industry, size band,
 founding year and HQ location, downloadable as CSV/JSON — permissive enough to use, and the
-licensing work in `docs/hr-contacts/2026-09-13_public-datasets-and-licensing.md` already covers how
-this repo treats third-party company data.
+licensing notes on public datasets (kept outside this public repo) already cover how this repo
+treats third-party company data.
 
 ## Six options
 

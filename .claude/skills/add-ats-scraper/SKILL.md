@@ -30,7 +30,7 @@ continue.
   for the provider; the pool file's stem, the liveness prober and the fingerprinter's
   `SUPPORTED` set all key on it (Cornerstone is `cornerstone`, not `csod`).
 - **Gitignored inputs live only in the main checkout.** Copy
-  `/Users/sarthakjain/Projects/HeadStart/data/ats-tenants-merged/{ats}.csv` (and
+  `<main checkout>/data/ats-tenants-merged/{ats}.csv` (and
   `data/wayback-ats/{ats}.csv`) into your worktree when they exist — every script resolves paths
   against the worktree it runs in. When no pool exists yet, step 3 creates it.
 - Keep scratch files under a directory named for the ATS; sibling agents share the scratchpad.
