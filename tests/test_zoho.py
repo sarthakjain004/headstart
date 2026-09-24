@@ -7,7 +7,7 @@ from fake_fetcher import FakeFetcher, FakeResponse
 
 from headstart.scrapers.base import DetailLost
 from headstart.scrapers.registry import get_scraper
-from headstart.scrapers.zoho import ZohoScraper
+from headstart.scrapers.zoho import THROTTLED, ZohoScraper
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 SCRAPED_AT = "2026-01-01T00:00:00+00:00"
@@ -387,7 +387,8 @@ def test_zoho_reads_the_unavailable_verdict_in_the_boards_language(verdict) -> N
 def test_zoho_keeps_a_posting_behind_the_page_unavailable_shell() -> None:
     # Zoho's .com data centre answers a throttled client with a *different* shell (a 302 to
     # /html/portal.html), for live postings too: measured 2026-09-25 after ~1,000 requests from
-    # one IP. It says nothing about the posting, so the Job stays and the loss stays unexplained.
+    # one IP. It says nothing about the posting, so the Job stays; the loss is labelled for what
+    # it is, so a CI run's gap line says whether this is the CI-only "no jobs blob" loss.
     throttled = _unavailable_shell("this page is currently unavailable.")
     scraper, _fetcher = _zoho_board(
         _page([{"id": "1", "Posting_Title": "Open Role"}]),
@@ -397,4 +398,4 @@ def test_zoho_keeps_a_posting_behind_the_page_unavailable_shell() -> None:
     jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
 
     assert [j.title for j in jobs] == ["Open Role"]
-    assert scraper.detail_losses == {"no jobs blob on the page": 1}
+    assert scraper.detail_losses == {THROTTLED: 1}
