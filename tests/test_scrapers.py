@@ -44,6 +44,14 @@ def test_greenhouse_parse():
     assert j.description and "</" not in j.description  # populated, HTML-stripped
 
 
+def test_greenhouse_requisition_is_the_internal_job_id():
+    """What an Eightfold site in front of this Board states as `atsJobId` (ADR-0210)."""
+    jobs = get_scraper("greenhouse", "stripe", "Stripe").parse(
+        _load("greenhouse_stripe.json"), SCRAPED_AT
+    )
+    assert [j.requisition for j in jobs] == ["3453698", "3407094", "3431456"]
+
+
 def test_greenhouse_location_strips_trailing_whitespace():
     # Real bug, location-field audit 2026-08-24: `location.name` ships un-trimmed padding on a
     # real minority of tenants ("Hybrid in Boston, MA   ", three trailing spaces — 22/178 sampled
@@ -2071,6 +2079,16 @@ def test_workday_parse():
         j.posted_at == "2026-01-10"
     )  # detail startDate, not the list's "30+ Days Ago"
     assert j.employment_type == "Full time"  # timeType
+
+
+def test_workday_requisition_is_the_native_id():
+    """What an Eightfold site in front of this Board states as `atsJobId` (ADR-0210)."""
+    slug = "https://3m.wd1.myworkdayjobs.com/search"
+    jobs = get_scraper("workday", slug, "3M").parse(
+        _load("workday_3m.json"), SCRAPED_AT
+    )
+    assert [j.requisition for j in jobs] == [j.id.rsplit(":", 1)[1] for j in jobs]
+    assert jobs[0].requisition == "R01165862"
 
 
 def test_workday_job_url_drops_a_query_string_the_slug_carries():
@@ -5694,6 +5712,31 @@ def test_successfactors_page_fields_jsonld():
     assert fields["description"] == "<p>Ship backend services.</p>"
 
 
+def test_successfactors_requisition_is_the_page_internal_id_without_its_locale():
+    """Every RMK job page states `"internalId":"{req}-{locale}"`, the requisition an Eightfold
+    site in front of the Board states as `atsJobId` (ADR-0210). The locale is dropped, so the
+    en_US and de_DE pages of one requisition carry the same id; a page stating none gives None."""
+    from headstart.scrapers.successfactors import SuccessFactorsScraper, _page_fields
+
+    page = (
+        "<html><head><title>Staff Engineer Job Details | Dolby</title>"
+        '<meta property="og:title" content="Staff Engineer" /></head><body><script>'
+        'var jobDetail = {"internalId":"41525-en_US","status":"OPEN"};</script></body></html>'
+    )
+    assert _page_fields(page)["requisition"] == "41525"
+    assert _page_fields(page.replace("41525-en_US", "41525-de_DE"))["requisition"] == (
+        "41525"
+    )
+    assert _page_fields(page.replace('"internalId"', '"other"'))["requisition"] is None
+    item = {
+        "url": "https://careers.dolby.com/job/x/1/",
+        "id": "1",
+        "fields": _page_fields(page),
+    }
+    (job,) = SuccessFactorsScraper("careers.dolby.com").parse([item], SCRAPED_AT)
+    assert job.requisition == "41525"
+
+
 def test_successfactors_page_fields_csb():
     from headstart.scrapers.successfactors import _page_fields
 
@@ -6156,6 +6199,36 @@ def test_eightfold_api_records_wires_the_remote_and_location_fixes():
         by_id["1"]["remote"] is True
     )  # remote_local now resolves, was False before the fix
     assert by_id["2"]["location"] == "Fremont, CA, US"  # site code repaired
+
+
+@pytest.mark.parametrize(
+    ("host", "requisition"),
+    [
+        ("jobs.nvidia.com", "3560628"),  # Workday-backed: `atsJobId`
+        ("twilio.eightfold.ai", "3560628"),  # Greenhouse-backed: `atsJobId`
+        ("arcadis.eightfold.ai", "42863"),  # Oracle-backed: `displayJobId`
+        ("acme.eightfold.ai", "3560628"),  # in front of no Board we know: `atsJobId`
+    ],
+)
+def test_eightfold_requisition_is_the_backing_atses_id(monkeypatch, host, requisition):
+    """Each posting states its backing ATS's requisition, under a field that depends on that
+    ATS; the committed pairs say which ATS backs the Board (ADR-0210)."""
+    from headstart.scrapers.registry import get_scraper
+
+    scraper = get_scraper("eightfold", host, "Acme")
+    monkeypatch.setattr(
+        scraper, "fan_out_async", lambda items, fn, **kw: [None] * len(items)
+    )
+    monkeypatch.setattr(scraper, "fan_out", lambda items, fn, **kw: [None] * len(items))
+    position = {
+        "id": "7",
+        "name": "Engineer",
+        "atsJobId": 3560628,
+        "displayJobId": "42863",
+    }
+    (record,) = scraper._api_records("acme.com", [position])
+    (job,) = scraper.parse([record], SCRAPED_AT)
+    assert job.requisition == requisition
 
 
 def test_eightfold_jobposting_fallback():

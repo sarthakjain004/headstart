@@ -1056,3 +1056,35 @@ def test_a_result_row_is_every_result_column_with_score_after_the_id():
     assert list(row) == ["id", "score", *[c for c in RESULT_COLUMNS if c != "id"]]
     # A column the table lacks reads as None rather than failing the whole page.
     assert row["salary_source"] is None
+
+
+def test_a_category_hands_over_as_the_ids_trends_counted() -> None:
+    """`family=` beside `board=` names the Boards' Jobs in that family, and nothing else."""
+    from werkzeug.datastructures import MultiDict
+
+    from headstart.search import MAX_FAMILY_IDS, scoped_family_clause
+
+    ids = {
+        "ai-ml": sorted(
+            ["google:careers.google.com:1", "Google:careers.google.com:2", "x:y:3"],
+            key=str.lower,
+        ),
+        "devops": ["google:careers.google.com:4"],
+    }
+    args = MultiDict([("board", "google:careers.google.com"), ("family", "ai-ml")])
+    assert scoped_family_clause(args, ids) == (
+        "id IN ('google:careers.google.com:1', 'Google:careers.google.com:2')"
+    )
+    bare = MultiDict([("family", "ai-ml")])
+    assert scoped_family_clause(bare, ids) is None, "only beside a company's Boards"
+    other = MultiDict(
+        [("board", "google:careers.google.com"), ("family", "data-science")]
+    )
+    assert scoped_family_clause(other, ids) == "id IN ('')"
+    assert scoped_family_clause(args, None) is None, "no snapshot, no filter"
+    quoted = {"ai-ml": ["b:o'k:1"]}
+    q = MultiDict([("board", "b:o'k"), ("family", "ai-ml")])
+    assert scoped_family_clause(q, quoted) == "id IN ('b:o''k:1')"
+    many = {"ai-ml": [f"b:x:{i:05d}" for i in range(MAX_FAMILY_IDS + 1)]}
+    with pytest.raises(ValueError):
+        scoped_family_clause(MultiDict([("board", "b:x"), ("family", "ai-ml")]), many)

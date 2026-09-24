@@ -46,8 +46,12 @@ once, which narrows nothing and widens nothing.
      sites like ``.../External`` vs ``.../external`` produce ``company/External`` and ``company/external``
      Board keys, hence two ids for one job. Same lowercased Board + native id → keep one, drop the rest.
      A Workday requisition is grouped across its Workday tenant's sites instead, since a Workday
-     tenant posts one requisition to several of them under the same id (ADR-0187); sync applies
-     the same rule to the rows it adds, so what prune takes out is not re-added.
+     tenant posts one requisition to several of them under the same id (ADR-0187), and an
+     Eightfold career site's copy of a posting its backing Board serves, matched on the stored
+     `requisition`, joins that row's group (ADR-0210); sync applies the same rules to the rows it
+     adds, so what prune takes out is not re-added. With ``--dedup-evictions`` every row taken out
+     as a duplicate, or off-Board on a Board the alias ledger buries, is appended to the dedup
+     eviction ledger by rule.
 
   Planning lives in :mod:`headstart.ingest.index_plan`; this is the CLI that runs it against the table.
   The keep-set is the live ledger (enabled ATSes), each Board key exactly as its scraper's
@@ -91,6 +95,7 @@ import numpy as np
 import pyarrow as pa
 
 from headstart import (
+    eightfold_backing,
     employment_type_filter,
     experience_filter,
     india_filter,
@@ -107,12 +112,16 @@ from headstart.ingest import (
     UNCONFIRMED_PATH,
     board_failures,
     board_freshness,
+    dedup_evictions,
     observability,
     read_id_list,
+    run_ts,
     write_id_list,
 )
 from headstart.ingest.doc_prep import PLANNER_ONLY_FIELDS
 from headstart.ingest.index_plan import (
+    alias_rules,
+    aliased_boards,
     apply_sync,
     boards_by_canon,
     grace_period_counts,
@@ -179,6 +188,11 @@ _POSTED_AT_COMPARABLE_FIELD = pa.field(posted_date_guard.COLUMN, pa.bool_())
 _EXPERIENCE_FILTER_FIELDS = tuple(
     pa.field(column, pa.bool_()) for column in experience_filter.COLUMNS
 )
+# The ATS's requisition id on the Boards the Eightfold pairs name, the only rows that can match a
+# posting across ATSes (ADR-0210). A fact like `url`, so `_refresh_metadata` fills it on a row
+# already held once its Board is re-scraped. Held as a constant because `_schema` and `sync`'s
+# migration both need it.
+_REQUISITION_FIELD = pa.field("requisition", pa.string())
 
 
 class _Held(NamedTuple):
@@ -229,6 +243,7 @@ def _schema(dim: int) -> pa.Schema:
             _SALARY_KNOWN_FIELD,
             pa.field("department", pa.string()),
             pa.field("url", pa.string()),
+            _REQUISITION_FIELD,
             pa.field("posted_at", pa.string()),
             _POSTED_AT_COMPARABLE_FIELD,
             _FIRST_SEEN_FIELD,
@@ -815,6 +830,12 @@ def sync(args: argparse.Namespace) -> int:
 
     _migrate_employment_type_flags(table)
 
+    # And for `requisition` (ADR-0210). Existing rows get null, which never matches another row,
+    # until `_refresh_metadata` below rewrites them from the store once their Board is re-scraped.
+    if _REQUISITION_FIELD.name not in table.schema.names:
+        _log.info(f"adding '{_REQUISITION_FIELD.name}' to the existing table")
+        table.add_columns(_REQUISITION_FIELD)
+
     # Replace the rows of Jobs being re-embedded with a description they previously lacked
     # (ADR-0050) — before planning, not after. `plan_sync` computes add = fresh - index, so an id
     # still listed in `index_ids` is excluded from the adds; deleting its row afterwards would take
@@ -830,9 +851,12 @@ def sync(args: argparse.Namespace) -> int:
     # start: one run of retained-but-closed rows is the price of never needing a migration, and
     # the run after it evicts normally.
     was_unconfirmed = read_id_list(Path(args.unconfirmed))
-    # One row per requisition across a Workday tenant's sites (ADR-0187), decided here as well as
-    # in prune so a copy prune took out is never added back. The re-embedded rows just taken out
-    # are passed back as `replaced`: they are still the requisition's incumbent.
+    # One row per requisition across a Workday tenant's sites (ADR-0187), and per posting across
+    # an Eightfold site and its backing Board (ADR-0210), decided here as well as in prune so a
+    # copy prune took out is never added back. The re-embedded rows just taken out are passed back
+    # as `replaced`: they are still the requisition's incumbent. The stamps come from the store,
+    # which `update_meta` has just refreshed, so a row is judged on the same value the refresh
+    # below writes into the table.
     plan = plan_sync(
         index_ids,
         fresh,
@@ -841,6 +865,8 @@ def sync(args: argparse.Namespace) -> int:
         was_unconfirmed,
         site_jobs=workday_site_jobs(args.ledger),
         replaced=taken.keys(),
+        requisitions={m["id"]: m["requisition"] for m in metas if m.get("requisition")},
+        backing=eightfold_backing.load(),
     )
     # `add` counts every row written, and an upgrade is a delete-then-re-add of a Job that never
     # left — so reading `add - evict` as growth overstates it by exactly the upgrade count. Over
@@ -856,9 +882,11 @@ def sync(args: argparse.Namespace) -> int:
         f"evict {len(plan.delete)} -> net {listings - len(plan.delete):+d} rows"
     )
     if plan.refused:
+        fronts = sum(1 for job_id in plan.refused if ats_of(job_id) == "eightfold")
         _log.info(
-            f"not added: {len(plan.refused)} Workday requisition(s) another site of the same "
-            "Workday tenant already serves or is being given (ADR-0187)"
+            f"not added: {len(plan.refused) - fronts} Workday requisition(s) another site of the "
+            f"same Workday tenant already serves or is being given (ADR-0187), and {fronts} "
+            "Eightfold posting(s) its backing Board serves or is being given (ADR-0210)"
         )
     # Written before the delete rather than after, and the reason is not crash-replay: `delete`
     # and `unconfirmed` are disjoint by construction, so a crash here loses no eviction — those
@@ -1001,16 +1029,30 @@ def prune(args: argparse.Namespace) -> int:
         return 1
 
     table = lancedb.connect(args.db).open_table(PROD_TABLE)
-    index_ids = _all_ids(table)
+    # The stamps ADR-0210 matches on; a table from before the column carries none, and matches
+    # nothing until sync adds it.
+    stamped = _REQUISITION_FIELD.name in table.schema.names
+    rows = _scan(table, ["id", _REQUISITION_FIELD.name] if stamped else ["id"])
+    index_ids = [r["id"] for r in rows]
+    requisitions = {
+        r["id"]: r[_REQUISITION_FIELD.name]
+        for r in rows
+        if r.get(_REQUISITION_FIELD.name)
+    }
     if not check_base(args.db, len(index_ids)):
         # Checked here too, not only in `sync`. `cleanup-index` runs `prune` as its FIRST table
         # operation, with no `sync` ahead of it — so without this a compaction would read a
         # rolled-back table, rebuild it, and publish a fresh self-consistent record, laundering
         # the loss into the new base.
         return 1
-    off_board, duplicate = plan_prune(
-        index_ids, keep, site_jobs=workday_site_jobs(args.ledger)
+    off_board, rules = plan_prune(
+        index_ids,
+        keep,
+        site_jobs=workday_site_jobs(args.ledger),
+        requisitions=requisitions,
+        backing=eightfold_backing.load(),
     )
+    duplicate = list(rules)
     evict = off_board + duplicate
     _log.info(
         f"index: {len(index_ids)} rows | evict {len(evict)} "
@@ -1039,6 +1081,15 @@ def prune(args: argparse.Namespace) -> int:
     _log_ids("prune off-Board", off_board)
     _log_ids("prune duplicate", duplicate)
     apply_sync(table, [], evict)
+    if args.dedup_evictions:
+        # After the delete, so the ledger never records a removal the table did not make.
+        live = boards_by_canon(keep)
+        dedup_evictions.append(
+            args.dedup_evictions,
+            run_ts().isoformat(timespec="seconds"),
+            {**rules, **alias_rules(off_board, live, aliased_boards(args.ledger))},
+            lambda job_id: resolve_board(job_id, live),
+        )
     final = table.count_rows()
     write_base(args.db, final, "prune")
     _log.info(f"done: pruned {len(evict)} rows; table '{PROD_TABLE}' now holds {final}")
@@ -1342,6 +1393,12 @@ def main() -> int:
         "(ADR-0206). Deliberately NOT defaulted, like sync's --scraped-boards: that file rides "
         "data/state through the HF dataset, so a default would let a local prune evict against "
         "whatever ledger was last pulled. The merge job passes it; omitted, it evicts nothing",
+    )
+    p_prune.add_argument(
+        "--dedup-evictions",
+        default=None,
+        help="append each dedup eviction to this ledger (ADR-0210); the pipeline passes "
+        "data/state/dedup_evictions.csv, and a run that does not publish data/state omits it",
     )
     p_prune.set_defaults(fn=prune)
 

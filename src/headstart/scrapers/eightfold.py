@@ -46,8 +46,8 @@ import urllib.parse
 from datetime import UTC, datetime
 from typing import Any, NamedTuple
 
-from headstart import company_name, http, log
-from headstart.models import Job, html_to_text, is_remote
+from headstart import company_name, eightfold_backing, http, log
+from headstart.models import Job, html_to_text, is_remote, requisition_of
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 from headstart.scrapers.job_posting_jsonld import (
     find_job_posting,
@@ -509,6 +509,11 @@ class EightfoldScraper(BaseScraper):
                 f"{self.board_key()}: fetched {requested}/{tech} descriptions "
                 f"({tech - requested} already held)"
             )
+        # The backing ATS's requisition, under the name that ATS's rows match on (ADR-0210):
+        # Oracle keys on `displayJobId`, every other backing ATS on `atsJobId`.
+        backing = eightfold_backing.load().get(self.slug.lower(), ())
+        oracle = any(board.startswith("oracle:") for board in backing)
+        requisition_field = "displayJobId" if oracle else "atsJobId"
         records = []
         for position in positions:
             position_id = str(position.get("id"))
@@ -527,6 +532,7 @@ class EightfoldScraper(BaseScraper):
                         "employment_type": None,  # not exposed by the PCSX API
                         "department": _department_of(position),
                         "remote": _remote_from(position.get("workLocationOption")),
+                        "requisition": requisition_of(position.get(requisition_field)),
                     },
                 }
             )
@@ -665,6 +671,7 @@ class EightfoldScraper(BaseScraper):
                     scraped_at=scraped_at,
                     description=html_to_text(fields.get("description")),
                     employment_type=fields.get("employment_type"),
+                    requisition=fields.get("requisition"),
                 )
             )
         return jobs
@@ -753,8 +760,8 @@ def _smartapply_to_pcsx_shape(pos: dict[str, Any]) -> dict[str, Any]:
         "department": department,
         "postedTs": pos.get("t_create"),
         "workLocationOption": pos.get("work_location_option"),
-        # The backing ATS's requisition id, under the PCSX names; unused by `parse`, read by
-        # `eightfold_backing_boards.py` (ADR-0205).
+        # The backing ATS's requisition id, under the PCSX names; stored by `_api_records`
+        # (ADR-0210) and read by `eightfold_backing_boards.py` (ADR-0205).
         "atsJobId": pos.get("ats_job_id"),
         "displayJobId": pos.get("display_job_id"),
     }

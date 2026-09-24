@@ -66,7 +66,9 @@ path reaches them too, and the pipeline must not become a dependency of that.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable
+from datetime import UTC, datetime
 from pathlib import Path
 
 # src/headstart/ingest/__init__.py -> the repo root. Every stage reads and writes the repo's
@@ -114,6 +116,20 @@ UNCONFIRMED_PATH = REPO_ROOT / "data" / "state" / "unconfirmed_ids.txt"
 # before the last replacement (ADR-0207). Written by `update_descriptions`, rewritten in full each
 # run. It lists only Jobs that have changed at least once.
 DESCRIPTION_CHANGES_PATH = REPO_ROOT / "data" / "state" / "description_changes.tsv.gz"
+
+#: The environment variable the pipeline sets once per merge job to this run's timestamp, so the
+#: steps that stamp a ledger — `index prune` and `role_trends` — stamp the same value.
+RUN_TS_ENV = "HEADSTART_RUN_TS"
+
+
+def run_ts() -> datetime:
+    """This run's one timestamp, to the second: :data:`RUN_TS_ENV` when the pipeline set it, else
+    now. `index prune` and `role_trends` run minutes apart, and a Trends reader joins the dedup
+    eviction ledger to the trends ledger on it (ADR-0210)."""
+    stated = os.environ.get(RUN_TS_ENV)
+    moment = datetime.fromisoformat(stated) if stated else datetime.now(UTC)
+    return moment.astimezone(UTC).replace(microsecond=0)
+
 
 # The ADR-0211 re-fetch rotation's two files, both written by `update_descriptions` and
 # rewritten in full each run: the UTC hour a fetch last reached each held Job of the rotated

@@ -869,3 +869,27 @@ def test_derivation_delta_reads_the_source_field_it_is_given():
         um.derivation_delta(before, after, "salary_source", ("min_salary_annual",))
         == "gained"
     )
+
+
+def test_a_requisition_is_stored_only_on_a_board_the_eightfold_pairs_name(
+    tmp_path, monkeypatch
+):
+    """ADR-0210: both places a fact reaches the store — a new Job's meta and the facts refresh
+    of one already held — keep `requisition` only where it can match, so the refresh never
+    rewrites a served row for a stamp nothing reads."""
+    from headstart import eightfold_backing
+    from headstart.ingest.doc_prep import to_meta
+
+    monkeypatch.setattr(
+        eightfold_backing, "load", lambda: {"jobs.acme.com": ("workday:acme/external",)}
+    )
+    paired = {"id": "workday:acme/External:R-100", "requisition": "R-100"}
+    other = {"id": "workday:globex/External:R-7", "requisition": "R-7"}
+    assert to_meta(paired)["requisition"] == "R-100"
+    assert to_meta(other)["requisition"] is None
+    (tmp_path / "workday.jsonl").write_text(
+        "".join(json.dumps(job) + "\n" for job in (paired, other)), encoding="utf-8"
+    )
+    facts = um.corpus_facts(tmp_path)
+    assert facts[paired["id"]]["requisition"] == "R-100"
+    assert facts[other["id"]]["requisition"] is None

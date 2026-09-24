@@ -15,8 +15,10 @@ this module imports ``fx`` and the Search-filter modules the same way everywhere
 from __future__ import annotations
 
 import time
+from bisect import bisect_left
 from collections import OrderedDict
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Collection, Mapping, Sequence
+from pathlib import Path
 from threading import Lock
 from typing import Any
 from urllib.parse import urlsplit
@@ -204,6 +206,66 @@ def scoped_boards_clause(args) -> str | None:
     if len(boards) > MAX_SCOPED_BOARDS:
         raise ValueError(f"at most {MAX_SCOPED_BOARDS} boards")
     return board_clause(boards, exclude=False)
+
+
+def load_family_ids(path: Path) -> dict[str, list[str]] | None:
+    """``family -> served ids``, each list sorted case-folded, from the role-assignment snapshot
+    (ADR-0057), or None without a readable one — which turns the category hand-off off (the
+    page is told through its config) rather than failing boot.
+
+    Sorted so a hand-off finds a Board's ids by bisection: scanning software-engineering's
+    ~90,000 ids per request, lower-casing each, was the cost of a flat list."""
+    if not Path(path).exists():
+        return None
+    try:
+        import pyarrow.parquet as pq
+
+        table = pq.read_table(path, columns=["id", "family"]).to_pydict()
+    except (OSError, ValueError, KeyError) as exc:
+        _log.warning(f"role assignments unreadable ({exc}); category hand-off off")
+        return None
+    out: dict[str, list[str]] = {}
+    for job_id, family in zip(table["id"], table["family"], strict=True):
+        out.setdefault(family, []).append(job_id)
+    for ids in out.values():
+        ids.sort(key=str.lower)
+    return out
+
+
+#: The most Jobs a ``family=`` hand-off names by id. Amazon's largest category measured 1,018
+#: (2026-09-25); the page hands a category over only under this bound (``CFG.max_family_ids``)
+#: and ranks by its name past it, so the clause never silently widens to every job.
+MAX_FAMILY_IDS = 5000
+
+
+def scoped_family_clause(
+    args, family_ids: Mapping[str, Sequence[str]] | None
+) -> str | None:
+    """The Jobs of the handed-over Boards in one role family (``family=``), or None.
+
+    Search has no family column; the family of each served Job is the pipeline's own
+    ``role_assignments`` snapshot (ADR-0057), the same assignment the Trends counts are made
+    of. So a trend's category hands over as exact ids — "243 AI roles at Google" in Trends
+    opens as Google's AI roles in Search, where a semantic query alone ranked all 1,856 Google
+    jobs. Only with ``board=``: a family across the whole index is a Trends view, not a search.
+    Past :data:`MAX_FAMILY_IDS` it is refused as an invalid filter rather than widened.
+    """
+    family = (args.get("family") or "").strip()
+    boards = sorted({b.lower() + ":" for b in args.getlist("board") if b.strip()})
+    if not family or not boards or family_ids is None:
+        return None
+    pool = family_ids.get(family, ())
+    ids: list[str] = []
+    for prefix in boards:
+        at = bisect_left(pool, prefix, key=str.lower)
+        while at < len(pool) and pool[at].lower().startswith(prefix):
+            ids.append(pool[at])
+            at += 1
+    if len(ids) > MAX_FAMILY_IDS:
+        raise ValueError(f"at most {MAX_FAMILY_IDS} jobs in one category hand-off")
+    if not ids:
+        return "id IN ('')"
+    return "id IN (" + ", ".join("'" + i.replace("'", "''") + "'" for i in ids) + ")"
 
 
 # TEMPORARY (2026-07-07) — INTENDED FOR REMOVAL. Darwinbox rows scraped before the

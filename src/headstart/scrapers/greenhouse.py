@@ -19,7 +19,7 @@ from __future__ import annotations
 from typing import Any
 
 from headstart import log, salary
-from headstart.models import Job, html_to_text, is_remote
+from headstart.models import Job, html_to_text, is_remote, requisition_of
 from headstart.scrapers.base import BaseScraper
 
 _log = log.get(__name__)
@@ -141,6 +141,9 @@ class GreenhouseScraper(BaseScraper):
                     scraped_at=scraped_at,
                     description=html_to_text(j.get("content")),
                     salary=self._salary_field(j.get("metadata")),
+                    # What an Eightfold site in front of this Board states as `atsJobId`
+                    # (ADR-0210). One internal job can carry several posts, one per location.
+                    requisition=requisition_of(j.get("internal_job_id")),
                 )
             )
         return jobs

@@ -24,11 +24,13 @@ when, in `aliases`:
   backing Board when the winner is itself buried, else onto the winner. These are
   `check_liveness`'s hand-frozen `_EIGHTFOLD_ALIAS_LOSERS`, which stays beside them (ADR-0205).
 
-The candidates are `BACKING`, found by content on served index v654 (2026-09-23): pairs of Boards
-on two ATSes sharing exact descriptions. A new front enters by adding it there. Lumen is left out
-by the user's decision (its backing site is an internal careers site), and so is International SOS
-(postings of its own). Every verdict is re-derived live on each run, including for the Boards the
-last run buried, so a Board whose backing Board drops out comes back when the script next runs.
+The candidates are `BACKING`, the committed pairs file `data/validate/eightfold_backing.csv`
+(`headstart.eightfold_backing`, ADR-0210), found by content on served index v654 (2026-09-23):
+pairs of Boards on two ATSes sharing exact descriptions. A new front enters by adding a row there.
+Lumen is left out by the user's decision (its backing site is an internal careers site), and so is
+International SOS (postings of its own). Every verdict is re-derived live on each run, including
+for the Boards the last run buried, so a Board whose backing Board drops out comes back when the
+script next runs.
 
 Reads each candidate and backing Board once, every read sequential within its Board and 16 Boards
 at a time, so at most 16 requests are in flight. Replaces the alias file, so re-run it after every
@@ -40,7 +42,6 @@ refresh of the liveness ledger of eightfold or of any ATS in `BACKING`.
 from __future__ import annotations
 
 import os
-import re
 import sys
 from collections.abc import Callable, Collection, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -51,7 +52,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from headstart import board_aliases, http, liveness, scrapable_boards
+from headstart import (
+    board_aliases,
+    eightfold_backing,
+    http,
+    liveness,
+    scrapable_boards,
+)
 from headstart.scrapers.base import USER_AGENT
 from headstart.scrapers.eightfold import EightfoldScraper, _department_of
 from headstart.scrapers.greenhouse import GreenhouseScraper
@@ -79,63 +86,10 @@ RESIDUAL_SHARE = 0.01
 #: Boards read at once. Every read below is sequential within its Board, so this is also the
 #: most requests in flight.
 _WORKERS = 16
-#: The requisition id an RMK job page states: `"internalId":"49983-en_GB"` (id, then locale).
-_SF_REQ_ID = re.compile(r'"internalId"\s*:\s*"([^"-]+)')
 
-#: Eightfold Board -> the Board keys (lowercased `board_key`) that list its postings.
-BACKING: dict[str, tuple[str, ...]] = {
-    "albemarle.eightfold.ai": ("workday:albemarle/external",),
-    "appliedmaterials.eightfold.ai": ("workday:amat/external",),
-    "arcadis.eightfold.ai": ("oracle:ebcs.fa.em2.oraclecloud.com",),
-    "bms.eightfold.ai": ("workday:bristolmyerssquibb/bms",),
-    "bostonscientific.eightfold.ai": ("successfactors:jobs.bostonscientific.com",),
-    "britishcouncil.eightfold.ai": ("successfactors:britishcouncil.jobs2web.com",),
-    "caci.eightfold.ai": ("workday:caci/external",),
-    "careers.micron.com": ("workday:micron/external",),
-    "citi.eightfold.ai": ("workday:citi/2",),
-    "corteva.eightfold.ai": ("workday:corteva/corteva", "workday:corteva/ctp"),
-    "costar.eightfold.ai": (
-        "workday:costar/broadbean_external",
-        "workday:costar/costar_campus",
-        "workday:costar/costarcareers",
-    ),
-    "curriculumassociates.eightfold.ai": ("workday:curriculumassociates/external",),
-    "dexcom.eightfold.ai": ("workday:dexcom/dexcom",),
-    "dolby.eightfold.ai": ("successfactors:careers.dolby.com",),
-    "fluor.eightfold.ai": ("successfactors:thrivecareers.fluor.com",),
-    "globalfoundries.eightfold.ai": ("workday:globalfoundries/external",),
-    "hp.eightfold.ai": (
-        "workday:hp/externalcareersite",
-        "workday:hp/exteu-ac-careersite",
-    ),
-    "jobs.nvidia.com": ("workday:nvidia/nvidiaexternalcareersite",),
-    "jobs.vodafone.com": ("successfactors:opportunities.vodafone.com",),
-    "johndeere.eightfold.ai": ("successfactors:jobs.deere.com",),
-    "morganstanley.eightfold.ai": ("workday:ms/external", "workday:ms/private"),
-    "nab.eightfold.ai": ("workday:nab/nab_careers",),
-    "netflix.eightfold.ai": ("workday:netflix/netflix",),
-    "ngc.eightfold.ai": ("workday:ngc/northrop_grumman_external_site",),
-    "paypal.eightfold.ai": ("workday:paypal/jobs",),
-    "premierhealth.eightfold.ai": (
-        "taleo_enterprise:https://php.taleo.net/careersection/40",
-    ),
-    "sephora.eightfold.ai": ("successfactors:jobs.sephora.com",),
-    "trimble.eightfold.ai": ("workday:trimble/trimblecareers",),
-    "trinet.eightfold.ai": ("oracle:fa-etgw-saasfaprod1.fa.ocs.oraclecloud.com",),
-    "twilio.eightfold.ai": ("greenhouse:twilio",),
-    "vialto.eightfold.ai": ("workday:vialto/vialtoexternalcareers",),
-    "vizientinc.eightfold.ai": ("workday:vizient/vizient_careers",),
-    "worley.eightfold.ai": (
-        "taleo_enterprise:https://worleyparsons.taleo.net/careersection/ext",
-    ),
-    # Second Eightfold sites of one company (#154), also `_EIGHTFOLD_ALIAS_LOSERS`.
-    "nvidia.eightfold.ai": ("eightfold:jobs.nvidia.com",),
-    "qualcomm.eightfold.ai": ("eightfold:careers.qualcomm.com",),
-    "micron.eightfold.ai": ("eightfold:careers.micron.com",),
-    "hsbc.eightfold.ai": ("eightfold:portal.careers.hsbc.com",),
-    "vodafone.eightfold.ai": ("eightfold:jobs.vodafone.com",),
-    "dsm.eightfold.ai": ("eightfold:dsm-firmenich.eightfold.ai",),
-}
+#: Eightfold Board -> the Board keys (lowercased `board_key`) that list its postings: the
+#: committed pairs file, which `index sync`/`prune` read too (ADR-0210).
+BACKING: dict[str, tuple[str, ...]] = eightfold_backing.load()
 
 
 @dataclass(frozen=True, slots=True)
@@ -356,11 +310,12 @@ def _successfactors(slug: str) -> list[Posting]:
             )
         except http.RequestsError:
             continue
-        req = _SF_REQ_ID.search(r.text) if r.status_code == 200 else None
-        fields = _titled_fields(r.text, url) if req else None
-        if fields:
+        fields = _titled_fields(r.text, url) if r.status_code == 200 else None
+        if fields and fields["requisition"]:
             posts.append(
-                Posting(frozenset({req.group(1)}), is_tech(fields["title"], None))
+                Posting(
+                    frozenset({fields["requisition"]}), is_tech(fields["title"], None)
+                )
             )
     return posts
 

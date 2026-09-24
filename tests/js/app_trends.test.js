@@ -77,7 +77,8 @@ function loadApp(fetchImpl) {
       // stub's exact color is irrelevant to every test here; only the structural HTML is asserted.
       documentElement: { getAttribute: () => null, setAttribute() {} },
     },
-    window: { addEventListener() {}, location: { hash: '' } },
+    // app.js reads its config off `window.CFG`, so tests set flags there.
+    window: { addEventListener() {}, location: { hash: '' }, CFG: {} },
     location: { hash: '' },
     console, CFG: {}, URLSearchParams, Date, Math, isNaN, setTimeout, clearTimeout,
     // loadTrends cancels its own previous request, so app.js does not evaluate without this.
@@ -106,7 +107,8 @@ function loadApp(fetchImpl) {
     + ' follow: boards => { myCompanies = { followed: boards, hidden: [] }; },'
     + ' followed: followedOption, openTrend: openCompanyTrend, chartedAndOther,'
     + ' unit: () => trendUnit, clickUnit: pickUnit, hash: trendHash, pick: setPicks, netOfSteps,'
-    + ' set: (d, drill) => { trendData = d; trendDrill = drill || null; } };'
+    + ' table: toggleTrendsTable,'
+    + ' set: (d, drill) => { trendData = d; trendRaw = d; trendDrill = drill || null; } };'
     // Repaints are counted at the global binding, which is what loadTrends' own `drawTrends()`
     // call resolves — so this counts the real paints, not a copy of them.
     + '\n;(() => { let n = 0; const real = drawTrends;'
@@ -1263,8 +1265,8 @@ test('percentages leave out a marked step; the plotted line keeps it', async () 
   await t.load(null);
   t.setUnit('count', false);
   t.draw();
-  // Net [200, 200, 200, 200, 220]; head and tail average two points: 200 → 210 is +5.0%.
-  assert.match(row(nodes['trends-legend'].innerHTML, 'a'), /\+5\.0%/, 'the doubling was the filter');
+  // Net [200, 200, 200, 200, 220]: first to last is +10.0%, where the raw line read +120%.
+  assert.match(row(nodes['trends-legend'].innerHTML, 'a'), /\+10\.0%/, 'the doubling was the filter');
 });
 
 test('a small count gets whole-number ticks', () => {
@@ -1401,7 +1403,7 @@ test('each company gets a sentence: its openings and which way they moved', () =
   t.draw();
   const html = nodes['trends-verdict'].innerHTML;
   assert.equal(nodes['trends-verdict'].hidden, false);
-  assert.match(html, /<b>Acme<\/b>: 998 tech openings; about flat over 3 days \(−0\.1%, −1 opening, about −2 a week\)\./);
+  assert.match(html, /<b>Acme<\/b>: 998 tech openings; about flat over 3 days \(−0\.2%, −2 openings, about −5 a week\)\./);
   assert.match(html, /<b>Beta<\/b>: 150 tech openings; up 50\.0% over 3 days \(\+50 openings, about \+117 a week\)\./);
   assert.match(html, /HeadStart has counted these companies since Sep 13 — too short to tell a trend from noise/);
 });
@@ -1452,8 +1454,8 @@ test('the mover floor is held to the openings a line really started with', () =>
     discovered: [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 1, openings: 12 }] });
   t.setUnit('count', false);
   t.draw();
-  // Net [24, 24, 24, 26]: the last two runs average 25 against 24 — one opening, no percentage.
-  assert.match(row(nodes['trends-legend'].innerHTML, 'a'), /↑ \+1 opening</);
+  // Net [24, 24, 24, 26]: two openings, and no percentage off a line that started at 12.
+  assert.match(row(nodes['trends-legend'].innerHTML, 'a'), /↑ \+2 openings</);
 });
 
 test('a counting change off zero starts the line there', () => {
@@ -1496,7 +1498,8 @@ test('how long a company has been counted comes from its counting, not the windo
     { stamps: FOUR, series: [{ name: 'greenhouse:acme', label: 'Acme', points: [null, null, 100, 100], latest: 100 }],
       split_by: 'company', counted_since: { 'greenhouse:acme': FOUR[0] } }));
   t.draw();
-  assert.match(nodes['trends-verdict'].innerHTML, /Acme<\/b>: 100 tech openings; too new to show a direction yet\./);
+  // Counted since Sep 13, three days: it is the window that is short, not the company.
+  assert.match(nodes['trends-verdict'].innerHTML, /Acme<\/b>: 100 tech openings; this window is too short to show a direction\./);
 });
 
 // ---- critique round 4 ------------------------------------------------------------------------
@@ -1573,4 +1576,66 @@ test('a found Board on a whole company line is lifted by its own size, keeping t
   const acme = t.data().series[0];
   // 200 were found; the other 10 that run were hiring and stay in (by the run's jump, 210).
   same(t.netOfSteps(acme.points, acme), [300, 300, 310, 310]);
+});
+
+
+test('duplicate removal is taken out of an Eightfold-only company too (Micron Technology)', () => {
+  const { t } = loadApp();
+  t.setPicks([{ key: 'eightfold:careers.micron.com', label: 'Micron Technology', boardKeys: ['eightfold:careers.micron.com'] }, BETA]);
+  t.set(companies([['eightfold:careers.micron.com', 'Micron Technology', [1887, 1887, 20, 20]], ['lever:beta', 'Beta', [100, 100, 80, 80]]],
+    { epochs: [{ ts: FOUR[2], changed: ['duplicate removal changed'], fields: ['dedup_version'] }] }));
+  t.setUnit('change', false);
+  const [micron, beta] = t.data().series;
+  same(t.seriesValues(micron), [100, 100, 100, 100]);
+  same(t.seriesValues(beta), [100, 100, 80, 80], 'one Board off Eightfold: its fall is its own');
+});
+
+
+// ---- critique round 5 ------------------------------------------------------------------------
+test('the table names what its change leaves out, and the counting changes add up', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({}), stamps: FOUR, split_by: 'family', totals: [1e4, 1e4, 1e4, 1e4], non_tech: [0, 0, 0, 0],
+    series: [{ name: 'a', label: 'a', points: [764, 764, 1018, 1018], latest: 1018 }],
+    discovered: [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 3, openings: 254 }] });
+  t.setUnit('count', false);
+  t.draw();
+  nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });   // no failed load showing
+  t.table(true);
+  const html = nodes['trends-table'].innerHTML;
+  assert.match(html, /Change, hiring only<\/th><th scope="col">Counting changes, openings<\/th><th scope="col">Start, as counted/);
+  assert.match(html, /\+254 openings/);
+});
+
+test('a custom range rides in the link and checks no preset', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  nodes['trends-since'].value = '2026-09-18T00:00';
+  nodes['trends-since'].fire('change');
+  assert.match(t.hash(), /since=2026-09-1\dT/);
+  assert.doesNotMatch(t.hash(), /days=/);
+});
+
+test('a drilled category hands over to Search as that category', () => {
+  const { t, ctx, nodes } = loadApp();
+  t.setPicks([{ ...ACME, boardKeys: ['greenhouse:acme'] }]);
+  t.set({ ...picked({}), family_label: 'AI / Machine Learning' }, 'ai-ml');
+  ctx.window.CFG.family_handoff = true; ctx.window.CFG.max_family_ids = 5000;
+  nodes['trends-co-roles'].fire('click');
+  const hash = new URLSearchParams(ctx.location.hash.split('?')[1]);
+  same(hash.getAll('board'), ['greenhouse:acme']);
+  assert.equal(hash.get('family'), 'ai-ml');
+  assert.equal(hash.get('family_label'), 'AI / Machine Learning');
+  assert.equal(hash.get('q'), null, 'the category is the filter, not a query');
+});
+
+test('without the Space’s category filter, the category ranks the jobs and no pill claims it', () => {
+  const { t, ctx, nodes } = loadApp();
+  t.setPicks([{ ...ACME, boardKeys: ['greenhouse:acme'] }]);
+  t.set({ ...picked({}), family_label: 'Software Engineering (general)' }, 'software-engineering');
+  ctx.window.CFG.family_handoff = false;
+  nodes['trends-co-roles'].fire('click');
+  const hash = new URLSearchParams(ctx.location.hash.split('?')[1]);
+  assert.equal(hash.get('family'), null);
+  assert.equal(hash.get('q'), 'Software Engineering');
 });

@@ -117,6 +117,12 @@ _ALLOWED: dict[str, str] = {
         "with no `headstart` to import the seam from. The absent arm never reaches here — it "
         "returns at DEBUG, because a signed-in Account with no Saved set is the common path."
     ),
+    "search.py:load_family_ids": (
+        "Bound: once per process — the Space and the local renderer each call it at boot, "
+        "never per request or per Board. WARNING because the Space's `lastResort` carries "
+        "nothing below it, and an unreadable role-assignment snapshot silently turns the "
+        "Trends category hand-off off (ADR-0185)."
+    ),
     "search.py:_warn_unknown_filters": (
         "Bound: 2 per HTTP request, and not against the annotation quota at all — `search.py` "
         "runs only in the deployed Space, which calls no `log.setup()`, so these render through "
