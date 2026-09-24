@@ -2,7 +2,11 @@ import html
 import json
 from pathlib import Path
 
+import pytest
+from fake_fetcher import FakeFetcher, FakeResponse
+
 from headstart.scrapers.registry import get_scraper
+from headstart.scrapers.zoho import ZohoScraper
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 SCRAPED_AT = "2026-01-01T00:00:00+00:00"
@@ -169,10 +173,23 @@ def _detail_page(record):
     return f"<script>var jobs = JSON.parse('{escaped}');</script>"
 
 
-def test_zoho_fetch_raw_detail_pass(monkeypatch):
-    monkeypatch.setenv(
-        "HEADSTART_ASYNC_FANOUT", "0"
-    )  # keep the detail pass on the sync path
+def _zoho_board(listing_page, detail_for):
+    """A zoho Board on ``acme.zohorecruit.com`` whose careers page is ``listing_page`` and whose
+    detail pages ``detail_for(job_id)`` answers, both through a FakeFetcher."""
+    board = "https://acme.zohorecruit.com/jobs/Careers"
+
+    def route(method, url, kwargs):
+        if url == board:
+            return FakeResponse(text=listing_page)
+        return detail_for(url.rsplit("/", 1)[1])
+
+    fetcher = FakeFetcher(route)
+    return ZohoScraper("acme.zohorecruit.com", fetcher=fetcher), fetcher
+
+
+@pytest.mark.parametrize("async_fanout", ["1", "0"])
+def test_zoho_fetch_raw_detail_pass(monkeypatch, async_fanout):
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
     # Every published, non-locked record gets a detail fetch, not just description-less ones —
     # Salary/Currency live ONLY on the detail page, so gating on a listing-level description
     # meant most jobs never had it fetched at all (user decision 2026-08-24).
@@ -181,27 +198,17 @@ def test_zoho_fetch_raw_detail_pass(monkeypatch):
         {"id": "2", "Posting_Title": "Filled", "Job_Description": "<p>x</p>"},
         {"id": "3", "Posting_Title": "Locked", "Is_Locked": True},
     ]
-    page = _page(records)
-    fetched = []
-
-    def _get(self, url=None):
-        if url is None:
-            return page
-        fetched.append(url)
-        return _detail_page({"id": "1", "Job_Description": "<div>4+ years of Go</div>"})
-
-    s = get_scraper("zoho", "acme.zohorecruit.com")
-    monkeypatch.setattr(type(s), "_get", _get)
-    raw = s.fetch_raw()
-    assert fetched == [
+    detail = {"id": "1", "Job_Description": "<div>4+ years of Go</div>"}
+    scraper, fetcher = _zoho_board(
+        _page(records), lambda job_id: FakeResponse(text=_detail_page(detail))
+    )
+    raw = scraper.fetch_raw()
+    assert sorted(fetcher.urls()[1:]) == [
         "https://acme.zohorecruit.com/jobs/Careers/1",
         "https://acme.zohorecruit.com/jobs/Careers/2",
     ]  # not "3" — locked
-    assert raw["details"] == {
-        "1": {"id": "1", "Job_Description": "<div>4+ years of Go</div>"},
-        "2": {"id": "1", "Job_Description": "<div>4+ years of Go</div>"},
-    }
-    jobs = s.parse(raw, SCRAPED_AT)
+    assert raw["details"] == {"1": detail, "2": detail}
+    jobs = scraper.parse(raw, SCRAPED_AT)
     # The detail record wins over the listing's own Job_Description for both jobs — it is a
     # measured strict superset (experiment/location-audit-2026-08-25/zoho.md).
     assert jobs[0].description == "4+ years of Go"
@@ -215,10 +222,7 @@ def test_zoho_fetch_raw_detail_pass(monkeypatch):
 # experiment/location-audit-2026-08-25/zoho.md).
 
 
-def test_zoho_detail_record_enriches_posted_at_experience_department_state_and_salary(
-    monkeypatch,
-):
-    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+def test_zoho_detail_record_enriches_posted_at_experience_department_state_and_salary():
     records = [
         {
             "id": "1",
@@ -227,7 +231,6 @@ def test_zoho_detail_record_enriches_posted_at_experience_department_state_and_s
             "Country": "France",
         }
     ]
-    page = _page(records)
     detail = _detail_page(
         {
             "id": "1",
@@ -241,13 +244,10 @@ def test_zoho_detail_record_enriches_posted_at_experience_department_state_and_s
             "Currency": "EUR",
         }
     )
-
-    def _get(self, url=None):
-        return page if url is None else detail
-
-    s = get_scraper("zoho", "acme.zohorecruit.com")
-    monkeypatch.setattr(type(s), "_get", _get)
-    jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
+    scraper, _fetcher = _zoho_board(
+        _page(records), lambda job_id: FakeResponse(text=detail)
+    )
+    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
     j = jobs[0]
     assert j.posted_at == "2025-09-25"  # listing had none
     assert j.experience == "+3 ans"  # listing had none
@@ -278,13 +278,18 @@ def test_zoho_falls_back_to_listing_when_detail_fetch_missing():
     assert j.salary is None  # never in the listing to begin with
 
 
-def test_zoho_classifies_a_source_declared_unavailable_detail() -> None:
-    scraper = get_scraper("zoho", "acme.zohorecruit.com")
-
-    assert (
-        scraper._detail_record_of(
-            '<div class="sorry-block"><h4>This job posting is no longer available.</h4></div>'
-        )
-        is None
+@pytest.mark.parametrize("async_fanout", ["1", "0"])
+def test_zoho_classifies_a_source_declared_unavailable_detail(
+    monkeypatch, async_fanout
+) -> None:
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
+    unavailable = '<div class="sorry-block"><h4>This job posting is no longer available.</h4></div>'
+    scraper, _fetcher = _zoho_board(
+        _page([{"id": "1", "Posting_Title": "Backend Engineer"}]),
+        lambda job_id: FakeResponse(text=unavailable),
     )
+
+    raw = scraper.fetch_raw()
+
+    assert raw["details"] == {}
     assert scraper.detail_losses == {"posting explicitly unavailable": 1}

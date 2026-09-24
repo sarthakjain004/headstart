@@ -42,9 +42,9 @@ import json
 import re
 from typing import Any
 
-from headstart import http, log
+from headstart import log
 from headstart.models import Job, host_of, html_to_text
-from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.base import BaseScraper, DetailLost, DetailRequest
 
 _log = log.get(__name__)
 
@@ -159,7 +159,7 @@ class ZohoScraper(BaseScraper):
         return f"https://{self.slug}/jobs/Careers"
 
     def job_url(self, jid: str, title: str) -> str:
-        """The served link, with a title slug and ``source`` param :meth:`_detail_url` (the
+        """The served link, with a title slug and ``source`` param :meth:`detail_request` (the
         fetch route for the same posting) does not carry — the two differ on purpose, so this
         is its own formula rather than a wrapper around that one (ADR-0153)."""
         return f"https://{self.slug}/jobs/Careers/{jid}/{_SLUG.sub('-', title)}?source=CareerSite"
@@ -181,17 +181,12 @@ class ZohoScraper(BaseScraper):
             for r in self._records(page)
             if r.get("id") and not r.get("Is_Locked") and r.get("Publish", True)
         ]
-        details = {}
-        if ids:
-            # Multiplexed by default (ADR-0016); HEADSTART_ASYNC_FANOUT=0 falls back to threads.
-            if self.async_fanout_enabled():
-                fetched = self.fan_out_async(ids, self._detail_record_async)
-            else:
-                fetched = self.fan_out(
-                    ids, self._detail_record, workers=_DETAIL_WORKERS
-                )
-            self.report_detail_gaps(fetched, "detail pages")
-            details = {jid: d for jid, d in zip(ids, fetched) if d}
+        # No tech gate: a department-blind gate would drop 47.4% of zoho's tech postings
+        # (ADR-0166). No held-description skip either: a stored description does not hold the
+        # Salary above.
+        details = self.run_detail_pass(
+            ids, key_of=lambda job_id: job_id, what="detail pages"
+        )
         return {"page": page, "details": details}
 
     @staticmethod
@@ -209,61 +204,40 @@ class ZohoScraper(BaseScraper):
             return []
         return json.loads(html.unescape(match.group(1)))
 
-    def _detail_url(self, jid: str) -> str:
-        return f"https://{self.slug}/jobs/Careers/{jid}"
+    def detail_request(self, job_id: str) -> DetailRequest:
+        return DetailRequest(f"https://{self.slug}/jobs/Careers/{job_id}")
 
-    def _detail_record_of(self, page: str) -> dict | None:
-        """The job record embedded in a detail page (None when the embedded blob is missing,
-        empty, or doesn't parse). Salary/Currency, a fuller State, Date_Opened and Work_Experience
-        all live on the detail page at meaningfully higher coverage than the listing (found via a
-        code-review-triggered re-probe on PR #238, after an earlier check against the listing
-        wrongly called Salary a dead end; the wider field-by-field gap measured in
-        experiment/location-audit-2026-08-25/zoho.md). ``parse()`` merges this over the thinner
-        listing record (``_merge_detail``) rather than reading only a computed description
-        string, so every field the detail page carries gets a chance to reach the Job.
+    def read_detail(self, job_id: str, response: Any) -> dict:
+        return self._detail_record_of(response.text)
 
-        Each ``None`` says which of the three it was, so the Board's gap line reports the shape
-        of the failure and not only its size — a page shape that moved and a page that never
-        arrived are one count otherwise (:meth:`~BaseScraper.note_detail_loss`)."""
+    @staticmethod
+    def _detail_record_of(page: str) -> dict:
+        """The job record embedded in a detail page. Salary/Currency, a fuller State, Date_Opened
+        and Work_Experience all live on the detail page at meaningfully higher coverage than the
+        listing (found via a code-review-triggered re-probe on PR #238, after an earlier check
+        against the listing wrongly called Salary a dead end; the wider field-by-field gap
+        measured in experiment/location-audit-2026-08-25/zoho.md). ``parse()`` merges this over
+        the thinner listing record (``_merge_detail``) rather than reading only a computed
+        description string, so every field the detail page carries gets a chance to reach the Job.
+
+        Raises :class:`DetailLost` naming which of four ways the page carried no record, so the
+        Board's gap line reports the shape of the failure and not only its size — a page shape
+        that moved and a page that never arrived are one count otherwise."""
         m = _DETAIL_JOBS.search(page)
         if not m:
             if (
                 "This job posting is no longer available." in page
                 or "A postagem desta vaga não está mais disponível." in page
             ):
-                self.note_detail_loss("posting explicitly unavailable")
-                return None
-            self.note_detail_loss("no jobs blob on the page")
-            return None
+                raise DetailLost("posting explicitly unavailable")
+            raise DetailLost("no jobs blob on the page")
         try:
             records = json.loads(_js_unescape(m.group(1)))
         except json.JSONDecodeError:
-            self.note_detail_loss("unparseable jobs blob")
-            return None
+            raise DetailLost("unparseable jobs blob") from None
         if not records:
-            self.note_detail_loss("empty jobs blob")
-            return None
+            raise DetailLost("empty jobs blob")
         return records[0]
-
-    def _detail_record(self, jid: str) -> dict | None:
-        """GET one job's detail page and return its embedded record."""
-        try:
-            page = self._get(self._detail_url(jid))
-        except http.RequestsError as exc:
-            # `fan_out` turns the raise into this same None; caught here so the cause reaches
-            # the Board's gap line rather than only its count.
-            self.note_detail_exception(exc)
-            return None
-        return self._detail_record_of(page)
-
-    async def _detail_record_async(self, session: Any, jid: str) -> dict | None:
-        """Same as :meth:`_detail_record` over the shared multiplexed ``AsyncSession``."""
-        try:
-            page = await self._get_async(session, self._detail_url(jid))
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return self._detail_record_of(page)
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         # raw is fetch_raw's {page, details}; a bare page string means no detail pass
