@@ -15,6 +15,7 @@ import csv
 import hmac
 import json
 import os
+import threading
 import time
 from collections import Counter, defaultdict
 from dataclasses import replace
@@ -543,6 +544,14 @@ def save_profile():
     return jsonify(_profile_out(updated, used))
 
 
+# Accounts with a parse in flight. The cap check reads the counter before the router call and
+# writes it after, and `app.run` serves requests on threads — so parallel parses would all read
+# the same count and all pass the cap, each spending a router call. One read per Account at a
+# time closes that window; the Space is a single process, so an in-process set is authoritative.
+_PARSING: set[str] = set()
+_PARSING_LOCK = threading.Lock()
+
+
 @app.route("/profile/parse", methods=["POST"])
 def parse_resume():
     """Paste a Résumé, get the stored Profile it implies — one LLM call (ADR-0041).
@@ -557,6 +566,21 @@ def parse_resume():
         return jsonify({"error": "profiles are not configured"}), 503
     email, store = gate
     account = subscription_id(email)
+    with _PARSING_LOCK:
+        if account in _PARSING:
+            return jsonify(
+                {"error": "a résumé read is already running — wait for it"}
+            ), 429
+        _PARSING.add(account)
+    try:
+        return _run_resume_read(email, store, account)
+    finally:
+        with _PARSING_LOCK:
+            _PARSING.discard(account)
+
+
+def _run_resume_read(email: str, store: Store, account: str):
+    """The parse itself, run while this Account holds its slot in `_PARSING`."""
     used = _parses(store, account)
     if used is None:
         return jsonify({"error": "profile is temporarily unavailable — try again"}), 503
