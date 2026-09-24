@@ -189,9 +189,9 @@ def test_the_gate_keeps_a_giant_board_that_earns_its_hour():
 
 
 def test_the_gate_drops_a_ten_minute_board_that_yields_almost_no_tech():
-    """`jibe:petsmart`, 2026-09-24: 760 s at a score of 2.8 (4 tech jobs), 0.22 a minute. Under the old 15 min
-    floor it sat unjudged while shards now finish in ~9 min, so it set the scrape stage's wall
-    clock once Costco was gone (ADR-0064's 2026-09-24 amendment)."""
+    """`jibe:petsmart`, 2026-09-24: 760 s at a score of 2.8 (4 tech jobs), 0.22 a minute. Under
+    the old 15 min floor it sat unjudged while shards now finish in ~9 min, so it set the scrape
+    stage's wall clock once Costco was gone (ADR-0064's 2026-09-24 amendment)."""
     gated = ps._gated_boards(
         ["jibe:petsmart"],
         {"jibe:petsmart": _cost(760.0, day="2026-09-24")},
