@@ -1639,3 +1639,26 @@ test('without the Space’s category filter, the category ranks the jobs and no 
   assert.equal(hash.get('family'), null);
   assert.equal(hash.get('q'), 'Software Engineering');
 });
+
+
+// ---- duplicate removals, sized (#649) --------------------------------------------------------
+test('duplicate postings removed later are taken out of that company’s line, exactly', () => {
+  const { t } = loadApp();
+  t.setPicks([ACME, BETA]);
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 95, 96]], ['lever:beta', 'Beta', [50, 50, 50, 50]]],
+    { evicted: [{ ts: FOUR[2], company: 'greenhouse:acme', count: 7 }] }));
+  t.setUnit('count', false);
+  const [acme, beta] = t.data().series;
+  // 7 duplicates went; the other +2 that run was hiring and stays.
+  same(t.netOfSteps(acme.points, acme), [93, 93, 95, 96]);
+  same(t.netOfSteps(beta.points, beta), [50, 50, 50, 50]);
+});
+
+test('a category line does not guess where a company’s removals fell', () => {
+  const { t } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({}), stamps: FOUR, series: [], epochs: [], discovered: [],
+    evicted: [{ ts: FOUR[2], company: 'greenhouse:acme', count: 7 }] });
+  const line = { name: 'software-engineering', points: [100, 100, 95, 96] };
+  same(t.netOfSteps(line.points, line), [100, 100, 95, 96]);
+});

@@ -2777,3 +2777,26 @@ def test_picks_a_view_leaves_out_are_named(company_trends):
     ).get_json()
     assert whole["uncounted"] == []
     assert company_trends.get("/trends").get_json()["uncounted"] == []
+
+
+def test_duplicate_removals_are_named_per_pick(company_trends, monkeypatch, tmp_path):
+    """#649's ledger, summed across rules and Boards, at the charted run that shows it."""
+    app_module = company_trends.application.view_functions["trends"].__globals__
+    ledger = tmp_path / "dedup_evictions.csv"
+    ledger.write_text(
+        "ts,board,count,rule\n"
+        f"{_T2},workday:hpe/a,4,backing-requisition\n"
+        f"{_T2},workday:hpe/b,3,workday-tenant\n"
+        f"{_T1},workday:hpe/a,9,case-variant\n"  # at the first run: already in the start
+        f"{_T3},workday:citi/2,2,alias:mirror\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setitem(app_module, "_EVICTIONS", app_module["_load_evictions"](ledger))
+    d = company_trends.get(
+        "/trends?split=company&company=workday:hpe/a&company=workday:citi/2"
+    ).get_json()
+    assert d["evicted"] == [
+        {"ts": _T2, "company": "workday:hpe/a", "count": 7},
+        {"ts": _T3, "company": "workday:citi/2", "count": 2},
+    ]
+    assert app_module["_load_evictions"](tmp_path / "missing.csv") == {}

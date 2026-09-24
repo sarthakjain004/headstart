@@ -1975,6 +1975,16 @@ function stepNotes(d){
       text: `${f.boards} more board${f.boards === 1 ? '' : 's'} of ${who} found here: `
         + `${f.openings.toLocaleString()} tech opening${f.openings === 1 ? '' : 's'} across the company, already open, arrive at once — not new hiring` });
   });
+  // Duplicate rows removed at a pick's Boards (#649, the Space's `evicted`): the same postings
+  // served twice, so their removal is not closures. Sized exactly, but per Board and not per
+  // category, so only a whole company's line can take them out (`wholeOnly`); a category line
+  // would have to guess which of its runs they fell in.
+  if (trendMetric === 'stock') (d.evicted || []).forEach(e => {
+    const i = d.stamps.indexOf(e.ts); if (i <= 0) return;
+    const who = (trendPicks.find(p => p.key === e.company) || {}).label || 'a picked company';
+    notes.push({ i, found: false, withhold: true, company: e.company, additive: true, size: -e.count, wholeOnly: true,
+      text: `${e.count.toLocaleString()} duplicate posting${e.count === 1 ? '' : 's'} of ${who} removed here — the same jobs listed twice, not closures` });
+  });
   // Not under comparable coverage: a pick counted after the cohort's base has no Boards in it.
   // Under New a pick joins when its first week ends (`new_counted_from`), not when counted.
   if (trendPicks.length > 1 && VIEWS[viewKind(d)].split !== 'company' && trendCoverage !== 'comparable'){
@@ -2440,10 +2450,15 @@ function netOfSteps(levels, s){
 // On a whole-company line under All openings, a found Board's size is known exactly (the
 // Space's `discovered.openings`), and lifting by it rather than by the run's whole jump keeps
 // that run's ordinary hiring in the line. Elsewhere (a category line, New) only the jump is known.
+// A line that is a whole company's tech openings under All openings: the Total, or a company's
+// line at the top level. Only these can take out a step whose size is known per company.
+function isWholeLine(s){
+  return trendMetric === 'stock' && !!s && (s.name === '__total__'
+    || (!trendDrill && VIEWS[viewKind(trendData)].split === 'company'));
+}
 function stepJumps(levels, s){
   const steps = new Map(), jumps = new Map();
-  const whole = trendMetric === 'stock' && !!s && (s.name === '__total__'
-    || (!trendDrill && VIEWS[viewKind(trendData)].split === 'company'));
+  const whole = isWholeLine(s);
   stepsFor(s).forEach(n => {
     // A run carrying a counting change and a found Board together is scaled: the change
     // re-sorts the whole line, and the found openings are then inside its ratio.
@@ -2479,8 +2494,9 @@ function notesOf(d){
 function stepsFor(s){
   if (!trendData) return [];
   const perCompany = !!s && VIEWS[viewKind(trendData)].split === 'company';
+  const whole = isWholeLine(s);
   return notesOf(trendData)
-    .filter(n => n.withhold && !(perCompany && ((n.company && s.name !== n.company)
+    .filter(n => n.withhold && !(n.wholeOnly && !whole) && !(perCompany && ((n.company && s.name !== n.company)
       || (n.companies && !n.companies.includes(s.name)))));
 }
 

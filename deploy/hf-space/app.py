@@ -124,6 +124,9 @@ def _pull_index(attempts: int = 5) -> None:
                     # each served Job's role family (ADR-0057), so a Trends category can hand
                     # over to Search as exact ids — ~4 MB, absent until a run writes one
                     "data/state/role_assignments.parquet",
+                    # duplicate removals per run and Board (#649), so a company's line can leave
+                    # them out exactly — small, and absent until a run writes one
+                    "data/state/dedup_evictions.csv",
                 ],
                 token=os.environ.get("HF_TOKEN"),
             )
@@ -305,11 +308,31 @@ def _load_epochs(path: Path) -> list[dict]:
     return out
 
 
+def _load_evictions(path: Path) -> dict[str, list[tuple[str, int]]]:
+    """``board -> [(ts, rows removed)]`` from the duplicate-removal ledger (#649), or empty.
+
+    Its ``ts`` is the run's own stamp, the one role_trends writes, so a removal lands exactly
+    on a charted run. Rows removed as duplicates are not closures, and a company's line leaves
+    them out; the rule that removed them does not matter to that, so it is summed away."""
+    if not path.exists():
+        return {}
+    out: dict[str, Counter] = defaultdict(Counter)
+    try:
+        with path.open(encoding="utf-8", newline="") as fh:
+            for row in csv.DictReader(fh):
+                out[row["board"]][row["ts"]] += int(row["count"])
+    except (OSError, ValueError, KeyError) as exc:
+        print(f"dedup evictions unreadable ({exc}); none left out", flush=True)
+        return {}
+    return {board: sorted(by_ts.items()) for board, by_ts in out.items()}
+
+
 _TRENDS = _load_trends(_STATE / "data" / "state" / "role_trends.parquet")
 _CONFIG = Path(__file__).parent / "config"  # copied in beside this app (ADR-0153)
 _WATCH = _watch_meta(_CONFIG / "role_watchlist.json")
 _FAMILY_LABELS = _family_labels(_CONFIG / "role_families.json")
 _EPOCHS = _load_epochs(_STATE / "data" / "state" / "trends_epochs.csv")
+_EVICTIONS = _load_evictions(_STATE / "data" / "state" / "dedup_evictions.csv")
 # A refit re-bases every series (ADR-0040), so never plot two versions on one axis: keep the
 # newest only. Older rows stay in the ledger, they just aren't charted.
 if _TRENDS:
@@ -1686,7 +1709,25 @@ def trends():
             {"ts": ts, "company": pick, "boards": n, "openings": openings}
             for (ts, pick), (n, openings) in sorted(found.items())
         ],
+        # Duplicate rows removed from each pick's Boards, per charted run (#649).
+        evicted=_picks_evicted(counted, stamps),
     )
+
+
+def _picks_evicted(counted: dict[str, str], stamps: list[str]) -> list[dict]:
+    """``[{ts, company, count}]``: each pick's duplicate removals at the charted run that shows
+    them — the first at or after the removal's own stamp, which is normally that stamp."""
+    if not stamps:
+        return []
+    at: Counter = Counter()
+    for board, pick in counted.items():
+        for ts, count in _EVICTIONS.get(board, ()):
+            k = bisect_left(stamps, ts)
+            if 0 < k < len(stamps) and count:
+                at[(stamps[k], pick)] += count
+    return [
+        {"ts": ts, "company": pick, "count": n} for (ts, pick), n in sorted(at.items())
+    ]
 
 
 def _company_json(key: str, label: str) -> dict:
