@@ -597,7 +597,7 @@ class WorkdayScraper(BaseScraper):
         retried a 400 on the theory it was a throttle; the 400 is a session-cookie fault the sweep
         never provokes, so that special case is gone.)
         """
-        hinted = self._parts()[1]  # self._instance is None here -> the URL's instance
+        hinted = self._requested_instance  # _instance is None here, so the URL's own
 
         def serves(instance: str) -> bool:
             try:
