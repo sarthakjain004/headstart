@@ -59,9 +59,9 @@ cut one**.
 The per-job detail endpoint (``jobs-service/v1/jobs/careersite``, JSON POST of ``jobUrl`` + the
 *real numeric* ``companyId``) holds the complete posting in ``longDescription`` (a 6,033-char JD
 was measured behind a listing row with none), so it is fetched for **every row not on the
-ADR-0050 skip-list** and wins over the listing text; the listing fields are the fallback when the
-detail call fails, so a Board whose config call breaks ships its listing text rather than
-nothing. The store bounds the cost: each Job's detail is fetched once in its lifetime (~15 KB a
+ADR-0050 skip-list** and wins over the listing text. The listing fields stand only when the
+detail answers with no text; a failed detail call — or a failed config call, which fails every
+detail on the Board — ships no description, so the next run retries it. The store bounds the cost: each Job's detail is fetched once in its lifetime (~15 KB a
 response, so the first pass over the 22,456-posting corpus moves ~340 MB; steady state is new
 postings only). What the detail holds is the tenant's own paste, junk included — one measured
 posting carries an AI-chat UI's class markup verbatim, and ``html_to_text``'s
@@ -430,8 +430,8 @@ class ZwayamScraper(BaseScraper):
     #: nothing shows which is faster. What is on record is the note on `detail_workers` above: a
     #: measured ~8-9 responses/s per-IP ceiling, which multiplexing cannot raise. Re-run the A/B
     #: from a fresh egress before moving this pass off threads. That move must also take
-    #: `_detail_company_id`'s blocking config call out of `detail_request`, which the multiplexed
-    #: path runs inside its event loop.
+    #: `_company_id_once_per_board`'s blocking config call out of `detail_request`, which the
+    #: multiplexed path runs inside its event loop.
     async_fanout = False
 
     def __init__(
@@ -439,10 +439,10 @@ class ZwayamScraper(BaseScraper):
     ) -> None:
         super().__init__(slug, company, fetcher=fetcher)
         self._company_id_lock = threading.Lock()
-        self._company_id_asked = (
-            False  # a failed config call leaves None, not asked again
-        )
-        self._board_company_id: int | None = None
+        # Filled by `_company_id_once_per_board`; a failed config call leaves None and is not
+        # asked again.
+        self._company_id_asked = False
+        self._resolved_company_id: int | None = None
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -576,20 +576,20 @@ class ZwayamScraper(BaseScraper):
             _log.info(f"{self.board_key()}: config call failed ({type(exc).__name__})")
             return None
 
-    def _detail_company_id(self) -> int | None:
+    def _company_id_once_per_board(self) -> int | None:
         """:meth:`_company_id`, called once per Board and only once the Detail pass forms its
         first request — the config call is metered like every other (``egress_fallback_on``), so
         a Board whose rows are all gated or already held never spends it. Locked because the
         thread transport (:attr:`async_fanout`) forms requests from several workers at once."""
         with self._company_id_lock:
             if not self._company_id_asked:
-                self._board_company_id = self._company_id()
+                self._resolved_company_id = self._company_id()
                 self._company_id_asked = True
-            return self._board_company_id
+            return self._resolved_company_id
 
     def detail_request(self, row: dict) -> DetailRequest:
         """A JSON POST, unlike the multipart search, carrying the *real* numeric company id."""
-        company_id = self._detail_company_id()
+        company_id = self._company_id_once_per_board()
         if company_id is None:
             # The config call is per-Board, so its failure fails every detail on the Board — each
             # a loss like any other failed detail, so each retries next run.
@@ -610,9 +610,9 @@ class ZwayamScraper(BaseScraper):
     def read_detail(self, row: dict, response: Any) -> str:
         """One Job's full posting text — the detail JSON's ``longDescription``, stripped.
 
-        ``""``, never a loss, when the endpoint answers with no body: `fetch_raw` needs the two
-        apart — a loss is transient and must be retried next run, the other is this posting's
-        final answer."""
+        ``""``, never a loss, when the detail JSON carries no ``longDescription``: `fetch_raw`
+        needs the two apart — a loss is transient and must be retried next run, the other is this
+        posting's final answer. A body that is not JSON at all is a loss, labelled by its type."""
         detail = response.json() or {}
         return html_to_text(detail.get("longDescription")) or ""
 

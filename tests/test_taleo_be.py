@@ -44,7 +44,7 @@ DETAIL_REMOTE = """<div class="well oracletaleocwsv2-job-description">
 
 
 def _served_board(
-    listing_pages: dict[str, str], detail: str | FakeResponse, company: str = "ICANN"
+    listing_pages: dict[str, str], detail: str | FakeResponse
 ) -> tuple[TaleoBEScraper, FakeFetcher]:
     """A TBE Board whose listing pages a FakeFetcher answers by URL, and every other GET — each
     detail page — with ``detail``."""
@@ -55,7 +55,7 @@ def _served_board(
         return detail if isinstance(detail, FakeResponse) else FakeResponse(text=detail)
 
     fetcher = FakeFetcher(route)
-    return TaleoBEScraper(URL, company, fetcher=fetcher), fetcher
+    return TaleoBEScraper(URL, "ICANN", fetcher=fetcher), fetcher
 
 
 def test_registry_and_ledger_url_slug():

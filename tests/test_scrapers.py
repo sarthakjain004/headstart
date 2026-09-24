@@ -1617,7 +1617,7 @@ def _ripplehire_board(listing_rows, detail_for):
     return RippleHireScraper("x", "X", fetcher=fetcher), fetcher
 
 
-def _ripplehire_record(record: dict) -> FakeResponse:
+def _ripplehire_detail_response(record: dict) -> FakeResponse:
     return FakeResponse(text=json.dumps({"jobVO": record}))
 
 
@@ -1631,7 +1631,7 @@ def test_ripplehire_fetch_raw_fills_jobdesc_from_detail(monkeypatch, async_fanou
             {"jobSeq": 1, "jobTitle": "SRE", "jobDesc": None},
             {"jobSeq": 2, "jobTitle": "Filled", "jobDesc": "<p>have</p>"},
         ],
-        lambda job_seq: _ripplehire_record(
+        lambda job_seq: _ripplehire_detail_response(
             {"jobDesc": "<p>3+ years of Kubernetes</p>"}
         ),
     )
@@ -1655,7 +1655,7 @@ def test_ripplehire_fetch_raw_attaches_full_detail_record():
     it rather than reading only `jobDesc` back out of it and discarding the rest."""
     scraper, _fetcher = _ripplehire_board(
         [{"jobSeq": 1, "jobTitle": "SRE", "jobDesc": None}],
-        lambda job_seq: _ripplehire_record(
+        lambda job_seq: _ripplehire_detail_response(
             {
                 "jobDesc": "<p>desc</p>",
                 "bussinessUnit": "Technology",
@@ -1679,7 +1679,7 @@ def test_ripplehire_a_record_without_jobdesc_keeps_its_fields_and_is_a_labelled_
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
     scraper, _fetcher = _ripplehire_board(
         [{"jobSeq": 1, "jobTitle": "SRE", "jobDesc": None}],
-        lambda job_seq: _ripplehire_record({"bussinessUnit": "Technology"}),
+        lambda job_seq: _ripplehire_detail_response({"bussinessUnit": "Technology"}),
     )
 
     with caplog.at_level("INFO"):
@@ -9809,7 +9809,7 @@ def _zwayam_served_board(rows, detail_for, config=None):
     return zwayam_module.ZwayamScraper("h.example", fetcher=fetcher), fetcher
 
 
-def _zwayam_detail_text(job_url: str) -> FakeResponse:
+def _zwayam_detail_response(job_url: str) -> FakeResponse:
     return FakeResponse(
         text=json.dumps({"longDescription": f"<p>detail text for {job_url}</p>"})
     )
@@ -9828,7 +9828,7 @@ def _zwayam_detail_bodies(fetcher: FakeFetcher) -> list[dict]:
     )
 
 
-def test_zwayam_detail_text_wins_and_the_skip_list_prunes_the_fetch():
+def test_zwayam_detail_response_wins_and_the_skip_list_prunes_the_fetch():
     """The listing's text can be silently truncated with no way to tell (632 chars listed vs
     909 of stripped detail text, measured), so the detail is fetched for every row not on the
     ADR-0050 skip-list and its text wins over whatever the listing carried.
@@ -9855,7 +9855,7 @@ def test_zwayam_detail_text_wins_and_the_skip_list_prunes_the_fetch():
                 "mediumDescriptionWithoutHtml": "possibly truncated listing",
             },
         ],
-        _zwayam_detail_text,
+        _zwayam_detail_response,
     )
     # id 3 is on the skip-list: the store already holds its (detail-derived) text, so the row
     # must ship None and let the store supply it. Shipping the listing text instead would be
@@ -9904,7 +9904,7 @@ def test_zwayam_a_failed_config_call_ships_no_descriptions_not_stale_ones():
     behave like any other failed detail rather than freezing the whole Board's listing text.
     Each loss is named, and none of them is a request made."""
     scraper, fetcher = _zwayam_served_board(
-        _ZWAYAM_TWO_ROWS, _zwayam_detail_text, config=FakeResponse(500, "down")
+        _ZWAYAM_TWO_ROWS, _zwayam_detail_response, config=FakeResponse(500, "down")
     )
     jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
     assert len(jobs) == 2  # the Jobs themselves still ship
@@ -9958,13 +9958,13 @@ def test_zwayam_asks_for_the_company_id_once_and_only_when_a_detail_is_wanted(
         text=json.dumps({"responseObject": {"company": {"id": 4242}}})
     )
     scraper, fetcher = _zwayam_served_board(
-        rows, _zwayam_detail_text, config=slow_config
+        rows, _zwayam_detail_response, config=slow_config
     )
     scraper.fetch_raw()
     assert fetcher.urls().count(zwayam_module._CONFIG_API) == 1
     assert len(_zwayam_detail_bodies(fetcher)) == 40
 
-    held, held_fetcher = _zwayam_served_board(rows, _zwayam_detail_text)
+    held, held_fetcher = _zwayam_served_board(rows, _zwayam_detail_response)
     held.have_details = {f"zwayam:h.example:{index}" for index in range(40)}
     held.fetch_raw()
     assert zwayam_module._CONFIG_API not in held_fetcher.urls()
@@ -9975,7 +9975,7 @@ def test_zwayam_detail_request_carries_the_browser_agent_the_edge_demands():
     the detail POST — and only it — carries `_DETAIL_USER_AGENT`."""
     from headstart.scrapers import zwayam as zwayam_module
 
-    scraper, fetcher = _zwayam_served_board(_ZWAYAM_TWO_ROWS, _zwayam_detail_text)
+    scraper, fetcher = _zwayam_served_board(_ZWAYAM_TWO_ROWS, _zwayam_detail_response)
     scraper.fetch_raw()
     detail_agents = {
         request.kwargs["headers"]["User-Agent"]
@@ -10856,7 +10856,7 @@ def test_zwayam_gate_and_the_held_detail_skip_compose():
             {"id": 2, "jobTitle": "Housekeeper", "jobUrl": "b"},
             {"id": 3, "jobTitle": "Data Engineer", "jobUrl": "c"},
         ],
-        _zwayam_detail_text,
+        _zwayam_detail_response,
     )
     scraper.have_details = {"zwayam:h.example:3"}  # id 3's text is already stored
 
