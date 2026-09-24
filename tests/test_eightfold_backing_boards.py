@@ -1,4 +1,4 @@
-"""Which Eightfold Boards are aliased onto the Board(s) of the ATS behind them (ADR-0191).
+"""Which Eightfold Boards are aliased onto the Board(s) of the ATS behind them (ADR-0204).
 
 The script is `scripts/validate/eightfold_backing_boards.py`. Its election, `aliases`, is pure, so
 every rule is tested here without a network: an Eightfold Board is aliased when its backing

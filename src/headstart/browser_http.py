@@ -351,7 +351,10 @@ class BrowserFetcher:
     deepened for ADR-0153). Implements ``fetch`` only — a browser tab is one session, not a
     multiplexed pool, and nothing calls its async half (see ``headstart.fetcher``'s module
     docstring) — and only for requests inside the origin it was opened on: every darwinbox
-    tenant is its own subdomain, so one instance never needs to cover two.
+    tenant is its own subdomain, so one instance never needs to cover two. It leaves
+    ``clear_cookies`` (ADR-0199) unimplemented too: the tab's cookies are the clearance its
+    navigation earned, so a reset would re-wall it, and a no-op would claim a reset that never
+    happened.
 
     A context manager, not a bare object, because the tab :func:`origin` opens must close
     deterministically — this wraps that contract rather than replacing it::

@@ -64,7 +64,10 @@ _PAGE_SIZE = 100  # server caps each page at 100 regardless of the requested lim
 _MAX_PAGES = (
     99  # our own ceiling, not the server's — reaching it means the board went unread
 )
-_TLDS = ("in", "com")
+#: The data-centre TLDs a tenant's host sits on, in the order a scrape tries them. Public: the
+#: liveness probe asks the same hosts (ADR-0203).
+TLDS = ("in", "com")
+_LISTING_PATH = "/ms/candidateapi/job/alljobs?companyId=main"
 
 
 def _iso_date(raw: str | float | None) -> str | None:
@@ -128,6 +131,14 @@ class DarwinboxScraper(BaseScraper):
         host = getattr(self, "_host", None) or f"https://{self.slug}.darwinbox.in"
         return f"{host}/ms/candidate/careers"
 
+    def host_on_tld(self, tld: str) -> str:
+        """This tenant's host on one of :data:`TLDS` — which one serves it is found by asking."""
+        return f"https://{self.slug}.darwinbox.{tld}"
+
+    def listing_url_on(self, tld: str) -> str:
+        """The job listing this tenant would answer on :meth:`host_on_tld` ``tld``."""
+        return f"{self.host_on_tld(tld)}{_LISTING_PATH}"
+
     def job_url(self, native_id: str) -> str:
         # v2 portal (the norm): browser-verified jobDetails route. On v2 tenants the old
         # /ms/candidate/ app is a 2.4KB stub that redirects to the v2 careers HOME, dropping
@@ -148,7 +159,7 @@ class DarwinboxScraper(BaseScraper):
         check pagination against once the loop ends — same ad hoc instance-attribute pattern as
         ``_host``/``_new_careers`` below, set here and read back after the call returns.
         """
-        api = f"{host}/ms/candidateapi/job/alljobs?companyId=main"
+        api = f"{host}{_LISTING_PATH}"
         body = {
             "companyId": "main",
             "page": page,
@@ -193,7 +204,7 @@ class DarwinboxScraper(BaseScraper):
         every tenant is its own subdomain — so each board pays exactly one navigation, then
         pages the same JSON API the curl path uses. `parse` never knows the difference.
         """
-        api = f"{host}/ms/candidateapi/job/alljobs?companyId=main"
+        api = f"{host}{_LISTING_PATH}"
         body = {"companyId": "main", "sort_option": "new", "limit": _PAGE_SIZE}
         with self._browser_fetcher(f"{host}/ms/candidate/careers") as browser:
             response = browser.fetch("POST", api, json={**body, "page": 1})
@@ -238,8 +249,8 @@ class DarwinboxScraper(BaseScraper):
         # data-center TLD varies per tenant; resolve it on the first page, then paginate.
         errors: list[tuple[str, Exception]] = []
         host = batch = None
-        for tld in _TLDS:
-            candidate = f"https://{self.slug}.darwinbox.{tld}"
+        for tld in TLDS:
+            candidate = self.host_on_tld(tld)
             try:
                 batch = self._alljobs(candidate, 1)
                 host = candidate

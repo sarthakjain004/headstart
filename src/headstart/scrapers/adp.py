@@ -52,7 +52,8 @@ import time
 from typing import Any
 from urllib.parse import urlencode
 
-from headstart import company_name, http
+from headstart import company_name, http, salary
+from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -221,7 +222,7 @@ def _string_field(row: dict, code: str) -> str | None:
     return next(iter(_strings(row.get("customFieldGroup") or {}, code)), None)
 
 
-#: `SalaryType` codes -> the period phrase `salary._period_multiplier` reads. The two observed
+#: `SalaryType` codes -> the period phrase `salary.from_field` reads. The two observed
 #: (HR 668, AN 412 of 1,080 paid rows). Anything else yields no salary: annual is the parser's
 #: default, so an unmapped daily or monthly figure would be served at the wrong scale.
 _PERIODS = {"HR": "per-hour", "AN": "per-year"}
@@ -271,8 +272,10 @@ class ADPScraper(BaseScraper):
     #: Process-wide, shared by every instance (see `_Pacer`).
     pacer = _PACER
 
-    def __init__(self, slug: str, company: str | None = None) -> None:
-        super().__init__(slug, company)
+    def __init__(
+        self, slug: str, company: str | None = None, fetcher: Fetcher | None = None
+    ) -> None:
+        super().__init__(slug, company, fetcher)
         self.cid, self.cc_id = slug.split("/", 1)
 
     def url(self) -> str:
@@ -391,6 +394,9 @@ class ADPScraper(BaseScraper):
             if self.needs_detail(_ext_id(r))
         ]
         details: dict[str, dict] = {}
+        # Composed from the primitives, not `run_detail_pass` (ADR-0201): each request waits on a
+        # process-wide pacer and a 429 rests every Board through the window, so the transport
+        # itself carries policy a request description cannot state.
         if wanted:
             if self.async_fanout_enabled():
                 fetched = self.fan_out_async(wanted, self._detail_async)
@@ -501,8 +507,9 @@ class ADPScraper(BaseScraper):
     def _salary_field(self, raw: Any) -> str | None:
         """``Job.salary`` from the listing row's ``payGradeRange`` and ``SalaryType``.
 
-        ``"19-20.50 USD per-hour"`` — the spelling ``salary._field_generic`` reads. Two shapes
-        need care (measured over 1,080 paid rows): an "Up to X" range arrives as **min 0.0**
+        ``"19-20.50 USD per-hour"``, built by ``salary.to_field`` — the spelling
+        ``salary.from_field`` reads for adp. Two shapes need care (measured over 1,080 paid
+        rows): an "Up to X" range arrives as **min 0.0**
         (158 rows), a lone ceiling that no spelling makes the parser read as a maximum, so it is
         refused; "X Onwards" arrives as **max 0.0** (1 row), a real floor, emitted alone.
         """
@@ -513,5 +520,6 @@ class ADPScraper(BaseScraper):
         if period is None or not lo:
             return None
         currency = (pay.get("minimumRate") or {}).get("currencyCode") or ""
-        amount = f"{_digits(lo)}-{_digits(hi)}" if hi else _digits(lo)
-        return " ".join(part for part in (amount, currency, period) if part)
+        return salary.to_field(
+            _digits(lo), _digits(hi) if hi else None, currency, period
+        )

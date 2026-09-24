@@ -1,4 +1,4 @@
-# ADR-0191: An Eightfold career site whose backing ATS Board already serves it is an alias
+# ADR-0204: An Eightfold career site whose backing ATS Board already serves it is an alias
 
 **Status:** accepted · **Date:** 2026-09-24 · **Relates to:** [ADR-0017](0017-tech-role-filter.md) (the tech gate decides what is served), [ADR-0111](0111-duplicate-boards-resolve-the-board-surface.md) (the alias ledger, and the `_EIGHTFOLD_ALIAS_LOSERS` it kept), [ADR-0182](0182-a-clearcompany-board-is-its-hrm-direct-feed.md) and [ADR-0186](0186-a-taleo-section-another-section-already-lists-is-an-alias.md) (the two writers this one follows), [ADR-0187](0187-a-workday-requisition-is-served-once-per-tenant.md) (the Workday requisition id), [ADR-0188](0188-a-dedup-rule-change-is-a-trends-epoch.md) (the Trends epoch)
 
@@ -92,6 +92,9 @@ Run on 2026-09-24 against the committed ledger (80 Boards read):
 | buried, second Eightfold site | 5 of 6 (qualcomm's winner read short) | 0 (their rows are dead) |
 | kept by rule 1 | 30 | |
 | kept for an unread Board | 1 (qualcomm) | |
+
+A second run the same day, stopped before its last Board (sephora) after Eightfold walled the
+machine and four reads failed, elects the same 8 from the 79 Boards it read.
 
 **Rule 1 decides almost everything.** Tech postings with no backing copy the tech gate keeps, per
 Board, from the same run: nvidia 19 of 2,061 tech, micron 29 of 1,959, amat 108 of 994, caci 129 of

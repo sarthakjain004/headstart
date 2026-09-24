@@ -29,8 +29,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from statistics import median
+from typing import TYPE_CHECKING
 
 from headstart.board_identity import ats_of
+
+if TYPE_CHECKING:
+    from headstart.scrapable_boards import ScrapableBoard
 
 FIELDS = ("board", "seconds", "jobs", "updated_at")
 # The per-shard file a scrape writes (pipeline.JobWriter.record_cost) and read_shard_rows reads.
@@ -76,6 +80,16 @@ def shard_row(
 # runner and network noise a tech-job count doesn't; this is the knob if shards still straggle.
 CURRENT_WEIGHT = 0.5
 FALLBACK_SECONDS = 5.0  # last resort: no measurement anywhere, not even for the ATS
+
+
+def key_for(board: ScrapableBoard | str) -> str:
+    """This Board's key in the ledger: its identity exactly as its scraper cases it (ADR-0192).
+
+    A key passes through unchanged. The same key as :func:`headstart.board_priority.key_for`
+    (ADR-0096), so one key reads both ledgers. Not case-folded: the file holds 1,956 groups of
+    case-variant keys (HF state, 2026-09-24), each its own row that a folded load would merge.
+    """
+    return board if isinstance(board, str) else board.identity
 
 
 @dataclass(frozen=True, slots=True)

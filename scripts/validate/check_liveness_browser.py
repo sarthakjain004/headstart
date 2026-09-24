@@ -88,12 +88,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from headstart import liveness
+from headstart.scrapers.registry import company_from_row
 
 LIVE, DEAD, UNKNOWN = "live", "dead", "unknown"
 
 # Per-ATS: how to reach a tenant's board, and how to read a verdict off the rendered page.
 #
-# `url` builds the board address from the ledger's tenant/url. `count_js` runs in page context
+# `board_page` builds the board address from the Board's slug, which each row's own Scraper reads
+# off it (`registry.company_from_row`, ADR-0203) — so the browser asks about the Board the scrape
+# reads, not whatever deep link discovery stored in `url`. `count_js` runs in page context
 # after render and must return an integer job count, or -1 for "this is not a board" (which is
 # what settles DEAD). Selectors are deliberately broad — these are marketing-grade pages that
 # change often, and a missed selector must read as "couldn't tell" (UNKNOWN), never as zero jobs.
@@ -104,7 +107,7 @@ LIVE, DEAD, UNKNOWN = "live", "dead", "unknown"
 # can only ever return a count, 0, or null; that asymmetry is deliberate, not an omission.
 _PAGE_PROBES: dict[str, dict] = {
     "workable": {
-        "url": lambda t, u: f"https://apply.workable.com/{t}/",
+        "board_page": lambda slug: f"https://apply.workable.com/{slug}/",
         "ready": "[data-ui='job'], [data-ui='overview'], main",
         "count_js": """
             const cards = document.querySelectorAll("[data-ui='job'], li[data-ui='job']");
@@ -132,7 +135,7 @@ _PAGE_PROBES: dict[str, dict] = {
         """,
     },
     "personio": {
-        "url": lambda t, u: (u or f"https://{t}.jobs.personio.de").rstrip("/") + "/",
+        "board_page": lambda slug: f"https://{slug}/",  # the slug is the host
         "ready": "[data-testid='job-list'], .job-list, main, body",
         "count_js": """
             const cards = document.querySelectorAll(
@@ -148,7 +151,7 @@ _PAGE_PROBES: dict[str, dict] = {
         """,
     },
     "recruitee": {
-        "url": lambda t, u: (u or f"https://{t}.recruitee.com").rstrip("/") + "/",
+        "board_page": lambda slug: f"https://{slug}.recruitee.com/",
         "ready": "main, body",
         # Recruitee serves its own marketing site for a tenant with no public board — same 200,
         # same shell. Its title is the tell, and it is what makes those rows DEAD rather than
@@ -165,7 +168,7 @@ _PAGE_PROBES: dict[str, dict] = {
         """,
     },
     "workday": {
-        "url": lambda t, u: (u or "").rstrip("/") + "/",
+        "board_page": lambda slug: slug + "/",  # the slug is the careers URL
         "ready": "[data-automation-id='jobResults'], [data-automation-id='searchResults'], body",
         "count_js": """
             // The stated total FIRST, never the rendered card count. Workday paginates at 20,
@@ -222,11 +225,11 @@ def _nav_url(built: str) -> str | None:
     failure mode this module warns about twice elsewhere. Measured 2026-08-15: of a 300-board
     sample, all 103 errors were bare hosts and all 197 rows carrying a scheme returned a verdict.
 
-    Counted through the per-ATS builders rather than off the raw column, because only three of the
-    four pass the stored URL through: **personio 3,292, recruitee 225, workday 5 — 3,522 rows**.
-    workable is unaffected at any count, since its builder derives the address from the tenant and
-    ignores the stored URL entirely. Of the 3,522, only 30 are ``unknown``; the rest are ``live``
-    (2,507) or ``dead`` (985), so this mostly unblocks *re-verifying* boards, not the backlog.
+    Counted then through the per-ATS builders, three of which passed the stored URL through:
+    **personio 3,292, recruitee 225, workday 5 — 3,522 rows**. Since ADR-0203 each builder starts
+    from the Scraper's slug instead, so personio's and recruitee's always carry a scheme; workday's
+    slug *is* the stored URL, and its scheme-less rows (5 on 2026-09-24) are what this still
+    rescues.
 
     Returns None for a row with no usable address — workday's builder yields ``"/"`` when the
     ledger stores no URL, and a workday tenant has no host to derive one from.
@@ -254,13 +257,14 @@ def _script_value(response):
     return inner.get("value") if isinstance(inner, dict) else inner
 
 
-async def _probe(tab, spec: dict, tenant: str, url: str) -> tuple[str, int | None]:
-    """One board through an already-open tab. Returns a ``(status, jobs)`` verdict.
+async def _probe(tab, spec: dict, slug: str) -> tuple[str, int | None]:
+    """One board, named by its slug, through an already-open tab. Returns a ``(status, jobs)``
+    verdict.
 
     Never raises: a browser failure is exactly the "couldn't tell" case the three-state model
     exists for, so it settles UNKNOWN and the row is re-probed on its TTL like any other.
     """
-    target = _nav_url(spec["url"](tenant, url))
+    target = _nav_url(spec["board_page"](slug))
     if target is None:
         return UNKNOWN, None  # nothing navigable in the ledger row
     try:
@@ -309,7 +313,8 @@ async def _run(
             async with gate:
                 tab = await browser.new_tab()
                 try:
-                    status, jobs = await _probe(tab, spec, row.tenant, row.url)
+                    slug = company_from_row(ats, row.tenant, row.url).slug
+                    status, jobs = await _probe(tab, spec, slug)
                 finally:
                     await tab.close()
             probed[row.tenant] = (status, jobs)

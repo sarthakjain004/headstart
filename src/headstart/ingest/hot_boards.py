@@ -285,7 +285,7 @@ def main() -> int:
         )
         return 0
 
-    from headstart.search import PROD_TABLE
+    from headstart.embedding_conventions import PROD_TABLE
 
     new, stock = read_levels(args.board_counts)
     moved, stamps = read_stock_change(args.board_deltas)

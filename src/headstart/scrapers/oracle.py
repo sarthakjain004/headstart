@@ -43,6 +43,7 @@ import json
 from typing import Any
 
 from headstart import http
+from headstart.fetcher import Fetcher
 from headstart.models import Job, host_of, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
@@ -126,8 +127,10 @@ class OracleScraper(BaseScraper):
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
     egress_fallback_on = frozenset({429})
 
-    def __init__(self, slug: str, company: str | None = None) -> None:
-        super().__init__(slug, company)
+    def __init__(
+        self, slug: str, company: str | None = None, fetcher: Fetcher | None = None
+    ) -> None:
+        super().__init__(slug, company, fetcher)
         self._offset = (
             0  # advanced by `fetch_raw`; `url()` renders whatever page it is on
         )
@@ -151,7 +154,7 @@ class OracleScraper(BaseScraper):
         # A pool row that is a bare label with no URL either (23 of them: `akamai`, `chubb`,
         # `cummins`) has no host to recover, and falls through to the tenant — which will not
         # resolve. That is deliberate and currently unreachable: those rows are unprobeable, so
-        # the ledger has no such entry and `load_active_companies` can never build one. Guarding
+        # the ledger has no such entry and `scrapable_boards.load` can never build one. Guarding
         # it here would be error handling for a case that cannot arrive.
         return host_of(url) or tenant.strip().lower()
 

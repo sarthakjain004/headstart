@@ -31,9 +31,13 @@ and the sweep would silently compare the old string against itself — every row
 mean nothing. Every module holding the name is patched, and the count is printed so a reader can
 see it happened.
 
-And a row is only evidence if the request reached a host. `DNSError` (personio, zoho) or a
-`ValueError` under **both** strings is a Board that was never fetched, not a Board the change left
-alone. Those read SAME and are excluded from the verdict for that reason.
+And a row is only evidence if the request reached a host. A `DNSError` or a `ValueError` under
+**both** strings is a Board that was never fetched, not a Board the change left alone. Those read
+UNREACHED and are excluded from the verdict for that reason. Until 2026-09-24 whole ATSes landed
+there by construction: the sample passed the ledger's raw `tenant` as the slug, which is not the
+slug on personio (2,503 of the 2,503 rows this samples from), taleo_be (217/217), workday
+(4,899/5,021) or zoho (4,416/4,446), whose Scrapers read theirs from the `url`. Rows now go
+through `registry.company_from_row` (ADR-0203), the one place a row becomes a Board.
 
 Run: python -u scripts/validate/user_agent_sweep.py --new "headstart/0.1"
 """
@@ -50,6 +54,7 @@ import time
 from pathlib import Path
 
 import headstart.scrapers as scrapers_pkg
+from headstart.config import CompanyRef
 from headstart.scrapers import registry
 from headstart.scrapers.base import USER_AGENT as CURRENT
 
@@ -76,17 +81,17 @@ def _set_agent(modules: list, agent: str) -> None:
         module.USER_AGENT = agent
 
 
-def _sample(seed: int, per_ats: int) -> list[tuple[str, str]]:
+def _sample(seed: int, per_ats: int) -> list[CompanyRef]:
     """One or more small live Boards per ATS, from the committed liveness ledgers.
 
     The ledgers are the repo's own authority for liveness (CLAUDE.md: they are committed to git,
     unlike the rest of `data/`), so this needs no HF round-trip and is reproducible from a clone.
     """
     random.seed(seed)
-    picks: list[tuple[str, str]] = []
+    picks: list[CompanyRef] = []
     for path in sorted(LIVENESS.glob("*.csv")):
         rows = [
-            (row[0], row[1])
+            (row[0], row[1], row[2])
             for row in csv.reader(path.read_text(encoding="utf-8").splitlines())
             if len(row) >= 5
             and row[3] == "live"
@@ -94,14 +99,17 @@ def _sample(seed: int, per_ats: int) -> list[tuple[str, str]]:
             and _MIN_JOBS <= int(row[4]) <= _MAX_JOBS
         ]
         if rows:
-            picks.extend(random.sample(rows, min(per_ats, len(rows))))
+            picks.extend(
+                registry.company_from_row(ats, tenant, url)
+                for ats, tenant, url in random.sample(rows, min(per_ats, len(rows)))
+            )
     return picks
 
 
-def _count(ats: str, slug: str) -> int | str:
+def _count(company: CompanyRef) -> int | str:
     """Jobs the real scraper returns, or the exception's name — both are outcomes worth comparing."""
     try:
-        scraper = registry.get_scraper(ats, slug, slug)
+        scraper = registry.get_scraper(company.ats, company.slug, company.name)
         return len(scraper.parse(scraper.fetch_raw(), _SCRAPED_AT))
     except Exception as exc:  # noqa: BLE001 - classifying the failure IS the measurement
         return type(exc).__name__
@@ -126,18 +134,19 @@ def _verdict(old: int | str, new: int | str) -> str:
 
 def _sweep(
     modules: list,
-    picks: list[tuple[str, str]],
+    picks: list[CompanyRef],
     old_agent: str,
     new_agent: str,
     verdicts: dict[str, int],
     worse: list[str],
 ) -> None:
     """Scrape every picked Board under both agents, printing each row as it lands."""
-    for ats, slug in picks:
+    for company in picks:
+        ats, slug = company.ats, company.slug
         counts: dict[str, int | str] = {}
         for label, agent in (("old", old_agent), ("new", new_agent)):
             _set_agent(modules, agent)
-            counts[label] = _count(ats, slug)
+            counts[label] = _count(company)
             time.sleep(0.2)
         old, new = counts["old"], counts["new"]
         verdict = _verdict(old, new)
@@ -162,7 +171,7 @@ def main() -> int:
 
     modules = _patchable_modules()
     picks = _sample(args.seed, args.per_ats)
-    covered = {ats for ats, _ in picks}
+    covered = {company.ats for company in picks}
     # Named, not counted. An ATS missing from the sample is a hole in the evidence, and a bare
     # "20 ATSes" reads as complete when the registry holds 22.
     uncovered = sorted(set(registry.SCRAPERS) - covered)

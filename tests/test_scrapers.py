@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from typing import ClassVar
 
 import pytest
+from fake_fetcher import FakeFetcher, FakeResponse
 
 from headstart import http
 from headstart.scrapers.personio import PersonioScraper
@@ -1068,30 +1069,29 @@ def test_smartrecruiters_parse_uses_function_when_department_is_null():
     assert job.department == "Information Technology"
 
 
-def test_smartrecruiters_tech_gate_reads_function_when_department_is_null(monkeypatch):
+def test_smartrecruiters_tech_gate_reads_function_when_department_is_null():
     """The gate and `parse` must reach the same verdict — both go through `_department_of`."""
-    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
-    scraper = get_scraper("smartrecruiters", "acme")
-    scraper.have_details = frozenset()
+    from headstart.scrapers.smartrecruiters import SmartRecruitersScraper
+
     postings = [
         # vague title, no department, tech function -> rule 4 promotes it (gate must fetch it)
         {"id": "1", "name": "Associate", "function": {"label": "Engineering"}},
         # vague title, no department, non-tech function -> stays gated out
         {"id": "2", "name": "Associate", "function": {"label": "Retail"}},
     ]
-    monkeypatch.setattr(
-        scraper, "_get", lambda *a: json.dumps({"content": postings, "totalFound": 2})
-    )
-    fetched: list[str] = []
-    monkeypatch.setattr(
-        scraper,
-        "_job_detail",
-        lambda posting_id: fetched.append(posting_id) or {"description": "d"},
-    )
+
+    def route(method, url, kwargs):
+        if "/postings?" in url:
+            return FakeResponse(text=json.dumps({"content": postings, "totalFound": 2}))
+        return FakeResponse(text=json.dumps({"jobAd": {}}))
+
+    fetcher = FakeFetcher(route)
+    scraper = SmartRecruitersScraper("acme", fetcher=fetcher)
+    scraper.have_details = frozenset()
 
     scraper.fetch_raw()
 
-    assert fetched == ["1"]
+    assert [url.rsplit("/", 1)[1] for url in fetcher.urls()[1:]] == ["1"]
 
 
 def test_smartrecruiters_description_joins_requirement_sections():
@@ -1112,7 +1112,7 @@ def test_smartrecruiters_description_joins_requirement_sections():
             }
 
     scraper = get_scraper("smartrecruiters", "acme", "Acme")
-    text = scraper._extract_detail(_Resp())["description"]
+    text = scraper.read_detail({"id": "1"}, _Resp())["description"]
     assert "Build things" in text
     assert "5+ years of experience" in text  # qualifications must ride along
     assert "Perks" in text
@@ -1227,7 +1227,7 @@ def test_smartrecruiters_salary_from_native_compensation_block(compensation, exp
     )
 
 
-def test_smartrecruiters_extract_detail_reads_description_and_compensation_from_one_response():
+def test_smartrecruiters_read_detail_reads_description_and_compensation_from_one_response():
     """The compensation fix must cost zero extra requests: both fields come off the SAME
     posting-detail response the scraper already fetches for the description alone."""
     from headstart.scrapers.smartrecruiters import SmartRecruitersScraper
@@ -1249,7 +1249,7 @@ def test_smartrecruiters_extract_detail_reads_description_and_compensation_from_
                 },
             }
 
-    detail = SmartRecruitersScraper("acme")._extract_detail(_Resp())
+    detail = SmartRecruitersScraper("acme").read_detail({"id": "1"}, _Resp())
     assert detail == {
         "description": "<p>Build things</p>",
         "compensation": {
@@ -1261,7 +1261,7 @@ def test_smartrecruiters_extract_detail_reads_description_and_compensation_from_
     }
 
 
-def test_smartrecruiters_extract_detail_missing_compensation_is_none():
+def test_smartrecruiters_read_detail_missing_compensation_is_none():
     from headstart.scrapers.smartrecruiters import SmartRecruitersScraper
 
     class _Resp:
@@ -1271,14 +1271,14 @@ def test_smartrecruiters_extract_detail_missing_compensation_is_none():
         def json():
             return {"jobAd": {"sections": {"jobDescription": {"text": "<p>Role</p>"}}}}
 
-    detail = SmartRecruitersScraper("acme")._extract_detail(_Resp())
+    detail = SmartRecruitersScraper("acme").read_detail({"id": "1"}, _Resp())
     assert detail["compensation"] is None
 
 
 def test_detail_without_a_native_id_is_not_counted_as_attempted():
     scraper = get_scraper("smartrecruiters", "acme")
 
-    assert scraper._job_detail(None) is None
+    assert scraper.fetch_detail({"id": None}) is None
     scraper.report_detail_gaps([None], "details")
 
     assert scraper.telemetry["detail_jobs"] == 1
@@ -2815,8 +2815,8 @@ def test_workday_alias_key_is_none_when_unreachable(monkeypatch):
 
 
 def test_workday_alias_key_is_none_on_a_malformed_slug_not_a_crash(monkeypatch):
-    """`_parts()` raises `ValueError` on a slug `_URL_PATTERN` cannot parse, and the real caller,
-    `dedupe_boards.py`'s `probe_all`, reads this method's result from an unguarded
+    """`_parts()` raises `ValueError` on a slug `CAREERS_URL_PATTERN` cannot parse, and the real
+    caller, `dedupe_boards.py`'s `probe_all`, reads this method's result from an unguarded
     `future.result()` inside a `ThreadPoolExecutor` -- one malformed slug anywhere in a
     12,844-Board scan would abort the whole run on whichever Board happened to raise, not just
     mark that one unreachable. `alias_key` must never let that escape."""
@@ -3511,39 +3511,38 @@ def test_trakstar_jobs_from_feed_builds_job_objects():
     assert j.remote is False
 
 
-def test_trakstar_fetch_via_feed_returns_none_when_feed_unavailable(monkeypatch):
-    import headstart.scrapers.trakstar as trakstar_module
-
-    monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug, egress_board: None)
-    s = get_scraper("trakstar", "acme", "Acme")
-    assert s.fetch_via_feed(SCRAPED_AT) is None
+_TRAKSTAR_FEED_URL = "https://acme.hire.trakstar.com/jobfeeds/acme"
 
 
-def test_trakstar_fetch_via_feed_returns_empty_list_when_feed_has_zero_jobs(
-    monkeypatch,
-):
+def _trakstar_feed_fetcher(status: int, feed: str = ""):
+    """The shared fake, answering acme's feed request with ``status``/``feed``."""
+    from fake_fetcher import FakeFetcher, FakeResponse
+
+    return FakeFetcher(lambda _method, _url, _kwargs: FakeResponse(status, feed))
+
+
+def test_trakstar_fetch_via_feed_returns_none_when_feed_unavailable():
+    fake = _trakstar_feed_fetcher(404)
+    scraper = get_scraper("trakstar", "acme", "Acme", fetcher=fake)
+    assert scraper.fetch_via_feed(SCRAPED_AT) is None
+    assert fake.urls() == [_TRAKSTAR_FEED_URL]
+
+
+def test_trakstar_fetch_via_feed_returns_empty_list_when_feed_has_zero_jobs():
     # a working feed reporting zero current openings must be distinguishable from "no feed at
     # all" — a caller checking `is None` sees the difference; one that checks truthiness doesn't
-    import headstart.scrapers.trakstar as trakstar_module
-
     empty_feed = '<?xml version="1.0"?><rss version="2.0"><channel></channel></rss>'
-    monkeypatch.setattr(
-        trakstar_module, "_fetch_feed", lambda slug, egress_board: empty_feed
-    )
-    s = get_scraper("trakstar", "acme", "Acme")
-    result = s.fetch_via_feed(SCRAPED_AT)
+    fake = _trakstar_feed_fetcher(200, empty_feed)
+    scraper = get_scraper("trakstar", "acme", "Acme", fetcher=fake)
+    result = scraper.fetch_via_feed(SCRAPED_AT)
     assert result == []
     assert result is not None
 
 
-def test_trakstar_fetch_via_feed_returns_jobs_when_available(monkeypatch):
-    import headstart.scrapers.trakstar as trakstar_module
-
-    monkeypatch.setattr(
-        trakstar_module, "_fetch_feed", lambda slug, egress_board: _TRAKSTAR_FEED
-    )
-    s = get_scraper("trakstar", "acme", "Acme")
-    jobs = s.fetch_via_feed(SCRAPED_AT)
+def test_trakstar_fetch_via_feed_returns_jobs_when_available():
+    fake = _trakstar_feed_fetcher(200, _TRAKSTAR_FEED)
+    scraper = get_scraper("trakstar", "acme", "Acme", fetcher=fake)
+    jobs = scraper.fetch_via_feed(SCRAPED_AT)
     assert len(jobs) == 2
     assert jobs[0].id == "trakstar:acme:fk0abc1"
 
@@ -3607,9 +3606,7 @@ def test_trakstar_fetch_raw_uses_feed_when_capped_and_skips_the_detail_pass(
         s, "_api_listing", lambda: None
     )  # no jsapi surface -> HTML+RSS path
     monkeypatch.setattr(s, "_get", lambda url=None: _trakstar_cards_page(25, total=40))
-    monkeypatch.setattr(
-        trakstar_module, "_fetch_feed", lambda slug, egress_board: _TRAKSTAR_FEED
-    )
+    monkeypatch.setattr(s, "_fetch_feed", lambda: _TRAKSTAR_FEED)
     detail_calls = []
     monkeypatch.setattr(s, "_job_posting", lambda code: detail_calls.append(code))
 
@@ -3626,8 +3623,6 @@ def test_trakstar_fetch_raw_uses_feed_when_capped_and_skips_the_detail_pass(
 def test_trakstar_fetch_raw_skips_feed_when_not_capped(monkeypatch):
     """The 92%+ of Boards under the render cap must cost exactly the one careers-page request
     they always did -- no RSS fetch, since there's nothing the cards are missing."""
-    import headstart.scrapers.trakstar as trakstar_module
-
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
     s = get_scraper("trakstar", "acme", "Acme")
     monkeypatch.setattr(
@@ -3635,10 +3630,10 @@ def test_trakstar_fetch_raw_skips_feed_when_not_capped(monkeypatch):
     )  # no jsapi surface -> HTML+RSS path
     monkeypatch.setattr(s, "_get", lambda url=None: _trakstar_cards_page(3, total=3))
 
-    def boom_feed(slug, egress_board):
+    def boom_feed():
         raise AssertionError("must not fetch the RSS feed when the Board isn't capped")
 
-    monkeypatch.setattr(trakstar_module, "_fetch_feed", boom_feed)
+    monkeypatch.setattr(s, "_fetch_feed", boom_feed)
     monkeypatch.setattr(s, "_job_posting", lambda code: None)
 
     raw = s.fetch_raw()
@@ -3652,15 +3647,13 @@ def test_trakstar_fetch_raw_keeps_html_when_feed_unreachable(monkeypatch):
     """sleekr-shaped live case: capped (25 cards, real total higher) but the feed 404s. The
     capped HTML list must still come back -- not an empty Board -- and the Board must be marked
     truncated now that the page's own total makes the shortfall provable, not just suspected."""
-    import headstart.scrapers.trakstar as trakstar_module
-
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
     s = get_scraper("trakstar", "acme", "Acme")
     monkeypatch.setattr(
         s, "_api_listing", lambda: None
     )  # no jsapi surface -> HTML+RSS path
     monkeypatch.setattr(s, "_get", lambda url=None: _trakstar_cards_page(25, total=77))
-    monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug, egress_board: None)
+    monkeypatch.setattr(s, "_fetch_feed", lambda: None)
     monkeypatch.setattr(s, "_job_posting", lambda code: None)
 
     raw = s.fetch_raw()
@@ -3681,8 +3674,6 @@ def test_trakstar_fetch_raw_does_not_mark_truncated_for_card_count_heuristic_alo
     marked truncated -- this is the same ambiguous "reached the cap" signal the pre-fix code
     deliberately declined to mark_truncated for; only the page's own total turns that into
     proof, and this Board never had one."""
-    import headstart.scrapers.trakstar as trakstar_module
-
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
     s = get_scraper("trakstar", "acme", "Acme")
     monkeypatch.setattr(
@@ -3691,7 +3682,7 @@ def test_trakstar_fetch_raw_does_not_mark_truncated_for_card_count_heuristic_alo
     monkeypatch.setattr(
         s, "_get", lambda url=None: _trakstar_cards_page(25)
     )  # no total button
-    monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug, egress_board: None)
+    monkeypatch.setattr(s, "_fetch_feed", lambda: None)
     monkeypatch.setattr(s, "_job_posting", lambda code: None)
 
     raw = s.fetch_raw()
@@ -10410,10 +10401,12 @@ def test_every_wired_scraper_resolves_its_company(
 #: listing pass (`TaleoEnterpriseScraper._last_title`) — so `_company` reads that shell
 #: directly instead, covered by `tests/test_taleo_enterprise.py`. It still needs the same
 #: vendor-alias coverage as every other wired ATS.
-#: adp has no page naming the employer either — its title is the literal "Recruitment" — so
-#: `ADPScraper.resolve_company` reads `ClientName` out of the `client-features` JSON instead,
-#: covered by `tests/test_adp.py`.
-_NO_BOARD_PAGE = {"taleo_enterprise", "adp"}
+#: adp (ADP Workforce Now) has no page naming the employer either — its title is the literal
+#: "Recruitment" — so `ADPScraper.resolve_company` reads `ClientName` out of the
+#: `client-features` JSON instead, covered by `tests/test_adp.py`. adp_recruiting (ADP
+#: Recruiting Management, a separate product) reads `clientName` off the site record it already
+#: fetched for its token, covered by `tests/test_adp_recruiting.py`.
+_NO_BOARD_PAGE = {"taleo_enterprise", "adp", "adp_recruiting"}
 
 
 def test_every_ats_with_patterns_has_a_scraper_that_offers_a_board_page():
@@ -10635,31 +10628,38 @@ def test_workday_gates_details_and_pairs_them_back_by_the_right_posting(monkeypa
     assert scraper.truncated is None
 
 
-def test_smartrecruiters_gates_details_and_pairs_them_back(monkeypatch):
-    """The same trap at smartrecruiters' call site — `p["_detail"]` is what `parse` reads."""
-    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
-    scraper = get_scraper("smartrecruiters", "acme")
-    scraper.have_details = frozenset()
+@pytest.mark.parametrize("async_fanout", ["1", "0"])
+def test_smartrecruiters_gates_details_and_pairs_them_back(monkeypatch, async_fanout):
+    """The same trap at smartrecruiters' call site — `p["_detail"]` is what `parse` reads —
+    on both transports, which now run one request description instead of two copies."""
+    from headstart.scrapers.smartrecruiters import SmartRecruitersScraper
+
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
     postings = [
         {"id": "1", "name": "Housekeeper"},
         {"id": "2", "name": "Backend Engineer"},
         {"id": "3", "name": "Chef"},
     ]
-    monkeypatch.setattr(
-        scraper, "_get", lambda *a: json.dumps({"content": postings, "totalFound": 3})
-    )
-    fetched: list[str] = []
 
-    def _detail(posting_id):
-        fetched.append(posting_id)
-        return {"description": f"body {posting_id}"}
+    def route(method, url, kwargs):
+        if "/postings?" in url:
+            return FakeResponse(text=json.dumps({"content": postings, "totalFound": 3}))
+        posting_id = url.rsplit("/", 1)[1]
+        sections = {"jobDescription": {"text": f"body {posting_id}"}}
+        return FakeResponse(text=json.dumps({"jobAd": {"sections": sections}}))
 
-    monkeypatch.setattr(scraper, "_job_detail", _detail)
+    fetcher = FakeFetcher(route)
+    scraper = SmartRecruitersScraper("acme", fetcher=fetcher)
+    scraper.have_details = frozenset()
     raw = scraper.fetch_raw()
 
-    assert fetched == ["2"], "only the tech posting cost a request"
+    detail_urls = fetcher.urls()[1:]
+    assert [url.rsplit("/", 1)[1] for url in detail_urls] == ["2"], (
+        "only the tech posting cost a request"
+    )
+    assert fetcher.requests[1].kwargs["headers"]["Accept"] == "application/json"
     by_id = {p["id"]: p["_detail"] for p in raw["content"]}
-    assert by_id["2"] == {"description": "body 2"}
+    assert by_id["2"] == {"description": "body 2", "compensation": None}
     assert by_id["1"] == {} and by_id["3"] == {}
 
 
@@ -10942,7 +10942,7 @@ def test_phenom_gate_reads_the_listing_title_and_category_not_the_teaser(monkeyp
 def test_eightfold_smartapply_to_pcsx_shape_carries_the_requisition_ids():
     """The PCSX search states `atsJobId`/`displayJobId` — the backing ATS's requisition id — and
     SmartApply states the same as `ats_job_id`/`display_job_id` (albemarle `REQ-31366`,
-    2026-09-24). `eightfold_backing_boards.py` matches on them (ADR-0191)."""
+    2026-09-24). `eightfold_backing_boards.py` matches on them (ADR-0204)."""
     from headstart.scrapers.eightfold import _smartapply_to_pcsx_shape
 
     got = _smartapply_to_pcsx_shape(

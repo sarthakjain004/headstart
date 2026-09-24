@@ -307,7 +307,7 @@ def test_alias_key_uses_full_career_section(monkeypatch):
 def test_listing_row_carries_the_contest_number(monkeypatch):
     """`jobId` is the posting's id and `contestNo` the requisition number the recruiter sees —
     the one an Eightfold career site in front of this section states as `atsJobId` (Premier
-    Health `978472` / `111166`, 2026-09-24; ADR-0191)."""
+    Health `978472` / `111166`, 2026-09-24; ADR-0204)."""
     row = {
         "jobId": "978472",
         "contestNo": "111166",

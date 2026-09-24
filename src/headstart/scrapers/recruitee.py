@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from headstart import salary
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
@@ -146,7 +147,4 @@ class RecruiteeScraper(BaseScraper):
             # blank, or a ceiling alone — `salary.extract` reads a lone figure as a floor, so
             # "up to 5339 EUR month" would serve as a 64k/yr minimum (iCIMS refuses the same)
             return None
-        rng = f"{lo}-{hi}" if hi else str(lo)
-        return " ".join(
-            str(x) for x in (rng, raw.get("currency"), raw.get("period")) if x
-        )
+        return salary.to_field(lo, hi or None, raw.get("currency"), raw.get("period"))

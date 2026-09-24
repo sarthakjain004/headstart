@@ -55,6 +55,8 @@ import urllib.parse
 import cc_data_host
 from wayback_feeder import ADP_HOST, ADP_PAGE_URL, extract
 
+from headstart.scrapers.adp_recruiting import SLUG as ADP_RECRUITING_SLUG
+
 CRAWL_ARG = sys.argv[1] if len(sys.argv) > 1 else None
 CSV = "data/discover/cc_ats_tenants.csv"
 DONE = "data/discover/cc_miner_checkpoint.txt"
@@ -80,6 +82,16 @@ ATS_PATTERNS = {
         "targets": [ADP_HOST],
         "kind": "adp",
         "patterns": [f"({ADP_PAGE_URL.pattern})"],
+    },
+    "adp_recruiting": {
+        # ADP Recruiting Management: one shared SPA host, the career site's slug is the first
+        # path word (`myjobs.adp.com/{slug}/cx`), which `adp_recruiting.py` keys its site config
+        # with. `public/` is the API itself and names no site.
+        "targets": ["myjobs.adp.com"],
+        "kind": "slug",
+        "patterns": [
+            rf"myjobs\.adp\.com/(?!public/)({ADP_RECRUITING_SLUG})(?=[/?#]|$)"
+        ],
     },
     "greenhouse": {
         "targets": [
@@ -329,7 +341,7 @@ ATS_PATTERNS = {
         # `{host}/{site}/job/{...}`, so on a genuine two-letter site the wider pattern eats the
         # site and captures the path marker — `howard.../hu/job/...` went from `hu` to `job`
         # (dropped by BLOCK, so the Board became undiscoverable) and `browardcollege.../pt/details/...`
-        # minted a phantom Board `details`. `load_active_companies(min_jobs=0)` counts 100
+        # minted a phantom Board `details`. `scrapable_boards.load(min_jobs=0)` counts 100
         # Scrapable Boards with a two-letter Workday site, 7 of them an ISO-639-1 code. The cost
         # of staying narrow is that a bare `/es` survives as a junk row, which the liveness
         # checker settles as dead — one probe.

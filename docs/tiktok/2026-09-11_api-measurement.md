@@ -54,6 +54,9 @@ normally.
 | `job_post_info` (salary, level, expiry) | object, every sub-field | **0%** — null on every sampled row |
 | `department_info`, `tag_list`, `vacancies`, `process_type`, `channel_online_status` | — | **0%** — null on every sampled row |
 
+*(Re-read 2026-09-22, ADR-0198: `job_subject` is a campus-cohort label ("PhD Graduates - 2027
+Start"), not a team, so it never stands in for `department`.)*
+
 **No date field of any kind exists in this payload.** The reference scraper reads
 `publish_time`/`post_time` keys; neither appears in any of the 100 sampled rows, nor in
 `job_post_info.expiry_time`. `posted_at` is therefore always `None` for this ATS — verified
@@ -74,7 +77,8 @@ across repeated calls (12 requests, same value every time).
 Only `website-path: tiktok` is required. The reference scraper's own docstring claims
 `Origin`/`Referer` are required too ("otherwise the endpoint refuses with 400") — that is not what
 this host does today; this scraper still sends them since they cost nothing, but they are
-confirmed non-load-bearing.
+confirmed non-load-bearing. *(2026-09-24, ADR-0198: re-measured as non-load-bearing, and the
+shared scraper no longer sends them.)*
 
 A **wrong** `website-path` value is also rejected: `website-path: bytedance` against this same
 host returns HTTP 400 (see the ByteDance check below), so the header is validated against a fixed
@@ -114,7 +118,9 @@ an artifact of one lucky crawl. 43 full pages each, all short only on the final 
 page came back under 100 in either sweep, so the "a short page is not always the end" trap
 oracle.py's own docstring warns about (which this scraper's terminator does *not* independently
 guard against) has no live evidence against this ATS today — worth re-checking if a future sweep
-ever disagrees with itself.
+ever disagrees with itself. *(2026-09-24, ADR-0198: the shared walk no longer stops on a short
+page. It asks for each page at the number of rows already read, and it ends on an empty page, at
+`count`, on a non-zero `code` or at the backend's 10,000-row result window.)*
 
 **A different failure mode does have live evidence, and the scraper's first version missed it.**
 Probing a handful of malformed requests (not part of the ordinary crawl) found one that returns
@@ -132,7 +138,7 @@ scraper's first version read `data or {}` and collapsed the second shape onto th
 the first shape produces — a mid-crawl failure would have silently read as "the board ended,"
 losing whatever pages came after it with no `mark_truncated` call at all. Fixed: `fetch_raw` now
 checks the envelope's own `code` before ever reading `data`, and calls `mark_truncated` on anything
-nonzero — covered by `tests/test_tiktok.py::test_an_application_level_error_on_http_200_marks_truncated_not_the_end`.
+nonzero — covered by `tests/test_supplier_search.py::test_a_nonzero_code_on_http_200_keeps_what_was_read_and_marks_truncated`.
 This is the same class of trap `base.py`'s `USER_AGENT` comment documents for SuccessFactors' User-
 Agent denylist (a 403 read as "unparseable" for five runs) — a status that looks like ordinary
 emptiness until the two causes are told apart.
@@ -146,6 +152,12 @@ through `html_to_text` (the same flattening every other scraper applies), since 
 carries HTML markup.
 
 ## ByteDance-platform-sharing check
+
+**Superseded 2026-09-24 by [ADR-0198](../adr/0198-tiktok-and-bytedance-share-one-scraper-and-keep-two-ats-values.md).**
+The two Boards are one backend. `website-path` selects the Board on either host: `tiktok` is
+TikTok's and `en` is ByteDance's. `bytedance`, the value tried below, is simply not a valid one.
+Both scrapers now share `headstart.scrapers.supplier_search`. The check below is kept as it was
+measured.
 
 A sibling agent is building `ats="bytedance"` against `jobs.bytedance.com`; TikTok is owned by
 ByteDance, so it was worth checking whether the two share one backend behind a brand filter before

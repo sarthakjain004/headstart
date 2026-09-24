@@ -8,7 +8,7 @@ from headstart.board_priority import (
     save,
     update,
 )
-from headstart.config import CompanyRef
+from headstart.scrapable_boards import ScrapableBoard
 
 TODAY = "2026-07-06"
 
@@ -61,7 +61,7 @@ def test_load_missing_file_is_empty(tmp_path):
 
 
 def _companies(n):
-    return [CompanyRef(ats="lever", slug=f"c{i}") for i in range(n)]
+    return [ScrapableBoard(ats="lever", slug=f"c{i}") for i in range(n)]
 
 
 def test_pick_boards_split_and_order():
@@ -110,13 +110,13 @@ def test_pick_boards_scores_workday_and_personio_by_their_board_key():
     their rows. 13,402 boards (20.1% of the scrape list) are keyed that way; against a local
     ledger snapshot 4,611 of them had actually earned a score and were reading 0.0, reachable
     only through the random exploration tail."""
-    from headstart.config import CompanyRef
+    from headstart.scrapable_boards import ScrapableBoard
 
-    workday = CompanyRef(
+    workday = ScrapableBoard(
         ats="workday", slug="https://x.wd1.myworkdayjobs.com/Careers", name="X"
     )
-    personio = CompanyRef(ats="personio", slug="acme.jobs.personio.de", name="Acme")
-    plain = CompanyRef(ats="greenhouse", slug="stripe", name="Stripe")
+    personio = ScrapableBoard(ats="personio", slug="acme.jobs.personio.de", name="Acme")
+    plain = ScrapableBoard(ats="greenhouse", slug="stripe", name="Stripe")
     # keyed exactly as `update_ledgers priority` writes them
     scores = {
         "workday:x/Careers": 90.0,
@@ -173,8 +173,8 @@ def test_gap_quota_drains_listing_only_atses_before_detail_pass():
     """Cheapest class first: a listing-only Board settles every Job on it in one request, while a
     detail-pass Board needs a fetch per Job. Draining the cheap half first buys most of the
     backlog for a fraction of the cost."""
-    detail = [CompanyRef(ats="workday", slug=f"d{i}") for i in range(10)]
-    listing = [CompanyRef(ats="greenhouse", slug=f"l{i}") for i in range(10)]
+    detail = [ScrapableBoard(ats="workday", slug=f"d{i}") for i in range(10)]
+    listing = [ScrapableBoard(ats="greenhouse", slug=f"l{i}") for i in range(10)]
     # the detail boards hold far more unsettled Jobs, so only the class ordering can put the
     # listing boards first
     unsettled = {f"workday:d{i}": 500 for i in range(10)}
@@ -198,7 +198,7 @@ def test_gap_quota_drains_listing_only_atses_before_detail_pass():
 
 
 def test_gap_quota_orders_by_unsettled_count_within_a_class():
-    companies = [CompanyRef(ats="greenhouse", slug=f"c{i}") for i in range(20)]
+    companies = [ScrapableBoard(ats="greenhouse", slug=f"c{i}") for i in range(20)]
     unsettled = {f"greenhouse:c{i}": i for i in range(20)}
 
     picked = pick_boards(
@@ -215,7 +215,7 @@ def test_gap_quota_matches_a_board_whose_ledger_casing_differs():
     not agree (ADR-0049/ADR-0023). Measured against a real store, 1,693 of 13,708 gap Boards —
     45,375 Jobs, 23% of the backlog — matched the live slice only case-insensitively, so an
     as-observed lookup strands every one of them and the quota silently under-fills."""
-    board = CompanyRef(ats="workday", slug="ngc/Northrop_Grumman_External_Site")
+    board = ScrapableBoard(ats="workday", slug="ngc/Northrop_Grumman_External_Site")
     picked = pick_boards(
         [board],
         {},
@@ -237,3 +237,12 @@ def test_absent_gap_ledger_leaves_the_slice_byte_identical():
     empty = pick_boards(companies, scores, 25, unsettled={}, rng=random.Random(42))
 
     assert [c.slug for c in before] == [c.slug for c in empty]
+
+
+def test_key_for_keeps_the_casing_its_scraper_builds():
+    """ADR-0192: a folded lookup would score Boards the verbatim one misses and change the slice."""
+    from headstart.board_priority import key_for
+
+    board = ScrapableBoard("workday", "https://Acme.wd1.myworkdayjobs.com/External")
+    assert key_for(board) == "workday:Acme/External"
+    assert key_for("workday:Acme/External") == "workday:Acme/External"

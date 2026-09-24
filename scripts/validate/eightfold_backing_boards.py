@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write Eightfold's alias ledger: career sites whose backing ATS Board already serves them (ADR-0191).
+"""Write Eightfold's alias ledger: career sites whose backing ATS Board already serves them (ADR-0204).
 
 An Eightfold career site is often a front over the company's real ATS — NVIDIA's `jobs.nvidia.com`
 lists the requisitions of its Workday site, Arcadis's lists its Oracle ones — and both Boards are
@@ -22,7 +22,7 @@ when, in `aliases`:
 - **A second Eightfold site of one company follows its winner.** `nvidia.eightfold.ai` serves
   `jobs.nvidia.com`'s postings; it is decided after the winner and buried onto the winner's
   backing Board when the winner is itself buried, else onto the winner. These are
-  `check_liveness`'s hand-frozen `_EIGHTFOLD_ALIAS_LOSERS`, which stays beside them (ADR-0191).
+  `check_liveness`'s hand-frozen `_EIGHTFOLD_ALIAS_LOSERS`, which stays beside them (ADR-0204).
 
 The candidates are `BACKING`, found by content on served index v654 (2026-09-23): pairs of Boards
 on two ATSes sharing exact descriptions. A new front enters by adding it there. Lumen is left out
@@ -51,13 +51,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from headstart import board_aliases, http, liveness
-from headstart.board_identity import board_identity, lower_key
-from headstart.config import load_active_companies
+from headstart import board_aliases, http, liveness, scrapable_boards
 from headstart.scrapers.base import USER_AGENT
 from headstart.scrapers.eightfold import EightfoldScraper, _department_of
 from headstart.scrapers.greenhouse import GreenhouseScraper
 from headstart.scrapers.oracle import OracleScraper
+from headstart.scrapers.registry import company_from_row
 from headstart.scrapers.successfactors import (
     SuccessFactorsScraper,
     _job_urls_from,
@@ -216,8 +215,7 @@ def write_aliases(
     and earns no verdict."""
     backing = {f"{ATS}:{b}": tuple(ps) for b, ps in backing.items()}
     companies = {
-        lower_key(board_identity(c)): c
-        for c in load_active_companies(liveness_dir, min_jobs=0)
+        b.lowercase_identity: b for b in scrapable_boards.load(liveness_dir, min_jobs=0)
     }
     scrapable = set(companies) | _buried_by(liveness_dir)
     boards = sorted(set(backing) | {p for ps in backing.values() for p in ps})
@@ -264,7 +262,7 @@ def _buried_by(liveness_dir: Path) -> set[str]:
         f"{ATS}:{v.tenant}".lower()
         for v in liveness.load(liveness_dir / f"{ATS}.csv").values()
         if v.status == liveness.LIVE
-        and EightfoldScraper.slug_from(v.tenant, v.url).lower() in previous
+        and company_from_row(ATS, v.tenant, v.url).slug.lower() in previous
     }
 
 

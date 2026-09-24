@@ -61,7 +61,7 @@ is present and non-zero on 20/20 listing rows sampled then, and a wider 280-row 
 opposite: absent on 10/10 details sampled off page 3, and on the other 30 (pages 50/150/250) it is
 present but always the same string, ``"Standard"`` — including on six 20 h/week retail postings.
 So :func:`_employment_type` maps ``standardWeeklyHours`` to ``"Full-time"``/``"Part-time"`` at the
-same ``>= 30`` split upstream uses (matching ``search.ETYPE_CLAUSES``' substring rules:
+same ``>= 30`` split upstream uses (matching ``employment_type_filter.RULES``' substring rules:
 "full"/"part").
 
 **One real exception found widening the sample past the issue's own 50, kept rather than
@@ -69,7 +69,7 @@ dropped.** A ``postingTitle`` containing the standalone word "Intern" is a genui
 weekly-hours split can't produce and would otherwise erase: measured live 2026-09-22, 15/15
 Intern-titled REQ postings pulled from a live search (`intern`-matched titles across pages 1-400)
 carry ``standardWeeklyHours: 40`` — which the hours split alone would read as "Full-time", losing
-the one value the ``internship`` filter (``employment_type.py``'s ``is_internship`` rule) actually
+the one value the ``internship`` filter (``employment_type_filter.py``'s ``is_internship`` rule) actually
 matches on. 11/15 of those also state ``employmentType: "Intern"`` on their detail (the other 4
 state nothing), so the *title* carries the signal at least as reliably as the detail field it is
 replacing, and it comes from the listing — available whether or not this run fetches the detail, so
@@ -323,7 +323,7 @@ class AppleScraper(BaseScraper):
         the one value the hours split can't produce and would otherwise erase, and unlike the
         detail field it doesn't disappear once the ADR-0048 skip stops fetching a Job's detail.
         Otherwise ``standardWeeklyHours >= 30`` matches upstream's own split; wording carries
-        "full"/"part"/"intern" so ``search.ETYPE_CLAUSES``' substring rules read it."""
+        "full"/"part"/"intern" so ``employment_type_filter.RULES``' substring rules read it."""
         if _INTERN_TITLE_RE.search(item.get("postingTitle") or ""):
             return "Intern"
         hours = item.get("standardWeeklyHours")

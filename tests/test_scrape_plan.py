@@ -16,8 +16,8 @@ import pytest
 
 import headstart.ingest.scrape_plan as ps
 from headstart.board_identity import board_identity
-from headstart.config import CompanyRef
 from headstart.ingest import board_failures as bf
+from headstart.scrapable_boards import ScrapableBoard
 
 
 def test_coldstart_cost_weights_detail_fetchers():
@@ -32,14 +32,14 @@ def test_coldstart_cost_weights_detail_fetchers():
 
 def test_main_partitions_every_selected_board(tmp_path, monkeypatch):
     boards = [
-        CompanyRef("workday", "big", "Big"),
-        CompanyRef("lever", "acme", "Acme"),
-        CompanyRef("greenhouse", "co", "Co"),
-        CompanyRef("keka", "startup", "Startup"),
-        CompanyRef("lever", "other", "Other"),
+        ScrapableBoard("workday", "big", "Big"),
+        ScrapableBoard("lever", "acme", "Acme"),
+        ScrapableBoard("greenhouse", "co", "Co"),
+        ScrapableBoard("keka", "startup", "Startup"),
+        ScrapableBoard("lever", "other", "Other"),
     ]
     monkeypatch.setattr(
-        ps, "load_active_companies", lambda ledger, min_jobs=0: list(boards)
+        ps.scrapable_boards, "load", lambda ledger, min_jobs=0: list(boards)
     )
     out = tmp_path / "assignments"
     monkeypatch.setattr(
@@ -79,7 +79,7 @@ def test_main_partitions_every_selected_board(tmp_path, monkeypatch):
 
 
 def test_main_empty_plan_when_no_boards(tmp_path, monkeypatch):
-    monkeypatch.setattr(ps, "load_active_companies", lambda ledger, min_jobs=0: [])
+    monkeypatch.setattr(ps.scrapable_boards, "load", lambda ledger, min_jobs=0: [])
     out = tmp_path / "assignments"
     monkeypatch.setattr(
         sys,
@@ -113,9 +113,9 @@ def test_plan_ships_the_detail_skip_list_to_the_shards(tmp_path, monkeypatch):
     out = tmp_path / "assignments"
 
     monkeypatch.setattr(
-        ps,
-        "load_active_companies",
-        lambda ledger, min_jobs=0: [CompanyRef("lever", "a", "A")],
+        ps.scrapable_boards,
+        "load",
+        lambda ledger, min_jobs=0: [ScrapableBoard("lever", "a", "A")],
     )
     monkeypatch.setattr(
         sys,
@@ -184,6 +184,31 @@ def test_the_gate_keeps_a_giant_board_that_earns_its_hour():
         {"workday:walmart": _cost(2670.0)},
         {"workday:walmart": 903.9},
         today="2026-08-18",
+    )
+    assert gated == {}
+
+
+def test_the_gate_drops_a_ten_minute_board_that_yields_almost_no_tech():
+    """`jibe:petsmart`, 2026-09-24: 760 s at a score of 2.8 (4 tech jobs), 0.22 a minute. Under
+    the old 15 min floor it sat unjudged while shards now finish in ~9 min, so it set the scrape
+    stage's wall clock once Costco was gone (ADR-0064's 2026-09-24 amendment)."""
+    gated = ps._gated_boards(
+        ["jibe:petsmart"],
+        {"jibe:petsmart": _cost(760.0, day="2026-09-24")},
+        {"jibe:petsmart": 2.8},
+        today="2026-09-24",
+    )
+    assert "jibe:petsmart" in gated
+
+
+def test_the_gate_leaves_a_board_under_ten_minutes_alone():
+    """The floor moved, it did not vanish: a nine-minute Board is under it however little it
+    yields, so the long tail stays out of the gate's business."""
+    gated = ps._gated_boards(
+        ["jibe:nine"],
+        {"jibe:nine": _cost(590.0, day="2026-09-24")},
+        {"jibe:nine": 0.5},
+        today="2026-09-24",
     )
     assert gated == {}
 
@@ -271,7 +296,7 @@ def test_the_gate_finds_a_workday_giants_score_under_the_one_shared_key():
     this guards is now impossible by construction rather than by pairing, so the test asserts the
     outcome: a high-yield giant survives.
     """
-    walmart = CompanyRef(
+    walmart = ScrapableBoard(
         ats="workday", slug="https://walmart.wd504.myworkdayjobs.com/x", name="Walmart"
     )
     key = board_identity(walmart)
@@ -286,10 +311,10 @@ def test_the_gate_finds_a_workday_giants_score_under_the_one_shared_key():
 def test_a_workday_board_is_costed_under_the_same_key_two_pods_share():
     """The point of one keyspace: `accenture.wd3` and `accenture.wd103` are one Board, so they
     cost-key alike and a tenant migrating between pods keeps its measured history."""
-    wd3 = CompanyRef(
+    wd3 = ScrapableBoard(
         ats="workday", slug="https://accenture.wd3.myworkdayjobs.com/careers", name="A"
     )
-    wd103 = CompanyRef(
+    wd103 = ScrapableBoard(
         ats="workday",
         slug="https://accenture.wd103.myworkdayjobs.com/careers",
         name="A",
@@ -311,17 +336,17 @@ def test_floor_warning_compares_wall_clock_not_serial_minutes(
     the new one fires (floor > that share divided by the measured speedup) — asserted below, so
     reverting the fix fails this test rather than merely changing a number in it.
     """
-    boards = [CompanyRef("lever", "giant", "Giant")] + [
-        CompanyRef("lever", f"small{i}", f"Small{i}") for i in range(9)
+    boards = [ScrapableBoard("lever", "giant", "Giant")] + [
+        ScrapableBoard("lever", f"small{i}", f"Small{i}") for i in range(9)
     ]
     monkeypatch.setattr(
-        ps, "load_active_companies", lambda ledger, min_jobs=0: list(boards)
+        ps.scrapable_boards, "load", lambda ledger, min_jobs=0: list(boards)
     )
-    # 700 s stays under the ADR-0064 value gate's 15 min bar, so the giant survives into the slice.
+    # 590 s stays under the ADR-0064 value gate's 10 min bar, so the giant survives into the slice.
     cost = tmp_path / "cost.csv"
     cost.write_text(
         "board,seconds,jobs,updated_at\n"
-        f"{board_identity(boards[0])},700.0,900,2026-09-08\n"
+        f"{board_identity(boards[0])},590.0,900,2026-09-08\n"
         + "".join(f"{board_identity(b)},200.0,50,2026-09-08\n" for b in boards[1:])
     )
     speedup = tmp_path / "speedup.csv"
@@ -474,12 +499,12 @@ def test_a_stale_quarantine_is_re_admitted_for_one_run(tmp_path, monkeypatch, ca
     verdict is still fresh may be.
     """
     boards = [
-        CompanyRef("greenhouse", "stale", "Stale"),
-        CompanyRef("greenhouse", "fresh", "Fresh"),
-        CompanyRef("greenhouse", "alive", "Alive"),
+        ScrapableBoard("greenhouse", "stale", "Stale"),
+        ScrapableBoard("greenhouse", "fresh", "Fresh"),
+        ScrapableBoard("greenhouse", "alive", "Alive"),
     ]
     monkeypatch.setattr(
-        ps, "load_active_companies", lambda ledger, min_jobs=0: list(boards)
+        ps.scrapable_boards, "load", lambda ledger, min_jobs=0: list(boards)
     )
     now = datetime.now(UTC)
     stale = (now - timedelta(days=bf.PAROLE_DAYS + 1)).isoformat(timespec="seconds")

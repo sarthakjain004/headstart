@@ -47,7 +47,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_liveness import PROBES  # needs the paths above first
 
 from headstart import liveness
-from headstart.scrapers.registry import SCRAPERS
+from headstart.scrapers.registry import company_from_row
 
 LEDGER = ROOT / "data" / "validate" / "liveness"
 
@@ -112,18 +112,15 @@ def url_template(ats: str, rows: dict) -> str | None:
 def derives_back(ats: str, slug: str, url: str) -> bool:
     """Would the pipeline rebuild ``slug`` from this row?
 
-    ``load_active_companies`` does not use the ledger's slug directly — it calls
+    ``scrapable_boards.load`` does not use the ledger's slug directly — it calls
     ``scraper.slug_from(tenant, url)``. For most ATSes that returns the tenant and the url is
     decoration, but personio and zoho derive the slug *from the url* (their slug is the whole host),
     so a plausible-looking url that reads back as something else would quietly scrape a different
     Board. Cheaper to check than to reason about per ATS.
     """
-    scraper = SCRAPERS.get(ats)
-    if scraper is None:
-        return False
     try:
-        return scraper.slug_from(slug, url) == slug
-    except Exception:  # noqa: BLE001 - a url the scraper cannot parse is not usable
+        return company_from_row(ats, slug, url).slug == slug
+    except Exception:  # noqa: BLE001 - no scraper, or a url it cannot parse: not usable
         return False
 
 
@@ -306,7 +303,7 @@ def main() -> int:
         existing = new.get(new_slug)
         url = existing.url if existing else template.format(tenant=new_slug)
         if not derives_back(new_ats, new_slug, url):
-            # the url column is not decoration: `load_active_companies` feeds it to `slug_from` to
+            # the url column is not decoration: `scrapable_boards.load` feeds it to `slug_from` to
             # rebuild the slug. A url the scraper reads back as something else would silently
             # scrape the wrong Board, so refuse it rather than infer harder.
             print(

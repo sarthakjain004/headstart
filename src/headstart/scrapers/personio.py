@@ -12,7 +12,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from headstart import http, log
+from headstart import http, log, salary
 from headstart.experience import from_field
 from headstart.models import Job, host_of, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
@@ -398,11 +398,9 @@ class PersonioScraper(BaseScraper):
         lo, hi = sal.findtext("min"), sal.findtext("max")
         if lo is None and hi is None:
             return None
-        span = (
-            f"{lo}-{hi}"
-            if lo is not None and hi is not None
-            else (lo if lo is not None else hi)
+        return salary.to_field(
+            lo if lo is not None else hi,
+            hi if lo is not None else None,
+            sal.findtext("currencyCode"),
+            sal.findtext("type"),
         )
-        code = sal.findtext("currencyCode")
-        period = sal.findtext("type")
-        return " ".join(x for x in (span, code, period) if x)

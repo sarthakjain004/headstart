@@ -189,7 +189,20 @@ supersedes it and note the supersession in both.
 | [0188](0188-a-dedup-rule-change-is-a-trends-epoch.md) | A change to which rows count as duplicates is a Trends epoch | 2026-09-24 |
 | [0189](0189-a-jibe-board-is-a-client-read-under-its-own-robots-rules.md) | A Jibe Board is a client, read under its own robots.txt, minus what iCIMS already serves | 2026-09-24 |
 | [0190](0190-the-embedding-store-keeps-only-served-and-scraped-jobs.md) | The embedding store keeps only served and just-scraped Jobs | 2026-09-24 |
-| [0191](0191-an-eightfold-site-its-backing-board-already-serves-is-an-alias.md) | An Eightfold career site whose backing ATS Board already serves it is an alias | 2026-09-24 |
+| [0191](0191-one-module-answers-whether-a-board-is-scraped.md) | One module answers whether a Board is scraped | 2026-09-24 |
+| [0192](0192-each-board-ledger-owns-its-key-form.md) | Each per-Board ledger owns the form its Boards are looked up in | 2026-09-24 |
+| [0193](0193-one-module-per-materialized-search-filter.md) | One module per materialized Search filter | 2026-09-24 |
+| [0194](0194-job-search-absorbs-what-its-adapters-copy.md) | JobSearch absorbs what its adapters copy | 2026-09-24 |
+| [0195](0195-one-retry-policy-drives-both-fetch-paths-and-the-warp-daemon-sits-behind-a-port.md) | One retry policy drives both fetch paths, and the WARP daemon sits behind a port | 2026-09-24 |
+| [0196](0196-a-job-pages-json-ld-job-posting-is-read-by-one-reader.md) | A job page's JSON-LD JobPosting is read by one reader | 2026-09-24 |
+| [0197](0197-salary-owns-the-field-codec-and-one-currency-symbol-resolver.md) | `salary.py` owns the salary field codec and one currency-symbol resolver | 2026-09-24 |
+| [0198](0198-tiktok-and-bytedance-share-one-scraper-and-keep-two-ats-values.md) | TikTok and ByteDance share one scraper and keep two `ats` values | 2026-09-24 |
+| [0199](0199-the-fetcher-seam-reaches-every-scraper.md) | The Fetcher seam reaches every Scraper | 2026-09-24 |
+| [0200](0200-a-board-scraped-empty-is-in-the-eviction-scope.md) | A Board scraped empty is in the eviction scope | 2026-09-24 |
+| [0201](0201-a-scraper-states-its-detail-request-once-and-the-base-runs-the-pass.md) | A Scraper states its detail request once, and the base runs the Detail pass | 2026-09-24 |
+| [0202](0202-an-adp-recruiting-board-is-a-career-site-read-through-its-token.md) | An ADP Recruiting Management Board is a career site, read through its token in the default language | 2026-09-24 |
+| [0203](0203-a-row-becomes-a-board-only-through-its-scraper.md) | A ledger row becomes a Board only through its Scraper | 2026-09-24 |
+| [0204](0204-an-eightfold-site-its-backing-board-already-serves-is-an-alias.md) | An Eightfold career site whose backing ATS Board already serves it is an alias | 2026-09-24 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

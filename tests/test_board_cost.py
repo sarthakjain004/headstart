@@ -247,3 +247,14 @@ def test_a_row_torn_after_unfinished_is_dropped_not_read_as_a_clean_scrape(tmp_p
     assert rows["good:b"] == ShardCost(
         seconds=10.0, jobs=5, unfinished=False, errored=False
     )
+
+
+def test_key_for_keeps_the_casing_its_scraper_builds():
+    """ADR-0192: the cost ledger is keyed verbatim, the same key the priority ledger reads."""
+    from headstart import board_cost, board_priority
+    from headstart.scrapable_boards import ScrapableBoard
+
+    board = ScrapableBoard("workday", "https://Acme.wd1.myworkdayjobs.com/External")
+    assert board_cost.key_for(board) == "workday:Acme/External"
+    assert board_cost.key_for("workday:Acme/External") == "workday:Acme/External"
+    assert board_cost.key_for(board) == board_priority.key_for(board)

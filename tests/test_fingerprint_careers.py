@@ -368,7 +368,7 @@ def test_resume_ignores_new_job_count_and_verify_uses_bounded_liveness(
             fetched.append(True)
             return ["listing"]
 
-    monkeypatch.setattr(fp, "load_active_companies", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(fp.scrapable_boards, "load", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(fp.registry, "get_scraper", lambda *_args: Scraper())
 
     def live(tenant, url):
@@ -902,7 +902,7 @@ def test_verification_job_evidence_does_not_leak_between_inputs(tmp_path, monkey
             return "https://boards.greenhouse.io/acme"
 
     monkeypatch.setattr(fp.registry, "get_scraper", lambda *a: Scraper())
-    monkeypatch.setattr(fp, "load_active_companies", lambda *a, **k: [])
+    monkeypatch.setattr(fp.scrapable_boards, "load", lambda *a, **k: [])
     monkeypatch.setattr(
         fp, "liveness_probes", lambda: {"greenhouse": lambda *a: ("live", 2)}
     )
@@ -976,7 +976,7 @@ def test_a_direct_jibe_client_host_is_the_jibe_board_named_by_its_label(monkeypa
 def test_an_adp_career_center_link_yields_its_cid_ccid_board():
     """ADP Workforce Now keys a Board by two query values, in any order and, in HTML, joined by
     `&amp;`. Only a career-center link names one; ADP Recruiting Management
-    (`recruiting.adp.com`, `myjobs.adp.com`) is a different platform with no scraper."""
+    (`recruiting.adp.com`, `myjobs.adp.com`) is a different platform, `adp_recruiting`."""
     cid = "7d58836c-11dd-4415-9de0-63b918b88652"
     page = (
         '<a href="https://workforcenow.adp.com/mascsr/default/mdf/recruitment/'
@@ -988,11 +988,25 @@ def test_an_adp_career_center_link_yields_its_cid_ccid_board():
     assert fp.candidate_identity("adp", f"{cid}/19000101_000001", "2Life")[1] == (
         "unverified"
     )
-    rm = fp.scan("https://myjobs.adp.com/pathgroup/cx", "pathgroup.com")
-    assert rm and rm[0][0] == "adp_recruiting"
-    assert fp.candidate_identity("adp_recruiting", "", "PathGroup") == (
-        "",
-        "unsupported",
+    assert fp.scan("https://myjobs.adp.com/pathgroup/cx", "pathgroup.com") == [
+        ("adp_recruiting", "ats", "pathgroup", 1)
+    ]
+
+
+def test_an_adp_recruiting_link_yields_its_career_site_slug():
+    """ADP Recruiting Management keys a Board on the path word of `myjobs.adp.com/{slug}/cx`.
+    The API's own `public/` path names no site, and a legacy `recruiting.adp.com` link names a
+    client number rather than a site, which detects the ATS with no Board."""
+    assert fp.scan(
+        '<a href="https://myjobs.adp.com/PathGroup/cx/job-listing">Jobs</a>', "x.com"
+    ) == [("adp_recruiting", "ats", "pathgroup", 1)]
+    assert fp.scan("https://myjobs.adp.com/public/staffing/v1/career-site/x", "x") == []
+    assert fp.scan(
+        "https://recruiting.adp.com/srccar/public/RTI.home?c=1110541", "x.com"
+    ) == [("adp_recruiting", "ats", "", 1)]
+    assert fp.candidate_identity("adp_recruiting", "pathgroup", "PathGroup") == (
+        "adp_recruiting:pathgroup",
+        "unverified",
     )
 
 

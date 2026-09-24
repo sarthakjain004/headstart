@@ -87,14 +87,17 @@ import lancedb
 import numpy as np
 import pyarrow as pa
 
-from headstart import log
+from headstart import (
+    employment_type_filter,
+    experience_filter,
+    india_filter,
+    log,
+    posted_date_guard,
+    salary_known_filter,
+)
 from headstart.board_identity import ats_of, lower_key
 from headstart.corpus import iter_jobs
-from headstart.employment_type import FILTERS as EMPLOYMENT_TYPE_FILTERS
-from headstart.employment_type import flags as employment_type_flags
-from headstart.experience_filter import CEILINGS as EXPERIENCE_FILTER_CEILINGS
-from headstart.experience_filter import column as experience_filter_column
-from headstart.experience_filter import flags as experience_filter_flags
+from headstart.embedding_conventions import PROD_TABLE
 from headstart.ingest import (
     PENDING_UPGRADES_PATH,
     REPO_ROOT,
@@ -119,7 +122,6 @@ from headstart.ingest.index_plan import (
     workday_site_jobs,
 )
 from headstart.ingest.update_descriptions import read_store
-from headstart.search import PROD_TABLE, posted_at_is_comparable
 
 _log = log.get(__name__, __spec__)
 
@@ -162,15 +164,16 @@ _DESCRIPTION_STORED_FIELD = pa.field("description_stored", pa.bool_())
 # Materializes `geo.where("india")`'s query-time regex alternation so the India filter's
 # whole-country case can use a plain equality instead. Held as a module constant for the same
 # reason `_FIRST_SEEN_FIELD`/`_DESCRIPTION_FIELD` are: `_schema` and `sync`'s migration both need it.
-_COUNTRY_FIELD = pa.field("country", pa.string())
+_COUNTRY_FIELD = pa.field(india_filter.COLUMN, pa.string())
+# The Search filters' materialized verdicts (ADR-0173). Each filter's module owns its column
+# names, the verdict `_served_meta` writes and the SQL an old table is migrated with (ADR-0193).
 _EMPLOYMENT_TYPE_FIELDS = tuple(
-    pa.field(rule.column, pa.bool_()) for rule in EMPLOYMENT_TYPE_FILTERS.values()
+    pa.field(column, pa.bool_()) for column in employment_type_filter.COLUMNS
 )
-_SALARY_KNOWN_FIELD = pa.field("salary_known", pa.bool_())
-_POSTED_AT_COMPARABLE_FIELD = pa.field("posted_at_comparable", pa.bool_())
+_SALARY_KNOWN_FIELD = pa.field(salary_known_filter.COLUMN, pa.bool_())
+_POSTED_AT_COMPARABLE_FIELD = pa.field(posted_date_guard.COLUMN, pa.bool_())
 _EXPERIENCE_FILTER_FIELDS = tuple(
-    pa.field(experience_filter_column(ceiling), pa.bool_())
-    for ceiling in EXPERIENCE_FILTER_CEILINGS
+    pa.field(column, pa.bool_()) for column in experience_filter.COLUMNS
 )
 
 
@@ -232,60 +235,49 @@ def _schema(dim: int) -> pa.Schema:
 def _served_meta(meta: dict) -> dict:
     """Store metadata plus the Search-only materialized filter verdicts."""
     row = dict(meta)
-    row.update(employment_type_flags(meta.get("employment_type")))
-    row[_SALARY_KNOWN_FIELD.name] = meta.get("min_salary_annual") is not None
-    row[_POSTED_AT_COMPARABLE_FIELD.name] = posted_at_is_comparable(
-        meta.get("posted_at")
-    )
-    row.update(experience_filter_flags(meta.get("min_years")))
+    row.update(employment_type_filter.flags(meta.get("employment_type")))
+    row.update(salary_known_filter.flags(meta.get("min_salary_annual")))
+    row.update(posted_date_guard.flags(meta.get("posted_at")))
+    row.update(experience_filter.flags(meta.get("min_years")))
     return row
+
+
+def _add_missing_columns(table: Any, column_sql: dict[str, str]) -> None:
+    """Add each column the table lacks, computed by LanceDB from its SQL over the raw columns."""
+    missing = {
+        column: sql
+        for column, sql in column_sql.items()
+        if column not in table.schema.names
+    }
+    if missing:
+        _log.info(f"adding {list(missing)} to the existing table")
+        table.add_columns(missing)
 
 
 def _migrate_employment_type_flags(table: Any) -> None:
     """Materialize the exact legacy LIKE verdicts on a table that predates ADR-0173."""
-    missing = {
-        rule.column: rule.raw_clause()
-        for rule in EMPLOYMENT_TYPE_FILTERS.values()
-        if rule.column not in table.schema.names
-    }
-    if missing:
-        _log.info(f"adding {list(missing)} to the existing table")
-        table.add_columns(missing)
+    _add_missing_columns(table, employment_type_filter.MIGRATION_SQL)
 
 
 def _migrate_presence_flags(table: Any) -> None:
     """Materialize two high-cost null checks on a table that predates ADR-0173."""
-    missing = {}
-    if _DESCRIPTION_STORED_FIELD.name not in table.schema.names:
-        missing[_DESCRIPTION_STORED_FIELD.name] = "description IS NOT NULL"
-    if _SALARY_KNOWN_FIELD.name not in table.schema.names:
-        missing[_SALARY_KNOWN_FIELD.name] = "min_salary_annual IS NOT NULL"
-    if missing:
-        _log.info(f"adding {list(missing)} to the existing table")
-        table.add_columns(missing)
+    _add_missing_columns(
+        table,
+        {
+            _DESCRIPTION_STORED_FIELD.name: "description IS NOT NULL",
+            **salary_known_filter.MIGRATION_SQL,
+        },
+    )
 
 
 def _migrate_posted_at_comparable(table: Any) -> None:
     """Materialize the posting-date shape guard on a table that predates ADR-0173."""
-    if _POSTED_AT_COMPARABLE_FIELD.name not in table.schema.names:
-        _log.info(f"adding '{_POSTED_AT_COMPARABLE_FIELD.name}' to the existing table")
-        table.add_columns(
-            {_POSTED_AT_COMPARABLE_FIELD.name: "posted_at LIKE '____-__-__%'"}
-        )
+    _add_missing_columns(table, posted_date_guard.MIGRATION_SQL)
 
 
 def _migrate_experience_filter_flags(table: Any) -> None:
     """Materialize the four facet ceilings on a table that predates ADR-0173."""
-    missing = {
-        experience_filter_column(ceiling): (
-            f"min_years <= {ceiling} OR min_years IS NULL"
-        )
-        for ceiling in EXPERIENCE_FILTER_CEILINGS
-        if experience_filter_column(ceiling) not in table.schema.names
-    }
-    if missing:
-        _log.info(f"adding {list(missing)} to the existing table")
-        table.add_columns(missing)
+    _add_missing_columns(table, experience_filter.MIGRATION_SQL)
 
 
 class _SearchIndexSpec(NamedTuple):
@@ -301,7 +293,7 @@ def _search_index_specs() -> list[_SearchIndexSpec]:
 
     return [
         _SearchIndexSpec("ats", "BITMAP", Bitmap()),
-        _SearchIndexSpec("country", "BITMAP", Bitmap()),
+        _SearchIndexSpec(india_filter.COLUMN, "BITMAP", Bitmap()),
         _SearchIndexSpec("remote", "BITMAP", Bitmap()),
         _SearchIndexSpec("posted_at", "BTREE", BTree()),
         _SearchIndexSpec(_POSTED_AT_COMPARABLE_FIELD.name, "BITMAP", Bitmap()),
@@ -309,12 +301,12 @@ def _search_index_specs() -> list[_SearchIndexSpec]:
         _SearchIndexSpec(_DESCRIPTION_STORED_FIELD.name, "BITMAP", Bitmap()),
         _SearchIndexSpec(_SALARY_KNOWN_FIELD.name, "BITMAP", Bitmap()),
         *(
-            _SearchIndexSpec(experience_filter_column(ceiling), "BITMAP", Bitmap())
-            for ceiling in EXPERIENCE_FILTER_CEILINGS
+            _SearchIndexSpec(column, "BITMAP", Bitmap())
+            for column in experience_filter.COLUMNS
         ),
         *(
-            _SearchIndexSpec(rule.column, "BITMAP", Bitmap())
-            for rule in EMPLOYMENT_TYPE_FILTERS.values()
+            _SearchIndexSpec(column, "BITMAP", Bitmap())
+            for column in employment_type_filter.COLUMNS
         ),
         # Exact scans are already cheap on tiny test/dev tables, and an ANN index needs a real
         # training population. Production is over 500k rows; this boundary is deliberately remote.

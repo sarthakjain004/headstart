@@ -41,9 +41,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from headstart import log
+from headstart import log, scrapable_boards
 from headstart.board_identity import board_key, board_of, lower_key
-from headstart.config import CompanyRef, load_active_companies
 from headstart.corpus import iter_jobs
 from headstart.ingest.board_operator import tenant
 
@@ -64,7 +63,7 @@ _log = log.get(__name__, __spec__)
 #: 1 — the rules when the counter was added (ADR-0188): casing duplicates, redirect and
 #:     ``shared-reqs`` aliases. 2 — Taleo Enterprise ``subset-reqs`` aliases (ADR-0186).
 #: 3 — one row per Workday tenant and requisition, public sites first (ADR-0187).
-#: 4 — Eightfold ``backing-reqs`` aliases onto the ATS Board behind the career site (ADR-0191).
+#: 4 — Eightfold ``backing-reqs`` aliases onto the ATS Board behind the career site (ADR-0204).
 DEDUP_VERSION = 4
 
 
@@ -121,10 +120,9 @@ def grace_period_counts(
       the scope before calling this (ADR-0053). Measured at 63–126 Boards per run
       (``docs/pipeline/2026-09-01_twelve-run-log-review.md``), so it is not a rounding error — and
       unlike the first cause it has no drain, which is what makes the total worth watching.
-    - The Board was scraped and emitted *zero jobs of any kind*, so it wrote no ids and
-      :func:`scraped_boards` never saw it (its own docstring says so; those rows are ADR-0023
-      prune's, not sync's). Rarer than the other two and pre-existing, but it is a Board that was
-      read — so reading this number as "Boards we did not get to" overstates that case.
+    - The Board raised, a 404 included, so it wrote no ids and is not in ``boards_ok`` either,
+      and :func:`scraped_boards` never saw it. A Board that scraped *clean* with zero jobs is no
+      longer a cause: ``scrape_join`` adds it from ``boards_ok``, so its rows evict in scope.
 
     What is *no longer* a cause is the ADR-0046 collapse guard capping a Board still in scope: an
     id whose Board was scraped, was in scope, and was absent again is now evicted, not carried.
@@ -415,7 +413,7 @@ def apply_sync(
 def live_keep_set(ledger_dir: str | Path) -> set[str]:
     """Board keys that should survive: every live ledger Board on an enabled ATS, each key exactly
     as its scraper's ``board_key()`` builds it — the real keys ids carry, which is what makes
-    prefix-matching them exact (ADR-0049). ``load_active_companies`` already drops dead Boards and
+    prefix-matching them exact (ADR-0049). ``scrapable_boards.load`` already drops dead Boards and
     ``DISABLED_ATS``; ``min_jobs=0`` keeps Scrapable Boards with no open postings.
 
     Kept in the ledger's **own casing**, not lowercased: :func:`plan_prune` matches Boards
@@ -423,7 +421,7 @@ def live_keep_set(ledger_dir: str | Path) -> set[str]:
     keep: set[str] = set()
     keyless: list[str] = []
     no_board_key = log.FirstOnly(_log)
-    for company in load_active_companies(ledger_dir, min_jobs=0):
+    for company in scrapable_boards.load(ledger_dir, min_jobs=0):
         try:
             keep.add(board_key(company))
         except Exception:  # noqa: BLE001 - a malformed ledger row shouldn't sink the whole set
@@ -441,7 +439,7 @@ def live_keep_set(ledger_dir: str | Path) -> set[str]:
             continue
     if len(keyless) > 1:
         # "Scrapable Board", the term `index prune`'s own keep-set line uses and the one
-        # `load_active_companies(min_jobs=0)` actually yields — CONTEXT.md §Counting Boards
+        # `scrapable_boards.load(min_jobs=0)` actually yields — CONTEXT.md §Counting Boards
         # binds each name to exactly one figure, and "live Boards" names none of them.
         _log.warning(
             f"keep-set: {len(keyless)} Scrapable Board(s) built no board_key and will prune as "
@@ -460,14 +458,13 @@ def workday_site_jobs(ledger_dir: str | Path) -> dict[str, int]:
     harmless, and one whose URL will not parse is already reported by :func:`live_keep_set`.
     """
     from headstart import liveness
-    from headstart.scrapers.registry import SCRAPERS
+    from headstart.scrapers.registry import company_from_row
 
-    slug_from = SCRAPERS["workday"].slug_from
     jobs: dict[str, int] = {}
     for verdict in liveness.load(Path(ledger_dir) / "workday.csv").values():
         if verdict.status != liveness.LIVE:
             continue
-        company = CompanyRef(ats="workday", slug=slug_from(verdict.tenant, verdict.url))
+        company = company_from_row("workday", verdict.tenant, verdict.url)
         try:
             board = lower_key(board_key(company))
         except ValueError:
@@ -502,7 +499,7 @@ def boards_by_canon(keep: Iterable[str]) -> dict[str, str]:
     against.
 
     The lex-min tie-break is defensive, not the decision: a production ``keep`` already holds one
-    casing per Board, because ``live_keep_set`` reads the list ``config._dedupe_boards`` has
+    casing per Board, because ``live_keep_set`` reads the list ``scrapable_boards.load`` has
     collapsed — the same list the scrape works from, which is *why* the casing prune keeps is the
     casing a scrape emits. It matters only for a caller assembling ``keep`` some other way, where an
     arbitrary set order must not be able to change the plan.
@@ -635,8 +632,9 @@ def scraped_boards(
     3. the corpus ids' Boards, when neither is available (a local sync with no full scrape on
        disk, or a unit test).
 
-    (A Board scraped that yields *zero* jobs of any kind writes no ids and so isn't covered by any
-    of them — that rarer case is handled by the dead/absent-Board prune, ADR-0023.)
+    (A Board scraped cleanly that yields *zero* jobs writes no ids, so only ``recorded`` covers
+    it: ``scrape_join`` adds the shard reports' ``boards_ok``. The other two sources miss it, and
+    prune does not catch it either, because a live Board with no postings stays in its keep-set.)
     """
     path = Path(scraped)
     if path.is_dir() and any(path.glob("*.jsonl")):

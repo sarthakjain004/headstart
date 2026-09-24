@@ -10,6 +10,7 @@ import asyncio
 import logging
 
 import pytest
+from curl_cffi.requests import Session
 
 from headstart import http
 
@@ -278,19 +279,14 @@ def _clean_egress(monkeypatch):
     to assert something about routing. The cooldown itself is policy, and it is tested where it
     lives, in test_spare_egress.py.
 
-    `rotate` is stubbed to False — "no fresh IP" — for a harder reason than speed: unstubbed it is
-    the *live* function, which shells out to `sudo -n` and restarts the machine's actual WARP
-    daemon. Measured: WARP's pid moved 96855 -> 97119 during one test. Where sudo needs a password
-    that call fails in milliseconds and every test passes by accident; where it does not, they
-    bounce the developer's tunnel and then fail, because a rotation that *succeeds* hands the
-    caller back an attempt and the canned outcome list runs out.
-
-    Autouse, so it holds for the whole file rather than only the tests that go through `_warp` —
-    several stub `proxy_url` themselves, and an opt-in guard would reopen this the first time one
-    of those walls. Tests that are *about* rotation override it locally.
+    `rotate` itself is left live. It used to be stubbed to False here, because the live function
+    shelled out to `sudo -n` and restarted the machine's actual WARP daemon (pid 96855 -> 97119
+    during one test). The daemon is now a port, and `tests/conftest.py` gives every test an
+    in-memory one with no WARP behind it, so an unstubbed rotation fails in memory and returns
+    False — "no fresh IP" — exactly as the stub did. Tests that are *about* rotation override it
+    locally.
     """
     monkeypatch.setattr(http.spare_egress, "_ROTATION_COOLDOWN", 0.0)
-    monkeypatch.setattr(http.spare_egress, "rotate", lambda board=None, **_: False)
     http.spare_egress.reset()
     yield
     http.spare_egress.reset()
@@ -703,6 +699,86 @@ def test_async_wall_on_the_final_attempt_still_marks(monkeypatch):
     assert http.spare_egress.walled_groups() == frozenset({"workday"})
 
 
+def test_both_paths_drive_one_policy_to_the_same_egress_decisions(monkeypatch):
+    """ADR-0195: the retry-and-egress loop is written once and each path only drives it.
+
+    The whole ladder — a severed connection, a wall on the direct route, a wall through the spare
+    egress, the rotation it earns and the settle — through both paths, recording every call to
+    `spare_egress` and every backoff. Before ADR-0195 the two paths were hand-duplicated loops,
+    and this is the comparison that would have caught them drifting.
+    """
+    outcomes = [429, _err(None), 429, 200]
+
+    def _drive_the_ladder(through_async):
+        http.spare_egress.reset()
+        recorded = []
+        routes = iter([None] + ["socks5h://127.0.0.1:40000"] * 3)
+
+        def _route(group):
+            recorded.append(("route", group))
+            return next(routes)
+
+        async def _route_async(group):
+            return _route(group)
+
+        monkeypatch.setattr(http.spare_egress, "proxy_for", _route)
+        monkeypatch.setattr(http.spare_egress, "proxy_for_async", _route_async)
+        monkeypatch.setattr(
+            http.spare_egress,
+            "rotate",
+            lambda board=None, **_: recorded.append(("rotate", board)) or True,
+        )
+        for name in ("mark_walled", "note_routed", "note_settled"):
+            monkeypatch.setattr(
+                http.spare_egress,
+                name,
+                lambda *arguments, _name=name: recorded.append((_name, *arguments)),
+            )
+        monkeypatch.setattr(
+            http,
+            "_note_retry",
+            lambda *arguments: recorded.append(arguments) or 0.0,
+        )
+        fetch_options = {
+            "attempts": 4,
+            "egress_group": "workday",
+            "egress_on": frozenset({429}),
+            "egress_board": "workday:acme/careers",
+        }
+        if through_async:
+            session, calls = _astub(monkeypatch, list(outcomes))
+            response = asyncio.run(
+                http.fetch_async(session, "GET", "u", **fetch_options)
+            )
+        else:
+            calls = _stub(monkeypatch, list(outcomes))
+            response = http.fetch("GET", "u", **fetch_options)
+        return response.status_code, _proxied(calls), recorded
+
+    sync_status, sync_routes, sync_calls = _drive_the_ladder(through_async=False)
+    assert sync_status == 200
+    assert ("rotate", "workday:acme/careers") in sync_calls
+    assert _drive_the_ladder(through_async=True) == (
+        sync_status,
+        sync_routes,
+        sync_calls,
+    )
+
+
+def test_a_stop_iteration_from_the_session_is_raised_not_returned(monkeypatch):
+    """The drivers never catch `StopIteration`. A first draft ended the policy with a `return` and
+    caught `StopIteration` around the whole driver loop — which also caught one raised by the
+    session itself and returned its argument as though it were the response."""
+
+    class _Session:
+        def request(self, method, url, **kwargs):
+            raise StopIteration("not a response")
+
+    monkeypatch.setattr(http, "session", lambda: _Session())
+    with pytest.raises(StopIteration):
+        http.fetch("GET", "u")
+
+
 # --- a connection we severed ourselves is not the request's fault ---------------------------------
 
 
@@ -976,3 +1052,36 @@ def test_resolving_a_route_never_stalls_the_event_loop_during_a_rotation(monkeyp
         assert asyncio.run(_drive()) > 5
     finally:
         spare_egress._gate.set()
+
+
+# --- HTTPFetcher.clear_cookies: the calling thread's pooled jar ------------------------------
+
+
+@pytest.fixture
+def pooled_session(monkeypatch: pytest.MonkeyPatch) -> Session:
+    pooled = Session()
+    pooled.cookies.set("session", "a", domain="acme.csod.com")
+    pooled.cookies.set("session", "b", domain="other.example")
+    monkeypatch.setattr(http, "session", lambda: pooled)
+    return pooled
+
+
+def test_http_fetcher_clears_one_domain_and_keeps_the_rest(
+    pooled_session: Session,
+) -> None:
+    http.DEFAULT_FETCHER.clear_cookies(domain="acme.csod.com")
+    assert [cookie.domain for cookie in pooled_session.cookies.jar] == ["other.example"]
+
+
+def test_http_fetcher_clears_the_whole_jar_without_a_domain(
+    pooled_session: Session,
+) -> None:
+    http.DEFAULT_FETCHER.clear_cookies()
+    assert list(pooled_session.cookies.jar) == []
+
+
+def test_http_fetcher_treats_a_domain_it_holds_nothing_for_as_already_clear(
+    pooled_session: Session,
+) -> None:
+    http.DEFAULT_FETCHER.clear_cookies(domain="never-visited.example")
+    assert len(list(pooled_session.cookies.jar)) == 2

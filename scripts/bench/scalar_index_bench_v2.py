@@ -4,7 +4,7 @@
 Three methodology properties this script is built around, each closing a way a naive version of
 this kind of bench reports a misleading number:
 
-1. **Real filter strings.** Every clause is produced by :func:`headstart.search.build_filter`
+1. **Real filter strings.** Every clause is produced by :func:`headstart.search_filter_compiler.build_filter`
    itself, not hand-written SQL — so ``max_years`` compiles to its actual
    ``(min_years <= N OR min_years IS NULL)`` shape, not a bare ``<=`` a hand-written clause
    would use, and every filter measured here is provably the one `/search` actually issues.
@@ -30,8 +30,8 @@ from pathlib import Path
 import lancedb
 import numpy as np
 
-from headstart.search import (
-    RESULT_COLUMNS,
+from headstart.search import RESULT_COLUMNS
+from headstart.search_filter_compiler import (
     IndexCapabilities,
     SearchFilters,
     build_filter,

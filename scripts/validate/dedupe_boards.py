@@ -3,7 +3,7 @@
 
 A company can publish one Board under two hostnames. Both go live in the liveness ledger, both
 are scraped, and both are indexed under different ``board_key``s, so the same posting is served
-twice. `config._dedupe_boards` cannot catch it — that collapses Boards whose canonical
+twice. `scrapable_boards._dedupe_boards` cannot catch it — that collapses Boards whose canonical
 `board_key` already matches modulo casing or URL form, and two different hostnames match nothing.
 
 The signal is each scraper's `alias_key()`: by default the host its Board surface resolves to
@@ -41,7 +41,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from headstart import board_aliases, liveness
-from headstart.scrapers.registry import SCRAPERS
+from headstart.scrapers.registry import SCRAPERS, company_from_row
 
 #: Probe width. These are one cheap header-only GET each against ~2,200 distinct hosts, so the
 #: bound is politeness to nobody in particular — no single origin sees more than a couple.
@@ -114,9 +114,10 @@ def main() -> int:
     # its rows (`shared-reqs`, `subset-reqs`, `backing-reqs`), so an --apply here would replace
     # every one of them with nothing.
     written_elsewhere = {
+        "adp_recruiting": "adp_recruiting_subset_sites.py (ADR-0202)",
         "clearcompany": "clearcompany_shared_accounts.py (ADR-0182)",
         "taleo_enterprise": "taleo_enterprise_subset_sections.py (ADR-0186)",
-        "eightfold": "eightfold_backing_boards.py (ADR-0191)",
+        "eightfold": "eightfold_backing_boards.py (ADR-0204)",
     }
     if args.apply and args.ats in written_elsewhere:
         raise SystemExit(
@@ -143,7 +144,7 @@ def main() -> int:
     ledger = liveness.load(ledger_path)
     live = sorted(
         {
-            scraper_cls.slug_from(v.tenant, v.url)
+            company_from_row(args.ats, v.tenant, v.url).slug
             for v in ledger.values()
             if v.status == liveness.LIVE
         }

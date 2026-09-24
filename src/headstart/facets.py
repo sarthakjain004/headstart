@@ -29,8 +29,8 @@ counts — see ADR-0024's 2026-09-06 amendment, which cut that clause from 267 `
 :class:`ThreadPoolExecutor` because LanceDB's counting happens in Rust with the GIL released, so
 the wall cost is roughly the slowest count rather than their sum.
 
-Exposed as one function, :func:`counts`, which takes the parsed :class:`headstart.search.
-SearchFilters` and the table's :class:`headstart.search.IndexCapabilities` (ADR-0149) and returns
+Exposed as one function, :func:`counts`, which takes the parsed :class:`headstart.search_filter_compiler.
+SearchFilters` and the table's :class:`headstart.search_filter_compiler.IndexCapabilities` (ADR-0149) and returns
 every number the UI needs. Splitting the two is what keeps the per-option rebuild below cheap to
 reason about: every one of the ~46 counts varies only ``filters``, through
 :func:`dataclasses.replace`, while ``capabilities`` — the ATS/currency whitelists and which
@@ -44,9 +44,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from typing import Any
 
-from headstart.experience_filter import CEILINGS as EXPERIENCE_FILTER_CEILINGS
-from headstart.search import (
-    ETYPE_CLAUSES,
+from headstart import employment_type_filter, experience_filter, salary_known_filter
+from headstart.search_filter_compiler import (
     KEYWORD_DEFAULT_SCOPE,
     KEYWORD_SCOPES,
     IndexCapabilities,
@@ -64,10 +63,6 @@ SEEN_HOURS = (2, 4, 6, 8, 12, 18, 24, 168)
 # ...and "posted by the employer", in DAYS, because that is the granularity `posted_at` carries
 # from the boards themselves.
 POSTED_DAYS = (1, 7, 30, 90)
-
-# Experience ceilings the UI offers. `max_years` is a "no more than" filter, so these read as
-# "roles open to someone with N years".
-MAX_YEARS = EXPERIENCE_FILTER_CEILINGS
 
 # Enough to keep the strip's wall cost near the slowest single count rather than their sum,
 # without opening a thread per option. LanceDB counts in Rust with the GIL released.
@@ -145,24 +140,14 @@ def counts(
             add("seen_within", h, label, seen_within=h)
     for d, label in POSTED_OPTIONS:
         add("posted_within", d, label, posted_within=d)
-    for y in MAX_YEARS:
-        add(
-            "max_years",
-            y,
-            "Entry level" if y == 0 else f"{y} years or less",
-            max_years=y,
-        )
-    for value, label in (
-        ("full-time", "Full-time"),
-        ("part-time", "Part-time"),
-        ("contract", "Contract"),
-        ("internship", "Internship"),
-    ):
-        if value in ETYPE_CLAUSES:
-            add("etype", value, label, etype=value)
+    for ceiling, label in experience_filter.FACET_OPTIONS:
+        add("max_years", ceiling, label, max_years=ceiling)
+    for value, label in employment_type_filter.FACET_OPTIONS:
+        add("etype", value, label, etype=value)
     add("remote", True, "Remote only", remote=True)
     if capabilities.has_min_salary_annual:
-        add("has_salary", True, "Shows salary", has_salary=True)
+        for value, label in salary_known_filter.FACET_OPTIONS:
+            add("has_salary", value, label, has_salary=value)
     for a in capabilities.atses:
         add("ats", a, a, ats=a)
 
