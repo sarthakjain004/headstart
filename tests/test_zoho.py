@@ -278,6 +278,42 @@ def test_zoho_falls_back_to_listing_when_detail_fetch_missing():
     assert j.salary is None  # never in the listing to begin with
 
 
+def _listing_with_description(job_id: str) -> str:
+    return _page(
+        [
+            {
+                "id": job_id,
+                "Posting_Title": "Backend Engineer",
+                "Job_Description": "<p>The listing's rendering of the posting.</p>",
+            }
+        ]
+    )
+
+
+def test_a_failed_detail_never_replaces_a_held_description_with_the_listings():
+    """ADR-0208. The listing's Job_Description renders differently from the detail page's (34 of
+    40 live pairs on 5 tenants, 2026-09-24), and whole Boards' detail passes fail on some runs
+    ("no jobs blob on the page", 526/526 on jobberman in run 36021294272, 15/15 fine fetched by
+    hand). Falling back to the listing then flipped the stored text back and forth — 4,784 of
+    the store's 6,115 replacements in 7 runs. A Job whose description the store holds gets none
+    instead, so `update_descriptions` keeps the held text."""
+    scraper = get_scraper("zoho", "acme.zohorecruit.com")
+    scraper.have_details = {"zoho:acme.zohorecruit.com:1"}
+    raw = {"page": _listing_with_description("1"), "details": {}}
+    [job] = scraper.parse(raw, SCRAPED_AT)
+    assert job.description is None
+
+
+def test_a_failed_detail_still_falls_back_to_the_listing_for_an_unheld_job():
+    """With nothing held, the listing's text is the best text there is: a new Job keeps it
+    rather than being embedded from its title alone."""
+    scraper = get_scraper("zoho", "acme.zohorecruit.com")
+    scraper.have_details = set()
+    raw = {"page": _listing_with_description("1"), "details": {}}
+    [job] = scraper.parse(raw, SCRAPED_AT)
+    assert job.description == "The listing's rendering of the posting."
+
+
 @pytest.mark.parametrize("async_fanout", ["1", "0"])
 def test_zoho_classifies_a_source_declared_unavailable_detail(
     monkeypatch, async_fanout
