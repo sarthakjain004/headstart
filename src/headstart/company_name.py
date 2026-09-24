@@ -256,13 +256,12 @@ _MAX_LEN = 60
 #: among them), and only an ATS with patterns can reach this test at all.
 #: ADR-0034 blocklists the Boards already known to be vendor-owned; this catches the rest.
 _VENDOR_ALIASES: dict[str, frozenset[str]] = {
-    # No ADP-named client was seen in 125 `ClientName`s; kept as the same precaution as
-    # taleo_enterprise's — the vendor runs its own payroll on its own platform.
+    # ADP Workforce Now. No ADP-named client was seen in 125 `ClientName`s; kept as the same
+    # precaution as taleo_enterprise's — the vendor runs its own payroll on its own platform.
     "adp": frozenset({"adp", "automaticdataprocessing"}),
     # ADP Recruiting Management. Empty on purpose: `clientName` is ADP's client record, not a
-    # page that can fall back to
-    # the vendor's branding, and ADP is a real client here — `apply` (909 postings) and
-    # `adpinternalcareers` both state "ADP" (2 of 681 sites, 2026-09-24).
+    # page that can fall back to the vendor's branding, and ADP is a real client here — `apply`
+    # (909 postings) and `adpinternalcareers` both state "ADP" (2 of 681 sites, 2026-09-24).
     "adp_recruiting": frozenset(),
     "ashby": frozenset({"ashby", "ashbyhq"}),
     "eightfold": frozenset({"eightfold", "eightfoldai"}),

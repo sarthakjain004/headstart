@@ -36,9 +36,10 @@ hypotheses. Two of them were wrong in ways that matter (the `orgoid`-only listin
 - **An org can run several sites.** 85 `orgoid`s held 267 of the 606 hiring sites dumped. The
   sites are distinct records (different `id`, `name` and `externalId`), and the token scopes the
   listing to one site. Across external sites of one org, 2,139 of 73,318 rows (2.9%) repeat a
-  `reqId` another site of the same org lists. Only 47 of those rows are tech. 31 external sites
-  list a subset of a sibling's postings (`gnc` and `generalnutritioncenter`: 753 each, the same
-  ids).
+  `reqId` another site of the same org lists. Only 47 of those rows are tech. In that 606-site
+  dump, 31 external sites list a subset of a sibling's postings (`gnc` and
+  `generalnutritioncenter`: 753 each, the same ids, that morning). Over the whole ledger's 990
+  live sites the alias run buried 131 (§"Sites another site of the same client contains").
 - **`reqId`** is all-digit and 13 characters long on 77,242 of 77,242 rows, so it is never split by
   `board_identity.board_of`'s last-`:` rule. Slugs match `[a-z0-9_.-]` on 681 of 681.
 - **Discovery spellings.** The seed lists, Wayback and Common Crawl emit the slug as written in a
@@ -102,7 +103,8 @@ hypotheses. Two of them were wrong in ways that matter (the `orgoid`-only listin
   of 680 seed sites. Re-read about 70 minutes later, all 70 were still 0 (Q8b).
 - **One site's listing errored:** `trulitecareers` answered 500
   `ErrCode=ERR_BAD_REQUEST … status code 404`, with its record fine. The prober leaves it UNKNOWN.
-- **Employee-only sites.** `settings.careerSiteType` is `"Internal"` on 15 of 681 sites. The 14
+- **Employee-only sites.** `settings.careerSiteType` is `"Internal"` on 15 of the 681 seed-census
+  sites (25 across the whole 1,499-slug pool, §"The ledger"). The 14
   hiring ones list 3,924 postings. 3,526 of those are also on an external site of the same org,
   and the other 398 are for the client's own staff. The prober writes them DEAD by policy
   (ADR-0202 §4).
@@ -242,6 +244,6 @@ so the cross-hostname and casing duplicate mechanisms cannot occur. A spot check
 grouped them by `orgoid`. It buried 131 sites, holding 3,601 of 87,181 postings, onto 41 kept
 sites in `data/validate/aliases/adp_recruiting.csv` (signal `subset-reqs`, ADR-0186's rule). Each
 buried site's whole posting set is contained in a kept site of the same client. For example,
-`gnc` (751) is buried onto `generalnutritioncenter` (751, the same ids). `clientName` was
+`gnc` (751 that afternoon) is buried onto `generalnutritioncenter` (751, the same ids). `clientName` was
 identical across every site of the 98 multi-site clients in the census, so a buried site's
 postings keep their company name. Sites that only partly overlap both stay.

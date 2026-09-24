@@ -1944,9 +1944,10 @@ def p_adp_recruiting(t, u):
     # knows reaches it. Every request sends `Accept-Language: en-US` — a filter, and curl_cffi's
     # own default reads every site as empty (`adp_recruiting.request_headers`).
     #
-    # An employee-only site (`careerSiteType` "Internal", 15 of 681 sites) is DEAD by policy,
-    # not by absence. Of the 14 hiring ones' 3,924 postings, 3,526 are on an external site of the
-    # same client, which serves them; the other 398 are for the client's own staff (ADR-0202).
+    # An employee-only site (`careerSiteType` "Internal", 15 of the 681 seed-census sites) is DEAD
+    # by policy, not by absence. Of the 14 hiring ones' 3,924 postings, 3,526 are on an external
+    # site of the same client, which serves them; the other 398 are for the client's own staff
+    # (ADR-0202).
     #
     # No rate limit was found (2,500 requests at 128-wide), so the host is not seeded in
     # `_GATES`. A DNS failure is UNKNOWN: every site is on the one fixed host.

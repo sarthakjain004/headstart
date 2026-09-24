@@ -281,7 +281,8 @@ def _with_style(style: Style, *hosts: str) -> tuple[tuple[str, Style], ...]:
 # An ATS's hosts share one dedupe set, keyed by `dedupe_key` rather than by the slug — see there
 # for why the label alone is the wrong identity outside `path` styles.
 ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
-    # One fixed host; the Board is two query values on its career-center page (see `extract`).
+    # ADP Workforce Now: one fixed host; the Board is two query values on its career-center page
+    # (see `extract`).
     "adp": _with_style("adp", ADP_HOST),
     # ADP Recruiting Management: every career site is one path word on the shared SPA host
     # (`myjobs.adp.com/{slug}/cx`), the slug `adp_recruiting.py` keys its site config with. Its

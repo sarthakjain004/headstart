@@ -95,6 +95,12 @@ _FULL = re.compile(r"(?<![A-Za-z])(?:FT|F/T)(?![A-Za-z])")
 _PART = re.compile(r"(?<![A-Za-z])(?:PT|P/T)(?![A-Za-z])")
 
 
+#: A career site's slug as discovery reads it and `url_shape` states it: the record's own
+#: `domain` matched this on 681 of 681 sites, and the ledger's tenant on 990 of 990 live rows. It
+#: never ends in a dot, so a URL at the end of a sentence ("…/cx/pathgroup.") does not carry one.
+SLUG = r"[a-z0-9](?:[a-z0-9_.-]*[a-z0-9_-])?"
+
+
 def site_url(slug: str) -> str:
     """The career site's public record: its token, `orgoid` and `clientName`."""
     return f"{_SITE}/{quote(slug)}"
@@ -219,11 +225,8 @@ class ADPRecruitingScraper(BaseScraper):
     # route for a `reqId`; rendered in Chromium 2026-09-24 it shows the posting on 3 of 3 sites
     # (the page fetches `search-meta/{reqId}` itself). `/cx/job/{reqId}` rendered the board
     # chrome with no posting.
-    # Slugs are `[a-z0-9_.-]` across 681 live sites; `reqId` is 13 digits on 77,242 of 77,242.
-    url_shape = r"https://myjobs\.adp\.com/[a-z0-9_.-]+/cx/job-details\?reqId=\d+"
-
-    #: The site record's `clientName`, set by `fetch_raw` and read by `resolve_company`.
-    _client_name: str | None = None
+    # The slug is `SLUG`; `reqId` is 13 digits on 77,242 of 77,242.
+    url_shape = rf"https://myjobs\.adp\.com/{SLUG}/cx/job-details\?reqId=\d+"
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -253,8 +256,24 @@ class ADPRecruitingScraper(BaseScraper):
                 return None
             raise
 
-    def _walk(self, token: str) -> list[dict]:
-        """Every listing row: 0-based `$skip` until `count` unique `reqId`s are read.
+    def read_site(self) -> tuple[dict, list[dict], int]:
+        """The site record, every listing row, and the count the listing states.
+
+        The record's `clientName` also becomes this Board's company here (`_adopt_client_name`),
+        since it arrives with the token and costs no request of its own. A record with no token
+        reads as no rows and a count of 0, noted as an unreadable Board."""
+        site = self._json(self.url())
+        self._adopt_client_name(site.get("clientName"))
+        token = site.get("myJobsToken")
+        if not token:
+            self.note_unreadable_board("a site record with a myJobsToken", "none")
+            return site, [], 0
+        rows, total = self._walk(token)
+        return site, rows, total
+
+    def _walk(self, token: str) -> tuple[list[dict], int]:
+        """Every listing row and the stated count: 0-based `$skip` until `count` unique `reqId`s
+        are read.
 
         A 502 halves the page, down to `_MIN_PAGE`; the next page asks `_PAGE` again, because one
         oversized row should not slow the rest of the Board to a crawl."""
@@ -272,7 +291,7 @@ class ADPRecruitingScraper(BaseScraper):
                     f"a {top}-row page at $skip={skip} still answered 502 at {len(seen)} of "
                     f"{total if total is not None else 'unknown'} postings — the rest unread"
                 )
-                return rows
+                return rows, total or 0
             total = data.get("count") or 0
             page = data.get("jobRequisitions") or []
             for row in page:
@@ -287,23 +306,18 @@ class ADPRecruitingScraper(BaseScraper):
             self.mark_truncated(
                 f"hit the {_MAX_PAGES}-page cap at {len(seen)} of {total} postings"
             )
-            return rows
+            return rows, total or 0
         if total and len(seen) < total:
             self.mark_truncated_unless_negligible(
                 len(seen),
                 total,
                 f"read {len(seen)} of {total} postings — the rest is unread, not absent",
             )
-        return rows
+        return rows, total or 0
 
     def fetch_raw(self) -> Any:
-        site = self._json(self.url())
-        self._client_name = site.get("clientName")
+        site, rows, _ = self.read_site()
         token = site.get("myJobsToken")
-        if not token:
-            self.note_unreadable_board("a site record with a myJobsToken", "none")
-            return {"rows": [], "details": {}}
-        rows = self._walk(token)
         # Exact gate: `parse` reads the title and department off this same listing row and the
         # detail overrides neither (300 of 300 titles equal). The description store's skip is
         # declined: the detail is the only source of `salary` (module docstring).
@@ -357,14 +371,15 @@ class ADPRecruitingScraper(BaseScraper):
             return None
         return self._detail_of(json.loads(response.text))
 
-    def resolve_company(self) -> None:
+    def _adopt_client_name(self, stated: str | None) -> None:
         """The employer, from the site record's ``clientName`` — already fetched for the token,
-        so this costs no request. Present on 681 of 681 sites; it is ADP's client record, often
-        the legal or parent entity ("Seaboard Corporation" for `stfcareers`), where the record's
-        ``name`` labels the site ("External", "External Career Site")."""
+        so this costs no request, and `resolve_company` (no `board_page`) leaves it alone. Present
+        on 681 of 681 sites; it is ADP's client record, often the legal or parent entity
+        ("Seaboard Corporation" for `stfcareers`), where the record's ``name`` labels the site
+        ("External", "External Career Site"). A real name already on the Board is kept."""
         if not company_name.looks_like_slug(self.company):
             return
-        name = company_name.from_title(self.ats, self._client_name, self.slug)
+        name = company_name.from_title(self.ats, stated, self.slug)
         if name:
             self.company = name
 

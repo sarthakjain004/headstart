@@ -22,8 +22,6 @@ import json
 import re
 from pathlib import Path
 
-import pytest
-
 from headstart.scrapers import adp_recruiting
 from headstart.scrapers.adp_recruiting import ADPRecruitingScraper
 from headstart.scrapers.registry import get_scraper
@@ -186,17 +184,18 @@ def test_the_job_url_matches_the_declared_shape():
 
 
 def test_the_company_is_the_site_records_client_name_at_no_extra_request(monkeypatch):
-    scraper = get_scraper("adp_recruiting", "churchmutual", "churchmutual")
-    scraper._client_name = FIXTURES["site_churchmutual"]["clientName"]
-    monkeypatch.setattr(scraper, "_fetch", pytest.fail)
+    fake = _FakeADP(_church_pages())
+    scraper = _wired(monkeypatch, fake)
+    scraper.fetch_raw()
+    calls = len(fake.calls)
     scraper.resolve_company()
     assert scraper.company == FIXTURES["site_churchmutual"]["clientName"]
+    assert len(fake.calls) == calls  # no request of its own
 
 
 def test_adp_itself_is_a_client_name_like_any_other():
     scraper = get_scraper("adp_recruiting", "apply", "apply")
-    scraper._client_name = "ADP"
-    scraper.resolve_company()
+    scraper._adopt_client_name("ADP")
     assert scraper.company == "ADP"
 
 

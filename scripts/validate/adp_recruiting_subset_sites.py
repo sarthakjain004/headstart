@@ -3,14 +3,16 @@
 
 An ADP Recruiting Management Board is one career site, `myjobs.adp.com/{slug}/cx`, and one client
 (`orgoid`) can run several. Their postings share one client-wide `reqId`, and some sites list
-exactly what a sibling does: `gnc` and `generalnutritioncenter` list the same 753 postings.
+exactly what a sibling does: `gnc` and `generalnutritioncenter` list the same 751 postings
+(2026-09-24).
 `index_plan.evict_duplicate` groups only within a Board, so every such posting would be served
 once per site. `dedupe_boards.py` cannot see it, because no site redirects to another.
 
 The signal is containment, as in Taleo Enterprise's `subset-reqs` (ADR-0186). A site whose full
 posting set is non-empty and contained in the set of another site of the same client is buried
-onto a maximal site. The election is `board_aliases.bury_contained`. A site whose walk fails or
-comes back short is left out, so it is neither buried nor kept for anything else.
+onto a maximal site. The election is `board_aliases.bury_contained`. A site whose walk fails, or
+reads fewer unique postings than the count it states (even by one, which the scraper itself
+would tolerate), is left out, so it is neither buried nor kept for anything else.
 
 Reads every `live` row of the liveness ledger, including the sites the last run buried (the alias
 ledger leaves their liveness rows in place), so each run re-derives every verdict. It also
@@ -42,17 +44,16 @@ _WORKERS = 16
 
 
 class _ShortWalk(Exception):
-    """The walk came back short of the site's own count, so its set is not the site's."""
+    """The walk read fewer unique postings than the site states, so its set is not the site's."""
 
 
 def _site(slug: str) -> tuple[str, set[str]]:
     """``(orgoid, every reqId)`` for one site, through the scraper's own listing walk."""
-    scraper = ADPRecruitingScraper(slug)
-    record = scraper._json(scraper.url())
-    rows = scraper._walk(record["myJobsToken"])
-    if scraper.truncated:
-        raise _ShortWalk(scraper.truncated)
-    return record["orgoid"], {row["reqId"] for row in rows}
+    record, rows, stated = ADPRecruitingScraper(slug).read_site()
+    ids = {row["reqId"] for row in rows}
+    if len(ids) != stated:
+        raise _ShortWalk(f"read {len(ids)} of {stated}")
+    return record["orgoid"], ids
 
 
 def main() -> None:

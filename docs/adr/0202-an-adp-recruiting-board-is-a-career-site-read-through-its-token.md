@@ -25,8 +25,8 @@ upstream's `adp_myjobs`. A Board is the path word of `myjobs.adp.com/{slug}/cx`.
 on 681 of 681 sites, so `slug_from` lowercases. An org can run several sites (85 `orgoid`s held
 267 of 606 hiring sites). Each site is its own Board, because the token scopes the listing to one
 site. Across external sites of one org in the 606-site dump, 2.9% of rows repeat (47 of them
-tech), and some sites list exactly what a sibling does (`gnc` and `generalnutritioncenter`, 753
-each). `index_plan.evict_duplicate` groups only within a Board, so each would serve twice. So a
+tech), and some sites list exactly what a sibling does (`gnc` and `generalnutritioncenter`: 753
+each in that morning's dump, 751 each at the afternoon's alias run). `index_plan.evict_duplicate` groups only within a Board, so each would serve twice. So a
 site whose whole posting set is non-empty and contained in another site of the same `orgoid` is
 buried in `data/validate/aliases/adp_recruiting.csv` under Taleo Enterprise's `subset-reqs`
 signal (ADR-0186). `scripts/validate/adp_recruiting_subset_sites.py` walks every live site and
@@ -68,7 +68,7 @@ was rejected for now, for three reasons:
 This gap is a named follow-up, not a silent loss.
 
 **4. An employee-only site is DEAD by policy.** `settings.careerSiteType` is `"Internal"` on 15
-of 681 sites. Their postings are for the client's staff. Of the 14 hiring ones' 3,924 postings,
+of the 681 sites in the seed census, and the prober found 25 across the whole 1,499-slug pool. Their postings are for the client's staff. Of the 14 hiring ones' 3,924 postings,
 3,526 are on an external site of the same client anyway. `p_adp_recruiting` writes such a site
 DEAD so it never enters the scrape list, following pyjamahr's precedent of dropping
 `published_internally` rows. This is the one DEAD verdict not keyed on absence. Otherwise a site

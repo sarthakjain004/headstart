@@ -55,6 +55,8 @@ import urllib.parse
 import cc_data_host
 from wayback_feeder import ADP_HOST, ADP_PAGE_URL, extract
 
+from headstart.scrapers.adp_recruiting import SLUG as ADP_RECRUITING_SLUG
+
 CRAWL_ARG = sys.argv[1] if len(sys.argv) > 1 else None
 CSV = "data/discover/cc_ats_tenants.csv"
 DONE = "data/discover/cc_miner_checkpoint.txt"
@@ -87,7 +89,9 @@ ATS_PATTERNS = {
         # with. `public/` is the API itself and names no site.
         "targets": ["myjobs.adp.com"],
         "kind": "slug",
-        "patterns": [r"myjobs\.adp\.com/(?!public/)([a-z0-9][a-z0-9_.-]+)(?=[/?#]|$)"],
+        "patterns": [
+            rf"myjobs\.adp\.com/(?!public/)({ADP_RECRUITING_SLUG})(?=[/?#]|$)"
+        ],
     },
     "greenhouse": {
         "targets": [

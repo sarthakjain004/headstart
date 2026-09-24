@@ -100,6 +100,7 @@ from headstart import scrapable_boards
 from headstart.board_identity import board_key, lower_key
 from headstart.config import CompanyRef
 from headstart.scrapers import registry
+from headstart.scrapers.adp_recruiting import SLUG as ADP_RECRUITING_SLUG
 
 try:
     import dns.resolver
@@ -296,7 +297,7 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
     "adp_recruiting": (
         "ats",
         [
-            r"myjobs\.adp\.com/(?!public/)([a-zA-Z0-9][a-zA-Z0-9_.-]*[a-zA-Z0-9_-])",
+            rf"myjobs\.adp\.com/(?!public/)({ADP_RECRUITING_SLUG})",
             r"recruiting\.adp\.com",
         ],
     ),
