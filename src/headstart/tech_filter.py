@@ -82,7 +82,15 @@ from pathlib import Path
 # pre-filter snapshot 68,600 -> 69,192, **+1,852 in, -1,260 out**. A blind 800-title hold-out
 # puts recall at ~84.6% and precision at ~82.0%. See
 # docs/tech-filter/2026-09-23_spellings-and-trades.md.
-TECH_FILTER_VERSION = 4
+# 5 (2026-09-24, `git log 6458fbac..6e05d8cc -- src/headstart/tech_filter.py`): rule 0 sets aside
+# a cashier on either side of "front end" ("Cashier (Front End)", "FRONT END/CASHIER"), which the
+# strong `front[\s-]?end` signal had been reading as a front-end developer. Purely subtractive: on
+# the served table (v654, 514,163 rows) **-148 out, 0 in**, every one a cashier title read by hand;
+# on the 1,135,079-posting pre-filter corpus (July scrape + Indeed harvest) **-3 out, 0 in**. Jibe
+# was not yet in v654: `jibe:costco` alone carried 1,581 such rows (live keyword sample 2026-09-24:
+# 1,213 of 2,500 hits were its only two kept titles). The blind hold-out is unchanged (recall
+# 84.6%, precision 82.0%). See docs/pipeline/2026-09-24_five-run-log-review.md finding 1.
+TECH_FILTER_VERSION = 5
 
 # 1. Strong, software-specific signals. A match here means tech regardless of any disqualifier.
 _STRONG_TERMS = [
@@ -443,6 +451,13 @@ _STRONG_NOT = re.compile(
     # Member" at a software firm is a React role), and v3 kept every such row.
     r"\bfront[\s-]end (manager|clerk|supervisor|cashier|attendant|service|lead clerk"
     r"|coordinator|host)s?\b"
+    # The cashier on either side of "front end", as a retailer titles it: "Cashier (Front End)"
+    # and "Cashier Assistant (Front End)" were 1,213 of 2,500 sampled Costco listings (live
+    # 2026-09-24), and "Front End Associate/Cashier" names the same role. Adjacent only, so a
+    # software title that merely mentions a cashier system ("Front End Developer - Cashier
+    # Systems") keeps its signal.
+    r"|\bcashier(s|\s+assistants?)?\s*[(/,:|–—-]?\s*front[\s-]end\b"
+    r"|\bfront[\s-]end([\s/-]+associates?)?[\s/-]+cashiers?\b"
     r"|\bcnc\b[\s/-]*(programmer|machinist)s?"
     r"|\bj\.?d\.?\W+ll\.?m\b|\bll\.?m\.?\s+(tax|law|candidate|graduate)"
     # Not after `&`, `/`, `,` or `and`: a joint title ("Firmware & Electrical Engineering
