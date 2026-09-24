@@ -762,6 +762,10 @@ def _smartapply_to_pcsx_shape(pos: dict[str, Any]) -> dict[str, Any]:
         "department": department,
         "postedTs": pos.get("t_create"),
         "workLocationOption": pos.get("work_location_option"),
+        # The backing ATS's requisition id, under the PCSX names; unused by `parse`, read by
+        # `eightfold_backing_boards.py` (ADR-0205).
+        "atsJobId": pos.get("ats_job_id"),
+        "displayJobId": pos.get("display_job_id"),
     }
 
 

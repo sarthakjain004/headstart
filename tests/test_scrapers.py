@@ -6472,6 +6472,8 @@ def test_eightfold_switches_to_smartapply_on_a_pcsx_disabled_403():
             "department": "Engineering",
             "postedTs": 1700000000,
             "workLocationOption": "hybrid",
+            "atsJobId": None,
+            "displayJobId": None,
         }
     ]
     assert scraper.truncated is None
@@ -6554,6 +6556,8 @@ def test_eightfold_smartapply_to_pcsx_shape_maps_fields():
         "department": "Data & Analytics",
         "postedTs": 1700000000,
         "workLocationOption": "remote_global",
+        "atsJobId": None,
+        "displayJobId": None,
     }
     assert "positionUrl" not in plain, (
         "canonicalPositionUrl is deliberately not carried through — it can point at a different "
@@ -11104,3 +11108,15 @@ def test_phenom_gate_reads_the_listing_title_and_category_not_the_teaser(monkeyp
         "jobFamilyGroup says Facilities — reading it as the department would drop it"
     )
     assert set(raw["details"]) == {"2", "3"}
+
+
+def test_eightfold_smartapply_to_pcsx_shape_carries_the_requisition_ids():
+    """The PCSX search states `atsJobId`/`displayJobId` — the backing ATS's requisition id — and
+    SmartApply states the same as `ats_job_id`/`display_job_id` (albemarle `REQ-31366`,
+    2026-09-24). `eightfold_backing_boards.py` matches on them (ADR-0205)."""
+    from headstart.scrapers.eightfold import _smartapply_to_pcsx_shape
+
+    got = _smartapply_to_pcsx_shape(
+        {"id": 1, "ats_job_id": "REQ-31366", "display_job_id": "REQ-31366"}
+    )
+    assert (got["atsJobId"], got["displayJobId"]) == ("REQ-31366", "REQ-31366")
