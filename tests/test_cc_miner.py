@@ -13,7 +13,7 @@ a subdomain label, and that is where both known defects lived:
    `{host}/{site}/job/{...}`, so the wider pattern ate the site and captured the path marker:
    `howard.../hu/job/...` went from `hu` to `job` (then dropped by `BLOCK`, making the Board
    undiscoverable) and `browardcollege.../pt/details/...` minted a phantom Board `details`.
-   `load_active_companies(min_jobs=0)` counts 100 Scrapable Boards with a two-letter Workday
+   `scrapable_boards.load(min_jobs=0)` counts 100 Scrapable Boards with a two-letter Workday
    site, 7 of them an ISO-639-1 code.
 
 Both were found by review rather than by a test, because this module had none. The second is the

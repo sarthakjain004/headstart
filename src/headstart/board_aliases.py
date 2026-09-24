@@ -6,7 +6,7 @@ One CSV per ATS at ``data/validate/aliases/{ats}.csv``::
 
 A company can run one Board under two hostnames. Both go live in the liveness ledger, both are
 scraped, and both are indexed under different ``board_key``s — so the same posting is served
-twice. ``config._dedupe_boards`` cannot see it: that collapses Boards whose canonical
+twice. ``scrapable_boards._dedupe_boards`` cannot see it: that collapses Boards whose canonical
 ``board_key`` already matches modulo casing or URL form, and two different hostnames match
 nothing.
 
@@ -176,7 +176,7 @@ def path_for(liveness_dir: str | Path, ats: str) -> Path:
     """This ATS's alias ledger, resolved from the liveness dir it sits beside.
 
     Keyed off the liveness directory rather than the repo root because both callers already hold
-    that — ``config.load_active_companies`` is handed it, and the script gets it from
+    that — ``scrapable_boards.load`` is handed it, and the script gets it from
     ``liveness.dir_for`` — so neither has to reconstruct a root by walking up parents."""
     return Path(liveness_dir).parent / "aliases" / f"{ats}.csv"
 

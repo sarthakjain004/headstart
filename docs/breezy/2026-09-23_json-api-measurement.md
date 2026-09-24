@@ -157,7 +157,7 @@ name (PHP, TWD, PKR, ZAR, …) and so come out with currency None; 37 more such 
 **Q16 — experience and employment type.** No experience field: upstream's `experience`,
 `category`, `education`, `tags` are on 0 of 38,314 rows. `type.id`: fullTime 25,626, contract
 5,501, partTime 5,026, other 1,658, temporary 503 — `type.name` is the same value localised
-("Повна зайнятість", "Vollzeit", "A tiempo completo"), so the id is the key. `employment_type.flags`
+("Повна зайнятість", "Vollzeit", "A tiempo completo"), so the id is the key. `employment_type_filter.flags`
 reads "Full-Time", "Part-Time" and "Contract"; "Temporary" and "Other" reach no filter. No intern
 id was observed.
 

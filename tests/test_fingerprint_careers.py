@@ -368,7 +368,7 @@ def test_resume_ignores_new_job_count_and_verify_uses_bounded_liveness(
             fetched.append(True)
             return ["listing"]
 
-    monkeypatch.setattr(fp, "load_active_companies", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(fp.scrapable_boards, "load", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(fp.registry, "get_scraper", lambda *_args: Scraper())
 
     def live(tenant, url):
@@ -902,7 +902,7 @@ def test_verification_job_evidence_does_not_leak_between_inputs(tmp_path, monkey
             return "https://boards.greenhouse.io/acme"
 
     monkeypatch.setattr(fp.registry, "get_scraper", lambda *a: Scraper())
-    monkeypatch.setattr(fp, "load_active_companies", lambda *a, **k: [])
+    monkeypatch.setattr(fp.scrapable_boards, "load", lambda *a, **k: [])
     monkeypatch.setattr(
         fp, "liveness_probes", lambda: {"greenhouse": lambda *a: ("live", 2)}
     )

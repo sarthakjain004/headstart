@@ -23,7 +23,7 @@ reader can also open `workday.md` alone and get everything about workday specifi
 ## The process, per ATS
 
 1. **Sample.** `scripts/enrich/salary_sample.py <ats> [--n 3000]` — up to 3000 live boards (the
-   full liveness-CSV live-board count if that's smaller), via `config.load_active_companies` (the
+   full liveness-CSV live-board count if that's smaller), via `scrapable_boards.load` (the
    same liveness-ledger source and dedup every other production consumer uses — never hand-parse
    the CSV, it has documented duplicate-row issues that function already handles). Fetches through
    the *real* registered scraper and its real `parse()`, not a reimplementation. Listing-only ATSes

@@ -47,7 +47,7 @@ A new scraper is a `BaseScraper` subclass in `src/headstart/scrapers/{ats}.py`, 
    `test_job_url_matches_url_shape` in `tests/test_bamboohr.py`).
    `scripts/eval/verify_filters.py` reads the shapes from there and checks served links against
    the live Space.
-2. Add a liveness ledger at `data/validate/liveness/{ats}.csv`. `load_active_companies` only reads
+2. Add a liveness ledger at `data/validate/liveness/{ats}.csv`. `scrapable_boards.load` only reads
    ledgers, so without one the scrape plan never picks the ATS.
 3. Document what you measured about the ATS under `docs/{ats}/`.
 
