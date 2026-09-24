@@ -247,14 +247,18 @@ def _tech_gate_page() -> str:
 _ACME_WIDGET_URL = "https://acme.bamboohr.com/jobs/embed2.php"
 
 
-def _acme_board(detail_body_by_id: dict[str, str]) -> tuple[BambooHRScraper, FakeFetcher]:
+def _acme_board(
+    detail_body_by_id: dict[str, str],
+) -> tuple[BambooHRScraper, FakeFetcher]:
     """The two-department `acme` widget, with each posting's `/detail` answering the body given
     for its id (a 404 for any other)."""
 
     def route(method: str, url: str, kwargs: dict) -> FakeResponse:
         if url == _ACME_WIDGET_URL:
             return FakeResponse(text=_tech_gate_page())
-        posting_id = url.removeprefix("https://acme.bamboohr.com/careers/").split("/")[0]
+        posting_id = url.removeprefix("https://acme.bamboohr.com/careers/").split("/")[
+            0
+        ]
         if posting_id not in detail_body_by_id:
             return FakeResponse(404)
         return FakeResponse(text=detail_body_by_id[posting_id])

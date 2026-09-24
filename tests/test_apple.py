@@ -78,9 +78,7 @@ def _serve_board(
         job_number = url.rsplit("/", 1)[1]
         if job_number not in details_by_job_number:
             return FakeResponse(404, '{"error":"jobsite.general.serviceError"}')
-        return FakeResponse(
-            text=json.dumps({"res": details_by_job_number[job_number]})
-        )
+        return FakeResponse(text=json.dumps({"res": details_by_job_number[job_number]}))
 
     fetcher = _TransportRecordingFetcher(route)
     return AppleScraper(SLUG, fetcher=fetcher), fetcher
