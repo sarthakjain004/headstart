@@ -52,6 +52,8 @@ from __future__ import annotations
 
 import argparse
 import collections
+import csv
+import itertools
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -71,6 +73,16 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 _BOARD_COUNTS = REPO_ROOT / "data" / "state" / "role_trend_board_counts.parquet"
 _BOARD_DELTAS = REPO_ROOT / "data" / "state" / "role_trend_board_deltas"
 _OUT = REPO_ROOT / "data" / "state" / "hot_boards.json"
+# role_trends' methodology boundaries (ADR-0164), written by the stage just before this one
+_EPOCHS = REPO_ROOT / "data" / "state" / "trends_epochs.csv"
+# The epoch columns whose change moves a Board's stock: a refit, a family-map edit, a
+# tech-filter change or duplicate removal. An extraction change (derivations) moves no count.
+_STOCK_MOVING = (
+    "centroid_version",
+    "family_map_fingerprint",
+    "tech_filter_version",
+    "dedup_version",
+)
 _DB = REPO_ROOT / "data" / "lancedb"
 
 #: Rows kept per lens. Enough to scroll, small enough that the artifact stays a few tens of KB
@@ -113,7 +125,26 @@ def read_levels(path: Path) -> tuple[collections.Counter, collections.Counter]:
     return new, stock
 
 
-def read_stock_change(delta_dir: Path) -> tuple[collections.Counter, list[str]]:
+def counting_changes(path: Path) -> set[str]:
+    """The ticks where a stock-moving epoch column changed (ADR-0164), or none without a file.
+
+    The first row is where recording began, not a change. Duplicate removal is dropped for
+    every Board, where the Trends chart drops it only at companies it can touch: a Board-level
+    list has no company to ask, and the cost is one run of ordinary change."""
+    if not path.exists():
+        return set()
+    with path.open(newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    return {
+        row["ts"]
+        for prev, row in itertools.pairwise(rows)
+        if any(row.get(col) != prev.get(col) for col in _STOCK_MOVING)
+    }
+
+
+def read_stock_change(
+    delta_dir: Path, changes: set[str] | frozenset[str] = frozenset()
+) -> tuple[collections.Counter, list[str]]:
     """Net per-Board stock change over the trailing window, and the tick stamps it covers.
 
     **The window is bounded to the same span as ``new``, and that is the point.** An unbounded
@@ -136,6 +167,12 @@ def read_stock_change(delta_dir: Path) -> tuple[collections.Counter, list[str]]:
 
     The returned stamps describe the window actually measured, never the window intended — a tab
     claiming a week over two days of data would be a lie the data can already tell.
+
+    **A counting change is not hiring** (``changes``, from :func:`counting_changes`). Its tick
+    and the one after it are left out: a tech-filter change can land over two runs — Amazon's
+    Sep 17 change was +308 at its tick and −439 at the next — and Hot then called Amazon "+532
+    net roles" while its "See trend" link, which leaves the change out, read it falling. The
+    cost is one ordinary run of real change per counting change.
     """
     import pyarrow.parquet as pq
 
@@ -156,10 +193,17 @@ def read_stock_change(delta_dir: Path) -> tuple[collections.Counter, list[str]]:
     newest = max(ts for _, ts in ticks)
     cutoff = (datetime.fromisoformat(newest) - timedelta(days=WINDOW_DAYS)).isoformat()
 
+    # Each change lands on the first tick at or after it (one whose own delta write was skipped
+    # lands on the next), and settles on the tick after that.
+    left_out: set[str] = set()
+    for change in changes:
+        k = next((k for k, (_, ts) in enumerate(ticks) if ts >= change), None)
+        if k is not None:
+            left_out.update(ts for _, ts in ticks[k : k + 2])
     moved: collections.Counter = collections.Counter()
     stamps: list[str] = []
     for path, first_ts in ticks[1:]:
-        if first_ts < cutoff:
+        if first_ts < cutoff or first_ts in left_out:
             continue
         table = pq.read_table(path).to_pydict()
         for board, metric, family, delta, ts in zip(
@@ -281,6 +325,7 @@ def main() -> int:
     ap.add_argument("--board-deltas", type=Path, default=_BOARD_DELTAS)
     ap.add_argument("--db", type=Path, default=_DB)
     ap.add_argument("--out", type=Path, default=_OUT)
+    ap.add_argument("--epochs", type=Path, default=_EPOCHS)
     args = ap.parse_args()
 
     # Both ledgers are role_trends' output, and that stage is `continue-on-error`: a run where
@@ -295,7 +340,7 @@ def main() -> int:
     from headstart.embedding_conventions import PROD_TABLE
 
     new, stock = read_levels(args.board_counts)
-    moved, stamps = read_stock_change(args.board_deltas)
+    moved, stamps = read_stock_change(args.board_deltas, counting_changes(args.epochs))
     if not stamps:
         # One delta file exists and it is the baseline. There is no measured change yet, and a
         # lens built on the baseline would rank every Board as newly created.
