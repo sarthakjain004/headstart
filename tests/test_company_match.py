@@ -107,3 +107,19 @@ def test_limit_and_no_match() -> None:
     assert len(suggest("acme", companies, limit=3)) == 3
     assert suggest("zzz", companies, limit=3) == []
     assert suggest("  ", companies, limit=3) == []
+
+
+def test_a_test_tenant_with_no_openings_is_not_offered() -> None:
+    companies = [
+        _company("Jpmc", 1716, key="oracle:jpmc"),
+        _company("Jpmc Dev1", 0, key="oracle:jpmc-dev1"),
+        _company("Nvidia Sandbox2", 0),
+        _company("Dev Partners", 12),  # an employer: the word alone is not enough
+        _company(
+            "Acme Studio", 0
+        ),  # nor are no openings alone: a closed employer stays
+    ]
+    assert [c.name for c in suggest("jpmc", companies, 5)] == ["Jpmc"]
+    assert suggest("nvidia", companies, 5) == []
+    assert [c.name for c in suggest("dev", companies, 5)] == ["Dev Partners"]
+    assert [c.name for c in suggest("acme", companies, 5)] == ["Acme Studio"]

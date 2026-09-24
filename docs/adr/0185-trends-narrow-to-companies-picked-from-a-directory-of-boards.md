@@ -251,3 +251,33 @@ chart misleading or empty for the common company. Each fix below answers a measu
   "See roles" had the same defect and now hands over its Board too.
 - **The picker sat under the chart on a phone.** Companies now have their own row above the
   filters, and the heading names the pick.
+
+## Amendment (2026-09-24): a critic's first round
+
+A critique agent used the fixed tab (about 25 journeys, 60 suggestion queries) and scored it
+5/10. Its measured findings, and what changed:
+
+- **"New this week" read a found Board's backlog as hiring** (Razorpay: 19 new of 19 open). Under
+  a pick, a Board found after the ledger's first tick now counts toward `new` only once the
+  flow window (7 days) has passed since it was found, the Hot tab's rule. Until then the tab
+  says why nothing is new yet.
+- **Movers named across steps that are not hiring.** Wipro's "+74.7%" held about +25% from the
+  Sep 17 tech-filter step. NVIDIA with AMD (counted from Sep 24) named
+  "engineering-management +442.9%". Under a pick, no riser or faller is named across a
+  line-moving counting change (a taxonomy refit, a family-map edit or a tech-filter change),
+  across duplicate removal at a pick it can touch, across a found Board, or across a later
+  pick joining a summed view. The last of these is also marked. The crosshair's tooltip and
+  readout now name the step at its stamp, on every chart.
+- **Misnamed and unfindable companies.** The ATS's own site title ("Oracle Taleo" for Scripps,
+  PMG and PruittHealth; "Successfactors" for TTTech) is no longer taken as the company. Curated
+  aliases name JPMorgan Chase's `jpmc` Board and join Atlassian's three iCIMS Tenants into one
+  company; both take effect at the next pipeline run. Test tenants with no openings ("Jpmc
+  Dev1", "Nvidia Sandbox2") are not suggested. The critic's claim that multi-word queries fail
+  was checked and is wrong: "morgan stanley" and "bosch group" match. Those employers are
+  unindexed, not unmatched.
+- **Controls lost state.** The drill, unit, measure, window and coverage now ride the hash, and a
+  drill is a history entry, so Back leaves it. A cold link keeps a roles drill. An empty
+  Comparable window says per-Board counting began on `ledger_start` rather than "widen the
+  dates". An empty answer no longer decides the auto breakdown, and Source lists only the
+  picks' ATSes. A refusal note clears on the reader's next pick. Enter takes the top
+  suggestion. No "−0.0%" mover is named.

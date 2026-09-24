@@ -108,10 +108,27 @@ def _one_edit(a: str, b: str) -> bool:
     return short[i:] == long_[i + 1 :]
 
 
+#: A word naming an ATS customer's test copy of its own site ("Jpmc Dev1", "Nvidia Sandbox2").
+_TEST_TENANT = re.compile(r"(dev|test|uat|sandbox|staging|demo|preprod)\d*")
+
+
+def _is_test_tenant(candidate: Candidate) -> bool:
+    """A test copy of a real site, which no job seeker is looking for.
+
+    Only one with no openings: "Dev Partners" is an employer, and the pattern alone would catch
+    it. JPMorgan's four Oracle test tenants read 0 beside its real 1,716 (2026-09-24 critique),
+    and "Nvidia Sandbox2" charted every category at −100%.
+    """
+    return candidate.openings == 0 and any(
+        _TEST_TENANT.fullmatch(word) for word in candidate.words
+    )
+
+
 def suggest(query: str, candidates: list[Candidate], limit: int) -> list[Candidate]:
     """The best ``limit`` companies for ``query``: by tier, then most openings, then name.
 
-    One suggestion per name: of the entries whose names normalize alike, only the one with the
+    A test tenant is never offered (see :func:`_is_test_tenant`). One suggestion per name: of
+    the entries whose names normalize alike, only the one with the
     most openings is offered. Most such twins are one employer's Boards on two ATSes, one
     mirroring the other ("NVIDIA Corporation" on Eightfold, "Nvidia" on Workday), and the
     directory cannot merge them because nothing but the name proves them one (ADR-0185). The
@@ -121,7 +138,7 @@ def suggest(query: str, candidates: list[Candidate], limit: int) -> list[Candida
     ranked = []
     for candidate in candidates:
         rank = tier(typed, candidate.words)
-        if rank is not None:
+        if rank is not None and not _is_test_tenant(candidate):
             ranked.append(
                 (rank, -candidate.openings, candidate.name, candidate.key, candidate)
             )

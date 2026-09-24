@@ -1804,8 +1804,11 @@ def company_trends(trends_app, monkeypatch):
     monkeypatch.setattr(
         trends_app, "_CANDIDATES", trends_app._build_candidates(companies, openings)
     )
+    arrivals = trends_app._board_arrivals(deltas, 2)
+    monkeypatch.setattr(trends_app, "_BOARD_ARRIVALS", arrivals)
+    monkeypatch.setattr(trends_app, "_NEW_HOLD", trends_app._new_holds(arrivals))
     monkeypatch.setattr(
-        trends_app, "_BOARD_ARRIVALS", trends_app._board_arrivals(deltas, 2)
+        trends_app, "_LEDGER_START", min(ts for ts, _ in arrivals.values())
     )
     return trends_app.app.test_client()
 
@@ -2658,3 +2661,29 @@ def test_search_narrows_to_the_boards_a_trend_hands_over(app):
     client = app.app.test_client()
     assert client.get("/search?" + many).status_code == 400
     assert client.get("/facets?" + many).status_code == 400
+
+
+def test_a_found_boards_backlog_waits_out_the_new_window(company_trends, monkeypatch):
+    """Eightfold's Citi Board is found at T2; its first-week `new` is its backlog, not hiring."""
+    app_module = company_trends.application.view_functions["trends"].__globals__
+    deltas = app_module["_TREND_DELTAS"] + [
+        _delta(_T2, "eightfold:citi.eightfold.ai", 3, metric="new")
+    ]
+    monkeypatch.setitem(app_module, "_TREND_DELTAS", deltas)
+    held = company_trends.get(
+        "/trends?company=eightfold:citi.eightfold.ai&metric=new"
+    ).get_json()
+    assert held["series"] == []  # nothing new yet: the three were its backlog
+    monkeypatch.setitem(app_module, "_NEW_HOLD", {})
+    counted = company_trends.get(
+        "/trends?company=eightfold:citi.eightfold.ai&metric=new"
+    ).get_json()
+    assert [s["points"] for s in counted["series"]] == [[3, 3]]
+    assert held["ledger_start"] == _T1
+
+
+def test_new_holds_start_after_the_first_tick_and_last_the_window(trends_app):
+    holds = trends_app._new_holds(
+        {"a": ("2026-09-13T00:00:00+00:00", 5), "b": ("2026-09-20T06:00:00+00:00", 3)}
+    )
+    assert holds == {"b": "2026-09-27T06:00:00+00:00"}

@@ -44,6 +44,7 @@ function fakeEl() {
     setAttribute(k, v) { this.attrs[k] = String(v); },
     getAttribute(k) { return this.attrs[k] ?? null; },
     removeAttribute(k) { delete this.attrs[k]; },
+    select() { this.selected = true; },
     // Recorded, not swallowed: the ATS picker's own handler is registered this way, and the
     // racing tests below drive the control the bug report names rather than calling the
     // loader behind it. `fire` is the harness's stand-in for dispatchEvent.
@@ -93,7 +94,7 @@ function loadApp(fetchImpl) {
     + ' niceAxis: niceAxis, niceBounds: niceBounds, fmtAxis: fmtAxis, deltaText: deltaText, seriesValues: seriesValues,'
     + ' hasIndexBase: hasIndexBase,'
     + ' atsSelected: trendAtsSelected, atsLabel: trendAtsLabel, atsToggle: toggleAtsPopover,'
-    + ' coverageSet: value => { trendCoverage = value; },'
+    + ' coverageSet: value => { trendCoverage = value; }, metricSet: value => { trendMetric = value; },'
     + ' colorSlot: name => seriesColorAssignment.get(name), setUnit: setUnit,'
     + ' load: loadTrends,'
     + ' data: () => trendData,'
@@ -102,7 +103,7 @@ function loadApp(fetchImpl) {
     + ' suggest: suggestCompanies, choose: chooseCo, options: () => coOptions,'
     + ' follow: boards => { myCompanies = { followed: boards, hidden: [] }; },'
     + ' followed: followedOption, openTrend: openCompanyTrend, chartedAndOther,'
-    + ' unit: () => trendUnit, clickUnit: pickUnit,'
+    + ' unit: () => trendUnit, clickUnit: pickUnit, hash: trendHash, pick: setPicks,'
     + ' set: (d, drill) => { trendData = d; trendDrill = drill || null; } };'
     // Repaints are counted at the global binding, which is what loadTrends' own `drawTrends()`
     // call resolves — so this counts the real paints, not a copy of them.
@@ -948,16 +949,16 @@ test('a link replaces the picks through the hash, labelled by the name it showed
   const { t, ctx } = loadApp();
   t.openTrend('workday:acme/site1', 'Acme');
   assert.equal(ctx.location.hash, '#trends?company=workday%3Aacme%2Fsite1');
-  assert.equal(t.readHash(), true);
+  assert.ok(t.readHash());
   assert.deepEqual(t.picks(), [{ key: 'workday:acme/site1', label: 'Acme' }]);
-  assert.equal(t.readHash(), false, 'the same hash again changes nothing');
+  assert.ok(!t.readHash(), 'the same hash again changes nothing');
 });
 
 test('a bare #trends keeps the picks — it is the tab strip, not a request to clear them', () => {
   const { t, ctx } = loadApp();
   t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
   ctx.location.hash = '#trends';
-  assert.equal(t.readHash(), false);
+  assert.ok(!t.readHash());
   assert.equal(t.picks().length, 1);
 });
 
@@ -1078,7 +1079,6 @@ test('a Board found after a company began is marked where its backlog lands', as
 
 test('the list stays open after a pick, less the company picked', async () => {
   const { t, ctx, nodes } = loadApp();
-  nodes['trends-co-q'] = Object.assign(nodes['trends-co-q'] || {}, { select() { this.selected = true; } });
   const c = (key, label) => ({ key, label, openings: 5, boards: 1, atses: ['icims'] });
   answering(ctx, { companies: [c('icims:apac', 'Apac Atlassian'), c('icims:global', 'Globalcareers Atlassian')] });
   await t.suggest('atlassian');
@@ -1117,7 +1117,7 @@ test('a name with no match says the board may be unread or named otherwise', asy
   assert.match(nodes['trends-co-note'].textContent, /may not read its board yet, or knows it by another name/);
 });
 
-test('duplicate removal withholds a company mover; a tech-filter change does not', async () => {
+test('duplicate removal and a tech-filter change withhold a company mover; extraction does not', async () => {
   const { t, ctx, nodes } = loadApp();
   const epoch = (changed, field) => [{ ts: STAMPS[1], changed: [changed], fields: [field] }];
   const hdr = [{ key: 'taleo_enterprise:hdr/1', label: 'HDR', board_keys: ['taleo_enterprise:hdr/1', 'taleo_enterprise:hdr/2'],
@@ -1128,7 +1128,11 @@ test('duplicate removal withholds a company mover; a tech-filter change does not
   assert.ok(!nodes['trends-kpi'].innerHTML.includes('Biggest'));
   answering(ctx, { ...picked({ a: [50, 90], b: [40, 45] }, hdr), epochs: epoch('tech filter changed', 'tech_filter_version') });
   await t.load(null);
-  assert.ok(nodes['trends-kpi'].innerHTML.includes('Biggest riser'));
+  assert.ok(!nodes['trends-kpi'].innerHTML.includes('Biggest'), 'Wipro’s +74.7% held a +25% filter step');
+  answering(ctx, { ...picked({ a: [50, 90], b: [40, 45] }, hdr),
+    epochs: epoch('experience/salary extraction changed', 'derivations_version') });
+  await t.load(null);
+  assert.ok(nodes['trends-kpi'].innerHTML.includes('Biggest riser'), 'extraction moves levels, not these lines');
   // a one-Board company has no copies for duplicate removal to take
   answering(ctx, { ...picked({ a: [50, 90], b: [40, 45] }), epochs: epoch('duplicate removal changed', 'dedup_version') });
   t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
@@ -1155,4 +1159,77 @@ test('a company counted for one run keeps its own note, not a pipeline one', asy
   await t.load(null);
   assert.match(nodes['trends-empty'].textContent, /counted Acme since Sep 20.*a few more runs/);
   assert.ok(!/pipeline/.test(nodes['trends-empty'].textContent));
+});
+
+
+test('a view survives its link: drill, unit, measure, window and coverage ride the hash', async () => {
+  const { t, ctx } = loadApp();
+  ctx.location.hash = '#trends?company=greenhouse%3Aacme&family=ai-ml&split=roles&unit=count&metric=new&days=30&coverage=comparable';
+  const link = ctx.location.hash;
+  const linked = t.readHash();
+  assert.equal(linked.family, 'ai-ml');
+  assert.equal(t.split(), 'roles');
+  assert.equal(t.unit(), 'count');
+  answering(ctx, { ...picked({ a: [50, 60], b: [40, 45] }), watch_parents: ['ai-ml'] });
+  await t.load(linked.family);
+  assert.equal(t.hash(), link, 'the state reads back as the same link');
+});
+
+test('in a summed view, a pick counted from later marks where it joins and names no mover', async () => {
+  const { t, ctx, nodes } = loadApp();
+  const two = [{ key: 'workday:nvidia', label: 'NVIDIA' }, { key: 'workday:amd', label: 'AMD' }];
+  answering(ctx, { ...picked({ a: [50, 400], b: [40, 45] }, two),
+    counted_since: { 'workday:nvidia': STAMPS[0], 'workday:amd': STAMPS[1] } });
+  t.setPicks(two);
+  await t.load(null);
+  assert.match(nodes['trends-chart'].innerHTML, /Counting for AMD starts here/);
+  assert.ok(!nodes['trends-kpi'].innerHTML.includes('Biggest'));
+});
+
+test('an empty comparable window says where per-board counting began', async () => {
+  const { t, ctx, nodes } = loadApp();
+  t.coverageSet('comparable');
+  answering(ctx, { ...fixture(), stamps: [], totals: [], non_tech: [], series: [], ledger_start: STAMPS[0] });
+  await t.load(null);
+  assert.match(nodes['trends-empty'].textContent, /counting by board began Sep 13/);
+});
+
+test('a refusal note clears on the next pick the reader makes', async () => {
+  const { t, ctx, nodes } = loadApp();
+  ctx.document.getElementById('trends-co-note').textContent = 'No trend for Ghost yet.';
+  answering(ctx, picked({ a: [50, 60], b: [40, 45] }));
+  t.pick([{ key: 'greenhouse:acme', label: 'Acme' }]);
+  assert.equal(nodes['trends-co-note'].textContent, '');
+});
+
+
+test('an empty answer does not decide the breakdown for a company', async () => {
+  const { t, ctx } = loadApp();
+  answering(ctx, { ...picked({}), series: [] });
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
+  await t.load(null);
+  answering(ctx, picked({ a: [50, 60], b: [40, 45] }));
+  await t.load(null);
+  assert.equal(t.data().series.length, 2, 'a big company still opens on its categories');
+});
+
+test('Enter with nothing highlighted takes the top suggestion', async () => {
+  const { t, ctx } = loadApp();
+  const c = (key, label) => ({ key, label, openings: 50, boards: 1, atses: ['workday'] });
+  answering(ctx, { companies: [c('workday:amd', 'AMD'), c('workday:amdocs', 'Amdocs')] });
+  await t.suggest('amd');
+  answering(ctx, picked({ a: [50, 60], b: [40, 45] }, [{ key: 'workday:amd', label: 'AMD' }]));
+  const input = ctx.document.getElementById('trends-co-q');
+  input.listeners.keydown.forEach(fn => fn({ key: 'Enter', preventDefault() {} }));
+  assert.deepEqual(t.picks().map(p => p.key), ['workday:amd']);
+});
+
+test('a held backlog under New says why nothing is new yet, with no empty tiles', async () => {
+  const { t, ctx, nodes } = loadApp();
+  t.metricSet('new');
+  answering(ctx, { ...picked({}), metric: 'new', series: [] });
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
+  await t.load(null);
+  assert.match(nodes['trends-empty'].textContent, /Nothing counts as new at Acme yet/);
+  assert.equal(nodes['trends-kpi'].hidden, true);
 });

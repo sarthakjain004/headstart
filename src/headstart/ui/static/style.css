@@ -639,6 +639,7 @@ textarea:focus{ border-color:var(--accent); }
 .ats-pick-menu label{ display:flex; align-items:center; gap:7px; padding:4px 6px; border-radius:7px;
   font-size:12.5px; color:var(--ink-2); cursor:pointer; }
 .ats-pick-menu label:hover{ background:var(--raise-2); color:var(--ink-1); }
+.ats-pick-menu label[hidden]{ display:none; }
 /* Company picker (ADR-0185): the chips and the query share one bordered field, so the picks
    and the way to add another read as one control; its suggestions hang under it the way the
    ATS menu hangs under its trigger. The field's border takes the accent on focus in place of
@@ -799,6 +800,8 @@ textarea:focus{ border-color:var(--accent); }
 /* A Board of a picked company found here (ADR-0185): openings that were already open land at
    once. An annotation, so ink like the epoch marker, but solid so the two never read alike. */
 .trends-grid .found-marker{ stroke:var(--ink-2); stroke-width:1; opacity:.45; }
+/* The sentence for a marked stamp, inside the crosshair's own tooltip. */
+.tt-note{ max-width:30ch; margin:2px 0 6px; font-size:11.5px; line-height:1.35; color:var(--ink-2); }
 
 
 /* min-width:0 because the panel is a flex column below 760px (the chart sits above the

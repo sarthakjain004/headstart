@@ -23,8 +23,9 @@ function showTab(name){
     a.setAttribute('aria-current', a.dataset.tab === name ? 'page' : 'false'));
   if (name === 'hot' && el('hot-results') && !hotData) loadHot();
   if (name === 'trends' && el('trends')){
-    if (readTrendHash() || !trendData) loadTrends(null);
-    else writeTrendHash();   // the tab strip's bare `#trends` gets the picks back, for sharing
+    const linked = readTrendHash();
+    if (linked || !trendData) loadTrends(linked ? linked.family : null);
+    else writeTrendHash();   // the tab strip's bare `#trends` gets the view back, for sharing
   }
   if (name === 'matches' && el('sets-strip')){
     if (!mySets) loadSets();
@@ -1586,14 +1587,28 @@ const startsIndexable = s => (s.points.find(v => v != null) ?? 0) >= INDEX_BASE_
 // Returns whether the hash changed the picks, so the caller knows to fetch.
 function readTrendHash(){
   const at = location.hash.indexOf('?');
-  if (at < 0) return false;
+  if (at < 0 || location.hash === trendHash()) return null;
   const q = new URLSearchParams(location.hash.slice(at + 1));
   const keys = [...new Set(q.getAll('company'))];
-  const by = keys.length && ['families', 'total', 'company'].includes(q.get('by')) ? q.get('by') : 'auto';
-  if (keys.join('\n') === trendPicks.map(p => p.key).join('\n') && by === topSplit.chosen) return false;
-  replacePicks(keys.map(key => ({ key, label: pickLabels.get(key) || null })));
-  topSplit.chosen = by; trendSplit = 'bands';
-  return true;
+  if (keys.join('\n') !== trendPicks.map(p => p.key).join('\n')){
+    replacePicks(keys.map(key => ({ key, label: pickLabels.get(key) || null })));
+    setCoNote('');
+  }
+  topSplit.chosen = keys.length && ['families', 'total', 'company'].includes(q.get('by')) ? q.get('by') : 'auto';
+  trendSplit = ['roles', 'company'].includes(q.get('split')) ? q.get('split') : 'bands';
+  unitWanted = null;
+  trendUnit = ['share', 'count', 'change'].includes(q.get('unit')) ? q.get('unit') : 'change';
+  trendMetric = q.get('metric') === 'new' ? 'new' : 'stock';
+  trendCoverage = q.get('coverage') === 'comparable' ? 'comparable' : 'all';
+  ['trends-since', 'trends-until'].forEach(id => { if (el(id)) el(id).value = ''; });
+  setRangePreset(['7', '30', '90'].includes(q.get('days')) ? q.get('days') : 'all');
+  syncSeg('trends-metric', 'metric', trendMetric);
+  syncSeg('trends-coverage', 'coverage', trendCoverage);
+  return { family: q.get('family') || null };
+}
+function syncSeg(id, attr, value){
+  const seg = el(id); if (!seg) return;
+  seg.querySelectorAll('button').forEach(b => setRadioChecked(b, b.dataset[attr] === value));
 }
 // The one place the pick list changes: every change re-decides the auto breakdown.
 function replacePicks(picks){
@@ -1605,13 +1620,27 @@ function replacePicks(picks){
 // Keys compared folded: Board keys differ only in casing across ledgers (CLAUDE.md), and a
 // followed or linked key need not be spelled the way the directory spells it.
 const pickedKeys = () => new Set(trendPicks.map(p => p.key.toLowerCase()));
-function writeTrendHash(){
-  if (currentTab() !== 'trends' || typeof history === 'undefined') return;
+// The whole view, not only the picks: a shared or reopened link lands on the same drill, unit,
+// measure, window and coverage. A drill is a history entry of its own, so Back leaves it.
+function trendHash(){
   const q = new URLSearchParams();
   trendPicks.forEach(p => q.append('company', p.key));
   if (trendPicks.length && topSplit.chosen !== 'auto') q.set('by', topSplit.chosen);
-  const hash = '#trends' + (q.size ? '?' + q : '');
-  if (location.hash !== hash) history.replaceState(null, '', hash);
+  if (trendDrill){
+    q.set('family', trendDrill);
+    if (trendSplit !== 'bands') q.set('split', trendSplit);
+  }
+  if ((unitWanted || trendUnit) !== 'change') q.set('unit', unitWanted || trendUnit);
+  if (trendMetric !== 'stock') q.set('metric', trendMetric);
+  if (trendDays !== 'all') q.set('days', trendDays);
+  if (trendCoverage !== 'all') q.set('coverage', trendCoverage);
+  return '#trends' + (q.size ? '?' + q : '');
+}
+function writeTrendHash(push){
+  if (currentTab() !== 'trends' || typeof history === 'undefined') return;
+  const hash = trendHash();
+  if (location.hash === hash) return;
+  if (push) history.pushState(null, '', hash); else history.replaceState(null, '', hash);
 }
 
 // The six views the tab can be in, and everything that names one. `viewKind` decides which
@@ -1619,7 +1648,8 @@ function writeTrendHash(){
 // control and whether a legend row opens anything all read it here instead of re-deciding it.
 const VIEWS = {
   families: { split: 'families', drills: true, tracked: 'Categories tracked', grouping: () => 'category',
-    scope: (n, where, measured) => `${n} categories${where} · ${measured} — click any of the top ${CHART_MAX} to break it down` },
+    scope: (n, where, measured) => n ? `${n} categories${where} · ${measured} — click any of the top ${CHART_MAX} to break it down`
+      : `nothing counted${where} · ${measured}` },
   total: { split: 'total', drills: false, tracked: null, grouping: null,
     scope: (n, where, measured) => `all tech roles${where} · ${measured}` },
   company: { split: 'company', drills: false, tracked: 'Companies compared', grouping: () => 'company',
@@ -1665,29 +1695,61 @@ function companyNote(d){
       : 'HeadStart has counted ' + dated.map(p => `${p.label || 'a company'} since ${stampLabel(since[p.key], true)}`).join(', ')
         + '; there is nothing before those dates.');
   }
-  if ((d.discovered || []).length)
-    parts.push('A solid grey vertical line marks boards found later: their openings were already open, so the step there is not hiring.');
-  if (pickSteps(d) && viewKind(d) !== 'total')
-    parts.push('No biggest riser or faller is named, because steps like these move the lines more than hiring does.');
+  const notes = stepNotes(d);
+  if (notes.some(n => n.found))
+    parts.push('A solid grey vertical line marks openings that joined the count at once — boards found later, or a company counted from a later date — not hiring.');
+  if (notes.some(n => n.withhold) && viewKind(d) !== 'total')
+    parts.push('No biggest riser or faller is named: counting changes and those joins move these lines more than hiring does. Point at a marked line to see which.');
   return parts.join(' ');
 }
 
-// Whether a picked company's window holds a step that is not hiring and is the company's own:
-// a Board found later, or duplicate removal (ADR-0188) crossed inside the window at a pick it
-// can touch. That removal parks copies within one Tenant's Boards — Taleo Enterprise career
-// sections and Workday sites — so only a pick holding several Boards on those ATSes can step.
-// The other counting changes move every line the index chart draws too, and it still names
-// movers across them, so they do not withhold one here either. Keyed on the epoch's `fields`,
-// never its display text.
+// Every point in the window where lines move for a reason that is not hiring, each with the
+// sentence the crosshair shows there (`text`), whether it gets a found-marker line (`found`),
+// and whether it keeps a company's riser and faller from being named (`withhold`).
+//   - A counting change (ADR-0164) is listed on every chart. Under a pick it withholds a mover
+//     when it moves the lines: a taxonomy refit, a family-map edit or a tech-filter change —
+//     measured, Wipro's "+74.7%" held about +25% from the Sep 17 filter step alone — or
+//     duplicate removal (ADR-0188) at a pick it can touch: it parks copies within one Tenant's
+//     Boards, Taleo Enterprise sections and Workday sites, so only a pick holding several
+//     Boards there can step. Extraction changes move levels, not these lines.
+//   - A Board found later lands its backlog at once (the Space's `discovered`).
+//   - In a view that sums several picks, one counted from a later date joins the sum at once:
+//     NVIDIA with AMD (counted from Sep 24) named "engineering-management +442.9%".
+// Keyed on the epoch's `fields`, never its display text. Only charted points (index > 0) count
+// as crossed: a change at the window's first point is already in every line's start.
+const LINE_MOVING = ['centroid_version', 'family_map_fingerprint', 'tech_filter_version'];
 const DEDUP_ATSES = ['taleo_enterprise', 'workday'];
-function pickSteps(d){
-  if (!trendPicks.length) return false;
-  if ((d.discovered || []).length) return true;
+function stepNotes(d){
+  const notes = [];
+  const picked = trendPicks.length > 0;
   const touched = trendPicks.some(p => (p.boardKeys || []).length > 1
     && (p.atses || []).some(a => DEDUP_ATSES.includes(a)));
-  return touched && (d.epochs || []).some(e =>
-    d.stamps.indexOf(e.ts) > 0 && (e.fields || []).includes('dedup_version'));
+  (d.epochs || []).forEach(e => {
+    const i = d.stamps.indexOf(e.ts); if (i < 0) return;
+    const fields = e.fields || [];
+    notes.push({ i, text: `Counting changed here: ${e.changed.join(', ')}`, found: false,
+      withhold: picked && i > 0 && (fields.some(f => LINE_MOVING.includes(f))
+        || (touched && fields.includes('dedup_version'))) });
+  });
+  (d.discovered || []).forEach(f => {
+    const i = d.stamps.indexOf(f.ts); if (i < 0) return;
+    const who = (trendPicks.find(p => p.key === f.company) || {}).label || 'a picked company';
+    notes.push({ i, found: true, withhold: true,
+      text: `${f.boards} more board${f.boards === 1 ? '' : 's'} of ${who} found here: `
+        + `${f.openings.toLocaleString()} tech openings across the company, already open, arrive at once — not new hiring` });
+  });
+  if (trendPicks.length > 1 && VIEWS[viewKind(d)].split !== 'company'){
+    const since = d.counted_since || {};
+    trendPicks.forEach(p => {
+      const i = since[p.key] ? d.stamps.findIndex(s => s >= since[p.key]) : -1;
+      if (i <= 0) return;
+      notes.push({ i, found: true, withhold: true,
+        text: `Counting for ${p.label || 'a picked company'} starts here: its openings join these lines at once — not new hiring` });
+    });
+  }
+  return notes;
 }
+function pickSteps(d){ return stepNotes(d).some(n => n.withhold); }
 
 // "at Stripe" / "at 3 companies": how the text around the chart names what the picks scope.
 function pickPhrase(){
@@ -1787,7 +1849,8 @@ async function loadTrends(family){
   // 'roles' into one that doesn't returns an empty series with its toggle hidden — nothing
   // to click, nothing to go back from, and only a reload escapes. Company is the same for a
   // pick list that has shrunk below two.
-  if (family && trendSplit === 'roles' && !(trendData?.watch_parents || []).includes(family)) trendSplit = 'bands';
+  // Only where it knows: a cold link into a roles drill has no answer yet to say otherwise.
+  if (family && trendSplit === 'roles' && trendData && !(trendData.watch_parents || []).includes(family)) trendSplit = 'bands';
   if (trendPicks.length < 2){
     if (trendSplit === 'company') trendSplit = 'bands';
     if (topSplit.chosen === 'company') topSplit.chosen = 'auto';
@@ -1845,12 +1908,15 @@ async function loadTrends(family){
     const kept = trendPicks.map(p => byKey.get(p.key)).filter(Boolean);
     trendPicks = [...kept, ...[...byKey.values()].filter(c => !kept.includes(c))];
   }
-  if (topSplit.stale && !family && payload.split_by === 'family'){
+  // Decided from an answer with lines in it: an empty one (a comparable window before per-Board
+  // counting began) says nothing about the company's size, and deciding there stuck on Total.
+  if (topSplit.stale && !family && payload.split_by === 'family' && payload.series.length){
     topSplit.autoTotal = fewIndexable(payload); topSplit.stale = false;
   }
+  const drilled = (family || null) !== trendDrill;
   trendRaw = payload; trendDrill = family || null;
   trendData = trendView(payload, trendDrill);
-  drawPicks(); writeTrendHash(); applyUnitLocks();
+  drawPicks(); applyUnitLocks(); writeTrendHash(drilled);
   drawTrends();
 }
 
@@ -2321,15 +2387,11 @@ function drawTrends(){
   // Boards of a pick that HeadStart found after its line began (ADR-0185). Each lands its
   // whole backlog at once — openings that were already open — so the step is marked where it
   // lands rather than left to read as hiring, the reason the Hot tab leaves new Boards out.
-  (d.discovered || []).forEach(f => {
-    const idx = d.stamps.indexOf(f.ts);
-    if (idx < 0) return;
-    const fx = x(idx);
-    const who = (trendPicks.find(p => p.key === f.company) || {}).label || 'a picked company';
-    const title = `${f.boards} more board${f.boards === 1 ? '' : 's'} of ${who} found here: `
-      + `${f.openings.toLocaleString()} tech openings across the company, already open, arrive at once — not new hiring`;
+  const notes = stepNotes(d);
+  notes.filter(n => n.found).forEach(n => {
+    const fx = x(n.i);
     svg += `<line class="found-marker" x1="${fx.toFixed(1)}" y1="${PAD_T}"
-             x2="${fx.toFixed(1)}" y2="${H - PAD_B}"><title>${esc(title)}</title></line>`;
+             x2="${fx.toFixed(1)}" y2="${H - PAD_B}"><title>${esc(n.text)}</title></line>`;
   });
 
   // Drawn before the series: context to read them against, not one of them. Dashed because
@@ -2405,7 +2467,7 @@ function drawTrends(){
   el('trends-chart').style.aspectRatio = `${W} / ${H}`;
   el('trends-chart').innerHTML = svg;
   const dotEls = [...el('trends-chart').querySelectorAll('.ch-dot')];
-  lastGeom = { x, y, W, stamps: d.stamps, series: geomSeries, dotEls };
+  lastGeom = { x, y, W, stamps: d.stamps, series: geomSeries, dotEls, notes };
   positionHoverLayer(null);
   hoveredSeries = null;
 
@@ -2431,7 +2493,12 @@ function drawTrends(){
   // only exist from the run this shipped in forward, not because the pipeline itself is new —
   // conflating the two would read as "the pipeline is broken" rather than "you narrowed it."
   el('trends-empty').textContent = runs === 0
-    ? 'No measurements inside this window — widen the dates, or clear them to see the whole history.'
+    ? (trendCoverage === 'comparable' && d.ledger_start
+      // Comparable keeps the Boards counted at the window's start, and per-Board counting has
+      // a start of its own: a window opening before it has no cohort at all, so "widen" is the
+      // wrong advice there.
+      ? `Comparable coverage follows only boards already counted when the window starts, and counting by board began ${stampLabel(d.ledger_start, true)} — choose a window that starts after that.`
+      : 'No measurements inside this window — widen the dates, or clear them to see the whole history.')
     : runs < 2 && trendPicks.length
     ? `${companyNote(d)} A trend line needs a few more runs.`.trim()
     : runs < 2
@@ -2444,13 +2511,16 @@ function drawTrends(){
       // a deploy and the next pipeline run the first exists without the second.
       ? 'These roles have not been measured yet — they appear after the next pipeline run.'
       : trendPicks.length && !d.series.length
-      ? `No openings counted${where} in this window.`
+      ? (trendMetric === 'new'
+        // The Space holds a found Board's first week out of `new`: its backlog is not hiring.
+        ? `Nothing counts as new${where} yet. A board's openings count as new only after HeadStart has read it for a week, so a backlog is not mistaken for hiring.`
+        : `No openings counted${where} in this window.`)
       : companyNote(d));
   // An axis with no lines under it is the "broken chart" reading the message above exists to
   // replace, so with nothing measured the message stands on its own — and so do the tiles,
   // which would otherwise print four em-dashes under it.
   if (el('trends-viz')) el('trends-viz').hidden = runs === 0 || tableView;
-  if (el('trends-kpi')) el('trends-kpi').hidden = runs === 0 || !buildKpis(d, charted, measured);
+  if (el('trends-kpi')) el('trends-kpi').hidden = runs === 0 || !d.series.length || !buildKpis(d, charted, measured);
   const nt = d.non_tech.filter(v => v != null).pop();
   const parts = [];
   // "7 days" mirrors role_trends.NEW_WINDOW_DAYS — change one and this sentence starts lying.
@@ -2481,7 +2551,8 @@ function drawTrends(){
     const offered = trendDrill
       ? ['bands', ...((d.watch_parents || []).includes(trendDrill) ? ['roles'] : []), ...(many ? ['company'] : [])]
       : trendPicks.length ? ['families', 'total', ...(many ? ['company'] : [])] : [];
-    const current = view.split;
+    // The reader's breakdown, even when an empty answer drew the default view.
+    const current = trendDrill ? trendSplit : trendPicks.length ? topSplitNow() : view.split;
     seg.hidden = offered.length < 2;
     if (el('trends-split-ctl')) el('trends-split-ctl').hidden = seg.hidden;
     seg.querySelectorAll('button').forEach(b => {
@@ -2524,7 +2595,7 @@ function buildKpis(d, charted, measured){
   // the duplicate-removal tick, and "Biggest faller −92.5%" headlined neither. Not named then.
   const moves = kind === 'total' || pickSteps(d) ? [] : charted.filter(hasIndexBase)
     .map(s => ({ label: s.label, dl: trendDelta(s.points, s) }))
-    .filter(m => m.dl != null).sort((a, b) => b.dl - a.dl);
+    .filter(m => m.dl != null && Math.abs(m.dl) >= 0.05).sort((a, b) => b.dl - a.dl);   // "−0.0%" is no mover
   // Summed from the series, NOT `totals - non_tech`: the ledger writes non_tech under the STOCK
   // metric only, so that subtraction reports the stock figure whatever the Measure says —
   // measured against this payload, 266,008 under a "New this week" label whose series sum to
@@ -2587,7 +2658,8 @@ function positionHoverLayer(index, opts){
   rows.forEach((r, i) => { if (r.dy != null && r.dy < best){ best = r.dy; near = i; } });
   if (opts && opts.announce && el('trends-readout')){
     el('trends-readout').textContent = rows.length
-      ? `${stampLabel(stamps[index])}. ` + rows.map(r => `${r.label} ${rowText(r)}`).join(', ')
+      ? `${stampLabel(stamps[index])}. ` + (lastGeom.notes || []).filter(n => n.i === index).map(n => n.text + '. ').join('')
+        + rows.map(r => `${r.label} ${rowText(r)}`).join(', ')
       : `${stampLabel(stamps[index])}. Nothing measured.`;
   }
   if (!tip) return;
@@ -2600,6 +2672,12 @@ function positionHoverLayer(index, opts){
     const head = document.createElement('div');
     head.className = 'tt-date'; head.textContent = stampLabel(stamps[index]);
     tip.appendChild(head);
+    // What a marker at this stamp means, where the crosshair already is — a 1px line's own
+    // <title> was the only place it was said, and hovering a line that thin rarely finds it.
+    (lastGeom.notes || []).filter(n => n.i === index).forEach(n => {
+      const note = document.createElement('div'); note.className = 'tt-note'; note.textContent = n.text;
+      tip.appendChild(note);
+    });
     rows.forEach((r, i) => {
       const row = document.createElement('div'); row.className = 'tt-row' + (i === near ? ' near' : '');
       const key = document.createElement('span'); key.className = 'tt-key'; key.style.background = r.color;
@@ -2837,7 +2915,7 @@ trendSeg('trends-metric', 'metric', v => {
 trendSeg('trends-coverage', 'coverage', v => { trendCoverage = v; loadTrends(trendDrill); });
 trendSeg('trends-unit', 'unit', v => pickUnit(v));
 // The reader's own choice clears any unit a lock was holding for them.
-function pickUnit(v){ unitWanted = null; trendUnit = v; applyUnitLocks(); drawTrends(); }
+function pickUnit(v){ unitWanted = null; trendUnit = v; applyUnitLocks(); writeTrendHash(); drawTrends(); }
 trendSeg('trends-split', 'split', v => trendSplitSelect(v));
 function trendSplitSelect(v){
   if (trendDrill){ trendSplit = v; loadTrends(trendDrill); return; }
@@ -2899,9 +2977,16 @@ function drawPicks(){
   if (el('trends-title')) el('trends-title').textContent =
     'Which tech roles are growing' + (pickPhrase() ? ' ' + pickPhrase() : '');
   if (el('trends-co-roles')) el('trends-co-roles').hidden = !(trendPicks.length === 1 && trendPicks[0].boardKeys);
+  // Source offers only the picks' ATSes: one no pick is on answers with an empty chart. Hidden,
+  // not unchecked, so clearing the picks gives back exactly the selection there was.
+  const on = new Set(trendPicks.flatMap(p => p.atses || []));
+  if (el('trends-ats-menu')) el('trends-ats-menu').querySelectorAll('input[type=checkbox]').forEach(box => {
+    if (box.parentElement) box.parentElement.hidden = on.size > 0 && !on.has(box.value);
+  });
 }
 
 function setPicks(picks){
+  setCoNote('');   // a refusal's sentence belongs to the pick it refused, not to the next one
   replacePicks(picks);
   loadTrends(trendDrill);
 }
@@ -2994,7 +3079,9 @@ if (el('trends-co-q')){
     const n = coOptions.length;
     if (e.key === 'ArrowDown' && n){ e.preventDefault(); setCoActive((coActive + 1) % n); }
     else if (e.key === 'ArrowUp' && n){ e.preventDefault(); setCoActive((coActive - 1 + n) % n); }
-    else if (e.key === 'Enter' && coActive >= 0){ e.preventDefault(); chooseCo(coActive); }
+    // Enter takes the highlighted suggestion, or the top one: typing "amd" and pressing Enter
+    // picked nothing, so the company a reader asked for silently never reached the chart.
+    else if (e.key === 'Enter' && n){ e.preventDefault(); chooseCo(Math.max(coActive, 0)); }
     else if (e.key === 'Escape'){ if (n) closeCoList(); else input.value = ''; }
     else if (e.key === 'Backspace' && !input.value && trendPicks.length)
       setPicks(trendPicks.slice(0, -1));

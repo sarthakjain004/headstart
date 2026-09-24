@@ -155,6 +155,9 @@ _searcher.warm()
 # Read once at startup — the Space restarts after every run, so it is never more than one run
 # stale, and the file is a few dozen rows per run.
 _NON_TECH = "non-tech"  # reserved diagnostic series — mirrors headstart.roles.NON_TECH
+_NEW_WINDOW_DAYS = (
+    7  # the `new` flow window — mirrors ingest.role_trends.NEW_WINDOW_DAYS
+)
 
 
 def _load_trends(path: Path) -> list[dict]:
@@ -367,6 +370,21 @@ def _board_arrivals(
     return {board: (ts, arrived[board]) for board, ts in first.items()}
 
 
+def _new_holds(arrivals: dict[str, tuple[str, int]]) -> dict[str, str]:
+    """When each Board found after the ledger's first tick may count toward `new`: its arrival
+    plus the flow window. A Board in the first tick's baseline has no hold (ADR-0185)."""
+    if not arrivals:
+        return {}
+    start = min(ts for ts, _ in arrivals.values())
+    return {
+        board: (
+            datetime.fromisoformat(ts) + timedelta(days=_NEW_WINDOW_DAYS)
+        ).isoformat(timespec="seconds")
+        for board, (ts, _) in arrivals.items()
+        if ts > start
+    }
+
+
 def _build_candidates(
     companies: dict[str, dict], openings: Counter[str]
 ) -> list[company_match.Candidate]:
@@ -397,6 +415,9 @@ _LIVE_VERSION = _TRENDS[-1]["version"] if _TRENDS else None
 _OPENINGS = _board_openings(_TREND_DELTAS, _LIVE_VERSION)
 _CANDIDATES = _build_candidates(_COMPANIES, _OPENINGS)
 _BOARD_ARRIVALS = _board_arrivals(_TREND_DELTAS, _LIVE_VERSION)
+_NEW_HOLD = _new_holds(_BOARD_ARRIVALS)
+# The first tick of the Board-delta ledger, before which no per-Board count exists.
+_LEDGER_START = min((ts for ts, _ in _BOARD_ARRIVALS.values()), default=None)
 # Email alerts (ADR-0035) — invite-only, so all three must be set before the panel appears:
 # the Google client id the sign-in button needs, and a token scoped to the Subscriptions
 # dataset alone (never the index token, which is read-only by design).
@@ -1262,13 +1283,30 @@ def _replay_rows(
     state: Counter[tuple[str, str, str, str, str]] = Counter()
     rows = []
     measurements = set(stamps)
+    # Under a pick, a Board found after the ledger began lands its whole backlog as `new` (each
+    # Job is first seen at discovery), so its `new` deltas wait out the flow window and are
+    # applied once it has passed, when the backlog has aged out and what lands is real inflow.
+    # The Hot tab leaves such Boards out for the same reason (ADR-0185).
+    held: dict[str, list[tuple[tuple[str, str, str, str, str], int]]] = defaultdict(
+        list
+    )
     # A delta can survive a failed aggregate append. Apply it before the next
     # measurement even though that interrupted tick is not itself charted.
     for stamp in sorted(measurements | by_stamp.keys()):
+        for board in [b for b in held if _NEW_HOLD[b] <= stamp]:
+            for key, delta in held.pop(board):
+                state[key] += delta
         for row in by_stamp[stamp]:
             if eligible is None or row["board"] in eligible:
                 company = company_of[row["board"]] if company_of else ""
                 key = (company, row["metric"], row["family"], row["band"], row["ats"])
+                if (
+                    company_of
+                    and row["metric"] == "new"
+                    and stamp < _NEW_HOLD.get(row["board"], "")
+                ):
+                    held[row["board"]].append((key, row["delta"]))
+                    continue
                 state[key] += row["delta"]
         if stamp < base_stamp or stamp not in measurements:
             continue
@@ -1322,7 +1360,10 @@ def trends():
     ``&split=company`` draws one series per picked company (with ``family``, within that
     family), and ``companies`` echoes the picks with their labels. Under a pick, ``totals`` is
     the picks' combined total and ``company_totals`` each pick's own, so a line split by company
-    can be a share of that company. ``counted_since`` maps each pick to its first counted tick.
+    can be a share of that company. ``counted_since`` maps each pick to its first counted tick,
+    and ``ledger_start`` is the Board-delta ledger's first tick, before which no pick has history.
+    Under a pick, a Board found after that tick counts toward ``new`` only once the flow window
+    has passed since it was found, so its backlog never reads as a week's hiring.
     ``discovered`` lists ``{ts, company, boards, openings}``: Boards of a pick found after its
     line began, at the first charted run that counts them. Each is a step of openings that were
     already open, not hiring, so the chart marks it.
@@ -1582,6 +1623,7 @@ def trends():
             k: [company_totals[k].get(ts) for ts in stamps] for k in picked_keys
         },
         counted_since=began,
+        ledger_start=_LEDGER_START,
         discovered=[
             {"ts": ts, "company": pick, "boards": n, "openings": openings}
             for (ts, pick), (n, openings) in sorted(found.items())
