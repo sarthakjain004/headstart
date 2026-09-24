@@ -819,7 +819,7 @@ def _is_non_public(board: str) -> bool:
     return any(token in site for token in _NON_PUBLIC_SITE_TOKENS)
 
 
-#: Which rule took a duplicate row out, as :func:`plan_prune_by_rule` names it and the dedup
+#: Which rule took a duplicate row out, as :func:`plan_prune` names it and the dedup
 #: eviction ledger records it (ADR-0210); :func:`alias_rules` adds ``alias:{signal}``.
 CASE_VARIANT = "case-variant"
 WORKDAY_TENANT = "workday-tenant"
@@ -841,21 +841,6 @@ def alias_rules(
 
 
 def plan_prune(
-    index_ids: Iterable[str],
-    keep: set[str],
-    *,
-    site_jobs: dict[str, int] | None = None,
-    requisitions: Mapping[str, str] | None = None,
-    backing: Mapping[str, Iterable[str]] | None = None,
-) -> tuple[list[str], list[str]]:
-    """``(evict_off_board, evict_duplicate)`` — :func:`plan_prune_by_rule` without the rules."""
-    off_board, rules = plan_prune_by_rule(
-        index_ids, keep, site_jobs=site_jobs, requisitions=requisitions, backing=backing
-    )
-    return off_board, list(rules)
-
-
-def plan_prune_by_rule(
     index_ids: Iterable[str],
     keep: set[str],
     *,

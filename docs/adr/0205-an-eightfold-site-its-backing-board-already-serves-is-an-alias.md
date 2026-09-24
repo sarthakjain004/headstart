@@ -80,9 +80,7 @@ which closes Jibe's hand-written row.
 Lumen, whose backing site is an internal careers site (the user's decision), and International
 SOS, which lists postings of its own. A new front enters by adding it there. Two scraper changes
 carry the ids through: SmartApply's shape keeps `ats_job_id`/`display_job_id` under the PCSX names,
-and the Taleo Enterprise listing row keeps `contestNo`. Neither is read by `parse`. (Since
-ADR-0210 the table is the committed file `data/validate/eightfold_backing.csv`, which the script
-loads as `BACKING`, and `parse` stores both ids as `Job.requisition`.)
+and the Taleo Enterprise listing row keeps `contestNo`. Neither is read by `parse`.
 
 ## Evidence
 
@@ -142,3 +140,10 @@ in its run's slice has not had today's postings added.
 - **The same gap as ADR-0186:** a burial is bounded by how often the writer runs, not by time.
 - **A run takes about 90 minutes**, most of it reading SuccessFactors job pages one at a time
   (sephora's 1,900) — the only way to read their requisition ids.
+
+## Amendment (2026-09-25, ADR-0210)
+
+The candidates table is no longer in the script: it is the committed file
+`data/validate/eightfold_backing.csv`, which the script loads as `BACKING` and which `index
+sync`/`prune` and the Eightfold scraper also read. A new front enters by adding a row there. The
+scrapers now store the requisition ids this ADR's changes carried through, as `Job.requisition`.

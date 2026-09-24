@@ -3,7 +3,7 @@
 **Status:** accepted · **Date:** 2026-09-25 · **Extends:**
 [ADR-0187](0187-a-workday-requisition-is-served-once-per-tenant.md) (the duplicate grouping this
 widens) · **Amends:** [ADR-0188](0188-a-dedup-rule-change-is-a-trends-epoch.md) (the marker no
-longer carries a dedup's removals alone) · **Relates to:**
+longer carries a dedup's removals alone), [ADR-0205](0205-an-eightfold-site-its-backing-board-already-serves-is-an-alias.md) (its candidates table becomes the committed pairs file) · **Relates to:**
 [ADR-0205](0205-an-eightfold-site-its-backing-board-already-serves-is-an-alias.md) (the Board-level
 rule this complements, and the pairs), [ADR-0061](0061-refreshable-metadata.md) (the facts
 refresh that stamps old rows), [ADR-0083](0083-evict-only-on-a-second-consecutive-absence.md) (the grace period
@@ -46,7 +46,8 @@ Every Eightfold posting states its backing ATS's requisition, and #632 measured 
    new Job) and `update_meta`'s facts refresh (a Job already held); every other row stores null.
    Only these rows can ever match, and a new value in the store rewrites the served row, vector
    included: stamping all six ATSes would rewrite 215,746 v654 rows on the first run (267,496 over
-   a day) for no dedup, where the scoped fill rewrites **25,890 on the first run and 26,124 in all**
+   a day) for no dedup, where the scoped fill — Workday counted tenant-wide, as `in_scope` matches it — rewrites
+   **25,890 on the first run and 26,124 in all**
    (13,909 Eightfold, 10,879 Workday, 614 SuccessFactors, 393 Oracle, 264 Taleo Enterprise, 65
    Greenhouse). HF storage is the binding cost (ADR-0168). The scrapers still state the id on
    every row of their ATS, in the corpus. **To widen it**, add pairs to the file — a new pair's
@@ -105,7 +106,10 @@ fetches within a minute and stated it on the next twelve.
 **Projection on served v654 (read-only)**, requisitions derived as #632's measurement read them:
 **10,296** Eightfold rows removed — 9,211 onto Workday, 563 SuccessFactors, 275 Oracle, 247 Taleo
 Enterprise — from 30 Eightfold Boards (nvidia 1,974, micron 1,924, ngc 1,680, amat 874, caci 787,
-citi 762, …). **0 tech postings lost**: every removed row's duplicate group keeps a backing row.
+citi 762, …). **0 tech postings lost**: every removed row's duplicate group keeps a backing row. The
+measurement read both of a posting's ids and the scraper stores one; only where a posting
+states two could the projection match on the other, which leaves at most the 2 premierhealth
+rows (Taleo, where 39 postings state two) counted that the code may not remove.
 (Eight hp rows looked lost to a check keyed on the named backing site; their requisition is served
 from another hp Workday site, the ADR-0187 survivor, which is why the tenant match exists.) Twilio,
 vizientinc and curriculumassociates remove nothing: ADR-0205 already buries them.

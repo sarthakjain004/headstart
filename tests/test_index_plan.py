@@ -16,7 +16,6 @@ from headstart.ingest.index_plan import (
     grace_period_counts,
     live_keep_set,
     plan_prune,
-    plan_prune_by_rule,
     plan_sync,
     read_unauthoritative_boards,
     resolve_board,
@@ -27,6 +26,12 @@ from headstart.scrapable_boards import load as load_scrapable_boards
 from headstart.scrapers.greenhouse import GreenhouseScraper
 from headstart.scrapers.personio import PersonioScraper
 from headstart.scrapers.workday import WorkdayScraper
+
+
+def _prune(*args, **kwargs):
+    """`plan_prune` with the duplicates as a list, the shape these tests compare."""
+    off_board, rules = plan_prune(*args, **kwargs)
+    return off_board, list(rules)
 
 
 def test_plan_add_and_evict_within_scraped_board():
@@ -185,7 +190,7 @@ def test_apply_sync_round_trip(tmp_path):
 
 def test_off_board_evicted_survivors_kept():
     keep = {"greenhouse:live"}
-    off, dup = plan_prune(["greenhouse:live:1", "greenhouse:dead:2"], keep)
+    off, dup = _prune(["greenhouse:live:1", "greenhouse:dead:2"], keep)
     assert off == ["greenhouse:dead:2"]
     assert dup == []
 
@@ -194,21 +199,21 @@ def test_dedup_keeps_the_casing_the_live_ledger_scrapes():
     # one job under two Board casings; the ledger scrapes 'co/site', so that row is the one a
     # future scrape re-sees — keeping the lex-min 'co/Site' would strand a fossil sync can't evict
     keep = {"workday:co/site"}
-    off, dup = plan_prune(["workday:co/Site:R1", "workday:co/site:R1"], keep)
+    off, dup = _prune(["workday:co/Site:R1", "workday:co/site:R1"], keep)
     assert off == []
     assert dup == ["workday:co/Site:R1"]
 
 
 def test_distinct_native_ids_are_not_duplicates():
     keep = {"workday:co/site"}
-    _, dup = plan_prune(["workday:co/Site:R1", "workday:co/site:R2"], keep)
+    _, dup = _prune(["workday:co/Site:R1", "workday:co/site:R2"], keep)
     assert dup == []
 
 
 def test_three_way_casing_keeps_the_live_one():
     keep = {"workday:co/Site"}
     ids = ["workday:co/SITE:R1", "workday:co/Site:R1", "workday:co/site:R1"]
-    off, dup = plan_prune(ids, keep)
+    off, dup = _prune(ids, keep)
     assert off == []
     assert sorted(dup) == ["workday:co/SITE:R1", "workday:co/site:R1"]
 
@@ -216,7 +221,7 @@ def test_three_way_casing_keeps_the_live_one():
 def test_dedup_falls_back_to_lexmin_when_no_row_has_the_live_casing():
     # every row is a fossil (the live casing isn't in the index yet) — still collapse to one
     keep = {"workday:co/site"}
-    off, dup = plan_prune(["workday:co/SITE:R1", "workday:co/Site:R1"], keep)
+    off, dup = _prune(["workday:co/SITE:R1", "workday:co/Site:R1"], keep)
     assert off == []
     assert dup == ["workday:co/Site:R1"]  # 'co/SITE' (I<i) sorts first
 
@@ -230,7 +235,7 @@ def test_prune_does_not_churn_the_freshly_scraped_row():
     for _ in range(3):
         plan = plan_sync(index, {fresh}, {"workday:co/site"}, live)
         index = (index | set(plan.add)) - set(plan.delete)
-        off, dup = plan_prune(index, keep)
+        off, dup = _prune(index, keep)
         index -= set(off) | set(dup)
     assert index == {fresh}  # the fossil is gone and the live row survives
 
@@ -263,7 +268,7 @@ def test_prune_keeps_the_casing_the_scrape_emits(tmp_path):
     emitted = WorkdayScraper(scraped[0].slug).board_key()
 
     indexed = [f"workday:acme/{site}:R1" for site in _CASE_VARIANT_SITES]
-    off_board, duplicate = plan_prune(indexed, live_keep_set(ledger))
+    off_board, duplicate = _prune(indexed, live_keep_set(ledger))
     assert off_board == []  # every casing resolves to the one live Board
     assert set(indexed) - set(duplicate) == {f"{emitted}:R1"}
 
@@ -289,7 +294,7 @@ def test_prune_keeps_rows_whose_board_is_live():
     # The churn this locks down: a live Board whose keep-set key disagrees with the ids it emits
     # is pruned off-Board every run, and re-added by the next sync — forever.
     keep = {PersonioScraper("ailylabs.jobs.personio.com").board_key()}
-    off, dup = plan_prune(["personio:ailylabs:2036107"], keep)
+    off, dup = _prune(["personio:ailylabs:2036107"], keep)
     assert off == []
     assert dup == []
 
@@ -305,7 +310,7 @@ def test_prune_keeps_rows_whose_native_id_contains_a_colon():
         "workday:otis/REC_Ext_Gateway:OT221: GD - NEW YORK, NY One Penn Plaza, NY, 10119",
         "workday:campaignmonitor/marigold:https://x.wd5.myworkdayjobs.com/marigold/job/R2454",
     ]
-    off_board, duplicate = plan_prune(ids, keep)
+    off_board, duplicate = _prune(ids, keep)
     assert off_board == [
         ids[2]
     ]  # not in this test's keep-set, so correctly off-Board here
@@ -330,7 +335,7 @@ def test_prune_slices_the_native_id_from_the_original_casing():
     # `live` is lowercased and str.lower() is not length-preserving, so slicing by the lowercased
     # key's *length* would eat a character of the native id and collide two distinct Jobs
     keep = {"workday:\u0130nc/Site"}
-    off_board, duplicate = plan_prune(
+    off_board, duplicate = _prune(
         ["workday:\u0130nc/Site:R1", "workday:\u0130nc/Site:X1"], keep
     )
     assert off_board == []
@@ -340,7 +345,7 @@ def test_prune_slices_the_native_id_from_the_original_casing():
 def test_prune_still_dedupes_case_variants_with_a_colon_in_the_native_id():
     keep = {"workday:co/site"}
     ids = ["workday:co/Site:REQ: 9", "workday:co/site:REQ: 9"]
-    off_board, duplicate = plan_prune(ids, keep)
+    off_board, duplicate = _prune(ids, keep)
     assert off_board == []
     assert duplicate == ["workday:co/Site:REQ: 9"]  # the fossil casing goes
 
@@ -364,7 +369,7 @@ def test_sync_can_evict_a_closed_posting_whose_native_id_has_a_colon():
     assert plan.delete == frozenset({closed})
 
     # ...and prune still leaves it alone while it is live, which is the loop this ADR closes
-    assert plan_prune([closed], {"workday:otis/REC_Ext_Gateway"}) == ([], [])
+    assert _prune([closed], {"workday:otis/REC_Ext_Gateway"}) == ([], [])
 
 
 def test_sync_without_a_ledger_keeps_the_board_of_scoping():
@@ -810,9 +815,7 @@ _SITE_JOBS = {"workday:acme/external": 900, "workday:acme/campus": 40}
 
 def test_prune_keeps_one_copy_of_a_requisition_on_the_site_with_the_most_jobs():
     keep = {_MAIN, _SUB}
-    off, dup = plan_prune(
-        [f"{_SUB}:R-100", f"{_MAIN}:R-100"], keep, site_jobs=_SITE_JOBS
-    )
+    off, dup = _prune([f"{_SUB}:R-100", f"{_MAIN}:R-100"], keep, site_jobs=_SITE_JOBS)
     assert off == []
     assert dup == [f"{_SUB}:R-100"]
 
@@ -827,7 +830,7 @@ def test_a_native_id_with_no_digit_is_not_a_requisition_and_stays_per_board():
         f"{_MAIN}:QA-Engineer_",
         f"{_SUB}:QA-Engineer_",
     ]
-    assert plan_prune(ids, keep, site_jobs=_SITE_JOBS) == ([], [])
+    assert _prune(ids, keep, site_jobs=_SITE_JOBS) == ([], [])
 
 
 def test_sync_adds_a_no_digit_native_id_on_every_site():
@@ -846,13 +849,13 @@ def test_sync_adds_a_no_digit_native_id_on_every_site():
 def test_other_atses_still_group_per_board():
     keep = {"greenhouse:acme", "greenhouse:acmeeu"}
     ids = ["greenhouse:acme:4001", "greenhouse:acmeeu:4001"]
-    assert plan_prune(ids, keep) == ([], [])
+    assert _prune(ids, keep) == ([], [])
 
 
 def test_the_survivor_site_keeps_its_live_casing_row():
     keep = {_MAIN, _SUB}
     ids = [f"{_SUB}:R-100", "workday:acme/EXTERNAL:R-100", f"{_MAIN}:R-100"]
-    _, dup = plan_prune(ids, keep, site_jobs=_SITE_JOBS)
+    _, dup = _prune(ids, keep, site_jobs=_SITE_JOBS)
     assert sorted(dup) == sorted([f"{_SUB}:R-100", "workday:acme/EXTERNAL:R-100"])
 
 
@@ -883,7 +886,7 @@ def _run(index, fresh, scraped, was_unconfirmed, keep=frozenset({_MAIN, _SUB})):
         site_jobs=_SITE_JOBS,
     )
     index = (set(index) | plan.add) - plan.delete
-    off, dup = plan_prune(sorted(index), set(keep), site_jobs=_SITE_JOBS)
+    off, dup = _prune(sorted(index), set(keep), site_jobs=_SITE_JOBS)
     return index - set(off) - set(dup), plan.unconfirmed
 
 
@@ -898,7 +901,7 @@ def test_a_requisition_arriving_on_two_sites_at_once_is_added_once_where_prune_k
     )
     assert plan.add == frozenset({f"{_MAIN}:R-100"})
     assert plan.refused == frozenset({f"{_SUB}:R-100"})
-    assert plan_prune(sorted(plan.add), {_MAIN, _SUB}, site_jobs=_SITE_JOBS) == ([], [])
+    assert _prune(sorted(plan.add), {_MAIN, _SUB}, site_jobs=_SITE_JOBS) == ([], [])
 
 
 def test_a_pruned_copy_is_not_re_added_and_the_survivor_never_flips():
@@ -985,7 +988,7 @@ _RANKED = {
 @pytest.mark.parametrize("non_public", [_CONFIDENTIAL, _INTERNAL])
 def test_prune_keeps_a_public_site_over_a_larger_non_public_one(non_public):
     jobs = {**_RANKED, non_public.lower(): 5000}
-    _, dup = plan_prune(
+    _, dup = _prune(
         [f"{non_public}:R-100", f"{_MAIN}:R-100"], {_MAIN, non_public}, site_jobs=jobs
     )
     assert dup == [f"{non_public}:R-100"]
@@ -1007,7 +1010,7 @@ def test_sync_gives_a_new_requisition_to_the_public_site_over_a_larger_non_publi
 def test_a_requisition_only_non_public_sites_hold_is_still_served():
     """The order only chooses which copy stays; it never decides whether one does."""
     keep = {_MAIN, _CONFIDENTIAL, _INTERNAL}
-    _, dup = plan_prune(
+    _, dup = _prune(
         [f"{_INTERNAL}:R-300", f"{_CONFIDENTIAL}:R-300"], keep, site_jobs=_RANKED
     )
     assert dup == [f"{_INTERNAL}:R-300"]  # one stays, ranked by ledger jobs as before
@@ -1136,7 +1139,7 @@ _BACKING = {"jobs.acme.com": ("workday:acme/external",)}
 def test_prune_drops_an_eightfold_copy_its_backing_board_serves():
     ids = [f"{_EF}:1099", f"{_MAIN}:R-100"]
     reqs = {f"{_EF}:1099": "R-100", f"{_MAIN}:R-100": "R-100"}
-    off, dup = plan_prune(ids, {_EF, _MAIN}, requisitions=reqs, backing=_BACKING)
+    off, dup = _prune(ids, {_EF, _MAIN}, requisitions=reqs, backing=_BACKING)
     assert (off, dup) == ([], [f"{_EF}:1099"])
 
 
@@ -1146,7 +1149,7 @@ def test_every_backing_row_of_one_requisition_stays():
     goes."""
     posts = [f"{_GH}:8067678", f"{_GH}:8067501", f"{_GH}:8067500"]
     reqs = {p: "3399621" for p in posts} | {f"{_EF}:2201": "3399621"}
-    _, dup = plan_prune(
+    _, dup = _prune(
         [f"{_EF}:2201", *posts],
         {_EF, _GH},
         requisitions=reqs,
@@ -1157,7 +1160,7 @@ def test_every_backing_row_of_one_requisition_stays():
 
 def test_a_posting_only_eightfold_serves_stays():
     reqs = {f"{_EF}:1099": "R-999", f"{_MAIN}:R-100": "R-100"}
-    assert plan_prune(
+    assert _prune(
         [f"{_EF}:1099", f"{_MAIN}:R-100"],
         {_EF, _MAIN},
         requisitions=reqs,
@@ -1170,7 +1173,7 @@ def test_a_row_without_a_requisition_never_matches(unstamped):
     """Stamps arrive as each Board is re-scraped; until both rows carry one, both are served."""
     reqs = {f"{_EF}:1099": "R-100", f"{_MAIN}:R-100": "R-100"}
     del reqs[unstamped]
-    assert plan_prune(
+    assert _prune(
         [f"{_EF}:1099", f"{_MAIN}:R-100"],
         {_EF, _MAIN},
         requisitions=reqs,
@@ -1181,7 +1184,7 @@ def test_a_row_without_a_requisition_never_matches(unstamped):
 def test_the_same_requisition_on_a_board_that_is_not_its_backing_board_is_not_a_copy():
     other = "workday:other/External"
     reqs = {f"{_EF}:1099": "R-100", f"{other}:R-100": "R-100"}
-    assert plan_prune(
+    assert _prune(
         [f"{_EF}:1099", f"{other}:R-100"],
         {_EF, other},
         requisitions=reqs,
@@ -1194,7 +1197,7 @@ def test_a_second_eightfold_site_in_the_pairs_is_not_matched_on_its_requisition(
     ADR-0205 losers). Both rows are Eightfold's, so this rule has no backing row to prefer."""
     second = "eightfold:nvidia.eightfold.ai"
     reqs = {f"{second}:7": "JR1", f"{_EF}:1099": "JR1"}
-    assert plan_prune(
+    assert _prune(
         [f"{second}:7", f"{_EF}:1099"],
         {second, _EF},
         requisitions=reqs,
@@ -1206,7 +1209,7 @@ def test_a_copy_its_workday_tenant_serves_from_another_site_is_still_a_copy():
     """ADR-0187 serves a Workday requisition from one site of the tenant, which need not be the
     site the pairs name; it is the same requisition either way."""
     reqs = {f"{_EF}:1099": "R-100", f"{_SUB}:R-100": "R-100"}
-    _, dup = plan_prune(
+    _, dup = _prune(
         [f"{_EF}:1099", f"{_SUB}:R-100"],
         {_EF, _MAIN, _SUB},
         requisitions=reqs,
@@ -1226,7 +1229,7 @@ def test_prune_names_the_rule_behind_each_duplicate():
         f"{_MAIN}:R-200",
     ]
     reqs = {f"{_EF}:1099": "R-100", f"{_MAIN}:R-100": "R-100"}
-    off, rules = plan_prune_by_rule(
+    off, rules = plan_prune(
         ids,
         {_EF, _MAIN, _SUB},
         site_jobs=_SITE_JOBS,
@@ -1239,13 +1242,6 @@ def test_prune_names_the_rule_behind_each_duplicate():
         f"{_SUB}:R-100": "workday-tenant",
         "workday:acme/EXTERNAL:R-200": "case-variant",
     }
-    assert plan_prune(
-        ids,
-        {_EF, _MAIN, _SUB},
-        site_jobs=_SITE_JOBS,
-        requisitions=reqs,
-        backing=_BACKING,
-    ) == (off, list(rules))
 
 
 def test_aliased_boards_names_each_buried_board_with_its_signal(tmp_path):
@@ -1286,9 +1282,7 @@ def _run_pair(index, fresh, scraped, was_unconfirmed, keep=_PAIR):
         backing=_BACKING,
     )
     index = (set(index) | plan.add) - plan.delete
-    off, dup = plan_prune(
-        sorted(index), set(keep), requisitions=_REQS, backing=_BACKING
-    )
+    off, dup = _prune(sorted(index), set(keep), requisitions=_REQS, backing=_BACKING)
     return index - set(off) - set(dup), plan.unconfirmed, plan.refused
 
 
@@ -1340,9 +1334,9 @@ def test_requisitions_on_workday_rows_leave_adr_0187_unchanged():
     ids = [f"{_SUB}:R-100", f"{_MAIN}:R-100", f"{_MAIN}:Texas", f"{_SUB}:Texas"]
     stamps = {i: i.rsplit(":", 1)[1] for i in ids}
     keep = {_MAIN, _SUB}
-    assert plan_prune(
+    assert _prune(
         ids, keep, site_jobs=_SITE_JOBS, requisitions=stamps, backing=_BACKING
-    ) == plan_prune(ids, keep, site_jobs=_SITE_JOBS)
+    ) == _prune(ids, keep, site_jobs=_SITE_JOBS)
     args = ({f"{_SUB}:R-100"}, set(ids), keep, boards_by_canon(keep), set())
     assert plan_sync(
         *args, site_jobs=_SITE_JOBS, requisitions=stamps, backing=_BACKING

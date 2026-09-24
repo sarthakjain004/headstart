@@ -126,7 +126,7 @@ from headstart.ingest.index_plan import (
     grace_period_counts,
     in_predicate,
     live_keep_set,
-    plan_prune_by_rule,
+    plan_prune,
     plan_sync,
     read_unauthoritative_boards,
     resolve_board,
@@ -189,8 +189,8 @@ _EXPERIENCE_FILTER_FIELDS = tuple(
 )
 # The ATS's requisition id on the Boards the Eightfold pairs name, the only rows that can match a
 # posting across ATSes (ADR-0210). A fact like `url`, so `_refresh_metadata` fills it on a row
-# already held once its Board is re-scraped;
-# held as a constant because `_schema` and `sync`'s migration both need it.
+# already held once its Board is re-scraped. Held as a constant because `_schema` and `sync`'s
+# migration both need it.
 _REQUISITION_FIELD = pa.field("requisition", pa.string())
 
 
@@ -1048,7 +1048,7 @@ def prune(args: argparse.Namespace) -> int:
         # rolled-back table, rebuild it, and publish a fresh self-consistent record, laundering
         # the loss into the new base.
         return 1
-    off_board, rules = plan_prune_by_rule(
+    off_board, rules = plan_prune(
         index_ids,
         keep,
         site_jobs=workday_site_jobs(args.ledger),

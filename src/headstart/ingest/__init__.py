@@ -109,11 +109,6 @@ PENDING_REDERIVE_PATH = REPO_ROOT / "data" / "state" / "pending_rederive.txt"
 # reappeared, been pruned, or belongs to a Board that left the ledger is simply not written again.
 UNCONFIRMED_PATH = REPO_ROOT / "data" / "state" / "unconfirmed_ids.txt"
 
-# The ADR-0210 dedup eviction ledger: one row per (run, Board, rule) for every served row a dedup
-# rule took out, so Trends can add back removals that were never closures. Appended by
-# `index prune`; round-trips through the HF dataset with the rest of data/state.
-DEDUP_EVICTIONS_PATH = REPO_ROOT / "data" / "state" / "dedup_evictions.csv"
-
 #: The environment variable the pipeline sets once per merge job to this run's timestamp, so the
 #: steps that stamp a ledger — `index prune` and `role_trends` — stamp the same value.
 RUN_TS_ENV = "HEADSTART_RUN_TS"
