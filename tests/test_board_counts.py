@@ -11,8 +11,8 @@ are therefore NOT checked here and cannot be: **Scraped Board** (`data/state/boa
 **Scored Board** (`data/state/board_priority.csv`) live only on HF and move every run, with no
 commit to hang an assertion on. They carry a measured-on date in the glossary instead.
 
-No `importorskip`: this needs stdlib plus `headstart.config`, so unlike `test_readme_schema.py` it
-actually runs in CI rather than skipping and reading green.
+No `importorskip`: this needs stdlib plus `headstart.scrapable_boards`, so unlike
+`test_readme_schema.py` it actually runs in CI rather than skipping and reading green.
 """
 
 from __future__ import annotations
@@ -23,13 +23,12 @@ import re
 from pathlib import Path
 
 from headstart import board_aliases, liveness
-from headstart.board_identity import board_identity
-from headstart.config import (
-    EXCLUDED_BOARDS,
-    PARKED_BOARDS,
-    CompanyRef,
+from headstart.config import PARKED_BOARDS
+from headstart.scrapable_boards import (
+    ScrapableBoard,
     _dedupe_boards,
-    load_active_companies,
+    is_excluded,
+    load,
 )
 from headstart.scrapers.registry import DISABLED_ATS, SCRAPERS
 
@@ -37,7 +36,7 @@ ROOT = Path(__file__).resolve().parents[1]
 LEDGER = ROOT / "data" / "validate" / "liveness"
 
 
-def _live_companies() -> list[CompanyRef]:
+def _live_boards() -> list[ScrapableBoard]:
     out = []
     for path in sorted(LEDGER.glob("*.csv")):
         scraper = SCRAPERS.get(path.stem)
@@ -46,7 +45,7 @@ def _live_companies() -> list[CompanyRef]:
         for v in liveness.load(path).values():
             if v.status == liveness.LIVE:
                 slug = scraper.slug_from(v.tenant, v.url)
-                out.append(CompanyRef(ats=scraper.ats, slug=slug, name=v.tenant))
+                out.append(ScrapableBoard(ats=scraper.ats, slug=slug, name=v.tenant))
     return out
 
 
@@ -67,31 +66,27 @@ def _counts() -> dict[str, int]:
                 st = (row.get("status") or "").strip()
                 by_status[st] = by_status.get(st, 0) + 1
 
-    live = _live_companies()
+    live = _live_boards()
     unique = _dedupe_boards(live)
     # Boards buried as another Board's duplicate (ADR-0111). A stage of the funnel that neither
     # `EXCLUDED_BOARDS` nor the case-variant dedupe accounts for: it is keyed on evidence from
     # outside the ledger, so without it the components stop summing to Scrapable Board.
     alias = {ats: board_aliases.load_for(LEDGER, ats) for ats in {c.ats for c in live}}
 
-    def is_alias(c: CompanyRef) -> bool:
+    def is_alias(c: ScrapableBoard) -> bool:
         return c.slug.lower() in alias.get(c.ats, {})  # `load` lowercases its keys
 
     # Dedupe-first order, which is what the glossary states. The README's funnel excludes first and
     # so reads different intermediate deltas for the same endpoints — two of the excluded Boards
     # are themselves duplicate spellings, so `EXCLUDED_BOARDS` removes 45 there and 43 here.
     enabled = [c for c in unique if c.ats not in DISABLED_ATS]
-    kept = [c for c in enabled if f"{c.ats}:{c.slug}".lower() not in EXCLUDED_BOARDS]
+    kept = [c for c in enabled if not is_excluded(c.ats, c.slug)]
     unaliased = [c for c in kept if not is_alias(c)]
     # the other order, for the README's funnel: exclude on the raw live set, then dedupe
     live_enabled = [c for c in live if c.ats not in DISABLED_ATS]
-    exclude_first_excluded = [
-        c for c in live_enabled if f"{c.ats}:{c.slug}".lower() in EXCLUDED_BOARDS
-    ]
+    exclude_first_excluded = [c for c in live_enabled if is_excluded(c.ats, c.slug)]
     exclude_first_kept = [
-        c
-        for c in live_enabled
-        if f"{c.ats}:{c.slug}".lower() not in EXCLUDED_BOARDS and not is_alias(c)
+        c for c in live_enabled if not is_excluded(c.ats, c.slug) and not is_alias(c)
     ]
     return {
         "Ledger row": sum(by_status.values()),
@@ -107,15 +102,13 @@ def _counts() -> dict[str, int]:
         "excluded_before_dedupe": len(exclude_first_excluded),
         "dedupe_after_exclude": len(exclude_first_kept)
         - len(_dedupe_boards(exclude_first_kept)),
-        "parked": sum(
-            1 for c in unaliased if board_identity(c).lower() in PARKED_BOARDS
-        ),
-        "Scrapable Board": len(load_active_companies(LEDGER, min_jobs=0)),
-        "Hiring Board": len(load_active_companies(LEDGER, min_jobs=1)),
+        "parked": sum(1 for c in unaliased if c.lowercase_identity in PARKED_BOARDS),
+        "Scrapable Board": len(load(LEDGER, min_jobs=0)),
+        "Hiring Board": len(load(LEDGER, min_jobs=1)),
         # Needs `data/state/board_cost.csv`, which is HF-backed and gitignored. Absent on a fresh
         # clone and in CI, so the one figure derived from it is skipped there rather than guessed.
         "scraped_not_unique": _scraped_not_unique(
-            {board_identity(c).lower() for c in _dedupe_boards(live)}
+            {c.lowercase_identity for c in _dedupe_boards(live)}
         ),
     }
 

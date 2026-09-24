@@ -255,7 +255,7 @@ def _authoritative_scrape(
 
 
 def gap(args: argparse.Namespace) -> int:
-    from headstart.config import load_active_companies
+    from headstart import scrapable_boards
     from headstart.scrapers.registry import DISABLED_ATS
 
     if not args.meta.exists():
@@ -275,7 +275,7 @@ def gap(args: argparse.Namespace) -> int:
         )
         return 0
 
-    # CONTEXT.md's **Scrapable Board** — `load_active_companies(min_jobs=0)`, the same call and
+    # CONTEXT.md's **Scrapable Board** — `scrapable_boards.load(min_jobs=0)`, the same call and
     # the same `min_jobs` `scrape_plan` makes, keyed the way the gap quota keys them.
     #
     # It is a *superset* of what the plan finally offers: `scrape_plan` then drops quarantined
@@ -290,7 +290,7 @@ def gap(args: argparse.Namespace) -> int:
     # silently take that ATS's whole backlog with it (ADR-0163).
     scrapable = {
         board_description_gap.key_for(c)
-        for c in load_active_companies(args.liveness, min_jobs=0)
+        for c in scrapable_boards.load(args.liveness, min_jobs=0)
     }
     if not scrapable:
         _log.warning(

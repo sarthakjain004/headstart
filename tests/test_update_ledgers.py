@@ -116,7 +116,7 @@ def test_a_board_reaches_quarantine_only_after_five_consecutive_runs(tmp_path):
 def _liveness(tmp_path: Path, boards: dict[str, list[str]]) -> Path:
     """A liveness ledger dir holding exactly `boards` — `{ats: [tenant, ...]}`, all `live`.
 
-    `gap` reads it through the very `load_active_companies` call `scrape_plan` makes, so a Board
+    `gap` reads it through the very `scrapable_boards.load` call `scrape_plan` makes, so a Board
     absent here is one no slice can contain.
     """
     d = tmp_path / "liveness"
@@ -394,7 +394,7 @@ def test_gap_drops_a_board_that_is_not_scrapable(tmp_path):
 
 
 def test_gap_reclassifies_nothing_when_the_liveness_dir_is_missing(tmp_path, caplog):
-    """The guard that stops a lost ledger emptying the gap. `load_active_companies` answers `[]`
+    """The guard that stops a lost ledger emptying the gap. `scrapable_boards.load` answers `[]`
     for a dir that is not there, which is indistinguishable from `no Board is live` — and acting
     on it would mark the entire backlog unreachable and hand the next run a quota of nothing."""
     with caplog.at_level(logging.INFO):

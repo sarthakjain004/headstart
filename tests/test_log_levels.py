@@ -222,7 +222,7 @@ _ALLOWED: dict[str, str] = {
 #: and deliberately small: the check that feeds it only flags sites lexically inside a loop, so an
 #: entry here is a claim that this particular loop cannot run away.
 _LOOPED_OK: dict[str, str] = {
-    "config.py:load_active_companies": (
+    "scrapable_boards.py:load": (
         "Bounded by the ledger directory: one iteration per committed liveness CSV, 28 of them, "
         "and the line fires only for a stem with no registered scraper. A whole ledger silently "
         "dropped is precisely the anomaly worth an annotation, and 28 is the ceiling even if "
