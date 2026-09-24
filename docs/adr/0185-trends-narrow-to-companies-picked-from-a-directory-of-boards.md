@@ -378,3 +378,60 @@ was the highest while its tile said "Biggest faller". What changed:
   directory.
 - **Phones.** The legend follows the chart directly, then the tiles, then the filters. A phone
   draws no end labels, so the legend is the only key.
+
+### A critic's fourth round (2026-09-25): 5/10, and a counting change that lands over two runs
+
+The third round's code review tightened a few things first. The mover floor is now held to
+the openings a line really started with, not its adjusted head. A step up from zero starts the
+line there. Why a pick is missing is read from the data, not from which control is on. "Counted
+for N days" comes from `counted_since`, not from the window. The Search hand-off is compared
+whole, so Back between two drills of one company keeps its query.
+
+The fourth critic then found the netting itself was incomplete:
+
+- **A counting change can land over two runs.** Amazon's Sep 17 tech-filter change was +308
+  openings at its run and −439 at the next (measured in the Board-delta ledger). Leaving out
+  only the first run turned Amazon's +1.2% into "down 2.9%". NVIDIA was +94 then −51. The run
+  after a counting change is now left out too. It is marked in the tooltip as the change still
+  settling, not drawn as its own marker. The cost is one run of ordinary change per counting
+  change. Amazon now reads about flat, +1.3%.
+- **Found openings and a later pick joining are added back, not scaled.** They were open all
+  along, so the history is lifted by their count. Scaling multiplied every earlier move by the
+  jump's ratio: NVIDIA with AMD summed to −146 against −99 and +1 apart. A counting change still
+  scales, since it re-sorts a share of the line. Now a sum moves by the sum of its parts (−44).
+- **The Hot tab leaves counting changes out too.** `hot_boards` now reads `trends_epochs.csv`
+  and drops each stock-moving change's run and the next from its 7-day net change. Hot called
+  Amazon "+532 net roles" while its "See trend" link read it falling. On the same data Hot now
+  says +39.
+- **The sentence names what is not hiring.** Google's Count line climbed 1,540 → 1,802 under
+  "about flat". The sentence now adds "the chart's other +269 openings came from counting
+  changes and boards found later, not hiring".
+- **Too new to judge.** A line with under 2 days of measurements names no direction ("too new
+  to show a direction yet"), and no tile headlines it. AMD, counted for hours, was "Biggest
+  riser".
+- **Fewer empty marks.** Under a pick, a counting change is marked only where a drawn line
+  moved. A found Board is marked only when it brought at least 5 openings, though it is still
+  taken out of the line.
+- **The date range says what it can show.** A preset longer than the picks' counted history is
+  disabled, with the reason. Before, 30 days, 90 days and All drew one chart.
+- **Findability.**
+  - Company search takes aliases people use: "aws", "jp morgan", "facebook", "google deepmind",
+    "tcs".
+  - A typo is never forgiven in the first letter, since "cisco" offered Discovery and Discord.
+  - AMD, Deloitte South Asia and Morgan Stanley get display names, each checked on its Board;
+    these take effect at the next pipeline run.
+  - Micron's two entries, Workday and Eightfold, are left apart on purpose. The Eightfold Board
+    mirrors the Workday one, so joining them would double-count until requisition-level
+    duplicate removal lands.
+- **Smaller.**
+  - The Company view's heading asks "How tech hiring compares at N companies".
+  - Enter pressed before suggestions arrive picks the top one when they do.
+  - A change of picks is its own history entry.
+  - On a phone the tooltip sits under the chart, and a result card's "trend" and "hide" links
+    grow to 44px targets.
+- **Not fixed here:**
+  - Missing employers (TCS, Flipkart, Swiggy, Goldman Sachs) need discovery.
+  - Share inside a drill stays a share of the company.
+  - The requisition-level duplicate removal (another PR) will remove Eightfold rows gradually over
+    several days. It will record them in `dedup_evictions.csv` so this chart can add them back
+    per company.

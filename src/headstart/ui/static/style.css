@@ -682,6 +682,14 @@ textarea:focus{ border-color:var(--accent); }
 .co-note:empty{ display:none; }
 .trends-companies{ display:flex; align-items:flex-end; gap:8px 14px; flex-wrap:wrap; margin-bottom:10px; }
 .co-roles{ font-size:12.5px; padding:4px 0; }
+/* A result card's "trend" sat 10px from "hide" at 29x18px: a slip removed the company from
+   results. On touch screens both grow to the 44px target, with room between them. */
+@media (pointer:coarse){
+  .org .see-trend, .org .hide-co{ min-height:44px; min-width:44px; padding:0 10px; }
+  .org .see-trend{ margin-left:12px; }
+}
+/* Under the plot on a phone (positionHoverLayer), so it can span the column. */
+@media (max-width:560px){ .trends-tooltip{ max-width:100%; } }
 /* A fingertip needs the room a pointer does not: the remove control and each suggestion grow
    to the 44px target on touch screens only, so the desktop row stays as dense as its neighbours. */
 @media (pointer:coarse){

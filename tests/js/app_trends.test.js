@@ -77,7 +77,7 @@ function loadApp(fetchImpl) {
     },
     window: { addEventListener() {}, location: { hash: '' } },
     location: { hash: '' },
-    console, CFG: {}, URLSearchParams, Date, Math, isNaN,
+    console, CFG: {}, URLSearchParams, Date, Math, isNaN, setTimeout, clearTimeout,
     // loadTrends cancels its own previous request, so app.js does not evaluate without this.
     // Node's real one, not a stub: the abort tests below need a signal that genuinely fires.
     AbortController,
@@ -921,7 +921,7 @@ test('the chart says where a company history starts', async () => {
   t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
   await t.load(null);
   // Said once, in the company's own sentence block, rather than again above the chart.
-  assert.match(nodes['trends-verdict'].innerHTML, /HeadStart has counted Acme since Sep 13 — 7 days, so read this as an early sign/);
+  assert.match(nodes['trends-verdict'].innerHTML, /HeadStart has counted Acme since Sep 13\. That is 7 days — read this as an early sign/);
   assert.doesNotMatch(nodes['trends-empty'].textContent, /counted Acme/);
 });
 
@@ -1248,19 +1248,20 @@ test('a held backlog under New says why nothing is new yet, with no empty tiles'
 
 test('percentages leave out a marked step; the plotted line keeps it', async () => {
   const { t, ctx, nodes } = loadApp();
-  // Four runs; a tech-filter change at the third doubles the line. Between steps it grows 10%.
+  // Five runs; a tech-filter change at the third doubles the line, the run after it settles
+  // (also left out), and the last run grows 10%.
   const stamps = ['2026-09-13T00:00:00+00:00', '2026-09-14T00:00:00+00:00',
-                  '2026-09-15T00:00:00+00:00', '2026-09-16T00:00:00+00:00'];
-  answering(ctx, { ...picked({ a: [100, 100, 200, 220], b: [100, 100, 100, 100] }),
-    stamps, totals: [1e4, 1e4, 1e4, 1e4], non_tech: [0, 0, 0, 0],
-    series: [{ name: 'a', label: 'A', points: [100, 100, 200, 220], latest: 220 },
-             { name: 'b', label: 'B', points: [100, 100, 100, 100], latest: 100 }],
+                  '2026-09-15T00:00:00+00:00', '2026-09-16T00:00:00+00:00', '2026-09-17T00:00:00+00:00'];
+  answering(ctx, { ...picked({ a: [100, 100, 200, 200, 220], b: [100, 100, 100, 100, 100] }),
+    stamps, totals: [1e4, 1e4, 1e4, 1e4, 1e4], non_tech: [0, 0, 0, 0, 0],
+    series: [{ name: 'a', label: 'A', points: [100, 100, 200, 200, 220], latest: 220 },
+             { name: 'b', label: 'B', points: [100, 100, 100, 100, 100], latest: 100 }],
     epochs: [{ ts: stamps[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
   t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
   await t.load(null);
   t.setUnit('count', false);
   t.draw();
-  // Head and tail average two points each: net 100 → 105 is +5.0%; with the step it read +110.0%.
+  // Net [200, 200, 200, 200, 220]; head and tail average two points: 200 → 210 is +5.0%.
   assert.match(row(nodes['trends-legend'].innerHTML, 'a'), /\+5\.0%/, 'the doubling was the filter');
 });
 
@@ -1400,7 +1401,7 @@ test('each company gets a sentence: its openings and which way they moved', () =
   assert.equal(nodes['trends-verdict'].hidden, false);
   assert.match(html, /<b>Acme<\/b>: 998 tech openings; about flat over 3 days \(−0\.1%, −1 opening\)\./);
   assert.match(html, /<b>Beta<\/b>: 150 tech openings; up 50\.0% over 3 days \(\+50 openings\)\./);
-  assert.match(html, /HeadStart has counted these companies since Sep 13 — 3 days, so read this as an early sign/);
+  assert.match(html, /HeadStart has counted these companies since Sep 13\. That is 3 days — read this as an early sign/);
 });
 
 test('the notes fit the view: no dashed line or reassignment caveat on whole companies', () => {
@@ -1483,5 +1484,61 @@ test('how long a company has been counted comes from its counting, not the windo
     { stamps: FOUR, series: [{ name: 'greenhouse:acme', label: 'Acme', points: [null, null, 100, 100], latest: 100 }],
       split_by: 'company', counted_since: { 'greenhouse:acme': FOUR[0] } }));
   t.draw();
-  assert.match(nodes['trends-verdict'].innerHTML, /since Sep 13 — 3 days/);
+  assert.match(nodes['trends-verdict'].innerHTML, /since Sep 13\. That is 3 days/);
+});
+
+// ---- critique round 4 ------------------------------------------------------------------------
+const FIVE = [...FOUR, '2026-09-17T00:00:00+00:00'];
+
+test('a counting change that lands over two runs is left out whole (Amazon, Sep 17)', () => {
+  const { t } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({}), stamps: FIVE, series: [], discovered: [],
+    epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
+  const net = t.netOfSteps([9000, 9000, 9308, 8869, 8880]).map(v => Math.round(v));
+  // +308 at the change and −439 the run after were one change; only the last +11 is hiring.
+  assert.deepEqual(net, [8869, 8869, 8869, 8869, 8880]);
+});
+
+test('found openings lift the history rather than scale it, so a sum moves by its parts', () => {
+  const { t } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({}), stamps: FOUR, series: [], epochs: [],
+    discovered: [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 2, openings: 200 }] });
+  // Scaled, the +10 of real growth before the find became +28; lifted, it stays +10.
+  assert.deepEqual(t.netOfSteps([100, 110, 310, 320]), [300, 310, 310, 320]);
+});
+
+test('the sentence says how much of the chart’s move was not hiring', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({}), stamps: FOUR, split_by: 'family', totals: [1e4, 1e4, 1e4, 1e4], non_tech: [0, 0, 0, 0],
+    series: [{ name: 'a', label: 'a', points: [1000, 1000, 1200, 1200], latest: 1200 },
+             { name: 'b', label: 'b', points: [500, 500, 500, 500], latest: 500 }],
+    discovered: [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 3, openings: 200 }] });
+  t.draw();
+  assert.match(nodes['trends-verdict'].innerHTML,
+    /Acme<\/b>: 1,700 tech openings; about flat over 3 days \(\+0\.0%, \+0 openings\); the chart’s other \+200 openings came from counting changes and boards found later, not hiring\./);
+});
+
+test('compared company by company, the heading asks how hiring compares', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME, BETA]);
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 100, 100]], ['lever:beta', 'Beta', [100, 100, 150, 150]]]));
+  t.draw();
+  assert.equal(nodes['trends-title'].textContent, 'How tech hiring compares at 2 companies');
+});
+
+test('Enter before the suggestions arrive picks the top one when they do', async () => {
+  const { t, ctx, nodes } = loadApp();
+  ctx.fetch = url => Promise.resolve({ ok: true, json: () => Promise.resolve(String(url).startsWith('/companies/suggest')
+    ? { companies: [{ key: 'amazon:jobs', label: 'Amazon', openings: 9000, boards: 1, atses: ['amazon'] }] }
+    : picked({ a: [50, 60] }, [{ key: 'amazon:jobs', label: 'Amazon' }])) });
+  const input = nodes['trends-co-q'];
+  input.value = 'amazon';
+  input.listeners.keydown.forEach(fn => fn({ key: 'Enter', preventDefault() {} }));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(t.picks().map(p => p.key), ['amazon:jobs']);
+  assert.equal(input.value, '', 'cleared for the next name, not run on into it');
 });

@@ -1790,31 +1790,44 @@ function viewNotes(d){ return [comparableNote(d), companyNote(d)].filter(Boolean
 // tech openings it has and which way they moved, in openings as well as percent. An indexed
 // chart asks the reader to work that out; this says it. Net of the marked steps like every
 // figure here, and a line under MOVER_FLOOR gets its change in openings without a direction
-// word, because a handful of openings moving is not a trend.
+// word, because a handful of openings moving is not a trend. Only the picks this answer counts:
+// under Comparable, "These 2 companies" was said of one.
 function verdictLines(d){
   if (!trendPicks.length || trendDrill || !d.series.length || !d.stamps.length) return [];
   const kind = viewKind(d);
+  const counted = trendPicks.filter(p => !(d.uncounted || []).includes(p.key));
   const lines = kind === 'company' ? d.series.slice(0, CHART_MAX).map(s => [s.label, s])
-    : [[trendPicks.length === 1 ? (trendPicks[0].label || 'This company') : `These ${trendPicks.length} companies`,
+    : [[counted.length === 1 ? (counted[0].label || 'This company') : `These ${counted.length} companies`,
         kind === 'total' ? d.series[0] : { name: '__total__', points: sumPoints(d.series, d.stamps) }]];
   return lines.map(([name, s]) => ({ name, ...verdictOf(s, d) }));
 }
+// Under this many days of measurements a line names no direction and no tile headlines it:
+// AMD, counted for a few hours, was "Biggest riser +0.1%".
+const MIN_SPAN_DAYS = 2;
+function spanDays(s, d){
+  const first = s.points.findIndex(v => v != null);
+  return first < 0 ? 0 : (new Date(d.stamps[d.stamps.length - 1]) - new Date(d.stamps[first])) / 864e5;
+}
 function verdictOf(s, d){
   const now = [...s.points].reverse().find(v => v != null);
-  const first = s.points.findIndex(v => v != null);
-  const days = first < 0 ? 0 : (new Date(d.stamps[d.stamps.length - 1]) - new Date(d.stamps[first])) / 864e5;
-  const over = days >= 1.5 ? `over ${Math.round(days)} days` : 'since the run before';
+  const days = spanDays(s, d);
+  const over = `over ${Math.round(days)} days`;
   const what = trendMetric === 'new' ? 'tech openings first seen in the last 7 days' : 'tech openings';
   const m = trendMove(s);
   let move;
-  if (!m) move = 'not enough runs yet to show a direction';
+  if (!m || days < MIN_SPAN_DAYS) move = 'too new to show a direction yet';
   else {
     const n = Math.round(m.change), pct = m.head ? m.change / m.head * 100 : 0;
     const count = signedOpenings(n);
     move = m.real < MOVER_FLOOR ? (n ? `${count} ${over}, too few to call a trend` : `unchanged ${over}`)
       : Math.abs(pct) < 2 ? `about flat ${over} (${pct < 0 ? '−' : '+'}${Math.abs(pct).toFixed(1)}%, ${count})`
       : `${pct > 0 ? 'up' : 'down'} ${Math.abs(pct).toFixed(1)}% ${over} (${count})`;
-    if (stepsFor(s).length && m.real >= MOVER_FLOOR) move += ', leaving out the marked jumps';
+    // The part of the raw move that is not hiring, as a number. Google's Count line visibly
+    // climbed 1,540 → 1,802 under "about flat (+3 openings)", and only a footnote said why.
+    const raw = headTail(s.points);
+    const other = raw ? Math.round(raw.tail - raw.head - m.change) : 0;
+    if (other && m.real >= MOVER_FLOOR)
+      move += `; the chart’s other ${signedOpenings(other)} came from counting changes and boards found later, not hiring`;
   }
   return { text: `${now == null ? 'no' : Math.round(now).toLocaleString()} ${what}; ${move}.`, days };
 }
@@ -1823,21 +1836,21 @@ function drawVerdict(d){
   const lines = verdictLines(d);
   host.hidden = !lines.length;
   if (!lines.length){ host.innerHTML = ''; return; }
-  // Eleven days of counting is too short to tell a trend from noise, and the chart cannot say
-  // so by itself: most companies have been counted since Sep 13 (ADR-0185).
   // How long HeadStart has counted them, from `counted_since` — not the window's span, which
-  // under "7 days" said "counted since Sep 13 — 7 days".
-  const firsts = Object.values(d.counted_since || {}).filter(Boolean).sort();
+  // under "7 days" said "counted since Sep 13 — 7 days". Eleven days is too short to tell a
+  // trend from noise, and the chart cannot say so by itself (ADR-0185).
+  const dates = Object.fromEntries(Object.entries(d.counted_since || {})
+    .filter(([k]) => !(d.uncounted || []).includes(k)));
+  const firsts = Object.values(dates).filter(Boolean).sort();
   const last = d.stamps[d.stamps.length - 1];
-  const days = firsts.length
-    ? Math.round((new Date(last) - new Date(firsts[firsts.length - 1])) / 864e5)
+  const days = firsts.length ? Math.round((new Date(last) - new Date(firsts[firsts.length - 1])) / 864e5)
     : Math.round(Math.max(...lines.map(l => l.days)));
-  const counted = trendCoverage !== 'comparable' && datedPicks(d.counted_since, 'since');
-  const since = counted ? `HeadStart has counted ${counted}` : '';
+  const counted = trendCoverage !== 'comparable' && datedPicks(dates, 'since');
   const n = Math.max(1, days), span = `${n} day${n === 1 ? '' : 's'}`;
-  const early = since
-    ? `${since}${days < 14 ? ` — ${span}, so read this as an early sign, not a trend` : '; there is nothing before that'}.`
-    : days < 14 ? `HeadStart has counted ${trendPicks.length === 1 ? 'this company' : 'these companies'} for ${span} — read this as an early sign, not a trend.` : '';
+  const newest = new Set(firsts).size > 1 ? ' for the newest' : '';
+  const early = days < 14 ? `${counted ? `HeadStart has counted ${counted}. That is ${span}${newest}` : `HeadStart has counted ${
+      trendPicks.length === 1 ? 'this company' : 'these companies'} for ${span}`} — read this as an early sign, not a trend.`
+    : counted ? `HeadStart has counted ${counted}; there is nothing before that.` : '';
   const tail = early ? `<p class="verdict-early">${esc(early)}</p>` : '';
   host.innerHTML = `<ul>${lines.map(l => `<li><b>${esc(l.name)}</b>: ${esc(l.text)}</li>`).join('')}</ul>${tail}`;
 }
@@ -1883,13 +1896,21 @@ function stepNotes(d){
     const moves = fields.some(f => LINE_MOVING.includes(f)) || (bands && fields.includes('derivations_version'));
     const dedup = !moves && touched.length > 0 && fields.includes('dedup_version');
     if (i === 0 || !(moves || dedup)) return;
+    const companies = dedup ? touched : null;
     notes.push({ i, text: `${text} — not hiring, so the jump it makes is left out of the lines it moves`,
-      found: false, epoch: true, withhold: true, companies: dedup ? touched : null });
+      found: false, epoch: true, withhold: true, companies });
+    // A change can land over two runs — Amazon's Sep 17 filter change was +308 at its run and
+    // −439 at the next, which left in read as hiring and turned Amazon from +1.2% to −2.9% —
+    // so the run after it is left out too, at the cost of one run of ordinary change.
+    if (i + 1 < d.stamps.length) notes.push({ i: i + 1, found: false, withhold: true, companies, settle: true,
+      text: 'The counting change one run earlier was still settling here, so this run’s jump is left out too' });
   });
   (d.discovered || []).forEach(f => {
     const i = d.stamps.indexOf(f.ts); if (i < 0) return;
     const who = (trendPicks.find(p => p.key === f.company) || {}).label || 'a picked company';
-    notes.push({ i, found: true, withhold: true, company: f.company,
+    // Found openings are added back, not scaled: they were open all along, so the history is
+    // lifted by them rather than multiplied, and a sum of companies moves by the sum of their moves.
+    notes.push({ i, found: true, withhold: true, company: f.company, additive: true, size: f.openings,
       text: `${f.boards} more board${f.boards === 1 ? '' : 's'} of ${who} found here: `
         + `${f.openings.toLocaleString()} tech opening${f.openings === 1 ? '' : 's'} across the company, already open, arrive at once — not new hiring` });
   });
@@ -1900,7 +1921,7 @@ function stepNotes(d){
     trendPicks.forEach(p => {
       const i = since[p.key] ? d.stamps.findIndex(s => s >= since[p.key]) : -1;
       if (i <= 0) return;
-      notes.push({ i, found: true, withhold: true, company: p.key,
+      notes.push({ i, found: true, withhold: true, company: p.key, additive: true,
         text: `Counting for ${p.label || 'a picked company'} starts here: its openings join these lines at once — not new hiring` });
     });
   }
@@ -1920,6 +1941,30 @@ function datedPicks(dates, word){
 }
 
 // "at Stripe" / "at 3 companies": how the text around the chart names what the picks scope.
+// A company's history starts where HeadStart began counting it, so a preset longer than that
+// draws exactly what All draws. Those presets are disabled with the reason, not left to look
+// like three different answers (30 days, 90 days and All were one chart).
+function drawRangeLimits(d){
+  const seg = el('trends-range'); if (!seg) return;
+  const firsts = Object.values(d.counted_since || {}).filter(Boolean).sort();
+  const first = trendPicks.length && firsts.length ? firsts[0] : null;
+  const had = first ? (Date.now() - new Date(first)) / 864e5 : Infinity;
+  seg.querySelectorAll('button').forEach(b => {
+    const days = Number(b.dataset.days);
+    const short = !!days && days > had && b.getAttribute('aria-checked') !== 'true';
+    b.disabled = short;
+    b.title = short ? `HeadStart has counted ${trendPicks.length === 1 ? 'this company' : 'these companies'} only since ${stampLabel(first, true)}, so this would show the same as All` : '';
+  });
+}
+
+// Compared company by company, the question is how each is hiring, not which roles grow.
+function drawTitle(){
+  if (!el('trends-title')) return;
+  const compared = !trendDrill && trendPicks.length > 1 && topSplitNow() === 'company';
+  el('trends-title').textContent = compared ? `How tech hiring compares ${pickPhrase()}`
+    : 'Which tech roles are growing' + (pickPhrase() ? ' ' + pickPhrase() : '');
+}
+
 // The drilled family's name as the Space labels it, else its slug.
 function drillLabel(){
   return (trendRaw && trendRaw.family_label) || trendDrill || '';
@@ -2092,7 +2137,7 @@ async function loadTrends(family){
   const drilled = (family || null) !== trendDrill;
   trendRaw = payload; trendDrill = family || null;
   trendData = trendView(payload, trendDrill);
-  drawPicks(); applyUnitLocks(); writeTrendHash(drilled);
+  drawPicks(); applyUnitLocks(); writeTrendHash(drilled || picksPushed); picksPushed = false;
   drawTrends();
 }
 
@@ -2289,18 +2334,21 @@ function signedOpenings(n){
 // reading −0.2%. With no pick there are no such steps, so the index chart is unchanged.
 // A step off zero (a pick at 0 whose first Board lands 40) has no ratio to scale by, so the
 // line starts at the step: what came before it was nothing counted, not a level to adjust.
+// Walking back, each earlier value maps through `v * scale + lift`: a counting change scales
+// the history by its ratio, openings found or joining lift it by their count.
 function netOfSteps(levels, s){
   const jumps = stepJumps(levels, s);
   if (!jumps.size) return levels;
   const out = levels.slice();
-  let factor = 1;
+  let scale = 1, lift = 0, cut = false;
   for (let j = levels.length - 1; j >= 0; j--){
     if (levels[j] == null) continue;
-    out[j] = factor == null ? null : levels[j] * factor;
+    out[j] = cut ? null : levels[j] * scale + lift;
     const jump = jumps.get(j);
-    if (!jump || factor == null) continue;
-    if (jump.before > 0 && jump.after > 0) factor *= jump.after / jump.before;
-    else if (jump.before <= 0 && jump.after > 0) factor = null;
+    if (!jump || cut) continue;
+    if (jump.additive) lift += scale * (jump.after - jump.before);
+    else if (jump.before > 0 && jump.after > 0) scale *= jump.after / jump.before;
+    else if (jump.after > 0) cut = true;
   }
   return out;
 }
@@ -2308,14 +2356,15 @@ function netOfSteps(levels, s){
 // point), with the level on either side of it: landing index -> {before, after}. The tooltip
 // states the size from here, and netOfSteps divides it out.
 function stepJumps(levels, s){
-  const steps = new Set(stepsFor(s)), jumps = new Map();
+  const steps = new Map(), jumps = new Map();
+  stepsFor(s).forEach(n => steps.set(n.i, steps.get(n.i) || !!n.additive));
   if (!steps.size) return jumps;
-  let last = null, pending = false;
+  let last = null, pending = null;
   levels.forEach((v, j) => {
-    if (steps.has(j)) pending = true;
+    if (steps.has(j)) pending = (pending || false) || steps.get(j);
     if (v == null) return;
-    if (pending && last != null) jumps.set(j, { before: last, after: v });
-    pending = false;
+    if (pending != null && last != null) jumps.set(j, { before: last, after: v, additive: pending });
+    pending = null;
     last = v;
   });
   return jumps;
@@ -2337,8 +2386,7 @@ function stepsFor(s){
   const perCompany = !!s && VIEWS[viewKind(trendData)].split === 'company';
   return notesOf(trendData)
     .filter(n => n.withhold && !(perCompany && ((n.company && s.name !== n.company)
-      || (n.companies && !n.companies.includes(s.name)))))
-    .map(n => n.i);
+      || (n.companies && !n.companies.includes(s.name)))));
 }
 
 // "Aug 12 09:00" from an ISO stamp — enough to anchor the axis without a timezone lecture.
@@ -2426,8 +2474,8 @@ function fmtAxis(v, dec){
 function rowText(r){
   const lvl = r.value == null ? '—' : fmtLevel(r.value);
   const read = trendUnit === 'change' && r.index != null ? `${lvl} · index ${r.index.toFixed(0)}` : lvl;
-  if (!r.jump) return read;
-  const n = Math.round(r.jump.after - r.jump.before);
+  const n = r.jump ? Math.round(r.jump.after - r.jump.before) : 0;
+  if (!n) return read;
   return `${read} · jumped ${n < 0 ? '−' : '+'}${Math.abs(n).toLocaleString()} here`;
 }
 
@@ -2676,7 +2724,12 @@ function drawTrends(){
   // simply finds no index and is skipped rather than guessed at.
   // Under a pick only the changes that move its lines are listed (stepNotes).
   const notes = notesOf(d);
-  notes.filter(n => n.epoch).forEach(n => {
+  // Under a pick, a change marked where no drawn line moved ("jumped +0 here") explains nothing.
+  const moves = n => !trendPicks.length || drawn.some(s => {
+    const jump = stepJumps(s.points, s).get(n.i);
+    return jump && Math.round(jump.after - jump.before) !== 0;
+  });
+  notes.filter(n => n.epoch && moves(n)).forEach(n => {
     const ex = x(n.i);
     svg += `<line class="epoch-marker" x1="${ex.toFixed(1)}" y1="${PAD_T}"
              x2="${ex.toFixed(1)}" y2="${H - PAD_B}"><title>${esc(n.text)}</title></line>`;
@@ -2684,7 +2737,9 @@ function drawTrends(){
   // Boards of a pick that HeadStart found after its line began (ADR-0185). Each lands its
   // whole backlog at once — openings that were already open — so the step is marked where it
   // lands rather than left to read as hiring, the reason the Hot tab leaves new Boards out.
-  notes.filter(n => n.found).forEach(n => {
+  // A Board found with a handful of openings is still taken out of the line, but a marker for
+  // one opening (Salesforce's) is furniture.
+  notes.filter(n => n.found && !(n.size != null && n.size < INDEX_BASE_FLOOR)).forEach(n => {
     const fx = x(n.i);
     svg += `<line class="found-marker" x1="${fx.toFixed(1)}" y1="${PAD_T}"
              x2="${fx.toFixed(1)}" y2="${H - PAD_B}"><title>${esc(n.text)}</title></line>`;
@@ -2818,6 +2873,8 @@ function drawTrends(){
         : `No openings counted${where} in this window. ${viewNotes(d)}`.trim())
       : viewNotes(d));
   drawVerdict(d);
+  drawTitle();
+  drawRangeLimits(d);
   // An axis with no lines under it is the "broken chart" reading the message above exists to
   // replace, so with nothing measured the message stands on its own — and so do the tiles,
   // which would otherwise print four em-dashes under it.
@@ -2906,7 +2963,8 @@ function buildKpis(d, charted, measured){
   // Movers are read off trendDelta, which is net of the marked steps (netOfSteps), so a found
   // Board or a counting change is never what a tile headlines.
   // And never off a line under MOVER_FLOOR, whose percentage is a handful of openings.
-  const moves = kind === 'total' ? [] : charted.filter(s => hasIndexBase(s) && lineMove(s).count == null)
+  const moves = kind === 'total' ? [] : charted.filter(s => hasIndexBase(s) && lineMove(s).count == null
+      && spanDays(s, d) >= MIN_SPAN_DAYS)
     .map(s => ({ label: s.label, dl: trendDelta(s.points, s) }))
     .filter(m => m.dl != null && Math.abs(m.dl) >= 0.05).sort((a, b) => b.dl - a.dl);   // "−0.0%" is no mover
   // Summed from the series, NOT `totals - non_tech`: the ledger writes non_tech under the STOCK
@@ -2972,7 +3030,7 @@ function positionHoverLayer(index, opts){
   rows.forEach((r, i) => { if (r.dy != null && r.dy < best){ best = r.dy; near = i; } });
   if (opts && opts.announce && el('trends-readout')){
     el('trends-readout').textContent = rows.length
-      ? `${stampLabel(stamps[index])}. ` + (lastGeom.notes || []).filter(n => n.i === index).map(n => n.text + '. ').join('')
+      ? `${stampLabel(stamps[index])}. ` + (lastGeom.notes || []).filter(n => n.i === index && n.text).map(n => n.text + '. ').join('')
         + rows.map(r => `${r.label} ${rowText(r)}`).join(', ')
       : `${stampLabel(stamps[index])}. Nothing measured.`;
   }
@@ -2988,7 +3046,7 @@ function positionHoverLayer(index, opts){
     tip.appendChild(head);
     // What a marker at this stamp means, where the crosshair already is — a 1px line's own
     // <title> was the only place it was said, and hovering a line that thin rarely finds it.
-    (lastGeom.notes || []).filter(n => n.i === index).forEach(n => {
+    (lastGeom.notes || []).filter(n => n.i === index && n.text).forEach(n => {
       const note = document.createElement('div'); note.className = 'tt-note'; note.textContent = n.text;
       tip.appendChild(note);
     });
@@ -3008,6 +3066,13 @@ function positionHoverLayer(index, opts){
     // of the plot; past halfway it belongs on the other side of the crosshair. Width is
     // measured now the rows are in, rather than assumed at 200.
     const tw = tip.offsetWidth || 200;
+    // On a phone a tooltip beside the crosshair covered the whole plot and clipped the axis, so
+    // it sits under the chart there, where the crosshair and its dots stay in view.
+    if (wrapRect.width < 560){
+      tip.style.left = '0px';
+      tip.style.top = (svgRect.height + 6) + 'px';
+      return;
+    }
     const left = px > wrapRect.width / 2 ? Math.max(4, px - tw - 12)
                                          : Math.min(Math.max(4, wrapRect.width - tw - 4), px + 12);
     tip.style.left = left + 'px';
@@ -3278,6 +3343,9 @@ if (el('trends-ats-trigger')) {
    one-posting slug collision of the same name. ---- */
 const SUGGEST_WAIT = 150;   // ms after the last keystroke — a query per key would race itself
 let coTimer = null, coReq = null, coOptions = [], coActive = -1;
+// Enter pressed before the suggestions came back: pick the top one when they do. It was
+// swallowed, and the next name typed ran on into the first ("amazonnvimicrosoft").
+let coEnterPending = false;
 
 function setCoNote(text){ if (el('trends-co-note')) el('trends-co-note').textContent = text; }
 
@@ -3288,8 +3356,7 @@ function drawPicks(){
     ><button type="button" data-unpick="${i}" aria-label="Remove ${esc(p.label || 'this company')}"
     >×</button></span>`).join('');
   if (el('trends-co-q')) el('trends-co-q').placeholder = trendPicks.length ? 'Add another' : 'Add a company';
-  if (el('trends-title')) el('trends-title').textContent =
-    'Which tech roles are growing' + (pickPhrase() ? ' ' + pickPhrase() : '');
+  drawTitle();
   // Every pick's Boards at once, within the Space's cap on one hand-off (CFG.max_scoped_boards);
   // past it the link says why rather than vanishing or sending a request the route refuses.
   const boards = trendPicks.flatMap(p => p.boardKeys || []);
@@ -3313,9 +3380,13 @@ function drawPicks(){
   trendAtsLabel();
 }
 
+// A change of picks is a history entry of its own, like a drill: Back used to undo every pick
+// and filter in one step.
+let picksPushed = false;
 function setPicks(picks){
   setCoNote('');   // a refusal's sentence belongs to the pick it refused, not to the next one
   replacePicks(picks);
+  picksPushed = true;
   loadTrends(trendDrill);
 }
 
@@ -3384,6 +3455,7 @@ async function suggestCompanies(q){
   const picked = pickedKeys();
   const options = (found || []).filter(c => !picked.has(c.key.toLowerCase())).map(company => ({ company }));
   openCoList(options);
+  if (coEnterPending){ coEnterPending = false; if (options.length){ chooseCo(0); return; } }
   // Said in the status line, not as a fake option: a listbox should only hold choices.
   setCoNote(missing ? 'Company search isn’t available here yet.'
     : !found ? 'Suggestions didn’t load — keep typing to try again.'
@@ -3396,6 +3468,7 @@ if (el('trends-co-q')){
     clearTimeout(coTimer);
     if (coReq) coReq.abort();
     const q = input.value.trim();
+    coEnterPending = false;
     if (!q){ setCoNote(''); openCoList(followedOption()); return; }
     coTimer = setTimeout(() => suggestCompanies(q), SUGGEST_WAIT);
   });
@@ -3408,6 +3481,9 @@ if (el('trends-co-q')){
     // Enter takes the highlighted suggestion, or the top one: typing "amd" and pressing Enter
     // picked nothing, so the company a reader asked for silently never reached the chart.
     else if (e.key === 'Enter' && n){ e.preventDefault(); chooseCo(Math.max(coActive, 0)); }
+    else if (e.key === 'Enter' && input.value.trim()){
+      e.preventDefault(); clearTimeout(coTimer); coEnterPending = true; suggestCompanies(input.value.trim());
+    }
     else if (e.key === 'Escape'){ if (n) closeCoList(); else input.value = ''; }
     else if (e.key === 'Backspace' && !input.value && trendPicks.length)
       setPicks(trendPicks.slice(0, -1));

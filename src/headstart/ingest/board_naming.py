@@ -156,6 +156,16 @@ DISPLAY_ALIASES: Final[dict[str, str]] = {
     "icims:careers-apac-atlassian.icims.com": "Atlassian",
     "icims:globalcareers-atlassian.icims.com": "Atlassian",
     "icims:campus-globalcareers-atlassian.icims.com": "Atlassian",
+    # Named "Amd", "Southasiacareers" and "Ms" by slug (2026-09-25 critique). Checked on each
+    # Board: the Jibe site's title is "AMD Jobs and Career Opportunities", the SuccessFactors
+    # host is Deloitte's own ("Join Deloitte India, Sri Lanka and Mauritius"), and the Workday
+    # tenant's page names Morgan Stanley. The Workday sites also answer "morgan stanley" now,
+    # beside the Eightfold Board of that name, which one suggestion per name folds to one.
+    "jibe:amd": "AMD",
+    "successfactors:southasiacareers.deloitte.com": "Deloitte South Asia",
+    "workday:ms/External": "Morgan Stanley",
+    "workday:ms/external": "Morgan Stanley",
+    "workday:ms/private": "Morgan Stanley",
 }
 
 
