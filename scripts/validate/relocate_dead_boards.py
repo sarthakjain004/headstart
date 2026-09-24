@@ -47,7 +47,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_liveness import PROBES  # needs the paths above first
 
 from headstart import liveness
-from headstart.scrapers.registry import SCRAPERS
+from headstart.scrapers.registry import company_from_row
 
 LEDGER = ROOT / "data" / "validate" / "liveness"
 
@@ -118,12 +118,9 @@ def derives_back(ats: str, slug: str, url: str) -> bool:
     so a plausible-looking url that reads back as something else would quietly scrape a different
     Board. Cheaper to check than to reason about per ATS.
     """
-    scraper = SCRAPERS.get(ats)
-    if scraper is None:
-        return False
     try:
-        return scraper.slug_from(slug, url) == slug
-    except Exception:  # noqa: BLE001 - a url the scraper cannot parse is not usable
+        return company_from_row(ats, slug, url).slug == slug
+    except Exception:  # noqa: BLE001 - no scraper, or a url it cannot parse: not usable
         return False
 
 

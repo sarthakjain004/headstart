@@ -150,6 +150,11 @@ def table(path: Path | None = None) -> dict[str, Any] | None:
     return result
 
 
+def as_of() -> str | None:
+    """The date on the committed rate table, or None when it cannot be read (ADR-0117)."""
+    return (table() or {}).get("as_of")
+
+
 def convert(amount: float, frm: str, to: str, rates: dict[str, float]) -> float | None:
     """``amount`` expressed in ``frm``, restated in ``to``. ``None`` if either has no rate.
 

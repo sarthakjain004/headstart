@@ -59,17 +59,12 @@ Board. The host is User-Agent-agnostic.
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
-from headstart import http
+from headstart import http, salary
 from headstart.models import Job, html_to_text
 from headstart.scrapers.base import USER_AGENT, BaseScraper
-
-_LD_BLOCK = re.compile(
-    r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
-    re.DOTALL | re.IGNORECASE,
-)
+from headstart.scrapers.job_posting_jsonld import find_job_posting
 
 #: The listing's body sections after `description`, in the order the posting page's own JSON-LD
 #: `description` lays them out, each under its tenant-chosen `{section}_header`.
@@ -119,7 +114,7 @@ def _department(item: dict) -> str | None:
 _REMOTE = {"remote": True, "onsite": False}
 
 
-#: `compensation_frequency` -> the period spelling `salary._field_generic` reads. The three it
+#: `compensation_frequency` -> the period spelling `salary.from_field` reads. The three it
 #: reads are year (3,233 rows), hour (2,781) and month (342). week (33), day (16) and two_weeks
 #: (10) have no spelling it reads, and its default is annual, so those yield no salary rather
 #: than a figure served at the wrong period.
@@ -139,17 +134,12 @@ def _uuid(item: dict) -> str:
 def _ld_fields(page: str) -> dict[str, Any] | None:
     """`posted_at` and `country` from a posting page's JSON-LD `JobPosting`, or None when the
     page carries none (a counted detail gap, not an error)."""
-    for match in _LD_BLOCK.finditer(page):
-        try:
-            node = json.loads(match.group(1))
-        except ValueError:
-            continue
-        if not isinstance(node, dict) or node.get("@type") != "JobPosting":
-            continue
-        where = node.get("applicantLocationRequirements")
-        country = where.get("name") if isinstance(where, dict) else None
-        return {"posted_at": node.get("datePosted") or None, "country": country}
-    return None
+    node = find_job_posting(page)
+    if node is None:
+        return None
+    where = node.get("applicantLocationRequirements")
+    country = where.get("name") if isinstance(where, dict) else None
+    return {"posted_at": node.get("datePosted") or None, "country": country}
 
 
 #: The posting page content-negotiates on `Accept`: the shared `_get`'s
@@ -286,6 +276,4 @@ class PinpointScraper(BaseScraper):
         if period is None:
             return None
         currency = (raw.get("compensation_currency") or "").strip()
-        return " ".join(
-            p for p in (f"{_digits(lo)}-{_digits(hi)}", currency, period) if p
-        )
+        return salary.to_field(_digits(lo), _digits(hi), currency, period)

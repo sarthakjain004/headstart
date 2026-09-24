@@ -28,7 +28,14 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from headstart import fanout_stats, http, log, scrapable_boards, spare_egress
+from headstart import (
+    board_priority,
+    fanout_stats,
+    http,
+    log,
+    scrapable_boards,
+    spare_egress,
+)
 from headstart.board_priority import load_scores, pick_boards
 from headstart.config import CompanyRef
 from headstart.harvest import scrape_all
@@ -339,7 +346,9 @@ def main() -> int:
         companies = scrapable_boards.load(_LEDGER, min_jobs=0)
         scores = load_scores(_PRIORITY)
         companies = pick_boards(companies, scores, args.max_boards)
-        priority = sum(1 for c in companies if scores.get(c.identity, 0.0) > 0.0)
+        priority = sum(
+            1 for c in companies if scores.get(board_priority.key_for(c), 0.0) > 0.0
+        )
         _log.info(
             f"harvest: {len(companies)} boards this run "
             f"({priority} priority + {len(companies) - priority} exploration)"

@@ -228,9 +228,10 @@ def _authoritative_scrape(
     """The Boards whose scraped list this run can be read as their complete set of openings, and
     every id those Boards emitted.
 
-    Boards are keyed like the gap counts themselves — ``board_of`` lowercased — so the two pair
-    (ADR-0049). An id can only ever be emitted by the Board whose key prefixes it, so one flat id
-    set answers "did this Board re-emit it" exactly as a per-Board set would.
+    Boards are keyed like the gap counts themselves — ``board_description_gap.key_for`` of
+    ``board_of`` — so the two pair (ADR-0049). An id can only ever be emitted by the Board whose key
+    prefixes it, so one flat id set answers "did this Board re-emit it" exactly as a per-Board set
+    would.
 
     A Board that wrote no lines is simply absent, whether it went unscraped this run or was
     truncated to nothing, and absence is what leaves an id counted.
@@ -249,7 +250,7 @@ def _authoritative_scrape(
         # comparison in `gap` are built alike.
         if _on_unauthoritative_board(job["id"], unauthoritative):
             continue
-        boards.add(lower_key(board_of(job["id"])))
+        boards.add(board_description_gap.key_for(board_of(job["id"])))
         emitted.add(job["id"])
     return boards, emitted
 
@@ -330,7 +331,7 @@ def gap(args: argparse.Namespace) -> int:
             # only case-insensitively, so keying this as-observed would strand every one of them.
             # It also folds ADR-0023's case-variant pairs (`.../External` and `.../external` are
             # one Board) into a single row instead of two half-counts.
-            board = lower_key(board_of(row["id"]))
+            board = board_description_gap.key_for(board_of(row["id"]))
             # Not a Scrapable Board — dead, parked, aliased away or a vendor test tenant — so it
             # is never scraped, its rows can never settle, and reserving gap quota against them
             # buys nothing. ADR-0062 named this class and left it in the count; measured on the

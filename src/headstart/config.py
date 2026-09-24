@@ -399,8 +399,9 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         # Fails ADR-0064's value test on the gate's own numbers and escapes only its floor.
         # `board_cost.csv` measures it at 562 s for 56,527 postings (2026-09-11); against the 12
         # tech jobs `board_priority.csv` credits it, that is **1.28 tech/min, under the gate's 2.0
-        # threshold** — but 562 s is under the 900 s floor, so its yield is never consulted. It is
-        # not a straggler like the three above; it is fast and enormous, the shape that floor was
+        # threshold** — but 562 s is under the 900 s floor (and under the 600 s one since
+        # 2026-09-24), so its yield is never consulted. It is not a straggler like the three
+        # above; it is fast and enormous, the shape that floor was
         # never meant to catch. It is also unreliable: in 3 of the 5 runs
         # 34450830376..34470668397 it raised `HTTP Error 400` after 44-271 s and produced nothing.
         #

@@ -54,6 +54,7 @@ import json
 import re
 from typing import Any
 
+from headstart import salary
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import (
     USER_AGENT,
@@ -67,8 +68,9 @@ _PAGE_SIZE = 100  # our page size, not the provider's ceiling (ADR-0070)
 # Our own ceiling, sized by cost rather than by tech density — because density does not fall off
 # down the list. Measured live: 14.1% tech at offset 500 across 40 random boards over 500 postings,
 # and 6 of the 15 boards over 3,000 run 14-62% tech at *half* and *end* of board. 5,000 postings is
-# the most this scraper can read and still stay under ADR-0064's 15-minute gate floor at the slow
-# end of fleet throughput; what stays truncated above it is ~0%-tech retail the gate handles.
+# the most this scraper can read and still stay under ADR-0064's gate floor at the slow end of
+# fleet throughput; what stays truncated above it is ~0%-tech retail the gate handles. Sized
+# against the 15 min floor; it is 10 min since 2026-09-24, so re-derive before re-enabling.
 # NOT ENFORCED right now (#227) — kept defined so re-enabling is a two-line uncomment, not a
 # re-derivation.
 _MAX_PAGES = 50
@@ -301,6 +303,5 @@ class SmartRecruitersScraper(BaseScraper):
         lo, hi = raw.get("min"), raw.get("max")
         if lo is None:
             return None
-        span = f"{lo}-{hi}" if hi is not None else str(lo)
         period = _STRUCTURED_PERIOD.get((raw.get("period") or "").upper())
-        return " ".join(str(x) for x in (span, raw.get("currency"), period) if x)
+        return salary.to_field(lo, hi, raw.get("currency"), period)

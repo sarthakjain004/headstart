@@ -65,9 +65,9 @@ honest answer rather than a wrong one.
 
 ``Job.salary`` is assembled from the JSON-LD ``baseSalary`` (a real ``MonetaryAmount``:
 currency + ``unitText`` HOUR/YEAR + min/max) into the ``"MIN-MAX CUR UNIT"`` shape
-``salary._field_range_currency_interval`` already reads for rippling and ashby — jazzhr is
-registered on that parser rather than falling through to ``_field_generic``, which annualizes
-nothing and therefore rejected every hourly figure. Present on 25.8% of detail pages;
+``salary.to_field`` spells — the one ``salary.from_field`` reads for rippling and ashby. jazzhr
+is registered for the bare unit words there rather than on the generic reader, which annualizes
+none of them and therefore rejected every hourly figure. Present on 25.8% of detail pages;
 368 of the 393 real values in the sample parse, and the 25 that don't are the plausibility
 bound correctly rejecting tenant data-entry errors (an hourly rate typed under ``unitText:
 YEAR``, e.g. "35-60 USD YEAR").
@@ -80,13 +80,13 @@ checked rather than assumed: on 60 of 60 sampled, the listing location already r
 
 from __future__ import annotations
 
-import json
 import re
 from typing import Any
 
-from headstart import http, log
+from headstart import http, log, salary
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.job_posting_jsonld import find_job_posting, jsonld_nodes
 
 _log = log.get(__name__)
 
@@ -109,8 +109,6 @@ _ROW_DEPARTMENT = re.compile(
 )
 _ROW_CELLS = re.compile(r"<td[^>]*>(.*?)</td>", re.DOTALL)
 
-_LD = re.compile(r'<script type="application/ld\+json">(.*?)</script>', re.DOTALL)
-
 #: The detail page's labelled attributes. Both spellings are real: stock themes emit
 #: ``resumator-job-employment``, fully custom ones ``resumator-job-type``. The closing-tag
 #: alternation excludes ``</i>`` deliberately — the responsive theme puts a Font Awesome
@@ -130,19 +128,6 @@ _ATTRIBUTE_LABEL = re.compile(r"<strong>.*?</strong>", re.DOTALL)
 
 _DESCRIPTION_ID = re.compile(r'id="(?:job-description|resumator-job-description)"')
 _DIV_TAG = re.compile(r"<div\b|</div>", re.IGNORECASE)
-
-
-def _ld_of(page: str, kind: str) -> dict[str, Any] | None:
-    """The page's schema.org blob of type ``kind``, or None. Every JazzHR page carries an
-    ``Organization`` one; only some carry a ``JobPosting`` (see the module docstring)."""
-    for blob in _LD.findall(page):
-        try:
-            data = json.loads(blob)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(data, dict) and data.get("@type") == kind:
-            return data
-    return None
 
 
 def _description_html(page: str) -> str | None:
@@ -352,12 +337,14 @@ class JazzHRScraper(BaseScraper):
         # Organization blob is the only place the tenant's own name appears — and it is there:
         # 300/300 boards probed 2026-09-07, properly cased and punctuated ("TWD Technologies
         # Ltd." for the slug `twd`). That makes `board_page()`/`company_name` unnecessary here.
-        company = ((_ld_of(listing, "Organization") or {}).get("name") or "").strip()
+        company = (
+            next(jsonld_nodes(listing, "Organization"), {}).get("name") or ""
+        ).strip()
         jobs: list[Job] = []
         for key, title, location, department in _rows(listing):
             page = details.get(key)
             attributes = _attributes(page) if page else {}
-            posting = _ld_of(page, "JobPosting") if page else None
+            posting = find_job_posting(page) if page else None
             jobs.append(
                 Job(
                     id=self.job_id(key),
@@ -383,9 +370,9 @@ class JazzHRScraper(BaseScraper):
     def _salary_field(self, raw: Any) -> str | None:
         """``Job.salary`` as ``"MIN-MAX CUR UNIT"`` from the JSON-LD ``baseSalary`` MonetaryAmount.
 
-        That exact shape is what :func:`headstart.salary._field_range_currency_interval` reads
-        (and why jazzhr is registered on it): the bare unit word is how an hourly figure gets
-        annualized at all. A single-valued amount — a fixed rate with no range, 33 of the 393 in
+        Built by :func:`headstart.salary.to_field`; :func:`headstart.salary.from_field` reads it
+        for jazzhr with the bare unit words, which is how an hourly figure gets annualized at
+        all. A single-valued amount — a fixed rate with no range, 33 of the 393 in
         the sample — keeps the same shape minus the range, which that parser also handles.
         """
         if not isinstance(raw, dict):
@@ -400,6 +387,12 @@ class JazzHRScraper(BaseScraper):
             low = high = value.get("value")
         if low is None and high is None:
             return None
-        one = low if low is not None else high
-        amount = f"{low}-{high}" if low is not None and high is not None else f"{one}"
-        return " ".join(part for part in (amount, currency, unit) if part) or None
+        return (
+            salary.to_field(
+                low if low is not None else high,
+                high if low is not None else None,
+                currency,
+                unit,
+            )
+            or None
+        )

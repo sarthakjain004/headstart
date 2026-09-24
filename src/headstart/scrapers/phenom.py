@@ -182,7 +182,9 @@ class PhenomScraper(BaseScraper):
 
     # --- listing ----------------------------------------------------------------------------
 
-    def _widgets_url(self) -> str:
+    def widgets_url(self) -> str:
+        """The tenant's one JSON endpoint. Public: the liveness probe posts its count here
+        (ADR-0203)."""
         return f"https://{self.slug}/widgets"
 
     #: The one set of headers and the one timeout both widget calls send. Declared once because
@@ -197,7 +199,7 @@ class PhenomScraper(BaseScraper):
     def _widgets(self, payload: dict[str, Any]) -> dict[str, Any]:
         response = self._fetch(
             "POST",
-            self._widgets_url(),
+            self.widgets_url(),
             json=payload,
             headers=self._WIDGET_HEADERS,
             timeout=self._WIDGET_TIMEOUT,
@@ -303,7 +305,7 @@ class PhenomScraper(BaseScraper):
     def detail_request(self, row: dict) -> DetailRequest:
         # The same POST `_widgets` sends for the listing, with the detail payload as its body.
         return DetailRequest(
-            self._widgets_url(),
+            self.widgets_url(),
             method="POST",
             headers=self._WIDGET_HEADERS,
             timeout=self._WIDGET_TIMEOUT,

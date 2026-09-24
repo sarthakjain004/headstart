@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from headstart import log
+from headstart import log, salary
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
@@ -196,9 +196,6 @@ class GreenhouseScraper(BaseScraper):
         if best is None:
             return None
         (lo, hi), currency = best
-        span = (
-            _format_amount(lo)
-            if lo == hi
-            else f"{_format_amount(lo)}-{_format_amount(hi)}"
+        return salary.to_field(
+            _format_amount(lo), None if lo == hi else _format_amount(hi), currency
         )
-        return f"{span} {currency}" if currency else span

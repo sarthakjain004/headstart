@@ -289,9 +289,10 @@ class BaseScraper(ABC):
     #: group is walled, so it sits ~95% whether or not the fallback bought anything. Only a
     #: per-Board outcome can.
     #:
-    #: Only requests made through :meth:`_get` carry the opt-in. A scraper that calls
-    #: ``http.fetch`` or ``http.fetch_async`` directly (most of them do, for their detail passes) must pass
-    #: ``**self._egress()`` itself, or setting this is silently inert.
+    #: Requests made through :meth:`_get`, :meth:`_fetch` and their async counterparts carry the
+    #: opt-in. A scraper that calls its fetcher directly must pass ``**self._egress()`` itself, or
+    #: setting this is silently inert: Workday's listing POST does, and drops it on purpose for its
+    #: one direct-egress retry.
     egress_fallback_on: frozenset[int] = frozenset()
 
     #: Hosts this ATS parks a decommissioned tenant on — its own marketing pages. A Board whose
@@ -345,9 +346,8 @@ class BaseScraper(ABC):
         # — resolved here, not as the parameter's own default value — means a caller that never
         # passes `fetcher` gets exactly today's global-http behaviour, unchanged, while a test
         # (or a future second HTTP-shaped adapter) can inject a fake without monkeypatching
-        # `headstart.http` itself. None of the nine scrapers that override `__init__` need any
-        # change for this: they all call `super().__init__(slug, company)` positionally, which
-        # still resolves to the same default.
+        # `headstart.http` itself. Every scraper that overrides `__init__` passes `fetcher` on to
+        # here, and `registry.get_scraper` takes one too, so a fake reaches any Scraper (ADR-0199).
         self._fetcher: Fetcher = (
             fetcher if fetcher is not None else http.DEFAULT_FETCHER
         )
@@ -650,10 +650,11 @@ class BaseScraper(ABC):
         host it lands on. A Board nothing points away from resolves to its own host, which is what
         makes the shared key meaningful rather than merely equal.
 
-        Override where an ATS serves its aliases independently instead of redirecting between them
-        — Eightfold's ``nvidia.eightfold.ai`` and ``jobs.nvidia.com`` each answer for themselves, so
-        the default finds nothing there and its tenant id is the key. This is the same
-        default-here-override-there shape as :meth:`board_key` and :meth:`slug_from`.
+        Override where the redirect off :meth:`url` is not the signal: Workday follows its public
+        careers page instead, and each single source scraper (``google``, ``apple``, ``meta``, …)
+        is its own key without a request. Where the redirect is the signal but the landing host is
+        the wrong key, override only :meth:`alias_key_of_landing` (both Taleo editions). This is
+        the same default-here-override-there shape as :meth:`board_key` and :meth:`slug_from`.
 
         **The default's return value must be comparable to this ATS's own ``slug``, and for the
         default that means the slug has to BE a host.** ``board_aliases.resolve`` decides a Board
@@ -678,6 +679,10 @@ class BaseScraper(ABC):
         Streamed and closed unread — only the redirect chain is wanted, and a SuccessFactors
         sitemap body runs to megabytes. Only the final host survives, not the chain that reached
         it, which is why the ledger records a destination rather than a route.
+
+        Names its Board in the retry log (``egress_board``) and does no more: it neither routes
+        nor walls the spare egress, which is exactly what both Taleo editions' own copies of this
+        fetch did before they came to share it (ADR-0203).
         """
         try:
             resp = self._fetcher.fetch(
@@ -687,11 +692,22 @@ class BaseScraper(ABC):
                 timeout=30,
                 allow_redirects=True,
                 stream=True,
+                egress_board=self.board_key(),
             )
             resp.close()
-            return urllib.parse.urlsplit(resp.url).netloc.lower() or None
+            return self.alias_key_of_landing(resp.url)
         except Exception:  # noqa: BLE001 - any failure to reach it is "no verdict", not a crash
             return None
+
+    @staticmethod
+    def alias_key_of_landing(landing_url: str) -> str | None:
+        """The alias key a Board's surface names by landing on ``landing_url`` — its host.
+
+        The one step of :meth:`alias_key` an ATS may need to change without re-implementing the
+        fetch around it: a Taleo Board shares its regional host with every other customer, so its
+        key is the whole canonical career-section URL instead (ADR-0203). Raising is "no verdict",
+        the same as a failed fetch."""
+        return urllib.parse.urlsplit(landing_url).netloc.lower() or None
 
     @abstractmethod
     def url(self) -> str:
@@ -711,8 +727,9 @@ class BaseScraper(ABC):
         scraper states what it found. The expected shape is a bare string carrying whatever the
         native field states — a number or range, a currency code, and a period — space-separated,
         e.g. Lever's ``_salary_field`` returns ``"50000-70000 USD per-year-salary"`` from
-        ``salaryRange``. An ATS with no calibrated ``salary.py`` parser still reaches
-        ``_field_generic``, so any reasonable "AMOUNT[-AMOUNT] [CURRENCY] [PERIOD]" spelling is
+        ``salaryRange``. Build that shape with ``headstart.salary.to_field``, the encoder paired
+        with ``from_field`` (ADR-0197), rather than by hand. An ATS with no calibrated
+        ``salary.py`` parser still reaches ``_field_generic``, so any reasonable "AMOUNT[-AMOUNT] [CURRENCY] [PERIOD]" spelling is
         safe to emit even without adding a dedicated Tier-1 parser for it.
 
         ``raw`` is deliberately loose: every ATS's raw per-job record shape differs, so each

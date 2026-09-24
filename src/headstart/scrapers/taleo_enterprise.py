@@ -23,7 +23,7 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import unquote, urlencode, urlsplit, urlunsplit
 
-from headstart import company_name
+from headstart import company_name, salary
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -191,8 +191,7 @@ def _salary_field(
     it is."""
     if not payvalue:
         return None
-    span = f"{payvalue}-{maximumsalary}" if maximumsalary else payvalue
-    return " ".join(p for p in (span, currency, frequency) if p)
+    return salary.to_field(payvalue, maximumsalary or None, currency, frequency)
 
 
 def _parse_detail_page(page: str) -> dict[str, str | None] | None:
@@ -262,23 +261,11 @@ class TaleoEnterpriseScraper(BaseScraper):
             {"lang": "en", "job": job_id}
         )
 
-    def alias_key(self) -> str | None:
-        """The final Career Section URL, in the same identity space as this ledger."""
-        try:
-            response = self._fetch(
-                "GET",
-                self.url(),
-                headers={"User-Agent": USER_AGENT},
-                timeout=30,
-                allow_redirects=True,
-                stream=True,
-            )
-            try:
-                return _canonical(response.url)
-            finally:
-                response.close()
-        except Exception:  # noqa: BLE001 - an unreachable Board has no alias verdict
-            return None
+    @staticmethod
+    def alias_key_of_landing(landing_url: str) -> str | None:
+        """The final Career Section URL, in the same identity space as this ledger. A landing
+        off Taleo raises, which the base :meth:`alias_key` reads as no verdict."""
+        return _canonical(landing_url)
 
     def _request_headers(self) -> dict[str, str]:
         return {

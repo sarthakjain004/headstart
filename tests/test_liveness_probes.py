@@ -17,6 +17,9 @@ from types import SimpleNamespace
 import pytest
 from curl_cffi.requests.exceptions import HTTPError as CurlHTTPError
 
+from headstart.scrapers.registry import company_from_row, get_scraper
+from headstart.scrapers.workday import INSTANCES as WORKDAY_INSTANCES
+
 _ROOT = Path(__file__).resolve().parent.parent
 _spec = importlib.util.spec_from_file_location(
     "check_liveness", _ROOT / "scripts" / "validate" / "check_liveness.py"
@@ -105,17 +108,15 @@ def test_taleo_known_page_not_found_template_is_dead(monkeypatch):
 
 
 def test_taleo_enterprise_liveness_counts_the_scraper_listing(monkeypatch):
-    class Scraper:
-        def __init__(self, url, company):
-            pass
+    """The Career Section is read through the scraper's own `slug_from`, `url()` and listing, so a
+    row whose url carries the section's search page still asks for the section itself."""
+    from headstart.scrapers.taleo_enterprise import TaleoEnterpriseScraper
 
-        def url(self):
-            return "https://acme.taleo.net/careersection/2/jobsearch.ftl?lang=en"
-
-        def _listing(self, shell, timeout):
-            assert shell == "shell"
-            assert timeout == cl.TIMEOUT
-            return [{"id": "1"}, {"id": "2"}]
+    def listing(self, shell, timeout):
+        assert self.slug == "https://acme.taleo.net/careersection/2"
+        assert shell == "shell"
+        assert timeout == cl.TIMEOUT
+        return [{"id": "1"}, {"id": "2"}]
 
     class Response:
         text = "shell"
@@ -123,12 +124,18 @@ def test_taleo_enterprise_liveness_counts_the_scraper_listing(monkeypatch):
         def raise_for_status(self):
             pass
 
-    monkeypatch.setattr(cl, "TaleoEnterpriseScraper", Scraper)
-    monkeypatch.setattr(cl.http, "fetch", lambda *args, **kwargs: Response())
-    assert cl.p_taleo_enterprise("acme", "https://acme.taleo.net/careersection/2") == (
-        cl.LIVE,
-        2,
-    )
+    fetched = []
+
+    def fetch(method, url, **kwargs):
+        fetched.append(url)
+        return Response()
+
+    monkeypatch.setattr(TaleoEnterpriseScraper, "_listing", listing)
+    monkeypatch.setattr(cl.http, "fetch", fetch)
+    assert cl.p_taleo_enterprise(
+        "acme", "https://acme.taleo.net/careersection/2/jobsearch.ftl?lang=fr"
+    ) == (cl.LIVE, 2)
+    assert fetched == ["https://acme.taleo.net/careersection/2/jobsearch.ftl?lang=en"]
 
 
 def _join_stub(page_props, jobs_rowcount=None):
@@ -585,6 +592,98 @@ def test_pyjamahr_inconclusive_answers_stay_unknown(monkeypatch):
         cl, "_get", _pyjamahr_get(200, b'{"count": 0, "results": []}', 503)
     )
     assert cl.p_pyjamahr("acme", "") == (cl.UNKNOWN, None)
+
+
+# --- adp_recruiting: the site record answers first, and its token reads the count --------------
+
+_ADP_RM = json.loads(
+    (Path(__file__).parent / "fixtures" / "adp_recruiting_responses.json").read_text(
+        "utf-8"
+    )
+)
+
+
+def _adp_rm_get(site_status, site_body, listing=(200, b'{"count": 19}'), calls=None):
+    """`_get` keyed on path: the site record on myjobs.adp.com, the listing on my.adp.com."""
+
+    def _get(url, headers=None):
+        if calls is not None:
+            calls.append((url, headers or {}))
+        if "/career-site/" in url:
+            body = site_body if isinstance(site_body, bytes) else json.dumps(site_body)
+            return site_status, body if isinstance(body, bytes) else body.encode()
+        return listing
+
+    return _get
+
+
+def test_adp_recruiting_a_site_record_and_its_count_is_live(monkeypatch):
+    calls: list = []
+    monkeypatch.setattr(
+        cl, "_get", _adp_rm_get(200, _ADP_RM["site_churchmutual"], calls=calls)
+    )
+    assert cl.p_adp_recruiting("ChurchMutual", "") == (cl.LIVE, 19)
+    (site_url, site_h), (listing_url, listing_h) = calls
+    assert site_url.endswith("/career-site/churchmutual")
+    assert "%24top=1" in listing_url and "%24skip=0" in listing_url
+    # The token addresses the site; the language header is a filter curl_cffi would set wrong.
+    assert listing_h["myjobstoken"] == _ADP_RM["site_churchmutual"]["myJobsToken"]
+    assert site_h["Accept-Language"] == listing_h["Accept-Language"] == "en-US"
+
+
+def test_adp_recruiting_a_zero_count_on_a_known_site_is_a_live_empty_board(monkeypatch):
+    monkeypatch.setattr(
+        cl,
+        "_get",
+        _adp_rm_get(200, _ADP_RM["site_churchmutual"], (200, b'{"count": 0}')),
+    )
+    assert cl.p_adp_recruiting("churchmutual", "") == (cl.LIVE, 0)
+
+
+@pytest.mark.parametrize("key", ["site_not_found", "site_not_active"])
+def test_adp_recruiting_a_site_record_naming_the_site_gone_is_dead(monkeypatch, key):
+    monkeypatch.setattr(cl, "_get", _adp_rm_get(400, _ADP_RM[key]))
+    assert cl.p_adp_recruiting("bastiansolutions", "") == (cl.DEAD, None)
+
+
+def test_adp_recruiting_an_employee_only_site_is_dead(monkeypatch):
+    monkeypatch.setattr(cl, "_get", _adp_rm_get(200, _ADP_RM["site_taherinternal"]))
+    assert cl.p_adp_recruiting("taherinternal", "") == (cl.DEAD, None)
+
+
+def test_adp_recruiting_a_404_is_unknown_and_noted_on_either_request(monkeypatch):
+    """`_get` notes every non-200 but 404/410, so the probe notes those itself."""
+    notes: list[str] = []
+    monkeypatch.setattr(cl, "_note", notes.append)
+    monkeypatch.setattr(cl, "_get", _adp_rm_get(404, b""))
+    assert cl.p_adp_recruiting("churchmutual", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(
+        cl, "_get", _adp_rm_get(200, _ADP_RM["site_churchmutual"], (410, b""))
+    )
+    assert cl.p_adp_recruiting("churchmutual", "") == (cl.UNKNOWN, None)
+    assert notes == ["site-http-404", "listing-http-410"]
+
+
+@pytest.mark.parametrize(
+    "site_status, site_body, listing",
+    [
+        # One fixed host: a DNS failure is the resolver, not the site.
+        ("dns", b"", (200, b'{"count": 1}')),
+        # A 400 whose message was never measured on a departed site.
+        (400, b'{"message":"Bad Request"}', (200, b'{"count": 1}')),
+        (503, b"", (200, b'{"count": 1}')),
+        (200, b"<html>wall</html>", (200, b'{"count": 1}')),
+        # A live site whose listing errored: `trulitecareers` answered this 500 on 2026-09-24.
+        (200, None, (500, b'{"message":"ErrCode=ERR_BAD_REQUEST"}')),
+        (200, None, (200, b"<html></html>")),
+    ],
+)
+def test_adp_recruiting_inconclusive_answers_stay_unknown(
+    monkeypatch, site_status, site_body, listing
+):
+    body = _ADP_RM["site_churchmutual"] if site_body is None else site_body
+    monkeypatch.setattr(cl, "_get", _adp_rm_get(site_status, body, listing))
+    assert cl.p_adp_recruiting("churchmutual", "") == (cl.UNKNOWN, None)
 
 
 # --- breezy: the listing's status settles it, redirects not followed ------------------------------
@@ -1204,3 +1303,198 @@ def test_adp_an_adp_side_500_is_unknown(monkeypatch):
     """32 of 40 sampled first-pass unknowns were a 500 on both calls — re-probed, never buried."""
     monkeypatch.setattr(cl, "_get", _adp_get(500, b'{"status":500}'))
     assert cl.p_adp(_ADP, _ADP_URL) == (cl.UNKNOWN, None)
+
+
+# --- ADR-0203: a probe asks the Board its own Scraper reads, at the URL the scrape reads ---------
+
+
+def _recording_get(asked):
+    def _get(url, headers=None):
+        asked.append(url)
+        return 404, b""
+
+    return _get
+
+
+def _scraper_url(ats, tenant, url):
+    return get_scraper(ats, company_from_row(ats, tenant, url).slug).url()
+
+
+@pytest.mark.parametrize(
+    ("ats", "tenant", "url"),
+    [
+        ("recruitee", "acme", "https://acme.recruitee.com/o/some-posting"),
+        ("teamtailor", "acme", "https://acme.teamtailor.com"),
+        ("freshteam", "acme", "https://acme.freshteam.com"),
+        ("keka", "acme", "https://acme.keka.com"),
+        ("bamboohr", "acme", "https://acme.bamboohr.com"),
+        # The slug is the lowercased first label, not the raw tenant.
+        ("clearcompany", "Acme.hrmdirect.com", ""),
+        ("jazzhr", "acme", "https://acme.applytojob.com"),
+        ("rippling", "acme", "https://ats.rippling.com/acme/jobs"),
+        ("trakstar", "acme", "https://acme.hire.trakstar.com"),
+        ("join", "acme", "https://join.com/companies/acme"),
+        ("gem", "acme", "https://jobs.gem.com/acme"),
+        # Host-slugged: a stored deep link must not carry its path or query into the probe.
+        ("zoho", "acme", "https://acme.zohorecruit.in/jobs/Careers/1?source=x"),
+        ("personio", "acme", "https://acme.jobs.personio.com/job/1?language=de"),
+    ],
+)
+def test_probe_asks_the_url_its_scraper_reads(monkeypatch, ats, tenant, url):
+    asked = []
+    monkeypatch.setattr(cl, "_get", _recording_get(asked))
+    cl.PROBES[ats](tenant, url)
+    assert asked[0] == _scraper_url(ats, tenant, url)
+
+
+@pytest.mark.parametrize(
+    ("ats", "tenant", "url"),
+    [
+        ("jobvite", "acme", "https://jobs.jobvite.com/acme"),
+        ("pinpoint", "Acme", "https://acme.pinpointhq.com"),
+    ],
+)
+def test_fetching_probe_asks_the_url_its_scraper_reads(monkeypatch, ats, tenant, url):
+    asked = []
+
+    def _fetch(method, probe_url, **kwargs):
+        asked.append(probe_url)
+
+    monkeypatch.setattr(cl, "_fetch", _fetch)
+    assert cl.PROBES[ats](tenant, url) == (cl.UNKNOWN, None)
+    assert asked == [_scraper_url(ats, tenant, url)]
+
+
+def test_oracle_probes_the_pod_host_a_bare_label_row_carries(monkeypatch):
+    """441 oracle rows held a bare label (`bun`) as tenant and the pod host only in `url`; the
+    probe asked `https://bun/...`, which cannot resolve, so every one was written dead. The
+    scraper reads the pod host, and 10 of 10 sampled rows whose host another row holds live
+    answered live there (2026-09-24)."""
+    asked = []
+    monkeypatch.setattr(cl, "_get", _recording_get(asked))
+    cl.p_oracle("bun", "bun.fa.em2.oraclecloud.com")
+    assert asked[0].startswith(
+        "https://bun.fa.em2.oraclecloud.com/hcmRestApi/resources/latest/"
+    )
+
+
+def test_phenom_and_zwayam_ask_the_host_their_scrapers_read(monkeypatch):
+    posted = []
+
+    def _post(url, json_body, headers):
+        posted.append(url)
+        return 404, None
+
+    def _fetch(method, url, **kwargs):
+        posted.append(kwargs["headers"]["Origin"])
+
+    monkeypatch.setattr(cl, "_post", _post)
+    monkeypatch.setattr(cl, "_fetch", _fetch)
+    cl.p_phenom("Acme", "https://careers.acme.com/us/en/home")
+    cl.p_zwayam("Acme", "https://careers.acme.com/jobs?utm_source=x")
+    assert posted == ["https://careers.acme.com/widgets", "https://careers.acme.com"]
+
+
+def test_workday_probe_asks_each_data_centre_the_scrapers_listing(monkeypatch):
+    posted = []
+
+    def _post(url, json_body, headers):
+        posted.append(url)
+        return 422, None
+
+    monkeypatch.setattr(cl, "_post", _post)
+    slug = "https://acme.wd3.myworkdayjobs.com/External"
+    assert cl.p_workday("acme", slug + "/") == (cl.DEAD, None)
+    scraper = get_scraper("workday", slug)
+    assert posted[0] == scraper.url()
+    assert posted == [
+        scraper.listing_url_on(instance)
+        for instance in ("wd3", *(i for i in WORKDAY_INSTANCES if i != "wd3"))
+    ]
+
+
+def test_lever_probe_asks_the_hinted_instance_first(monkeypatch):
+    asked = []
+    monkeypatch.setattr(cl, "_get", _recording_get(asked))
+    assert cl.p_lever("acme", "https://jobs.eu.lever.co/acme") == (cl.DEAD, None)
+    scraper = get_scraper("lever", "acme")
+    assert asked == [scraper.listing_url_on("api.eu.lever.co"), scraper.url()]
+
+
+def test_darwinbox_probe_asks_the_scrapers_listing_on_each_tld(monkeypatch):
+    asked = []
+
+    def fetch(method, url, **kwargs):
+        asked.append(url)
+        raise CurlHTTPError("could not resolve host", 6, None)
+
+    monkeypatch.setattr(cl.http, "fetch", fetch)
+    assert cl.p_darwinbox("acme", "https://acme.darwinbox.com") == (cl.DEAD, None)
+    scraper = get_scraper("darwinbox", "acme")
+    assert asked == [scraper.listing_url_on("com"), scraper.listing_url_on("in")]
+
+
+def test_ripplehire_probe_reads_the_scrapers_token_and_search(monkeypatch):
+    asked = []
+
+    class Landed:
+        url = "https://acme.ripplehire.com/candidate/?token=abc_123"
+
+    class Searched:
+        status_code = 200
+
+        def json(self):
+            return {"totalJobCount": 7}
+
+    def fetch(method, url, **kwargs):
+        asked.append(url)
+        return Landed() if method == "GET" else Searched()
+
+    monkeypatch.setattr(cl.http, "fetch", fetch)
+    assert cl.p_ripplehire("acme", "https://acme.ripplehire.com") == (cl.LIVE, 7)
+    scraper = get_scraper("ripplehire", "acme")
+    assert asked == [scraper.url(), scraper.search_url()]
+
+
+def test_successfactors_probe_streams_the_scrapers_sitemap(monkeypatch):
+    asked = []
+
+    def request(method, url, **kwargs):
+        asked.append(url)
+        raise CurlHTTPError("connection reset", 0, None)
+
+    monkeypatch.setattr(cl.http, "session", lambda: SimpleNamespace(request=request))
+    assert cl.p_successfactors("careers.acme.com", "https://careers.acme.com") == (
+        cl.UNKNOWN,
+        None,
+    )
+    assert asked == [_scraper_url("successfactors", "careers.acme.com", "")]
+
+
+def test_taleo_be_walk_starts_on_the_scrapers_canonical_board_url(monkeypatch):
+    """A stored url carrying a sort parameter starts the walk on the Board, not on that view."""
+    asked = []
+    monkeypatch.setattr(cl, "_get", _recording_get(asked))
+    stored = (
+        "https://phe.tbe.taleo.net/p/ats/careers/v2/searchResults?org=A&cws=1&act=sort"
+    )
+    assert cl.p_taleo_be("acme", stored) == (cl.DEAD, None)
+    assert asked == [
+        "https://phe.tbe.taleo.net/p/ats/careers/v2/searchResults?org=A&cws=1"
+    ]
+    assert asked == [_scraper_url("taleo_be", "acme", stored)]
+
+
+def test_pyjamahr_settles_a_zero_count_on_the_scrapers_board_page(monkeypatch):
+    asked = []
+
+    def _get(url, headers=None):
+        asked.append(url)
+        return (200, b'{"count": 0}') if len(asked) == 1 else (200, b"<html></html>")
+
+    monkeypatch.setattr(cl, "_get", _get)
+    assert cl.p_pyjamahr("tulip-group", "https://jobs.pyjamahr.com/tulip-group") == (
+        cl.LIVE,
+        0,
+    )
+    assert asked[1] == get_scraper("pyjamahr", "tulip-group").board_page()

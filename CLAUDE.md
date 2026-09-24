@@ -79,6 +79,13 @@ discovery landing (#576) moved five more. Board totals belong in README and CONT
   a second name for a Board already held (131 accounts spanned 453 labels on 2026-09-23). The
   script rewrites `data/validate/aliases/clearcompany.csv`; `dedupe_boards.py` finds none of these
   and refuses `--apply` for this ATS (ADR-0182).
+- **ADP Recruiting Management: re-run `scripts/validate/adp_recruiting_subset_sites.py` after every
+  refresh of its ledger.** One client (`orgoid`) often runs several career sites, and a site can
+  list exactly what a sibling does (`gnc` and `generalnutritioncenter`, 751 each). A site whose
+  postings another site of the same client already lists is buried in
+  `data/validate/aliases/adp_recruiting.csv` (131 of 990 live sites on 2026-09-24). The script
+  re-walks every live site and rewrites the file, and `dedupe_boards.py` refuses `--apply` for this
+  ATS (ADR-0202).
 - **Taleo Enterprise: re-run `scripts/validate/taleo_enterprise_subset_sections.py` after every
   refresh of its ledger.** A tenant's career sections often list the same requisitions (HDR's 15
   sections listed the same 2,282 on 2026-09-24), so a section whose reqs another section of the
@@ -105,11 +112,6 @@ Evidence for the first two is in `docs/discovery/2026-09-23_indeed-sweep-landing
   Cornerstone are now built, #579, #582, #580 and #584, and the sweep's companies on all four are
   landed. ADP Workforce Now is built too, #585, ADR-0180; the sweep's ADP companies are a landing
   still to do.)
-- **ADP Recruiting Management** (`myjobs.adp.com/{slug}`, `recruiting.adp.com`) — a different
-  platform from Workforce Now: its listing
-  (`my.adp.com/myadp_prefix/mycareer/public/staffing/v1/job-requisitions/apply-custom-filters`)
-  wants an `orgoid` header, which `/public/staffing/v1/career-site/{slug}` supplies, and a
-  posting-channel id not yet found (`docs/adp/2026-09-23_careercenter-measurement.md`).
 - **SenseHQ** — the scraper is registered but has no ledger and no liveness probe, so none of its
   Boards can land.
 - **TurboHire** — token flow: `/api/token/noauth` (needs Referer), then `POST

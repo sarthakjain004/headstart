@@ -26,6 +26,7 @@ import json
 import re
 from typing import Any
 
+from headstart import salary
 from headstart.models import Job, html_to_text
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 
@@ -205,9 +206,9 @@ class JoinScraper(BaseScraper):
         currency = (raw.get("salaryAmountFrom") or raw.get("salaryAmountTo") or {}).get(
             "currency"
         )
-        span = (
-            f"{lo_amt // 100}-{hi_amt // 100}"
-            if lo_amt is not None and hi_amt is not None
-            else str((lo_amt if lo_amt is not None else hi_amt) // 100)
+        return salary.to_field(
+            (lo_amt if lo_amt is not None else hi_amt) // 100,
+            hi_amt // 100 if lo_amt is not None and hi_amt is not None else None,
+            currency,
+            period,
         )
-        return " ".join(p for p in (span, currency, period) if p)

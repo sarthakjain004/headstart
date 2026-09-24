@@ -130,6 +130,8 @@ merely re-derived. Both failure modes were confirmed red before the change was k
 - **Derive the scope from the shard reports.** They key Boards *attempted*, not Boards that emitted
   a line. A Board scraped that yields zero jobs of any kind is deliberately out of scope today
   (ADR-0023 prune owns those rows); reading the reports would silently widen eviction.
+  *Reversed by [ADR-0200](0200-a-board-scraped-empty-is-in-the-eviction-scope.md): prune never
+  owned those rows, because its keep-set keeps a live Board with no postings.*
 - **Re-read `data/jobs` after the union with `iter_jobs`.** Byte-identical to the reference
   implementation, but a second pass over 9.1 GB plus a 2.08 M-id dedup set, for an answer the first
   pass can produce for free.

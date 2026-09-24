@@ -76,7 +76,7 @@ from headstart.scrapers import registry
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 from headstart.scrapers.eightfold import _sitemap_position_id
 from headstart.scrapers.ripplehire import _PAGE_SIZE as _RIPPLEHIRE_PAGE_SIZE
-from headstart.scrapers.ripplehire import _TOKEN as _RIPPLEHIRE_TOKEN
+from headstart.scrapers.ripplehire import CAREERS_TOKEN as _RIPPLEHIRE_TOKEN
 from headstart.scrapers.successfactors import _job_urls_from
 from headstart.scrapers.trakstar import _codes_from
 

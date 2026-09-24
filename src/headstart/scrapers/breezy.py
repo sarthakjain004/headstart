@@ -46,6 +46,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from headstart import salary
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
@@ -71,7 +72,7 @@ _SALARY = re.compile(
     r"(?:(?P<plus>\+)| – (?P=sym)(?P<hi>\d[\d,.]*))?(?: / (?P<period>\w+))?$"
 )
 
-#: The period word -> the bare unit `salary._field_range_currency_interval` annualises. No
+#: The period word -> the bare unit `salary.from_field` annualises for breezy. No
 #: period (90 postings) reads as annual, that parser's default. "biweekly" (161) is left out on
 #: purpose: no shared parser reads it, and passing it bare would read a fortnight's pay as a year's.
 _PERIODS: dict[str | None, str] = {
@@ -87,7 +88,7 @@ _PERIODS: dict[str | None, str] = {
 #: `baseSalary.currency` (499 postings, 2026-09-23; every sampled one agreed). A symbol not here
 #: — `kr` (SEK or DKK), `Rp` (never checked) or anything unseen — states no currency.
 #:
-#: Known limit (ADR-0181): the shared parser names only the codes in `salary._CURRENCY_CODES`, so
+#: Known limit (ADR-0181): `salary.from_field` names only the ISO codes it knows, so
 #: the 15 here outside it (PHP, TWD, PKR, ZAR, …; 103 of 19,167 salaries) still reach `extract`
 #: as currency None — annualised, but unpriced, like a bare `$` outside the US and
 #: Canada. The code is emitted anyway, so widening that shared list is all it would take.
@@ -118,7 +119,7 @@ _SYMBOLS: dict[str, str] = {
 #: A bare `$` by the posting's country (ADR-0181). Measured against the page's JSON-LD: USD on
 #: 141 of 141 US postings, CAD on 179 of 188 Canadian ones (the other 9 are paid in USD — a known
 #: error this accepts), and USD on only 41 of 47 elsewhere (MXN, SGD, COP, unstated), so every
-#: other country states none. A scoped exception, chosen by the user, to `salary._symbol_currency`'s
+#: other country states none. A scoped exception, chosen by the user, to `salary.from_field`'s
 #: rule that a bare `$` names no currency.
 _DOLLAR_BY_COUNTRY: dict[str, str] = {"US": "USD", "CA": "CAD"}
 
@@ -206,9 +207,9 @@ class BreezyScraper(BaseScraper):
 
     def _salary_field(self, raw: Any) -> str | None:
         """``Job.salary`` from the row's templated `salary` string ("$25 – $30 / hour"), re-spelt
-        as RANGE CODE UNIT ("25-30 USD HOUR") — the shape `salary._field_range_currency_interval`
-        reads, where `_field_generic` read none of the hourly, weekly or monthly figures (neither
-        "/ hour" nor "/ week" is one of its phrase markers).
+        as RANGE CODE UNIT ("25-30 USD HOUR") through `salary.to_field` — the shape
+        `salary.from_field` reads for breezy, where the generic reader read none of the hourly,
+        weekly or monthly figures (neither "/ hour" nor "/ week" is one of its phrase markers).
 
         A floor ("$20+") keeps no ceiling and an exact figure ("$18") becomes coinciding bounds.
         A lone ceiling ("Up to $60,000", 37 postings) and a biweekly period (161) yield None: the
@@ -220,15 +221,12 @@ class BreezyScraper(BaseScraper):
             return None
         lo = m.group("lo").replace(",", "")
         if m.group("hi"):
-            figures = f"{lo}-{m.group('hi').replace(',', '')}"
+            hi = m.group("hi").replace(",", "")
         elif m.group("plus"):
-            figures = lo
+            hi = None
         else:
-            figures = f"{lo}-{lo}"
+            hi = lo
         country = ((raw.get("location") or {}).get("country") or {}).get("id")
-        parts = (
-            figures,
-            _currency(m.group("sym"), country),
-            _PERIODS[m.group("period")],
+        return salary.to_field(
+            lo, hi, _currency(m.group("sym"), country), _PERIODS[m.group("period")]
         )
-        return " ".join(part for part in parts if part)

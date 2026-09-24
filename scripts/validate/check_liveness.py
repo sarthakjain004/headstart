@@ -69,8 +69,8 @@ from headstart import (  # needs src on sys.path first
     liveness,
     spare_egress,
 )
-from headstart.models import (  # one host rule, shared with the scrapers
-    host_of,
+from headstart.scrapers import (
+    adp_recruiting as _adp_recruiting,  # request shapes + headers, single source
 )
 from headstart.scrapers import (
     jibe as _jibe,  # robots.txt rule + crawl delay, single source
@@ -89,14 +89,39 @@ from headstart.scrapers.clearcompany import (  # feed decode + req grouping, sin
 from headstart.scrapers.cornerstone import (  # the site walk + token, single source
     CornerstoneScraper,
 )
-from headstart.scrapers.jobvite import (  # board url + counter parse, single source
-    JobviteScraper,
+from headstart.scrapers.darwinbox import (  # the data-centre TLDs, single source
+    TLDS as _DARWINBOX_TLDS,
+)
+from headstart.scrapers.jobvite import (  # counter parse, single source
     total_of,
 )
-from headstart.scrapers.registry import SCRAPERS  # slug_from, per ATS
-from headstart.scrapers.taleo_enterprise import TaleoEnterpriseScraper
-from headstart.scrapers.workday import (  # the DC list, single source of truth
+from headstart.scrapers.lever import (  # the two instances, single source
+    API_HOSTS as _LEVER_API_HOSTS,
+)
+from headstart.scrapers.lever import (
+    EU_API_HOST as _LEVER_EU_API_HOST,
+)
+from headstart.scrapers.lever import (
+    GLOBAL_API_HOST as _LEVER_GLOBAL_API_HOST,
+)
+from headstart.scrapers.registry import (  # the row-to-Board funnel, per ATS
+    SCRAPERS,
+    company_from_row,
+)
+from headstart.scrapers.ripplehire import (  # the careers redirect's token, single source
+    CAREERS_TOKEN as _RIPPLEHIRE_TOKEN,
+)
+from headstart.scrapers.taleo_be import (  # the next-ten-rows link, single source
+    NEXT_PAGE_LINK as _TALEO_NEXT,
+)
+from headstart.scrapers.workday import (  # careers-URL parts + the DC list, single source
+    CAREERS_URL_PATTERN as _WD_URL,
+)
+from headstart.scrapers.workday import (
     INSTANCES as _WD_INSTANCES,
+)
+from headstart.scrapers.zoho import (  # the listing's jobs <input>, single source
+    JOBS_INPUT as _ZOHO_JOBS,
 )
 from headstart.scrapers.zwayam import (  # request shape + dead-vs-failed line, single source
     body_error_code,
@@ -1035,27 +1060,20 @@ def _drop_alias_duplicates(ats: str, rows: list[dict], ledger_dir: Path) -> list
     reaches those — assuming it would fail silently, skipping nothing, which is the least
     detectable way for this to be wrong."""
     aliases = board_aliases.load_for(ledger_dir, ats)
-    if not aliases:
-        return rows
-    scraper = SCRAPERS.get(ats)
-    if scraper is None:
+    if not aliases or ats not in SCRAPERS:
         return rows
     return [
         r
         for r in rows
-        if scraper.slug_from(r["tenant"], r["url"]).lower() not in aliases
+        if company_from_row(ats, r["tenant"], r["url"]).slug.lower() not in aliases
     ]
 
 
-_ZOHO_JOBS = re.compile(r'value="([^"]*)"\s+id="jobs"')
-_TOKEN = re.compile(r"token=([A-Za-z0-9_-]+)")
-_WD_URL = re.compile(r"^https://([^.]+)\.(wd\d+)\.myworkdayjobs\.com/([^/?#]+)")
 #: Any posting link on a jobvite board page. Deliberately not slug-anchored: the probe only
 #: needs to know whether the page lists anything, and five row templates put the link in
 #: different elements (JobviteScraper's module docstring).
 _JOBVITE_JOB = re.compile(r"/job/[A-Za-z0-9]+")
 _TALEO_JOB = re.compile(r"viewRequisition[^\"\s>]*\brid=(\d+)", re.IGNORECASE)
-_TALEO_NEXT = re.compile(r'<a\s+href="([^\"]+)"\s+class="jscroll-next"', re.IGNORECASE)
 _TALEO_GONE = "attempted to reach a url that no longer exists"
 
 
@@ -1144,12 +1162,37 @@ def _classify(url, count):
     return _verdict(status, count(body) if status == 200 else None)
 
 
+def _slug_of(ats, tenant, url):
+    """The Board's slug, read off this row by its own Scraper's ``slug_from`` (ADR-0203).
+
+    A probe that reads the raw ``tenant`` instead can ask a different host than the scrape reads:
+    a Personio row whose ``url`` is a vanity host, an Oracle row whose ``tenant`` is a bare label."""
+    return company_from_row(ats, tenant, url).slug
+
+
+def _scraper_for_row(ats, tenant, url):
+    """The Scraper for the Board this row names, so a probe asks the very URL the scrape reads
+    (its ``url()``) rather than a copy of it (ADR-0203)."""
+    return SCRAPERS[ats](_slug_of(ats, tenant, url))
+
+
+def _hinted_first(hinted, choices):
+    """``choices`` reordered to ask ``hinted`` first: the instance, data centre or TLD a row's url
+    names, before the others a Board may have moved to."""
+    return (hinted, *(choice for choice in choices if choice != hinted))
+
+
 # --- per-ATS probes: return (verdict, jobs) ---
+# Each reads the Board through `_scraper_for_row`/`_slug_of`, except `p_eightfold`, which ADR-0203
+# left as it was. Where a probe asks a different URL than the scraper's `url()` (a smaller page,
+# no descriptions), it says why beside it.
 
 
 def p_greenhouse(t, u):
+    # Not `url()`: its `content=true` carries every description, and a count needs none.
+    slug = _slug_of("greenhouse", t, u)
     return _classify(
-        f"https://boards-api.greenhouse.io/v1/boards/{t}/jobs",
+        f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs",
         lambda b: _len_of(b, "jobs"),
     )
 
@@ -1160,12 +1203,11 @@ def p_lever(t, u):
     # Trusting the url's hint alone marks a board DEAD whenever discovery found it on the global
     # host but the company actually sits on EU: measured 2026-07-27, 13 boards the ledger called
     # dead answered live on api.eu.lever.co. Only a 404 from *both* instances is definitive.
-    hinted = "api.eu" if "jobs.eu.lever.co" in u else "api"
+    scraper = _scraper_for_row("lever", t, u)
+    hinted = _LEVER_EU_API_HOST if "jobs.eu.lever.co" in u else _LEVER_GLOBAL_API_HOST
     verdict = DEAD
-    for host in (hinted, "api" if hinted == "api.eu" else "api.eu"):
-        v, jobs = _classify(
-            f"https://{host}.lever.co/v0/postings/{t}?mode=json", _len_of
-        )
+    for api_host in _hinted_first(hinted, _LEVER_API_HOSTS):
+        v, jobs = _classify(scraper.listing_url_on(api_host), _len_of)
         if v == LIVE:
             return v, jobs
         if v == UNKNOWN:
@@ -1174,21 +1216,25 @@ def p_lever(t, u):
 
 
 def p_ashby(t, u):
+    # Not `url()`: its `includeCompensation=true` adds a block per posting a count never reads.
+    slug = _slug_of("ashby", t, u)
     return _classify(
-        f"https://api.ashbyhq.com/posting-api/job-board/{t}",
+        f"https://api.ashbyhq.com/posting-api/job-board/{slug}",
         lambda b: _len_of(b, "jobs"),
     )
 
 
 def p_recruitee(t, u):
     return _classify(
-        f"https://{t}.recruitee.com/api/offers/", lambda b: _len_of(b, "offers")
+        _scraper_for_row("recruitee", t, u).url(), lambda b: _len_of(b, "offers")
     )
 
 
 def p_workable(t, u):
+    # Not `url()`: its `details=true` carries every description, and a count needs none.
+    slug = _slug_of("workable", t, u)
     return _classify(
-        f"https://apply.workable.com/api/v1/widget/accounts/{t}",
+        f"https://apply.workable.com/api/v1/widget/accounts/{slug}",
         lambda b: _len_of(b, "jobs"),
     )
 
@@ -1204,7 +1250,8 @@ def p_gem(t, u):
     # 2026-09-16 — see gem.py's module docstring). The board page IS a real 404 for a nonexistent
     # tenant, so it settles DEAD; only once it says the tenant exists does the API's job count mean
     # anything.
-    status, _ = _get(f"https://jobs.gem.com/{t}")
+    scraper = _scraper_for_row("gem", t, u)
+    status, _ = _get(scraper.url())
     if status == "dns" or status in (404, 410):
         return DEAD, None
     if status != 200:
@@ -1214,7 +1261,7 @@ def p_gem(t, u):
         [
             {
                 "operationName": "JobBoardList",
-                "variables": {"boardId": t},
+                "variables": {"boardId": scraper.slug},
                 "query": _GEM_LIST_QUERY,
             }
         ],
@@ -1242,11 +1289,10 @@ def _zoho_count(text):
 
 
 def p_zoho(t, u):
-    # Host only, matching ZohoScraper.slug_from — same latent shape as the personio bug above.
-    # Zoho's ledger carries 44 pathy / 19 query rows; none is live today, so this is not yet
-    # costing coverage, but the identical `/jobs/Careers` suffix would land inside a query.
-    host = host_of(u)
-    status, body = _get(f"https://{host}/jobs/Careers")
+    # The scraper's own careers page, on the host its `slug_from` reads off the row: Zoho's
+    # ledger carries 44 pathy / 19 query rows, where appending `/jobs/Careers` to the raw url
+    # would land inside a path or a query.
+    status, body = _get(_scraper_for_row("zoho", t, u).url())
     if status == "dns" or status in (404, 410):
         return DEAD, None
     if status != 200:
@@ -1277,6 +1323,10 @@ class _GatedFetcher:
             raise _BreakerOpen
         return r
 
+    def clear_cookies(self, domain=None):
+        """`_fetch` rides the pooled session, so its jar is the one to clear (ADR-0199)."""
+        http.DEFAULT_FETCHER.clear_cookies(domain)
+
 
 def p_cornerstone(t, u):
     """The Board's whole listing, read by the scraper's own walk (`CornerstoneScraper.listing`).
@@ -1292,9 +1342,7 @@ def p_cornerstone(t, u):
     career-site page on ids 1-3 redirects to `/ui/error` (an LMS-only corp: 12 of that sample,
     and 5 tenants x ids 1-6). Anything else unexplained is UNKNOWN.
     """
-    scraper = CornerstoneScraper(
-        CornerstoneScraper.slug_from(t, u), fetcher=_GatedFetcher()
-    )
+    scraper = CornerstoneScraper(_slug_of("cornerstone", t, u), fetcher=_GatedFetcher())
     try:
         rows = scraper.listing()
     except _BreakerOpen:
@@ -1321,7 +1369,7 @@ def p_bamboohr(t, u):
     # empty). DNS/404 never happen here (the *.bamboohr.com wildcard resolves for anything), so
     # the wrapper's presence, not the status code, is the real signal. See bamboohr.py's module
     # docstring for the full measurement.
-    status, body = _get(f"https://{t}.bamboohr.com/jobs/embed2.php")
+    status, body = _get(_scraper_for_row("bamboohr", t, u).url())
     if status == "dns" or status in (404, 410):
         return DEAD, None
     if status != 200:
@@ -1355,10 +1403,11 @@ def p_breezy(t, u):
     1,500 live-verdict Boards drew 100 curl code-6 errors.
     So it is UNKNOWN, retried on the next pass, like any other network failure.
     """
+    slug = _slug_of("breezy", t, u)
     try:
         r = _fetch(
             "GET",
-            f"https://{t}.breezy.hr/json",
+            f"https://{slug}.breezy.hr/json",  # `url()` less `verbose`, as above
             headers={"User-Agent": UA, "Accept": "application/json"},
             allow_redirects=False,
         )
@@ -1396,7 +1445,7 @@ def p_clearcompany(t, u):
     # answers almost any label (the one real NXDOMAIN in the pool is the vendor's `preview`), and
     # under a wide pass the local resolver fails first — breezy's wildcard wrote 41 live Boards
     # dead that way (`p_breezy`).
-    status, body = _get(f"https://{t}.hrmdirect.com/employment/xml.php")
+    status, body = _get(_scraper_for_row("clearcompany", t, u).url())
     if status == 404:
         return DEAD, None
     if status != 200:
@@ -1417,7 +1466,7 @@ def p_keka(t, u):
     # with *neither* exposed no UUID at all and was recorded UNKNOWN despite serving jobs.
     # Measured 2026-07-27: 25 of 25 sampled ledger-UNKNOWNs answered LIVE here, with real count
     # variance; dead slugs and garbage controls were unchanged.
-    status, body = _get(f"https://{t}.keka.com/careers/api/jobs/default/active")
+    status, body = _get(_scraper_for_row("keka", t, u).url())
     if status == "dns" or status in (404, 410):
         return DEAD, None
     if status != 200:
@@ -1438,14 +1487,15 @@ _WD_GONE = {404, 410, 422}
 
 
 def p_workday(t, u):
-    m = _WD_URL.match(u.rstrip("/"))
+    slug = _slug_of("workday", t, u)
+    m = _WD_URL.match(slug)
     if not m:
         return DEAD, None  # not a Workday URL -> can't be a board
-    co, hinted, site = m.groups()
+    scraper = SCRAPERS["workday"](slug)
 
     def probe(inst):
         status, data = _post(
-            f"https://{co}.{inst}.myworkdayjobs.com/wday/cxs/{co}/{site}/jobs",
+            scraper.listing_url_on(inst),
             {"appliedFacets": {}, "limit": 1, "offset": 0, "searchText": ""},
             {
                 "User-Agent": UA,
@@ -1458,7 +1508,7 @@ def p_workday(t, u):
 
     # Probe the hinted DC, then sweep the rest (tenant may have migrated). Any 200 -> LIVE, found.
     statuses = []
-    for inst in (hinted, *(i for i in _WD_INSTANCES if i != hinted)):
+    for inst in _hinted_first(m.group("instance"), _WD_INSTANCES):
         total, status = probe(inst)
         if total is not None:
             return LIVE, total
@@ -1471,11 +1521,12 @@ def p_workday(t, u):
 
 
 def p_ripplehire(t, u):
+    scraper = _scraper_for_row("ripplehire", t, u)
     headers = {"User-Agent": UA}
     try:
         r = http.fetch(
             "GET",
-            f"https://{t}.ripplehire.com/candidate/careers",
+            scraper.url(),
             headers=headers,
             timeout=TIMEOUT,
             verify=False,
@@ -1483,7 +1534,7 @@ def p_ripplehire(t, u):
         )
     except http.RequestsError as e:
         return (DEAD, None) if _is_dns(e) else (UNKNOWN, None)
-    m = _TOKEN.search(r.url)
+    m = _RIPPLEHIRE_TOKEN.search(r.url)
     if not m:
         return UNKNOWN, None
     params = json.dumps(
@@ -1499,7 +1550,7 @@ def p_ripplehire(t, u):
     try:
         r2 = http.fetch(
             "POST",
-            f"https://{t}.ripplehire.com/candidate/candidatejobsearch",
+            scraper.search_url(),
             data=data,
             headers={
                 "User-Agent": UA,
@@ -1522,10 +1573,15 @@ def p_ripplehire(t, u):
 
 
 def p_darwinbox(t, u):
-    host_tld = "com" if ".darwinbox.com" in u else "in"
+    # The scraper tries `TLDS` in its own order; the probe starts from the one the row's url
+    # names, and asks each host the same listing the scrape pages through.
+    scraper = _scraper_for_row("darwinbox", t, u)
+    hinted = next(
+        (tld for tld in _DARWINBOX_TLDS if f".darwinbox.{tld}" in u), _DARWINBOX_TLDS[0]
+    )
     dns_fails = 0
-    for tld in (host_tld, *[x for x in ("in", "com") if x != host_tld]):
-        api = f"https://{t}.darwinbox.{tld}/ms/candidateapi/job/alljobs?companyId=main"
+    for tld in _hinted_first(hinted, _DARWINBOX_TLDS):
+        api = scraper.listing_url_on(tld)
         try:
             r = http.fetch(
                 "POST",
@@ -1551,7 +1607,7 @@ def p_darwinbox(t, u):
             except Exception:  # noqa: BLE001
                 return UNKNOWN, None
         # 404/other on this tld -> try the other tld
-    return (DEAD, None) if dns_fails == 2 else (UNKNOWN, None)
+    return (DEAD, None) if dns_fails == len(_DARWINBOX_TLDS) else (UNKNOWN, None)
 
 
 # The Board host's redirect target, for slugs the posting API can't settle (see p_smartrecruiters).
@@ -1603,12 +1659,14 @@ def p_smartrecruiters(t, u):
         tf = d.get("totalFound")
         return tf if isinstance(tf, int) else len(d.get("content") or [])
 
+    # `limit=10`, not `url()`'s 100: only `totalFound` is read.
+    slug = _slug_of("smartrecruiters", t, u)
     verdict, jobs = _classify(
-        f"https://api.smartrecruiters.com/v1/companies/{t}/postings?limit=10", count
+        f"https://api.smartrecruiters.com/v1/companies/{slug}/postings?limit=10", count
     )
     if verdict != LIVE or jobs:
         return verdict, jobs
-    served = _sr_board_host(t)
+    served = _sr_board_host(slug)
     if served is None:
         return UNKNOWN, None  # couldn't tell -> re-probe rather than guess
     return (LIVE, 0) if served else (DEAD, None)
@@ -1616,7 +1674,7 @@ def p_smartrecruiters(t, u):
 
 def p_teamtailor(t, u):
     return _classify(
-        f"https://{t}.teamtailor.com/jobs.json", lambda b: _len_of(b, "items")
+        _scraper_for_row("teamtailor", t, u).url(), lambda b: _len_of(b, "items")
     )
 
 
@@ -1624,7 +1682,7 @@ def p_freshteam(t, u):
     # The public careers widget: a real board always returns JSON with a "jobs" key (0 == live but
     # empty). An unknown/parked slug soft-errors at HTTP 200 with an HTML 404 page off the
     # *.freshteam.com wildcard (so it never 404s / DNS-fails) — non-JSON at 200 is definitively DEAD.
-    status, body = _get(f"https://{t}.freshteam.com/hire/widgets/jobs.json")
+    status, body = _get(_scraper_for_row("freshteam", t, u).url())
     if status == "dns" or status in (404, 410):
         return DEAD, None
     if status != 200:
@@ -1678,12 +1736,13 @@ def p_pinpoint(t, u):
     `pinpointhq.com` is a spanning gate (`_SPANNING`): the refusals it answers overload with span
     tenants and persist for minutes.
     """
-    base = f"https://{t.lower()}.pinpointhq.com"
+    scraper = _scraper_for_row("pinpoint", t, u)
+    base = scraper.board_page().rstrip("/")
 
     def ask_listing():
         return _fetch(
             "GET",
-            f"{base}/postings.json",
+            scraper.url(),
             headers={"User-Agent": UA},
             allow_redirects=False,
         )
@@ -1767,8 +1826,10 @@ def p_pyjamahr(t, u):
     # the three 404s in the Wayback roster were `images`, `&` and a `.js` asset, not tenants).
     # No rate limit was found (~3,800 requests, up to 84 req/s, zero non-200s), so neither host
     # is seeded in `_GATES`; the auto-gate covers a wall that appears later.
+    # `limit=1`, not `url()`'s 1,000: the envelope's `count` is the whole total either way.
+    scraper = _scraper_for_row("pyjamahr", t, u)
     status, body = _get(
-        f"https://api.pyjamahr.com/api/career/jobs/?company_slug={t}&limit=1"
+        f"https://api.pyjamahr.com/api/career/jobs/?company_slug={scraper.slug}&limit=1"
     )
     if status == "dns" or status in (404, 410):
         return DEAD, None
@@ -1780,7 +1841,7 @@ def p_pyjamahr(t, u):
         return UNKNOWN, None
     if n:
         return LIVE, n
-    status, _ = _get(f"https://jobs.pyjamahr.com/{t}")
+    status, _ = _get(scraper.board_page())
     if status == 200:
         return LIVE, 0
     if status == "dns" or status in (404, 410):
@@ -1842,7 +1903,7 @@ def p_jibe(t, u):
     # (requisition, language), so it can exceed the postings the scraper keeps. A 404 there is not
     # a departed client: 21 resolving labels answer it (dycom's board lives under `/dycom/`), so it
     # is UNKNOWN too. Measured 2026-09-24, docs/jibe/2026-09-24_api-jobs-measurement.md.
-    hostname = _jibe.JibeScraper(_jibe.JibeScraper.slug_from(t, u)).host
+    hostname = _scraper_for_row("jibe", t, u).host
     host = f"https://{hostname}"
     status, body = _jibe_get(f"{host}/robots.txt", follow=True)
     if status == "dns":
@@ -1890,7 +1951,8 @@ def p_adp(t, u):
     # unresolvable name says nothing about a tenant. Measured 2026-09-24: the local resolver
     # failed `workforcenow.adp.com` mid-pass while the host kept answering, which the generic
     # `status == "dns"` rule wrote down as dead Boards (breezy's lesson, ADR-0181).
-    cid, _, cc = t.partition("/")
+    scraper = _scraper_for_row("adp", t, u)  # every ledger row is `{cid}/{ccId}`
+    cid, cc = scraper.cid, scraper.cc_id
     status, body = _get(locales_url(cid, cc))
     if status == "dns":
         _note("dns-on-fixed-host")
@@ -1927,6 +1989,67 @@ def p_adp(t, u):
     return LIVE, total
 
 
+#: What the site record answers for a site that is gone — a 400, not a 404. Both measured
+#: 2026-09-24 on real departed sites from the seed lists: "not found" on 5 (`bastiansolutions`,
+#: `carolinapowerscareers`, ...), "not active" on 6 (`cityofpeoriaaz`, `lkqexternalcareersite`,
+#: ...). An invented slug answers "not found" too.
+_ADP_RECRUITING_GONE = (b"Careersite not found", b"Careersite is not active")
+
+
+def p_adp_recruiting(t, u):
+    # A Board is a career site, `myjobs.adp.com/{slug}/cx`. Its record answers first: a 400
+    # naming the site gone is DEAD, and a 200 carries the token the listing wants. The listing
+    # (`$top=1`) states the count; a zero is a real empty site, because only a site the record
+    # knows reaches it. Every request sends `Accept-Language: en-US` — a filter, and curl_cffi's
+    # own default reads every site as empty (`adp_recruiting.request_headers`).
+    #
+    # An employee-only site (`careerSiteType` "Internal", 15 of the 681 seed-census sites) is DEAD
+    # by policy, not by absence. Of the 14 hiring ones' 3,924 postings, 3,526 are on an external
+    # site of the same client, which serves them; the other 398 are for the client's own staff
+    # (ADR-0202).
+    #
+    # No rate limit was found (2,500 requests at 128-wide), so the host is not seeded in
+    # `_GATES`. A DNS failure is UNKNOWN: every site is on the one fixed host.
+    slug = _slug_of("adp_recruiting", t, u)
+    status, body = _get(
+        _adp_recruiting.site_url(slug), headers=_adp_recruiting.request_headers()
+    )
+    if status == "dns":
+        _note("dns-on-fixed-host")
+        return UNKNOWN, None
+    if status == 400 and any(gone in body for gone in _ADP_RECRUITING_GONE):
+        return DEAD, None
+    if status != 200:
+        # `_get` notes every other non-200 itself; neither was seen on this host.
+        if status in (404, 410):
+            _note(f"site-http-{status}")
+        return UNKNOWN, None
+    try:
+        site = json.loads(body)
+    except ValueError:
+        _note("body-unparseable")
+        return UNKNOWN, None
+    if (site.get("settings") or {}).get("careerSiteType") == "Internal":
+        return DEAD, None
+    token = site.get("myJobsToken")
+    if not token:
+        _note("no-token")
+        return UNKNOWN, None
+    status, body = _get(
+        _adp_recruiting.listing_url(skip=0, top=1),
+        headers=_adp_recruiting.request_headers(token),
+    )
+    if status != 200:
+        if status in (404, 410):
+            _note(f"listing-http-{status}")
+        return UNKNOWN, None
+    try:
+        return LIVE, int(json.loads(body)["count"])
+    except (ValueError, KeyError, TypeError):
+        _note("body-unparseable")
+        return UNKNOWN, None
+
+
 def p_successfactors(t, u):
     # RMK vanity-domain board: /sitemap.xml is either a compact urlset of /job/ URLs or the
     # Google-jobs RSS feed. The read is a capped stream (the RSS generator trickles, and big
@@ -1937,7 +2060,7 @@ def p_successfactors(t, u):
     try:
         r = http.session().request(
             "GET",
-            f"https://{t}/sitemap.xml",
+            _scraper_for_row("successfactors", t, u).url(),
             headers={"User-Agent": UA},
             timeout=TIMEOUT,
             verify=False,
@@ -1973,7 +2096,7 @@ def p_successfactors(t, u):
 
 def p_rippling(t, u):
     return _classify(
-        f"https://api.rippling.com/platform/api/ats/v1/board/{t}/jobs",
+        _scraper_for_row("rippling", t, u).url(),
         lambda b: _len_of(b, "items", "jobs"),
     )
 
@@ -2127,7 +2250,7 @@ def p_eightfold(t, u):
 
 
 def p_trakstar(t, u):
-    status, body = _get(f"https://{t}.hire.trakstar.com/")
+    status, body = _get(_scraper_for_row("trakstar", t, u).url())
     if status == "dns" or status in (404, 410):
         return DEAD, None
     if status != 200:
@@ -2137,14 +2260,14 @@ def p_trakstar(t, u):
 
 
 def p_personio(t, u):
-    # Host only, matching PersonioScraper.slug_from. 634 rows in this ledger carry a job deep
-    # link with tracking params in `url` (cc_miner stored the raw capture), and `rstrip("/")`
-    # left the path and query in place: the probe then fetched `.../job/186062?language=de/xml`,
-    # where the `/xml` lands INSIDE the query string, so Personio served the ordinary HTML job
-    # page with a 200 and this counted zero `<position>` entries. Every one of the 312 such rows
-    # is recorded live with jobs=0 — probed as alive while the scraper could never read them.
-    host = host_of(u) or f"{t}.jobs.personio.de"
-    status, body = _get(f"https://{host}/xml")
+    # The scraper's own feed, on the host its `slug_from` reads. 634 rows in this ledger carry a
+    # job deep link with tracking params in `url` (cc_miner stored the raw capture), and
+    # `rstrip("/")` left the path and query in place: the probe then fetched
+    # `.../job/186062?language=de/xml`, where the `/xml` lands INSIDE the query string, so
+    # Personio served the ordinary HTML job page with a 200 and this counted zero `<position>`
+    # entries. Every one of the 312 such rows was recorded live with jobs=0 — probed as alive
+    # while the scraper could never read them.
+    status, body = _get(_scraper_for_row("personio", t, u).url())
     if status == "dns" or status in (404, 410):
         return DEAD, None
     if status != 200:
@@ -2153,7 +2276,7 @@ def p_personio(t, u):
 
 
 def p_join(t, u):
-    status, body = _get(f"https://join.com/companies/{t}")
+    status, body = _get(_scraper_for_row("join", t, u).url())
     if status == "dns" or status in (404, 410):
         return DEAD, None
     if status != 200:
@@ -2199,7 +2322,7 @@ def p_jobvite(t, u):
     try:
         r = _fetch(
             "GET",
-            JobviteScraper(t).url(),
+            _scraper_for_row("jobvite", t, u).url(),
             headers={"Accept": "text/html"},
             allow_redirects=False,
         )
@@ -2230,7 +2353,7 @@ def p_jobvite(t, u):
 
 
 def p_zwayam(t, u):
-    """One POST to the shared API, which selects the Board by hostname (`t`).
+    """One POST to the shared API, which selects the Board by hostname — the slug.
 
     Read the BODY, never the status: a hostname that is no longer a registered Board answers
     HTTP 200 with `"data": null`, identical in every other respect to a live one — and a
@@ -2241,7 +2364,7 @@ def p_zwayam(t, u):
     imported only the body helpers and re-declared the headers, and had already drifted on the
     User-Agent.
     """
-    url, headers, body = search_request(t)
+    url, headers, body = search_request(_slug_of("zwayam", t, u))
     try:
         r = _fetch("POST", url, data=body, headers=headers)
     except http.RequestsError as e:
@@ -2304,7 +2427,7 @@ def p_jazzhr(t, u):
     one transport timeout (correctly UNKNOWN here) and one empty board the career-page harvest
     miscounted.
     """
-    status, body = _get(f"https://{t}.applytojob.com/apply/jobs")
+    status, body = _get(_scraper_for_row("jazzhr", t, u).url())
     if status == "dns" or status in (404, 410):
         return DEAD, None
     if status != 200:
@@ -2336,8 +2459,10 @@ def p_oracle(t, u):
     stays UNKNOWN here and is re-probed. That is the status-is-not-a-mechanism rule; a 503 from
     this API means "ask again", not "gone".
     """
+    # `limit=1`, not `url()`'s page of 200: `TotalJobsCount` is the whole total either way.
+    host = _slug_of("oracle", t, u)
     return _classify(
-        f"https://{t}/hcmRestApi/resources/latest/recruitingCEJobRequisitions"
+        f"https://{host}/hcmRestApi/resources/latest/recruitingCEJobRequisitions"
         f"?onlyData=true&expand=requisitionList&finder=findReqs;limit=1,offset=0",
         _oracle_total,
     )
@@ -2371,11 +2496,10 @@ def p_phenom(t, u):
     that answered 403 to every probe while serving a real board in a browser), so those stay
     UNKNOWN and are re-probed rather than buried.
     """
-    from headstart.scrapers.phenom import PhenomScraper
-
+    scraper = _scraper_for_row("phenom", t, u)
     status, body = _post(
-        f"https://{t}/widgets",
-        PhenomScraper(t)._search_payload(0, 1),
+        scraper.widgets_url(),
+        scraper._search_payload(0, 1),
         {"User-Agent": UA, "Accept": "*/*", "Content-Type": "application/json"},
     )
     total = None
@@ -2390,7 +2514,7 @@ def p_taleo_be(t, u):
     """Walk TBE's cookie-backed ten-row pages and return the actual Board count."""
     from urllib.parse import urljoin
 
-    page_url, seen_pages, ids = u, set(), set()
+    page_url, seen_pages, ids = _scraper_for_row("taleo_be", t, u).url(), set(), set()
     for _ in range(1_000):
         if page_url in seen_pages:
             return UNKNOWN, None
@@ -2409,14 +2533,14 @@ def p_taleo_be(t, u):
         next_match = _TALEO_NEXT.search(text)
         if not next_match:
             return LIVE, len(ids)
-        page_url = urljoin(page_url, html.unescape(next_match.group(1)))
+        page_url = urljoin(page_url, html.unescape(next_match.group("href")))
     return UNKNOWN, None
 
 
 def p_taleo_enterprise(t, u):
     """Count a public Career Section through its measured JSON listing surface."""
-    scraper = TaleoEnterpriseScraper(u, t)
     try:
+        scraper = _scraper_for_row("taleo_enterprise", t, u)
         response = http.fetch(
             "GET",
             scraper.url(),
@@ -2434,6 +2558,7 @@ PROBES = {
     "greenhouse": p_greenhouse,
     "lever": p_lever,
     "adp": p_adp,
+    "adp_recruiting": p_adp_recruiting,
     "ashby": p_ashby,
     "bamboohr": p_bamboohr,
     "breezy": p_breezy,
