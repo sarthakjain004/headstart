@@ -189,13 +189,13 @@ def _fetch_smartrecruiters(scraper: BaseScraper) -> list[Job]:
     """Bounded adapter for smartrecruiters: one listing page via the scraper's own single-page
     primitive (``_get()``, no offset — never ``fetch_raw()``, which pages the *whole* board plus
     fans out detail fetches over *every* posting found). Detail-fetches only the first
-    :data:`_DETAIL_FETCH_CAP` postings via the scraper's own ``_job_detail``, then parses
+    :data:`_DETAIL_FETCH_CAP` postings via the scraper's own ``fetch_detail``, then parses
     just those — so the returned Jobs are exactly the ones with a real description."""
     page = json.loads(scraper._get())
     postings = (page or {}).get("content") or []
     sample = postings[:_DETAIL_FETCH_CAP]
     for item in sample:
-        item["_detail"] = scraper._job_detail(item.get("id")) or {}
+        item["_detail"] = scraper.fetch_detail(item) or {}
     return scraper.parse({**page, "content": sample}, datetime.now(UTC).isoformat())
 
 

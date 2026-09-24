@@ -5,13 +5,16 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import threading
 import time
 import urllib.parse
 from abc import ABC, abstractmethod
 from collections import Counter
-from collections.abc import Awaitable, Callable, Container, Sequence
+from collections.abc import Awaitable, Callable, Container, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from types import MappingProxyType
 from typing import Any, TypeVar
 
 from headstart import company_name, fanout_stats, http, log, spare_egress
@@ -153,6 +156,68 @@ def loss_breakdown(losses: Counter[str], missing: int) -> str:
         return ""
     why = ", ".join(f"{cause} x{n}" for cause, n in tally.most_common())
     return f" ({why})"
+
+
+#: The headers :meth:`BaseScraper._get` sends, and so the default for a :class:`DetailRequest` —
+#: a Detail pass that used to ride ``_get``/``_get_async`` states nothing and sends exactly this.
+DEFAULT_REQUEST_HEADERS: Mapping[str, str] = MappingProxyType(
+    {"User-Agent": USER_AGENT, "Accept": "application/json, text/html"}
+)
+
+
+@dataclass(frozen=True)
+class DetailRequest:
+    """One Job's Detail pass request, stated as data (ADR-0195).
+
+    A Scraper returns this from :meth:`BaseScraper.detail_request` instead of sending the request
+    itself, so :meth:`BaseScraper.run_detail_pass` can send it over whichever transport is in
+    force — the thread pool or the multiplexed session — from this one description. Before this
+    existed every Scraper wrote each detail request twice, once per transport, and three pairs had
+    already drifted apart (a header sent on one path only, a retry argument dropped on the other).
+
+    ``options`` carries any further keyword for the fetch seam (``json=``, ``data=``,
+    ``allow_redirects=``, ``retry_on=``, ``marks_wall=``) unchanged.
+    """
+
+    url: str
+    method: str = "GET"
+    headers: Mapping[str, str] = DEFAULT_REQUEST_HEADERS
+    timeout: float = 30
+    options: Mapping[str, Any] = field(default_factory=dict)
+
+
+class DetailLost(Exception):
+    """One Job's detail is lost, and ``cause`` names what lost it — the label
+    :meth:`BaseScraper.report_detail_gaps` prints (ADR-0088's discipline).
+
+    Raised from :meth:`BaseScraper.read_detail` for a response that arrived but carries no detail
+    (``"no JSON-LD on a 200"``, ``"no posting"``). Transport failures and non-200 statuses are
+    labelled by :meth:`BaseScraper.run_detail_pass` itself and never need raising.
+    """
+
+    def __init__(self, cause: str) -> None:
+        super().__init__(cause)
+        self.cause = cause
+
+
+class DetailUnattempted(DetailLost):
+    """Raised from :meth:`BaseScraper.detail_request` when no request can be formed for a Job (a
+    listing row with no native id), so ``detail_attempted`` telemetry stays a count of requests
+    actually made."""
+
+
+class FetchedDetails(dict[str, Any]):
+    """What :meth:`BaseScraper.run_detail_pass` returns: each detail that arrived, keyed by the
+    Job's native id, plus how many of the requested ones did not (:attr:`missing`) — the count a
+    load-bearing pass marks its Board truncated on (ADR-0053).
+
+    A Job the tech gate or the held-description skip left out is simply absent: never requested,
+    so neither present nor missing.
+    """
+
+    def __init__(self, details: dict[str, Any], missing: int) -> None:
+        super().__init__(details)
+        self.missing = missing
 
 
 class BaseScraper(ABC):
@@ -696,10 +761,7 @@ class BaseScraper(ABC):
         response = self._fetcher.fetch(
             "GET",
             url or self.url(),
-            headers={
-                "User-Agent": USER_AGENT,
-                "Accept": "application/json, text/html",
-            },
+            headers=dict(DEFAULT_REQUEST_HEADERS),
             timeout=30,
             **self._egress(),
         )
@@ -718,10 +780,7 @@ class BaseScraper(ABC):
             session,
             "GET",
             url or self.url(),
-            headers={
-                "User-Agent": USER_AGENT,
-                "Accept": "application/json, text/html",
-            },
+            headers=dict(DEFAULT_REQUEST_HEADERS),
             timeout=30,
             **self._egress(),
         )
@@ -929,6 +988,168 @@ class BaseScraper(ABC):
 
             await asyncio.gather(*(one(i, item) for i, item in enumerate(items)))
         return results
+
+    def detail_request(self, item: Any) -> DetailRequest:
+        """The request that fetches ``item``'s detail — the one place a Scraper states it, for
+        :meth:`run_detail_pass` to send on either transport (ADR-0195).
+
+        Raise :class:`DetailUnattempted` when no request can be formed. Only a Scraper that calls
+        :meth:`run_detail_pass` implements this.
+        """
+        raise NotImplementedError(f"{type(self).__name__} has no detail_request")
+
+    def read_detail(self, item: Any, response: Any) -> Any:
+        """``item``'s detail out of its 200 ``response``, or raise :class:`DetailLost` naming
+        why the page carries none.
+
+        Only ever handed a 200: a non-200 is labelled ``HTTP {status}`` before this is called,
+        and anything it raises other than :class:`DetailLost` is labelled by its exception type
+        rather than lost unlabelled. Keep it free of I/O — it runs inside the event loop on the
+        multiplexed path.
+        """
+        raise NotImplementedError(f"{type(self).__name__} has no read_detail")
+
+    def run_detail_pass(
+        self,
+        items: Sequence[_T],
+        *,
+        key_of: Callable[[_T], str],
+        what: str,
+        title_of: Callable[[_T], str | None] | None = None,
+        department_of: Callable[[_T], str | None] | None = None,
+        skip_held: bool = False,
+        concurrency: int | None = None,
+    ) -> FetchedDetails:
+        """Fetch the detail of each of ``items`` worth fetching, and return them by native id.
+
+        The whole **Detail pass** a Scraper used to compose by hand, behind one call (ADR-0195):
+
+        * ``title_of`` (with ``department_of``, if the listing states one) arms the ADR-0166 tech
+          gate, :meth:`tech_detail_wanted`. Omit it where the gate was measured unsafe.
+        * ``skip_held`` skips a Job whose description the store already holds (ADR-0048,
+          :meth:`needs_detail`). Leave it off where the detail supplies more than the description.
+        * Each remaining item goes through :meth:`detail_request`, the fetch seam and
+          :meth:`read_detail`, on the multiplexed path (ADR-0016) unless it is off
+          (:meth:`async_fanout_enabled`), in which case on :attr:`detail_workers` threads. Both
+          transports record their width and throughput (``fanout_stats``).
+        * Every loss is labelled — a transport exception, a non-200 status, a
+          :class:`DetailLost`, or an unexpected parse error by its type — and the pass ends in
+          one :meth:`report_detail_gaps` line titled ``what``.
+
+        ``key_of`` gives an item's native id: the key of the returned mapping, and what
+        :meth:`needs_detail` is asked about. ``concurrency`` pins the multiplexed width over
+        every other source, for a host whose politeness bound must not be widened even by the
+        operator (Trakstar under DataDome, ADR-0016); leave it None otherwise.
+        """
+        wanted: Sequence[_T] = items
+        if title_of is not None:
+            wanted = self.tech_detail_wanted(wanted, title_of, department_of)
+        if skip_held:
+            wanted = [item for item in wanted if self.needs_detail(key_of(item))]
+        if self.async_fanout_enabled():
+            results = self.fan_out_async(
+                wanted, self._fetch_detail_async, concurrency=concurrency
+            )
+        else:
+            results = self._fan_out_timed(
+                wanted, self.fetch_detail, self.detail_workers or 8
+            )
+        missing = self.report_detail_gaps(results, what)
+        return FetchedDetails(
+            {
+                key_of(item): detail
+                for item, detail in zip(wanted, results)
+                if detail is not None
+            },
+            missing,
+        )
+
+    def _fan_out_timed(
+        self, items: Sequence[_T], fetch_one: Callable[[_T], _R], workers: int
+    ) -> list[_R | None]:
+        """:meth:`fan_out` recording its operating point, as :meth:`fan_out_async` does.
+
+        ``fan_out`` is a staticmethod with no Scraper to name, so a Board on the thread path used
+        to drop its ``concurrency {ats} details @N`` line — the line ADR-0167's transport
+        decision was read from. The lock is needed here and not on the async path:
+        ``fanout_stats.batch``'s callback accumulates into an unsynchronised dict, safe from one
+        event-loop thread but not from ``workers`` threads at once.
+        """
+        timing_lock = threading.Lock()
+        with fanout_stats.batch(f"{self.ats} details", workers) as item_done:
+
+            def timed(item: _T) -> _R:
+                started = time.monotonic()
+                try:
+                    return fetch_one(item)
+                finally:
+                    with timing_lock:
+                        item_done(time.monotonic() - started)
+
+            return self.fan_out(items, timed, workers=workers)
+
+    def fetch_detail(self, item: Any) -> Any:
+        """One Job's detail over the thread-path transport, every loss labelled — the per-item
+        step of :meth:`run_detail_pass`, public so a sampler can fetch a handful of details
+        without running a whole pass (``scripts/enrich/salary_sample.py``). None when lost."""
+        request = self._detail_request_or_none(item)
+        if request is None:
+            return None
+        try:
+            response = self._fetch(
+                request.method,
+                request.url,
+                headers=dict(request.headers),
+                timeout=request.timeout,
+                **request.options,
+            )
+        except Exception as exc:  # noqa: BLE001 - labelled here, not lost to fan_out's catch-all
+            self.note_detail_exception(exc)
+            return None
+        return self._read_detail_labelled(item, response)
+
+    async def _fetch_detail_async(self, session: Any, item: Any) -> Any:
+        request = self._detail_request_or_none(item)
+        if request is None:
+            return None
+        try:
+            response = await self._fetch_async(
+                session,
+                request.method,
+                request.url,
+                headers=dict(request.headers),
+                timeout=request.timeout,
+                **request.options,
+            )
+        except Exception as exc:  # noqa: BLE001 - labelled here, not lost to fan_out's catch-all
+            self.note_detail_exception(exc)
+            return None
+        return self._read_detail_labelled(item, response)
+
+    def _detail_request_or_none(self, item: Any) -> DetailRequest | None:
+        try:
+            return self.detail_request(item)
+        except DetailLost as lost:
+            self._note_lost(lost)
+            return None
+
+    def _read_detail_labelled(self, item: Any, response: Any) -> Any:
+        if response.status_code != 200:
+            self.note_detail_loss(f"HTTP {response.status_code}")
+            return None
+        try:
+            return self.read_detail(item, response)
+        except DetailLost as lost:
+            self._note_lost(lost)
+        except Exception as exc:  # noqa: BLE001 - an unreadable body is a labelled loss
+            self.note_detail_exception(exc)
+        return None
+
+    def _note_lost(self, lost: DetailLost) -> None:
+        if isinstance(lost, DetailUnattempted):
+            self.note_detail_unattempted(lost.cause)
+        else:
+            self.note_detail_loss(lost.cause)
 
     def report_detail_gaps(self, results: Sequence[Any], what: str) -> int:
         """Log how many of a detail pass's results came back empty (None) — the gaps behind

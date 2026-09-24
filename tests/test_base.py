@@ -1,10 +1,18 @@
 import asyncio
+import json
 import logging
 
 import pytest
+from fake_fetcher import FakeFetcher, FakeResponse
 
-from headstart import http
-from headstart.scrapers.base import BaseScraper
+from headstart import fanout_stats, http
+from headstart.scrapers.base import (
+    DEFAULT_REQUEST_HEADERS,
+    BaseScraper,
+    DetailLost,
+    DetailRequest,
+    DetailUnattempted,
+)
 
 
 class _StubScraper(BaseScraper):
@@ -600,3 +608,120 @@ def test_attach_details_pairs_against_the_fetched_subset_not_the_full_list():
 
     assert items[1]["_detail"] == {"description": "b body"}
     assert items[0]["_detail"] == {} and items[2]["_detail"] == {}
+
+
+# --- the ADR-0195 Detail pass -----------------------------------------------------------
+
+
+class _DetailStub(_StubScraper):
+    """A Scraper whose Detail pass reads `/detail/{id}` as JSON and loses a page with no body."""
+
+    def detail_request(self, row):
+        if not row.get("id"):
+            raise DetailUnattempted("no job id")
+        return DetailRequest(f"https://example.invalid/detail/{row['id']}")
+
+    def read_detail(self, row, response):
+        body = json.loads(response.text)
+        if "body" not in body:
+            raise DetailLost("no body on a 200")
+        return body["body"]
+
+
+def _detail_route(method, url, kwargs):
+    native_id = url.rsplit("/", 1)[1]
+    return {
+        "ok": FakeResponse(text='{"body": "text of ok"}'),
+        "gone": FakeResponse(404, "{}"),
+        "empty": FakeResponse(text="{}"),
+        "garbled": FakeResponse(text="<html>not json"),
+        "refused": http.RequestsError("connection refused"),
+    }[native_id]
+
+
+@pytest.mark.parametrize("async_fanout", ["1", "0"])
+def test_run_detail_pass_labels_every_loss_on_either_transport(
+    monkeypatch, async_fanout
+):
+    """One request description, two transports, one set of outcomes: the drift between
+    hand-written sync and async twins (a header sent on one path only) cannot recur."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
+    fetcher = FakeFetcher(_detail_route)
+    scraper = _DetailStub("x", fetcher=fetcher)
+    rows = [{"id": i} for i in ("ok", "gone", "empty", "garbled", "refused")] + [{}]
+
+    details = scraper.run_detail_pass(
+        rows, key_of=lambda row: row.get("id"), what="pages"
+    )
+
+    assert dict(details) == {"ok": "text of ok"}
+    assert details.missing == 5
+    assert scraper.detail_losses == {
+        "HTTP 404": 1,
+        "no body on a 200": 1,
+        "JSONDecodeError": 1,
+        "RequestException": 1,
+        "no job id": 1,
+    }
+    assert scraper.telemetry["detail_attempted"] == 5
+    assert all(
+        request.kwargs["headers"] == dict(DEFAULT_REQUEST_HEADERS)
+        and request.kwargs["timeout"] == 30
+        for request in fetcher.requests
+    )
+
+
+def test_run_detail_pass_gates_on_the_listing_and_skips_held_details(monkeypatch):
+    monkeypatch.delenv("HEADSTART_TECH_GATE", raising=False)
+    fetcher = FakeFetcher(
+        lambda method, url, kwargs: FakeResponse(text='{"body": "b"}')
+    )
+    scraper = _DetailStub("x", fetcher=fetcher)
+    scraper.have_details = frozenset({"stub:x:held"})
+    rows = [
+        {"id": "held", "title": "Backend Engineer"},
+        {"id": "new", "title": "Backend Engineer"},
+        {"id": "chef", "title": "Head Chef"},
+    ]
+
+    details = scraper.run_detail_pass(
+        rows,
+        key_of=lambda row: row["id"],
+        what="pages",
+        title_of=lambda row: row["title"],
+        skip_held=True,
+    )
+
+    assert fetcher.urls() == ["https://example.invalid/detail/new"]
+    assert dict(details) == {"new": "b"} and details.missing == 0
+    assert scraper.telemetry["tech_gated_details"] == 1
+
+
+def test_run_detail_pass_records_the_thread_path_width(monkeypatch):
+    """`fan_out` alone records nothing; a Board on the thread path must still say at what width
+    its details ran (ADR-0167 was decided from that line)."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    fanout_stats.reset()
+    scraper = _DetailStub(
+        "x", fetcher=FakeFetcher(lambda m, u, k: FakeResponse(text='{"body": "b"}'))
+    )
+    scraper.detail_workers = 3
+
+    scraper.run_detail_pass(
+        [{"id": "a"}, {"id": "b"}], key_of=lambda r: r["id"], what="p"
+    )
+
+    assert fanout_stats.stats()[("stub details", 3)]["items"] == 2
+    fanout_stats.reset()
+
+
+def test_run_detail_pass_pins_the_multiplexed_width_when_asked(monkeypatch):
+    seen = _spy_concurrency(monkeypatch)
+    monkeypatch.setenv("HEADSTART_H2_STREAMS", "64")
+    scraper = _DetailStub("x", fetcher=FakeFetcher(_detail_route))
+
+    scraper.run_detail_pass(
+        [{"id": "ok"}], key_of=lambda r: r["id"], what="p", concurrency=4
+    )
+
+    assert seen["concurrency"] == 4
