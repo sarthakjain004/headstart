@@ -1729,6 +1729,165 @@ def test_comparable_display_window_is_separate_from_base(comparable_history):
     assert data["series"][0]["points"] == [15]
 
 
+def _delta(ts, board, delta, family="software-engineering", metric="stock"):
+    return {
+        "ts": ts,
+        "version": 2,
+        "board": board,
+        "metric": metric,
+        "family": family,
+        "band": "mid",
+        "ats": board.split(":", 1)[0],
+        "delta": delta,
+    }
+
+
+@pytest.fixture
+def company_trends(trends_app, monkeypatch):
+    """Three companies over the delta ledger (ADR-0185). HPE is one Tenant split into two
+    Workday sites, and two unrelated employers are both called "Citi"."""
+    ledger = [
+        {
+            "ts": stamp,
+            "version": 2,
+            "metric": "stock",
+            "family": "software-engineering",
+            "band": "mid",
+            "ats": "workday",
+            "count": 1,
+        }
+        for stamp in (_T1, _T2, _T3)
+    ]
+    deltas = [
+        _delta(_T1, "workday:hpe/a", 10),
+        _delta(_T1, "workday:hpe/b", 5),
+        _delta(_T1, "workday:hpe/b", 2, family="ai-ml"),
+        _delta(_T1, "workday:hpe/b", 7, family="non-tech"),
+        _delta(_T1, "workday:citi/2", 40),
+        _delta(_T2, "workday:hpe/a", 1),
+        _delta(_T2, "eightfold:citi.eightfold.ai", 3),  # first seen at T2
+        _delta(_T3, "workday:hpe/b", -5),
+        _delta(_T3, "workday:citi/2", 4),
+    ]
+    companies = {
+        "workday:hpe/a": {"name": "Hpe", "boards": ["workday:hpe/a", "workday:hpe/b"]},
+        "workday:citi/2": {"name": "Citi", "boards": ["workday:citi/2"]},
+        "eightfold:citi.eightfold.ai": {
+            "name": "Citi",
+            "boards": ["eightfold:citi.eightfold.ai"],
+        },
+    }
+    openings = trends_app._board_openings(deltas, 2)
+    monkeypatch.setattr(trends_app, "_TRENDS", ledger)
+    monkeypatch.setattr(trends_app, "_TREND_DELTAS", deltas)
+    monkeypatch.setattr(trends_app, "_COMPANIES", companies)
+    monkeypatch.setattr(
+        trends_app,
+        "_COMPANY_OF",
+        {b: k for k, e in companies.items() for b in e["boards"]},
+    )
+    monkeypatch.setattr(trends_app, "_OPENINGS", openings)
+    monkeypatch.setattr(
+        trends_app, "_CANDIDATES", trends_app._candidates(companies, openings)
+    )
+    return trends_app.app.test_client()
+
+
+def test_board_openings_count_tech_stock_only(trends_app):
+    """`non-tech` is no opening, `watch:` re-counts a family, `new` is not stock."""
+    deltas = [
+        _delta(_T1, "a", 5),
+        _delta(_T1, "a", 9, family="non-tech"),
+        _delta(_T1, "a", 3, family="watch:fde"),
+        _delta(_T1, "a", 4, metric="new"),
+        _delta(_T2, "a", -2),
+        {**_delta(_T2, "a", 100), "version": 1},  # a stale refit
+    ]
+    assert trends_app._board_openings(deltas, 2)["a"] == 3
+
+
+def test_any_board_of_a_company_picks_the_whole_company(company_trends):
+    """A Hot-tab row links by its own Board; the company is every Board of that Tenant."""
+    d = company_trends.get("/trends?company=workday:hpe/b").get_json()
+    points = {s["name"]: s["points"] for s in d["series"]}
+    assert points == {"software-engineering": [15, 16, 11], "ai-ml": [2, 2, 2]}
+    assert [c["key"] for c in d["companies"]] == ["workday:hpe/a"]
+    assert d["companies"][0]["openings"] == 13  # 11 + 2, no non-tech
+    # the share denominator is the picked company's own total, non-tech included
+    assert d["totals"] == [24, 25, 20]
+
+
+def test_split_by_company_draws_a_line_per_pick_and_tells_twins_apart(company_trends):
+    d = company_trends.get(
+        "/trends?split=company&company=workday:citi/2"
+        "&company=eightfold:citi.eightfold.ai&company=workday:hpe/a"
+    ).get_json()
+    assert d["split_by"] == "company"
+    by_label = {s["label"]: s["points"] for s in d["series"]}
+    assert by_label == {
+        "Citi (workday)": [40, 40, 44],
+        "Citi (eightfold)": [None, 3, 3],  # a gap before its first delta, never a zero
+        "Hpe": [17, 18, 13],
+    }
+
+
+def test_company_combines_with_comparable_coverage(company_trends):
+    """Picked, and counted only over Boards known at the base: the T2 Citi drops out."""
+    d = company_trends.get(
+        f"/trends?coverage=comparable&base={quote(_T1)}&split=company"
+        "&company=workday:citi/2&company=eightfold:citi.eightfold.ai"
+    ).get_json()
+    assert d["base"] == _T1
+    assert {s["label"]: s["points"] for s in d["series"]} == {
+        "Citi (workday)": [40, 40, 44]
+    }
+
+
+@pytest.mark.parametrize(
+    ("query", "status"),
+    [
+        ("/trends?company=greenhouse:nobody", 400),
+        ("/trends?split=company", 400),
+        ("/trends?split=everything", 400),
+    ],
+)
+def test_bad_company_requests_are_refused(company_trends, query, status):
+    assert company_trends.get(query).status_code == status
+
+
+def test_suggest_ranks_and_labels_companies(company_trends):
+    d = company_trends.get("/companies/suggest?q=citi").get_json()
+    got = [(c["label"], c["openings"], c["boards"]) for c in d["companies"]]
+    # both Citis match exactly; more openings first, and each says which ATS it is
+    assert got == [("Citi (workday)", 44, 1), ("Citi (eightfold)", 3, 1)]
+    assert company_trends.get("/companies/suggest?q=hpe").get_json()["companies"][0][
+        "atses"
+    ] == ["workday"]
+    assert company_trends.get("/companies/suggest?q=zzz").get_json() == {
+        "companies": []
+    }
+    assert company_trends.get("/companies/suggest?limit=x").status_code == 400
+
+
+def test_no_directory_answers_503(trends_app, monkeypatch):
+    monkeypatch.setattr(trends_app, "_COMPANIES", {})
+    client = trends_app.app.test_client()
+    assert client.get("/companies/suggest?q=a").status_code == 503
+    assert client.get("/trends?company=workday:hpe/a").status_code == 503
+
+
+def test_load_directory_keys_each_company_by_its_first_board(tmp_path, trends_app):
+    path = tmp_path / "company_directory.json"
+    path.write_text(
+        '{"companies": [{"name": "Hpe", "boards": ["workday:hpe/a", "workday:hpe/b"]}]}',
+        encoding="utf-8",
+    )
+    assert list(trends_app._load_directory(path)) == ["workday:hpe/a"]
+    path.write_text("{half-written", encoding="utf-8")
+    assert trends_app._load_directory(path) == {}
+    assert trends_app._load_directory(tmp_path / "absent.json") == {}
+
+
 def test_trends_rejects_unknown_coverage(trends_app):
     assert (
         trends_app.app.test_client().get("/trends?coverage=future").status_code == 400

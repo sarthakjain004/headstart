@@ -1,0 +1,119 @@
+"""Suggest directory companies for what a person types into the Trends company picker.
+
+A suggestion is only ever a candidate: the person picks each company, so a typed string never
+resolves to a company on its own (ADR-0185). That is why the match can be loose — prefixes and
+one typo — where ADR-0171's operator labels, which nobody checks, must match exactly.
+"""
+
+from __future__ import annotations
+
+import re
+import unicodedata
+from dataclasses import dataclass
+
+#: Legal-form words that tell two spellings of one company apart without naming it.
+_LEGAL = frozenset(
+    {
+        "inc",
+        "incorporated",
+        "llc",
+        "llp",
+        "lp",
+        "ltd",
+        "limited",
+        "plc",
+        "corp",
+        "corporation",
+        "co",
+        "company",
+        "gmbh",
+        "ag",
+        "sa",
+        "srl",
+        "bv",
+        "nv",
+        "pvt",
+        "private",
+        "pty",
+    }
+)
+_NOT_WORD = re.compile(r"[^0-9a-z]+")
+#: A typo is only forgiven in a word this long; a short word one edit away is another word.
+_TYPO_MIN = 5
+
+
+def normalize(text: str) -> list[str]:
+    """``text`` as comparable words: no case, accents, punctuation or legal form."""
+    folded = unicodedata.normalize("NFKD", text.casefold().replace("&", " and "))
+    # Dots dropped rather than split on, so "S.A." and "D.R. Horton" read as the words they are.
+    plain = "".join(ch for ch in folded if not unicodedata.combining(ch) and ch != ".")
+    words = [word for word in _NOT_WORD.split(plain) if word]
+    kept = [word for word in words if word not in _LEGAL]
+    return kept or words  # "Company Inc" alone is still something to match
+
+
+@dataclass(frozen=True)
+class Candidate:
+    """One directory company as the matcher sees it."""
+
+    key: str  # the company's id: its first board_key
+    name: str
+    words: tuple[str, ...]
+    openings: int
+
+
+def tier(query: list[str], words: tuple[str, ...]) -> int | None:
+    """How well ``query`` matches a company's words, best first: 0 exact, 1 name prefix,
+    2 every query word starts a name word, 3 the same allowing one typo per long word."""
+    if not query:
+        return None
+    if list(words) == query:
+        return 0
+    joined, typed = " ".join(words), " ".join(query)
+    if joined.startswith(typed):
+        return 1
+    if all(any(w.startswith(q) for w in words) for q in query):
+        return 2
+    if all(any(w.startswith(q) or _near(q, w) for w in words) for q in query):
+        return 3
+    return None
+
+
+def _near(typed: str, word: str) -> bool:
+    """One edit from ``word`` or from its same-length prefix."""
+    if len(typed) < _TYPO_MIN:
+        return False
+    return _one_edit(typed, word) or _one_edit(typed, word[: len(typed)])
+
+
+def _one_edit(a: str, b: str) -> bool:
+    """One substitution, insertion, deletion, or swap of two neighbouring letters ("googel")."""
+    if abs(len(a) - len(b)) > 1:
+        return False
+    if len(a) == len(b):
+        diffs = [k for k, (x, y) in enumerate(zip(a, b, strict=True)) if x != y]
+        if len(diffs) == 1:
+            return True
+        return (
+            len(diffs) == 2
+            and diffs[1] == diffs[0] + 1
+            and a[diffs[0]] == b[diffs[1]]
+            and a[diffs[1]] == b[diffs[0]]
+        )
+    short, long_ = sorted((a, b), key=len)
+    i = next((k for k, (x, y) in enumerate(zip(short, long_)) if x != y), len(short))
+    return short[i:] == long_[i + 1 :]
+
+
+def suggest(query: str, candidates: list[Candidate], limit: int) -> list[Candidate]:
+    """The best ``limit`` companies for ``query``: by tier, then most openings, then name."""
+    typed = normalize(query)
+    ranked = []
+    for candidate in candidates:
+        rank = tier(typed, candidate.words)
+        if rank is not None:
+            ranked.append(
+                (rank, -candidate.openings, candidate.name, candidate.key, candidate)
+            )
+    ranked.sort(key=lambda item: item[:4])
+    return [item[4] for item in ranked[:limit]]

@@ -78,8 +78,8 @@ shared with the Hot tab's operator labels. Measured over the ledger's 34,203 Boa
 - Casing duplicates (`smartrecruiters:AbhiBus` / `abhibus`) fold in because the comparison
   ignores case (267 pairs).
 
-The only cross-ATS identity is `board_naming.DISPLAY_ALIASES`, such as Lockheed Martin on
-Eightfold and SuccessFactors.
+The only cross-ATS identity is `board_naming.DISPLAY_ALIASES`. Lockheed Martin on Eightfold
+and SuccessFactors was the first such pair, since split (see the amendment below).
 
 **A Tenant is usually one employer, and a holding group is one entry.** `workday:volarisgroup`'s
 26 Boards are its portfolio companies' sites, and they appear as the group. An entry is named by
@@ -138,7 +138,7 @@ A few get worse, where a site said more than its Tenant: "Samsung_Careers" becom
     distinct (Tenant, requisition) pairs. HDR alone has 8,235 rows for 549.
   - Workday sites overlap: 7,146 of 104,849 rows are copies.
   - An aliased cross-ATS pair can mirror itself: Lockheed's Eightfold Board shares 1,248 of its
-    1,249 distinct titles with its SuccessFactors Board.
+    1,249 distinct titles with its SuccessFactors Board. The amendment below un-aliases it.
 
   A deduplication pass has since been decided in a separate thread. It parks Taleo sections
   whose requisitions another section already holds, keeps one row per (Workday Tenant,
@@ -151,3 +151,28 @@ A few get worse, where a site said more than its Tenant: "Samsung_Careers" becom
   must say so rather than let a ten-day line read as a whole history.
 - On 2026-09-24 the directory holds 32,597 companies over 34,203 Boards, 830 of them owning more
   than one Board, in 2,073,102 bytes.
+
+## Amendment (2026-09-24): the Space serves picks
+
+The second of the three PRs puts the directory behind two routes in the Space.
+
+- **`/companies/suggest?q=&limit=`** ranks directory entries with `headstart.company_match`,
+  the tiers the Decision names. Each suggestion carries its current tech openings, which the
+  Space sums from the delta ledger it already loads, and its Board count and ATSes. Two picked
+  entries with the same name are labelled with their ATSes.
+- **`/trends?company=`** (repeatable) takes **any** board_key of an entry, so a Hot-tab row or
+  a search result links to its company by the key it already holds. A pick replays only its
+  Boards' deltas, and it combines with comparable coverage. `split=company` draws one line per
+  pick, within a family when one is given.
+
+**Within-Tenant duplicates are gone** from the first pipeline run after #602 (Taleo Enterprise
+sections, `DEDUP_VERSION` 2) and #603 (Workday sites, 3). That tick carries ADR-0188's
+duplicate-removal epoch marker. From then on, a sum over one Tenant's Boards no longer double
+counts.
+
+**Cross-ATS mirrors remain** (9,872 rows; not yet scheduled), and one directory entry was built
+across them: Lockheed Martin's alias spanned both its SuccessFactors Board and its Eightfold
+Board, which mirrors it. The alias now covers only the SuccessFactors Board (user decision), so
+that entry counts once. The Eightfold Board is its own entry, still named "Lockheed Martin"
+because it states that itself, and it is labelled by ATS if both are picked. Re-alias it once
+cross-ATS mirrors are parked.

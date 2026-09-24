@@ -27,7 +27,15 @@ from flask import Flask, jsonify, redirect, render_template, request, session
 from huggingface_hub import snapshot_download
 
 import headstart  # only for headstart.__file__, to locate ui/ beside this package (ADR-0153)
-from headstart import facets, fx, geo, llm_router, profile_extract, search
+from headstart import (
+    company_match,
+    facets,
+    fx,
+    geo,
+    llm_router,
+    profile_extract,
+    search,
+)
 
 # alerts/__init__.py is empty on purpose, so importing it never pulls in the Digest or Resend
 # modules, whose dependencies (xlsxwriter, Resend) this image does not install.
@@ -49,6 +57,7 @@ from headstart.alerts.store import (
     is_resume_id,
     subscription_id,
 )
+from headstart.board_identity import ats_of
 
 DATASET = os.environ.get("HF_DATASET", "imPoseidon/headstart-index")
 _STATE = Path("/app/state")
@@ -103,6 +112,9 @@ def _pull_index(attempts: int = 5) -> None:
                     # the hot list (hot_boards) — a few tens of KB, and absent until a run
                     # writes one, which hides the tab rather than failing the pull
                     "data/state/hot_boards.json",
+                    # the Trends company picker's directory (ADR-0185) — ~2 MB, and absent
+                    # until a run writes one, which hides the picker rather than failing
+                    "data/state/company_directory.json",
                 ],
                 token=os.environ.get("HF_TOKEN"),
             )
@@ -280,6 +292,64 @@ _TREND_DELTAS = _load_board_deltas(
     _STATE / "data" / "state" / "role_trend_board_deltas"
 )
 _HOT = _load_hot(_STATE / "data" / "state" / "hot_boards.json")
+
+
+def _load_directory(path: Path) -> dict[str, dict]:
+    """The company directory (ADR-0185) as ``{company key: {name, boards}}``, or ``{}``.
+
+    A company's key is its first board_key, and any of its Boards resolves to it through
+    ``_COMPANY_OF``, so a Hot-tab row or a search result links to its company by the Board it
+    already carries. Absent or half-written means no picker, never a failed boot.
+    """
+    if not path.exists():
+        return {}
+    try:
+        entries = json.loads(path.read_text(encoding="utf-8"))["companies"]
+        return {entry["boards"][0]: entry for entry in entries}
+    except (OSError, ValueError, KeyError, TypeError, IndexError):
+        return {}
+
+
+def _board_openings(deltas: list[dict], version: int | None) -> Counter[str]:
+    """Each Board's current tech openings: its `stock` deltas summed at the live version.
+
+    The directory carries no counts on purpose (ADR-0185); the delta ledger already holds
+    them, and its first tick is a baseline of every Board's whole stock, so the sum is the
+    level now. `non-tech` is not an opening a picker should count, and `watch:` rows re-count
+    Jobs already counted in their family (ADR-0051).
+    """
+    openings: Counter[str] = Counter()
+    for row in deltas:
+        if (
+            row["version"] == version
+            and row["metric"] == "stock"
+            and row["family"] != _NON_TECH
+            and not row["family"].startswith(_WATCH_PREFIX)
+        ):
+            openings[row["board"]] += row["delta"]
+    return openings
+
+
+def _candidates(
+    companies: dict[str, dict], openings: Counter[str]
+) -> list[company_match.Candidate]:
+    return [
+        company_match.Candidate(
+            key=key,
+            name=entry["name"],
+            words=tuple(company_match.normalize(entry["name"])),
+            openings=sum(openings[board] for board in entry["boards"]),
+        )
+        for key, entry in companies.items()
+    ]
+
+
+_COMPANIES = _load_directory(_STATE / "data" / "state" / "company_directory.json")
+_COMPANY_OF = {
+    board: key for key, entry in _COMPANIES.items() for board in entry["boards"]
+}
+_OPENINGS = _board_openings(_TREND_DELTAS, _TRENDS[-1]["version"] if _TRENDS else None)
+_CANDIDATES = _candidates(_COMPANIES, _OPENINGS)
 # Email alerts (ADR-0035) — invite-only, so all three must be set before the panel appears:
 # the Google client id the sign-in button needs, and a token scoped to the Subscriptions
 # dataset alone (never the index token, which is read-only by design).
@@ -1090,8 +1160,18 @@ def delete_resume(doc_id: str):
     return jsonify({"ok": True})
 
 
-def _comparable_rows(base: str | None) -> tuple[list[dict], str | None]:
-    """Rebuild counts for Boards first observed by ``base`` from their deltas."""
+def _replay_rows(
+    base: str | None, comparable: bool, company_of: dict[str, str] | None
+) -> tuple[list[dict], str | None]:
+    """Rebuild counts from the Board-delta ledger for a chosen set of Boards.
+
+    ``comparable`` keeps only Boards first observed by ``base`` (ADR-0143). ``company_of``
+    keeps only the picked companies' Boards and tags every row with its company key, so the
+    route can split by company (ADR-0185); None means every Board. The two combine: picked
+    companies, counted only over the Boards already known at the base.
+
+    Returns the rows and the first measurement charted (the base, when ``comparable``).
+    """
     if not _TRENDS:
         return [], None
     version = _TRENDS[-1]["version"]
@@ -1100,44 +1180,55 @@ def _comparable_rows(base: str | None) -> tuple[list[dict], str | None]:
         return [], None
     stamps = sorted({row["ts"] for row in _TRENDS})
     first_delta = min(row["ts"] for row in deltas)
-    if base is None:
-        base = next((stamp for stamp in stamps if stamp >= first_delta), first_delta)
-    base_stamp = max(
-        (stamp for stamp in stamps if first_delta <= stamp <= base), default=None
-    )
-    if base_stamp is None:
-        return [], None
-    first: dict[str, str] = {}
-    for row in deltas:
-        if row["metric"] == "stock":
-            first[row["board"]] = min(first.get(row["board"], row["ts"]), row["ts"])
-    eligible = {board for board, seen in first.items() if seen <= base_stamp}
+    eligible: set[str] | None = None
+    if comparable:
+        if base is None:
+            base = next(
+                (stamp for stamp in stamps if stamp >= first_delta), first_delta
+            )
+        base_stamp = max(
+            (stamp for stamp in stamps if first_delta <= stamp <= base), default=None
+        )
+        if base_stamp is None:
+            return [], None
+        first: dict[str, str] = {}
+        for row in deltas:
+            if row["metric"] == "stock":
+                first[row["board"]] = min(first.get(row["board"], row["ts"]), row["ts"])
+        eligible = {board for board, seen in first.items() if seen <= base_stamp}
+    else:
+        base_stamp = next((stamp for stamp in stamps if stamp >= first_delta), None)
+        if base_stamp is None:
+            return [], None
+    if company_of is not None:
+        deltas = [row for row in deltas if row["board"] in company_of]
     by_stamp: dict[str, list[dict]] = defaultdict(list)
     for row in deltas:
         by_stamp[row["ts"]].append(row)
-    state: Counter[tuple[str, str, str, str]] = Counter()
+    state: Counter[tuple[str, str, str, str, str]] = Counter()
     rows = []
     measurements = set(stamps)
     # A delta can survive a failed aggregate append. Apply it before the next
     # measurement even though that interrupted tick is not itself charted.
     for stamp in sorted(measurements | by_stamp.keys()):
         for row in by_stamp[stamp]:
-            if row["board"] in eligible:
-                state[(row["metric"], row["family"], row["band"], row["ats"])] += row[
-                    "delta"
-                ]
+            if eligible is None or row["board"] in eligible:
+                company = company_of[row["board"]] if company_of else ""
+                key = (company, row["metric"], row["family"], row["band"], row["ats"])
+                state[key] += row["delta"]
         if stamp < base_stamp or stamp not in measurements:
             continue
         rows.extend(
             {
                 "ts": stamp,
+                "company": company,
                 "metric": metric,
                 "family": family,
                 "band": band,
                 "ats": ats,
                 "count": count,
             }
-            for (metric, family, band, ats), count in state.items()
+            for (company, metric, family, band, ats), count in state.items()
         )
     return rows, base_stamp
 
@@ -1170,6 +1261,14 @@ def trends():
     name) and silently truncate history. A pre-ship stamp has no per-ATS breakdown to select
     from, so a narrow ``ats`` scope's series legitimately start later than an unfiltered one's.
 
+    ``?company=`` (repeatable, ADR-0185) narrows to picked companies from the company
+    directory, each named by **any** of its Boards' board_keys, so a Hot-tab row or a search
+    result links by the key it already carries. A company's counts exist only per Board, so a
+    pick replays the Board-delta ledger and its history starts at that ledger's first tick.
+    ``&split=company`` draws one series per picked company (with ``family``, within that
+    family), and ``companies`` echoes the picks with their labels. An unknown key is a 400, and
+    a deployment with no directory yet answers 503.
+
     ``totals`` carries the served table per stamp — narrowed by ``ats`` exactly like every
     other row here — so the caller can plot a **share** of what's currently in view rather than
     a raw count: with no ATS filter that's a share of the whole index, with one it's a share of
@@ -1199,8 +1298,23 @@ def trends():
         return jsonify(error="coverage must be 'all' or 'comparable'"), 400
     family = request.args.get("family")
     split = request.args.get("split", "bands")
-    if split not in ("bands", "roles"):
-        return jsonify(error="split must be 'bands' or 'roles'"), 400
+    if split not in ("bands", "roles", "company"):
+        return jsonify(error="split must be 'bands', 'roles' or 'company'"), 400
+    picked = request.args.getlist("company")
+    company_of: dict[str, str] | None = None
+    if picked:
+        if not _COMPANIES:
+            return jsonify(error="no company directory on this deployment yet"), 503
+        unknown = [board for board in picked if board not in _COMPANY_OF]
+        if unknown:
+            return jsonify(error=f"unknown company: {', '.join(unknown)}"), 400
+        company_of = {
+            board: key
+            for key in {_COMPANY_OF[board] for board in picked}
+            for board in _COMPANIES[key]["boards"]
+        }
+    if split == "company" and not picked:
+        return jsonify(error="split=company needs at least one company"), 400
 
     def _norm_stamp(raw: str) -> str:
         """``raw`` re-shaped to exactly how the ledger stores ``ts`` — see the docstring's note
@@ -1222,8 +1336,14 @@ def trends():
     # ``_TRENDS`` is already pinned to the live centroid version at load time, so filtering here
     # never has to worry about a stray row from a stale refit; only the requested window changes.
     base_stamp = None
-    if coverage == "comparable":
-        trends_rows, base_stamp = _comparable_rows(base)
+    if coverage == "comparable" or company_of is not None:
+        # A company's counts exist only per Board, so a pick replays the delta ledger too;
+        # its history therefore starts at that ledger's first tick, 2026-09-13 (ADR-0185).
+        trends_rows, first_charted = _replay_rows(
+            base, coverage == "comparable", company_of
+        )
+        if coverage == "comparable":
+            base_stamp = first_charted
     else:
         trends_rows = _TRENDS
     if since:
@@ -1257,7 +1377,19 @@ def trends():
     rows = [
         r for r in trends_rows if r["metric"] == metric and r["family"] != _NON_TECH
     ]
-    if family and split == "roles":
+    if split == "company":
+        # One series per picked company (ADR-0185): its whole tech total, or within one family.
+        rows = [
+            r
+            for r in rows
+            if (
+                r["family"] == family
+                if family
+                else not r["family"].startswith(_WATCH_PREFIX)
+            )
+        ]
+        key = "company"
+    elif family and split == "roles":
         # The family's watched sub-roles (ADR-0051), each its own series.
         wanted = {n for n, meta in _WATCH.items() if meta["parent"] == family}
         rows = [r for r in rows if r["family"] in wanted]
@@ -1286,10 +1418,14 @@ def trends():
         series.setdefault(r[key], {})
         at = series[r[key]]
         at[r["ts"]] = at.get(r["ts"], 0) + r["count"]
+    picked_keys = sorted(set(company_of.values())) if company_of else []
+    company_labels = _company_labels(picked_keys)
     out = [
         {
             "name": name,
-            "label": _WATCH[name]["label"]
+            "label": company_labels[name]
+            if key == "company"
+            else _WATCH[name]["label"]
             if name in _WATCH
             else _FAMILY_LABELS.get(name, name),
             # None (not 0) where a run has no row for this series: a gap is "not measured",
@@ -1322,7 +1458,56 @@ def trends():
         split_by=key,
         watch_parents=watch_parents,
         epochs=epochs,
+        companies=[_company_json(k, company_labels[k]) for k in picked_keys],
     )
+
+
+def _company_json(key: str, label: str | None = None) -> dict:
+    """A directory company as the picker and the chart show it."""
+    boards = _COMPANIES[key]["boards"]
+    return {
+        "key": key,
+        "name": _COMPANIES[key]["name"],
+        "label": label or _COMPANIES[key]["name"],
+        "atses": sorted({ats_of(board) for board in boards}),
+        "boards": len(boards),
+        "openings": sum(_OPENINGS[board] for board in boards),
+    }
+
+
+def _company_labels(keys: list[str]) -> dict[str, str]:
+    """Each company's name, with its ATSes appended where two picked companies share one.
+
+    The directory keeps same-named employers apart when nothing proves them one (ADR-0185), so
+    "Citi" on Workday and "Citi" on Eightfold can both be picked and need telling apart.
+    """
+    names = Counter(_COMPANIES[key]["name"] for key in keys)
+    labels = {}
+    for key in keys:
+        name = _COMPANIES[key]["name"]
+        atses = sorted({ats_of(board) for board in _COMPANIES[key]["boards"]})
+        labels[key] = f"{name} ({', '.join(atses)})" if names[name] > 1 else name
+    return labels
+
+
+@app.route("/companies/suggest")
+def suggest_companies():
+    """Directory companies matching ``?q=`` for the Trends company picker (ADR-0185), best
+    first, or 503 until the pipeline has written a directory.
+
+    Each carries its current tech openings and Board count, so a real company is told apart
+    from a one-posting slug collision of the same name. ``?limit=`` defaults to 8, at most 20.
+    A suggestion is only a candidate: nothing here resolves a typed name to a company.
+    """
+    if not _COMPANIES:
+        return jsonify(error="no company directory on this deployment yet"), 503
+    try:
+        limit = max(1, min(int(request.args.get("limit", 8)), 20))
+    except ValueError:
+        return jsonify(error="limit must be an integer"), 400
+    found = company_match.suggest(request.args.get("q", ""), _CANDIDATES, limit)
+    labels = _company_labels([candidate.key for candidate in found])
+    return jsonify(companies=[_company_json(c.key, labels[c.key]) for c in found])
 
 
 @app.route("/auth/google", methods=["POST"])
