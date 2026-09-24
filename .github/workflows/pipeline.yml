@@ -874,8 +874,8 @@ jobs:
         run: python -m headstart.ingest.hot_boards
       - name: Name the companies Trends can be filtered to (ADR-0185)
         # After role_trends for the same reason as the hot list: it reads that stage's
-        # Board-count snapshot, and warns and exits 0 without it. When the table's names can't
-        # be read it keeps the previous directory rather than writing an all-slug one.
+        # Board-delta ledger, and warns and exits 0 without it. When the table's names can't be
+        # read it keeps the previous directory rather than writing an all-slug one.
         if: needs.scrape-plan.outputs.run == 'true'
         continue-on-error: true
         run: python -m headstart.ingest.company_directory

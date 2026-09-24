@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Final
 
 from headstart import log
+from headstart.ingest.board_operator import tenant
 
 _log = log.get(__name__)
 
@@ -127,8 +128,8 @@ _WORDS = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")
 #:
 #: It also does the work cross-ATS identity would: Lockheed Martin reaches the Expansion lens
 #: on **both** Eightfold and SuccessFactors, and before this map they ranked first and second
-#: as "Lockheed Martin" and "Lockheed". Mapping both to one name lets `_collapse_same_company`
-#: see them as one company. That is a display-level patch over a real gap — the index has no
+#: as "Lockheed Martin" and "Lockheed". Mapping both to one name lets
+#: `hot_boards._collapse_same_company` see them as one company. That is a display-level patch over a real gap — the index has no
 #: cross-ATS Board identity (`index_plan.evict_duplicate` groups *within* a Board) — so a pair
 #: not listed here still shows twice. Add pairs as the head of a lens surfaces them.
 #:
@@ -162,9 +163,19 @@ def stated_name(company: str, board: str) -> str | None:
     if alias:
         return alias
     stated = (company or "").strip()
-    if stated and stated != stated.lower() and not _is_site(stated, board):
+    if stated and stated != stated.lower() and not _names_the_board(stated, board):
         return stated  # a real, cased company name — never re-case or trim it
     return None
+
+
+def _names_the_board(name: str, board: str) -> bool:
+    """Whether a company string is really a piece of the Board's own key, not a company.
+
+    Three shapes reach the company column: a Workday site (`_is_site`), a noise label of the
+    host (`_is_noise_label`), and Taleo Business Edition's ledger spelling, `GATEWAYVENT:77@phg…`.
+    """
+    ledger_spelling = name.lower().startswith(tenant(board).lower() + ":")
+    return ledger_spelling or _is_site(name, board) or _is_noise_label(name, board)
 
 
 def _is_site(name: str, board: str) -> bool:
@@ -181,10 +192,15 @@ def _is_site(name: str, board: str) -> bool:
     return any(word.casefold() in _LABEL_NOISE for word in _WORDS.findall(name))
 
 
-def _host(board: str) -> set[str]:
-    """The labels of the slug's host (or its whole first segment, when it has no dots)."""
-    head = _slug(board).split("/", 1)[0]
-    return {label.casefold() for label in head.split(".") if label}
+def _is_noise_label(name: str, board: str) -> bool:
+    """Whether ``name`` is one of the Board's own host labels, made only of board words.
+
+    `www`, `apply` and `careers-apply` name the host; `six-group` and `sap` name the company,
+    so they stay.
+    """
+    labels = {label.lower() for label in tenant(board).split(".") if label}
+    words = [word for word in name.lower().split("-") if word]
+    return name.lower() in labels and all(word in _LABEL_NOISE for word in words)
 
 
 def _slug(board: str) -> str:
@@ -200,17 +216,14 @@ def display_name(company: str, board: str) -> str:
     company leaderboard reads as a bug. (`www.amazon.jobs` was the stock example until the eight
     Single source scrapers began declaring `BaseScraper.COMPANY`; they now arrive named, so this
     function no longer has to rescue them.) This drops the labels of a host that name the board or the
-    vendor and keeps the first that names the company.
-
-    Picking the *first non-noise label* rather than the registrable domain is deliberate, and
-    both conventions appear in the data: `careers-inc.nttdata.com` puts the company second,
-    while `lockheed.jobs.hr.cloud.sap` puts it first. Taking the label before the public suffix
-    reads the latter as "Cloud"; taking the first label reads the former as "Careers-Inc".
+    vendor and keeps the first that names the company (`_tidy`), reading the slug through
+    `tenant`, so a Taleo Business Edition Board is named by its `org` and not its shared pod.
 
     It stops at tidying. `swa.wd1.myworkdayjobs.com/external` becomes "Swa" and not "Southwest
     Airlines", because that expansion is not in the data and a leaderboard that guesses company
-    names is worse than one that shows an honest slug. Anything already mixed-case is returned
-    untouched, so `CI&T` and `HCLTech` survive.
+    names is worse than one that shows an honest slug. A stated, mixed-case name is returned
+    untouched, so `CI&T` and `HCLTech` survive — unless it is the Board's own site or ledger
+    spelling (`stated_name`), which names the board, not the company.
     """
     named = stated_name(company, board)
     if named:
@@ -219,26 +232,38 @@ def display_name(company: str, board: str) -> str:
     # carries capitals of its own (`micron/External`), and treating those as a company name
     # returned the raw slug, path and all.
     name = (company or "").strip()
-    # A company that is only a piece of the Board's own slug names the board, not the company:
-    # SuccessFactors rows carry their host's first label (`www`, `apply`, `job`), and a
-    # Workday row can carry its site. Tidying the whole slug finds the company instead.
-    if not name or name.casefold() in _host(board) or _is_site(name, board):
-        name = board.split(":", 1)[-1]
+    from_slug = _tidy(tenant(board))
+    # A company that only names the board yields to the slug: SuccessFactors rows carry a noise
+    # label of their own host (`www`, `apply`, `careers-apply`), and a Workday row can carry its
+    # site. Only where the slug has a real name to give, though: `jobs.sap.com` tidies to
+    # nothing, so its "sap" stays.
+    if name and from_slug and _names_the_board(name, board):
+        name = ""
+    text = (_tidy(name) if name else None) or from_slug or name or tenant(board)
+    return text.replace("-", " ").replace("_", " ").strip().title() or text
+
+
+def _tidy(text: str) -> str | None:
+    """The company a slug or host names, or None when every label of a host is noise.
+
+    Picking the *first non-noise label* rather than the registrable domain is deliberate, and
+    both conventions appear in the data: `careers-inc.nttdata.com` puts the company second,
+    while `lockheed.jobs.hr.cloud.sap` puts it first. Taking the label before the public suffix
+    reads the latter as "Cloud"; taking the first label reads the former as "Careers-Inc".
+    """
     # Taleo Enterprise's slug is a whole URL; split on "/" first, it tidied to "Https:".
-    head = _SCHEME.sub("", name).split("/", 1)[0]
-    if "." in head:
-        labels = [
-            label
-            for label in head.split(".")
-            if label and label not in _LABEL_NOISE and not _WD_POD.match(label)
-        ]
-        # A prefixed label still carries the company after its noise word (`careers-inc` ->
-        # `inc`, dropped above; `jobs-bylight` -> `bylight`).
-        for label in labels:
-            parts = [p for p in label.split("-") if p and p not in _LABEL_NOISE]
-            if parts:
-                head = "-".join(parts)
-                break
-        else:
-            head = labels[0] if labels else head
-    return head.replace("-", " ").replace("_", " ").strip().title() or name
+    head = _SCHEME.sub("", text).split("/", 1)[0]
+    if "." not in head:
+        return head or None
+    labels = [
+        label
+        for label in head.split(".")
+        if label and label not in _LABEL_NOISE and not _WD_POD.match(label)
+    ]
+    # A prefixed label still carries the company after its noise word (`careers-inc` ->
+    # `inc`, dropped above; `jobs-bylight` -> `bylight`).
+    for label in labels:
+        parts = [p for p in label.split("-") if p and p not in _LABEL_NOISE]
+        if parts:
+            return "-".join(parts)
+    return labels[0] if labels else None

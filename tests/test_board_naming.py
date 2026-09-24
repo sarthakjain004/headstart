@@ -33,6 +33,20 @@ from headstart.ingest import board_naming
         ("g-research", "workday:gresearch/g-research", "G Research"),
         # A cased name equal to the whole slug is still the Board's own spelling.
         ("AbhiBus", "smartrecruiters:AbhiBus", "AbhiBus"),
+        # A host label that names the company is not a board word, so it stays.
+        ("sap", "successfactors:jobs.sap.com", "Sap"),
+        ("six-group", "successfactors:careers.six-group.com", "Six Group"),
+        # Taleo Business Edition: the ledger spelling is not a name, and the pod is not a company.
+        (
+            "GATEWAYVENT:77@phg.tbe.taleo.net/phg01",
+            "taleo_be:https://phg.tbe.taleo.net/phg01/ats/careers/v2/searchResults?org=GATEWAYVENT&cws=77",
+            "Gatewayvent",
+        ),
+        (
+            "",
+            "taleo_be:https://phh.tbe.taleo.net/phh03/ats/careers/v2/searchResults?org=ACME&cws=1",
+            "Acme",
+        ),
         # A stated, cased name is never re-cased or trimmed.
         ("CI&T", "lever:ciandt", "CI&T"),
         ("Qantas Group", "smartrecruiters:QantasGroup", "Qantas Group"),

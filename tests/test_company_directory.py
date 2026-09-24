@@ -24,7 +24,7 @@ def _companies(
 
 
 def test_one_tenant_split_into_sites_is_one_company() -> None:
-    """Workday sites, Taleo career sections and TBE `cws` sites of one account merge."""
+    """Workday sites, Taleo career sections and TBE `cws` sites of one Tenant merge."""
     got = _companies(
         [
             "workday:hpe/ACJobSite",
@@ -242,3 +242,44 @@ def test_no_ledger_skips_without_writing(
     out = tmp_path / "company_directory.json"
     assert _run(monkeypatch, tmp_path / "absent", out, {"x": "X"}) == 0
     assert not out.exists()
+
+
+def test_a_holding_groups_tenant_is_not_named_after_one_site() -> None:
+    """`workday:luminegrp`'s 14 Boards were all named "Motive", which only one of them states."""
+    got = _companies(
+        ["workday:luminegrp/motive", "workday:luminegrp/b", "workday:luminegrp/c"],
+        {"workday:luminegrp/motive": "Motive"},
+    )
+    assert list(got) == ["Luminegrp"]
+
+
+def test_a_name_most_boards_state_names_the_company() -> None:
+    got = _companies(
+        ["taleo_enterprise:https://bae.taleo.net/careersection/a"]
+        + [f"taleo_enterprise:https://bae.taleo.net/careersection/{s}" for s in "bc"],
+        {
+            "taleo_enterprise:https://bae.taleo.net/careersection/a": "BAE Systems",
+            "taleo_enterprise:https://bae.taleo.net/careersection/b": "BAE Systems",
+            "taleo_enterprise:https://bae.taleo.net/careersection/c": "BAE SYSTEMS | KSA",
+        },
+    )
+    assert list(got) == ["BAE Systems"]
+
+
+def test_a_closed_board_keeps_its_previous_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A closed Board has no table rows to name it; it must not be renamed to its slug."""
+    deltas = _ledger(
+        tmp_path / "deltas",
+        [("2026-09-13T12:00:00+00:00", 2, [("greenhouse:acmecorp", "stock", "se", 3)])],
+    )
+    out = tmp_path / "company_directory.json"
+    out.write_text(
+        '{"companies": [{"name": "Acme Corp", "boards": ["greenhouse:acmecorp"]}]}',
+        encoding="utf-8",
+    )
+    assert _run(monkeypatch, deltas, out, {"greenhouse:other": "Other"}) == 0
+    assert json.loads(out.read_text(encoding="utf-8"))["companies"] == [
+        {"name": "Acme Corp", "boards": ["greenhouse:acmecorp"]}
+    ]
