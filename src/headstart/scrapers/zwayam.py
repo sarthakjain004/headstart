@@ -518,7 +518,7 @@ class ZwayamScraper(BaseScraper):
                 # says nothing about zwayam's per-IP quota, and marking on it would wall the whole
                 # ATS for the run off one tenant's edge — the exact shape of the personio revert
                 # (#312/#313) that `egress_fallback_on`'s own docstring cites. Routing is kept,
-                # marking is dropped (the eightfold precedent, `base._egress`).
+                # marking is dropped (the eightfold precedent, `BoardFetcher.egress_binding`).
                 marks_wall=False,
                 headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
                 timeout=30,

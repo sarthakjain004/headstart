@@ -8453,7 +8453,9 @@ def test_workday_429_does_not_leak_the_opt_in_to_other_scrapers():
     from headstart.scrapers.greenhouse import GreenhouseScraper
 
     assert GreenhouseScraper.egress_fallback_on == frozenset()
-    assert GreenhouseScraper("acme")._egress() == {"egress_board": "greenhouse:acme"}
+    assert GreenhouseScraper("acme").board_fetcher.egress_binding() == {
+        "egress_board": "greenhouse:acme"
+    }
 
 
 def test_personio_stays_on_its_direct_route_on_429(monkeypatch):
@@ -8511,7 +8513,7 @@ def test_workable_429_walls_the_origin_and_moves_to_the_spare_egress(monkeypatch
     Asserted through an actual 429 rather than off the constant, for the reason the personio test
     gives in reverse: what has to hold is that the fetch **carries** the group, since
     `http.fetch` walls a group only when it is handed an `egress_group`. Reading the constant
-    alone would still pass if `_egress()` stopped being threaded onto the request.
+    alone would still pass if the Board fetcher stopped threading its binding onto the request.
     """
     from headstart.scrapers.workable import WorkableScraper
 

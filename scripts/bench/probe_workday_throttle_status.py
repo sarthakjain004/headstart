@@ -41,7 +41,7 @@ Two deliberate choices about what is measured:
   the neighbouring probes use. That is not an oversight. ``fan_out_async`` resolves its width
   through :func:`spare_egress.stream_width`, which returns ``min(ceiling, 12)`` for a group that
   has walled — and the listing harvest below *can* wall workday, since ``_post`` carries
-  ``_egress()`` with ``egress_on={400, 429}``. Resolution happens once per call, so an arm that
+  its Board fetcher's binding with ``egress_on={400, 429}``. Resolution happens once per call, so an arm that
   started after such a wall would run pinned at 12 for its whole length while still reporting
   itself as a width-25 walk. That is precisely what would make this run incomparable to the
   laptop's, which is the entire point of the exercise, so the width is pinned here instead.

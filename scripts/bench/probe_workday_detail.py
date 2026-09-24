@@ -73,13 +73,12 @@ def run_arm(scraper: WorkdayScraper, paths: list[str], width: int) -> None:
 
     async def one(session, path: str):
         try:
-            response = await http.fetch_async(
+            response = await scraper.board_fetcher.fetch_async(
                 session,
                 "GET",
                 scraper._detail_url(path),
                 timeout=30,
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-                **scraper._egress(),
             )
         except Exception as exc:  # noqa: BLE001 - classifying the failure is the point
             statuses[_outcome(exc)] += 1
