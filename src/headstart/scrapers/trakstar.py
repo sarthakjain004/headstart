@@ -91,6 +91,7 @@ from urllib.parse import quote
 from headstart import http, log
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.job_posting_jsonld import find_job_posting
 
 _log = log.get(__name__)
 
@@ -127,9 +128,6 @@ _TOTAL_OPENINGS = re.compile(
 # the opening-meta span next to it — both sit in the same block, just unread until now.
 _DEPT = re.compile(r'"rb-text-4">\s*([^<]+?)\s*</div>')
 _EMPTYPE = re.compile(r"js-job-list-opening-meta[^>]*>\s*<span>\s*([^<]+?)\s*</span>")
-_JSONLD = re.compile(
-    r"<script[^>]*application/ld\+json[^>]*>(.*?)</script>", re.DOTALL | re.IGNORECASE
-)
 # the rendered description container present on every detail page template, JSON-LD or not
 _DESC_DIV = re.compile(r'<div class="jobdesciption">', re.IGNORECASE)
 _DIV_TAG = re.compile(r"<div\b|</div\s*>", re.IGNORECASE)
@@ -337,7 +335,7 @@ class TrakstarScraper(BaseScraper):
         if response.status_code != 200:
             self.note_detail_loss(f"HTTP {response.status_code}")
             return None
-        posting = _jsonld_posting(response.text)
+        posting = find_job_posting(response.text)
         if posting is not None:
             return posting
         description = _html_description(response.text)
@@ -484,20 +482,6 @@ def _is_capped(html: str, n_codes: int) -> bool:
     if total is not None:
         return total > n_codes
     return n_codes >= _CARD_CAP
-
-
-def _jsonld_posting(html: str) -> dict | None:
-    """Pull the JobPosting object out of a detail page's schema.org JSON-LD block."""
-    for match in _JSONLD.finditer(html):
-        try:
-            # strict=False: the JSON-LD embeds literal newlines inside string values
-            data = json.loads(match.group(1), strict=False)
-        except (json.JSONDecodeError, ValueError):
-            continue
-        for item in data if isinstance(data, list) else [data]:
-            if isinstance(item, dict) and item.get("@type") == "JobPosting":
-                return item
-    return None
 
 
 def _isolate_div(html: str, opening_div: re.Pattern) -> str | None:
