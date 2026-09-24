@@ -46,7 +46,8 @@ from __future__ import annotations
 
 import re
 from typing import Final, Literal
-from urllib.parse import parse_qs, urlsplit
+
+from headstart.board_identity import tenant
 
 Operator = Literal["employer", "services", "aggregator"]
 
@@ -188,30 +189,6 @@ EXCEPTIONS: Final[frozenset[str]] = frozenset(
 
 _SPLIT = re.compile(r"[^a-z0-9]+")
 _TRAILING_DIGITS = re.compile(r"\d+$")
-_URLISH = re.compile(r"^https?://", re.IGNORECASE)
-
-
-def tenant(board_key: str) -> str:
-    """The part of a board_key that names *whose* Board it is, without the site path.
-
-    Deeper path segments name the career site, not the company, and an ATS lets a company name
-    that site after whoever built it: Hyatt's Taleo section is `careersection/infosys_intl`, and
-    reading the whole key labels **Hyatt** an Infosys board. The tenant is the Workday
-    `{company}` before the site, or a URL's host, or the slug itself — and it still carries the
-    real cases, since Avanade's Board is `accenture/AvanadeCareers`, whose tenant is Accenture.
-
-    Taleo Business Edition is the exception to "a URL's host": its host is a pod many companies
-    share (`phg.tbe.taleo.net`), and the company is the `org` its URL names. The company
-    directory (ADR-0185) groups Boards by this, so a pod read as a tenant would merge them.
-    """
-    slug = board_key.split(":", 1)[1] if ":" in board_key else board_key
-    if board_key.startswith("taleo_be:"):
-        org = parse_qs(urlsplit(slug).query).get("org")
-        if org:
-            return org[0]
-    if _URLISH.match(slug):
-        slug = slug.split("//", 1)[1]
-    return slug.split("/", 1)[0]
 
 
 def _forms(text: str) -> set[str]:

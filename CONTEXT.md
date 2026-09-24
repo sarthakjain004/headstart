@@ -49,7 +49,7 @@ _Avoid_: "hot" as a measure. `hot` is the internal name of the ranking — the s
 called in the UI. Neither is a value a row can hold; a row holds a lens figure and an Operator.
 
 **Followed / Hidden Board** (ADR-0171):
-A Board an Account has chosen to see more or less of, held as a `CompanyPrefs` record keyed by **board_key** — never by company name, which four served rows in five do not carry. Hidden Boards are excluded from every search; followed ones are what the "only companies I follow" control narrows to. The two lists are disjoint by construction, and they are Account state rather than a Search filter, so a **Saved Set** never freezes them.
+A Board an Account has chosen to see more or less of, held as a `CompanyPrefs` record keyed by **board_key** — never by company name, which is a display value (ADR-0212), not an identity. Hidden Boards are excluded from every search; followed ones are what the "only companies I follow" control narrows to. The two lists are disjoint by construction, and they are Account state rather than a Search filter, so a **Saved Set** never freezes them.
 _Avoid_: "blocked" or "muted" — a hidden Board is still scraped, still indexed and still served to everyone else; only this Account stops seeing it.
 
 **Company directory** (ADR-0185):
@@ -119,7 +119,7 @@ python -c "from headstart.board_cost import load; print(len({k.lower() for k in 
 ```
 Count distinct keys, never lines — both files carry case-variants.
 
-Two rules resolve most of it. **"live" describes a _row_, not a Board** — a sentence saying "live boards" is ambiguous by construction, because 6,632 live rows are duplicate spellings of a Board counted elsewhere. And **the subtractions depend on the order you apply them**: `EXCLUDED_BOARDS` removes 90 Boards from the raw live rows but only **88** from the deduped set, because two of them were themselves duplicate spellings. The chain below dedupes *first*; the README's funnel excludes first and so reads −90 / −6,630. Both reconcile; neither is quotable without saying which order it used.
+Two rules resolve most of it. **"live" describes a _row_, not a Board** — a sentence saying "live boards" is ambiguous by construction, because 6,632 live rows are duplicate spellings of a Board counted elsewhere. And **the subtractions depend on the order you apply them**: `EXCLUDED_BOARDS` removes 105 Boards from the raw live rows but only **103** from the deduped set, because two of them were themselves duplicate spellings. The chain below dedupes *first*; the README's funnel excludes first and so reads −105 / −6,630. Both reconcile; neither is quotable without saying which order it used.
 
 **Ledger row** — 304,519:
 One line in a `data/validate/liveness/{ats}.csv`. Includes `dead` and `unknown`. Never a Board count; a raw `wc -l` overstates by however many duplicates exist.
@@ -131,11 +131,11 @@ _Avoid_: "live Boards" for this number — that is the phrase this section exist
 **Unique Board** — 180,541:
 Live rows collapsed to one entry per canonical `board_key` (ADR-0023) — the distinct Boards we know exist. **Scrapable Board** and **Hiring Board** are subsets of it; nothing in that chain removes a duplicate, only Boards we choose not to read. The two *history* counts at the end are **not** subsets: 600 Scraped Boards are absent from it, because a Board read months ago may have gone Dead since and left the live set.
 
-**Scrapable Board** — 154,052:
-A Unique Board a run may actually pick: minus `registry.DISABLED_ATS` (−25,488, all of it `join`), `config.EXCLUDED_BOARDS` (−88 vendor test Boards), the alias ledger (−900 Boards published under a second hostname or label, Taleo career sections and ADP Recruiting Management career sites whose every posting another section or site of the same tenant already lists, or Eightfold career sites whose backing ATS Board already serves them, ADR-0111, ADR-0182, ADR-0186, ADR-0202 and ADR-0205) and `config.PARKED_BOARDS` (−13). Computed by `scrapable_boards.load(min_jobs=0)` (ADR-0191, the one place that decides whether a Board is scraped) — which applies these in the *other* order, excluding before it dedupes, and lands on the same figure. The right default answer to "how many Boards do we have".
-_Avoid_: calling this "unique" — the 26,489 Boards between it and Unique Board are real and distinct, deliberately skipped rather than deduplicated. The alias subtraction is the one exception, and it is small: those 900 serve no posting a kept Board does not — one Board reached by more than one name, a Taleo career section or ADP Recruiting Management career site whose every posting another of its tenant already lists, or an Eightfold career site whose backing ATS Board lists its postings and serves every tech one (a distinct Board, but a redundant one).
+**Scrapable Board** — 154,037:
+A Unique Board a run may actually pick: minus `registry.DISABLED_ATS` (−25,488, all of it `join`), `config.EXCLUDED_BOARDS` (−103 vendor test Boards), the alias ledger (−900 Boards published under a second hostname or label, Taleo career sections and ADP Recruiting Management career sites whose every posting another section or site of the same tenant already lists, or Eightfold career sites whose backing ATS Board already serves them, ADR-0111, ADR-0182, ADR-0186, ADR-0202 and ADR-0205) and `config.PARKED_BOARDS` (−13). Computed by `scrapable_boards.load(min_jobs=0)` (ADR-0191, the one place that decides whether a Board is scraped) — which applies these in the *other* order, excluding before it dedupes, and lands on the same figure. The right default answer to "how many Boards do we have".
+_Avoid_: calling this "unique" — the 26,504 Boards between it and Unique Board are real and distinct, deliberately skipped rather than deduplicated. The alias subtraction is the one exception, and it is small: those 900 serve no posting a kept Board does not — one Board reached by more than one name, a Taleo career section or ADP Recruiting Management career site whose every posting another of its tenant already lists, or an Eightfold career site whose backing ATS Board lists its postings and serves every tech one (a distinct Board, but a redundant one).
 
-**Hiring Board** — 101,502:
+**Hiring Board** — 101,487:
 A Scrapable Board with at least one open posting (`scrapable_boards.load(min_jobs=1)`, the function's default). The other 52,550 are live but empty.
 
 **Slice** — 20,000:

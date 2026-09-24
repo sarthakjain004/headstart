@@ -1,0 +1,36 @@
+# Hand-curated company names, keyed by board_key (ADR-0212). An entry here overrides every other
+# name source, at scrape time (the served `company`) and on the Hot and Trends tabs. It is for
+# Boards that state no name anywhere we read; `evidence` says where a person read this one.
+#
+# An entry is also the company directory's cross-ATS identity (ADR-0185): Boards sharing a name
+# here are one company there, and their counts are summed. So a pair whose Boards mirror each
+# other must not share a name until the index keeps one copy. Lockheed Martin is that pair: its
+# Eightfold Board lists the same requisitions as its SuccessFactors one (1,248 of 1,249 distinct
+# titles, 2026-09-23), so only the SuccessFactors Board is here. The Eightfold one states
+# "Lockheed Martin" itself.
+board_key,name,evidence
+successfactors:lockheed.jobs.hr.cloud.sap,Lockheed Martin,board_naming alias (ADR-0185)
+workday:globalhr/REC_RTX_Ext_Gateway,RTX,board_naming alias (ADR-0185)
+workday:bah/BAH_Jobs,Booz Allen Hamilton,board_naming alias (ADR-0185)
+workday:swa/external,Southwest Airlines,board_naming alias (ADR-0185)
+workday:caci/external,CACI,board_naming alias (ADR-0185)
+workday:gdit/External_Career_Site,GDIT,board_naming alias (ADR-0185)
+workday:ngc/Northrop_Grumman_External_Site,Northrop Grumman,board_naming alias (ADR-0185)
+successfactors:careers.hcltech.com,HCLTech,board_naming alias (ADR-0185)
+successfactors:careers.capgemini.com,Capgemini,board_naming alias (ADR-0185)
+successfactors:careers.wipro.com,Wipro,board_naming alias (ADR-0185)
+successfactors:careers-inc.nttdata.com,NTT Data,board_naming alias (ADR-0185)
+oracle:jpmc.fa.oraclecloud.com,JPMorgan Chase,"site calls itself ""JPMC Candidate Experience page"" (2026-09-24)"
+icims:careers-apac-atlassian.icims.com,Atlassian,Atlassian's own pages (2026-09-24)
+icims:globalcareers-atlassian.icims.com,Atlassian,Atlassian's own pages (2026-09-24)
+icims:campus-globalcareers-atlassian.icims.com,Atlassian,Atlassian's own pages (2026-09-24)
+cornerstone:gmv,GMV,"career site 4 titles itself ""Career site | GMV"" (2026-09-24)"
+cornerstone:bba,BBA,"career sites 4 and 7: logo alt ""BBA"", footer ""BBA 2026"" (2026-09-24)"
+cornerstone:aswatsonph,Watsons,"career site 5: logo alt ""Watsons Logo"" (2026-09-24)"
+cornerstone:shopdirect,Shop Direct,"career sites 2 and 6: logo alt ""Shop Direct"" (2026-09-24)"
+cornerstone:uis,University of Illinois at Springfield,"career sites 1, 4 and 5: logo alt ""University of Illinois at Springfield Logo"" (2026-09-24)"
+jibe:amd,AMD,"site title ""AMD Jobs and Career Opportunities"" (2026-09-25)"
+successfactors:southasiacareers.deloitte.com,Deloitte South Asia,"Deloitte's own host: ""Join Deloitte India, Sri Lanka and Mauritius"" (2026-09-25)"
+workday:ms/External,Morgan Stanley,tenant page names Morgan Stanley (2026-09-25); casing duplicate of ms/external
+workday:ms/external,Morgan Stanley,tenant page names Morgan Stanley (2026-09-25)
+workday:ms/private,Morgan Stanley,tenant page names Morgan Stanley (2026-09-25)

@@ -15,7 +15,18 @@ from __future__ import annotations
 
 import pytest
 
-from headstart.company_name import from_title, looks_like_slug, title_of
+from headstart import company_name
+from headstart.company_name import (
+    brand_first,
+    curated,
+    from_field,
+    from_title,
+    humanised,
+    looks_like_slug,
+    settled,
+    title_cased,
+    title_of,
+)
 
 
 @pytest.mark.parametrize(
@@ -70,8 +81,9 @@ def test_a_board_title_yields_the_company_name(ats, title, slug, expected):
             "Life@MOHH - people, culture, and values | MOHH",
             "careers.mohh.com.sg",
         ),
-        # a hostname, written like one
-        ("lever", "webfx.com", "webfx"),
+        # a URL, which is not a name (lever served this one as a title, 2026-09-24)
+        ("lever", "https://www.azuga.com/", "azuga"),
+        ("lever", "www.webfx.com", "webfx"),
         # exactly the slug: nothing gained
         ("lever", "cargo-partner", "cargo-partner"),
         ("ashby", "telli Jobs", "telli"),
@@ -258,17 +270,18 @@ def test_a_page_label_is_not_a_company_name():
     assert from_title("keka", "Entropik Careers", "entropik") == "Entropik"
 
 
-def test_a_lowercase_name_with_a_tld_is_read_as_a_hostname():
-    """The guard the hostname rule really needs.
+def test_a_name_the_company_writes_as_a_domain_is_a_name():
+    """ADR-0212 reversed the hostname guard: a startup whose brand is its domain states it.
 
-    `Character.AI` is spared by the regex being case-sensitive, not by this test — deleting the
-    lowercase check left the suite green. What it actually decides is a mixed-case name with a
-    lowercase TLD, which a live ashby board serves: "Sprout.ai Jobs".
+    Gem titles itself "11x.ai Careers" and "agenta.ai Careers" (2026-09-16 sample), and the
+    field ATSes carry "incident.io" and "tails.com". A URL is still refused, scheme or `www.`.
     """
+    assert from_title("gem", "11x.ai Careers", "11x") == "11x.ai"
     assert from_title("ashby", "Sprout.ai Jobs", "sprout-ai") == "Sprout.ai"
     assert from_title("ashby", "Character.AI Jobs", "character") == "Character.AI"
-    assert from_title("lever", "webfx.com", "webfx") is None
-    assert from_title("lever", "acme.io", "acme") is None
+    assert from_title("lever", "webfx.com", "webfx") == "webfx.com"
+    assert from_title("lever", "https://www.azuga.com/", "azuga") is None
+    assert from_title("lever", "www.acme.io", "acme") is None
 
 
 def test_a_vendor_name_is_refused_only_on_that_vendors_own_boards():
@@ -308,3 +321,167 @@ def test_a_ledger_name_that_is_itself_a_slug_is_not_a_real_name():
         assert looks_like_slug(slug_like), slug_like
     for real in ("Tata Steel Ltd", "1Password", "Character.AI", "NVIDIA Corporation"):
         assert not looks_like_slug(real), real
+
+
+@pytest.mark.parametrize(
+    ("stated", "expected"),
+    [
+        # Each is a name a keka, zwayam or darwinbox Board states (2026-09-24 research census).
+        ("IMPRONICS DIGITECH PRIVATE LIMITED", "Impronics Digitech Private Limited"),
+        ("SS SUPPLY CHAIN SOLUTION PVT. LTD.", "SS Supply Chain Solution Pvt. Ltd."),
+        ("TRINITY TOUCH PVT LTD", "Trinity Touch Pvt Ltd"),
+        ("LEMON YELLOW LLP", "Lemon Yellow LLP"),
+        ("NOVENTIQ HOLDINGS PLC", "Noventiq Holdings PLC"),
+        ("BERKOWITS HAIR AND SKIN CLINIC", "Berkowits Hair and Skin Clinic"),
+        ("THE HI-TECH ROBOTIC SYSTEMZ LIMITED", "The Hi-Tech Robotic Systemz Limited"),
+        (
+            "EQUIPPED ANALYTICAL INTELLIGENCE (INDIA) LLP",
+            "Equipped Analytical Intelligence (India) LLP",
+        ),
+        ("IIFL FINANCE LIMITED", "IIFL Finance Limited"),
+        ("INDUSIND BANK LTD", "Indusind Bank Ltd"),
+        ("SI HOUSE OF MODELS PRIVATE LIMITED", "SI House of Models Private Limited"),
+        # constructed: a possessive keeps its tail lowercase
+        ("MACY'S RETAIL HOLDINGS", "Macy's Retail Holdings"),
+        # kept: no word longer than four letters, a single word, or not all caps
+        ("BIG OH TECH", "BIG OH TECH"),
+        ("HCL", "HCL"),
+        ("CRISIL", "CRISIL"),
+        ("EPAM", "EPAM"),
+        ("KPMG", "KPMG"),
+        ("Tata Consultancy Services", "Tata Consultancy Services"),
+        ("NVIDIA Corporation", "NVIDIA Corporation"),
+        # a caseless script carries no capitals to lower: pyjamahr served this title
+        ("【QR】クオリティー エンジニア", "【QR】クオリティー エンジニア"),
+    ],
+)
+def test_an_all_caps_legal_name_is_title_cased(stated, expected):
+    assert title_cased(stated) == expected
+
+
+def test_title_casing_reaches_both_name_paths():
+    assert (
+        from_title("keka", "Careers at IMPRONICS DIGITECH PRIVATE LIMITED", "impronics")
+        == "Impronics Digitech Private Limited"
+    )
+    assert from_field("zwayam", "IIFL FINANCE LIMITED") == "IIFL Finance Limited"
+
+
+def test_a_stated_field_name_is_taken_as_the_company_typed_it():
+    """ADR-0212: a field name is not refused for equalling the slug or being lowercase.
+
+    Greenhouse's `commercetools` and Teamtailor's `sunday` state exactly their slug, and Workable,
+    JazzHR and Breezy state names written as domains; all are what the company typed.
+    """
+    assert from_field("greenhouse", "commercetools") == "commercetools"
+    assert from_field("teamtailor", "sunday") == "sunday"
+    assert from_field("jazzhr", "h2o.ai") == "h2o.ai"
+    assert from_field("greenhouse", "impact.com") == "impact.com"
+    assert from_field("greenhouse", " VML/WPP Enterprise Solutions  ") == (
+        "VML/WPP Enterprise Solutions"
+    )
+    assert from_field("pinpoint", "Jobs &amp; Co") == "Jobs & Co"
+
+
+def test_a_field_that_states_nothing_usable_is_none():
+    """So ``from_field(...) or fallback`` falls back. ``value or fallback`` did not on padding:
+    rippling's `agora` states "   ", which is truthy, and a Job then carried an empty company."""
+    assert from_field("rippling", "   ") is None
+    assert from_field("rippling", None) is None
+    assert from_field("jazzhr", "www.wingbrace.com") is None
+    assert from_field("lever", "https://www.azuga.com/") is None
+    # the ATS's own name, where that ATS has vendor aliases
+    assert from_field("adp", "ADP") is None
+
+
+def test_the_brand_a_page_states_outranks_a_legal_name():
+    assert brand_first("Klipboard", "KERRIDGE COMMERCIAL SYSTEMS CORP") == "Klipboard"
+    assert brand_first(None, "Kerridge Commercial Systems Corp") == (
+        "Kerridge Commercial Systems Corp"
+    )
+    assert brand_first(None, None) is None
+
+
+def test_the_curated_map_names_boards_that_state_nothing():
+    """Seeded from pages read by hand (`config/company_names.csv`'s evidence column)."""
+    assert curated("cornerstone:gmv") == "GMV"
+    assert curated("cornerstone:aswatsonph") == "Watsons"
+    assert curated("cornerstone:uis") == "University of Illinois at Springfield"
+    # a ledger's casing and a fresh board_key need not agree (ADR-0049)
+    assert curated("WORKDAY:bah/bah_jobs") == "Booz Allen Hamilton"
+    assert curated("cornerstone:not-curated") is None
+
+
+@pytest.mark.parametrize(
+    ("board_key", "expected"),
+    [
+        ("workday:nvidia/NVIDIAExternalCareerSite", "Nvidia"),
+        ("workday:hpe/ACJobSite", "HPE"),
+        ("icims:careers-gd-ais.icims.com", "GD AIS"),
+        ("icims:careers-peraton.icims.com", "Peraton"),
+        ("zwayam:careers.persistent.com", "Persistent"),
+        ("eightfold:careers.qualcomm.com", "Qualcomm"),
+        ("successfactors:careers.hcltech.com", "Hcltech"),
+        ("phenom:jobs.baesystems.com", "Baesystems"),
+        ("personio:q-ant-gmbh", "Q ANT GmbH"),
+        ("pyjamahr:careers-at-aifa-labs", "Aifa Labs"),
+        ("rippling:apexanalytix-careers", "Apexanalytix"),
+        ("freshteam:codvo-team", "Codvo"),
+        ("pyjamahr:werecruiters-1", "Werecruiters"),
+        ("teamtailor:evrocab-1692891239", "Evrocab"),
+        ("smartrecruiters:TecTammina", "TecTammina"),
+        (
+            "taleo_be:https://phg.tbe.taleo.net/phg01/ats/careers/v2/searchResults?org=GATEWAYVENT&cws=42",
+            "Gatewayvent",
+        ),
+        ("taleo_enterprise:https://hdr.taleo.net/careersection/austin_tx", "HDR"),
+        # only a code: no name at all rather than one (ADR-0212)
+        ("breezy:1001", None),
+        ("oracle:eeho.fa.us2.oraclecloud.com", None),
+        ("oracle:utulsa-ibvjjb.fa.ocs.oraclecloud.com", None),
+        ("adp:37053934-22c6-4362-aa6a-1fee41c0cca3/19000101_000001", None),
+        (
+            "taleo_be:https://lde.tbe.taleo.net/lde01/ats/careers/v2/searchResults?org=G94W9A&cws=37",
+            None,
+        ),
+        # a digit-led slug is cased too, never served verbatim
+        ("lever:1password", "1Password"),
+        (
+            "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=40",
+            "Covestic2",
+        ),
+        ("clearcompany:good2grow", "Good2grow"),
+    ],
+)
+def test_a_board_with_no_stated_name_is_shown_under_its_humanised_tenant(
+    board_key, expected
+):
+    """Never the raw slug (ADR-0212). Each key is a residue Board from the 2026-09-24 served
+    table, bar `careers-gd-ais`'s neighbours, which are the shapes the tidy rules exist for."""
+    assert humanised(board_key) == expected
+
+
+def test_settled_keeps_a_stated_name_and_humanises_an_identifier(monkeypatch):
+    monkeypatch.setattr(company_name, "curated_names", dict)
+    nvidia = "workday:nvidia/NVIDIAExternalCareerSite"
+    ledger = "nvidia.wd5.myworkdayjobs.com/nvidiaexternalcareersite"
+    # nothing ran: the ledger's spelling is an identifier
+    assert settled(ledger, ledger, nvidia) == "Nvidia"
+    # a source stated a name during the fetch, even one equal to a slug piece
+    assert settled("NVIDIA", ledger, nvidia) == "NVIDIA"
+    assert settled("commercetools", "x", "greenhouse:commercetools") == "commercetools"
+    # the curated feed's own name, or a declared `COMPANY`, is a name already
+    assert settled("1Password", "1Password", "ashby:1password") == "1Password"
+    # SuccessFactors' constructor leaves a host label, SmartRecruiters the slug itself
+    assert settled("hcltech", "hcltech", "successfactors:careers.hcltech.com") == (
+        "Hcltech"
+    )
+    assert settled("TecTammina", "TecTammina", "smartrecruiters:TecTammina") == (
+        "TecTammina"
+    )
+    # padding is no name at all
+    assert settled("   ", "   ", "bamboohr:cintel") == "Cintel"
+
+
+def test_a_curated_name_overrides_every_source():
+    assert settled("Some Title", "gmv", "cornerstone:gmv") == "GMV"

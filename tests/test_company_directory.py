@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from headstart import company_name
 from headstart.ingest import company_directory
 
 pa = pytest.importorskip("pyarrow")
@@ -38,8 +39,8 @@ def test_one_tenant_split_into_sites_is_one_company() -> None:
             "taleo_be:https://phg.tbe.taleo.net/phg04/ats/careers/v2/searchResults?org=ALLETE&cws=43": "ALLETE INC"
         },
     )
-    assert len(got["Hpe"]) == 1 and len(got["Hpe"][0]) == 2
-    assert len(got["Hdr"]) == 1 and len(got["Hdr"][0]) == 2
+    assert len(got["HPE"]) == 1 and len(got["HPE"][0]) == 2
+    assert len(got["HDR"]) == 1 and len(got["HDR"][0]) == 2
     assert len(got["ALLETE INC"]) == 1 and len(got["ALLETE INC"][0]) == 2
 
 
@@ -49,7 +50,18 @@ def test_a_shared_taleo_be_pod_is_not_a_shared_tenant() -> None:
         "taleo_be:https://phf.tbe.taleo.net/phf03/ats/careers/v2/searchResults?org=NBF1199&cws=41",
         "taleo_be:https://phf.tbe.taleo.net/phf04/ats/careers/v2/searchResults?org=B973N8&cws=40",
     ]
-    assert len(company_directory.companies(set(boards), {})) == 2
+    # Named, because `B973N8` alone is a code and a code names no directory entry (ADR-0212).
+    names = {boards[0]: "NBF Industries", boards[1]: "Brookfield Nursing"}
+    assert len(company_directory.companies(set(boards), names)) == 2
+
+
+def test_a_board_only_a_code_names_is_left_out() -> None:
+    """ADR-0212: no name beats a code. Oracle's pod `eeho` is a code by ATS, `B973N8` by shape."""
+    boards = {
+        "oracle:eeho.fa.us2.oraclecloud.com",
+        "taleo_be:https://phf.tbe.taleo.net/phf04/ats/careers/v2/searchResults?org=B973N8&cws=40",
+    }
+    assert company_directory.companies(boards, {}) == []
 
 
 def test_a_casing_duplicate_is_the_same_board() -> None:
@@ -63,7 +75,8 @@ def test_a_casing_duplicate_is_the_same_board() -> None:
 
 def test_a_curated_alias_joins_two_atses(monkeypatch: pytest.MonkeyPatch) -> None:
     aliases = {"greenhouse:acme": "Acme", "lever:acme-corp": "Acme"}
-    monkeypatch.setattr(company_directory, "DISPLAY_ALIASES", aliases)
+    # Read at call time (ADR-0212), so a patched map reaches the directory.
+    monkeypatch.setattr(company_name, "curated_names", lambda: aliases)
     got = _companies(["greenhouse:acme", "lever:acme-corp"])
     assert got == {"Acme": [["greenhouse:acme", "lever:acme-corp"]]}
 
@@ -223,7 +236,7 @@ def test_the_file_names_boards_and_carries_no_counts(
     assert json.loads(first) == {
         "companies": [
             {"name": "Acme", "boards": ["greenhouse:acme"]},
-            {"name": "Hpe", "boards": ["workday:hpe/ACJobSite"]},
+            {"name": "HPE", "boards": ["workday:hpe/ACJobSite"]},
         ]
     }
 

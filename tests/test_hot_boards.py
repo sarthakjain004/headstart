@@ -190,6 +190,27 @@ def test_one_company_on_two_atses_collapses_to_one_row() -> None:
     )
 
 
+def test_a_board_no_one_can_name_is_counted_not_ranked() -> None:
+    """ADR-0212: an Oracle pod names nobody, and two such rows would collapse into one."""
+    lenses, counts = _rank(
+        new={
+            "oracle:eeho.fa.us2.oraclecloud.com": 40,
+            "oracle:eofd.fa.us6.oraclecloud.com": 30,
+        },
+        stock={
+            "oracle:eeho.fa.us2.oraclecloud.com": 400,
+            "oracle:eofd.fa.us6.oraclecloud.com": 300,
+        },
+        moved={
+            "oracle:eeho.fa.us2.oraclecloud.com": 60,
+            "oracle:eofd.fa.us6.oraclecloud.com": 50,
+        },
+        names={},
+    )
+    assert all(not lens for lens in lenses.values())
+    assert counts["unnamed"] == 2
+
+
 def test_rows_carry_their_operator_label() -> None:
     lenses, excluded = _rank(
         new={"lever:jobgether": 1634, "greenhouse:acme": 40},
