@@ -22,9 +22,9 @@ from a description it no longer has re-readable.
 
 from __future__ import annotations
 
+from headstart import india_filter
 from headstart.experience import ExperienceSpan
 from headstart.experience import extract as extract_experience
-from headstart.geo import classify as classify_country
 from headstart.remote import extract as extract_remote
 from headstart.salary import SalarySpan
 from headstart.salary import extract as extract_salary
@@ -67,8 +67,9 @@ def salary_meta(salary: str | None, description: str | None, ats: str | None) ->
 
 
 def country_meta(location: str | None) -> dict:
-    """``headstart.geo.classify`` as its one served meta key (ADR-0138)."""
-    return {"country": classify_country(location)}
+    """``headstart.geo.classify`` as its one served meta key (ADR-0138), named and valued by
+    :mod:`headstart.india_filter`, the Search filter that reads it (ADR-0193)."""
+    return {india_filter.COLUMN: india_filter.country(location)}
 
 
 def remote_meta(remote: bool | None, description: str | None) -> dict:
