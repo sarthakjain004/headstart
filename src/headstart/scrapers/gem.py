@@ -83,10 +83,11 @@ costs three detail requests regardless. The ADR-0166 tech gate is a separate ski
 **Company name: the board page renders server-side, and its title wrapper is one this repo already
 knows.** Sampled 60 live board pages — no JS wall, real HTML on a bare GET. ~95% follow "{Name}
 Careers" (`a16z speedrun careers`, `Accel Careers`, …), the exact wrapper `company_name.py` already
-uses for eightfold/jobvite/keka, so `PATTERNS["gem"]` reuses `_CAREERS_WRAPPER` rather than a new
-pattern. Many single-word-brand tenants (`agenta.ai Careers`, `11x.ai Careers`) still fall through to
-their slug: `from_title`'s existing hostname guard correctly declines a name that is itself a bare
-domain.
+uses for eightfold/jobvite/keka, so `PATTERNS["gem"]` starts from `_CAREERS_WRAPPER`, plus the
+other wrappers affected Boards served ("Bluesky Jobs", "Jobs @ Formal", "Lutra Opportunities",
+"Shorebird Open Positions"). A tenant whose brand is its domain (`agenta.ai Careers`, `11x.ai
+Careers`) is named by it since ADR-0212. Gem's own ATS sandboxes are not: `atssandboxyello-co`
+titles itself "ats_sandbox_yello.co Careers", which :meth:`GemScraper.company_from_page` refuses.
 
 **Salary: `compensationHtml` is machine-templated on the large majority of tenants that state one at
 all**, unlike Phenom's own tenant-private free text. Sampled 899 postings across all 377 live boards:
@@ -197,6 +198,11 @@ class GemScraper(BaseScraper):
 
     def board_page(self) -> str:
         return self.url()
+
+    def company_from_page(self, page: str | None) -> str | None:
+        """The title's name, unless it is one of Gem's own ATS sandboxes (module docstring)."""
+        name = super().company_from_page(page)
+        return None if name and name.lower().startswith("ats_sandbox_") else name
 
     def job_url(self, native_id: str) -> str:
         return f"https://jobs.gem.com/{self.slug}/{native_id}"

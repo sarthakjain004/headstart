@@ -185,7 +185,10 @@ def test_the_page_is_asked_for_as_html_and_read_on_either_transport(
     assert raw["details"][ENGINEER] == {
         "posted_at": "2026-08-25T18:11:43+01:00",
         "country": "United States",
+        "company": "Wood Rodgers",
     }
+    # the posting's hiring organization is kept for a Board whose title names no one
+    assert scraper._posting_company == "Wood Rodgers"
 
 
 def test_posted_at_and_country_come_from_the_posting_page():
@@ -357,3 +360,16 @@ def test_a_board_that_is_empty_twice_is_empty():
     scraper, fetcher = _fetching_scraper({"data": []})
     assert scraper.fetch_raw() == {"data": [], "details": {}}
     assert fetcher.urls() == [scraper.url(), scraper.url()]
+
+
+def test_a_board_page_that_names_no_one_falls_back_to_its_postings(monkeypatch):
+    """The board title first (brand before legal name); where the board page is gone or its title
+    is the slug, the hiring organization a posting page names (6 of 10 affected Boards,
+    2026-09-24)."""
+    from headstart import http
+
+    monkeypatch.setattr(http, "fetch", lambda *a, **k: FakeResponse(404))
+    scraper = PinpointScraper("kharon")
+    scraper._posting_company = "Kharon"
+    scraper.resolve_company()
+    assert scraper.company == "Kharon"

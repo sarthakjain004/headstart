@@ -652,3 +652,48 @@ def test_an_india_ats_names_its_board(ats, stated, slug, expected):
 )
 def test_an_india_ats_refuses_a_non_name(ats, stated, slug):
     assert from_title(ats, stated, slug) is None
+
+
+@pytest.mark.parametrize(
+    ("ats", "title", "expected"),
+    [
+        # Each served by an affected Board, 2026-09-24.
+        ("gem", "Bluesky Jobs", "Bluesky"),
+        ("gem", "Jobs @ Formal", "Formal"),
+        ("gem", "Jobs at Nerdery", "Nerdery"),
+        ("gem", "Opportunities @ Haulvana", "Haulvana"),
+        ("gem", "SynthBee Opportunities", "SynthBee"),
+        ("gem", "Align Builders Career Opportunities", "Align Builders"),
+        ("gem", "Shorr Packaging Open Positions", "Shorr Packaging"),
+        ("gem", "11x.ai Careers", "11x.ai"),
+        ("jobvite", "Carrières Buckman", "Buckman"),
+        ("jobvite", "Provisur Technologies Karrieren", "Provisur Technologies"),
+        ("jobvite", "Provisur Technologies Carrières", "Provisur Technologies"),
+        ("jobvite", "Samtec, Inc carreras", "Samtec, Inc"),
+        ("jobvite", "Samtec, Inc 职业", "Samtec, Inc"),
+    ],
+)
+def test_a_title_ats_reads_its_other_wrappers(ats, title, expected):
+    assert from_title(ats, title, "x") == expected
+
+
+@pytest.mark.parametrize(
+    ("ats", "title"),
+    [
+        ("gem", "Gem Jobs"),
+        ("gem", "Careers"),
+        ("gem", "Join Our Mission"),
+        ("gem", "Open Jobs"),
+        ("gem", "Current Opportunities"),
+        ("jobvite", "the D Las Vegas cares"),
+    ],
+)
+def test_a_title_ats_refuses_a_page_that_names_no_employer(ats, title):
+    assert from_title(ats, title, "x") is None
+
+
+def test_title_fallback_sources_take_the_field_path():
+    assert from_field("ashby:graphql", "Ashby") == "Ashby"
+    assert from_field("eightfold", "Eightfold") is None
+    assert from_field("pinpoint", "Pinpoint") is None
+    assert from_field("lever", "Veeva Systems") == "Veeva Systems"

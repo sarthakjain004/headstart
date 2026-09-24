@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from headstart.scrapers.gem import GemScraper
@@ -362,3 +363,16 @@ def test_an_empty_board_is_not_reported_as_unreadable(monkeypatch):
         lambda payload: [{"data": {"oatsExternalJobPostings": {"jobPostings": []}}}],
     )
     assert scraper._listing() == []
+
+
+def test_gem_refuses_its_own_ats_sandboxes(monkeypatch):
+    from headstart import http
+    from headstart.scrapers.gem import GemScraper
+
+    page = SimpleNamespace(
+        status_code=200, text="<title>ats_sandbox_yello.co Careers</title>"
+    )
+    monkeypatch.setattr(http, "fetch", lambda *a, **k: page)
+    scraper = GemScraper("atssandboxyello-co")
+    scraper.resolve_company()
+    assert scraper.company == "atssandboxyello-co"
