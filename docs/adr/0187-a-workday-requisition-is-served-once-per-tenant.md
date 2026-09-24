@@ -1,0 +1,242 @@
+# ADR-0187: A Workday requisition is served once per tenant, not once per site
+
+**Status:** accepted · **Date:** 2026-09-24 · **Amends:**
+[ADR-0023](0023-prune-stale-and-duplicate-index-rows.md) (the duplicate group widens from one
+Board to one Workday tenant), [ADR-0111](0111-duplicate-boards-resolve-the-board-surface.md) (its
+2026-09-11 amendment's "Workday sites share no postings" was a false negative) · **Relates to:**
+[ADR-0049](0049-match-boards-by-prefix-not-by-parsing.md) (ids resolve to a Board by prefix; the
+native id is what follows it), [ADR-0050](0050-persist-descriptions-across-runs.md) (the re-embed
+that deletes a row before sync re-adds it), [ADR-0053](0053-scope-eviction-on-scrape-outcome.md)
+and [ADR-0121](0121-a-negligible-shortfall-is-still-an-authoritative-list.md) (eviction scope),
+[ADR-0083](0083-evict-only-on-a-second-consecutive-absence.md) (the grace period),
+[ADR-0097](0097-a-postings-id-comes-from-the-listing-never-the-detail.md) (how the native id is
+chosen), [ADR-0188](0188-a-dedup-rule-change-is-a-trends-epoch.md) (the Trends epoch a dedup
+change marks)
+
+## Context
+
+A Workday Board is one *site*, keyed `workday:{company}/{site}`. Workday calls the `{company}`
+part the **tenant** (CONTEXT.md's **Tenant**, ADR-0185), and a tenant with several sites posts one
+requisition to several of them.
+`index_plan.plan_prune` grouped duplicates on `(lowercased Board, native id)` — built for
+case-variant spellings of one Board (ADR-0023) — so each site's copy was served.
+
+Measured on the served table, version 654 (2026-09-23; 514,163 rows, 104,849 of them Workday):
+
+- The native id is the requisition id, and it is **identical across sites**: 6,212
+  `(company, native id)` groups span more than one site, holding 13,358 rows, so **7,146 rows
+  (6.8% of Workday) are duplicates**. No suffix normalisation is needed — Workday's per-site `-N`
+  disambiguator lives in the URL only, and a trailing `-N` in a native id is part of a real id
+  (`REQ-53`).
+- Across the sites of one group, titles agree in 99.81%, locations in 99.24%, descriptions in
+  89.17%. The 12 groups whose titles disagree are the same requisition re-titled per site (belk
+  `JR-103156`, boeing `JR2026523431`, expedia `R-107932`).
+- 34 rows carry a native id with **no digit** — a fallback such as `Texas`, or a title slug like
+  `QA-Engineer_` (ADR-0097's last resort). Those are not requisition ids.
+
+Parking whole sites through the alias ledger (ADR-0111) was measured first and removes only 2,644
+of the 7,146, because most multi-site tenants overlap only partly — a main site plus sub-sites that
+each hold a few requisitions of their own (HPE: 1,490 requisitions across its sites, 1,389 on the
+largest). And a prune-only rule churns: 5,940 of the 7,146 copies it would remove sit on a
+Board in the latest run's recorded eviction scope (`scraped_boards.json`, 14,822 Boards, pulled
+2026-09-24), so that run's sync would re-add them, and every later run's sync would re-add the
+copies its own slice re-emits, for prune to take out again.
+
+That record was wrong once already. ADR-0111's 2026-09-11 amendment measured 217 same-company
+site pairs and found 0 shared postings, but it compared `externalPath`, whose per-site `-N`
+suffix differs between two sites' copies of one requisition in 6,208 of 6,212 cases. On the
+native id the sharing is plain.
+
+## Decision
+
+**One served row per `(workday, lowercased {company}, native id)`, enforced both where `index sync`
+adds rows and in `index prune`.** Board keys do not change and nothing is re-keyed.
+
+- **The key.** A Workday row whose native id contains a digit is grouped on its tenant. Every other
+  row, and a Workday row whose native id has no digit, keeps ADR-0023's `(Board, native id)` group.
+- **The survivor.** An **incumbent wins**: a requisition already served from a live Board stays
+  there, and a copy arriving from another site is not added — with one exception, below. With no
+  incumbent — copies arriving together, and the one-time cleanup of today's duplicates — a
+  **public site** keeps it before a non-public one, then the site with the **most jobs in the
+  liveness ledger**, tie-broken by the lexicographically smallest lowercased Board key. Within the
+  kept site, ADR-0023's live-casing rule still picks the row. A copy on the incumbent's own site is
+  still added, since that is a case-variant spelling of the same Board, and refusing it would make
+  a fossil casing immortal: the loop ADR-0023's amendment exists to break.
+- **Public sites win — the user's decision (2026-09-24).** A site is non-public when its `{site}`
+  segment contains, case-insensitively, one of `hidden`, `confidential`, `internal`, `private`,
+  `sourcer` or `targeted` (`_NON_PUBLIC_SITE_TOKENS`). The motivating case is GE Vernova: its
+  `only_confidential_executive_recruiting` site lists 2,360 ledger jobs against
+  `vernova_externalsite`'s 2,194, so ranking on jobs alone served 737 of its requisitions from the
+  confidential site, and 806 across four tenants. Two things follow:
+  - the ranking puts public sites first, for the cleanup and for copies arriving together;
+  - **a public copy displaces an incumbent that sits on non-public sites only** — the one
+    exception to incumbent-wins. Ranking alone would not deliver the decision for new
+    requisitions: most runs read only one of a tenant's sites, so which site a requisition reaches
+    first is close to chance. Sync adds the public copy, and prune, ranking the same way, drops the
+    non-public row in the same run. The exception runs one way only: never non-public over public,
+    and never within a class (public over public, non-public over non-public), where the
+    incumbent still wins — so the order is total and one-directional and nothing oscillates.
+
+  The order only chooses which copy stays; it never decides whether a requisition is served, so
+  one that only non-public sites hold still survives on one of them.
+- **Where the rule lives.** `index_plan`, in private helpers both planners call: `_placement`
+  (an id's duplicate group and site, with `_workday_tenant` as the one place the key widens),
+  `_survivor_board` (the ranking: public first, then ledger jobs, then key) and `_is_non_public`.
+  `plan_sync` gains keyword `site_jobs` and `replaced` and reports the ids it declined as
+  `SyncPlan.refused`; `plan_prune` gains keyword `site_jobs`. One place defines the ranking, so
+  the planner that admits a row and the planner that removes rows cannot disagree about which
+  site keeps it; the displacement compares only its first key (public before non-public). The
+  tenant part of the key comes from `board_operator.tenant`, the one derivation of CONTEXT.md's
+  **Tenant** (ADR-0185). Sync runs the grouping over every ATS, not just Workday: a group keyed
+  on its Board holds one site, so nothing else is ever refused, and the only Workday-specific
+  parts are the key and the site-name tokens. There is no per-ATS hook on `BaseScraper`: Workday
+  is the only ATS with sites under one tenant sharing an id, and a seam with one adapter is a
+  hypothetical one.
+- **No new state.** The ranking reads the committed liveness ledger (`workday_site_jobs`, beside
+  `live_keep_set`, which reads the same file); the incumbents are the table's own rows, which
+  `sync` already reads.
+
+### Staying inside ADR-0083 and ADR-0053
+
+The incumbent is judged **after this run's evictions**, and only on a **live** Board:
+
+- The survivor's Board stops listing the requisition: its first absence marks it Unconfirmed and it
+  keeps serving; the other site's copy is added on the first scrape of that site after the
+  survivor's second absence evicts it — the same run, when both are in its slice.
+- The survivor's Board is not in this run's slice, or is Unauthoritative: no evidence, so it stays
+  the incumbent and the other copy stays out — unless the survivor is on non-public sites only
+  and the arriving copy is public, which displaces it whatever its Board's scope. That is the
+  partial-harvest safety, unchanged — but see Consequences for the Board that is Unauthoritative
+  on every run.
+- The survivor's Board goes dead or is parked: its rows are no longer incumbents, and prune evicts
+  them as off-Board. The other site's copy is added on that site's next scrape — the same run if
+  it is in the slice; until then the requisition is not served.
+
+`replaced` exists for one case the tests caught. `index sync` deletes the rows being re-embedded
+(ADR-0050) before planning, so without it an upgraded incumbent competes as a new arrival, can lose
+to a bigger site, and hands the requisition over with a fresh `first_seen`: a "new" listing, and a
+Digest entry, for a Job that never left. Passing those ids back keeps them the incumbent.
+
+**The survivor cannot flip on unchanged inputs.** Once the one-time cleanup has run, sync keeps
+every requisition on one site, so prune has two sites to choose between only in the run where a
+public copy displaces a non-public incumbent — and it keeps the public one, because it ranks the
+same way. A displacement moves a requisition from a non-public site to a public one and nothing
+moves it back. A re-probe that changes the ledger's job counts affects only requisitions arriving
+afterwards.
+
+## Consequences
+
+This is a new duplicate rule, so it bumps `index_plan.DEDUP_VERSION` from 2 to 3
+([ADR-0188](0188-a-dedup-rule-change-is-a-trends-epoch.md)): the tick its first prune removes the
+7,146 rows carries a "duplicate removal changed" marker on the Trends chart.
+
+Projected on served v654, running the new planners against the committed ledger at `610578b3`
+(130,310-Board keep-set, 10,538 Workday sites with a count; the Workday side is identical to the
+pre-rebase ledger the figures were first taken on):
+
+| | measured | expected |
+| --- | ---: | ---: |
+| rows removed by the first prune | **7,146** | ~7,146 |
+| Workday requisitions served before → after | 97,669 → 97,669 | — |
+| requisitions lost | **0** | 0 |
+| rows the next sync re-adds, every live Board re-emitting every id | **0** (7,146 refused) | 0 |
+
+- **Every collapsed requisition keeps a public site.** Of the 6,212, all 6,212 survivors are
+  public. 1,158 groups had a copy on a non-public site; under the ledger ranking alone 806 of them
+  kept it — `gevernova/only_confidential_executive_recruiting` 737, `spgi/spgi_internal` 59,
+  `denver/internal-postings` 8, `baincapital/external_private` 2 — and all 806 now move to their
+  public sibling. (Before the decision, one posting per site pair was probed live, 10 URLs: all 10
+  answered the CXS detail with 200, the same title and `canApply: true`, so the confidential
+  links worked; the decision is about where an outside applicant is sent, not about dead links.)
+- **570 Workday requisitions stay on non-public sites**, on 59 sites, because no public site of
+  their tenant holds them — led by GE Vernova's confidential site (143), `expedia/private` (76) and
+  `globalhr/private_posting_no_tmp` (48). They are served exactly as before; the order has no
+  sibling to prefer.
+- **Displacement, projected.** Starting from the index the ledger-only rule would have left
+  (1,376 requisitions on non-public sites), one sync with every live Board re-emitting every id
+  adds 806 public copies and prune drops the 806 non-public incumbents they displace — the same
+  806 the cleanup moves; the 570 without a public sibling stay; a second sync adds nothing. After
+  that, displacement happens one new requisition at a time, whenever a requisition first served
+  from a non-public site later turns up on a public one; how often depends on how a tenant's sites
+  fall into slices, and is not measured.
+- **A displacement re-stamps `first_seen`, once per displacement.** The public copy is a new row
+  with this run's stamp, so the requisition reads as a new listing once — in the Search tab's
+  recency, in Trends' `new` level, and possibly in a Digest. On unchanged inputs nothing moves it
+  back. It can recur only through a real change: if the public site stops listing it and ADR-0083
+  evicts it, a non-public copy comes back in, and a later public listing displaces that again —
+  each move a handover with its own stamp.
+- **The token match is a substring rule, so it can misclassify.** 176 of the 10,538 live Workday
+  sites in the ledger match a token, 26 of them competing in v654's multi-site groups. At least
+  one is plainly a false positive: `blackstone/x_ghostsite_theedgeinasiarecruitmentprivatelimited`
+  matches on a company's "Private Limited", not a non-public site; in the ledger,
+  `excellprivatecareservicescareersite` matches on a company name. The cost is bounded: a
+  misclassified site only ranks after its tenant's other sites, and is displaced by a public one,
+  so the requisition is still served, from another site of the same tenant; the order never
+  removes a requisition. A site that is non-public but carries none of the tokens is ranked as
+  public, which is the pre-decision behaviour.
+- **A public survivor on a Board that is Unauthoritative on every run keeps its siblings out for
+  good.** (A non-public one is displaced by the first public copy that arrives.)
+  ADR-0053's exclusion has no drain, so such a survivor is never evicted, and a sibling's copy is
+  refused even if the requisition has left the survivor's site and is live only on the sibling.
+  Before this change that sibling's row was served. Exposure, measured against the latest run's
+  `unauthoritative_boards.json` (96 Boards, 21 of them Workday, pulled 2026-09-24): **47 of the
+  6,212 collapsed requisitions** keep a site on that list, on six Workday Boards (`ms/external`,
+  `usbank/us_bank_careers`, `rbc/rbcglobal1`, …). One snapshot, so an upper bound on no single
+  run. **A known gap, deferred by the user's decision (2026-09-24)**, to be fixed together with
+  ADR-0053's missing drain rather than here: admitting the sibling while the survivor is out of
+  scope gives prune two sites, and prune, which does not see the scope, would take one of them
+  back out every run — the churn this rule exists to remove.
+- **The one-time cleanup ranks public first, then by ledger count — not by freshness.** It can
+  keep a copy whose own site already missed it once (Unconfirmed) and evict a sibling that is
+  still listed: **5 of the 6,212** against the latest `unconfirmed_ids.txt` (re-measured under the
+  public-first ranking: unchanged, as is the 47 above). If the survivor's site has really dropped
+  it, ADR-0083 evicts it on the next scrape and the sibling comes back on its own site's next
+  scrape; the requisition is unserved in between.
+- **A handover re-stamps `first_seen`.** When a survivor is evicted and another site's copy comes
+  in, that copy is a new row with this run's stamp, so the requisition reads as a new listing and
+  can reach a Digest. `replaced` prevents this only for the re-embed case, where nothing was
+  handed over; a real handover has the same effect any evict-then-re-add has today.
+- **The first run removes 7,146 rows at once**, which `role_trends` reads as negative stock. That
+  is what ADR-0188's `DEDUP_VERSION` marks. It is not bumped in this change: ADR-0188's PR adds
+  the counter and had not merged when this branch was cut, so the bump is made when this merges.
+- **Per-Board counts shift between a tenant's sites.** `role_trends`' Board contributions and the
+  Hot tab count a requisition on whichever site serves it, so a main site can show fewer rows than
+  its ledger count while a sub-site incumbent holds the rest.
+- **Blocked copies are still embedded.** `embed_plan` runs in `join`, before `sync`, and sees only
+  the embedding store (`meta.jsonl`), which is append-only and keeps the ids of evicted rows. It has
+  no view of which rows are served. Using the store as the incumbent would refuse a copy for good
+  once its survivor was evicted, breaking the re-admission above; the nearest thing in
+  `data/state/` to a served-id list, `role_assignments.parquet`, omits the rows the role taxonomy
+  files as non-tech and is a diagnostic side ledger. So the embed gate would need new persisted
+  state (a served-id list written by `merge`), and it is not built. The cost it would save is small:
+  1,991 of the 7,146 removed rows were first indexed in v654's last seven days, 1.4% of the 144,874
+  rows first indexed in that window. The refused copy's vector is also what lets it be added
+  without a re-embed when its survivor goes away. A narrower gate needs no new state — rank only
+  the copies arriving in one run's corpus by the ledger, embedding just the top site's — but it is
+  a third copy of the rule in a different job, it cannot see incumbents, so its choice can differ
+  from sync's (it would embed the bigger site's copy that sync then refuses), and it saves only the
+  copies whose higher-ranked sibling happens to share their slice. Not built.
+- **`plan_prune` and `plan_sync` still work without `site_jobs`**: every site then ties and the
+  lexicographic tie-break alone chooses, which is still a correct dedupe, only a different
+  survivor. It is defaulted rather than required, unlike `live`, because omitting it mis-ranks
+  rather than mis-evicts; both production call sites are in `index.py`, and a test goes red if
+  either stops passing it.
+- Cost: on v654's 514,163 ids, `plan_prune` takes 1.1 s with or without the rule, `plan_sync` with
+  every Workday row arriving at once 1.6 s, and `workday_site_jobs` 0.17 s — noise beside the
+  table's own reads and writes.
+
+## Alternatives rejected
+
+- **Park superset sites through the alias ledger.** Removes 2,644 of 7,146, because most
+  overlaps are partial; parking a site that also holds unique requisitions would drop those.
+- **The rule in prune only.** Sync re-adds what prune removed for every copy on an in-scope
+  Board (5,940 of 7,146 on the latest run's scope), run after run: a churn loop of the kind
+  ADR-0023's amendment and ADR-0049 each had to undo.
+- **Fixed survivor per tenant (its largest site), with no incumbent rule.** The user's choice
+  as first stated, refined to incumbent-first before this was built: a fixed survivor moves a
+  served requisition whenever the bigger site's copy arrives, re-stamping `first_seen`, while
+  incumbent-first gives the same one-time cleanup and no churn.
+- **Drop non-public copies outright.** The 570 requisitions only non-public sites hold would
+  leave the index; the user's decision orders those sites last instead of excluding them.
+- **Gate `embed_plan` too.** Needs a served-id list in `data/state/` that nothing writes today; see
+  Consequences.

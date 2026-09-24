@@ -4,7 +4,10 @@
 [ADR-0023](0023-prune-stale-and-duplicate-index-rows.md) (whose `_dedupe_boards` collapses
 *syntactic* duplicates only) · **Relates to:**
 [ADR-0012](0012-liveness-ledger.md) (the ledger this one sits beside),
-[ADR-0034](0034-nonprod-boards-dead-by-convention.md) (the pre-probe skip shape reused here)
+[ADR-0034](0034-nonprod-boards-dead-by-convention.md) (the pre-probe skip shape reused here) ·
+**Amended by:** [ADR-0187](0187-a-workday-requisition-is-served-once-per-tenant.md) — the
+2026-09-11 amendment's "0/217 Workday site pairs share a posting" compared URL paths that differ
+per site; on the native id, a tenant's sites share 6,212 requisitions
 
 ## Context
 
@@ -218,6 +221,14 @@ site slugs — campus vs corporate, one per subsidiary or recruiting program) we
 first page of `{title, externalPath}`: 0 shared postings anywhere. A company running several
 Workday sites is running several genuinely distinct application funnels, not one Board republished
 twice. No pairwise mechanism is built for Workday; none is warranted by what was measured.
+
+> **Amended 2026-09-24 by [ADR-0187](0187-a-workday-requisition-is-served-once-per-tenant.md).**
+> The 0/217 result above is a false negative, and so is its conclusion. `externalPath` ends in a
+> per-site `-N` suffix, so two sites' copies of one requisition almost never compare equal on it: on
+> served v654 the URL tails differ in 6,208 of 6,212 cross-site requisitions. Compared on the
+> native id instead, 6,212 requisitions span more than one site of a tenant, 7,146 duplicate
+> rows. Sites do share postings — mostly partially, which is why ADR-0187 dedupes per
+> requisition in `index sync` and `index prune` rather than parking whole sites here.
 
 **Same-company, two data centres — the other known Workday duplicate shape, `config.py`'s own
 "Accenture sits on both `wd3` and `wd103`" comment — needed no new mechanism either.** It was
