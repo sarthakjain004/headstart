@@ -11,8 +11,9 @@ description and labelled metadata. That JSON-LD is not universally absent: measu
 2026-09-22 on 3 boards, NBF1199 rid=11231 carries it (description byte-identical to this
 scraper's own ``cwsJobDescription`` read, so it rescues nothing there) while CLINIPACE rid=8094
 and YKHC rid=18951 carry neither JSON-LD nor a readable ``cwsJobDescription`` anchor — a second
-layout, read from its ``col-md-8`` column since 2026-09-25 (:func:`_description_html`). So JSON-LD
-is a redundant path on both layouts, not a free fix for either.
+layout, read from its ``col-md-8`` column since 2026-09-25 (:func:`_description_html`). JSON-LD
+turns up on some pages of both layouts (INVXIS carries it) and not on others, so it is a path
+neither layout can rely on.
 """
 
 from __future__ import annotations
@@ -76,7 +77,7 @@ _COMPANY = re.compile(r"Company:\s*(?P<company>[^%<\r\n]+)", re.IGNORECASE)
 #: The 14th tenant (Caidya) is the second layout, carrying no anchor; :func:`_description_html`
 #: reads it from its ``col-md-8`` column since 2026-09-25.
 _DETAIL_OPEN = re.compile(r'<div[^>]*\bname="cwsJobDescription"[^>]*>', re.IGNORECASE)
-_DIV_TAG = re.compile(r"<(?P<close>/?)div\b", re.IGNORECASE)
+_DIV_TAG = re.compile(r"<(?P<close>/?)div\b[^>]*>", re.IGNORECASE)
 #: The second layout's header column; its presence is what makes the ``col-md-8`` below a job's
 #: body rather than any Bootstrap page's main column.
 _SECOND_LAYOUT_HEADER = re.compile(
@@ -119,33 +120,34 @@ def _description_html(page: str) -> str | None:
     ``<div>``/``</div>``, so the body ends at its container's *own* closing tag. None when neither
     container is on the page — the caller records that as a cause, not an empty description.
     """
+    # The first layout is tried first and returns even when unbalanced: its pages carry the
+    # second layout's markers too (STG_CITCO's anchor sits inside the same ``col-md-8``).
     opening = _DETAIL_OPEN.search(page)
     if opening:
-        return _div_inner(page, opening.end())
+        close = _div_close(page, opening.end())
+        return page[opening.end() : close.start()] if close else None
     header = _SECOND_LAYOUT_HEADER.search(page)
     column = header and _SECOND_LAYOUT_BODY.search(page, header.end())
     if not column:
         return None
-    body = _div_inner(page, column.end())
-    if body is None:
+    close = _div_close(page, column.end())
+    if close is None:
         return None
-    body = _STYLE_OR_SCRIPT.sub("", body)
+    body = _STYLE_OR_SCRIPT.sub("", page[column.end() : close.start()])
     buttons = _SECOND_LAYOUT_BUTTONS.search(body)
-    if buttons:
-        end = _div_inner(body, buttons.end())
-        if end is not None:
-            cut = buttons.end() + len(end) + len("</div>")
-            body = body[: buttons.start()] + body[cut:]
+    bar_close = buttons and _div_close(body, buttons.end())
+    if bar_close:
+        body = body[: buttons.start()] + body[bar_close.end() :]
     return body
 
 
-def _div_inner(page: str, start: int) -> str | None:
-    """The HTML between an opening ``<div>`` that ends at ``start`` and its own ``</div>``."""
+def _div_close(page: str, start: int) -> re.Match[str] | None:
+    """The ``</div>`` closing the ``<div>`` whose opening tag ends at ``start``, by depth count."""
     depth = 1
     for tag in _DIV_TAG.finditer(page, start):
         depth += -1 if tag.group("close") else 1
         if depth == 0:
-            return page[start : tag.start()]
+            return tag
     # Unbalanced markup: refuse rather than pollute. Running to the end of the page would put the
     # site footer and navigation into the job's description, and a description that is wrong is
     # worse for the embedding than one that is absent — the caller records a cause either way.

@@ -41,7 +41,7 @@ def test_description_stops_at_its_own_container():
     assert len(body) < len(page)
 
 
-def test_a_page_without_the_anchor_returns_none():
+def test_a_page_with_neither_layout_returns_none():
     """A page with neither layout's container must be reported, not silent."""
     assert (
         taleo_be._description_html("<html><body><p>no anchor here</p></body></html>")
@@ -66,6 +66,7 @@ def test_the_second_layout_body_is_read_from_its_main_column():
     assert text is not None
     assert "RealmOne was built on the principle that people matter" in text
     assert "Apply Now" not in text  # the column's own Back / Share / Apply buttons
+    assert "FOOTER MUST NOT APPEAR" not in text
 
 
 def test_the_second_layout_drops_inline_style_and_its_button_bar():
