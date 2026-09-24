@@ -2,7 +2,7 @@
 
 Zoho server-renders the job list into the careers page as an HTML-entity-encoded
 JSON array inside `<input type="hidden" value="[...]" id="jobs">` (value before id —
-that order is what `_JOBS_INPUT` relies on). There is no XHR or CSRF handshake for the
+that order is what `JOBS_INPUT` relies on). There is no XHR or CSRF handshake for the
 listing — we GET the page and extract that array.
 
 A Zoho company's `slug` is its full careers host, e.g. "pnbcsl.zohorecruit.in"
@@ -52,7 +52,9 @@ _log = log.get(__name__)
 #: pagination; the docstring above records it as the sample-wide maximum.
 _EMBED_CEILING = 750
 
-_JOBS_INPUT = re.compile(r'value="([^"]*)"\s+id="jobs"')
+#: The listing's hidden ``<input id="jobs">``. Public: the liveness probe counts the same
+#: input off the same page (ADR-0197).
+JOBS_INPUT = re.compile(r'value="([^"]*)"\s+id="jobs"')
 _CONFIG_AFTER_JOBS = re.compile(r'id="jobs">\s*<input[^>]*\bvalue="([^"]*)"')
 _SLUG = re.compile(r"[^A-Za-z0-9]+")
 # a job's detail page embeds its full record as `var jobs = JSON.parse('…')` — a JS
@@ -202,7 +204,7 @@ class ZohoScraper(BaseScraper):
         once — sync would evict all their rows as delistings (the eightfold-flap failure
         class), with nothing in any log saying why.
         """
-        match = _JOBS_INPUT.search(page)
+        match = JOBS_INPUT.search(page)
         if not match:
             return []
         return json.loads(html.unescape(match.group(1)))

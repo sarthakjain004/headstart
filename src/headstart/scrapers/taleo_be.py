@@ -24,7 +24,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
 
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.base import BaseScraper
 
 _MAX_PAGES = 1_000
 _DETAIL_WORKERS = 16
@@ -49,7 +49,11 @@ _SORT_COLUMN = re.compile(
     r"<option[^>]*\bsortColumn=(?P<n>\d+)[^>]*>(?P<label>.*?)</option>",
     re.DOTALL | re.IGNORECASE,
 )
-_NEXT = re.compile(r'<a\s+href="(?P<href>[^"]+)"\s+class="jscroll-next"', re.IGNORECASE)
+#: The listing's link to its next ten rows. Public: the liveness probe walks the same pages to
+#: count a Board (ADR-0197).
+NEXT_PAGE_LINK = re.compile(
+    r'<a\s+href="(?P<href>[^"]+)"\s+class="jscroll-next"', re.IGNORECASE
+)
 _COMPANY = re.compile(r"Company:\s*(?P<company>[^%<\r\n]+)", re.IGNORECASE)
 #: The description container's *opening* tag. Its extent is found by depth-counting
 #: :data:`_DIV_TAG` rather than by a forward-looking terminator.
@@ -246,28 +250,15 @@ class TaleoBEScraper(BaseScraper):
         simply names that as the declared source (ADR-0153)."""
         return url
 
-    def alias_key(self) -> str | None:
+    @staticmethod
+    def alias_key_of_landing(landing_url: str) -> str | None:
         """The final canonical TBE board URL, when this Board redirects to one.
 
         A host alone cannot be an alias key here: every customer shares Taleo's regional hosts.
         The full final URL is in the same slug space as the liveness ledger, which lets the
         generic alias resolver bury only a Board whose redirect target is itself live.
         """
-        try:
-            response = self._fetch(
-                "GET",
-                self.url(),
-                headers={"User-Agent": USER_AGENT},
-                timeout=30,
-                allow_redirects=True,
-                stream=True,
-            )
-            try:
-                return _canonical(response.url)
-            finally:
-                response.close()
-        except Exception:  # noqa: BLE001 - an unreachable surface has earned no alias verdict
-            return None
+        return _canonical(landing_url)
 
     def _listing(self) -> list[dict[str, str | None]]:
         page_url = self.url()
@@ -317,7 +308,7 @@ class TaleoBEScraper(BaseScraper):
                         else None,
                     }
                 )
-            next_match = _NEXT.search(page)
+            next_match = NEXT_PAGE_LINK.search(page)
             if not next_match:
                 return listed
             page_url = urljoin(page_url, html.unescape(next_match.group("href")))

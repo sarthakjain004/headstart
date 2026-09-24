@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Container
 
+from headstart.config import CompanyRef
 from headstart.scrapers.adp import ADPScraper
 from headstart.scrapers.adp_recruiting import ADPRecruitingScraper
 from headstart.scrapers.amazon import AmazonScraper
@@ -130,6 +131,22 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
 #
 # join stays disabled: ~99.99% non-tech (German-SMB boards, ~1 tech job in ~10k).
 DISABLED_ATS: frozenset[str] = frozenset({"join"})
+
+
+def company_from_row(ats: str, tenant: str, url: str) -> CompanyRef:
+    """The Board a discovered ``(tenant, url)`` row names, with its slug read by the Scraper.
+
+    A liveness-ledger row and a candidate-pool row both carry a Board as ``tenant`` and ``url``,
+    and only the Scraper knows which of the two its slug comes from — the tenant for most ATSes,
+    the careers host for Zoho and Personio, the whole careers URL for Workday (ADR-0001). Every
+    caller that turns such a row into a Board goes through here, so none of them can skip
+    :meth:`~headstart.scrapers.base.BaseScraper.slug_from` and pass the raw tenant as the slug
+    (ADR-0197). ``name`` is the raw tenant, as the scrape list has always carried it.
+
+    Raises ``KeyError`` for an ``ats`` with no Scraper, and whatever ``slug_from`` raises on a
+    row it cannot read; each caller decides what a bad row means for it.
+    """
+    return CompanyRef(ats=ats, slug=SCRAPERS[ats].slug_from(tenant, url), name=tenant)
 
 
 def detail_pass_atses() -> frozenset[str]:
