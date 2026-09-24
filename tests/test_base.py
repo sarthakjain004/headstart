@@ -609,7 +609,7 @@ def test_attach_details_pairs_against_the_fetched_subset_not_the_full_list():
     assert items[0]["_detail"] == {} and items[2]["_detail"] == {}
 
 
-# --- the ADR-0195 Detail pass -----------------------------------------------------------
+# --- the ADR-0201 Detail pass -----------------------------------------------------------
 
 
 class _DetailStub(_StubScraper):
@@ -702,12 +702,15 @@ def test_run_detail_pass_records_the_thread_path_width(monkeypatch):
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
     fanout_stats.reset()
     scraper = _DetailStub(
-        "x", fetcher=FakeFetcher(lambda m, u, k: FakeResponse(text='{"body": "b"}'))
+        "x",
+        fetcher=FakeFetcher(
+            lambda method, url, kwargs: FakeResponse(text='{"body": "b"}')
+        ),
     )
     scraper.detail_workers = 3
 
     scraper.run_detail_pass(
-        [{"id": "a"}, {"id": "b"}], key_of=lambda r: r["id"], what="p"
+        [{"id": "a"}, {"id": "b"}], key_of=lambda row: row["id"], what="detail pages"
     )
 
     assert fanout_stats.stats()[("stub details", 3)]["items"] == 2
@@ -720,7 +723,21 @@ def test_run_detail_pass_pins_the_multiplexed_width_when_asked(monkeypatch):
     scraper = _DetailStub("x", fetcher=FakeFetcher(_detail_route))
 
     scraper.run_detail_pass(
-        [{"id": "ok"}], key_of=lambda r: r["id"], what="p", concurrency=4
+        [{"id": "ok"}], key_of=lambda row: row["id"], what="detail pages", concurrency=4
     )
 
     assert seen["concurrency"] == 4
+
+
+def test_run_detail_pass_over_nothing_records_no_batch_on_either_transport(monkeypatch):
+    """A Board the tech gate empties must not add a zero batch: `fanout_stats.report` promises
+    to stay silent when nothing fanned out."""
+    fanout_stats.reset()
+    for async_fanout in ("1", "0"):
+        monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
+        scraper = _DetailStub("x", fetcher=FakeFetcher(_detail_route))
+        details = scraper.run_detail_pass(
+            [], key_of=lambda row: row["id"], what="detail pages"
+        )
+        assert dict(details) == {} and details.missing == 0
+    assert fanout_stats.stats() == {}

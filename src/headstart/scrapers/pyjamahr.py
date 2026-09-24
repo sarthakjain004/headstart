@@ -224,7 +224,7 @@ class PyjamaHRScraper(BaseScraper):
         # list is whole (ADR-0053 is about the list, not the fields).
         details = self.run_detail_pass(
             _public(listed),
-            key_of=lambda row: str(row["id"]),
+            key_of=lambda row: None if row.get("id") is None else str(row["id"]),
             what="detail payloads",
             title_of=lambda row: row.get("title"),
             department_of=lambda row: row.get("department_name"),

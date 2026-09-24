@@ -339,7 +339,7 @@ class CornerstoneScraper(BaseScraper):
             for r in self.tech_detail_wanted(rows, _title)
             if self.needs_detail(str(r["requisitionId"]))
         ]
-        # Composed from the primitives, not `run_detail_pass` (ADR-0195): every ad request rides
+        # Composed from the primitives, not `run_detail_pass` (ADR-0201): every ad request rides
         # a tenant token that a 401 refreshes mid-pass for the items still in flight.
         ads = self.fan_out_async(wanted, self._ad_async) if wanted else []
         # Reported, not marked truncated: a missing ad costs a description, not a posting.

@@ -320,7 +320,7 @@ class GemScraper(BaseScraper):
             for i in range(0, len(wanted), _DETAIL_BATCH_SIZE)
         ]
         details: dict[str, dict[str, Any]] = {}
-        # Composed from the primitives, not `run_detail_pass` (ADR-0195): one request fetches a
+        # Composed from the primitives, not `run_detail_pass` (ADR-0201): one request fetches a
         # batch of postings, so the fan-out unit is not the Job.
         if batches:
             if self.async_fanout_enabled():

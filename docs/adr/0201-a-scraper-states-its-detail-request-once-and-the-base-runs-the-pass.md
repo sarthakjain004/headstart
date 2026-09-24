@@ -1,4 +1,4 @@
-# ADR-0195: A Scraper states its detail request once, and the base runs the Detail pass
+# ADR-0201: A Scraper states its detail request once, and the base runs the Detail pass
 
 **Status:** accepted · **Date:** 2026-09-24 · **Takes up:**
 [ADR-0003](0003-fan-out-detail-fetch.md) (whose Consequences deferred "folding in the per-item GET
@@ -18,11 +18,12 @@ transports. Mapped across `src/headstart/scrapers/` on 2026-09-24 (26 Scrapers w
 `has_detail_pass`, 27 call sites):
 
 - **22 Scrapers write every detail request twice**, a sync function for the thread pool and an
-  async twin for the multiplexed session, ~540 lines between them. Two pairs had already
-  drifted: eightfold sends its `Referer` on the sync path only, and adp's async pacer dropped
-  `tries` and `**kwargs`. A third looks like drift and is not: workday's two paths clear
-  different cookie jars on a 400, but each clears the jar its own transport rides — the thread's
-  pooled session, or the pass's `AsyncSession`.
+  async twin for the multiplexed session, ~540 lines between them. One pair has drifted in
+  behaviour: eightfold sends its `Referer` on the sync path only. Two more only look like it.
+  adp's async pacer takes no `tries` or `**kwargs`, but no caller passes either to it (the one
+  that passes them, `resolve_company`, is sync by design). workday's two paths clear different
+  cookie jars on a 400, but each clears the jar its own transport rides — the thread's pooled
+  session, or the pass's `AsyncSession`.
 - **Pairing results back to items is done five ways** — a dict-zip (11 sites), `dict(zip)` keeping
   Nones (2), positional zips (7), in-place mutation (3) and `attach_details` (3).
 - **8 Scrapers leave a parse failure unlabelled**: they catch only `http.RequestsError`, so a
@@ -50,14 +51,15 @@ everything else.
 - **`run_detail_pass(items, *, key_of, what, title_of=None, department_of=None,
   skip_held=False, concurrency=None) -> FetchedDetails`** — arms the ADR-0166 gate when
   `title_of` is given, the ADR-0048 skip when `skip_held` is, sends each request on the
-  multiplexed path unless `async_fanout_enabled()` says otherwise, labels every loss (transport
-  exception and non-200 through `classify_exception`, `DetailLost` by its cause, an unexpected
-  read error by its type), reports one gap line, and returns the details keyed by native id with
+  multiplexed path unless `async_fanout_enabled()` says otherwise, labels every loss (a non-200
+  as `HTTP {status}`, a transport exception or unexpected read error through `classify_exception`,
+  a `DetailLost` by its cause), reports one gap line, and returns the details keyed by native id with
   `.missing` for a load-bearing pass to truncate on.
 - **`fetch_detail(item)`** — the per-item step on the thread transport, public for samplers
   (`scripts/enrich/salary_sample.py`) that fetch a handful of details without a whole pass.
-- The thread transport records `fanout_stats` itself (with its own lock), so a Board on it keeps
-  its `concurrency {ats} details @N` line; apple's hand-written copy goes when apple moves.
+- The thread transport records `fanout_stats` itself (with its own lock), so every Board on it
+  gains the `concurrency {ats} details @N` line only apple had; apple's hand-written copy goes when
+  apple moves.
 - `concurrency=` pins the multiplexed width over every other source, for the one host whose
   politeness bound must not be widened even by the operator (trakstar under DataDome, ADR-0016).
 
@@ -77,9 +79,6 @@ otherwise each re-add them to `base.py` at once: `skip_held` (apple, phenom, zwa
 `concurrency=` (trakstar), `DetailRequest.method`/`options` (phenom and zwayam POST a body) and
 `FetchedDetails.missing` (icims, jobvite, meta and eightfold's sitemap pass truncate on it).
 
-adp's async pacer now takes the same `tries` and `**kwargs` as its sync one, which ends that
-drift while adp stays on the primitives.
-
 ## Consequences
 
 - A migrated Scraper has one request description, so transport drift is impossible by
@@ -89,9 +88,11 @@ drift while adp stays on the primitives.
 - A migrated Scraper's losses are all named. An unexpected read error is labelled by its type
   (`JSONDecodeError`) where it used to be `unlabelled`.
 - `report_detail_gaps` now always runs, so a pass over zero items writes zeroed detail telemetry
-  where a few Scrapers used to skip the call. The gap line itself is unchanged.
-- Measured live before merging: the three migrated Scrapers on three real Boards each (235 Jobs)
-  read byte-identical Jobs from `origin/main` and from this change, except 11 pyjamahr
-  `posted_at` values. Each of those is the same instant with a different UTC offset, and the
+  where a few Scrapers used to skip the call. The gap line's format is unchanged.
+- A listing row with no native id is now a counted, labelled loss (`no posting id`, `no job id`)
+  where pyjamahr used to drop it before the pass without a word.
+- Measured live before merging, on the change's final code: the three migrated Scrapers on three
+  real Boards each (235 Jobs) read byte-identical Jobs from `origin/main` and from this change,
+  except 11 pyjamahr `posted_at` values. Each of those is the same instant with a different UTC offset, and the
   baseline code itself returns `-05:00` and then `+05:30` for one posting on consecutive calls,
   so the API varies the offset, not this change.

@@ -467,3 +467,23 @@ def test_the_company_name_is_the_board_page_title():
         is None
     )
     assert company_name.from_title("pyjamahr", "smallcase", "smallcase") is None
+
+
+def test_a_row_with_no_id_is_a_labelled_unattempted_detail_not_a_silent_drop():
+    """No request can be formed without the id, so the row is counted and named rather than
+    vanishing from the pass — and nothing is sent for it."""
+    rows = [{"id": 1, "slug": "swe", "title": "Backend Engineer"}, {"slug": "no-id"}]
+    listing = {"count": 2, "next": None, "results": rows}
+
+    def route(method, url, kwargs):
+        if url.startswith(f"{_API}?"):
+            return FakeResponse(text=json.dumps(listing))
+        return FakeResponse(text=json.dumps({"description": "<p>body</p>"}))
+
+    fetcher = FakeFetcher(route)
+    scraper = _scraper(fetcher)
+    raw = scraper.fetch_raw()
+    assert set(raw["details"]) == {"1"}
+    assert len(fetcher.urls()) == 2  # the listing and one detail
+    assert scraper.detail_losses == {"no job id": 1}
+    assert scraper.telemetry["detail_attempted"] == 1

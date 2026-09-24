@@ -91,9 +91,10 @@ _R = TypeVar("_R")
 #: must not mean different things on different ATSes.
 MIN_AUTHORITATIVE_SHARE = 0.99
 
-#: The thread-pool width :meth:`BaseScraper.fan_out` and the Detail pass's thread path use when a
-#: Scraper declares no :attr:`~BaseScraper.detail_workers` of its own.
-_DEFAULT_DETAIL_WORKERS = 8
+#: The thread-pool width :meth:`BaseScraper.fan_out` uses unless told otherwise — for a listing
+#: fan-out or a Detail pass alike — and the Detail pass's thread path uses when a Scraper declares
+#: no :attr:`~BaseScraper.detail_workers` of its own.
+_DEFAULT_FAN_OUT_WORKERS = 8
 
 # Default HTTP/2 multiplexing width (concurrent streams per host) for fan_out_async — 100 is around
 # the common server MAX_CONCURRENT_STREAMS. Override per-call, via HEADSTART_H2_STREAMS, or
@@ -171,13 +172,13 @@ DEFAULT_REQUEST_HEADERS: Mapping[str, str] = MappingProxyType(
 
 @dataclass(frozen=True)
 class DetailRequest:
-    """One Job's Detail pass request, stated as data (ADR-0195).
+    """One Job's Detail pass request, stated as data (ADR-0201).
 
     A Scraper returns this from :meth:`BaseScraper.detail_request` instead of sending the request
     itself, so :meth:`BaseScraper.run_detail_pass` can send it over whichever transport is in
     force — the thread pool or the multiplexed session — from this one description. Before this
-    existed every Scraper wrote each detail request twice, once per transport, and three pairs had
-    already drifted apart (a header sent on one path only, a retry argument dropped on the other).
+    existed every Scraper wrote each detail request twice, once per transport, and the copies could
+    drift apart unseen — eightfold's already sends a header on one path only.
 
     ``options`` carries any further keyword for the fetch seam unchanged — ``json=``, ``data=``,
     ``allow_redirects=``, ``retry_on=``, ``marks_wall=``.
@@ -882,7 +883,7 @@ class BaseScraper(ABC):
         items: Sequence[_T],
         fn: Callable[[_T], _R],
         *,
-        workers: int = _DEFAULT_DETAIL_WORKERS,
+        workers: int = _DEFAULT_FAN_OUT_WORKERS,
         default: _R | None = None,
     ) -> list[_R | None]:
         """Apply ``fn`` to each item across a bounded thread pool, isolating per-item failures.
@@ -992,7 +993,7 @@ class BaseScraper(ABC):
 
     def detail_request(self, item: Any) -> DetailRequest:
         """The request that fetches ``item``'s detail — the one place a Scraper states it, for
-        :meth:`run_detail_pass` to send on either transport (ADR-0195).
+        :meth:`run_detail_pass` to send on either transport (ADR-0201).
 
         Raise :class:`DetailLost` when no request can be formed; it is counted unattempted. Only a
         Scraper that calls :meth:`run_detail_pass` implements this.
@@ -1023,7 +1024,7 @@ class BaseScraper(ABC):
     ) -> FetchedDetails:
         """Fetch the detail of each of ``items`` worth fetching, and return them by native id.
 
-        The whole **Detail pass** a Scraper used to compose by hand, behind one call (ADR-0195):
+        The whole **Detail pass** a Scraper used to compose by hand, behind one call (ADR-0201):
 
         * ``title_of`` (with ``department_of``, if the listing states one) arms the ADR-0166 tech
           gate, :meth:`tech_detail_wanted`. Omit it where the gate was measured unsafe.
@@ -1039,9 +1040,11 @@ class BaseScraper(ABC):
 
         ``key_of`` gives an item's native id: the key of the returned mapping, and what
         :meth:`needs_detail` is asked about. It may answer None for a row with no id, which is
-        never held and never keyed — its :meth:`detail_request` says why it was not fetched. ``concurrency`` pins the multiplexed width over
-        every other source, for a host whose politeness bound must not be widened even by the
-        operator (Trakstar under DataDome, ADR-0016); leave it None otherwise.
+        never held and never keyed — its :meth:`detail_request` says why it was not fetched.
+
+        ``concurrency`` pins the multiplexed width over every other source, for a host whose
+        politeness bound must not be widened even by the operator (Trakstar under DataDome,
+        ADR-0016); leave it None otherwise.
         """
         wanted: Sequence[_T] = items
         if title_of is not None:
@@ -1060,7 +1063,7 @@ class BaseScraper(ABC):
             results = self._fan_out_timed(
                 wanted,
                 self.fetch_detail,
-                self.detail_workers or _DEFAULT_DETAIL_WORKERS,
+                self.detail_workers or _DEFAULT_FAN_OUT_WORKERS,
             )
         missing = self.report_detail_gaps(results, what)
         return FetchedDetails(
@@ -1083,6 +1086,8 @@ class BaseScraper(ABC):
         ``fanout_stats.batch``'s callback accumulates into an unsynchronised dict, safe from one
         event-loop thread but not from ``workers`` threads at once.
         """
+        if not items:
+            return []
         timing_lock = threading.Lock()
         with fanout_stats.batch(f"{self.ats} details", workers) as item_done:
 
