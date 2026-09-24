@@ -24,12 +24,14 @@ experiment/ats-provider-expansion/artifacts/research_successfactors.md + 2026-07
 The list surfaces otherwise carry no indexable fields — the one exception is surface 3's own
 ``g:job_function`` (:func:`_job_functions_from`), read for free since that surface's whole body
 is already being paid for; a bounded detail pass fetches every job page and extracts every other
-field from whichever markup that tenant serves: classic RMK pages embed a JSON-LD
-``JobPosting`` (title, datePosted, jobLocation, employmentType, description); CSB-rendered pages
-(Wipro, Voith) have no JSON-LD but keep schema.org microdata (``itemprop="title"`` /
-``"description"``), ``og:title``, a ``<title>`` of the form "{Job Title} Job Details | {Co}", and
-per-tenant ``joblayouttoken`` label/value spans (City / State/Province / Posting Start Date) —
-each field falls back independently, since tenants mix the shapes. No detail markup sampled
+field from its markup: schema.org microdata (``itemprop="title"`` / ``"description"``),
+``og:title``, a ``<title>`` of the form "{Job Title} Job Details | {Co}", and per-tenant
+``joblayouttoken`` label/value spans (City / State/Province / Posting Start Date) — each field
+falls back independently, since tenants mix the shapes. The reader tries a JSON-LD ``JobPosting``
+first, and this docstring used to say classic RMK pages embed one; no page measured does today:
+none of 50 pages from the 10 largest Boards nor the probe pages of 195 more (ADR-0196), and none of
+113 pages from 60 more Boards sampled 2026-09-24 (two carried an ``ld+json`` block, neither a
+``JobPosting``). The branch stays because it costs nothing where absent. No detail markup sampled
 carries a department field at all, which is why ``department`` was hardcoded ``None`` until this
 RSS-feed field was found — see :func:`_job_functions_from`'s docstring. A page that yields no
 title drops that job for the run (there is nothing to keep it by); it returns next scrape.
@@ -45,9 +47,9 @@ on ``jobsearch.alstom.com`` (2,234/2,283). Not every tenant has it (``jobs.thyss
 **It is a fallback, not a shortcut: its fields fill a Job only where that id's job page yielded
 none**, and it is fetched only when some page did. The page stays the authority because it states
 a posting date and the feed never does (no item of 3,083 over three tenants, nor of 961 on
-``jobs.sap.com``), while the page does on 8 of 9 tenants sampled 2026-09-22 — JSON-LD on classic
-pages, ``datePosted`` microdata or a "Posting Start Date:" label on CSB ones
-(:func:`_csb_posted_at`); ``basf.jobs`` is the exception. Serving the feed *instead* of readable
+``jobs.sap.com``), while the page does on 8 of 9 tenants sampled 2026-09-22 — ``datePosted``
+microdata or a "Posting Start Date:" label (:func:`_csb_posted_at`); ``basf.jobs`` is the
+exception. Serving the feed *instead* of readable
 pages (as #564 did) leaves ``posted_at=None`` on nearly every such Job, and ``update_meta`` then
 copies that over the indexed row's stored date. The listing surface above stays the sole authority
 on which ids exist; this only ever fills fields.
@@ -70,7 +72,7 @@ from urllib.parse import unquote
 from headstart import http, log
 from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote, requisition_of
-from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 from headstart.scrapers.job_posting_jsonld import find_job_posting, job_posting_fields
 
 _log = log.get(__name__)
@@ -459,6 +461,9 @@ class SuccessFactorsScraper(BaseScraper):
         # non-tech posting never reached the corpus at all, so this ATS's real tech share was no
         # longer readable from the pipeline's own data. `verify_scraper.py` and the enrichment
         # samplers construct scrapers directly and now see whole Boards again.
+        #
+        # Gated here rather than by handing the pass `title_of`, because what follows needs the
+        # gated list itself: it is both what this returns and the truncation denominator below.
         tech_listed = self.tech_detail_wanted(
             listed,
             lambda pair: _title_from_slug(pair[0]),
@@ -467,25 +472,17 @@ class SuccessFactorsScraper(BaseScraper):
         # Detail pass: every field comes from the job page, so fetch each one (bounded); a
         # failed fetch leaves fields None and parse drops just that job, unless the fallback
         # below fills it.
-        if self.async_fanout_enabled():
-            fields = self.fan_out_async(
-                tech_listed,
-                lambda session, pair: self._job_fields_async(session, pair[0]),
-            )
-        else:
-            fields = self.fan_out(
-                tech_listed,
-                lambda pair: self._job_fields(pair[0]),
-                workers=_DETAIL_WORKERS,
-            )
-        unread = self.report_detail_gaps(fields, "detail fields")
+        pages = self.run_detail_pass(
+            tech_listed, key_of=lambda pair: pair[1], what="detail fields"
+        )
+        unread = pages.missing
         # /sitemal.xml (module docstring): the fallback for a page that yielded nothing, fetched
         # only when one did. The page stays the authority — it states the posting date the feed
         # never does — and `listed` stays the sole id authority; this only ever fills fields.
         sitemal_fields = self._sitemal_fields() if unread else {}
         fields = [
-            page if page is not None else sitemal_fields.get(job_id)
-            for (_, job_id), page in zip(tech_listed, fields)
+            pages[job_id] if job_id in pages else sitemal_fields.get(job_id)
+            for _, job_id in tech_listed
         ]
         lost = sum(1 for page in fields if page is None)
         if lost < unread:
@@ -528,49 +525,22 @@ class SuccessFactorsScraper(BaseScraper):
             for (url, job_id), page_fields in zip(tech_listed, fields)
         ]
 
-    def _job_fields(self, url: str) -> dict[str, Any] | None:
-        try:
-            response = self._fetch(
-                "GET",
-                url,
-                headers={"User-Agent": USER_AGENT},
-                timeout=30,
-            )
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return self._fields_of(response, url)
+    def detail_request(self, pair: tuple[str, str]) -> DetailRequest:
+        return DetailRequest(pair[0], headers={"User-Agent": USER_AGENT})
 
-    async def _job_fields_async(self, session: Any, url: str) -> dict[str, Any] | None:
-        try:
-            response = await self._fetch_async(
-                session,
-                "GET",
-                url,
-                headers={"User-Agent": USER_AGENT},
-                timeout=30,
-            )
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return self._fields_of(response, url)
-
-    def _fields_of(self, response: Any, url: str) -> dict[str, Any] | None:
-        """One job page's fields, with a ``None`` labelled by what lost it.
+    def read_detail(self, pair: tuple[str, str], response: Any) -> dict[str, Any]:
+        """One job page's fields, or a loss named for a page that yielded no title.
 
         This is the pass the User-Agent denylist landed on: 102 Boards, five consecutive runs,
         56,120 postings listed and none ingested, and the only line on the subject read
         ``2127/2127 detail fields missing`` — because a 403 and a 200 that parsed to no title
-        both arrive here as ``None`` (:data:`~headstart.scrapers.base.USER_AGENT`). The label is
-        what separates "the origin refused us" from "the parser did not recognise the page", and
-        those two call for opposite responses.
+        were one count (:data:`~headstart.scrapers.base.USER_AGENT`). The label is what separates
+        "the origin refused us" from "the parser did not recognise the page", and those two call
+        for opposite responses.
         """
-        if response.status_code != 200:
-            self.note_detail_loss(f"HTTP {response.status_code}")
-            return None
-        fields = _titled_fields(response.text, url)
+        fields = _titled_fields(response.text, pair[0])
         if fields is None:
-            self.note_detail_loss("200 without a parseable title")
+            raise DetailLost("200 without a parseable title")
         return fields
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:

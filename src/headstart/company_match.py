@@ -53,6 +53,8 @@ _LEGAL = frozenset(
 _NOT_WORD = re.compile(r"[^0-9a-z]+")
 #: A typo is only forgiven in a word this long; a short word one edit away is another word.
 _TYPO_MIN = 5
+#: Fewest letters a space-blind match needs: shorter, it matches half the directory.
+_SQUEEZE_MIN = 5
 
 
 def normalize(text: str) -> list[str]:
@@ -80,7 +82,9 @@ class Candidate:
 
 def tier(query: list[str], words: tuple[str, ...]) -> int | None:
     """How well ``query`` matches a company's words, best first: 0 exact, 1 name prefix,
-    2 every query word starts a name word, 3 the same allowing one typo per long word."""
+    2 every query word starts a name word, 3 the same allowing one typo per long word, 4 a
+    name prefix once spaces are ignored — "micro soft" and "jp morgan" found nothing, because
+    the reader split a word the company writes whole, or the other way round."""
     if not query:
         return None
     if list(words) == query:
@@ -92,6 +96,9 @@ def tier(query: list[str], words: tuple[str, ...]) -> int | None:
         return 2
     if all(any(w.startswith(q) or _near(q, w) for w in words) for q in query):
         return 3
+    squeezed = "".join(query)
+    if len(squeezed) >= _SQUEEZE_MIN and "".join(words).startswith(squeezed):
+        return 4
     return None
 
 
@@ -121,10 +128,27 @@ def _one_edit(a: str, b: str) -> bool:
     return short[i:] == long_[i + 1 :]
 
 
+#: A word naming an ATS customer's test copy of its own site ("Jpmc Dev1", "Nvidia Sandbox2").
+_TEST_TENANT = re.compile(r"(dev|test|uat|sandbox|staging|demo|preprod)\d*")
+
+
+def _is_test_tenant(candidate: Candidate) -> bool:
+    """A test copy of a real site, which no job seeker is looking for.
+
+    Only one with no openings: "Dev Partners" is an employer, and the pattern alone would catch
+    it. JPMorgan's four Oracle test tenants read 0 beside its real 1,716 (2026-09-24 critique),
+    and "Nvidia Sandbox2" charted every category at −100%.
+    """
+    return candidate.openings == 0 and any(
+        _TEST_TENANT.fullmatch(word) for word in candidate.words
+    )
+
+
 def suggest(query: str, candidates: list[Candidate], limit: int) -> list[Candidate]:
     """The best ``limit`` companies for ``query``: by tier, then most openings, then name.
 
-    One suggestion per name: of the entries whose names normalize alike, only the one with the
+    A test tenant is never offered (see :func:`_is_test_tenant`). One suggestion per name: of
+    the entries whose names normalize alike, only the one with the
     most openings is offered. Most such twins are one employer's Boards on two ATSes, one
     mirroring the other ("NVIDIA Corporation" on Eightfold, "Nvidia" on Workday), and the
     directory cannot merge them because nothing but the name proves them one (ADR-0185). The
@@ -134,12 +158,15 @@ def suggest(query: str, candidates: list[Candidate], limit: int) -> list[Candida
     ranked = []
     for candidate in candidates:
         rank = tier(typed, candidate.words)
-        if rank is not None:
+        if rank is not None and not _is_test_tenant(candidate):
             ranked.append(
                 (rank, -candidate.openings, candidate.name, candidate.key, candidate)
             )
     ranked.sort(key=lambda item: item[:4])
-    # Equal words match at an equal tier, so the first of each name is its largest.
+    # Equal words match at an equal tier, so the first of each name is its largest. Exactly
+    # equal, not merely close: letting a trailing "Technology" or "Group" differ joined 120
+    # name pairs, nearly all different employers (Affinity / Affinity Group, Blackstone /
+    # Blackstone Technology Group), to catch one mirror (Micron).
     seen: set[tuple[str, ...]] = set()
     kept = []
     for *_, candidate in ranked:

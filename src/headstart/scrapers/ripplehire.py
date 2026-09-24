@@ -19,11 +19,16 @@ from __future__ import annotations
 import json
 import re
 import urllib.parse
-from collections.abc import Sequence
 from typing import Any
 
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
+from headstart.scrapers.base import (
+    USER_AGENT,
+    BaseScraper,
+    DetailLost,
+    DetailRequest,
+    DetailWithoutDescription,
+)
 
 #: The session token the careers page redirects onto. Public: the liveness probe reads the
 #: same token before it asks for a count (ADR-0203).
@@ -175,7 +180,9 @@ class RippleHireScraper(BaseScraper):
             headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
         )
 
-    def read_detail(self, listing_row: dict, response: Any) -> dict:
+    def read_detail(
+        self, listing_row: dict, response: Any
+    ) -> dict | DetailWithoutDescription:
         """The whole ``jobVO`` record, not only its ``jobDesc``.
 
         The search list always carries ``jobDesc: null``, so this was fetched for the
@@ -186,25 +193,15 @@ class RippleHireScraper(BaseScraper):
         ``parse`` read those too, at zero extra requests.
 
         A response with no ``jobVO`` is a 200 this parser did not recognise, not a request that
-        failed. A ``jobVO`` with no ``jobDesc`` is still returned — its other fields are real —
-        and :meth:`report_detail_gaps` counts it as the gap it is.
+        failed. A ``jobVO`` with no ``jobDesc`` is still kept — its other fields are real — and
+        counted as the gap it is.
         """
         record = response.json().get("jobVO") or None
         if record is None:
             raise DetailLost("no jobVO on a 200")
+        if not record.get("jobDesc"):
+            return DetailWithoutDescription(record, "no jobDesc on the record")
         return record
-
-    def report_detail_gaps(self, results: Sequence[Any], what: str) -> int:
-        """The Board's gap line counts *descriptions*: a record that arrived and carried no text
-        is a gap too, labelled apart from a fetch that never landed — the bare count reads the
-        two identically (:meth:`~BaseScraper.note_detail_loss`)."""
-        descriptions: list[str | None] = []
-        for record in results:
-            text = (record or {}).get("jobDesc") or None
-            if text is None and record is not None:
-                self.note_detail_loss("no jobDesc on the record")
-            descriptions.append(text)
-        return super().report_detail_gaps(descriptions, what)
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []

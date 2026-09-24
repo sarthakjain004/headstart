@@ -97,3 +97,12 @@ otherwise each re-add them to `base.py` at once: `skip_held` (apple, phenom, zwa
   11 on one pair of runs, 60 on the next, 0 of them a different instant — and the baseline code
   alone returns `-05:00` and then `+05:30` for one posting on consecutive calls, so the API
   varies the offset, not this change.
+
+## Amendment, 2026-09-24: a third `read_detail` outcome
+
+ADR-0201's second wave (#631) found details that arrive without their description yet carry fields `parse`
+reads — a Taleo BE layout states a location and department on 128 of 128 pages with no body — and
+three Scrapers each overrode `report_detail_gaps` to keep such a detail while counting it as a gap.
+`read_detail` may now return `DetailWithoutDescription(fields, cause)`: `run_detail_pass` labels
+`cause`, counts the Job in the gap line and `FetchedDetails.missing`, and keeps `fields` in the
+mapping; `fetch_detail` returns `fields`. The three overrides are gone.

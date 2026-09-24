@@ -53,9 +53,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from headstart import http
 from headstart.models import Job, host_of, html_to_text, is_remote
-from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 from headstart.scrapers.job_posting_jsonld import find_job_posting, job_posting_fields
 
 _DETAIL_WORKERS = 16  # measured clean at conc 20 (80 reqs); matches icims/oracle
@@ -110,17 +109,10 @@ class MetaScraper(BaseScraper):
         listed = _sitemap_rows(self._get())
         if not listed:
             return []
-        if self.async_fanout_enabled():
-            fields = self.fan_out_async(
-                listed, lambda session, row: self._job_fields_async(session, row[1])
-            )
-        else:
-            fields = self.fan_out(
-                listed,
-                lambda row: self._job_fields(row[1]),
-                workers=self.detail_workers,
-            )
-        lost = self.report_detail_gaps(fields, "detail fields")
+        pages = self.run_detail_pass(
+            listed, key_of=lambda row: row[0], what="detail fields"
+        )
+        lost = pages.missing
         if lost:
             # Every field but `id` lives on the detail page, so a lost fetch is a Job `parse`
             # cannot build at all — the list is knowingly short (ADR-0053), and the sitemap gives
@@ -133,46 +125,26 @@ class MetaScraper(BaseScraper):
                 f"{lost}/{len(listed)} job pages unreadable — those Jobs are listed but unbuilt",
             )
         return [
-            {"id": job_id, "url": url, "lastmod": lastmod, "fields": page_fields}
-            for (job_id, url, lastmod), page_fields in zip(listed, fields)
+            {
+                "id": job_id,
+                "url": url,
+                "lastmod": lastmod,
+                "fields": pages.get(job_id),
+            }
+            for job_id, url, lastmod in listed
         ]
 
-    def _job_fields(self, url: str) -> dict[str, Any] | None:
-        try:
-            response = self._fetch(
-                "GET",
-                url,
-                headers={"User-Agent": USER_AGENT},
-                timeout=30,
-            )
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return self._fields_of(response)
+    def detail_request(self, row: tuple[str, str, str | None]) -> DetailRequest:
+        return DetailRequest(row[1], headers={"User-Agent": USER_AGENT})
 
-    async def _job_fields_async(self, session: Any, url: str) -> dict[str, Any] | None:
-        try:
-            response = await self._fetch_async(
-                session,
-                "GET",
-                url,
-                headers={"User-Agent": USER_AGENT},
-                timeout=30,
-            )
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return self._fields_of(response)
-
-    def _fields_of(self, response: Any) -> dict[str, Any] | None:
-        if response.status_code != 200:
-            self.note_detail_loss(f"HTTP {response.status_code}")
-            return None
+    def read_detail(
+        self, row: tuple[str, str, str | None], response: Any
+    ) -> dict[str, Any]:
         fields = _ld_fields(response.text)
         if fields is None:
             # A stale sitemap entry (the posting closed since the sitemap was generated) answers
             # 200 with no JSON-LD block at all — measured directly against a bumped, unlisted id.
-            self.note_detail_loss("no JSON-LD on a 200")
+            raise DetailLost("no JSON-LD on a 200")
         return fields
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:

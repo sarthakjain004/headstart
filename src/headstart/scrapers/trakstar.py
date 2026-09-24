@@ -90,7 +90,7 @@ from urllib.parse import quote
 
 from headstart import http, log
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 from headstart.scrapers.job_posting_jsonld import find_job_posting
 
 _log = log.get(__name__)
@@ -157,6 +157,8 @@ class TrakstarScraper(BaseScraper):
     ats = "trakstar"
     url_shape = r"https://[^.]+\.hire\.trakstar\.com/jobs/[0-9a-z]+/?"
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
+    # The thread path's width; the multiplexed one is pinned to the same number in `fetch_raw`.
+    detail_workers = _DETAIL_WORKERS
 
     def url(self) -> str:
         return f"https://{self.slug}.hire.trakstar.com/"
@@ -227,12 +229,11 @@ class TrakstarScraper(BaseScraper):
         if api_items is not None:
             # The whole point of this surface (module docstring): listing IS the detail — every
             # object already carries its own description, so there is no per-job fetch to gate
-            # with ADR-0017/ADR-0048 the way the HTML+detail path below still needs.
+            # with ADR-0017 the way the HTML+detail path below still needs.
             return {"api_items": api_items}
         html = self._get()  # the careers page HTML (job cards)
         # Split once: the cap check needs the count, the tech gate below needs each card's own
-        # title and department, and `parse` re-reads the same blocks. `_codes_from` stays as the
-        # projection `scripts/enrich/salary_sample.py` calls.
+        # title and department, and `parse` re-reads the same blocks.
         cards = _job_cards(html)
         codes = [code for _block, code in cards]
         if _is_capped(html, len(codes)):
@@ -269,31 +270,21 @@ class TrakstarScraper(BaseScraper):
                 "unreachable — keeping the capped HTML list"
             )
         # Each job page's JSON-LD JobPosting (description + datePosted), fetched concurrently
-        # (bounded); failures -> None. The detail pages sit behind DataDome, so the async path
-        # pins the multiplexing width to the gentle _DETAIL_WORKERS rather than the global
-        # HEADSTART_H2_STREAMS.
+        # (bounded); a failed page is simply absent. The detail pages sit behind DataDome, so the
+        # async path pins the multiplexing width to the gentle _DETAIL_WORKERS rather than the
+        # global HEADSTART_H2_STREAMS.
         # The tech gate (ADR-0017), on the cards rather than the codes: `parse` reads `_TITLE`
         # and `_DEPT` out of this same block and the JSON-LD overrides neither, so the gate's
         # verdict is the one `filter_tech` will reach. Each detail page is a DataDome-guarded
         # request, which makes a skipped one worth more here than the card count suggests.
-        wanted = [
-            code
-            for _block, code in self.tech_detail_wanted(
-                cards,
-                lambda card: _card_title(card[0]),
-                lambda card: _card_dept(card[0]),
-            )
-        ]
-        if self.async_fanout_enabled():
-            results = self.fan_out_async(
-                wanted,
-                lambda session, code: self._job_posting_async(session, code),
-                concurrency=_DETAIL_WORKERS,
-            )
-        else:
-            results = self.fan_out(wanted, self._job_posting, workers=_DETAIL_WORKERS)
-        self.report_detail_gaps(results, "JSON-LD postings")
-        postings = dict(zip(wanted, results))
+        postings = self.run_detail_pass(
+            cards,
+            key_of=lambda card: card[1],
+            what="JSON-LD postings",
+            title_of=lambda card: _card_title(card[0]),
+            department_of=lambda card: _card_dept(card[0]),
+            concurrency=_DETAIL_WORKERS,
+        )
         return {"html": html, "postings": postings}
 
     def _fetch_feed(self) -> str | None:
@@ -345,55 +336,23 @@ class TrakstarScraper(BaseScraper):
         plain items list with no live scraper instance needed (ADR-0153)."""
         return _job_url(self.slug, code)
 
-    def _extract_posting(self, response: Any) -> dict | None:
-        """Pull the JobPosting JSON-LD block from a detail page (None on non-200), falling
-        back to the rendered description container when a tenant's template never emits
-        JSON-LD at all (#179).
+    def detail_request(self, card: tuple[str, str]) -> DetailRequest:
+        return DetailRequest(self.job_url(card[1]), headers={"User-Agent": USER_AGENT})
+
+    def read_detail(self, card: tuple[str, str], response: Any) -> dict:
+        """The page's JobPosting JSON-LD block, falling back to the rendered description
+        container when a tenant's template never emits JSON-LD at all (#179).
 
         These pages sit behind DataDome, so "the wall answered" and "the page arrived and
         neither reader recognised it" are the two live explanations for a gap and the count
-        alone reads them alike — hence the label on each exit
-        (:meth:`~BaseScraper.note_detail_loss`)."""
-        if response.status_code != 200:
-            self.note_detail_loss(f"HTTP {response.status_code}")
-            return None
+        alone reads them alike — hence the named loss when neither reader finds anything."""
         posting = find_job_posting(response.text)
         if posting is not None:
             return posting
         description = _html_description(response.text)
         if description is None:
-            self.note_detail_loss("no JSON-LD and no description on a 200")
-            return None
+            raise DetailLost("no JSON-LD and no description on a 200")
         return {"description": description}
-
-    def _job_posting(self, code: str) -> dict | None:
-        """GET one job page and return its JSON-LD JobPosting (None on failure). Sync path."""
-        try:
-            response = self._fetch(
-                "GET",
-                self.job_url(code),
-                timeout=30,
-                headers={"User-Agent": USER_AGENT},
-            )
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None  # a missing posting must not drop the job
-        return self._extract_posting(response)
-
-    async def _job_posting_async(self, session: Any, code: str) -> dict | None:
-        """Same as :meth:`_job_posting` but over the shared multiplexed ``AsyncSession``."""
-        try:
-            response = await self._fetch_async(
-                session,
-                "GET",
-                self.job_url(code),
-                timeout=30,
-                headers={"User-Agent": USER_AGENT},
-            )
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return self._extract_posting(response)
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         if isinstance(raw, dict) and "api_items" in raw:
@@ -463,22 +422,16 @@ def _card_dept(block: str) -> str | None:
 
 
 def _job_cards(html: str) -> list[tuple[str, str]]:
-    """``(block, code)`` per job card — :func:`_codes_from` keeping the block the code came from,
-    so the tech gate can read the card's own title and department without re-splitting."""
+    """``(block, code)`` per job card, in the order the cards appear — the code with the block it
+    came from, so the tech gate can read the card's own title and department without
+    re-splitting. Shared by ``fetch_raw()`` and the sampling script's own bounded adapter
+    (``_fetch_trakstar``, ``scripts/enrich/salary_sample.py``) so the two don't carry two copies
+    of the same card-splitting logic."""
     return [
         (block, m.group(1))
         for block in html.split(_ITEM)[1:]
         if (m := _CODE.search(block))
     ]
-
-
-def _codes_from(html: str) -> list[str]:
-    """Every job code on a careers-page listing, in the order the cards appear. Shared by
-    ``fetch_raw()`` and the sampling script's own bounded adapter (``_fetch_trakstar``,
-    ``scripts/enrich/salary_sample.py``) so the two don't carry two copies of the same
-    card-splitting logic — the same reuse ``_fetch_successfactors`` already gets from this
-    module's ``_job_urls_from``-equivalent, ``successfactors.py``'s own module-level helper."""
-    return [code for _block, code in _job_cards(html)]
 
 
 def _total_openings(html: str) -> int | None:

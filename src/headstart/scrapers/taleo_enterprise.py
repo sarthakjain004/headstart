@@ -19,14 +19,19 @@ from __future__ import annotations
 import json
 import math
 import re
-from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import unquote, urlencode, urlsplit, urlunsplit
 
 from headstart import company_name, salary
 from headstart.models import Job, html_to_text, is_remote, requisition_of
-from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
+from headstart.scrapers.base import (
+    USER_AGENT,
+    BaseScraper,
+    DetailLost,
+    DetailRequest,
+    DetailWithoutDescription,
+)
 
 _PORTAL = re.compile(r"portalNo:\s*'?(\d+)")
 _TITLE_TAG = re.compile(r"<title[^>]*>(.*?)</title>", re.DOTALL | re.IGNORECASE)
@@ -416,23 +421,17 @@ class TaleoEnterpriseScraper(BaseScraper):
     def detail_request(self, item: dict[str, Any]) -> DetailRequest:
         return DetailRequest(item["url"])
 
-    def read_detail(self, item: dict[str, Any], response: Any) -> dict[str, str | None]:
+    def read_detail(
+        self, item: dict[str, Any], response: Any
+    ) -> dict[str, str | None] | DetailWithoutDescription:
         detail = _parse_detail_page(response.text)
         if detail is None:
             raise DetailLost("no labelled requisition fields on a 200")
+        if not detail.get("description"):
+            # Kept, not lost: its location, department and salary are real and `parse` prefers
+            # them to the listing's; counted as a gap for the missing description.
+            return DetailWithoutDescription(detail, "no description on the requisition")
         return detail
-
-    def report_detail_gaps(self, results: Sequence[Any], what: str) -> int:
-        """The gap line counts descriptions. A page whose fields parse but carry no description
-        is counted as the gap it is, yet :meth:`read_detail` still returns it: its other fields
-        (location, department, salary) are real and `parse` prefers them to the listing's."""
-        described_details: list[dict[str, str | None] | None] = []
-        for detail in results:
-            if detail is not None and not detail.get("description"):
-                self.note_detail_loss("no description on the requisition")
-                detail = None
-            described_details.append(detail)
-        return super().report_detail_gaps(described_details, what)
 
     def fetch_raw(self) -> Any:
         shell = self._get()

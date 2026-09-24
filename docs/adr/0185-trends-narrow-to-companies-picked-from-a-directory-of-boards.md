@@ -212,3 +212,169 @@ links on Hot-tab rows and search results land already picked. A search result's 
 `boardOf`'s guess from the job id (ADR-0049). 98.1% of the 514,163 served rows resolve exactly
 to a directory Board. The rest, and any other key the Space refuses, are dropped with a sentence
 under the picker rather than failing the chart.
+
+## Amendment (2026-09-24): what using the shipped tab showed
+
+A critique drove the merged tab against the 2026-09-24 state (33,966 companies) and found the
+chart misleading or empty for the common company. Each fix below answers a measurement.
+
+- **Most companies drew nothing.** 22,863 of 33,966 hold fewer than 5 tech openings (median
+  2), below Change's indexing floor, so the default view was one "not indexed" row over a blank
+  plot. Change is now withdrawn, with its reason, wherever no line can be indexed, and counts are
+  drawn. The reader's unit returns once a view can show it. A perfectly flat Total also drew
+  every y as NaN, and now gets an axis with height.
+- **Found Boards read as hiring.** 254 of 852 multi-Board companies gained a Board after their
+  line began, and each lands its whole backlog at once (Hyatt +1,048 over 83 Boards). This is the
+  reason the Hot tab leaves new Boards out. `/trends` now returns `discovered` under a pick
+  (`{ts, company, boards, openings}`, from each Board's first tick), and the chart marks each with
+  a solid ink line. A Board that brought no tech openings, or that lands on the point where its
+  company's line begins, is not marked. Across a found Board, or across duplicate removal at a
+  pick holding several Taleo Enterprise or Workday Boards (the only Boards it parks), no riser or
+  faller is named. Tech-filter and extraction changes still allow one, as they do on the index
+  chart. Epochs now carry `fields` (the version columns that moved) beside their labels, so the
+  tab keys on `dedup_version`, not on prose.
+- **The history note was wrong for late starters.** 9,981 companies were first counted after
+  2026-09-13, but the note named 2026-09-13. `/trends` now returns `counted_since`, each pick's
+  own first counted tick, in place of `history_start`, and the note names it per company. It
+  shows whenever a company is picked, including on a one-run line.
+- **Unfindable and fragmented names.** "jpmorgan" finds nothing (the Board is named "Jpmc"), and
+  Siemens, Goldman Sachs, Flipkart, Shopify, Swiggy and TCS have no Board at all. The no-match
+  line now says a Board may be unread or named otherwise. The picker also stays open on its
+  query after a pick, so an employer split across entries (Atlassian's three iCIMS Tenants) takes
+  a few Enters, with the next entry already active. Curated aliases for well-known employers
+  remain open work.
+- **No way from a trend to the jobs.** One pick now offers "See its open roles". It hands over
+  the company's Board keys, not its name: `/search` and `/facets` take `board=` (repeatable, at
+  most 200), kept out of `SearchFilters` like follow/hide so a Saved Set never freezes it. The
+  name's substring match found 0 of Booz Allen Hamilton's 1,388 rows and 0 of Six Group's 30,
+  and returned 2,057 rows for one Citi Board that holds 927 (2026-09-15 table). The Hot tab's
+  "See roles" had the same defect and now hands over its Board too.
+- **The picker sat under the chart on a phone.** Companies now have their own row above the
+  filters, and the heading names the pick.
+
+## Amendment (2026-09-24): a critic's first round
+
+A critique agent used the fixed tab (about 25 journeys, 60 suggestion queries) and scored it
+5/10. Its measured findings, and what changed:
+
+- **"New this week" read a found Board's backlog as hiring** (Razorpay: 19 new of 19 open). Under
+  a pick, a Board found after the ledger's first tick now counts toward `new` only once the
+  flow window (7 days) has passed since it was found, the Hot tab's rule. Until then the tab
+  says why nothing is new yet.
+- **Movers named across steps that are not hiring.** Wipro's "+74.7%" held about +25% from the
+  Sep 17 tech-filter step. NVIDIA with AMD (counted from Sep 24) named
+  "engineering-management +442.9%". Under a pick, no riser or faller is named across a
+  line-moving counting change (a taxonomy refit, a family-map edit or a tech-filter change),
+  across duplicate removal at a pick it can touch, across a found Board, or across a later
+  pick joining a summed view. The last of these is also marked. The crosshair's tooltip and
+  readout now name the step at its stamp, on every chart.
+- **Misnamed and unfindable companies.** The ATS's own site title ("Oracle Taleo" for Scripps,
+  PMG and PruittHealth; "Successfactors" for TTTech) is no longer taken as the company. Curated
+  aliases name JPMorgan Chase's `jpmc` Board and join Atlassian's three iCIMS Tenants into one
+  company; both take effect at the next pipeline run. Test tenants with no openings ("Jpmc
+  Dev1", "Nvidia Sandbox2") are not suggested. The critic's claim that multi-word queries fail
+  was checked and is wrong: "morgan stanley" and "bosch group" match. Those employers are
+  unindexed, not unmatched.
+- **Controls lost state.** The drill, unit, measure, window and coverage now ride the hash, and a
+  drill is a history entry, so Back leaves it. A cold link keeps a roles drill. An empty
+  Comparable window says per-Board counting began on `ledger_start` rather than "widen the
+  dates". An empty answer no longer decides the auto breakdown, and Source lists only the
+  picks' ATSes. A refusal note clears on the reader's next pick. Enter takes the top
+  suggestion. No "−0.0%" mover is named.
+
+## Amendment (2026-09-24): a critic's second round
+
+A fresh critique agent scored the next build 5/10. Its measured findings, and what changed:
+
+- **"New this week" invented collapses at the biggest employers.** Amazon's `new` held at
+  ~8,600 for exactly seven days from the ledger's first tick, then fell to 1,371, and Google's
+  went from 1,690 to 489. The ledger's first week reads every Board's backlog as new, not only a
+  found Board's. The hold now covers every Board from its first tick, the baseline included.
+  `new_counted_from` gives the first run a pick's `new` can count, and the tab says so.
+- **Percentages still carried the marked steps.** A withheld riser tile did not help while the
+  legend printed the same number. Legend, table and tile percentages are now net of the marked
+  steps: each later value is scaled back by the jump the step made. Wipro's Software
+  Engineering reads +27.7% instead of +74.7%, and Google with BAE Systems no longer shows
+  "+1170.2%". Since the figures are net, movers are named again. The plotted lines keep their
+  steps, marked.
+- **Findability.** A first cut treated names that differ only by a trailing "Technology" or
+  "Group" as one name, to fold Micron's two entries (1,949 on Workday, 1,887 on Eightfold). The
+  code review measured it over the directory: it joined 120 name pairs, and nearly all were
+  different employers (Affinity / Affinity Group, Blackstone / Blackstone Technology Group). It
+  was withdrawn. Micron's two entries stay until an alias joins them.
+- **Friction.** A pick closes and clears the list, which covered the filters (both critics).
+  "See their open roles" hands every pick's Boards over at once. A tap reads the chart on a
+  touch screen. Tables name their first column for the view (Category, Line, Company, Level,
+  Role). A count axis has whole-number ticks, and "too few to index" replaces "not indexed".
+- **Not fixed here, and why:**
+  - AI labs' Software Engineer titles land in `ai-ml`: Anthropic reads software-engineering 4
+    against 91 such titles. That is the role taxonomy (ADR-0040), not this tab.
+  - Shopify, Goldman Sachs, Flipkart, Swiggy and TCS have no Board. That is discovery work.
+  - The Hot tab's "open now" counts a different stock from the trend's tech openings.
+  - Search has no role-family filter to carry a drilled category over.
+
+Its code review then tightened the round:
+
+- Netting is per line. Under a Company breakdown, a company's own step (a found Board, its
+  joining a sum) is divided out of that company's line only, so another company's real change
+  in that run survives. A step that falls on a gap in a line lands on its next point.
+- The `new` hold applies to every replay of the ledger, so the comparable index chart is held
+  too. `new_counted_from` is now per pick. Under `new`, a found Board's marker sits at the run
+  it starts counting, not at its arrival.
+- Under comparable coverage, a later pick has no Boards in the cohort, so it is not marked.
+  Duplicate removal withholds only at a pick with two or more Boards on one of its ATSes.
+- The hand-off cap comes from the page (`CFG.max_scoped_boards`). Past it the link says why.
+  Source hides only the ATSes the picks are not on, and hidden boxes are never sent. A custom
+  date range survives Back. The empty-Comparable advice appears only when the window starts
+  before per-Board counting.
+
+### A critic's third round (2026-09-24): 5.5/10, and the line and its number disagreed
+
+The critic used the tab again with a signed-in session. The worst finding was a regression the
+second round introduced: the percentages were net of the marked steps but the lines were not.
+Google's Total line ended near 117 over a legend reading −0.2%, and on a phone Google's line
+was the highest while its tile said "Biggest faller". What changed:
+
+- **The Change plot draws the net levels.** Steps are taken out backwards, the way a price
+  history is adjusted for a split: the latest value stays real, and the history before each
+  step is scaled by that step's jump. Every percentage reads from the same levels, so a line
+  and its number can no longer disagree. Measured on the same data, each company's line ends
+  at 100 plus its legend percentage (Amazon 97.1 against −2.9%, Microsoft 107.7 against
+  +7.6%). Share and Count plot real levels, which a reader takes off the axis, and break the
+  line at each marked step rather than draw the jump as a climb.
+- **Steps belong to the picks they can move.** Duplicate removal is taken out only of a pick
+  whose Boards it can touch. That is two or more on Taleo Enterprise or Workday, or an
+  Eightfold Board beside another (#632 aliases Eightfold mirrors). Google had read −0.2% beside
+  Stripe and −0.5% beside Micron, and now reads +0.2% beside either. Under a pick, a counting
+  change that cannot move its lines is not marked. An extraction change moves only a Level
+  breakdown.
+- **Two or more picks compare by default** (Company breakdown). Summed categories under "at 4
+  companies" answered a question nobody asked. One pick keeps Category, or Total when small.
+- **A sentence per company** above the chart gives its tech openings now and its move in
+  percent and in openings, net of the marked steps. Examples: "Google: 1,802 tech openings;
+  about flat over 11 days (+0.2%, +3 openings)", then how long HeadStart has counted it. Under
+  14 days it adds that this is an early sign, not a trend.
+- **Small numbers are counts, not percentages.** A line starting under 20 openings shows its
+  change in openings, and no tile names it. Stripe's "Biggest riser +18.2%" was 11 openings
+  becoming 13.
+- **Nothing is dropped silently.** The Space names `uncounted` picks, and the page says why
+  each is missing. Comparable coverage whose window starts before per-Board counting now begins
+  at the first per-Board run and says so. Before, Google over 30 days answered nothing. With no
+  runs, the caption is empty ("live openings at , or…").
+- **A held week is a gap.** Under `new`, a pick's runs before its first week ends are `None`,
+  not 0. The zeros drew a week of nothing and then a surge. A summed line starts with its
+  earliest pick.
+- **Marker tooltips give the size.** Each line's row reads, for example, "1,739 · index 103 ·
+  jumped +148 here". The index is named.
+- **Notes fit the view.** The dashed whole-company line appears only where lines are parts of
+  it, so not on Total or Company. The reassignment caveat is hidden where a category cannot
+  move. The step explanation appears only where a line has a step and a percentage, and sits
+  in the caption under the chart.
+- **Search keeps the hand-off.** It rides in `#search?board=…&label=…&q=…`, so a reload keeps
+  it. From a drill, the category's name becomes the semantic query. Search has no category
+  filter, so the jobs come ranked by the category rather than narrowed to it.
+- **Findability.** Company search matches a name prefix with spaces ignored (5+ letters), so
+  "micro soft" finds Microsoft. "jp morgan" needs the pending `Jpmc` alias to reach the served
+  directory.
+- **Phones.** The legend follows the chart directly, then the tiles, then the filters. A phone
+  draws no end labels, so the legend is the only key.

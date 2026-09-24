@@ -1,4 +1,10 @@
-from headstart.models import Job, epoch_ms_to_iso, html_to_text, is_remote
+from headstart.models import (
+    Job,
+    epoch_ms_to_iso,
+    html_to_text,
+    is_remote,
+    requisition_of,
+)
 
 
 def test_job_round_trips_to_dict():
@@ -31,6 +37,7 @@ def test_job_round_trips_to_dict():
         "experience",
         "employment_type",
         "salary",
+        "requisition",
     }
 
 
@@ -71,3 +78,58 @@ def test_is_remote():
 def test_epoch_ms_to_iso():
     assert epoch_ms_to_iso(None) is None
     assert epoch_ms_to_iso(0) == "1970-01-01T00:00:00+00:00"
+
+
+def _job(**overrides):
+    fields = {
+        "id": "x:y:1",
+        "ats": "x",
+        "company": "C",
+        "title": "T",
+        "location": None,
+        "remote": None,
+        "department": None,
+        "url": "u",
+        "posted_at": None,
+        "scraped_at": "2026-01-01T00:00:00+00:00",
+    }
+    return Job(**{**fields, **overrides})
+
+
+def test_job_unescapes_entities_in_title_and_company():
+    # Served 2026-09-24: 56 titles (smartrecruiters, zwayam) and a pyjamahr company kept one.
+    job = _job(
+        title="IT Architect - Technical Process &amp; Compliance",
+        company="Pitangent Analytics &amp; Software",
+    )
+    assert job.title == "IT Architect - Technical Process & Compliance"
+    assert job.company == "Pitangent Analytics & Software"
+
+
+def test_job_strips_company_whitespace():
+    # 3,851 served rows carried a company with a trailing space ("Onware ").
+    assert _job(company="  Onware \n").company == "Onware"
+    # Only the ends: the inside of a stated name is left as the Board wrote it.
+    assert _job(title=" Senior  Engineer ").title == "Senior  Engineer"
+
+
+def test_job_location_drops_tags_and_lists_lines():
+    # Teamtailor's own feed puts markup in `addressLocality` (knightecgroup, 2026-09-24).
+    tagged = 'São Bernardo do Campo</span> - <span class="region">SP, BR'
+    assert _job(location=tagged).location == "São Bernardo do Campo - SP, BR"
+    # iCIMS states several places one per line; the repo joins places with "; ".
+    listed = "FL-Sarasota\nUS-IL-Itasca\n US-TX-Austin, US"
+    assert (
+        _job(location=listed).location == "FL-Sarasota; US-IL-Itasca; US-TX-Austin, US"
+    )
+    assert _job(location="  Pune,   India ").location == "Pune, India"
+    assert _job(location=" <br> ").location is None
+    assert _job(location="&lt;Remote&gt; &#x7c; UK").location == "<Remote> | UK"
+
+
+def test_a_requisition_is_stored_as_trimmed_text_or_none():
+    """Two rows match only on equal strings (ADR-0206), whether the ATS stated a number or text."""
+    assert requisition_of(3560628) == "3560628"
+    assert requisition_of(" R-100 ") == "R-100"
+    assert requisition_of("") is None
+    assert requisition_of(None) is None

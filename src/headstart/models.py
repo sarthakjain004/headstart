@@ -34,6 +34,16 @@ class Job:
     # Board's requisition, and a row on that Board carries the same id. None everywhere else.
     requisition: str | None = None
 
+    def __post_init__(self) -> None:
+        # The one point every scraper's Jobs pass through, so the display text is cleaned once
+        # rather than per scraper. Each defect was served on 2026-09-24: entities left in 56
+        # titles (smartrecruiters, zwayam) and a company (pyjamahr), 3,851 companies with edge
+        # whitespace, and locations carrying markup (teamtailor's own feed) or one place per
+        # line (50 icims rows, one workday). `object.__setattr__` because the dataclass is frozen.
+        object.__setattr__(self, "title", _unescaped(self.title))
+        object.__setattr__(self, "company", _unescaped(self.company))
+        object.__setattr__(self, "location", _location_text(self.location))
+
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
@@ -49,6 +59,25 @@ def requisition_of(value: Any) -> str | None:
 
 _TAGS = re.compile(r"<[^>]+>")
 _WS = re.compile(r"\s+")
+_LINE_BREAKS = re.compile(r"\s*[\r\n]+\s*")
+
+
+def _unescaped(value: str | None) -> str | None:
+    """``value`` with its entities decoded and its ends stripped; the inside is left as stated."""
+    return value if value is None else html.unescape(value).strip()
+
+
+def _location_text(value: str | None) -> str | None:
+    """A location as display text: tags dropped, entities decoded, a line break read as a list.
+
+    Tags go before entities are decoded, so an escaped ``&lt;Remote&gt;`` survives as text. A line
+    break separates places (all 50 icims rows served with one on 2026-09-24), so it becomes the
+    ``"; "`` the scrapers already join places with, not a space that runs two places into one.
+    """
+    if not value:
+        return None
+    text = _LINE_BREAKS.sub("; ", _TAGS.sub(" ", value).strip())
+    return _WS.sub(" ", html.unescape(text)).strip() or None
 
 
 def host_of(url: str | None) -> str:

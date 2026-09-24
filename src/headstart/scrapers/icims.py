@@ -51,9 +51,9 @@ import re
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from headstart import http, log
+from headstart import log
 from headstart.models import Job, host_of, html_to_text, is_remote
-from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 from headstart.scrapers.job_posting_jsonld import (
     find_job_posting,
     job_location_text,
@@ -172,19 +172,10 @@ class ICIMSScraper(BaseScraper):
         if not listed:
             return []
 
-        if self.async_fanout_enabled():
-            fields = self.fan_out_async(
-                listed,
-                lambda session, row: self._job_fields_async(session, row[1]),
-            )
-        else:
-            fields = self.fan_out(
-                listed,
-                lambda row: self._job_fields(row[1]),
-                workers=_DETAIL_WORKERS,
-            )
-
-        lost = self.report_detail_gaps(fields, "detail fields")
+        pages = self.run_detail_pass(
+            listed, key_of=lambda row: row[0], what="detail fields"
+        )
+        lost = pages.missing
         if lost:
             # Every field but `posted_at` comes from the job page, so `parse` drops a Job whose
             # page did not arrive — which makes this list knowingly short, and an unmarked short
@@ -195,52 +186,30 @@ class ICIMSScraper(BaseScraper):
                 f"{lost}/{len(listed)} job pages unreadable — those Jobs are listed but unbuilt"
             )
         return [
-            {"id": job_id, "url": url, "posted_at": lastmod, "fields": page_fields}
-            for (job_id, url, lastmod), page_fields in zip(listed, fields)
+            {
+                "id": job_id,
+                "url": url,
+                "posted_at": lastmod,
+                "fields": pages.get(job_id),
+            }
+            for job_id, url, lastmod in listed
         ]
 
-    def _job_fields(self, url: str) -> dict[str, Any] | None:
-        try:
-            response = self._fetch(
-                "GET",
-                _detail_url(url),
-                headers={"User-Agent": USER_AGENT},
-                timeout=30,
-            )
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return self._fields_of(response)
+    def detail_request(self, row: tuple[str, str, str | None]) -> DetailRequest:
+        return DetailRequest(_detail_url(row[1]), headers={"User-Agent": USER_AGENT})
 
-    async def _job_fields_async(self, session: Any, url: str) -> dict[str, Any] | None:
-        try:
-            response = await self._fetch_async(
-                session,
-                "GET",
-                _detail_url(url),
-                headers={"User-Agent": USER_AGENT},
-                timeout=30,
-            )
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return self._fields_of(response)
-
-    def _fields_of(self, response: Any) -> dict[str, Any] | None:
-        """One job page's JSON-LD fields, with a ``None`` labelled by what lost it (ADR-0088's
-        discipline, on the pass that needed it: a refusal and a body that arrived unreadable both
-        return ``None`` here, and a bare count of ``None``s cannot tell them apart — which is how
-        a User-Agent denylist stayed invisible for five runs across 102 Boards). The transport
-        failures are labelled by the two callers above, which are the only ones that see them.
-        """
-        if response.status_code != 200:
-            self.note_detail_loss(f"HTTP {response.status_code}")
-            return None
+    def read_detail(
+        self, row: tuple[str, str, str | None], response: Any
+    ) -> dict[str, Any]:
+        """One job page's JSON-LD fields, or a loss named for what the page lacked — a refusal
+        and a body that arrived unreadable must not read as one count (ADR-0088's discipline,
+        on the pass that needed it: that is how a User-Agent denylist stayed invisible for five
+        runs across 102 Boards)."""
         fields = _ld_fields(response.text)
         if fields is None:
             # The `in_iframe=1` trap as well as a genuine JSON-LD outage — the branded wrapper
             # is a well-formed 200 carrying no JobPosting at all.
-            self.note_detail_loss("no JSON-LD on a 200")
+            raise DetailLost("no JSON-LD on a 200")
         return fields
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
