@@ -244,7 +244,9 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   metadata refresh, after the merge and before `sync`), `index` (`sync` then `prune --apply`),
   `role_trends` (the ADR-0040 trends ledger, after prune), `hot_boards` (the actively-hiring
   ranking the "Hiring now" tab serves, strictly after `role_trends` because it reads that
-  stage's Board-count snapshot and delta ledger). `index compact` is a subcommand of the
+  stage's Board-count snapshot and delta ledger), `company_directory` (the ADR-0185 Board →
+  company names the Trends company filter searches, after `role_trends`, whose
+  Board-delta ledger it reads). `index compact` is a subcommand of the
   same module but is **not** part of this run — it moved to the `cleanup-index` workflow, because
   rewriting the whole table once per run is what the storage budget cannot afford.
   Five more entry points are not stages. `state_fetch` (ADR-0030) pulls each stage's slice of HF
@@ -259,7 +261,7 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   HF's collection, which is how the 100 GB quota filled on 2026-09-18.
   If you change what the pipeline runs, change it there and update `.github/workflows/pipeline.yml`
   to match. Don't add a pipeline stage to `scripts/`. Helper modules used *only* by the pipeline
-  live there too (`binpack`, `board_failures`, `board_freshness`, `board_operator`,
+  live there too (`binpack`, `board_failures`, `board_freshness`, `board_naming`, `board_operator`,
   `derived_meta`, `doc_prep`, `index_plan`, `observability`, `role_assignments`, `shard_plan`,
   `shard_speedup`, `trends_epochs`). Logic the curated-feed path (`python -m headstart` →
   `headstart.harvest`) also reaches stays in `headstart` proper (`harvest`, `board_cost`,

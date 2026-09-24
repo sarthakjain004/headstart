@@ -52,6 +52,10 @@ called in the UI. Neither is a value a row can hold; a row holds a lens figure a
 A Board an Account has chosen to see more or less of, held as a `CompanyPrefs` record keyed by **board_key** — never by company name, which four served rows in five do not carry. Hidden Boards are excluded from every search; followed ones are what the "only companies I follow" control narrows to. The two lists are disjoint by construction, and they are Account state rather than a Search filter, so a **Saved Set** never freezes them.
 _Avoid_: "blocked" or "muted" — a hidden Board is still scraped, still indexed and still served to everyone else; only this Account stops seeing it.
 
+**Company directory** (ADR-0185):
+The list of companies the Trends tab can be filtered to, each naming the **Board**s it owns — `data/state/company_directory.json`, written by `ingest/company_directory` from every Board the ADR-0143 delta ledger has counted. An entry is a **Company** only as far as the data proves it: two Boards join when they share a **Tenant** (casing duplicates included) or a curated alias, never because their names match — measured, a matching name joined different startups across four ATSes. So one employer on two ATSes with no alias is two entries under one name. It holds names and Boards, no counts; counts come from the delta ledger.
+_Avoid_: reading an entry's Boards as additive — one Company's Boards can list the same requisitions (Taleo sections, Workday sites, Lockheed's mirrored Eightfold Board), so summing them overcounts until the index removes the copies.
+
 **Careers page**:
 A company's own web page that links to or embeds its Board; the input to careers-page discovery, distinct from the Board itself.
 
@@ -75,6 +79,10 @@ place it's declared.
 
 **Company**:
 The employer listed on an ATS, behind a Board; a `CompanyRef` (`ats`, `slug`, `name`) is the reference that tells the scrape step which Board to read.
+
+**Tenant** (ADR-0185):
+The customer an ATS hosts, which may hold several **Board**s: Workday's `{company}` across its sites, a Taleo Enterprise host across its career sections, a Taleo Business Edition `org` across its `cws` sites; on most ATSes it is simply the **Slug**. Usually one **Company**'s, but a holding group's Tenant can carry its portfolio companies' Boards, and a Company on two ATSes has two Tenants.
+_Avoid_: "account" — that is a signed-in person (**Account**); reading the ledgers' `tenant` column as a Tenant — that column holds one Board's slug spelling, site included.
 
 **Single source scraper**:
 A Scraper for a company that runs its own in-house careers system rather than a third-party ATS platform other companies also rent — Amazon, Apple, Google, Meta, Tesla, Uber, ByteDance, TikTok. Modelled exactly like any other Scraper (`ats` = the company itself, `slug` fixed to its own careers host, never discovered) rather than a parallel dispatch path, so every consumer that already keys off `ats:slug` needs no new code (ADR-0139). Has no **Discovery** step — its liveness ledger carries exactly one hand-entered row, since there is only ever one Board.
@@ -274,7 +282,7 @@ _Avoid_: **Search filter** — that names a deterministic where-clause over the 
 
 **Account** (ADR-0042):
 A signed-in person, identified by the verified address their Google sign-in proves. The whole UI sits behind sign-in and anyone may create an Account; the costly paths keep their own gates — **Digest** delivery stays invite-only, **Résumé** parsing is capped per Account.
-_Avoid_: user, subscriber — an Account is the identity; whether it receives email is the **Subscription**'s question.
+_Avoid_: user, subscriber — an Account is the identity; whether it receives email is the **Subscription**'s question. Also "ATS account" for an ATS's customer — that is a **Tenant**.
 
 **Profile** (ADR-0041):
 The stored, structured extraction of an Account's career: one role sentence (the **Résumé query**) plus facts — current title, years of experience, skills, past roles, education, location. Built by one LLM call from a **Résumé** or edited by hand; the document it came from is discarded, and contact details are never kept. Split by purpose: the sentence drives ranking, the facts pre-fill **Search filters** — a Profile never smuggles years or location into the **Query**.
@@ -458,6 +466,7 @@ _Avoid_: using it for a **shard**, which is the unit of _work_ a planner assigns
 ## Relationships
 
 - A **Company** runs its **Board** on exactly one **ATS**, located by its **Slug**.
+- A **Tenant** holds one or more **Boards** on one **ATS**; the **Company directory** joins a Tenant's Boards into one entry.
 - A **Scraper** (one per **ATS**) reads a **Board** and produces **Jobs**.
 - **Discovery** collects **Companies** (each as an `(ATS, slug)`) via **Feeders**; **Liveness** sorts their **Boards** into Live / Dead / Unknown and writes the Live ones to the **Active list**; **Resolve** maps a known **Company** to its `(ATS, slug)`.
 - The scrape step runs **Scrapers** over the **Active list** and assembles the **Feed**.
@@ -478,4 +487,4 @@ _Avoid_: using it for a **shard**, which is the unit of _work_ a planner assigns
 - **"ATS provider" (UI label only)** — the search rail's ATS dropdown is labelled "ATS provider" for job-seekers (its values are greenhouse, lever, …). It briefly said "Board", which the glossary makes wrong — a **Board** is one company's listing, not the system hosting it. Internally the term stays **ATS** and the param stays `ats`; "provider" remains avoided in code and docs.
 - **"Discover" (rejected tab name)** — the Search tab is called Search, not Discover: **Discovery** already names finding Companies on ATSes, and a UI label colliding with a glossary term would make every future conversation disambiguate.
 - **"match"** — three related things: a *match* is a **Job** a **Saved set**'s Query and filters admit; the Matches *tab* is that set run live; the **Match ring** is only the displayed score. None of them is the **Subscription**, which is the emailing Saved set.
-- **"Tenant" (retired)** — previously the `(ATS, slug)` pair. Dropped as a term: a **Company** *is* the thing on an ATS, located by its **Slug**, so we just say "a Company's slug on an ATS." The data still carries a `tenant` column (and the `data/ats-tenants-merged/` dir, `slug_from(tenant, …)` param keep the name) — a code/data rename is a separate change, not yet done.
+- **"Tenant"** — retired as a name for the `(ATS, slug)` pair, then re-defined by ADR-0185 as the ATS-hosted customer that can hold several **Board**s (a Workday company's sites, a Taleo host's sections). The old sense survives only in data names: the ledgers' `tenant` column, the `data/ats-tenants-merged/` dir and `slug_from(tenant, …)` still mean one Board's slug spelling — a code/data rename is a separate change, not yet done.
