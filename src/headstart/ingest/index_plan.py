@@ -634,8 +634,9 @@ def scraped_boards(
     3. the corpus ids' Boards, when neither is available (a local sync with no full scrape on
        disk, or a unit test).
 
-    (A Board scraped that yields *zero* jobs of any kind writes no ids and so isn't covered by any
-    of them — that rarer case is handled by the dead/absent-Board prune, ADR-0023.)
+    (A Board scraped cleanly that yields *zero* jobs writes no ids, so only ``recorded`` covers
+    it: ``scrape_join`` adds the shard reports' ``boards_ok``. The other two sources miss it, and
+    prune does not catch it either, because a live Board with no postings stays in its keep-set.)
     """
     path = Path(scraped)
     if path.is_dir() and any(path.glob("*.jsonl")):

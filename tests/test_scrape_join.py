@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 import headstart.ingest.scrape_join as js
+from headstart.ingest import observability
 from headstart.ingest.index_plan import (
     boards_by_canon,
     live_keep_set,
@@ -418,3 +419,34 @@ def test_the_scope_file_is_rewritten_even_when_the_join_covered_nothing(tmp_path
     _run(tmp_path / "absent", tmp_path / "jobs", scraped_boards_path=recorded)
 
     assert json.loads(recorded.read_text(encoding="utf-8")) == []
+
+
+def test_a_board_scraped_clean_with_zero_jobs_is_in_the_scope(tmp_path):
+    """A Board that answered with nothing open writes no job line, so a scope built from lines
+    alone never held it: `index sync` left its old rows alone, and `prune` kept them too, because
+    the Board is still live in the ledger. Its closed postings were served forever (measured
+    2026-09-24: greenhouse:hyphenconnect answers 404 and served 602 rows). The shard report's
+    `boards_ok` is the evidence the lines cannot carry, keyed the way ids are, so Workday's
+    URL slug lands as `{company}/{site}`."""
+    frags = tmp_path / "frags"
+    _shard(frags, 0, {"greenhouse.jsonl": ['{"id": "greenhouse:stripe:1"}']})
+    observability.write_shard(
+        frags / "shard-0",
+        ShardReport(
+            boards_ok=[
+                "greenhouse:stripe",
+                "greenhouse:emptyco",
+                "workday:https://acme.wd1.myworkdayjobs.com/Careers",
+            ],
+            errors={"greenhouse:down": "HTTP 500"},
+        ),
+    )
+    recorded = tmp_path / "scraped_boards.json"
+
+    _run(frags, tmp_path / "jobs", scraped_boards_path=recorded)
+
+    assert set(json.loads(recorded.read_text(encoding="utf-8"))) == {
+        "greenhouse:stripe",
+        "greenhouse:emptyco",
+        "workday:acme/Careers",
+    }

@@ -211,10 +211,16 @@ def main() -> int:
         _log.info(f"{ats_file}: {n} lines from {len(sources)} shard(s)")
 
     _log.info(f"wrote {total} lines across {len(per_ats)} ATS files -> {out}")
+    reports = observability.read_shards(shards_root)
+    # A Board scraped clean with zero jobs writes no line above, so it would never enter the
+    # scope and its closed postings would be served forever. `boards_ok` is that evidence; keyed
+    # through `board_key_of`, it is the prefix the Board's own ids carry. A truncated Board is in
+    # `boards_ok` too, and `index sync` drops it again as unauthoritative (ADR-0053).
+    for report in reports:
+        boards.update(filter(None, map(board_key_of, report.boards_ok)))
     # Before the telemetry below, like the unauthoritative-Board write: this is the eviction
     # signal, and an empty file is the honest record of a run that joined nothing.
     write_scraped_boards(boards, Path(args.scraped_boards))
-    reports = observability.read_shards(shards_root)
     # Written unconditionally, before the summary: an empty file is the honest record of "every
     # Board's list is authoritative", and the summary below is telemetry that must never gate the
     # eviction signal.
