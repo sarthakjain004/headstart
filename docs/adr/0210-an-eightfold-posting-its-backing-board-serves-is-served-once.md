@@ -4,8 +4,7 @@
 [ADR-0187](0187-a-workday-requisition-is-served-once-per-tenant.md) (the duplicate grouping this
 widens) · **Amends:** [ADR-0188](0188-a-dedup-rule-change-is-a-trends-epoch.md) (the marker no
 longer carries a dedup's removals alone), [ADR-0205](0205-an-eightfold-site-its-backing-board-already-serves-is-an-alias.md) (its candidates table becomes the committed pairs file) · **Relates to:**
-[ADR-0205](0205-an-eightfold-site-its-backing-board-already-serves-is-an-alias.md) (the Board-level
-rule this complements, and the pairs), [ADR-0061](0061-refreshable-metadata.md) (the facts
+[ADR-0061](0061-refreshable-metadata.md) (the facts
 refresh that stamps old rows), [ADR-0083](0083-evict-only-on-a-second-consecutive-absence.md) (the grace period
 re-admission waits on)
 
@@ -65,7 +64,7 @@ Every Eightfold posting states its backing ATS's requisition, and #632 measured 
 4. **The grouping extends ADR-0187's, in `index_plan._placement`.** An Eightfold row whose stamp a
    row on one of its backing Boards also carries joins **that row's group**
    (`_backing_copies`). The ranking that picks a group's survivor, and the displacement sync
-   applies to an incumbent, both put a backing Board before an Eightfold site (`_rank_class`), ahead
+   applies to an incumbent, both put a backing Board before an Eightfold site (`_survivor_precedence`), ahead
    of ADR-0187's public-before-non-public key. So in sync an arriving Eightfold copy is refused
    while its backing row is served, an arriving backing row displaces a served Eightfold copy that
    prune then drops in the same run, and in prune the copy is a duplicate. A Workday backing Board
@@ -81,8 +80,8 @@ Every Eightfold posting states its backing ATS's requisition, and #632 measured 
    join, so the next scrape of the Eightfold Board adds it back. An unstamped row never matches, so
    until both rows carry a stamp both are served as today.
 6. **`DEDUP_VERSION` 4 → 5**, a new grouping in `plan_prune` (ADR-0188).
-7. **A dedup eviction ledger, `data/state/dedup_evictions.csv`** (the user's decision): one row
-   `(ts, board, count, rule)` per run, Board and rule for every row prune takes out as a
+7. **A dedup eviction ledger, `data/state/dedup_evictions.csv`** (the user's decision): rows
+   `(ts, board, count, rule)`, one per run, Board and rule, counting every row prune takes out as a
    duplicate — `case-variant`, `workday-tenant` (ADR-0187), `backing-requisition` (this rule) — or
    as off-Board on a Board an alias ledger buries, `alias:{signal}` (`index_plan.aliased_boards`
    matches ledger rows exactly as `scrapable_boards.load` skips them). Ordinary closures (sync) and
@@ -165,4 +164,7 @@ and **90% of pairs after about 10 runs (~8 hours)**.
   ledger change between the two; a dedup it does make there is logged but not in the ledger.
 - **A run whose corpus artifact was lost writes no ledger rows**, since `data/state` is not
   published then; prune still runs and its removals are logged.
-- **The first commit on this branch said ADR-0206**; that number went to #642 before this merged.
+- **An aliased Board's row is labelled only when its id resolves to that Board.** An off-Board id
+  resolves through `board_of`'s last-colon guess (ADR-0049), so a buried Board's row whose native
+  id carries a colon (Workday's `REQ: 228` shape) is removed unrecorded. The same guess every
+  other off-Board path makes; rare, and logged.

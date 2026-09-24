@@ -53,10 +53,16 @@ def in_scope(job_id: str) -> bool:
     the served row, vector and all, for no dedup it could ever take part in. Matched on the id's
     prefix rather than a parsed Board, which is exact however many colons the native id holds.
     """
+    return job_id.lower().startswith(_prefixes(tuple(load().items())))
+
+
+@cache
+def _prefixes(pairs: tuple[tuple[str, tuple[str, ...]], ...]) -> tuple[str, ...]:
+    """The id prefixes :func:`in_scope` matches, built once per pairs file rather than per row."""
     prefixes: list[str] = []
-    for slug, boards in load().items():
+    for slug, boards in pairs:
         prefixes.append(f"eightfold:{slug}:")
         for board in boards:
             workday = board.startswith("workday:")
             prefixes.append(board.split("/", 1)[0] + "/" if workday else f"{board}:")
-    return job_id.lower().startswith(tuple(prefixes))
+    return tuple(prefixes)

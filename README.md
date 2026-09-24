@@ -368,7 +368,7 @@ Two rows, fetched live from the index:
   "min_salary_annual": 180000, "max_salary_annual": 300000, "salary_currency": "USD",
   "salary_known": true,
   "url": "https://jobs.ashbyhq.com/character/b063d44b-e1fd-4777-8079-573706a589a0",
-  "requisition": null,                                    // filled on six ATSes only
+  "requisition": null,                                    // null off the paired Boards
   "posted_at": "2025-12-08T19:38:59.867+00:00",
   "posted_at_comparable": true,
   "first_seen": null
@@ -389,7 +389,7 @@ Two rows, fetched live from the index:
   "min_salary_annual": 108000, "max_salary_annual": 125000, "salary_currency": null,
   "salary_known": true,
   "url": "https://jobs.smartrecruiters.com/xplor/744000140844907",
-  "requisition": null,                                    // filled on six ATSes only
+  "requisition": null,                                    // null off the paired Boards
   "posted_at": "2026-07-31T07:57:53.720Z",                 // not every ATS's date is ISO
   "posted_at_comparable": true,
   "first_seen": "2026-08-20T16:19:41+00:00"

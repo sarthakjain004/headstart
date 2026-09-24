@@ -407,8 +407,8 @@ def _other_site_copies(
         # first keys `_survivor_board` sorts on, compared on their own so a class never displaces
         # itself: a backing Board below an Eightfold site, public below non-public, in one
         # direction only.
-        displaced = bool(incumbents) and min(map(_rank_class, by_board)) < min(
-            map(_rank_class, incumbents)
+        displaced = bool(incumbents) and min(map(_survivor_precedence, by_board)) < min(
+            map(_survivor_precedence, incumbents)
         )
         keep = (
             {_survivor_board(by_board.keys(), site_jobs)}
@@ -798,11 +798,16 @@ def _survivor_board(boards: AbstractSet[str], site_jobs: dict[str, int]) -> str:
     displacement in :func:`_other_site_copies` compares this ranking's first key only.
     """
     return min(
-        boards, key=lambda board: (*_rank_class(board), -site_jobs.get(board, 0), board)
+        boards,
+        key=lambda board: (
+            *_survivor_precedence(board),
+            -site_jobs.get(board, 0),
+            board,
+        ),
     )
 
 
-def _rank_class(board: str) -> tuple[bool, bool]:
+def _survivor_precedence(board: str) -> tuple[bool, bool]:
     """``(an Eightfold career site, a non-public Workday site)`` for a lowercased Board key —
     :func:`_survivor_board`'s first keys, and all a displacement compares. A backing Board
     outranks the Eightfold site in front of it (ADR-0210), and a public Workday site a non-public
