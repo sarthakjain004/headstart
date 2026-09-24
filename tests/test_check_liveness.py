@@ -684,3 +684,38 @@ def test_an_unknown_reprobe_keeps_a_live_verdict(cl, tmp_path, monkeypatch):
     after = cl.liveness.load(ledger / "greenhouse.csv")
     assert after["stripe"] == live
     assert after["newco"].status == cl.UNKNOWN
+
+
+def test_an_oracle_pool_row_lands_under_the_pod_host_its_scraper_reads(
+    cl, tmp_path, monkeypatch
+):
+    """#627: the harvest writes Oracle pool rows as a bare label (`bun`) with the pod host only in
+    `url`. Keyed on the raw tenant, each landed as a second ledger row beside the host row that
+    already holds its Board — 439 of them. A row lands in the ledger's own spelling (tenant the pod
+    host, url `https://{host}`), once per Board, and a bare company name whose `url` names no host
+    is no Board at all."""
+    pool, ledger = tmp_path / "pool", tmp_path / "ledger"
+    pool.mkdir()
+    host = "bun.fa.em2.oraclecloud.com"
+    (pool / "oracle.csv").write_text(
+        f"tenant,url\nakamai,\nbun,{host}\n{host},https://{host}\n"
+        "cygl,https://cygl.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1\n",
+        encoding="utf-8",
+    )
+    probed = []
+
+    def probe(tenant, url):
+        probed.append(tenant)
+        return cl.LIVE, 7
+
+    monkeypatch.setitem(cl.PROBES, "oracle", probe)
+    monkeypatch.setattr(cl, "PASSES", [(1, 1)])
+    monkeypatch.setattr(
+        "sys.argv",
+        ["check_liveness", "--dir", str(pool), "--ledger-dir", str(ledger), "oracle"],
+    )
+    cl.main()
+    after = cl.liveness.load(ledger / "oracle.csv")
+    assert sorted(after) == ["bun.fa.em2.oraclecloud.com", "cygl.fa.us2.oraclecloud.com"]
+    assert {v.url for v in after.values()} == {f"https://{t}" for t in after}
+    assert sorted(probed) == sorted(after)

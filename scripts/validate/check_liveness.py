@@ -1168,6 +1168,24 @@ def _slug_of(ats, tenant, url):
     return company_from_row(ats, tenant, url).slug
 
 
+def _in_ledger_spelling(ats, rows):
+    """Oracle pool rows respelled as the ledger holds a Board: tenant the pod host its Scraper
+    reads, url `https://{host}`, one row per host (#627).
+
+    The harvest writes a bare label (`bun`) with the host only in `url`, and the ledger is keyed on
+    the raw tenant, so each such row landed beside the host row already holding its Board: 439 of
+    464 did. A bare company name whose `url` names no host (`akamai`) names no Board, and is
+    dropped."""
+    if ats != "oracle":
+        return rows
+    by_host = {}
+    for r in rows:
+        host = _slug_of(ats, r["tenant"], r["url"])
+        if "." in host:
+            by_host.setdefault(host, {**r, "tenant": host, "url": f"https://{host}"})
+    return list(by_host.values())
+
+
 def _scraper_for_row(ats, tenant, url):
     """The Scraper for the Board this row names, so a probe asks the very URL the scrape reads
     (its ``url()``) rather than a copy of it (ADR-0203)."""
@@ -2648,7 +2666,9 @@ def main():
             continue
         ledger = liveness.load(ledger_dir / f"{ats}.csv")
         verdicts[ats] = ledger
-        rows = list(csv.DictReader(csvf.open(encoding="utf-8")))
+        rows = _in_ledger_spelling(
+            ats, list(csv.DictReader(csvf.open(encoding="utf-8")))
+        )
         todo = [
             r
             for r in rows
