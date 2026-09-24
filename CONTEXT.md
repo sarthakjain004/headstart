@@ -119,7 +119,7 @@ python -c "from headstart.board_cost import load; print(len({k.lower() for k in 
 ```
 Count distinct keys, never lines — both files carry case-variants.
 
-Two rules resolve most of it. **"live" describes a _row_, not a Board** — a sentence saying "live boards" is ambiguous by construction, because 6,632 live rows are duplicate spellings of a Board counted elsewhere. And **the subtractions depend on the order you apply them**: `EXCLUDED_BOARDS` removes 70 Boards from the raw live rows but only **68** from the deduped set, because two of them were themselves duplicate spellings. The chain below dedupes *first*; the README's funnel excludes first and so reads −70 / −6,630. Both reconcile; neither is quotable without saying which order it used.
+Two rules resolve most of it. **"live" describes a _row_, not a Board** — a sentence saying "live boards" is ambiguous by construction, because 6,632 live rows are duplicate spellings of a Board counted elsewhere. And **the subtractions depend on the order you apply them**: `EXCLUDED_BOARDS` removes 90 Boards from the raw live rows but only **88** from the deduped set, because two of them were themselves duplicate spellings. The chain below dedupes *first*; the README's funnel excludes first and so reads −90 / −6,630. Both reconcile; neither is quotable without saying which order it used.
 
 **Ledger row** — 303,484:
 One line in a `data/validate/liveness/{ats}.csv`. Includes `dead` and `unknown`. Never a Board count; a raw `wc -l` overstates by however many duplicates exist.
@@ -131,11 +131,11 @@ _Avoid_: "live Boards" for this number — that is the phrase this section exist
 **Unique Board** — 179,551:
 Live rows collapsed to one entry per canonical `board_key` (ADR-0023) — the distinct Boards we know exist. **Scrapable Board** and **Hiring Board** are subsets of it; nothing in that chain removes a duplicate, only Boards we choose not to read. The two *history* counts at the end are **not** subsets: 600 Scraped Boards are absent from it, because a Board read months ago may have gone Dead since and left the live set.
 
-**Scrapable Board** — 153,216:
-A Unique Board a run may actually pick: minus `registry.DISABLED_ATS` (−25,488, all of it `join`), `config.EXCLUDED_BOARDS` (−68 vendor test Boards), the alias ledger (−766 Boards published under a second hostname or label, or Taleo career sections whose every posting another section of the tenant already lists, ADR-0111, ADR-0182 and ADR-0186) and `config.PARKED_BOARDS` (−13). Computed by `scrapable_boards.load(min_jobs=0)` (ADR-0191, the one place that decides whether a Board is scraped) — which applies these in the *other* order, excluding before it dedupes, and lands on the same figure. The right default answer to "how many Boards do we have".
-_Avoid_: calling this "unique" — the 26,335 Boards between it and Unique Board are real and distinct, deliberately skipped rather than deduplicated. The alias subtraction is the one exception, and it is small: those 766 serve no posting a kept Board does not — one Board reached by more than one name, or a Taleo career section whose every posting another section of its tenant already lists (a distinct Board, but a redundant one).
+**Scrapable Board** — 153,196:
+A Unique Board a run may actually pick: minus `registry.DISABLED_ATS` (−25,488, all of it `join`), `config.EXCLUDED_BOARDS` (−88 vendor test Boards), the alias ledger (−766 Boards published under a second hostname or label, or Taleo career sections whose every posting another section of the tenant already lists, ADR-0111, ADR-0182 and ADR-0186) and `config.PARKED_BOARDS` (−13). Computed by `scrapable_boards.load(min_jobs=0)` (ADR-0191, the one place that decides whether a Board is scraped) — which applies these in the *other* order, excluding before it dedupes, and lands on the same figure. The right default answer to "how many Boards do we have".
+_Avoid_: calling this "unique" — the 26,355 Boards between it and Unique Board are real and distinct, deliberately skipped rather than deduplicated. The alias subtraction is the one exception, and it is small: those 766 serve no posting a kept Board does not — one Board reached by more than one name, or a Taleo career section whose every posting another section of its tenant already lists (a distinct Board, but a redundant one).
 
-**Hiring Board** — 100,795:
+**Hiring Board** — 100,775:
 A Scrapable Board with at least one open posting (`scrapable_boards.load(min_jobs=1)`, the function's default). The other 52,421 are live but empty.
 
 **Slice** — 20,000:
