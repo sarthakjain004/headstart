@@ -65,9 +65,9 @@ honest answer rather than a wrong one.
 
 ``Job.salary`` is assembled from the JSON-LD ``baseSalary`` (a real ``MonetaryAmount``:
 currency + ``unitText`` HOUR/YEAR + min/max) into the ``"MIN-MAX CUR UNIT"`` shape
-``salary._field_range_currency_interval`` already reads for rippling and ashby — jazzhr is
-registered on that parser rather than falling through to ``_field_generic``, which annualizes
-nothing and therefore rejected every hourly figure. Present on 25.8% of detail pages;
+``salary.to_field`` spells — the one ``salary.from_field`` reads for rippling and ashby. jazzhr
+is registered for the bare unit words there rather than on the generic reader, which annualizes
+none of them and therefore rejected every hourly figure. Present on 25.8% of detail pages;
 368 of the 393 real values in the sample parse, and the 25 that don't are the plausibility
 bound correctly rejecting tenant data-entry errors (an hourly rate typed under ``unitText:
 YEAR``, e.g. "35-60 USD YEAR").
@@ -83,7 +83,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from headstart import http, log
+from headstart import http, log, salary
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 from headstart.scrapers.job_posting_jsonld import find_job_posting, jsonld_nodes
@@ -370,9 +370,9 @@ class JazzHRScraper(BaseScraper):
     def _salary_field(self, raw: Any) -> str | None:
         """``Job.salary`` as ``"MIN-MAX CUR UNIT"`` from the JSON-LD ``baseSalary`` MonetaryAmount.
 
-        That exact shape is what :func:`headstart.salary._field_range_currency_interval` reads
-        (and why jazzhr is registered on it): the bare unit word is how an hourly figure gets
-        annualized at all. A single-valued amount — a fixed rate with no range, 33 of the 393 in
+        Built by :func:`headstart.salary.to_field`; :func:`headstart.salary.from_field` reads it
+        for jazzhr with the bare unit words, which is how an hourly figure gets annualized at
+        all. A single-valued amount — a fixed rate with no range, 33 of the 393 in
         the sample — keeps the same shape minus the range, which that parser also handles.
         """
         if not isinstance(raw, dict):
@@ -387,6 +387,12 @@ class JazzHRScraper(BaseScraper):
             low = high = value.get("value")
         if low is None and high is None:
             return None
-        one = low if low is not None else high
-        amount = f"{low}-{high}" if low is not None and high is not None else f"{one}"
-        return " ".join(part for part in (amount, currency, unit) if part) or None
+        return (
+            salary.to_field(
+                low if low is not None else high,
+                high if low is not None else None,
+                currency,
+                unit,
+            )
+            or None
+        )

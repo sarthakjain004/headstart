@@ -9,6 +9,11 @@ unguarded.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+
+from headstart import salary as salary_module
 from headstart.salary import SalarySpan, extract, from_description, from_field
 
 # --- Shared: _num(), US and European number formats -------------------------------------------
@@ -192,7 +197,7 @@ def test_field_gem_templated_range():
 def test_field_gem_range_now_reads_whole_in_field_generic_too():
     # Gem got its own Tier-1 parser when _field_generic's _RANGE could not read a symbol before
     # EACH side ("$80,000 – $120,000") and kept only the floor. _RANGE reads it now; the bare "$"
-    # stays currency-less there, where gem's own parser resolves it (_gem_currency).
+    # stays currency-less there, where gem's own parser resolves it (bare_dollar="USD").
     from headstart.salary import _field_generic
 
     assert _field_generic(
@@ -222,9 +227,8 @@ def test_field_gem_canadian_dollar_symbol():
 
 
 def test_field_gem_australian_dollar_symbol_not_read_as_cad():
-    # Real gap this parser closes deliberately: the shared Tier-2 _guess_currency reads ANY
-    # multi-char "$"-ending symbol as CAD, which would misreport this AUD figure. "A$" is mapped
-    # explicitly rather than falling through to that heuristic.
+    # A multi-char "$"-ending symbol is not always CAD: "A$" names AUD in the one symbol map every
+    # tier shares (ADR-0197).
     assert from_field(
         "Compensation The base pay range for this role is A$125,000 – A$175,000 per year.",
         "gem",
@@ -1596,10 +1600,10 @@ def test_description_l_suffix_lakh_shorthand_recognized():
     # label-anchored evidence across 5 companies ("Compensation: ₹30L to ₹50L", "Salary : INR
     # 3.0L to 4.5L", "CTC - 7L-8L/annum").
     assert from_description(
-        "Compensation: ₹30L to ₹50L cash, plus an equity component.", ats="keka"
+        "Compensation: ₹30L to ₹50L cash, plus an equity component."
     ) == SalarySpan(3_000_000, 5_000_000, "INR", "regex")
     assert from_description(
-        "Salary : INR 3.0L to 4.5L Position : Full-time", ats="keka"
+        "Salary : INR 3.0L to 4.5L Position : Full-time"
     ) == SalarySpan(
         300_000, 450_000, "INR", "regex"
     )  # was 400,000: 4.5 rounded before the L
@@ -1612,7 +1616,7 @@ def test_description_l_suffix_does_not_swallow_lakhs_word():
     # this pass also added ("stipend"/"ctc" aren't present here, so this exercises the boundary
     # directly rather than relying on a label absence to keep it safe).
     text = "Medical Insurance: Benefits of group insurance of 3 lakhs for family including spouse."
-    assert from_description(text, ats="keka") is None
+    assert from_description(text) is None
 
 
 def test_description_ctc_label_recognized():
@@ -1620,7 +1624,7 @@ def test_description_ctc_label_recognized():
     # real, 33 distinct companies, evidenced independently of the "L" suffix above (a plain
     # "to"-range with an explicit "Per month" period marker, no L-shorthand involved).
     span = from_description(
-        "www.gibs.edu.in CTC :20000 to 25000 Per month + Incentives", ats="keka"
+        "www.gibs.edu.in CTC :20000 to 25000 Per month + Incentives"
     )
     assert span == SalarySpan(240_000, 300_000, None, "regex")
 
@@ -1635,7 +1639,7 @@ def test_guard_ctc_business_unit_name_not_a_salary_label():
         "CTC Business units. The Freight Audit Representative will be involved in creating "
         "efficiencies, documenting new processes, and ensuring knowledge is transferred."
     )
-    assert from_description(text, ats="keka") is None
+    assert from_description(text) is None
 
 
 # --- Full-HF-corpus recall audit, 2026-08-23: _LABELED's own filler/connector gaps -------------
@@ -1654,9 +1658,7 @@ def test_description_labeled_filler_reaches_a_short_geography_clause():
         "The typical base pay range for this role across Switzerland is CHF 146,200.00 - "
         "CHF 245,900.00 per year. Certain roles may be eligible for benefits"
     )
-    assert from_description(text, ats="eightfold") == SalarySpan(
-        146_200, 245_900, "CHF", "regex"
-    )
+    assert from_description(text) == SalarySpan(146_200, 245_900, "CHF", "regex")
 
 
 def test_description_labeled_filler_still_declines_a_reachable_second_mention():
@@ -1674,7 +1676,7 @@ def test_description_labeled_filler_still_declines_a_reachable_second_mention():
         "The typical base pay range for this role across France is €113,330 - €151,550 per year. "
         "The typical base pay range for this role across Spain is €98,000 - €130,000 per year."
     )
-    assert from_description(text, ats="workday") is None
+    assert from_description(text) is None
 
 
 def test_description_labeled_filler_does_not_reach_a_distant_second_mention():
@@ -1695,18 +1697,14 @@ def test_description_labeled_filler_does_not_reach_a_distant_second_mention():
         "New York, the base pay range for this role in those locations is $124,670 - $166,810 "
         "per year."
     )
-    assert from_description(text, ats="workday") == SalarySpan(
-        113_330, 151_550, "USD", "regex"
-    )
+    assert from_description(text) == SalarySpan(113_330, 151_550, "USD", "regex")
 
 
 def test_description_between_code_and():
     # Full-corpus audit: "between CAD 82,000 and CAD 100,000" — real greenhouse phrasing,
     # invisible to the pre-existing _BARE_BETWEEN (symbols only: $£€₹, no currency codes).
     text = "the estimated base salary range is between CAD 82,000 and CAD 100,000 plus bonus."
-    assert from_description(text, ats="greenhouse") == SalarySpan(
-        82_000, 100_000, "CAD", "regex"
-    )
+    assert from_description(text) == SalarySpan(82_000, 100_000, "CAD", "regex")
 
 
 def test_description_between_code_dash():
@@ -1718,29 +1716,23 @@ def test_description_between_code_dash():
     # (no separator = no ceiling) and short-circuit _BARE_BETWEEN's own complete match — the
     # identical cascade-precedence trap already found and reverted on trakstar's own pass.
     text = "the estimated base salary range is between CAD 82,000 - CAD 100,000 plus bonus."
-    assert from_description(text, ats="greenhouse") == SalarySpan(
-        82_000, 100_000, "CAD", "regex"
-    )
+    assert from_description(text) == SalarySpan(82_000, 100_000, "CAD", "regex")
 
 
 def test_description_between_symbol_still_works():
     # Regression check: the pre-existing symbol-only shape this pattern was originally built for
     # (greenhouse's own PR #236 precedent) must still work unchanged.
     text = "the base pay for this role will be between $60,000 and $70,000."
-    assert from_description(text, ats="greenhouse") == SalarySpan(
-        60_000, 70_000, "USD", "regex"
-    )
+    assert from_description(text) == SalarySpan(60_000, 70_000, "USD", "regex")
 
 
 def test_description_ca_dollar_prefix_resolves_as_cad():
     # Full-corpus audit: "CA$105,000" — a real, common Canadian-dollar notation (30 occurrences,
-    # 10 distinct companies) _guess_currency's bare-"$"-defaults-to-USD fallback was silently
+    # 10 distinct companies) the bare-"$"-defaults-to-USD fallback was silently
     # misreading, since the symbol capture only ever grabs the "$" character itself, not the "CA"
     # prefix immediately before it.
     text = "annual base salary range for this position is CA$105,000 to $145,000"
-    assert from_description(text, ats="greenhouse") == SalarySpan(
-        105_000, 145_000, "CAD", "regex"
-    )
+    assert from_description(text) == SalarySpan(105_000, 145_000, "CAD", "regex")
 
 
 def test_description_ca_dollar_prefix_works_without_a_swallowing_filler():
@@ -1751,9 +1743,7 @@ def test_description_ca_dollar_prefix_works_without_a_swallowing_filler():
     # at all to accidentally swallow "CA" first, so it isolates whether _SYM itself now captures
     # the prefix directly, the way every other symbol-capturing pattern in the file needs it to.
     text = "We offer CA$105,000 to $145,000 per year"
-    assert from_description(text, ats="greenhouse") == SalarySpan(
-        105_000, 145_000, "CAD", "regex"
-    )
+    assert from_description(text) == SalarySpan(105_000, 145_000, "CAD", "regex")
 
 
 def test_description_ca_dollar_bare_range_multi_region_still_ambiguous():
@@ -1766,7 +1756,7 @@ def test_description_ca_dollar_bare_range_multi_region_still_ambiguous():
         "Compensation & Equity Canada: CA$225,300 – CA$361,750 + equity "
         "United States: $160,900 – $260,700 + equity"
     )
-    assert from_description(text, ats="ashby") is None
+    assert from_description(text) is None
 
 
 def test_description_ca_dollar_and_trailing_cad_code_agree():
@@ -1779,9 +1769,7 @@ def test_description_ca_dollar_and_trailing_cad_code_agree():
         "annual base salary range for this position is CA$105,000 to $145,000. "
         "Compensation $105,000 — $145,000 CAD"
     )
-    assert from_description(text, ats="greenhouse") == SalarySpan(
-        105_000, 145_000, "CAD", "regex"
-    )
+    assert from_description(text) == SalarySpan(105_000, 145_000, "CAD", "regex")
 
 
 def test_description_prefixed_dollar_symbols_name_their_currency():
@@ -1885,6 +1873,111 @@ def test_a_word_cut_at_the_period_window_edge_is_not_a_hint():
     assert from_description(
         "Base Salary Range: $108,000-$148,500 How We Protect What Matters Most: 1. We offer"
     ) == SalarySpan(108_000, 148_500, "USD", "regex")
+
+
+# --- The field codec and the one currency-symbol resolver (ADR-0197) --------------------------
+
+#: Every ATS whose scraper spells ``Job.salary`` through ``to_field``, read off the scraper
+#: sources (a scraper module is named for its ATS), so a new caller is tested without an edit here.
+_ATSES_ENCODING_THROUGH_TO_FIELD = sorted(
+    scraper_source.stem
+    for scraper_source in (Path(salary_module.__file__).parent / "scrapers").glob(
+        "*.py"
+    )
+    if "salary.to_field(" in scraper_source.read_text(encoding="utf-8")
+)
+#: The ones registered on the parser that also reads bare unit words ("HOUR").
+_ATSES_READING_BARE_UNIT_WORDS = sorted(
+    ats
+    for ats, parser in salary_module._FIELD_PARSERS.items()
+    if parser is salary_module._field_range_currency_interval
+)
+
+
+def test_the_encoding_ats_list_finds_every_scraper_that_calls_to_field():
+    # Guards the source scan above from silently parametrizing nothing.
+    assert len(_ATSES_ENCODING_THROUGH_TO_FIELD) >= 18
+    assert set(_ATSES_READING_BARE_UNIT_WORDS) <= set(_ATSES_ENCODING_THROUGH_TO_FIELD)
+
+
+def test_to_field_spells_figures_currency_and_period_leaving_out_empty_parts():
+    from headstart.salary import to_field
+
+    assert to_field(50000, 70000, "USD", "per-year-salary") == (
+        "50000-70000 USD per-year-salary"
+    )
+    assert to_field("48000.00", None, "EUR", "yearly") == "48000.00 EUR yearly"
+    assert to_field(18, 18, None, "HOUR") == "18-18 HOUR"
+    assert to_field(120000, None, "", None) == "120000"
+    assert to_field("", None, "", "") == ""
+
+
+@pytest.mark.parametrize("ats", _ATSES_ENCODING_THROUGH_TO_FIELD)
+def test_to_field_round_trips_through_from_field_for_every_encoding_ats(ats):
+    from headstart.salary import to_field
+
+    assert from_field(to_field(80000, 100000, "USD"), ats) == SalarySpan(
+        80_000, 100_000, "USD", "field"
+    )
+    if ats != "keka":  # see the keka test below
+        assert from_field(to_field(120000, None, "EUR"), ats) == SalarySpan(
+            120_000, None, "EUR", "field"
+        )
+    # The phrase spelling is annualised for every ATS.
+    assert from_field(to_field(25, 30, "USD", "per-hour"), ats) == SalarySpan(
+        25 * 2080, 30 * 2080, "USD", "field"
+    )
+    assert from_field(to_field(5000, 6000, "GBP", "monthly"), ats) == SalarySpan(
+        60_000, 72_000, "GBP", "field"
+    )
+
+
+def test_keka_reads_no_lone_figure_a_known_codec_gap():
+    # Found by the round trip above (ADR-0197): keka.py emits a lone figure when only one of
+    # minimum/maximum is set, and `_field_keka` reads ranges only, so it declines. Pinned rather
+    # than fixed: keka's lone figure may be a ceiling, and reading it would serve it as a floor.
+    from headstart.salary import to_field
+
+    assert from_field(to_field("1200000", None, "INR"), "keka") is None
+
+
+@pytest.mark.parametrize("ats", _ATSES_READING_BARE_UNIT_WORDS)
+def test_to_field_bare_unit_words_round_trip_where_registered(ats):
+    from headstart.salary import to_field
+
+    assert from_field(to_field(25, 30, "USD", "HOUR"), ats) == SalarySpan(
+        25 * 2080, 30 * 2080, "USD", "field"
+    )
+    assert from_field(to_field(1000, 1200, "USD", "WEEK"), ats) == SalarySpan(
+        52_000, 62_400, "USD", "field"
+    )
+
+
+def test_currency_for_symbol_names_a_bare_dollar_by_the_callers_policy():
+    from headstart.salary import _currency_for_symbol
+
+    # A named symbol decides alone, in any letter case.
+    assert _currency_for_symbol("CA$", "USD", bare_dollar=None) == "CAD"
+    assert _currency_for_symbol("ca$", "", bare_dollar="USD") == "CAD"
+    assert _currency_for_symbol("A$", "", bare_dollar="USD") == "AUD"
+    assert _currency_for_symbol("S$", "", bare_dollar=None) == "SGD"
+    assert _currency_for_symbol("NZ$", "", bare_dollar=None) == "NZD"
+    assert _currency_for_symbol("£", "", bare_dollar=None) == "GBP"
+    # A bare "$" (or no symbol) defers to a stated ISO code, then to the policy.
+    assert _currency_for_symbol("$", "80,000 CAD", bare_dollar="USD") == "CAD"
+    assert _currency_for_symbol("$", "", bare_dollar="USD") == "USD"
+    assert _currency_for_symbol("$", "", bare_dollar=None) is None
+    assert _currency_for_symbol(None, "INR 5,00,000", bare_dollar="USD") == "INR"
+    assert _currency_for_symbol(None, "", bare_dollar="USD") is None
+
+
+def test_every_currency_salary_can_emit_has_an_fx_rate():
+    # The salary bracket leaves out a currency config/fx_rates.json has no rate for (ADR-0117),
+    # so a currency this module emits without one would silently drop its Jobs from the bracket.
+    from headstart import fx, salary
+
+    emittable = {*salary._CURRENCY_CODES.split("|"), *salary._SYMBOL_CURRENCY.values()}
+    assert emittable - fx.table()["rates"].keys() == set()
 
 
 def test_adp_recruiting_pay_transparency_amounts_read_annual_and_refuse_hourly():
