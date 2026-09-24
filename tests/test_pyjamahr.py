@@ -19,7 +19,9 @@ import json
 import re
 from pathlib import Path
 
-from headstart import company_name, experience, http, salary
+from fake_fetcher import FakeFetcher, FakeResponse
+
+from headstart import company_name, experience, salary
 from headstart.models import html_to_text
 from headstart.scrapers.pyjamahr import (
     _API,
@@ -51,8 +53,10 @@ def _raw() -> dict:
     return {"results": _listing()["results"], "details": _details()}
 
 
-def _scraper() -> PyjamaHRScraper:
-    return get_scraper("pyjamahr", SLUG, "HunarStreet Technologies")
+def _scraper(fetcher: FakeFetcher | None = None) -> PyjamaHRScraper:
+    if fetcher is None:
+        return get_scraper("pyjamahr", SLUG, "HunarStreet Technologies")
+    return PyjamaHRScraper(SLUG, "HunarStreet Technologies", fetcher=fetcher)
 
 
 def _jobs(raw: dict | None = None) -> dict:
@@ -76,9 +80,8 @@ def test_the_listing_is_keyed_by_company_slug_and_asks_for_the_whole_board():
 
 def test_the_detail_url_carries_the_company_slug():
     """Without the company key the detail endpoint 404s, and so does another tenant's."""
-    assert (
-        _scraper()._detail_url(REMOTE_ID) == f"{_API}{REMOTE_ID}/?company_slug={SLUG}"
-    )
+    request = _scraper().detail_request({"id": int(REMOTE_ID)})
+    assert request.url == f"{_API}{REMOTE_ID}/?company_slug={SLUG}"
 
 
 def test_the_job_url_is_the_slug_page_and_matches_the_declared_shape():
@@ -120,29 +123,22 @@ def test_published_internally_rows_are_dropped():
     assert "354734" not in {j.id.rsplit(":", 1)[1] for j in jobs}
 
 
-def test_the_detail_pass_skips_internal_rows_too(monkeypatch):
+def test_the_detail_pass_skips_internal_rows_too():
     """No fetch for a Job that never ships."""
     internal = {"id": 354734, "slug": "x", "title": "x", "published_internally": True}
     listing = {"count": 4, "next": None, "results": [*_listing()["results"], internal]}
-    scraper = _scraper()
-    requested: list[str] = []
+    details = _details()
 
-    def fake_get(url):
-        requested.append(url)
-        if url == scraper.url():
-            return json.dumps(listing)
-        job_id = url[len(_API) :].split("/", 1)[0]
-        return json.dumps(_details()[job_id])
+    def route(method, url, kwargs):
+        if url.startswith(f"{_API}?"):
+            return FakeResponse(text=json.dumps(listing))
+        return FakeResponse(text=json.dumps(details[url[len(_API) :].split("/", 1)[0]]))
 
-    monkeypatch.setattr(scraper, "_get", fake_get)
-    monkeypatch.setattr(
-        scraper,
-        "fan_out_async",
-        lambda items, fn, **kw: [scraper._detail(i) for i in items],
-    )
+    fetcher = FakeFetcher(route)
+    scraper = _scraper(fetcher)
     raw = scraper.fetch_raw()
     assert set(raw["details"]) == {REMOTE_ID, HYBRID_ID, ONSITE_ID}
-    assert not any(f"{_API}354734/" in u for u in requested)
+    assert not any(f"{_API}354734/" in url for url in fetcher.urls())
     # The listing keeps the internal row: `count` includes it, so the shortfall check must too.
     assert len(raw["results"]) == 4
     assert scraper.truncated is None
@@ -397,26 +393,20 @@ def test_an_unknown_slug_parses_to_no_jobs_and_is_not_an_error():
 # ------------------------------------------------------------------------------- detail gaps
 
 
-def test_a_failed_detail_is_a_counted_gap_not_a_failed_board(monkeypatch):
+def test_a_failed_detail_is_a_counted_gap_not_a_failed_board():
     """A posting that closed between the listing and the detail call 404s with the same body an
     unknown id does. The Job is still listed and still emitted; the Board is not truncated."""
     listing = {"count": 3, "next": None, "results": _listing()["results"]}
-    scraper = _scraper()
 
-    def fake_get(url):
-        if url == scraper.url():
-            return json.dumps(listing)
-        raise http.RequestsError("404 Not Found")
+    def route(method, url, kwargs):
+        if url.startswith(f"{_API}?"):
+            return FakeResponse(text=json.dumps(listing))
+        return FakeResponse(404, '{"detail": "Not found."}')
 
-    monkeypatch.setattr(scraper, "_get", fake_get)
-    monkeypatch.setattr(
-        scraper,
-        "fan_out_async",
-        lambda items, fn, **kw: [scraper._detail(i) for i in items],
-    )
+    scraper = _scraper(FakeFetcher(route))
     raw = scraper.fetch_raw()
     assert raw["details"] == {}
-    assert sum(scraper.detail_losses.values()) == 3
+    assert scraper.detail_losses == {"HTTP 404": 3}
     assert scraper.truncated is None
     assert len(scraper.parse(raw, SCRAPED_AT)) == 3
 
@@ -432,25 +422,20 @@ def test_the_tech_gate_skips_non_tech_details_but_still_emits_the_job(monkeypatc
         {"id": 2, "slug": "chef", "title": "Head Chef", "department_name": "Kitchen"},
     ]
     listing = {"count": 2, "next": None, "results": rows}
-    scraper = _scraper()
+
+    def route(method, url, kwargs):
+        if url.startswith(f"{_API}?"):
+            return FakeResponse(text=json.dumps(listing))
+        return FakeResponse(
+            text=json.dumps({"description": "<p>body</p>", "job_type": "FULLTIME"})
+        )
+
+    fetcher = FakeFetcher(route)
+    scraper = _scraper(fetcher)
     scraper.have_details = frozenset()  # the pipeline's signal; nothing held yet
-    requested: list[str] = []
-
-    def fake_get(url):
-        requested.append(url)
-        if url == scraper.url():
-            return json.dumps(listing)
-        return json.dumps({"description": "<p>body</p>", "job_type": "FULLTIME"})
-
-    monkeypatch.setattr(scraper, "_get", fake_get)
-    monkeypatch.setattr(
-        scraper,
-        "fan_out_async",
-        lambda items, fn, **kw: [scraper._detail(i) for i in items],
-    )
     raw = scraper.fetch_raw()
     assert set(raw["details"]) == {"1"}
-    assert not any(f"{_API}2/" in u for u in requested)
+    assert not any(f"{_API}2/" in url for url in fetcher.urls())
     jobs = {j.id.rsplit(":", 1)[1]: j for j in scraper.parse(raw, SCRAPED_AT)}
     assert set(jobs) == {"1", "2"}
     assert jobs["1"].description == "body"
@@ -482,3 +467,23 @@ def test_the_company_name_is_the_board_page_title():
         is None
     )
     assert company_name.from_title("pyjamahr", "smallcase", "smallcase") is None
+
+
+def test_a_row_with_no_id_is_a_labelled_unattempted_detail_not_a_silent_drop():
+    """No request can be formed without the id, so the row is counted and named rather than
+    vanishing from the pass — and nothing is sent for it."""
+    rows = [{"id": 1, "slug": "swe", "title": "Backend Engineer"}, {"slug": "no-id"}]
+    listing = {"count": 2, "next": None, "results": rows}
+
+    def route(method, url, kwargs):
+        if url.startswith(f"{_API}?"):
+            return FakeResponse(text=json.dumps(listing))
+        return FakeResponse(text=json.dumps({"description": "<p>body</p>"}))
+
+    fetcher = FakeFetcher(route)
+    scraper = _scraper(fetcher)
+    raw = scraper.fetch_raw()
+    assert set(raw["details"]) == {"1"}
+    assert len(fetcher.urls()) == 2  # the listing and one detail
+    assert scraper.detail_losses == {"no job id": 1}
+    assert scraper.telemetry["detail_attempted"] == 1

@@ -71,7 +71,8 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import urlencode, urljoin, urlsplit
 
-from headstart import http
+from headstart import http, salary
+from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -96,7 +97,7 @@ API_PATH = "/api/jobs"
 _ICIMS_PATH = "/sitemap.xml"
 
 #: `employment_type` -> label. The eight schema.org values seen on 114,809 rows; each label reads
-#: correctly through `employment_type.flags` (TEMPORARY, PER_DIEM and OTHER set no flag, which is
+#: correctly through `employment_type_filter.flags` (TEMPORARY, PER_DIEM and OTHER set no flag, which is
 #: right: none of them is one of the four filters).
 _TYPE_LABELS: dict[str, str] = {
     "FULL_TIME": "Full-Time",
@@ -109,7 +110,7 @@ _TYPE_LABELS: dict[str, str] = {
     "OTHER_EMPLOYMENT_TYPE": "Other",
 }
 
-#: `salary_frequency` -> the bare unit `salary._field_range_currency_interval` annualises.
+#: `salary_frequency` -> the bare unit `salary.from_field` annualises for jibe.
 _PERIODS: dict[str, str] = {"HOURLY": "HOUR", "WEEKLY": "WEEK", "YEARLY": "YEAR"}
 
 ALLOW, DISALLOW, UNREACHABLE = "allow", "disallow", "unreachable"
@@ -218,7 +219,9 @@ class JibeScraper(BaseScraper):
     # 151,619 rows, else digits and hyphens or letters (Oracle, Cadient ids).
     url_shape = r"https://[a-z0-9-]+\.jibeapply\.com/jobs/[A-Za-z0-9-]+"
 
-    def __init__(self, slug: str, company: str | None = None, fetcher=None) -> None:
+    def __init__(
+        self, slug: str, company: str | None = None, fetcher: Fetcher | None = None
+    ) -> None:
         super().__init__(slug, company, fetcher)
         self._last_request: float | None = None
         # This Board's robots.txt answer (status, body), read once, before any other request.
@@ -486,8 +489,8 @@ class JibeScraper(BaseScraper):
         return jobs
 
     def _salary_field(self, raw: Any) -> str | None:
-        """``Job.salary`` as RANGE CODE UNIT ("13-19.5 HOUR", "1036.44-1036.44 USD WEEK") for
-        `salary._field_range_currency_interval`.
+        """``Job.salary`` as RANGE CODE UNIT ("13-19.5 HOUR", "1036.44-1036.44 USD WEEK"), built
+        by `salary.to_field` for `salary.from_field`.
 
         Stated on 12,035 rows, all on three non-iCIMS feeds (petsmart, pepsicojobs, smoothieking).
         Bounds are 0 when unstated. A lone ceiling (194 rows) yields None rather than being read as a
@@ -505,12 +508,12 @@ class JibeScraper(BaseScraper):
         if not period:
             return None
         if low and high:
-            figures = f"{low}-{high}"
+            bounds = (low, high)
         elif low:
-            figures = low
+            bounds = (low, None)
         elif exact:
-            figures = f"{exact}-{exact}"
+            bounds = (exact, exact)
         else:
             return None
         currency = (row.get("salary_currency") or "").strip().upper()
-        return " ".join(p for p in (figures, currency, period) if p)
+        return salary.to_field(*bounds, currency, period)

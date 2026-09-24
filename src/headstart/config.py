@@ -6,10 +6,6 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from headstart import log
-
-_log = log.get(__name__)
-
 
 @dataclass(frozen=True, slots=True)
 class CompanyRef:
@@ -21,9 +17,9 @@ class CompanyRef:
 # Vendor test and sandbox Boards. They are live, they look like they are hiring, and their
 # postings are fabricated — RippleHire's own QA/UAT tenants, a SmartRecruiters demo board,
 # greenhouse boards whose company name is literally "Test". They reach users as real results
-# (a "Software Engineer" at "prodtest"), so they are dropped here, which both stops the scrape
-# and makes `index prune` evict the rows already indexed — the keep-set is built from this
-# same function.
+# (a "Software Engineer" at "prodtest"), so `scrapable_boards.load` drops them, which both stops
+# the scrape and makes `index prune` evict the rows already indexed — the keep-set is built from
+# that same list.
 #
 # Every entry was confirmed by READING that Board's own postings (2026-08-12), never from the
 # shape of its slug. That distinction is the whole point: a slug-pattern rule would also have
@@ -274,6 +270,70 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "taleo_enterprise:https://pmg.taleo.net/careersection/m1",
         "taleo_enterprise:https://pmg.taleo.net/careersection/mobilecs_demo_al",
         "taleo_enterprise:https://pmg.taleo.net/careersection/qatestcs",
+        # Vendor and integration-partner sandboxes found by reading the served table's postings
+        # (titles, companies, posted dates) on 2026-09-24, each re-read live from its ATS's
+        # public listing the same day. Where the sandbox wears a real employer's name, that
+        # employer's real Board is a separate ledger row this does not touch.
+        #
+        # Greenhouse (boards-api): `builtinintegrationsandbox` names itself "BuiltIn Integration
+        # Sandbox"; it lists 0 postings live, but its 316 served rows are generated ("Cloud
+        # Solutions Architect - Job 50 9/16/2026, 12:04:29 PM") and only this removes them.
+        # `mergeapiintegrationsandbox` is "Merge API Integration Sandbox", 87 postings: "Account
+        # Executive (Automation Test)", "AI filed = No initially but then changed", "Eng Dog
+        # Walker", "Republish Test". `agodasandbox` is "Agoda Sandbox", 34 postings dated
+        # 2019-2026: "Agoda Homes Test", "2 Phenom CRM", "Campaign Marketing Analyst change";
+        # Agoda's real Board is `greenhouse:agoda`.
+        "greenhouse:agodasandbox",
+        "greenhouse:builtinintegrationsandbox",
+        "greenhouse:mergeapiintegrationsandbox",
+        # Jobvite (board pages, and a sample of detail pages' JSON-LD for dates): `onecoprd`
+        # ("Oneco 1 Careers") is Jobvite's release-QA tenant, 614 of 1,318 titles test-shaped:
+        # "2020-07 Release Testing", "Crash Test - Do not change", "10th_aug_4th". `li3` is
+        # "LinkedIn Test 3", 749 postings of numbered copies ("1000 - Content Producer",
+        # "TEST 1241 - Enterprise Sales Manager - Lynda.com", "Test 5 #DNP"). `deming` and
+        # `deminginc` are both "SC Demo Instance", the same 34 stock postings dated 2016-2017.
+        # `michaelcarrinotest` is "Michael Carrino Sandbox": "Brit's Test Job", "dfadfasdfa",
+        # "Implementation Manager - Sahana Demo".
+        "jobvite:deming",
+        "jobvite:deminginc",
+        "jobvite:li3",
+        "jobvite:michaelcarrinotest",
+        "jobvite:onecoprd",
+        # JazzHR (board page, detail JSON-LD `hiringOrganization`): `adptestcompanycp` is "ADP
+        # Test Company- CP", stock titles ("Advertising Sales Representative", "Art Director");
+        # `jobtarget` is "JobTarget - Demo", 46 postings: "Donkey Handler - JazzHr Integration Test
+        # Job", "testtttttttttttt", "Test Unnleash JazzHR".
+        "jazzhr:adptestcompanycp",
+        "jazzhr:jobtarget",
+        # Recruitee (offers API): `democompany` and `democompany3` both serve "KW Demo company"'s
+        # same 12 offers: "Test Tech Support (2)", "maltest", "aaa", "dsd", "Example offer 3".
+        "recruitee:democompany",
+        "recruitee:democompany3",
+        # SmartRecruiters (postings API, every page): `kombo` is the integrations vendor's test
+        # account, 62 of 156 titles test-shaped ("Test job 2", "QA Testing guru") beside
+        # "Superman", "Astronaut", "dr pepper drinker"; Kombo's real Board is `ashby:kombo`.
+        # `biogensandbox` is "Biogen SANDBOX", all 327 postings released in 2019 ("SIT-Test New
+        # Position", "UAT EH14 - Sr Manager, Strategic Sourcing G&A"). `rhaegalsandbox` is
+        # "Rhaegal - Arago Sandbox", a partner's sandbox of 561 postings, 65 test-shaped ("test
+        # publication", "[DEMO] Développeur Java", "Rhaegal Sandbox"); its plausible French ads
+        # apply into a sandbox, not to an employer. `joveosandbox` is "Joveo Sandbox" ("TESTING
+        # Jobad api", "Test MQ", "jojosiva", "French man"). `rebeccajdemo` is "RebeccaJ Demo",
+        # 23 postings from 2016-2018 ("Rocket Surgeon", "Rattlesnake Breeder", "SEEK Test Job").
+        # `angloamericansandbox1` is "Anglo American Sandbox" ("BNE TEST JOB 6 - Met Coal
+        # Apprenticeships", "Template (English): Mining Manager"). `piqc` is "Partners Internal
+        # Quality Control" ("Test Tanya", "Anastasiia's Test Job", "Taxi driver").
+        "smartrecruiters:angloamericansandbox1",
+        "smartrecruiters:biogensandbox",
+        "smartrecruiters:joveosandbox",
+        "smartrecruiters:kombo",
+        "smartrecruiters:piqc",
+        "smartrecruiters:rebeccajdemo",
+        "smartrecruiters:rhaegalsandbox",
+        # Zoho (careers page's embedded jobs): `zohocorp2.zohorecruit.com` is Zoho's own QA
+        # tenant. Its company name carries an XSS probe (`Zoho India ''>>"">>"> ... <img src=x
+        # onerror=alert(100)>`), as do 3 of its 28 titles; the rest read "Java Developer CRM Deal
+        # renmaed Director", "Accountant       oppoo", "job publish Kosovo", "test 3".
+        "zoho:zohocorp2.zohorecruit.com",
         # Blackstone's own test sites; the second is named for what it serves. Workday slugs
         # ARE the careers URL, so these keys are longer than the rest.
         "workday:https://blackstone.wd1.myworkdayjobs.com/marni_test_site",
@@ -296,8 +356,8 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
 # Keyed on the canonical lowercased ``board_key``, NOT on ``ats:slug`` like EXCLUDED_BOARDS. The
 # ledger carries one Workday Board under several hosts — Accenture sits on both `wd3` and `wd103`
 # — and `board_key` is what collapses them (ADR-0023). Keyed on one URL, the park would remove
-# that row and merely promote another instance's row to be `_dedupe_boards`' survivor: the Board
-# keeps being scraped while the entry looks effective.
+# that row and merely promote another instance's row to be `scrapable_boards._dedupe_boards`'
+# survivor: the Board keeps being scraped while the entry looks effective.
 #
 # A parked Board also leaves `index_plan.live_keep_set`, so whatever rows it holds in the index
 # are evicted as off-Board. That was first accepted on the grounds that the Board had never
@@ -339,8 +399,9 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         # Fails ADR-0064's value test on the gate's own numbers and escapes only its floor.
         # `board_cost.csv` measures it at 562 s for 56,527 postings (2026-09-11); against the 12
         # tech jobs `board_priority.csv` credits it, that is **1.28 tech/min, under the gate's 2.0
-        # threshold** — but 562 s is under the 900 s floor, so its yield is never consulted. It is
-        # not a straggler like the three above; it is fast and enormous, the shape that floor was
+        # threshold** — but 562 s is under the 900 s floor (and under the 600 s one since
+        # 2026-09-24), so its yield is never consulted. It is not a straggler like the three
+        # above; it is fast and enormous, the shape that floor was
         # never meant to catch. It is also unreliable: in 3 of the 5 runs
         # 34450830376..34470668397 it raised `HTTP Error 400` after 44-271 s and produced nothing.
         #
@@ -446,90 +507,3 @@ def load_companies(path: str | Path) -> list[CompanyRef]:
         CompanyRef(ats=entry["ats"], slug=entry["slug"], name=entry.get("name"))
         for entry in data.get("company", [])
     ]
-
-
-def load_active_companies(
-    ledger_dir: str | Path, min_jobs: int = 1
-) -> list[CompanyRef]:
-    """Build the scrape list from the liveness ledger (ADR-0012).
-
-    Reads every ``{ledger_dir}/{ats}.csv`` (the per-ATS liveness ledger) and keeps the boards
-    whose last verdict is ``live`` with ``jobs >= min_jobs`` (default: drop boards with no open
-    postings — the "currently hiring" subset). Each scraper turns a ``(tenant, url)`` into its
-    own slug via ``slug_from``, so no per-ATS logic lives here. Rows for an ATS with no scraper
-    are skipped, as are the vendor test Boards in :data:`EXCLUDED_BOARDS` (matched on
-    ``ats:slug``), the Boards buried as duplicates in the alias ledger (ADR-0111, matched on the
-    slug) and the real-but-withheld ones in :data:`PARKED_BOARDS` (matched after the
-    dedupe, on the canonical ``board_key``). This is the production source for a full scrape;
-    ``config/companies.toml`` remains the small curated seed.
-
-    Two dedupes run here and they catch different things: the alias ledger is *semantic* (one
-    company, two hostnames, no shared key to collapse on) and ``_dedupe_boards`` below is
-    *syntactic* (one hostname, two spellings). Neither subsumes the other.
-    """
-    from headstart import board_aliases, liveness
-    from headstart.scrapers.registry import DISABLED_ATS, SCRAPERS
-
-    ledger_dir = Path(ledger_dir)
-    companies: list[CompanyRef] = []
-    for csv_path in sorted(ledger_dir.glob("*.csv")):
-        scraper = SCRAPERS.get(csv_path.stem)
-        if scraper is None:
-            # A whole ledger file dropped, silently, because its stem is not a registered ATS.
-            # That is how a scraper renamed without its ledger, or a ledger landed under a
-            # misspelt name, takes every one of its Boards out of the run while the run reports
-            # nothing unusual — the ATS simply stops appearing in the totals.
-            _log.warning(
-                f"{csv_path.name}: no scraper registered for '{csv_path.stem}' — "
-                "every Board in this ledger is skipped"
-            )
-            continue
-        if scraper.ats in DISABLED_ATS:
-            continue  # deliberate (registry.DISABLED_ATS), so not worth a line
-        # Boards this ATS publishes twice, buried in favour of their canonical (ADR-0111). Dropped
-        # here beside EXCLUDED_BOARDS because both are keyed on the slug; the *syntactic* dedupe
-        # below cannot do it, since two different hostnames share no `board_key` to collapse on.
-        aliases = board_aliases.load_for(ledger_dir, scraper.ats)
-        for v in liveness.load(csv_path).values():
-            if v.status != liveness.LIVE or (v.jobs or 0) < min_jobs:
-                continue
-            slug = scraper.slug_from(v.tenant, v.url)
-            if (
-                f"{scraper.ats}:{slug}".lower() in EXCLUDED_BOARDS
-                or slug.lower() in aliases
-            ):
-                continue
-            companies.append(CompanyRef(ats=scraper.ats, slug=slug, name=v.tenant))
-    return _drop_parked(_dedupe_boards(companies))
-
-
-def _drop_parked(companies: list[CompanyRef]) -> list[CompanyRef]:
-    """Drop :data:`PARKED_BOARDS`, matched on the same identity ``_dedupe_boards`` collapses on
-    so the two can never disagree about which Board an entry names."""
-    from headstart.board_identity import board_identity, lower_key
-
-    return [c for c in companies if lower_key(board_identity(c)) not in PARKED_BOARDS]
-
-
-def _dedupe_boards(companies: list[CompanyRef]) -> list[CompanyRef]:
-    """Collapse Boards that map to the same canonical key to one entry (ADR-0023).
-
-    The ledger holds duplicate rows for one Board — differing only by slug casing (Workday sites
-    ``.../External`` vs ``.../external``) or by an equivalent tenant/url form that resolves to the
-    same ``board_key``. Left in, each variant is scraped and indexed separately, so one job lands in
-    the index two or three times. Keep the lexicographically-smallest ``board_key`` per canonical
-    (lowercased) key — this picks the Board that is actually scraped, and ``index_plan.plan_prune``
-    keeps the index row carrying *that* casing, so scrape and index agree. (Until 2026-08-11 the
-    prune instead kept the lex-min casing *present in the index*, which is a different population —
-    it includes casings that left the ledger — and the two disagreed permanently: ADR-0023's
-    amendment.)"""
-    from headstart.board_identity import board_identity, lower_key
-
-    best: dict[str, tuple[str, CompanyRef]] = {}
-    for company in companies:
-        key = board_identity(company)
-        canon = lower_key(key)
-        current = best.get(canon)
-        if current is None or key < current[0]:
-            best[canon] = (key, company)
-    return [company for _, company in best.values()]

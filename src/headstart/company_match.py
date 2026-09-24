@@ -12,6 +12,19 @@ import unicodedata
 from dataclasses import dataclass
 
 #: Legal-form words that tell two spellings of one company apart without naming it.
+#:
+#: Two neighbours look like this list and are kept apart on purpose. Measured 2026-09-24 over the
+#: company directory's 35,596 name/Board pairs and 303,484 Ledger rows:
+#:
+#: * `board_naming._LABEL_NOISE` drops a legal word as a *host label*, where it can be the
+#:   Tenant itself. Widened to this list, it moved 29 of those 339,080 display names: better
+#:   where the word sat inside a hyphenated label ("private-conduent" became "Conduent"), worse
+#:   where it was the whole label (Airbus's six `ag.wd3.myworkdayjobs.com` sites became
+#:   "Ag.Wd3.Myworkdayjobs.Com"). Telling those two apart is a naming change of its own.
+#: * `company_name`'s vendor-alias fold keeps letters only and drops no legal form. `normalize`
+#:   matches it on all 314,052 distinct names only with two flags added (no digits, no legal
+#:   drop); without them 3 verdicts change. Two flags for one caller is more interface than the
+#:   one-line regex they would replace.
 _LEGAL = frozenset(
     {
         "inc",

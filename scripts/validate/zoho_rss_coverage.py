@@ -67,7 +67,7 @@ def probe(host: str) -> dict:
     }
     try:
         # `Careers` is the only portal name any ledger row uses — every live zoho `url` is a
-        # bare host, and `zoho.py`'s own `_detail_url` hardcodes the same portal.
+        # bare host, and `zoho.py`'s own `detail_request` hardcodes the same portal.
         page = _get(f"https://{host}/jobs/Careers")
         widget = {str(r["id"]) for r in ZohoScraper._records(page) if r.get("id")}
         row["widget"] = len(widget)

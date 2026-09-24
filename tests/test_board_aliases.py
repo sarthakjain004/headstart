@@ -161,3 +161,18 @@ def test_path_sits_beside_the_liveness_ledger(tmp_path):
         board_aliases.path_for(liveness_dir, "successfactors")
         == tmp_path / "data" / "validate" / "aliases" / "successfactors.csv"
     )
+
+
+def test_bury_contained_compares_boards_only_within_their_group():
+    """ADP Recruiting Management groups on `orgoid`: `gnc` lists exactly what
+    `generalnutritioncenter` does (the same client) and is buried; another client's site with the
+    same ids is not, and an empty site is never buried."""
+    from headstart.board_aliases import bury_contained
+
+    ids = {"1", "2"}
+    client = {"gnc": "G3", "generalnutritioncenter": "G3", "other": "Z9", "empty": "G3"}
+    buried = bury_contained(
+        {"gnc": ids, "generalnutritioncenter": ids, "other": ids, "empty": set()},
+        client.__getitem__,
+    )
+    assert buried == {"gnc": "generalnutritioncenter"}

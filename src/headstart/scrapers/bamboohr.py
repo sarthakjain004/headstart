@@ -102,9 +102,8 @@ import json
 import re
 from typing import Any
 
-from headstart import http
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.base import BaseScraper, DetailLost, DetailRequest
 
 #: One job's `<li>` block in the widget — id in the tag, title/location inside the body.
 _POSITION = re.compile(
@@ -185,9 +184,6 @@ class BambooHRScraper(BaseScraper):
     def job_url(self, native_id: str) -> str:
         return f"https://{self.slug}.bamboohr.com/careers/{native_id}"
 
-    def _detail_url(self, native_id: str) -> str:
-        return f"{self.job_url(native_id)}/detail"
-
     def fetch_raw(self) -> Any:
         page = self._get()
         if _LIVE_WRAPPER not in page:
@@ -221,53 +217,33 @@ class BambooHRScraper(BaseScraper):
                         "department": departments.get(m.group("id")),
                     }
                 )
-        wanted = self.tech_detail_wanted(
-            candidates, lambda c: c["title"], lambda c: c["department"]
+        details = self.run_detail_pass(
+            candidates,
+            key_of=lambda candidate: candidate["id"],
+            what="job details",
+            title_of=lambda candidate: candidate["title"],
+            department_of=lambda candidate: candidate["department"],
         )
-        ids = [c["id"] for c in wanted]
-        details: dict[str, dict] = {}
-        if ids:
-            if self.async_fanout_enabled():
-                fetched = self.fan_out_async(ids, self._detail_async)
-            else:
-                fetched = self.fan_out(ids, self._detail, workers=self.detail_workers)
-            self.report_detail_gaps(fetched, "job details")
-            details = {jid: d for jid, d in zip(ids, fetched) if d}
         # Computed once here for the gate above and threaded through for `parse` to reuse,
         # rather than walking the same HTML's department blocks a second time per Board.
         return {"page": page, "details": details, "departments": departments}
 
-    def _opening_of(self, body: str) -> dict | None:
+    def detail_request(self, candidate: dict) -> DetailRequest:
+        return DetailRequest(f"{self.job_url(candidate['id'])}/detail")
+
+    def read_detail(self, candidate: dict, response: Any) -> dict:
         try:
-            data = json.loads(body)
+            data = json.loads(response.text)
         except json.JSONDecodeError:
-            self.note_detail_loss("unparseable detail JSON")
-            return None
+            raise DetailLost("unparseable detail JSON") from None
         opening = (
             (data.get("result") or {}).get("jobOpening")
             if isinstance(data, dict)
             else None
         )
         if not opening:
-            self.note_detail_loss("empty jobOpening")
-            return None
+            raise DetailLost("empty jobOpening")
         return opening
-
-    def _detail(self, native_id: str) -> dict | None:
-        try:
-            body = self._get(self._detail_url(native_id))
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return self._opening_of(body)
-
-    async def _detail_async(self, session: Any, native_id: str) -> dict | None:
-        try:
-            body = await self._get_async(session, self._detail_url(native_id))
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return self._opening_of(body)
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         page, details = (

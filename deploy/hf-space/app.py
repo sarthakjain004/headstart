@@ -30,6 +30,7 @@ from huggingface_hub import snapshot_download
 import headstart  # only for headstart.__file__, to locate ui/ beside this package (ADR-0153)
 from headstart import (
     company_match,
+    embedding_conventions,
     facets,
     fx,
     geo,
@@ -59,6 +60,10 @@ from headstart.alerts.store import (
     subscription_id,
 )
 from headstart.board_identity import ats_of
+from headstart.search_filter_compiler import (
+    KEYWORD_DEFAULT_SCOPE,
+    keyword_scope_options,
+)
 
 DATASET = os.environ.get("HF_DATASET", "imPoseidon/headstart-index")
 _STATE = Path("/app/state")
@@ -140,8 +145,12 @@ from sentence_transformers import (
     SentenceTransformer,
 )
 
-_model = SentenceTransformer(search.MODEL, trust_remote_code=True, device="cpu")
-_table = lancedb.connect(_STATE / "data" / "lancedb").open_table(search.PROD_TABLE)
+_model = SentenceTransformer(
+    embedding_conventions.MODEL, trust_remote_code=True, device="cpu"
+)
+_table = lancedb.connect(_STATE / "data" / "lancedb").open_table(
+    embedding_conventions.PROD_TABLE
+)
 # The whole query path — parse, whitelist, rank, project — lives behind this one object
 # (search.JobSearch); its startup scan supplies the ATS dropdown and the first_seen flag.
 _searcher = search.JobSearch(_model, _table)
@@ -438,10 +447,10 @@ _AUTH_ON = bool(_SECRET_KEY and _GOOGLE_CLIENT_ID)
 # request time; that path degrades to a 503 on its own.)
 _SETS_ON = _AUTH_ON and bool(_SUBSCRIBERS_REPO and _SUBSCRIBERS_TOKEN)
 print(
-    f"ready: {_table.count_rows()} jobs across {len(_searcher.atses)} ATSes"
+    f"ready: {_table.count_rows()} jobs across {len(_searcher.capabilities.atses)} ATSes"
     + (
         ""
-        if _searcher.has_first_seen
+        if _searcher.capabilities.has_first_seen
         else " (no first_seen column yet — 'new since' hidden)"
     )
     + ("" if _ALERTS_ON else " (alerts secrets unset — email alerts hidden)")
@@ -550,10 +559,7 @@ def _company_where(args) -> str | None:
     email, store = gate
     prefs = store.get_companies(subscription_id(email))
     return search.with_extra(
-        scoped,
-        search.account_clause(
-            prefs.followed, prefs.hidden, mine=args.get("mine") in ("1", "true")
-        ),
+        scoped, search.request_account_clause(args, prefs.followed, prefs.hidden)
     )
 
 
@@ -1778,21 +1784,6 @@ def coverage():
     return jsonify(_searcher.coverage())
 
 
-def _fx_as_of() -> str | None:
-    """The date on the committed rate table, or None when it cannot be read (ADR-0117)."""
-    return (fx.table() or {}).get("as_of")
-
-
-def _fx_converts(currencies: list[str]) -> bool:
-    """Whether a bracket can actually cross a currency boundary here.
-
-    Two served currencies must both carry a rate; with fewer, `build_filter` compiles the
-    single-currency clause and any copy promising conversion would be describing nothing.
-    """
-    rates = (fx.table() or {}).get("rates") or {}
-    return len([c for c in currencies if c in rates]) > 1
-
-
 @app.route("/privacy")
 def privacy():
     """The privacy policy — one canonical copy, `PRIVACY.md` in the repository."""
@@ -1801,6 +1792,7 @@ def privacy():
 
 @app.route("/")
 def index():
+    capabilities = _searcher.capabilities
     if _AUTH_ON and not session.get("email"):
         # The door states what this is and proves it before asking for an identity
         # (ADR-0112). Every number is read rather than written, and every one is EXACT —
@@ -1812,12 +1804,12 @@ def index():
             "signin.html",
             google_client_id=_GOOGLE_CLIENT_ID,
             njobs=f"{_table.count_rows():,}",
-            n_atses=len(_searcher.atses),
+            n_atses=len(capabilities.atses),
             n_new=_searcher.n_seen_within(_DOOR_NEW_HOURS),
             new_days=_DOOR_NEW_HOURS // 24,
             repo=_REPO,
         )
-    scopes = search.keyword_scope_options()  # the Keyword filter's one map (ADR-0104)
+    scopes = keyword_scope_options()  # the Keyword filter's one map (ADR-0104)
     return render_template(
         "base.html",
         # the one blob the static JS reads (window.CFG); everything else is template-side
@@ -1827,11 +1819,11 @@ def index():
             # disclaimer", plus the default the JS omits from a request — both read off the
             # same map the <select> below is rendered from, so the three cannot drift apart.
             "keyword_scopes": {value: needs for value, _, needs in scopes},
-            "keyword_default_scope": search.KEYWORD_DEFAULT_SCOPE,
+            "keyword_default_scope": KEYWORD_DEFAULT_SCOPE,
             # A no-query browse orders by `first_seen` only when the column exists; without
             # it the fallback is `id`, which is not a date at all. The line naming what the
             # user is looking at must not claim "newest first" on the second one.
-            "has_first_seen": _searcher.has_first_seen,
+            "has_first_seen": capabilities.has_first_seen,
             # The salary bracket's rate table (ADR-0117), so the page can print what a row
             # in another currency comes to in the one the user asked in — the SAME table the
             # where-clause was compiled from, never a second lookup, so the label beside a row
@@ -1843,28 +1835,28 @@ def index():
             "max_scoped_boards": search.MAX_SCOPED_BOARDS,
         },
         njobs=f"{_table.count_rows():,}",
-        atses=_searcher.atses,
+        atses=capabilities.atses,
         india_opts=geo.dropdown_options(),
-        has_first_seen=_searcher.has_first_seen,
+        has_first_seen=capabilities.has_first_seen,
         # the Keyword filter (ADR-0104): its scopes from the one map, and whether the served
         # table carries the description column yet — description-bearing scopes are disabled
         # until it does
         keyword_scopes=scopes,
-        keyword_default_scope=search.KEYWORD_DEFAULT_SCOPE,
-        has_description=_searcher.has_description,
+        keyword_default_scope=KEYWORD_DEFAULT_SCOPE,
+        has_description=capabilities.has_description,
         # the "Highest salary" sort option — dark until the ADR-0082 columns exist on the
         # served table, the same rule `run` applies to the value the control would send
-        has_min_salary=_searcher.has_min_salary_annual,
+        has_min_salary=capabilities.has_min_salary_annual,
         # the salary bracket's currency picker (issue #275) — only the currencies the served
         # table actually carries, and the same list `build_filter` whitelists against
-        currencies=_searcher.currencies,
+        currencies=capabilities.currencies,
         # The salary bracket converts across currencies (ADR-0117); the rail prints the date
         # of the rates it used, so a stale table is visible rather than silent.
         # Both facts, because the tip needs the second one: `as_of` says the table parsed,
         # but conversion only happens where the served currencies HAVE rates. Guarding the
         # claim on the date let a deployment with no comparable currencies still promise it.
-        fx_as_of=_fx_as_of(),
-        fx_converts=_fx_converts(_searcher.currencies),
+        fx_as_of=fx.as_of(),
+        fx_converts=_searcher.salary_bracket_converts,
         # the recency dropdowns, from the same tuples headstart.facets counts (ADR-0084)
         seen_opts=facets.SEEN_OPTIONS,
         posted_opts=facets.POSTED_OPTIONS,

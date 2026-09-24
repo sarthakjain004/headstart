@@ -96,9 +96,11 @@ from fingerprint_deep import (
 from fingerprint_job_evidence import check_jobs
 from wayback_feeder import ADP_HOST, ADP_PAGE_PATH, extract
 
+from headstart import scrapable_boards
 from headstart.board_identity import board_key, lower_key
-from headstart.config import CompanyRef, load_active_companies
+from headstart.config import CompanyRef
 from headstart.scrapers import registry
+from headstart.scrapers.adp_recruiting import SLUG as ADP_RECRUITING_SLUG
 
 try:
     import dns.resolver
@@ -281,7 +283,7 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
     "clearcompany": ("ats", [SUB + r"hrmdirect\.com", SUB + r"clearcompany\.com"]),
     # ADP Workforce Now: the Board is `cid` + `ccId` in the career-center page's query (adp.py);
     # `scan` reads them out of the captured query. ADP Recruiting Management is a different
-    # platform (its own host, path slug and API) with no scraper, so it is its own key.
+    # platform (its own host, path slug and API), so it is its own key.
     "adp": (
         "ats",
         [
@@ -290,7 +292,15 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
             re.escape(ADP_HOST) + f"(?!/{re.escape(ADP_PAGE_PATH)}\\?)",
         ],
     ),
-    "adp_recruiting": ("ats", [r"recruiting\.adp\.com", r"myjobs\.adp\.com"]),
+    # A Board is the path word of `myjobs.adp.com/{slug}/cx` (adp_recruiting.py). A legacy
+    # `recruiting.adp.com` link names the client number, not a site, so it detects the ATS only.
+    "adp_recruiting": (
+        "ats",
+        [
+            rf"myjobs\.adp\.com/(?!public/)({ADP_RECRUITING_SLUG})",
+            r"recruiting\.adp\.com",
+        ],
+    ),
     "ukg": ("ats", [SUB + r"ultipro\.com"]),
     "occupop": ("ats", [SUB + r"occupop\.com"]),
     "hrcloud": ("ats", [SUB + r"hrcloud\.com"]),
@@ -1922,7 +1932,7 @@ def cmd_verify(args) -> None:
         rows = [r for r in rows if r["ats"] in keep]
     live = {
         lower_key(board_key(company))
-        for company in load_active_companies(
+        for company in scrapable_boards.load(
             ROOT / "data/validate/liveness", min_jobs=0
         )
     }

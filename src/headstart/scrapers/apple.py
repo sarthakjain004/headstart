@@ -61,7 +61,7 @@ is present and non-zero on 20/20 listing rows sampled then, and a wider 280-row 
 opposite: absent on 10/10 details sampled off page 3, and on the other 30 (pages 50/150/250) it is
 present but always the same string, ``"Standard"`` — including on six 20 h/week retail postings.
 So :func:`_employment_type` maps ``standardWeeklyHours`` to ``"Full-time"``/``"Part-time"`` at the
-same ``>= 30`` split upstream uses (matching ``search.ETYPE_CLAUSES``' substring rules:
+same ``>= 30`` split upstream uses (matching ``employment_type_filter.RULES``' substring rules:
 "full"/"part").
 
 **One real exception found widening the sample past the issue's own 50, kept rather than
@@ -69,7 +69,7 @@ dropped.** A ``postingTitle`` containing the standalone word "Intern" is a genui
 weekly-hours split can't produce and would otherwise erase: measured live 2026-09-22, 15/15
 Intern-titled REQ postings pulled from a live search (`intern`-matched titles across pages 1-400)
 carry ``standardWeeklyHours: 40`` — which the hours split alone would read as "Full-time", losing
-the one value the ``internship`` filter (``employment_type.py``'s ``is_internship`` rule) actually
+the one value the ``internship`` filter (``employment_type_filter.py``'s ``is_internship`` rule) actually
 matches on. 11/15 of those also state ``employmentType: "Intern"`` on their detail (the other 4
 state nothing), so the *title* carries the signal at least as reliably as the detail field it is
 replacing, and it comes from the listing — available whether or not this run fetches the detail, so
@@ -97,13 +97,10 @@ from __future__ import annotations
 
 import json
 import re
-import threading
-import time
 from typing import Any
 
-from headstart import fanout_stats, http
 from headstart.models import Job, html_to_text
-from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 
 _SEARCH_URL = "https://jobs.apple.com/api/v1/search"
 _LOCALE = "en-us"
@@ -224,83 +221,43 @@ class AppleScraper(BaseScraper):
             )
         return list(seen.values())
 
-    def _timed_details(self, ids: list[str]) -> list[Any]:
-        """The threaded detail pass, recording its operating point like the async one does.
-
-        `fan_out_async` wraps itself in `fanout_stats.batch`, so every multiplexed ATS reports a
-        ``concurrency {ats} details @N`` line and its widths stay comparable across runs.
-        `fan_out` records nothing — it is a `@staticmethod` with no scraper to name — so moving
-        this Board to the sync path would have silently deleted the very line the transport
-        decision was made from, leaving only the board-level `slow board` total, which cannot
-        separate the listing from the details.
-
-        The lock is this method's own, and is not redundant: `fanout_stats.batch`'s callback
-        accumulates into an unsynchronised dict, safe under the async gather because that calls it
-        from one event-loop thread. Here :attr:`detail_workers` threads call it at once.
-        """
-        lock = threading.Lock()
-        with fanout_stats.batch(
-            f"{self.ats} details", self.detail_workers
-        ) as item_done:
-
-            def timed(native_id: str) -> Any:
-                started = time.monotonic()
-                try:
-                    return self._detail(native_id)
-                finally:
-                    with lock:
-                        item_done(time.monotonic() - started)
-
-            return self.fan_out(ids, timed, workers=self.detail_workers)
-
     def fetch_raw(self) -> Any:
         items = self._listing()
         # ADR-0017 tech gate: `parse` reads `postingTitle` and `team.teamName` off this same
         # listing item and never off the detail, so the gate reaches the verdict `filter_tech`
         # will reach. Apple is ~70.8% tech, so this saves less than on any other Board — it is
         # wired for the same reason it is cheap.
-        wanted = self.tech_detail_wanted(
-            [i for i in items if i.get("id")],
-            lambda i: i.get("postingTitle"),
-            lambda i: (i.get("team") or {}).get("teamName"),
+        #
+        # ADR-0048 `needs_detail` skip (`skip_held`): now safe to re-enable. `employment_type`
+        # moved off the detail payload onto the listing's own `standardWeeklyHours` (module
+        # docstring), so the detail fetch supplies only `description` — exactly the case the skip
+        # exists for. An already-described Job (`have_details`) is left alone rather than
+        # re-fetched.
+        #
+        # Every row `_listing` keeps has an `id`. The pass rides the thread transport because
+        # `async_fanout` is False (ADR-0167), and records its `concurrency apple details @N` line
+        # there at `detail_workers` (ADR-0201) — the line the transport decision was read from.
+        details = self.run_detail_pass(
+            items,
+            key_of=lambda row: row["id"],
+            what="detail payloads",
+            title_of=lambda row: row.get("postingTitle"),
+            department_of=lambda row: (row.get("team") or {}).get("teamName"),
+            skip_held=True,
         )
-        # ADR-0048 `needs_detail` skip: now safe to re-enable. `employment_type` moved off the
-        # detail payload onto the listing's own `standardWeeklyHours` (module docstring), so the
-        # detail fetch supplies only `description` — exactly the case the skip exists for. An
-        # already-described Job (`have_details`) is left alone rather than re-fetched.
-        wanted = [i for i in wanted if self.needs_detail(i["id"])]
-        ids = [i["id"] for i in wanted]
-        if self.async_fanout_enabled():
-            fetched = self.fan_out_async(ids, self._detail_async)
-        else:
-            fetched = self._timed_details(ids)
-        self.report_detail_gaps(fetched, "detail payloads")
-        details = {i: d for i, d in zip(ids, fetched) if d}
         return {"searchResults": items, "details": details}
 
-    def _job_number(self, native_id: str) -> str:
+    def detail_request(self, row: dict) -> DetailRequest:
         # PIPE's id carries the vendor-type prefix the detail endpoint does not want; REQ's id
         # (already "{positionId}-{reqSuffix}") is the jobNumber verbatim.
-        return native_id.removeprefix("PIPE-")
+        job_number = row["id"].removeprefix("PIPE-")
+        return DetailRequest(f"https://{self.slug}/api/v1/jobDetails/{job_number}")
 
-    def _detail_url(self, native_id: str) -> str:
-        return f"https://{self.slug}/api/v1/jobDetails/{self._job_number(native_id)}"
-
-    def _detail(self, native_id: str) -> dict | None:
-        try:
-            body = self._get(self._detail_url(native_id))
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return json.loads(body).get("res")
-
-    async def _detail_async(self, session: Any, native_id: str) -> dict | None:
-        try:
-            body = await self._get_async(session, self._detail_url(native_id))
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return json.loads(body).get("res")
+    def read_detail(self, row: dict, response: Any) -> dict:
+        detail = json.loads(response.text).get("res")
+        if detail is None:
+            raise DetailLost("no res on a 200")
+        return detail
 
     def job_url(self, item: dict) -> str:
         return (
@@ -323,7 +280,7 @@ class AppleScraper(BaseScraper):
         the one value the hours split can't produce and would otherwise erase, and unlike the
         detail field it doesn't disappear once the ADR-0048 skip stops fetching a Job's detail.
         Otherwise ``standardWeeklyHours >= 30`` matches upstream's own split; wording carries
-        "full"/"part"/"intern" so ``search.ETYPE_CLAUSES``' substring rules read it."""
+        "full"/"part"/"intern" so ``employment_type_filter.RULES``' substring rules read it."""
         if _INTERN_TITLE_RE.search(item.get("postingTitle") or ""):
             return "Intern"
         hours = item.get("standardWeeklyHours")

@@ -13,7 +13,7 @@ where they disagree is a Board that migrates.
 Result 2026-08-30 against the code as shipped, `--boards 140` (102 returned usable
 listing+detail data, 27,510 postings): **1 Board (1.0%) and 452 postings (1.6%)** migrate —
 `saabgroup/Saab_careers`, which carries no `bulletFields` for its URL to vouch for. Projected
-over the 7,620 Scrapable Workday Boards `load_active_companies()` reports — not the cost ledger's
+over the 7,620 Scrapable Workday Boards `scrapable_boards.load()` reports — not the cost ledger's
 raw rows — that is ~75 Boards and ~17,000 raw postings, or ~1,200 served rows at Workday's ~6.9%
 tech keep rate. One migrating Board in 102 is a small numerator; the projection is an order of
 magnitude, not a forecast.

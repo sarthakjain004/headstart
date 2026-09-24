@@ -52,7 +52,7 @@ discovery landing (#576) moved five more. Board totals belong in README and CONT
 - **Decide "new" by `board_key`, and land in the ledger's own spelling.** `check_liveness.py` keys
   a ledger on the raw `tenant` string, so a Board already held under another spelling lands as a
   second row. Match candidates through each scraper's `slug_from(tenant, url)` and `board_key` (the
-  identity `load_active_companies` uses), and write new rows in that ledger's majority form:
+  identity `scrapable_boards.load` uses), and write new rows in that ledger's majority form:
   Workday keys a Board as `{co}.wdN.myworkdayjobs.com/{site}`, Personio and Zoho as a bare label,
   Taleo BE as `ORG:CWS@host/path`. `url` is the Board's public URL, never the probe's endpoint.
 - **Phenom carries only skins whose backing Board we do not already hold.** Phenom is a career-site
@@ -79,6 +79,13 @@ discovery landing (#576) moved five more. Board totals belong in README and CONT
   a second name for a Board already held (131 accounts spanned 453 labels on 2026-09-23). The
   script rewrites `data/validate/aliases/clearcompany.csv`; `dedupe_boards.py` finds none of these
   and refuses `--apply` for this ATS (ADR-0182).
+- **ADP Recruiting Management: re-run `scripts/validate/adp_recruiting_subset_sites.py` after every
+  refresh of its ledger.** One client (`orgoid`) often runs several career sites, and a site can
+  list exactly what a sibling does (`gnc` and `generalnutritioncenter`, 751 each). A site whose
+  postings another site of the same client already lists is buried in
+  `data/validate/aliases/adp_recruiting.csv` (131 of 990 live sites on 2026-09-24). The script
+  re-walks every live site and rewrites the file, and `dedupe_boards.py` refuses `--apply` for this
+  ATS (ADR-0202).
 - **Taleo Enterprise: re-run `scripts/validate/taleo_enterprise_subset_sections.py` after every
   refresh of its ledger.** A tenant's career sections often list the same requisitions (HDR's 15
   sections listed the same 2,282 on 2026-09-24), so a section whose reqs another section of the
@@ -87,6 +94,14 @@ discovery landing (#576) moved five more. Board totals belong in README and CONT
   when one starts listing a req of its own, or when the section it is buried onto dies. It re-reads
   every buried section and rewrites the file; `dedupe_boards.py` refuses `--apply` for this ATS
   (ADR-0186).
+- **Eightfold: re-run `scripts/validate/eightfold_backing_boards.py` after every refresh of the
+  eightfold ledger or of a ledger it reads (workday, successfactors, oracle, taleo_enterprise,
+  greenhouse).** An Eightfold career site is often a front over the company's real ATS Board, so a
+  site whose postings that Board already lists and would serve is buried in
+  `data/validate/aliases/eightfold.csv` (signal `backing-reqs`), one row per backing Board. Nothing
+  scrapes a buried site, so the script is the only thing that notices when its backing Board drops
+  out or it starts posting on its own. Candidates are its `BACKING` table; a new front enters there.
+  `dedupe_boards.py` refuses `--apply` for this ATS (ADR-0205).
 - **SuccessFactors holds RMK sites only.** `p_successfactors` accepts any `<urlset>`, so a corporate
   site or a Radancy career front probes `live`, and the scraper reads it as 0 jobs or as page titles
   ("Working at TUI"). Before landing a host, confirm a `/job/` page from its sitemap (urlset, RSS or
@@ -105,11 +120,6 @@ Evidence for the first two is in `docs/discovery/2026-09-23_indeed-sweep-landing
   Cornerstone are now built, #579, #582, #580 and #584, and the sweep's companies on all four are
   landed. ADP Workforce Now is built too, #585, ADR-0180; the sweep's ADP companies are a landing
   still to do.)
-- **ADP Recruiting Management** (`myjobs.adp.com/{slug}`, `recruiting.adp.com`) — a different
-  platform from Workforce Now: its listing
-  (`my.adp.com/myadp_prefix/mycareer/public/staffing/v1/job-requisitions/apply-custom-filters`)
-  wants an `orgoid` header, which `/public/staffing/v1/career-site/{slug}` supplies, and a
-  posting-channel id not yet found (`docs/adp/2026-09-23_careercenter-measurement.md`).
 - **SenseHQ** — the scraper is registered but has no ledger and no liveness probe, so none of its
   Boards can land.
 - **TurboHire** — token flow: `/api/token/noauth` (needs Referer), then `POST
@@ -416,9 +426,9 @@ caught:
   by the raw ledger row.
 - **Stale casing duplicates** (found fixing #202/PR #226) — a prober-side casing-normalization
   change left the old-cased row behind instead of replacing it; 1,843 pairs in one ledger, one
-  root cause. `_dedupe_boards`'s lexicographic tie-break (`config.py`) usually papers over this
-  silently, but picks the **older** row whenever old and new disagree in ASCII order — which
-  matters when the two rows also disagree on *verdict*, not just casing: two boards stayed in
+  root cause. `_dedupe_boards`'s lexicographic tie-break (`scrapable_boards.py`) usually papers
+  over this silently, but picks the **older** row whenever old and new disagree in ASCII order —
+  which matters when the two rows also disagree on *verdict*, not just casing: two boards stayed in
   the active scrape list after the newer probe had already found them `dead`, because the stale
   `live` row kept winning the tie-break. Diagnostic: for a ledger with real duplicate rows, check
   whether the tie-break's survivor is the newest-verified data, not just count how many boards
@@ -427,7 +437,7 @@ caught:
 None of these are caught by `_dedupe_boards()`/`_drop_parked` alone — that mechanism assumes
 duplicate rows differ only cosmetically (casing, URL form) and always agree on which board they
 name and whether it's live. A raw `wc -l` or per-row count on a liveness CSV overstates board
-count by however many duplicates exist; go through `load_active_companies()` (or an equivalent
+count by however many duplicates exist; go through `scrapable_boards.load()` (or an equivalent
 `board_key()`-grouped count) for anything that needs to be accurate, not the CSV directly.
 
 ### Reading eviction, flapping, or "we deleted a live job" data

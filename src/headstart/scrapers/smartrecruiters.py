@@ -54,17 +54,23 @@ import json
 import re
 from typing import Any
 
-from headstart import http
+from headstart import salary
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.base import (
+    USER_AGENT,
+    BaseScraper,
+    DetailLost,
+    DetailRequest,
+)
 
 _DETAIL_WORKERS = 8
 _PAGE_SIZE = 100  # our page size, not the provider's ceiling (ADR-0070)
 # Our own ceiling, sized by cost rather than by tech density — because density does not fall off
 # down the list. Measured live: 14.1% tech at offset 500 across 40 random boards over 500 postings,
 # and 6 of the 15 boards over 3,000 run 14-62% tech at *half* and *end* of board. 5,000 postings is
-# the most this scraper can read and still stay under ADR-0064's 15-minute gate floor at the slow
-# end of fleet throughput; what stays truncated above it is ~0%-tech retail the gate handles.
+# the most this scraper can read and still stay under ADR-0064's gate floor at the slow end of
+# fleet throughput; what stays truncated above it is ~0%-tech retail the gate handles. Sized
+# against the 15 min floor; it is 10 min since 2026-09-24, so re-derive before re-enabling.
 # NOT ENFORCED right now (#227) — kept defined so re-enabling is a two-line uncomment, not a
 # re-derivation.
 _MAX_PAGES = 50
@@ -165,48 +171,37 @@ class SmartRecruitersScraper(BaseScraper):
         # `parse` reads `name` and `_department_of` off this listing posting and never off
         # `_detail`, so the gate asks `filter_tech`'s own question with `filter_tech`'s own
         # inputs. A gated posting still ships as a Job without a description.
-        wanted = self.tech_detail_wanted(
+        details = self.run_detail_pass(
             postings,
-            lambda p: p.get("name"),
-            _department_of,
+            key_of=lambda posting: posting.get("id"),
+            what="details",
+            title_of=lambda posting: posting.get("name"),
+            department_of=_department_of,
         )
-        if self.async_fanout_enabled():
-            details = self.fan_out_async(
-                wanted,
-                lambda session, p: self._job_detail_async(session, p.get("id")),
-            )
-        else:
-            details = self.fan_out(
-                wanted,
-                lambda p: self._job_detail(p.get("id")),
-                workers=_DETAIL_WORKERS,
-            )
-        self.report_detail_gaps(details, "details")
-        self.attach_details(postings, wanted, details)
+        for posting in postings:
+            posting["_detail"] = details.get(posting.get("id")) or {}
         return data
 
-    def _detail_url(self, posting_id: str) -> str:
-        return f"https://api.smartrecruiters.com/v1/companies/{self.slug}/postings/{posting_id}"
+    def detail_request(self, posting: dict[str, Any]) -> DetailRequest:
+        posting_id = posting.get("id")
+        if not posting_id:
+            raise DetailLost("no posting id")
+        return DetailRequest(
+            f"https://api.smartrecruiters.com/v1/companies/{self.slug}/postings/{posting_id}",
+            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+        )
 
-    def _extract_detail(self, response: Any) -> dict[str, Any] | None:
-        """The posting-detail fields ``parse()`` needs (None on non-200): the jobAd sections
-        concatenated into raw HTML, and the native ``compensation`` block (min/max/currency/
-        period — populated on 10.48% of postings, unread until this pass; see
+    def read_detail(self, posting: dict[str, Any], response: Any) -> dict[str, Any]:
+        """The posting-detail fields ``parse()`` needs: the jobAd sections concatenated into raw
+        HTML, and the native ``compensation`` block (min/max/currency/period — populated on
+        10.48% of postings, unread until this pass; see
         :meth:`SmartRecruitersScraper._salary_field`'s docstring). One fetch for both — this
         response is already the one the scraper makes for the description alone.
 
         qualifications and additionalInformation carry the requirements (years of
         experience etc.); companyDescription is deliberately skipped — it's the same
         boilerplate on every posting and would dilute the embedding.
-
-        An instance method, not a static one, so the ``None`` can say what lost it: a bare count
-        of ``None``s reads a refused Board and an empty one identically, which is how a
-        User-Agent denylist stayed invisible across 102 Boards for five runs
-        (:data:`~headstart.scrapers.base.USER_AGENT`).
         """
-        if response.status_code != 200:
-            self.note_detail_loss(f"HTTP {response.status_code}")
-            return None
         payload = response.json()
         sections = (payload.get("jobAd") or {}).get("sections") or {}
         parts = [
@@ -217,43 +212,6 @@ class SmartRecruitersScraper(BaseScraper):
             "description": "\n".join(p for p in parts if p) or None,
             "compensation": payload.get("compensation") or None,
         }
-
-    def _job_detail(self, posting_id: str | None) -> dict[str, Any] | None:
-        """GET one posting's detail fields (None on failure). Sync path."""
-        if not posting_id:
-            self.note_detail_unattempted("no posting id")
-            return None
-        try:
-            response = self._fetch(
-                "GET",
-                self._detail_url(posting_id),
-                timeout=30,
-                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-            )
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None  # a missing detail must not drop the job
-        return self._extract_detail(response)
-
-    async def _job_detail_async(
-        self, session: Any, posting_id: str | None
-    ) -> dict[str, Any] | None:
-        """Same as :meth:`_job_detail` but over the shared multiplexed ``AsyncSession``."""
-        if not posting_id:
-            self.note_detail_unattempted("no posting id")
-            return None
-        try:
-            response = await self._fetch_async(
-                session,
-                "GET",
-                self._detail_url(posting_id),
-                timeout=30,
-                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-            )
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return self._extract_detail(response)
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
@@ -345,6 +303,5 @@ class SmartRecruitersScraper(BaseScraper):
         lo, hi = raw.get("min"), raw.get("max")
         if lo is None:
             return None
-        span = f"{lo}-{hi}" if hi is not None else str(lo)
         period = _STRUCTURED_PERIOD.get((raw.get("period") or "").upper())
-        return " ".join(str(x) for x in (span, raw.get("currency"), period) if x)
+        return salary.to_field(lo, hi, raw.get("currency"), period)

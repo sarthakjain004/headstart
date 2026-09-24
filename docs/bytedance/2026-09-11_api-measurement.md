@@ -49,6 +49,9 @@ website-path: en
  "recruitment_id_list":[],"subject_id_list":[],"tag_id_list":[]}
 ```
 
+*(2026-09-24, ADR-0198: `accept-language` is no longer required, and `website-path` still is.
+Without `accept-language`, `i18n_name` comes back in Chinese.)*
+
 **Both headers are required, not cookie fallbacks.** A request missing `accept-language` or
 `website-path` returns `HTTP 400` with the plain-text body `invalid request` (no JSON at all —
 `.raise_for_status()` catches it cleanly). `"en-US"` / `"en"` are the app's own default values
@@ -86,6 +89,10 @@ ordinary end-of-list shape, not an error. No clamp was found at any tested `limi
 scraper still pages at a fixed size (`_PAGE_SIZE = 200`) rather than requesting one giant page:
 an un-clamped limit measured today is not a contract, and every other paginated scraper in this
 repo (icims, oracle, eightfold) makes the same call for the same reason.
+
+*(2026-09-24, ADR-0198: the backend has a 10,000-row result window. Past `offset + limit =
+10,000` it answers 0 rows and reports `count` as 10,000, not the real total. The shared walk never
+asks past that window, and it marks a Board that reaches it as truncated.)*
 
 ## 4. The listing carries the full description — no detail pass
 
@@ -136,6 +143,12 @@ own, not on the page's rendered content; `scripts/eval/verify_filters.py`'s `byt
 checks exactly that shape.
 
 ## 8. Does TikTok's careers site share this platform?
+
+**Settled 2026-09-24 by [ADR-0198](../adr/0198-tiktok-and-bytedance-share-one-scraper-and-keep-two-ats-values.md):
+yes.** `api.lifeattiktok.com` serves these routes, and `website-path` selects the Board on
+either host (`en` is ByteDance's, `tiktok` is TikTok's). Both scrapers now share
+`headstart.scrapers.supplier_search`. The same measurement found that `accept-language` is no
+longer required (§1). It still decides the language of `i18n_name`, which is Chinese without it.
 
 Partially confirmed, not fully — this is the explicit cross-check the task brief asked for, since
 a parallel effort was building a TikTok (`lifeattiktok.com`) scraper at the same time.

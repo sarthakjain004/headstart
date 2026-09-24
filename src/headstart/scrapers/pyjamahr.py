@@ -68,9 +68,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from headstart import http
+from headstart import salary
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.base import BaseScraper, DetailLost, DetailRequest
 
 _API = "https://api.pyjamahr.com/api/career/jobs/"
 _BOARD = "https://jobs.pyjamahr.com"
@@ -97,7 +97,7 @@ _JOB_TYPE_LABELS: dict[str, str] = {
     "FREELANCER": "Freelance",
 }
 
-#: `salary_type` codes -> the period spelling `salary._period_multiplier` reads. The three values
+#: `salary_type` codes -> the period spelling `salary.from_field` reads. The three values
 #: observed (1,022 / 641 / 78). An unobserved code yields no salary at all rather than a figure
 #: read at the wrong period: annual is the parser's default, so a WEEKLY figure passed through
 #: bare would be served 52x too low.
@@ -220,49 +220,28 @@ class PyjamaHRScraper(BaseScraper):
         # will keep. That gate is exact here: `parse` reads `title` and `department_name` off
         # this same listing row and the detail overrides neither (ADR-0166 §3). ADR-0048's skip
         # of the already-described is deliberately not taken (module docstring).
-        wanted = self.tech_detail_wanted(
+        # Reported, not marked truncated: a missing detail costs this Job its description and
+        # three derived fields, but the Job is still listed and still emitted, so the Board's
+        # list is whole (ADR-0053 is about the list, not the fields).
+        details = self.run_detail_pass(
             _public(listed),
-            lambda i: i.get("title"),
-            lambda i: i.get("department_name"),
+            key_of=lambda row: None if row.get("id") is None else str(row["id"]),
+            what="detail payloads",
+            title_of=lambda row: row.get("title"),
+            department_of=lambda row: row.get("department_name"),
         )
-        ids = [str(i["id"]) for i in wanted if i.get("id") is not None]
-        details: dict[str, dict] = {}
-        if ids:
-            # Multiplexed by default (ADR-0016); HEADSTART_ASYNC_FANOUT=0 falls back to threads.
-            if self.async_fanout_enabled():
-                fetched = self.fan_out_async(ids, self._detail_async)
-            else:
-                fetched = self.fan_out(ids, self._detail, workers=self.detail_workers)
-            # Reported, not marked truncated: a missing detail costs this Job its description
-            # and three derived fields, but the Job is still listed and still emitted, so the
-            # Board's list is whole (ADR-0053 is about the list, not the fields).
-            self.report_detail_gaps(fetched, "detail payloads")
-            details = {i: d for i, d in zip(ids, fetched) if d}
         return {"results": listed, "details": details}
 
-    def _detail_url(self, job_id: str) -> str:
+    def detail_request(self, row: dict) -> DetailRequest:
         # The company key is required here too: without it, or with another tenant's, the
         # endpoint answers 404 `{"detail": "Not found."}` — the same body a posting that closed
         # between the listing and this call returns.
-        return f"{_API}{job_id}/?company_slug={self.slug}"
+        if row.get("id") is None:
+            raise DetailLost("no job id")
+        return DetailRequest(f"{_API}{row['id']}/?company_slug={self.slug}")
 
-    def _detail(self, job_id: str) -> dict | None:
-        try:
-            body = self._get(self._detail_url(job_id))
-        except http.RequestsError as exc:
-            # `fan_out` turns the raise into this same None; caught here so the cause travels
-            # with the count rather than only the count.
-            self.note_detail_exception(exc)
-            return None
-        return json.loads(body)
-
-    async def _detail_async(self, session: Any, job_id: str) -> dict | None:
-        try:
-            body = await self._get_async(session, self._detail_url(job_id))
-        except http.RequestsError as exc:
-            self.note_detail_exception(exc)
-            return None
-        return json.loads(body)
+    def read_detail(self, row: dict, response: Any) -> dict:
+        return json.loads(response.text)
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         details = raw.get("details") or {}
@@ -303,7 +282,7 @@ class PyjamaHRScraper(BaseScraper):
         The gate and the bounds agree exactly on live data — of 1,741 details, all 1,236 marked
         visible carried both bounds and none of the 505 hidden carried either — so requiring
         every part is a statement of the measured shape, not caution against an imagined one. The
-        spelling ("30000-40000 INR per-month") is what `salary._field_generic` reads: a range, a
+        spelling ("30000-40000 INR per-month") is what `salary.from_field` reads: a range, a
         currency code, and a phrase-shaped period. `is_salary_visible` is the tenant's own
         publication choice, so a hidden figure stays hidden even when the API leaks it.
         """
@@ -314,6 +293,4 @@ class PyjamaHRScraper(BaseScraper):
         if period is None or lo is None or hi is None:
             return None
         currency = (raw.get("currency") or "").strip()
-        return " ".join(
-            part for part in (f"{_digits(lo)}-{_digits(hi)}", currency, period) if part
-        )
+        return salary.to_field(_digits(lo), _digits(hi), currency, period)

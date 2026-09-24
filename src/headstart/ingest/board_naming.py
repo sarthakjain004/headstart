@@ -54,7 +54,8 @@ def board_names(db: Path, table_name: str) -> dict[str, str]:
 
 #: Host labels that name the *board* rather than the company, and so are never the answer.
 #: Vendor labels and TLDs sit here too: `micron.wd5.myworkdayjobs.com` and
-#: `lockheed.jobs.hr.cloud.sap` both have to reduce to their first real word.
+#: `lockheed.jobs.hr.cloud.sap` both have to reduce to their first real word. Its few legal
+#: words are not `company_match._LEGAL`, which says why the two lists stay apart.
 _LABEL_NOISE = frozenset(
     {
         "www",

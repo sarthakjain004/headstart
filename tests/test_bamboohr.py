@@ -15,6 +15,9 @@ import json
 import pathlib
 from typing import Any
 
+import pytest
+from fake_fetcher import FakeFetcher, FakeResponse
+
 from headstart.scrapers.bamboohr import (
     BambooHRScraper,
     _canonical_location,
@@ -156,32 +159,17 @@ def test_canonical_location_handles_a_missing_or_non_dict_value():
 
 # --- fetch_raw(): dead vs. live-but-empty, from the same HTTP 200 ---------------------------
 # See the module docstring's measurement: a dead tenant's widget is a 200 with an EMPTY body,
-# while a live tenant (jobs or not) always serves the BambooHR-ATS-board wrapper. FakeFetcher
-# mirrors tests/test_fetcher.py's pattern (ADR-0153) rather than hitting the network.
+# while a live tenant (jobs or not) always serves the BambooHR-ATS-board wrapper. The shared
+# FakeFetcher (ADR-0153, ADR-0199) answers rather than the network.
 
 
-class _FakeResponse:
-    def __init__(self, text: str = "") -> None:
-        self.status_code = 200
-        self.text = text
-
-    def raise_for_status(self) -> None:
-        pass
-
-
-class _FakeFetcher:
-    def __init__(self, text: str) -> None:
-        self._text = text
-
-    def fetch(self, method: str, url: str, **_kwargs: Any) -> _FakeResponse:
-        return _FakeResponse(self._text)
-
-    async def fetch_async(self, session: Any, method: str, url: str, **kwargs: Any):
-        return self.fetch(method, url, **kwargs)
+def _widget_fetcher(text: str) -> FakeFetcher:
+    """Every request gets the same 200 widget body."""
+    return FakeFetcher(lambda _method, _url, _kwargs: FakeResponse(200, text))
 
 
 def test_fetch_raw_treats_a_dead_tenants_empty_body_as_an_unread_board():
-    scraper = BambooHRScraper("gone", fetcher=_FakeFetcher(""))
+    scraper = BambooHRScraper("gone", fetcher=_widget_fetcher(""))
     assert scraper.fetch_raw() == {"page": "", "details": {}}
 
 
@@ -190,7 +178,7 @@ def test_fetch_raw_reads_a_live_but_jobless_tenants_blank_state():
         '<div class="BambooHR-ATS-board"><div class="BambooHR-ATS-blankState">'
         "We currently have no open positions.</div></div>"
     )
-    scraper = BambooHRScraper("empty-board", fetcher=_FakeFetcher(blank))
+    scraper = BambooHRScraper("empty-board", fetcher=_widget_fetcher(blank))
     assert scraper.fetch_raw() == {"page": blank, "details": {}, "departments": {}}
 
 
@@ -206,7 +194,7 @@ def test_fetch_raw_treats_changed_row_markup_as_an_unread_board_not_an_empty_one
         '<li data-position-id="331">bhrPositionID_331 moved to a data attribute</li>'
         "</div>"
     )
-    scraper = BambooHRScraper("drifted", fetcher=_FakeFetcher(drifted))
+    scraper = BambooHRScraper("drifted", fetcher=_widget_fetcher(drifted))
     assert scraper.fetch_raw() == {"page": "", "details": {}}
 
 
@@ -217,7 +205,7 @@ def test_fetch_raw_still_reads_a_genuinely_empty_but_well_formed_board():
         '<div class="BambooHR-ATS-board"><div class="BambooHR-ATS-blankState">'
         "We currently have no open positions.</div></div>"
     )
-    scraper = BambooHRScraper("empty-board", fetcher=_FakeFetcher(blank))
+    scraper = BambooHRScraper("empty-board", fetcher=_widget_fetcher(blank))
     assert scraper.fetch_raw() == {"page": blank, "details": {}, "departments": {}}
 
 
@@ -241,46 +229,102 @@ def _tech_gate_page() -> str:
     )
 
 
-def test_fetch_raw_skips_the_detail_fetch_for_a_posting_the_tech_filter_will_drop(
-    monkeypatch,
-):
+_ACME_WIDGET_URL = "https://acme.bamboohr.com/jobs/embed2.php"
+
+
+def _acme_board(
+    detail_body_by_id: dict[str, str],
+) -> tuple[BambooHRScraper, FakeFetcher]:
+    """The two-department `acme` widget, with each posting's `/detail` answering the body given
+    for its id (a 404 for any other)."""
+
+    def route(method: str, url: str, kwargs: dict) -> FakeResponse:
+        if url == _ACME_WIDGET_URL:
+            return FakeResponse(text=_tech_gate_page())
+        posting_id = url.removeprefix("https://acme.bamboohr.com/careers/").split("/")[
+            0
+        ]
+        if posting_id not in detail_body_by_id:
+            return FakeResponse(404)
+        return FakeResponse(text=detail_body_by_id[posting_id])
+
+    fetcher = FakeFetcher(route)
+    return BambooHRScraper("acme", "Acme", fetcher=fetcher), fetcher
+
+
+def _opening_body(department: str) -> str:
+    return json.dumps({"result": {"jobOpening": {"departmentLabel": department}}})
+
+
+def _detail_urls(fetcher: FakeFetcher) -> list[str]:
+    return [url for url in fetcher.urls() if url != _ACME_WIDGET_URL]
+
+
+def test_fetch_raw_skips_the_detail_fetch_for_a_posting_the_tech_filter_will_drop():
     """ADR-0017, added 2026-09-22 — BambooHR was the only `has_detail_pass` ATS without this
     gate. `department` comes off the widget's own blocks (`_department_map`), so the gate can
     run before any detail is fetched."""
-    scraper = get_scraper("bamboohr", "acme", "Acme")
+    scraper, fetcher = _acme_board(
+        {"1": _opening_body("Engineering"), "2": _opening_body("Logistics")}
+    )
     scraper.have_details = (
         set()
     )  # arms the gate (off for every non-pipeline caller otherwise)
-    monkeypatch.setattr(scraper, "_get", lambda url=None: _tech_gate_page())
-    fetched: list[str] = []
-
-    def fake_fan_out_async(items, fn, **kwargs):
-        fetched.extend(items)
-        return [{"departmentLabel": "Engineering"} for _ in items]
-
-    monkeypatch.setattr(scraper, "fan_out_async", fake_fan_out_async)
     raw = scraper.fetch_raw()
 
-    assert fetched == ["1"]  # the tech posting's detail was fetched
-    assert "2" not in raw["details"]  # the non-tech posting's detail never was
+    # the tech posting's detail was fetched; the non-tech posting's never was
+    assert _detail_urls(fetcher) == ["https://acme.bamboohr.com/careers/1/detail"]
+    assert raw["details"] == {"1": {"departmentLabel": "Engineering"}}
 
 
-def test_fetch_raw_fetches_every_detail_outside_the_pipeline(monkeypatch):
+@pytest.mark.parametrize("async_fanout_switch", ["1", "0"])
+def test_fetch_raw_fetches_every_detail_outside_the_pipeline_on_either_transport(
+    monkeypatch, async_fanout_switch
+):
     """`have_details is None` (the default for a direct caller) disarms the gate entirely — the
-    same contract every other gated scraper honours."""
-    scraper = get_scraper("bamboohr", "acme", "Acme")
+    same contract every other gated scraper honours — and the detail request is the same bare
+    GET whichever transport carries it."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout_switch)
+    scraper, fetcher = _acme_board(
+        {"1": _opening_body("Engineering"), "2": _opening_body("Logistics")}
+    )
     assert scraper.have_details is None
-    monkeypatch.setattr(scraper, "_get", lambda url=None: _tech_gate_page())
-    fetched: list[str] = []
+    raw = scraper.fetch_raw()
 
-    def fake_fan_out_async(items, fn, **kwargs):
-        fetched.extend(items)
-        return [{"departmentLabel": "X"} for _ in items]
+    assert sorted(_detail_urls(fetcher)) == [
+        "https://acme.bamboohr.com/careers/1/detail",
+        "https://acme.bamboohr.com/careers/2/detail",
+    ]
+    assert raw["details"] == {
+        "1": {"departmentLabel": "Engineering"},
+        "2": {"departmentLabel": "Logistics"},
+    }
+    detail_request = next(
+        request for request in fetcher.requests if request.url.endswith("/detail")
+    )
+    assert detail_request.method == "GET"
+    assert detail_request.kwargs["timeout"] == 30
 
-    monkeypatch.setattr(scraper, "fan_out_async", fake_fan_out_async)
-    scraper.fetch_raw()
 
-    assert sorted(fetched) == ["1", "2"]
+def test_every_lost_detail_is_labelled_by_what_lost_it():
+    """An unparseable body and an empty `jobOpening` each read differently in the gap line, and
+    neither as a refusal, so a refused Board is never mistaken for one whose pages are empty."""
+    scraper, _fetcher = _acme_board(
+        {"1": "<html>not json</html>", "2": json.dumps({"result": {}})}
+    )
+    raw = scraper.fetch_raw()
+
+    assert raw["details"] == {}
+    assert scraper.detail_losses == {
+        "unparseable detail JSON": 1,
+        "empty jobOpening": 1,
+    }
+    # Both Jobs still ship, each with the listing's own department.
+    jobs = scraper.parse(raw, SCRAPED_AT)
+    assert [(job.title, job.department) for job in jobs] == [
+        ("Backend Engineer", "Engineering"),
+        ("Warehouse Associate", "Logistics"),
+    ]
 
 
 # --- _department_map(): the widget's department blocks -----------------------------------------

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Container
 
+from headstart.config import CompanyRef
+from headstart.fetcher import Fetcher
 from headstart.scrapers.adp import ADPScraper
+from headstart.scrapers.adp_recruiting import ADPRecruitingScraper
 from headstart.scrapers.amazon import AmazonScraper
 from headstart.scrapers.apple import AppleScraper
 from headstart.scrapers.ashby import AshbyScraper
@@ -91,6 +94,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         JobviteScraper,
         TeslaScraper,
         ADPScraper,
+        ADPRecruitingScraper,
         AmazonScraper,
         ByteDanceScraper,
         CornerstoneScraper,
@@ -130,6 +134,23 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
 DISABLED_ATS: frozenset[str] = frozenset({"join"})
 
 
+def company_from_row(ats: str, tenant: str, url: str) -> CompanyRef:
+    """The ``CompanyRef`` for the Board a discovered ``(tenant, url)`` row names, its slug read
+    by that ATS's Scraper.
+
+    A liveness-ledger row and a candidate-pool row both carry a Board as ``tenant`` and ``url``,
+    and only the Scraper knows which of the two its slug comes from — the tenant for most ATSes,
+    the careers host for Zoho and Personio, the whole careers URL for Workday (ADR-0001). Every
+    caller that turns such a row into a Board goes through here, so none of them can skip
+    :meth:`~headstart.scrapers.base.BaseScraper.slug_from` and pass the raw tenant as the slug
+    (ADR-0203). ``name`` is the raw tenant, as the scrape list has always carried it.
+
+    Raises ``KeyError`` for an ``ats`` with no Scraper, and whatever ``slug_from`` raises on a
+    row it cannot read; each caller decides what a bad row means for it.
+    """
+    return CompanyRef(ats=ats, slug=SCRAPERS[ats].slug_from(tenant, url), name=tenant)
+
+
 def detail_pass_atses() -> frozenset[str]:
     """ATSes whose ``description`` comes from a per-Job **detail pass**, so it can go missing.
 
@@ -148,13 +169,14 @@ def get_scraper(
     company: str | None = None,
     *,
     have_details: Container[str] | None = None,
+    fetcher: Fetcher | None = None,
 ) -> BaseScraper:
     try:
         cls = SCRAPERS[ats]
     except KeyError:
         raise ValueError(f"unknown ats {ats!r}; known: {sorted(SCRAPERS)}") from None
-    scraper = cls(slug, company)
-    # Set after construction, not passed in: five scrapers override ``__init__`` and only one
+    scraper = cls(slug, company, fetcher)
+    # Set after construction, not passed in: nine scrapers override ``__init__`` and only one
     # consults this, so widening all their signatures for it would be churn for nothing.
     scraper.have_details = have_details
     return scraper

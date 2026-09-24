@@ -19,7 +19,7 @@ import json
 import re
 from pathlib import Path
 
-from headstart import employment_type
+from headstart import employment_type_filter
 from headstart.scrapers.breezy import BreezyScraper
 from headstart.scrapers.registry import get_scraper
 
@@ -103,9 +103,9 @@ def test_employment_type_is_keyed_on_the_type_id_not_its_localised_name():
     ssg = _jobs(SSG)
     assert ssg["65fef260f81c"].employment_type == "Full-Time"
     assert ssg["26d87665a903"].employment_type == "Temporary"
-    assert employment_type.flags("Full-Time")["is_full_time"]
-    assert employment_type.flags("Part-Time")["is_part_time"]
-    assert employment_type.flags("Contract")["is_contract"]
+    assert employment_type_filter.flags("Full-Time")["is_full_time"]
+    assert employment_type_filter.flags("Part-Time")["is_part_time"]
+    assert employment_type_filter.flags("Contract")["is_contract"]
 
 
 def test_an_unobserved_type_id_passes_through_and_a_localised_name_does_not():
@@ -126,7 +126,7 @@ def _salary(raw: str, country: str | None) -> str | None:
 
 
 def test_a_bare_dollar_names_its_currency_by_the_postings_country():
-    """ADR-0181, the user's scoped exception to `salary._symbol_currency`: against the page's
+    """ADR-0181, the user's scoped exception to `salary.from_field`'s rule: against the page's
     JSON-LD a bare `$` was USD on 141 of 141 US postings and CAD on 179 of 188 Canadian ones, but
     USD on only 41 of 47 elsewhere — so only the first two are named."""
     assert _salary("$19 – $20 / hour", "US") == "19-20 USD HOUR"

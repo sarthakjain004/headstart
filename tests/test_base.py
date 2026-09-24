@@ -1,10 +1,17 @@
 import asyncio
+import json
 import logging
 
 import pytest
+from fake_fetcher import FakeFetcher, FakeResponse
 
-from headstart import http
-from headstart.scrapers.base import BaseScraper
+from headstart import fanout_stats, http
+from headstart.scrapers.base import (
+    DEFAULT_REQUEST_HEADERS,
+    BaseScraper,
+    DetailLost,
+    DetailRequest,
+)
 
 
 class _StubScraper(BaseScraper):
@@ -206,8 +213,8 @@ def test_fan_out_async_keeps_the_global_default_when_nothing_is_declared(monkeyp
 def test_fan_out_async_narrows_once_this_scrapers_egress_group_has_walled(monkeypatch):
     """Every step of the chain above is static, so a shard the origin had already refused fanned
     out exactly as wide as one it was still serving — 4 of 15 shards on run 32249345870 took 80%
-    of its 94,110 rate-limit retries that way (#195). The clamp keys on the group `_egress()`
-    names, so it reaches only the scrapers whose requests carry one."""
+    of its 94,110 rate-limit retries that way (#195). The clamp keys on the group the Board fetcher binds, so
+    it reaches only the scrapers whose requests carry one."""
     from headstart import spare_egress
 
     seen = _spy_concurrency(monkeypatch)
@@ -259,29 +266,37 @@ def test_egress_is_inert_unless_the_scraper_opts_in():
     """Routing has to stay inert: every ATS that has never walled us must keep making exactly the
     request it made before this existed. Only ``egress_board`` — pure log attribution, no routing
     effect — rides along regardless."""
-    assert _StubScraper("acme")._egress() == {"egress_board": "stub:acme"}
+    assert _StubScraper("acme").board_fetcher.egress_binding() == {
+        "egress_board": "stub:acme"
+    }
 
 
 def test_egress_opt_in_keys_on_the_ats_not_the_board():
     # per-Board marking would make each of a shard's Boards spend its own attempts rediscovering
     # a wall the first one already proved (the metering is per origin, across tenants)
-    kwargs = _WalledScraper("acme")._egress()
-    other = _WalledScraper("other-board")._egress()
-    assert kwargs["egress_group"] == other["egress_group"] == "walled"
-    assert kwargs["egress_on"] == other["egress_on"] == frozenset({403, 405})
+    binding = _WalledScraper("acme").board_fetcher.egress_binding()
+    other_binding = _WalledScraper("other-board").board_fetcher.egress_binding()
+    assert binding["egress_group"] == other_binding["egress_group"] == "walled"
+    assert binding["egress_on"] == other_binding["egress_on"] == frozenset({403, 405})
 
 
 def test_the_board_rides_along_for_attribution_only():
     """`egress_board` lets the shard report name which Boards spent the IP supply. It must not
     change the grouping: two Boards of one ATS still share a budget and a wall."""
-    assert _WalledScraper("acme")._egress()["egress_board"] == "walled:acme"
-    assert _WalledScraper("other")._egress()["egress_board"] == "walled:other"
+    assert (
+        _WalledScraper("acme").board_fetcher.egress_binding()["egress_board"]
+        == "walled:acme"
+    )
+    assert (
+        _WalledScraper("other").board_fetcher.egress_binding()["egress_board"]
+        == "walled:other"
+    )
 
 
 def test_fetch_threads_egress_kwargs_into_http_fetch(monkeypatch):
     """`_fetch` is `_get`'s counterpart for a caller that needs a non-GET method, custom
-    headers/timeout, or the raw ``Response`` — it must apply this scraper's `_egress()` kwargs
-    exactly as `_get` does, not leave the caller to spell `**self._egress()` itself."""
+    headers/timeout, or the raw ``Response`` — its request must carry the Board fetcher's egress
+    binding exactly as `_get`'s does (ADR-0204)."""
     captured = {}
 
     def fake_fetch(method, url, **kwargs):
@@ -302,7 +317,7 @@ def test_fetch_threads_egress_kwargs_into_http_fetch(monkeypatch):
 
 
 def test_fetch_marks_wall_false_drops_only_the_marking(monkeypatch):
-    """`marks_wall=False` passes straight through to `_egress`: the request still carries
+    """`marks_wall=False` passes straight through to the Board fetcher's binding: the request still carries
     `egress_group`/`egress_board` (still routed once walled) but `egress_on` is emptied, so this
     call's own failures can never be what walls the ATS."""
     captured = {}
@@ -316,7 +331,7 @@ def test_fetch_marks_wall_false_drops_only_the_marking(monkeypatch):
 
 
 def test_fetch_async_threads_egress_kwargs_into_http_fetch_async(monkeypatch):
-    """Async counterpart: `_fetch_async` must thread the same `_egress()` kwargs into
+    """Async counterpart: `_fetch_async` must thread the same egress binding into
     `http.fetch_async`, with `session` and `method` passed through positionally."""
     captured = {}
 
@@ -348,7 +363,12 @@ def test_eightfold_opts_in_on_the_wall_statuses():
     from headstart.scrapers.eightfold import EightfoldScraper
 
     assert EightfoldScraper.egress_fallback_on == frozenset({403, 405, 429})
-    assert EightfoldScraper("x.eightfold.ai")._egress()["egress_group"] == "eightfold"
+    assert (
+        EightfoldScraper("x.eightfold.ai").board_fetcher.egress_binding()[
+            "egress_group"
+        ]
+        == "eightfold"
+    )
 
 
 def test_measured_429_scrapers_opt_into_spare_egress():
@@ -600,3 +620,189 @@ def test_attach_details_pairs_against_the_fetched_subset_not_the_full_list():
 
     assert items[1]["_detail"] == {"description": "b body"}
     assert items[0]["_detail"] == {} and items[2]["_detail"] == {}
+
+
+# --- the ADR-0201 Detail pass -----------------------------------------------------------
+
+
+class _DetailStub(_StubScraper):
+    """A Scraper whose Detail pass reads `/detail/{id}` as JSON and loses a page with no body."""
+
+    def detail_request(self, row):
+        if not row.get("id"):
+            raise DetailLost("no job id")
+        return DetailRequest(f"https://example.invalid/detail/{row['id']}")
+
+    def read_detail(self, row, response):
+        body = json.loads(response.text)
+        if "body" not in body:
+            raise DetailLost("no body on a 200")
+        return body["body"]
+
+
+def _detail_route(method, url, kwargs):
+    native_id = url.rsplit("/", 1)[1]
+    return {
+        "ok": FakeResponse(text='{"body": "text of ok"}'),
+        "gone": FakeResponse(404, "{}"),
+        "empty": FakeResponse(text="{}"),
+        "garbled": FakeResponse(text="<html>not json"),
+        "refused": http.RequestsError("connection refused"),
+    }[native_id]
+
+
+@pytest.mark.parametrize("async_fanout", ["1", "0"])
+def test_run_detail_pass_labels_every_loss_on_either_transport(
+    monkeypatch, async_fanout
+):
+    """One request description, two transports, one set of outcomes: the drift between
+    hand-written sync and async twins (a header sent on one path only) cannot recur."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
+    fetcher = FakeFetcher(_detail_route)
+    scraper = _DetailStub("x", fetcher=fetcher)
+    rows = [{"id": i} for i in ("ok", "gone", "empty", "garbled", "refused")] + [{}]
+
+    details = scraper.run_detail_pass(
+        rows, key_of=lambda row: row.get("id"), what="pages"
+    )
+
+    assert dict(details) == {"ok": "text of ok"}
+    assert details.missing == 5
+    assert scraper.detail_losses == {
+        "HTTP 404": 1,
+        "no body on a 200": 1,
+        "JSONDecodeError": 1,
+        "RequestException": 1,
+        "no job id": 1,
+    }
+    assert scraper.telemetry["detail_attempted"] == 5
+    assert all(
+        request.kwargs["headers"] == dict(DEFAULT_REQUEST_HEADERS)
+        and request.kwargs["timeout"] == 30
+        for request in fetcher.requests
+    )
+
+
+def test_run_detail_pass_gates_on_the_listing_and_skips_held_details(monkeypatch):
+    monkeypatch.delenv("HEADSTART_TECH_GATE", raising=False)
+    fetcher = FakeFetcher(
+        lambda method, url, kwargs: FakeResponse(text='{"body": "b"}')
+    )
+    scraper = _DetailStub("x", fetcher=fetcher)
+    scraper.have_details = frozenset({"stub:x:held"})
+    rows = [
+        {"id": "held", "title": "Backend Engineer"},
+        {"id": "new", "title": "Backend Engineer"},
+        {"id": "chef", "title": "Head Chef"},
+    ]
+
+    details = scraper.run_detail_pass(
+        rows,
+        key_of=lambda row: row["id"],
+        what="pages",
+        title_of=lambda row: row["title"],
+        skip_held=True,
+    )
+
+    assert fetcher.urls() == ["https://example.invalid/detail/new"]
+    assert dict(details) == {"new": "b"} and details.missing == 0
+    assert scraper.telemetry["tech_gated_details"] == 1
+
+
+def test_run_detail_pass_records_the_thread_path_width(monkeypatch):
+    """`fan_out` alone records nothing; a Board on the thread path must still say at what width
+    its details ran (ADR-0167 was decided from that line)."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    fanout_stats.reset()
+    scraper = _DetailStub(
+        "x",
+        fetcher=FakeFetcher(
+            lambda method, url, kwargs: FakeResponse(text='{"body": "b"}')
+        ),
+    )
+    scraper.detail_workers = 3
+
+    scraper.run_detail_pass(
+        [{"id": "a"}, {"id": "b"}], key_of=lambda row: row["id"], what="detail pages"
+    )
+
+    assert fanout_stats.stats()[("stub details", 3)]["items"] == 2
+    fanout_stats.reset()
+
+
+def test_run_detail_pass_pins_the_multiplexed_width_when_asked(monkeypatch):
+    seen = _spy_concurrency(monkeypatch)
+    monkeypatch.setenv("HEADSTART_H2_STREAMS", "64")
+    scraper = _DetailStub("x", fetcher=FakeFetcher(_detail_route))
+
+    scraper.run_detail_pass(
+        [{"id": "ok"}], key_of=lambda row: row["id"], what="detail pages", concurrency=4
+    )
+
+    assert seen["concurrency"] == 4
+
+
+def test_run_detail_pass_over_nothing_records_no_batch_on_either_transport(monkeypatch):
+    """A Board the tech gate empties must not add a zero batch: `fanout_stats.report` promises
+    to stay silent when nothing fanned out."""
+    fanout_stats.reset()
+    for async_fanout in ("1", "0"):
+        monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
+        scraper = _DetailStub("x", fetcher=FakeFetcher(_detail_route))
+        details = scraper.run_detail_pass(
+            [], key_of=lambda row: row["id"], what="detail pages"
+        )
+        assert dict(details) == {} and details.missing == 0
+    assert fanout_stats.stats() == {}
+
+
+class _Landed:
+    """A settled response that ended its redirects on ``url``."""
+
+    def __init__(self, url):
+        self.url = url
+
+    def close(self):
+        pass
+
+
+def test_default_alias_key_is_the_lowercased_landing_host(monkeypatch):
+    seen = {}
+
+    def fetch(method, url, **kwargs):
+        seen.update(kwargs, url=url)
+        return _Landed("https://Careers.Example.com/jobs?x=1")
+
+    monkeypatch.setattr(http, "fetch", fetch)
+    scraper = _StubScraper("acme")
+    assert scraper.alias_key() == "careers.example.com"
+    assert seen["url"] == scraper.url()
+    # It names its Board in the retry log and neither routes nor walls (ADR-0203).
+    assert seen["egress_board"] == scraper.board_key()
+    assert "egress_group" not in seen and "egress_on" not in seen
+
+
+def test_alias_key_of_landing_is_the_one_step_a_scraper_overrides(monkeypatch):
+    """The fetch stays the base's; only the key read off the landing URL changes."""
+
+    class _WholeUrlKeyed(_StubScraper):
+        @staticmethod
+        def alias_key_of_landing(landing_url):
+            return landing_url.upper()
+
+    monkeypatch.setattr(
+        http, "fetch", lambda *args, **kwargs: _Landed("https://x.example/a")
+    )
+    assert _WholeUrlKeyed("acme").alias_key() == "HTTPS://X.EXAMPLE/A"
+
+
+def test_alias_key_is_none_when_the_landing_url_cannot_be_read(monkeypatch):
+    class _Refusing(_StubScraper):
+        @staticmethod
+        def alias_key_of_landing(landing_url):
+            raise ValueError(f"not this ATS: {landing_url}")
+
+    monkeypatch.setattr(
+        http, "fetch", lambda *args, **kwargs: _Landed("https://elsewhere.example/")
+    )
+    assert _Refusing("acme").alias_key() is None

@@ -32,9 +32,9 @@ import time
 
 import numpy as np
 
+from headstart.embedding_conventions import DOC_PREFIX, MODEL
 from headstart.ingest.doc_prep import BUCKETS, MAX_SEQ_TOKENS
 from headstart.ingest.embed_run import _length_sorted, batch_size_for
-from headstart.search import DOC_PREFIX, MODEL
 
 # Measured token-length distribution of the real tech corpus (4,000 English Docs, real
 # tokenizer). Sampling from this rather than a flat length keeps the batch shapes honest.

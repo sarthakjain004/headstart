@@ -351,7 +351,10 @@ class BrowserFetcher:
     deepened for ADR-0153). Implements ``fetch`` only — a browser tab is one session, not a
     multiplexed pool, and nothing calls its async half (see ``headstart.fetcher``'s module
     docstring) — and only for requests inside the origin it was opened on: every darwinbox
-    tenant is its own subdomain, so one instance never needs to cover two.
+    tenant is its own subdomain, so one instance never needs to cover two. It leaves
+    ``clear_cookies`` (ADR-0199) unimplemented too: the tab's cookies are the clearance its
+    navigation earned, so a reset would re-wall it, and a no-op would claim a reset that never
+    happened.
 
     A context manager, not a bare object, because the tab :func:`origin` opens must close
     deterministically — this wraps that contract rather than replacing it::
@@ -383,9 +386,15 @@ class BrowserFetcher:
         if cm is not None:
             cm.__exit__(*exc_info)
 
-    def fetch(
-        self, method: str, url: str, *, json: dict | None = None, **_ignored: Any
-    ) -> _FetchResult:
+    def fetch(self, method: str, url: str, *, json: dict | None = None) -> _FetchResult:
+        """One in-page request on the warmed tab.
+
+        Takes no egress binding, headers or timeout, and refuses them rather than dropping them
+        (ADR-0204): the tab has one origin and its own network stack, so the spare egress cannot
+        route it, and a :class:`~headstart.fetcher.BoardFetcher` never wraps it — darwinbox calls
+        it directly for the walled path only. It used to accept and silently drop any keyword,
+        which is exactly how a request loses its egress binding without anyone noticing.
+        """
         if self._page is None:
             raise RuntimeError("BrowserFetcher.fetch() called outside its `with` block")
         if not url.startswith(self._origin):

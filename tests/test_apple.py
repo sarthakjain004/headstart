@@ -12,9 +12,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
+import pytest
+from fake_fetcher import FakeFetcher, FakeResponse, Route
+
+from headstart import fanout_stats
 from headstart.models import html_to_text
-from headstart.scrapers.apple import AppleScraper
+from headstart.scrapers.apple import _SEARCH_URL, AppleScraper
 from headstart.scrapers.registry import get_scraper
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -43,6 +48,40 @@ def _scraper():
 
 def _jobs():
     return {j.id.rsplit(":", 1)[1]: j for j in _scraper().parse(_raw(), SCRAPED_AT)}
+
+
+class _TransportRecordingFetcher(FakeFetcher):
+    """A :class:`FakeFetcher` that also counts the requests sent on the multiplexed path, so a
+    test can say which transport the Detail pass rode."""
+
+    def __init__(self, route: Route) -> None:
+        super().__init__(route)
+        self.multiplexed_requests = 0
+
+    async def fetch_async(
+        self, session: Any, method: str, url: str, **kwargs: Any
+    ) -> FakeResponse:
+        self.multiplexed_requests += 1
+        return self.fetch(method, url, **kwargs)
+
+
+def _serve_board(
+    listed: list[dict], details_by_job_number: dict[str, dict]
+) -> tuple[AppleScraper, _TransportRecordingFetcher]:
+    """An Apple scraper whose search POST answers ``listed`` as one short page and whose detail
+    GETs answer from ``details_by_job_number``; an unknown job number is Apple's own 404."""
+
+    def route(method: str, url: str, kwargs: dict) -> FakeResponse:
+        if method == "POST" and url == _SEARCH_URL:
+            page = {"searchResults": listed, "totalRecords": len(listed)}
+            return FakeResponse(text=json.dumps({"res": page}))
+        job_number = url.rsplit("/", 1)[1]
+        if job_number not in details_by_job_number:
+            return FakeResponse(404, '{"error":"jobsite.general.serviceError"}')
+        return FakeResponse(text=json.dumps({"res": details_by_job_number[job_number]}))
+
+    fetcher = _TransportRecordingFetcher(route)
+    return AppleScraper(SLUG, fetcher=fetcher), fetcher
 
 
 # --------------------------------------------------------------------------- the URL contract
@@ -79,29 +118,21 @@ def test_alias_key_is_the_slug_itself():
     assert AppleScraper(SLUG).alias_key() == SLUG
 
 
-def test_the_search_request_carries_an_empty_query_and_filters(monkeypatch):
+def test_the_search_request_carries_an_empty_query_and_filters():
     """An empty query/filters returns the whole board (module docstring) — the scraper must not
     narrow it with a keyword or team filter, since the tech gate is a post-hoc filter
     (`headstart.tech_filter`), not something scraped-in."""
-    import headstart.scrapers.apple as apple_module
-
-    calls = []
-
-    def fake_fetch(method, url, **kwargs):
-        calls.append((method, url, kwargs.get("json")))
-        raise RuntimeError("stop after first call")
-
-    monkeypatch.setattr(apple_module.http, "fetch", fake_fetch)
-    scraper = _scraper()
-    try:
+    fetcher = FakeFetcher(
+        lambda method, url, kwargs: RuntimeError("stop after first call")
+    )
+    scraper = AppleScraper(SLUG, fetcher=fetcher)
+    with pytest.raises(RuntimeError):
         scraper._listing()
-    except RuntimeError:
-        pass
 
-    assert len(calls) == 1
-    method, url, body = calls[0]
-    assert method == "POST"
-    assert url == "https://jobs.apple.com/api/v1/search"
+    (request,) = fetcher.requests
+    assert request.method == "POST"
+    assert request.url == "https://jobs.apple.com/api/v1/search"
+    body = request.kwargs["json"]
     assert body["query"] == ""
     assert body["filters"] == {}
     assert body["page"] == 1
@@ -117,10 +148,12 @@ def test_the_job_url_is_the_details_page():
 
 def test_the_detail_url_strips_the_pipe_prefix_but_not_a_req_id():
     scraper = _scraper()
-    assert scraper._detail_url(PIPE_ID) == (
+    assert scraper.detail_request({"id": PIPE_ID}).url == (
         f"https://{SLUG}/api/v1/jobDetails/200313970"
     )
-    assert scraper._detail_url(REQ_ID) == (f"https://{SLUG}/api/v1/jobDetails/{REQ_ID}")
+    assert scraper.detail_request({"id": REQ_ID}).url == (
+        f"https://{SLUG}/api/v1/jobDetails/{REQ_ID}"
+    )
 
 
 # ------------------------------------------------------------------------------ field mapping
@@ -345,11 +378,10 @@ def test_hitting_the_page_cap_marks_truncated(monkeypatch):
     assert scraper.truncated and "page cap" in scraper.truncated
 
 
-def test_fetch_raw_skips_details_it_already_holds(monkeypatch):
+def test_fetch_raw_skips_details_it_already_holds():
     """ADR-0048, re-enabled: `employment_type` moved onto the listing's `standardWeeklyHours`
     (module docstring), so the detail fetch supplies only `description` — a held Job's detail is
     skipped rather than re-fetched every run."""
-    scraper = _scraper()
     listed = [
         {
             "id": "REQ-10",
@@ -366,20 +398,37 @@ def test_fetch_raw_skips_details_it_already_holds(monkeypatch):
             "standardWeeklyHours": 40,
         },
     ]
+    scraper, fetcher = _serve_board(
+        listed,
+        {row["id"]: {"description": f"desc-{row['id']}"} for row in listed},
+    )
     scraper.have_details = {f"apple:{SLUG}:REQ-10"}
-    monkeypatch.setattr(scraper, "_listing", lambda: listed)
-    fetched_ids: list[str] = []
-
-    def fake_timed_details(ids):
-        fetched_ids.extend(ids)
-        return [{"description": f"desc-{i}"} for i in ids]
-
-    monkeypatch.setattr(scraper, "_timed_details", fake_timed_details)
     raw = scraper.fetch_raw()
 
-    assert fetched_ids == ["REQ-11"]  # the held Job was never fetched
+    detail_urls = fetcher.urls()[1:]
+    assert detail_urls == [f"https://{SLUG}/api/v1/jobDetails/REQ-11"]  # REQ-10 is held
     assert "REQ-10" not in raw["details"]
     assert raw["details"]["REQ-11"]["description"] == "desc-REQ-11"
+
+
+def test_a_detail_with_no_res_is_a_labelled_loss_and_the_job_still_ships():
+    """A 200 whose body carries no `res` has no detail in it; the loss is named rather than left
+    to the gap line's `unlabelled`, and the Job is still listed without a description."""
+    listed = [{"id": "REQ-12", "positionId": "12", "postingTitle": "Engineer"}]
+
+    def route(method: str, url: str, kwargs: dict) -> FakeResponse:
+        if method == "POST":
+            page = {"searchResults": listed, "totalRecords": 1}
+            return FakeResponse(text=json.dumps({"res": page}))
+        return FakeResponse(text=json.dumps({"error": "none"}))
+
+    scraper = AppleScraper(SLUG, fetcher=FakeFetcher(route))
+    raw = scraper.fetch_raw()
+
+    assert raw["details"] == {}
+    assert scraper.detail_losses == {"no res on a 200": 1}
+    (job,) = scraper.parse(raw, SCRAPED_AT)
+    assert job.description is None
 
 
 def test_the_scraper_declares_a_detail_pass():
@@ -412,53 +461,45 @@ def test_the_width_is_the_connection_count():
     assert AppleScraper.detail_streams is None
 
 
-def test_fetch_raw_takes_the_threaded_path(monkeypatch):
-    """The attribute above only matters if `fetch_raw` actually routes on it."""
-    s = AppleScraper(SLUG)
-    listing, details = _listing(), _details()
-    monkeypatch.setattr(AppleScraper, "_listing", lambda self: listing)
-    monkeypatch.setattr(AppleScraper, "_detail", lambda self, i: details.get(i))
-
-    took = {"sync": 0, "async": 0}
-    real_fan_out = (
-        AppleScraper.fan_out
-    )  # a staticmethod: (items, fn, *, workers, default)
-
-    def spy_sync(items, fn, **kw):
-        took["sync"] += 1
-        assert kw.get("workers") == AppleScraper.detail_workers, (
-            "the detail pass must open as many connections as the measurement was taken at"
-        )
-        return real_fan_out(items, fn, **kw)
-
-    def spy_async(self, *a, **kw):  # pragma: no cover - must not run
-        took["async"] += 1
-        raise AssertionError("the multiplexed path is the slow one for this origin")
-
-    monkeypatch.setattr(AppleScraper, "fan_out", staticmethod(spy_sync))
-    monkeypatch.setattr(AppleScraper, "fan_out_async", spy_async)
-
-    raw = s.fetch_raw()
-
-    assert took == {"sync": 1, "async": 0}
-    assert raw["details"], "the threaded path must still return the detail payloads"
+def _fixture_board() -> tuple[AppleScraper, _TransportRecordingFetcher]:
+    """The two fixture postings, each with its real detail behind its job number."""
+    details_by_job_number = {
+        native_id.removeprefix("PIPE-"): detail
+        for native_id, detail in _details().items()
+    }
+    return _serve_board(_listing(), details_by_job_number)
 
 
-def test_the_threaded_detail_pass_still_records_its_operating_point(monkeypatch):
-    """`fan_out_async` instruments itself; `fan_out` does not. Without `_timed_details` the move
-    to the sync path would delete the `concurrency apple details @N` line — the one the transport
-    decision was read from — leaving only a board-level total that cannot separate listing from
-    details."""
-    from headstart import fanout_stats
+@pytest.mark.parametrize("async_fanout_switch", ["1", "0"])
+def test_fetch_raw_takes_the_threaded_path_whatever_the_fanout_switch(
+    monkeypatch, async_fanout_switch
+):
+    """The attribute above only matters if `fetch_raw` actually routes on it — and the operator's
+    switch only ever turns the multiplexed path off, never on (ADR-0167)."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout_switch)
+    scraper, fetcher = _fixture_board()
 
+    raw = scraper.fetch_raw()
+
+    assert fetcher.multiplexed_requests == 0, (
+        "the multiplexed path is the slow one for this origin"
+    )
+    assert set(raw["details"]) == {PIPE_ID, REQ_ID}
+    assert scraper.detail_losses == {}
+
+
+def test_the_threaded_detail_pass_records_its_operating_point_at_the_measured_width(
+    monkeypatch,
+):
+    """`fan_out` records nothing on its own; the base's thread transport records the
+    `concurrency apple details @N` line — the one the transport decision was read from — at the
+    width the measurement was taken at, so the pass opens that many connections."""
     monkeypatch.setattr(fanout_stats, "_rows", {})
-    s = AppleScraper(SLUG)
-    details = _details()
-    monkeypatch.setattr(AppleScraper, "_detail", lambda self, i: details.get(i))
+    scraper, _fetcher = _fixture_board()
 
-    s._timed_details(list(details))
+    scraper.fetch_raw()
 
     recorded = fanout_stats.stats()
     key = ("apple details", AppleScraper.detail_workers)
     assert key in recorded, f"no operating point recorded; got {list(recorded)}"
-    assert recorded[key]["items"] == len(details)
+    assert recorded[key]["items"] == len(_details())

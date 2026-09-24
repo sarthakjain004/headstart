@@ -37,7 +37,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import json
 import re
 import time
 import urllib.parse
@@ -47,7 +46,8 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from headstart import fanout_stats, http, log, spare_egress
+from headstart import fanout_stats, http, log
+from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import (
     USER_AGENT,
@@ -55,6 +55,7 @@ from headstart.scrapers.base import (
     classify_exception,
     loss_breakdown,
 )
+from headstart.scrapers.job_posting_jsonld import jsonld_nodes
 
 _log = log.get(__name__)
 
@@ -132,7 +133,7 @@ def _listing_diagnostic(response: Any, instance: str) -> tuple[str, bool]:
 # schema.org's closed ``employmentType`` vocabulary, in the wording Workday's own ``timeType``
 # uses where the two overlap ("Full time" on every CXS detail measured) so a recovered posting is
 # indistinguishable from a CXS one downstream. Values beyond the enum pass through: the filter
-# vocabulary matches by substring (`search.ETYPE_CLAUSES`), so an unmapped-but-real value still
+# vocabulary matches by substring (`employment_type_filter.RULES`), so an unmapped-but-real value still
 # beats the None it replaces, while OTHER maps to None because it carries nothing.
 _SCHEMA_EMPLOYMENT = {
     "FULL_TIME": "Full time",
@@ -163,34 +164,30 @@ def _extract_page_detail(response: Any) -> dict[str, Any] | None:
     them, and reformatting the JSON-LD address would be guesswork on top of it."""
     if response.status_code != 200:
         return None
-    for block in _JSON_LD.findall(response.text):
-        try:
-            data = json.loads(block)
-        except ValueError:
-            continue
-        for node in data if isinstance(data, list) else [data]:
-            if not isinstance(node, dict):
-                continue
-            kind = node.get("@type")  # JSON-LD allows a list of types
-            if kind == "JobPosting" or (
-                isinstance(kind, list) and "JobPosting" in kind
-            ):
-                description = node.get("description")
-                if not description:
-                    continue
-                employment = node.get("employmentType")
-                if isinstance(employment, list):  # the spec allows a list here too
-                    employment = employment[0] if employment else None
-                return {
-                    "description": description,
-                    "startDate": node.get("datePosted"),
-                    "remoteType": node.get("jobLocationType"),
-                    "timeType": _SCHEMA_EMPLOYMENT.get(employment, employment),
-                }
-    return None
+    described = (
+        node
+        for node in jsonld_nodes(response.text, "JobPosting")
+        if node.get("description")
+    )
+    posting = next(described, None)
+    if posting is None:
+        return None
+    employment = posting.get("employmentType")
+    if isinstance(employment, list):  # the spec allows a list here too
+        employment = employment[0] if employment else None
+    return {
+        "description": posting["description"],
+        "startDate": posting.get("datePosted"),
+        "remoteType": posting.get("jobLocationType"),
+        "timeType": _SCHEMA_EMPLOYMENT.get(employment, employment),
+    }
 
 
-_URL_PATTERN = re.compile(
+#: A Workday Board's careers URL — its slug (:meth:`WorkdayScraper.slug_from`) — split into the
+#: tenant, the data centre it was discovered on and the site. Public because the liveness probe
+#: reads the same three parts off the same URL, and a second copy of this pattern is how the two
+#: could disagree about which Board a row names (ADR-0203).
+CAREERS_URL_PATTERN = re.compile(
     r"^https://(?P<company>[^.]+)\.(?P<instance>wd\d+)\.myworkdayjobs\.com/(?P<site>[^/?#]+)"
 )
 
@@ -306,9 +303,6 @@ _PAGE_RECOVERED = "recovered from the public page"
 # unconditionally the cookie one. Recovered details ride this label and are popped from the loss
 # tally exactly as `_PAGE_RECOVERED` is.
 _COOKIE_RECOVERED = "cookie-reset (recovered)"
-_JSON_LD = re.compile(
-    r'<script[^>]*type="application/ld\+json"[^>]*>(.*?)</script>', re.DOTALL
-)
 
 # A 500-episode is the origin refusing a Board's details wholesale for minutes, and nothing
 # in-run beats it (ADR-0100): massgeneralbrigham lost 2,324 of 2,420 details to settled 500s
@@ -469,8 +463,10 @@ class WorkdayScraper(BaseScraper):
     _settled_5xx_streak = 0
     _detail_pass_broken = False
 
-    def __init__(self, slug: str, company: str | None = None) -> None:
-        super().__init__(slug, company)
+    def __init__(
+        self, slug: str, company: str | None = None, fetcher: Fetcher | None = None
+    ) -> None:
+        super().__init__(slug, company, fetcher)
         # The data center actually serving the tenant. None until resolved; overrides the URL's
         # ``wdN`` when the tenant has migrated (see :meth:`_resolve_instance`).
         self._instance: str | None = None
@@ -486,7 +482,14 @@ class WorkdayScraper(BaseScraper):
         return f"{self.ats}:{company}/{site}"
 
     def url(self) -> str:
-        company, instance, site = self._parts()
+        return self.listing_url_on(self._requested_instance)
+
+    def listing_url_on(self, instance: str) -> str:
+        """The CXS listing this Board would answer on data centre ``instance``.
+
+        :meth:`url` asks the one this scrape resolved; :meth:`_resolve_instance` and the liveness
+        probe ask each of :data:`INSTANCES` in turn to find a tenant that migrated (ADR-0203)."""
+        company, _instance, site = self._parts()
         return (
             f"https://{company}.{instance}.myworkdayjobs.com"
             f"/wday/cxs/{company}/{site}/jobs"
@@ -517,18 +520,18 @@ class WorkdayScraper(BaseScraper):
         bare host never matches a Workday slug, so every live Board reads `migrated` and the
         script's own >50% warning fires on every invocation.
 
-        Measured against the full live population and against the deferred (id-overlap) signal
-        both -- full transcripts, not just the summary, in
-        `docs/workday/2026-09-11_alias-key-full-population-scan.md`; the single duplicate found
-        and why it is not in the alias ledger is in ADR-0111's 2026-09-11 amendment. Short form:
-        12,844 Boards, 1 duplicate (a `config._dedupe_boards` no-op today), 2 migrated, 38 landed
+        Measured against the full live population and against the deferred (id-overlap) signal both
+        -- full transcripts, not just the summary, in
+        `docs/workday/2026-09-11_alias-key-full-population-scan.md`; the single duplicate found and
+        why it is not in the alias ledger is in ADR-0111's 2026-09-11 amendment. Short form: 12,844
+        Boards, 1 duplicate (a `scrapable_boards._dedupe_boards` no-op today), 2 migrated, 38 landed
         on Workday's own outage page (:attr:`alias_vendor_hosts`); 0/217 same-company site pairs
         shared a posting (the deferred, Eightfold-shaped signal) -- a false negative: it compared
         ``externalPath``, whose per-site ``-N`` suffix differs on 6,208 of 6,212 cross-site
-        requisitions, while the native id matches, so sites do share postings and ADR-0187
-        dedupes them per requisition in the index, not here; 0/50 same-company instance-split
-        pairs were simultaneously live (the other known Workday duplicate shape, already handled
-        by `board_key`'s instance-blind fold, ADR-0023, needing no help from this method).
+        requisitions, while the native id matches, so sites do share postings and ADR-0187 dedupes
+        them per requisition in the index, not here; 0/50 same-company instance-split pairs were
+        simultaneously live (the other known Workday duplicate shape, already handled by
+        `board_key`'s instance-blind fold, ADR-0023, needing no help from this method).
 
         Query string and fragment are stripped before returning: Workday's outage page appends a
         per-request `?d=&s=&e=&o=` tail that would otherwise make two visits to the very same
@@ -536,7 +539,7 @@ class WorkdayScraper(BaseScraper):
         """
         try:
             # `_parts()` inside the guard, not before it: it raises `ValueError` on a slug that
-            # does not match `_URL_PATTERN`, and `dedupe_boards.py` reads this method's result
+            # does not match `CAREERS_URL_PATTERN`, and `dedupe_boards.py` reads this method's result
             # from an unguarded `future.result()` inside a `ThreadPoolExecutor` -- one malformed
             # slug anywhere in a 12,844-board scan would abort the whole run on whichever board
             # happened to raise, not just mark that one unreachable.
@@ -557,7 +560,7 @@ class WorkdayScraper(BaseScraper):
             return None
 
     def _parts(self) -> tuple[str, str, str]:
-        match = _URL_PATTERN.match(self.slug.rstrip("/"))
+        match = CAREERS_URL_PATTERN.match(self.slug.rstrip("/"))
         if not match:
             raise ValueError(
                 "Workday slug must be a careers URL like "
@@ -586,19 +589,13 @@ class WorkdayScraper(BaseScraper):
         retried a 400 on the theory it was a throttle; the 400 is a session-cookie fault the sweep
         never provokes, so that special case is gone.)
         """
-        company, hinted, site = (
-            self._parts()
-        )  # self._instance is None here -> the URL's instance
+        hinted = self._requested_instance  # _instance is None here, so the URL's own
 
         def serves(instance: str) -> bool:
-            probe_url = (
-                f"https://{company}.{instance}.myworkdayjobs.com"
-                f"/wday/cxs/{company}/{site}/jobs"
-            )
             try:
                 response = self._fetch(
                     "POST",
-                    probe_url,
+                    self.listing_url_on(instance),
                     json={
                         "appliedFacets": {},
                         "limit": 1,
@@ -668,13 +665,13 @@ class WorkdayScraper(BaseScraper):
                 int(self.telemetry.get("listing_fetch_calls", 0)) + 1
             )
             try:
-                response = http.fetch(
+                response = self.board_fetcher.fetch(
                     "POST",
                     self.url(),
+                    direct=direct,
                     json=body,
                     headers=headers,
                     timeout=30,
-                    **({} if direct else self._egress()),
                 )
             except http.RequestsError as exc:
                 self._record_listing_loss(classify_exception(exc))
@@ -700,7 +697,7 @@ class WorkdayScraper(BaseScraper):
             # measure is what a *persisting* 400 still does below, exactly as before the reset —
             # mid-crawl it raises into `_paginate`'s "page(s) failed mid-crawl (HTTP 400)" line;
             # on a slice's first page it raises out of `_exhaust` as a Board error. Both drop.
-            http.session().cookies.clear()
+            self.board_fetcher.clear_cookies()
             response = fetch()
         if response.status_code == 404:
             if not raise_gone:
@@ -783,14 +780,14 @@ class WorkdayScraper(BaseScraper):
                 int(self.telemetry.get("listing_fetch_calls", 0)) + 1
             )
             try:
-                response = await http.fetch_async(
+                response = await self.board_fetcher.fetch_async(
                     session,
                     "POST",
                     self.url(),
+                    direct=direct,
                     json=body,
                     headers=headers,
                     timeout=30,
-                    **({} if direct else self._egress()),
                 )
             except http.RequestsError as exc:
                 self._record_listing_loss(classify_exception(exc))
@@ -907,6 +904,9 @@ class WorkdayScraper(BaseScraper):
             lambda item: item.get("title"),
             lambda item: item.get("jobFamilyGroup"),
         )
+        # Composed from the primitives, not `run_detail_pass` (ADR-0201): an in-pass circuit
+        # breaker, in-item fallbacks (a 404 to the page's JSON-LD, a 400 to a cookie reset),
+        # recovered outcomes and its own loss line (ADR-0088) are pass state a request cannot hold.
         if self.async_fanout_enabled():
             details = self.fan_out_async(
                 wanted,
@@ -1020,7 +1020,7 @@ class WorkdayScraper(BaseScraper):
         if (
             response.status_code == 400
         ):  # a stale session cookie — see _COOKIE_RECOVERED
-            http.session().cookies.clear()
+            self.board_fetcher.clear_cookies()
             try:
                 response = self._fetch(
                     "GET",
@@ -1490,9 +1490,7 @@ class WorkdayScraper(BaseScraper):
         # site rather than through it: this gather exists precisely because that method's
         # exception contract is not the one `_paginate` needs (above), so the width policy is
         # shared as a function and the two fan-outs stay apart (#195).
-        width = spare_egress.stream_width(
-            self._egress().get("egress_group"), _PAGE_STREAMS
-        )
+        width = self.board_fetcher.stream_width(_PAGE_STREAMS)
         sem = asyncio.Semaphore(width)
         missing = 0
         error: http.RequestsError | None = None

@@ -19,13 +19,15 @@ from __future__ import annotations
 import json
 import re
 import urllib.parse
+from collections.abc import Sequence
 from typing import Any
 
-from headstart import http
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 
-_TOKEN = re.compile(r"token=([A-Za-z0-9_-]+)")
+#: The session token the careers page redirects onto. Public: the liveness probe reads the
+#: same token before it asks for a count (ADR-0203).
+CAREERS_TOKEN = re.compile(r"token=([A-Za-z0-9_-]+)")
 _PAGE_SIZE = 100
 # The width this detail pass has always run at — `fan_out`'s default, stated here so the async
 # path resolves to it rather than to the 100-stream default (base.fan_out_async, ADR-0047).
@@ -65,9 +67,16 @@ class RippleHireScraper(BaseScraper):
     )
     detail_workers = _DETAIL_WORKERS  # also the async stream width (base.fan_out_async)
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
+    #: The per-site token the careers URL redirects with; `fetch_raw` reads it before the Detail
+    #: pass, and every detail URL carries it.
+    _board_token: str | None = None
 
     def url(self) -> str:
         return f"https://{self.slug}.ripplehire.com/candidate/careers"
+
+    def search_url(self) -> str:
+        """The job-search endpoint the careers page's token unlocks."""
+        return f"https://{self.slug}.ripplehire.com/candidate/candidatejobsearch"
 
     def job_url(self) -> str:
         """No per-job route exists on this ATS's public site (known gap, tracked in
@@ -94,11 +103,11 @@ class RippleHireScraper(BaseScraper):
         # A 200 that redirects somewhere without a token still returns [] — that is the
         # portal's shape for "no public board", not a fetch failure.
         response.raise_for_status()
-        m = _TOKEN.search(response.url)
+        m = CAREERS_TOKEN.search(response.url)
         if not m:
             return []
         token = m.group(1)
-        api = f"https://{self.slug}.ripplehire.com/candidate/candidatejobsearch"
+        api = self.search_url()
         headers = {
             "User-Agent": USER_AGENT,
             "Accept": "application/json",
@@ -144,39 +153,30 @@ class RippleHireScraper(BaseScraper):
             )
         # detail pass: the list never carries jobDesc — fill it from the per-job detail JSON,
         # which also carries department/posted_at/employment_type/salary that `parse` needs
-        # (see `_job_detail`)
+        # (see `read_detail`). No tech gate: it is deferred for this ATS (ADR-0166).
+        self._board_token = token
         need = [j for j in jobs if j.get("jobSeq") and not j.get("jobDesc")]
-        # Multiplexed by default (ADR-0016); HEADSTART_ASYNC_FANOUT=0 falls back to threads.
-        if self.async_fanout_enabled():
-            details = self.fan_out_async(
-                need,
-                lambda session, j: self._job_detail_async(session, token, j["jobSeq"]),
-            )
-        else:
-            details = self.fan_out(need, lambda j: self._job_detail(token, j["jobSeq"]))
-        descriptions: list[str | None] = []
-        for d in details:
-            text = (d or {}).get("jobDesc") or None
-            if text is None and d is not None:
-                # The record arrived and carried no text. Counted as a gap either way, but it
-                # is not the same fact as a fetch that never landed, and the bare count reads
-                # the two identically (:meth:`~BaseScraper.note_detail_loss`).
-                self.note_detail_loss("no jobDesc on the record")
-            descriptions.append(text)
-        self.report_detail_gaps(descriptions, "descriptions")
-        for j, d, desc in zip(need, details, descriptions):
-            j["jobDesc"] = desc
-            j["_detail"] = d or {}
+        records = self.run_detail_pass(
+            need,
+            key_of=lambda listing_row: str(listing_row["jobSeq"]),
+            what="descriptions",
+        )
+        for listing_row in need:
+            # A missing detail record must not drop the Job: it ships on its listing fields.
+            record = records.get(str(listing_row["jobSeq"])) or {}
+            listing_row["jobDesc"] = record.get("jobDesc") or None
+            listing_row["_detail"] = record
         return jobs
 
-    def _detail_url(self, token: str, job_seq: Any) -> str:
-        return (
+    def detail_request(self, listing_row: dict) -> DetailRequest:
+        return DetailRequest(
             f"https://{self.slug}.ripplehire.com/candidate/candidatejobdetail"
-            f"?token={token}&jobSeq={job_seq}&source=CAREERSITE&lang=en"
+            f"?token={self._board_token}&jobSeq={listing_row['jobSeq']}&source=CAREERSITE&lang=en",
+            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
         )
 
-    def _job_detail(self, token: str, job_seq: Any) -> dict | None:
-        """GET one job's detail JSON and return the whole ``jobVO`` (None on failure). Sync path.
+    def read_detail(self, listing_row: dict, response: Any) -> dict:
+        """The whole ``jobVO`` record, not only its ``jobDesc``.
 
         The search list always carries ``jobDesc: null``, so this was fetched for the
         description alone and everything else in ``jobVO`` was discarded — but that same record
@@ -184,44 +184,27 @@ class RippleHireScraper(BaseScraper):
         which are always empty on the list (experiment/location-audit-2026-08-25/ripplehire.md,
         live-verified across all 18,659 jobs on all 55 boards). Returning the full dict lets
         ``parse`` read those too, at zero extra requests.
+
+        A response with no ``jobVO`` is a 200 this parser did not recognise, not a request that
+        failed. A ``jobVO`` with no ``jobDesc`` is still returned — its other fields are real —
+        and :meth:`report_detail_gaps` counts it as the gap it is.
         """
-        try:
-            data = self._fetch(
-                "GET",
-                self._detail_url(token, job_seq),
-                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-                timeout=30,
-            ).json()
-        except (http.RequestsError, json.JSONDecodeError) as exc:
-            self.note_detail_exception(exc)
-            return None  # a missing detail record must not drop the job
-        return self._job_vo(data)
+        record = response.json().get("jobVO") or None
+        if record is None:
+            raise DetailLost("no jobVO on a 200")
+        return record
 
-    async def _job_detail_async(
-        self, session: Any, token: str, job_seq: Any
-    ) -> dict | None:
-        """Same as :meth:`_job_detail` over the shared multiplexed ``AsyncSession``."""
-        try:
-            response = await self._fetch_async(
-                session,
-                "GET",
-                self._detail_url(token, job_seq),
-                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-                timeout=30,
-            )
-            data = response.json()
-        except (http.RequestsError, json.JSONDecodeError) as exc:
-            self.note_detail_exception(exc)
-            return None  # a missing detail record must not drop the job
-        return self._job_vo(data)
-
-    def _job_vo(self, data: dict) -> dict | None:
-        """The ``jobVO`` record, or a ``None`` that says the response carried none — which is
-        a 200 this parser did not recognise, not a request that failed."""
-        vo = data.get("jobVO") or None
-        if vo is None:
-            self.note_detail_loss("no jobVO on a 200")
-        return vo
+    def report_detail_gaps(self, results: Sequence[Any], what: str) -> int:
+        """The Board's gap line counts *descriptions*: a record that arrived and carried no text
+        is a gap too, labelled apart from a fetch that never landed — the bare count reads the
+        two identically (:meth:`~BaseScraper.note_detail_loss`)."""
+        descriptions: list[str | None] = []
+        for record in results:
+            text = (record or {}).get("jobDesc") or None
+            if text is None and record is not None:
+                self.note_detail_loss("no jobDesc on the record")
+            descriptions.append(text)
+        return super().report_detail_gaps(descriptions, what)
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []

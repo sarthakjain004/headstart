@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Sample real boards to measure how one ATS shows salary (docs/salary-extraction/).
 
-For up to N live boards of ``<ats>`` (``config.load_active_companies`` — the same liveness-ledger
+For up to N live boards of ``<ats>`` (``scrapable_boards.load`` — the same liveness-ledger
 source and dedup every other production consumer uses), fetches the listing response through the
 *real* registered scraper (``registry.get_scraper``) and its real ``parse()``, then measures, per
 Job: whether ``salary`` came back populated (a structured-field hit), and whether the description
@@ -21,15 +21,12 @@ specifically was undercounting real coverage on boards with many missing-descrip
 exits with a clear message rather than guessing.
 
 **Spare egress is automatic, never hand-rolled.** Every fetch goes through the scraper's own
-``_get()``/``_post()``/``_job_detail()``-style methods, which already carry
-``**self._egress()`` — so an ATS with ``egress_fallback_on`` set (workday: ``{429}``) transparently
-routes through `headstart.spare_egress`'s WARP fallback the same way the real pipeline does,
-reactively, the first time this process meets a wall. No adapter here should ever call
-``http.fetch`` directly; that would silently skip it. **Narrow, named exception:**
-``_fetch_ripplehire`` calls ``http.fetch`` directly twice, mirroring ``ripplehire.py``'s own
-production ``fetch_raw()`` exactly (which does the same for the identical reason — see that
-adapter's own docstring) — harmless today only because ``RippleHireScraper.egress_fallback_on`` is
-unset; re-check this exception if ripplehire is ever added to that set. One real local limitation,
+``_get()``/``_post()``/``_job_detail()``-style methods, which already carry their Board
+fetcher's egress binding (ADR-0204) — so an ATS with ``egress_fallback_on`` set (workday:
+``{429}``) transparently routes through `headstart.spare_egress`'s WARP fallback the same way the
+real pipeline does, reactively, the first time this process meets a wall. No adapter here should ever call
+``http.fetch`` directly; that would silently skip it. ``_fetch_ripplehire``, which needs raw
+responses, sends its two requests through ``scraper.board_fetcher`` for the same reason. One real local limitation,
 verified 2026-08-21: rotation (`systemctl restart warp-svc`) needs systemd and doesn't exist on
 macOS, so a local run gets one alternate route per process, not full adaptive rotation — CI still
 gets that.
@@ -69,14 +66,14 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from headstart import http
-from headstart.config import EXCLUDED_BOARDS, CompanyRef, load_active_companies
+from headstart import scrapable_boards
+from headstart.config import CompanyRef
 from headstart.models import Job
 from headstart.scrapers import registry
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 from headstart.scrapers.eightfold import _sitemap_position_id
 from headstart.scrapers.ripplehire import _PAGE_SIZE as _RIPPLEHIRE_PAGE_SIZE
-from headstart.scrapers.ripplehire import _TOKEN as _RIPPLEHIRE_TOKEN
+from headstart.scrapers.ripplehire import CAREERS_TOKEN as _RIPPLEHIRE_TOKEN
 from headstart.scrapers.successfactors import _job_urls_from
 from headstart.scrapers.trakstar import _codes_from
 
@@ -130,7 +127,7 @@ class BoardResult:
 
 
 def _sample_boards(ats: str, n: int, seed: int) -> list[CompanyRef]:
-    all_companies = [c for c in load_active_companies(LEDGER_DIR) if c.ats == ats]
+    all_companies = [c for c in scrapable_boards.load(LEDGER_DIR) if c.ats == ats]
     if not all_companies and not (LEDGER_DIR / f"{ats}.csv").exists():
         all_companies = _candidates_without_ledger(ats)
     if len(all_companies) <= n:
@@ -141,7 +138,7 @@ def _sample_boards(ats: str, n: int, seed: int) -> list[CompanyRef]:
 def _candidates_without_ledger(ats: str) -> list[CompanyRef]:
     """Fallback for an ATS with no liveness ledger at all (:data:`CANDIDATES_DIR`'s own
     docstring) — reads the raw candidate-tenant discovery file directly, applying the same
-    :data:`~headstart.config.EXCLUDED_BOARDS` filter :func:`load_active_companies` would.
+    :data:`~headstart.config.EXCLUDED_BOARDS` filter :func:`scrapable_boards.load` would.
     Unlike that function, this does NOT itself check liveness — for a population this small
     (dozens, not thousands), the caller's own per-board fetch during sampling already is
     the liveness check, so a candidate that turns out dead simply errors there, same as any
@@ -153,7 +150,7 @@ def _candidates_without_ledger(ats: str) -> list[CompanyRef]:
     with path.open(newline="") as f:
         for row in csv.DictReader(f):
             slug = row["tenant"]
-            if f"{ats}:{slug}".lower() in EXCLUDED_BOARDS:
+            if scrapable_boards.is_excluded(ats, slug):
                 continue
             companies.append(CompanyRef(ats=ats, slug=slug, name=slug))
     return companies
@@ -189,13 +186,13 @@ def _fetch_smartrecruiters(scraper: BaseScraper) -> list[Job]:
     """Bounded adapter for smartrecruiters: one listing page via the scraper's own single-page
     primitive (``_get()``, no offset — never ``fetch_raw()``, which pages the *whole* board plus
     fans out detail fetches over *every* posting found). Detail-fetches only the first
-    :data:`_DETAIL_FETCH_CAP` postings via the scraper's own ``_job_detail``, then parses
+    :data:`_DETAIL_FETCH_CAP` postings via the scraper's own ``fetch_detail``, then parses
     just those — so the returned Jobs are exactly the ones with a real description."""
     page = json.loads(scraper._get())
     postings = (page or {}).get("content") or []
     sample = postings[:_DETAIL_FETCH_CAP]
     for item in sample:
-        item["_detail"] = scraper._job_detail(item.get("id")) or {}
+        item["_detail"] = scraper.fetch_detail(item) or {}
     return scraper.parse({**page, "content": sample}, datetime.now(UTC).isoformat())
 
 
@@ -258,7 +255,7 @@ def _fetch_rippling(scraper: BaseScraper) -> list[Job]:
     ``fetch_raw()``, which bakes the FULL per-posting detail fan-out into that same call — every
     job on the board, not a capped subset. It's the *fan-out*, not the listing, that makes calling
     ``fetch_raw()`` directly unsafe for a sampling pass here. Detail-fetches only the first
-    :data:`_DETAIL_FETCH_CAP` postings via the scraper's own ``_detail()``, then parses just
+    :data:`_DETAIL_FETCH_CAP` postings via the scraper's own ``fetch_detail``, then parses just
     those, mirroring workday's/smartrecruiters' capped shape rather than zoho's uncapped one."""
     data = json.loads(scraper._get())
     items = (
@@ -268,7 +265,7 @@ def _fetch_rippling(scraper: BaseScraper) -> list[Job]:
     )
     sample = items[:_DETAIL_FETCH_CAP]
     for item in sample:
-        item["_detail"] = scraper._detail(item.get("uuid")) or {}
+        item["_detail"] = scraper.fetch_detail(item) or {}
     return scraper.parse(sample, datetime.now(UTC).isoformat())
 
 
@@ -276,17 +273,12 @@ def _fetch_ripplehire(scraper: BaseScraper) -> list[Job]:
     """Bounded adapter for ripplehire: one listing POST (page 0 only, at production's own
     ``_PAGE_SIZE``) via the scraper's own token handshake, never ``fetch_raw()``, which loops the
     search POST across every page AND bakes an uncapped per-posting detail fan-out into the same
-    call — every job on the board, not a capped subset. The token step calls ``http.fetch``
-    directly (matching ``ripplehire.py``'s own ``fetch_raw()``, not ``BaseScraper._get()``): it
-    needs the redirected response's own ``.url`` to pull the token from, which ``_get()`` doesn't
-    expose (it returns only ``.text``) — this isn't a missed egress-wrapped primitive (lesson 40),
-    it's the one step that structurally can't use it. The search POST that follows ALSO calls
-    ``http.fetch`` directly, for a different reason: unlike workday (``_post()``) or smartrecruiters/
-    rippling (``_get()``), ``RippleHireScraper`` exposes no single-page search primitive to
-    delegate to — ``fetch_raw()`` builds the same request inline too, so this mirrors production's
-    own necessary duplication rather than introducing a new one. Both calls are genuinely inert
-    here (see the module docstring's own named exception for this adapter) since ripplehire has no
-    ``egress_fallback_on`` set; revisit if that ever changes.
+    call — every job on the board, not a capped subset. The token step fetches the raw response
+    rather than calling ``BaseScraper._get()``: it needs the redirected response's own ``.url``
+    to pull the token from, which ``_get()`` doesn't expose (it returns only ``.text``). The search POST that follows is built here too:
+    ``RippleHireScraper`` exposes no single-page search primitive to delegate to, since
+    ``fetch_raw()`` builds the same request inline. Both go through ``scraper.board_fetcher``, so
+    they carry the Board's egress binding exactly as the scraper's own requests do (ADR-0204).
 
     Deliberately asymmetric, unlike every other capped adapter here: ``compensationRange``/
     ``compensationInfo`` (Tier 1) are already on the LISTING response — real, found while building
@@ -296,13 +288,13 @@ def _fetch_ripplehire(scraper: BaseScraper) -> list[Job]:
     cost reason to, since the field costs nothing extra to read). So the FULL page (up to
     ``_PAGE_SIZE`` real listing rows) is kept for field coverage; only the expensive per-job
     detail fetch (``jobDesc``, never on the listing — confirmed in ``ripplehire.py``'s own
-    docstring) is capped at :data:`_DETAIL_FETCH_CAP`, via the scraper's own ``_job_description()``.
+    docstring) is capped at :data:`_DETAIL_FETCH_CAP`, via the scraper's own ``fetch_detail()``.
     Consequence, stated plainly rather than silently absorbed: on any board with more than
     :data:`_DETAIL_FETCH_CAP` jobs, the description-hint measurement undercounts (rows past the
     cap keep an empty ``description``, correctly read as "no hint" rather than fabricating one) —
     a conservative bias on the coarser Tier-2 signal only, never on Tier 1's own field coverage,
     which is exactly what this fix exists to make accurate."""
-    response = http.fetch(
+    response = scraper.board_fetcher.fetch(
         "GET", scraper.url(), headers={"User-Agent": USER_AGENT}, timeout=30
     )
     response.raise_for_status()
@@ -321,7 +313,7 @@ def _fetch_ripplehire(scraper: BaseScraper) -> list[Job]:
         }
     )
     body = urllib.parse.urlencode({"careerSiteUrlParams": params, "lang": "en"})
-    data = http.fetch(
+    data = scraper.board_fetcher.fetch(
         "POST",
         api,
         data=body,
@@ -334,8 +326,12 @@ def _fetch_ripplehire(scraper: BaseScraper) -> list[Job]:
         timeout=30,
     ).json()
     items = data.get("jobVoList") or []
+    # The detail request carries the Board's token, which production's `fetch_raw` sets itself.
+    scraper._board_token = token
     for item in items[:_DETAIL_FETCH_CAP]:
-        item["jobDesc"] = scraper._job_description(token, item.get("jobSeq"))
+        record = scraper.fetch_detail(item) or {}
+        item["jobDesc"] = record.get("jobDesc") or None
+        item["_detail"] = record
     return scraper.parse(items, datetime.now(UTC).isoformat())
 
 

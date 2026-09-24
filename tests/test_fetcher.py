@@ -1,4 +1,4 @@
-"""Tests for the Fetcher seam (headstart.fetcher, ADR-0153).
+"""Tests for the Fetcher seam (headstart.fetcher, ADR-0153, ADR-0199).
 
 Before this seam existed, faking a scraper's HTTP meant one of four structurally different
 tricks: monkeypatching ``headstart.http``'s module attributes with hand-rolled response doubles,
@@ -9,72 +9,51 @@ fake fetcher in.
 
 These tests do exactly that: construct a scraper with a fake :class:`~headstart.fetcher.Fetcher`
 (and, for darwinbox, a fake browser fetcher too) and call its real ``fetch_raw``/``parse``. No
-test in this file monkeypatches ``headstart.http`` or ``headstart.browser_http`` — the whole
-point is that the seam makes that unnecessary. One representative per category from the task that
-motivated ADR-0153: greenhouse (a plain single-fetch board), icims (the sitemap-plus-per-job-
-JSON-LD-detail-pass pattern shared with successfactors/meta), and darwinbox (the browser adapter,
-both its curl-first path and its walled escalation).
+test in this file answers a request by monkeypatching ``headstart.http`` or
+``headstart.browser_http`` — the whole point is that the seam makes that unnecessary. The only
+patches of ``headstart.http`` make a request that bypasses the seam fail loudly
+(``seam_bypass_fails``). One representative per category
+from the task that motivated ADR-0153: greenhouse (a plain single-fetch board), icims (the
+sitemap-plus-per-job-JSON-LD-detail-pass pattern shared with successfactors/meta), and darwinbox
+(the browser adapter, both its curl-first path and its walled escalation). ADR-0199 adds the two
+requests that used to bypass the seam, Workday's listing and Trakstar's feed, and checks that
+every registered Scraper takes the fetcher ``get_scraper`` is given.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
+from collections.abc import Callable
+
+# `FakeBrowserFetcher.fetch` takes a `json=` keyword, which shadows the module inside it.
+from json import dumps as json_text
 from typing import Any, Self
 
+import pytest
+from fake_fetcher import FakeFetcher, FakeRequest, FakeResponse, Route
+
+from headstart import http
+from headstart.scrapers.base import USER_AGENT
 from headstart.scrapers.darwinbox import DarwinboxScraper
 from headstart.scrapers.greenhouse import GreenhouseScraper
 from headstart.scrapers.icims import ICIMSScraper
+from headstart.scrapers.registry import SCRAPERS, get_scraper
+from headstart.scrapers.workday import _PAGE_LIMIT
 
 SCRAPED_AT = "2026-01-01T00:00:00+00:00"
 
 
-class FakeResponse:
-    """The slice of ``curl_cffi``'s ``Response`` surface every scraper in this repo reads:
-    ``.status_code``, ``.text``, ``.json()``, ``.raise_for_status()``."""
-
-    def __init__(self, status_code: int = 200, text: str = "") -> None:
-        self.status_code = status_code
-        self.text = text
-
-    def json(self) -> Any:
-        return json.loads(self.text)
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise _FakeHTTPError(self)
+def _fetcher_answering(
+    responses: dict[tuple[str, str], FakeResponse],
+) -> FakeFetcher:
+    """The shared fake, answering an exact ``(method, url)`` from ``responses`` — a request
+    nothing scripted raises KeyError, so a test cannot pass by reaching an unexpected URL."""
+    return FakeFetcher(lambda method, url, _kwargs: responses[(method, url)])
 
 
-class _FakeHTTPError(Exception):
-    """Carries ``.response`` like ``curl_cffi``'s own ``HTTPError`` does, since darwinbox's wall
-    detection (``_is_wall``) reads the status off exactly that attribute."""
-
-    def __init__(self, response: FakeResponse) -> None:
-        super().__init__(f"HTTP {response.status_code}")
-        self.response = response
-
-
-class FakeFetcher:
-    """A ``headstart.fetcher.Fetcher`` a test can hand straight to a scraper's constructor.
-
-    ``responses`` maps an exact ``(method, url)`` pair to the :class:`FakeResponse` ``.fetch()``
-    should hand back for it; every call is recorded in ``.calls`` so a test can also assert the
-    seam is genuinely being reached rather than short-circuited. ``fetch_async`` delegates to the
-    same table, so an ATS whose detail pass defaults to the multiplexed path (icims's does) needs
-    no separate fake.
-    """
-
-    def __init__(self, responses: dict[tuple[str, str], FakeResponse]) -> None:
-        self.responses = responses
-        self.calls: list[tuple[str, str]] = []
-
-    def fetch(self, method: str, url: str, **_kwargs: Any) -> FakeResponse:
-        self.calls.append((method, url))
-        return self.responses[(method, url)]
-
-    async def fetch_async(
-        self, session: Any, method: str, url: str, **kwargs: Any
-    ) -> FakeResponse:
-        return self.fetch(method, url, **kwargs)
+def _methods_and_urls(fake: FakeFetcher) -> list[tuple[str, str]]:
+    return [(request.method, request.url) for request in fake.requests]
 
 
 # --- greenhouse: a plain single-fetch board -------------------------------------------------
@@ -96,12 +75,13 @@ def test_greenhouse_fetch_raw_uses_the_injected_fetcher() -> None:
         ],
         "meta": {"total": 1},
     }
-    fake = FakeFetcher({("GET", url): FakeResponse(200, json.dumps(payload))})
+    fake = _fetcher_answering({("GET", url): FakeResponse(200, json.dumps(payload))})
 
     scraper = GreenhouseScraper("acme", "Acme", fetcher=fake)
     jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
 
-    assert fake.calls == [("GET", url)]  # the seam, not a global, answered this
+    # the seam, not a global, answered this
+    assert _methods_and_urls(fake) == [("GET", url)]
     assert len(jobs) == 1
     assert jobs[0].id == "greenhouse:acme:42"
     assert jobs[0].title == "Backend Engineer"
@@ -138,7 +118,7 @@ def test_icims_fetch_raw_uses_the_injected_fetcher_for_listing_and_detail() -> N
             "datePosted": "2026-09-01T00:00:00.000Z",  # anchored -> real, not fabricated
         }
     )
-    fake = FakeFetcher(
+    fake = _fetcher_answering(
         {
             ("GET", sitemap_url): FakeResponse(200, sitemap_xml),
             ("GET", detail_url): FakeResponse(200, detail_html),
@@ -148,7 +128,9 @@ def test_icims_fetch_raw_uses_the_injected_fetcher_for_listing_and_detail() -> N
     scraper = ICIMSScraper(host, "Acme", fetcher=fake)
     jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
 
-    assert sorted(fake.calls) == sorted([("GET", sitemap_url), ("GET", detail_url)])
+    assert sorted(_methods_and_urls(fake)) == sorted(
+        [("GET", sitemap_url), ("GET", detail_url)]
+    )
     assert len(jobs) == 1
     assert jobs[0].id == "icims:acme.icims.com:42"
     assert jobs[0].title == "Backend Engineer"
@@ -176,25 +158,13 @@ class FakeBrowserFetcher:
     def __exit__(self, *exc_info: object) -> None:
         return None
 
-    def fetch(
-        self, method: str, url: str, *, json: dict | None = None, **_ignored: Any
-    ):
+    def fetch(self, method: str, url: str, *, json: dict | None = None):
         self._calls.append((method, url, json))
         if method == "GET":
-            return _FakeBrowserResponse({"message": {"company": {"new_careers": True}}})
+            portal = {"message": {"company": {"new_careers": True}}}
+            return FakeResponse(200, json_text(portal))
         page = self._pages[(json or {}).get("page", 1) - 1]
-        return _FakeBrowserResponse({"data": page})
-
-
-class _FakeBrowserResponse:
-    def __init__(self, data: dict) -> None:
-        self._data = data
-
-    def raise_for_status(self) -> None:
-        pass
-
-    def json(self) -> dict:
-        return self._data
+        return FakeResponse(200, json_text({"data": page}))
 
 
 def test_darwinbox_fetch_raw_uses_the_injected_fetcher_when_unwalled() -> None:
@@ -211,7 +181,7 @@ def test_darwinbox_fetch_raw_uses_the_injected_fetcher_when_unwalled() -> None:
             }
         ]
     }
-    fake = FakeFetcher(
+    fake = _fetcher_answering(
         {
             ("POST", url): FakeResponse(200, json.dumps(jobs_payload)),
             ("GET", portal_url): FakeResponse(
@@ -223,7 +193,7 @@ def test_darwinbox_fetch_raw_uses_the_injected_fetcher_when_unwalled() -> None:
     scraper = DarwinboxScraper("acme", "Acme", fetcher=fake)
     jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
 
-    assert ("POST", url) in fake.calls
+    assert ("POST", url) in _methods_and_urls(fake)
     assert len(jobs) == 1
     assert jobs[0].id == "darwinbox:acme:abc123"
     assert jobs[0].title == "Backend Engineer"
@@ -235,7 +205,7 @@ def test_darwinbox_wall_escalates_to_the_injected_browser_fetcher() -> None:
     neither of which touches `headstart.http` or `headstart.browser_http`."""
     in_url = "https://acme.darwinbox.in/ms/candidateapi/job/alljobs?companyId=main"
     com_url = "https://acme.darwinbox.com/ms/candidateapi/job/alljobs?companyId=main"
-    fake_http = FakeFetcher(
+    fake_http = _fetcher_answering(
         {
             ("POST", in_url): FakeResponse(403, "cloudflare wall"),
             ("POST", com_url): FakeResponse(500, "Invalid subdomain"),
@@ -253,8 +223,8 @@ def test_darwinbox_wall_escalates_to_the_injected_browser_fetcher() -> None:
     jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
 
     # both curl attempts happened first (the wall is discovered, not assumed) ...
-    assert ("POST", in_url) in fake_http.calls
-    assert ("POST", com_url) in fake_http.calls
+    assert ("POST", in_url) in _methods_and_urls(fake_http)
+    assert ("POST", com_url) in _methods_and_urls(fake_http)
     # ... then the escalation navigated the walled TLD's careers page, not the other one.
     assert (
         "navigate",
@@ -263,3 +233,253 @@ def test_darwinbox_wall_escalates_to_the_injected_browser_fetcher() -> None:
     assert len(jobs) == 1
     assert jobs[0].id == "darwinbox:acme:abc123"
     assert jobs[0].title == "Backend Engineer"
+
+
+# --- the seam reaches every Scraper (ADR-0199) ------------------------------------------------
+
+
+@pytest.mark.parametrize("ats", sorted(SCRAPERS))
+def test_get_scraper_hands_its_fetcher_to_every_scraper(ats: str) -> None:
+    """`get_scraper` once took no fetcher, and seven of the nine `__init__` overrides dropped
+    one passed to the constructor directly."""
+    fake = FakeFetcher(lambda _method, _url, _kwargs: FakeResponse(404))
+    scraper = get_scraper(ats, "acme/careers", "Acme", fetcher=fake)
+    assert scraper._fetcher is fake
+
+
+@pytest.fixture
+def seam_bypass_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Any request that skips the injected fetcher for the module-global client fails loudly,
+    instead of quietly reaching the network."""
+
+    def bypassed(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("a request bypassed the injected fetcher")
+
+    monkeypatch.setattr(http, "fetch", bypassed)
+    monkeypatch.setattr(http, "fetch_async", bypassed)
+    monkeypatch.setattr(http, "session", bypassed)
+
+
+# --- workday: listing POSTs, sync and async, and the stale-cookie reset ------------------------
+
+_WORKDAY_BOARD = "https://acme.wd1.myworkdayjobs.com/External"
+_WORKDAY_LISTING = "https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/External/jobs"
+_WORKDAY_POSTINGS = [
+    {"title": f"Backend Engineer {n}", "externalPath": f"/job/Remote/Backend_R{n}"}
+    for n in range(
+        _PAGE_LIMIT + 1
+    )  # one page past the limit: page 2 rides `_post_async`
+]
+
+
+def _workday_board(method: str, url: str, kwargs: dict[str, Any]) -> FakeResponse:
+    """A healthy Board of `_WORKDAY_POSTINGS`: the listing pages them, every detail answers."""
+    if url == _WORKDAY_LISTING:
+        offset, limit = kwargs["json"]["offset"], kwargs["json"]["limit"]
+        page = _WORKDAY_POSTINGS[offset : offset + limit]
+        total = len(_WORKDAY_POSTINGS)
+        return FakeResponse(200, json.dumps({"total": total, "jobPostings": page}))
+    info = {"title": "Backend Engineer", "jobDescription": f"<p>{url}</p>"}
+    return FakeResponse(200, json.dumps({"jobPostingInfo": info}))
+
+
+def _stale_cookie_until_cleared(
+    fake: FakeFetcher, stale: Callable[[str, dict[str, Any]], bool]
+) -> Route:
+    """`_workday_board`, except that a request `stale` picks answers ADR-0103's stale-cookie 400
+    until `fake`'s cookies have been cleared."""
+
+    def route(method: str, url: str, kwargs: dict[str, Any]) -> FakeResponse:
+        if not fake.cookie_clears and stale(method, kwargs):
+            return FakeResponse(400, '{"errorCode": "S22"}')
+        return _workday_board(method, url, kwargs)
+
+    return route
+
+
+def _is_listing_page(method: str, kwargs: dict[str, Any]) -> bool:
+    return method == "POST" and kwargs["json"]["limit"] == _PAGE_LIMIT  # not the probe
+
+
+def _is_detail(method: str, _kwargs: dict[str, Any]) -> bool:
+    return method == "GET"
+
+
+def test_workday_listing_pages_reach_the_injected_fetcher_with_their_egress_kwargs(
+    seam_bypass_fails: None,
+) -> None:
+    fake = FakeFetcher(_workday_board)
+    scraper = get_scraper("workday", _WORKDAY_BOARD, "Acme", fetcher=fake)
+
+    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+
+    assert len(jobs) == len(_WORKDAY_POSTINGS)
+    assert all(job.description for job in jobs)
+    listing = [request for request in fake.requests if request.url == _WORKDAY_LISTING]
+    # the instance probe (limit 1), then page 1 (sync `_post`) and page 2 (`_post_async`)
+    offsets = [request.kwargs["json"]["offset"] for request in listing]
+    assert offsets == [0, 0, _PAGE_LIMIT]
+    for request in listing[1:]:
+        assert request.method == "POST"
+        sent_without_body = {
+            name: value for name, value in request.kwargs.items() if name != "json"
+        }
+        assert sent_without_body == {
+            "headers": {
+                "User-Agent": USER_AGENT,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            "timeout": 30,
+            "egress_group": "workday",
+            "egress_on": frozenset({429}),
+            "egress_board": "workday:acme/External",
+        }
+
+
+def test_workday_listing_retry_via_direct_egress_sends_no_egress_kwargs(
+    seam_bypass_fails: None,
+) -> None:
+    """A transient non-JSON page is refetched once with `direct=True`, which deliberately
+    carries none of the Board fetcher's binding — not even the Board attribution."""
+    empty_board = FakeResponse(200, json.dumps({"total": 0, "jobPostings": []}))
+    listing_answers = iter(
+        [FakeResponse(200, "<html><title>Just a moment...</title></html>"), empty_board]
+    )
+
+    def route(method: str, url: str, kwargs: dict[str, Any]) -> FakeResponse:
+        if kwargs["json"]["limit"] == 1:  # the instance probe
+            return empty_board
+        return next(listing_answers)
+
+    fake = FakeFetcher(route)
+    scraper = get_scraper("workday", _WORKDAY_BOARD, "Acme", fetcher=fake)
+
+    assert scraper.parse(scraper.fetch_raw(), SCRAPED_AT) == []
+
+    _probe, first_page, direct_retry = fake.requests
+    assert "egress_board" in first_page.kwargs
+    assert set(direct_retry.kwargs) == {"json", "headers", "timeout"}
+
+
+def test_workday_listing_400_clears_the_injected_fetchers_cookies(
+    seam_bypass_fails: None,
+) -> None:
+    """ADR-0103's stale-cookie reset reaches the fetcher's jar, not the module global's."""
+    fake = FakeFetcher(_workday_board)
+    fake.route = _stale_cookie_until_cleared(fake, _is_listing_page)
+    scraper = get_scraper("workday", _WORKDAY_BOARD, "Acme", fetcher=fake)
+
+    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+
+    assert len(jobs) == len(_WORKDAY_POSTINGS)
+    assert fake.cookie_clears == [None]  # the whole jar, once
+
+
+def test_workday_sync_detail_400_clears_the_injected_fetchers_cookies(
+    seam_bypass_fails: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The sync detail pass (`HEADSTART_ASYNC_FANOUT=0`) resets the same jar on a detail 400.
+    Its worker threads can each see a 400 before the first reset lands, so the count may exceed
+    one; every reset is still the whole jar, through the fetcher."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    fake = FakeFetcher(_workday_board)
+    fake.route = _stale_cookie_until_cleared(fake, _is_detail)
+    scraper = get_scraper("workday", _WORKDAY_BOARD, "Acme", fetcher=fake)
+
+    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+
+    assert len(jobs) == len(_WORKDAY_POSTINGS)
+    assert all(job.description for job in jobs)  # every stale detail was recovered
+    assert fake.cookie_clears and set(fake.cookie_clears) == {None}
+
+
+# --- trakstar: the RSS feed rides the same fetcher as the rest of the Board ------------------
+
+
+def test_trakstar_feed_reaches_the_injected_fetcher_with_board_attribution_only(
+    seam_bypass_fails: None,
+) -> None:
+    feed_url = "https://acme.hire.trakstar.com/jobfeeds/acme"
+    feed = '<?xml version="1.0"?><rss version="2.0"><channel></channel></rss>'
+    fake = _fetcher_answering({("GET", feed_url): FakeResponse(200, feed)})
+    scraper = get_scraper("trakstar", "acme", "Acme", fetcher=fake)
+
+    assert scraper.fetch_via_feed(SCRAPED_AT) == []
+    assert fake.requests == [
+        FakeRequest(
+            "GET",
+            feed_url,
+            {
+                "timeout": 30,
+                "headers": {"User-Agent": USER_AGENT},
+                "egress_board": "trakstar:acme",
+            },
+        )
+    ]
+
+
+# --- the Fetcher bound to its Board (ADR-0204) ------------------------------------------------
+
+
+def _answer_empty(method: str, url: str, kwargs: dict[str, Any]) -> FakeResponse:
+    return FakeResponse(200, "{}")
+
+
+def test_a_board_fetcher_adds_the_boards_egress_binding_to_every_request() -> None:
+    """An opted-in scraper's requests carry group, walls and Board without spreading anything;
+    ``marks_wall=False`` keeps the routing and drops only the marking (ADR-0063)."""
+    fake = FakeFetcher(_answer_empty)
+    scraper = get_scraper("workday", _WORKDAY_BOARD, "Acme", fetcher=fake)
+
+    scraper._fetch("GET", "https://example.invalid/a", timeout=5)
+    asyncio.run(scraper._fetch_async(None, "GET", "https://example.invalid/b"))
+    scraper._fetch("GET", "https://example.invalid/c", marks_wall=False)
+
+    bindings = [request.kwargs for request in fake.requests]
+    assert bindings[0] == {
+        "egress_group": "workday",
+        "egress_on": frozenset({429}),
+        "egress_board": "workday:acme/External",
+        "timeout": 5,
+    }
+    assert bindings[1]["egress_on"] == frozenset({429})
+    assert bindings[2]["egress_group"] == "workday"
+    assert bindings[2]["egress_on"] == frozenset()  # routed, but cannot mark the wall
+
+
+def test_a_scraper_that_never_opted_in_carries_only_its_board() -> None:
+    fake = FakeFetcher(_answer_empty)
+    GreenhouseScraper("acme", fetcher=fake)._fetch("GET", "https://x.invalid")
+    assert fake.requests[0].kwargs == {"egress_board": "greenhouse:acme"}
+
+
+def test_the_stream_width_is_read_through_the_board_fetcher() -> None:
+    from headstart import spare_egress
+
+    scraper = get_scraper(
+        "workday", _WORKDAY_BOARD, "Acme", fetcher=FakeFetcher(_answer_empty)
+    )
+    spare_egress.reset()
+    try:
+        assert scraper.board_fetcher.stream_width(25) == 25
+        spare_egress.mark_walled("workday", 429)
+        assert scraper.board_fetcher.stream_width(25) == 12
+        # a scraper that never opted in names no group, so another ATS's wall is not its own
+        assert GreenhouseScraper("acme").board_fetcher.stream_width(25) == 25
+    finally:
+        spare_egress.reset()
+
+
+def test_the_browser_fetcher_refuses_an_egress_binding_rather_than_dropping_it() -> (
+    None
+):
+    """A browser tab has one origin and its own network stack; the spare egress cannot route it.
+    It used to swallow any keyword, which is how a binding goes missing without a trace."""
+    from headstart.browser_http import BrowserFetcher
+
+    browser = BrowserFetcher("https://acme.darwinbox.in/ms/candidate/careers")
+    with pytest.raises(TypeError):
+        browser.fetch(
+            "GET", "https://acme.darwinbox.in/ms/x", egress_board="darwinbox:acme"
+        )

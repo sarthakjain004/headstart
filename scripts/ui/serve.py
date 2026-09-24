@@ -20,15 +20,16 @@ from flask import Flask, jsonify, render_template, request
 import headstart
 from headstart import facets, fx, geo
 from headstart.alerts.store import MAX_COMPANIES, CompanyPrefs
+from headstart.embedding_conventions import PROD_TABLE, load_encoder
 from headstart.search import (
-    KEYWORD_DEFAULT_SCOPE,
     MAX_SCOPED_BOARDS,
-    PROD_TABLE,
     JobSearch,
-    account_clause,
-    keyword_scope_options,
-    load_encoder,
+    request_account_clause,
     scoped_boards_clause,
+)
+from headstart.search_filter_compiler import (
+    KEYWORD_DEFAULT_SCOPE,
+    keyword_scope_options,
     with_extra,
 )
 
@@ -63,23 +64,9 @@ app = Flask(
 )
 
 
-def _fx_as_of() -> str | None:
-    """The date on the committed rate table, or None when it cannot be read (ADR-0117)."""
-    return (fx.table() or {}).get("as_of")
-
-
-def _fx_converts(currencies: list[str]) -> bool:
-    """Whether a bracket can actually cross a currency boundary here.
-
-    Two served currencies must both carry a rate; with fewer, `build_filter` compiles the
-    single-currency clause and any copy promising conversion would be describing nothing.
-    """
-    rates = (fx.table() or {}).get("rates") or {}
-    return len([c for c in currencies if c in rates]) > 1
-
-
 @app.route("/")
 def index():
+    capabilities = _searcher.capabilities
     scopes = keyword_scope_options()  # the Keyword filter's one map (ADR-0104)
     return render_template(
         "base.html",
@@ -91,7 +78,7 @@ def index():
             "keyword_scopes": {value: needs for value, _, needs in scopes},
             "keyword_default_scope": KEYWORD_DEFAULT_SCOPE,
             # The Data tab's browse line reads this to name the ordering actually in force.
-            "has_first_seen": _searcher.has_first_seen,
+            "has_first_seen": capabilities.has_first_seen,
             # The salary bracket's rate table (ADR-0117), so the page can print what a row
             # in another currency comes to in the one the user asked in — the SAME table the
             # where-clause was compiled from, never a second lookup, so the label beside a row
@@ -106,22 +93,22 @@ def index():
         repo="https://github.com/sarthakjain004/headstart",
         auth_on=False,  # the local renderer has no sign-in, so nothing is stored
         njobs=f"{_table.count_rows():,}",
-        atses=_searcher.atses,
+        atses=capabilities.atses,
         india_opts=geo.dropdown_options(),
-        has_first_seen=_searcher.has_first_seen,
+        has_first_seen=capabilities.has_first_seen,
         # the "Highest salary" sort option — dark until the ADR-0082 columns exist on the
         # served table, the same rule app.py and JobSearch.run apply to the value the control
         # would send (this was previously missing here — the option silently vanished from
         # local dev only, ADR-0153)
-        has_min_salary=_searcher.has_min_salary_annual,
-        currencies=_searcher.currencies,
+        has_min_salary=capabilities.has_min_salary_annual,
+        currencies=capabilities.currencies,
         # The salary bracket converts across currencies (ADR-0117); the rail prints the date
         # of the rates it used, so a stale table is visible rather than silent.
         # Both facts, because the tip needs the second one: `as_of` says the table parsed,
         # but conversion only happens where the served currencies HAVE rates. Guarding the
         # claim on the date let a deployment with no comparable currencies still promise it.
-        fx_as_of=_fx_as_of(),
-        fx_converts=_fx_converts(_searcher.currencies),
+        fx_as_of=fx.as_of(),
+        fx_converts=_searcher.salary_bracket_converts,
         # the recency dropdowns, from the same tuples headstart.facets counts (ADR-0084)
         seen_opts=facets.SEEN_OPTIONS,
         posted_opts=facets.POSTED_OPTIONS,
@@ -130,7 +117,7 @@ def index():
         # Keyword scope <select> comes out with zero options, silently.
         keyword_scopes=scopes,
         keyword_default_scope=KEYWORD_DEFAULT_SCOPE,
-        has_description=_searcher.has_description,
+        has_description=capabilities.has_description,
         trends_on=False,
         hot_on=bool(_HOT),
         alerts_on=False,
@@ -160,10 +147,8 @@ def _company_where(args) -> str | None:
     """Mirror of the Space's per-request follow/hide and ``board=`` clause — the rules are shared."""
     return with_extra(
         scoped_boards_clause(args),
-        account_clause(
-            _LOCAL_COMPANIES.followed,
-            _LOCAL_COMPANIES.hidden,
-            mine=args.get("mine") in ("1", "true"),
+        request_account_clause(
+            args, _LOCAL_COMPANIES.followed, _LOCAL_COMPANIES.hidden
         ),
     )
 

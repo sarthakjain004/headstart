@@ -1,3 +1,8 @@
+import json
+
+import pytest
+from fake_fetcher import FakeFetcher, FakeResponse
+
 from headstart import http
 from headstart.scrapers import taleo_enterprise as enterprise
 from headstart.scrapers.taleo_enterprise import TaleoEnterpriseScraper
@@ -302,3 +307,124 @@ def test_alias_key_uses_full_career_section(monkeypatch):
     assert TaleoEnterpriseScraper(
         "https://acme.taleo.net/careersection/2"
     ).alias_key() == ("https://acme.taleo.net/careersection/2")
+
+
+def test_listing_row_carries_the_contest_number(monkeypatch):
+    """`jobId` is the posting's id and `contestNo` the requisition number the recruiter sees —
+    the one an Eightfold career site in front of this section states as `atsJobId` (Premier
+    Health `978472` / `111166`, 2026-09-24; ADR-0205)."""
+    row = {
+        "jobId": "978472",
+        "contestNo": "111166",
+        "column": ["Registered Nurse", '["Middletown"]', "", "Sep 11, 2026"],
+        "linkedColumn": 0,
+        "locationsColumns": [1],
+    }
+    monkeypatch.setattr(
+        http,
+        "fetch",
+        lambda *a, **k: type(
+            "R",
+            (),
+            {
+                "raise_for_status": lambda s: None,
+                "json": lambda s: _page([row], 1, total=1),
+            },
+        )(),
+    )
+    jobs = TaleoEnterpriseScraper(BOARD)._listing(SHELL)
+    assert [(j["id"], j["contest_no"]) for j in jobs] == [("978472", "111166")]
+
+
+def _requisition_page(fields: dict[str, str]) -> str:
+    """A jobdetail page whose `_hlid` labels name ``fields``' keys, in the live shape."""
+    labels = ",".join(repr(label) for label in fields)
+    values = ",".join(repr(value) for value in fields.values())
+    return (
+        f"_hlid: [{labels}],"
+        "api.fillList('requisitionDescriptionInterface', 'descRequisition', "
+        f"[{values}]);"
+    )
+
+
+def _served_board(detail_pages: dict[str, str]):
+    """A Career Section whose shell, one listing page and each job's detail page a FakeFetcher
+    answers; a job missing from ``detail_pages`` answers 404."""
+    rows = [
+        {
+            "jobId": job_id,
+            "column": ["Engineer", '["US-TX-Austin"]', "Listing Dept", "Sep 11, 2026"],
+            "linkedColumn": 0,
+            "locationsColumns": [1],
+        }
+        for job_id in ("1", "2", "3", "4")
+    ]
+
+    def route(method, url, kwargs):
+        if url == f"{BOARD}/jobsearch.ftl?lang=en":
+            return FakeResponse(text=SHELL)
+        if "/rest/jobboard/searchjobs" in url:
+            paging = {"currentPageNo": 1, "pageSize": 4, "totalCount": 4}
+            return FakeResponse(
+                text=json.dumps({"requisitionList": rows, "pagingData": paging})
+            )
+        job_id = url.rsplit("job=", 1)[1]
+        if job_id in detail_pages:
+            return FakeResponse(text=detail_pages[job_id])
+        return FakeResponse(404, "gone")
+
+    fetcher = FakeFetcher(route)
+    return TaleoEnterpriseScraper(BOARD, fetcher=fetcher), fetcher
+
+
+def test_each_detail_page_is_read_and_every_loss_is_named(caplog):
+    """A page with a description, one whose fields parse but carry none, one with no labelled
+    fields at all, and a refused one. The second keeps its fields — they are real, and `parse`
+    prefers them to the listing's — while still counting as the gap it is; before this, it and
+    the third were counted but never named."""
+    scraper, _fetcher = _served_board(
+        {
+            "1": _requisition_page(
+                {
+                    "reqlistitem.description": "!*!%3Cp%3EBuild%20things%3C%2Fp%3E",
+                    "reqlistitem.jobfield": "Engineering",
+                }
+            ),
+            "2": _requisition_page({"reqlistitem.jobfield": "Research"}),
+            "3": "<html>maintenance</html>",
+        }
+    )
+
+    with caplog.at_level("INFO"):
+        jobs = scraper.parse(scraper.fetch_raw(), "2026-01-01T00:00:00+00:00")
+
+    assert [(job.description, job.department) for job in jobs] == [
+        ("Build things", "Engineering"),
+        (None, "Research"),
+        (None, "Listing Dept"),
+        (None, "Listing Dept"),
+    ]
+    assert scraper.detail_losses == {
+        "no description on the requisition": 1,
+        "no labelled requisition fields on a 200": 1,
+        "HTTP 404": 1,
+    }
+    assert "3/4 detail pages missing" in caplog.text
+    assert "unlabelled" not in caplog.text
+
+
+def test_every_detail_request_rides_the_thread_path(monkeypatch):
+    """`async_fanout = False` on a measurement (ADR-0167): the kill switch aside, nothing may
+    put this Scraper's Detail pass back on the multiplexed path."""
+    monkeypatch.delenv("HEADSTART_ASYNC_FANOUT", raising=False)
+    scraper, fetcher = _served_board({})
+    monkeypatch.setattr(
+        type(scraper),
+        "fan_out_async",
+        lambda *args, **kwargs: pytest.fail("the multiplexed path was taken"),
+    )
+
+    scraper.fetch_raw()
+
+    detail_urls = [url for url in fetcher.urls() if "jobdetail.ftl" in url]
+    assert sorted(detail_urls) == [scraper.job_url(job_id) for job_id in "1234"]
