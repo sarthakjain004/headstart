@@ -270,9 +270,9 @@ class TrakstarScraper(BaseScraper):
                 "unreachable — keeping the capped HTML list"
             )
         # Each job page's JSON-LD JobPosting (description + datePosted), fetched concurrently
-        # (bounded); failures -> None. The detail pages sit behind DataDome, so the async path
-        # pins the multiplexing width to the gentle _DETAIL_WORKERS rather than the global
-        # HEADSTART_H2_STREAMS.
+        # (bounded); a failed page is simply absent. The detail pages sit behind DataDome, so the
+        # async path pins the multiplexing width to the gentle _DETAIL_WORKERS rather than the
+        # global HEADSTART_H2_STREAMS.
         # The tech gate (ADR-0017), on the cards rather than the codes: `parse` reads `_TITLE`
         # and `_DEPT` out of this same block and the JSON-LD overrides neither, so the gate's
         # verdict is the one `filter_tech` will reach. Each detail page is a DataDome-guarded

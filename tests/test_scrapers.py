@@ -3654,9 +3654,8 @@ def test_trakstar_fetch_raw_uses_feed_when_capped_and_skips_the_detail_pass():
     jobs = scraper.parse(raw, SCRAPED_AT)
     assert len(jobs) == 2
     assert jobs[0].id == "trakstar:acme:fk0abc1"
-    assert (
-        scraper.truncated is None
-    )  # the feed answered in full -- this Board is not short
+    # the feed answered in full -- this Board is not short
+    assert scraper.truncated is None
 
 
 @pytest.mark.parametrize("async_fanout", ["1", "0"])
@@ -9347,19 +9346,29 @@ def test_successfactors_marks_truncation_when_a_page_loads_but_has_no_title(
     assert scraper.truncated and "unreadable" in scraper.truncated
 
 
-def _eightfold_sitemap_board(readable_ids, listed_ids=(1, 2, 3)):
-    """An Eightfold Board on its sitemap fallback, listing ``listed_ids``; the job page of each
-    of ``readable_ids`` carries a JobPosting, every other one 404s."""
-    job_url = "https://acme.eightfold.ai/careers/job/{}".format
+def _eightfold_job_page_url(position_slug):
+    return f"https://acme.eightfold.ai/careers/job/{position_slug}"
+
+
+def _eightfold_sitemap_board(readable_slugs, listed_slugs=(1, 2, 3)):
+    """An Eightfold Board on its sitemap fallback, listing the job page of each of
+    ``listed_slugs``; the page of each of ``readable_slugs`` carries a JobPosting and every other
+    one 404s."""
     posting = (
         '<script type="application/ld+json">'
         '{"@type": "JobPosting", "title": "Engineer"}</script>'
     )
-    sitemap = "".join(f"<url><loc>{job_url(i)}</loc></url>" for i in listed_ids)
+    sitemap = "".join(
+        f"<url><loc>{_eightfold_job_page_url(position_slug)}</loc></url>"
+        for position_slug in listed_slugs
+    )
     return _eightfold_board(
         job_pages={
             "https://acme.eightfold.ai/careers/sitemap.xml": f"<urlset>{sitemap}</urlset>",
-            **{job_url(i): posting for i in readable_ids},
+            **{
+                _eightfold_job_page_url(position_slug): posting
+                for position_slug in readable_slugs
+            },
         }
     )
 
@@ -9370,7 +9379,7 @@ def test_eightfold_sitemap_fallback_marks_truncation_when_pages_are_lost(
 ):
     """Same ADR-0053 hole on the surface eightfold takes whenever the API 403s."""
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
-    scraper, _fetcher = _eightfold_sitemap_board(readable_ids=(1, 3))
+    scraper, _fetcher = _eightfold_sitemap_board(readable_slugs=(1, 3))
 
     records = scraper._sitemap_records()
 
@@ -9492,31 +9501,22 @@ def test_successfactors_does_not_mark_a_board_whose_pages_all_arrived(monkeypatc
 def test_eightfold_sitemap_fallback_keeps_each_url_with_its_own_page():
     """`_job_urls` dedupes URLs, not position ids, so one position can be listed twice; each URL
     keeps the page it was read from rather than sharing whichever of the two arrived."""
-    readable = "https://acme.eightfold.ai/careers/job/7-engineer-pune"
-    unreadable = "https://acme.eightfold.ai/careers/job/7-engineer-remote"
-    posting = (
-        '<script type="application/ld+json">'
-        '{"@type": "JobPosting", "title": "Engineer"}</script>'
-    )
-    listing = "".join(f"<url><loc>{url}</loc></url>" for url in (readable, unreadable))
-    scraper, _fetcher = _eightfold_board(
-        job_pages={
-            "https://acme.eightfold.ai/careers/sitemap.xml": f"<urlset>{listing}</urlset>",
-            readable: posting,
-        }
+    scraper, _fetcher = _eightfold_sitemap_board(
+        readable_slugs=("7-engineer-pune",),
+        listed_slugs=("7-engineer-pune", "7-engineer-remote"),
     )
 
     records = scraper._sitemap_records()
 
     assert {record["url"]: record["fields"] is None for record in records} == {
-        readable: False,
-        unreadable: True,
+        _eightfold_job_page_url("7-engineer-pune"): False,
+        _eightfold_job_page_url("7-engineer-remote"): True,
     }
 
 
 def test_eightfold_sitemap_fallback_does_not_mark_a_complete_board():
     """Same negative direction on eightfold's fallback surface."""
-    scraper, _fetcher = _eightfold_sitemap_board(readable_ids=(1,), listed_ids=(1,))
+    scraper, _fetcher = _eightfold_sitemap_board(readable_slugs=(1,), listed_slugs=(1,))
 
     records = scraper._sitemap_records()
 

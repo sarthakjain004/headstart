@@ -179,7 +179,7 @@ class DetailRequest:
     itself, so :meth:`BaseScraper.run_detail_pass` can send it over whichever transport is in
     force — the thread pool or the multiplexed session — from this one description. Before this
     existed every Scraper wrote each detail request twice, once per transport, and the copies could
-    drift apart unseen — eightfold's already sends a header on one path only.
+    drift apart unseen — eightfold's sent its Referer on one path only until it moved onto this.
 
     ``options`` carries any further keyword for the fetch seam unchanged — ``json=``, ``data=``,
     ``allow_redirects=``, ``retry_on=``, ``marks_wall=``.
