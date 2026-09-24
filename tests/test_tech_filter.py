@@ -864,6 +864,9 @@ def test_version_4_domain_words_stay_qualified(title):
         "Cashier (Front End)",
         "Cashier Assistant (Front End)",
         "Cashier - Front End",
+        "Cashier — Front End",
+        "Cashier | Front End",
+        "FRONT END/CASHIER",
         "Front End Associate/Cashier -Retail - Lead Cashier",
     ],
 )

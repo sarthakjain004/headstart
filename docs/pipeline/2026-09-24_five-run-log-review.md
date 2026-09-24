@@ -48,6 +48,19 @@ minutes is under its 15-minute floor. With both gone the scrape stage falls from
 clock from ~47 to ~37 minutes. That figure is a projection from these runs' own shard times, not a
 measurement.
 
+**Fixed in #622 (`TECH_FILTER_VERSION` 5).** Rule 0 now sets aside a cashier on either side of
+"front end". A second, larger live sample used Jibe's `keywords=front end` filter: of 2,500 hits,
+the gate kept exactly two titles, `Cashier (Front End)` ×800 and `Cashier Assistant (Front End)`
+×413. Old and new gates compared two-sided:
+
+| corpus | out | in |
+|---|---|---|
+| served table v654 (514,163 rows; local snapshot, a day stale, no Jibe rows yet) | −148, all cashier titles, read by hand | 0 |
+| pre-filter corpus (1,135,079 postings: July scrape + Indeed harvest) | −3 | 0 |
+| blind hold-out | unchanged: recall 84.6%, precision 82.0% | |
+
+`jibe:petsmart` and the gate's 15-minute floor are not part of that change.
+
 ### 2. HCLTech: the `sitemal.xml` fallback serves ~1,210 unavailable postings per run (HIGH)
 
 `successfactors:careers.hcltech.com` is priority #2 (4,648 tech jobs). Every run, 1,204–1,225 of
