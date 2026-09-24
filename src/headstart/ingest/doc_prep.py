@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import re
 
+from headstart import eightfold_backing
 from headstart.embedding_conventions import DOC_PREFIX
 from headstart.ingest.derived_meta import derive
 
@@ -50,6 +51,7 @@ META_FIELDS = (
     "salary",
     "department",
     "url",
+    "requisition",
     "posted_at",
 )
 
@@ -60,6 +62,21 @@ META_FIELDS = (
 # listed here breaks every add. Kept beside `to_meta` because that is where the temptation is.
 # `_derivations_version` is update_meta's resumable sweep checkpoint (ADR-0176).
 PLANNER_ONLY_FIELDS = ("has_description", "_derivations_version")
+
+
+def stored_facts(job: dict) -> dict:
+    """The :data:`META_FIELDS` a corpus row puts in the store, as :func:`to_meta` and
+    ``update_meta``'s facts refresh both read them — the one place a fact is scoped on its way in.
+
+    ``requisition`` is kept only on a Board the Eightfold pairs name (ADR-0210): nothing else can
+    ever match on it, and a new value in the store rewrites the served row, vector and all, so
+    stamping every row of the six ATSes that state one would rewrite ~216k rows on the first run
+    for no dedup. Widen it by adding pairs, or by dropping this check.
+    """
+    facts = {field: job.get(field) for field in META_FIELDS}
+    if facts["requisition"] and not eightfold_backing.in_scope(job["id"]):
+        facts["requisition"] = None
+    return facts
 
 
 def bucket_for(n_tokens: int) -> int:
@@ -305,7 +322,7 @@ def to_meta(job: dict) -> dict:
     The derived fields are re-computable from the facts beside them, which is what lets
     ``update_meta`` repair them in place later; see :data:`DERIVATIONS_VERSION`.
     """
-    meta = {field: job.get(field) for field in META_FIELDS}
+    meta = stored_facts(job)
     # Whether the Doc we are about to embed actually carried a description (ADR-0050). Recorded
     # because a vector built from a bare title is indistinguishable from a good one afterwards,
     # and `embed_plan` skips by id — so without this the degradation is permanent and invisible.

@@ -229,6 +229,12 @@ def load_for(liveness_dir: str | Path, ats: str) -> dict[str, str]:
     return load(path_for(liveness_dir, ats))
 
 
+def signals_for(liveness_dir: str | Path, ats: str) -> dict[str, str]:
+    """This ATS's ``{duplicate: signal}`` map — why each Board is buried, keyed as :func:`load`
+    keys it (lowercased). Empty when the ATS has no ledger."""
+    return _column(path_for(liveness_dir, ats), "signal")
+
+
 def load(path: str | Path) -> dict[str, str]:
     """``{duplicate_slug: canonical_slug}``, or empty when no ledger exists for this ATS.
 
@@ -241,14 +247,19 @@ def load(path: str | Path) -> dict[str, str]:
     Missing-file-is-empty rather than an error: every ATS reads this on the scrape path and only
     the ones that have been scanned have a file. A read that raised would make adding an ATS a
     two-step change."""
+    return _column(path, "canonical")
+
+
+def _column(path: str | Path, column: str) -> dict[str, str]:
+    """``{lowercased duplicate: that row's column}``, or empty when there is no ledger."""
     path = Path(path)
     if not path.exists():
         return {}
     with open(path, newline="", encoding="utf-8") as fh:
         return {
-            row["duplicate"].lower(): row["canonical"]
+            row["duplicate"].lower(): row[column]
             for row in csv.DictReader(fh)
-            if row.get("duplicate") and row.get("canonical")
+            if row.get("duplicate") and row.get(column)
         }
 
 

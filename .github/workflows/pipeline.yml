@@ -844,6 +844,11 @@ jobs:
         continue-on-error: true
         timeout-minutes: 35
         run: python -m headstart.ingest.update_meta --sweep-budget-seconds 600
+      - name: Stamp this run's time for the ledgers it writes (ADR-0210)
+        # One value for `index prune`'s dedup eviction ledger and `role_trends`' ledger, which run
+        # minutes apart: Trends joins the two on it to add back removals that were never closures.
+        if: needs.scrape-plan.outputs.run == 'true'
+        run: echo "HEADSTART_RUN_TS=$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" >> "$GITHUB_ENV"
       - name: Sync the jobs table
         # `--scraped-boards` explicitly, because it has no default (ADR-0161): the file rides
         # `data/state` through the HF dataset, so a default would let any checkout holding a
@@ -858,10 +863,17 @@ jobs:
         # --board-failures is this run's join ledger from the corpus-state artifact: Boards parole
         # re-confirmed gone leave the keep-set (ADR-0206). If that download failed the file is
         # absent, and prune evicts nothing on its account.
+        # The dedup eviction ledger (ADR-0210) rides `data/state` too, and is published only when
+        # this run's corpus artifact arrived — so without it prune still runs, and the ledger is
+        # not written rather than written to a file nothing uploads.
         if: needs.scrape-plan.outputs.run == 'true'
-        run: >-
-          python -m headstart.ingest.index prune --apply
-          --board-failures data/state/board_failures.csv
+        env:
+          CORPUS: ${{ steps.corpus.outcome }}
+        run: |
+          ledger=()
+          [ "$CORPUS" = "success" ] && ledger=(--dedup-evictions data/state/dedup_evictions.csv)
+          python -m headstart.ingest.index prune --apply \
+            --board-failures data/state/board_failures.csv "${ledger[@]}"
       - name: Drop the store's vectors of unserved Jobs (ADR-0190)
         # After prune, so the table it keeps is final. Needs the corpus, whose ids it also keeps.
         # Never fatal: it rewrites through tmp files (which the upload excludes), so a failure

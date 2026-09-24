@@ -4,6 +4,7 @@ from headstart.models import (
     html_to_text,
     is_remote,
     repaired_mojibake,
+    requisition_of,
 )
 
 
@@ -37,6 +38,7 @@ def test_job_round_trips_to_dict():
         "experience",
         "employment_type",
         "salary",
+        "requisition",
     }
 
 
@@ -124,6 +126,14 @@ def test_job_location_drops_tags_and_lists_lines():
     assert _job(location="  Pune,   India ").location == "Pune, India"
     assert _job(location=" <br> ").location is None
     assert _job(location="&lt;Remote&gt; &#x7c; UK").location == "<Remote> | UK"
+
+
+def test_a_requisition_is_stored_as_trimmed_text_or_none():
+    """Two rows match only on equal strings (ADR-0210), whether the ATS stated a number or text."""
+    assert requisition_of(3560628) == "3560628"
+    assert requisition_of(" R-100 ") == "R-100"
+    assert requisition_of("") is None
+    assert requisition_of(None) is None
 
 
 def test_job_repairs_utf8_read_as_latin1_in_its_display_text():

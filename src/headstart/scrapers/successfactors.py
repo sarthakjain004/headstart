@@ -81,7 +81,7 @@ from urllib.parse import unquote
 
 from headstart import http, log
 from headstart.fetcher import Fetcher
-from headstart.models import Job, html_to_text, is_remote
+from headstart.models import Job, html_to_text, is_remote, requisition_of
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 from headstart.scrapers.job_posting_jsonld import find_job_posting, job_posting_fields
 
@@ -111,6 +111,12 @@ _ATS_TOKEN = re.compile(r"^ATS_[A-Z0-9_]+$")
 
 _ITEMPROP_TITLE = re.compile(r'<[^>]*itemprop="title"[^>]*>([^<]*)')
 _OG_TITLE = re.compile(r'property="og:title"\s+content="([^"]*)"')
+#: The requisition every RMK job page states, then its locale: `"internalId":"41525-en_US"`. Only
+#: the id is kept, so a requisition's pages in two locales carry one id (ADR-0210). It rides the
+#: page the detail pass already fetches, so it costs no request. Measured 2026-09-24: 484 of 510
+#: pages across 27 Boards, classic and CSB-rendered alike; all 26 misses were one tenant's
+#: (careers.bsp.gov.ph), and one careers.dolby.com page omitted it for about a minute.
+_INTERNAL_ID = re.compile(r'"internalId"\s*:\s*"([^"-]+)')
 _TITLE_TAG = re.compile(r"<title>([^<|]*)", re.IGNORECASE)
 _DESC_OPEN = re.compile(
     r'<(span|div)\b[^>]*itemprop="description"[^>]*>', re.IGNORECASE
@@ -597,6 +603,7 @@ class SuccessFactorsScraper(BaseScraper):
                     scraped_at=scraped_at,
                     description=html_to_text(fields.get("description")),
                     employment_type=fields.get("employment_type"),
+                    requisition=fields.get("requisition"),
                 )
             )
         return jobs
@@ -813,6 +820,8 @@ def _page_fields(page: str, url: str | None = None) -> dict[str, Any]:
         fields["location"] = _location_from_street_address(page)
     if not fields.get("posted_at"):
         fields["posted_at"] = _csb_posted_at(page)
+    requisition = _INTERNAL_ID.search(page)
+    fields["requisition"] = requisition_of(requisition and requisition.group(1))
     return fields
 
 

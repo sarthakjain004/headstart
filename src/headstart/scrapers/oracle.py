@@ -43,7 +43,7 @@ import json
 from typing import Any
 
 from headstart.fetcher import Fetcher
-from headstart.models import Job, host_of, html_to_text, is_remote
+from headstart.models import Job, host_of, html_to_text, is_remote, requisition_of
 from headstart.scrapers.base import BaseScraper, DetailLost, DetailRequest
 
 #: The API's own maximum `limit`. Requesting more is silently clamped to it — 300, 500 and 1000
@@ -364,6 +364,9 @@ class OracleScraper(BaseScraper):
                         or r.get("JobType")
                         or r.get("JobSchedule")
                     ),
+                    # What an Eightfold site in front of this Board states as `displayJobId`
+                    # (ADR-0210).
+                    requisition=requisition_of(job_id),
                 )
             )
         return jobs

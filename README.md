@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml)
 [![pipeline](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml)
-[![ADRs](https://img.shields.io/badge/ADRs-194-blue)](./docs/adr/)
+[![ADRs](https://img.shields.io/badge/ADRs-200-blue)](./docs/adr/)
 [![Python](https://img.shields.io/badge/python-3.12+-blue)](./pyproject.toml)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue)](./LICENSE)
 
@@ -42,7 +42,7 @@ and normalizes every posting into a single `Job`. You never learn an ATS's name.
 
 ### Everything above is measured.
 
-And every limit ships next to the result it qualifies. 194 ADRs record the options that lost,
+And every limit ships next to the result it qualifies. 200 ADRs record the options that lost,
 not just the one that won. When a later measurement contradicts an earlier one, the ADR is
 amended in place rather than quietly edited.
 
@@ -145,7 +145,7 @@ hitting the host, not by reading code. This is a rule with a scar behind it: a "
 to tell dead from empty" guard looked obviously correct and died on contact, because 9 of 12 boards
 the ledger already called dead answered `GET /` with 200. Findings carry their sample size.
 
-**Record the rejected options, not just the chosen one.** 194 ADRs, **131** carrying a heading that
+**Record the rejected options, not just the chosen one.** 200 ADRs, **135** carrying a heading that
 weighs alternatives (`grep -lEi '^#{2,3} .*(alternativ|options? (considered|rejected)|rejected)'
 docs/adr/`). When a later measurement contradicts an earlier one the ADR is amended or superseded
 in place rather than quietly edited — **57** name an `Amends:` / `Supersedes:` relationship in
@@ -341,6 +341,7 @@ fails if this table drifts from it.
 | `salary_known` | bool | whether `min_salary_annual` is known; materialized and bitmap-indexed for the “Shows salary” filter (ADR-0173) |
 | `department` | string | raw ATS text. Not served to the API and not currently read from this table by any filter, sort, or downstream logic — its one real consumer is the tech filter, which reads it off the *raw scrape record*, before a row ever reaches this table. See the note below |
 | `url` | string | the job-detail link |
+| `requisition` | string | the ATS's own requisition id, kept only on rows whose Board `data/validate/eightfold_backing.csv` names — an Eightfold career site, or a Board behind one (any site of a Workday tenant). On an Eightfold row it is the id its backing Board states (`atsJobId`, or `displayJobId` over Oracle); on a backing row, that Board's own. **Nullable**: null everywhere else and on rows not re-scraped since the column arrived, and null never matches. Not served to the API; `index sync`/`prune` read it to serve a posting once when an Eightfold career site and its backing Board both list it (ADR-0210) |
 | `posted_at` | string | **the company's** posting date, straight from the ATS — inconsistent in shape across ATSes (`2026-01-09T00:46:44.672+00:00`, `03-Jul-2026`) and null on a meaningful share of rows |
 | `posted_at_comparable` | bool | whether `posted_at` has the `____-__-__` prefix the date filters can compare; materialized and bitmap-indexed (ADR-0173) |
 | `first_seen` | string | **ours** — ISO-8601 UTC, stamped when `index sync` first adds the row. Write-once, and null on rows added before the column existed (ADR-0031) |
@@ -372,6 +373,7 @@ Two rows, fetched live from the index:
   "min_salary_annual": 180000, "max_salary_annual": 300000, "salary_currency": "USD",
   "salary_known": true,
   "url": "https://jobs.ashbyhq.com/character/b063d44b-e1fd-4777-8079-573706a589a0",
+  "requisition": null,                                    // null off the paired Boards
   "posted_at": "2025-12-08T19:38:59.867+00:00",
   "posted_at_comparable": true,
   "first_seen": null
@@ -392,6 +394,7 @@ Two rows, fetched live from the index:
   "min_salary_annual": 108000, "max_salary_annual": 125000, "salary_currency": null,
   "salary_known": true,
   "url": "https://jobs.smartrecruiters.com/xplor/744000140844907",
+  "requisition": null,                                    // null off the paired Boards
   "posted_at": "2026-07-31T07:57:53.720Z",                 // not every ATS's date is ISO
   "posted_at_comparable": true,
   "first_seen": "2026-08-20T16:19:41+00:00"
@@ -523,7 +526,7 @@ your own. The auth model and failure modes are in
 
 ## More
 
-- **Design decisions:** [`docs/adr/`](./docs/adr/) — 194 numbered ADRs (the option picked, the
+- **Design decisions:** [`docs/adr/`](./docs/adr/) — 200 numbered ADRs (the option picked, the
   ones rejected, and why).
 - **Domain glossary:** [`CONTEXT.md`](./CONTEXT.md) — the ubiquitous language (ATS, Board, Slug,
   Job, Discovery, Liveness, Feed, Doc, Bucket, GitHub VM…).

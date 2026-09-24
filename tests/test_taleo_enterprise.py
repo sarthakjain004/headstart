@@ -336,6 +336,23 @@ def test_listing_row_carries_the_contest_number(monkeypatch):
     assert [(j["id"], j["contest_no"]) for j in jobs] == [("978472", "111166")]
 
 
+def test_the_requisition_is_the_contest_number():
+    """Stored on the Job, so a row on this section can be matched to the Eightfold site's copy
+    of the same posting (ADR-0210)."""
+    item = {
+        "id": "978472",
+        "contest_no": "111166",
+        "title": "Registered Nurse",
+        "location": "Middletown",
+        "department": None,
+        "employment_type": None,
+        "posted_at": None,
+        "url": "https://php.taleo.net/careersection/40/jobdetail.ftl?job=978472",
+    }
+    (job,) = TaleoEnterpriseScraper(BOARD).parse([(item, None)], "2026-09-24")
+    assert job.requisition == "111166"
+
+
 def _requisition_page(fields: dict[str, str]) -> str:
     """A jobdetail page whose `_hlid` labels name ``fields``' keys, in the live shape."""
     labels = ",".join(repr(label) for label in fields)

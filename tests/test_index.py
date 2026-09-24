@@ -29,6 +29,7 @@ import numpy as np
 
 import headstart.ingest.index as idx
 from headstart import employment_type_filter
+from headstart.ingest import RUN_TS_ENV
 
 _DIM = 4
 
@@ -625,6 +626,28 @@ def test_sync_refreshes_materialized_search_flags_with_their_sources(
     assert row["posted_at_comparable"] is True
 
 
+def test_a_requisition_reaches_a_row_indexed_before_the_column_existed(
+    tmp_path, monkeypatch
+):
+    """The fill path for `requisition` (ADR-0210): `update_meta` writes the re-scraped fact into
+    the store, and sync's metadata refresh carries it into a row the table already held — on a
+    table frozen before the column existed. A row whose Board was not re-scraped keeps null."""
+    ids = ["greenhouse:a:1"]
+    _sync(tmp_path, monkeypatch, ids)
+    db = lancedb.connect(str(tmp_path / "db"))
+    db.open_table(idx.PROD_TABLE).drop_columns(["requisition"])  # a table from before
+
+    _sync(tmp_path, monkeypatch, ids)
+    row = db.open_table(idx.PROD_TABLE).search().limit(1).to_list()[0]
+    assert row["requisition"] is None  # no stamp yet: null, never matched
+
+    _sync(tmp_path, monkeypatch, ids, meta_over={"requisition": "3560628"})
+    rows = db.open_table(idx.PROD_TABLE).search().limit(10).to_list()
+    assert [(r["id"], r["requisition"]) for r in rows] == [
+        ("greenhouse:a:1", "3560628")
+    ]
+
+
 # ---- the description column (ADR-0104) ----
 
 
@@ -1019,6 +1042,7 @@ def _prune_args(tmp_path, monkeypatch):
         apply=True,
         limit=None,
         board_failures=str(tmp_path / "board_failures.csv"),
+        dedup_evictions=None,
     )
 
 
@@ -1114,6 +1138,104 @@ def test_prune_collapses_a_served_workday_requisition_onto_the_site_the_ledger_r
     )
     assert idx.prune(args) == 0
     assert set(_rows(tmp_path)) == {f"{_BIG}:R-100"}
+
+
+_FRONT, _BEHIND = "eightfold:jobs.acme.com:1099", "workday:acme/Careers:R-100"
+
+
+def _pair_boards(monkeypatch):
+    """An Eightfold site in front of a Workday site (ADR-0210), both live."""
+    monkeypatch.setattr(
+        idx.eightfold_backing,
+        "load",
+        lambda: {"jobs.acme.com": ("workday:acme/careers",)},
+    )
+    floor = {f"lever:f{i}" for i in range(1200)}  # clears `_MIN_KEEP_BOARDS`
+    monkeypatch.setattr(
+        idx,
+        "live_keep_set",
+        lambda ledger: {"eightfold:jobs.acme.com", "workday:acme/Careers"} | floor,
+    )
+
+
+def test_sync_serves_a_posting_once_across_an_eightfold_site_and_its_backing_board(
+    tmp_path, monkeypatch
+):
+    _pair_boards(monkeypatch)
+    _sync(tmp_path, monkeypatch, [_FRONT, _BEHIND], meta_over={"requisition": "R-100"})
+    assert set(_rows(tmp_path)) == {_BEHIND}
+
+
+def test_prune_drops_the_eightfold_copy_once_both_rows_carry_the_requisition(
+    tmp_path, monkeypatch
+):
+    """The rows served before the rule, stamped as their Boards are re-scraped: the refresh
+    carries the stamp into the table, and prune reads it there."""
+    _sync(tmp_path, monkeypatch, [_FRONT, _BEHIND])  # no pairs yet: both served
+    _pair_boards(monkeypatch)
+    _sync(tmp_path, monkeypatch, [_FRONT, _BEHIND], meta_over={"requisition": "R-100"})
+    assert set(_rows(tmp_path)) == {
+        _FRONT,
+        _BEHIND,
+    }  # sync adds nothing, removes nothing
+    assert idx.prune(_prune_args_keeping_the_stub(tmp_path)) == 0
+    assert set(_rows(tmp_path)) == {_BEHIND}
+
+
+def test_prune_records_each_dedup_eviction_under_its_rule_and_the_run_stamp(
+    tmp_path, monkeypatch
+):
+    """The dedup eviction ledger (ADR-0210): the Eightfold copy is recorded under its rule and
+    the run stamp `role_trends` will use; an off-Board row on a Board no alias ledger buries is an
+    ordinary eviction and is not recorded."""
+    dead = "greenhouse:gone:1"
+    _sync(tmp_path, monkeypatch, [_FRONT, _BEHIND, dead])
+    _pair_boards(monkeypatch)
+    _sync(
+        tmp_path,
+        monkeypatch,
+        [_FRONT, _BEHIND, dead],
+        meta_over={"requisition": "R-100"},
+    )
+    monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T06:00:00+00:00")
+    args = _prune_args_keeping_the_stub(tmp_path)
+    args.dedup_evictions = str(tmp_path / "state" / "dedup_evictions.csv")
+    assert idx.prune(args) == 0
+    assert set(_rows(tmp_path)) == {_BEHIND}
+    assert (tmp_path / "state" / "dedup_evictions.csv").read_text(encoding="utf-8") == (
+        "ts,board,count,rule\n"
+        "2026-09-25T06:00:00+00:00,eightfold:jobs.acme.com,1,backing-requisition\n"
+    )
+
+
+def test_prune_records_a_row_on_an_aliased_board_under_its_signal(
+    tmp_path, monkeypatch
+):
+    buried = "successfactors:arvestajobs.eu:7"
+    _sync(tmp_path, monkeypatch, [buried, "greenhouse:a:1"])
+    monkeypatch.setattr(
+        idx,
+        "aliased_boards",
+        lambda ledger: {"successfactors:arvestajobs.eu": "redirect"},
+    )
+    args = _prune_args(tmp_path, monkeypatch)
+    args.dedup_evictions = str(tmp_path / "dedup_evictions.csv")
+    monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T06:00:00+00:00")
+    assert idx.prune(args) == 0
+    assert (tmp_path / "dedup_evictions.csv").read_text(encoding="utf-8").splitlines()[
+        1
+    ] == ("2026-09-25T06:00:00+00:00,successfactors:arvestajobs.eu,1,alias:redirect")
+
+
+def _prune_args_keeping_the_stub(tmp_path):
+    return argparse.Namespace(
+        db=str(tmp_path / "db"),
+        ledger=str(tmp_path / "liveness"),
+        apply=True,
+        limit=None,
+        board_failures=None,
+        dedup_evictions=None,
+    )
 
 
 def test_compact_always_leaves_a_record(tmp_path):
