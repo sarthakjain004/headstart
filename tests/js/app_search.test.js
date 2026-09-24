@@ -719,3 +719,14 @@ test('a company hand-off rides in the hash, so a reload keeps it', async () => {
   assert.deepEqual(new URLSearchParams(url.split('?')[1]).getAll('board'), ['workday:citi/2']);
   assert.match(reload.nodes['active'].innerHTML, /<b>Company<\/b> Citi/);
 });
+
+
+test('Back between two hand-offs of one company restores the query it had', async () => {
+  const { t, ctx, nodes } = loadApp(() => []);
+  t.searchCompany(['google:careers.google.com'], 'Google', 'AI / Machine Learning');
+  const ai = ctx.location.hash;
+  t.searchCompany(['google:careers.google.com'], 'Google', 'Data Science');
+  ctx.location.hash = ai;   // what Back does
+  assert.equal(t.readSearchHash(), true);
+  assert.equal(nodes['q'].value, 'AI / Machine Learning');
+});
