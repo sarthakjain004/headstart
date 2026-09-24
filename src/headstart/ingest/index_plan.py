@@ -46,6 +46,19 @@ from headstart.corpus import iter_jobs
 
 _log = log.get(__name__, __spec__)
 
+#: The version of the rules that decide which served rows are duplicates of each other (ADR-0188).
+#: A change to them removes rows that were served before, all in the tick it first runs, and the
+#: Trends chart would draw that as a hiring drop; ``role_trends`` stamps this into the
+#: ADR-0164 epoch ledger so the chart marks it instead. Bump it in the change that alters which
+#: rows count as duplicates: a new grouping in :func:`plan_prune`, or a new alias-ledger signal
+#: (:mod:`headstart.board_aliases`). Don't bump it for a routine alias-ledger rewrite that applies
+#: an existing signal, nor for a ``config.PARKED_BOARDS`` entry, which is a temporary hold rather
+#: than a duplicate rule. The marker lands on the step only because both routes remove rows
+#: through ``index prune``, which has no grace period; a dedup that instead stops emitting ids at
+#: scrape time would drain through ``sync``'s two-scrape grace (ADR-0083) and read as a slow
+#: decline after the marker, so keep new dedup rules on the prune path.
+DEDUP_VERSION = 1
+
 
 @dataclass(frozen=True, slots=True)
 class SyncPlan:
@@ -497,6 +510,8 @@ def scraped_boards(
 
 def plan_prune(index_ids: Iterable[str], keep: set[str]) -> tuple[list[str], list[str]]:
     """Split index ids into ``(evict_off_board, evict_duplicate)``.
+
+    A change to what counts as a duplicate here bumps :data:`DEDUP_VERSION` (ADR-0188).
 
     ``evict_off_board``: Board not in ``keep`` (dead / dropped from the ledger / disabled ATS).
     ``evict_duplicate``: among the survivors, every id but one per ``(lowercased Board, native id)``
