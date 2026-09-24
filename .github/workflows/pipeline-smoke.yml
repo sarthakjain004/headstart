@@ -54,7 +54,7 @@ jobs:
         run: |
           python - <<'PY'
           import json, pathlib
-          from headstart.config import load_active_companies
+          from headstart import scrapable_boards
 
           # Real Boards taken from the committed liveness ledger, not invented slugs: `index prune`
           # evicts every row whose Board is not live in the ledger, so a made-up slug would be
@@ -62,7 +62,7 @@ jobs:
           # the ATS the flap was measured on (its slug is a host, so it also exercises `board_key()`
           # mapping); lever is the cheap control.
           first = {}
-          for c in load_active_companies("data/validate/liveness", min_jobs=0):
+          for c in scrapable_boards.load("data/validate/liveness", min_jobs=0):
               first.setdefault(c.ats, c)
           healthy, flaky = first["lever"], first["eightfold"]
           base = "We build and operate large scale distributed backend systems in Python and Go. "

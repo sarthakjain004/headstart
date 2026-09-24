@@ -5,13 +5,13 @@ The fourth per-board ledger, beside :mod:`headstart.board_priority`,
 **board_key** shape that :func:`headstart.board_identity.board_of` yields — not ``f"{ats}:{slug}"``
 (ADR-0059) — and then **lowercased**, which the other three ledgers are not.
 
-That lowercasing is the whole reason :func:`key_for` exists rather than each caller spelling out
-``board_identity(c).lower()``. Measured against a real store, 1,693 of 13,708 gap Boards — 45,375
-Jobs, 23% of the backlog — matched the live slice only case-insensitively, because the casing baked
-into a Job id and the casing in the liveness ledger need not agree (ADR-0049). It also folds
+That lowercasing is the whole reason :func:`key_for` exists rather than each caller choosing which
+casing of a Board's identity to look up. Measured against a real store, 1,693 of 13,708 gap Boards —
+45,375 Jobs, 23% of the backlog — matched the live slice only case-insensitively, because the casing
+baked into a Job id and the casing in the liveness ledger need not agree (ADR-0049). It also folds
 ADR-0023's case-variant pairs (``.../External`` and ``.../external`` are one Board) into a single
-row instead of two half-counts. :func:`save` and :func:`load` normalise, so a hand-edited or
-older file cannot reintroduce a key no lookup will reach.
+row instead of two half-counts. :func:`save` and :func:`load` normalise, so a hand-edited or older
+file cannot reintroduce a key no lookup will reach.
 
 A row means *this Board holds N embedded Jobs whose description the ADR-0050 store does not
 settle*. Those Jobs cannot have their derived columns repaired, because a re-derivation without
@@ -32,16 +32,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from headstart.config import CompanyRef
+    from headstart.scrapable_boards import ScrapableBoard
 
 FIELDS = ("board", "unsettled", "updated_at")
 
 
-def key_for(company: CompanyRef) -> str:
+def key_for(board: ScrapableBoard) -> str:
     """This Board's key in the ledger — the one form every reader and writer must agree on."""
-    from headstart.board_identity import board_identity, lower_key
-
-    return lower_key(board_identity(company))
+    return board.lowercase_identity
 
 
 def load(path: str | Path) -> dict[str, int]:

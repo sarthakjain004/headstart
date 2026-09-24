@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from headstart import log
-from headstart.config import load_active_companies, load_companies
+from headstart import log, scrapable_boards
+from headstart.config import load_companies
 from headstart.harvest import build_feed, scrape_all, write_feed
 from headstart.tech_filter import filter_jobs
 
@@ -26,7 +26,7 @@ def main() -> None:
     # the ledger hasn't been generated yet.
     using_ledger = any(_LEDGER.glob("*.csv"))
     companies = (
-        load_active_companies(_LEDGER) if using_ledger else load_companies(_CONFIG)
+        scrapable_boards.load(_LEDGER) if using_ledger else load_companies(_CONFIG)
     )
 
     # The dashboard feed docs/jobs.json is rebuilt from the per-ATS JSONL (the source of truth) and

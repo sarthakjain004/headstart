@@ -400,7 +400,8 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
 
 - `src/headstart/` — shared library, used by both the pipeline and the curated feed: `models.py`
   (Job + normalization), `scrapers/` (45 per-ATS + `base`/`registry`), `http.py` (the pooled
-  reliable-fetch seam), `config.py`, `harvest.py` (the scrape engine), `liveness.py`, `corpus.py`,
+  reliable-fetch seam), `config.py`, `scrapable_boards.py` (which Boards a run may scrape,
+  ADR-0191), `harvest.py` (the scrape engine), `liveness.py`, `corpus.py`,
   `tech_filter.py` (ADR-0017), `experience.py`, `salary.py` (ADR-0082), `geo.py`, `remote.py`,
   `company_name.py` (ADR-0114), `search.py` (shared embed/search constants + filter builder),
   `facets.py` (ADR-0084), `board_priority.py` (ADR-0022), `board_cost.py` (measured scrape
