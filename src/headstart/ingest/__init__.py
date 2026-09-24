@@ -45,6 +45,8 @@ here, and ``alerts`` is not the feed::
     derived_meta   The four field-extractors composed into a Job's derived meta keys, shared
                    by doc_prep.to_meta and update_meta.refresh_row (ADR-0146)
     doc_prep       Doc build / English gate / typed metadata, shared by embed_run and embed_plan
+    held_refetch   Which held descriptions the next scrape fetches again (ADR-0211), used by
+                   update_descriptions
     index_plan     Pure add-evict and prune planners for the jobs table (no LanceDB import)
     observability  Step summaries, the typed ``ShardReport`` round trip, and the error summary
                    (the run-context line moved to ``headstart.log.context``, which
@@ -111,6 +113,13 @@ UNCONFIRMED_PATH = REPO_ROOT / "data" / "state" / "unconfirmed_ids.txt"
 # before the last replacement (ADR-0207). Written by `update_descriptions`, rewritten in full each
 # run. It lists only Jobs that have changed at least once.
 DESCRIPTION_CHANGES_PATH = REPO_ROOT / "data" / "state" / "description_changes.tsv.gz"
+
+# The ADR-0211 re-fetch rotation's two files, both written by `update_descriptions` and
+# rewritten in full each run: the UTC hour a fetch last reached each held Job of the rotated
+# ATSes, and the held Jobs the published skip-list left out, which the next run reads back to
+# tell a due Job that was asked for and came back empty from one that was never asked for.
+DESCRIPTION_CHECKED_PATH = REPO_ROOT / "data" / "state" / "description_checked.tsv.gz"
+REFETCH_DUE_PATH = REPO_ROOT / "data" / "state" / "refetch_due.txt"
 
 
 def read_id_list(path: Path) -> set[str]:

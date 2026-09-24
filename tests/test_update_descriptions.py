@@ -11,7 +11,9 @@ from __future__ import annotations
 import gzip
 import json
 import sys
+from datetime import UTC, datetime, timedelta
 
+from headstart.ingest import held_refetch
 from headstart.ingest import update_descriptions as ud
 
 
@@ -394,6 +396,10 @@ def test_only_already_embedded_jobs_are_queued_to_rederive(tmp_path, monkeypatch
             str(prior_meta),
             "--changes",
             str(tmp_path / "changes.tsv.gz"),
+            "--checked",
+            str(tmp_path / "checked.tsv.gz"),
+            "--refetch-due",
+            str(tmp_path / "refetch_due.txt"),
         ],
     )
     ud.main()
@@ -434,6 +440,10 @@ def test_main_summarises_descriptions_restored_and_still_unknown(tmp_path, monke
             str(tmp_path / "absent-meta.jsonl"),
             "--changes",
             str(tmp_path / "changes.tsv.gz"),
+            "--checked",
+            str(tmp_path / "checked.tsv.gz"),
+            "--refetch-due",
+            str(tmp_path / "refetch_due.txt"),
         ],
     )
 
@@ -443,3 +453,75 @@ def test_main_summarises_descriptions_restored_and_still_unknown(tmp_path, monke
     assert "**1** description restored from the store" in text
     assert "**1** description learned from fresh detail fetches" in text
     assert "**1** Job still has an unknown description" in text
+
+
+def _rotation_run(tmp_path, monkeypatch, corpus: list[dict], at) -> None:
+    """One `update_descriptions` run over an eightfold corpus, with every path in tmp_path."""
+    monkeypatch.setattr(held_refetch, "now", lambda: at)
+    _corpus(tmp_path / "tech" / "eightfold.jsonl", corpus)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "update_descriptions",
+            "--jobs",
+            str(tmp_path / "tech"),
+            "--store",
+            str(tmp_path / "store"),
+            "--held-details",
+            str(tmp_path / "held.txt.gz"),
+            "--pending-rederive",
+            str(tmp_path / "pending.txt"),
+            "--prior-meta",
+            str(tmp_path / "absent-meta.jsonl"),
+            "--changes",
+            str(tmp_path / "changes.tsv.gz"),
+            "--checked",
+            str(tmp_path / "checked.tsv.gz"),
+            "--refetch-due",
+            str(tmp_path / "refetch_due.txt"),
+        ],
+    )
+    assert ud.main() == 0
+
+
+def _skip_list(tmp_path) -> set[str]:
+    with gzip.open(tmp_path / "held.txt.gz", "rt", encoding="utf-8") as fh:
+        return {line.strip() for line in fh if line.strip()}
+
+
+_AT = datetime(2026, 9, 25, 12, tzinfo=UTC)
+_PERIOD = timedelta(days=held_refetch.PERIOD_DAYS)
+
+
+def test_a_held_job_leaves_the_skip_list_a_period_after_its_last_fetch(
+    tmp_path, monkeypatch
+):
+    """ADR-0211. Eightfold skips the detail of a Job whose description is held, so an edit was
+    never fetched again. A held Job whose last fetch is a period old is left off the skip-list,
+    and the next scrape fetches it."""
+    _rotation_run(tmp_path, monkeypatch, [_job("eightfold:acme:1", "Held.")], _AT)
+    assert "eightfold:acme:1" in _skip_list(tmp_path)  # fetched this run
+
+    _rotation_run(
+        tmp_path, monkeypatch, [_job("eightfold:acme:1", None)], _AT + _PERIOD
+    )
+    assert "eightfold:acme:1" not in _skip_list(tmp_path)
+    assert (tmp_path / "refetch_due.txt").read_text().split() == ["eightfold:acme:1"]
+
+
+def test_a_re_fetch_that_comes_back_empty_keeps_the_held_text_and_waits_a_period(
+    tmp_path, monkeypatch
+):
+    """The due Job was asked for and came back empty. Its held text stays (ADR-0050/0089), and
+    it counts as checked, so a posting whose detail always answers empty is not fetched on every
+    scrape."""
+    _rotation_run(tmp_path, monkeypatch, [_job("eightfold:acme:1", "Held.")], _AT)
+    later = _AT + _PERIOD
+    _rotation_run(tmp_path, monkeypatch, [_job("eightfold:acme:1", None)], later)
+    _rotation_run(tmp_path, monkeypatch, [_job("eightfold:acme:1", None)], later)
+
+    assert ud.read_store(tmp_path / "store" / "eightfold") == {
+        "eightfold:acme:1": "Held."
+    }
+    assert "eightfold:acme:1" in _skip_list(tmp_path)

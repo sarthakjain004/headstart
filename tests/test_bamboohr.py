@@ -347,3 +347,10 @@ def test_department_map_has_no_entry_for_a_position_before_any_department_header
         "</div>"
     )
     assert _department_map(page) == {}
+
+
+def test_bamboohr_company_info_that_is_not_the_json_leaves_the_slug():
+    scraper = BambooHRScraper("cintel")
+    assert scraper.company_from_page("<html>gone</html>") is None
+    assert scraper.company_from_page('{"result": null}') is None
+    assert scraper.company_from_page('{"result": {"name": 7}}') is None

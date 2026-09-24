@@ -91,11 +91,11 @@ def test_a_board_title_yields_the_company_name(ats, title, slug, expected):
         # names are ordinary and clean: no separator, no label, no hostname, so nothing else in
         # `from_title` would refuse them and only the pattern gate can be what does. Without
         # such a row, deleting that gate left the whole suite green.
-        ("freshteam", "Careers at Red Baton", "redbaton"),
-        ("workday", "Bachem", "sap"),
-        ("darwinbox", "Tata Motors", "tatamotors"),
+        ("recruitee", "Careers at Red Baton", "redbaton"),
+        ("oracle", "Bachem", "sap"),
+        ("workable", "Tata Motors", "tatamotors"),
         ("greenhouse", "Stripe", "stripe"),
-        ("workday", "Careers at Anything", "pwc"),
+        ("icims", "Careers at Anything", "pwc"),
         # nothing to read
         ("lever", None, "acme"),
         ("lever", "", "acme"),
@@ -485,3 +485,170 @@ def test_settled_keeps_a_stated_name_and_humanises_an_identifier(monkeypatch):
 
 def test_a_curated_name_overrides_every_source():
     assert settled("Some Title", "gmv", "cornerstone:gmv") == "GMV"
+
+
+@pytest.mark.parametrize(
+    ("ats", "stated", "slug", "expected"),
+    [
+        # Each observed live on an affected Board, 2026-09-24.
+        ("freshteam", "Careers - KreditBee", "krazybee", "KreditBee"),
+        ("freshteam", "Careers - Jobconversion, LLC", "abnhire", "Jobconversion, LLC"),
+        (
+            "personio",
+            "Jobs at 7Learnings GmbH",
+            "7learnings.jobs.personio.de",
+            "7Learnings GmbH",
+        ),
+        (
+            "trakstar",
+            (
+                "Planate Management Group jobs | Planate Management Group openings | "
+                "Planate Management Group careers"
+            ),
+            "planate",
+            "Planate Management Group",
+        ),
+    ],
+)
+def test_a_field_or_page_the_board_states_yields_its_name(ats, stated, slug, expected):
+    assert from_title(ats, stated, slug) == expected
+
+
+@pytest.mark.parametrize(
+    ("ats", "stated", "slug"),
+    [
+        # freshteam's <title>, which is "Careers" on every Board: not the og:title shape
+        ("freshteam", "Careers", "hotelogix"),
+        # an untranslated personio page: only the English wrapper is read
+        ("personio", "Jobs bei 9elements", "9elements.jobs.personio.de"),
+        # a title-less personio page's wrapper with nothing in it
+        ("personio", "Jobs at", "aarktech.jobs.personio.com"),
+        # Trakstar Hire's pre-rebrand name on a trial tenant (`trakstar:trial101`)
+        (
+            "trakstar",
+            "Recruiterbox jobs | Recruiterbox openings | Recruiterbox careers",
+            "trial101",
+        ),
+        # a trakstar name that carries a separator of its own (`trakstar:elliottlewis`)
+        (
+            "trakstar",
+            "Elliott-Lewis | Sautter Crane | AA Duckett jobs | Elliott-Lewis | …",
+            "elliottlewis",
+        ),
+    ],
+)
+def test_a_page_or_field_with_no_employer_leaves_the_slug(ats, stated, slug):
+    assert from_title(ats, stated, slug) is None
+
+
+@pytest.mark.parametrize(
+    ("ats", "stated", "expected"),
+    [
+        # Each a field observed live on an affected Board, 2026-09-24.
+        ("bamboohr", "Cintel Inc", "Cintel Inc"),
+        ("bamboohr", "Falls Technology ", "Falls Technology"),
+        (
+            "cornerstone",
+            "MACOM Technology Solutions Holdings, Inc.",
+            "MACOM Technology Solutions Holdings, Inc.",
+        ),
+        ("darwinbox", "Zydus Hospitals Group", "Zydus Hospitals Group"),
+        ("zwayam", "Persistent Systems", "Persistent Systems"),
+        # A client record names a unit of its parent with " - ": a field, not a slogan with a
+        # tail to cut, so `from_field` keeps it where `from_title` would refuse it.
+        (
+            "adp",
+            "Gold Medal Environmental - Apple Valley Waste Inc",
+            "Gold Medal Environmental - Apple Valley Waste Inc",
+        ),
+        (
+            "adp_recruiting",
+            "Gold Medal Environmental - Apple Valley Waste Inc",
+            "Gold Medal Environmental - Apple Valley Waste Inc",
+        ),
+        ("ripplehire", "7 - Eleven", "7 - Eleven"),
+    ],
+)
+def test_a_field_source_names_its_board(ats, stated, expected):
+    assert from_field(ats, stated) == expected
+
+
+@pytest.mark.parametrize(
+    ("ats", "stated"),
+    [
+        ("bamboohr", "BambooHR"),
+        ("cornerstone", "Cornerstone OnDemand"),
+        ("darwinbox", "Darwinbox"),
+        # zwayam's own test tenants, and the openings.co template's placeholder
+        ("zwayam", "Hiremate Test 1"),
+        ("zwayam", "SST Test"),
+        ("zwayam", "Talent SST"),
+        ("zwayam", "TechCorp"),
+        ("ripplehire", "RippleHire"),
+    ],
+)
+def test_a_field_source_refuses_its_vendor_and_test_tenants(ats, stated):
+    assert from_field(ats, stated) is None
+
+
+def test_the_title_path_still_cuts_a_spaced_hyphen():
+    name = "Gold Medal Environmental - Apple Valley Waste Inc"
+    assert from_title("lever", name, "goldmedal") is None
+    assert from_title("ripplehire", "7 - Eleven Careers | Latest jobs", "x") is None
+
+
+@pytest.mark.parametrize(
+    ("ats", "stated", "slug", "expected"),
+    [
+        # keka's portal `name`, as tenants typed it (2026-09-24 census)
+        ("keka", "Zypp Electric", "zypp", "Zypp Electric"),
+        ("keka", "Careers at WeDoGood", "wedogood", "WeDoGood"),
+        (
+            "keka",
+            "Career at Coozmoo Digital Solutions",
+            "coozmoo",
+            "Coozmoo Digital Solutions",
+        ),
+        ("keka", "Jobs at Olyv", "smartcoin", "Olyv"),
+        ("keka", "SecPod Careers", "secpod", "SecPod"),
+        # zoho's careers page titles
+        (
+            "zoho",
+            "Jobs at MasonBlue Technologies, LLC",
+            "masonbluesecurity",
+            "MasonBlue Technologies, LLC",
+        ),
+        ("zoho", "Careers @ thinkbridge", "thinkbridgeinc", "thinkbridge"),
+        (
+            "zoho",
+            "Careers at Wedded Wonderland | Join Our Team",
+            "wedded.wonderland",
+            "Wedded Wonderland",
+        ),
+        ("zoho", "Jobs | Aiones", "aiones", "Aiones"),
+        ("zoho", "Rumzer Careers", "rumzer.com", "Rumzer"),
+        (
+            "zoho",
+            "Jobs by Vasudha Business Solutions",
+            "vbs",
+            "Vasudha Business Solutions",
+        ),
+    ],
+)
+def test_an_india_ats_names_its_board(ats, stated, slug, expected):
+    assert from_title(ats, stated, slug) == expected
+
+
+@pytest.mark.parametrize(
+    ("ats", "stated", "slug"),
+    [
+        ("keka", "keka", "dataction"),  # the vendor's name where the tenant's belongs
+        ("keka", "Serviqual - Jobs", "serviqual"),
+        # a job family, not an employer: why zoho has no trailing "{Name} Jobs" pattern
+        ("zoho", "Project Management Jobs", "eiger"),
+        ("zoho", "Jobs at Careers", "flydocs"),
+        ("zoho", "Jobs at agrocommercialbyliotis", "agrocommercialbyliotis"),
+    ],
+)
+def test_an_india_ats_refuses_a_non_name(ats, stated, slug):
+    assert from_title(ats, stated, slug) is None

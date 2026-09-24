@@ -44,6 +44,10 @@ the 10 boards — only `experience_from`/`experience_to` (both real, e.g. `"1"`/
 `experience` string (`"1 - 2 Years"`) this scraper already reads; not wired, since the string
 field is already well-formed on every sampled job and nothing here shows it losing information the
 numeric pair would recover.
+
+**The company is ``companyinfo``'s ``message.company.company_name``** — the record both paths already
+fetch to tell the portal generation apart, so it costs nothing. Every one of the 193 affected
+Boards names itself there (2026-09-24).
 """
 
 from __future__ import annotations
@@ -178,11 +182,10 @@ class DarwinboxScraper(BaseScraper):
         self._job_counts = payload.get("job_counts")
         return payload.get("data") or []
 
-    def _portal_is_v2(self, host: str) -> bool:
-        """Whether the tenant runs the candidatev2 careers portal (companyinfo.new_careers).
-
-        Every tenant surveyed (60/60 across the corpus, 2026-07-06) is on v2, so failures
-        default to True; the flag exists so a legacy tenant still gets working links."""
+    def _company_info(self, host: str) -> dict:
+        """The tenant's ``companyinfo`` record, or ``{}`` when it cannot be read. It says whether
+        the tenant runs the candidatev2 careers portal (``new_careers``) and names the company
+        (``company_name``) — see :meth:`_read_company_info`."""
         try:
             response = self._fetch(
                 "GET",
@@ -190,10 +193,16 @@ class DarwinboxScraper(BaseScraper):
                 timeout=20,
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
             )
-            company = (response.json().get("message") or {}).get("company") or {}
-            return bool(company.get("new_careers", True))
+            return (response.json().get("message") or {}).get("company") or {}
         except Exception:  # noqa: BLE001 - portal detection must never sink the board
-            return True
+            return {}
+
+    def _read_company_info(self, company: dict) -> None:
+        """Portal generation and company name from a ``companyinfo`` record. Every tenant surveyed
+        (60/60 across the corpus, 2026-07-06) is on v2, so an unread record defaults to True; the
+        flag exists so a legacy tenant still gets working links."""
+        self._new_careers = bool(company.get("new_careers", True))
+        self.adopt_company(company.get("company_name"))
 
     def _fetch_raw_browser(self, host: str) -> list[dict]:
         """The walled board through a real browser fetcher: navigate once, then in-page
@@ -239,9 +248,9 @@ class DarwinboxScraper(BaseScraper):
                 )
                 info.raise_for_status()
                 company = (info.json().get("message") or {}).get("company") or {}
-                self._new_careers = bool(company.get("new_careers", True))
             except Exception:  # noqa: BLE001 - portal detection must never sink the board
-                self._new_careers = True
+                company = {}
+            self._read_company_info(company)
         self._host = host
         return jobs
 
@@ -273,7 +282,7 @@ class DarwinboxScraper(BaseScraper):
                 return self._fetch_raw_browser(walled)
             raise errors[-1][1]
         self._host = host
-        self._new_careers = self._portal_is_v2(host)
+        self._read_company_info(self._company_info(host))
         jobs = list(batch)
         page = 1
         while len(batch) == _PAGE_SIZE and page < _MAX_PAGES:

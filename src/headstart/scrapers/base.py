@@ -187,6 +187,23 @@ DEFAULT_REQUEST_HEADERS: Mapping[str, str] = MappingProxyType(
 )
 
 
+def _head_of(response: Any, size: int) -> str | None:
+    """The first ``size`` bytes (or a little more — whole chunks) of a streamed 200, decoded as
+    UTF-8, or None for any other status; the rest is never downloaded, and the stream is closed
+    either way."""
+    body = b""
+    try:
+        if response.status_code != 200:
+            return None
+        for chunk in response.iter_content():
+            body += chunk
+            if len(body) >= size:
+                break
+    finally:
+        response.close()
+    return body.decode("utf-8", "replace")
+
+
 @dataclass(frozen=True)
 class DetailRequest:
     """One Job's Detail pass request, stated as data (ADR-0201).
@@ -867,10 +884,16 @@ class BaseScraper(ABC):
     def fetch_raw(self) -> Any:
         return json.loads(self._get())
 
+    #: When set, :meth:`resolve_company` streams the board page and reads only its first this
+    #: many bytes — for a page whose name sits in the ``<head>`` of a body that can run to
+    #: megabytes (freshteam's ``/jobs`` is 1.7 MB on ``abnhire``). None reads the whole page.
+    board_page_head: int | None = None
+
     def board_page(self) -> str | None:
-        """The page whose ``<title>`` carries this Board's company name, or None for an ATS with
-        no such page. Overridden by the seven scrapers `headstart.company_name` has evidence for;
-        for everything else :meth:`fetch` serves the Board's humanised tenant (ADR-0212)."""
+        """The page that states this Board's company name — its ``<title>`` unless
+        :meth:`company_from_page` reads it elsewhere — or None for an ATS with no such page.
+        Overridden by the scrapers `headstart.company_name` has evidence for; for everything else
+        :meth:`fetch` serves the Board's humanised tenant (ADR-0212)."""
         return None
 
     def resolve_company(self) -> None:
@@ -879,9 +902,10 @@ class BaseScraper(ABC):
         Called from :meth:`fetch`, not :meth:`parse`, because it makes a request and ``parse`` is
         pure — that split is what lets the parse tests run against recorded fixtures.
 
-        One request per Board, never per Job, and every failure path leaves ``self.company``
-        exactly as it was: no ``board_page``, a request that raises, a title this ATS's patterns
-        cannot read. What that guarantees is narrower than "only ever an upgrade": a slug is never
+        One request per Board, never per Job (a :meth:`company_from_page` override may make one
+        more, for a second source), and every failure path leaves ``self.company`` exactly as it
+        was: no ``board_page``, a request that raises, a page this ATS cannot read, a reader that
+        raises. What that guarantees is narrower than "only ever an upgrade": a slug is never
         replaced by a *non-name*, but a Board can state a name less recognisable than its own slug
         (`ripplehire:ltimindtree` serves "LTM"). ADR-0114 §Consequences has the measured cases.
         """
@@ -899,27 +923,92 @@ class BaseScraper(ABC):
             # returns `.text` — and going through it fed a `Response` to the title parser and
             # broke every eightfold Board. Caught end to end against live boards, not by the
             # suite, which passed throughout.
-            response = self._fetch(
-                "GET",
-                page,
-                headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
-                timeout=30,
-                # One attempt, and it can never wall the ATS. A display name is the most
-                # optional thing this scrape fetches, so it must not spend the retry ladder
-                # (three attempts against a walled origin is ~90s for a Board) and its own
-                # non-200 must not be what routes every other Board of that ATS onto the spare
-                # egress — the reason eightfold's own probe already passes `marks_wall=False`.
-                attempts=1,
-                marks_wall=False,
+            response = self._fetch_once(
+                "GET", page, stream=self.board_page_head is not None
             )
-            html_text = response.text if response.status_code == 200 else None
-        except Exception:  # noqa: BLE001 - a display name is never worth failing a Board for
+            if self.board_page_head is not None:
+                html_text = _head_of(response, self.board_page_head)
+            else:
+                html_text = response.text if response.status_code == 200 else None
+        except Exception as exc:  # noqa: BLE001 - a display name is never worth failing a Board for
+            self._log.info(
+                f"{self.board_key()}: no company name — {page} raised {type(exc).__name__}"
+            )
             return
-        name = company_name.from_title(
-            self.ats, company_name.title_of(html_text), self.slug
-        )
+        try:
+            name = self.company_from_page(html_text)
+        except Exception as exc:  # noqa: BLE001 - a reader's surprise is never worth the Board
+            self._log.info(
+                f"{self.board_key()}: no company name — reading {page} raised "
+                f"{type(exc).__name__}"
+            )
+            return
         if name:
             self.company = name
+        else:
+            # INFO, like every per-Board line (ADR-0039). Until 2026-09-24 this path was silent,
+            # so a Board serving its slug could not be told apart from one whose page was
+            # never asked, refused, or read and not recognised.
+            self._log.info(
+                f"{self.board_key()}: no company name — {page} answered "
+                f"{response.status_code} and stated none this ATS accepts"
+            )
+
+    def _fetch_once(
+        self, method: str, url: str, *, accept: str = "text/html", **kwargs: Any
+    ) -> Any:
+        """One request for something only the company name needs, sent through the shared fetch
+        seam — `_fetch` directly, not `_get`, whose return type differs across subclasses
+        (eightfold's hands back the `Response`).
+
+        One attempt, and it can never wall the ATS. A display name is the most optional thing
+        a scrape fetches, so it must not spend the retry ladder (three attempts against a walled
+        origin is ~90s for a Board) and its own non-200 must not be what routes every other
+        Board of that ATS onto the spare egress — the reason eightfold's own probe already
+        passes `marks_wall=False`.
+        """
+        return self._fetch(
+            method,
+            url,
+            headers={"User-Agent": USER_AGENT, "Accept": accept},
+            timeout=30,
+            attempts=1,
+            marks_wall=False,
+            **kwargs,
+        )
+
+    def company_from_page(self, page: str | None) -> str | None:
+        """The company name :meth:`board_page`'s HTML states, or None — its ``<title>`` read
+        through this ATS's `company_name` patterns. Overridden where the page states the name
+        somewhere else as well, or needs decoding first."""
+        return company_name.from_title(self.ats, company_name.title_of(page), self.slug)
+
+    def wants_company_name(self) -> bool:
+        """Whether a stated name would change what this Board is served under: it has no real
+        name yet, and no curated one overrides every source (ADR-0212). A scraper asks before
+        spending a request on a name source."""
+        return company_name.looks_like_slug(self.company) and not company_name.curated(
+            self.board_key()
+        )
+
+    def adopt_company(self, stated: str | None) -> None:
+        """Serve the name a structured field states as this Board's company.
+
+        For a name a scraper reads off a response it fetched anyway — a detail record, a config
+        call, a posting's JSON-LD — read by `company_name.from_field`, which takes it as the
+        company typed it (ADR-0212) and refuses this ATS's vendor aliases. A real name already on
+        the Board is kept, as in :meth:`resolve_company`.
+        """
+        if not self.wants_company_name():
+            return
+        name = company_name.from_field(self.ats, stated)
+        if name:
+            self.company = name
+        elif stated:
+            self._log.info(
+                f"{self.board_key()}: no company name — a field stated {stated!r}, which "
+                "the guards refuse"
+            )
 
     def fetch(self) -> list[Job]:
         scraped_at = datetime.now(UTC).isoformat()
