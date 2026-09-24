@@ -259,8 +259,9 @@ _PAGE_STREAMS = _DETAIL_STREAMS
 # loses most of its pages has kept too little to read as those postings — and marking *that*
 # truncated would tell `index sync` to preserve rows for a query we barely read.
 _MAX_LOST_PAGE_SHARE = 0.5
-#: The most lost pages :meth:`WorkdayScraper._second_pass` asks for again. The exclusions it exists
-#: for lost 1-2 pages each (runs 35971969417..35998606646); more is an origin failing, not a blip.
+#: The most lost pages one Board asks for again (:meth:`WorkdayScraper._second_pass`). Of the 71
+#: exclusions it exists for (runs 35971969417..35998606646), 68 lost three pages or fewer and the
+#: other three lost 8, 11 and 22 — an origin failing, not a blip.
 _SECOND_PASS_MAX = 5
 # Above what share of a Board's details may go missing before the gap is a WARNING rather than an
 # INFO count. The same half as `_MAX_LOST_PAGE_SHARE` by analogy, *not* by derivation, and unlike
@@ -473,6 +474,10 @@ class WorkdayScraper(BaseScraper):
         # The data center actually serving the tenant. None until resolved; overrides the URL's
         # ``wdN`` when the tenant has migrated (see :meth:`_resolve_instance`).
         self._instance: str | None = None
+        # Lost pages this Board may still ask for again, across every slice `_exhaust` pages
+        # (:meth:`_second_pass`). Per Board, not per slice: a subdivided Board pages fifteen or
+        # more slices, and a per-slice allowance would let a failing origin cost minutes in each.
+        self._second_pass_left = _SECOND_PASS_MAX
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -863,7 +868,12 @@ class WorkdayScraper(BaseScraper):
         return payload
 
     def _record_listing_loss(self, cause: str) -> None:
-        """Record one logical listing page that did not produce postings."""
+        """Record one listing-page loss event, as it happens.
+
+        An event, not a settled page: a page lost on the fan-out and lost again on
+        :meth:`_second_pass` records twice, and one the second pass recovers stays recorded
+        (``listing_second_pass_recovered`` counts those) — ``observability`` reports these as
+        loss *events* for that reason."""
         self.telemetry["listing_page_losses"] = (
             int(self.telemetry.get("listing_page_losses", 0)) + 1
         )
@@ -1406,7 +1416,8 @@ class WorkdayScraper(BaseScraper):
         """Page through offsets [20, total), fanned out over at most ``_PAGE_STREAMS`` concurrent
         streams (mirrors :meth:`fan_out_async`'s bounded-semaphore/shared-session shape, as its
         own small gather rather than a call to it — see :meth:`_paginate_async`). A page that
-        404s or spends its retry ladder mid-crawl is skipped, and one line reports how many
+        spends its retry ladder is asked once more after the fan-out (:meth:`_second_pass`); a
+        page that 404s, or is still lost after that, is skipped, and one line reports how many
         went missing — the tripwire for a truncated list — unless more than
         ``_MAX_LOST_PAGE_SHARE`` of the query's pages went that way, which is a failed crawl
         rather than a truncated one and raises (ADR-0076).
@@ -1427,18 +1438,18 @@ class WorkdayScraper(BaseScraper):
         # `scrape_run`'s run-wide retry totals, which are shared across every Board in the shard
         # and so cannot be attributed to this one.
         classes: Counter[str] = Counter()
-        # Offsets whose request outlived its retry ladder, by the class it failed with. A 404 is
-        # not here: mid-crawl it is a page the listing no longer has, not a failed request.
-        failed: dict[int, str] = {}
+        # Offsets whose request outlived its retry ladder, by the class it failed with: the pages
+        # worth asking again. A 404 is not one — mid-crawl it is a page the listing no longer has.
+        retryable: dict[int, str] = {}
         if self.async_fanout_enabled():
             missing, error = asyncio.run(
-                self._paginate_async(applied, offsets, absorb, classes, failed)
+                self._paginate_async(applied, offsets, absorb, classes, retryable)
             )
         else:
             missing, error = self._paginate_sync(
-                applied, offsets, absorb, classes, failed
+                applied, offsets, absorb, classes, retryable
             )
-        missing -= self._second_pass(applied, failed, absorb, classes)
+        missing -= self._second_pass(applied, retryable, absorb, classes)
         if not missing:
             return
         # Page 1 is in the denominator because it is in hand: :meth:`_exhaust` fetched it before
@@ -1471,7 +1482,7 @@ class WorkdayScraper(BaseScraper):
     def _second_pass(
         self,
         applied: dict[str, list[str]],
-        failed: dict[int, str],
+        retryable: dict[int, str],
         absorb,
         classes: Counter[str],
     ) -> int:
@@ -1479,37 +1490,43 @@ class WorkdayScraper(BaseScraper):
         return how many answered.
 
         Runs 35971969417..35998606646 (2026-09-24): 71 of 132 ADR-0053 scope exclusions were
-        Workday Boards that lost one or two pages of dozens to a ConnectionError or an HTTP 500
-        and were never asked again, so the whole Board left eviction scope for the run. Those
-        failures are transient on the scale of a fan-out: this pass comes after every other page
-        has answered, through the sync path and its own retry ladder. A page that answers is
-        read, and its loss is taken back out of the count :meth:`_paginate` decides on.
+        Workday Boards that lost pages to a ConnectionError or an HTTP 500 and were never asked
+        again, so the whole Board left eviction scope for the run — 68 of the 71 had lost three
+        pages or fewer. The same Boards list every page cleanly on a later crawl (umiami, rbc,
+        manulife, 2026-09-25), so the failure is transient; this pass comes after every other
+        page has answered, through the sync path and its own retry ladder. A page that answers is
+        read, and its loss is taken back out of the count :meth:`_paginate` decides on; one that
+        404s now is relabelled as the lost page it has become.
 
-        Only for a few lost pages (:data:`_SECOND_PASS_MAX`): the pass is sequential, each request
-        carrying a full retry ladder, and a Board that lost many is an origin failing, where
-        asking again one page at a time only spends the shard's budget.
+        Bounded by :data:`_SECOND_PASS_MAX` pages per *Board* (``_second_pass_left``): the pass is
+        sequential, each request carrying a full retry ladder, and a Board losing more is an
+        origin failing, where asking again one page at a time only spends the shard's budget.
         """
-        if len(failed) > _SECOND_PASS_MAX:
+        if not retryable or len(retryable) > self._second_pass_left:
             return 0
+        self._second_pass_left -= len(retryable)
         recovered = 0
-        for offset, cls in failed.items():
+        for offset, cause in retryable.items():
             try:
                 payload = self._post(applied, offset=offset)
             except http.RequestsError:
                 continue
+            classes[cause] -= 1
+            if not classes[cause]:
+                del classes[cause]
             if payload is None:
-                continue  # it 404s now: the listing moved on, and it stays one lost page
+                classes["404 mid-crawl"] += (
+                    1  # still lost, now for the reason it is lost
+                )
+                continue
             absorb(payload.get("jobPostings") or [])
-            classes[cls] -= 1
-            if not classes[cls]:
-                del classes[cls]
             recovered += 1
         if recovered:
             self.telemetry["listing_second_pass_recovered"] = (
                 int(self.telemetry.get("listing_second_pass_recovered", 0)) + recovered
             )
             _log.info(
-                f"{self.board_key()}: {recovered} of {len(failed)} page(s) lost mid-crawl "
+                f"{self.board_key()}: {recovered} of {len(retryable)} page(s) lost mid-crawl "
                 "answered a second pass"
             )
         return recovered
@@ -1520,7 +1537,7 @@ class WorkdayScraper(BaseScraper):
         offsets: range,
         absorb,
         classes: Counter[str],
-        failed: dict[int, str],
+        retryable: dict[int, str],
     ) -> tuple[int, http.RequestsError | None]:
         """Fetch every offset in ``offsets`` concurrently over one shared ``AsyncSession``,
         bounded to at most ``_PAGE_STREAMS`` in flight — narrower once the origin has walled this
@@ -1566,8 +1583,8 @@ class WorkdayScraper(BaseScraper):
                             payload = await self._post_async(session, applied, offset)
                         except http.RequestsError as exc:
                             missing += 1
-                            failed[offset] = classify_exception(exc)
-                            classes[failed[offset]] += 1
+                            retryable[offset] = classify_exception(exc)
+                            classes[retryable[offset]] += 1
                             error = error or exc
                             return
                         finally:
@@ -1586,7 +1603,7 @@ class WorkdayScraper(BaseScraper):
         offsets: range,
         absorb,
         classes: Counter[str],
-        failed: dict[int, str],
+        retryable: dict[int, str],
     ) -> tuple[int, http.RequestsError | None]:
         """The pre-concurrency fallback: walk ``offsets`` one at a time via the sync
         :meth:`_post`, exactly as :meth:`_paginate` did before it fanned out. Only reached
@@ -1600,8 +1617,8 @@ class WorkdayScraper(BaseScraper):
                 payload = self._post(applied, offset=offset)
             except http.RequestsError as exc:
                 missing += 1
-                failed[offset] = classify_exception(exc)
-                classes[failed[offset]] += 1
+                retryable[offset] = classify_exception(exc)
+                classes[retryable[offset]] += 1
                 error = error or exc
                 continue
             if payload is None:
