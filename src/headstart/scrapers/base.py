@@ -106,12 +106,14 @@ _DEFAULT_H2_STREAMS = 100
 #: 36003741124: `oracle:egud` finished its listing, then spent 56 min in its detail pass until the
 #: shard's 60 min budget killed it, and the run took 91 min instead of ~47. A slow pass that still
 #: lands details is left alone (`oracle:ejwl` legitimately takes ~26 min); only one that has
-#: stopped landing any is cut. Twice a single item's worst legitimate retry budget (5 attempts at
-#: a 30 s timeout plus a capped 30 s wait, ~300 s), so a stall this long is not one slow request.
+#: stopped landing any is cut. Above a single item's worst legitimate budget (~430 s: 5 attempts at
+#: a 30 s timeout, capped 30 s waits, two egress rotations), so a stall this long is not one slow
+#: request.
 _DETAIL_STALL_S = 600.0
 #: The most one multiplexed detail may take (ADR-0209). Every request carries a timeout, but a
 #: stream can outlast it; without a bound one stuck item holds the pass, and so the shard, open.
-#: Above the ~300 s retry budget plus an egress rotation wait.
+#: Above the ~430 s worst legitimate budget of one walled item (5 timeouts, 4 capped waits, two
+#: rotations).
 _DETAIL_ITEM_TIMEOUT_S = 900.0
 #: The loss labels the two bounds write, so the gap line names them.
 DETAIL_STALLED = "skipped after the detail pass stalled"
@@ -1107,22 +1109,23 @@ class BaseScraper(ABC):
             ]
         # ADR-0209: the last time a detail landed. Read before each item starts, so once nothing
         # has landed for `_DETAIL_STALL_S` every item not yet started is skipped, labelled.
-        landed = [_detail_clock()]
-        landed_lock = threading.Lock()
+        landed = _detail_clock()
 
-        def stalled() -> bool:
-            with landed_lock:
-                return _detail_clock() - landed[0] > _DETAIL_STALL_S
+        def skipped_as_stalled() -> bool:
+            # A float read and a float write, each atomic under the GIL: no lock on either path.
+            if _detail_clock() - landed <= _DETAIL_STALL_S:
+                return False
+            self.note_detail_unattempted(DETAIL_STALLED)
+            return True
 
         def note(outcome: Any) -> Any:
+            nonlocal landed
             if _unwrapped(outcome) is not None:
-                with landed_lock:
-                    landed[0] = _detail_clock()
+                landed = _detail_clock()
             return outcome
 
         async def watched_async(session: Any, item: _T) -> Any:
-            if stalled():
-                self.note_detail_loss(DETAIL_STALLED)
+            if skipped_as_stalled():
                 return None
             try:
                 outcome = await asyncio.wait_for(
@@ -1135,8 +1138,7 @@ class BaseScraper(ABC):
             return note(outcome)
 
         def watched(item: _T) -> Any:
-            if stalled():
-                self.note_detail_loss(DETAIL_STALLED)
+            if skipped_as_stalled():
                 return None
             return note(self._fetch_detail_outcome(item))
 
@@ -1147,11 +1149,6 @@ class BaseScraper(ABC):
                 wanted,
                 watched,
                 self.detail_workers or _DEFAULT_FAN_OUT_WORKERS,
-            )
-        if self.detail_losses[DETAIL_STALLED]:
-            self._log.info(
-                f"{self.board_key()}: no detail landed for {_DETAIL_STALL_S:.0f} s — skipped "
-                f"the remaining {self.detail_losses[DETAIL_STALLED]} (ADR-0209)"
             )
         described_details: list[Any] = []
         details: dict[str, Any] = {}
@@ -1284,7 +1281,9 @@ class BaseScraper(ABC):
                     for cause, n in self.detail_losses.items()
                     if cause.startswith("HTTP ")
                 ),
-                "detail_breaker_skips": self.detail_losses[DETAIL_STALLED],
+                "detail_breaker_skips": 0,
+                # ADR-0209: read by `harvest`, which then keeps this Board's cost row unchanged.
+                "detail_stalled": self.detail_losses[DETAIL_STALLED],
                 "detail_loss_causes": dict(self.detail_losses),
             }
         )

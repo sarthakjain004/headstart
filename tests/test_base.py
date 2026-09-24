@@ -6,6 +6,7 @@ import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
 from headstart import fanout_stats, http
+from headstart.scrapers import base
 from headstart.scrapers.base import (
     DEFAULT_REQUEST_HEADERS,
     BaseScraper,
@@ -708,8 +709,6 @@ def test_run_detail_pass_breaks_off_when_no_detail_succeeds_for_the_stall_window
 ):
     """Run 36003741124: `oracle:egud`'s detail pass ran 56 min after its listing and the shard's
     budget killed it. Once nothing has succeeded for the window, the rest is skipped, labelled."""
-    from headstart.scrapers import base
-
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
     clock = _Clock()
     monkeypatch.setattr(base, "_detail_clock", clock)
@@ -726,7 +725,8 @@ def test_run_detail_pass_breaks_off_when_no_detail_succeeds_for_the_stall_window
         "RequestException": 2,
         base.DETAIL_STALLED: 2,
     }
-    assert scraper.telemetry["detail_breaker_skips"] == 2
+    assert scraper.telemetry["detail_stalled"] == 2
+    assert scraper.telemetry["detail_attempted"] == 2  # skipped items formed no request
 
 
 @pytest.mark.parametrize("async_fanout", ["1", "0"])
@@ -735,8 +735,6 @@ def test_run_detail_pass_keeps_going_while_details_still_succeed(
 ):
     """A slow pass that is still landing details is not a stall: `oracle:ejwl` legitimately
     spends ~26 min, and a wall-clock cap would cut it where this does not."""
-    from headstart.scrapers import base
-
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
     clock = _Clock()
     monkeypatch.setattr(base, "_detail_clock", clock)
@@ -749,16 +747,12 @@ def test_run_detail_pass_keeps_going_while_details_still_succeed(
     )
 
     assert base.DETAIL_STALLED not in scraper.detail_losses
-    assert scraper.telemetry["detail_breaker_skips"] == 0
+    assert scraper.telemetry["detail_stalled"] == 0
 
 
 def test_run_detail_pass_bounds_a_detail_that_never_returns(monkeypatch):
     """Every request carries a timeout, but a multiplexed stream can still hang past it; one
     stuck item must not hold the whole pass, and so the whole shard, open."""
-    import asyncio
-
-    from headstart.scrapers import base
-
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "1")
     monkeypatch.setattr(base, "_DETAIL_ITEM_TIMEOUT_S", 0.05)
     scraper = _DetailStub("x", fetcher=FakeFetcher(_detail_route))
