@@ -85,7 +85,7 @@ def extract(
 ) -> SalarySpan | None:
     """Run the cascade: a concrete figure from the structured field, then from the description.
     None if neither yields one — never a fabricated estimate (see module docstring)."""
-    return from_field(salary, ats) or from_description(description, ats)
+    return from_field(salary, ats) or from_description(description)
 
 
 # --- Tier 1: parse Job.salary, a string we already formatted per-scraper -----------------------
@@ -122,22 +122,49 @@ _CURRENCY_CODE = re.compile(rf"\b({_CURRENCY_CODES})\b", re.IGNORECASE)
 # of that specific pattern (a label's own filler, say) happened to consume it too, which is real
 # for some phrasings and not others. Folding the prefix into the shared symbol fragment itself
 # means every caller captures it reliably, not by accident of surrounding text — see
-# `_guess_currency`'s own handling of a `sym` value longer than one character. The other dollar
+# `_currency_for_symbol`'s own handling of a symbol longer than one character. The other dollar
 # prefixes joined later ("HK$", "S$", "A$", "NZ$" were being captured as a bare "$" and served as
 # USD — HK$370,000 as a $370k job); the lookbehind keeps a letter-glued prefix from being carved
 # out of a longer one ("US$" is not "S$").
 _SYM = r"(?:(?<![A-Za-z])(?:CA|C|HK|SG|S|AU|A|NZ|US)\$|\$|[£€₹])"
-_DOLLAR_PREFIX = {
-    "CA": "CAD",
-    "C": "CAD",
-    "HK": "HKD",
-    "SG": "SGD",
-    "S": "SGD",
-    "AU": "AUD",
-    "A": "AUD",
-    "NZ": "NZD",
-    "US": "USD",
+#: Every currency symbol this module reads, to the currency it names — one map for Tier 1 and
+#: Tier 2 alike (ADR-0197). A bare "$" is deliberately absent: what it names depends on where it
+#: was read, so `_currency_for_symbol` takes that as an explicit policy instead.
+_SYMBOL_CURRENCY = {
+    "CA$": "CAD",
+    "C$": "CAD",
+    "HK$": "HKD",
+    "SG$": "SGD",
+    "S$": "SGD",
+    "AU$": "AUD",
+    "A$": "AUD",
+    "NZ$": "NZD",
+    "US$": "USD",
+    "£": "GBP",
+    "€": "EUR",
+    "₹": "INR",
 }
+
+
+def _currency_for_symbol(
+    symbol: str | None, stated_text: str, *, bare_dollar: str | None
+) -> str | None:
+    """The currency a captured symbol names — the one currency-symbol resolver (ADR-0197).
+
+    A named symbol ("CA$", "£", ...) decides on its own, in any letter case. Otherwise an ISO code
+    anywhere in ``stated_text`` names it, and failing that a bare "$" names ``bare_dollar``: the
+    policy that genuinely differs by context. Description text (Tier 2) and gem's templated
+    sentence pass "USD", the corpus's dominant dollar; a free-text field read by `_field_generic`
+    passes None, since ~15% of its bare-"$" fields were measured non-US (see
+    `_currency_of_symbol_before`)."""
+    if symbol and symbol != "$":
+        return _SYMBOL_CURRENCY.get(symbol.upper())
+    code_m = _CURRENCY_CODE.search(stated_text)
+    if code_m:
+        return code_m.group(1).upper()
+    return bare_dollar if symbol == "$" else None
+
+
 # The optional symbol after the dash lets a free-text field state one per side ("$85,000 -
 # $135,000", zoho): without it the range failed and `_SINGLE_NUM` silently kept only the floor.
 _RANGE = re.compile(
@@ -437,12 +464,11 @@ def _field_darwinbox(value: str) -> SalarySpan | None:
 #: still earns its place: it reads the "to" separator and resolves a bare `$` (see below), neither
 #: of which `_field_generic` does.
 #:
-#: Symbols measured across the real sample: `$`, `CA$`/`C$`, `A$`, `€`, `£`, `₹` — each mapped
-#: explicitly rather than guessed. `_guess_currency`'s Tier-2 rule (any multi-char `$`-ending
-#: symbol is CAD) is right for what it was built against but would be wrong here: `A$125,000` is a
-#: real, repeated AUD figure in this corpus, not a CAD one. A bare `$` still needs the fallback: an
-#: explicit trailing ISO code overrides it when the sentence states one ("$200,000 – $350,000
-#: USD"), else it defaults USD, matching every other bare-`$` reading in this module.
+#: Symbols measured across the real sample: `$`, `CA$`/`C$`, `A$`, `€`, `£`, `₹` — each named by
+#: `_currency_for_symbol`'s one map, so `A$125,000` (a real, repeated AUD figure in this corpus)
+#: reads AUD, not CAD. A bare `$` still needs the fallback: an explicit trailing ISO code
+#: overrides it when the sentence states one ("$200,000 – $350,000 USD"), else it defaults USD,
+#: the same bare-`$` policy Tier 2 uses.
 #:
 #: The separator also accepts the word "to", not just a dash: "$180,000 to $210,000" is real,
 #: observed phrasing (not a dash variant), and without it `_GEM_RANGE` would silently degrade to
@@ -461,33 +487,18 @@ _GEM_RANGE = re.compile(
 _GEM_SINGLE = re.compile(rf"(?P<sym>{_GEM_SYM_RE})\s*(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)")
 
 
-def _gem_currency(sym: str, value: str) -> str | None:
-    if sym in ("CA$", "C$"):
-        return "CAD"
-    if sym == "A$":
-        return "AUD"
-    if sym == "€":
-        return "EUR"
-    if sym == "£":
-        return "GBP"
-    if sym == "₹":
-        return "INR"
-    code_m = _CURRENCY_CODE.search(value)
-    return code_m.group(1).upper() if code_m else "USD"
-
-
 def _field_gem(value: str) -> SalarySpan | None:
     mult = _period_multiplier(value)
     m = _GEM_RANGE.search(value)
     if m:
-        currency = _gem_currency(m.group("sym"), value)
+        currency = _currency_for_symbol(m.group("sym"), value, bare_dollar="USD")
         lo, hi = _num(m.group("lo")) * mult, _num(m.group("hi")) * mult
         return _bounded(min(lo, hi), max(lo, hi), currency)
     single = _GEM_SINGLE.search(value)
     if single:
         if _states_a_ceiling_only(value, single.start("lo")):
             return None
-        currency = _gem_currency(single.group("sym"), value)
+        currency = _currency_for_symbol(single.group("sym"), value, bare_dollar="USD")
         v = _num(single.group("lo")) * mult
         return _bounded(v, None, currency)
     return None
@@ -532,15 +543,13 @@ _FIELD_PARSERS = {
 }
 
 
-def _symbol_currency(value: str, start: int) -> str | None:
-    """The currency a symbol directly before ``value[start:]`` names, resolved by Tier 2's own
-    :func:`_guess_currency` — so "CA$"/"HK$" name their dollar. A bare "$" stays None: measured on
-    the 2026-09-15 snapshot, ~15% of bare-"$" fields were Canadian, Australian or even stated
+def _currency_of_symbol_before(value: str, start: int) -> str | None:
+    """The currency a symbol directly before ``value[start:]`` names, resolved by
+    :func:`_currency_for_symbol` — so "CA$"/"HK$" name their dollar. A bare "$" stays None: measured
+    on the 2026-09-15 snapshot, ~15% of bare-"$" fields were Canadian, Australian or even stated
     "MXN", and a wrong USD puts them in the USD bracket and sort, where None only leaves them out."""
     sym = re.search(rf"({_SYM})\s*$", value[:start])
-    if not sym or sym.group(1) == "$":
-        return None
-    return _guess_currency(sym.group(1), "")
+    return _currency_for_symbol(sym.group(1) if sym else None, "", bare_dollar=None)
 
 
 def _field_generic(value: str) -> SalarySpan | None:
@@ -553,7 +562,7 @@ def _field_generic(value: str) -> SalarySpan | None:
     mult = _period_multiplier(value)
     m = _RANGE.search(value)
     if m:
-        currency = currency or _symbol_currency(value, m.start(1))
+        currency = currency or _currency_of_symbol_before(value, m.start(1))
         lo, hi = _num(m.group(1)) * mult, _num(m.group(2)) * mult
         return _bounded(min(lo, hi), max(lo, hi), currency)
     single = _SINGLE_NUM.search(value)
@@ -564,14 +573,39 @@ def _field_generic(value: str) -> SalarySpan | None:
         # floor (code review, PR #238).
         if _states_a_ceiling_only(value, single.start(1)):
             return None
-        currency = currency or _symbol_currency(value, single.start(1))
+        currency = currency or _currency_of_symbol_before(value, single.start(1))
         v = _num(single.group(1)) * mult
         return _bounded(v, None, currency)
     return None
 
 
+def to_field(
+    low: str | float,
+    high: str | float | None = None,
+    currency: str | None = None,
+    period: str | None = None,
+) -> str:
+    """Spell a structured compensation field as the ``Job.salary`` string :func:`from_field`
+    reads back — the encoder half of the field codec (ADR-0197).
+
+    The shape is ``FIGURES [CURRENCY] [PERIOD]``, space-separated: ``FIGURES`` is ``"LOW-HIGH"``,
+    or ``"LOW"`` alone when ``high`` is None, and an empty part is left out. ``"25-30 USD HOUR"``,
+    ``"48000.00 EUR yearly"``, ``"1200000"``. The caller keeps every policy about its own native
+    field: which figure is the floor, whether a lone ceiling is emitted at all (a lone figure
+    reads as a floor), how a number is spelt, and which native period word is passed.
+
+    :func:`from_field` annualises a period it recognises. Every ATS reads the phrase spellings
+    ("per-hour", "hourly", "per-month", "monthly"); an ATS registered on
+    ``_field_range_currency_interval`` also reads the bare unit words HOUR, DAY, WEEK and MONTH.
+    No period, or an unrecognised one, reads as annual. The currency is read only when it is one
+    of the ISO codes this module names."""
+    figures = f"{low}" if high is None else f"{low}-{high}"
+    return " ".join(str(part) for part in (figures, currency, period) if part)
+
+
 def from_field(salary: str | None, ats: str | None = None) -> SalarySpan | None:
-    """Parse the structured ``Job.salary`` string a scraper already formatted."""
+    """Parse the structured ``Job.salary`` string a scraper already formatted — the decoder half
+    of the field codec, with :func:`to_field` as its encoder."""
     value = (salary or "").strip()
     if not value:
         return None
@@ -641,13 +675,6 @@ def _has_false_positive_context(text: str, start: int, end: int) -> bool:
     )
 
 
-_CURRENCY_SYM = {
-    "$": None,
-    "£": "GBP",
-    "€": "EUR",
-    "₹": "INR",
-}  # "$" resolved below (see _guess_dollar_currency)
-
 # Anchored patterns, tried in this order — an explicit "Salary:"/"Pay range:"/"Compensation:"
 # label first (highest confidence, matches "Salary: upto £29,000", "Compensation: $100-120k",
 # "Pay Rate: $34-58/hr" from real samples), then a bare currency-symbol range/single anywhere in
@@ -660,7 +687,7 @@ _CURRENCY_SYM = {
 # 70,000-90,000" (an already-registered code) failed identically before this fix, confirmed by
 # direct testing — AED's pass just supplied the first real evidence, since AED is conventionally
 # written code-first far more often than the codes already in `_CURRENCY_CODES`. No new named
-# group needed: the leading code becomes part of the overall match, which `_guess_currency`
+# group needed: the leading code becomes part of the overall match, which `_currency_for_symbol`
 # already scans for a code via `_CURRENCY_CODE.search()` on the full matched text.
 #
 # "stipend" joined the label alternation on the same keka pass: 13 distinct companies, always the
@@ -792,7 +819,7 @@ _BARE_RANGE = re.compile(
 # a symbol — "between CAD 82,000 and CAD 100,000" was falling through entirely, since the
 # original only recognized $£€₹. The first number still REQUIRES a symbol or a code (same safety
 # anchor as before, now widened); the second stays optional either way, matching how every other
-# paired pattern here only needs the currency stated once. `_guess_currency` finds a code
+# paired pattern here only needs the currency stated once. `_currency_for_symbol` finds a code
 # anywhere in the overall match text on its own — no new named group needed for that half.
 # (2) also accepts a dash separator, not just " and " — a real, if less common, hybrid phrasing
 # ("is between CAD 82,000 - CAD 100,000", mixing "between" with a dash instead of "and"). This
@@ -1002,21 +1029,6 @@ _STRONG_PERIOD_HINT = re.compile(
 )
 
 
-def _guess_currency(sym: str | None, code_context: str) -> str | None:
-    if sym and sym.endswith("$") and sym != "$":
-        # "CA$"/"HK$"/... — see _SYM's own docstring for why this must be checked against `sym`
-        # itself, not searched for separately in the surrounding match text.
-        return _DOLLAR_PREFIX[sym[:-1].upper()]
-    if sym and sym != "$":
-        return _CURRENCY_SYM.get(sym)
-    code_m = _CURRENCY_CODE.search(code_context)
-    if code_m:
-        return code_m.group(1).upper()
-    if sym == "$":
-        return "USD"  # statistically dominant in this corpus; genuinely ambiguous otherwise
-    return None
-
-
 #: Added to an "after"-side period hint's distance when it looks like a new sentence starting
 #: right where the number ends (see _distance) — large enough to always lose to any "before" hint
 #: within the ~50-char window _period_from_window searches, while still letting the hint win if
@@ -1161,7 +1173,10 @@ def _span_from_match(
         else 1
     )
     mult = _period_from_window(text, m.start(), m.end())
-    currency = _guess_currency(m.groupdict().get("sym"), matched)
+    # A bare "$" reads USD: statistically dominant in this corpus, genuinely ambiguous otherwise.
+    currency = _currency_for_symbol(
+        m.groupdict().get("sym"), matched, bare_dollar="USD"
+    )
     lo = round(_num_value(lo_raw) * magnitude_mult) * mult
     hi = round(_num_value(hi_raw) * magnitude_mult) * mult if hi_raw else None
     span = _bounded(min(lo, hi) if hi else lo, max(lo, hi) if hi else None, currency)
@@ -1268,9 +1283,7 @@ def _resolve(spans: list[SalarySpan]) -> SalarySpan | None | object:
     return _AMBIGUOUS
 
 
-def from_description(
-    description: str | None, ats: str | None = None
-) -> SalarySpan | None:
+def from_description(description: str | None) -> SalarySpan | None:
     """Scan free text for a stated salary, trying patterns in confidence order: leveled
     compensation bands (several genuinely different numbers that are still one real, stated
     envelope — see :func:`_scan_level_bands`), an explicit "minimum $X ... maximum $Y" band

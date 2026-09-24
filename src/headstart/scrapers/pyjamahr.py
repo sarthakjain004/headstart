@@ -68,7 +68,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from headstart import http
+from headstart import http, salary
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
@@ -97,7 +97,7 @@ _JOB_TYPE_LABELS: dict[str, str] = {
     "FREELANCER": "Freelance",
 }
 
-#: `salary_type` codes -> the period spelling `salary._period_multiplier` reads. The three values
+#: `salary_type` codes -> the period spelling `salary.from_field` reads. The three values
 #: observed (1,022 / 641 / 78). An unobserved code yields no salary at all rather than a figure
 #: read at the wrong period: annual is the parser's default, so a WEEKLY figure passed through
 #: bare would be served 52x too low.
@@ -303,7 +303,7 @@ class PyjamaHRScraper(BaseScraper):
         The gate and the bounds agree exactly on live data — of 1,741 details, all 1,236 marked
         visible carried both bounds and none of the 505 hidden carried either — so requiring
         every part is a statement of the measured shape, not caution against an imagined one. The
-        spelling ("30000-40000 INR per-month") is what `salary._field_generic` reads: a range, a
+        spelling ("30000-40000 INR per-month") is what `salary.from_field` reads: a range, a
         currency code, and a phrase-shaped period. `is_salary_visible` is the tenant's own
         publication choice, so a hidden figure stays hidden even when the API leaks it.
         """
@@ -314,6 +314,4 @@ class PyjamaHRScraper(BaseScraper):
         if period is None or lo is None or hi is None:
             return None
         currency = (raw.get("currency") or "").strip()
-        return " ".join(
-            part for part in (f"{_digits(lo)}-{_digits(hi)}", currency, period) if part
-        )
+        return salary.to_field(_digits(lo), _digits(hi), currency, period)
